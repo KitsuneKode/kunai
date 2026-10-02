@@ -25,14 +25,23 @@ export function classifyPlaybackFailureFromEvent(event: PlayerPlaybackEvent): Pl
       }
       return "network-buffering";
     case "stream-slow":
+      // slow-open falls to network-buffering — a slow connect is a wait
+      // condition, not a fault.
       return event.state === "slow-network-suspected" ? "slow-stream" : "network-buffering";
     case "seek-stalled":
       return "seek-stuck";
     case "ipc-stalled":
       return "ipc-stuck";
     case "stream-stalled":
-      if (event.stallKind === "network-read-dead") return "expired-stream";
-      return "unknown";
+      if (event.stallKind === "network-read-dead" || event.stallKind === "cache-starved") {
+        // The demuxer starved: the source stopped feeding bytes — refreshing
+        // it is the recovery, not inspecting the player.
+        return "expired-stream";
+      }
+      // Position quiet mid-playback without a cache signal is a live stream
+      // that stopped advancing — the wait-or-refresh guidance fits better than
+      // the inspect-the-player fallback.
+      return "slow-stream";
     default:
       return "none";
   }

@@ -1,7 +1,7 @@
 import { normalizeMediaKind, presentMedia } from "@/domain/media/media-presentation";
 import type { QueueEntry } from "@/services/storage/storage-read-models";
 
-export type QueueRowState = "playing" | "pending" | "played";
+export type QueueRowState = "next" | "pending" | "played";
 
 export type QueueViewRow = {
   readonly id: string;
@@ -100,7 +100,9 @@ export function buildQueueView(input: BuildQueueViewInput): QueueView {
       title: entry.title,
       episodeLabel: episodeLabel(entry),
       sourceLabel: sourceLabel(entry.source),
-      state: isPlayed ? "played" : entry.id === firstUnplayedId ? "playing" : "pending",
+      // "next" = head of the unplayed chain — the overlay has no playback
+      // authority, so it must not claim "playing" the way a live session could.
+      state: isPlayed ? "played" : entry.id === firstUnplayedId ? "next" : "pending",
       position: isPlayed ? 0 : unplayedPos,
       posterUrl: input.resolvePoster(entry.titleId),
       titleId: entry.titleId,

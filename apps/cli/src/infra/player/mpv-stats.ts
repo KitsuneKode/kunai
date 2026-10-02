@@ -121,13 +121,13 @@ const EOF_TRUST_TAIL_FRACTION = 0.05;
 const EOF_TRUST_TAIL_MIN_SEC = 120;
 const EOF_TRUST_PERCENT_POS_MIN = 95;
 
-/** Called when the playback watchdog reports stream/ipc stall (correlate with spurious EOF). */
+/** Called when the playback watchdog reports stream stall (correlate with spurious EOF). */
 export function noteStreamStall(state: PlayerStatsState, observedAtMs: number): void {
-  const pos = state.latestIpcSample?.positionSeconds ?? 0;
+  // Stamp only — a stall is evidence the feed is untrustworthy, so the position
+  // observed at that moment must not be promoted into maxTrustedProgressSeconds
+  // (a stall at a jumped position would then exempt that position from the
+  // premature-eof demotion it justifies).
   state.lastStreamStallAtMs = observedAtMs;
-  if (pos > 0) {
-    state.maxTrustedProgressSeconds = Math.max(state.maxTrustedProgressSeconds, pos);
-  }
 }
 
 function advanceTrustedProgressSeconds(

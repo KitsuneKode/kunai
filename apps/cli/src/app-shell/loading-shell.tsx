@@ -964,7 +964,20 @@ export const LoadingShell = React.memo(function LoadingShell({
                       {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
                     </Text>
                     <Text color={palette.dim}>
-                      {`r recover  ·  ${PLAYER_FALLBACK_KEY} fallback  ·  o source  ·  d diagnostics`}
+                      {
+                        // Same gates as resolvePlaybackShellInput — a hint that
+                        // the key handler would refuse is a lie in the worst spot.
+                        [
+                          onRecover ? "r recover" : null,
+                          state.fallbackAvailable && onFallback
+                            ? `${PLAYER_FALLBACK_KEY} fallback`
+                            : null,
+                          canOpenSourcePicker ? "o source" : null,
+                          state.onCommandAction ? "d diagnostics" : null,
+                        ]
+                          .filter((part): part is string => Boolean(part))
+                          .join("  ·  ")
+                      }
                     </Text>
                   </Box>
                 ) : state.bufferHealth === "buffering" || state.bufferHealth === "stalled" ? (

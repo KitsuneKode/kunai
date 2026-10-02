@@ -138,7 +138,7 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
   ],
   [
     "apps/cli/src/app/offline/offline-playback-launch.ts",
-    ["@/app-shell/root-content-state", "@/app-shell/types"],
+    ["@/app-shell/cancel-root-overlay", "@/app-shell/root-content-state", "@/app-shell/types"],
   ],
 ]);
 

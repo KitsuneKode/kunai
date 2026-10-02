@@ -6,4 +6,4 @@
   Dune: Part Two · Movie                    ○ queued                                    — waiti…
   Arcane · S01E09                           ◇ repairable                                 sidecar
 
-x to abort  ·  a to repair all
+x to abort  ·  a to repair sidecars

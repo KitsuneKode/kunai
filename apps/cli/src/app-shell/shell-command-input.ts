@@ -79,6 +79,12 @@ export function useShellInput({
       if (key.return) {
         const resolved = getHighlightedCommand(commandInput, commands, highlightedIndex);
         if (resolved?.enabled) {
+          // A resolved command dismisses the palette — leaving commandMode on
+          // keeps it mounted over the next surface, eating that surface's keys.
+          setCommandMode(false);
+          setCommandInput("");
+          setHighlightedIndex(0);
+          setPaletteNotice(null);
           onResolve(toShellAction(resolved.id));
           return;
         }

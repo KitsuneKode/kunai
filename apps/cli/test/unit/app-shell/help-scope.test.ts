@@ -73,11 +73,11 @@ test("resolveHelpScope prefers the overlay over active playback", () => {
   expect(resolveHelpScope(stateWithOverlays("finished", "notifications"))).toBe("notifications");
 });
 
-// `?` pushes `help` itself, and `confirm` is a transient prompt over a real
-// surface; documenting either would be circular.
-test("resolveHelpScope looks beneath the help and confirm overlays", () => {
+// `?` pushes `help` itself — a transient prompt over a real surface;
+// documenting it would be circular.
+test("resolveHelpScope looks beneath the help overlay", () => {
   expect(resolveHelpScope(stateWithOverlays("idle", "queue", "help"))).toBe("queue");
-  expect(resolveHelpScope(stateWithOverlays("idle", "history", "confirm", "help"))).toBe("history");
+  expect(resolveHelpScope(stateWithOverlays("idle", "history", "help"))).toBe("history");
   expect(resolveHelpScope(stateWithOverlays("playing", "help"))).toBe("player");
 });
 

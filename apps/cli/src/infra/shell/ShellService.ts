@@ -21,8 +21,7 @@ export type ModalType =
       currentProvider: string;
       lane: import("../../domain/types").ProviderLane;
     }
-  | { type: "subtitle_picker"; tracks: import("../../domain/types").SubtitleTrack[] }
-  | { type: "confirm"; message: string; onConfirm: () => void };
+  | { type: "subtitle_picker"; tracks: import("../../domain/types").SubtitleTrack[] };
 
 export interface ShellService {
   // State management

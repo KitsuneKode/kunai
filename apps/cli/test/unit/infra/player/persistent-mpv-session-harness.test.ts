@@ -5,6 +5,7 @@ import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc"
 import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
 import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
+import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 
 import { waitUntil } from "../../../support/wait-until";
 
@@ -875,6 +876,66 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     await playbackResult;
   });
 
+  test("a no-progress stream stall triggers the same bounded in-process reconnect", async () => {
+    // The watchdog verdict that used to dead-end: position frozen while
+    // unpaused, unseeked and unbuffered is a dead feed too — it now takes the
+    // same same-URL reload lane as network-read-dead/cache-starved.
+    let nowMs = 1_000;
+    const timers: Array<{ callback: () => void }> = [];
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const originalDateNow = Date.now;
+    // SAFETY: the test swaps the process-wide timer pair for a callback queue it
+    // fires by hand — the fake is never-shaped, the real pair is restored in
+    // finally. Same seam the watchdog unit tests use.
+    globalThis.setInterval = ((callback: () => void) => {
+      timers.push({ callback });
+      return timers.length;
+    }) as never;
+    // SAFETY: ditto — the fake pair is never-shaped and restored in finally.
+    globalThis.clearInterval = (() => {}) as never;
+    Date.now = () => nowMs;
+    try {
+      const harness = createHarness();
+      const session = await PersistentMpvSession.create({
+        stream: createStream({ url: "https://video.example/frozen.m3u8" }),
+        options: { displayTitle: "Episode 1", primarySubtitle: null },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        kitsuneConfig: {
+          mpvInProcessStreamReconnect: true,
+          mpvInProcessStreamReconnectMaxAttempts: 1,
+          mpvKunaiScriptOpts: "",
+        } as never,
+        onControlReady: () => {},
+        runtime: harness.runtime,
+      });
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 50 });
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 60 });
+
+      // Frozen position for 13s while playing — past the 12s no-progress lane.
+      nowMs = 13_100;
+      for (const timer of timers) timer.callback();
+      await flushAsyncWork();
+
+      const reload = harness.commands.find(
+        (command) =>
+          command[0] === "loadfile" && command[1] === "https://video.example/frozen.m3u8",
+      );
+      expect(reload?.[4]).toEqual(expect.objectContaining({ start: "100" }));
+
+      harness.callbacks().onFileLoaded?.({ observedAt: 13_300 });
+      await flushAsyncWork();
+      const playbackResult = session.waitForCurrentPlayback();
+      harness.callbacks().onEndFile({ reason: "quit", observedAt: 13_500 });
+      await playbackResult;
+    } finally {
+      globalThis.setInterval = originalSetInterval;
+      globalThis.clearInterval = originalClearInterval;
+      Date.now = originalDateNow;
+    }
+  });
+
   test("an in-process reconnect on a live stream never seeks back to the drop position", async () => {
     // Nulling the loadfile `start` was not enough: the completion step issued its own
     // absolute seek, which on a live broadcast lands in the DVR window or fails.
@@ -1162,6 +1223,115 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
 
     const playbackResult = session.waitForCurrentPlayback();
     harness.callbacks().onEndFile({ reason: "quit", observedAt: 99_000 });
+    await playbackResult;
+  });
+
+  test("a premature-eof reconnect seeks back to trusted progress, not the jumped position", async () => {
+    // The eof was demoted precisely because the raw position jumped to the tail
+    // — the reload must seek to the last trusted position (or the file's own
+    // start), never replay the corrupt jump.
+    const harness = createHarness();
+    const session = await PersistentMpvSession.create({
+      stream: createStream({ url: "https://video.example/jump.m3u8" }),
+      options: { displayTitle: "Episode 1", primarySubtitle: null, onPlaybackEvent: () => {} },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 2000, observedAt: 2 });
+    for (let pos = 50; pos <= 400; pos += 50) {
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: pos, observedAt: 10 + pos });
+    }
+    harness
+      .callbacks()
+      .onPropertyUpdate({ name: "demuxer-via-network", value: true, observedAt: 500 });
+    // The corrupt sample: position lands at the duration without playing.
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 1990, observedAt: 600 });
+    harness.callbacks().onEndFile({ reason: "eof", observedAt: 700 });
+    await waitUntil(
+      () =>
+        harness.commands.some((command) => command[0] === "loadfile" && command[2] === "replace"),
+      { label: "demoted-eof reconnect loadfile" },
+    );
+
+    const reload = harness.commands.find(
+      (command) => command[0] === "loadfile" && command[2] === "replace",
+    );
+    // SAFETY: captured argv is the session's own loadfile tuple — [command,
+    // url, mode, flags?, options] — options carries the resume start offset.
+    const reloadStart = (reload?.[4] as { start?: unknown } | undefined)?.start;
+    expect(reloadStart).toBe("400");
+
+    const playbackResult = session.waitForCurrentPlayback();
+    harness.callbacks().onEndFile({ reason: "quit", observedAt: 9_000 });
+    await playbackResult;
+  });
+
+  test("a stray replaced-file stop end-file during reconnect does not orphan the reload", async () => {
+    // `loadfile ... replace` makes mpv emit end-file reason "stop" for the file
+    // it unloads. That stray event lands while the reconnect's file-loaded is
+    // pending; resolving the cycle on it orphans the recovered file — the
+    // subsequent file-loaded finds no owner and mpv plays unowned. The error
+    // end-file below arms the same pendingInProcessReconnect window the
+    // watchdog path uses (runSameUrlReconnect is shared), so this drives the
+    // stray stop through the public event surface.
+    const harness = createHarness();
+    const events: PlayerPlaybackEvent[] = [];
+    const session = await PersistentMpvSession.create({
+      stream: createStream({ url: "https://video.example/dead-feed.m3u8" }),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 2 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 3 });
+    harness
+      .callbacks()
+      .onPropertyUpdate({ name: "demuxer-via-network", value: true, observedAt: 4 });
+
+    harness.callbacks().onEndFile({ reason: "error", observedAt: 5 });
+    await waitUntil(
+      () =>
+        harness.commands.some((command) => command[0] === "loadfile" && command[2] === "replace"),
+      { label: "reconnect loadfile sent" },
+    );
+
+    // mpv now unloads the replaced file → stray end-file "stop". The cycle must
+    // survive it: the pending load owner stays armed for the reload's
+    // file-loaded, and the reconnect is still in flight.
+    harness.callbacks().onEndFile({ reason: "stop", observedAt: 6 });
+    await flushAsyncWork();
+    expect(pendingLoadOwners(session)).toBe(1);
+
+    // The reload's file-loaded completes the reconnect normally.
+    harness.callbacks().onFileLoaded?.({ observedAt: 7 });
+    await flushAsyncWork();
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "mpv-in-process-reconnect", phase: "complete" }),
+    );
+    expect(
+      events.some((event) => event.type === "mpv-in-process-reconnect" && event.phase === "failed"),
+    ).toBe(false);
+
+    const playbackResult = session.waitForCurrentPlayback();
+    harness.callbacks().onEndFile({ reason: "quit", observedAt: 9_000 });
     await playbackResult;
   });
 

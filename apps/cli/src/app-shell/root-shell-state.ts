@@ -1,4 +1,4 @@
-import type { OverlayState, SessionState, StateTransition } from "@/domain/session/SessionState";
+import type { OverlayState, SessionState } from "@/domain/session/SessionState";
 import { isPlaybackSessionActive } from "@/domain/session/SessionState";
 
 import type { KeyScope } from "./keybindings";
@@ -129,7 +129,7 @@ function overlayUnderHelp(state: SessionState): OverlayState | null {
   for (let i = modals.length - 1; i >= 0; i -= 1) {
     const overlay = modals[i];
     if (!overlay) continue;
-    if (overlay.type === "help" || overlay.type === "confirm") continue;
+    if (overlay.type === "help") continue;
     return overlay;
   }
   return null;
@@ -177,11 +177,4 @@ export function resolveHelpScope(state: SessionState): KeyScope {
     default:
       return "browse";
   }
-}
-
-export function resolveEscTransition(state: SessionState): StateTransition | null {
-  if (state.activeModals.length > 0) {
-    return { type: "CLOSE_TOP_OVERLAY" };
-  }
-  return null;
 }

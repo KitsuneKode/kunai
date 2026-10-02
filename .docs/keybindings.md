@@ -147,13 +147,13 @@ shows the chord only when an untried, healthy candidate actually exists.
 | `r`             | Replay from start with mpv resume prompt available when applicable                                                                                     |
 | `a`             | Toggle autoplay — same session flag as the player `a` binding                                                                                          |
 | `u`             | Toggle autoskip — same session flag as the player `u` binding                                                                                          |
-| `x`             | Toggle stop-after-current — cancels a pending auto-advance                                                                                             |
+| `x`             | Toggle stop-after-current — the chain stops after the next play                                                                                        |
 | `e`             | Episode picker                                                                                                                                         |
 | `o`             | Source picker                                                                                                                                          |
 | `Shift+F`       | Fallback provider                                                                                                                                      |
 | `m`             | Title control menu                                                                                                                                     |
 | `h`             | History                                                                                                                                                |
-| `w`             | Watchlist (caught-up only)                                                                                                                             |
+| `w`             | Bookmark this title (caught-up only)                                                                                                                   |
 | `d`             | Diagnostics                                                                                                                                            |
 | `1` / `2` / `3` | Play recommendation 1 / 2 / 3 when the rail is visible                                                                                                 |
 | `!` / `@` / `#` | Open action menu for recommendation 1 / 2 / 3 when the rail is visible                                                                                 |

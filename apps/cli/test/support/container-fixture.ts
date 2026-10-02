@@ -1,6 +1,6 @@
 import type { Container } from "@/container";
 
-type OverlayRecord = { readonly type: string };
+type OverlayRecord = { readonly type: string; readonly id?: string };
 
 export type MockStateManager = {
   getState: () => { activeModals: OverlayRecord[] };
@@ -40,6 +40,14 @@ export function createContainerFixture(overrides: Partial<Container> = {}): Cont
       if (event.type === "CLOSE_TOP_OVERLAY") {
         activeModals = activeModals.slice(0, -1);
         dispatches.push("close");
+      }
+      // Same rule as the real reducer: a cancelled picker pops only when it is
+      // the top modal, so the overlay underneath survives the cancellation.
+      if (event.type === "CANCEL_PICKER") {
+        if (activeModals.at(-1)?.id === event.id) {
+          activeModals = activeModals.slice(0, -1);
+        }
+        dispatches.push(`cancel:${event.id}`);
       }
       notify();
     },

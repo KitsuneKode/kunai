@@ -125,12 +125,12 @@ export class WatchStatsRepository {
       .query<{ date: string; watched_count: number; total_seconds: number }, typeof params>(
         `
           SELECT
-            date(${ACTIVITY_TS}) AS date,
+            date(${ACTIVITY_TS}, 'localtime') AS date,
             COALESCE(SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END), 0) AS watched_count,
             COALESCE(SUM(watched_seconds), 0) AS total_seconds
           FROM history_progress
           WHERE ${ACTIVITY_TS} >= ?${kindClause}
-          GROUP BY date(${ACTIVITY_TS})
+          GROUP BY date(${ACTIVITY_TS}, 'localtime')
           ORDER BY date ASC
         `,
       )
@@ -148,7 +148,7 @@ export class WatchStatsRepository {
       .query<{ week: string; watched_count: number; total_seconds: number }, typeof params>(
         `
           SELECT
-            strftime('%Y-W%W', ${ACTIVITY_TS}) AS week,
+            strftime('%Y-W%W', ${ACTIVITY_TS}, 'localtime') AS week,
             COALESCE(SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END), 0) AS watched_count,
             COALESCE(SUM(watched_seconds), 0) AS total_seconds
           FROM history_progress
@@ -191,12 +191,12 @@ export class WatchStatsRepository {
       .query<{ date: string; kind: string; total_seconds: number }, typeof params>(
         `
           SELECT
-            date(${ACTIVITY_TS}) AS date,
+            date(${ACTIVITY_TS}, 'localtime') AS date,
             ${CORRECTED_KIND_SQL} AS kind,
             COALESCE(SUM(watched_seconds), 0) AS total_seconds
           FROM history_progress
           WHERE ${ACTIVITY_TS} >= ?${kindClause}
-          GROUP BY date(${ACTIVITY_TS}), kind
+          GROUP BY date(${ACTIVITY_TS}, 'localtime'), kind
           ORDER BY date ASC
         `,
       )
@@ -275,7 +275,7 @@ export class WatchStatsRepository {
       .query<{ hour: number; episode_count: number; total_seconds: number }, typeof params>(
         `
           SELECT
-            CAST(strftime('%H', ${ACTIVITY_TS}) AS INTEGER) AS hour,
+            CAST(strftime('%H', ${ACTIVITY_TS}, 'localtime') AS INTEGER) AS hour,
             COALESCE(SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END), 0) AS episode_count,
             COALESCE(SUM(watched_seconds), 0) AS total_seconds
           FROM history_progress
@@ -342,7 +342,7 @@ export class WatchStatsRepository {
     return this.db
       .query<{ date: string }, string[]>(
         `
-          SELECT DISTINCT date(${ACTIVITY_TS}) AS date
+          SELECT DISTINCT date(${ACTIVITY_TS}, 'localtime') AS date
           FROM history_progress
           WHERE (completed = 1 OR position_seconds >= 300)${kindClause}
           ORDER BY date DESC

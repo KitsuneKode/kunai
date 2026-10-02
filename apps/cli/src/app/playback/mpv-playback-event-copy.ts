@@ -9,6 +9,26 @@ export type MpvPlaybackFeedback = {
   readonly note?: string | null;
 };
 
+/**
+ * Reconnect `detail` is the internal trigger enum on started/complete and
+ * `"<trigger>: <error>"` on failure — translate the enum half, keep errors raw.
+ */
+function reconnectDetailLabel(detail: string): string {
+  const [trigger, rest] = detail.split(": ", 2);
+  const label =
+    trigger === "network-read-dead"
+      ? "network read idle"
+      : trigger === "cache-starved"
+        ? "buffer stopped filling"
+        : trigger === "premature-eof"
+          ? "stream ended early"
+          : trigger === "error"
+            ? "playback error"
+            : null;
+  if (!label) return detail;
+  return rest ? `${label}: ${rest}` : label;
+}
+
 /** User-facing copy for mpv playback events (extracted from PlaybackPhase). */
 export function describeMpvPlayerEvent(event: PlayerPlaybackEvent): MpvPlaybackFeedback {
   switch (event.type) {
@@ -55,6 +75,12 @@ export function describeMpvPlayerEvent(event: PlayerPlaybackEvent): MpvPlaybackF
     case "network-sample":
       return {};
     case "stream-slow":
+      if (event.state === "slow-open") {
+        return {
+          detail: "Still opening the stream",
+          note: `${event.secondsBuffering}s · slow sources can take ~30s · auto failover if it stalls out`,
+        };
+      }
       return {
         detail:
           event.state === "slow-network-suspected"
@@ -87,9 +113,19 @@ export function describeMpvPlayerEvent(event: PlayerPlaybackEvent): MpvPlaybackF
       return { detail: "Playing" };
     case "stream-stalled": {
       const dead = event.stallKind === "network-read-dead";
+      const starved = event.stallKind === "cache-starved";
+      const cause = dead
+        ? "Demuxer underrun with no incoming bytes"
+        : starved
+          ? "Cache stopped filling"
+          : `No playback progress for ${event.secondsWithoutProgress}s`;
       return {
-        detail: dead ? "Stream stalled (network read idle)" : "Stream stalled",
-        note: `${dead ? "Demuxer underrun with no incoming bytes" : `No playback progress for ${event.secondsWithoutProgress}s`} · ${recoveryForPlaybackFailure(classifyPlaybackFailureFromEvent(event)).label}`,
+        detail: dead
+          ? "Stream stalled (network read idle)"
+          : starved
+            ? "Stream stalled (buffer stopped filling)"
+            : "Stream stalled",
+        note: `${cause} · ${recoveryForPlaybackFailure(classifyPlaybackFailureFromEvent(event)).label}`,
       };
     }
     case "seek-stalled":
@@ -116,11 +152,10 @@ export function describeMpvPlayerEvent(event: PlayerPlaybackEvent): MpvPlaybackF
           : event.phase === "complete"
             ? "Reload finished"
             : "Reload failed";
+      const detail = event.detail ? reconnectDetailLabel(event.detail) : null;
       return {
         detail: phaseLabel,
-        note: event.detail
-          ? `Attempt ${event.attempt} · ${event.detail}`
-          : `Attempt ${event.attempt}`,
+        note: detail ? `Attempt ${event.attempt} · ${detail}` : `Attempt ${event.attempt}`,
       };
     }
   }

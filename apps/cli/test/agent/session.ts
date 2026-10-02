@@ -35,7 +35,7 @@ import {
 function usage(): never {
   console.error(`usage: bun run agent:session -- <command> [opts]
   start [--name N] [--seed onboarded|fresh] [--width C] [--rows R]
-        [--no-fake-mpv] [--fake-mpv-mode normal|fail-pre-loaded|hold]
+        [--no-fake-mpv] [--fake-mpv-mode normal|fail-pre-loaded|hold|slow-open]
         [--command "..."] [--keep-profile] [--set-env K=V]...
   see [--name N] [--raw]
   do <key>... [--name N]      keys: text types literally, <enter> <esc> <up> ...
@@ -172,7 +172,8 @@ async function main(): Promise<void> {
         fakeMpvMode !== undefined &&
         fakeMpvMode !== "normal" &&
         fakeMpvMode !== "fail-pre-loaded" &&
-        fakeMpvMode !== "hold"
+        fakeMpvMode !== "hold" &&
+        fakeMpvMode !== "slow-open"
       ) {
         usage();
       }

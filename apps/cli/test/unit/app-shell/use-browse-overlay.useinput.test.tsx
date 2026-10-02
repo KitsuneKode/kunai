@@ -40,6 +40,15 @@ function Probe({
       overlay.openDetails(undefined, { focusZone: "list" });
       return;
     }
+    if (!overlay.current && input === "n") {
+      // The notification-open path marks the sheet so Enter/d work off the
+      // captured option even with no live search behind it.
+      overlay.openDetails(selectedOption ?? undefined, {
+        focusZone: "list",
+        origin: "notification",
+      });
+      return;
+    }
     onIntent?.(overlay.handleKey(input, key, { selectedOption, searchReady }));
   });
   const current = overlay.current;
@@ -52,9 +61,10 @@ function Probe({
 
 async function press(handle: ReturnType<typeof render>, keys: readonly string[]): Promise<void> {
   for (const key of keys) {
+    // `enqueue` emits 'readable' synchronously and the surrounding act() drains
+    // the effects it schedules — no fixed delay needed.
     await act(async () => {
       handle.stdin.enqueue([key]);
-      await new Promise((resolve) => setTimeout(resolve, 5));
     });
   }
 }
@@ -139,6 +149,19 @@ test("Enter with search not ready is consumed, not submitted", async () => {
   }
 });
 
+test("Enter submits a notification-opened sheet even with no live search", async () => {
+  const intents: BrowseOverlayIntent<string>[] = [];
+  const handle = render(<Probe searchReady={false} onIntent={(intent) => intents.push(intent)} />);
+  try {
+    await press(handle, ["n"]);
+    expect(handle.lastFrame()).toContain("open=details");
+    await press(handle, [RETURN]);
+    expect(intents).toEqual([{ kind: "submit", value: "sel-1" }]);
+  } finally {
+    handle.unmount();
+  }
+});
+
 test("s toggles season expansion inside the hook", async () => {
   const intents: BrowseOverlayIntent<string>[] = [];
   const handle = render(<Probe onIntent={(intent) => intents.push(intent)} />);
@@ -161,7 +184,14 @@ test("w/q/d surface the sheet-footer intents for the shell to run", async () => 
   try {
     await press(handle, ["o"]);
     await press(handle, ["w", "q", "d"]);
-    expect(intents).toEqual([{ kind: "watchlist" }, { kind: "queue" }, { kind: "download" }]);
+    expect(intents.map((i) => i.kind)).toEqual(["watchlist", "queue", "download"]);
+    for (const intent of intents) {
+      expect(
+        intent.kind === "watchlist" || intent.kind === "queue" || intent.kind === "download"
+          ? intent.option.value
+          : null,
+      ).toBe("sel-1");
+    }
   } finally {
     handle.unmount();
   }
@@ -186,6 +216,46 @@ test("t without a trailer URL is consumed, not a trailer intent", async () => {
     await press(handle, ["o"]);
     await press(handle, ["t"]);
     expect(intents).toEqual([{ kind: "consumed" }]);
+  } finally {
+    handle.unmount();
+  }
+});
+
+function DivergedProbe({
+  onIntent,
+}: {
+  readonly onIntent?: (intent: BrowseOverlayIntent<string>) => void;
+}) {
+  const overlay = useBrowseOverlay<string>({ mode: "series" });
+  useInput((input, key) => {
+    if (!overlay.current && input === "o") {
+      overlay.openDetails({ value: "opened-title", label: "Opened" }, { focusZone: "list" });
+      return;
+    }
+    // The list highlight has moved to a different row since the sheet opened.
+    onIntent?.(
+      overlay.handleKey(input, key, {
+        selectedOption: { value: "drifted-row", label: "Drifted" },
+        searchReady: true,
+      }),
+    );
+  });
+  return <Text>{`open=${overlay.current ? overlay.current.type : "none"}`}</Text>;
+}
+
+test("details actions act on the option that opened the sheet, not the live selection", async () => {
+  const intents: BrowseOverlayIntent<string>[] = [];
+  const handle = render(<DivergedProbe onIntent={(intent) => intents.push(intent)} />);
+  try {
+    await press(handle, ["o"]);
+    expect(handle.lastFrame()).toContain("open=details");
+    await press(handle, ["w", RETURN]);
+    const watchlist = intents.find((i) => i.kind === "watchlist");
+    const submit = intents.find((i) => i.kind === "submit");
+    expect(watchlist && watchlist.kind === "watchlist" ? watchlist.option.value : null).toBe(
+      "opened-title",
+    );
+    expect(submit && submit.kind === "submit" ? submit.value : null).toBe("opened-title");
   } finally {
     handle.unmount();
   }

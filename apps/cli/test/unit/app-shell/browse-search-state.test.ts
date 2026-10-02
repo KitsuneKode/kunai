@@ -66,7 +66,7 @@ describe("resolveDetailsOverlaySubmitValue", () => {
       resolveDetailsOverlaySubmitValue({
         detailsOpen: true,
         searchReady: true,
-        selectedOption: selected,
+        option: selected,
       }),
     ).toBe("series-1");
   });
@@ -81,14 +81,14 @@ describe("resolveDetailsOverlaySubmitValue", () => {
       resolveDetailsOverlaySubmitValue({
         detailsOpen: false,
         searchReady: true,
-        selectedOption: selected,
+        option: selected,
       }),
     ).toBeNull();
     expect(
       resolveDetailsOverlaySubmitValue({
         detailsOpen: true,
         searchReady: false,
-        selectedOption: selected,
+        option: selected,
       }),
     ).toBeNull();
   });

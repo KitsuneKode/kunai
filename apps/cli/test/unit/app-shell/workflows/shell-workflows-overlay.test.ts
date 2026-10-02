@@ -8,19 +8,24 @@ import type { Container } from "@/container";
 import type { DownloadJobRecord } from "@kunai/storage";
 
 describe("runShellWorkflowFromOverlay", () => {
-  test("closes the top overlay before running workflow handlers", async () => {
+  function createContainer(topOverlay: { type: string; id?: string } | null) {
     const dispatches: string[] = [];
-    let executed = false;
-    let modalCount = 1;
+    let top = topOverlay;
     const container = {
       stateManager: {
-        getState: () => ({ activeModals: Array.from({ length: modalCount }) }),
+        getState: () => ({ activeModals: top ? [top] : [] }),
         dispatch: (event: { type: string }) => {
           dispatches.push(event.type);
-          if (event.type === "CLOSE_TOP_OVERLAY") modalCount = 0;
+          if (event.type === "CLOSE_TOP_OVERLAY") top = null;
         },
       },
     } as unknown as Container;
+    return { container, dispatches };
+  }
+
+  test("closes the top overlay before running workflow handlers", async () => {
+    const { container, dispatches } = createContainer({ type: "help" });
+    let executed = false;
 
     const result = await runShellWorkflowFromOverlay(container, "setup", {
       execute: async () => {
@@ -32,6 +37,35 @@ describe("runShellWorkflowFromOverlay", () => {
     expect(dispatches[0]).toBe("CLOSE_TOP_OVERLAY");
     expect(executed).toBe(true);
     expect(result).toBe("handled");
+  });
+
+  test("a tracks_panel top settles its picker waiter instead of stranding playback", async () => {
+    // openTracksPanel awaits a pickerResult keyed to the panel's id; a bare
+    // CLOSE_TOP_OVERLAY popped the modal without settling it, deadlocking the
+    // playback phase loop that was parked on the pick.
+    const { container, dispatches } = createContainer({
+      type: "tracks_panel",
+      id: "tracks-1",
+    });
+
+    await runShellWorkflowFromOverlay(container, "stats", {
+      execute: async () => "handled",
+    });
+
+    expect(dispatches).toEqual(["CLOSE_TOP_OVERLAY", "CANCEL_PICKER"]);
+  });
+
+  test("a media picker top cancels the picker's result", async () => {
+    const { container, dispatches } = createContainer({
+      type: "episode_picker",
+      id: "ep-1",
+    });
+
+    await runShellWorkflowFromOverlay(container, "watchlist", {
+      execute: async () => "handled",
+    });
+
+    expect(dispatches).toEqual(["CANCEL_PICKER"]);
   });
 });
 

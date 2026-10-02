@@ -573,6 +573,23 @@ export async function runPostPlaybackMenu(
           },
         };
       }
+      if (postAction.type === "launch-playback") {
+        // Overlay/palette launch settled into the post-play session — exiting
+        // to play another title is exactly what this surface is for.
+        await deps.teardownPlaybackForPostPlayExit();
+        return {
+          kind: "exit",
+          result: {
+            status: "success",
+            value: {
+              type: "history_entry",
+              title: postAction.launch.title,
+              episode: postAction.launch.episode,
+              startSeconds: postAction.launch.startSeconds,
+            },
+          },
+        };
+      }
       if (postAction.type === "play-queue-entry") {
         // Claim the exact advertised id — do not substitute a reordered peekNext head.
         const launch = claimQueuePlaybackLaunch(

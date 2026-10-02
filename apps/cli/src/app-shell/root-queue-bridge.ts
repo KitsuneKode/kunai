@@ -27,6 +27,9 @@ let pendingResolver: QueueResolver | null = null;
 
 export function waitForRootQueueSelection(): Promise<QueuePlaybackLaunch | null> {
   return new Promise<QueuePlaybackLaunch | null>((resolve) => {
+    // A second waiter means the first workflow was superseded — resolve it
+    // with null instead of leaking the promise.
+    pendingResolver?.(null);
     pendingResolver = resolve;
   });
 }

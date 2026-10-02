@@ -10,6 +10,7 @@ import {
 } from "@/app-shell/pickers";
 
 export { buildPickerActionContext };
+import { cancelRootOverlay } from "@/app-shell/cancel-root-overlay";
 import { exportLocalSupportBundle } from "@/app-shell/export-local-support-bundle";
 import {
   buildExternalOpenFallback,
@@ -86,6 +87,11 @@ import type { SyncPushSummary } from "@/services/sync/SyncService";
 import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
 
+import {
+  claimQueuePlaybackLaunch,
+  episodeInfoFromQueuePlaybackLaunch,
+  titleInfoFromQueuePlaybackLaunch,
+} from "../root-queue-bridge";
 import { openTrackerConnectShell } from "../tracker-connect-shell";
 import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
@@ -909,21 +915,19 @@ export async function handleShellAction({
   return "unhandled";
 }
 
-/** Close the active overlay (or cancel a picker) before running a workflow command. */
+/** Close the active overlay (settling any picker/bridge waiter) before running a workflow command. */
 export async function runShellWorkflowFromOverlay(
   container: Container,
   action: ShellAction,
   options: {
-    readonly cancelPickerId?: string;
     readonly execute?: (
       input: Parameters<typeof handleShellAction>[0],
     ) => ReturnType<typeof handleShellAction>;
   } = {},
 ): Promise<ShellWorkflowResult> {
-  if (options.cancelPickerId) {
-    container.stateManager.dispatch({ type: "CANCEL_PICKER", id: options.cancelPickerId });
-  } else if (container.stateManager.getState().activeModals.length > 0) {
-    container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+  const top = container.stateManager.getState().activeModals.at(-1);
+  if (top) {
+    cancelRootOverlay(top, container.stateManager);
   }
   const execute = options.execute ?? handleShellAction;
   return execute({ action, container });
@@ -940,7 +944,7 @@ const withOverlay = async <T>(
   } finally {
     const top = stateManager.getState().activeModals.at(-1);
     if (top?.type === overlay.type) {
-      stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+      cancelRootOverlay(top, stateManager);
     }
   }
 };
@@ -2919,17 +2923,17 @@ async function handleUpNext(container: Container): Promise<ShellWorkflowResult> 
         queueService.moveDownInQueue(picked.id);
         continue;
       } else if (itemAction === "play") {
+        // Claim the exact row before handing the launch back — a bare
+        // history-entry would leave it `pending` forever while something else
+        // (auto-advance, a second picker) could still play it again. A failed
+        // CAS means the row is already claimed elsewhere; re-render instead of
+        // launching a duplicate.
+        const launch = claimQueuePlaybackLaunch(queueService, picked.id, "queue");
+        if (!launch) continue;
         return {
           type: "history-entry",
-          title: {
-            id: picked.titleId,
-            type: picked.mediaKind === "movie" ? "movie" : "series",
-            name: picked.title,
-          },
-          episode:
-            picked.season !== undefined && picked.episode !== undefined
-              ? { season: picked.season, episode: picked.episode }
-              : undefined,
+          title: titleInfoFromQueuePlaybackLaunch(launch),
+          episode: episodeInfoFromQueuePlaybackLaunch(launch),
         };
       }
       continue;

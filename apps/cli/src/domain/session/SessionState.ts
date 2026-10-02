@@ -144,8 +144,7 @@ export type OverlayState =
   | { type: "diagnostics" }
   | { type: "help" }
   | { type: "about" }
-  | { type: "setup"; missing: readonly string[] }
-  | { type: "confirm"; message: string; confirmLabel?: string };
+  | { type: "setup"; missing: readonly string[] };
 
 export type ModalState = OverlayState;
 
@@ -283,15 +282,11 @@ export type StateTransition =
       providerLabel?: string;
     }
   | { type: "CLOSE_TOP_OVERLAY" }
-  | { type: "CLOSE_ALL_OVERLAYS" }
   | { type: "OPEN_PICKER"; picker: PickerModalOverlayState }
   | { type: "UPDATE_PICKER_FILTER"; id: string; filterQuery: string }
   | { type: "MOVE_PICKER_SELECTION"; id: string; delta: number }
   | { type: "RESOLVE_PICKER"; id: string; value: string }
   | { type: "CANCEL_PICKER"; id: string }
-  | { type: "PUSH_MODAL"; modal: OverlayState }
-  | { type: "POP_MODAL" }
-  | { type: "CLOSE_ALL_MODALS" }
   | { type: "SET_TERMINAL_SIZE"; columns: number; rows: number }
   | { type: "TOGGLE_COMPANION_PANE" }
   | { type: "OPEN_DIAGNOSTICS_PANE" }
@@ -638,9 +633,6 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         activeModals: state.activeModals.slice(0, -1),
       };
 
-    case "CLOSE_ALL_OVERLAYS":
-      return { ...state, activeModals: [] };
-
     case "OPEN_PICKER":
       return {
         ...state,
@@ -705,21 +697,6 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         pickerResult: { type: "cancelled", id: transition.id },
         activeModals: popPickerOverlay(state.activeModals, transition.id),
       };
-
-    case "PUSH_MODAL":
-      return {
-        ...state,
-        activeModals: [...state.activeModals, transition.modal],
-      };
-
-    case "POP_MODAL":
-      return {
-        ...state,
-        activeModals: state.activeModals.slice(0, -1),
-      };
-
-    case "CLOSE_ALL_MODALS":
-      return { ...state, activeModals: [] };
 
     case "SET_TERMINAL_SIZE":
       return withLayout(state, {
@@ -871,7 +848,7 @@ function isPickerOverlay(
 }
 
 function shouldReplaceOpenOverlay(current: OverlayState | undefined, next: OverlayState): boolean {
-  return Boolean(current && current.type === next.type && next.type !== "confirm");
+  return Boolean(current && current.type === next.type);
 }
 
 function normalizePickerIndex(index: number, length: number): number {

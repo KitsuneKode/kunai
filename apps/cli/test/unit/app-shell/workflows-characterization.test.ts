@@ -165,20 +165,22 @@ describe("handleShellAction routing contract", () => {
 });
 
 describe("runShellWorkflowFromOverlay dismissal", () => {
-  test("a picker is cancelled by id instead of closing the overlay beneath it", async () => {
+  test("a picker top is settled by CANCEL_PICKER, leaving the overlay beneath", async () => {
     const { container, dispatches, stateManager } = createContainerFixture();
     stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "library" } });
+    stateManager.dispatch({
+      type: "OPEN_OVERLAY",
+      overlay: { type: "episode_picker", id: "picker-1" },
+    });
     dispatches.length = 0;
 
     const result = await runShellWorkflowFromOverlay(container, "settings", {
-      cancelPickerId: "episode-picker",
       execute: async () => "handled",
     });
 
     expect(result).toBe("handled");
-    // The fixture records overlay mutations only, so a CANCEL_PICKER leaves it
-    // empty — the point is that the overlay underneath was NOT closed.
-    expect(dispatches).not.toContain("close");
+    expect(dispatches).toEqual(["cancel:picker-1"]);
+    expect(stateManager.getState().activeModals.map((modal) => modal.type)).toEqual(["library"]);
   });
 
   test("an empty overlay stack closes nothing before running the workflow", async () => {

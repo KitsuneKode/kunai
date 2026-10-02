@@ -1,3 +1,4 @@
+import { localDayKey } from "../local-day-key";
 import type { DailyActivity, ShowStat, WatchStats } from "./StatsService";
 
 const BAR_FULL = "█";
@@ -67,18 +68,19 @@ export class StatsFormatter {
     }
     cur.setTime(startDate.getTime());
 
-    let cursorTime = startDate.getTime();
-    const endTime = endDate.getTime();
-    while (cursorTime <= endTime) {
-      const d = new Date(cursorTime);
-      const dateStr = d.toISOString().slice(0, 10);
+    // Local-day keys to match the 'localtime' SQL buckets, and calendar
+    // stepping (setDate, not +86400s) so a DST boundary can't double-print or
+    // skip a day.
+    const cursor = new Date(startDate);
+    while (cursor.getTime() <= endDate.getTime()) {
+      const dateStr = localDayKey(cursor);
       const count = byDate.get(dateStr) ?? 0;
       week.push(heatmapChar(count, maxCount));
-      if (d.getDay() === 6) {
+      if (cursor.getDay() === 6) {
         weeks.push(week);
         week = [];
       }
-      cursorTime += 86_400_000;
+      cursor.setDate(cursor.getDate() + 1);
     }
     if (week.length > 0) {
       while (week.length < 7) week.push(" ");

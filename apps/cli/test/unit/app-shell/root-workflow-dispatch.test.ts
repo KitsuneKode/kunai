@@ -1,83 +1,101 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
-import { clearRootContentSession, mountRootContent } from "@/app-shell/root-content-state";
-import { runRootWorkflowSafely } from "@/app-shell/root-workflow-dispatch";
-import type { BrowseShellResult } from "@/app-shell/types";
+import { resolveRootSurfaceCommand } from "@/app-shell/root-workflow-dispatch";
+import type { ShellAction } from "@/app-shell/types";
 import type { Container } from "@/container";
-import type { SearchResult } from "@/domain/types";
-import type { ReactElement } from "react";
+import type { SessionState, StateTransition } from "@/domain/session/SessionState";
 
-test("contains a root workflow loader failure with feedback and diagnostics", async () => {
-  const notes: string[] = [];
-  const events: Array<{ operation?: string }> = [];
+type Dispatched = StateTransition;
+
+function createHarness(
+  options: { readonly attentionInbox?: boolean } = {},
+  topOverlay: SessionState["activeModals"][number] | null = null,
+) {
+  const dispatched: Dispatched[] = [];
   const container = {
-    stateManager: { dispatch: (event: { note?: string }) => notes.push(event.note ?? "") },
-    diagnosticsService: { record: (event: { operation?: string }) => events.push(event) },
+    stateManager: {
+      getState: () => ({ activeModals: topOverlay ? [topOverlay] : [] }),
+      dispatch: (event: Dispatched) => {
+        dispatched.push(event);
+      },
+      subscribe: () => () => {},
+    },
+    featureFlags: { attentionInbox: options.attentionInbox ?? true },
+    diagnosticsService: { record: () => {} },
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   } as unknown as Container;
 
-  await expect(
-    runRootWorkflowSafely({
-      container,
-      action: "sync",
-      loadWorkflow: async () => {
-        throw new Error("module unavailable");
-      },
-    }),
-  ).resolves.toBeUndefined();
-
-  expect(notes[0]).toContain("Could not run sync");
-  expect(events[0]?.operation).toBe("shell.workflow.failed");
-});
-
-function mountBrowse() {
-  return mountRootContent<BrowseShellResult<SearchResult>>({
-    kind: "browse",
-    renderContent: () => null as unknown as ReactElement,
-    fallbackValue: { type: "cancelled" },
-  });
+  // SAFETY: deliberately partial test stub — the resolver only reads provider/mode.
+  const state = { provider: "hianime", mode: "anime" } as unknown as SessionState;
+  return { container, state, dispatched };
 }
 
-const noopContainer = {
-  stateManager: { dispatch: () => {} },
-  diagnosticsService: { record: () => {} },
-} as unknown as Container;
-
-// This result used to be awaited and discarded, so a workflow that asked to
-// start playing something reported success and played nothing.
-test("a workflow asking for playback settles the mounted browse session", async () => {
-  const mounted = mountBrowse();
-  const title = { id: "tmdb:1", type: "series" as const, name: "Example" };
-  const episode = { season: 1, episode: 2 };
-
-  await runRootWorkflowSafely({
-    container: noopContainer,
-    action: "sync",
-    loadWorkflow: async () =>
-      ({
-        runShellWorkflowFromOverlay: async () => ({ type: "history-entry", title, episode }),
-      }) as never,
+describe("resolveRootSurfaceCommand", () => {
+  test("settings resolves to the settings overlay", () => {
+    const { container, state, dispatched } = createHarness();
+    resolveRootSurfaceCommand({ container, state, action: "settings" });
+    expect(dispatched).toEqual([{ type: "OPEN_OVERLAY", overlay: { type: "settings" } }]);
   });
 
-  expect(await mounted.result).toEqual({
-    type: "launch-playback",
-    launch: { title, episode },
+  test("provider resolves to a lane-scoped provider picker", () => {
+    const { container, state, dispatched } = createHarness();
+    resolveRootSurfaceCommand({ container, state, action: "provider" });
+    expect(dispatched).toEqual([
+      {
+        type: "OPEN_OVERLAY",
+        overlay: { type: "provider_picker", currentProvider: "hianime", lane: "anime" },
+      },
+    ]);
   });
-});
 
-test("a workflow with no playback result leaves the browse session mounted", async () => {
-  const mounted = mountBrowse();
-  let settled = false;
-  void mounted.result.then(() => (settled = true));
-
-  await runRootWorkflowSafely({
-    container: noopContainer,
-    action: "sync",
-    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    loadWorkflow: async () => ({ runShellWorkflowFromOverlay: async () => "handled" }) as never,
+  test("history resolves to the watching-filtered history overlay", () => {
+    const { container, state, dispatched } = createHarness();
+    resolveRootSurfaceCommand({ container, state, action: "history" });
+    expect(dispatched).toEqual([
+      { type: "OPEN_OVERLAY", overlay: { type: "history", initialFilterMode: "watching" } },
+    ]);
   });
-  await Promise.resolve();
 
-  expect(settled).toBe(false);
-  mounted.close({ type: "cancelled" });
-  clearRootContentSession();
+  test("notifications refuse visibly when the inbox flag is off", () => {
+    const { container, state, dispatched } = createHarness({ attentionInbox: false });
+    resolveRootSurfaceCommand({ container, state, action: "notifications" });
+    expect(dispatched).toEqual([
+      {
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: "Attention inbox is disabled.",
+      },
+    ]);
+  });
+
+  test("a picker top settles its waiter before the new overlay opens", () => {
+    const { container, state, dispatched } = createHarness(
+      {},
+      {
+        type: "episode_picker",
+        id: "picker-7",
+        season: 1,
+        options: [],
+        selectedIndex: 0,
+        filterQuery: "",
+      },
+    );
+    resolveRootSurfaceCommand({ container, state, action: "library" as ShellAction });
+    expect(dispatched).toEqual([
+      { type: "CANCEL_PICKER", id: "picker-7" },
+      { type: "OPEN_OVERLAY", overlay: { type: "library", view: "library" } },
+    ]);
+  });
+
+  test("a tracks_panel top settles its waiter instead of stranding the playback loop", () => {
+    const { container, state, dispatched } = createHarness(
+      {},
+      { type: "tracks_panel", id: "tracks-9", groups: [], favorites: [] },
+    );
+    resolveRootSurfaceCommand({ container, state, action: "settings" });
+    expect(dispatched).toEqual([
+      { type: "CLOSE_TOP_OVERLAY" },
+      { type: "CANCEL_PICKER", id: "tracks-9" },
+      { type: "OPEN_OVERLAY", overlay: { type: "settings" } },
+    ]);
+  });
 });

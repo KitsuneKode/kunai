@@ -97,7 +97,12 @@ const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
  */
 const RECONNECT_ATTEMPT_CEILING = 12;
 
-type InProcessReconnectTrigger = "network-read-dead" | "premature-eof" | "error";
+type InProcessReconnectTrigger =
+  | "network-read-dead"
+  | "cache-starved"
+  | "no-progress"
+  | "premature-eof"
+  | "error";
 
 type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill" | "signalCode">;
 
@@ -274,6 +279,8 @@ export class PersistentMpvSession {
   private reconnectBaseBackoffMs = IN_PROCESS_RECONNECT_BASE_BACKOFF_MS;
   private reconnectMaxBackoffMs = IN_PROCESS_RECONNECT_MAX_BACKOFF_MS;
   private reconnectTryCount = 0;
+  /** Decode/bandwidth ceilings applied to every loadfile on weak hosts. */
+  private hardwareProfile: "standard" | "low-spec" = "standard";
   private reconnectBackoffUntilMs = 0;
   private reconnectInFlight = false;
   private pendingInProcessReconnect: {
@@ -404,6 +411,7 @@ export class PersistentMpvSession {
     }
     session.skipPromptDurationMs = parseSkipPromptDurationMs(cfg.mpvKunaiScriptOpts);
     session.scriptOptsArg = buildKunaiBridgeScriptOptsArg(cfg.mpvKunaiScriptOpts);
+    session.hardwareProfile = opts.mpv?.hardwareProfile ?? "standard";
     session.luaScriptPath = await resolveKunaiMpvBridgeScriptPath(cfg);
     await session.spawn(opts.mpv);
     return session;
@@ -478,6 +486,7 @@ export class PersistentMpvSession {
           urlKind: options.urlKind,
           audioPreference: options.audioPreference,
           chaptersFile: this.currentChaptersFilePath,
+          hardwareProfile: this.hardwareProfile,
         },
       ),
       3_000,
@@ -721,7 +730,10 @@ export class PersistentMpvSession {
 
     const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
       const active = this.activeCycle;
-      if (active && (event.type === "stream-stalled" || event.type === "ipc-stalled")) {
+      // Only the watchdog's stream-stall verdicts mean the feed died. ipc-stalled
+      // fires for any non-subtitle command timeout — a cosmetic set_property
+      // during heavy demux must not stamp the eof-demotion window.
+      if (active && event.type === "stream-stalled") {
         noteStreamStall(active.stats, Date.now());
       }
       this.emitPlaybackEventFor(this.currentCycleOptions(), event);
@@ -729,10 +741,15 @@ export class PersistentMpvSession {
         this.mpvInProcessStreamReconnectEnabled &&
         this.mpvInProcessStreamReconnectMaxAttempts > 0 &&
         event.type === "stream-stalled" &&
-        event.stallKind === "network-read-dead"
+        (event.stallKind === "network-read-dead" ||
+          event.stallKind === "cache-starved" ||
+          event.stallKind === "no-progress")
       ) {
-        // Fire-and-forget is fine; an unhandled rejection is not.
-        void this.handleNetworkReadDeadReconnect().catch((error) => {
+        // All three kinds mean playback is going nowhere — the source stopped
+        // feeding bytes or the position froze while unpaused, unseeked and
+        // unbuffered — a same-URL reload is the repair. Fire-and-forget is
+        // fine; an unhandled rejection is not.
+        void this.handleDeadFeedReconnect(event.stallKind).catch((error) => {
           dbg("mpv-ipc", "in-process-reconnect-failed", {
             error: error instanceof Error ? error.message : String(error),
           });
@@ -1651,6 +1668,15 @@ export class PersistentMpvSession {
     // loadfile then emits end-file error with no file-loaded). Clear the in-flight
     // flag so runSameUrlReconnect's guard does not block the next attempt within budget.
     if (this.reconnectInFlight) {
+      // `loadfile ... replace` makes mpv emit end-file reason "stop" for the file
+      // it unloads. With the reconnect's file-loaded still pending, that event is
+      // the replaced file going away — not the reload dying. Resolving the cycle
+      // here orphans the recovered file: its file-loaded finds no pending owner
+      // and finishInProcessReconnectAfterLoad never runs. Real reload deaths
+      // arrive as error/redirect/eof before file-loaded and keep this behavior.
+      if (this.pendingInProcessReconnect !== null && reason === "stop") {
+        return;
+      }
       this.reconnectInFlight = false;
       this.pendingInProcessReconnect = null;
     }
@@ -1677,7 +1703,15 @@ export class PersistentMpvSession {
     const latest = active.stats.latestIpcSample ?? active.stats.lastNonZeroSample;
     const networkish = latest?.demuxerViaNetwork === true;
     const demoted = active.stats.eofDemotedByPrematureGuard;
-    const seekFrom = Math.max(result.watchedSeconds, this.currentPositionSeconds);
+    // A demoted eof exists precisely because the raw position jumped near the
+    // duration — `currentPositionSeconds` is the corrupt sample this path is
+    // reacting to, so it must not steer the reload's seek. Fall back to the
+    // file's own start position when no trusted progress was ever observed.
+    const seekFrom = demoted
+      ? result.watchedSeconds > 0
+        ? result.watchedSeconds
+        : (this.loadStartAt ?? 0)
+      : Math.max(result.watchedSeconds, this.currentPositionSeconds);
     const durationForSeek =
       result.duration > 0
         ? result.duration
@@ -1703,7 +1737,12 @@ export class PersistentMpvSession {
     active.resolve(result);
   }
 
-  private async handleNetworkReadDeadReconnect(): Promise<void> {
+  private async handleDeadFeedReconnect(
+    trigger: Extract<
+      InProcessReconnectTrigger,
+      "network-read-dead" | "cache-starved" | "no-progress"
+    >,
+  ): Promise<void> {
     if (
       !this.mpvInProcessStreamReconnectEnabled ||
       this.mpvInProcessStreamReconnectMaxAttempts <= 0
@@ -1715,12 +1754,15 @@ export class PersistentMpvSession {
 
     const latest = active.stats.latestIpcSample;
     const duration = latest?.durationSeconds ?? 0;
-    const reloaded = await this.runSameUrlReconnect(
-      active,
-      this.currentPositionSeconds,
-      duration,
-      "network-read-dead",
-    );
+    // A dead feed can fire inside the open window — before any position sample
+    // was ever trusted. `currentPositionSeconds` is still 0 there, so the
+    // reload must fall back to the start position this file loaded with, or a
+    // resume at N minutes would come back at the beginning.
+    const positionForReload =
+      active.stats.maxTrustedProgressSeconds > 0 || this.currentPositionSeconds > 0
+        ? this.currentPositionSeconds
+        : (this.loadStartAt ?? 0);
+    const reloaded = await this.runSameUrlReconnect(active, positionForReload, duration, trigger);
     if (!reloaded) {
       dbg("mpv-ipc", "in-process-reconnect-skipped", {
         reason: "backoff-or-limit-or-in-flight",
@@ -1815,6 +1857,7 @@ export class PersistentMpvSession {
             urlKind: opts.urlKind,
             audioPreference: opts.audioPreference,
             chaptersFile: this.currentChaptersFilePath ?? undefined,
+            hardwareProfile: this.hardwareProfile,
           },
         ),
         12_000,
@@ -1823,7 +1866,13 @@ export class PersistentMpvSession {
         this.clearPendingFileLoadIf(reconnectLoadId, reconnectGeneration);
         throw new Error(loadResult.error ?? "loadfile failed");
       }
-      if (!this.isGenerationCurrent(reconnectGeneration)) return false;
+      // The stream can die organically while the loadfile is in flight —
+      // handlePlaybackEnded then resolves the cycle same-generation, so a
+      // generation check alone still lets this claim an unowned loadfile.
+      if (!this.isGenerationCurrent(reconnectGeneration) || this.activeCycle !== active) {
+        this.clearPendingFileLoadIf(reconnectLoadId, reconnectGeneration);
+        return false;
+      }
 
       this.reconnectBackoffUntilMs = 0;
       void this.ipcSession.send(["set_property", "user-data/kunai-loading", ""], 500);
@@ -1868,7 +1917,15 @@ export class PersistentMpvSession {
           this.currentPositionSeconds = spec.seekSeconds;
         }
       }
-      await this.ipcSession?.send(["set_property", "pause", false], 500);
+      // A pause the user took during the stall window is their intent — the
+      // reload completed for them, not against them. Ask mpv rather than the
+      // stats snapshot (which the reconnect just rebuilt) so the unpause only
+      // fires when mpv isn't already user-paused.
+      const pauseState = await this.ipcSession?.send(["get_property", "pause"], 500);
+      if (!isCurrent()) return;
+      if (pauseState?.ok && pauseState.response.data !== true) {
+        await this.ipcSession?.send(["set_property", "pause", false], 500);
+      }
       if (!isCurrent()) return;
 
       await this.replaceSubtitleInventory(

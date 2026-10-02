@@ -111,6 +111,10 @@ export function resolvePlaybackBindingEffect(
       return handlers.onToggleAutoskip ? { kind: "toggle-autoskip" } : null;
     case "player-stop-after-current":
       return handlers.onStopAfterCurrent ? { kind: "stop-after-current" } : null;
+    case "player-refresh":
+      // The mpv bridge maps ctrl+r to its "refresh" request; the terminal chord
+      // resolves to the same recover-stream effect instead of being a dead key.
+      return handlers.onRecover ? { kind: "recover" } : null;
     case "player-memory":
       return handlers.onCommandAction ? { kind: "shell-action", action: "memory" } : null;
     case "title-control-menu":

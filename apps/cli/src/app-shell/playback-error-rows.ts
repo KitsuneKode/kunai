@@ -33,13 +33,13 @@ function scenarioRows(scenario: ErrorScenario): readonly ErrorRow[] {
       return [
         row(`✗  timed out after ${scenario.elapsedSec}s`, "danger"),
         row(scenario.providerName, "dim"),
-        row("r retry · /fallback for another provider", "dim"),
+        row("r retry · /providers to pick another provider", "dim"),
       ];
     case "stream-broken":
       return [
         row("✗  stream interrupted", "danger"),
         row(`attempt ${scenario.attempt} of ${scenario.maxAttempts}`, "dim"),
-        row("r retry · /recover to refresh the stream", "dim"),
+        row("r retry — re-resolves the stream", "dim"),
       ];
     case "network-offline":
       return [row("○  offline", "dim"), row("/library for downloaded titles", "accent")];
@@ -47,7 +47,7 @@ function scenarioRows(scenario: ErrorScenario): readonly ErrorRow[] {
       return [
         row(`●  ${scenario.providerName} session required`, "danger"),
         row("/settings · add Videasy session token", "dim"),
-        row("/fallback for another provider", "dim"),
+        row("/providers to pick another provider", "dim"),
       ];
     case "title-unavailable":
       return [

@@ -60,10 +60,13 @@ export function LibraryShell({
   container,
   onClose,
   initialView = "library",
+  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   initialView?: TabId;
+  /** Palette open over this surface — keys belong to the palette, not the list. */
+  commandMode?: boolean;
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
   const [downloadJobCount, setDownloadJobCount] = useState(0);
@@ -73,11 +76,10 @@ export function LibraryShell({
 
   useEffect(() => {
     const refreshCount = () => {
-      const active = container.downloadService.listActive(50).length;
-      const completed = container.downloadService.listCompleted(5).length;
-      const failed = container.downloadService.listFailed(50);
-      setDownloadJobCount(active + completed + failed.length);
-      setRepairableJobCount(failed.filter((job) => job.status === "repairable").length);
+      // Capped list lengths under-report once a bucket outgrows its LIMIT —
+      // the badge is a table total, and repairable jobs are their own status.
+      setDownloadJobCount(container.downloadService.countJobs());
+      setRepairableJobCount(container.downloadService.countJobsByStatus("repairable"));
     };
     refreshCount();
     return container.downloadService.onEvent(() => {
@@ -117,12 +119,14 @@ export function LibraryShell({
             onClose={onClose}
             onNavigateToLibrary={() => setTab("library")}
             showSelectionHints={false}
+            commandMode={commandMode}
           />
         ) : (
           <LibraryTab
             container={container}
             onClose={onClose}
             onNavigateToQueue={() => setTab("queue")}
+            commandMode={commandMode}
           />
         )}
       </Box>
@@ -162,10 +166,12 @@ function LibraryTab({
   container,
   onClose,
   onNavigateToQueue,
+  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToQueue: () => void;
+  commandMode?: boolean;
 }) {
   const [libraryView, setLibraryView] = useState<LibraryView>("titles");
   const [detailGroup, setDetailGroup] = useState<OfflineLibraryShelfGroup | null>(null);
@@ -355,7 +361,7 @@ function LibraryTab({
         setConfirmDeleteKey(null);
       }
     },
-    { isActive: titlesActive },
+    { isActive: titlesActive && !commandMode },
   );
 
   const railPosterUrl =
@@ -435,6 +441,7 @@ function LibraryTab({
         }}
         onNavigateToQueue={onNavigateToQueue}
         onEntriesChanged={refreshEntries}
+        commandMode={commandMode}
       />
     );
   }

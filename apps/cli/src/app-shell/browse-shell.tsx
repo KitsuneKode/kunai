@@ -734,11 +734,11 @@ export function BrowseShell<T>({
   // Thin shell-side wrapper: resolve the default option, own the palette
   // close, then hand the rest to the hook (stash → seed → open → gap-fill).
   const openDetailsOverlay = useCallback(
-    (option?: BrowseShellOption<T>) => {
+    (option?: BrowseShellOption<T>, origin?: "notification") => {
       const resolved = option ?? selectedOption;
       if (!resolved) return;
       closePalette();
-      openDetails(resolved, { focusZone });
+      openDetails(resolved, { focusZone, origin });
     },
     [selectedOption, focusZone, closePalette, openDetails],
   );
@@ -768,7 +768,7 @@ export function BrowseShell<T>({
     if (!notificationDetailsPending) return;
     const item = takeNotificationDetailsItem();
     if (!item) return;
-    openDetailsOverlay(browseOptionFromMediaItem(item) as BrowseShellOption<T>);
+    openDetailsOverlay(browseOptionFromMediaItem(item) as BrowseShellOption<T>, "notification");
   }, [notificationDetailsPending, openDetailsOverlay]);
 
   const handleLocalAction = (action: ShellAction): boolean => {
@@ -1116,27 +1116,27 @@ export function BrowseShell<T>({
           onOpenLink?.(intent.url);
           return;
         case "watchlist":
-          if (selectedOption && onWatchlistSelected) {
+          if (onWatchlistSelected) {
+            const option = intent.option;
             runMutationWithFeedback(
-              () => onWatchlistSelected(selectedOption.value),
-              `Watchlisted ${selectedOption.label}`,
+              () => onWatchlistSelected(option.value),
+              `Watchlisted ${option.label}`,
               "Could not watchlist",
             );
           }
           return;
         case "queue":
-          if (selectedOption && onQueueSelected) {
+          if (onQueueSelected) {
+            const option = intent.option;
             runMutationWithFeedback(
-              () => onQueueSelected(selectedOption.value),
-              `Queued ${selectedOption.label}`,
+              () => onQueueSelected(option.value),
+              `Queued ${option.label}`,
               "Could not queue",
             );
           }
           return;
         case "download":
-          if (selectedOption) {
-            onResolve("download", selectedOption.value);
-          }
+          onResolve("download", intent.option.value);
           return;
         default:
           // "consumed" / "ignored" — the overlay owns every keypress while open.
@@ -1682,7 +1682,7 @@ export function BrowseShell<T>({
           <OverlayPanel
             overlay={activeOverlay}
             width={innerWidth}
-            canDownload={searchState === "ready"}
+            searchReady={searchState === "ready"}
           />
         ) : calendarRoutePending ? (
           <Box marginTop={2} flexGrow={1} flexDirection="column">

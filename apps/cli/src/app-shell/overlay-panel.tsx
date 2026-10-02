@@ -21,7 +21,7 @@ import {
 } from "./shell-text";
 import { palette, semanticToneColor, statusColor } from "./shell-theme";
 import { PosterOutput } from "./SixelPosterPane";
-import type { ShellPanelLine, ShellPickerOption } from "./types";
+import type { BrowseShellOption, ShellPanelLine, ShellPickerOption } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 
 export { formatPickerDisplayRow, formatPickerOptionRow } from "./overlay-picker-row.model";
@@ -50,6 +50,17 @@ export type BrowseOverlay =
       detailData?: DetailsPanelData;
       /** Rich details sheet model — preferred over detailData when present. */
       sheet?: DetailsSheetModel;
+      /**
+       * The option this sheet was opened for. Details actions (Enter/w/q/d)
+       * act on this, not the browse-list highlight — the two diverge when the
+       * sheet opens from a notification or the list re-filters under it.
+       */
+      option?: BrowseShellOption<unknown>;
+      /**
+       * "notification" sheets arrive with their own option and no live search
+       * behind them — Enter/d stay enabled even when results aren't ready.
+       */
+      origin?: "notification";
       seasonsExpanded?: boolean;
       imageUrl?: string;
       loading?: boolean;
@@ -140,13 +151,13 @@ export function OverlayPanel({
   overlay,
   width,
   maxLinesOverride,
-  canDownload,
+  searchReady,
 }: {
   overlay: BrowseOverlay;
   width: number;
   maxLinesOverride?: number;
-  /** Mirrors the `d` key's press-time gate (`selectedOption && searchReady`). */
-  canDownload?: boolean;
+  /** Mirrors the sheet's `↵`/`d` press-time gates (`searchReady`). */
+  searchReady?: boolean;
 }) {
   const insideOverlay = useIsInsideOverlay();
   const contentWidth = Math.max(24, width - 4);
@@ -364,7 +375,9 @@ export function OverlayPanel({
             model={overlay.sheet}
             seasonsExpanded={overlay.seasonsExpanded ?? false}
             width={contentWidth}
-            canDownload={canDownload === true}
+            // Notification-opened sheets take Enter/d off the captured option
+            // even when no live search is behind them — keep legend honest.
+            searchReady={searchReady === true || overlay.origin === "notification"}
           />
         </Box>
       ) : overlay.type === "details" && overlay.detailData ? (

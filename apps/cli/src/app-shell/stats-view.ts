@@ -12,6 +12,7 @@ import type {
   WatchStats,
 } from "@/domain/lists/StatsService";
 import { ALL_TIME_STATS_WINDOW_DAYS } from "@/domain/lists/StatsService";
+import { localDayKey } from "@/domain/local-day-key";
 
 import { heatBucket } from "./format/heatmap";
 import { footerHints as statsFooterHints } from "./keybindings";
@@ -178,6 +179,7 @@ function buildHeatmapGrid(input: {
   readonly dailyKindMix: readonly DailyKindMix[];
   readonly kindFilter: StatsKind;
   readonly maxWeeks: number;
+  readonly nowMs: number;
 }): {
   grid: StatsHeatmapWeek[];
   monthLabels: { weekStartDate: string; label: string }[];
@@ -186,23 +188,29 @@ function buildHeatmapGrid(input: {
   for (const day of input.heatmap) byDate.set(day.date, day.watchedCount);
   const maxCount = Math.max(...input.heatmap.map((day) => day.watchedCount), 1);
 
-  const now = new Date();
-  const endDate = new Date(now);
+  const endDate = new Date(input.nowMs);
   endDate.setHours(0, 0, 0, 0);
-  const startMs = endDate.getTime() - input.maxWeeks * 7 * 86_400_000;
-  const startDate = new Date(startMs);
+  // Walk back far enough that the current week is always inside the window,
+  // then keep the newest maxWeeks columns — the previous shape counted
+  // maxWeeks forward from the start date, so the partial current week fell off
+  // the right edge and the newest days never rendered.
+  const startDate = new Date(endDate);
+  startDate.setDate(startDate.getDate() - (input.maxWeeks + 1) * 7);
   startDate.setDate(startDate.getDate() - startDate.getDay());
 
-  const grid: StatsHeatmapWeek[] = [];
+  const weeks: StatsHeatmapWeek[] = [];
   const monthLabels: { weekStartDate: string; label: string }[] = [];
   let lastMonth = -1;
   let cur = new Date(startDate);
 
-  while (cur.getTime() <= endDate.getTime() && grid.length < input.maxWeeks) {
-    const weekStartDate = cur.toISOString().slice(0, 10);
+  while (cur.getTime() <= endDate.getTime()) {
+    // Cells walk the local calendar and the buckets they read are 'localtime'
+    // SQL days — a UTC slice here would look every date up one day early for
+    // UTC+ users and misalign the Mon/Wed/Fri row labels.
+    const weekStartDate = localDayKey(cur);
     const cells: StatsHeatmapCell[] = [];
     for (let day = 0; day < 7; day += 1) {
-      const dateStr = cur.toISOString().slice(0, 10);
+      const dateStr = localDayKey(cur);
       const count = byDate.get(dateStr) ?? 0;
       const bucket = heatBucket(count, maxCount);
       const tint = resolveStatsTintColor({
@@ -221,10 +229,15 @@ function buildHeatmapGrid(input: {
       }
       cur.setDate(cur.getDate() + 1);
     }
-    grid.push({ cells, weekStartDate });
+    weeks.push({ cells, weekStartDate });
   }
 
-  return { grid, monthLabels };
+  const grid = weeks.slice(-input.maxWeeks);
+  const visibleStarts = new Set(grid.map((week) => week.weekStartDate));
+  return {
+    grid,
+    monthLabels: monthLabels.filter((mark) => visibleStarts.has(mark.weekStartDate)),
+  };
 }
 
 function buildTypeBreakdown(breakdown: TypeBreakdown): {
@@ -411,6 +424,7 @@ export function buildStatsView(input: {
           dailyKindMix: input.stats.dailyKindMix,
           kindFilter: input.kind,
           maxWeeks,
+          nowMs: input.nowMs ?? Date.now(),
         })
       : null;
 

@@ -107,6 +107,25 @@ describe("useShellInput command mode lock transitions", () => {
     handle.unmount();
   });
 
+  test("Enter on an enabled command resolves and exits command mode", () => {
+    const seen: ShellAction[] = [];
+    const handle = render(
+      <ShellInputProbe onResolve={(action) => seen.push(action)} exposeSetLocked={() => {}} />,
+    );
+
+    handle.stdin.enqueue("/");
+    handle.stdin.enqueue("source");
+    handle.stdin.enqueue("\r");
+    expect(seen).toEqual(["source"]);
+    expect(handle.lastFrame()).toContain("unlocked:normal");
+
+    // The next shortcut reaches the surface — the palette is not still eating keys.
+    handle.stdin.enqueue("o");
+    expect(seen).toEqual(["source", "source"]);
+
+    handle.unmount();
+  });
+
   test("Enter with no matching command says so", () => {
     const handle = render(<ShellInputProbe onResolve={() => {}} exposeSetLocked={() => {}} />);
 

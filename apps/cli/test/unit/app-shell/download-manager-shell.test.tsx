@@ -44,6 +44,11 @@ function createContainerFixture() {
       listActive: () => activeJobs,
       listCompleted: () => completedJobs,
       listFailed: () => failedJobs,
+      listRepairable: () => completedJobs.filter((job) => job.status === "repairable"),
+      countJobsByStatus: (status: string) =>
+        [...activeJobs, ...completedJobs, ...failedJobs].filter((job) => job.status === status)
+          .length,
+      countJobs: () => activeJobs.length + completedJobs.length + failedJobs.length,
       onEvent: (nextListener: (event: DownloadEvent) => void) => {
         listener = nextListener;
         return () => {

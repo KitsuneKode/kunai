@@ -94,14 +94,15 @@ export function isQueryDirty(state: BrowseSearchUiState): boolean {
 export function resolveDetailsOverlaySubmitValue<TValue>({
   detailsOpen,
   searchReady,
-  selectedOption,
+  option,
 }: {
   readonly detailsOpen: boolean;
   readonly searchReady: boolean;
-  readonly selectedOption: { readonly value: TValue } | null | undefined;
+  /** The option the sheet was opened for — not the live list highlight. */
+  readonly option: { readonly value: TValue } | null | undefined;
 }): TValue | null {
   if (!detailsOpen || !searchReady) return null;
-  return selectedOption?.value ?? null;
+  return option?.value ?? null;
 }
 
 export function normalizeBrowseCommandInput(nextValue: string): {

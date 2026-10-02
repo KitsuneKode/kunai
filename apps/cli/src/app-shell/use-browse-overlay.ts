@@ -48,9 +48,9 @@ export type BrowseOverlayIntent<T> =
   | { readonly kind: "submit"; readonly value: T }
   | { readonly kind: "trailer"; readonly url: string }
   | { readonly kind: "link"; readonly url: string }
-  | { readonly kind: "watchlist" }
-  | { readonly kind: "queue" }
-  | { readonly kind: "download" };
+  | { readonly kind: "watchlist"; readonly option: BrowseShellOption<T> }
+  | { readonly kind: "queue"; readonly option: BrowseShellOption<T> }
+  | { readonly kind: "download"; readonly option: BrowseShellOption<T> };
 
 export function useBrowseOverlay<T>(input: { readonly mode: ShellMode }) {
   const [current, setCurrent] = useState<BrowseOverlay | null>(null);
@@ -63,7 +63,10 @@ export function useBrowseOverlay<T>(input: { readonly mode: ShellMode }) {
    * owns palette state).
    */
   const openDetails = useCallback(
-    (option: BrowseShellOption<T> | undefined, ctx: { readonly focusZone: BrowseFocusZone }) => {
+    (
+      option: BrowseShellOption<T> | undefined,
+      ctx: { readonly focusZone: BrowseFocusZone; readonly origin?: "notification" },
+    ) => {
       if (!option) return;
       const detailRequestId = detailRequestGate.begin();
       const panel = buildBrowseDetailsPanel(option);
@@ -78,6 +81,8 @@ export function useBrowseOverlay<T>(input: { readonly mode: ShellMode }) {
 
       setCurrent({
         type: "details",
+        option: option as BrowseShellOption<unknown>,
+        origin: ctx.origin,
         title: panel.title,
         subtitle: panel.subtitle,
         lines: [],
@@ -145,11 +150,21 @@ export function useBrowseOverlay<T>(input: { readonly mode: ShellMode }) {
         return { kind: "closed", restoreTo };
       }
 
+      // A details sheet belongs to the option that opened it — the live list
+      // selection may have moved on (filter, notification-opened sheet).
+      const detailsOption =
+        overlay.type === "details"
+          ? ((overlay.option as BrowseShellOption<T> | undefined) ?? ctx.selectedOption ?? null)
+          : null;
+
       if (key.return && overlay.type === "details") {
+        // A notification-opened sheet carries its own option and has no live
+        // search behind it — searchReady gates Enter for result-opened sheets
+        // only.
         const value = resolveDetailsOverlaySubmitValue({
           detailsOpen: true,
-          searchReady: ctx.searchReady,
-          selectedOption: ctx.selectedOption,
+          searchReady: ctx.searchReady || overlay.origin === "notification",
+          option: detailsOption,
         });
         return value !== null ? { kind: "submit", value } : { kind: "consumed" };
       }
@@ -171,11 +186,19 @@ export function useBrowseOverlay<T>(input: { readonly mode: ShellMode }) {
           return { kind: "link", url: overlay.sheet.links.items[0].url };
         }
         // Sheet-footer mutations — the shell owns the prop callbacks; the hook
-        // only reports that the user asked.
-        if (letter === "w" && ctx.selectedOption) return { kind: "watchlist" };
-        if (letter === "q" && ctx.selectedOption) return { kind: "queue" };
-        if (letter === "d" && ctx.selectedOption && ctx.searchReady) {
-          return { kind: "download" };
+        // only reports that the user asked, carrying the sheet's own option.
+        if (letter === "w" && detailsOption) {
+          return { kind: "watchlist", option: detailsOption };
+        }
+        if (letter === "q" && detailsOption) {
+          return { kind: "queue", option: detailsOption };
+        }
+        if (
+          letter === "d" &&
+          detailsOption &&
+          (ctx.searchReady || overlay.origin === "notification")
+        ) {
+          return { kind: "download", option: detailsOption };
         }
       }
 

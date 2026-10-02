@@ -75,10 +75,18 @@ export function forceSettleAllRootContent(_reason: string): void {
   setRootContentSession(null);
 }
 
-export function forceCloseRootContent<TResult>(value: TResult): boolean {
-  if (!rootContentSession) return false;
+export function forceCloseRootContent<TResult>(
+  value: TResult,
+  { kinds }: { readonly kinds?: readonly RootContentKind[] } = {},
+): boolean {
+  const session = rootContentSession;
+  if (!session) return false;
+  // The settle is a blind cast — only kinds whose consumer understands this
+  // result type may receive it. A picker-kind session would swallow a
+  // launch-playback and leave any queue claim in-flight forever.
+  if (kinds && !kinds.includes(session.kind)) return false;
   const mount = [...pendingRootContentMounts].find(
-    (candidate) => candidate.sessionId === rootContentSession?.id,
+    (candidate) => candidate.sessionId === session.id,
   );
   if (!mount) return false;
   mount.settle(value);
@@ -185,6 +193,13 @@ export function mountRootContent<TResult>({
 
   if (rootContentSession !== null && rootContentSession.id !== sessionId) {
     clearRootContentTransitionFrame();
+    // The displaced session's mount promise would otherwise hang until
+    // teardown — settle it with its declared fallback so the awaiting phase
+    // loop exits cleanly.
+    const displaced = [...pendingRootContentMounts].find(
+      (mount) => mount.sessionId === rootContentSession?.id,
+    );
+    displaced?.settle(displaced.fallbackValue);
   }
 
   setRootContentSession({

@@ -109,3 +109,12 @@ test("Escape resolves null without mutating queue state", async () => {
 
   db.close();
 });
+
+test("a second waiter resolves the superseded one with null instead of leaking it", async () => {
+  const first = waitForRootQueueSelection();
+  const second = waitForRootQueueSelection();
+
+  await expect(first).resolves.toBeNull();
+  resolveRootQueueSelection(null);
+  await expect(second).resolves.toBeNull();
+});

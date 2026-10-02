@@ -91,6 +91,16 @@ test("Enter resolves the highlighted command and the caller decides what it mean
   expect(resolved).toEqual(["search"]);
 });
 
+test("Enter on an enabled command closes the palette", async () => {
+  const resolved: string[] = [];
+  const handle = render(<Probe onResolved={(id) => resolved.push(id)} />);
+  await press(handle, ["/", "s", "e", "a", "\r"]);
+  expect(resolved).toEqual(["search"]);
+  expect(handle.lastFrame()).toContain("open=0");
+  expect(handle.lastFrame()).toContain("input=");
+  expect(handle.lastFrame()).not.toContain("input=sea");
+});
+
 test("Enter on a disabled command is consumed, not resolved", async () => {
   const resolved: string[] = [];
   const handle = render(<Probe onResolved={(id) => resolved.push(id)} />);

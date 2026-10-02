@@ -731,6 +731,26 @@ export class DownloadJobsRepository {
       .all(limit)
       .map(mapRow);
   }
+
+  /**
+   * True totals for header surfaces. The list* methods are LIMIT-capped views —
+   * rendering their array length as a header count silently under-reports once
+   * a bucket outgrows its cap.
+   */
+  countByStatus(status: DownloadJobStatus): number {
+    const row = this.db
+      .query<{ n: number }, [DownloadJobStatus]>(
+        "SELECT COUNT(*) AS n FROM download_jobs WHERE status = ?",
+      )
+      .get(status);
+    return row?.n ?? 0;
+  }
+
+  /** Every job in the table regardless of status — badge totals, not views. */
+  countAll(): number {
+    const row = this.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM download_jobs").get();
+    return row?.n ?? 0;
+  }
 }
 
 function mapRow(row: DownloadJobRow): DownloadJobRecord {

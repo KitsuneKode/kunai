@@ -260,6 +260,38 @@ describe("mpv-stats", () => {
     expect(result.duration).toBe(2000);
   });
 
+  test("a stall at a jumped position does not promote that position into trusted progress", () => {
+    // If the stall stamp lifted the corrupt sample into maxTrusted, the eof
+    // demotion's `maxTrusted < duration - tail` check would pass and a
+    // truncated watch would finalize as completed.
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    for (let pos = 0; pos <= 400; pos += 50) {
+      applyObservedPropertySample(stats, {
+        name: "playback-time",
+        value: pos,
+        observedAt: 1_000 + pos,
+      });
+    }
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 2000,
+      observedAt: 2_000,
+    });
+    // Position jumps to the tail — the stall is observed AT the corrupt sample.
+    applyObservedPropertySample(stats, {
+      name: "playback-time",
+      value: 1990,
+      observedAt: 2_001,
+    });
+    noteStreamStall(stats, 2_002);
+    applyEndFileEvent(stats, "eof", 2_003);
+    recordPlayerExit(stats, { code: 0, signal: null });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("unknown");
+    expect(result.watchedSeconds).toBe(400);
+  });
+
   test("demotes eof for network demuxer when trusted progress is far below duration (no stall)", () => {
     const stats = createPlayerStatsState("/tmp/mpv.sock");
     for (let pos = 0; pos <= 400; pos += 50) {

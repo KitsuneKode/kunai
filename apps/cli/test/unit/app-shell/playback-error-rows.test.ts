@@ -36,7 +36,7 @@ describe("buildErrorRows", () => {
     });
     expect(lines).toContain("✗  timed out after 12s");
     expect(lines).toContain("allmanga");
-    expect(lines).toContain("r retry · /fallback for another provider");
+    expect(lines).toContain("r retry · /providers to pick another provider");
   });
 
   test("renders stream-broken", () => {

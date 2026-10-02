@@ -406,7 +406,11 @@ export type BrowseShellResult<T> =
    */
   | {
       type: "launch-playback";
-      launch: { readonly title: TitleInfo; readonly episode?: EpisodeInfo };
+      launch: {
+        readonly title: TitleInfo;
+        readonly episode?: EpisodeInfo;
+        readonly startSeconds?: number;
+      };
     }
   | { type: "cancelled" };
 
@@ -431,6 +435,20 @@ export type PlaybackShellResult =
   | {
       readonly type: "play-queue-entry";
       readonly queueEntryId: string;
+    }
+  /**
+   * Settled into a mounted post-play session by overlay/palette launches —
+   * the post-play loop translates it into the same history_entry exit a
+   * recommendation pick produces. Only browse + post-play consumers
+   * understand it; never settle it into picker-kind sessions.
+   */
+  | {
+      readonly type: "launch-playback";
+      readonly launch: {
+        readonly title: TitleInfo;
+        readonly episode?: EpisodeInfo;
+        readonly startSeconds?: number;
+      };
     };
 
 export function toShellAction(commandId: AppCommandId): ShellAction {

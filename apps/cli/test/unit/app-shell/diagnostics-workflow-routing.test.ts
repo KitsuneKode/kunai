@@ -16,7 +16,9 @@ describe("diagnostics workflow routing", () => {
   test("palette, workflow, and overlay entry points share openDiagnosticsOverlay sources", () => {
     const palette = readFileSync(join(SRC, "dispatch-palette-command.ts"), "utf8");
     const workflow = readFileSync(join(SRC, "workflows/shell-workflows.ts"), "utf8");
-    const overlay = readFileSync(join(SRC, "root-overlay-shell.tsx"), "utf8");
+    // The overlay host delegates command resolution to the shared surface
+    // resolver, so its label lives there now.
+    const overlay = readFileSync(join(SRC, "root-workflow-dispatch.ts"), "utf8");
 
     expect(palette).toContain('workflows.openDiagnostics(container, "diagnostics-palette")');
     expect(workflow).toContain('openDiagnosticsOverlay(container, "diagnostics-command")');

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-12"
+lastReviewed: "2026-10-03"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -13,7 +13,7 @@ This applies only to the **persistent mpv** path (`PersistentMpvSession`, autopl
 
 When playback hits certain failure signals, Kunai **reloads the same stream URL** inside the existing mpv process via IPC (`loadfile … replace`), then:
 
-- **VOD** (mpv reports a positive `duration`): **seeks** back to the last trusted position (capped near the end to avoid overshoot).
+- **VOD** (mpv reports a positive `duration`): **seeks** back to the last trusted position (capped near the end to avoid overshoot). If no position sample was ever trusted — a dead feed inside the initial open window — the reload falls back to the file's original `startAt`, so a resume at N minutes does not come back at the beginning.
 - **Live / unknown duration** (`duration` ≤ 0): **reload only** — no seek-back (same rule as normal “live” handling).
 
 After a successful reload, **external subtitles are re-attached** from the current cycle options (same as a fresh file load path).
@@ -28,13 +28,36 @@ startup, same-URL replay, normal replacement, and both enabled/disabled baseline
 
 1. **`network-read-dead`** (from `playback-watchdog`): demuxer reports network + underrun + `raw-input-rate === 0` while paused-for-cache, sustained for ~8s. Fires at most once per stall incident from the watchdog; **reconnect attempts** are still capped per cycle.
 
-2. **Premature EOF** (playback-stats guard): `end-file` with `eof` was **demoted** to `unknown` because trusted progress was inconsistent with a full watch (`eofDemotedByPrematureGuard`).
+2. **`cache-starved`** (from `playback-watchdog`): paused-for-cache with zero cache growth and zero cache speed for ~20s — the source stopped feeding bytes even though the demuxer is still waiting. Same reload repair; the longer window keeps a merely-slow trickle (any inbound byte rate resets it) from tripping the trigger.
 
-3. **`end-file` with `error`** while **`demuxer-via-network`** was true: treat as a reconnectable network demuxer error before surfacing a terminal failure.
+3. **Premature EOF** (playback-stats guard): `end-file` with `eof` was **demoted** to `unknown` because trusted progress was inconsistent with a full watch (`eofDemotedByPrematureGuard`).
+
+4. **`end-file` with `error`** while **`demuxer-via-network`** was true: treat as a reconnectable network demuxer error before surfacing a terminal failure.
 
 If reconnect **succeeds**, the current `play()` promise **does not resolve** yet; playback continues until a normal end, quit, or exhaustion of retries.
 
 If reconnect **fails** or limits are hit, the cycle ends and the usual `PlaybackResult` is returned.
+
+### Event ordering that must not be misread
+
+`loadfile … replace` makes mpv emit an `end-file` with reason **`stop`** for the
+file it unloads — on watchdog-triggered reconnects (`network-read-dead`,
+`cache-starved`) that stray event lands while the old file is still loaded and
+the reload's `file-loaded` is still pending. `handlePlaybackEnded` treats a
+`stop` end-file arriving while `pendingInProcessReconnect` is set as the
+expected unload and keeps the cycle alive; it does **not** clear the reconnect
+flags, retire the pending load owner, or resolve `play()`. A real reload death
+(`error`, `redirect`, or a dead playlist's instant `eof` before `file-loaded`)
+still resolves the cycle and unblocks the next attempt inside budget.
+
+The other way around: if the stream dies organically while a reconnect's
+loadfile is in flight, the cycle resolves same-generation — the post-ACK path
+re-checks `activeCycle`, not just the generation, so it cannot claim an unowned
+loadfile.
+
+Completion also asks mpv for `pause` before unpausing: a pause the user took
+during the stall window is their intent, and the freshly reset stats snapshot
+cannot speak for it.
 
 ## Limits and backoff
 
