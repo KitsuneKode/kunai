@@ -4,6 +4,7 @@ import { unlink } from "node:fs/promises";
 import type { PlaybackResult } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
+import { LOW_SPEC_HLS_BITRATE, LOW_SPEC_YTDL_FORMAT } from "@/infra/player/mpv-hardware-profile";
 import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "@/infra/player/mpv-ipc";
 import {
@@ -617,10 +618,14 @@ export function buildMpvArgs(
   }
 
   const args: string[] = [];
+  const lowSpec = config?.mpv?.hardwareProfile === "low-spec";
 
   if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
     args.push("--ytdl=yes");
-    args.push(`--ytdl-format=${opts.ytdlFormat ?? DEFAULT_MPV_YTDL_FORMAT}`);
+    // An explicit ytdlFormat wins over the low-spec ceiling — the user asked.
+    const ytdlFormat =
+      opts.ytdlFormat ?? (lowSpec ? LOW_SPEC_YTDL_FORMAT : DEFAULT_MPV_YTDL_FORMAT);
+    args.push(`--ytdl-format=${ytdlFormat}`);
     if (opts.ytdlRawOptions?.trim()) {
       args.push(`--ytdl-raw-options=${opts.ytdlRawOptions.trim()}`);
     }
@@ -698,6 +703,14 @@ export function buildMpvArgs(
   args.push("--cache=yes");
   args.push("--cache-pause=yes");
   args.push("--cache-pause-initial=no");
+  if (lowSpec) {
+    // mpv defaults to hwdec=no — software-decoding 1080p+ on a weak host stalls
+    // hard enough for the watchdog's no-progress lane to fire. auto-safe is
+    // mpv's documented safe enable, and the HLS bitrate cap keeps variant
+    // picks inside what the CPU can decode in realtime.
+    args.push("--hwdec=auto-safe");
+    args.push(`--hls-bitrate=${LOW_SPEC_HLS_BITRATE}`);
+  }
   // `--demuxer-lavf-o` is single-valued: repeating it replaces the previous value
   // rather than merging. The local-HLS whitelist used to be pushed last and so
   // silently discarded whichever reconnect ladder had been chosen above. Collect

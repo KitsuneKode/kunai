@@ -36,6 +36,7 @@ import {
 } from "./hls-relay";
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
 import { discoverMpvInvocation } from "./mpv-discovery";
+import { detectHardwareProfile } from "./mpv-hardware-profile";
 import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
@@ -642,6 +643,7 @@ export class PlayerServiceImpl implements PlayerService {
       mpv: {
         ...this.deps.mpv,
         startupPriority: this.deps.config.startupPriority,
+        hardwareProfile: detectHardwareProfile(),
       },
     });
 
@@ -725,6 +727,7 @@ export class PlayerServiceImpl implements PlayerService {
         mpv: {
           ...this.deps.mpv,
           startupPriority: this.deps.config.startupPriority,
+          hardwareProfile: detectHardwareProfile(),
         },
       });
     } finally {
@@ -792,6 +795,7 @@ export class PlayerServiceImpl implements PlayerService {
         mpv: {
           ...this.deps.mpv,
           startupPriority: this.deps.config.startupPriority,
+          hardwareProfile: detectHardwareProfile(),
         },
         kitsuneConfig: this.deps.config.getRaw(),
         onControlReady: (control) => this.setActiveControlFor(generation, control),

@@ -1,3 +1,4 @@
+import { LOW_SPEC_HLS_BITRATE, LOW_SPEC_YTDL_FORMAT } from "./mpv-hardware-profile";
 import {
   isAllowedMpvUrl,
   isLocalHlsManifestPlaybackUrl,
@@ -173,6 +174,9 @@ export type PersistentLoadfileOptions = {
   readonly "ytdl-raw-options"?: string;
   readonly "demuxer-lavf-o"?: string;
   readonly "demuxer-lavf-o-clr"?: string;
+  /** Decode/bandwidth ceilings applied on low-spec hosts. */
+  readonly hwdec?: string;
+  readonly "hls-bitrate"?: string;
   /** Live-broadcast demuxer profile; see {@link LIVE_DEMUXER_OPTIONS}. */
   readonly "cache-pause-wait"?: string;
   readonly "demuxer-readahead-secs"?: string;
@@ -231,6 +235,12 @@ export type PersistentLoadfileMediaOptions = {
   readonly audioPreference?: string;
   /** Ephemeral chapters file path containing chapter markers. */
   readonly chaptersFile?: string | null;
+  /**
+   * Low-spec hosts cap decode (hwdec=auto-safe), HLS variant pick and the ytdl
+   * default selector — a process launched on a weak device must not switch
+   * files into an undecodable stream mid-session.
+   */
+  readonly hardwareProfile?: "standard" | "low-spec";
 };
 
 export function buildPersistentLoadfileOptions(
@@ -271,6 +281,12 @@ export function buildPersistentLoadfileOptions(
   const alang = toMpvLanguageToken(ytdlOptions?.audioPreference, { forSubtitle: false });
   if (alang) loadOptions.alang = alang;
 
+  const lowSpec = ytdlOptions?.hardwareProfile === "low-spec";
+  if (lowSpec) {
+    loadOptions.hwdec = "auto-safe";
+    loadOptions["hls-bitrate"] = LOW_SPEC_HLS_BITRATE;
+  }
+
   if (isYoutubeWatchUrl(url) || ytdlOptions?.requiresYtdl) {
     // `ytdl` is a yes/no flag and `ytdl-format` is the selector, so assigning
     // the format to `ytdl` silently discarded the user's quality ceiling on the
@@ -280,7 +296,9 @@ export function buildPersistentLoadfileOptions(
     // property` while `ytdl-format` accepts it. Setting the flag explicitly
     // also survives a user config that turned ytdl off.
     loadOptions.ytdl = "yes";
-    loadOptions["ytdl-format"] = ytdlOptions?.ytdlFormat ?? DEFAULT_MPV_YTDL_FORMAT;
+    // An explicit ytdlFormat wins over the low-spec ceiling — the user asked.
+    loadOptions["ytdl-format"] =
+      ytdlOptions?.ytdlFormat ?? (lowSpec ? LOW_SPEC_YTDL_FORMAT : DEFAULT_MPV_YTDL_FORMAT);
     if (ytdlOptions?.ytdlRawOptions?.trim()) {
       loadOptions["ytdl-raw-options"] = ytdlOptions.ytdlRawOptions.trim();
     }

@@ -279,6 +279,8 @@ export class PersistentMpvSession {
   private reconnectBaseBackoffMs = IN_PROCESS_RECONNECT_BASE_BACKOFF_MS;
   private reconnectMaxBackoffMs = IN_PROCESS_RECONNECT_MAX_BACKOFF_MS;
   private reconnectTryCount = 0;
+  /** Decode/bandwidth ceilings applied to every loadfile on weak hosts. */
+  private hardwareProfile: "standard" | "low-spec" = "standard";
   private reconnectBackoffUntilMs = 0;
   private reconnectInFlight = false;
   private pendingInProcessReconnect: {
@@ -409,6 +411,7 @@ export class PersistentMpvSession {
     }
     session.skipPromptDurationMs = parseSkipPromptDurationMs(cfg.mpvKunaiScriptOpts);
     session.scriptOptsArg = buildKunaiBridgeScriptOptsArg(cfg.mpvKunaiScriptOpts);
+    session.hardwareProfile = opts.mpv?.hardwareProfile ?? "standard";
     session.luaScriptPath = await resolveKunaiMpvBridgeScriptPath(cfg);
     await session.spawn(opts.mpv);
     return session;
@@ -483,6 +486,7 @@ export class PersistentMpvSession {
           urlKind: options.urlKind,
           audioPreference: options.audioPreference,
           chaptersFile: this.currentChaptersFilePath,
+          hardwareProfile: this.hardwareProfile,
         },
       ),
       3_000,
@@ -1853,6 +1857,7 @@ export class PersistentMpvSession {
             urlKind: opts.urlKind,
             audioPreference: opts.audioPreference,
             chaptersFile: this.currentChaptersFilePath ?? undefined,
+            hardwareProfile: this.hardwareProfile,
           },
         ),
         12_000,
