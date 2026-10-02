@@ -908,9 +908,17 @@ export class ConfigServiceImpl implements ConfigService {
     // runs the catch and the finally before this assignment would have happened,
     // so assigning afterwards left an already-rejected promise in `saveInFlight`
     // that every later `flushPending()` would await.
+    // Chain on the prior in-flight write. The store's atomic rename makes a
+    // single write crash-safe, but it cannot order two overlapping writes —
+    // an older snapshot's rename landing after a newer one is last-write-loses.
+    // Serializing also means the IIFE reads `this.config` after the prior
+    // write settles, so the write that starts last always carries the newest
+    // state.
+    const prior = this.saveInFlight;
     this.saveInFlight = pending;
     void (async () => {
       try {
+        if (prior) await prior.catch(() => {});
         await this.persistConfig(this.config);
         resolve?.();
       } catch (error) {
@@ -924,6 +932,9 @@ export class ConfigServiceImpl implements ConfigService {
 
   async reset(): Promise<void> {
     this.config = { ...DEFAULT_CONFIG };
+    // Order behind any in-flight debounced write — otherwise a save already
+    // renaming on disk can land after the reset and resurrect stale values.
+    if (this.saveInFlight) await this.saveInFlight.catch(() => {});
     await this.persistConfig(this.config);
   }
 }
