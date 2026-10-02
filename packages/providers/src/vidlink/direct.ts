@@ -25,6 +25,7 @@ import {
   looksLikeHlsMasterUrl,
 } from "../shared/hls-ladder";
 import { readJsonObjectBody } from "../shared/json-body";
+import { probeLookupForPort } from "../shared/stream-reachability";
 import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
 
 export { VIDLINK_PROVIDER_ID };
@@ -220,6 +221,7 @@ export function resolveVidlinkDirect(
             masterUrl: stream.playlist,
             headers: playlistHeaders,
             signal: ctx.signal,
+            lookupImpl: probeLookupForPort(ctx.fetch),
           });
           // A dead host (5xx / 404 / 410) fails identically in mpv — dropping
           // the row beats emitting an `auto` fallback to a corpse URL. Ambiguous

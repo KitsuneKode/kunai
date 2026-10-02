@@ -14,6 +14,12 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
 
   return {
     runtime: "direct-http",
+    // Requests through this port either resolve on this machine or fall back to
+    // it — the relay only ever carries allowlisted metadata hosts, and a
+    // locally-pinned stream address never matches that list, so guarded stream
+    // fetches are always direct. The guard needs the marker to know its DNS
+    // pin is not about to be handed to a remote resolver.
+    resolvesLocally: true,
     async fetch(input, init) {
       if (!baseUrl) return fetchImpl(input, init);
 

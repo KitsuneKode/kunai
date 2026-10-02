@@ -18,6 +18,7 @@ import {
 } from "../shared/curl-impersonate";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
+import { probeLookupForPort } from "../shared/stream-reachability";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import {
   decodeHianimeEmbedPage,
@@ -569,6 +570,7 @@ export async function resolveHianimeEpisodeStreams({
       masterUrl: payload.src,
       headers: ladderHeaders,
       signal: createTimeoutSignal(signal, 15_000),
+      lookupImpl: probeLookupForPort(context.fetch),
     });
     // A dead master host (5xx/404/410) means the fallback `auto` row would point
     // at the same dead URL — drop it so the caller fails instead of playing a

@@ -21,6 +21,7 @@ import {
   BALANCED_QUALITY_WAIT_BUDGET_MS,
   QUALITY_FIRST_WAIT_BUDGET_MS,
 } from "../shared/startup-selection";
+import { probeLookupForPort } from "../shared/stream-reachability";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { anidbNumericId, parseAnidbBrowseHtml, type AnidbSearchResult } from "./browse-parser";
 

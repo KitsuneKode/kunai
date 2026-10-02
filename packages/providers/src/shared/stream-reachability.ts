@@ -18,11 +18,21 @@ export type ProbeStreamReachabilityInput = {
   readonly url: string;
   readonly headers?: Record<string, string>;
   readonly fetchImpl?: StreamReachabilityFetch;
+  /**
+   * DNS answer source for the real network path — validates answers and pins
+   * the connection to a checked address. Supply it when `fetchImpl` opens
+   * local sockets through a wrapper the identity check cannot see through
+   * (the provider fetch port); injected fetches own their targets and skip it.
+   */
+  readonly lookupImpl?: StreamReachabilityLookup;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
 };
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
+
+/** Guarded fetches (subtitles, playlists, manifests) get a wider budget than probes. */
+const DEFAULT_GUARDED_FETCH_TIMEOUT_MS = 20_000;
 const SEGMENT_RANGE_HEADER = `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`;
 const MAX_PROBE_REDIRECT_HOPS = 3;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -68,14 +78,166 @@ function blockedLiteralTargetReason(url: string): string | null {
   return null;
 }
 
-async function resolvedAddressBlockReason(url: string): Promise<string | null> {
-  const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  const resolved = await resolveHostAddresses(host);
-  for (const address of resolved) {
-    const reason = isPrivateLiteralAddress(address);
-    if (reason) return `${reason} (DNS answer for ${host})`;
+/**
+ * A DNS answer source. The default is the system resolver; tests inject one so
+ * the validation-and-pin path runs without touching the network.
+ */
+export type StreamReachabilityLookup = (host: string) => Promise<readonly string[]>;
+
+export const systemDnsLookup: StreamReachabilityLookup = async (host) => {
+  const { lookup } = await import("node:dns/promises");
+  const answers = await lookup(host, { all: true });
+  return answers.map((answer) => answer.address);
+};
+
+/**
+ * The platform's real fetch, captured at module load before tests can swap
+ * `globalThis.fetch` for a stub. Only the real impl opens sockets the system
+ * resolver answers for — a stubbed global owns its destinations, and pinning
+ * it would rewrite URLs the stub never resolves while doing real DNS on names
+ * that exist only in the fixture.
+ */
+const PLATFORM_FETCH: typeof fetch = fetch;
+
+/**
+ * Which lookup a stream fetch through this port needs.
+ *
+ * `undefined` means the global `fetch` — local sockets when it is still the
+ * platform's own, none when a stub has replaced it. A port that declares
+ * `resolvesLocally` opens local sockets for stream URLs (the relay port's
+ * relay branch only covers allowlisted metadata hosts) even though its bound
+ * method never matches the `=== fetch` identity check — also pin. Any other
+ * port resolves where it runs, and local answers mean nothing there.
+ */
+export function probeLookupForPort(
+  port: { readonly resolvesLocally?: boolean } | undefined,
+): StreamReachabilityLookup | undefined {
+  if (port === undefined) {
+    return fetch === PLATFORM_FETCH ? systemDnsLookup : undefined;
   }
-  return null;
+  return port.resolvesLocally === true ? systemDnsLookup : undefined;
+}
+
+type PinnedTarget =
+  | { readonly kind: "pinned"; readonly url: string; readonly init: RequestInit }
+  | { readonly kind: "blocked"; readonly reason: string }
+  | { readonly kind: "timeout" };
+
+/**
+ * Resolve, validate, and pin the connection for one request.
+ *
+ * Checking `lookup` once and then fetching the hostname leaves a rebinding
+ * window — the name can answer a public address for the check and a private
+ * one for the fetch. Pinning rewrites the request to a validated address while
+ * `Host` and TLS `serverName` keep the real authority, so the connection that
+ * opens is the one the DNS check covered. The target URL stays a hostname —
+ * redirects resolve against it and each hop re-pins.
+ *
+ * `proxy: false` because a configured proxy would resolve the pinned name
+ * itself and silently undo the check.
+ *
+ * Fails closed: an empty or failed lookup cannot prove the name stays public
+ * through the fetch's own resolution, so it is a blocked target — the same
+ * definitive-unreachable the fetch itself would report for ENOTFOUND.
+ */
+async function pinTargetToResolvedAddress(options: {
+  readonly target: string;
+  readonly init: RequestInit;
+  readonly remaining: () => number;
+  readonly parentSignal?: AbortSignal;
+  readonly lookupImpl: StreamReachabilityLookup;
+}): Promise<PinnedTarget> {
+  const parsed = new URL(options.target);
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  // A literal is already its own pin — the literal check ran upstream — but
+  // Host still has to name this URL's authority, or a redirect hop would carry
+  // whatever Host an earlier pinned hop set.
+  if (parseIpv4(hostname) || hostname.includes(":")) {
+    const headers = new Headers(options.init.headers);
+    headers.set("host", parsed.host);
+    return { kind: "pinned", url: options.target, init: { ...options.init, headers } };
+  }
+
+  const addresses = await lookupWithDeadline(
+    options.lookupImpl,
+    hostname,
+    options.remaining,
+    options.parentSignal,
+  );
+  if (addresses === "timeout") return { kind: "timeout" };
+  if (addresses === null || addresses.length === 0) {
+    return {
+      kind: "blocked",
+      reason: `${options.target} -> DNS lookup failed or returned no answers for ${hostname}`,
+    };
+  }
+  for (const address of addresses) {
+    const reason = isPrivateLiteralAddress(address);
+    if (reason) {
+      return {
+        kind: "blocked",
+        reason: `${options.target} -> ${reason} (DNS answer for ${hostname})`,
+      };
+    }
+  }
+
+  const pinned = addresses[0];
+  if (pinned === undefined) {
+    return { kind: "blocked", reason: `${options.target} -> no DNS answer for ${hostname}` };
+  }
+  const authority = pinned.includes(":") ? `[${pinned}]` : pinned;
+  const pinnedUrl = `${parsed.protocol}//${authority}${parsed.port ? `:${parsed.port}` : ""}${parsed.pathname}${parsed.search}${parsed.hash}`;
+
+  const headers = new Headers(options.init.headers);
+  // Host keeps the real authority — the address only names the socket.
+  headers.set("host", parsed.host);
+  const init: RequestInit & {
+    tls?: { serverName?: string };
+    proxy?: boolean;
+  } = { ...options.init, headers, proxy: false };
+  if (parsed.protocol === "https:") {
+    init.tls = { serverName: hostname };
+  }
+  return { kind: "pinned", url: pinnedUrl, init };
+}
+
+/**
+ * `dns.lookup` cannot be cancelled, so the deadline and the abort signal race
+ * it rather than interrupt it — a slow resolver used to hold the probe past
+ * its budget. The orphaned lookup resolves late and is discarded.
+ */
+async function lookupWithDeadline(
+  lookupImpl: StreamReachabilityLookup,
+  host: string,
+  remaining: () => number,
+  parentSignal: AbortSignal | undefined,
+): Promise<readonly string[] | "timeout" | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    return await Promise.race([
+      lookupImpl(host).then(
+        (addresses) => addresses,
+        () => null,
+      ),
+      new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), Math.max(1, remaining()));
+      }),
+      new Promise<"timeout">((resolve) => {
+        if (parentSignal?.aborted) {
+          resolve("timeout");
+          return;
+        }
+        onAbort = () => resolve("timeout");
+        parentSignal?.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (parentSignal && onAbort) {
+      parentSignal.removeEventListener("abort", onAbort);
+    }
+  }
 }
 
 /** Dotted-quad parse; WHATWG URL canonicalises exotic forms before we see them. */
@@ -151,18 +313,6 @@ function isPrivateLiteralAddress(host: string): string | null {
   return null;
 }
 
-async function resolveHostAddresses(host: string): Promise<string[]> {
-  if (parseIpv4(host) || host.includes(":")) return [];
-  try {
-    const { lookup } = await import("node:dns/promises");
-    const answers = await lookup(host, { all: true });
-    return answers.map((a) => a.address);
-  } catch {
-    // An unresolvable name fails in the fetch anyway — don't pre-empt its error.
-    return [];
-  }
-}
-
 export type ProbeFetchOutcome =
   | { readonly kind: "response"; readonly response: Response }
   | { readonly kind: "blocked"; readonly reason: string }
@@ -179,7 +329,13 @@ async function fetchProbeTarget(options: {
   readonly init: RequestInit;
   readonly remaining: () => number;
   readonly parentSignal?: AbortSignal;
-  readonly resolveNames: boolean;
+  /**
+   * When set, every hop resolves the name, validates the answers, and pins the
+   * connection to a checked address. Absent means the impl owns its targets —
+   * injected fetches and remote-resolving ports — and only the literal
+   * blocklist applies.
+   */
+  readonly lookupImpl?: StreamReachabilityLookup;
 }): Promise<ProbeFetchOutcome> {
   let target = options.url;
   let init = options.init;
@@ -188,27 +344,41 @@ async function fetchProbeTarget(options: {
     if (literalBlocked) {
       return { kind: "blocked", reason: `${target} -> ${literalBlocked}` };
     }
+    let requestUrl = target;
+    let requestInit = init;
     // DNS once the literals pass — skipped when the caller already aborted so
-    // a cancelled probe does not sit on a resolver round-trip.
-    if (options.resolveNames && !options.parentSignal?.aborted) {
-      const resolvedBlocked = await resolvedAddressBlockReason(target);
-      if (resolvedBlocked) {
-        return { kind: "blocked", reason: `${target} -> ${resolvedBlocked}` };
+    // a cancelled probe does not sit on a resolver round-trip. The pin makes
+    // the connection the check covered; the name alone would leave a
+    // public-then-private rebinding window.
+    if (options.lookupImpl && !options.parentSignal?.aborted) {
+      const pinned = await pinTargetToResolvedAddress({
+        target,
+        init,
+        remaining: options.remaining,
+        parentSignal: options.parentSignal,
+        lookupImpl: options.lookupImpl,
+      });
+      if (pinned.kind !== "pinned") {
+        return pinned;
       }
+      requestUrl = pinned.url;
+      requestInit = pinned.init;
     }
     if (options.remaining() <= 0) {
       return { kind: "timeout" };
     }
     // The fetch impl is invoked even on an aborted signal: abort is delivered
     // through the signal itself, which is also what injected test fetches see.
-    const response = await options.fetchImpl(target, {
-      ...init,
+    const response = await options.fetchImpl(requestUrl, {
+      ...requestInit,
       redirect: "manual",
     });
     if (REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get("location");
       if (location && hop < MAX_PROBE_REDIRECT_HOPS) {
         try {
+          // Resolves against the hostname URL, never the pinned address, so a
+          // relative Location keeps the real authority for the next hop's pin.
           const next = new URL(location, target);
           // Match undici's own redirect hygiene: credentials do not cross
           // origins, even when every hop individually validates as public.
@@ -248,14 +418,30 @@ export function fetchGuardedStreamTarget(options: {
   readonly url: string;
   readonly init: RequestInit;
   readonly signal?: AbortSignal;
+  /**
+   * Shared budget for the DNS pin and the fetch itself. The signal still
+   * aborts sooner; this exists because `remaining` feeds the lookup race —
+   * a stub budget there starves the resolver and every hostname fetch times
+   * out without issuing a request.
+   */
+  readonly timeoutMs?: number;
+  /**
+   * Passed by callers whose impl is a port that opens local sockets — the
+   * relay fetch port's stream URLs always take its direct branch, so DNS
+   * answers still need validating and pinning. Absent with an injected impl
+   * means the impl owns its targets and only the literal blocklist applies.
+   */
+  readonly lookupImpl?: StreamReachabilityLookup;
 }): Promise<ProbeFetchOutcome> {
+  const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_GUARDED_FETCH_TIMEOUT_MS);
   return fetchProbeTarget({
     fetchImpl: options.fetchImpl,
     url: options.url,
     init: { ...options.init, signal: options.signal },
-    remaining: () => 1, // the caller's signal owns the deadline
+    remaining: () => Math.max(0, deadline - Date.now()),
     parentSignal: options.signal,
-    resolveNames: options.fetchImpl === fetch,
+    lookupImpl:
+      options.lookupImpl ?? (options.fetchImpl === PLATFORM_FETCH ? systemDnsLookup : undefined),
   });
 }
 
@@ -268,12 +454,15 @@ export async function probeStreamReachability(
   const deadline = Date.now() + timeoutMs;
   const remaining = () => Math.max(100, deadline - Date.now());
   const headers = input.headers ?? {};
-  // Injected fetches own their destinations; real fetches get DNS answers
-  // re-validated so a public name cannot resolve to a private address.
-  const resolveNames = input.fetchImpl === undefined;
+  // Injected fetches own their destinations; the real network path validates
+  // DNS answers and pins the connection, so a public name cannot resolve to a
+  // private address between the check and the fetch.
+  const lookupImpl =
+    input.lookupImpl ??
+    ((input.fetchImpl ?? fetch) === PLATFORM_FETCH ? systemDnsLookup : undefined);
 
   if (isHlsPlaylistUrl(input.url)) {
-    return probeHlsManifest(fetchImpl, input.url, headers, remaining, input.signal, resolveNames);
+    return probeHlsManifest(fetchImpl, input.url, headers, remaining, input.signal, lookupImpl);
   }
 
   try {
@@ -282,7 +471,7 @@ export async function probeStreamReachability(
       headers,
       remainingMs: remaining,
       parentSignal: input.signal,
-      resolveNames,
+      lookupImpl,
     });
     if (head.status === "reachable") return head;
     if (head.status === "timeout") return head;
@@ -298,7 +487,7 @@ export async function probeStreamReachability(
     headers: { ...headers, Range: "bytes=0-0" },
     remainingMs: remaining,
     parentSignal: input.signal,
-    resolveNames,
+    lookupImpl,
     healthyStatus: (status) => (status >= 200 && status < 300) || status === 206,
   });
 }
@@ -339,7 +528,7 @@ async function probeHlsManifest(
   headers: Record<string, string>,
   remaining: () => number,
   parentSignal: AbortSignal | undefined,
-  resolveNames: boolean,
+  lookupImpl: StreamReachabilityLookup | undefined,
 ): Promise<StreamReachabilityProbeResult> {
   if (parentSignal?.aborted || remaining() <= 0) {
     return { status: "timeout" };
@@ -351,7 +540,7 @@ async function probeHlsManifest(
     headers,
     remaining,
     parentSignal,
-    resolveNames,
+    lookupImpl,
   );
   if (master.status !== "ok") {
     return master.result;
@@ -381,7 +570,7 @@ async function probeHlsManifest(
       headers,
       remaining,
       parentSignal,
-      resolveNames,
+      lookupImpl,
     );
     if (variant.status !== "ok") {
       return variant.result;
@@ -400,14 +589,7 @@ async function probeHlsManifest(
   }
 
   const segmentUrl = resolveHlsSegmentUrl(mediaPlaylistUrl, segmentPath);
-  return probeHlsMediaSegment(
-    fetchImpl,
-    segmentUrl,
-    headers,
-    remaining,
-    parentSignal,
-    resolveNames,
-  );
+  return probeHlsMediaSegment(fetchImpl, segmentUrl, headers, remaining, parentSignal, lookupImpl);
 }
 
 async function fetchPlaylistText(
@@ -416,7 +598,7 @@ async function fetchPlaylistText(
   headers: Record<string, string>,
   remaining: () => number,
   parentSignal: AbortSignal | undefined,
-  resolveNames: boolean,
+  lookupImpl: StreamReachabilityLookup | undefined,
 ): Promise<
   | { readonly status: "ok"; readonly text: string }
   | { readonly status: "fail"; readonly result: StreamReachabilityProbeResult }
@@ -437,7 +619,7 @@ async function fetchPlaylistText(
       init: { method: "GET", headers, signal: controller.signal },
       remaining,
       parentSignal,
-      resolveNames,
+      lookupImpl,
     });
     if (outcome.kind === "timeout") {
       return { status: "fail", result: { status: "timeout" } };
@@ -487,7 +669,7 @@ async function probeHlsMediaSegment(
   headers: Record<string, string>,
   remaining: () => number,
   parentSignal: AbortSignal | undefined,
-  resolveNames: boolean,
+  lookupImpl: StreamReachabilityLookup | undefined,
 ): Promise<StreamReachabilityProbeResult> {
   if (parentSignal?.aborted || remaining() <= 0) {
     return { status: "timeout" };
@@ -509,7 +691,7 @@ async function probeHlsMediaSegment(
       },
       remaining,
       parentSignal,
-      resolveNames,
+      lookupImpl,
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {
@@ -574,7 +756,7 @@ async function probeHttpStatus(
     readonly remainingMs: () => number;
     readonly parentSignal?: AbortSignal;
     readonly healthyStatus?: (status: number) => boolean;
-    readonly resolveNames: boolean;
+    readonly lookupImpl?: StreamReachabilityLookup;
   },
 ): Promise<StreamReachabilityProbeResult> {
   if (options.parentSignal?.aborted) {
@@ -601,7 +783,7 @@ async function probeHttpStatus(
       },
       remaining: options.remainingMs,
       parentSignal: options.parentSignal,
-      resolveNames: options.resolveNames,
+      lookupImpl: options.lookupImpl,
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {

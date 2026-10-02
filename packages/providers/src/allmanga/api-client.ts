@@ -17,6 +17,7 @@ import {
 } from "../shared/anime-metadata";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
+import { probeLookupForPort } from "../shared/stream-reachability";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import {
   ALLMANGA_BUILD_ID,
@@ -1641,6 +1642,7 @@ async function fetchM3u8Variants({
     masterUrl: url,
     headers: { Referer: referer, "User-Agent": ua },
     signal,
+    lookupImpl: probeLookupForPort(context.fetch),
   });
   // Dead master host → the `auto` fallback row points at the same dead URL;
   // drop it so upstream failure propagates instead of handing mpv a corpse.

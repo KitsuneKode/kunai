@@ -227,3 +227,18 @@ test("normalizeRelayBaseUrl accepts HTTPS and local HTTP only", () => {
   expect(normalizeRelayBaseUrl("http://127.0.0.1:8787/")).toBe("http://127.0.0.1:8787");
   expect(normalizeRelayBaseUrl("http://relay.example")).toBeUndefined();
 });
+
+test("relay port declares local resolution so stream probes pin DNS", () => {
+  // Stream URLs never match the metadata allowlist — they always take the
+  // direct branch and open local sockets, so the reachability probe treats
+  // this port as a local resolver even though its fetch is wrapped.
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example" },
+    registry,
+    async fetch() {
+      return Response.json({ ok: true });
+    },
+  });
+
+  expect(port.resolvesLocally).toBe(true);
+});

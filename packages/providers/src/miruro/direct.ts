@@ -70,6 +70,7 @@ import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import {
   isStreamReachabilityVerified,
+  probeLookupForPort,
   type StreamReachabilityProbeResult,
 } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
@@ -980,6 +981,7 @@ async function expandMiruroPipeStreams(
         masterUrl: url,
         headers: fetchHeaders,
         signal: combinedSignal,
+        lookupImpl: probeLookupForPort(context?.fetch),
       });
     }),
   );
