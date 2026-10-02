@@ -88,6 +88,7 @@ import {
   getBrowseCommandPaletteMaxVisible,
   getBrowseListMaxVisible,
 } from "./layout-policy";
+import { MouseTarget } from "./mouse/MouseRegions";
 import { OverlayPanel } from "./overlay-panel";
 import { suppressPosterWhileNavigating } from "./poster-types";
 import { computeMediaListRowLayout } from "./primitives/list-row-layout";
@@ -1771,13 +1772,33 @@ export function BrowseShell<T>({
                       columns.push(listRowStatusColumn("♥", 2, palette.accent));
                     }
                     return (
-                      <ListRow
+                      // Mouse: click a row to select it (same as arrowing to
+                      // it); click the already-selected row to submit — the
+                      // terminal-safe "click to open" without timing games.
+                      // Deactivated while an overlay is up so a click on an
+                      // uncovered row can't slip under it.
+                      <MouseTarget
                         key={`${option.label}-${option.detail ?? ""}`}
-                        selected={selected && listFocused}
-                        rowWidth={rowWidth}
-                        flexColumnIndex={browseRowLayout.flexColumnIndex}
-                        columns={columns}
-                      />
+                        id={`browse:row:${optionIndex}`}
+                        active={!activeOverlay}
+                        onClick={() => {
+                          if (!listFocused) {
+                            dispatchFocusZone({ type: "focus-list" });
+                          }
+                          if (optionIndex !== boundedSelectedIndex) {
+                            setSelectedIndex(optionIndex);
+                            return;
+                          }
+                          if (searchState === "ready") onSubmit(option.value);
+                        }}
+                      >
+                        <ListRow
+                          selected={selected && listFocused}
+                          rowWidth={rowWidth}
+                          flexColumnIndex={browseRowLayout.flexColumnIndex}
+                          columns={columns}
+                        />
+                      </MouseTarget>
                     );
                   })}
               {(

@@ -53,6 +53,8 @@ import {
 } from "./interactive-shell-state";
 import { helpSectionsForScope } from "./keybindings";
 import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
+import { MouseSplitStdin } from "./mouse/mouse-stdin";
+import { MouseDispatchProvider, MouseDispatcher } from "./mouse/MouseRegions";
 import {
   createNotificationQueueState,
   NOTIFICATION_TOAST_TTL_MS,
@@ -1264,17 +1266,51 @@ export async function launchSessionApp(container: Container) {
   markInteractiveShellMounted();
   clearShellScreen();
 
-  rootShellInk = render(<AppRoot container={container} />, {
-    exitOnCtrlC: false,
-    alternateScreen: true,
-    // Ink invokes this before writing the frame. The manager defers its paint
-    // to the next task, so sixel lands after the frame rather than inside it.
-    onRender: () => sixelOverlayManager.afterInkRender(),
-  });
+  // Mouse support: a stdin facade sits between the real TTY and Ink. It pumps
+  // real stdin itself (so Ink's readable/read loop is untouched by a second
+  // consumer), splits SGR mouse reports out before Ink's keypress parser can
+  // see them, and dispatches them as semantic pointer events. Keyboard bytes
+  // pass through untouched. Opt-out: KUNAI_NO_MOUSE=1, or any non-TTY/dumb
+  // terminal.
+  const mouseSupported =
+    process.stdin.isTTY === true &&
+    process.env.KUNAI_NO_MOUSE !== "1" &&
+    process.env.TERM !== "dumb";
+  const mouseDispatcher = mouseSupported ? new MouseDispatcher() : null;
+  const mouseStdin = mouseDispatcher ? new MouseSplitStdin(process.stdin, mouseDispatcher) : null;
+  if (mouseStdin) {
+    mouseStdin.attach();
+    mouseStdin.enableTracking();
+    // A hard exit (crash, uncaught signal) would leave the terminal in mouse
+    // tracking mode — the user's shell would get SGR noise on every click.
+    process.once("exit", () => mouseStdin.disableTracking());
+  }
+
+  rootShellInk = render(
+    mouseDispatcher ? (
+      <MouseDispatchProvider dispatcher={mouseDispatcher}>
+        <AppRoot container={container} />
+      </MouseDispatchProvider>
+    ) : (
+      <AppRoot container={container} />
+    ),
+    {
+      exitOnCtrlC: false,
+      alternateScreen: true,
+      // SAFETY: MouseSplitStdin implements the readable/read/setRawMode/isTTY
+      // subset Ink's stdin contract calls — verified against ink 7.x source.
+      stdin: (mouseStdin ?? process.stdin) as NodeJS.ReadStream,
+      // Ink invokes this before writing the frame. The manager defers its paint
+      // to the next task, so sixel lands after the frame rather than inside it.
+      onRender: () => sixelOverlayManager.afterInkRender(),
+    },
+  );
   rootShellExitPromise = rootShellInk.waitUntilExit();
 
   void (async () => {
     await rootShellExitPromise;
+    mouseStdin?.detach();
+    mouseDispatcher?.clear();
     rootShellInk = null;
     rootShellExitPromise = null;
     clearRootContentSession();
