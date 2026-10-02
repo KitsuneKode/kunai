@@ -25,11 +25,8 @@ import { resolveBrowseDestinationLabel, setBrowseDestinationLabel } from "./brow
 import { decideBrowseFilterAction } from "./browse-filter-actions";
 import {
   getLastFilterStateKey,
-  getStructuredFilterChips,
-  nextBrowseEscFilterLayer,
   removeFilterTokenFromQuery,
   shouldResearchAfterFilterChange,
-  stripStructuredFiltersFromQuery,
 } from "./browse-filter-chips";
 import {
   hasBrowseResultFilters,
@@ -52,7 +49,6 @@ import {
 import {
   browseResultStatusLine,
   buildPreviewRailModelFromBrowseOption,
-  filterBrowseOptionsByResultFilter,
   mapPosterPreviewState,
 } from "./browse-preview-rail";
 import {
@@ -63,7 +59,6 @@ import {
 import {
   buildBrowseDetailsSheetSeed,
   formatBrowseShellError,
-  MIN_RESULTS_FOR_LOCAL_FILTER,
   PREVIEW_POSTER_ROWS,
 } from "./browse-shell-view";
 import {
@@ -140,6 +135,7 @@ import {
 } from "./types";
 import { useIdleSurface } from "./use-idle-surface";
 import { usePosterPreview } from "./use-poster-preview";
+import { useResultNarrow } from "./use-result-narrow";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 function clearShellScreen() {
@@ -310,10 +306,7 @@ export function BrowseShell<T>({
   const [emptyMessage, setEmptyMessage] = useState(
     () => initialEmptyMessage ?? browseIdleHint(mode),
   );
-  const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
   const [searchWarnings, setSearchWarnings] = useState<readonly string[]>(initialWarnings ?? []);
-  const [resultFilter, setResultFilter] = useState("");
-  const [filterModeOpen, setFilterModeOpen] = useState(false);
   // Focus zones: query (text) → list (bare hotkeys) → filter (local narrow) → idle.
   // See browse-focus-zone.ts and .docs/ux-architecture.md.
   const [focusZone, setFocusZone] = useState<BrowseFocusZone>(() => {
@@ -434,11 +427,27 @@ export function BrowseShell<T>({
     resetCalendar();
   }, [resetCalendar]);
 
-  const narrowedOptions = useMemo(
-    () => filterBrowseOptionsByResultFilter(options, resultFilter),
-    [options, resultFilter],
-  );
-  const structuredFilterChips = useMemo(() => getStructuredFilterChips(query), [query]);
+  // Local narrowing, provider-filter badges, and the Esc-layer decision. The
+  // shell keeps only what is genuinely its own — selection reset, focus-zone
+  // dispatch, and re-running the search after a chip strip.
+  const narrow = useResultNarrow<T>({
+    options,
+    query,
+    searchState,
+    isCalendarView,
+    ultraCompact: viewport.ultraCompact,
+  });
+  const narrowedOptions = narrow.narrowedOptions;
+  const structuredFilterChips = narrow.structuredFilterChips;
+  const resultFilter = narrow.value;
+  const activeFilterBadges = narrow.badges;
+  // Stable action refs (each is useCallback-memoized in the hook) so memoized
+  // consumers can dep on them directly instead of the hook-returned object.
+  const {
+    clearAll: clearNarrowCluster,
+    clearNarrow: clearNarrowFields,
+    setBadges: setNarrowBadges,
+  } = narrow;
   const calendarOptionsForDay = useCallback(
     (dayKey: string | null): readonly BrowseShellOption<T>[] => {
       const scheduleOptions = narrowedOptions as readonly BrowseShellOption<
@@ -464,13 +473,11 @@ export function BrowseShell<T>({
     setErrorMessage(null);
     setEmptyMessage("Search for a title — or try /trending to see what's popular");
     setResultSubtitle("");
-    setActiveFilterBadges([]);
+    clearNarrowCluster();
     setSearchWarnings([]);
-    setResultFilter("");
-    setFilterModeOpen(false);
     setFocusZone("query");
     leaveCalendarSurface();
-  }, [leaveCalendarSurface]);
+  }, [leaveCalendarSurface, clearNarrowCluster]);
 
   const updateQuery = useCallback(
     (nextValue: string) => {
@@ -519,8 +526,7 @@ export function BrowseShell<T>({
         const filterSuffix = activeBadges.length > 0 ? `  ·  ${activeBadges.join(", ")}` : "";
 
         setLastSearchedQuery(rawQuery);
-        setResultFilter("");
-        setFilterModeOpen(false);
+        clearNarrowFields();
         addSearchQuery(rawQuery);
         setOptions(processed.options);
         setSelectedIndex(0);
@@ -530,7 +536,7 @@ export function BrowseShell<T>({
             ? "No results matched those filters."
             : (response.emptyMessage ?? "No results found."),
         );
-        setActiveFilterBadges(activeBadges);
+        setNarrowBadges(activeBadges);
         setSearchWarnings(response.warnings ?? []);
         setSearchState("ready");
         setFocusZone(processed.options.length > 0 ? "list" : "query");
@@ -545,7 +551,7 @@ export function BrowseShell<T>({
         setEmptyMessage("Search failed.");
       }
     },
-    [query, onSearch, leaveCalendarSurface],
+    [query, onSearch, leaveCalendarSurface, clearNarrowFields, setNarrowBadges],
   );
 
   const clearStructuredFilterChip = useCallback(
@@ -577,7 +583,7 @@ export function BrowseShell<T>({
     setOptions([]);
     setSelectedIndex(0);
     setResultSubtitle("");
-    setActiveFilterBadges([]);
+    narrow.setBadges([]);
     setSearchWarnings([]);
     setFocusZone("query");
     leaveCalendarSurface();
@@ -590,7 +596,7 @@ export function BrowseShell<T>({
       setSelectedIndex(0);
       setResultSubtitle(response.subtitle);
       setEmptyMessage(response.emptyMessage ?? "Trending is unavailable right now.");
-      setActiveFilterBadges([]);
+      narrow.setBadges([]);
       setSearchState("ready");
       setFocusZone(response.options.length > 0 ? "list" : "query");
     } catch (error) {
@@ -616,7 +622,7 @@ export function BrowseShell<T>({
     setOptions([]);
     setSelectedIndex(0);
     setResultSubtitle("");
-    setActiveFilterBadges([]);
+    narrow.setBadges([]);
     setSearchWarnings([]);
     setFocusZone("query");
     leaveCalendarSurface();
@@ -645,7 +651,7 @@ export function BrowseShell<T>({
       setSelectedIndex(0);
       setResultSubtitle(response.subtitle);
       setEmptyMessage(response.emptyMessage ?? "Recommendations are unavailable right now.");
-      setActiveFilterBadges([]);
+      narrow.setBadges([]);
       setSearchState("ready");
       setFocusZone(response.options.length > 0 ? "list" : "query");
 
@@ -848,7 +854,7 @@ export function BrowseShell<T>({
         isCalendarView,
       });
       if (decision.kind === "open-narrow") {
-        setFilterModeOpen(true);
+        narrow.open();
         closePalette();
         setFocusZone("filter");
       }
@@ -898,12 +904,7 @@ export function BrowseShell<T>({
 
   // Local narrow mode only earns space on long result sets. Ctrl+F opens it;
   // /filters opens guided facets via SearchPhase.
-  const showResultFilterBar =
-    searchState === "ready" &&
-    options.length >= MIN_RESULTS_FOR_LOCAL_FILTER &&
-    !isCalendarView &&
-    !viewport.ultraCompact &&
-    (filterModeOpen || resultFilter.length > 0);
+  const showResultFilterBar = narrow.showBar;
 
   focusZoneContextRef.current = {
     hasResults: displayOptions.length > 0,
@@ -1265,7 +1266,7 @@ export function BrowseShell<T>({
       return;
     }
 
-    if (!commandMode && !resultFilterFocused && !filterModeOpen && listFocused) {
+    if (!commandMode && !resultFilterFocused && !narrow.modeOpen && listFocused) {
       const listBinding = resolveKeybinding(["browse"], input, key);
       if (listBinding?.id === "help") {
         onResolve("help");
@@ -1447,29 +1448,28 @@ export function BrowseShell<T>({
         return;
       }
 
-      const escLayer = nextBrowseEscFilterLayer({
-        narrowOpenOrFocused: resultFilterFocused || filterModeOpen,
-        resultFilterNonEmpty: resultFilter.length > 0,
-        structuredChipCount: structuredFilterChips.length,
+      // Layer decision (narrow → chips → query → cancel) is the hook's — it
+      // reads hook state. `narrow` is consumed inside; the rest translate here.
+      const escLayer = narrow.escape({
+        filterFocused: resultFilterFocused,
         queryNonEmpty: query.trim().length > 0,
       });
 
-      if (escLayer === "narrow") {
-        if (resultFilter.length > 0) {
-          setResultFilter("");
-        }
-        setFilterModeOpen(false);
+      if (escLayer.layer === "narrow") {
         dispatchFocusZone({ type: "focus-query" });
         return;
       }
 
-      if (escLayer === "chips") {
-        const plainQuery = stripStructuredFiltersFromQuery(query);
-        setQuery(plainQuery);
+      if (escLayer.layer === "chips") {
+        setQuery(escLayer.plainQuery);
         if (
-          shouldResearchAfterFilterChange({ searchState, lastSearchedQuery, nextQuery: plainQuery })
+          shouldResearchAfterFilterChange({
+            searchState,
+            lastSearchedQuery,
+            nextQuery: escLayer.plainQuery,
+          })
         ) {
-          void runSearch(plainQuery);
+          void runSearch(escLayer.plainQuery);
         }
         dispatchFocusZone({ type: "focus-query" });
         return;
@@ -1480,7 +1480,7 @@ export function BrowseShell<T>({
         return;
       }
 
-      if (escLayer === "query") {
+      if (escLayer.layer === "query") {
         updateQuery("");
         return;
       }
@@ -1610,8 +1610,7 @@ export function BrowseShell<T>({
               label="Narrow results"
               value={resultFilter}
               onChange={(next) => {
-                setResultFilter(next);
-                setFilterModeOpen(true);
+                narrow.type(next);
                 setSelectedIndex(0);
                 dispatchFocusZone({ type: "focus-filter" });
               }}
