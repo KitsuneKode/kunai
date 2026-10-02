@@ -1,7 +1,6 @@
 import type { PlaybackStartupStage } from "@/services/playback/playback-startup-timeline";
 
 import { footerKeyFromBinding, KEYBINDINGS, type KeyBinding } from "./keybindings";
-import { selectFooterActions } from "./shell-primitives";
 import type { FooterAction, LoadingShellState, ShellMode } from "./types";
 
 type LoadingFooterBindingId =
@@ -126,7 +125,9 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
       footerActionFromBinding("player-source", "source", bindings),
       footerActionFromBinding("player-stop", "quit", bindings, { label: "stop" }),
     ];
-    return selectFooterActions(playingFooterActions, state.footerMode ?? "detailed");
+    // Return the raw list — Footer owns the width cap and the +N overflow
+    // count; pre-capping here would hide real keys without naming them.
+    return playingFooterActions;
   }
 
   return [

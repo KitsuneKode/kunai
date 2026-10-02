@@ -15,6 +15,7 @@ import { useCallback, useState } from "react";
 
 import type { ResolvedAppCommand } from "./commands";
 import {
+  describePaletteRefusal,
   getCommandAutocompleteTarget,
   getCommandMatches,
   getHighlightedCommand,
@@ -70,11 +71,7 @@ export function useCommandPalette(options?: { readonly onInputRedraw?: () => voi
         // A disabled highlighted command still consumes the keypress — Enter on a
         // greyed row refuses with a notice, not a fallthrough to the surface beneath.
         if (!resolved?.enabled) {
-          setNotice(
-            resolved
-              ? `can't run — ${resolved.reason ?? "unavailable here"}`
-              : "no command matches that",
-          );
+          setNotice(describePaletteRefusal(resolved));
           return { kind: "consumed" };
         }
         return { kind: "resolved", command: resolved };

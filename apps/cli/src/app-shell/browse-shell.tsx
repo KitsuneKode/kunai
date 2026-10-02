@@ -110,7 +110,7 @@ import {
 import { SakuraLoader } from "./SakuraLoader";
 import { CommandPalette } from "./shell-command-ui";
 import { getCommandLabel, InputField } from "./shell-frame";
-import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
+import { ContextStrip, ResizeBlocker, ShellFooter } from "./shell-primitives";
 import { getWindowStart, measureColumns } from "./shell-text";
 import { palette } from "./shell-theme";
 import {
@@ -2052,12 +2052,6 @@ export function BrowseShell<T>({
             action: "quit",
           },
         ];
-        const visibleBrowseFooterActions = selectFooterActions(
-          allBrowseFooterActions,
-          effectiveFooterMode,
-          viewport.columns,
-          viewport.breakpoint === "narrow" ? 3 : 5,
-        );
         const browseTaskLabel = resolveBrowseDestinationLabel({
           isCalendar: isCalendarView,
           query,
@@ -2071,7 +2065,10 @@ export function BrowseShell<T>({
             taskLabel={browseTaskLabel}
             mode={effectiveFooterMode}
             commandMode={commandMode}
-            actions={visibleBrowseFooterActions}
+            // Raw list + maxVisible: Footer owns the width cap so its +N
+            // overflow chip counts the actions that actually dropped.
+            actions={allBrowseFooterActions}
+            maxVisible={viewport.breakpoint === "narrow" ? 3 : 5}
             terminalWidth={viewport.columns}
           />
         );

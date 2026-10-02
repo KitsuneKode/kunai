@@ -47,6 +47,15 @@ export function getHighlightedCommand(
   return commands.find((command) => command.id === model.selectedOption?.value) ?? null;
 }
 
+// Enter on a disabled or absent command must name the refusal — a silent
+// consume reads as a dead key. Both palette implementations (useShellInput,
+// useCommandPalette) render this same notice until the next keypress.
+export function describePaletteRefusal(resolved: ResolvedAppCommand | null): string {
+  return resolved
+    ? `can't run — ${resolved.reason ?? "unavailable here"}`
+    : "no command matches that";
+}
+
 export function getCommandAutocompleteTarget(
   input: string,
   commands: readonly ResolvedAppCommand[],

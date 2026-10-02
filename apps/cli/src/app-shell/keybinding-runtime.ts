@@ -127,6 +127,8 @@ export function resolvePlaybackBindingEffect(
 
 export function resolvePostPlaybackBindingResult(binding: KeyBinding): PlaybackShellResult | null {
   switch (binding.id) {
+    case "post-quit":
+      return "quit";
     case "post-continue":
       return "next";
     case "post-replay":

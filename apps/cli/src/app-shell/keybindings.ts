@@ -575,7 +575,9 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "post-watchlist",
     chord: { input: "w" },
-    label: "Open your watchlist",
+    // The binding resolves to "bookmark" — it marks the title, it does not
+    // navigate to a watchlist view. The label has to say what the key does.
+    label: "Bookmark this title",
     scope: "postPlayback",
     group: "After playback",
   },

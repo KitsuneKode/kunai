@@ -8,6 +8,7 @@ import { recordInputDrop } from "./diagnostics/render-trace";
 import { routeShellInput } from "./input-router";
 import {
   buildCommandPickerModel,
+  describePaletteRefusal,
   getCommandAutocompleteTarget,
   getHighlightedCommand,
 } from "./shell-command-model";
@@ -81,11 +82,7 @@ export function useShellInput({
           onResolve(toShellAction(resolved.id));
           return;
         }
-        setPaletteNotice(
-          resolved
-            ? `can't run — ${resolved.reason ?? "unavailable here"}`
-            : "no command matches that",
-        );
+        setPaletteNotice(describePaletteRefusal(resolved));
         return;
       }
       setPaletteNotice(null);

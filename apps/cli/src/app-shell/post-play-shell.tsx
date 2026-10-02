@@ -638,7 +638,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
                   "↑↓ move",
                   "↵ select",
                   recommendations.length > 0 ? "1·2·3 picks" : null,
-                  view.nextUpHero ? "x cancel" : null,
+                  view.nextUpHero ? "x stop after" : null,
                   "/ search",
                 ]
                   .filter(Boolean)

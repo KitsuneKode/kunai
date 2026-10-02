@@ -28,7 +28,7 @@ import {
 import { ResumeCard } from "@/app-shell/primitives/ResumeCard";
 import { SectionGroup } from "@/app-shell/primitives/SectionGroup";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
-import { ResizeBlocker, ShellFooter, selectFooterActions } from "@/app-shell/shell-primitives";
+import { ResizeBlocker, ShellFooter } from "@/app-shell/shell-primitives";
 import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
@@ -130,16 +130,14 @@ export function LibraryShell({
         <ShellFooter
           taskLabel={tab === "library" ? "Library" : downloadJobCount > 0 ? "Downloads" : "Queue"}
           mode="minimal"
-          actions={selectFooterActions(
+          actions={
             tab === "library"
               ? libraryFooterActions()
               : downloadQueueFooterActions({
                   hasJobs: downloadJobCount > 0,
                   hasRepairable: repairableJobCount > 0,
-                }),
-            "minimal",
-            viewport.columns,
-          )}
+                })
+          }
           terminalWidth={viewport.columns}
         />
         {tab === "library" ? (
