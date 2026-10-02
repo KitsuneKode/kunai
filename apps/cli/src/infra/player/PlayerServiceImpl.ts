@@ -15,6 +15,7 @@ import {
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
+import { dbg } from "@/logger";
 import { launchMpv, shouldApplyStartAtSeek } from "@/mpv";
 import { formatTimestamp } from "@/services/continuation/history-progress";
 import {
@@ -861,7 +862,16 @@ export class PlayerServiceImpl implements PlayerService {
           },
         }),
       );
-      handler?.({ generation, event });
+      // The app-shell handler is consumer code: a throw must not propagate
+      // back into the socket handler, timer, or continuation that emitted.
+      try {
+        handler?.({ generation, event });
+      } catch (error) {
+        dbg("mpv", "playback-event-consumer-threw", {
+          event: event.type,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     };
   }
 

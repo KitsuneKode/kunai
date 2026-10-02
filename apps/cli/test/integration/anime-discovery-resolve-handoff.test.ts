@@ -33,12 +33,12 @@ const SOLO_LEVELING: SearchResult = {
   episodeCount: 12,
 };
 
-const disposers: Array<() => void> = [];
+const disposers: Array<() => void | Promise<void>> = [];
 const liveProviderTest = process.env.KUNAI_LIVE_PROVIDER_TESTS === "1" ? test : test.skip;
 
-afterEach(() => {
+afterEach(async () => {
   while (disposers.length > 0) {
-    disposers.pop()?.();
+    await disposers.pop()?.();
   }
 });
 

@@ -64,6 +64,14 @@ export type PersistentReadyWorkExecutorDeps = {
   subtitleManager: PersistentSubtitleManager;
   /** False once a replacement cycle has taken over the generation this work belongs to. */
   isGenerationCurrent(generation: PlaybackGeneration): boolean;
+  /**
+   * Deliver a playback event to the listener carried on `options` — contained:
+   * a consumer throw must not abort the remaining ready work.
+   */
+  emitPlaybackEvent(
+    options: { onPlaybackEvent?: (event: PlayerPlaybackEvent) => void },
+    event: PlayerPlaybackEvent,
+  ): void;
 };
 
 export class PersistentReadyWorkExecutor {
@@ -85,8 +93,12 @@ export class PersistentReadyWorkExecutor {
 
     if (!cycle.playerReadyNotified) {
       cycle.playerReadyNotified = true;
-      cycle.onPlaybackEvent?.({ type: "player-ready" });
-      cycle.onPlayerReady?.();
+      this.deps.emitPlaybackEvent(cycle, { type: "player-ready" });
+      try {
+        cycle.onPlayerReady?.();
+      } catch {
+        // Consumer callback failures must not abort the remaining ready work.
+      }
     }
 
     const ipcSession = this.deps.getIpcSession();
@@ -136,7 +148,7 @@ export class PersistentReadyWorkExecutor {
       const seekTarget = live ? undefined : resolvePersistentStartSeekTarget(options, choice);
       if (shouldApplyStartAtSeek(seekTarget) && seekTarget !== undefined) {
         const target = seekTarget;
-        options.onPlaybackEvent?.({ type: "resolving-playback" });
+        this.deps.emitPlaybackEvent(options, { type: "resolving-playback" });
         if (this.deps.getLoadStartAt() !== null && target === this.deps.getLoadStartAt()) {
           this.deps.setCurrentPositionSeconds(target);
           noteTrustedSeek(cycle.stats, target);
@@ -161,16 +173,16 @@ export class PersistentReadyWorkExecutor {
       options.primarySubtitle === initialOptions.primarySubtitle &&
       collectAdditionalSubtitleTracks(options.primarySubtitle, options.subtitleTracks).length === 0
     ) {
-      options.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount: 1 });
-      options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount: 1 });
+      this.deps.emitPlaybackEvent(options, { type: "subtitle-inventory-ready", trackCount: 1 });
+      this.deps.emitPlaybackEvent(options, { type: "subtitle-attached", trackCount: 1 });
     } else {
       await this.deps.subtitleManager.replaceSubtitleInventory(
         ipcSession,
         options.primarySubtitle,
         options.subtitleTracks,
         (trackCount) => {
-          options.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
-          options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
+          this.deps.emitPlaybackEvent(options, { type: "subtitle-inventory-ready", trackCount });
+          this.deps.emitPlaybackEvent(options, { type: "subtitle-attached", trackCount });
         },
         options.subtitleUrlKind,
         isCurrent,

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   clearTmdbSessionCache,
@@ -50,6 +50,13 @@ describe("tmdb proxy search errors", () => {
 
 describe("fetchTmdbJsonCached", () => {
   const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    // hostRetryAfter is module-level and shared across test files: an earlier
+    // file that trips every host leaves this suite's first test with zero
+    // eligible hosts ("no TMDB hosts available"). Clear before, not just after.
+    clearTmdbSessionCache();
+  });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;

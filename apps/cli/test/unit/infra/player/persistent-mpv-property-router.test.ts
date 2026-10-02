@@ -53,6 +53,7 @@ describe("PersistentMpvPropertyRouter", () => {
       handleSegmentSkipProgress: async () => {},
       fireNearEofIfNeeded: () => {},
       observeWatchdog: () => {},
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     router.handlePropertyUpdate({
@@ -84,6 +85,7 @@ describe("PersistentMpvPropertyRouter", () => {
       handleSegmentSkipProgress: async () => {},
       fireNearEofIfNeeded: () => {},
       observeWatchdog: () => {},
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     router.handlePropertyUpdate({
@@ -153,6 +155,7 @@ describe("PersistentMpvPropertyRouter", () => {
       observeWatchdog: (sample) => {
         events.push({ type: "watchdog", positionSeconds: sample.positionSeconds });
       },
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     router.handlePropertyUpdate({ name: "duration", value: 600, observedAt: 1 });
@@ -194,6 +197,7 @@ describe("PersistentMpvPropertyRouter", () => {
       handleSegmentSkipProgress: async () => {},
       fireNearEofIfNeeded: () => {},
       observeWatchdog: () => {},
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     router.handlePropertyUpdate({
@@ -231,6 +235,7 @@ describe("PersistentMpvPropertyRouter", () => {
       handleSegmentSkipProgress: async () => {},
       fireNearEofIfNeeded: () => {},
       observeWatchdog: () => {},
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     router.handlePropertyUpdate({

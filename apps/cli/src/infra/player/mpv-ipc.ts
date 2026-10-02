@@ -24,6 +24,13 @@ export const MPV_OBSERVED_PROPERTIES = [
 
 export const MPV_INITIAL_PROPERTIES = ["playback-time", "duration", "percent-pos"] as const;
 
+/**
+ * Ceiling on the unparsed IPC receive buffer. mpv replies are small JSON
+ * lines; a peer that never emits `\n` would otherwise grow the buffer for the
+ * life of the session. Oversized remainders are dropped, not the connection.
+ */
+const MAX_IPC_UNPARSED_BYTES = 256 * 1024;
+
 type MpvIpcMessage = {
   event?: string;
   name?: string;
@@ -168,6 +175,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
   let closed = false;
   let closePromise: Promise<void> | null = null;
   let bufferValue = "";
+  const utf8Decoder = new TextDecoder();
 
   const drainPending = (error: string) => {
     for (const [requestId, pending] of Array.from(pendingCommands)) {
@@ -190,23 +198,45 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
       open() {},
       data(_socket, data) {
         if (closed) return;
-        bufferValue += data.toString();
+        // Streaming decode keeps a multi-byte UTF-8 character split across two
+        // socket chunks whole — per-chunk toString() would corrupt it into U+FFFD.
+        bufferValue += utf8Decoder.decode(data, { stream: true });
+        // A runaway peer that never terminates a line would grow the buffer
+        // without bound; cap the unparsed remainder and drop it rather than
+        // letting memory climb for the life of the session.
+        const firstNl = bufferValue.indexOf("\n");
+        if (firstNl === -1 && bufferValue.length > MAX_IPC_UNPARSED_BYTES) {
+          bufferValue = "";
+          return;
+        }
         let nl = bufferValue.indexOf("\n");
         while (nl !== -1) {
           const line = bufferValue.slice(0, nl);
           bufferValue = bufferValue.slice(nl + 1);
           const parsed = parseMpvIpcLine(line);
           if (parsed) {
-            dispatchMessage(
-              parsed,
-              requestIds,
-              pendingCommands,
-              options.onPropertyUpdate,
-              options.onEndFile,
-              options.onFileLoaded,
-            );
+            try {
+              dispatchMessage(
+                parsed,
+                requestIds,
+                pendingCommands,
+                options.onPropertyUpdate,
+                options.onEndFile,
+                options.onFileLoaded,
+              );
+            } catch {
+              // Consumer callbacks (property watchers, end-file handlers,
+              // pending resolves) are session-owned code — a throw must not
+              // escape into Bun's socket handler, where it is fatal.
+            }
           }
           nl = bufferValue.indexOf("\n");
+        }
+        // The head check above only fires before the drain; a chunk shaped like
+        // "line\n<huge unterminated tail>" still needs the cap applied to the
+        // remainder the loop leaves behind.
+        if (bufferValue.length > MAX_IPC_UNPARSED_BYTES) {
+          bufferValue = "";
         }
       },
       close(sock) {
@@ -242,6 +272,16 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
     socket.write(buildMpvIpcCommand(command, requestId));
   };
 
+  // Consumer-side observer: a throw here runs inside a timer or a promise
+  // executor — neither is a place a callback may crash the process.
+  const reportCommandResult = (result: MpvIpcCommandResult) => {
+    try {
+      options.onCommandResult?.(result);
+    } catch {
+      // contained
+    }
+  };
+
   return {
     send(command, timeoutMs = 1_000) {
       const requestId = nextRequestId++;
@@ -254,7 +294,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
             error: "session closed",
           };
           resolve(result);
-          options.onCommandResult?.(result);
+          reportCommandResult(result);
           return;
         }
         let settled = false;
@@ -269,7 +309,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
           // The `settled` guard above makes timeout/write-error/response races single-shot.
           // eslint-disable-next-line promise/no-multiple-resolved
           resolve(result);
-          options.onCommandResult?.(result);
+          reportCommandResult(result);
         };
         const timeout = setTimeout(() => {
           finish({ ok: false, command, requestId, error: "timeout" });
