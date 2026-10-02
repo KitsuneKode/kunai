@@ -582,4 +582,42 @@ describe("mpv-stats", () => {
     expect(result.endReason).toBe("error");
     expect(result.watchedSeconds).toBe(600);
   });
+
+  test("external SIGKILL (OOM / kill -9) near the end is an error, not a completed watch", () => {
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    applyObservedPropertySample(stats, {
+      name: "playback-time",
+      value: 1_400,
+      observedAt: 1_000,
+    });
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 1_440,
+      observedAt: 1_010,
+    });
+    // Kernel killed mpv — no kill() call from us, so terminatedByUs is false.
+    recordPlayerExit(stats, { code: null, signal: "SIGKILL", terminatedByUs: false });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("error");
+    expect(result.watchedSeconds).toBe(1_400);
+  });
+
+  test("our own SIGKILL escalation still classifies as quit", () => {
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    applyObservedPropertySample(stats, {
+      name: "playback-time",
+      value: 1_400,
+      observedAt: 1_000,
+    });
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 1_440,
+      observedAt: 1_010,
+    });
+    recordPlayerExit(stats, { code: null, signal: "SIGKILL", terminatedByUs: true });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("quit");
+  });
 });

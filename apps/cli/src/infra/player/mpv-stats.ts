@@ -519,7 +519,8 @@ export function applyEndFileEvent(
 /**
  * Signals that mean mpv faulted rather than being asked to stop. Kill-family
  * signals (SIGTERM/SIGINT/SIGKILL/...) stay "quit" — our own teardown
- * escalates through them.
+ * escalates through them — except SIGKILL we did not send: an external
+ * kill -9 / OOM-kill is a crash, not a quit.
  */
 const PLAYER_CRASH_SIGNALS: ReadonlySet<NodeJS.Signals> = new Set([
   "SIGABRT",
@@ -536,6 +537,12 @@ export function recordPlayerExit(
   exit: {
     code: number | null;
     signal: NodeJS.Signals | null;
+    /**
+     * True when our own teardown sent the terminating signal (proc.kill()).
+     * SIGKILL without it means the OS or another process killed mpv — OOM,
+     * kill -9, cgroup limit — which is a crash-class death, not a quit.
+     */
+    terminatedByUs?: boolean;
   },
 ) {
   state.playerExitCode = exit.code;
@@ -544,9 +551,11 @@ export function recordPlayerExit(
 
   // A player that died abnormally must never be promoted to eof — a crash
   // after a transient eof-reached (keep-open, flaky HLS) is not a completed
-  // watch.
+  // watch. Same for an external SIGKILL: the kernel OOM-killer does not mean
+  // "the user finished watching".
   const exitedAbnormally =
     (exit.signal !== null && PLAYER_CRASH_SIGNALS.has(exit.signal)) ||
+    (exit.signal === "SIGKILL" && exit.terminatedByUs !== true) ||
     (exit.code !== null && exit.code !== 0);
 
   if (

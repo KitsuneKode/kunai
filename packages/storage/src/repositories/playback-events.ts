@@ -4,7 +4,14 @@ import type { MediaKind, ProviderId } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
 
-export type PlaybackEventType = "start" | "progress" | "pause" | "resume" | "seek" | "complete";
+export type PlaybackEventType =
+  | "start"
+  | "progress"
+  | "pause"
+  | "resume"
+  | "seek"
+  | "complete"
+  | "end";
 
 export interface PlaybackEventInput {
   readonly eventType: PlaybackEventType;

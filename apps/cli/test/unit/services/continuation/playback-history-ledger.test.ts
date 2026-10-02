@@ -21,6 +21,7 @@ const CONTEXT = {
 function makeHarness(): {
   ledger: PlaybackHistoryLedger;
   history: HistoryRepository;
+  events: PlaybackEventRepository;
   active: ActivePlaybackCheckpoint;
 } {
   const dir = stores.dir("ledger-discard");
@@ -30,6 +31,7 @@ function makeHarness(): {
   return {
     ledger: new PlaybackHistoryLedger(history, events),
     history,
+    events,
     active: new ActivePlaybackCheckpoint(),
   };
 }
@@ -54,4 +56,24 @@ test("discard is idempotent and clears state even if flush still holds a callbac
   ledger.discard();
   active.flush();
   expect(history.listAllProgress()).toEqual([]);
+});
+
+test("a completed watch writes a 'complete' event", () => {
+  const { ledger, events } = makeHarness();
+  ledger.start(CONTEXT, 0);
+  ledger.onProgress(1400, 1400);
+  ledger.finalize({ positionSeconds: 1400, durationSeconds: 1400, completed: true });
+  const types = events.listByTitle("show-1").map((e) => e.eventType);
+  expect(types).toContain("complete");
+  expect(types).not.toContain("end");
+});
+
+test("a quit/crash finale writes 'end', never 'complete'", () => {
+  const { ledger, events } = makeHarness();
+  ledger.start(CONTEXT, 0);
+  ledger.onProgress(600, 1400);
+  ledger.finalize({ positionSeconds: 600, durationSeconds: 1400, completed: false });
+  const types = events.listByTitle("show-1").map((e) => e.eventType);
+  expect(types).toContain("end");
+  expect(types).not.toContain("complete");
 });
