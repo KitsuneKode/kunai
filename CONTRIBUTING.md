@@ -82,7 +82,7 @@ When reporting a provider breakage, always include:
 - The provider ID (visible in the source picker)
 - Exact command used
 - OS and terminal
-- Output of `/ export-diagnostics` from inside the shell
+- Output of `/export-diagnostics` from inside the shell
 
 ---
 
@@ -140,7 +140,13 @@ See `RELEASING.md` for full release-operator details.
 
 ## Code of conduct
 
-Be direct and kind. Focus feedback on code and behavior, not people. If something isn't working for you in the contribution process, open an issue.
+Be direct and kind. Focus feedback on code and behavior, not people. The full
+community standards and enforcement ladder live in
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). If something isn't working for you in
+the contribution process, open an issue.
+
+Security bugs are the exception to "open an issue" — report them privately per
+[SECURITY.md](SECURITY.md).
 
 ## Terminal demos
 

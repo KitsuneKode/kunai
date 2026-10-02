@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Security vulnerability
+    url: https://github.com/KitsuneKode/kunai/security/advisories/new
+    about: Report a vulnerability privately — do NOT open a public issue for security bugs.
   - name: Discussions
     url: https://github.com/kitsunekode/kunai/discussions
     about: General questions, ideas, and community chat

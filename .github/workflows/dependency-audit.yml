@@ -1,0 +1,32 @@
+name: Dependency audit
+
+# Weekly advisory check: `bun audit` against the committed lockfile, failing on
+# high/critical advisories. Advisory data is a moving target, so this is a
+# scheduled signal rather than a per-PR gate — a new advisory should not block
+# an unrelated PR, but it must surface somewhere visible.
+
+on:
+  schedule:
+    - cron: "41 7 * * 1" # Mondays 07:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: bun audit (high+)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: dep-audit
+
+      - name: Audit dependencies
+        run: bun audit --audit-level=high

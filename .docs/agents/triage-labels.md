@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-03"
+lastReviewed: "2026-10-02"
 ---
 
 # Triage Labels
@@ -18,3 +18,5 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 | `wontfix`         | `wontfix`             | Will not be actioned                     |
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table. Every role maps to a label of the same name here; verified against `gh label list` on 2026-09-03.
+
+Beyond the triage roles, type labels exist alongside them — notably `type:security` ("Security hardening") for non-sensitive hardening issues. Actual vulnerabilities never go through the tracker: they are reported privately via GitHub security advisories (see `SECURITY.md`), so `type:security` is for public-safe work like dependency pinning or header hardening.

@@ -21,7 +21,7 @@ jobs:
     outputs:
       cells: ${{ steps.matrix.outputs.cells }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - name: List and validate registry
         run: |
           bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: installer-matrix-binaries
@@ -107,7 +107,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.validate-registry.outputs.cells) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - name: Download linux binaries
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:

@@ -8,14 +8,14 @@ Diagnostics are local-first. Kunai records enough runtime context to explain fai
 
 ## Quick reference
 
-| Command / flag        | Purpose                                                |
-| --------------------- | ------------------------------------------------------ |
+| Command / flag        | Purpose                                               |
+| --------------------- | ----------------------------------------------------- |
 | `/diagnostics`        | Runtime panel: provider timeline, cache, mpv, network |
-| `/export-diagnostics` | Redacted JSON bundle near cwd                          |
-| `/report-issue`       | GitHub issue flow with bundle guidance                 |
-| `--debug`             | Verbose logging to `./logs.txt`                        |
-| `--debug-json`        | Structured JSONL event stream                          |
-| `--debug-session`     | Full session trace with path printed on stderr         |
+| `/export-diagnostics` | Redacted JSON bundle near cwd                         |
+| `/report-issue`       | GitHub issue flow with bundle guidance                |
+| `--debug`             | Verbose logging to `./logs.txt`                       |
+| `--debug-json`        | Structured JSONL event stream                         |
+| `--debug-session`     | Full session trace with path printed on stderr        |
 
 Launch example:
 
@@ -88,6 +88,12 @@ The flow should:
 4. Open the GitHub issue page with a safe prefilled summary
 
 If browser open fails, Kunai shows the issue URL and local bundle path.
+
+Security issues are different: do **not** file a public issue or include a
+diagnostics bundle publicly. Report privately via a
+[GitHub security advisory](https://github.com/KitsuneKode/kunai/security/advisories/new) —
+see [SECURITY.md](https://github.com/KitsuneKode/kunai/blob/main/SECURITY.md)
+for scope and response expectations.
 
 For developers contributing fixes, also see [Contribute](/docs/developer/contribute).
 

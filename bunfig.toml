@@ -4,3 +4,21 @@
 # node_modules/.bun entries into it — worktrees share one physical copy.
 linker = "isolated"
 globalStore = true
+
+# Supply-chain floor: registry packages must have been published at least 3
+# days ago (seconds). A meaningful share of hijacked releases are caught and
+# yanked inside that window. The @kitsunekode/* platform packages are exempt:
+# they are published by our own release pipeline and can legitimately be
+# minutes old when a fresh install resolves them.
+minimumReleaseAge = 259200
+minimumReleaseAgeExcludes = [
+  "@kitsunekode/kunai",
+  "@kitsunekode/kunai-darwin-arm64",
+  "@kitsunekode/kunai-darwin-x64",
+  "@kitsunekode/kunai-linux-arm64",
+  "@kitsunekode/kunai-linux-arm64-musl",
+  "@kitsunekode/kunai-linux-x64",
+  "@kitsunekode/kunai-linux-x64-musl",
+  "@kitsunekode/kunai-windows-arm64",
+  "@kitsunekode/kunai-windows-x64",
+]
