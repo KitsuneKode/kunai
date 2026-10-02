@@ -56,6 +56,8 @@ export async function extractYtDlpVideoInfo(
     "--no-warnings",
     "--no-playlist",
     ...buildYoutubeYtdlCliArgs(options),
+    // Operand boundary: a watch URL beginning with `-` must not parse as flags.
+    "--",
   ];
   args.push(watchUrl);
 

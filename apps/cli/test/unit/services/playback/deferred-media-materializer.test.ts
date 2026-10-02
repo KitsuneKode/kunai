@@ -68,4 +68,27 @@ describe("deferred media materializer", () => {
     await materialized.cleanup();
     expect(existsSync(materialized.stream.url)).toBe(false);
   });
+
+  test("refuses to write an MPD whose representation targets a private host", async () => {
+    const locator = registerAllMangaAkDeferredDescriptor({
+      duration: 120,
+      video: {
+        url: "http://169.254.169.254/latest/meta-data",
+        mimeType: "video/mp4",
+      },
+      audio: {
+        url: "https://ak-audio.example/audio.mp4?sig=test-audio",
+        mimeType: "audio/mp4",
+      },
+    });
+    const stream: StreamInfo = {
+      url: locator,
+      deferredLocator: locator,
+      headers: {},
+      title: "Ak Test",
+      timestamp: Date.now(),
+    };
+
+    await expect(materializeDeferredMediaForPlayback(stream)).rejects.toThrow("unsafe target");
+  });
 });

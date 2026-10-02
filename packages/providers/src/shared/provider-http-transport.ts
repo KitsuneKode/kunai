@@ -705,6 +705,10 @@ export async function providerFetchText(
     }
     const args = [
       curl.path,
+      // First argv only: curl reads ~/.curlrc unless -q/--disable leads the
+      // command line — a user config could inject proxy/cert flags into
+      // provider fetches. hls-relay.ts documents the same contract.
+      "-q",
       "-s",
       "-A",
       policy.userAgent,

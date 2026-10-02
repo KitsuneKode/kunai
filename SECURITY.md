@@ -61,3 +61,7 @@ For reference, the load-bearing defenses in this codebase:
   paths.
 - Analytics is off unless you explicitly opt in, and sends a hashed install
   id, version, OS, and arch — nothing else.
+- Self-update verifies the downloaded binary against the release's
+  `SHA256SUMS`. Both artifacts come from the same release origin, so the
+  checksum proves transit integrity — GitHub's release integrity is the root
+  of trust, and a fully compromised origin could serve a matching pair.

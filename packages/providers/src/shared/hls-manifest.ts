@@ -1,6 +1,7 @@
 // Pure URL helpers live in core so the CLI mpv relay (infra) can use them too;
 // re-exported here to keep existing @kunai/providers consumers working.
 import { isHlsPlaylistUrl, resolveHlsSegmentUrl } from "@kunai/core";
+import { blockedLiteralTargetReason } from "@kunai/types";
 
 export { isHlsPlaylistUrl, resolveHlsSegmentUrl };
 
@@ -102,4 +103,53 @@ export function shouldMaterializeHlsManifest(manifestUrl: string, manifestText: 
   if (!isHlsPlaylistUrl(manifestUrl)) return false;
   if (!manifestUsesHostRootSegmentPaths(manifestText)) return false;
   return manifestText.length > FFMPEG_HLS_PARTIAL_READ_BYTES || isKnownHostRootHlsCdn(manifestUrl);
+}
+
+/** Schemes embedded URIs may carry; everything else is a fetch primitive on hosts we never vetted. */
+const EMBEDDED_URI_ALLOWED_SCHEMES = new Set(["http:", "https:", "data:"]);
+const URI_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+const URI_ATTRIBUTE_PATTERN = /URI="([^"]+)"/g;
+
+/**
+ * Every URI a fetched manifest tells the player to request — media-segment
+ * lines plus the URI= attributes on #EXT-X-KEY/MAP/MEDIA/I-FRAME-STREAM-INF
+ * tags. mpv fetches these itself at play time, so a poisoned manifest is an
+ * SSRF/file-read primitive regardless of whether we materialize the file.
+ *
+ * Returns the first block reason, or null when every URI is relative
+ * (inherits the already-guarded manifest origin), a public http(s) literal,
+ * or a self-contained `data:` URI (init-segment inlining, the reason ffmpeg's
+ * protocol whitelist carries it).
+ */
+export function blockedHlsManifestUriReason(manifestText: string): string | null {
+  for (const line of manifestText.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("#")) {
+      for (const match of trimmed.matchAll(URI_ATTRIBUTE_PATTERN)) {
+        const uri = match[1];
+        if (uri === undefined) continue;
+        const reason = embeddedHlsUriBlockReason(uri);
+        if (reason !== null) return reason;
+      }
+      continue;
+    }
+    const reason = embeddedHlsUriBlockReason(trimmed);
+    if (reason !== null) return reason;
+  }
+  return null;
+}
+
+function embeddedHlsUriBlockReason(uri: string): string | null {
+  if (uri.startsWith("//")) {
+    // Scheme-relative inherits the manifest's https — the host itself is new.
+    return blockedLiteralTargetReason(`https:${uri}`);
+  }
+  if (!URI_SCHEME_PATTERN.test(uri)) return null;
+  const scheme = uri.slice(0, uri.indexOf(":") + 1).toLowerCase();
+  if (!EMBEDDED_URI_ALLOWED_SCHEMES.has(scheme)) {
+    return `embedded URI scheme ${scheme}`;
+  }
+  if (scheme === "data:") return null;
+  return blockedLiteralTargetReason(uri);
 }

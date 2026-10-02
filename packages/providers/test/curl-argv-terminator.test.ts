@@ -13,7 +13,7 @@ const CURL_ARGV_SITES = [
   // The shared transport assembles the argv for every provider that delegates
   // to it (hianime, animekai, anidb, animegg); miruro still builds its own.
   { file: "src/shared/provider-http-transport.ts", url: "curlTarget" },
-  { file: "src/miruro/direct.ts", url: "url" },
+  { file: "src/miruro/direct.ts", url: "input.target" },
 ] as const;
 
 for (const site of CURL_ARGV_SITES) {

@@ -9,6 +9,7 @@ import {
   type AllMangaAkDeferredDescriptor,
   type AllMangaAkRepresentation,
 } from "@kunai/providers";
+import { blockedLiteralTargetReason } from "@kunai/types";
 
 export type MaterializedDeferredMedia = {
   readonly stream: StreamInfo;
@@ -46,7 +47,31 @@ export async function materializeDeferredMediaForPlayback(
   throw new Error(`Unsupported deferred media locator: ${stream.deferredLocator.split(":")[0]}`);
 }
 
+/**
+ * mpv fetches each <BaseURL> itself — the representation URLs came from
+ * upstream JSON, so they get the same scheme + private-literal boundary as
+ * any other provider-controlled media target before they reach the file.
+ */
+function blockedDeferredRepTargetReason(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "unparseable representation URL";
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return `scheme ${parsed.protocol}`;
+  }
+  return blockedLiteralTargetReason(url);
+}
+
 function buildAllMangaAkMpd(descriptor: AllMangaAkDeferredDescriptor): string {
+  for (const rep of [descriptor.video, descriptor.audio]) {
+    const blocked = blockedDeferredRepTargetReason(rep.url);
+    if (blocked !== null) {
+      throw new Error(`Deferred AllManga Ak media names an unsafe target: ${blocked}`);
+    }
+  }
   const duration =
     Number.isFinite(descriptor.duration) && descriptor.duration
       ? ` mediaPresentationDuration="PT${descriptor.duration}S"`
