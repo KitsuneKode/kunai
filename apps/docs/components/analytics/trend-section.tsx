@@ -1,5 +1,7 @@
 import { TrendSync } from "@/components/analytics/trend-sync";
+import { releaseMarkers } from "@/lib/analytics-derive";
 import type { DocsAnalyticsSeries } from "@/lib/analytics-series";
+import { publishedReleaseNotesArtifacts } from "@/lib/release-notes";
 
 /**
  * The over-time half of the page.
@@ -18,11 +20,21 @@ import type { DocsAnalyticsSeries } from "@/lib/analytics-series";
 export function TrendSection({ series }: { readonly series: DocsAnalyticsSeries | null }) {
   if (!series) return null;
 
+  // Computed on the server so the client chart receives plain data, not the
+  // whole generated release-notes bundle.
+  const releases = releaseMarkers(
+    series.points,
+    publishedReleaseNotesArtifacts().map((release) => ({
+      date: release.date,
+      tag: release.tag,
+    })),
+  );
+
   return (
     <div className="flex flex-col gap-4">
-      <TrendSync series={series} />
+      <TrendSync series={series} releases={releases} />
 
-      <p className="text-muted-foreground m-0 text-xs text-pretty">
+      <p className="text-muted-foreground m-0 text-xs leading-5 text-pretty">
         These counts are anonymous and best-effort. Anyone willing to fake pings can inflate them,
         so read them as a pulse rather than a measurement — Kunai deliberately collects no IP or
         identity that would let it prove otherwise.

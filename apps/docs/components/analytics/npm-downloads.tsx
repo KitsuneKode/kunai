@@ -93,17 +93,25 @@ export function NpmDownloads({ series }: { readonly series: NpmDownloadSeries })
           The table twin rule applies here too: every plotted value is
           reachable as text, so the bars enhance rather than gate.
         */}
-        <table className="sr-only">
-          <caption>npm downloads per UTC day</caption>
-          <tbody>
-            {series.points.map((point) => (
-              <tr key={point.day}>
-                <th scope="row">{point.day}</th>
-                <td>{point.downloads}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/*
+          The visually-hidden class sits on a wrapper, not on the table. A table
+          ignores `width: 1px` and keeps its content width, so `<table class="sr-only">`
+          stayed 320px wide, extended past a 320px phone viewport, and gave the page a
+          horizontal scroll. A block wrapper honours the 1px clip.
+        */}
+        <div className="sr-only">
+          <table>
+            <caption>npm downloads per UTC day</caption>
+            <tbody>
+              {series.points.map((point) => (
+                <tr key={point.day}>
+                  <th scope="row">{point.day}</th>
+                  <td>{point.downloads}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </CardContent>
     </Card>
   );
