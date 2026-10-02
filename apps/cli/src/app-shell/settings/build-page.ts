@@ -1,5 +1,6 @@
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
+import { truncateLine } from "../shell-text";
 import { isSettingVisible } from "./gates";
 import { describeProviderOrder } from "./provider-order";
 import { buildSettingsRegistry } from "./registry";
@@ -45,7 +46,7 @@ function valueSummaryFor(def: SettingRowDef, config: KitsuneConfig): string {
           return "configured";
         }
       }
-      return raw.length > 32 ? `${raw.slice(0, 29)}…` : raw;
+      return truncateLine(raw, 32);
     }
     case "submenu":
       return def.summarize(config);

@@ -60,14 +60,14 @@ function normalizeRailFactValue(sourceLabel: string, value: string): string | nu
 
   if (sourceLabel === "Provider detail page" || sourceLabel === "Release") {
     if (/unavailable|no schedule|did not return/i.test(trimmed)) return null;
-    return trimmed.length > 36 ? truncateLine(trimmed, 34) : trimmed;
+    return truncateLine(trimmed, 34);
   }
 
   if (sourceLabel === "Watch history" || sourceLabel === "Local progress") {
-    return trimmed.length > 32 ? truncateLine(trimmed, 30) : trimmed;
+    return truncateLine(trimmed, 30);
   }
 
-  return trimmed.length > 36 ? truncateLine(trimmed, 34) : trimmed;
+  return truncateLine(trimmed, 34);
 }
 
 function normalizePreviewBadge(badge: string): PreviewRailModel["facts"][number] | null {
@@ -78,7 +78,7 @@ function normalizePreviewBadge(badge: string): PreviewRailModel["facts"][number]
   }
   return {
     label: "Status",
-    value: trimmed.length > 28 ? truncateLine(trimmed, 26) : trimmed,
+    value: truncateLine(trimmed, 26),
     tone: "muted",
   };
 }
@@ -94,7 +94,7 @@ function normalizePreviewNote(note: string): PreviewRailModel["facts"][number] |
   }
   return {
     label: "Hint",
-    value: trimmed.length > 28 ? truncateLine(trimmed, 26) : trimmed,
+    value: truncateLine(trimmed, 26),
     tone: "muted",
   };
 }

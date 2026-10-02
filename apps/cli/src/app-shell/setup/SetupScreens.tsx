@@ -10,6 +10,7 @@ import React from "react";
 
 import { CompanionHost } from "../CompanionHost";
 import { BLOOM_FRAMES, reducedMotionEnabled, STATIC_PETAL } from "../primitives/SakuraPetal";
+import { padColumnsEnd, truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 import type { ScopedDependencyRow } from "./dependency-rows";
 import { ChoiceRow, ScreenTitle, ToggleRow, type FooterKey } from "./SetupFrame";
@@ -40,9 +41,7 @@ function stateColor(state: ScopedDependencyRow["state"]): string {
 
 /** Pads to a fixed cell budget so columns line up and rows never reflow. */
 function pad(value: string, width: number): string {
-  if (value.length === width) return value;
-  if (value.length > width) return `${value.slice(0, Math.max(0, width - 1))}…`;
-  return value.padEnd(width);
+  return padColumnsEnd(truncateLine(value, width), width);
 }
 
 // ─── 1 · Dependencies ─────────────────────────────────────────────────────────

@@ -91,7 +91,13 @@ import { CommandPalette } from "./shell-command-ui";
 import { InputField } from "./shell-frame";
 import { LocalSection, ResizeBlocker, ShellFooter, TransientRowSlot } from "./shell-primitives";
 import { clearShellScreenArtifacts } from "./shell-screen-clear";
-import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
+import {
+  getWindowStart,
+  measureColumns,
+  padColumnsEnd,
+  truncateLine,
+  wrapText,
+} from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import { sixelOverlayManager } from "./sixel-overlay";
 import { PosterOutput } from "./SixelPosterPane";
@@ -681,7 +687,7 @@ export function AppRoot({ container }: { container: Container }) {
         // `detail` already leads with the status for an unavailable provider, so
         // composing it here is what produced "unavailable · unavailable · …".
         const composed = presenceStatusDetail(snapshot.status, snapshot.detail, " · ");
-        const detail = composed.length > 56 ? `${composed.slice(0, 53).trimEnd()}…` : composed;
+        const detail = truncateLine(composed, 56);
         const tone: ShellStatusTone = snapshot.status === "error" ? "error" : "warning";
         setPresenceBootLine({
           text: `Discord presence · ${detail}`,
@@ -1602,7 +1608,7 @@ function ListShell<T>({
                           ? palette.warnDim
                           : palette.dim;
                   const secondary = option.detail
-                    ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - option.label.length - 4))}`
+                    ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - measureColumns(option.label) - 4))}`
                     : "";
                   const rowText = truncateLine(`${option.label}${secondary}`, rowWidth - 2);
                   const highlighted = selected && !option.disabled;
