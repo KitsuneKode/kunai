@@ -26,18 +26,25 @@ import {
   splitMouseSequences,
 } from "./terminal-mouse";
 
+/** The byte shapes a Node readable stdin can hand us once encoding is off. */
+type StdinChunk = string | Buffer | Uint8Array;
+
 type StdinLike = EventEmitter & {
-  read(): unknown;
+  read(): StdinChunk | null;
   setEncoding(encoding: BufferEncoding): void;
   setRawMode?(mode: boolean): void;
   isTTY?: boolean;
   ref?(): void;
   unref?(): void;
-  unshift?(chunk: unknown): void;
+  unshift?(chunk: StdinChunk): void;
   pause?(): void;
   resume?(): void;
   isPaused?(): boolean;
 };
+
+function chunkToText(chunk: StdinChunk): string {
+  return chunk instanceof Uint8Array ? chunk.toString("utf8") : chunk;
+}
 
 const PENDING_TAIL_LIMIT = 64;
 
@@ -88,8 +95,8 @@ export class MouseSplitStdin extends EventEmitter {
 
   // -- Input side: one source chunk → mouse events + clean-byte queue --------
 
-  private ingest(chunk: unknown): void {
-    const text = typeof chunk === "string" ? chunk : (chunk as Buffer).toString("utf8");
+  private ingest(chunk: StdinChunk): void {
+    const text = chunkToText(chunk);
     const { input, events, pendingTail } = splitMouseSequences(this.pendingTail + text);
     if (input.length > 0) {
       this.buffer.push(input);
@@ -134,9 +141,9 @@ export class MouseSplitStdin extends EventEmitter {
   }
 
   /** Ink pushes bytes back (e.g. kitty-protocol leftovers). Re-queue them. */
-  unshift(chunk: unknown): void {
+  unshift(chunk: StdinChunk | null | undefined): void {
     if (chunk === undefined || chunk === null) return;
-    this.buffer.unshift(typeof chunk === "string" ? chunk : (chunk as Buffer).toString("utf8"));
+    this.buffer.unshift(chunkToText(chunk));
     this.emit("readable");
   }
 
