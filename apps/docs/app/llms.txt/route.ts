@@ -33,6 +33,7 @@ export async function GET() {
     ),
     `- [Feedback](${docsSiteUrl}/feedback): File bugs, provider issues, and feature requests on GitHub`,
     `- [Usage analytics](${docsSiteUrl}/analytics): Public usage pulse and opt-in rules`,
+    `- [Privacy](${docsSiteUrl}/privacy): What leaves your machine, site telemetry, and third parties`,
     "",
   ];
 
