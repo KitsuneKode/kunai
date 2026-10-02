@@ -9,7 +9,7 @@
 
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
-import { providerFetch, ProviderHttpError } from "../runtime/fetch";
+import { providerFetch, ProviderHttpError, providerHttpErrorForStatus } from "../runtime/fetch";
 import { type CurlEnvironment } from "../shared/curl-impersonate";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import {
@@ -252,7 +252,12 @@ export async function hianimeFetchText(
     extraHeaders: options.extraHeaders,
     maxTimeSec: options.maxTimeSec,
     curlEnvironment: hianimeCurlEnvironmentForTests,
-    blockedError: (impersonated) => new Error(cloudflareBlockMessage(impersonated)),
+    blockedError: (impersonated) =>
+      providerHttpErrorForStatus({
+        status: 403,
+        providerId: HIANIME_PROVIDER_ID,
+        message: cloudflareBlockMessage(impersonated),
+      }),
   });
 }
 
