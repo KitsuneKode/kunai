@@ -28,6 +28,7 @@ import {
 } from "../shared/hls-ladder";
 import { readJsonObjectBody } from "../shared/json-body";
 import { ProviderQueryCache } from "../shared/provider-query";
+import { sleepMs } from "../shared/timeout-signal";
 import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
 
 export { VIDLINK_PROVIDER_ID };
@@ -372,7 +373,7 @@ async function fetchVidlinkApi(
       }
       if (attempt < maxAttempts && response.status >= 500 && !signal?.aborted) {
         lastError = error;
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        if (!(await sleepMs(500, signal))) throw signal?.reason ?? error;
         continue;
       }
       throw error;
@@ -386,7 +387,7 @@ async function fetchVidlinkApi(
       }
       if (attempt >= maxAttempts || signal?.aborted) throw error;
       lastError = error instanceof Error ? error : new Error(String(error));
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (!(await sleepMs(500, signal))) throw signal?.reason ?? lastError;
     }
   }
   throw lastError ?? new Error("VidLink API fetch failed");
@@ -461,7 +462,7 @@ async function encryptTmdbId(
         }
         lastError = error instanceof Error ? error : new Error(String(error));
         if (attempt < maxAttempts && !signal?.aborted) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          if (!(await sleepMs(500, signal))) throw signal?.reason ?? lastError;
         }
       }
     }

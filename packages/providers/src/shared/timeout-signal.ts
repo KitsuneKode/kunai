@@ -43,3 +43,29 @@ export function combineAbortSignalsManually(signals: readonly AbortSignal[]): Ab
   }
   return controller.signal;
 }
+
+/**
+ * A backoff the caller can cancel. A bare `setTimeout` holds the delay past
+ * an abort, so quitting mid-retry still waits out the sleep while every other
+ * lane has already given up. Resolves false on abort — the caller breaks out
+ * of its retry loop without needing a throw path.
+ */
+export function sleepMs(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted === true) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(true);
+    }, ms);
+    timer.unref?.();
+    const onAbort = () => {
+      cleanup();
+      resolve(false);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}

@@ -67,6 +67,32 @@ export { RIVESTREAM_PROVIDER_ID };
 export const RIVESTREAM_REFERER = "https://www.rivestream.app/";
 export const RIVESTREAM_API_BASE = "https://www.rivestream.app/api/backendfetch";
 
+/** Sources × HLS probes is a socket fan-out; keep the burst small so one
+ * resolve cannot starve sibling candidates on a thin link. */
+const RIVESTREAM_EXPAND_CONCURRENCY = 4;
+
+/** Preserve order and results like `Promise.all(items.map(fn))`, but never
+ * run more than `limit` `fn`s at once. */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      const item = items[index];
+      if (item === undefined) break;
+      results[index] = await fn(item);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -1011,9 +1037,14 @@ async function resolveRivestreamProviderCandidate({
 
   // Expand HLS masters into per-rendition rows so the Tracks panel shows the
   // real ladder (360p/720p/…) instead of a single `auto` row — and a dead
-  // master host drops out here instead of failing in mpv.
-  const expandedSources = await Promise.all(
-    rawSources.map(async (source) => {
+  // master host drops out here instead of failing in mpv. Bounded fan-out:
+  // every source × every probe is a socket, and the API can hand back a dozen
+  // mirrors — on a thin link an unbounded Promise.all turns one resolve into
+  // a burst that starves every sibling candidate.
+  const expandedSources = await mapWithConcurrency(
+    rawSources,
+    RIVESTREAM_EXPAND_CONCURRENCY,
+    async (source) => {
       if (!source.url || !source.url.includes(".m3u8")) {
         return { source, variants: null as readonly HlsLadderVariant[] | null };
       }
@@ -1038,7 +1069,7 @@ async function resolveRivestreamProviderCandidate({
             ? inventory.variants
             : (null as readonly HlsLadderVariant[] | null),
       };
-    }),
+    },
   );
 
   for (const { source, variants: ladder } of expandedSources) {
