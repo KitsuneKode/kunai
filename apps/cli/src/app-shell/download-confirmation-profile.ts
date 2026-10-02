@@ -1,11 +1,9 @@
-// =============================================================================
-// download-confirmation-profile.ts — pure edit policy for a download
+// Pure edit policy for a download
 // confirmation draft.
 //
 // Kept separate from both the phase and the shell so either can import it
 // without creating a shell↔phase cycle. It owns only "what does this edit do to
 // the draft"; mounting, rendering and committing live elsewhere.
-// =============================================================================
 
 import { AUDIO_SETTINGS_OPTIONS } from "@/app-shell/settings/registry/shared";
 import type { DownloadConfirmationProfile } from "@/services/download/DownloadIntentService";

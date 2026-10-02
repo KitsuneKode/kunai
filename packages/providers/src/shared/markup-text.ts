@@ -1,5 +1,4 @@
-// =============================================================================
-// markup-text.ts — turning fetched provider markup into text that is safe to
+// Turning fetched provider markup into text that is safe to
 // print to a terminal.
 //
 // Every helper here exists because the naive one-liner is wrong in a way that
@@ -7,7 +6,6 @@
 // quadratic time, a tag strip that leaves `<script` behind, an entity decoder
 // that mints a raw ESC byte into a string headed for stdout. Scraped HTML and
 // scraped XML have the same problem, so they share one implementation.
-// =============================================================================
 
 /**
  * Removes `<script>…</script>` spans by scanning, not by regex.

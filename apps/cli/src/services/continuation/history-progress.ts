@@ -1,9 +1,7 @@
-// =============================================================================
-// history-progress.ts — finished-state authority + timestamp formatting
+// Finished-state authority + timestamp formatting
 //
 // Single authority for "is this episode finished" over the canonical
 // HistoryProgress row. Replaces the lossy facade-era isFinished.
-// =============================================================================
 
 import { isAnimeOnlyProviderId } from "@/domain/media/content-kind";
 import type { ContentType, ProviderLane } from "@/domain/types";

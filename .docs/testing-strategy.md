@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-02"
 ---
 
 # Kunai — Testing Strategy
@@ -262,7 +262,6 @@ added the following tests and removed the following dead tests.
 | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/cli/test/unit/app-shell/render-capture.test.tsx` (extended)       | `render()` + `simulateTicks()` + `act()` wiring; the previous real-time `countCommits(Flickering)` test was timing-dependent, replaced with a deterministic 6-commit assertion.                                   |
 | `apps/cli/test/unit/app-shell/input-router.useinput.test.tsx`           | First test to drive `useInput` through the harness. Asserts the router wires through correctly: Ctrl+C → hard-global, `/` in command-palette context → palette, `/` in text-input context → open-command-palette. |
-| `apps/cli/test/unit/app-shell/dot-matrix-loader.test.tsx` (rewritten)   | Loader animation is interval-driven; replaced the real-time assertion with `simulateTicks` so the commit count is exact.                                                                                          |
 | `apps/cli/test/unit/main-args.test.ts` (extended)                       | `--jump` / `--quick` / `-q` / `--continue` / `--history` / `--offline` parsing and invalid-input fallthrough.                                                                                                     |
 | `apps/cli/test/unit/app-shell/help-overlay.test.tsx`                    | The "no-drift" contract from `keybindings.ts:7-9`: every live binding label is rendered in some tab, no hard-coded copy can reappear, and `HELP_TABS` matches the registry order.                                 |
 | `apps/cli/test/unit/app-shell/post-play-h.useinput.test.tsx`            | P0-2 regression: `h` from the post-play surface routes to `onResolve("history")`; Ctrl+H does not; overlay-blocked `h` is dropped.                                                                                |

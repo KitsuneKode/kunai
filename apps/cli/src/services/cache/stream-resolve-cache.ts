@@ -1,9 +1,7 @@
-// =============================================================================
 // Stream resolve cache keys
 //
 // Single place for SQLite stream cache preimages used by playback and browser
 // scrape paths so providers do not duplicate keying policy.
-// =============================================================================
 
 import type { TitleInfo, EpisodeInfo, ShellMode } from "@/domain/types";
 import type { CoreProviderManifest } from "@kunai/core";

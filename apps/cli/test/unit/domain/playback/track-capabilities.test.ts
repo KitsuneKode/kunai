@@ -20,7 +20,6 @@ import type {
   PlaybackSourceInventoryView,
   PlaybackSubtitleOptionView,
 } from "@/services/playback/PlaybackSourceInventoryView";
-import type { ProviderId } from "@kunai/types";
 
 const PROVIDER = "vidking";
 

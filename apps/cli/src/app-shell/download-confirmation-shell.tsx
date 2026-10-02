@@ -1,5 +1,4 @@
-// =============================================================================
-// download-confirmation-shell.tsx — one mounted download confirmation.
+// One mounted download confirmation.
 //
 // The previous implementation re-opened a fresh picker on every edit through a
 // `while (true)` loop. Each pass mounted a new component, so the title poster
@@ -7,7 +6,6 @@
 // image visibly flickered every time you cycled quality. Mounting once and
 // keeping the draft in local state removes that entirely: the poster request
 // key depends on the title and fixed geometry, never on profile state.
-// =============================================================================
 
 import type { Container } from "@/container";
 import { isTitleLevelContent } from "@/domain/media/content-kind";

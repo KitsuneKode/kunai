@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { RecoveryMode } from "@/domain/recovery/RecoveryPolicy";
 import { planProviderCandidates } from "@/services/playback/ProviderCandidatePlanner";
-import type { MediaKind, ProviderHealth, ProviderId } from "@kunai/types";
+import type { MediaKind, ProviderHealth } from "@kunai/types";
 
 describe("ProviderCandidatePlanner", () => {
   const now = () => new Date("2026-06-23T12:00:00.000Z");

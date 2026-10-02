@@ -1,5 +1,4 @@
-// =============================================================================
-// HistoryMetadataHealer.ts — best-effort self-healing of history metadata
+// Best-effort self-healing of history metadata
 //
 // Resolves catalog metadata (title, poster, external IDs) for history titles that were
 // stored without it and backfills the rows. Once external IDs exist, the normal
@@ -7,7 +6,6 @@
 // turn lets the history bucket classifier recognise finished series as completed
 // instead of stranding them in "continue". IO is delegated to a resolver port so
 // the orchestration stays pure-testable.
-// =============================================================================
 
 import { looksLikeOpaqueProviderNativeId, mergeProviderNativeId } from "@kunai/core";
 import type { HistoryProgress } from "@kunai/storage";

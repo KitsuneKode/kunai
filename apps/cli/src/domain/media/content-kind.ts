@@ -1,12 +1,10 @@
-// =============================================================================
-// content-kind.ts — identity (anime vs series vs movie vs video) is separate
+// Identity (anime vs series vs movie vs video) is separate
 // from structure (does this title have an episode axis?).
 //
 // ContentKind is the badge, history stamp, and language profile. ContentType
 // (`title.type`) is whether season/episode chrome is product-visible. An anime
 // theatrical film is kind "anime" and type "movie": `@ anime`, runtime, no S/E.
 // ShellMode is provider routing only and must never decide either axis.
-// =============================================================================
 
 import type { ContentType, ShellMode, TitleInfo } from "@/domain/types";
 import type { MediaLanguageProfile } from "@/services/persistence/ConfigService";
