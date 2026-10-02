@@ -9,7 +9,6 @@ import { useCommandPalette } from "@/app-shell/use-command-palette";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { FilterStateKey } from "@/domain/search/SearchIntent";
 import type { SearchResult, ShellMode } from "@/domain/types";
-import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, useInput } from "ink";
 import React, {
@@ -51,16 +50,8 @@ import {
   buildPreviewRailModelFromBrowseOption,
   mapPosterPreviewState,
 } from "./browse-preview-rail";
-import {
-  isQueryDirty,
-  normalizeBrowseCommandInput,
-  resolveDetailsOverlaySubmitValue,
-} from "./browse-search-state";
-import {
-  buildBrowseDetailsSheetSeed,
-  formatBrowseShellError,
-  PREVIEW_POSTER_ROWS,
-} from "./browse-shell-view";
+import { isQueryDirty, normalizeBrowseCommandInput } from "./browse-search-state";
+import { formatBrowseShellError, PREVIEW_POSTER_ROWS } from "./browse-shell-view";
 import {
   CalendarDayStrip,
   CalendarScheduleRow,
@@ -82,13 +73,11 @@ import { sortCalendarOptions } from "./calendar-view";
 import type { ResolvedAppCommand } from "./commands";
 import { DetailsSheetUI } from "./details-pane-ui";
 import {
-  buildBrowseDetailsPanel,
   buildDetailsPanelDataFromBrowseOption,
   buildDetailsSheetLines,
   resolveBrowseDetailsSecondary,
   type DetailsPanelData,
 } from "./details-panel";
-import { buildDetailsSheet } from "./details-sheet.model";
 import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { deleteAllKittyImages } from "./image-pane";
@@ -99,7 +88,6 @@ import {
   getBrowseCommandPaletteMaxVisible,
   getBrowseListMaxVisible,
 } from "./layout-policy";
-import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { suppressPosterWhileNavigating } from "./poster-types";
 import { computeMediaListRowLayout } from "./primitives/list-row-layout";
@@ -133,6 +121,7 @@ import {
   type BrowseShellSearchResponse,
   type ShellAction,
 } from "./types";
+import { useBrowseOverlay } from "./use-browse-overlay";
 import { useIdleSurface } from "./use-idle-surface";
 import { usePosterPreview } from "./use-poster-preview";
 import { useResultNarrow } from "./use-result-narrow";
@@ -290,7 +279,7 @@ export function BrowseShell<T>({
     [],
   );
   const commandEditor = commandPalette.editor;
-  const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
+
   const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>(initialResults ?? []);
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
   const [resultSubtitle, setResultSubtitle] = useState(initialResultSubtitle ?? "");
@@ -333,15 +322,13 @@ export function BrowseShell<T>({
       ),
     });
   });
-  /** Zone to restore when closing browse-local overlays (details). */
-  const focusZoneBeforeOverlayRef = useRef<BrowseFocusZone | null>(null);
+
   const focusZoneContextRef = useRef<BrowseFocusZoneContext>({
     hasResults: false,
     hasFilterBar: false,
     canFocusIdle: false,
   });
   const searchRequestGateRef = useRef(createLatestRequestGate());
-  const detailRequestGateRef = useRef(createLatestRequestGate());
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -448,6 +435,13 @@ export function BrowseShell<T>({
     clearNarrow: clearNarrowFields,
     setBadges: setNarrowBadges,
   } = narrow;
+
+  // Details overlay: the hook owns overlay state, the focus-zone stash, the
+  // detail-fetch gate, and overlay key choreography; the shell translates the
+  // returned intents into its own focus/callback actions.
+  const overlay = useBrowseOverlay<T>({ mode });
+  const activeOverlay = overlay.current;
+  const { openDetails } = overlay;
   const calendarOptionsForDay = useCallback(
     (dayKey: string | null): readonly BrowseShellOption<T>[] => {
       const scheduleOptions = narrowedOptions as readonly BrowseShellOption<
@@ -687,18 +681,6 @@ export function BrowseShell<T>({
     }
   };
 
-  const closeOverlay = () => {
-    detailRequestGateRef.current.invalidate();
-    setActiveOverlay(null);
-    const restore = focusZoneBeforeOverlayRef.current;
-    focusZoneBeforeOverlayRef.current = null;
-    if (restore) {
-      setFocusZone(restore);
-    } else if (options.length > 0) {
-      setFocusZone("list");
-    }
-  };
-
   useEffect(() => {
     if (displayOptions.length === 0) {
       setSelectedIndex(0);
@@ -748,65 +730,16 @@ export function BrowseShell<T>({
   // navigating. Used to suppress the heavy poster block from intermediate frames.
   const navigating = selectedOption !== settledOption;
 
+  // Thin shell-side wrapper: resolve the default option, own the palette
+  // close, then hand the rest to the hook (stash → seed → open → gap-fill).
   const openDetailsOverlay = useCallback(
     (option?: BrowseShellOption<T>) => {
       const resolved = option ?? selectedOption;
       if (!resolved) return;
-      const detailRequestId = detailRequestGateRef.current.begin();
-      const panel = buildBrowseDetailsPanel(resolved);
       closePalette();
-      focusZoneBeforeOverlayRef.current = focusZone;
-      // Keep list ownership under the sheet so close restores the highlighted row,
-      // not a forced dump into the search field.
-
-      const seed = buildBrowseDetailsSheetSeed(resolved);
-      const value = resolved.value as unknown as Partial<SearchResult>;
-      const titleId = typeof value?.id === "string" ? value.id : undefined;
-      const cached = titleId ? (peekTitleDetail(titleId, seed.type) ?? null) : null;
-
-      setActiveOverlay({
-        type: "details",
-        title: panel.title,
-        subtitle: panel.subtitle,
-        lines: [],
-        sheet: buildDetailsSheet({ seed, detail: cached, history: null, availability: null }),
-        seasonsExpanded: false,
-        imageUrl: panel.imageUrl,
-        loading: false,
-        scrollIndex: 0,
-      });
-
-      // Gap-fill only when cold (peek miss); the fetch rides the shared TMDB cache.
-      if (titleId && !cached) {
-        void (async () => {
-          try {
-            const detail = await fetchTitleDetail(titleId, seed.type, undefined, {
-              externalIds: value?.externalIds,
-              isAnime: mode === "anime" || value?.isAnime === true,
-            });
-            setActiveOverlay((current) =>
-              detailRequestGateRef.current.isCurrent(detailRequestId) &&
-              current &&
-              current.type === "details"
-                ? {
-                    ...current,
-                    sheet: buildDetailsSheet({
-                      seed,
-                      detail,
-                      history: null,
-                      availability: null,
-                      seasonsExpanded: current.seasonsExpanded,
-                    }),
-                  }
-                : current,
-            );
-          } catch {
-            // best-effort; the seeded header/synopsis stay, skeletons resolve to "—"
-          }
-        })();
-      }
+      openDetails(resolved, { focusZone });
     },
-    [selectedOption, mode, focusZone, closePalette],
+    [selectedOption, focusZone, closePalette, openDetails],
   );
 
   const runMutationWithFeedback = useCallback(
@@ -1157,82 +1090,57 @@ export function BrowseShell<T>({
     }
 
     if (activeOverlay) {
-      if (input === "/") {
-        return;
+      // The hook owns the overlay-side decisions (close/scroll/sheet toggles);
+      // intents that need shell props or focus come back translated here.
+      const intent = overlay.handleKey(input, key, {
+        selectedOption,
+        searchReady: searchState === "ready",
+      });
+      switch (intent.kind) {
+        case "closed": {
+          if (intent.restoreTo) {
+            setFocusZone(intent.restoreTo);
+          } else if (options.length > 0) {
+            setFocusZone("list");
+          }
+          return;
+        }
+        case "submit":
+          onSubmit(intent.value);
+          return;
+        case "trailer":
+          onPlayTrailer?.(intent.url);
+          return;
+        case "link":
+          onOpenLink?.(intent.url);
+          return;
+        case "watchlist":
+          if (selectedOption && onWatchlistSelected) {
+            runMutationWithFeedback(
+              () => onWatchlistSelected(selectedOption.value),
+              `Watchlisted ${selectedOption.label}`,
+              "Could not watchlist",
+            );
+          }
+          return;
+        case "queue":
+          if (selectedOption && onQueueSelected) {
+            runMutationWithFeedback(
+              () => onQueueSelected(selectedOption.value),
+              `Queued ${selectedOption.label}`,
+              "Could not queue",
+            );
+          }
+          return;
+        case "download":
+          if (selectedOption) {
+            onResolve("download", selectedOption.value);
+          }
+          return;
+        default:
+          // "consumed" / "ignored" — the overlay owns every keypress while open.
+          return;
       }
-
-      if (key.escape) {
-        closeOverlay();
-        return;
-      }
-
-      if (key.return && activeOverlay.type === "details") {
-        const value = resolveDetailsOverlaySubmitValue({
-          detailsOpen: true,
-          searchReady: searchState === "ready",
-          selectedOption,
-        });
-        if (value !== null) {
-          onSubmit(value);
-        }
-        return;
-      }
-
-      if (activeOverlay.type === "details" && activeOverlay.sheet) {
-        if (input.toLowerCase() === "s") {
-          setActiveOverlay((current) =>
-            current && current.type === "details"
-              ? { ...current, seasonsExpanded: !current.seasonsExpanded }
-              : current,
-          );
-          return;
-        }
-        if (input.toLowerCase() === "t" && activeOverlay.sheet.trailerUrl) {
-          onPlayTrailer?.(activeOverlay.sheet.trailerUrl);
-          return;
-        }
-        if (input.toLowerCase() === "l" && activeOverlay.sheet.links.items[0]) {
-          onOpenLink?.(activeOverlay.sheet.links.items[0].url);
-          return;
-        }
-        // Actions advertised in the sheet footer, dispatched against the highlighted row.
-        if (input.toLowerCase() === "w" && selectedOption && onWatchlistSelected) {
-          runMutationWithFeedback(
-            () => onWatchlistSelected(selectedOption.value),
-            `Watchlisted ${selectedOption.label}`,
-            "Could not watchlist",
-          );
-          return;
-        }
-        if (input.toLowerCase() === "q" && selectedOption && onQueueSelected) {
-          runMutationWithFeedback(
-            () => onQueueSelected(selectedOption.value),
-            `Queued ${selectedOption.label}`,
-            "Could not queue",
-          );
-          return;
-        }
-        if (input.toLowerCase() === "d" && selectedOption && searchState === "ready") {
-          onResolve("download", selectedOption.value);
-          return;
-        }
-      }
-
-      if (activeOverlay.type === "episode-picker") {
-        return;
-      }
-
-      if ("lines" in activeOverlay && (key.upArrow || key.downArrow) && !activeOverlay.loading) {
-        if (activeOverlay.lines.length === 0) {
-          return;
-        }
-        const maxScroll = Math.max(0, activeOverlay.lines.length - 1);
-        const nextScroll = key.upArrow
-          ? Math.max(0, (activeOverlay.scrollIndex ?? 0) - 1)
-          : Math.min(maxScroll, (activeOverlay.scrollIndex ?? 0) + 1);
-        setActiveOverlay({ ...activeOverlay, scrollIndex: nextScroll });
-      }
-      return;
     }
 
     if (commandMode) {
