@@ -139,7 +139,8 @@ function ActionRows({
   return (
     <Box flexDirection="column" marginTop={1}>
       {actions.map((action, idx) => {
-        const isSelected = idx === safeSelectedIndex;
+        const actionable = action.selectable !== false;
+        const isSelected = actionable && idx === safeSelectedIndex;
         const shortcut = padColumnsEnd(` [${action.shortcut}]`, shortcutWidth);
         const label = padColumnsEnd(truncateLine(action.label, labelWidth), labelWidth);
         return (
@@ -147,7 +148,10 @@ function ActionRows({
             <Text color={isSelected ? palette.accent : palette.dim}>
               {isSelected ? "▌ " : "  "}
             </Text>
-            <Text color={isSelected ? palette.text : palette.textDim} bold={isSelected}>
+            <Text
+              color={isSelected ? palette.text : actionable ? palette.textDim : palette.muted}
+              bold={isSelected}
+            >
               {label}
             </Text>
             {detailWidth > 0 ? (
@@ -634,7 +638,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
                   "↑↓ move",
                   "↵ select",
                   recommendations.length > 0 ? "1·2·3 picks" : null,
-                  view.nextUpHero ? "x cancel" : null,
+                  view.nextUpHero ? "x stop after" : null,
                   "/ search",
                 ]
                   .filter(Boolean)

@@ -32,4 +32,4 @@
  │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
  └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
                                                                                                    │
- ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   x cancel   ·   / search                            │
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   x stop after   ·   / search                        │

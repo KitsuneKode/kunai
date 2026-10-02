@@ -1683,6 +1683,7 @@ function ListShell<T>({
             subtitle.split("\n").length,
           )}
           width={innerWidth}
+          notice={commandPalette.notice}
         />
       ) : null}
       <ShellFooter

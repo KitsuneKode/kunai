@@ -22,6 +22,14 @@ const COMMANDS: readonly ResolvedAppCommand[] = [
     description: "Open source picker",
     enabled: true,
   },
+  {
+    id: "watchlist",
+    label: "Watchlist",
+    aliases: ["watchlist"],
+    description: "Open watchlist",
+    enabled: false,
+    reason: "sign in first",
+  },
 ];
 
 function ShellInputProbe({
@@ -36,14 +44,19 @@ function ShellInputProbe({
     exposeSetLocked(setLocked);
   }, [exposeSetLocked]);
 
-  const { commandMode } = useShellInput({
+  const { commandMode, paletteNotice } = useShellInput({
     footerActions: FOOTER_ACTIONS,
     commands: COMMANDS,
     disabled: locked,
     onResolve,
   });
 
-  return <Text>{`${locked ? "locked" : "unlocked"}:${commandMode ? "command" : "normal"}`}</Text>;
+  return (
+    <Text>
+      {`${locked ? "locked" : "unlocked"}:${commandMode ? "command" : "normal"}`}
+      {paletteNotice ? `|${paletteNotice}` : ""}
+    </Text>
+  );
 }
 
 describe("useShellInput command mode lock transitions", () => {
@@ -73,6 +86,35 @@ describe("useShellInput command mode lock transitions", () => {
     handle.stdin.enqueue("o");
 
     expect(seen).toEqual(["source"]);
+    handle.unmount();
+  });
+
+  test("Enter on a disabled command names the refusal until the next keypress", () => {
+    const seen: ShellAction[] = [];
+    const handle = render(
+      <ShellInputProbe onResolve={(action) => seen.push(action)} exposeSetLocked={() => {}} />,
+    );
+
+    handle.stdin.enqueue("/");
+    handle.stdin.enqueue("watchlist");
+    handle.stdin.enqueue("\r");
+    expect(handle.lastFrame()).toContain("can't run — sign in first");
+    expect(seen).toEqual([]);
+
+    handle.stdin.enqueue("x");
+    expect(handle.lastFrame()).not.toContain("can't run");
+
+    handle.unmount();
+  });
+
+  test("Enter with no matching command says so", () => {
+    const handle = render(<ShellInputProbe onResolve={() => {}} exposeSetLocked={() => {}} />);
+
+    handle.stdin.enqueue("/");
+    handle.stdin.enqueue("zzz");
+    handle.stdin.enqueue("\r");
+    expect(handle.lastFrame()).toContain("no command matches that");
+
     handle.unmount();
   });
 });

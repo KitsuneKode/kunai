@@ -127,6 +127,8 @@ export function resolvePlaybackBindingEffect(
 
 export function resolvePostPlaybackBindingResult(binding: KeyBinding): PlaybackShellResult | null {
   switch (binding.id) {
+    case "post-quit":
+      return "quit";
     case "post-continue":
       return "next";
     case "post-replay":
@@ -145,6 +147,12 @@ export function resolvePostPlaybackBindingResult(binding: KeyBinding): PlaybackS
       return "diagnostics";
     case "post-episode":
       return "pick-episode";
+    case "post-autoplay":
+      return "toggle-autoplay";
+    case "post-autoskip":
+      return "toggle-autoskip";
+    case "post-stop-after-current":
+      return "stop-after-current";
     case "post-title-control-menu":
       return "menu";
     default:

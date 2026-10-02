@@ -45,6 +45,13 @@ export type PostPlayActionRow = {
   readonly detail: string;
   readonly shortcut: string;
   readonly primary: boolean;
+  /**
+   * `false` marks a status row: navigation skips it and it renders without a
+   * selection affordance, because Enter on it resolves to nothing (the Session
+   * row groups the a/u/x toggle letters — the keys are real, the row is not
+   * an action).
+   */
+  readonly selectable?: boolean;
   /** Exact queue row when `id` is `queue-next` — never re-peek at resolve time. */
   readonly queueEntryId?: string;
 };
@@ -523,10 +530,11 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           detail: `${autoskipDetail} · ${chainDetail}`,
           shortcut: postPlayShortcutGroup(
             bindings,
-            ["player-autoplay", "player-autoskip", "player-stop-after-current"],
+            ["post-autoplay", "post-autoskip", "post-stop-after-current"],
             ["a", "u", "x"],
           ),
           primary: false,
+          selectable: false,
         },
         {
           id: "copy-share-link",
@@ -899,6 +907,32 @@ export function resolvePostPlayUnhandledInput(
     return { type: "recommendation-actions", index: actionIndex };
   }
   return null;
+}
+
+/**
+ * Index of the first Enter-able row. Non-selectable status rows (Session) are
+ * never a valid landing spot, so the initial highlight starts on a real action.
+ */
+export function firstSelectableActionIndex(actions: readonly PostPlayActionRow[]): number {
+  const index = actions.findIndex((action) => action.selectable !== false);
+  return index === -1 ? 0 : index;
+}
+
+/**
+ * Moves the highlight one step and keeps it on Enter-able rows. Non-selectable
+ * status rows are skipped in both directions; out-of-range ends clamp (the rows
+ * are a linear strip, not a carousel).
+ */
+export function movePostPlayActionSelection(
+  actions: readonly PostPlayActionRow[],
+  index: number,
+  delta: -1 | 1,
+): number {
+  let next = index + delta;
+  while (next >= 0 && next < actions.length && actions[next]?.selectable === false) {
+    next += delta;
+  }
+  return next >= 0 && next < actions.length ? next : index;
 }
 
 /** Maps a highlighted post-play action row to the shell result PlaybackPhase expects. */

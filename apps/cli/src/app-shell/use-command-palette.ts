@@ -15,6 +15,7 @@ import { useCallback, useState } from "react";
 
 import type { ResolvedAppCommand } from "./commands";
 import {
+  describePaletteRefusal,
   getCommandAutocompleteTarget,
   getCommandMatches,
   getHighlightedCommand,
@@ -29,6 +30,9 @@ export type CommandPaletteKeyResult =
 
 export function useCommandPalette(options?: { readonly onInputRedraw?: () => void }) {
   const [state, setState] = useState({ open: false, input: "", highlightedIndex: 0 });
+  // Enter on a disabled command must name the refusal — a silent consume reads
+  // as a dead key. The notice lives until the next palette keypress.
+  const [notice, setNotice] = useState<string | null>(null);
 
   const editor = useLineEditor({
     value: state.input,
@@ -38,17 +42,16 @@ export function useCommandPalette(options?: { readonly onInputRedraw?: () => voi
   });
 
   // Stable identities: callers put these in useCallback/useEffect dep arrays.
-  const openPalette = useCallback(
-    () => setState({ open: true, input: "", highlightedIndex: 0 }),
-    [],
-  );
-  const closePalette = useCallback(
-    () =>
-      setState((current) =>
-        current.open ? { open: false, input: "", highlightedIndex: 0 } : current,
-      ),
-    [],
-  );
+  const openPalette = useCallback(() => {
+    setNotice(null);
+    setState({ open: true, input: "", highlightedIndex: 0 });
+  }, []);
+  const closePalette = useCallback(() => {
+    setNotice(null);
+    setState((current) =>
+      current.open ? { open: false, input: "", highlightedIndex: 0 } : current,
+    );
+  }, []);
 
   const handleKey = useCallback(
     (
@@ -66,9 +69,14 @@ export function useCommandPalette(options?: { readonly onInputRedraw?: () => voi
       if (key.return) {
         const resolved = getHighlightedCommand(state.input, commands, state.highlightedIndex);
         // A disabled highlighted command still consumes the keypress — Enter on a
-        // greyed row is a no-op, not a fallthrough to the surface beneath.
-        return resolved?.enabled ? { kind: "resolved", command: resolved } : { kind: "consumed" };
+        // greyed row refuses with a notice, not a fallthrough to the surface beneath.
+        if (!resolved?.enabled) {
+          setNotice(describePaletteRefusal(resolved));
+          return { kind: "consumed" };
+        }
+        return { kind: "resolved", command: resolved };
       }
+      setNotice(null);
       if (key.tab) {
         const target = getCommandAutocompleteTarget(state.input, commands, state.highlightedIndex);
         if (target) {
@@ -106,6 +114,7 @@ export function useCommandPalette(options?: { readonly onInputRedraw?: () => voi
     input: state.input,
     cursor: editor.cursor,
     highlightedIndex: state.highlightedIndex,
+    notice,
     openPalette,
     closePalette,
     editor,

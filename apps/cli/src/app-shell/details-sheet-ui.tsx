@@ -54,10 +54,16 @@ export function DetailsSheet({
   model,
   seasonsExpanded,
   width,
+  canDownload = false,
 }: {
   readonly model: DetailsSheetModel;
   readonly seasonsExpanded: boolean;
   readonly width: number;
+  /**
+   * Whether `d` actually downloads right now — the browse overlay gates it on
+   * `searchReady`, so the legend must not promise it unconditionally.
+   */
+  readonly canDownload?: boolean;
 }) {
   const textWidth = Math.max(20, width - POSTER_COLS - 4);
   const synopsisLines = wrapSynopsis(model.synopsis.text, Math.max(20, width - 2), 6);
@@ -166,10 +172,12 @@ export function DetailsSheet({
         </Box>
       ) : null}
 
-      {/* Actions footer */}
+      {/* Actions footer — only keys the overlay handler actually answers */}
       <Box marginTop={1}>
         <Text color={palette.dim}>
-          ▶ play · + queue · w follow · d download · e episodes
+          ↵ play · q queue · w watchlist
+          {canDownload ? " · d download" : ""}
+          {model.seasons.items.length > 0 ? " · s seasons" : ""}
           {model.trailerUrl ? " · t trailer" : ""}
           {model.links.items.length > 0 ? " · l links" : ""} · esc
         </Text>

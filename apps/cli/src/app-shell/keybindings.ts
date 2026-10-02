@@ -575,7 +575,9 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "post-watchlist",
     chord: { input: "w" },
-    label: "Open your watchlist",
+    // The binding resolves to "bookmark" — it marks the title, it does not
+    // navigate to a watchlist view. The label has to say what the key does.
+    label: "Bookmark this title",
     scope: "postPlayback",
     group: "After playback",
   },
@@ -632,6 +634,32 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "postPlayback",
     group: "After playback",
     helpOnly: true,
+  },
+  // Session toggles stay live after playback ends — the post-play Session row
+  // advertises these letters and the menu router already handles the actions.
+  {
+    id: "post-autoplay",
+    chord: { input: "a" },
+    label: "Toggle autoplay",
+    hintLabel: "autoplay",
+    scope: "postPlayback",
+    group: "After playback",
+  },
+  {
+    id: "post-autoskip",
+    chord: { input: "u" },
+    label: "Toggle autoskip",
+    hintLabel: "autoskip",
+    scope: "postPlayback",
+    group: "After playback",
+  },
+  {
+    id: "post-stop-after-current",
+    chord: { input: "x" },
+    label: "Stop after current episode",
+    hintLabel: "stop after",
+    scope: "postPlayback",
+    group: "After playback",
   },
 
   // ── Up Next queue ──

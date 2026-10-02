@@ -56,6 +56,8 @@ export function notificationsFooterActions(input: {
 
 export function downloadQueueFooterActions(input: {
   readonly hasJobs: boolean;
+  /** `a` sweep silently no-ops with zero repairable rows — don't advertise it. */
+  readonly hasRepairable: boolean;
 }): readonly FooterAction[] {
   if (!input.hasJobs) {
     // Empty queue: don't advertise play/remove from the Up Next binding set.
@@ -66,7 +68,7 @@ export function downloadQueueFooterActions(input: {
     { key: "↵", label: "play done", primary: true },
     { key: "r", label: "retry" },
     { key: "x", label: "remove" },
-    { key: "a", label: "repair" },
+    ...(input.hasRepairable ? [{ key: "a", label: "repair" }] : []),
   ];
 }
 

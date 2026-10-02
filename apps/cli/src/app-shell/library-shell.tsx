@@ -28,7 +28,7 @@ import {
 import { ResumeCard } from "@/app-shell/primitives/ResumeCard";
 import { SectionGroup } from "@/app-shell/primitives/SectionGroup";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
-import { ResizeBlocker, ShellFooter, selectFooterActions } from "@/app-shell/shell-primitives";
+import { ResizeBlocker, ShellFooter } from "@/app-shell/shell-primitives";
 import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
@@ -67,6 +67,7 @@ export function LibraryShell({
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
   const [downloadJobCount, setDownloadJobCount] = useState(0);
+  const [repairableJobCount, setRepairableJobCount] = useState(0);
   const downloadsEnabled = container.config.downloadsEnabled;
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
 
@@ -74,8 +75,9 @@ export function LibraryShell({
     const refreshCount = () => {
       const active = container.downloadService.listActive(50).length;
       const completed = container.downloadService.listCompleted(5).length;
-      const failed = container.downloadService.listFailed(10).length;
-      setDownloadJobCount(active + completed + failed);
+      const failed = container.downloadService.listFailed(50);
+      setDownloadJobCount(active + completed + failed.length);
+      setRepairableJobCount(failed.filter((job) => job.status === "repairable").length);
     };
     refreshCount();
     return container.downloadService.onEvent(() => {
@@ -128,13 +130,14 @@ export function LibraryShell({
         <ShellFooter
           taskLabel={tab === "library" ? "Library" : downloadJobCount > 0 ? "Downloads" : "Queue"}
           mode="minimal"
-          actions={selectFooterActions(
+          actions={
             tab === "library"
               ? libraryFooterActions()
-              : downloadQueueFooterActions({ hasJobs: downloadJobCount > 0 }),
-            "minimal",
-            viewport.columns,
-          )}
+              : downloadQueueFooterActions({
+                  hasJobs: downloadJobCount > 0,
+                  hasRepairable: repairableJobCount > 0,
+                })
+          }
           terminalWidth={viewport.columns}
         />
         {tab === "library" ? (

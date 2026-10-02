@@ -144,6 +144,12 @@ export function Footer({
       ),
     [actions, mode, terminalWidth, maxVisible],
   );
+  // The cap silently drops real, working actions — count them so the user knows
+  // the footer isn't the whole list (the rest live behind / commands).
+  const hiddenCount = Math.max(
+    0,
+    actions.filter((action) => !action.disabled).length - visibleActions.length,
+  );
 
   if (commandMode) {
     return (
@@ -201,6 +207,11 @@ export function Footer({
               </Box>
             );
           })}
+          {hiddenCount > 0 ? (
+            <Text color={palette.dim} dimColor>
+              {` +${hiddenCount}`}
+            </Text>
+          ) : null}
         </Box>
       ) : (
         <Box marginTop={1} minHeight={1}>

@@ -74,6 +74,7 @@ export function CommandPalette({
   highlightedIndex,
   maxVisible: maxVisibleProp,
   width,
+  notice,
 }: {
   input: string;
   cursor?: number;
@@ -81,6 +82,8 @@ export function CommandPalette({
   highlightedIndex: number;
   maxVisible?: number;
   width?: number;
+  /** Transient reason shown after Enter on a command that cannot run now. */
+  notice?: string | null;
 }) {
   const { cols: shellColumns, rows: terminalRows } = useShellDimensions();
   const shellWidth = Math.max(28, width ?? shellColumns);
@@ -154,6 +157,7 @@ export function CommandPalette({
         Tab autocomplete · ↑↓ choose · Enter run
         {matches.length > visibleMatches.length ? ` · ${matches.length} commands` : ""}
       </Text>
+      {notice ? <Text color={palette.warn}>{truncateLine(notice, contentWidth)}</Text> : null}
       <Box flexDirection="column">
         {matches.length > 0 ? (
           <>

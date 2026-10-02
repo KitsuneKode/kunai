@@ -8,6 +8,7 @@ import { recordInputDrop } from "./diagnostics/render-trace";
 import { routeShellInput } from "./input-router";
 import {
   buildCommandPickerModel,
+  describePaletteRefusal,
   getCommandAutocompleteTarget,
   getHighlightedCommand,
 } from "./shell-command-model";
@@ -32,6 +33,9 @@ export function useShellInput({
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  // Enter on a disabled palette command used to return silently — a dead press.
+  // The notice names the refusal until the next keypress.
+  const [paletteNotice, setPaletteNotice] = useState<string | null>(null);
   const commandEditor = useLineEditor({
     value: commandInput,
     onChange: (nextValue) => {
@@ -45,6 +49,7 @@ export function useShellInput({
     setCommandMode(false);
     setCommandInput("");
     setHighlightedIndex(0);
+    setPaletteNotice(null);
   }, [disabled]);
 
   useInput((input, key) => {
@@ -61,6 +66,7 @@ export function useShellInput({
         setCommandMode(false);
         setCommandInput("");
         setHighlightedIndex(0);
+        setPaletteNotice(null);
         return;
       }
       if (escapeAction) onResolve(escapeAction);
@@ -76,8 +82,10 @@ export function useShellInput({
           onResolve(toShellAction(resolved.id));
           return;
         }
+        setPaletteNotice(describePaletteRefusal(resolved));
         return;
       }
+      setPaletteNotice(null);
       if (key.tab) {
         const target = getCommandAutocompleteTarget(commandInput, commands, highlightedIndex);
         if (target) {
@@ -108,6 +116,7 @@ export function useShellInput({
     if (route.command === "open-command-palette" && commands.length > 0) {
       setCommandMode(true);
       setCommandInput("");
+      setPaletteNotice(null);
       return;
     }
 
@@ -120,6 +129,7 @@ export function useShellInput({
         setCommandMode(true);
         setCommandInput("");
         setHighlightedIndex(0);
+        setPaletteNotice(null);
         return;
       }
       if (letterKeysHandledExternally) {
@@ -143,5 +153,11 @@ export function useShellInput({
     }
   });
 
-  return { commandMode, commandInput, commandCursor: commandEditor.cursor, highlightedIndex };
+  return {
+    commandMode,
+    commandInput,
+    commandCursor: commandEditor.cursor,
+    highlightedIndex,
+    paletteNotice,
+  };
 }

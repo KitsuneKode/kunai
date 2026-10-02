@@ -43,6 +43,7 @@ function Probe({ onResolved }: { onResolved: (id: string) => void }) {
   return (
     <Text>
       {`open=${palette.open ? 1 : 0} input=${palette.input} idx=${palette.highlightedIndex}`}
+      {palette.notice ? ` notice=${palette.notice}` : ""}
     </Text>
   );
 }
@@ -96,6 +97,24 @@ test("Enter on a disabled command is consumed, not resolved", async () => {
   await press(handle, ["/", "d", "o", "w", "n", "l", "o", "a", "d", "s", "\r"]);
   expect(resolved).toEqual([]);
   expect(handle.lastFrame()).toContain("open=1"); // still open — the keypress was consumed
+});
+
+test("Enter on a disabled command names the refusal until the next keypress", async () => {
+  const resolved: string[] = [];
+  const handle = render(<Probe onResolved={(id) => resolved.push(id)} />);
+  await press(handle, ["/", "d", "o", "w", "n", "l", "o", "a", "d", "s", "\r"]);
+  expect(resolved).toEqual([]);
+  expect(handle.lastFrame()).toContain("notice=can't run — offline");
+
+  // Any other palette keypress dismisses the notice.
+  await press(handle, [DOWN]);
+  expect(handle.lastFrame()).not.toContain("notice=");
+});
+
+test("Enter with no match still answers the keypress", async () => {
+  const handle = render(<Probe onResolved={() => {}} />);
+  await press(handle, ["/", "z", "z", "z", "\r"]);
+  expect(handle.lastFrame()).toContain("notice=no command matches that");
 });
 
 test("Tab autocompletes the highlighted command into the query", async () => {
