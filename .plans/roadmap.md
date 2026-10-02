@@ -232,6 +232,18 @@ The release PR is intentionally last: Changesets will keep updating it while
 stability fixes merge, and merging it early would version an incomplete
 candidate.
 
+### Delivery and follow-ups — 2026-10-02
+
+Proposed, not started. Written against `origin/main@e509732e7` and the open-PR
+state on 2026-10-02.
+
+| Plan                                                                                       | Remaining work                                                                                                                                                                                           | Status   |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| [2026-10-02-pr-stack-consolidation.md](./2026-10-02-pr-stack-consolidation.md)             | Unblock the two conflicting stack bases, re-stack refactors away from fixes, close or park old PRs                                                                                                       | PROPOSED |
+| [2026-10-02-signed-provider-profile-feed.md](./2026-10-02-signed-provider-profile-feed.md) | Design spike: a signed, data-only feed so rotating provider constants ship without a release; also record that `Bun.secrets` exists in Bun 1.4.2 and should be evaluated for plan 052's Keychain residue | PROPOSED |
+| [2026-10-02-share-moment-discoverability.md](./2026-10-02-share-moment-discoverability.md) | Surface the existing `Ctrl+Shift+S` share-at-timestamp key in the playing legend, README and docs                                                                                                        | PROPOSED |
+| [2026-10-02-color-followups.md](./2026-10-02-color-followups.md)                           | After the APCA text-tier retune: remove the remaining `dimColor` double-dimming once the PR stacks land, add `dangerText` and `milestoneText` role tokens                                                | PROPOSED |
+
 ## Rules
 
 1. `.plans/` holds unfinished work only, and is the **only** plan directory.
