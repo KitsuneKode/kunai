@@ -34,6 +34,13 @@ export type RunYtDlpProcessOptions = {
   readonly signal?: AbortSignal;
   readonly maxStderrBytes?: number;
   readonly exitGraceMs?: number;
+  /**
+   * Liveness bound for long-running jobs: any stdout/stderr line resets it,
+   * and expiry terminates the process. `--socket-timeout` only covers a hung
+   * read — a server dribbling bytes or a retry loop can keep a download alive
+   * without ever producing progress.
+   */
+  readonly idleTimeoutMs?: number;
   readonly onStdoutLine?: (line: string) => void;
   readonly onStderrLine?: (line: string) => void;
   readonly spawn?: YtDlpSpawn;
@@ -82,13 +89,31 @@ export function runYtDlpProcess(options: RunYtDlpProcessOptions): RunYtDlpProces
   };
   options.signal?.addEventListener("abort", onAbort, { once: true });
 
+  // Any output line is liveness proof; silence past the bound means wedged.
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const armIdleTimer = () => {
+    if (options.idleTimeoutMs === undefined) return;
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      stderrAcc = appendBoundedText(
+        stderrAcc,
+        `kunai: no output for ${options.idleTimeoutMs}ms — treating as wedged`,
+        maxStderrBytes,
+      );
+      terminate();
+    }, options.idleTimeoutMs);
+  };
+
   let stderrAcc = "";
   const stdoutPromise = readStreamLines({
     stream: proc.stdout,
     signal: ioController.signal,
     maxBytes: DEFAULT_STREAMING_OUTPUT_LIMIT_BYTES,
     label: "yt-dlp stdout",
-    onLine: (line) => options.onStdoutLine?.(line),
+    onLine: (line) => {
+      armIdleTimer();
+      options.onStdoutLine?.(line);
+    },
   });
   const stderrPromise = readStreamLines({
     stream: proc.stderr,
@@ -96,6 +121,7 @@ export function runYtDlpProcess(options: RunYtDlpProcessOptions): RunYtDlpProces
     maxBytes: maxStderrBytes,
     label: "yt-dlp stderr",
     onLine: (line) => {
+      armIdleTimer();
       stderrAcc = appendBoundedText(stderrAcc, line, maxStderrBytes);
       options.onStderrLine?.(line);
     },
@@ -120,8 +146,11 @@ export function runYtDlpProcess(options: RunYtDlpProcessOptions): RunYtDlpProces
         exitGraceMs,
       });
       if (forceKillId !== undefined) clearTimeout(forceKillId);
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
     }
   })();
+
+  armIdleTimer();
 
   return {
     process: proc,

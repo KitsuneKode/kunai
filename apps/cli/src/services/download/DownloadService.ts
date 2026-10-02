@@ -1339,6 +1339,10 @@ export class DownloadService {
     const handle = runYtDlpProcess({
       args,
       maxStderrBytes: STDERR_MAX_BYTES,
+      // --socket-timeout bounds a hung read, but a server dribbling bytes or a
+      // fragment-retry loop can stay alive without producing a progress line.
+      // Two minutes of total output silence is a wedge, not a slow download.
+      idleTimeoutMs: 120_000,
       onStdoutLine: (line) => {
         const match = line.match(/\[download\]\s+([\d.]+)%/);
         if (match && match[1]) {

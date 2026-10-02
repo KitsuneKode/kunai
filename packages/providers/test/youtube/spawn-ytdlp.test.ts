@@ -145,6 +145,94 @@ describe("runYtDlpProcess", () => {
     await expect(handle.completed).rejects.toThrow("yt-dlp stderr exceeded 8 bytes");
     expect(killSignals.length).toBeGreaterThan(0);
   });
+
+  test("idle timeout terminates a silent process and records the wedge", async () => {
+    const killSignals: (string | number | undefined)[] = [];
+    const out = pushableStream();
+    const err = pushableStream();
+    const proc = createFakeProcess({
+      stdout: out.stream,
+      stderr: err.stream,
+      onKill: (signal) => {
+        killSignals.push(signal);
+        // A dying process closes its pipes; the fake must do the same or the
+        // line readers hang past the process exit.
+        out.close();
+        err.close();
+      },
+      autoExit: false,
+    });
+
+    const handle = runYtDlpProcess({
+      args: ["--newline"],
+      idleTimeoutMs: 30,
+      exitGraceMs: 5,
+      spawn: () => proc,
+    });
+
+    const result = await handle.completed;
+    expect(killSignals).toEqual(["SIGTERM"]);
+    expect(result.exitCode).toBe(143);
+    expect(result.stderr).toContain("treating as wedged");
+  });
+
+  test("an output line re-arms the idle timer", async () => {
+    const out = pushableStream();
+    const err = pushableStream();
+    const killAt: number[] = [];
+    const started = Date.now();
+    const proc = createFakeProcess({
+      stdout: out.stream,
+      stderr: err.stream,
+      onKill: () => {
+        killAt.push(Date.now());
+        out.close();
+        err.close();
+      },
+      autoExit: false,
+    });
+
+    const handle = runYtDlpProcess({
+      args: ["--newline"],
+      idleTimeoutMs: 80,
+      exitGraceMs: 5,
+      spawn: () => proc,
+    });
+
+    await Bun.sleep(40);
+    out.push("[download] 1.0%\n");
+    await Bun.sleep(40);
+    out.push("[download] 2.0%\n");
+
+    const result = await handle.completed;
+    // A non-resetting timer fires ~80ms after spawn — before the second line's
+    // own 80ms window (~160ms) could elapse. 140 leaves scheduler margin.
+    const firstKillAt = killAt.at(0);
+    expect(firstKillAt).toBeDefined();
+    expect((firstKillAt ?? 0) - started).toBeGreaterThanOrEqual(140);
+    expect(result.exitCode).toBe(143);
+  });
+
+  test("no idle timeout leaves a silent process alone", async () => {
+    const killSignals: (string | number | undefined)[] = [];
+    const proc = createFakeProcess({
+      stdout: hangingStream(),
+      stderr: hangingStream(),
+      onKill: (signal) => killSignals.push(signal),
+      autoExit: false,
+    });
+
+    const handle = runYtDlpProcess({
+      args: ["--newline"],
+      exitGraceMs: 5,
+      spawn: () => proc,
+    });
+
+    await Bun.sleep(60);
+    expect(killSignals).toEqual([]);
+    handle.cancel("test done");
+    await expect(handle.completed).rejects.toThrow("yt-dlp cancelled");
+  });
 });
 
 function createFakeProcess(options: {
@@ -168,6 +256,28 @@ function createFakeProcess(options: {
     kill: (signal) => {
       options.onKill(signal);
       resolveExit(signal === "SIGKILL" ? 137 : 143);
+    },
+  };
+}
+
+function pushableStream() {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({
+    start: (c) => {
+      controller = c;
+    },
+  });
+  let closed = false;
+  return {
+    stream,
+    push: (text) => {
+      if (!closed) controller.enqueue(new TextEncoder().encode(text));
+    },
+    close: () => {
+      if (!closed) {
+        closed = true;
+        controller.close();
+      }
     },
   };
 }
