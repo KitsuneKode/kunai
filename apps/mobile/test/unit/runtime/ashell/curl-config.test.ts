@@ -18,6 +18,7 @@ describe("a-Shell curl config", () => {
     );
     expect(config).toContain("max-time = 8");
     expect(config).toContain("max-filesize = 65536");
+    expect(config).toContain('range = "0-65535"');
     expect(config).toContain('request = "GET"');
     expect(config).not.toContain("\r");
     expect(config).not.toContain("\0");

@@ -10,6 +10,7 @@ const MEDIA_URL = "https://media.example/video.m3u8?token=a&title=$(touch%20nope
 function runtime(input: {
   readonly commands?: Readonly<Record<string, string>>;
   readonly exitCode?: number;
+  readonly output?: string;
   readonly onWhich?: (command: string) => void;
   readonly onSpawn?: (argv: readonly string[]) => void;
 }): AndroidPlayerRuntime {
@@ -20,7 +21,7 @@ function runtime(input: {
     },
     spawn: async (argv) => {
       input.onSpawn?.(argv);
-      return { exitCode: input.exitCode ?? 0 };
+      return { exitCode: input.exitCode ?? 0, output: input.output ?? "" };
     },
   };
 }
@@ -55,6 +56,31 @@ describe("Android mobile player port", () => {
         runtime: runtime({ commands: { am: "/system/bin/am" }, exitCode: 1 }),
       }).handoff({ player: "vlc", url: MEDIA_URL }),
     ).resolves.toEqual({ kind: "rejected", reason: "launch-rejected" });
+  });
+
+  test("rejects a zero-exit am launch that reports an intent error", async () => {
+    // `am` and termux-am builds have been observed printing the failure to
+    // stderr while still exiting 0; the exit code alone is not an acceptance.
+    await expect(
+      createAndroidPlayerPort({
+        runtime: runtime({
+          commands: { "termux-am": "/usr/bin/termux-am" },
+          output: "Error: Activity not started, unable to resolve Intent",
+        }),
+      }).handoff({ player: "vlc", url: MEDIA_URL }),
+    ).resolves.toEqual({ kind: "rejected", reason: "launch-rejected" });
+  });
+
+  test("accepts a zero-exit am launch reporting only a started intent", async () => {
+    await expect(
+      createAndroidPlayerPort({
+        runtime: runtime({
+          commands: { am: "/system/bin/am" },
+          output:
+            "Starting: Intent { act=android.intent.action.VIEW dat=https://media.example/... }",
+        }),
+      }).handoff({ player: "vlc", url: MEDIA_URL }),
+    ).resolves.toEqual({ kind: "accepted", launcher: "am" });
   });
 
   test("probes only launchers that can produce an explicit VLC intent", async () => {

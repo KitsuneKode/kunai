@@ -22,10 +22,18 @@ cleanup_mobile_runtime() {
 
 finish_mobile_session() {
   cleanup_mobile_runtime
-  rmdir .runtime/session.lock
+  if [ -d .runtime/session.lock ]; then
+    # A retained lock is operator-owned; a failed release must not mask the real status.
+    rmdir .runtime/session.lock 2>/dev/null ||
+      printf '%s\n' 'warning: session lock retained at .runtime/session.lock' >&2
+  fi
 }
 if ! mkdir .runtime/session.lock 2>/dev/null; then
-  printf '%s\n' 'Mobile session is active or requires lock recovery.' >&2
+  if [ -d .runtime/session.lock ]; then
+    printf '%s\n' 'Mobile session is active; remove .runtime/session.lock only if no session is running.' >&2
+  else
+    printf '%s\n' 'Cannot create the mobile session lock under .runtime/.' >&2
+  fi
   exit 1
 fi
 trap finish_mobile_session EXIT

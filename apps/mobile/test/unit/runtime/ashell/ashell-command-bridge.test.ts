@@ -40,6 +40,22 @@ describe("a-Shell fixed command bridge", () => {
     expect(createAShellCommandBridge(jsc).runFixedHelper("read-line")).toBe(0);
   });
 
+  test("normalizes a status string carrying host whitespace", () => {
+    const jsc = fakeJsc([]);
+    jsc.system = () => "0\n";
+
+    expect(createAShellCommandBridge(jsc).runFixedHelper("http")).toBe(0);
+  });
+
+  test("still fails closed on non-numeric host output", () => {
+    const jsc = fakeJsc([]);
+    jsc.system = () => "helper stdout text";
+
+    expect(() => createAShellCommandBridge(jsc).runFixedHelper("http")).toThrow(
+      "Invalid helper status",
+    );
+  });
+
   test("rejects any value outside the literal helper allowlist", () => {
     const systemCommands: string[] = [];
     const bridge = createAShellCommandBridge(fakeJsc(systemCommands));

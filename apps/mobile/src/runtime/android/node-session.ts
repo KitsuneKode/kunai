@@ -8,14 +8,25 @@ export function acquireNodeSession(root: string): () => void {
   const lock = join(root, "session.lock");
   try {
     mkdirSync(lock, { mode: 0o700 });
-  } catch {
-    throw new Error("Mobile session is already active or requires lock recovery");
+  } catch (error) {
+    const rawCode = error instanceof Error && "code" in error ? error.code : undefined;
+    const code = rawCode === undefined ? undefined : String(rawCode);
+    if (code === "EEXIST") {
+      throw new Error(
+        `Mobile session is already active; remove ${lock} only if no session is running`,
+      );
+    }
+    throw new Error(`Mobile session lock failed${code === undefined ? "" : ` (${code})`}`);
   }
   let released = false;
   const release = () => {
     if (released) return;
-    rmdirSync(lock);
     released = true;
+    try {
+      rmdirSync(lock);
+    } catch {
+      // A removed or occupied lock directory is operator-owned; never mask it.
+    }
     process.off("exit", onExit);
   };
   const onExit = () => {
