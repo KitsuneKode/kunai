@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  downloadQueueFooterActions,
   historyFooterActions,
   notificationsFooterActions,
   queueFooterActions,
@@ -71,5 +72,19 @@ describe("overlay footer actions", () => {
 
     // width < 92 → 2 primary hints, then the command action tail.
     expect(visible.map((action) => action.label)).toEqual(["play", "reorder", "commands"]);
+  });
+
+  test("download queue footer hides `a repair` when no repairable rows exist", () => {
+    const withRepair = downloadQueueFooterActions({ hasJobs: true, hasRepairable: true });
+    const withoutRepair = downloadQueueFooterActions({ hasJobs: true, hasRepairable: false });
+
+    expect(withRepair.map((action) => action.label)).toContain("repair");
+    expect(withoutRepair.map((action) => action.label)).not.toContain("repair");
+    // The rest of the grammar survives — only the gated key drops.
+    expect(withoutRepair.map((action) => action.label)).toEqual(["play done", "retry", "remove"]);
+  });
+
+  test("download queue footer stays empty with no jobs at all", () => {
+    expect(downloadQueueFooterActions({ hasJobs: false, hasRepairable: true })).toEqual([]);
   });
 });

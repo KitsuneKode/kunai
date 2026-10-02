@@ -137,27 +137,30 @@ shows the chord only when an untried, healthy candidate actually exists.
 
 ## Post-Playback
 
-| Key             | Action                                                                               |
-| --------------- | ------------------------------------------------------------------------------------ |
-| `/`             | Open command palette                                                                 |
-| `↑` / `k`       | Move selection up through the action list                                            |
-| `↓` / `j`       | Move selection down through the action list                                          |
-| `Enter`         | Run the highlighted action (or the first recommendation on series-complete)          |
-| `n`             | Continue / next — resume, next episode, next season, or queued head per footer label |
-| `r`             | Replay from start with mpv resume prompt available when applicable                   |
-| `e`             | Episode picker                                                                       |
-| `o`             | Source picker                                                                        |
-| `Shift+F`       | Fallback provider                                                                    |
-| `m`             | Title control menu                                                                   |
-| `h`             | History                                                                              |
-| `w`             | Watchlist (caught-up only)                                                           |
-| `d`             | Diagnostics                                                                          |
-| `1` / `2` / `3` | Play recommendation 1 / 2 / 3 when the rail is visible                               |
-| `!` / `@` / `#` | Open action menu for recommendation 1 / 2 / 3 when the rail is visible               |
-| `?`             | Help                                                                                 |
-| `s`             | Fresh search                                                                         |
-| `q`             | Quit                                                                                 |
-| `Esc`           | Back to previous results                                                             |
+| Key             | Action                                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/`             | Open command palette                                                                                                                                   |
+| `↑` / `k`       | Move selection up through the action list                                                                                                              |
+| `↓` / `j`       | Move selection down through the action list                                                                                                            |
+| `Enter`         | Run the highlighted action (or the first recommendation on series-complete); the Session row is a status readout, not selectable — use `a` / `u` / `x` |
+| `n`             | Continue / next — resume, next episode, next season, or queued head per footer label                                                                   |
+| `r`             | Replay from start with mpv resume prompt available when applicable                                                                                     |
+| `a`             | Toggle autoplay — same session flag as the player `a` binding                                                                                          |
+| `u`             | Toggle autoskip — same session flag as the player `u` binding                                                                                          |
+| `x`             | Toggle stop-after-current — cancels a pending auto-advance                                                                                             |
+| `e`             | Episode picker                                                                                                                                         |
+| `o`             | Source picker                                                                                                                                          |
+| `Shift+F`       | Fallback provider                                                                                                                                      |
+| `m`             | Title control menu                                                                                                                                     |
+| `h`             | History                                                                                                                                                |
+| `w`             | Watchlist (caught-up only)                                                                                                                             |
+| `d`             | Diagnostics                                                                                                                                            |
+| `1` / `2` / `3` | Play recommendation 1 / 2 / 3 when the rail is visible                                                                                                 |
+| `!` / `@` / `#` | Open action menu for recommendation 1 / 2 / 3 when the rail is visible                                                                                 |
+| `?`             | Help                                                                                                                                                   |
+| `s`             | Fresh search                                                                                                                                           |
+| `q`             | Quit                                                                                                                                                   |
+| `Esc`           | Back to previous results                                                                                                                               |
 
 ## Pickers
 

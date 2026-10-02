@@ -42,4 +42,43 @@ describe("DetailsSheet", () => {
     expect(frame).toContain("MyAnimeList");
     expect(frame).toContain("trailer");
   });
+
+  it("legend prints only keys the overlay handler actually answers", () => {
+    const model = buildDetailsSheet({ seed, detail: null, history: null, availability: null });
+    const frame = captureFrame(<DetailsSheet model={model} seasonsExpanded={false} width={90} />, {
+      columns: 100,
+    });
+    // Real keymap: ↵ submit · q queue · w watchlist · s seasons (when rows
+    // exist) · t trailer / l links (when present) · esc.
+    expect(frame).toContain("↵ play · q queue · w watchlist");
+    expect(frame).toContain("· esc");
+    expect(frame).not.toContain("+ queue");
+    expect(frame).not.toContain("follow");
+    expect(frame).not.toContain("e episodes");
+    // `d` is gated on `searchReady` at press time — hidden by default.
+    expect(frame).not.toContain("d download");
+    // No seasons in this model — `s` must not be advertised either.
+    expect(frame).not.toContain("s seasons");
+  });
+
+  it("advertises download and seasons only when they exist", () => {
+    const detail: TitleDetail = {
+      id: "1",
+      type: "series",
+      title: "Frieren",
+      episodeCount: 28,
+      seasonCount: 2,
+      seasons: [
+        { season: 1, name: "Season 1" },
+        { season: 2, name: "Season 2" },
+      ],
+    };
+    const model = buildDetailsSheet({ seed, detail, history: null, availability: null });
+    const frame = captureFrame(
+      <DetailsSheet model={model} seasonsExpanded={false} width={90} canDownload />,
+      { columns: 100 },
+    );
+    expect(frame).toContain("d download");
+    expect(frame).toContain("s seasons");
+  });
 });

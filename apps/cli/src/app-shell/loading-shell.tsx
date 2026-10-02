@@ -479,6 +479,15 @@ export const LoadingShell = React.memo(function LoadingShell({
   );
 
   const commandModeOpen = useShellCommandModeOpen();
+  // Esc during the non-cancellable bootstrap window used to dead-end silently
+  // (the global `back` binding resolves to no playback effect). A dead key in a
+  // stalled-looking resolve reads as a hang — acknowledge it briefly instead.
+  const [escapeNotice, setEscapeNotice] = React.useState<{ seq: number } | null>(null);
+  React.useEffect(() => {
+    if (!escapeNotice) return;
+    const timer = setTimeout(() => setEscapeNotice(null), 2500);
+    return () => clearTimeout(timer);
+  }, [escapeNotice]);
 
   useInput((input, key) => {
     if (commandModeOpen) return;
@@ -486,8 +495,16 @@ export const LoadingShell = React.memo(function LoadingShell({
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
       return;
     }
-    if (key.escape && state.cancellable && onCancel) {
-      onCancel();
+    if (key.escape) {
+      if (state.cancellable && onCancel) {
+        onCancel();
+        return;
+      }
+      // Only the live resolve reads as a stuck wait — recovery/trouble views
+      // already present their own decision keys.
+      if (state.operation !== "playing" && !recoveryView && !playbackTroubleActive) {
+        setEscapeNotice((current) => ({ seq: (current?.seq ?? 0) + 1 }));
+      }
       return;
     }
 
@@ -713,6 +730,14 @@ export const LoadingShell = React.memo(function LoadingShell({
                         </Text>
                       </Box>
                     )}
+                    {/* Esc acknowledgment — the key is heard even when cancel isn't wired */}
+                    {escapeNotice ? (
+                      <Box marginTop={1}>
+                        <Text color={palette.warn}>
+                          still resolving — cancel isn't available yet · ^C quits
+                        </Text>
+                      </Box>
+                    ) : null}
                   </Box>
                 </Box>
 

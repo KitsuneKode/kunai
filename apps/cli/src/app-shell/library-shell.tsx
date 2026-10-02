@@ -67,6 +67,7 @@ export function LibraryShell({
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
   const [downloadJobCount, setDownloadJobCount] = useState(0);
+  const [repairableJobCount, setRepairableJobCount] = useState(0);
   const downloadsEnabled = container.config.downloadsEnabled;
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
 
@@ -74,8 +75,9 @@ export function LibraryShell({
     const refreshCount = () => {
       const active = container.downloadService.listActive(50).length;
       const completed = container.downloadService.listCompleted(5).length;
-      const failed = container.downloadService.listFailed(10).length;
-      setDownloadJobCount(active + completed + failed);
+      const failed = container.downloadService.listFailed(50);
+      setDownloadJobCount(active + completed + failed.length);
+      setRepairableJobCount(failed.filter((job) => job.status === "repairable").length);
     };
     refreshCount();
     return container.downloadService.onEvent(() => {
@@ -131,7 +133,10 @@ export function LibraryShell({
           actions={selectFooterActions(
             tab === "library"
               ? libraryFooterActions()
-              : downloadQueueFooterActions({ hasJobs: downloadJobCount > 0 }),
+              : downloadQueueFooterActions({
+                  hasJobs: downloadJobCount > 0,
+                  hasRepairable: repairableJobCount > 0,
+                }),
             "minimal",
             viewport.columns,
           )}

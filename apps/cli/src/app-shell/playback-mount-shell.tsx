@@ -43,7 +43,9 @@ import { buildPostPlayFooterActions } from "./post-play-footer-actions";
 import { PostPlayShell } from "./post-play-shell";
 import {
   buildPostPlayView,
+  firstSelectableActionIndex,
   isPostPlayPlaybackRestartResult,
+  movePostPlayActionSelection,
   resolvePostPlayMenuAction,
   resolvePostPlayUnhandledInput,
 } from "./post-play-view";
@@ -501,12 +503,14 @@ function PlaybackShell({
     autoskipPaused: state.autoskipPaused,
     stopAfterCurrent: state.stopAfterCurrent,
   });
-  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
+  const [selectedActionIndex, setSelectedActionIndex] = useState(() =>
+    firstSelectableActionIndex(postPlayView.actions),
+  );
   const postPlayResetKey = `${postPlayState.kind}|${state.episodeLabel ?? ""}|${state.resumeLabel ?? ""}`;
   const [prevPostPlayResetKey, setPrevPostPlayResetKey] = useState(postPlayResetKey);
   if (postPlayResetKey !== prevPostPlayResetKey) {
     setPrevPostPlayResetKey(postPlayResetKey);
-    setSelectedActionIndex(0);
+    setSelectedActionIndex(firstSelectableActionIndex(postPlayView.actions));
   }
 
   const openInlineTracks = useCallback(
@@ -580,12 +584,14 @@ function PlaybackShell({
       escapeAction="back-to-results"
       onUnhandledInput={(input, key) => {
         if (key.upArrow || input === "k") {
-          setSelectedActionIndex((index) => Math.max(0, index - 1));
+          setSelectedActionIndex((index) =>
+            movePostPlayActionSelection(postPlayView.actions, index, -1),
+          );
           return;
         }
         if (key.downArrow || input === "j") {
           setSelectedActionIndex((index) =>
-            Math.min(Math.max(0, postPlayView.actions.length - 1), index + 1),
+            movePostPlayActionSelection(postPlayView.actions, index, 1),
           );
           return;
         }
@@ -595,7 +601,9 @@ function PlaybackShell({
           canResume,
           hasNextSeason:
             postPlayState.kind === "season-finale" ? postPlayState.hasNextSeason : false,
-          selectedActionAvailable: postPlayView.actions[selectedActionIndex] !== undefined,
+          selectedActionAvailable:
+            postPlayView.actions[selectedActionIndex] !== undefined &&
+            postPlayView.actions[selectedActionIndex]?.selectable !== false,
           recommendationCount: activeRecommendations.length,
           queueNextEntryId: state.queueNextEntryId,
         });

@@ -1679,7 +1679,11 @@ export function BrowseShell<T>({
             message="Resize terminal to browse results"
           />
         ) : activeOverlay ? (
-          <OverlayPanel overlay={activeOverlay} width={innerWidth} />
+          <OverlayPanel
+            overlay={activeOverlay}
+            width={innerWidth}
+            canDownload={searchState === "ready"}
+          />
         ) : calendarRoutePending ? (
           <Box marginTop={2} flexGrow={1} flexDirection="column">
             <SakuraLoader
@@ -1961,6 +1965,7 @@ export function BrowseShell<T>({
             Boolean(activeFilterBadges.length > 0 && !viewport.ultraCompact),
           )}
           width={innerWidth}
+          notice={commandPalette.notice}
         />
       ) : null}
 

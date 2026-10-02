@@ -280,6 +280,7 @@ function HelpShell({
   commandCursor,
   commands,
   highlightedIndex,
+  paletteNotice,
   footerActions,
   onClose,
 }: {
@@ -292,6 +293,7 @@ function HelpShell({
   commandCursor: number;
   commands: readonly ResolvedAppCommand[];
   highlightedIndex: number;
+  paletteNotice?: string | null;
   footerActions: readonly FooterAction[];
   onClose: () => void;
 }) {
@@ -381,6 +383,7 @@ function HelpShell({
           cursor={commandCursor}
           commands={commands}
           highlightedIndex={highlightedIndex}
+          notice={paletteNotice}
         />
       ) : null}
       <ShellFooter
@@ -826,79 +829,81 @@ export function RootOverlayShell({
     { key: "/", label: "commands", action: "command-mode" },
     { key: "esc", label: "close", action: "quit" },
   ];
-  const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
-    footerActions,
-    commands,
-    escapeAction: null,
-    onResolve: (action) => {
-      if (
-        action === "settings" ||
-        action === "presence" ||
-        action === "help" ||
-        action === "about" ||
-        action === "diagnostics" ||
-        action === "downloads" ||
-        action === "notifications" ||
-        action === "continue" ||
-        action === "history" ||
-        action === "provider"
-      ) {
-        if (action === "notifications" && !container.featureFlags.attentionInbox) {
-          container.stateManager.dispatch({
-            type: "SET_PLAYBACK_FEEDBACK",
-            note: "Attention inbox is disabled.",
-          });
-          return;
-        }
-        if (action === "diagnostics") {
+  const { commandMode, commandInput, commandCursor, highlightedIndex, paletteNotice } =
+    useShellInput({
+      footerActions,
+      commands,
+      escapeAction: null,
+      onResolve: (action) => {
+        if (
+          action === "settings" ||
+          action === "presence" ||
+          action === "help" ||
+          action === "about" ||
+          action === "diagnostics" ||
+          action === "downloads" ||
+          action === "notifications" ||
+          action === "continue" ||
+          action === "history" ||
+          action === "provider"
+        ) {
+          if (action === "notifications" && !container.featureFlags.attentionInbox) {
+            container.stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: "Attention inbox is disabled.",
+            });
+            return;
+          }
+          if (action === "diagnostics") {
+            if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+              container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+            }
+            void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
+            return;
+          }
+          const nextOverlay =
+            action === "provider"
+              ? {
+                  type: "provider_picker" as const,
+                  currentProvider: state.provider,
+                  lane: shellModeToProviderLane(state.mode),
+                }
+              : action === "history" || action === "continue"
+                ? { type: "history" as const, initialFilterMode: "watching" as const }
+                : action === "notifications"
+                  ? { type: "notifications" as const }
+                  : action === "downloads"
+                    ? { type: "downloads" as const }
+                    : action === "settings" || action === "presence"
+                      ? { type: "settings" as const }
+                      : { type: action };
           if (isRootMediaPickerOverlay(overlay) && overlay.id) {
             container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
           }
-          void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
+          container.stateManager.dispatch({
+            type: "OPEN_OVERLAY",
+            overlay: nextOverlay,
+          });
           return;
         }
-        const nextOverlay =
-          action === "provider"
-            ? {
-                type: "provider_picker" as const,
-                currentProvider: state.provider,
-                lane: shellModeToProviderLane(state.mode),
-              }
-            : action === "history" || action === "continue"
-              ? { type: "history" as const, initialFilterMode: "watching" as const }
-              : action === "notifications"
-                ? { type: "notifications" as const }
-                : action === "downloads"
-                  ? { type: "downloads" as const }
-                  : action === "settings" || action === "presence"
-                    ? { type: "settings" as const }
-                    : { type: action };
-        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
-          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+        if (action === "library") {
+          const nextOverlay = { type: "library" as const, view: "library" as const };
+          if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+            container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+          }
+          container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
+          return;
         }
-        container.stateManager.dispatch({
-          type: "OPEN_OVERLAY",
-          overlay: nextOverlay,
-        });
-        return;
-      }
-      if (action === "library") {
-        const nextOverlay = { type: "library" as const, view: "library" as const };
-        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
-          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+        if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
+          void runRootWorkflowSafely({
+            container,
+            action,
+            cancelPickerId:
+              isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
+          });
         }
-        container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
-        return;
-      }
-      if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
-        void runRootWorkflowSafely({
-          container,
-          action,
-          cancelPickerId: isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
-        });
-      }
-    },
-  });
+      },
+    });
 
   const overlayPanelKind = resolveOverlayPanelKind(overlay.type);
   const overlayDedicatedShell =
@@ -1989,6 +1994,7 @@ export function RootOverlayShell({
             cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
+            notice={paletteNotice}
           />
         ) : null}
         <ShellFooter
@@ -2016,6 +2022,7 @@ export function RootOverlayShell({
             cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
+            notice={paletteNotice}
           />
         ) : null}
       </Box>,
@@ -2043,6 +2050,7 @@ export function RootOverlayShell({
             cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
+            notice={paletteNotice}
           />
         ) : null}
       </Box>,
@@ -2065,6 +2073,7 @@ export function RootOverlayShell({
             cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
+            notice={paletteNotice}
           />
         ) : null}
         <ShellFooter
@@ -2132,6 +2141,7 @@ export function RootOverlayShell({
             cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
+            notice={paletteNotice}
           />
         ) : null}
         <ShellFooter
@@ -2179,6 +2189,7 @@ export function RootOverlayShell({
             cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
+            notice={paletteNotice}
           />
         ) : null}
         <ShellFooter
@@ -2225,6 +2236,7 @@ export function RootOverlayShell({
         commandCursor={commandCursor}
         commands={commands}
         highlightedIndex={highlightedIndex}
+        paletteNotice={paletteNotice}
         footerActions={footerActions}
         onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
       />,
@@ -2253,6 +2265,7 @@ export function RootOverlayShell({
             cursor={commandCursor}
             commands={commands}
             highlightedIndex={highlightedIndex}
+            notice={paletteNotice}
           />
         ) : null}
         <ShellFooter
@@ -2316,6 +2329,7 @@ export function RootOverlayShell({
           cursor={commandCursor}
           commands={commands}
           highlightedIndex={highlightedIndex}
+          notice={paletteNotice}
         />
       ) : null}
       <ShellFooter

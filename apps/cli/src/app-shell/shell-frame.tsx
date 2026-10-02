@@ -81,14 +81,15 @@ export function ShellFrame({
     }
   });
 
-  const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
-    footerActions,
-    commands,
-    disabled: inputDisabled,
-    letterKeysHandledExternally,
-    escapeAction,
-    onResolve,
-  });
+  const { commandMode, commandInput, commandCursor, highlightedIndex, paletteNotice } =
+    useShellInput({
+      footerActions,
+      commands,
+      disabled: inputDisabled,
+      letterKeysHandledExternally,
+      escapeAction,
+      onResolve,
+    });
 
   useInput((input, key) => {
     if (inputDisabled || commandMode) return;
@@ -144,6 +145,7 @@ export function ShellFrame({
             highlightedIndex={highlightedIndex}
             maxVisible={getPlaybackCommandPaletteMaxVisible(rows)}
             width={commandWidth}
+            notice={paletteNotice}
           />
         ) : null}
 

@@ -145,6 +145,12 @@ export function resolvePostPlaybackBindingResult(binding: KeyBinding): PlaybackS
       return "diagnostics";
     case "post-episode":
       return "pick-episode";
+    case "post-autoplay":
+      return "toggle-autoplay";
+    case "post-autoskip":
+      return "toggle-autoskip";
+    case "post-stop-after-current":
+      return "stop-after-current";
     case "post-title-control-menu":
       return "menu";
     default:

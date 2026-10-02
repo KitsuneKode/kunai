@@ -633,6 +633,32 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "After playback",
     helpOnly: true,
   },
+  // Session toggles stay live after playback ends — the post-play Session row
+  // advertises these letters and the menu router already handles the actions.
+  {
+    id: "post-autoplay",
+    chord: { input: "a" },
+    label: "Toggle autoplay",
+    hintLabel: "autoplay",
+    scope: "postPlayback",
+    group: "After playback",
+  },
+  {
+    id: "post-autoskip",
+    chord: { input: "u" },
+    label: "Toggle autoskip",
+    hintLabel: "autoskip",
+    scope: "postPlayback",
+    group: "After playback",
+  },
+  {
+    id: "post-stop-after-current",
+    chord: { input: "x" },
+    label: "Stop after current episode",
+    hintLabel: "stop after",
+    scope: "postPlayback",
+    group: "After playback",
+  },
 
   // ── Up Next queue ──
   {

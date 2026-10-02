@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
 import { KEYBINDINGS, type KeyBinding } from "@/app-shell/keybindings";
-import { buildPostPlayView } from "@/app-shell/post-play-view";
+import {
+  buildPostPlayView,
+  firstSelectableActionIndex,
+  movePostPlayActionSelection,
+  resolvePostPlayUnhandledInput,
+} from "@/app-shell/post-play-view";
 
 describe("buildDiscovery posters", () => {
   it("resolves a TMDB posterUrl from posterPath", () => {
@@ -66,9 +71,9 @@ describe("post-play action shortcuts", () => {
     expect(view.actions.find((action) => action.id === "source")?.shortcut).toBe("z");
   });
 
-  it("uses the same player registry keys for mid-series session controls", () => {
+  it("derives session-control hints from the postPlayback-scoped bindings", () => {
     const bindings: readonly KeyBinding[] = KEYBINDINGS.map((binding) =>
-      binding.id === "player-autoskip" ? { ...binding, chord: { input: "y" } } : binding,
+      binding.id === "post-autoskip" ? { ...binding, chord: { input: "y" } } : binding,
     );
 
     const view = buildPostPlayView({
@@ -81,6 +86,48 @@ describe("post-play action shortcuts", () => {
     expect(view.actions.find((action) => action.id === "session-controls")?.shortcut).toBe(
       "a · y · x",
     );
+  });
+
+  it("marks the Session row non-selectable — its letters work, the row is a status", () => {
+    const view = buildPostPlayView({
+      title: "Show",
+      episodeLabel: "S01 E02",
+      postPlayState: { kind: "mid-series" },
+    });
+
+    const session = view.actions.find((action) => action.id === "session-controls");
+    expect(session?.selectable).toBe(false);
+    // Navigation starts on an Enter-able row and skips the Session row.
+    const first = firstSelectableActionIndex(view.actions);
+    expect(view.actions[first]?.selectable).not.toBe(false);
+    const before = view.actions.findIndex((action) => action.id === "session-controls");
+    const afterDown = movePostPlayActionSelection(view.actions, before - 1, 1);
+    expect(afterDown).not.toBe(before);
+    expect(view.actions[afterDown]?.selectable).not.toBe(false);
+    const afterUp = movePostPlayActionSelection(view.actions, before + 1, -1);
+    expect(afterUp).not.toBe(before);
+    expect(view.actions[afterUp]?.selectable).not.toBe(false);
+  });
+
+  it("routes the session-toggle letters to real post-play results", () => {
+    const ctx = {
+      postPlayStateKind: "mid-series",
+      selectedActionAvailable: true,
+      recommendationCount: 0,
+    } as const;
+
+    expect(resolvePostPlayUnhandledInput("a", {}, ctx)).toEqual({
+      type: "shell-result",
+      result: "toggle-autoplay",
+    });
+    expect(resolvePostPlayUnhandledInput("u", {}, ctx)).toEqual({
+      type: "shell-result",
+      result: "toggle-autoskip",
+    });
+    expect(resolvePostPlayUnhandledInput("x", {}, ctx)).toEqual({
+      type: "shell-result",
+      result: "stop-after-current",
+    });
   });
 });
 
