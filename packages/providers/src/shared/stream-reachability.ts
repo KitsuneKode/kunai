@@ -92,7 +92,10 @@ async function fetchProbeTarget(options: {
       // DNS once the literals pass — skipped when the caller already aborted so
       // a cancelled probe does not sit on a resolver round-trip.
       if (options.resolveNames && !options.parentSignal?.aborted) {
-        const resolvedBlocked = await resolvedAddressBlockReason(target);
+        const resolvedBlocked = await resolvedAddressBlockReason(
+          target,
+          options.parentSignal ?? undefined,
+        );
         if (resolvedBlocked) {
           return { kind: "blocked", reason: `${target} -> ${resolvedBlocked}` };
         }
@@ -110,6 +113,12 @@ async function fetchProbeTarget(options: {
     if (REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get("location");
       if (location && hop < MAX_PROBE_REDIRECT_HOPS) {
+        // Release the hop's socket promptly, but a body that never drains must
+        // not stall the probe — bound the cancel inside the hop's own budget.
+        await Promise.race([
+          response.body?.cancel("redirected").catch(() => {}) ?? Promise.resolve(),
+          Bun.sleep(Math.min(500, Math.max(0, options.remaining()))),
+        ]);
         try {
           const next = new URL(location, target);
           const current = new URL(target);

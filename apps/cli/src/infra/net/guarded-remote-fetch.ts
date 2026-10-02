@@ -70,7 +70,7 @@ export async function fetchGuardedRemoteTarget(
     // DNS answers are validated only for the platform fetch — an injected impl
     // owns its destinations, and a stubbed lookup would be pure test flakiness.
     if (fetchImpl === PLATFORM_FETCH) {
-      const resolvedBlocked = await resolvedAddressBlockReason(target);
+      const resolvedBlocked = await resolvedAddressBlockReason(target, init.signal ?? undefined);
       if (resolvedBlocked) {
         throw new GuardedRemoteFetchError(`Blocked unsafe target: ${resolvedBlocked}`, target);
       }
@@ -80,7 +80,12 @@ export async function fetchGuardedRemoteTarget(
     if (!REDIRECT_STATUSES.has(response.status)) return response;
 
     const location = response.headers.get("location");
-    await response.body?.cancel("redirected").catch(() => {});
+    // Drain the hop's socket promptly, but a body that never finishes must not
+    // stall the redirect chain — bound the cancel to a short grace.
+    await Promise.race([
+      response.body?.cancel("redirected").catch(() => {}) ?? Promise.resolve(),
+      Bun.sleep(500),
+    ]);
     if (!location || hop >= maxHops) {
       throw new GuardedRemoteFetchError("Redirect chain exceeded", target);
     }
