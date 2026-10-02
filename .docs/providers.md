@@ -204,6 +204,10 @@ so a cached resolve older than an hour will 403 on replay. And mpv only has
 dedicated options for referer and user-agent — everything else a provider
 attaches has to ride `http-header-fields`, which is why
 `normalizeStreamHttpHeaders` forwards unknown headers instead of dropping them.
+Those fields (and `ytdl-raw-options`, which can carry a PO token) never ride
+mpv argv: `writeMpvSensitiveConf` writes them to an owner-only `--include`
+conf next to the IPC socket, deleted once the endpoint proves mpv's startup
+parse is done — argv is world-readable via `/proc/<pid>/cmdline`.
 
 **Per-candidate timeouts are clamped to the attempt budget.**
 `providerCycleCandidateTimeoutMs` (in `packages/core/src/provider-attempt-budget.ts`)
