@@ -66,6 +66,17 @@ hands a stream URL that provider already serves to `mpv`: no browser, no tabs, n
 fullscreen keyboard session covers anime, series, and movies, with offline
 downloads, a release calendar, watch history, and Discord Rich Presence built in.
 
+What that buys you:
+
+- **One session for every kind of title.** Anime, series, movies, and YouTube share one
+  keyboard-driven shell, so finding the next thing to watch never means leaving it.
+- **Streams resolve on your machine.** No browser automation: Kunai hands `mpv` a stream
+  URL the provider already serves.
+- **A stalled stream has a way out.** The stalled-stream prompt offers `r` recover, `o` another
+  source, and `⇧F` fallback to another provider.
+- **It keeps going.** Up Next, resume, watch history, a release calendar, and offline
+  downloads are one command away.
+
 It takes the daily-driver confidence of tools like `ani-cli` and extends it into
 an app-grade browsing experience that keeps search, details, episodes, and
 playback connected while staying a deterministic, scriptable CLI.
@@ -125,13 +136,16 @@ help, diagnostics, and watch history without leaving the session:
 Every surface is reachable this way: search, details, the release calendar,
 downloads, and Up Next, all without leaving the session or touching a mouse.
 
-A second tape walks both catalog lanes as a typed session, series (Andor)
-then `/anime` into Frieren, from search through episode pick, resolve, mpv
-supervision, and post-play:
+A typed session from search to post-play, on sample data (Blender open movies, no
+network): search, pick, resolve, play, the stalled-stream prompt with its recover and
+fallback keys, then post-play. It is the real shell, recorded by
+`apps/cli/test/vhs/ui-demo.tape`.
 
 <div align="center">
 
-![Kunai series and anime playback walkthrough](.reference/design/brand/demo-playback-walkthrough.gif)
+![Kunai search, resolve, play, recover, and post-play walkthrough](.reference/design/brand/demo-ui-walkthrough.gif)
+
+[Watch the sharper MP4](.reference/design/brand/demo-ui-walkthrough.mp4)
 
 </div>
 
@@ -586,6 +600,7 @@ Environment overrides:
 KUNAI_POSTER=0                          # Disable posters
 KUNAI_PET=off                           # Retire the fox companion entirely
 KUNAI_PET=glyph                         # Keep the companion, but only as 🦊
+KUNAI_REDUCED_MOTION=1                  # Stop animated petals and spinners (NO_MOTION=1 works too)
 KUNAI_IMAGE_PROTOCOL=kitty              # Force protocol
 KUNAI_IMAGE_DEBUG=1                     # Verbose poster logging
 ```
