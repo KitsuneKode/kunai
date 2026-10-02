@@ -27,6 +27,10 @@ export type PublicAnalyticsMetrics = {
   readonly schemaVersion: typeof METRICS_SCHEMA_VERSION;
   readonly day: string;
   readonly activeInstalls: number;
+  /**
+   * Cumulative observations, not a unique-install total: installs retired for
+   * long silence stay counted, and one that returns is counted again.
+   */
   readonly lifetimeInstalls: number;
   readonly byVersion: Readonly<Record<string, number>>;
   readonly byOs: Readonly<Record<string, number>>;

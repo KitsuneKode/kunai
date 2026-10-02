@@ -86,12 +86,18 @@ function bucketJsonCte(alias: string, column: "version" | "os" | "arch"): string
  * from different snapshots, so a ping landing mid-rollup published dimension
  * counts that did not add up to the active total. And the lifetime figure was
  * `count(*) from install_lifetime` — every install ever, *including ones first
- * seen after the day being rolled up. Cron rolls up yesterday just after
- * midnight UTC, so today's installs were already inflating yesterday's number,
+ * seen after the day being rolled up. Cron rolls up yesterday just after the
+ * day boundary, so today's installs were already inflating yesterday's number,
  * and recomputing an old day produced a different answer every time.
  *
- * `first_seen <= day` makes the figure a function of the day it labels, and one
- * statement makes every component share a snapshot.
+ * `first_seen <= day` makes the live half a function of the day it labels, and
+ * one statement makes every component share a snapshot. The retired half is a
+ * single counter with no dates — as-of-now, not as-of-`day` — which cannot
+ * skew a recompute because a prunable row was always last seen before every
+ * day the raw window can still reach. What it does mean: an install that
+ * returns after retirement writes a fresh `install_lifetime` row while still
+ * counting inside `lifetime_retired` — cumulative observations, not a
+ * unique-install total.
  */
 export const ROLL_UP_DAY_SQL = `with active as (
   select count(*)::int as n from ping_day where day = $1::date

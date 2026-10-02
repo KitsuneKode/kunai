@@ -6,7 +6,8 @@
  *
  * Stores only:
  * - ping_day: HMAC(installId) + version/os/arch, 35-day retention
- * - install_lifetime: HMAC(installId) + first-seen date, permanent
+ * - install_lifetime: HMAC(installId) + first-seen date; folds into a retired
+ *   counter after the silence window
  * - daily_rollup: aggregate counts, permanent, no identity
  *
  * Never stores or accepts: raw install UUIDs, IP addresses, titles, queries,

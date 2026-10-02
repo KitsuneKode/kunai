@@ -13,6 +13,11 @@ export type DailyRollup = {
   readonly byVersion: Readonly<Record<string, number>>;
   readonly byOs: Readonly<Record<string, number>>;
   readonly byArch: Readonly<Record<string, number>>;
+  /**
+   * Installs ever observed: live `install_lifetime` rows with `first_seen` on
+   * or before `day`, plus the retired counter. Not a unique-install total —
+   * an install that returns after its row was retired is counted again.
+   */
   readonly lifetimeInstalls: number;
 };
 
@@ -62,7 +67,9 @@ export type AnalyticsStore = {
   pruneRawBefore(day: string): Promise<number>;
   /**
    * Deletes install rows unseen since `day`, adding them to the retired counter
-   * so the lifetime total stays exact. A no-op when retention is disabled.
+   * so the published total keeps them. The fold discards identity: a returning
+   * install writes a fresh row and is counted again. A no-op when retention is
+   * disabled.
    */
   pruneLifetimeBefore(day: string): Promise<PruneLifetimeResult>;
 };

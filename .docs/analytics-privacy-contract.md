@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-02"
 ---
 
 # Analytics Privacy Contract
@@ -166,7 +166,12 @@ for the snapshot, so a closed dimension is never recoverable by subtraction.
 
 `lifetimeInstalls` is retention-adjusted and therefore **not monotonic**. It may
 fall when `lifetime_retired` absorbs pruned installs; a consumer charting it as
-a cumulative line will show a dip that is correct data, not a bug.
+a cumulative line will show a dip that is correct data, not a bug. The same seam
+caps its precision upward: an install that pings again after its row was retired
+writes a fresh `install_lifetime` row while the old one still counts inside
+`lifetime_retired`, so it is counted twice. Read the figure as installs ever
+observed, deduplicated only within the retained window — not as a unique-install
+total.
 
 The ingest body is capped at 512 bytes and a real install is limited by the
 `(day, install_hash)` primary key. Before production enablement, configure a
