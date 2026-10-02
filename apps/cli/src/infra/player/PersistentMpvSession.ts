@@ -721,7 +721,10 @@ export class PersistentMpvSession {
 
     const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
       const active = this.activeCycle;
-      if (active && (event.type === "stream-stalled" || event.type === "ipc-stalled")) {
+      // Only the watchdog's stream-stall verdicts mean the feed died. ipc-stalled
+      // fires for any non-subtitle command timeout — a cosmetic set_property
+      // during heavy demux must not stamp the eof-demotion window.
+      if (active && event.type === "stream-stalled") {
         noteStreamStall(active.stats, Date.now());
       }
       this.emitPlaybackEventFor(this.currentCycleOptions(), event);
@@ -1652,6 +1655,15 @@ export class PersistentMpvSession {
     // loadfile then emits end-file error with no file-loaded). Clear the in-flight
     // flag so runSameUrlReconnect's guard does not block the next attempt within budget.
     if (this.reconnectInFlight) {
+      // `loadfile ... replace` makes mpv emit end-file reason "stop" for the file
+      // it unloads. With the reconnect's file-loaded still pending, that event is
+      // the replaced file going away — not the reload dying. Resolving the cycle
+      // here orphans the recovered file: its file-loaded finds no pending owner
+      // and finishInProcessReconnectAfterLoad never runs. Real reload deaths
+      // arrive as error/redirect/eof before file-loaded and keep this behavior.
+      if (this.pendingInProcessReconnect !== null && reason === "stop") {
+        return;
+      }
       this.reconnectInFlight = false;
       this.pendingInProcessReconnect = null;
     }
@@ -1678,7 +1690,15 @@ export class PersistentMpvSession {
     const latest = active.stats.latestIpcSample ?? active.stats.lastNonZeroSample;
     const networkish = latest?.demuxerViaNetwork === true;
     const demoted = active.stats.eofDemotedByPrematureGuard;
-    const seekFrom = Math.max(result.watchedSeconds, this.currentPositionSeconds);
+    // A demoted eof exists precisely because the raw position jumped near the
+    // duration — `currentPositionSeconds` is the corrupt sample this path is
+    // reacting to, so it must not steer the reload's seek. Fall back to the
+    // file's own start position when no trusted progress was ever observed.
+    const seekFrom = demoted
+      ? result.watchedSeconds > 0
+        ? result.watchedSeconds
+        : (this.loadStartAt ?? 0)
+      : Math.max(result.watchedSeconds, this.currentPositionSeconds);
     const durationForSeek =
       result.duration > 0
         ? result.duration
@@ -1829,7 +1849,13 @@ export class PersistentMpvSession {
         this.clearPendingFileLoadIf(reconnectLoadId, reconnectGeneration);
         throw new Error(loadResult.error ?? "loadfile failed");
       }
-      if (!this.isGenerationCurrent(reconnectGeneration)) return false;
+      // The stream can die organically while the loadfile is in flight —
+      // handlePlaybackEnded then resolves the cycle same-generation, so a
+      // generation check alone still lets this claim an unowned loadfile.
+      if (!this.isGenerationCurrent(reconnectGeneration) || this.activeCycle !== active) {
+        this.clearPendingFileLoadIf(reconnectLoadId, reconnectGeneration);
+        return false;
+      }
 
       this.reconnectBackoffUntilMs = 0;
       void this.ipcSession.send(["set_property", "user-data/kunai-loading", ""], 500);
@@ -1874,7 +1900,15 @@ export class PersistentMpvSession {
           this.currentPositionSeconds = spec.seekSeconds;
         }
       }
-      await this.ipcSession?.send(["set_property", "pause", false], 500);
+      // A pause the user took during the stall window is their intent — the
+      // reload completed for them, not against them. Ask mpv rather than the
+      // stats snapshot (which the reconnect just rebuilt) so the unpause only
+      // fires when mpv isn't already user-paused.
+      const pauseState = await this.ipcSession?.send(["get_property", "pause"], 500);
+      if (!isCurrent()) return;
+      if (pauseState?.ok && pauseState.response.data !== true) {
+        await this.ipcSession?.send(["set_property", "pause", false], 500);
+      }
       if (!isCurrent()) return;
 
       await this.replaceSubtitleInventory(

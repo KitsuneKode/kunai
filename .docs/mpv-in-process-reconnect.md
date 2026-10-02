@@ -38,6 +38,27 @@ If reconnect **succeeds**, the current `play()` promise **does not resolve** yet
 
 If reconnect **fails** or limits are hit, the cycle ends and the usual `PlaybackResult` is returned.
 
+### Event ordering that must not be misread
+
+`loadfile … replace` makes mpv emit an `end-file` with reason **`stop`** for the
+file it unloads — on watchdog-triggered reconnects (`network-read-dead`,
+`cache-starved`) that stray event lands while the old file is still loaded and
+the reload's `file-loaded` is still pending. `handlePlaybackEnded` treats a
+`stop` end-file arriving while `pendingInProcessReconnect` is set as the
+expected unload and keeps the cycle alive; it does **not** clear the reconnect
+flags, retire the pending load owner, or resolve `play()`. A real reload death
+(`error`, `redirect`, or a dead playlist's instant `eof` before `file-loaded`)
+still resolves the cycle and unblocks the next attempt inside budget.
+
+The other way around: if the stream dies organically while a reconnect's
+loadfile is in flight, the cycle resolves same-generation — the post-ACK path
+re-checks `activeCycle`, not just the generation, so it cannot claim an unowned
+loadfile.
+
+Completion also asks mpv for `pause` before unpausing: a pause the user took
+during the stall window is their intent, and the freshly reset stats snapshot
+cannot speak for it.
+
 ## Limits and backoff
 
 - **`mpvInProcessStreamReconnectMaxAttempts`** (default `1`, and `1` is also the

@@ -48,6 +48,9 @@ export function createPlaybackWatchdog(
   let bufferingSince: number | null = null;
   let emittedSlowNetwork = false;
   let lastNetworkSampleAt = 0;
+  let lastBufferingPercent: number | null = null;
+  let lastBufferingEmitAt = 0;
+  let bufferingEmitted = false;
   /** Position has demonstrably advanced (or loaded to a nonzero start). */
   let hasSeenProgress = false;
   let lastSlowOpenSecond = -1;
@@ -87,6 +90,8 @@ export function createPlaybackWatchdog(
       emittedNetworkReadDead = false;
       bufferingSince = null;
       emittedSlowNetwork = false;
+      lastBufferingPercent = null;
+      bufferingEmitted = false;
       return;
     }
 
@@ -180,6 +185,7 @@ export function createPlaybackWatchdog(
     emittedNetworkReadDead = false;
     bufferingSince = null;
     emittedSlowNetwork = false;
+    lastBufferingPercent = null;
 
     const stalledForMs = now - lastProgressAt;
     if (!hasSeenProgress) {
@@ -243,6 +249,8 @@ export function createPlaybackWatchdog(
         emittedNetworkReadDead = false;
         bufferingSince = null;
         emittedSlowNetwork = false;
+        lastBufferingPercent = null;
+        bufferingEmitted = false;
       }
 
       if (sample.positionSeconds > lastPosition + 0.25) {
@@ -272,12 +280,25 @@ export function createPlaybackWatchdog(
         }
         lastCacheAheadSeconds = cacheAhead;
 
-        emit({
-          type: "network-buffering",
-          percent: sample.cacheBufferingState,
-          cacheAheadSeconds: sample.demuxerCacheDurationSeconds,
-          cacheSpeed: sample.cacheSpeedBytesPerSecond,
-        });
+        // demuxer-cache-state samples arrive per-percent while buffering; the
+        // feedback dispatch behind this event must not tick at sample rate.
+        const percent = sample.cacheBufferingState ?? null;
+        const percentMoved =
+          percent !== lastBufferingPercent &&
+          (lastBufferingPercent === null ||
+            percent === null ||
+            Math.abs(percent - lastBufferingPercent) >= 5);
+        if (!bufferingEmitted || percentMoved || sample.observedAt - lastBufferingEmitAt >= 1_000) {
+          bufferingEmitted = true;
+          lastBufferingPercent = percent;
+          lastBufferingEmitAt = sample.observedAt;
+          emit({
+            type: "network-buffering",
+            percent: sample.cacheBufferingState,
+            cacheAheadSeconds: sample.demuxerCacheDurationSeconds,
+            cacheSpeed: sample.cacheSpeedBytesPerSecond,
+          });
+        }
         // Once the slow-network warning fired it is the stronger signal —
         // keep ticking percent updates, but don't let the milder counter
         // overwrite it on the same feedback slot.
