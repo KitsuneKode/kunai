@@ -4,16 +4,16 @@
  *
  * Env:
  * - KUNAI_FAKE_MPV_EVIDENCE: absolute JSONL path
- * - KUNAI_FAKE_MPV_MODE: normal | fail-pre-loaded | hold
+ * - KUNAI_FAKE_MPV_MODE: normal | fail-pre-loaded | hold | slow-open
  */
 import { appendFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 
-type Mode = "normal" | "fail-pre-loaded" | "hold";
+type Mode = "normal" | "fail-pre-loaded" | "hold" | "slow-open";
 
 function modeFromEnv(): Mode {
   const raw = process.env.KUNAI_FAKE_MPV_MODE?.trim();
-  if (raw === "fail-pre-loaded" || raw === "hold") return raw;
+  if (raw === "fail-pre-loaded" || raw === "hold" || raw === "slow-open") return raw;
   return "normal";
 }
 
@@ -72,6 +72,14 @@ async function runPlaybackLifecycle(
   emit(sock, { event: "file-loaded" });
   appendEvidence({ type: "file-loaded", url });
   emit(sock, { event: "property-change", name: "duration", data: 600 });
+
+  if (mode === "slow-open") {
+    // The demuxer opened but no position ever advances — the slow-but-not-dead
+    // connect the watchdog used to mislabel "stream stalled".
+    appendEvidence({ type: "slow-open-hold" });
+    return "continue";
+  }
+
   emit(sock, { event: "property-change", name: "time-pos", data: 12 });
   appendEvidence({ type: "playback-properties", duration: 600, timePos: 12 });
 

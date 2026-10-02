@@ -53,7 +53,7 @@ export interface TmuxSessionOptions {
   readonly env?: Record<string, string>;
   /** PATH-shim fake mpv (default true — the real-mpv tier sets this false). */
   readonly fakeMpv?: boolean;
-  readonly fakeMpvMode?: "normal" | "fail-pre-loaded" | "hold";
+  readonly fakeMpvMode?: "normal" | "fail-pre-loaded" | "hold" | "slow-open";
   /**
    * Command override — default `bun src/main.ts`. The compiled-binary tier
    * passes the built binary path here; everything else stays identical.

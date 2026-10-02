@@ -17,6 +17,8 @@
  * hasn't rendered yet.
  * `<wait-config:key=value>` waits for the (debounced) config write to land —
  * frame says it AND the file commits it, or the run times out honestly.
+ * `<sleep:MS>` pauses the replay for a wall-clock duration while the session
+ * keeps ticking — for time-based surfaces like watchdog thresholds.
  *
  * Examples:
  *   bun run agent:drive -- --keys '/' --keys 'smoke movie' --keys '<enter>' --show frame,tables
@@ -54,7 +56,8 @@ const SHOW_SECTION_SET: ReadonlySet<string> = new Set(SHOW_SECTIONS);
 type DriveStep =
   | { kind: "key"; value: string }
   | { kind: "wait"; text: string }
-  | { kind: "waitConfig"; key: string; value: string };
+  | { kind: "waitConfig"; key: string; value: string }
+  | { kind: "sleep"; ms: number };
 
 interface DriveArgs {
   steps: DriveStep[];
@@ -68,7 +71,7 @@ interface DriveArgs {
 function usage(): never {
   console.error(`usage: bun run agent:drive -- [opts]
   --keys <k>...            keys to replay (repeatable; escapes, <names>, <wait:text>,
-                           <wait-config:key=value>)
+                           <wait-config:key=value>, <sleep:ms>)
   --show <a,b,c>           sections: ${SHOW_SECTIONS.join(",")} (default: frame,tables)
   --wait-for <text>        require the frame to contain text (repeatable)
   --verify-citation <text> require text to appear in captured evidence (repeatable)
@@ -76,7 +79,7 @@ function usage(): never {
   --seed onboarded|fresh   profile seed (default: onboarded)
   --providers smoke|none   fixture providers (default: smoke)
   --mpv fake|none          PATH-shim fake mpv (default: none)
-  --fake-mpv-mode <m>      normal | fail-pre-loaded | hold
+  --fake-mpv-mode <m>      normal | fail-pre-loaded | hold | slow-open
   --width N / --rows N     terminal size (default: 100x30)
   --set-env K=V            extra env for the session (repeatable)`);
   process.exit(2);
@@ -111,12 +114,15 @@ function parseArgs(argv: string[]): DriveArgs {
           i++;
           const wait = /^<wait:(.+)>$/i.exec(token);
           const waitConfig = /^<wait-config:([A-Za-z0-9_.-]+)=(.*)>$/i.exec(token);
+          const sleep = /^<sleep:(\d+)>$/i.exec(token);
           out.steps.push(
             wait?.[1]
               ? { kind: "wait", text: wait[1] }
               : waitConfig?.[1] !== undefined
                 ? { kind: "waitConfig", key: waitConfig[1], value: waitConfig[2] ?? "" }
-                : { kind: "key", value: decodeKeyToken(token) },
+                : sleep?.[1] !== undefined
+                  ? { kind: "sleep", ms: Number(sleep[1]) }
+                  : { kind: "key", value: decodeKeyToken(token) },
           );
           consumed++;
         }
@@ -171,7 +177,13 @@ function parseArgs(argv: string[]): DriveArgs {
       }
       case "--fake-mpv-mode": {
         const mode = next();
-        if (mode !== "normal" && mode !== "fail-pre-loaded" && mode !== "hold") usage();
+        if (
+          mode !== "normal" &&
+          mode !== "fail-pre-loaded" &&
+          mode !== "hold" &&
+          mode !== "slow-open"
+        )
+          usage();
         out.options = { ...out.options, fakeMpvMode: mode };
         break;
       }
@@ -212,6 +224,13 @@ async function main(): Promise<void> {
       if (step.kind === "wait") {
         const pred = frameMatcher(step.text);
         await session.waitForFrame(pred, `frame matches ${JSON.stringify(step.text)}`);
+      } else if (step.kind === "sleep") {
+        // Wall-clock pause for time-based surfaces (watchdog thresholds). The
+        // session keeps ticking underneath — this is "wait N ms, then look".
+        // Settling after journals the frame at that moment, so a state that
+        // only exists mid-sleep still lands in the evidence bundle.
+        await Bun.sleep(step.ms);
+        await session.waitSettled();
       } else if (step.kind === "waitConfig") {
         // Config writes are debounced (~300ms) — a frame claiming "Minimal"
         // while config.json still says nothing is a deferred write, not a
