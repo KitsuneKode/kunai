@@ -16,6 +16,7 @@ export function createPlaybackWatchdog(
     networkReadDeadAfterMs?: number;
     networkSampleEveryMs?: number;
     slowNetworkAfterMs?: number;
+    slowOpenAfterMs?: number;
   },
 ): PlaybackWatchdog {
   const intervalMs = options?.intervalMs ?? 2_500;
@@ -26,6 +27,13 @@ export function createPlaybackWatchdog(
   const networkReadDeadAfterMs = options?.networkReadDeadAfterMs ?? 8_000;
   const networkSampleEveryMs = options?.networkSampleEveryMs ?? 2_500;
   const slowNetworkAfterMs = options?.slowNetworkAfterMs ?? 6_000;
+  /**
+   * Before the position has ever advanced there is nothing to stall on — a
+   * slow open (redirects, TLS, manifest fetch, first segment) legitimately
+   * reports zero movement. The startup watchdog owns the real abort call; this
+   * softer threshold only narrates "still opening" so the surface stays honest.
+   */
+  const slowOpenAfterMs = options?.slowOpenAfterMs ?? 15_000;
   let latest: PlayerStatsSample | null = null;
   let lastPosition = 0;
   let lastProgressAt = Date.now();
@@ -40,6 +48,22 @@ export function createPlaybackWatchdog(
   let bufferingSince: number | null = null;
   let emittedSlowNetwork = false;
   let lastNetworkSampleAt = 0;
+  /** Position has demonstrably advanced (or loaded to a nonzero start). */
+  let hasSeenProgress = false;
+  let lastSlowOpenSecond = -1;
+
+  const emitSlowOpen = (elapsedMs: number, cacheSample: PlayerStatsSample) => {
+    const second = Math.floor(elapsedMs / 1000);
+    if (elapsedMs < slowOpenAfterMs || second === lastSlowOpenSecond) return;
+    lastSlowOpenSecond = second;
+    emit({
+      type: "stream-slow",
+      state: "slow-open",
+      secondsBuffering: Math.round(elapsedMs / 1000),
+      cacheAheadSeconds: cacheSample.demuxerCacheDurationSeconds,
+      cacheSpeed: cacheSample.cacheSpeedBytesPerSecond,
+    });
+  };
 
   const resetProgressClock = (observedAt: number, positionSeconds: number) => {
     lastPosition = positionSeconds;
@@ -80,6 +104,13 @@ export function createPlaybackWatchdog(
     if (latest.seeking) {
       seekingSince ??= now;
       const seekingForMs = now - seekingSince;
+      if (!hasSeenProgress) {
+        // The opening seek (startAt resume) runs inside stream open and can
+        // legitimately take a while on slow sources — narrate the open, don't
+        // cry stall. The clock is the open, not the seek.
+        emitSlowOpen(now - lastProgressAt, latest);
+        return;
+      }
       if (seekingForMs >= seekStallAfterMs && !emittedSeekStall) {
         emittedSeekStall = true;
         emit({ type: "seek-stalled", secondsSeeking: Math.round(seekingForMs / 1000) });
@@ -139,6 +170,7 @@ export function createPlaybackWatchdog(
         emit({
           type: "stream-stalled",
           secondsWithoutProgress: Math.round(cacheStalledForMs / 1000),
+          stallKind: "cache-starved",
         });
       }
       return;
@@ -150,11 +182,19 @@ export function createPlaybackWatchdog(
     emittedSlowNetwork = false;
 
     const stalledForMs = now - lastProgressAt;
+    if (!hasSeenProgress) {
+      // Position has never advanced: this is the open phase, not a stall.
+      // Claiming "stream stalled" here is how a slow-but-healthy connect gets
+      // misread as a dead stream — the startup watchdog owns that call.
+      emitSlowOpen(stalledForMs, latest);
+      return;
+    }
     if (stalledForMs >= stallAfterMs && !emittedStreamStall) {
       emittedStreamStall = true;
       emit({
         type: "stream-stalled",
         secondsWithoutProgress: Math.round(stalledForMs / 1000),
+        stallKind: "no-progress",
       });
     }
   }, intervalMs);
@@ -187,7 +227,26 @@ export function createPlaybackWatchdog(
         });
       }
 
+      // A new loadfile in the same process rewinds position to ~0 — that is a
+      // fresh open, not progress backward. Re-arm the startup gate so the next
+      // title's slow open isn't judged by mid-playback rules.
+      if (hasSeenProgress && lastPosition > 0.25 && sample.positionSeconds < 0.25) {
+        hasSeenProgress = false;
+        lastSlowOpenSecond = -1;
+        lastPosition = sample.positionSeconds;
+        lastProgressAt = sample.observedAt;
+        lastCacheProgressAt = sample.observedAt;
+        emittedStreamStall = false;
+        seekingSince = null;
+        emittedSeekStall = false;
+        networkReadDeadSince = null;
+        emittedNetworkReadDead = false;
+        bufferingSince = null;
+        emittedSlowNetwork = false;
+      }
+
       if (sample.positionSeconds > lastPosition + 0.25) {
+        hasSeenProgress = true;
         lastPosition = sample.positionSeconds;
         lastProgressAt = sample.observedAt;
         lastCacheProgressAt = sample.observedAt;
@@ -219,13 +278,18 @@ export function createPlaybackWatchdog(
           cacheAheadSeconds: sample.demuxerCacheDurationSeconds,
           cacheSpeed: sample.cacheSpeedBytesPerSecond,
         });
-        emit({
-          type: "stream-slow",
-          state: "buffering-observed",
-          secondsBuffering: Math.max(0, Math.round((sample.observedAt - bufferingSince) / 1000)),
-          cacheAheadSeconds: sample.demuxerCacheDurationSeconds,
-          cacheSpeed: sample.cacheSpeedBytesPerSecond,
-        });
+        // Once the slow-network warning fired it is the stronger signal —
+        // keep ticking percent updates, but don't let the milder counter
+        // overwrite it on the same feedback slot.
+        if (!emittedSlowNetwork) {
+          emit({
+            type: "stream-slow",
+            state: "buffering-observed",
+            secondsBuffering: Math.max(0, Math.round((sample.observedAt - bufferingSince) / 1000)),
+            cacheAheadSeconds: sample.demuxerCacheDurationSeconds,
+            cacheSpeed: sample.cacheSpeedBytesPerSecond,
+          });
+        }
       }
     },
     stop() {

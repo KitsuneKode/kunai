@@ -250,6 +250,34 @@ describe("runMpvPlaybackSession degraded-state recovery", () => {
     expect(harness.beforeCompletion.snapshot.status).toBe("playing");
   });
 
+  test("slow-open narrates the connect without claiming a stall", async () => {
+    const harness = await runSession((emit) => {
+      emit({ type: "mpv-process-started" });
+      emit({ type: "stream-slow", state: "slow-open", secondsBuffering: 18 });
+    });
+
+    // Startup is still "loading" — the surface narrates a slow connect instead
+    // of downgrading to the stalled badge while the stream is still opening.
+    expect(harness.beforeCompletion.snapshot.status).toBe("loading");
+    expect(harness.feedback).toContainEqual(
+      expect.objectContaining({ detail: "Still opening the stream" }),
+    );
+  });
+
+  test("a cache-starved stall names its cause, not a bare stall", async () => {
+    const harness = await runSession((emit) => {
+      emit({ type: "playback-started" });
+      emit({ type: "stream-stalled", secondsWithoutProgress: 22, stallKind: "cache-starved" });
+    });
+
+    expect(harness.beforeCompletion.snapshot.status).toBe("stalled");
+    expect(harness.feedback).toContainEqual(
+      expect.objectContaining({
+        detail: "Stream stalled (buffer stopped filling)",
+      }),
+    );
+  });
+
   test("repeated playing progress updates presence without duplicate status writes", async () => {
     const harness = await runSession((emit) => {
       emit({ type: "playback-started" });

@@ -97,7 +97,7 @@ const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
  */
 const RECONNECT_ATTEMPT_CEILING = 12;
 
-type InProcessReconnectTrigger = "network-read-dead" | "premature-eof" | "error";
+type InProcessReconnectTrigger = "network-read-dead" | "cache-starved" | "premature-eof" | "error";
 
 type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill" | "signalCode">;
 
@@ -729,10 +729,11 @@ export class PersistentMpvSession {
         this.mpvInProcessStreamReconnectEnabled &&
         this.mpvInProcessStreamReconnectMaxAttempts > 0 &&
         event.type === "stream-stalled" &&
-        event.stallKind === "network-read-dead"
+        (event.stallKind === "network-read-dead" || event.stallKind === "cache-starved")
       ) {
-        // Fire-and-forget is fine; an unhandled rejection is not.
-        void this.handleNetworkReadDeadReconnect().catch((error) => {
+        // Both kinds mean the source stopped feeding bytes — a same-URL reload
+        // is the repair. Fire-and-forget is fine; an unhandled rejection is not.
+        void this.handleDeadFeedReconnect(event.stallKind).catch((error) => {
           dbg("mpv-ipc", "in-process-reconnect-failed", {
             error: error instanceof Error ? error.message : String(error),
           });
@@ -1703,7 +1704,9 @@ export class PersistentMpvSession {
     active.resolve(result);
   }
 
-  private async handleNetworkReadDeadReconnect(): Promise<void> {
+  private async handleDeadFeedReconnect(
+    trigger: Extract<InProcessReconnectTrigger, "network-read-dead" | "cache-starved">,
+  ): Promise<void> {
     if (
       !this.mpvInProcessStreamReconnectEnabled ||
       this.mpvInProcessStreamReconnectMaxAttempts <= 0
@@ -1715,12 +1718,15 @@ export class PersistentMpvSession {
 
     const latest = active.stats.latestIpcSample;
     const duration = latest?.durationSeconds ?? 0;
-    const reloaded = await this.runSameUrlReconnect(
-      active,
-      this.currentPositionSeconds,
-      duration,
-      "network-read-dead",
-    );
+    // A dead feed can fire inside the open window — before any position sample
+    // was ever trusted. `currentPositionSeconds` is still 0 there, so the
+    // reload must fall back to the start position this file loaded with, or a
+    // resume at N minutes would come back at the beginning.
+    const positionForReload =
+      active.stats.maxTrustedProgressSeconds > 0 || this.currentPositionSeconds > 0
+        ? this.currentPositionSeconds
+        : (this.loadStartAt ?? 0);
+    const reloaded = await this.runSameUrlReconnect(active, positionForReload, duration, trigger);
     if (!reloaded) {
       dbg("mpv-ipc", "in-process-reconnect-skipped", {
         reason: "backoff-or-limit-or-in-flight",

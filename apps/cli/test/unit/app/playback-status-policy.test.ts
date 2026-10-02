@@ -265,6 +265,50 @@ describe("transitionPlaybackStatus — degraded states", () => {
     expect(decision.snapshot).toEqual(snapshot("seeking"));
   });
 
+  test.each(["loading", "ready"] as const)(
+    "stream-stalled during %s narrates but cannot claim stalled",
+    (status) => {
+      const decision = transitionPlaybackStatus(snapshot(status), {
+        kind: "player-event",
+        generation: GEN,
+        event: { type: "stream-stalled", secondsWithoutProgress: 12 },
+      });
+      // Accepted (feedback/log still see it), but the badge stays in the open
+      // window — a slow connect must not read as a dead stream.
+      expect(decision.accepted).toBe(true);
+      expect(decision.statusChanged).toBe(false);
+      expect(decision.snapshot).toEqual(snapshot(status));
+    },
+  );
+
+  test.each(["loading", "ready"] as const)(
+    "ipc-stalled during %s cannot claim stalled either",
+    (status) => {
+      const decision = transitionPlaybackStatus(snapshot(status), {
+        kind: "player-event",
+        generation: GEN,
+        event: { type: "ipc-stalled", command: "loadfile", error: "timeout" },
+      });
+      expect(decision.accepted).toBe(true);
+      expect(decision.statusChanged).toBe(false);
+      expect(decision.snapshot).toEqual(snapshot(status));
+    },
+  );
+
+  test.each(["loading", "ready"] as const)(
+    "the startup seek during %s does not flip the surface to seeking",
+    (status) => {
+      const decision = transitionPlaybackStatus(snapshot(status), {
+        kind: "player-event",
+        generation: GEN,
+        event: { type: "seek-stalled", secondsSeeking: 9 },
+      });
+      expect(decision.accepted).toBe(true);
+      expect(decision.statusChanged).toBe(false);
+      expect(decision.snapshot).toEqual(snapshot(status));
+    },
+  );
+
   test("player-ready enters ready from loading", () => {
     const decision = transitionPlaybackStatus(snapshot("loading"), {
       kind: "player-event",

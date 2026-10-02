@@ -120,9 +120,19 @@ function transitionFromActive(
       return to("buffering");
     case "stream-stalled":
     case "ipc-stalled":
-      return to("stalled");
+      // loading/ready is the open window — the stream is still connecting, so
+      // nothing may claim "stalled" yet. A slow-but-normal open (redirects,
+      // manifest fetch, first segment) reads exactly like this, and the
+      // startup watchdog owns the real abort call. The feedback note still
+      // lands; only the badge stays honest.
+      return current.status === "loading" || current.status === "ready"
+        ? informational(current)
+        : to("stalled");
     case "seek-stalled":
-      return to("seeking");
+      // Same gate: the opening startAt seek runs inside the open window.
+      return current.status === "loading" || current.status === "ready"
+        ? informational(current)
+        : to("seeking");
     case "playback-started":
     case "playback-resumed":
       return to("playing");

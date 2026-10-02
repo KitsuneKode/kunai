@@ -282,6 +282,211 @@ describe("playback-watchdog", () => {
     watchdog.stop();
   });
 
+  test("a slow open reports slow-open, never stream-stalled, until first progress", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      intervalMs: 100,
+      stallAfterMs: 1_000,
+      seekStallAfterMs: 700,
+      cacheStallAfterMs: 5_000,
+      slowOpenAfterMs: 300,
+    });
+
+    // Position stays 0 across the whole open — the stream is connecting, not
+    // playing. Past stallAfterMs this used to claim "Stream stalled".
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 0,
+      positionSeconds: 0,
+      durationSeconds: 120,
+    });
+    nowMs = 400;
+    runTimers();
+    nowMs = 900;
+    runTimers();
+    nowMs = 2_000;
+    runTimers();
+
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(0);
+    const slowOpens = events.filter(
+      (event) => event.type === "stream-slow" && event.state === "slow-open",
+    );
+    expect(slowOpens.length).toBeGreaterThan(0);
+    watchdog.stop();
+  });
+
+  test("a stall after first progress still fires normally", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      intervalMs: 100,
+      stallAfterMs: 1_000,
+      seekStallAfterMs: 700,
+      cacheStallAfterMs: 5_000,
+      slowOpenAfterMs: 300,
+    });
+
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 0,
+      positionSeconds: 0,
+      durationSeconds: 120,
+    });
+    // First frame lands: position advances — mid-playback rules now apply.
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 2_000,
+      positionSeconds: 0.5,
+      durationSeconds: 120,
+    });
+    nowMs = 3_400;
+    runTimers();
+
+    const stalled = events.filter((event) => event.type === "stream-stalled");
+    expect(stalled).toHaveLength(1);
+    expect(stalled[0]).toMatchObject({ stallKind: "no-progress" });
+    watchdog.stop();
+  });
+
+  test("a startup seek narrates slow-open instead of seek-stalled", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      intervalMs: 100,
+      stallAfterMs: 1_000,
+      seekStallAfterMs: 700,
+      cacheStallAfterMs: 5_000,
+      slowOpenAfterMs: 300,
+    });
+
+    // Resume seek inside stream open — position not yet moved.
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 0,
+      positionSeconds: 0,
+      durationSeconds: 120,
+      seeking: true,
+    });
+    nowMs = 800;
+    runTimers();
+    nowMs = 1_000;
+    runTimers();
+
+    expect(events.filter((event) => event.type === "seek-stalled")).toHaveLength(0);
+    expect(
+      events.filter((e) => e.type === "stream-slow" && e.state === "slow-open").length,
+    ).toBeGreaterThan(0);
+    watchdog.stop();
+  });
+
+  test("a rewound position re-arms the open gate for the next file", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      intervalMs: 100,
+      stallAfterMs: 1_000,
+      seekStallAfterMs: 700,
+      cacheStallAfterMs: 5_000,
+      slowOpenAfterMs: 300,
+    });
+
+    // Title one plays at 300s.
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 0,
+      positionSeconds: 300,
+      durationSeconds: 600,
+    });
+    // A same-process loadfile (next episode) rewinds position to 0 — a fresh
+    // open, so its slow connect must not read as a mid-playback stall.
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 1_000,
+      positionSeconds: 0,
+      durationSeconds: 600,
+    });
+    nowMs = 1_400;
+    runTimers();
+    nowMs = 2_200;
+    runTimers();
+
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(0);
+    expect(
+      events.filter((e) => e.type === "stream-slow" && e.state === "slow-open").length,
+    ).toBeGreaterThan(0);
+    watchdog.stop();
+  });
+
+  test("a cache starve reports cache-starved, not an unclassified stall", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      intervalMs: 100,
+      stallAfterMs: 2_000,
+      seekStallAfterMs: 700,
+      cacheStallAfterMs: 500,
+    });
+
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 0,
+      positionSeconds: 50,
+      durationSeconds: 200,
+      pausedForCache: true,
+      demuxerCacheDurationSeconds: 0,
+      cacheSpeedBytesPerSecond: 0,
+    });
+    nowMs = 200;
+    runTimers();
+    nowMs = 700;
+    runTimers();
+
+    const stalled = events.filter((event) => event.type === "stream-stalled");
+    expect(stalled.length).toBeGreaterThan(0);
+    expect(stalled[0]).toMatchObject({ stallKind: "cache-starved" });
+    watchdog.stop();
+  });
+
+  test("buffering-observed stops overwriting the slow-network warning once it fires", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      intervalMs: 100,
+      stallAfterMs: 10_000,
+      seekStallAfterMs: 700,
+      cacheStallAfterMs: 5_000,
+      networkReadDeadAfterMs: 5_000,
+      slowNetworkAfterMs: 500,
+    });
+
+    const starvedSample = (observedAt: number) => ({
+      source: "ipc" as const,
+      observedAt,
+      positionSeconds: 50,
+      durationSeconds: 200,
+      pausedForCache: true,
+      demuxerViaNetwork: true,
+      demuxerCacheUnderrun: false,
+      demuxerRawInputRate: 64,
+      demuxerCacheDurationSeconds: 0.1,
+      cacheSpeedBytesPerSecond: 64,
+    });
+
+    watchdog.observe(starvedSample(0));
+    nowMs = 600;
+    runTimers();
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "stream-slow", state: "slow-network-suspected" }),
+    );
+
+    // Samples after the warning must not push the milder "buffering-observed"
+    // copy back onto the feedback slot.
+    watchdog.observe(starvedSample(700));
+    watchdog.observe(starvedSample(900));
+    const observedAfterWarn = events
+      .slice(
+        events.findIndex((e) => e.type === "stream-slow" && e.state === "slow-network-suspected"),
+      )
+      .filter((e) => e.type === "stream-slow" && e.state === "buffering-observed");
+    expect(observedAfterWarn).toHaveLength(0);
+    watchdog.stop();
+  });
+
   test("emits throttled network samples for passive speed diagnostics", () => {
     const events: PlayerPlaybackEvent[] = [];
     const watchdog = createPlaybackWatchdog((event) => events.push(event), {

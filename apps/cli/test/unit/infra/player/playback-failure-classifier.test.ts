@@ -43,3 +43,35 @@ describe("playback recovery guidance", () => {
     ).toBe("expired-stream");
   });
 });
+
+describe("stream-stalled classification", () => {
+  test("cache-starved is a source failure — refresh, not inspect", () => {
+    const failure = classifyPlaybackFailureFromEvent({
+      type: "stream-stalled",
+      secondsWithoutProgress: 22,
+      stallKind: "cache-starved",
+    });
+    expect(failure).toBe("expired-stream");
+    expect(recoveryForPlaybackFailure(failure).action).toBe("refresh");
+  });
+
+  test("no-progress mid-playback is a wait-or-refresh, not an inspect", () => {
+    const failure = classifyPlaybackFailureFromEvent({
+      type: "stream-stalled",
+      secondsWithoutProgress: 14,
+      stallKind: "no-progress",
+    });
+    expect(failure).toBe("slow-stream");
+    expect(recoveryForPlaybackFailure(failure).action).toBe("wait");
+  });
+
+  test("slow-open is a wait condition, never a stall verdict", () => {
+    const failure = classifyPlaybackFailureFromEvent({
+      type: "stream-slow",
+      state: "slow-open",
+      secondsBuffering: 18,
+    });
+    expect(failure).toBe("network-buffering");
+    expect(recoveryForPlaybackFailure(failure).action).toBe("wait");
+  });
+});

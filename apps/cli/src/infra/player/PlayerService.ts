@@ -40,7 +40,13 @@ export type PlayerPlaybackEvent =
     }
   | {
       type: "stream-slow";
-      state: "buffering-observed" | "slow-network-suspected";
+      /**
+       * buffering-observed — demuxer waiting for cache, progress ticking.
+       * slow-network-suspected — buffering beyond the slow threshold.
+       * slow-open — still no first progress past the open grace; the stream
+       *   is connecting slowly, not yet classifiable as stalled.
+       */
+      state: "buffering-observed" | "slow-network-suspected" | "slow-open";
       secondsBuffering: number;
       cacheAheadSeconds?: number;
       cacheSpeed?: number;
@@ -56,8 +62,13 @@ export type PlayerPlaybackEvent =
   | {
       type: "stream-stalled";
       secondsWithoutProgress: number;
-      /** When set, the stall matched demuxer/network starvation heuristics (see playback-watchdog). */
-      stallKind?: "progress" | "network-read-dead";
+      /**
+       * When set, the stall matched demuxer/network starvation heuristics (see
+       * playback-watchdog). `network-read-dead` is underrun with zero read
+       * rate; `cache-starved` is paused-for-cache with no cache growth;
+       * `no-progress` is the position clock going quiet mid-playback.
+       */
+      stallKind?: "progress" | "network-read-dead" | "cache-starved" | "no-progress";
     }
   | { type: "seek-stalled"; secondsSeeking: number }
   | { type: "player-closing" }
