@@ -27,13 +27,21 @@ function createFakeProcess() {
     }),
     killed: false,
     exitCode: null as number | null,
+    signalCode: null as NodeJS.Signals | null,
     kill() {
       this.killed = true;
       this.exitCode = 0;
       resolveExit(0);
     },
   };
-  return { handle, endProcess: (code = 0) => resolveExit(code) };
+  return {
+    handle,
+    endProcess: (code = 0, signal: NodeJS.Signals | null = null) => {
+      handle.exitCode = code;
+      handle.signalCode = signal;
+      resolveExit(code);
+    },
+  };
 }
 
 function createHarness(
@@ -50,6 +58,7 @@ function createHarness(
     }),
     killed: false,
     exitCode: null as number | null,
+    signalCode: null as NodeJS.Signals | null,
     kill() {
       this.killed = true;
       this.exitCode = 0;
@@ -85,8 +94,9 @@ function createHarness(
     runtime,
     commands,
     callbacks: () => callbacks,
-    endProcess(code = 0) {
+    endProcess(code = 0, signal: NodeJS.Signals | null = null) {
       proc.exitCode = code;
+      proc.signalCode = signal;
       resolveExit(code);
     },
   };
@@ -371,6 +381,39 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     expect(result.endReason).toBe("eof");
     expect(result.watchedSeconds).toBe(600);
     expect(result.duration).toBe(600);
+  });
+
+  test("a crashed process after eof-reached reports error, never a completed watch", async () => {
+    const harness = createHarness();
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+      },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: false,
+        mpvInProcessStreamReconnectMaxAttempts: 0,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 1_440, observedAt: 2 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 1_400, observedAt: 3 });
+    harness.callbacks().onPropertyUpdate({ name: "eof-reached", value: true, observedAt: 4 });
+    const playbackResult = session.waitForCurrentPlayback();
+    // mpv faulted instead of exiting cleanly — a real SIGSEGV arrives via
+    // signalCode and must classify as error, not a completed watch.
+    harness.endProcess(139, "SIGSEGV");
+    const result = await playbackResult;
+
+    expect(result.endReason).toBe("error");
+    expect(result.playerExitSignal).toBe("SIGSEGV");
+    expect(result.watchedSeconds).toBe(1_400);
+    await session.close();
   });
 
   test("ignores playback property flood before episode-transition ready work but keeps subtitle cleanup cache", async () => {
