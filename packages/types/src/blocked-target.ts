@@ -40,9 +40,12 @@ export function blockedLiteralTargetReason(url: string): string | null {
   return null;
 }
 
-export async function resolvedAddressBlockReason(url: string): Promise<string | null> {
+export async function resolvedAddressBlockReason(
+  url: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  const resolved = await resolveHostAddresses(host);
+  const resolved = await resolveHostAddresses(host, signal);
   for (const address of resolved) {
     const reason = isPrivateLiteralAddress(address);
     if (reason) return `${reason} (DNS answer for ${host})`;
@@ -123,12 +126,53 @@ export function isPrivateLiteralAddress(host: string): string | null {
   return null;
 }
 
-async function resolveHostAddresses(host: string): Promise<string[]> {
+/**
+ * A resolver that accepts the query and never answers (UDP drop, captive DNS)
+ * would otherwise pend past every caller deadline — the lookup happens inside
+ * fetch paths whose advertised budgets assume it returns. Bound it; a dead
+ * lookup yields no answers and the fetch fails on its own, same as an
+ * unresolvable name.
+ */
+const DEFAULT_DNS_LOOKUP_BUDGET_MS = 4_000;
+let dnsLookupBudgetMs = DEFAULT_DNS_LOOKUP_BUDGET_MS;
+
+/** Test seam — the bound is module state so a test need not wait 4s to see it. */
+export function setBlockedTargetDnsBudgetMsForTest(ms: number): void {
+  dnsLookupBudgetMs = ms;
+}
+
+async function resolveHostAddresses(host: string, signal?: AbortSignal): Promise<string[]> {
   if (parseIpv4(host) || host.includes(":")) return [];
+  if (signal?.aborted) return [];
   try {
     const { lookup } = await import("node:dns/promises");
-    const answers = await lookup(host, { all: true });
-    return answers.map((a) => a.address);
+    const answers = await new Promise<{ address: string }[] | null>((resolve) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve(null);
+      }, dnsLookupBudgetMs);
+      timer.unref?.();
+      const onAbort = () => {
+        cleanup();
+        resolve(null);
+      };
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      lookup(host, { all: true }).then(
+        (value) => {
+          cleanup();
+          return resolve(value);
+        },
+        () => {
+          cleanup();
+          return resolve(null);
+        },
+      );
+    });
+    return (answers ?? []).map((a) => a.address);
   } catch {
     // An unresolvable name fails in the fetch anyway — don't pre-empt its error.
     return [];

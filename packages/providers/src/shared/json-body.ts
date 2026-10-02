@@ -17,10 +17,18 @@
  * the one place that has the raw body; callers branch on the domain value
  * (`if (!data?.stream)`) instead of trusting a cast.
  */
+import { readResponseTextCapped } from "./bounded-body";
+
 export async function readJsonObjectBody<T>(response: Response): Promise<T | null> {
-  const body: unknown = await response.json();
+  // Capped before parse — a provider JSON body is never legitimately many MB,
+  // and a chunked body is bounded only by its request timeout without one.
+  const text = await readResponseTextCapped(response, PROVIDER_JSON_BODY_MAX_BYTES);
+  if (text === null) return null;
+  const body: unknown = JSON.parse(text);
   if (body === null || !(body instanceof Object)) return null;
   // SAFETY: `instanceof Object` proves a JSON-parsed non-null object/array; the
   // caller's `T` describes fields it knows the endpoint may carry.
   return body as T;
 }
+
+const PROVIDER_JSON_BODY_MAX_BYTES = 8 * 1024 * 1024;

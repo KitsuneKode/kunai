@@ -1,6 +1,7 @@
 import type { ProviderEpisodeOption, ProviderRuntimeContext } from "@kunai/types";
 
 import { providerFetch } from "../runtime/fetch";
+import { readJsonObjectBody } from "./json-body";
 import { TTLCache } from "./provider-cache";
 import { createTimeoutSignal } from "./timeout-signal";
 
@@ -175,7 +176,7 @@ async function fetchJson<T>(
       headers: { Accept: "application/json" },
     });
     if (!response.ok) return null;
-    return (await response.json()) as T;
+    return readJsonObjectBody<T>(response);
   } catch {
     return null;
   }
@@ -261,15 +262,15 @@ async function fetchAniListStreamingEpisodes(
       }),
     });
     if (!response.ok) return { episodes, complete: false };
-    const payload = (await response.json()) as {
+    const payload = await readJsonObjectBody<{
       readonly data?: {
         readonly Media?: {
           readonly idMal?: number | null;
           readonly streamingEpisodes?: readonly AniListStreamingEpisode[] | null;
         };
       };
-    };
-    const rows = payload.data?.Media?.streamingEpisodes ?? [];
+    }>(response);
+    const rows = payload?.data?.Media?.streamingEpisodes ?? [];
     rows.forEach((row, index) => {
       const number = index + 1;
       mergeEpisodeMetadata(episodes, number, {

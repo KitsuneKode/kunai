@@ -27,6 +27,7 @@
  * classifier reads structure, never message prose (#458).
  */
 import {
+  blockedLiteralTargetReason,
   httpStatusIsRetryable,
   httpStatusToResolveErrorCode,
   isRelayedResponse,
@@ -34,18 +35,32 @@ import {
   parseRetryAfterHeader,
   ProviderHttpError,
   providerHttpErrorForStatus,
+  resolvedAddressBlockReason,
   type ProviderId,
   type ProviderRuntimeContext,
   type ResolveErrorCode,
 } from "@kunai/types";
 
+import { readResponseTextCapped, readStreamTextCapped } from "./bounded-body";
 import {
   curlCipherArgs,
   isCloudflareChallengeText,
   resolveCurlCandidate,
   type CurlEnvironment,
 } from "./curl-impersonate";
+import { createGuardedFetch, PROVIDER_API_SENSITIVE_HEADERS } from "./stream-reachability";
 import { createTimeoutSignal } from "./timeout-signal";
+
+/**
+ * The last-resort leg walks redirects through the same per-hop literal/DNS
+ * blocklist as providerFetch — a bare fetch() would follow Location anywhere.
+ * Hop 0 stays exempt for the same reason: provider endpoints are code-fixed
+ * or user-configured.
+ */
+const guardedTransportFetch = createGuardedFetch({
+  extraSensitiveHeaders: PROVIDER_API_SENSITIVE_HEADERS,
+  allowInitialPrivateTarget: true,
+});
 
 /* ------------------------------------------------------------------------ */
 /* Transport failure taxonomy                                               */
@@ -275,10 +290,15 @@ const CURL_SIGTERM_EXIT_CODE = 143;
 export type CurlHttpTrailer = {
   readonly body: string;
   readonly httpCode: number | null;
+  /** `%{redirect_url}` when the caller's `-w` trailer carries it — set only on
+   * a response whose Location curl was configured to report, never followed.
+   * Undefined when the trailer format is plain `%{http_code}`. */
+  readonly redirectUrl?: string;
 };
 
 /**
- * Split curl's `-w '\n%{http_code}'` trailer into `{ body, httpCode }`.
+ * Split curl's `-w '\n%{http_code}'` (or `'\n%{http_code}\t%{redirect_url}'`)
+ * trailer into `{ body, httpCode, redirectUrl }`.
  * `httpCode` is null when curl never received an HTTP response (DNS, TCP, or
  * TLS failure) — the ani-cli 5.1.4 distinction between "no HTTP response" and
  * "HTTP NNN", so a dead route is never misread as an HTTP error. curl prints
@@ -287,11 +307,12 @@ export type CurlHttpTrailer = {
  * its bytes.
  */
 export function splitCurlHttpTrailer(stdout: string): CurlHttpTrailer {
-  const match = /\n(\d{3})$/.exec(stdout);
+  const match = /\n(\d{3})(?:\t([^\n]*))?$/.exec(stdout);
   if (!match?.[1]) return { body: stdout, httpCode: null };
   const code = Number(match[1]);
   const body = stdout.slice(0, stdout.length - match[0].length);
-  return { body, httpCode: code === 0 ? null : code };
+  const redirectUrl = match[2]?.trim() || undefined;
+  return { body, httpCode: code === 0 ? null : code, redirectUrl };
 }
 
 /** The request label for error messages: origin + path, never the query —
@@ -311,16 +332,38 @@ export type SpawnCurlOnce = (
   signal?: AbortSignal,
 ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
 
+/**
+ * Provider API bodies are pages/JSON in the kilobytes — a flat ceiling both as
+ * `--max-filesize` (kills a declared oversize before a byte flows) and as the
+ * stdout reader cap (catches chunked or misdeclared bodies curl can't see).
+ */
+const PROVIDER_BODY_MAX_BYTES = 8 * 1024 * 1024;
+
 export function spawnCurlOnce(
   args: readonly string[],
   signal?: AbortSignal,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe", signal });
   return Promise.all([
-    new Response(proc.stdout).text(),
+    readStreamTextCapped(proc.stdout, PROVIDER_BODY_MAX_BYTES),
     new Response(proc.stderr).text(),
     proc.exited,
-  ]).then(([stdout, stderr, exitCode]) => ({ stdout, stderr, exitCode }));
+  ]).then(async ([stdout, stderr, exitCode]) => {
+    if (stdout === null) {
+      // Over-cap stdout: the pipe stops draining, curl dies on EPIPE or we
+      // stop it — either way the request is a failed transport, never a body.
+      proc.kill();
+      await proc.exited.catch(() => {});
+      return {
+        stdout: "",
+        stderr: `stdout exceeded ${PROVIDER_BODY_MAX_BYTES} bytes`,
+        // 63 = CURLE_FILESIZE_EXCEEDED — the transport-kind mapper reads it as
+        // an ordinary network fault, which is the honest classification.
+        exitCode: exitCode === 0 ? 63 : exitCode,
+      };
+    }
+    return { stdout, stderr, exitCode };
+  });
 }
 
 export type ProviderCurlRunOptions = {
@@ -581,7 +624,7 @@ export async function providerFetchText(
     // transport level (relay down, direct fine).
     let response: Response;
     try {
-      response = await fetch(url, {
+      response = await guardedTransportFetch(url, {
         headers: requestHeaders,
         signal: createTimeoutSignal(signal, fetchTimeoutMs),
       });
@@ -636,47 +679,141 @@ export async function providerFetchText(
     return text;
   }
 
-  const args = [
-    curl.path,
-    "-sL",
-    "-A",
-    policy.userAgent,
-    ...(policy.referer ? ["-H", `Referer: ${policy.referer}`] : []),
-    ...Object.entries(policy.extraHeaders ?? {}).flatMap(([name, value]) => [
-      "-H",
-      `${name}: ${value}`,
-    ]),
-    "--max-time",
-    String(policy.maxTimeSec ?? 12),
-    ...curlCipherArgs(curl.impersonates),
-    "-w",
-    "\n%{http_code}",
-    // Everything after `--` is an operand, never an option — upstream JSON can
-    // hand us URLs beginning with `-` (anidb's guard, adopted everywhere).
-    "--",
-    url,
-  ];
-  const { body, httpCode } = splitCurlHttpTrailer(
-    await runProviderCurlWithRetry(args, {
-      signal,
-      urlLabel,
-      label,
-      providerId: policy.providerId,
-      stage,
-      spawnOnce: policy.spawnCurl,
-    }),
-  );
-  // Challenge detection outranks the status on a non-2xx: a CF challenge
-  // served at 403/404 is a block, not the route's real answer — treating it
-  // as not-found would tell callers to re-search a catalogue that never
-  // answered.
-  if (isChallenge(body)) throw blockedError(curl.impersonates);
-  if (httpCode !== null && (httpCode < 200 || httpCode > 299)) {
-    throw statusError(httpCode);
+  // curl's own redirect following stays off: `-L` would chase a Location into
+  // private space, a scheme downgrade, or a non-HTTP protocol with no way for
+  // this process to refuse. Each hop is re-spawned instead so every target
+  // clears the same literal/DNS blocklist the fetch legs answer to — hop 0 is
+  // exempt like guardedDirectFetch, because provider endpoints are code-fixed
+  // or user-configured; redirect hops are the attacker-controlled part.
+  let curlTarget = url;
+  // Referer/extraHeaders carry provider context — possibly an API key — so a
+  // cross-origin hop drops them, mirroring the fetch legs' credential strip.
+  let curlReferer = policy.referer;
+  let curlHeaders: Record<string, string> | undefined = policy.extraHeaders
+    ? { ...policy.extraHeaders }
+    : undefined;
+  for (let hop = 0; ; hop++) {
+    const blockedReason = await curlTargetBlockReason(curlTarget, hop === 0, signal);
+    if (blockedReason !== null) {
+      throw new ProviderHttpError({
+        message: `${label} refused unsafe target ${providerUrlLabel(curlTarget)} (${blockedReason})`,
+        providerId: policy.providerId,
+        stage,
+        code: "blocked",
+        retryable: false,
+      });
+    }
+    const args = [
+      curl.path,
+      "-s",
+      "-A",
+      policy.userAgent,
+      ...(curlReferer ? ["-H", `Referer: ${curlReferer}`] : []),
+      ...Object.entries(curlHeaders ?? {}).flatMap(([name, value]) => ["-H", `${name}: ${value}`]),
+      "--max-time",
+      String(policy.maxTimeSec ?? 12),
+      // Declared-length oversize dies before a byte flows; chunked or
+      // misdeclared bodies hit the stdout reader cap in spawnCurlOnce.
+      "--max-filesize",
+      String(PROVIDER_BODY_MAX_BYTES),
+      ...curlCipherArgs(curl.impersonates),
+      "-w",
+      "\n%{http_code}\t%{redirect_url}",
+      // Everything after `--` is an operand, never an option — upstream JSON
+      // can hand us URLs beginning with `-` (anidb's guard, adopted everywhere).
+      "--",
+      curlTarget,
+    ];
+    const { body, httpCode, redirectUrl } = splitCurlHttpTrailer(
+      await runProviderCurlWithRetry(args, {
+        signal,
+        urlLabel,
+        label,
+        providerId: policy.providerId,
+        stage,
+        spawnOnce: policy.spawnCurl,
+      }),
+    );
+    if (redirectUrl && httpCode !== null && httpCode >= 300 && httpCode < 400) {
+      if (hop >= MAX_PROVIDER_CURL_HOPS) {
+        throw new ProviderHttpError({
+          message: `${label} redirect chain exceeded ${MAX_PROVIDER_CURL_HOPS} hops`,
+          providerId: policy.providerId,
+          stage,
+          code: "blocked",
+          retryable: false,
+        });
+      }
+      let next: URL | null = null;
+      try {
+        next = new URL(redirectUrl, curlTarget);
+      } catch {
+        next = null;
+      }
+      // An unparseable Location is a response, not a redirect — process it.
+      if (next !== null) {
+        const current = new URL(curlTarget);
+        if (current.protocol === "https:" && next.protocol === "http:") {
+          throw new ProviderHttpError({
+            message: `${label} refused https downgrade to ${providerUrlLabel(next.href)}`,
+            providerId: policy.providerId,
+            stage,
+            code: "blocked",
+            retryable: false,
+          });
+        }
+        if (next.origin !== current.origin) {
+          curlReferer = undefined;
+          curlHeaders = undefined;
+        }
+        curlTarget = next.href;
+        continue;
+      }
+    }
+    // Challenge detection outranks the status on a non-2xx: a CF challenge
+    // served at 403/404 is a block, not the route's real answer — treating it
+    // as not-found would tell callers to re-search a catalogue that never
+    // answered.
+    if (isChallenge(body)) throw blockedError(curl.impersonates);
+    if (httpCode !== null && (httpCode < 200 || httpCode > 299)) {
+      throw statusError(httpCode);
+    }
+    const virtual = policy.bodyAsStatus?.(body);
+    if (virtual !== null && virtual !== undefined) throw statusError(virtual);
+    return body;
   }
-  const virtual = policy.bodyAsStatus?.(body);
-  if (virtual !== null && virtual !== undefined) throw statusError(virtual);
-  return body;
+}
+
+/** Match the fetch legs' redirect ceiling — a loop must bound the same way. */
+const MAX_PROVIDER_CURL_HOPS = 4;
+
+/**
+ * The blocklist verdict for one curl hop. Hop 0 mirrors guardedDirectFetch:
+ * provider endpoints are code-fixed or user-configured, so a private literal
+ * or DNS answer is the caller's intent, not a redirect trick. Every later hop
+ * is attacker-controlled and clears both literal and DNS checks. The scheme
+ * check applies on every hop including the first — `curl file:///etc/passwd`
+ * is a read primitive, not a fetch.
+ */
+async function curlTargetBlockReason(
+  target: string,
+  allowInitialPrivate: boolean,
+  signal: AbortSignal | undefined,
+): Promise<string | null> {
+  let parsed: URL;
+  try {
+    parsed = new URL(target);
+  } catch {
+    return "unparseable target";
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return `scheme ${parsed.protocol}`;
+  }
+  if (allowInitialPrivate) return null;
+  const literal = blockedLiteralTargetReason(target);
+  if (literal !== null) return literal;
+  if (signal?.aborted === true) return null;
+  return resolvedAddressBlockReason(target, signal);
 }
 
 /** JSON variant — the parse failure is typed `parse-failed`, not a raw throw. */
@@ -701,8 +838,15 @@ export async function providerFetchJson<T = unknown>(
   }
 }
 
-function readResponseText(response: Response): Promise<string> {
-  return response.text();
+async function readResponseText(response: Response): Promise<string> {
+  // Null is over-cap or a read error — throwing keeps the two call sites'
+  // contract (a thrown read falls to curl / surfaces a transport error)
+  // rather than silently handing "" to challenge/status predicates.
+  const text = await readResponseTextCapped(response, PROVIDER_BODY_MAX_BYTES);
+  if (text === null) {
+    throw new Error(`provider response body exceeds ${PROVIDER_BODY_MAX_BYTES} bytes`);
+  }
+  return text;
 }
 
 /**

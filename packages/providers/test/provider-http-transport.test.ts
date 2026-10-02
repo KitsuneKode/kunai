@@ -466,6 +466,130 @@ describe("providerFetchText — curl leg", () => {
     );
     expect(mustBe(thrown, Error).message).toBe("typed status 503");
   });
+
+  test("curl never follows redirects in-process: -s not -L, and each hop is spawned", async () => {
+    const argvs: string[][] = [];
+    const text = await providerFetchText(URL_UNDER_TEST, {
+      ...POLICY,
+      context: challengedContext,
+      curlEnvironment: CURL_ENV,
+      spawnCurl: async (args) => {
+        argvs.push([...args]);
+        // First hop redirects same-origin; second answers.
+        return argvs.length === 1
+          ? { stdout: "moved\n301\thttps://provider.example/final", stderr: "", exitCode: 0 }
+          : { stdout: "final page\n200", stderr: "", exitCode: 0 };
+      },
+    });
+    expect(text).toBe("final page");
+    expect(argvs).toHaveLength(2);
+    for (const argv of argvs) {
+      expect(argv).not.toContain("-L");
+      expect(argv).not.toContain("-sL");
+      expect(argv.join(" ")).toContain("%{redirect_url}");
+      expect(argv).toContain("--max-filesize");
+    }
+    // Hop 2 re-asked the redirect target, not the original URL.
+    expect(argvs[1]?.[argvs[1].length - 1]).toBe("https://provider.example/final");
+  });
+
+  test("a curl redirect into private space is refused before the hop spawns", async () => {
+    let spawns = 0;
+    const thrown = await providerFetchText(URL_UNDER_TEST, {
+      ...POLICY,
+      context: challengedContext,
+      curlEnvironment: CURL_ENV,
+      spawnCurl: async () => {
+        spawns += 1;
+        return { stdout: "\n301\thttps://169.254.169.254/latest", stderr: "", exitCode: 0 };
+      },
+    }).then(
+      () => null,
+      (error) => error,
+    );
+    expect(mustBe(thrown, ProviderHttpError).code).toBe("blocked");
+    expect(mustBe(thrown, ProviderHttpError).retryable).toBe(false);
+    expect(mustBe(thrown, ProviderHttpError).message).toContain("refused unsafe target");
+    // The metadata endpoint was never contacted — the hop died in the guard.
+    expect(spawns).toBe(1);
+  });
+
+  test("a curl redirect to a non-http scheme is refused", async () => {
+    const thrown = await providerFetchText(URL_UNDER_TEST, {
+      ...POLICY,
+      context: challengedContext,
+      curlEnvironment: CURL_ENV,
+      spawnCurl: async () => ({
+        stdout: "\n302\tfile:///etc/passwd",
+        stderr: "",
+        exitCode: 0,
+      }),
+    }).then(
+      () => null,
+      (error) => error,
+    );
+    expect(mustBe(thrown, ProviderHttpError).code).toBe("blocked");
+  });
+
+  test("a curl https downgrade hop is refused", async () => {
+    const thrown = await providerFetchText(URL_UNDER_TEST, {
+      ...POLICY,
+      context: challengedContext,
+      curlEnvironment: CURL_ENV,
+      spawnCurl: async () => ({
+        stdout: "\n301\thttp://provider.example/final",
+        stderr: "",
+        exitCode: 0,
+      }),
+    }).then(
+      () => null,
+      (error) => error,
+    );
+    expect(mustBe(thrown, ProviderHttpError).code).toBe("blocked");
+    expect(mustBe(thrown, ProviderHttpError).message).toContain("downgrade");
+  });
+
+  test("a cross-origin curl hop drops Referer and extra headers", async () => {
+    const argvs: string[][] = [];
+    const text = await providerFetchText(URL_UNDER_TEST, {
+      ...POLICY,
+      extraHeaders: { "X-Api-Key": "secret" },
+      context: challengedContext,
+      curlEnvironment: CURL_ENV,
+      spawnCurl: async (args) => {
+        argvs.push([...args]);
+        return argvs.length === 1
+          ? { stdout: "moved\n301\thttps://other-cdn.example/x", stderr: "", exitCode: 0 }
+          : { stdout: "final page\n200", stderr: "", exitCode: 0 };
+      },
+    });
+    expect(text).toBe("final page");
+    const hop0 = argvs[0]?.join("\n") ?? "";
+    const hop1 = argvs[1]?.join("\n") ?? "";
+    expect(hop0).toContain("Referer: https://provider.example/");
+    expect(hop0).toContain("X-Api-Key: secret");
+    expect(hop1).not.toContain("Referer:");
+    expect(hop1).not.toContain("X-Api-Key");
+  });
+
+  test("a curl redirect loop dies at the hop ceiling", async () => {
+    let spawns = 0;
+    const thrown = await providerFetchText(URL_UNDER_TEST, {
+      ...POLICY,
+      context: challengedContext,
+      curlEnvironment: CURL_ENV,
+      spawnCurl: async () => {
+        spawns += 1;
+        return { stdout: "\n301\thttps://provider.example/loop", stderr: "", exitCode: 0 };
+      },
+    }).then(
+      () => null,
+      (error) => error,
+    );
+    expect(mustBe(thrown, ProviderHttpError).code).toBe("blocked");
+    expect(mustBe(thrown, ProviderHttpError).message).toContain("redirect chain exceeded");
+    expect(spawns).toBe(5);
+  });
 });
 
 describe("providerFetchText — Retry-After capture", () => {

@@ -122,6 +122,54 @@ describe("stream reachability", () => {
     expect(isStreamReachableForResolve(probe)).toBe(false);
   });
 
+  test("Range-ignoring 200 segment body is read to the probe prefix, then cancelled", async () => {
+    // A CDN that answers `bytes=0-1023` with a full 200 segment used to be
+    // buffered whole into memory — per candidate, per probe. The reader must
+    // stop once the minimum byte proof arrives and cancel the rest.
+    let cancelled = false;
+    const endlessSegment = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(8192).fill(0xab));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/stream.m3u8",
+      fetchImpl: async (url: string) => {
+        if (url.endsWith("stream.m3u8")) {
+          return response(200, "#EXTM3U\n#EXTINF:3,\n/seg-1.ts\n");
+        }
+        return new Response(endlessSegment, {
+          status: 200,
+          headers: { "content-type": "application/octet-stream" },
+        });
+      },
+      timeoutMs: 500,
+    });
+
+    expect(probe).toEqual({ status: "reachable" });
+    expect(cancelled).toBe(true);
+  });
+
+  test("an oversized playlist body is unreachable instead of buffered whole", async () => {
+    // A chunked playlist body is bounded only by the request timeout without
+    // the cap — 3MB of `#` comments is not a playlist, it is a memory leak.
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/stream.m3u8",
+      fetchImpl: async () => response(200, `#EXTM3U\n${"#".repeat(3 * 1024 * 1024)}\n`),
+      timeoutMs: 500,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    if (probe.status === "unreachable") {
+      expect(probe.reason).toContain("playlist body");
+      expect(probe.definitive).toBe(false);
+    }
+  });
+
   test("junk tiny segment body is unreachable", async () => {
     const probe = await probeStreamReachability({
       url: "https://cdn.example/stream.m3u8",

@@ -4,6 +4,7 @@ import {
   resolvedAddressBlockReason,
 } from "@kunai/types";
 
+import { readResponseBodyPrefix, readResponseTextCapped } from "./bounded-body";
 import {
   HLS_SEGMENT_PROBE_MIN_BYTES,
   isHlsMasterPlaylist,
@@ -47,6 +48,8 @@ export type ProbeStreamReachabilityInput = {
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
 const SEGMENT_RANGE_HEADER = `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`;
+/** Playlists are line text in the KBs — anything past this is not a playlist. */
+const PLAYLIST_BODY_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_PROBE_REDIRECT_HOPS = 3;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
@@ -92,7 +95,10 @@ async function fetchProbeTarget(options: {
       // DNS once the literals pass — skipped when the caller already aborted so
       // a cancelled probe does not sit on a resolver round-trip.
       if (options.resolveNames && !options.parentSignal?.aborted) {
-        const resolvedBlocked = await resolvedAddressBlockReason(target);
+        const resolvedBlocked = await resolvedAddressBlockReason(
+          target,
+          options.parentSignal ?? undefined,
+        );
         if (resolvedBlocked) {
           return { kind: "blocked", reason: `${target} -> ${resolvedBlocked}` };
         }
@@ -110,6 +116,12 @@ async function fetchProbeTarget(options: {
     if (REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get("location");
       if (location && hop < MAX_PROBE_REDIRECT_HOPS) {
+        // Release the hop's socket promptly, but a body that never drains must
+        // not stall the probe — bound the cancel inside the hop's own budget.
+        await Promise.race([
+          response.body?.cancel("redirected").catch(() => {}) ?? Promise.resolve(),
+          Bun.sleep(Math.min(500, Math.max(0, options.remaining()))),
+        ]);
         try {
           const next = new URL(location, target);
           const current = new URL(target);
@@ -462,7 +474,19 @@ async function fetchPlaylistText(
         result: { status: "unreachable", reason: `HTTP ${response.status}`, definitive },
       };
     }
-    const text = await response.text();
+    // A playlist is line-oriented text in the KBs — a chunked body sized only
+    // by the request timeout is not a playlist, it is a memory leak.
+    const text = await readResponseTextCapped(response, PLAYLIST_BODY_MAX_BYTES);
+    if (text === null) {
+      return {
+        status: "fail",
+        result: {
+          status: "unreachable",
+          reason: `playlist body unreadable or exceeds ${PLAYLIST_BODY_MAX_BYTES} bytes`,
+          definitive: false,
+        },
+      };
+    }
     return { status: "ok", text };
   } catch (error) {
     if (controller.signal.aborted || parentSignal?.aborted) {
@@ -545,7 +569,19 @@ async function probeHlsMediaSegment(
       };
     }
 
-    const buffer = new Uint8Array(await response.arrayBuffer());
+    // Range asks politely; this enforces it. A host that answers a 1KiB Range
+    // request with a full 200 segment would otherwise be buffered whole into
+    // memory — per candidate, per probe.
+    const buffer = await readResponseBodyPrefix(response, HLS_SEGMENT_PROBE_MIN_BYTES);
+    if (buffer === null) {
+      // Mid-body disconnect, not an empty file — the CDN answered and then
+      // died; a sibling rung may still be fine.
+      return {
+        status: "unreachable",
+        reason: "HLS segment unreachable: body read failed",
+        definitive: false,
+      };
+    }
     if (buffer.byteLength < HLS_SEGMENT_PROBE_MIN_BYTES) {
       return {
         status: "unreachable",

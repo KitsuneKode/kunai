@@ -25,7 +25,9 @@ import type {
 import { parseRetryAfterHeader } from "@kunai/types";
 
 import { ProviderHttpError, providerFetch } from "../runtime/fetch";
+import { readResponseTextCapped } from "../shared/bounded-body";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import { readJsonObjectBody } from "../shared/json-body";
 import { cycleExhaustedResult } from "../shared/provider-cycle";
 import { ProviderQueryCache } from "../shared/provider-query";
 import { resolveGateBudgetMs, selectVerifiedReadyStream } from "../shared/resolve-gate";
@@ -121,6 +123,8 @@ const seedCache = new ProviderQueryCache<string, { seed: string; ttlMs: number }
   maxEntries: 64,
 });
 const MOVY_CANDIDATE_TIMEOUT_MS = 15_000;
+/** Sources envelopes are KBs of ciphertext — nothing past this is a payload. */
+const MOVY_BODY_MAX_BYTES = 4 * 1024 * 1024;
 
 async function fetchMovySeed(
   context: ProviderRuntimeContext,
@@ -146,8 +150,8 @@ async function fetchMovySeed(
     }
     // SAFETY: seed response is a two-field JSON envelope; a missing `seed` is
     // rejected on the next line, so a shape surprise fails closed.
-    const body = (await response.json()) as { seed?: string; ttlMs?: number };
-    if (!body.seed) throw new MovyDecryptError("seed response carried no seed");
+    const body = await readJsonObjectBody<{ seed?: string; ttlMs?: number }>(response);
+    if (!body?.seed) throw new MovyDecryptError("seed response carried no seed");
     return { seed: body.seed, ttlMs: body.ttlMs ?? 30_000 };
   });
   return entry.seed;
@@ -199,7 +203,14 @@ async function fetchMovyLaneSources(
         retryable: response.status >= 500 || response.status === 429,
       });
     }
-    const ciphertext = await response.text();
+    // The sources envelope is KBs of ciphertext; an unbounded read lets a
+    // chunked body be sized only by the request timeout.
+    const ciphertext = await readResponseTextCapped(response, MOVY_BODY_MAX_BYTES);
+    if (ciphertext === null) {
+      throw new MovyDecryptError(
+        `${lane}: sources body unreadable or over ${MOVY_BODY_MAX_BYTES} bytes`,
+      );
+    }
     const plaintext = decryptMovyPayload(ciphertext, seed, mediaId);
     try {
       // SAFETY: decrypted payload is the lane's sources envelope; every
