@@ -1,3 +1,6 @@
+import { classifyProviderFailure } from "@/domain/provider/ProviderFailureClassifier";
+import type { ClassifiableProviderFailure, ProviderFailureClass } from "@kunai/types";
+
 import type { DiagnosticCategory, DiagnosticEventInput } from "./diagnostic-event";
 import type { DiagnosticSeverity, RecommendedAction } from "./diagnostics-insight";
 import { redactDiagnosticValue, resolveRedactionHomeDir } from "./redaction";
@@ -217,6 +220,40 @@ export function buildCacheMaintenanceDiagnosticEvent(
       input.recommendedAction ??
       (input.failureClass ? mapFailureToRecommendedAction(input.failureClass) : undefined),
   });
+}
+
+// The provider taxonomy is finer than the diagnostic surface — per-attempt rows
+// keep the exact class in context, but the event's top-level failureClass must
+// always be a real DiagnosticFailureClass or support-bundle validation and
+// recommended-action mapping silently drop it.
+const DIAGNOSTIC_CLASS_BY_PROVIDER_FAILURE = {
+  timeout: "timeout",
+  network: "http",
+  offline: "offline",
+  "rate-limited": "rate-limited",
+  "provider-empty": "not-found",
+  "provider-parse": "parse",
+  "expired-stream": "http",
+  "unsupported-title": "not-found",
+  "missing-input": "unknown",
+  "user-cancelled": "cancelled",
+  "runtime-missing": "dependency",
+  blocked: "http",
+  "sub-dub-mismatch": "not-found",
+  "title-episode-gap": "not-found",
+  unknown: "unknown",
+} satisfies Record<ProviderFailureClass, DiagnosticFailureClass>;
+
+export function providerFailureClassToDiagnostic(
+  failureClass: ProviderFailureClass,
+): DiagnosticFailureClass {
+  return DIAGNOSTIC_CLASS_BY_PROVIDER_FAILURE[failureClass] ?? "unknown";
+}
+
+export function providerFailureToDiagnosticClass(
+  failure: ClassifiableProviderFailure,
+): DiagnosticFailureClass {
+  return providerFailureClassToDiagnostic(classifyProviderFailure(failure).failureClass);
 }
 
 export function mapFailureToRecommendedAction(
