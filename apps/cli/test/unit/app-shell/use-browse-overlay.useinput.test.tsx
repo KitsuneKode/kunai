@@ -40,6 +40,15 @@ function Probe({
       overlay.openDetails(undefined, { focusZone: "list" });
       return;
     }
+    if (!overlay.current && input === "n") {
+      // The notification-open path marks the sheet so Enter/d work off the
+      // captured option even with no live search behind it.
+      overlay.openDetails(selectedOption ?? undefined, {
+        focusZone: "list",
+        origin: "notification",
+      });
+      return;
+    }
     onIntent?.(overlay.handleKey(input, key, { selectedOption, searchReady }));
   });
   const current = overlay.current;
@@ -52,9 +61,10 @@ function Probe({
 
 async function press(handle: ReturnType<typeof render>, keys: readonly string[]): Promise<void> {
   for (const key of keys) {
+    // `enqueue` emits 'readable' synchronously and the surrounding act() drains
+    // the effects it schedules — no fixed delay needed.
     await act(async () => {
       handle.stdin.enqueue([key]);
-      await new Promise((resolve) => setTimeout(resolve, 5));
     });
   }
 }
@@ -134,6 +144,19 @@ test("Enter with search not ready is consumed, not submitted", async () => {
     await press(handle, ["o"]);
     await press(handle, [RETURN]);
     expect(intents).toEqual([{ kind: "consumed" }]);
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("Enter submits a notification-opened sheet even with no live search", async () => {
+  const intents: BrowseOverlayIntent<string>[] = [];
+  const handle = render(<Probe searchReady={false} onIntent={(intent) => intents.push(intent)} />);
+  try {
+    await press(handle, ["n"]);
+    expect(handle.lastFrame()).toContain("open=details");
+    await press(handle, [RETURN]);
+    expect(intents).toEqual([{ kind: "submit", value: "sel-1" }]);
   } finally {
     handle.unmount();
   }

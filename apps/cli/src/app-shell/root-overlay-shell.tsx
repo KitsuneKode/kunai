@@ -1126,10 +1126,7 @@ export function RootOverlayShell({
             const delivered = forceCloseRootContent<BrowseShellResult<SearchResult>>(
               {
                 type: "launch-playback",
-                launch: {
-                  title: intent.title,
-                  ...(intent.episode ? { episode: intent.episode } : {}),
-                },
+                launch: { title: intent.title, episode: intent.episode },
               },
               { kinds: ["browse", "post-playback"] },
             );
@@ -1542,10 +1539,7 @@ export function RootOverlayShell({
                       ? forceCloseRootContent<BrowseShellResult<SearchResult>>(
                           {
                             type: "launch-playback",
-                            launch: {
-                              title: launch.title,
-                              ...(launch.episode ? { episode: launch.episode } : {}),
-                            },
+                            launch: { title: launch.title, episode: launch.episode },
                           },
                           { kinds: ["browse", "post-playback"] },
                         )
@@ -1556,6 +1550,7 @@ export function RootOverlayShell({
                         note: "can't launch that title here — close this surface and retry",
                       });
                     }
+                    return settled;
                   },
                 );
               }

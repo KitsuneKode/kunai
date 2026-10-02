@@ -63,7 +63,10 @@ export function useBrowseOverlay<T>(input: { readonly mode: ShellMode }) {
    * owns palette state).
    */
   const openDetails = useCallback(
-    (option: BrowseShellOption<T> | undefined, ctx: { readonly focusZone: BrowseFocusZone }) => {
+    (
+      option: BrowseShellOption<T> | undefined,
+      ctx: { readonly focusZone: BrowseFocusZone; readonly origin?: "notification" },
+    ) => {
       if (!option) return;
       const detailRequestId = detailRequestGate.begin();
       const panel = buildBrowseDetailsPanel(option);
@@ -79,6 +82,7 @@ export function useBrowseOverlay<T>(input: { readonly mode: ShellMode }) {
       setCurrent({
         type: "details",
         option: option as BrowseShellOption<unknown>,
+        origin: ctx.origin,
         title: panel.title,
         subtitle: panel.subtitle,
         lines: [],
@@ -154,9 +158,12 @@ export function useBrowseOverlay<T>(input: { readonly mode: ShellMode }) {
           : null;
 
       if (key.return && overlay.type === "details") {
+        // A notification-opened sheet carries its own option and has no live
+        // search behind it — searchReady gates Enter for result-opened sheets
+        // only.
         const value = resolveDetailsOverlaySubmitValue({
           detailsOpen: true,
-          searchReady: ctx.searchReady,
+          searchReady: ctx.searchReady || overlay.origin === "notification",
           option: detailsOption,
         });
         return value !== null ? { kind: "submit", value } : { kind: "consumed" };
@@ -186,7 +193,11 @@ export function useBrowseOverlay<T>(input: { readonly mode: ShellMode }) {
         if (letter === "q" && detailsOption) {
           return { kind: "queue", option: detailsOption };
         }
-        if (letter === "d" && detailsOption && ctx.searchReady) {
+        if (
+          letter === "d" &&
+          detailsOption &&
+          (ctx.searchReady || overlay.origin === "notification")
+        ) {
           return { kind: "download", option: detailsOption };
         }
       }

@@ -626,10 +626,20 @@ export class DownloadService {
         const refreshed = this.deps.repo.get(job.id);
         if (refreshed?.status === "completed" || refreshed?.status === "completed-with-notes") {
           repaired += 1;
+          // Listeners re-count buckets off events; a silent status move leaves
+          // surfaces (the library badge) offering repair-all on a clean bucket.
+          this.emit({ type: "complete", jobId: job.id });
         } else if (refreshed?.status === "repairable") {
           stillRepairable += 1;
         } else {
           failed += 1;
+          if (refreshed?.status === "failed") {
+            this.emit({
+              type: "failed",
+              jobId: job.id,
+              error: refreshed.errorMessage ?? "sidecar repair left the job failed",
+            });
+          }
         }
       } catch (error) {
         failed += 1;

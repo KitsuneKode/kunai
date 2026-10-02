@@ -734,11 +734,11 @@ export function BrowseShell<T>({
   // Thin shell-side wrapper: resolve the default option, own the palette
   // close, then hand the rest to the hook (stash → seed → open → gap-fill).
   const openDetailsOverlay = useCallback(
-    (option?: BrowseShellOption<T>) => {
+    (option?: BrowseShellOption<T>, origin?: "notification") => {
       const resolved = option ?? selectedOption;
       if (!resolved) return;
       closePalette();
-      openDetails(resolved, { focusZone });
+      openDetails(resolved, { focusZone, origin });
     },
     [selectedOption, focusZone, closePalette, openDetails],
   );
@@ -768,7 +768,7 @@ export function BrowseShell<T>({
     if (!notificationDetailsPending) return;
     const item = takeNotificationDetailsItem();
     if (!item) return;
-    openDetailsOverlay(browseOptionFromMediaItem(item) as BrowseShellOption<T>);
+    openDetailsOverlay(browseOptionFromMediaItem(item) as BrowseShellOption<T>, "notification");
   }, [notificationDetailsPending, openDetailsOverlay]);
 
   const handleLocalAction = (action: ShellAction): boolean => {

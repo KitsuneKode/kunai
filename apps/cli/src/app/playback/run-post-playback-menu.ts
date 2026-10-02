@@ -584,10 +584,8 @@ export async function runPostPlaybackMenu(
             value: {
               type: "history_entry",
               title: postAction.launch.title,
-              ...(postAction.launch.episode ? { episode: postAction.launch.episode } : {}),
-              ...(postAction.launch.startSeconds !== undefined
-                ? { startSeconds: postAction.launch.startSeconds }
-                : {}),
+              episode: postAction.launch.episode,
+              startSeconds: postAction.launch.startSeconds,
             },
           },
         };

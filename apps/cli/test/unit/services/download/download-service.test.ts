@@ -1535,9 +1535,16 @@ describe("DownloadService", () => {
     const secondOutput = repo.get(second.id)?.outputPath;
     if (secondOutput) rmSync(secondOutput, { force: true });
 
+    // Surfaces re-count buckets off these events — a silent sweep leaves the
+    // library badge offering repair-all on a clean bucket.
+    const events: string[] = [];
+    const unsubscribe = service.onEvent((event) => events.push(event.type));
     const summary = await service.repairRepairableSidecars();
+    unsubscribe();
 
     expect(summary).toEqual({ checked: 2, repaired: 1, stillRepairable: 0, failed: 1 });
+    expect(events).toContain("complete");
+    expect(events).toContain("failed");
     expect(ytDlpCalls).toBe(2);
     expect(repo.get(first.id)?.status).toBe("completed");
     expect(repo.get(second.id)?.status).toBe("failed");

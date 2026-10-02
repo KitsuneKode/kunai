@@ -56,6 +56,11 @@ export type BrowseOverlay =
        * sheet opens from a notification or the list re-filters under it.
        */
       option?: BrowseShellOption<unknown>;
+      /**
+       * "notification" sheets arrive with their own option and no live search
+       * behind them — Enter/d stay enabled even when results aren't ready.
+       */
+      origin?: "notification";
       seasonsExpanded?: boolean;
       imageUrl?: string;
       loading?: boolean;
@@ -370,7 +375,9 @@ export function OverlayPanel({
             model={overlay.sheet}
             seasonsExpanded={overlay.seasonsExpanded ?? false}
             width={contentWidth}
-            searchReady={searchReady === true}
+            // Notification-opened sheets take Enter/d off the captured option
+            // even when no live search is behind them — keep legend honest.
+            searchReady={searchReady === true || overlay.origin === "notification"}
           />
         </Box>
       ) : overlay.type === "details" && overlay.detailData ? (

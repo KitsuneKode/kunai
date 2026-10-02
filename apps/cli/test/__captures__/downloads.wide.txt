@@ -6,7 +6,7 @@
   Dune: Part Two · Movie                          ○ queued                                    — waiti…      │                            │
   Arcane · S01E09                                 ◇ repairable                                 sidecar      ╰────────────────────────────╯
 
-x to abort                                                                                                  Severance
+x to abort  ·  a to repair sidecars                                                                         Severance
                                                                                                             S02E04
 
                                                                                                             Status downloading 63%

@@ -33,12 +33,20 @@ const sampleStats: WatchStats = {
   hourOfDay: [{ hour: 21, episodeCount: 40, totalSeconds: 50_000 }],
   dailyKindMix: [],
   // Buckets are local days — the same keys the 'localtime' SQL emits, so the
-  // golden grid renders identically in every test timezone.
-  heatmap: Array.from({ length: 120 }, (_, i) => ({
-    date: localDayKey(new Date(Date.now() - i * 86_400_000)),
-    watchedCount: i % 3 === 0 ? 2 : 0,
-    totalSeconds: i % 3 === 0 ? 3600 : 0,
-  })),
+  // golden grid renders identically in every test timezone. Step by calendar
+  // day (setDate), not by subtracting 86_400_000ms — a DST transition or a run
+  // near local midnight would skip or duplicate a date and shift every bucket.
+  heatmap: (() => {
+    const day = new Date();
+    return Array.from({ length: 120 }, (_, i) => {
+      if (i > 0) day.setDate(day.getDate() - 1);
+      return {
+        date: localDayKey(new Date(day)),
+        watchedCount: i % 3 === 0 ? 2 : 0,
+        totalSeconds: i % 3 === 0 ? 3600 : 0,
+      };
+    });
+  })(),
   topShows: [
     {
       titleId: "1",

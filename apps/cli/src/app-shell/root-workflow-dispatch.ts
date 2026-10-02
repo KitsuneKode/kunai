@@ -126,8 +126,8 @@ export async function runRootWorkflowSafely({
           type: "launch-playback",
           launch: {
             title: result.title,
-            ...(result.episode ? { episode: result.episode } : {}),
-            ...(result.startSeconds !== undefined ? { startSeconds: result.startSeconds } : {}),
+            episode: result.episode,
+            startSeconds: result.startSeconds,
           },
         },
         { kinds: ["browse", "post-playback"] },

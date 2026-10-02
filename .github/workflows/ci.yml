@@ -278,6 +278,16 @@ jobs:
           set -o pipefail
           bunx turbo run test --summarize 2>&1 | tee ci-test.log
 
+      - name: Storage localtime regression under a pinned non-UTC zone
+        # SQLite 'localtime' resolves the OS zone while `bun test` pins JS Date
+        # to UTC when TZ is unset — on a UTC runner the oracle in
+        # watch-stats.test.ts agrees with a regression to UTC bucketing, so the
+        # check passes vacuously. Pinning TZ makes the divergence observable;
+        # Kathmandu (+5:45) shifts both the local date and the hour.
+        env:
+          TZ: Asia/Kathmandu
+        run: bun test packages/storage/test/watch-stats.test.ts --timeout=30000
+
       - name: Retain verification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -415,7 +425,13 @@ jobs:
         # apps/cli runner. Observed wall time is 73-99s, so the previous
         # 2-minute bound left almost no headroom and would have started failing
         # as the suite grew.
+        #
+        # TZ uses the POSIX format the Windows CRT parses (IANA names degrade
+        # to UTC there, which is vacuous but harmless); -2:30 keeps the
+        # localtime-bucket tests on a non-UTC zone when it does take.
         timeout-minutes: 6
+        env:
+          TZ: NST2:30
         run: bun run --cwd packages/storage test
 
       # The Linux legs build and smoke a binary; Windows did not, and that gap
@@ -489,7 +505,11 @@ jobs:
       - name: Test storage lifecycle
         # APFS is case-insensitive by default while ext4 is not, so path and
         # temp-directory handling can diverge from the Linux leg here.
+        # TZ pins SQLite 'localtime' to a non-UTC zone so the localtime-bucket
+        # regression tests are observable rather than vacuous here.
         timeout-minutes: 3
+        env:
+          TZ: Asia/Kathmandu
         run: bun run --cwd packages/storage test
 
       # Same rationale as the Windows binary smoke: source execution cannot

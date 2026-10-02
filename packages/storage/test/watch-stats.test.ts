@@ -142,10 +142,13 @@ test("date and hour buckets follow the local calendar, not UTC", () => {
   const history = new HistoryRepository(db);
   const stats = new WatchStatsRepository(db);
 
-  // bun test pins JS Date to UTC while SQLite 'localtime' resolves the OS zone,
-  // so the oracle is a direct 'localtime' query on the same connection — the
-  // repo must agree with it. A regression to UTC bucketing diverges on any
-  // non-UTC machine.
+  // bun test pins JS Date to UTC only when TZ is unset, while SQLite
+  // 'localtime' resolves the OS zone — so the oracle is a direct 'localtime'
+  // query on the same connection and the repo must agree with it. On a UTC
+  // machine the pair agrees with a UTC-bucketing regression too, making this
+  // check vacuous; CI runs this file under a pinned non-UTC TZ (and the
+  // platform storage legs run the whole package suite under one) so a
+  // regression to UTC diverges there.
   const lateUtc = "2026-06-20T23:30:00.000Z";
   history.upsertProgress({
     title: { id: "edge", kind: "series", title: "Edge" },

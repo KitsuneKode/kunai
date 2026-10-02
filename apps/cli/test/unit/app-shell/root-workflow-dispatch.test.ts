@@ -3,9 +3,9 @@ import { describe, expect, test } from "bun:test";
 import { resolveRootSurfaceCommand } from "@/app-shell/root-workflow-dispatch";
 import type { ShellAction } from "@/app-shell/types";
 import type { Container } from "@/container";
-import type { SessionState } from "@/domain/session/SessionState";
+import type { SessionState, StateTransition } from "@/domain/session/SessionState";
 
-type Dispatched = { readonly type: string } & Record<string, unknown>;
+type Dispatched = StateTransition;
 
 function createHarness(options: { readonly attentionInbox?: boolean } = {}) {
   const dispatched: Dispatched[] = [];

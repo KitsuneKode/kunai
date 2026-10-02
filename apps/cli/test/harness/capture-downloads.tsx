@@ -76,7 +76,10 @@ const activeJobs: DownloadJobRecord[] = [
   }),
 ];
 
-const failedJobs: DownloadJobRecord[] = [
+// Repairable jobs live in the completed bucket in the real service — media
+// landed, only sidecars failed. Putting this row in listFailed would render a
+// state the store can never produce and leave listRepairable/reporting at 0.
+const repairableJobs: DownloadJobRecord[] = [
   job({
     id: "repairable",
     titleId: "arcane",
@@ -85,24 +88,23 @@ const failedJobs: DownloadJobRecord[] = [
     mediaKind: "series",
     season: 1,
     episode: 9,
-    progressPercent: 41,
+    // Repairable means the media already landed — only sidecars failed.
+    progressPercent: 100,
   }),
 ];
+
+const allJobs = [...activeJobs, ...repairableJobs];
 
 const container = {
   config: { zenMode: false },
   downloadService: {
     listActive: () => activeJobs,
-    listCompleted: () => [],
-    listFailed: () => failedJobs,
-    listRepairable: () => [],
+    listCompleted: () => repairableJobs,
+    listFailed: () => [],
+    listRepairable: () => repairableJobs,
     countJobsByStatus: (status: string) =>
-      status === "running" || status === "queued"
-        ? activeJobs.filter((job) => job.status === status).length
-        : status === "failed"
-          ? failedJobs.length
-          : 0,
-    countJobs: () => activeJobs.length + failedJobs.length,
+      allJobs.filter((fixture) => fixture.status === status).length,
+    countJobs: () => allJobs.length,
     onEvent: () => () => undefined,
     repairRepairableSidecars: async () => ({
       checked: 0,
