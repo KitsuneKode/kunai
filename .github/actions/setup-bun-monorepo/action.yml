@@ -19,12 +19,12 @@ runs:
   using: composite
   steps:
     - name: Setup Bun
-      uses: oven-sh/setup-bun@v2
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # oven-sh/setup-bun@v2
       with:
         bun-version-file: package.json
 
     - name: Restore Bun install store
-      uses: actions/cache/restore@v5
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # actions/cache@v5
       id: bun-store
       with:
         path: ~/.bun/install/cache
@@ -36,7 +36,7 @@ runs:
 
     - name: Cache Turbo local
       if: inputs.skip-turbo-cache != 'true'
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # actions/cache@v5
       with:
         path: .turbo
         key: ${{ runner.os }}-turbo-${{ inputs.turbo-cache-prefix }}-${{ github.sha }}
@@ -64,7 +64,7 @@ runs:
 
     - name: Save Bun install store
       if: steps.bun-store.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v5
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # actions/cache@v5
       with:
         path: ~/.bun/install/cache
         key: ${{ runner.os }}-bun-store-v2-${{ hashFiles('bun.lock') }}

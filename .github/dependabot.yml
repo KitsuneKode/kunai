@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Keeps the SHA-pinned actions fresh — Dependabot rewrites the pin and the
+  # trailing version comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # Bun workspace dependencies (root + all package manifests).
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dependencies:
+        patterns:
+          - "*"

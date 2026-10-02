@@ -23,7 +23,8 @@
   "author": "kitsunekode",
   "repository": {
     "type": "git",
-    "url": "https://github.com/KitsuneKode/kunai"
+    "url": "https://github.com/KitsuneKode/kunai",
+    "directory": "apps/cli"
   },
   "bin": {
     "kunai": "dist/kunai.mjs"

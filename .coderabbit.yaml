@@ -60,6 +60,23 @@ reviews:
       enabled: false
     unit_tests:
       enabled: false
+  tools:
+    shellcheck:
+      enabled: true
+    markdownlint:
+      enabled: true
+    biome:
+      enabled: false
+    eslint:
+      enabled: false
+    ruff:
+      enabled: false
+    hadolint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    actionlint:
+      enabled: true
 chat:
   auto_reply: true
   integrations:
@@ -82,20 +99,3 @@ code_generation:
     language: "en-US"
   unit_tests:
     enabled: false
-tools:
-  shellcheck:
-    enabled: true
-  markdownlint:
-    enabled: true
-  biome:
-    enabled: false
-  eslint:
-    enabled: false
-  ruff:
-    enabled: false
-  hadolint:
-    enabled: true
-  gitleaks:
-    enabled: true
-  actionlint:
-    enabled: true

@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           # The sweep only runs tests — it never pushes or reads private refs,
           # so the token does not need to persist into later steps.

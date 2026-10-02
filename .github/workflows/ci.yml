@@ -34,7 +34,7 @@ jobs:
       installer: ${{ steps.filter.outputs.installer }}
       installer-matrix: ${{ steps.installer-matrix.outputs.cells }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
 
       # scenarios.tsv is the single source of truth for which installer cells
       # exist and which gate they belong to. Deriving the matrix keeps this
@@ -137,7 +137,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -175,7 +175,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -215,7 +215,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -248,7 +248,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -323,7 +323,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: analytics-pg
@@ -373,7 +373,7 @@ jobs:
     timeout-minutes: 35
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -455,7 +455,7 @@ jobs:
     timeout-minutes: 35
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -592,7 +592,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
 
       - name: Lint installer scripts
         run: |
@@ -636,7 +636,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -667,7 +667,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -705,11 +705,11 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
 
       # No `bun install`: these scripts import only node:fs, node:path, and
       # Bun.Glob, so the workspace install would be pure latency here.
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
 
@@ -729,7 +729,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -777,7 +777,7 @@ jobs:
         include: ${{ fromJSON(needs.changes.outputs.installer-matrix) }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
 
       - name: Validate scenario registry
         run: bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios >/dev/null
@@ -792,7 +792,7 @@ jobs:
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # docker/setup-buildx-action@v4
 
       - name: Cache installer smoke images
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # actions/cache@v5
         with:
           path: /tmp/.buildx-cache
           key: installer-smoke-${{ runner.os }}-${{ hashFiles('apps/cli/test/docker/native-installer/Dockerfile') }}
@@ -858,7 +858,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: installer-scenarios
@@ -889,7 +889,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - name: Require successful jobs or expected path-filter skips
         env:
           CI_NEEDS: ${{ toJSON(needs) }}

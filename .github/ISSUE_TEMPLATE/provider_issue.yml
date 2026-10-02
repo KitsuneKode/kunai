@@ -63,7 +63,7 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics output
-      description: Run `/ export-diagnostics` inside the shell and paste here. This is the most important field.
+      description: Run `/export-diagnostics` inside the shell and paste here. This is the most important field.
       render: text
     validations:
       required: false

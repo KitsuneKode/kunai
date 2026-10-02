@@ -154,6 +154,8 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres lifetime accounting", () => {
 describe.skipIf(!TEST_DATABASE_URL)("postgres bucket cardinality", () => {
   beforeAll(resetAnalyticsTables);
 
+  // Eighteen sequential writes plus a rollup straddle Bun's default 5s
+  // budget on a loaded runner — give the flood test explicit headroom.
   test("a version flood is capped in storage, not just in the public JSON", async () => {
     const store = storeWith({ maxBucketsPerDimension: 3 });
     const day = "1999-07-01";
@@ -172,7 +174,7 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres bucket cardinality", () => {
     const total = Object.values(rollup.byVersion).reduce((sum, n) => sum + n, 0);
     expect(total).toBe(rollup.activeInstalls);
     expect(total).toBe(18);
-  });
+  }, 15_000);
 
   test("the cap is deterministic, so a recomputed day is byte-identical", async () => {
     const store = storeWith({ maxBucketsPerDimension: 3 });

@@ -813,6 +813,14 @@ suite, changesets, and the release gate are all in
 AI tooling assists with code and review here; every change still lands through human
 review and the same typecheck, lint, and deterministic test gate as everything else.
 
+### Security
+
+Found a vulnerability? Report it privately through a
+[GitHub security advisory](https://github.com/KitsuneKode/kunai/security/advisories/new) —
+not a public issue. Scope, response expectations, and what's covered are in
+[SECURITY.md](SECURITY.md). Community standards are in
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
 ---
 
 ## Appreciation
