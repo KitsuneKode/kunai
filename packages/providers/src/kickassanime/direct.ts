@@ -21,13 +21,18 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
+import { providerHttpErrorForStatus } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import { formatAnimeSourceDetail } from "../shared/anime-source-presentation";
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { parseHlsMasterAudioRenditions, type HlsAudioRendition } from "../shared/hls-ladder";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
-import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import {
+  classifyProviderFetchFailure,
+  createExhaustedResult,
+  emitTraceEvent,
+} from "../shared/resolve-helpers";
 import { searchWithPhraseFallback } from "../shared/search-fallback";
 import {
   createSourceCandidateFromStream,
@@ -142,7 +147,15 @@ async function fetchJson(
   init: { readonly method?: "GET" | "POST"; readonly body?: unknown } = {},
 ): Promise<unknown> {
   const response = await kaaFetch(context, path, init);
-  if (!response.ok) throw new Error(`KickAssAnime returned HTTP ${response.status}`);
+  if (!response.ok) {
+    void response.body?.cancel().catch(() => {});
+    throw providerHttpErrorForStatus({
+      status: response.status,
+      message: `KickAssAnime returned HTTP ${response.status}`,
+      providerId: KICKASSANIME_PROVIDER_ID,
+      stage: "fetch-json",
+    });
+  }
   return response.json();
 }
 
@@ -209,7 +222,15 @@ async function fetchPlayerPage(
     headers: { referer: `${currentBase}/`, "user-agent": USER_AGENT },
     signal: directStreamFetchSignal(context.signal, KAA_FETCH_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`KickAssAnime player returned HTTP ${response.status}`);
+  if (!response.ok) {
+    void response.body?.cancel().catch(() => {});
+    throw providerHttpErrorForStatus({
+      status: response.status,
+      message: `KickAssAnime player returned HTTP ${response.status}`,
+      providerId: KICKASSANIME_PROVIDER_ID,
+      stage: "fetch-page",
+    });
+  }
   return response.text();
 }
 
@@ -407,7 +428,10 @@ export const kickassanimeProviderModule: CoreProviderModule = {
     try {
       slug = await locateKaaShow(input.title, context, events);
     } catch (error) {
-      return fail("network-error", `KickAssAnime search failed: ${describe(error)}`, true);
+      const { code, retryable } = classifyProviderFetchFailure(
+        error instanceof Error ? error : undefined,
+      );
+      return fail(code, `KickAssAnime search failed: ${describe(error)}`, retryable);
     }
     if (!slug) {
       const year = input.title.year ? ` (${input.title.year})` : "";
@@ -450,7 +474,10 @@ export const kickassanimeProviderModule: CoreProviderModule = {
         }
       }
     } catch (error) {
-      return fail("network-error", `KickAssAnime episode list failed: ${describe(error)}`, true);
+      const { code, retryable } = classifyProviderFetchFailure(
+        error instanceof Error ? error : undefined,
+      );
+      return fail(code, `KickAssAnime episode list failed: ${describe(error)}`, retryable);
     }
     if (!located) return fail("not-found", `KickAssAnime has no episode ${episode} for ${slug}`);
 
@@ -463,7 +490,10 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       server = servers.find((candidate) => PLAYABLE_SERVERS.has(candidate.name));
       if (server) player = parseKaaPlayerPage(await fetchPlayerPage(context, server));
     } catch (error) {
-      return fail("network-error", `KickAssAnime player failed: ${describe(error)}`, true);
+      const { code, retryable } = classifyProviderFetchFailure(
+        error instanceof Error ? error : undefined,
+      );
+      return fail(code, `KickAssAnime player failed: ${describe(error)}`, retryable);
     }
     if (!server || !player) {
       return fail("not-found", `KickAssAnime offered no playable server for ${slug} ${episode}`);

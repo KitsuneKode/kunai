@@ -691,13 +691,13 @@ describe("kickassanimeProviderModule", () => {
     expect(result.failures[0]?.message).toContain('"Frieren"');
   });
 
-  test("an HTTP error is retryable and does not go looking for a new domain", async () => {
+  test("an HTTP error keeps its typed classification and does not go looking for a new domain", async () => {
     const requests: string[] = [];
     const result = await kickassanimeProviderModule.resolve(
       resolveInput(),
       contextWith(() => json({ message: "down" }, 503), requests),
     );
-    expect(result.failures[0]).toMatchObject({ code: "network-error", retryable: true });
+    expect(result.failures[0]).toMatchObject({ code: "provider-unavailable", retryable: true });
     expect(requests.some((request) => request.includes("kickass-anime.ro"))).toBe(false);
   });
 

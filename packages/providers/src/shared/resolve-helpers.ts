@@ -1,4 +1,5 @@
 import { createResolveTrace, createTraceStep } from "@kunai/core";
+import { ProviderHttpError } from "@kunai/types";
 import type {
   CachePolicy,
   ProviderFailure,
@@ -99,6 +100,36 @@ export function createExhaustedResult(
 /** Failure codes that describe the request, not the provider's health. */
 function isProviderHealthNeutral(code: ProviderFailure["code"]): boolean {
   return code === "cancelled" || code === "unsupported-title";
+}
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- boundary probe: this function is what parses the caught value
+export function isProviderTimeoutError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "TimeoutError" || error.name === "AbortError") return true;
+  return /timed out|timeout/i.test(error.message);
+}
+
+export interface ClassifiedFetchFailure {
+  readonly code: ProviderFailure["code"];
+  readonly retryable: boolean;
+}
+
+/**
+ * Classify a thrown fetch/resolve error into failure-ledger terms without
+ * string-matching: a ProviderHttpError already carries the right code and
+ * retryability (403 → blocked, 429 → rate-limited, 5xx → provider-unavailable),
+ * so flattening it to `network-error` would retry-storm throttled endpoints
+ * and mislead fallback ordering. Everything else stays a generic,
+ * retryable network failure.
+ */
+export function classifyProviderFetchFailure(error: Error | undefined): ClassifiedFetchFailure {
+  if (error instanceof ProviderHttpError) {
+    return { code: error.code, retryable: error.retryable };
+  }
+  if (error !== undefined && isProviderTimeoutError(error)) {
+    return { code: "timeout", retryable: true };
+  }
+  return { code: "network-error", retryable: true };
 }
 
 export function emitTraceEvent(
