@@ -7,7 +7,7 @@
 - **Status:** PROPOSED — nothing executed. Planning only.
 - **Priority:** P1 (everything the audits fixed is stuck behind this)
 - **Effort:** M (mostly rebasing and review, little new code)
-- **Risk:** MED — re-stacking can drop a change; verify with an empty `git diff` against the old tip
+- **Risk:** MED — re-stacking can drop a change; verify each replacement PR against its original patch, and the composed replacement stack against the old tip (step 4)
 - **Depends on:** none
 - **Category:** delivery / process
 - **Snapshot:** 2026-10-02, 29 open PRs, `origin/main` unchanged since #338
@@ -31,7 +31,7 @@ Stack B is 17 deep, and its newest PR (#528) is still being added to the top. A 
 1. **Stop adding to the tops.** No new PR is based on #528 or #506. New work branches from `main`.
 2. **Clear the two blocked bases.** Rebase #508 and #501 onto current `main`, resolve conflicts by reading behaviour (not by picking a side), and answer their changes-requested comments. #499 is approved and 3 files: rebase and merge it first, it is a free win.
 3. **Choose one backbone for stack A** exactly as `.plans/2026-10-01-pr-review.md` recommends: #501 → #502 → #503 → #505 → #504 → #506, with #500's gate repairs first. Land bottom-up, one PR per merge, each green standing alone.
-4. **Split stack B by risk, not by order.** The reliability and security PRs (#508, #509, #510, #511, #516, #520, #522, #523, #525, #526, #527, #528) are what users need. The refactors (#513, #515, #517, #519: `useCommandPalette`, `useIdleSurface`, `useResultNarrow`, `useBrowseOverlay`) and the mouse-input feature (#521, +1262 lines) sit in the middle of the chain and block the fixes above them. Re-stack them onto `main` as a separate, later stack. Method: partition the changed files by theme and check the partition is complete and disjoint, rebuild each branch with `git checkout <old-tip> -- <paths>` from the final state of its paths, then prove `git diff <new-tip> <old-tip>` is empty. Keep the old branches until every re-stacked PR merges.
+4. **Split stack B by risk, not by order.** The reliability and security PRs (#508, #509, #510, #511, #516, #520, #522, #523, #525, #526, #527, #528) are what users need. The refactors (#513, #515, #517, #519: `useCommandPalette`, `useIdleSurface`, `useResultNarrow`, `useBrowseOverlay`) and the mouse-input feature (#521, +1262 lines) sit in the middle of the chain and block the fixes above them. Re-stack them onto `main` as a separate, later stack. Method: partition the changed files by theme and check the partition is complete and disjoint, rebuild each branch with `git checkout <old-tip> -- <paths>` from the final state of its paths, then compare each replacement PR with its original patch. A single replacement branch is not expected to equal the old tip, because the refactors and #521 are deliberately left out of the reliability and security stack. The empty-diff proof applies to the composed result: the replacement branches applied in order must reproduce the old tip, so `git diff <composed-tip> <old-tip>` is empty. Keep the old branches until every re-stacked PR merges.
 5. **Then #507's unique residue**, per the review: only the hunks #501–#506 do not already carry.
 6. **Close or park deliberately:** #255 (anti-slop wiring), #287 (Android runtime), #306 (Cast) get a written decision, not silence. #327 (version packages) lands last.
 
@@ -45,5 +45,5 @@ Stack B is 17 deep, and its newest PR (#528) is still being added to the top. A 
 ## Stop conditions
 
 - A rebase changes behaviour of a PR the review marked "no blocking defect": stop and re-review that PR.
-- Any re-stack whose `git diff old-tip new-tip` is not empty: stop, the split lost something.
+- Once the replacement branches are composed, a non-empty `git diff old-tip composed-tip`: stop, the split lost something.
 - CI red on a merged base: stop landing, fix forward on `main` first.

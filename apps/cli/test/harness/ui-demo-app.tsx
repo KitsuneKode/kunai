@@ -5,6 +5,9 @@
  * search, pick, resolve, play, a stalled stream, post-play. The one addition is
  * the `x` key, which toggles the stalled state so a tape can show the real
  * recovery prompt without a real stall. No providers, mpv, or analytics.
+ *
+ * Browse and playback show the real command lists, so most palette entries are
+ * inert here. After playback, `search` returns to browse and `quit` exits.
  */
 
 import { BrowseShell } from "@/app-shell/browse-shell";
@@ -16,6 +19,7 @@ import { fallbackCommandState } from "@/app-shell/shell-command-model";
 import { ShellFrame } from "@/app-shell/shell-frame";
 import { APP_LABEL } from "@/app-shell/shell-theme";
 import type { ShellAction } from "@/app-shell/types";
+import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { SearchResult } from "@/domain/types";
 import { useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -36,7 +40,7 @@ type Phase = "browse" | "resolving" | "playing" | "post-play";
 const TICK_MS = 100;
 const BROWSE_COMMANDS = fallbackCommandState(SEARCH_BROWSE_COMMAND_IDS);
 const PLAYBACK_COMMANDS = fallbackCommandState(COMMAND_CONTEXTS.activePlayback);
-const POST_PLAY_COMMANDS = fallbackCommandState(["next", "replay", "search", "help", "quit"]);
+const POST_PLAY_COMMANDS = fallbackCommandState(["search", "quit"]);
 
 function noop(): void {}
 
@@ -136,7 +140,10 @@ export function UiDemoApp() {
         ]}
         commands={POST_PLAY_COMMANDS}
         escapeAction="search"
-        onResolve={() => goPhase("browse")}
+        onResolve={(action: ShellAction) => {
+          if (action === "quit") requestAppShutdown();
+          else goPhase("browse");
+        }}
       >
         <PostPlayShell {...postPlayProps()} selectedActionIndex={0} />
       </ShellFrame>
