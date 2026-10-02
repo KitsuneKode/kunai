@@ -71,7 +71,7 @@ export function CapabilityIssueStrip({
           ) : null}
         </Box>
       ))}
-      <Text color={palette.dim} dimColor>
+      <Text color={palette.dim}>
         Everything else still works. `kunai doctor` has the full report.
       </Text>
     </Box>

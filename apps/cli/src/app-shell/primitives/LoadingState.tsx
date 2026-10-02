@@ -42,11 +42,7 @@ export function LoadingState({
       <Text color={palette.accent}>
         {spinner} {message}
       </Text>
-      {subtitle ? (
-        <Text color={palette.dim} dimColor>
-          {subtitle}
-        </Text>
-      ) : null}
+      {subtitle ? <Text color={palette.dim}>{subtitle}</Text> : null}
     </Box>
   );
 }

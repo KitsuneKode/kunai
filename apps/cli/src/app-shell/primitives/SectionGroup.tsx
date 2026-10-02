@@ -28,11 +28,7 @@ export const SectionGroup = React.memo(function SectionGroup({
       overflow="hidden"
     >
       <Text color={palette.muted}>{label.toUpperCase()}</Text>
-      {tag ? (
-        <Text color={palette.dim} dimColor>
-          {tag}
-        </Text>
-      ) : null}
+      {tag ? <Text color={palette.dim}>{tag}</Text> : null}
       {rule ? (
         <Box
           flexGrow={1}

@@ -198,22 +198,14 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             return (
               <Box key={row.def.id} flexDirection="column">
                 {renderMainRow(row, false, rowWidth)}
-                {row.detail ? (
-                  <Text color={palette.dim} dimColor>
-                    {row.detail}
-                  </Text>
-                ) : null}
+                {row.detail ? <Text color={palette.dim}>{row.detail}</Text> : null}
               </Box>
             );
           }
           return (
             <Box key={row.def.id} flexDirection="column">
               {renderMainRow(row, selected, rowWidth)}
-              {selected && row.detail ? (
-                <Text color={palette.dim} dimColor>
-                  {`  ${row.detail}`}
-                </Text>
-              ) : null}
+              {selected && row.detail ? <Text color={palette.dim}>{`  ${row.detail}`}</Text> : null}
             </Box>
           );
         })}

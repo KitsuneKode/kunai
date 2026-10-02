@@ -73,9 +73,7 @@ export function RootIdleShell({ state }: { state: SessionState }) {
     <Box flexDirection="column" flexGrow={1}>
       {hasSession ? (
         <Box flexDirection="column" gap={0}>
-          <Text color={palette.dim} dimColor>
-            {resolveContentKind(currentTitle, state.mode)}
-          </Text>
+          <Text color={palette.dim}>{resolveContentKind(currentTitle, state.mode)}</Text>
           <Box marginTop={1}>
             <Text color={palette.accent}>{"⏸  "}</Text>
             <Text color={palette.text} bold>
@@ -84,7 +82,7 @@ export function RootIdleShell({ state }: { state: SessionState }) {
             {currentEpisode ? <Text color={palette.muted}>{`  ${currentEpisode}`}</Text> : null}
           </Box>
           <Box marginTop={1}>
-            <Text color={palette.dim} dimColor>
+            <Text color={palette.dim}>
               {"/history to continue  ·  /calendar for today  ·  / for commands"}
             </Text>
           </Box>

@@ -314,9 +314,7 @@ export function DownloadConfirmationContent({
         <Text color={palette.text} bold>
           {truncateLine(`Download ${presentation.title}?`, layout.listWidth)}
         </Text>
-        <Text color={palette.muted} dimColor>
-          {truncateLine(subtitle, layout.listWidth)}
-        </Text>
+        <Text color={palette.muted}>{truncateLine(subtitle, layout.listWidth)}</Text>
         <Box flexDirection="column" marginTop={1}>
           {actions.map((action, index) => {
             const selected = index === cursor;
@@ -326,7 +324,7 @@ export function DownloadConfirmationContent({
                   {truncateLine(`${selected ? "\u258c " : "  "}${action.label}`, layout.listWidth)}
                 </Text>
                 {selected ? (
-                  <Text color={palette.muted} dimColor wrap="truncate">
+                  <Text color={palette.muted} wrap="truncate">
                     {truncateLine(`    ${action.detail}`, layout.listWidth)}
                   </Text>
                 ) : null}
