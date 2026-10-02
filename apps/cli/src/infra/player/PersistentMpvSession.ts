@@ -602,8 +602,10 @@ export class PersistentMpvSession {
           : closed
             ? null
             : ("SIGKILL" as NodeJS.Signals)),
-      // This whole block is our own teardown — quit/TERM/KILL escalation.
-      terminatedByUs: true,
+      // target.killed is only set when a kill() actually delivered — an
+      // external SIGKILL racing our teardown leaves it false and still
+      // classifies as a crash, not a quit.
+      terminatedByUs: target?.killed === true,
     });
   }
 
@@ -1444,9 +1446,9 @@ export class PersistentMpvSession {
     await this.handleProcessTermination({
       code: exit.exitCode ?? 1,
       signal: exit.signal,
-      // terminateMpvProcess is our own kill path — whatever signal landed,
-      // the teardown was ours (a real crash signal still dominates anyway).
-      terminatedByUs: true,
+      // target.killed only marks a kill() that actually delivered — a
+      // SIGKILL that beat our teardown to the process stays crash-class.
+      terminatedByUs: target.killed === true,
     });
   }
 
