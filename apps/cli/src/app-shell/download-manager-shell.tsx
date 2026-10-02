@@ -30,11 +30,24 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 /** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
 
 function refreshJobLists(container: Container) {
+  const active = container.downloadService.listActive(50);
   return {
-    activeJobs: container.downloadService.listActive(50).filter((j) => j.status === "running"),
-    queuedJobs: container.downloadService.listActive(50).filter((j) => j.status === "queued"),
-    completedJobs: container.downloadService.listCompleted(5),
-    failedJobs: container.downloadService.listFailed(10),
+    activeJobs: active.filter((j) => j.status === "running"),
+    queuedJobs: active.filter((j) => j.status === "queued"),
+    completedJobs: container.downloadService.listCompleted(50),
+    failedJobs: container.downloadService.listFailed(50),
+    // LIMIT-capped list lengths cannot speak for the buckets — the header reads
+    // real COUNT(*) totals so an overflowing bucket still reports truth.
+    runningTotal: container.downloadService.countJobsByStatus("running"),
+    queuedTotal: container.downloadService.countJobsByStatus("queued"),
+    repairableTotal: container.downloadService.countJobsByStatus("repairable"),
+    // "Failed" in the header means needs-attention: terminal failures plus the
+    // repairable bucket, which lives in listCompleted, not listFailed.
+    attentionTotal:
+      container.downloadService.countJobsByStatus("failed") +
+      container.downloadService.countJobsByStatus("aborted") +
+      container.downloadService.countJobsByStatus("repairable"),
+    totalJobs: container.downloadService.countJobs(),
   };
 }
 
@@ -179,6 +192,13 @@ export function DownloadManagerContent({
   const [queuedJobs, setQueuedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [completedJobs, setCompletedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [failedJobs, setFailedJobs] = useState<readonly DownloadJobRecord[]>([]);
+  const [bucketTotals, setBucketTotals] = useState({
+    running: 0,
+    queued: 0,
+    repairable: 0,
+    attention: 0,
+    total: 0,
+  });
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [confirmingDeleteIndex, setConfirmingDeleteIndex] = useState<number | null>(null);
   const [repairSweepStatus, setRepairSweepStatus] = useState<string | null>(null);
@@ -190,6 +210,13 @@ export function DownloadManagerContent({
     setQueuedJobs(lists.queuedJobs);
     setCompletedJobs(lists.completedJobs);
     setFailedJobs(lists.failedJobs);
+    setBucketTotals({
+      running: lists.runningTotal,
+      queued: lists.queuedTotal,
+      repairable: lists.repairableTotal,
+      attention: lists.attentionTotal,
+      total: lists.totalJobs,
+    });
   }, [container]);
 
   useEffect(() => {
@@ -271,7 +298,10 @@ export function DownloadManagerContent({
       }
       if (input.toLowerCase() === "a") {
         if (repairSweepRunning) return;
-        const repairableCount = failedJobs.filter((job) => job.status === "repairable").length;
+        // Repairable jobs are not in listFailed — they live in listCompleted
+        // (media landed; only sidecars failed). Read the dedicated bucket or the
+        // sweep can never fire.
+        const repairableCount = container.downloadService.listRepairable(50).length;
         if (repairableCount === 0) return;
         setRepairSweepRunning(true);
         setRepairSweepStatus(
@@ -479,12 +509,8 @@ export function DownloadManagerContent({
     );
   };
 
-  const failedAttentionCount = failedJobs.filter(
-    (job) => job.status === "failed" || job.status === "repairable",
-  ).length;
-
   const hasSummaryHeader =
-    activeJobs.length > 0 || queuedJobs.length > 0 || failedAttentionCount > 0;
+    bucketTotals.running > 0 || bucketTotals.queued > 0 || bucketTotals.attention > 0;
   const hintRows =
     (confirmingDeleteIndex !== null ? 1 : 0) +
     (repairSweepStatus ? 1 : 0) +
@@ -525,9 +551,9 @@ export function DownloadManagerContent({
       ) : (
         <Box flexDirection="column">
           <QueueSummaryHeader
-            activeCount={activeJobs.length}
-            queuedCount={queuedJobs.length}
-            failedCount={failedAttentionCount}
+            activeCount={bucketTotals.running}
+            queuedCount={bucketTotals.queued}
+            failedCount={bucketTotals.attention}
           />
           {windowStart > 0 ? (
             <Text color={palette.dim} dimColor>
@@ -538,6 +564,12 @@ export function DownloadManagerContent({
           {windowEnd < allJobs.length ? (
             <Text color={palette.dim} dimColor>
               {"  "}more below
+            </Text>
+          ) : null}
+          {bucketTotals.total > allJobs.length ? (
+            <Text color={palette.dim} dimColor>
+              {"  "}…{bucketTotals.total - allJobs.length} older job
+              {bucketTotals.total - allJobs.length === 1 ? "" : "s"} not shown
             </Text>
           ) : null}
         </Box>
@@ -568,9 +600,7 @@ export function DownloadManagerContent({
             <Box marginTop={1}>
               <Text color={palette.muted} dimColor>
                 {hints}
-                {failedJobs.some((job) => job.status === "repairable")
-                  ? "  ·  a to repair all"
-                  : ""}
+                {bucketTotals.repairable > 0 ? "  ·  a to repair all" : ""}
               </Text>
             </Box>
           ) : null;

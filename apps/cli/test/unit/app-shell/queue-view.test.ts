@@ -41,7 +41,7 @@ describe("buildQueueView", () => {
       entry({ id: "3", title: "Later", episode: 3 }),
     ];
     const v = buildQueueView({ entries, ...base, selectedId: "2" });
-    expect(v.rows.map((r) => r.state)).toEqual(["played", "playing", "pending"]);
+    expect(v.rows.map((r) => r.state)).toEqual(["played", "next", "pending"]);
     expect(v.rows[1]!.position).toBe(1);
     // Anime hides season unless the caller proves it is meaningful.
     expect(v.rows[1]!.episodeLabel).toBe("E08");

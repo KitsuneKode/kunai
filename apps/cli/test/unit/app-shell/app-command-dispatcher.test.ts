@@ -86,6 +86,12 @@ function createDeps(calls: string[]): ActivePlaybackCommandDispatchDeps {
       calls.push(`route:${action}`);
       return "handled";
     },
+    queueService: {
+      rollbackBeforeStart: (_intent, failure) => {
+        calls.push(`rollback:${failure.code}`);
+        return true;
+      },
+    },
     setExiting: (value) => calls.push(`exiting:${value}`),
   };
 }

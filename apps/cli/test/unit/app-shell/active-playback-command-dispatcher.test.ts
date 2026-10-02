@@ -261,6 +261,56 @@ describe("dispatchActivePlaybackCommand", () => {
       "autoskip:false:playback-loading-command-autoskip",
     ]);
   });
+
+  test("a history-entry result is refused visibly and its queue claim rolled back", async () => {
+    // Palette/overlays opened over loading or playing (up-next, history,
+    // downloads, notifications) resolve to {type:"history-entry"} — but there
+    // is no mid-playback launch channel, so the result used to die silently
+    // here, leaving the queue row claimed in-flight forever.
+    const calls: string[] = [];
+    const deps = createDeps(calls, {
+      routeSearchShellAction: async () => ({
+        type: "history-entry",
+        title: {
+          id: "t1",
+          type: "series" as const,
+          name: "Show",
+          queuePlaybackIntent: { queueEntryId: "q-9" },
+        },
+      }),
+    });
+
+    const result = await dispatchActivePlaybackCommand("up-next", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+    });
+
+    expect(result).toBe("handled");
+    expect(calls).toContain("rollback:q-9:handoff-failed");
+    expect(calls).toContain("dispatch:SET_PLAYBACK_FEEDBACK");
+  });
+
+  test("a history-entry without a queue claim still refuses visibly", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls, {
+      routeSearchShellAction: async () => ({
+        type: "history-entry",
+        title: { id: "t1", type: "movie" as const, name: "Film" },
+      }),
+    });
+
+    await dispatchActivePlaybackCommand("history", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+    });
+
+    expect(calls).toContain("dispatch:SET_PLAYBACK_FEEDBACK");
+    expect(calls.some((c) => c.startsWith("rollback:"))).toBe(false);
+  });
 });
 
 function createDeps(
@@ -337,6 +387,12 @@ function createDeps(
     routeSearchShellAction: async (action: ShellAction) => {
       calls.push(`route:${action}`);
       return "handled";
+    },
+    queueService: {
+      rollbackBeforeStart: (intent, failure) => {
+        calls.push(`rollback:${intent.queueEntryId}:${failure.code}`);
+        return true;
+      },
     },
     setExiting: (value) => {
       calls.push(`exiting:${value}`);

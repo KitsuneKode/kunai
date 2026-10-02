@@ -161,7 +161,14 @@ test("w/q/d surface the sheet-footer intents for the shell to run", async () => 
   try {
     await press(handle, ["o"]);
     await press(handle, ["w", "q", "d"]);
-    expect(intents).toEqual([{ kind: "watchlist" }, { kind: "queue" }, { kind: "download" }]);
+    expect(intents.map((i) => i.kind)).toEqual(["watchlist", "queue", "download"]);
+    for (const intent of intents) {
+      expect(
+        intent.kind === "watchlist" || intent.kind === "queue" || intent.kind === "download"
+          ? intent.option.value
+          : null,
+      ).toBe("sel-1");
+    }
   } finally {
     handle.unmount();
   }
@@ -186,6 +193,46 @@ test("t without a trailer URL is consumed, not a trailer intent", async () => {
     await press(handle, ["o"]);
     await press(handle, ["t"]);
     expect(intents).toEqual([{ kind: "consumed" }]);
+  } finally {
+    handle.unmount();
+  }
+});
+
+function DivergedProbe({
+  onIntent,
+}: {
+  readonly onIntent?: (intent: BrowseOverlayIntent<string>) => void;
+}) {
+  const overlay = useBrowseOverlay<string>({ mode: "series" });
+  useInput((input, key) => {
+    if (!overlay.current && input === "o") {
+      overlay.openDetails({ value: "opened-title", label: "Opened" }, { focusZone: "list" });
+      return;
+    }
+    // The list highlight has moved to a different row since the sheet opened.
+    onIntent?.(
+      overlay.handleKey(input, key, {
+        selectedOption: { value: "drifted-row", label: "Drifted" },
+        searchReady: true,
+      }),
+    );
+  });
+  return <Text>{`open=${overlay.current ? overlay.current.type : "none"}`}</Text>;
+}
+
+test("details actions act on the option that opened the sheet, not the live selection", async () => {
+  const intents: BrowseOverlayIntent<string>[] = [];
+  const handle = render(<DivergedProbe onIntent={(intent) => intents.push(intent)} />);
+  try {
+    await press(handle, ["o"]);
+    expect(handle.lastFrame()).toContain("open=details");
+    await press(handle, ["w", RETURN]);
+    const watchlist = intents.find((i) => i.kind === "watchlist");
+    const submit = intents.find((i) => i.kind === "submit");
+    expect(watchlist && watchlist.kind === "watchlist" ? watchlist.option.value : null).toBe(
+      "opened-title",
+    );
+    expect(submit && submit.kind === "submit" ? submit.value : null).toBe("opened-title");
   } finally {
     handle.unmount();
   }

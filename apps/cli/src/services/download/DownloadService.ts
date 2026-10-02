@@ -37,6 +37,7 @@ import {
   getKunaiPaths,
   type DownloadArtifactStatus,
   type DownloadJobRecord,
+  type DownloadJobStatus,
   type DownloadJobsRepository,
   type HistoryTitleAliasInput,
   type HistoryTitleAliasRepository,
@@ -527,6 +528,19 @@ export class DownloadService {
    */
   listRepairable(limit = 100): readonly DownloadJobRecord[] {
     return this.deps.repo.listRepairable(limit);
+  }
+
+  /**
+   * True total for a status bucket — the list* methods are LIMIT-capped views,
+   * so their length under-reports once a bucket outgrows the cap.
+   */
+  countJobsByStatus(status: DownloadJobStatus): number {
+    return this.deps.repo.countByStatus(status);
+  }
+
+  /** Total jobs regardless of status — badge counts, not capped views. */
+  countJobs(): number {
+    return this.deps.repo.countAll();
   }
 
   getJob(id: string): DownloadJobRecord | undefined {

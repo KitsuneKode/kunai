@@ -64,6 +64,9 @@ function fixture(options: FixtureOptions = {}): Container {
       listActive: () => [],
       listCompleted: () => [],
       listFailed: () => [],
+      listRepairable: () => [],
+      countJobsByStatus: () => 0,
+      countJobs: () => 0,
       onEvent: () => () => undefined,
       deleteJob: (jobId: string) => {
         options.deletes?.push(jobId);

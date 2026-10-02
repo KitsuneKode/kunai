@@ -375,6 +375,7 @@ describe("queue playback lifecycle integration", () => {
         columns: 100,
         listWidth: 92,
         rowWidth: 88,
+        maxVisible: 10,
       }),
       { columns: 100 },
     ).replace(ANSI, "");

@@ -1,3 +1,5 @@
+import type { QueuePlaybackIntent } from "@/domain/queue/queue-playback-intent";
+
 import type { ShellAction } from "./types";
 
 export type ActivePlaybackStreamPickerAction =
@@ -10,7 +12,12 @@ export type ActivePlaybackStreamPickerAction =
 type PlaybackSessionToggleEvent =
   | { readonly type: "SET_SESSION_AUTOPLAY_PAUSED"; readonly paused: boolean }
   | { readonly type: "SET_SESSION_AUTOSKIP_PAUSED"; readonly paused: boolean }
-  | { readonly type: "SET_SESSION_STOP_AFTER_CURRENT"; readonly enabled: boolean };
+  | { readonly type: "SET_SESSION_STOP_AFTER_CURRENT"; readonly enabled: boolean }
+  | {
+      readonly type: "SET_PLAYBACK_FEEDBACK";
+      readonly detail?: string | null;
+      readonly note?: string | null;
+    };
 
 type PlaybackSessionToggleState = {
   readonly autoplaySessionPaused: boolean;
@@ -66,6 +73,17 @@ export type ActivePlaybackCommandDispatchDeps = {
     action: ShellAction,
     deps: ActivePlaybackCommandDispatchDeps,
   ) => Promise<unknown>;
+  readonly queueService: {
+    readonly rollbackBeforeStart: (
+      intent: QueuePlaybackIntent,
+      failure: {
+        readonly code: "handoff-failed";
+        readonly stage: "handoff";
+        readonly at: string;
+        readonly detail?: string;
+      },
+    ) => boolean;
+  };
   readonly setExiting: (value: boolean) => void;
 };
 
@@ -217,6 +235,40 @@ export async function dispatchActivePlaybackCommand(
   const routed = await deps.routeSearchShellAction(action, deps);
   if (routed === "quit") {
     deps.setExiting(true);
+    return "handled";
+  }
+  // Overlay selections made over loading/playing resolve to a launch object,
+  // but nothing mid-playback consumes it — `forceCloseRootContent` only settles
+  // retained root sessions (browse/post-playback). A queue pick has already
+  // CAS-claimed its row, so roll the claim back and say so, instead of the
+  // row going in-flight forever with no playback.
+  if (isHistoryEntryResult(routed)) {
+    const intent = routed.title.queuePlaybackIntent;
+    if (intent) {
+      deps.queueService.rollbackBeforeStart(intent, {
+        code: "handoff-failed",
+        stage: "handoff",
+        at: new Date().toISOString(),
+        detail: "no mid-playback launch channel",
+      });
+    }
+    deps.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "can't start another title while one is playing — press q to stop first",
+    });
   }
   return "handled";
+}
+
+type HistoryEntryResult = {
+  readonly type: "history-entry";
+  readonly title: { readonly queuePlaybackIntent?: QueuePlaybackIntent };
+};
+
+function isHistoryEntryResult(value: unknown): value is HistoryEntryResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { type?: unknown }).type === "history-entry"
+  );
 }

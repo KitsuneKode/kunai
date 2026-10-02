@@ -116,11 +116,17 @@ test("anime kind filter uses corrected provider markers", () => {
 
 test("computeStreak breaks on gaps and counts longest run", () => {
   const { service, history } = makeStatsService();
-  const day = (offset: number) =>
-    new Date(Date.now() - offset * 86_400_000).toISOString().slice(0, 10);
-  const days = [day(0), day(1), day(3), day(4), day(5)];
+  // Buckets are local days ('localtime'), so a UTC-day string is the wrong
+  // anchor — local noon lands on the intended day in every timezone.
+  const stampFor = (offset: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() - offset);
+    d.setHours(12, 0, 0, 0);
+    return d.toISOString();
+  };
+  const offsets = [0, 1, 3, 4, 5];
 
-  for (const [index, watchDay] of days.entries()) {
+  for (const [index, offset] of offsets.entries()) {
     history.upsertProgress({
       title: { id: `title-${index}`, kind: "series", title: `Title ${index}` },
       episode: { season: 1, episode: 1 },
@@ -128,7 +134,7 @@ test("computeStreak breaks on gaps and counts longest run", () => {
       durationSeconds: 1_000,
       completed: true,
       watchedSeconds: 1_000,
-      updatedAt: `${watchDay}T20:00:00.000Z`,
+      updatedAt: stampFor(offset),
     });
   }
 

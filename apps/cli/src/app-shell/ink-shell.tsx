@@ -982,6 +982,7 @@ export function AppRoot({ container }: { container: Container }) {
                 const { routeSearchShellAction } = await import("./command-router");
                 return routeSearchShellAction({ action: nextAction, container });
               },
+              queueService: container.queueService,
               setExiting,
             },
             canGoNext,

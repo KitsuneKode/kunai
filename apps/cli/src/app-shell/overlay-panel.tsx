@@ -21,7 +21,7 @@ import {
 } from "./shell-text";
 import { palette, semanticToneColor, statusColor } from "./shell-theme";
 import { PosterOutput } from "./SixelPosterPane";
-import type { ShellPanelLine, ShellPickerOption } from "./types";
+import type { BrowseShellOption, ShellPanelLine, ShellPickerOption } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 
 export { formatPickerDisplayRow, formatPickerOptionRow } from "./overlay-picker-row.model";
@@ -50,6 +50,12 @@ export type BrowseOverlay =
       detailData?: DetailsPanelData;
       /** Rich details sheet model — preferred over detailData when present. */
       sheet?: DetailsSheetModel;
+      /**
+       * The option this sheet was opened for. Details actions (Enter/w/q/d)
+       * act on this, not the browse-list highlight — the two diverge when the
+       * sheet opens from a notification or the list re-filters under it.
+       */
+      option?: BrowseShellOption<unknown>;
       seasonsExpanded?: boolean;
       imageUrl?: string;
       loading?: boolean;

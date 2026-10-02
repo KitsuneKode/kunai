@@ -74,6 +74,9 @@ export function useCommandPalette(options?: { readonly onInputRedraw?: () => voi
           setNotice(describePaletteRefusal(resolved));
           return { kind: "consumed" };
         }
+        // Resolve = dismiss. Otherwise the palette stays open over whatever the
+        // command launched, swallowing that surface's keys.
+        closePalette();
         return { kind: "resolved", command: resolved };
       }
       setNotice(null);

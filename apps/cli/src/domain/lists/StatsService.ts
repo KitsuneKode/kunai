@@ -1,6 +1,7 @@
 import type { KunaiDatabase } from "@kunai/storage";
 import { WatchStatsRepository } from "@kunai/storage";
 
+import { localDayKey } from "../local-day-key";
 import { buildWatchGenreBreakdown, type WatchGenreBreakdown } from "./WatchGenreStats";
 
 /** Sentinel window length used by Stats UI for "All time". */
@@ -89,8 +90,15 @@ export class StatsService {
 
     if (rows.length === 0) return { current: 0, longest: 0 };
 
-    const today = new Date().toISOString().slice(0, 10);
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    // Streak days are local days: `streakDates` buckets with 'localtime', so a
+    // UTC `toISOString` today/yesterday compares against keys shifted a full
+    // day for UTC+ users. Calendar subtraction (not now-86400s) stays correct
+    // across DST.
+    const todayDate = new Date();
+    const yesterdayDate = new Date(todayDate);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const today = localDayKey(todayDate);
+    const yesterday = localDayKey(yesterdayDate);
 
     let current = 0;
     let longest = 0;
@@ -315,9 +323,8 @@ export class StatsService {
   }
 
   watchedToday(): boolean {
-    const today = new Date().toISOString().slice(0, 10);
     const rows = this.repo.streakDates();
-    return rows.includes(today);
+    return rows.includes(localDayKey(new Date()));
   }
 }
 

@@ -95,6 +95,14 @@ const container = {
     listActive: () => activeJobs,
     listCompleted: () => [],
     listFailed: () => failedJobs,
+    listRepairable: () => [],
+    countJobsByStatus: (status: string) =>
+      status === "running" || status === "queued"
+        ? activeJobs.filter((job) => job.status === status).length
+        : status === "failed"
+          ? failedJobs.length
+          : 0,
+    countJobs: () => activeJobs.length + failedJobs.length,
     onEvent: () => () => undefined,
     repairRepairableSidecars: async () => ({
       checked: 0,

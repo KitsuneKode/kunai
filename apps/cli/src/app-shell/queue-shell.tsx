@@ -1,4 +1,4 @@
-import { Box } from "ink";
+import { Box, Text } from "ink";
 import React from "react";
 
 import { useRailPoster } from "./hooks/use-rail-poster";
@@ -9,6 +9,7 @@ import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import type { QueueView, QueueViewRow } from "./queue-view";
+import { getWindowStart } from "./shell-text";
 import { palette } from "./shell-theme";
 
 function QueueRow({
@@ -23,8 +24,8 @@ function QueueRow({
   const innerWidth = Math.max(16, rowWidth - 5);
   const layout = computeMediaListRowLayout(innerWidth, { hasEpisode: true });
   const stateLabel =
-    row.state === "playing" ? "▶ playing" : row.state === "played" ? "played" : row.sourceLabel;
-  const stateColor = row.state === "playing" ? palette.ok : palette.muted;
+    row.state === "next" ? "▶ next up" : row.state === "played" ? "played" : row.sourceLabel;
+  const stateColor = row.state === "next" ? palette.ok : palette.muted;
   return (
     <Box flexDirection="row">
       <Box width={5}>
@@ -40,7 +41,7 @@ function QueueRow({
             episodeCode: row.episodeLabel,
             statusLabel: stateLabel,
             statusColor: stateColor,
-            statusDim: row.state !== "playing",
+            statusDim: row.state !== "next",
             layout,
           })}
         />
@@ -54,11 +55,14 @@ export function QueueShell({
   columns,
   listWidth,
   rowWidth,
+  maxVisible,
 }: {
   readonly view: QueueView;
   readonly columns: number;
   readonly listWidth: number;
   readonly rowWidth: number;
+  /** Row budget from the overlay layout; windows long queues around selection. */
+  readonly maxVisible: number;
 }) {
   // Single Kitty hero for the selected item (same mechanism as history's rail).
   const { poster: railPoster } = useRailPoster(view.rail?.posterUrl, {
@@ -67,6 +71,12 @@ export function QueueShell({
     enabled: columns >= 124,
     variant: "detail",
   });
+
+  // Window around the selection — unbounded mapping let J/K move the highlight
+  // onto rows clipped below the fold (invisible-cursor x/reorder operations).
+  const windowStart = getWindowStart(view.selectedIndex, view.rows.length, maxVisible);
+  const windowEnd = Math.min(windowStart + maxVisible, view.rows.length);
+  const visibleRows = view.rows.slice(windowStart, windowEnd);
 
   const list = (
     <Box flexDirection="column" flexGrow={1}>
@@ -81,14 +91,26 @@ export function QueueShell({
           width={rowWidth}
         />
       ) : (
-        view.rows.map((row, index) => (
-          <QueueRow
-            key={row.id}
-            row={row}
-            selected={index === view.selectedIndex}
-            rowWidth={rowWidth}
-          />
-        ))
+        <Box flexDirection="column">
+          {windowStart > 0 ? (
+            <Text color={palette.dim} dimColor>
+              {"  "}more above
+            </Text>
+          ) : null}
+          {visibleRows.map((row, index) => (
+            <QueueRow
+              key={row.id}
+              row={row}
+              selected={windowStart + index === view.selectedIndex}
+              rowWidth={rowWidth}
+            />
+          ))}
+          {windowEnd < view.rows.length ? (
+            <Text color={palette.dim} dimColor>
+              {"  "}more below
+            </Text>
+          ) : null}
+        </Box>
       )}
     </Box>
   );

@@ -4,6 +4,7 @@ import { palette } from "@/app-shell/shell-theme";
 import { buildStatsView } from "@/app-shell/stats-view";
 import { StatsFormatter } from "@/domain/lists/StatsFormatter";
 import type { WatchStats } from "@/domain/lists/StatsService";
+import { localDayKey } from "@/domain/local-day-key";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -31,8 +32,10 @@ const sampleStats: WatchStats = {
   providerBreakdown: [{ providerId: "allanime", episodeCount: 200, totalSeconds: 300_000 }],
   hourOfDay: [{ hour: 21, episodeCount: 40, totalSeconds: 50_000 }],
   dailyKindMix: [],
+  // Buckets are local days — the same keys the 'localtime' SQL emits, so the
+  // golden grid renders identically in every test timezone.
   heatmap: Array.from({ length: 120 }, (_, i) => ({
-    date: new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10),
+    date: localDayKey(new Date(Date.now() - i * 86_400_000)),
     watchedCount: i % 3 === 0 ? 2 : 0,
     totalSeconds: i % 3 === 0 ? 3600 : 0,
   })),

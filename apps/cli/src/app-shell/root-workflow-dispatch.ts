@@ -27,10 +27,27 @@ export async function runRootWorkflowSafely({
     // nothing played. Settle the retained browse session instead — the same
     // channel offline playback and the inbox use to reach the phase loop.
     if (typeof result === "object" && result.type === "history-entry") {
-      forceCloseRootContent<BrowseShellResult<SearchResult>>({
+      const settled = forceCloseRootContent<BrowseShellResult<SearchResult>>({
         type: "launch-playback",
         launch: { title: result.title, ...(result.episode ? { episode: result.episode } : {}) },
       });
+      if (!settled) {
+        // Nothing retainable is mounted (mid-playback or over another overlay
+        // on top of it) — the pick would otherwise die invisibly and, for a
+        // queue-sourced launch, leave the row claimed in-flight forever.
+        if (result.title.queuePlaybackIntent) {
+          container.queueService.rollbackBeforeStart(result.title.queuePlaybackIntent, {
+            code: "handoff-failed",
+            stage: "handoff",
+            at: new Date().toISOString(),
+            detail: "no retained root session for launch",
+          });
+        }
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: "can't start another title while one is playing — press q to stop first",
+        });
+      }
     }
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unknown workflow error";

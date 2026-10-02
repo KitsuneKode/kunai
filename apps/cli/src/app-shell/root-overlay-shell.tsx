@@ -82,7 +82,9 @@ import {
   getOverlayContentViewport,
   getOverlayHostChromeRows,
   getOverlayListMaxVisible,
+  getPickerChromeRows,
   getPickerLayout,
+  getPickerListMaxVisible,
   resolveOverlayPanelKind,
 } from "./layout-policy";
 import { LibraryShell } from "./library-shell";
@@ -144,7 +146,14 @@ import {
   isRootChoiceOverlay,
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
-import { resolveQueueRowPlaySelection, resolveRootQueueSelection } from "./root-queue-bridge";
+import {
+  claimQueuePlaybackLaunch,
+  episodeInfoFromQueuePlaybackLaunch,
+  hasPendingRootQueueSelection,
+  resolveQueueRowPlaySelection,
+  resolveRootQueueSelection,
+  titleInfoFromQueuePlaybackLaunch,
+} from "./root-queue-bridge";
 import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
 import { runRootWorkflowSafely } from "./root-workflow-dispatch";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
@@ -894,7 +903,18 @@ export function RootOverlayShell({
           container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
           return;
         }
-        if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
+        if (
+          PALETTE_WORKFLOW_ACTIONS.has(action) ||
+          // Enabled in the rootOverlay context but not in the palette workflow
+          // set — they still have real shell-workflow handlers. Without this
+          // branch Enter on /up-next, /watch, /playlists, /providers and
+          // /image-pane inside any overlay was a silent dead key.
+          action === "up-next" ||
+          action === "watch" ||
+          action === "playlists" ||
+          action === "providers" ||
+          action === "image-pane"
+        ) {
           void runRootWorkflowSafely({
             container,
             action,
@@ -1608,13 +1628,43 @@ export function RootOverlayShell({
       const sel = queueRows.length === 0 ? -1 : Math.min(selectedIndex, queueRows.length - 1);
       const row = sel >= 0 ? queueRows[sel] : undefined;
       if (key.return && row) {
-        // Claim exact row before handoff; failed CAS keeps the overlay open.
-        resolveQueueRowPlaySelection(
-          container.queueService,
-          row.id,
-          resolveRootQueueSelection,
-          () => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" }),
-        );
+        if (hasPendingRootQueueSelection()) {
+          // Claim exact row before handoff; failed CAS keeps the overlay open.
+          resolveQueueRowPlaySelection(
+            container.queueService,
+            row.id,
+            resolveRootQueueSelection,
+            () => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" }),
+          );
+          return;
+        }
+        // No palette route is awaiting this pick (opened as a plain overlay) —
+        // resolving a null waiter would drop the launch *and* leave the row
+        // claimed in-flight forever. Deliver through the retained-session
+        // channel like the history fallback does, and roll the claim back with
+        // a visible refusal when nothing can receive it (e.g. mid-playback).
+        const launch = claimQueuePlaybackLaunch(container.queueService, row.id);
+        if (!launch) return;
+        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+        const settled = forceCloseRootContent<BrowseShellResult<SearchResult>>({
+          type: "launch-playback",
+          launch: {
+            title: titleInfoFromQueuePlaybackLaunch(launch),
+            episode: episodeInfoFromQueuePlaybackLaunch(launch),
+          },
+        });
+        if (!settled) {
+          container.queueService.rollbackBeforeStart(launch.intent, {
+            code: "handoff-failed",
+            stage: "handoff",
+            at: new Date().toISOString(),
+            detail: "no retained root session for queue launch",
+          });
+          container.stateManager.dispatch({
+            type: "SET_PLAYBACK_FEEDBACK",
+            note: "can't start another title while one is playing — press q to stop first",
+          });
+        }
         return;
       }
       if (input === "J" && row) {
@@ -2134,6 +2184,15 @@ export function RootOverlayShell({
           columns={overlayLayout.contentColumns}
           listWidth={listWidth}
           rowWidth={rowWidth}
+          maxVisible={getPickerListMaxVisible(
+            overlayLayout.contentRows,
+            getPickerChromeRows({
+              hasSubtitle: false,
+              commandMode,
+              extraRows: 2,
+            }),
+            0,
+          )}
         />
         {commandMode ? (
           <CommandPalette

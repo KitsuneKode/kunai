@@ -1116,27 +1116,27 @@ export function BrowseShell<T>({
           onOpenLink?.(intent.url);
           return;
         case "watchlist":
-          if (selectedOption && onWatchlistSelected) {
+          if (onWatchlistSelected) {
+            const option = intent.option;
             runMutationWithFeedback(
-              () => onWatchlistSelected(selectedOption.value),
-              `Watchlisted ${selectedOption.label}`,
+              () => onWatchlistSelected(option.value),
+              `Watchlisted ${option.label}`,
               "Could not watchlist",
             );
           }
           return;
         case "queue":
-          if (selectedOption && onQueueSelected) {
+          if (onQueueSelected) {
+            const option = intent.option;
             runMutationWithFeedback(
-              () => onQueueSelected(selectedOption.value),
-              `Queued ${selectedOption.label}`,
+              () => onQueueSelected(option.value),
+              `Queued ${option.label}`,
               "Could not queue",
             );
           }
           return;
         case "download":
-          if (selectedOption) {
-            onResolve("download", selectedOption.value);
-          }
+          onResolve("download", intent.option.value);
           return;
         default:
           // "consumed" / "ignored" — the overlay owns every keypress while open.

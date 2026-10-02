@@ -1,3 +1,5 @@
+import { localDayKey } from "../local-day-key";
+
 export type CalendarContentKind = "anime" | "series" | "movie";
 export type CalendarReleasePrecision = "timestamp" | "date" | "unknown";
 export type CalendarReleaseStatus = "released" | "upcoming" | "unknown";
@@ -225,10 +227,7 @@ function formatDayKey(releaseAt: string | null): string | null {
   if (!releaseAt) return null;
   const release = new Date(releaseAt);
   if (Number.isNaN(release.getTime())) return null;
-  const y = release.getFullYear();
-  const m = String(release.getMonth() + 1).padStart(2, "0");
-  const d = String(release.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return localDayKey(release);
 }
 
 function isSameLocalDay(releaseAt: string | null, nowMs: number): boolean {

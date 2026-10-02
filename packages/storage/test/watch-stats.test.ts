@@ -137,6 +137,43 @@ test("seriesCompleted counts only series with every in-window episode completed"
   expect(totals.rowCount).toBe(3);
 });
 
+test("date and hour buckets follow the local calendar, not UTC", () => {
+  const db = stores.store("watch-stats", "data");
+  const history = new HistoryRepository(db);
+  const stats = new WatchStatsRepository(db);
+
+  // bun test pins JS Date to UTC while SQLite 'localtime' resolves the OS zone,
+  // so the oracle is a direct 'localtime' query on the same connection — the
+  // repo must agree with it. A regression to UTC bucketing diverges on any
+  // non-UTC machine.
+  const lateUtc = "2026-06-20T23:30:00.000Z";
+  history.upsertProgress({
+    title: { id: "edge", kind: "series", title: "Edge" },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 1_000,
+    durationSeconds: 1_000,
+    completed: true,
+    watchedSeconds: 500,
+    updatedAt: lateUtc,
+    lastWatchedAt: lateUtc,
+  });
+
+  const oracle = db
+    .query<{ d: string; h: number }, [string, string]>(
+      "SELECT date(?, 'localtime') AS d, CAST(strftime('%H', ?, 'localtime') AS INTEGER) AS h",
+    )
+    .get(lateUtc, lateUtc);
+
+  const days = stats.dailyActivitySince(windowStart);
+  expect(days).toHaveLength(1);
+  expect(days[0]?.date).toBe(oracle?.d);
+
+  const hours = stats.hourOfDaySince(windowStart);
+  expect(hours.map((h) => h.hour)).toContain(oracle?.h ?? -1);
+
+  expect(stats.streakDates()).toContain(oracle?.d ?? "");
+});
+
 test("completedTitleWatchSecondsSince aggregates completed rows only", () => {
   const { history, stats } = repos();
 

@@ -73,11 +73,10 @@ export function LibraryShell({
 
   useEffect(() => {
     const refreshCount = () => {
-      const active = container.downloadService.listActive(50).length;
-      const completed = container.downloadService.listCompleted(5).length;
-      const failed = container.downloadService.listFailed(50);
-      setDownloadJobCount(active + completed + failed.length);
-      setRepairableJobCount(failed.filter((job) => job.status === "repairable").length);
+      // Capped list lengths under-report once a bucket outgrows its LIMIT —
+      // the badge is a table total, and repairable jobs are their own status.
+      setDownloadJobCount(container.downloadService.countJobs());
+      setRepairableJobCount(container.downloadService.countJobsByStatus("repairable"));
     };
     refreshCount();
     return container.downloadService.onEvent(() => {
