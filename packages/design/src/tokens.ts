@@ -62,10 +62,18 @@ const milestoneDim = "#4a417c";
 const milestoneFill = "#1c1830";
 
 // Text ramp — warm white → faint. Carries ~80% of hierarchy.
-const text = "#f6eff4";
-const textDim = "#cabfca";
-const muted = "#968a98";
-const dim = "#665b69";
+//
+// Each tier is set by APCA lightness contrast (|Lc|) on the canvas and panel, because on a dark
+// ground WCAG ratios flatter it: the old `muted` was 5.9:1 but only Lc 41, and the old `dim` was
+// Lc 20 on the canvas and Lc 15 on the selected row, the floor for being discernible at all.
+// Targets: textDim Lc 75 (body floor), muted Lc 60 (labels), dim Lc 45 (hints, pending steps).
+// Hue and chroma are unchanged from the previous values; only OKLCH lightness moved.
+// `color-resolution.ts` holds the 256-colour fallback for each tier and meets the same targets.
+const text = "#f6eff4"; // Lc 98
+const textDim = "#d5cad5"; // Lc 76
+const muted = "#bcafbe"; // Lc 61
+const dim = "#a292a5"; // Lc 46
+// Decorative only (1.6:1 on bg): rules and disabled glyphs, never text a user has to read.
 const faint = "#3a3340";
 
 // Media-type hues — Stats + Calendar surfaces (see THE ONE RULE above).

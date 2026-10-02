@@ -1,5 +1,7 @@
 :root {
-  /* Ember Dusk — synced from packages/design/src/tokens.ts */
+  /* Ember Dusk — synced from packages/design/src/tokens.ts, except --color-fd-muted-foreground.
+     The terminal's `muted` was lifted to #bcafbe for legibility, but this variable also drives the
+     chart "residual" de-emphasis gray in charts.css, which must stay quieter than the series. */
   --color-fd-background: #100b0f;
   --color-fd-foreground: #f6eff4;
   --color-fd-primary: #ff8fb0;

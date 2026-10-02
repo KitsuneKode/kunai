@@ -62,10 +62,10 @@ export function AnalyticsScreen({ selectedIndex }: { readonly selectedIndex: num
           <Text color={palette.text}>
             {`  "os": "${process.platform}", "arch": "${process.arch}", "ts": 0 }`}
           </Text>
-          <Text color={palette.dim} dimColor>
+          <Text color={palette.dim}>
             Never: titles · queries · providers · URLs · paths · your IP
           </Text>
-          <Text color={palette.dim} dimColor>
+          <Text color={palette.dim}>
             The raw id never leaves this machine. Off in /settings deletes it.
           </Text>
         </Box>
