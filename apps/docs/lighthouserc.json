@@ -6,6 +6,7 @@
         "http://127.0.0.1:3456/analytics",
         "http://127.0.0.1:3456/support",
         "http://127.0.0.1:3456/workshop",
+        "http://127.0.0.1:3456/status",
         "http://127.0.0.1:3456/docs",
         "http://127.0.0.1:3456/docs/users/getting-started",
         "http://127.0.0.1:3456/docs/users/troubleshooting",

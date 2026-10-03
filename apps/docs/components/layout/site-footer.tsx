@@ -36,6 +36,7 @@ const DOCS_LINKS: readonly FooterLink[] = [
 
 const PROJECT_LINKS: readonly FooterLink[] = [
   { href: "/releases", label: "Releases" },
+  { href: "/status", label: "Provider status" },
   { href: "/analytics", label: "Usage analytics" },
   { href: "/feedback", label: "Feedback" },
   { href: "/docs/users/kanna", label: "Kanna, the fox" },

@@ -1,14 +1,26 @@
 name: Provider status sweep
 
 # Daily upstream health check: resolves a known-good title through every
-# production provider module from the runner's network and commits the result
-# to apps/docs/lib/generated-provider-status.json, which the docs site's
-# provider-status page renders.
+# registered provider from the runner's network and publishes the result to the
+# `status-data` branch, which the docs site's /status page reads at render.
+#
+# Why a branch and not a commit to main. This job used to commit the result to
+# main and rebase onto it, and the rebase was refused every day ("cannot rebase:
+# You have unstaged changes"): three scheduled runs failed, nothing was pushed, and
+# the board kept showing results weeks old as if they were current. The data now has
+# its own branch with one writer, so it cannot conflict with a PR or be blocked by
+# the state of this checkout, it needs no [skip ci] gymnastics on main, and the docs
+# show it without a release because they fetch it. packages/providers/scripts/
+# status-data-branch.sh does the git work and is tested against throwaway remotes.
 #
 # Scheduled on purpose: upstream status is a property of the providers, not of
 # any PR, and the sweep needs real network time (up to ~4 min worst case).
 # Runner egress is a clean-region view; region-gated providers report as
 # "blocked" rather than dead.
+#
+# Posting a notice about a known problem needs no release and no workflow: edit
+# `status-notices.json` on the `status-data` branch (the GitHub web editor is
+# enough). This job seeds that file once and never overwrites it.
 
 on:
   schedule:
@@ -16,10 +28,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # commits the refreshed status JSON
+  contents: write # pushes the status-data branch
 
 # One sweep at a time: a second run overlapping the first would race the
-# status-file commit, and the loser wastes a full provider-probe cycle.
+# publish, and the loser wastes a full provider-probe cycle.
 concurrency:
   group: provider-status-sweep
   cancel-in-progress: true
@@ -29,6 +41,8 @@ jobs:
     name: Probe providers and publish status
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    env:
+      STATUS_DIR: ${{ runner.temp }}/status-data
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-bun-monorepo
@@ -40,35 +54,31 @@ jobs:
       # would read "blocked" no matter how healthy the upstream is.
       - uses: ./.github/actions/setup-curl-impersonate
 
+      - name: Check out the status-data branch (creating it on the first run)
+        run: bash packages/providers/scripts/status-data-branch.sh checkout "$STATUS_DIR"
+
+      # Seeded once so the page has a notices file to read. Never overwritten: it is
+      # the one document a maintainer edits by hand.
+      - name: Seed the notices file if it is missing
+        run: |
+          if [ ! -f "$STATUS_DIR/status-notices.json" ]; then
+            cp apps/docs/lib/status-notices.json "$STATUS_DIR/status-notices.json"
+          fi
+
+      # The sweep reads yesterday's history from $STATUS_DIR, adds today, and writes
+      # both files back there.
       - name: Run the provider sweep
         working-directory: packages/providers
+        env:
+          KUNAI_STATUS_DIR: ${{ env.STATUS_DIR }}
         run: bun run scripts/provider-status-sweep.ts
 
-      - name: Commit the status file if it changed
+      # generatedAt changes every run, so there is a commit a day: that is the
+      # heartbeat the page's freshness line is read from. `[skip ci] [vercel skip]`
+      # keeps the daily commit from queueing builds for a branch that has no app.
+      - name: Publish
         run: |
-          # generatedAt and resolveMs jitter every run — a raw git diff can never
-          # be quiet, which would turn this into ~365 empty [skip ci] commits a
-          # year. Compare the semantic payload instead.
-          strip_volatile() {
-            jq 'del(.generatedAt) | .providers |= map(del(.resolveMs))' "$1"
-          }
-          git show HEAD:apps/docs/lib/generated-provider-status.json > /tmp/status-old.json 2>/dev/null || echo '{"providers":[]}' > /tmp/status-old.json
-          if diff -q <(strip_volatile /tmp/status-old.json) <(strip_volatile apps/docs/lib/generated-provider-status.json) > /dev/null; then
-            echo "status unchanged"
-            exit 0
-          fi
           git config user.name "kunai-status-bot[bot]"
           git config user.email "kunai-status-bot[bot]@users.noreply.github.com"
-          git add apps/docs/lib/generated-provider-status.json
-          git commit -m "docs(status): refresh provider status sweep [skip ci]"
-          # The checked-out branch may have advanced during the ~4-minute sweep;
-          # rebase onto its live head so the push is never rejected. Manual
-          # dispatch can select a non-default branch, so the rebase target is
-          # the ref this run checked out, never a hardcoded main.
-          for attempt in 1 2 3; do
-            git fetch origin "$GITHUB_REF_NAME"
-            git rebase "origin/$GITHUB_REF_NAME" && git push && exit 0
-            sleep 2
-          done
-          echo "status commit could not be pushed after rebasing; next scheduled run will retry" >&2
-          exit 1
+          bash packages/providers/scripts/status-data-branch.sh publish "$STATUS_DIR" \
+            "chore(status): sweep $(date -u +%Y-%m-%d) [skip ci] [vercel skip]"

@@ -53,6 +53,10 @@
   --kunai-warning: #f59a3c;
   --kunai-danger: #ff5d5d;
   --kunai-info: #5fb6ff;
+  /* "Region-gated" on the provider status board: alive, but it turns this network
+     away. A lavender, not an alarm colour, because it is not a fault in the provider.
+     Always shown with its icon and label; the colour alone never carries the state. */
+  --kunai-gated: #b9a2f2;
 
   /* Ambient mesh */
   --kunai-mesh-a: color-mix(in oklab, var(--kunai-accent) 7%, transparent);

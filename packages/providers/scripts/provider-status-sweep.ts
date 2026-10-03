@@ -2,11 +2,17 @@
  * Live provider-status sweep.
  *
  * Runs each production provider module against a known-good fixture title on
- * the caller's network and writes `apps/docs/lib/generated-provider-status.json`.
- * The scheduled workflow (.github/workflows/provider-status-sweep.yml) runs
- * this on GitHub's egress so the published board reflects a clean-region view;
- * a local run reports *this* network's view and is still useful for diagnosing
- * region-gated providers.
+ * the caller's network and writes two files: `generated-provider-status.json`
+ * (the latest result per provider) and `generated-provider-status-history.json`
+ * (one status per provider per day, for the history strips). The scheduled
+ * workflow (.github/workflows/provider-status-sweep.yml) runs this on GitHub's
+ * egress so the published board reflects a clean-region view and publishes the
+ * files to the `status-data` branch; a local run reports *this* network's view and
+ * is still useful for diagnosing region-gated providers.
+ *
+ * Where the files go: `KUNAI_STATUS_DIR` when set (the workflow points it at a
+ * checkout of `status-data`, and the previous history is read from there too),
+ * otherwise `apps/docs/lib`, which holds the seed copy the site falls back to.
  *
  * Always exits 0: an exhausted or blocked provider is status data, not a
  * script failure. Non-zero would only mean the sweep itself could not run.
@@ -18,22 +24,39 @@ import type { ProviderModule, ProviderResolveInput, ProviderRuntimeContext } fro
 
 import { allmangaProviderModule } from "../src/allmanga/direct";
 import { anidbProviderModule } from "../src/anidb/direct";
+import { animeggProviderModule } from "../src/animegg/direct";
 import { hianimeProviderModule } from "../src/hianime/direct";
+import { kickassanimeProviderModule } from "../src/kickassanime/direct";
 import { miruroProviderModule } from "../src/miruro/direct";
+import { movyProviderModule } from "../src/movy/direct";
 import { rivestreamProviderModule } from "../src/rivestream/direct";
 import { videasyProviderModule } from "../src/videasy/index";
 import { vidlinkProviderModule } from "../src/vidlink/direct";
+import { vidrockProviderModule } from "../src/vidrock/direct";
 import { youtubeProviderModule } from "../src/youtube/index";
+import {
+  type HistoryFile,
+  type SweepStatus,
+  updateHistory,
+  utcDay,
+} from "./provider-status-history";
 
-const OUTPUT_PATH = path.resolve(
-  import.meta.dir,
-  "../../../apps/docs/lib/generated-provider-status.json",
-);
+/**
+ * Where the files are read from and written to. Read when the sweep runs, not once
+ * at module load, so a test can redirect it.
+ */
+function outputPaths() {
+  const dir =
+    process.env.KUNAI_STATUS_DIR?.trim() || path.resolve(import.meta.dir, "../../../apps/docs/lib");
+  return {
+    dir,
+    status: path.join(dir, "generated-provider-status.json"),
+    history: path.join(dir, "generated-provider-status-history.json"),
+  };
+}
 
 const RESOLVE_TIMEOUT_MS = 30_000;
 const FRONT_DOOR_TIMEOUT_MS = 12_000;
-
-type SweepStatus = "healthy" | "degraded" | "blocked" | "down" | "dead";
 
 interface ProviderRow {
   readonly id: string;
@@ -176,6 +199,34 @@ const PROBES: readonly ProbeSpec[] = [
     frontDoor: "https://www.youtube.com",
     input: YOUTUBE_INPUT,
   },
+  // The four below were registered providers the board never showed: a sweep that
+  // covers eight of twelve reads as a clean bill of health for the other four.
+  // Same fixtures as their siblings: the TMDB-keyed ones take the movie, the
+  // anime ones locate the show by name.
+  {
+    id: "vidrock",
+    module: vidrockProviderModule,
+    frontDoor: "https://vidrock.net",
+    input: MOVIE_INPUT,
+  },
+  {
+    id: "movy",
+    module: movyProviderModule,
+    frontDoor: "https://movy.sx",
+    input: MOVIE_INPUT,
+  },
+  {
+    id: "animegg",
+    module: animeggProviderModule,
+    frontDoor: "https://www.animegg.org",
+    input: ONE_PIECE_ANILIST,
+  },
+  {
+    id: "kickassanime",
+    module: kickassanimeProviderModule,
+    frontDoor: "https://kaa.lt",
+    input: ONE_PIECE_ANILIST,
+  },
 ];
 
 async function probeFrontDoor(url: string): Promise<number | null> {
@@ -283,21 +334,35 @@ async function probe(spec: ProbeSpec): Promise<ProviderRow> {
   }
 }
 
+function readHistory(historyPath: string): HistoryFile | null {
+  try {
+    const parsed: HistoryFile = JSON.parse(fs.readFileSync(historyPath, "utf8"));
+    return parsed.schemaVersion === 1 && Array.isArray(parsed.days) ? parsed : null;
+  } catch {
+    // No history yet (first run) or an unreadable one: start a fresh record rather
+    // than fail a sweep over its own bookkeeping.
+    return null;
+  }
+}
+
 async function main() {
   const rows = await Promise.all(PROBES.map(probe));
-  const file: StatusFile = {
-    generatedAt: new Date().toISOString(),
-    schemaVersion: 1,
-    providers: rows,
-  };
-  fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
-  fs.writeFileSync(OUTPUT_PATH, `${JSON.stringify(file, null, 2)}\n`);
+  const generatedAt = new Date().toISOString();
+  const file: StatusFile = { generatedAt, schemaVersion: 1, providers: rows };
+  const statuses = Object.fromEntries(rows.map((row) => [row.id, row.effectiveStatus]));
+  const out = outputPaths();
+  const history = updateHistory(readHistory(out.history), utcDay(generatedAt), statuses);
+
+  fs.mkdirSync(out.dir, { recursive: true });
+  fs.writeFileSync(out.status, `${JSON.stringify(file, null, 2)}\n`);
+  fs.writeFileSync(out.history, `${JSON.stringify(history)}\n`);
   for (const row of rows) {
     console.log(
-      `${row.id.padEnd(10)} ${row.effectiveStatus.padEnd(8)} http=${row.upstreamHttp ?? "—"} resolve=${row.resolveStatus} streams=${row.streams} ${row.note}`,
+      `${row.id.padEnd(12)} ${row.effectiveStatus.padEnd(8)} http=${row.upstreamHttp ?? "—"} resolve=${row.resolveStatus} streams=${row.streams} ${row.note}`,
     );
   }
-  console.log(`wrote ${OUTPUT_PATH}`);
+  console.log(`wrote ${out.status}`);
+  console.log(`wrote ${out.history} (${history.days.length} days)`);
 }
 
 await main();

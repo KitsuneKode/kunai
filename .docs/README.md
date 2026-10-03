@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-01"
+lastReviewed: "2026-10-03"
 ---
 
 # Kunai internal docs
@@ -34,6 +34,7 @@ end to end.
 | Provider contract, resolve, fallback, relay          | [providers.md](./providers.md)                                                                                                                           |
 | Adding or hardening a provider                       | [provider-intake.md](./provider-intake.md) · [provider-agent-workflow.md](./provider-agent-workflow.md) · [provider-examples.md](./provider-examples.md) |
 | Provider health, cache layers, reset                 | [title-provider-health-and-cache-reset.md](./title-provider-health-and-cache-reset.md)                                                                   |
+| Provider status page, daily sweep, notices           | [provider-status.md](./provider-status.md)                                                                                                               |
 | Source, quality, audio, subtitle inventory           | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md)                                                                         |
 | IntroDB/AniSkip, MAL resolution, auto-skip           | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)                                                                                       |
 | mpv reconnect on the persistent session              | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                                                                                             |

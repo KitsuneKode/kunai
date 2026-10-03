@@ -17,6 +17,7 @@
 @import "./styles/fox.css";
 @import "./styles/timeline.css";
 @import "./styles/charts.css";
+@import "./styles/status.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 

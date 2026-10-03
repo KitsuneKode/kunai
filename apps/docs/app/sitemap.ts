@@ -43,6 +43,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.6,
     },
     {
+      url: `${docsSiteUrl}/status`,
+      changeFrequency: "daily",
+      priority: 0.55,
+    },
+    {
       url: `${docsSiteUrl}/workshop`,
       changeFrequency: "monthly",
       priority: 0.5,
