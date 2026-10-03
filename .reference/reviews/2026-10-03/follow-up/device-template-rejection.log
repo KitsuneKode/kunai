@@ -1,0 +1,5 @@
+$ bun run --cwd apps/mobile test:live:mobile-host-proof --metadata "/tmp/kunai-full-review-20261003/device-kit/mobile-build-meta.json" --evidence "/tmp/kunai-full-review-20261003/device-kit/android-evidence.template.json" --evidence "/tmp/kunai-full-review-20261003/device-kit/ios-evidence.template.json"
+$ bun test/live/device-host-proof.ts --metadata "/tmp/kunai-full-review-20261003/device-kit/mobile-build-meta.json" --evidence "/tmp/kunai-full-review-20261003/device-kit/android-evidence.template.json" --evidence "/tmp/kunai-full-review-20261003/device-kit/ios-evidence.template.json"
+Mobile device evidence has an invalid osVersion
+error: script "test:live:mobile-host-proof" exited with code 1
+error: script "test:live:mobile-host-proof" exited with code 1

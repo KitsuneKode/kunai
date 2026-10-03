@@ -1,0 +1,14 @@
+$ bun run --cwd apps/cli test:file --isolate test/unit/app-shell/loading-shell-command-mode.test.tsx
+$ bun test --timeout=20000 --isolate test/unit/app-shell/loading-shell-command-mode.test.tsx
+bun test v1.4.2 (744846f84)
+
+test/unit/app-shell/loading-shell-command-mode.test.tsx:
+(pass) playback command palette > a playback key stops playback while the palette is closed [45.16ms]
+(pass) playback command palette > typing a command name does not fire playback keys behind the palette [55.29ms]
+(pass) playback command palette > closing the palette hands the keys back [22.23ms]
+(pass) playback command palette > Escape closes a resolving palette before cancelling the resolve [9.68ms]
+
+ 4 pass
+ 0 fail
+ 11 expect() calls
+Ran 4 tests across 1 file. [213.00ms]

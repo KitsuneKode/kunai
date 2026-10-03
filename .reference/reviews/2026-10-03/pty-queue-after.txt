@@ -1,0 +1,10 @@
+$ bun test/agent/session.ts inspect queue --name "full-review-20261003"
+[
+  {
+    "id": "e6022b5d-e29d-4f9d-9a14-fc9c2bac07f0",
+    "title_id": "tmdb:smoke-movie-1",
+    "absolute_episode": null,
+    "status": "pending",
+    "last_failure_json": null
+  }
+]

@@ -1,0 +1,754 @@
+diff --git a/apps/docs/app/analytics/page.tsx b/apps/docs/app/analytics/page.tsx
+index b8b8b24f6..a64ec51d9 100644
+--- a/apps/docs/app/analytics/page.tsx
++++ b/apps/docs/app/analytics/page.tsx
+@@ -37,13 +37,12 @@ export default async function AnalyticsPage() {
+     */
+     <main className="kunai-home @container/analytics relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-14 md:px-10">
+       <header className="border-border flex flex-col gap-4 border-b pb-8">
+-        <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
++        <p className="text-muted-foreground text-xs font-medium tracking-[0.16em] uppercase">
+           Trust surface
+         </p>
+         <h1 className="kunai-display-title max-w-none text-4xl md:text-5xl">Usage analytics</h1>
+         <p className="text-muted-foreground max-w-3xl text-base leading-7 text-pretty">
+-          A quiet public pulse for installs running Kunai, not a growth dashboard. Analytics is
+-          optional; enable or disable it in Settings.
++          A quiet public pulse for installs running Kunai, not a growth dashboard.
+         </p>
+       </header>
+ 
+diff --git a/apps/docs/app/styles/charts.css b/apps/docs/app/styles/charts.css
+index 565e10dec..f22851cf3 100644
+--- a/apps/docs/app/styles/charts.css
++++ b/apps/docs/app/styles/charts.css
+@@ -7,7 +7,7 @@
+  * the same roles for the dark surface. Every value is measured against the
+  * surface it actually renders on, not flipped:
+  *
+- *   dark  — series #ff8fb0 on #1c1620 = 8.3:1 · residual #968a98 = 5.4:1
++ *   dark  — series #ff8fb0 on #1c1620 = 8.3:1 · residual #a195a3 = 6.2:1
+  *   light — series #c14a71 on #fcfcfb = 4.6:1 · residual #8b8391 = 3.6:1
+  *
+  * One hue per chart: these breakdowns are single-series nominal magnitude, so
+@@ -69,6 +69,14 @@
+    * second colour.
+    */
+   --kunai-chart-new: #5f0a27;
++  /*
++   * The 7-day average and the release markers are annotations on the install
++   * series, not series of their own, so both take the neutral ramp rather than
++   * a hue: a dashed neutral line reads as "a guide to the data", where a third
++   * rose step would read as a third kind of install.
++   */
++  --kunai-chart-avg: #3d3540;
++  --kunai-chart-marker: #8b8391;
+   /*
+    * npm registry downloads — deliberately outside the rose family. It is a
+    * third-party counter on a different day grid, so it takes a muted
+@@ -93,6 +101,8 @@
+   --kunai-chart-lifetime: #b84a6e;
+   --kunai-chart-active: var(--kunai-accent);
+   --kunai-chart-new: #ffc9d9;
++  --kunai-chart-avg: #f6eff4;
++  --kunai-chart-marker: #a195a3;
+   --kunai-chart-npm: #8d96c6;
+   --kunai-chart-os-windows: #7ba8d1;
+   --kunai-chart-os-macos: #b0a8bc;
+@@ -106,6 +116,8 @@
+     --kunai-chart-lifetime: #b84a6e;
+     --kunai-chart-active: var(--kunai-accent);
+     --kunai-chart-new: #ffc9d9;
++    --kunai-chart-avg: #f6eff4;
++    --kunai-chart-marker: #a195a3;
+     --kunai-chart-npm: #8d96c6;
+     --kunai-chart-os-windows: #7ba8d1;
+     --kunai-chart-os-macos: #b0a8bc;
+diff --git a/apps/docs/components/analytics/chart-installs.tsx b/apps/docs/components/analytics/chart-installs.tsx
+index a98ab3624..3dc37b833 100644
+--- a/apps/docs/components/analytics/chart-installs.tsx
++++ b/apps/docs/components/analytics/chart-installs.tsx
+@@ -32,12 +32,14 @@ import {
+   isRangeKey,
+   platformColumns,
+   platformLabel,
++  type ReleaseMarker,
++  rollingMean,
+   sliceRange,
+   type RangeKey,
+ } from "@/lib/analytics-derive";
+ import type { SeriesPoint } from "@/lib/analytics-series";
+ import * as React from "react";
+-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
++import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "recharts";
+ 
+ /**
+  * Installs over time — the page's one interactive chart.
+@@ -106,17 +108,38 @@ const chartConfig = {
+     label: "First seen that day",
+     color: "var(--kunai-chart-new)",
+   },
++  activeAverage: {
++    label: "7-day average",
++    color: "var(--kunai-chart-avg)",
++  },
+ } satisfies ChartConfig;
+ 
++/** A stable empty default: a fresh `[]` per render would defeat memoisation downstream. */
++const NO_RELEASES: readonly ReleaseMarker[] = [];
++
++/** Trailing days the smoothed active line averages over. */
++const AVERAGE_WINDOW_DAYS = 7;
++
++function roundTenth(value: number | null): number | null {
++  return value === null ? null : Math.round(value * 10) / 10;
++}
++
+ export function ChartInstalls({
+   points,
+   from,
+   to,
++  releases = NO_RELEASES,
+   onDayHover,
+ }: {
+   readonly points: readonly SeriesPoint[];
+   readonly from: string;
+   readonly to: string;
++  /**
++   * Release days inside the series window, drawn as labelled guides so a step
++   * in the line can be read against what shipped. Filtered again to the drawn
++   * range here, because the range toggle moves the left edge.
++   */
++  readonly releases?: readonly ReleaseMarker[];
+   /**
+    * Optional chart → table sync. Called with the hovered rollup day, or null
+    * when the pointer leaves. Only the *drawn* range is reported — days the
+@@ -135,6 +158,25 @@ export function ChartInstalls({
+     osKeys.length === 0 ? METRICS.filter((m) => m.key !== "platforms") : METRICS;
+ 
+   const visible = sliceRange(points, range);
++  // The average is computed over the FULL series and then sliced, so a "last 7
++  // days" view still averages across the days before its left edge instead of
++  // restarting from a one-point mean.
++  const averageByDay = React.useMemo(() => {
++    const averages = rollingMean(
++      points.map((point) => point.activeInstalls),
++      AVERAGE_WINDOW_DAYS,
++    );
++    return new Map(points.map((point, index) => [point.day, averages[index] ?? null]));
++  }, [points]);
++  const firstVisible = visible[0]?.day;
++  const lastVisible = visible.at(-1)?.day;
++  const markers = releases.filter(
++    (marker) =>
++      firstVisible !== undefined &&
++      lastVisible !== undefined &&
++      marker.day >= firstVisible &&
++      marker.day <= lastVisible,
++  );
+   // `null`, not 0, where the wire did not publish the field — recharts treats
+   // null as a gap, while 0 would draw a false floor under every old point.
+   const hasNew = visible.some((point) => point.newInstalls !== null);
+@@ -143,6 +185,9 @@ export function ChartInstalls({
+     activeInstalls: point.activeInstalls,
+     newInstalls: point.newInstalls,
+     lifetimeInstalls: point.lifetimeInstalls,
++    // One decimal: the tooltip prints this raw, and 5.428571 is false precision
++    // for a count of installs.
++    activeAverage: roundTenth(averageByDay.get(point.day) ?? null),
+     // A missing platform key means "below the naming floor or zero" — the
+     // suppressed mass lives in `other`, so zero here keeps the stack summing
+     // to the day's true total instead of tearing it open.
+@@ -330,7 +375,7 @@ export function ChartInstalls({
+           */}
+           <AreaChart
+             data={data}
+-            margin={{ left: 4, right: 20, top: 4 }}
++            margin={{ left: 4, right: 20, top: markers.length > 0 ? 20 : 4 }}
+             onMouseMove={(state) => reportHover(state?.activeLabel)}
+             onMouseLeave={() => onDayHover?.(null)}
+             onClick={(state) => reportHover(state?.activeLabel)}
+@@ -408,6 +453,21 @@ export function ChartInstalls({
+               of 2 → 0 → 0 dips the curve BELOW zero and draws a negative
+               install count. Monotone cannot overshoot.
+             */}
++            {markers.map((marker) => (
++              <ReferenceLine
++                key={marker.day}
++                x={dayToEpoch(marker.day)}
++                stroke="var(--kunai-chart-marker)"
++                strokeDasharray="2 4"
++                ifOverflow="visible"
++                label={{
++                  value: marker.tag,
++                  position: "top",
++                  fill: "var(--kunai-chart-marker)",
++                  fontSize: 12,
++                }}
++              />
++            ))}
+             {effectiveMetric === "total" ? (
+               <Area
+                 dataKey="lifetimeInstalls"
+@@ -453,6 +513,18 @@ export function ChartInstalls({
+                   strokeWidth={2}
+                   isAnimationActive={false}
+                 />
++                {visible.length >= AVERAGE_WINDOW_DAYS ? (
++                  <Area
++                    dataKey="activeAverage"
++                    type="monotone"
++                    fill="none"
++                    stroke="var(--color-activeAverage)"
++                    strokeWidth={1.5}
++                    strokeDasharray="4 3"
++                    isAnimationActive={false}
++                    activeDot={false}
++                  />
++                ) : null}
+                 {hasNew ? (
+                   <Area
+                     dataKey="newInstalls"
+diff --git a/apps/docs/components/analytics/npm-downloads.tsx b/apps/docs/components/analytics/npm-downloads.tsx
+index 90cd26d7d..f63811bf2 100644
+--- a/apps/docs/components/analytics/npm-downloads.tsx
++++ b/apps/docs/components/analytics/npm-downloads.tsx
+@@ -93,17 +93,25 @@ export function NpmDownloads({ series }: { readonly series: NpmDownloadSeries })
+           The table twin rule applies here too: every plotted value is
+           reachable as text, so the bars enhance rather than gate.
+         */}
+-        <table className="sr-only">
+-          <caption>npm downloads per UTC day</caption>
+-          <tbody>
+-            {series.points.map((point) => (
+-              <tr key={point.day}>
+-                <th scope="row">{point.day}</th>
+-                <td>{point.downloads}</td>
+-              </tr>
+-            ))}
+-          </tbody>
+-        </table>
++        {/*
++          The visually-hidden class sits on a wrapper, not on the table. A table
++          ignores `width: 1px` and keeps its content width, so `<table class="sr-only">`
++          stayed 320px wide, extended past a 320px phone viewport, and gave the page a
++          horizontal scroll. A block wrapper honours the 1px clip.
++        */}
++        <div className="sr-only">
++          <table>
++            <caption>npm downloads per UTC day</caption>
++            <tbody>
++              {series.points.map((point) => (
++                <tr key={point.day}>
++                  <th scope="row">{point.day}</th>
++                  <td>{point.downloads}</td>
++                </tr>
++              ))}
++            </tbody>
++          </table>
++        </div>
+       </CardContent>
+     </Card>
+   );
+diff --git a/apps/docs/components/analytics/section-cards.tsx b/apps/docs/components/analytics/section-cards.tsx
+index 348d3cbd3..d9b1fc44e 100644
+--- a/apps/docs/components/analytics/section-cards.tsx
++++ b/apps/docs/components/analytics/section-cards.tsx
+@@ -1,3 +1,4 @@
++import { Sparkline } from "@/components/analytics/sparkline";
+ import { Badge } from "@/components/ui/badge";
+ import {
+   Card,
+@@ -10,7 +11,7 @@ import {
+ import {
+   delta,
+   type Delta,
+-  namedVersionCount,
++  namedBucketCount,
+   residualShare,
+   type TrendDirection,
+ } from "@/lib/analytics-derive";
+@@ -45,12 +46,15 @@ function StatCard({
+   badge,
+   headline,
+   detail,
++  trend,
+ }: {
+   readonly label: string;
+   readonly value: string;
+   readonly badge?: { readonly text: string; readonly direction: TrendDirection };
+   readonly headline: ReactNode;
+   readonly detail: string;
++  /** The figure's daily history, drawn as a sparkline when it has a shape. */
++  readonly trend?: readonly number[];
+ }) {
+   const TrendIcon = badge ? TREND_ICON[badge.direction] : null;
+   return (
+@@ -76,7 +80,13 @@ function StatCard({
+           </CardAction>
+         ) : null}
+       </CardHeader>
+-      <CardFooter className="flex-col items-start gap-1.5 text-sm">
++      {trend ? (
++        <Sparkline
++          values={trend}
++          className="mx-(--card-spacing) -mt-1 h-8 w-[calc(100%-var(--card-spacing)*2)] text-(--kunai-chart-active)"
++        />
++      ) : null}
++      <CardFooter className="mt-auto flex-col items-start gap-1.5 text-sm">
+         <div className="line-clamp-1 flex gap-2 font-medium">
+           {headline}
+           {TrendIcon ? <TrendIcon className="size-4" stroke={1.5} /> : null}
+@@ -122,8 +132,11 @@ export function SectionCards({
+   const lifetimeDelta = first ? delta(metrics.lifetimeInstalls, first.lifetimeInstalls) : null;
+   const activeDelta = previous ? delta(metrics.activeInstalls, previous.activeInstalls) : null;
+ 
++  // One day, both halves. The figure and the headline of the floor tile are
++  // read from the same snapshot breakdown; mixing in the whole-window count put
++  // "0%" and "every bucket folds into other" in a single card.
+   const suppressed = residualShare(metrics.byVersion);
+-  const named = namedVersionCount(points);
++  const named = namedBucketCount(metrics.byVersion);
+ 
+   // First-seen count for the snapshot day, when the series reaches it. The
+   // field lives on the series only, and the tail point counts only when it is
+@@ -144,6 +157,7 @@ export function SectionCards({
+         }
+         headline={lifetimeHeadline(lifetimeDelta)}
+         detail="Cumulative: kept installs plus the retired count"
++        trend={points.map((point) => point.lifetimeInstalls)}
+       />
+       <StatCard
+         label="Active yesterday"
+@@ -157,6 +171,7 @@ export function SectionCards({
+             ? `${newThatDay} of them first seen that day`
+             : "A ping is one install, once a day"
+         }
++        trend={points.map((point) => point.activeInstalls)}
+       />
+       <StatCard
+         label="Reporting window"
+@@ -167,7 +182,10 @@ export function SectionCards({
+             in-page anchor makes it navigate there instead of just describe it.
+           */
+           series ? (
+-            <Link href="#day-by-day" className="underline-offset-4 hover:underline">
++            <Link
++              href="#day-by-day"
++              className="-my-1 inline-block py-1 underline-offset-4 hover:underline"
++            >
+               {`${series.from} → ${series.to}`}
+             </Link>
+           ) : (
+@@ -182,10 +200,10 @@ export function SectionCards({
+         badge={suppressed >= 1 ? { text: "all buckets", direction: "flat" } : undefined}
+         headline={
+           named > 0
+-            ? `${named} ${named === 1 ? "version" : "versions"} clear the floor`
+-            : "Every bucket folds into other"
++            ? `${named} ${named === 1 ? "version names itself" : "versions name themselves"} today`
++            : "Every version folds into other today"
+         }
+-        detail="Groups under 5 installs are not reported"
++        detail="Share of today’s installs in groups under 5, which are not named"
+       />
+     </div>
+   );
+diff --git a/apps/docs/components/analytics/share-bars.tsx b/apps/docs/components/analytics/share-bars.tsx
+index afbaf312f..786c29396 100644
+--- a/apps/docs/components/analytics/share-bars.tsx
++++ b/apps/docs/components/analytics/share-bars.tsx
+@@ -40,7 +40,10 @@ function ShareRow({ bucket }: { readonly bucket: ShareBucket }) {
+         {/* Lookups stay on the raw key — `darwin` must keep matching its
+             release-query fail-closed path while readers see `macOS`. */}
+         {release ? (
+-          <Link href={releasePath(bucket.label)} className="underline-offset-4 hover:underline">
++          <Link
++            href={releasePath(bucket.label)}
++            className="-my-1 inline-block py-1 underline-offset-4 hover:underline"
++          >
+             {platformLabel(bucket.label)}
+           </Link>
+         ) : (
+diff --git a/apps/docs/components/analytics/sparkline.tsx b/apps/docs/components/analytics/sparkline.tsx
+new file mode 100644
+index 000000000..0829db355
+--- /dev/null
++++ b/apps/docs/components/analytics/sparkline.tsx
+@@ -0,0 +1,51 @@
++import { sparklinePaths } from "@/lib/analytics-derive";
++
++/**
++ * A figure's own shape, drawn beside the figure.
++ *
++ * Decorative by construction: the tile it sits in already carries the number,
++ * the delta and the window as text, and the day-by-day table is the full twin.
++ * So this is `aria-hidden` rather than labelled, which would read a polyline
++ * aloud as nothing useful.
++ *
++ * Plain SVG, rendered on the server: four of these sit above the fold, and
++ * pulling in the chart library for a 28px outline would put it on the critical
++ * path of the page's first paint. `vector-effect: non-scaling-stroke` keeps the
++ * line at 1.5px however far `preserveAspectRatio="none"` stretches the box.
++ */
++const WIDTH = 120;
++const HEIGHT = 32;
++
++export function Sparkline({
++  values,
++  className,
++}: {
++  readonly values: readonly number[];
++  readonly className?: string;
++}) {
++  const paths = sparklinePaths(values, WIDTH, HEIGHT);
++  // One point (or none) is not a shape. Render nothing rather than a dot that
++  // reads as a rendering failure.
++  if (!paths) return null;
++
++  return (
++    <svg
++      aria-hidden="true"
++      focusable="false"
++      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
++      preserveAspectRatio="none"
++      className={className}
++    >
++      <path d={paths.area} fill="currentColor" opacity={0.14} />
++      <path
++        d={paths.line}
++        fill="none"
++        stroke="currentColor"
++        strokeWidth={1.5}
++        strokeLinejoin="round"
++        strokeLinecap="round"
++        vectorEffect="non-scaling-stroke"
++      />
++    </svg>
++  );
++}
+diff --git a/apps/docs/components/analytics/trend-section.tsx b/apps/docs/components/analytics/trend-section.tsx
+index 3c1028872..b902724d9 100644
+--- a/apps/docs/components/analytics/trend-section.tsx
++++ b/apps/docs/components/analytics/trend-section.tsx
+@@ -1,5 +1,7 @@
+ import { TrendSync } from "@/components/analytics/trend-sync";
++import { releaseMarkers } from "@/lib/analytics-derive";
+ import type { DocsAnalyticsSeries } from "@/lib/analytics-series";
++import { publishedReleaseNotesArtifacts } from "@/lib/release-notes";
+ 
+ /**
+  * The over-time half of the page.
+@@ -18,11 +20,21 @@ import type { DocsAnalyticsSeries } from "@/lib/analytics-series";
+ export function TrendSection({ series }: { readonly series: DocsAnalyticsSeries | null }) {
+   if (!series) return null;
+ 
++  // Computed on the server so the client chart receives plain data, not the
++  // whole generated release-notes bundle.
++  const releases = releaseMarkers(
++    series.points,
++    publishedReleaseNotesArtifacts().map((release) => ({
++      date: release.date,
++      tag: release.tag,
++    })),
++  );
++
+   return (
+     <div className="flex flex-col gap-4">
+-      <TrendSync series={series} />
++      <TrendSync series={series} releases={releases} />
+ 
+-      <p className="text-muted-foreground m-0 text-xs text-pretty">
++      <p className="text-muted-foreground m-0 text-xs leading-5 text-pretty">
+         These counts are anonymous and best-effort. Anyone willing to fake pings can inflate them,
+         so read them as a pulse rather than a measurement — Kunai deliberately collects no IP or
+         identity that would let it prove otherwise.
+diff --git a/apps/docs/components/analytics/trend-sync.tsx b/apps/docs/components/analytics/trend-sync.tsx
+index 60485d2de..f05b617f2 100644
+--- a/apps/docs/components/analytics/trend-sync.tsx
++++ b/apps/docs/components/analytics/trend-sync.tsx
+@@ -4,6 +4,7 @@ import { ChartInstalls } from "@/components/analytics/chart-installs";
+ import { ShareSection } from "@/components/analytics/share-section";
+ import { TrendTable } from "@/components/analytics/trend-table";
+ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
++import type { ReleaseMarker } from "@/lib/analytics-derive";
+ import type { DocsAnalyticsSeries } from "@/lib/analytics-series";
+ import * as React from "react";
+ 
+@@ -19,7 +20,13 @@ import * as React from "react";
+  *
+  * `hoveredDay` is one string of state; no debounce needed.
+  */
+-export function TrendSync({ series }: { readonly series: DocsAnalyticsSeries }) {
++export function TrendSync({
++  series,
++  releases,
++}: {
++  readonly series: DocsAnalyticsSeries;
++  readonly releases: readonly ReleaseMarker[];
++}) {
+   const [hoveredDay, setHoveredDay] = React.useState<string | null>(null);
+ 
+   return (
+@@ -28,6 +35,7 @@ export function TrendSync({ series }: { readonly series: DocsAnalyticsSeries })
+         points={series.points}
+         from={series.from}
+         to={series.to}
++        releases={releases}
+         onDayHover={setHoveredDay}
+       />
+ 
+diff --git a/apps/docs/components/analytics/usage-panel.tsx b/apps/docs/components/analytics/usage-panel.tsx
+index c28f9af97..b2492a7cc 100644
+--- a/apps/docs/components/analytics/usage-panel.tsx
++++ b/apps/docs/components/analytics/usage-panel.tsx
+@@ -79,7 +79,7 @@ function BreakdownCards({ metrics }: { readonly metrics: DocsAnalyticsMetrics })
+           </Card>
+         ))}
+       </div>
+-      <p className="text-muted-foreground m-0 text-xs text-pretty">
++      <p className="text-muted-foreground m-0 text-xs leading-5 text-pretty">
+         Each breakdown counts the same installs a different way, so the three add up to the same day
+         total; they are not parts of one whole. Small-cell suppression is applied per breakdown; it
+         is not a joint anonymity guarantee.
+@@ -283,10 +283,10 @@ export function UsagePanel({
+     <div className="flex flex-col gap-6">
+       <Alert className="border-border/80 bg-card/60">
+         <IconShieldCheck />
+-        <AlertTitle>Optional · aggregates only · enable or disable in Settings</AlertTitle>
++        <AlertTitle>Opt-in, aggregates only</AlertTitle>
+         <AlertDescription>
+           Public day and lifetime counts, plus version, OS and architecture breakdowns. Never who is
+-          running Kunai, what they watched, or any install UUID.
++          running Kunai, what they watched, or any install UUID. Turn it on or off in Settings.
+         </AlertDescription>
+       </Alert>
+ 
+@@ -301,14 +301,21 @@ export function UsagePanel({
+               updated{" "}
+               <LocalTime iso={metrics.updatedAt} utcLabel={formatUpdatedAt(metrics.updatedAt)} />
+             </p>
+-            <p className="text-muted-foreground m-0 basis-full text-xs">
+-              Days end at midnight IST (18:30 UTC) from 15 September 2026. 14 September 2026 is an
+-              18.5-hour changeover day ending at 18:30 UTC; earlier days end at midnight UTC.
+-            </p>
++            {/* A native disclosure: the changeover detail is reference material for
++                the few who read the day-by-day table closely, so it stays one
++                line until asked for instead of occupying the top of the page. */}
++            <details className="text-muted-foreground basis-full text-xs">
++              <summary className="hover:text-foreground w-fit cursor-pointer underline decoration-dotted underline-offset-4">
++                Days end at midnight IST
++              </summary>
++              <p className="m-0 mt-1.5 max-w-prose leading-5 text-pretty">
++                Days end at midnight IST (18:30 UTC) from 15 September 2026. 14 September 2026 is an
++                18.5-hour changeover day ending at 18:30 UTC; earlier days end at midnight UTC.
++              </p>
++            </details>
+             <div className="flex flex-wrap items-center gap-2">
+               {stale ? <Badge variant="outline">data may be stale</Badge> : null}
+               <Badge variant="outline">schema v{metrics.schemaVersion}</Badge>
+-              <Badge variant="secondary">opt out with /analytics</Badge>
+             </div>
+           </div>
+ 
+diff --git a/apps/docs/lib/analytics-derive.ts b/apps/docs/lib/analytics-derive.ts
+index 375fc7283..2c4341fc4 100644
+--- a/apps/docs/lib/analytics-derive.ts
++++ b/apps/docs/lib/analytics-derive.ts
+@@ -141,6 +141,107 @@ export function formatDayTick(value: number): string {
+   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+ }
+ 
++/**
++ * Named (non-residual, non-empty) buckets in ONE breakdown.
++ *
++ * The snapshot tile reads a single day, so its figure and its headline must
++ * come from that same day. `namedVersionCount` spans the whole series, which
++ * suppresses across the window and so can name nothing while today's snapshot
++ * names one — pairing the two put "0%" and "every bucket folds into other" in
++ * one tile.
++ */
++export function namedBucketCount(counts: Readonly<Record<string, number>>): number {
++  let named = 0;
++  for (const [bucket, count] of Object.entries(counts)) {
++    if (bucket !== RESIDUAL_LABEL && count > 0) named += 1;
++  }
++  return named;
++}
++
++/**
++ * Trailing mean over `window` points, aligned to the input.
++ *
++ * Active installs oscillate by a handful per day at this population, so the raw
++ * line is mostly noise. The mean shortens at the start of the series rather
++ * than padding with zeros, which would draw a false ramp-up. Null inputs (a
++ * field the wire did not carry that day) are skipped, and a window with no real
++ * values stays null so the chart draws a gap, not a zero.
++ */
++export function rollingMean(
++  values: readonly (number | null)[],
++  window: number,
++): readonly (number | null)[] {
++  return values.map((_, index) => {
++    const slice = values.slice(Math.max(0, index - window + 1), index + 1);
++    const real = slice.filter((value): value is number => value !== null);
++    if (real.length === 0) return null;
++    return real.reduce((sum, value) => sum + value, 0) / real.length;
++  });
++}
++
++/**
++ * SVG path data for a sparkline: a stroked `line` and a closed `area` under it.
++ *
++ * Returns null below two points, where there is no shape to draw. The vertical
++ * scale runs from zero, not from the series minimum: a sparkline that rescales
++ * to its own range turns a wobble of 4 → 5 into a cliff, which on a page about
++ * honest counts is exactly the misreading to avoid. An all-zero run draws along
++ * the floor, which is the honest picture of nothing.
++ */
++export function sparklinePaths(
++  values: readonly number[],
++  width: number,
++  height: number,
++): { readonly line: string; readonly area: string } | null {
++  if (values.length < 2) return null;
++  const peak = Math.max(...values, 1);
++  const pad = 2;
++  const usable = height - pad * 2;
++  const step = width / (values.length - 1);
++  const coords = values.map((value, index) => {
++    const x = index * step;
++    const y = pad + usable - (Math.max(value, 0) / peak) * usable;
++    return [Number(x.toFixed(2)), Number(y.toFixed(2))] as const;
++  });
++  const line = coords.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x},${y}`).join(" ");
++  const last = coords.at(-1);
++  const first = coords[0];
++  if (!last || !first) return null;
++  const area = `${line} L${last[0]},${height} L${first[0]},${height} Z`;
++  return { line, area };
++}
++
++export type ReleaseMarker = {
++  /** The release's calendar day, `YYYY-MM-DD`, as it sits on the x-axis. */
++  readonly day: string;
++  readonly tag: string;
++};
++
++/**
++ * Releases that fall inside the plotted window, oldest first.
++ *
++ * A marker outside the axis domain would either clip or stretch the domain, so
++ * only releases between the first and last plotted day are returned. Two
++ * releases on one day collapse to the later-listed tag: a vertical line carries
++ * one label, and the day is what the reader is locating.
++ */
++export function releaseMarkers(
++  points: readonly SeriesPoint[],
++  releases: readonly { readonly date: string | null; readonly tag: string }[],
++): readonly ReleaseMarker[] {
++  const first = points[0]?.day;
++  const last = points.at(-1)?.day;
++  if (!first || !last) return [];
++  const byDay = new Map<string, ReleaseMarker>();
++  for (const release of releases) {
++    const day = release.date?.slice(0, 10);
++    if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
++    if (day < first || day > last) continue;
++    byDay.set(day, { day, tag: release.tag });
++  }
++  return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
++}
++
+ /** Distinct named (non-residual) buckets seen anywhere in the window. */
+ export function namedVersionCount(points: readonly SeriesPoint[]): number {
+   const seen = new Set<string>();
+diff --git a/apps/docs/test/analytics-derive.test.ts b/apps/docs/test/analytics-derive.test.ts
+index 0dae6b0d7..41da46eae 100644
+--- a/apps/docs/test/analytics-derive.test.ts
++++ b/apps/docs/test/analytics-derive.test.ts
+@@ -5,10 +5,13 @@ import {
+   dayToEpoch,
+   delta,
+   formatDayTick,
++  namedBucketCount,
+   namedVersionCount,
+   platformColumns,
+   platformLabel,
++  releaseMarkers,
+   residualShare,
++  rollingMean,
+   sliceRange,
+ } from "../lib/analytics-derive";
+ import type { SeriesPoint } from "../lib/analytics-series";
+@@ -187,3 +190,70 @@ describe("platformColumns", () => {
+     expect(platformColumns(points)).toEqual(["linux", "freebsd", "other"]);
+   });
+ });
++
++describe("namedBucketCount", () => {
++  test("counts only real, non-empty buckets from one breakdown", () => {
++    expect(namedBucketCount({ "0.3.0": 5, other: 9, "0.2.0": 0 })).toBe(1);
++  });
++
++  test("a breakdown that is all residual names nothing", () => {
++    expect(namedBucketCount({ other: 3 })).toBe(0);
++    expect(namedBucketCount({})).toBe(0);
++  });
++
++  test("agrees with residualShare: a tile cannot say 0% suppressed and name nothing", () => {
++    const counts = { "0.3.0": 5 };
++    expect(residualShare(counts)).toBe(0);
++    expect(namedBucketCount(counts)).toBeGreaterThan(0);
++  });
++});
++
++describe("rollingMean", () => {
++  test("shortens at the start instead of padding with zeros", () => {
++    expect(rollingMean([4, 6, 8], 3)).toEqual([4, 5, 6]);
++  });
++
++  test("slides once the window is full", () => {
++    expect(rollingMean([1, 2, 3, 4], 2)).toEqual([1, 1.5, 2.5, 3.5]);
++  });
++
++  test("skips nulls and keeps a gap where a window has no real value", () => {
++    expect(rollingMean([null, null, 6], 2)).toEqual([null, null, 6]);
++    expect(rollingMean([2, null, 4], 2)).toEqual([2, 2, 4]);
++  });
++});
++
++describe("releaseMarkers", () => {
++  const points = [day(0), day(1), day(2), day(3)];
++
++  test("keeps only releases inside the plotted window, oldest first", () => {
++    const markers = releaseMarkers(points, [
++      { date: "2026-01-03", tag: "v2" },
++      { date: "2025-12-30", tag: "v0" },
++      { date: "2026-01-02", tag: "v1" },
++      { date: "2026-02-01", tag: "v9" },
++    ]);
++    expect(markers.map((m) => m.tag)).toEqual(["v1", "v2"]);
++  });
++
++  test("includes both edges of the window", () => {
++    const markers = releaseMarkers(points, [
++      { date: "2026-01-01", tag: "first" },
++      { date: "2026-01-04", tag: "last" },
++    ]);
++    expect(markers).toHaveLength(2);
++  });
++
++  test("reads the day from a timestamp and ignores unparseable dates", () => {
++    const markers = releaseMarkers(points, [
++      { date: "2026-01-02T10:00:00Z", tag: "iso" },
++      { date: null, tag: "undated" },
++      { date: "soon", tag: "bad" },
++    ]);
++    expect(markers).toEqual([{ day: "2026-01-02", tag: "iso" }]);
++  });
++
++  test("an empty window has no markers", () => {
++    expect(releaseMarkers([], [{ date: "2026-01-02", tag: "v1" }])).toEqual([]);
++  });
++});

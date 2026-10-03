@@ -1,0 +1,33 @@
+@kunai/types:test:  20 pass
+@kunai/types:test:  0 fail
+@kunai/analytics-ingest:test:  133 pass
+@kunai/analytics-ingest:test:  33 skip
+@kunai/analytics-ingest:test:  0 fail
+@kunai/schemas:test:  12 pass
+@kunai/schemas:test:  0 fail
+@kunai/config:test:  8 pass
+@kunai/config:test:  0 fail
+@kunai/mobile:test:  138 pass
+@kunai/mobile:test:  0 fail
+@kunai/core:test:  119 pass
+@kunai/core:test:  0 fail
+@kunai/storage:test:  209 pass
+@kunai/storage:test:  0 fail
+@kunai/docs:test:  293 pass
+@kunai/docs:test:  0 fail
+@kunai/relay:test:  118 pass
+@kunai/relay:test:  0 fail
+@kunai/relay-server:test:  51 pass
+@kunai/relay-server:test:  0 fail
+@kunai/providers:test:  901 pass
+@kunai/providers:test:  1 skip
+@kunai/providers:test:  0 fail
+@kitsunekode/kunai:test:unit:  5800 pass
+@kitsunekode/kunai:test:unit:  1 skip
+@kitsunekode/kunai:test:unit:  0 fail
+@kitsunekode/kunai:test:integration:  295 pass
+@kitsunekode/kunai:test:integration:  25 skip
+@kitsunekode/kunai:test:integration:  0 fail
+ Tasks:    26 successful, 26 total
+Cached:    0 cached, 26 total
+  Time:    2m16.932s 

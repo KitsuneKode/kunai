@@ -1,0 +1,16 @@
+PASS Changesets config: installed parser rejects deeply nested braces and parentheses
+PASS Changesets config: compile guards direct ASTs and cannot raise the safe ceiling
+PASS Changesets config: expand guards direct ASTs and cannot raise the safe ceiling
+PASS Changesets config: stringify guards direct ASTs and cannot raise the safe ceiling
+PASS Changesets config: depth boundary and ordinary glob semantics remain compatible
+PASS Changesets git: installed parser rejects deeply nested braces and parentheses
+PASS Changesets git: compile guards direct ASTs and cannot raise the safe ceiling
+PASS Changesets git: expand guards direct ASTs and cannot raise the safe ceiling
+PASS Changesets git: stringify guards direct ASTs and cannot raise the safe ceiling
+PASS Changesets git: depth boundary and ordinary glob semantics remain compatible
+PASS shadcn glob: installed parser rejects deeply nested braces and parentheses
+PASS shadcn glob: compile guards direct ASTs and cannot raise the safe ceiling
+PASS shadcn glob: expand guards direct ASTs and cannot raise the safe ceiling
+PASS shadcn glob: stringify guards direct ASTs and cannot raise the safe ceiling
+PASS shadcn glob: depth boundary and ordinary glob semantics remain compatible
+Dependency patch checks: 15 passed, 0 failed

@@ -1,0 +1,37 @@
+$ bun run --cwd apps/cli test:file --isolate test/unit/app-shell/loading-shell-command-mode.test.tsx
+$ bun test --timeout=20000 --isolate test/unit/app-shell/loading-shell-command-mode.test.tsx
+bun test v1.4.2 (744846f84)
+
+test/unit/app-shell/loading-shell-command-mode.test.tsx:
+(pass) playback command palette > a playback key stops playback while the palette is closed [51.32ms]
+49 |     expect(stripAnsi(handle.lastFrame())).toContain("type a command");
+50 | 
+51 |     // q stop, n next, p previous, a autoplay, u autoskip: every one is a live key outside the palette.
+52 |     type("quitnpau");
+53 | 
+54 |     expect(calls).toEqual([]);
+                       ^
+error: expect(received).toEqual(expected)
+
+- []
++ [
++   "stop",
++   "autoskip",
++   "next",
++   "previous",
++   "autoplay",
++   "autoskip",
++ ]
+
+- Expected  - 1
++ Received  + 8
+
+      at <anonymous> (/home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/apps/cli/test/unit/app-shell/loading-shell-command-mode.test.tsx:54:19)
+(fail) playback command palette > typing a command name does not fire playback keys behind the palette [54.60ms]
+
+ 1 pass
+ 1 fail
+ 3 expect() calls
+Ran 2 tests across 1 file. [192.00ms]
+error: script "test:file" exited with code 1
+error: script "test:cli:file" exited with code 1

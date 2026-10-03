@@ -1,0 +1,19 @@
+Lint	Anti-slop count baseline	﻿2026-10-03T05:46:34.2328357Z ##[group]Run bun run lint:anti-slop:baseline
+Lint	Anti-slop count baseline	2026-10-03T05:46:34.2328741Z ^[[36;1mbun run lint:anti-slop:baseline^[[0m
+Lint	Anti-slop count baseline	2026-10-03T05:46:34.2397343Z shell: /usr/bin/bash -e {0}
+Lint	Anti-slop count baseline	2026-10-03T05:46:34.2397630Z env:
+Lint	Anti-slop count baseline	2026-10-03T05:46:34.2397865Z   TURBO_TEAM: 
+Lint	Anti-slop count baseline	2026-10-03T05:46:34.2398402Z   TURBO_TOKEN: ***
+Lint	Anti-slop count baseline	2026-10-03T05:46:34.2398708Z   TURBO_SCM_BASE: dfac31be4b28f9bd6695c79e6bde2dc5a17ad9f5
+Lint	Anti-slop count baseline	2026-10-03T05:46:34.2399066Z ##[endgroup]
+Lint	Anti-slop count baseline	2026-10-03T05:46:34.2520757Z $ bun run scripts/anti-slop-baseline.ts
+Lint	Anti-slop count baseline	2026-10-03T05:46:37.7188250Z [anti-slop] FAIL: 3 rule(s) increased above baseline — fix the new findings or justify them to a human
+Lint	Anti-slop count baseline	2026-10-03T05:46:37.7192338Z ##[error]anti-slop(no-chained-type-assertions) rose 301 -> 305
+Lint	Anti-slop count baseline	2026-10-03T05:46:37.7193345Z [anti-slop] INCREASED anti-slop(no-chained-type-assertions): 301 -> 305 (+4)
+Lint	Anti-slop count baseline	2026-10-03T05:46:37.7194317Z ##[error]anti-slop(no-runtime-typeof) rose 832 -> 834
+Lint	Anti-slop count baseline	2026-10-03T05:46:37.7195093Z [anti-slop] INCREASED anti-slop(no-runtime-typeof): 832 -> 834 (+2)
+Lint	Anti-slop count baseline	2026-10-03T05:46:37.7196214Z ##[error]anti-slop(require-safety-comment-for-type-assertion) rose 1813 -> 1822
+Lint	Anti-slop count baseline	2026-10-03T05:46:37.7197135Z [anti-slop] INCREASED anti-slop(require-safety-comment-for-type-assertion): 1813 -> 1822 (+9)
+Lint	Anti-slop count baseline	2026-10-03T05:46:37.7197773Z [anti-slop] 4421 finding(s) against baseline at tools/oxlint/anti-slop/baseline.json
+Lint	Anti-slop count baseline	2026-10-03T05:46:37.7216825Z error: script "lint:anti-slop:baseline" exited with code 1
+Lint	Anti-slop count baseline	2026-10-03T05:46:37.7228160Z ##[error]Process completed with exit code 1.

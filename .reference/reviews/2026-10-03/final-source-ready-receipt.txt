@@ -1,0 +1,16 @@
+ Tasks:    15 successful, 15 total
+Cached:    0 cached, 15 total
+  Time:    5.715s 
+ Tasks:    14 successful, 14 total
+Cached:    0 cached, 14 total
+  Time:    453ms 
+ Tasks:    13 successful, 13 total
+Cached:    0 cached, 13 total
+  Time:    1.413s 
+ Tasks:    13 successful, 13 total
+Cached:    0 cached, 13 total
+  Time:    1.456s 
+verify:doc-paths — 57 docs and 2323 source files scanned, all paths resolve.
+verify:doc-frontmatter — 81 docs scanned, all declare status and audience; every doc changed since e509732e7 was reconciled.
+[anti-slop] 4413 finding(s) against baseline at tools/oxlint/anti-slop/baseline.json
+[release-guard] OK — @kitsunekode/kunai@0.3.0 is in sync.

@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "provider": "allanime",
+  "check": "crypto-freshness",
+  "diagnosis": "current",
+  "status": 200,
+  "pinnedBuildId": "177",
+  "pinnedEpoch": 2960,
+  "liveEpoch": 2961,
+  "epochsBehind": 1
+}

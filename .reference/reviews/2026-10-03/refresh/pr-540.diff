@@ -1,0 +1,123 @@
+diff --git a/apps/cli/src/services/update/native-installer/install-latest.ts b/apps/cli/src/services/update/native-installer/install-latest.ts
+index ade55bbcb..613e78bfd 100644
+--- a/apps/cli/src/services/update/native-installer/install-latest.ts
++++ b/apps/cli/src/services/update/native-installer/install-latest.ts
+@@ -337,7 +337,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
+           return { status: "skipped" as const, reason: "lock-contention" as const };
+         }
+ 
+-        void cleanupOldVersions(layout);
++        void cleanupOldVersions(layout).catch(() => {});
+ 
+         return { status: "installed" as const, version: resolved, versionPath };
+       } catch (error) {
+diff --git a/apps/cli/src/services/update/native-installer/native-uninstall.ts b/apps/cli/src/services/update/native-installer/native-uninstall.ts
+index 838955f35..ed527b054 100644
+--- a/apps/cli/src/services/update/native-installer/native-uninstall.ts
++++ b/apps/cli/src/services/update/native-installer/native-uninstall.ts
+@@ -206,12 +206,20 @@ export async function nativeUninstall(
+     const versionsOk = await tryRemove(layout.versionsDir, removed, failed, rmImpl);
+     const stagingOk = await tryRemove(layout.stagingRoot, removed, failed, rmImpl);
+ 
++    let transactionsOk = true;
+     if (existsSync(layout.transactionsDir)) {
+       for (const entry of await readdir(layout.transactionsDir).catch(() => [] as string[])) {
++        // Transaction files are `<id>.json`; anything else in the dir is foreign.
++        if (!entry.endsWith(".json")) continue;
+         await tryRemove(join(layout.transactionsDir, entry), removed, failed, rmImpl, false);
+       }
++      // Only remove the dir once nothing foreign remains — a recursive rm here
++      // would sweep files the installer never wrote.
++      const remaining = await readdir(layout.transactionsDir).catch(() => [] as string[]);
++      if (remaining.length === 0) {
++        transactionsOk = await tryRemove(layout.transactionsDir, removed, failed, rmImpl);
++      }
+     }
+-    const transactionsOk = await tryRemove(layout.transactionsDir, removed, failed, rmImpl);
+ 
+     const lifecyclePartial = failed.length > 0 || !versionsOk || !stagingOk || !transactionsOk;
+ 
+diff --git a/apps/cli/src/services/update/self-replace.ts b/apps/cli/src/services/update/self-replace.ts
+index 8a318e090..4013ba954 100644
+--- a/apps/cli/src/services/update/self-replace.ts
++++ b/apps/cli/src/services/update/self-replace.ts
+@@ -1,6 +1,5 @@
+ import { createHash } from "node:crypto";
+-import { existsSync } from "node:fs";
+-import { chmod, readdir, rename, rm, writeFile } from "node:fs/promises";
++import { chmod, rename, rm, writeFile } from "node:fs/promises";
+ import { dirname, join } from "node:path";
+ 
+ /** Find the checksum for `assetName` in a `SHA256SUMS` file body. */
+@@ -26,13 +25,10 @@ async function sha256(bytes: Uint8Array): Promise<string> {
+  * launch. Safe to call on every platform/startup.
+  */
+ export async function cleanupOldBinary(binPath: string): Promise<void> {
+-  const dir = dirname(binPath);
+-  if (!existsSync(dir)) return;
+-  for (const entry of await readdir(dir).catch(() => [] as string[])) {
+-    if (entry.endsWith(".old")) {
+-      await rm(join(dir, entry), { force: true }).catch(() => {});
+-    }
+-  }
++  // Only the exact aside self-replace writes. Sweeping every `*.old` in the
++  // directory would delete foreign files that share the suffix (log rotations,
++  // user backups) whenever the binary dir is also a working directory.
++  await rm(`${binPath}.old`, { force: true }).catch(() => {});
+ }
+ 
+ export type SelfReplaceInput = {
+diff --git a/apps/cli/test/unit/self-replace.test.ts b/apps/cli/test/unit/self-replace.test.ts
+index fd0c129fa..e1289c137 100644
+--- a/apps/cli/test/unit/self-replace.test.ts
++++ b/apps/cli/test/unit/self-replace.test.ts
+@@ -97,3 +97,18 @@ test("cleanupOldBinary removes stale .old files", async () => {
+   expect(existsSync(`${bin}.old`)).toBe(false);
+   expect(existsSync(bin)).toBe(true);
+ });
++
++test("cleanupOldBinary leaves foreign .old files in the directory alone", async () => {
++  const dir = mkdtempSync(join(tmpdir(), "kunai-replace-"));
++  made.push(dir);
++  const bin = join(dir, "kunai.exe");
++  const foreign = join(dir, "logs.txt.old");
++  await Bun.write(bin, "CUR");
++  await Bun.write(`${bin}.old`, "STALE");
++  await Bun.write(foreign, "KEEP");
++
++  await cleanupOldBinary(bin);
++
++  expect(existsSync(`${bin}.old`)).toBe(false);
++  expect(await Bun.file(foreign).text()).toBe("KEEP");
++});
+diff --git a/apps/cli/test/unit/services/update/native-installer/native-uninstall.test.ts b/apps/cli/test/unit/services/update/native-installer/native-uninstall.test.ts
+index 5015dc1ff..c53b70638 100644
+--- a/apps/cli/test/unit/services/update/native-installer/native-uninstall.test.ts
++++ b/apps/cli/test/unit/services/update/native-installer/native-uninstall.test.ts
+@@ -183,6 +183,26 @@ describe("nativeUninstall residue and preservation", () => {
+     expect(abandoned.id).toBeTruthy();
+   });
+ 
++  test("foreign files in the transactions dir survive and keep their directory", async () => {
++    const { layout } = await makeRoot();
++    await seedManagedUnixInstall(layout);
++
++    const owned = join(layout.transactionsDir, "deadbeef.json");
++    const foreign = join(layout.transactionsDir, "scratch-notes.txt");
++    await writeFile(owned, "{}");
++    await writeFile(foreign, "not ours");
++
++    const result = await nativeUninstall({ layout, platform: "linux" });
++
++    expect(result.status).toBe("removed");
++    expect(existsSync(owned)).toBe(false);
++    expect(existsSync(foreign)).toBe(true);
++    expect(existsSync(layout.transactionsDir)).toBe(true);
++    // Preserving foreign residue is not a lifecycle failure — the manifest still goes.
++    expect(result.failed).toEqual([]);
++    expect(existsSync(join(layout.configDir, "install.json"))).toBe(false);
++  });
++
+   test("--purge reports each user root and preserves external download directories", async () => {
+     const { root, layout } = await makeRoot();
+     await seedManagedUnixInstall(layout);

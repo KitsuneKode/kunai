@@ -1,0 +1,68 @@
+$ bun run --cwd apps/cli test:file --isolate "test/unit/pr539-dns-continuity.test.ts" test/unit/services/update/native-installer/native-uninstall.test.ts
+$ bun test --timeout=20000 --isolate "test/unit/pr539-dns-continuity.test.ts" test/unit/services/update/native-installer/native-uninstall.test.ts
+bun test v1.4.2 (744846f84)
+
+test/unit/pr539-dns-continuity.test.ts:
+10 |   return new Response("ok");
+11 | });
+12 | const { fetchGuardedRemoteTarget } = await import("@/infra/net/guarded-remote-fetch");
+13 | test("the connection must use the address checked during DNS preflight", async () => {
+14 |   await fetchGuardedRemoteTarget("https://cdn.example.test/path");
+15 |   expect(new URL(targets.at(-1)!).hostname).toBe("8.8.8.8");
+                                                 ^
+error: expect(received).toBe(expected)
+
+Expected: "8.8.8.8"
+Received: "cdn.example.test"
+
+      at <anonymous> (/tmp/kunai-full-review-20261003/current-pr540/apps/cli/test/unit/pr539-dns-continuity.test.ts:15:45)
+(fail) the connection must use the address checked during DNS preflight [1.63ms]
+15 |   expect(new URL(targets.at(-1)!).hostname).toBe("8.8.8.8");
+16 | });
+17 | test("DNS failure must not permit an unchecked fetch", async () => {
+18 |   lookupFails = true;
+19 |   const before = targets.length;
+20 |   await expect(fetchGuardedRemoteTarget("https://cdn.example.test/path")).rejects.toThrow();
+                                                                                       ^
+error: expect(received).rejects.toThrow(expected)
+
+Expected promise that rejects
+Received promise that resolved: Promise { <resolved> }
+
+      at <anonymous> (/tmp/kunai-full-review-20261003/current-pr540/apps/cli/test/unit/pr539-dns-continuity.test.ts:20:83)
+(fail) DNS failure must not permit an unchecked fetch [1.33ms]
+
+test/unit/services/update/native-installer/native-uninstall.test.ts:
+139 |     });
+140 | 
+141 |     const result = await nativeUninstall({ layout, platform: "linux" });
+142 | 
+143 |     expect(result.status).toBe("removed");
+144 |     expect(await readFile(foreignJson, "utf8")).toBe('{"note":"keep"}');
+                       ^
+ENOENT: no such file or directory, open '/tmp/kunai-uninstall-ZejQcA/data/transactions/notes.json'
+    path: "/tmp/kunai-uninstall-ZejQcA/data/transactions/notes.json",
+ syscall: "open",
+   errno: -2,
+    code: "ENOENT"
+
+      at async <anonymous> (/tmp/kunai-full-review-20261003/current-pr540/apps/cli/test/unit/services/update/native-installer/native-uninstall.test.ts:144:18)
+(fail) nativeUninstall residue and preservation > preserves foreign JSON, text, and directories in the transaction root [10.14ms]
+(pass) nativeUninstall residue and preservation > default uninstall removes owned lifecycle state and preserves user data [3.31ms]
+(pass) nativeUninstall residue and preservation > --purge reports each user root and preserves external download directories [1.80ms]
+(pass) nativeUninstall residue and preservation > --purge keeps its external lifecycle guard through the final root removal [2.19ms]
+(pass) nativeUninstall refusal > active lock blocks without mutation [2.06ms]
+(pass) nativeUninstall refusal > active launcher activation blocks uninstall without mutation [33.01ms]
+(pass) nativeUninstall refusal > transaction-start failure releases lifecycle and activation ownership [2.47ms]
+(pass) nativeUninstall refusal > active transaction blocks without mutation [1.25ms]
+(pass) nativeUninstall refusal > unmanaged launcher blocks without mutation [1.07ms]
+(pass) nativeUninstall refusal > Windows launcher ownership requires checksum match [2.85ms]
+(pass) nativeUninstall refusal > partial failure keeps the install manifest [1.64ms]
+(pass) nativeUninstall refusal > partial failure with purge:true still keeps manifest and user roots [1.83ms]
+
+ 11 pass
+ 3 fail
+ 88 expect() calls
+Ran 14 tests across 2 files. [114.00ms]
+error: script "test:file" exited with code 1
+error: script "test:cli:file" exited with code 1

@@ -1,0 +1,780 @@
+diff --git a/.docs/mobile-terminal-runtime.md b/.docs/mobile-terminal-runtime.md
+index 04f22295e..7adf46773 100644
+--- a/.docs/mobile-terminal-runtime.md
++++ b/.docs/mobile-terminal-runtime.md
+@@ -70,7 +70,12 @@ React, SQLite, tests, plans, and archived experiments from the Android graph.
+ The iOS output is a browser-targeted IIFE. The build rejects Node, Bun,
+ Android, native, SQLite, Ink, React, tests, plans, and archived experiments from
+ the iOS graph. It also scans emitted JavaScript and executes the IIFE against a
+-fake JavaScriptCore host.
++fake JavaScriptCore host whose global surface is stripped to match bare JSC —
++Node and Web API names (`process`, `URL`, `fetch`, `TextEncoder`, and friends)
++are bound to `undefined`, so the shared application layer cannot use them. URL
++validation lives in `application/portable-url.ts` as a hand-rolled
++HTTPS-only parser; `new URL` appears only on the Android/Node side for redirect
++base resolution.
+ 
+ On iOS the launcher never places raw user arguments in `jsc` source. It writes
+ at most 32 arguments to fixed private files, publishes the count last, invokes
+@@ -128,11 +133,20 @@ recovery is explicit rather than guessing whether another session is alive.
+ 
+ - Accept only absolute credential-free HTTPS URLs without fragments or control
+   characters.
+-- Bound HTTP to 8 seconds, three HTTPS-only redirects, and 64 KiB.
++- Bound HTTP to 8 seconds, three HTTPS-only redirects, and 64 KiB. The byte cap
++  is also sent as a `Range` request so chunked responses stop at the cap
++  mid-transfer wherever the origin honors ranges; the recorded `size_download`
++  still rejects oversized bodies on origins that ignore it.
+ - Pass media URLs as one opaque process argument; never evaluate a constructed
+   shell string.
+ - Android uses `spawn` with `shell: false`; explicit VLC handoff can use only
+-  `termux-am` or `/system/bin/am`.
++  `termux-am` or `/system/bin/am`. A bare exit 0 is not acceptance: launcher
++  output is scanned for intent-resolution errors (`am` can print `Error:` lines
++  while still exiting 0).
++- The `jsc`→launcher exit contract is exactly `{0,1,2}`: `MobileExit.code` is a
++  literal union, `exitMobile` clamps to the same set, and the launcher rejects
++  any other status-file value. Helper statuses are normalized through the
++  command bridge (string statuses are trimmed before parsing).
+ - iOS uses a literal helper allowlist and fixed private files.
+ - The iOS HTTP helper disables implicit curl configuration with `-q` before
+   loading its private request configuration. That configuration disables URL
+diff --git a/apps/mobile/scripts/ashell/kunai-mobile b/apps/mobile/scripts/ashell/kunai-mobile
+index 80c849350..a7e45cff4 100755
+--- a/apps/mobile/scripts/ashell/kunai-mobile
++++ b/apps/mobile/scripts/ashell/kunai-mobile
+@@ -22,10 +22,18 @@ cleanup_mobile_runtime() {
+ 
+ finish_mobile_session() {
+   cleanup_mobile_runtime
+-  rmdir .runtime/session.lock
++  if [ -d .runtime/session.lock ]; then
++    # A retained lock is operator-owned; a failed release must not mask the real status.
++    rmdir .runtime/session.lock 2>/dev/null ||
++      printf '%s\n' 'warning: session lock retained at .runtime/session.lock' >&2
++  fi
+ }
+ if ! mkdir .runtime/session.lock 2>/dev/null; then
+-  printf '%s\n' 'Mobile session is active or requires lock recovery.' >&2
++  if [ -d .runtime/session.lock ]; then
++    printf '%s\n' 'Mobile session is active; remove .runtime/session.lock only if no session is running.' >&2
++  else
++    printf '%s\n' 'Cannot create the mobile session lock under .runtime/.' >&2
++  fi
+   exit 1
+ fi
+ trap finish_mobile_session EXIT
+diff --git a/apps/mobile/scripts/build-contract.ts b/apps/mobile/scripts/build-contract.ts
+index 42a4f716d..c9934962d 100644
+--- a/apps/mobile/scripts/build-contract.ts
++++ b/apps/mobile/scripts/build-contract.ts
+@@ -25,7 +25,10 @@ export const MOBILE_TARGETS: readonly MobileTarget[] = [
+ 
+ export type MobileBuildMetafileEntry = {
+   readonly bytes: number;
+-  readonly imports?: readonly { readonly path: string; readonly kind?: string }[];
++  readonly imports?: readonly {
++    readonly path: string;
++    readonly kind?: string;
++  }[];
+ };
+ 
+ export type MobileBuildMetafile = {
+@@ -87,6 +90,21 @@ const IOS_FORBIDDEN_OUTPUT_TOKENS = [
+   "Bun.",
+   "node:",
+   "bun:",
++  "new URL(",
++  "URLSearchParams",
++  "TextEncoder",
++  "TextDecoder",
++  "WebSocket",
++  "XMLHttpRequest",
++  "localStorage",
++  "indexedDB",
++] as const;
++
++// Whole-word scans for tokens that would false-positive as plain substrings
++// (`prefetch(` contains `fetch(`) or that bare JavaScriptCore lacks.
++const IOS_FORBIDDEN_OUTPUT_PATTERNS = [
++  ["process", /\bprocess\b/u],
++  ["fetch(", /\bfetch\(/u],
+ ] as const;
+ 
+ export function resolveRuntimeModule(targetId: MobileTargetId): string {
+@@ -137,7 +155,9 @@ export function findForbiddenIosOutputTokens(source: string): readonly string[]
+   const violations: string[] = IOS_FORBIDDEN_OUTPUT_TOKENS.filter((token) =>
+     source.includes(token),
+   );
+-  if (/\bprocess\b/u.test(source)) violations.push("process");
++  for (const [label, pattern] of IOS_FORBIDDEN_OUTPUT_PATTERNS) {
++    if (pattern.test(source)) violations.push(label);
++  }
+   return violations.sort();
+ }
+ 
+diff --git a/apps/mobile/scripts/build.ts b/apps/mobile/scripts/build.ts
+index 745372aed..e0a196786 100644
+--- a/apps/mobile/scripts/build.ts
++++ b/apps/mobile/scripts/build.ts
+@@ -39,7 +39,9 @@ function mobileRuntimePlugin(runtimePath: string): BunPlugin {
+   return {
+     name: "kunai-mobile-runtime",
+     setup(build) {
+-      build.onResolve({ filter: /^mobile:runtime$/ }, () => ({ path: runtimePath }));
++      build.onResolve({ filter: /^mobile:runtime$/ }, () => ({
++        path: runtimePath,
++      }));
+     },
+   };
+ }
+@@ -136,6 +138,64 @@ async function assertIosGraph(metafile: MobileBuildMetafile): Promise<void> {
+   }
+ }
+ 
++// Bare JavaScriptCore in a-Shell exposes none of these Node/Web globals; the
++// fake host binds them to undefined so the bundle fails here, not on-device.
++const STRIPPED_IOS_GLOBALS = [
++  "process",
++  "Buffer",
++  "URL",
++  "URLSearchParams",
++  "fetch",
++  "TextEncoder",
++  "TextDecoder",
++  "require",
++  "module",
++  "exports",
++  "__dirname",
++  "__filename",
++  "global",
++  "Bun",
++  "Deno",
++  "setTimeout",
++  "setInterval",
++  "clearTimeout",
++  "clearInterval",
++  "setImmediate",
++  "queueMicrotask",
++  "crypto",
++  "btoa",
++  "atob",
++  "structuredClone",
++  "AbortController",
++  "AbortSignal",
++  "Request",
++  "Response",
++  "Headers",
++  "FormData",
++  "Blob",
++  "File",
++  "FileReader",
++  "ReadableStream",
++  "WritableStream",
++  "TransformStream",
++  "WebAssembly",
++  "WebSocket",
++  "XMLHttpRequest",
++  "EventSource",
++  "localStorage",
++  "sessionStorage",
++  "indexedDB",
++  "navigator",
++  "location",
++  "document",
++  "window",
++  "Worker",
++  "BroadcastChannel",
++  "MessageChannel",
++  "SharedArrayBuffer",
++  "Atomics",
++] as const;
++
+ async function assertIosBundleRuns(bundlePath: string): Promise<void> {
+   const source = await Bun.file(bundlePath).text();
+   const forbiddenTokens = findForbiddenIosOutputTokens(source);
+@@ -179,7 +239,8 @@ async function assertIosBundleRuns(bundlePath: string): Promise<void> {
+   };
+   console.log = (...values: unknown[]) => output.push(values.map(String).join(" "));
+   try {
+-    Function(source)();
++    const harness = Function(...STRIPPED_IOS_GLOBALS, `"use strict"; ${source}`);
++    harness(...STRIPPED_IOS_GLOBALS.map(() => undefined));
+     await waitForMobileHostProof(hostProofCompleted, "[mobile-build] fake JSC host proof");
+   } finally {
+     console.log = previousLog;
+diff --git a/apps/mobile/src/application/contracts.ts b/apps/mobile/src/application/contracts.ts
+index 3d927bed8..15d494229 100644
+--- a/apps/mobile/src/application/contracts.ts
++++ b/apps/mobile/src/application/contracts.ts
+@@ -27,7 +27,10 @@ export interface MobileStateStore {
+ 
+ export type MobileChoiceRequest = {
+   readonly prompt: string;
+-  readonly choices: readonly { readonly value: string; readonly label: string }[];
++  readonly choices: readonly {
++    readonly value: string;
++    readonly label: string;
++  }[];
+ };
+ 
+ export type MobileChoiceResult =
+@@ -58,6 +61,6 @@ export type MobileEnvironment = {
+ };
+ 
+ export type MobileExit = {
+-  readonly code: number;
++  readonly code: 0 | 1 | 2;
+   readonly reason: "completed" | "cancelled" | "handoff" | "invalid-input" | "failed";
+ };
+diff --git a/apps/mobile/src/application/portable-url.ts b/apps/mobile/src/application/portable-url.ts
+index 8089da461..18465f656 100644
+--- a/apps/mobile/src/application/portable-url.ts
++++ b/apps/mobile/src/application/portable-url.ts
+@@ -1,3 +1,34 @@
++// This module runs on bare JavaScriptCore in a-Shell, which exposes no Web API
++// globals. URL parsing and canonicalization here are hand-rolled: new URL()
++// exists only on the Android/Node runtime.
++
++const HTTPS_PREFIX = "https://";
++const HTTPS_PREFIX_PATTERN = /^https:\/\//iu;
++
++// WHATWG percent-encode sets for a special scheme (https): the path set is the
++// query set plus `?` `^` `` ` `` `{` `}`; the special-scheme query set adds `'`.
++// `?` and `#` cannot appear by construction (query split precedes encoding and
++// `#` is rejected as a fragment marker before parsing).
++const PATH_ENCODE_ASCII = new Set([" ", '"', "<", ">", "^", "`", "{", "}"]);
++const QUERY_ENCODE_ASCII = new Set([" ", '"', "<", ">", "'"]);
++
++// Characters forbidden in an authority host (outside a bracketed IPv6 literal).
++const HOST_FORBIDDEN_ASCII = new Set([
++  " ",
++  '"',
++  "#",
++  "/",
++  "<",
++  ">",
++  "?",
++  "@",
++  "[",
++  "]",
++  "\\",
++  "^",
++  "|",
++]);
++
+ function hasUnsafeControlCharacter(value: string): boolean {
+   return Array.from(value).some((character) => {
+     const code = character.charCodeAt(0);
+@@ -5,28 +36,111 @@ function hasUnsafeControlCharacter(value: string): boolean {
+   });
+ }
+ 
+-export function parsePortableHttpUrl(value: string, label: string, base?: string | URL): URL {
+-  if (hasUnsafeControlCharacter(value)) {
+-    throw new Error(`${label} must be an absolute credential-free HTTPS URL`);
++function percentEncodeScalar(codePoint: number): string {
++  const bytes =
++    codePoint < 0x80
++      ? [codePoint]
++      : codePoint < 0x800
++        ? [0xc0 | (codePoint >> 6), 0x80 | (codePoint & 0x3f)]
++        : codePoint < 0x1_0000
++          ? [0xe0 | (codePoint >> 12), 0x80 | ((codePoint >> 6) & 0x3f), 0x80 | (codePoint & 0x3f)]
++          : [
++              0xf0 | (codePoint >> 18),
++              0x80 | ((codePoint >> 12) & 0x3f),
++              0x80 | ((codePoint >> 6) & 0x3f),
++              0x80 | (codePoint & 0x3f),
++            ];
++  return bytes.map((byte) => `%${byte.toString(16).toUpperCase().padStart(2, "0")}`).join("");
++}
++
++function encodeUrlComponent(value: string, ascii: ReadonlySet<string>): string {
++  let encoded = "";
++  for (const character of value) {
++    const code = character.codePointAt(0) ?? 0x20;
++    encoded += code < 0x80 && !ascii.has(character) ? character : percentEncodeScalar(code);
+   }
++  return encoded;
++}
+ 
+-  let parsed: URL;
+-  try {
+-    parsed = new URL(value, base);
+-  } catch {
+-    throw new Error(`${label} must be an absolute credential-free HTTPS URL`);
++function removeDotSegments(path: string): string {
++  const trailingSlash = path.endsWith("/") || path.endsWith("/.") || path.endsWith("/..");
++  const absolute = path.startsWith("/");
++  const segments: string[] = [];
++  for (const segment of path.split("/")) {
++    if (segment === "..") {
++      // An absolute path's leading empty segment is the root; ".." cannot pop it.
++      if (segments.length > (absolute ? 1 : 0)) segments.pop();
++    } else if (segment !== ".") {
++      segments.push(segment);
++    }
+   }
+-  if (
+-    parsed.protocol !== "https:" ||
+-    parsed.username !== "" ||
+-    parsed.password !== "" ||
+-    parsed.hash !== ""
+-  ) {
+-    throw new Error(`${label} must be an absolute credential-free HTTPS URL`);
++  let result = segments.join("/");
++  if (trailingSlash && !result.endsWith("/")) result += "/";
++  return result === "" ? "/" : result;
++}
++
++function normalizeAuthority(authority: string): string | undefined {
++  if (authority === "" || authority.includes("@")) return undefined;
++  let host = authority;
++  let portSuffix = "";
++  if (authority.startsWith("[")) {
++    const close = authority.indexOf("]");
++    if (close < 0) return undefined;
++    host = authority.slice(0, close + 1);
++    const remainder = authority.slice(close + 1);
++    if (remainder !== "" && !remainder.startsWith(":")) return undefined;
++    portSuffix = remainder;
++  } else {
++    const colon = authority.lastIndexOf(":");
++    if (colon >= 0) {
++      host = authority.slice(0, colon);
++      portSuffix = authority.slice(colon);
++    }
++    if (host.includes(":")) return undefined;
++  }
++  if (host === "") return undefined;
++  const bracketed = host.startsWith("[");
++  for (const character of host) {
++    if (bracketed && (character === "[" || character === "]")) continue;
++    const code = character.codePointAt(0) ?? 0x20;
++    if (code < 0x80 && HOST_FORBIDDEN_ASCII.has(character)) return undefined;
++  }
++  if (portSuffix !== "") {
++    const digits = portSuffix.slice(1);
++    if (digits === "") {
++      portSuffix = "";
++    } else {
++      if (!/^[0-9]+$/u.test(digits)) return undefined;
++      const port = Number(digits);
++      if (port > 65_535) return undefined;
++      portSuffix = port === 443 ? "" : `:${port}`;
++    }
+   }
+-  return parsed;
++  return `${host.toLowerCase()}${portSuffix}`;
+ }
+ 
+ export function requirePortableHttpUrl(value: string, label: string): string {
+-  return parsePortableHttpUrl(value, label).href;
++  const invalid = () => {
++    throw new Error(`${label} must be an absolute credential-free HTTPS URL`);
++  };
++  if (hasUnsafeControlCharacter(value)) invalid();
++  if (!HTTPS_PREFIX_PATTERN.test(value) || value.includes("#")) invalid();
++
++  const rest = value.slice(HTTPS_PREFIX.length);
++  const authorityEnd = rest.search(/[/?]/u);
++  const authority = authorityEnd < 0 ? rest : rest.slice(0, authorityEnd);
++  const normalizedAuthority = normalizeAuthority(authority);
++  if (normalizedAuthority === undefined) invalid();
++
++  const tail = authorityEnd < 0 ? "" : rest.slice(authorityEnd);
++  const queryStart = tail.indexOf("?");
++  const rawPath = queryStart < 0 ? tail : tail.slice(0, queryStart);
++  const rawQuery = queryStart < 0 ? "" : tail.slice(queryStart + 1);
++
++  const path = encodeUrlComponent(
++    removeDotSegments((rawPath === "" ? "/" : rawPath).replaceAll("\\", "/")),
++    PATH_ENCODE_ASCII,
++  );
++  const query = rawQuery === "" ? "" : `?${encodeUrlComponent(rawQuery, QUERY_ENCODE_ASCII)}`;
++  return `https://${normalizedAuthority}${path}${query}`;
+ }
+diff --git a/apps/mobile/src/runtime/android/android-player-port.ts b/apps/mobile/src/runtime/android/android-player-port.ts
+index e5adc6132..82a18ed82 100644
+--- a/apps/mobile/src/runtime/android/android-player-port.ts
++++ b/apps/mobile/src/runtime/android/android-player-port.ts
+@@ -7,9 +7,16 @@ import { resolveAndroidIntentPlan } from "./android-intent-plan";
+ 
+ export interface AndroidPlayerRuntime {
+   readonly which: (command: string) => string | undefined;
+-  readonly spawn: (argv: readonly string[]) => Promise<{ readonly exitCode: number }>;
++  readonly spawn: (
++    argv: readonly string[],
++  ) => Promise<{ readonly exitCode: number; readonly output: string }>;
+ }
+ 
++// `am` and `termux-am` report intent-resolution failures on stderr/stdout and,
++// on some stacks, still exit 0; the exit code alone cannot prove the launch.
++const LAUNCH_ERROR_PATTERN =
++  /error|denial|exception|unable|does not exist|no activity|not found|not started/iu;
++
+ function findExecutable(command: string): string | undefined {
+   const candidates = (process.env.PATH ?? "")
+     .split(delimiter)
+@@ -38,11 +45,14 @@ export const defaultAndroidPlayerRuntime: AndroidPlayerRuntime = {
+       }
+       const child = spawn(command, args, {
+         shell: false,
+-        stdio: "ignore",
++        stdio: ["ignore", "pipe", "pipe"],
+         windowsHide: true,
+       });
++      const chunks: string[] = [];
++      child.stdout?.on("data", (chunk: Buffer | string) => chunks.push(String(chunk)));
++      child.stderr?.on("data", (chunk: Buffer | string) => chunks.push(String(chunk)));
+       child.once("error", reject);
+-      child.once("close", (code) => resolve({ exitCode: code ?? 1 }));
++      child.once("close", (code) => resolve({ exitCode: code ?? 1, output: chunks.join("") }));
+     }),
+ };
+ 
+@@ -65,7 +75,7 @@ export function createAndroidPlayerPort(
+       if (!plan.ok) return { kind: "rejected", reason: plan.reason };
+       try {
+         const result = await runtime.spawn(plan.argv);
+-        return result.exitCode === 0
++        return result.exitCode === 0 && !LAUNCH_ERROR_PATTERN.test(result.output)
+           ? { kind: "accepted", launcher: plan.launcher }
+           : { kind: "rejected", reason: "launch-rejected" };
+       } catch {
+diff --git a/apps/mobile/src/runtime/android/node-http-port.ts b/apps/mobile/src/runtime/android/node-http-port.ts
+index da0eb9fda..f69113044 100644
+--- a/apps/mobile/src/runtime/android/node-http-port.ts
++++ b/apps/mobile/src/runtime/android/node-http-port.ts
+@@ -1,5 +1,5 @@
+ import type { MobileHttpPort, MobileHttpRequest } from "../../application/contracts";
+-import { parsePortableHttpUrl } from "../../application/portable-url";
++import { requirePortableHttpUrl } from "../../application/portable-url";
+ 
+ type TimeoutToken = ReturnType<typeof setTimeout> | number;
+ type AndroidFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+@@ -13,8 +13,22 @@ export type NodeHttpRuntime = {
+ const MAX_REDIRECTS = 3;
+ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+ 
+-function requireHttpUrl(rawUrl: string, base?: URL): URL {
+-  return parsePortableHttpUrl(rawUrl, "Probe URL", base);
++// WHATWG URL resolution strips tabs and newlines, so controls are checked on
++// the raw redirect target before any resolution can launder them away.
++const UNSAFE_CONTROL_CHARACTER = /\p{Cc}/u;
++
++function requireHttpUrl(rawUrl: string, base?: string): string {
++  if (UNSAFE_CONTROL_CHARACTER.test(rawUrl)) {
++    throw new Error("Probe URL must be an absolute credential-free HTTPS URL");
++  }
++  if (base === undefined) return requirePortableHttpUrl(rawUrl, "Probe URL");
++  let resolved: string;
++  try {
++    resolved = new URL(rawUrl, base).href;
++  } catch {
++    throw new Error("Probe URL must be an absolute credential-free HTTPS URL");
++  }
++  return requirePortableHttpUrl(resolved, "Probe URL");
+ }
+ 
+ async function countBodyBytes(response: Response, maxBytes: number): Promise<number> {
+diff --git a/apps/mobile/src/runtime/android/node-session.ts b/apps/mobile/src/runtime/android/node-session.ts
+index 5431b48d5..68c91d4d0 100644
+--- a/apps/mobile/src/runtime/android/node-session.ts
++++ b/apps/mobile/src/runtime/android/node-session.ts
+@@ -8,14 +8,25 @@ export function acquireNodeSession(root: string): () => void {
+   const lock = join(root, "session.lock");
+   try {
+     mkdirSync(lock, { mode: 0o700 });
+-  } catch {
+-    throw new Error("Mobile session is already active or requires lock recovery");
++  } catch (error) {
++    const rawCode = error instanceof Error && "code" in error ? error.code : undefined;
++    const code = rawCode === undefined ? undefined : String(rawCode);
++    if (code === "EEXIST") {
++      throw new Error(
++        `Mobile session is already active; remove ${lock} only if no session is running`,
++      );
++    }
++    throw new Error(`Mobile session lock failed${code === undefined ? "" : ` (${code})`}`);
+   }
+   let released = false;
+   const release = () => {
+     if (released) return;
+-    rmdirSync(lock);
+     released = true;
++    try {
++      rmdirSync(lock);
++    } catch {
++      // A removed or occupied lock directory is operator-owned; never mask it.
++    }
+     process.off("exit", onExit);
+   };
+   const onExit = () => {
+diff --git a/apps/mobile/src/runtime/ashell/ashell-command-bridge.ts b/apps/mobile/src/runtime/ashell/ashell-command-bridge.ts
+index cb88eb5dc..bc9dea4a2 100644
+--- a/apps/mobile/src/runtime/ashell/ashell-command-bridge.ts
++++ b/apps/mobile/src/runtime/ashell/ashell-command-bridge.ts
+@@ -18,7 +18,7 @@ export function createAShellCommandBridge(jsc: AShellJsc): AShellCommandBridge {
+       const command = HELPER_COMMANDS[name];
+       if (command === undefined) throw new Error("Unsupported helper");
+       const status = jsc.system(command);
+-      const text = String(status);
++      const text = String(status).trim();
+       if (/^-?\d+$/u.test(text)) {
+         const numericStatus = Number(text);
+         if (Number.isSafeInteger(numericStatus)) return numericStatus;
+diff --git a/apps/mobile/src/runtime/ashell/curl-config.ts b/apps/mobile/src/runtime/ashell/curl-config.ts
+index a5ce19476..18ab6a59b 100644
+--- a/apps/mobile/src/runtime/ashell/curl-config.ts
++++ b/apps/mobile/src/runtime/ashell/curl-config.ts
+@@ -20,6 +20,7 @@ export function encodeCurlConfig(request: MobileHttpRequest): string {
+     `request = ${quoteCurlConfig(request.method)}`,
+     `max-time = ${timeoutMs / 1_000}`,
+     `max-filesize = ${maxBytes}`,
++    `range = "0-${maxBytes - 1}"`,
+     "",
+   ].join("\n");
+ }
+diff --git a/apps/mobile/test/unit/application/portable-url.test.ts b/apps/mobile/test/unit/application/portable-url.test.ts
+new file mode 100644
+index 000000000..5afcfe082
+--- /dev/null
++++ b/apps/mobile/test/unit/application/portable-url.test.ts
+@@ -0,0 +1,76 @@
++import { describe, expect, test } from "bun:test";
++
++import { requirePortableHttpUrl } from "../../../src/application/portable-url";
++
++const LABEL = "Probe URL";
++
++describe("requirePortableHttpUrl", () => {
++  test("canonicalizes scheme case, default port, host case, and dot segments", () => {
++    expect(requirePortableHttpUrl("HTTPS://PROBE.EXAMPLE:443/a/../status", LABEL)).toBe(
++      "https://probe.example/status",
++    );
++    expect(requirePortableHttpUrl("https://EXAMPLE.com", LABEL)).toBe("https://example.com/");
++    expect(requirePortableHttpUrl("https://example.com:443/x", LABEL)).toBe(
++      "https://example.com/x",
++    );
++    expect(requirePortableHttpUrl("https://example.com:", LABEL)).toBe("https://example.com/");
++    expect(requirePortableHttpUrl("https://example.com:8443/x", LABEL)).toBe(
++      "https://example.com:8443/x",
++    );
++    expect(requirePortableHttpUrl("https://example.com:080/x", LABEL)).toBe(
++      "https://example.com:80/x",
++    );
++  });
++
++  test("resolves dot segments without climbing above the root", () => {
++    expect(requirePortableHttpUrl("https://x.example/a/b/../c/./d", LABEL)).toBe(
++      "https://x.example/a/c/d",
++    );
++    expect(requirePortableHttpUrl("https://x.example/../../e", LABEL)).toBe("https://x.example/e");
++    expect(requirePortableHttpUrl("https://x.example/a/b/", LABEL)).toBe("https://x.example/a/b/");
++    expect(requirePortableHttpUrl("https://x.example/a/b/..", LABEL)).toBe("https://x.example/a/");
++  });
++
++  test("percent-encodes unsafe path and query scalars and keeps existing escapes", () => {
++    expect(requirePortableHttpUrl('https://x.example/a b/"q"<t>`w`{z}^v', LABEL)).toBe(
++      "https://x.example/a%20b/%22q%22%3Ct%3E%60w%60%7Bz%7D%5Ev",
++    );
++    expect(requirePortableHttpUrl("https://x.example/p?a='b'&c=d", LABEL)).toBe(
++      "https://x.example/p?a=%27b%27&c=d",
++    );
++    expect(requirePortableHttpUrl("https://x.example/keep%20me?x=%2f", LABEL)).toBe(
++      "https://x.example/keep%20me?x=%2f",
++    );
++    expect(requirePortableHttpUrl("https://x.example/münchen", LABEL)).toBe(
++      "https://x.example/m%C3%BCnchen",
++    );
++  });
++
++  test("keeps bracketed IPv6 hosts and ports", () => {
++    expect(requirePortableHttpUrl("https://[2001:DB8::1]:8443/x", LABEL)).toBe(
++      "https://[2001:db8::1]:8443/x",
++    );
++    expect(requirePortableHttpUrl("https://[::1]/", LABEL)).toBe("https://[::1]/");
++  });
++
++  test("rejects non-https schemes, credentials, fragments, and malformed authorities", () => {
++    for (const url of [
++      "http://x.example/",
++      "ftp://x.example/",
++      "//x.example/path",
++      "https:///path",
++      "https://",
++      "https://user@x.example/",
++      "https://user:pw@x.example/",
++      "https://x.example/#frag",
++      "https://x.example/path#",
++      "https://x.example:notaport/",
++      "https://x.example:65536/",
++      "https://exa mple.com/",
++      "https://exa[mple.com/",
++      "https://a:b:c/",
++    ]) {
++      expect(() => requirePortableHttpUrl(url, LABEL)).toThrow("HTTPS");
++    }
++  });
++});
+diff --git a/apps/mobile/test/unit/runtime/android/android-player-port.test.ts b/apps/mobile/test/unit/runtime/android/android-player-port.test.ts
+index 48f338dae..e6b799f41 100644
+--- a/apps/mobile/test/unit/runtime/android/android-player-port.test.ts
++++ b/apps/mobile/test/unit/runtime/android/android-player-port.test.ts
+@@ -10,6 +10,7 @@ const MEDIA_URL = "https://media.example/video.m3u8?token=a&title=$(touch%20nope
+ function runtime(input: {
+   readonly commands?: Readonly<Record<string, string>>;
+   readonly exitCode?: number;
++  readonly output?: string;
+   readonly onWhich?: (command: string) => void;
+   readonly onSpawn?: (argv: readonly string[]) => void;
+ }): AndroidPlayerRuntime {
+@@ -20,7 +21,7 @@ function runtime(input: {
+     },
+     spawn: async (argv) => {
+       input.onSpawn?.(argv);
+-      return { exitCode: input.exitCode ?? 0 };
++      return { exitCode: input.exitCode ?? 0, output: input.output ?? "" };
+     },
+   };
+ }
+@@ -57,6 +58,31 @@ describe("Android mobile player port", () => {
+     ).resolves.toEqual({ kind: "rejected", reason: "launch-rejected" });
+   });
+ 
++  test("rejects a zero-exit am launch that reports an intent error", async () => {
++    // `am` and termux-am builds have been observed printing the failure to
++    // stderr while still exiting 0; the exit code alone is not an acceptance.
++    await expect(
++      createAndroidPlayerPort({
++        runtime: runtime({
++          commands: { "termux-am": "/usr/bin/termux-am" },
++          output: "Error: Activity not started, unable to resolve Intent",
++        }),
++      }).handoff({ player: "vlc", url: MEDIA_URL }),
++    ).resolves.toEqual({ kind: "rejected", reason: "launch-rejected" });
++  });
++
++  test("accepts a zero-exit am launch reporting only a started intent", async () => {
++    await expect(
++      createAndroidPlayerPort({
++        runtime: runtime({
++          commands: { am: "/system/bin/am" },
++          output:
++            "Starting: Intent { act=android.intent.action.VIEW dat=https://media.example/... }",
++        }),
++      }).handoff({ player: "vlc", url: MEDIA_URL }),
++    ).resolves.toEqual({ kind: "accepted", launcher: "am" });
++  });
++
+   test("probes only launchers that can produce an explicit VLC intent", async () => {
+     const probes: string[] = [];
+ 
+diff --git a/apps/mobile/test/unit/runtime/android/node-session.test.ts b/apps/mobile/test/unit/runtime/android/node-session.test.ts
+index b692f76c0..6d0a7bc72 100644
+--- a/apps/mobile/test/unit/runtime/android/node-session.test.ts
++++ b/apps/mobile/test/unit/runtime/android/node-session.test.ts
+@@ -1,5 +1,5 @@
+ import { expect, test } from "bun:test";
+-import { mkdtempSync, rmSync } from "node:fs";
++import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+ import { tmpdir } from "node:os";
+ import { join } from "node:path";
+ 
+@@ -20,3 +20,36 @@ test("a competing session cannot release or enter the owner's state transaction"
+     rmSync(root, { recursive: true, force: true });
+   }
+ });
++
++test("a competing session message names the lock an operator can recover", () => {
++  const root = mkdtempSync(join(tmpdir(), "kunai-mobile-session-"));
++  try {
++    const release = acquireNodeSession(root);
++    try {
++      acquireNodeSession(root);
++      throw new Error("unreachable");
++    } catch (error) {
++      const message = error instanceof Error ? error.message : String(error);
++      expect(message).toContain("already active");
++      expect(message).toContain(join(root, "session.lock"));
++    }
++    release();
++  } finally {
++    rmSync(root, { recursive: true, force: true });
++  }
++});
++
++test("a foreign lock path is still reported as contention", () => {
++  const root = mkdtempSync(join(tmpdir(), "kunai-mobile-session-"));
++  try {
++    writeFileSync(join(root, "session.lock"), "foreign");
++    try {
++      acquireNodeSession(root);
++      throw new Error("unreachable");
++    } catch (error) {
++      expect(error instanceof Error ? error.message : String(error)).toContain("already active");
++    }
++  } finally {
++    rmSync(root, { recursive: true, force: true });
++  }
++});
+diff --git a/apps/mobile/test/unit/runtime/ashell/ashell-command-bridge.test.ts b/apps/mobile/test/unit/runtime/ashell/ashell-command-bridge.test.ts
+index ded61ca9e..76a088971 100644
+--- a/apps/mobile/test/unit/runtime/ashell/ashell-command-bridge.test.ts
++++ b/apps/mobile/test/unit/runtime/ashell/ashell-command-bridge.test.ts
+@@ -40,6 +40,22 @@ describe("a-Shell fixed command bridge", () => {
+     expect(createAShellCommandBridge(jsc).runFixedHelper("read-line")).toBe(0);
+   });
+ 
++  test("normalizes a status string carrying host whitespace", () => {
++    const jsc = fakeJsc([]);
++    jsc.system = () => "0\n";
++
++    expect(createAShellCommandBridge(jsc).runFixedHelper("http")).toBe(0);
++  });
++
++  test("still fails closed on non-numeric host output", () => {
++    const jsc = fakeJsc([]);
++    jsc.system = () => "helper stdout text";
++
++    expect(() => createAShellCommandBridge(jsc).runFixedHelper("http")).toThrow(
++      "Invalid helper status",
++    );
++  });
++
+   test("rejects any value outside the literal helper allowlist", () => {
+     const systemCommands: string[] = [];
+     const bridge = createAShellCommandBridge(fakeJsc(systemCommands));
+diff --git a/apps/mobile/test/unit/runtime/ashell/curl-config.test.ts b/apps/mobile/test/unit/runtime/ashell/curl-config.test.ts
+index bd0357f2b..a218bc053 100644
+--- a/apps/mobile/test/unit/runtime/ashell/curl-config.test.ts
++++ b/apps/mobile/test/unit/runtime/ashell/curl-config.test.ts
+@@ -18,6 +18,7 @@ describe("a-Shell curl config", () => {
+     );
+     expect(config).toContain("max-time = 8");
+     expect(config).toContain("max-filesize = 65536");
++    expect(config).toContain('range = "0-65535"');
+     expect(config).toContain('request = "GET"');
+     expect(config).not.toContain("\r");
+     expect(config).not.toContain("\0");
+diff --git a/apps/mobile/test/unit/scripts/build-contract.test.ts b/apps/mobile/test/unit/scripts/build-contract.test.ts
+index c42486779..a0fe9e9d6 100644
+--- a/apps/mobile/test/unit/scripts/build-contract.test.ts
++++ b/apps/mobile/test/unit/scripts/build-contract.test.ts
+@@ -132,4 +132,14 @@ describe("mobile artifact build contract", () => {
+       expect(findForbiddenIosOutputTokens(source)).toContain("process");
+     }
+   });
++
++  test("finds Web API globals bare JavaScriptCore lacks, without substring traps", () => {
++    expect(findForbiddenIosOutputTokens("const u=new URL('https://x');")).toContain("new URL(");
++    expect(findForbiddenIosOutputTokens("fetch('https://x')")).toContain("fetch(");
++    // `prefetch`/`TextEncoder`-named locals must not trip the scan.
++    expect(findForbiddenIosOutputTokens("prefetch('https://x')")).toEqual([]);
++    expect(findForbiddenIosOutputTokens("const s='open vlc-x-callback-url now please';")).toEqual(
++      [],
++    );
++  });
+ });

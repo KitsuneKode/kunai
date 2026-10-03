@@ -1,0 +1,113 @@
+{
+  "baseline": "e509732e7cdd3277943b7a705a0fea9004ed0b7f",
+  "suites": {
+    "@kunai/types:test": {
+      "pass": 20,
+      "fail": 0
+    },
+    "@kunai/analytics-ingest:test": {
+      "pass": 133,
+      "skip": 33,
+      "fail": 0
+    },
+    "@kunai/schemas:test": {
+      "pass": 12,
+      "fail": 0
+    },
+    "@kunai/config:test": {
+      "pass": 8,
+      "fail": 0
+    },
+    "@kunai/mobile:test": {
+      "pass": 138,
+      "fail": 0
+    },
+    "@kunai/core:test": {
+      "pass": 119,
+      "fail": 0
+    },
+    "@kunai/storage:test": {
+      "pass": 209,
+      "fail": 0
+    },
+    "@kunai/docs:test": {
+      "pass": 293,
+      "fail": 0
+    },
+    "@kunai/relay:test": {
+      "pass": 118,
+      "fail": 0
+    },
+    "@kunai/relay-server:test": {
+      "pass": 51,
+      "fail": 0
+    },
+    "@kunai/providers:test": {
+      "pass": 901,
+      "skip": 1,
+      "fail": 0
+    },
+    "@kitsunekode/kunai:test:unit": {
+      "pass": 5800,
+      "skip": 1,
+      "fail": 0
+    },
+    "@kitsunekode/kunai:test:integration": {
+      "pass": 295,
+      "skip": 25,
+      "fail": 0
+    }
+  },
+  "logs": [
+    {
+      "log": "final-root-test-ready.log",
+      "sha256": "32bd5eaf92bbd13fb097ba45d18ef1599265a72168fbf60f394a793f68dfd57b",
+      "bytes": 1288065
+    },
+    {
+      "log": "final-runtime-ready.log",
+      "sha256": "0114066169bec817b72ebe721cd163395491f58294172c8e3457fbe3467ed171",
+      "bytes": 41461
+    },
+    {
+      "log": "final-source-ready.log",
+      "sha256": "0d0836b172d66d22cf18af6ca9c9806a8014353380f4936d7662620101a3dd54",
+      "bytes": 35926
+    },
+    {
+      "log": "final-docs-build-fixed.log",
+      "sha256": "ae2cef4a67651bd4a2225ef59327b12b281dff3968251316e36f91b3a5067e8a",
+      "bytes": 5438
+    },
+    {
+      "log": "final-mobile.log",
+      "sha256": "52c4770ae3426c97e00bc5d33296972dff3f3f54b54653278b6fa0ae0a4d9a18",
+      "bytes": 15648
+    },
+    {
+      "log": "final-download-ties.log",
+      "sha256": "0160fe8cd6fbe66bb44e3653560a8a844bfe410c8f55a3d860b8bef2fde0d30f",
+      "bytes": 26552
+    },
+    {
+      "log": "final-audit.json",
+      "sha256": "5a9adf8fbbd2a854066d8ebb81515723fc033927c4bcee0f7ed3ea13b300efba",
+      "bytes": 334
+    },
+    {
+      "log": "final-allmanga-crypto.log",
+      "sha256": "f6b0f59fc8267e3430da678e308cd3a4fa073b9b62ad0bae8d4eb2eecc4501dd",
+      "bytes": 310
+    },
+    {
+      "log": "react-doctor-final-cleanup.json",
+      "sha256": "1cda147655f5f25ddcb7e9665450b179b98d9e708fd57f281aeb4028637d36e0",
+      "bytes": 13927
+    },
+    {
+      "log": "pr540-refreshed-reproductions.log",
+      "sha256": "7d9bb5dda1ce79596a8e733ad8db168a266abcdc0be27413e33d858343f19a57",
+      "bytes": 3964
+    }
+  ]
+}

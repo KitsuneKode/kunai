@@ -1,0 +1,951 @@
+diff --git a/.docs/provider-dossiers/allmanga.md b/.docs/provider-dossiers/allmanga.md
+index aa78947de..4128ab9f9 100644
+--- a/.docs/provider-dossiers/allmanga.md
++++ b/.docs/provider-dossiers/allmanga.md
+@@ -97,7 +97,7 @@ The experiment generated a temporary MPD from one selected video representation
+ - The AES-256-GCM `tobeparsed` decode path and the build id 166 crypto bootstrap are verified working (re-derived 2026-09-08 after the 140→166 rotation; the episode query executes and `aaReq` is accepted); AES-CTR must not be restored (see `.docs/providers.md`).
+ - Source APIs can return valid data that is not a single HLS/mp4 URL.
+ - Returning only the `Ak` video URL would be wrong because audio is separate — the generated MPD carries one video + one audio representation.
+-- `Ak` handoff **is implemented**: `fetchAkLinks` normalizes `rawUrls` (`vids`/`audios`/`subtitles`/`duration`), registers a `allmanga-ak:` deferred locator, and `apps/cli/src/services/playback/deferred-media-materializer.ts` writes the SegmentBase MPD into a private temp dir at playback time. The playback materializer releases each `allmanga-ak:` locator during cleanup. Deferred entries are not persisted in the playback cache, and source-cache entries containing them are evicted before reuse rather than replayed.
++- `Ak` handoff **is implemented**: `fetchAkLinks` normalizes `rawUrls` (`vids`/`audios`/`subtitles`/`duration`), registers a `allmanga-ak:` deferred locator, and `apps/cli/src/services/playback/deferred-media-materializer.ts` writes the SegmentBase MPD into a private temp dir at playback time. The playback materializer releases each `allmanga-ak:` locator during cleanup. Deferred entries are not persisted in the playback cache, and source-cache entries containing them are evicted before reuse rather than replayed. Each `<BaseURL>` is validated before the MPD is written — the rep URLs come from upstream JSON, so scheme and private-literal checks apply; a bad target fails materialization instead of reaching mpv.
+ 
+ ## Recovering a build rotation
+ 
+diff --git a/.docs/provider-dossiers/miruro.md b/.docs/provider-dossiers/miruro.md
+index 97c6e2925..968a34038 100644
+--- a/.docs/provider-dossiers/miruro.md
++++ b/.docs/provider-dossiers/miruro.md
+@@ -67,6 +67,11 @@ this change to keep the release-hardening branches independently mergeable.
+ - **Transport, measured:** Bun `fetch` is always CF-403'd at the pipe (TLS
+   fingerprint). curl — plain or impersonate — clears it with the `sec-fetch-*`
+   triplet the client already sends.
++- **Curl leg contract (2026-10):** the pipe fallback passes `-q` first (no
++  `~/.curlrc` injection) and walks redirects in-process — `-L` is deliberately
++  absent. Each hop's target clears scheme, private-literal, and DNS checks
++  (`miruroCurlTargetBlockReason`) before curl touches it; mirror URLs come from
++  upstream JSON, so even hop 0 is treated as remote-controlled.
+ - **Per-server `sources`, One Piece ep 1159:** `moo` (AnimeGG) 200/4 streams,
+   `bee` (Anikoto) 200/2, `bonk` 200/7, `kiwi` (owocdn/kwik) 200/4; `pewe` (AniDB),
+   `ally` (AllManga) and `hop` 444 — the first two because their upstreams are down.
+diff --git a/.docs/providers.md b/.docs/providers.md
+index 8d5af4030..bff516650 100644
+--- a/.docs/providers.md
++++ b/.docs/providers.md
+@@ -204,6 +204,10 @@ so a cached resolve older than an hour will 403 on replay. And mpv only has
+ dedicated options for referer and user-agent — everything else a provider
+ attaches has to ride `http-header-fields`, which is why
+ `normalizeStreamHttpHeaders` forwards unknown headers instead of dropping them.
++Those fields (and `ytdl-raw-options`, which can carry a PO token) never ride
++mpv argv: `writeMpvSensitiveConf` writes them to an owner-only `--include`
++conf next to the IPC socket, deleted once the endpoint proves mpv's startup
++parse is done — argv is world-readable via `/proc/<pid>/cmdline`.
+ 
+ **Per-candidate timeouts are clamped to the attempt budget.**
+ `providerCycleCandidateTimeoutMs` (in `packages/core/src/provider-attempt-budget.ts`)
+diff --git a/SECURITY.md b/SECURITY.md
+index 48aa9b0ae..fcd746b0a 100644
+--- a/SECURITY.md
++++ b/SECURITY.md
+@@ -61,3 +61,7 @@ For reference, the load-bearing defenses in this codebase:
+   paths.
+ - Analytics is off unless you explicitly opt in, and sends a hashed install
+   id, version, OS, and arch — nothing else.
++- Self-update verifies the downloaded binary against the release's
++  `SHA256SUMS`. Both artifacts come from the same release origin, so the
++  checksum proves transit integrity — GitHub's release integrity is the root
++  of trust, and a fully compromised origin could serve a matching pair.
+diff --git a/apps/cli/src/infra/player/PersistentMpvSession.ts b/apps/cli/src/infra/player/PersistentMpvSession.ts
+index e18cdfeda..9c3747110 100644
+--- a/apps/cli/src/infra/player/PersistentMpvSession.ts
++++ b/apps/cli/src/infra/player/PersistentMpvSession.ts
+@@ -17,7 +17,7 @@ import { registerMpvProcess, terminateMpvProcess } from "@/infra/player/mpv-proc
+ import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
+ import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
+ import { dbg } from "@/logger";
+-import { buildMpvArgs, shouldApplyStartAtSeek } from "@/mpv";
++import { buildMpvArgs, shouldApplyStartAtSeek, writeMpvSensitiveConf } from "@/mpv";
+ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+ import { resolveTuning } from "@/services/persistence/tuning";
+ import { checkStreamPreflight } from "@/services/playback/stream-health-check";
+@@ -695,6 +695,15 @@ export class PersistentMpvSession {
+       }
+     }
+ 
++    const sensitiveConf = await writeMpvSensitiveConf(
++      {
++        url: this.initialStream.url,
++        headers: this.initialStream.headers ?? {},
++        requiresYtdl: this.initialStream.requiresYtdl,
++        ytdlRawOptions: this.initialStream.ytdlRawOptions,
++      },
++      this.ipcEndpoint,
++    );
+     const args = buildMpvArgs(
+       {
+         url: this.initialStream.url,
+@@ -721,6 +730,7 @@ export class PersistentMpvSession {
+         includeStartArg,
+         scriptPath: this.luaScriptPath ?? undefined,
+         scriptOpts: this.scriptOptsArg,
++        sensitiveOptionsPath: sensitiveConf?.path,
+       },
+     );
+     this.loadStartAt =
+@@ -728,6 +738,22 @@ export class PersistentMpvSession {
+     this.subtitlesAttachedAtSpawn = Boolean(this.initialOptions.primarySubtitle);
+     this.titleAppliedViaArgs = true;
+ 
++    try {
++      await this.spawnProcessAndConnect(mpvOptions, args);
++    } finally {
++      // The conf's only reader is mpv's startup config parse — once spawn()
++      // has settled (IPC ready, bootstrap failure, or spawn throw) the file
++      // has no further consumer.
++      await sensitiveConf?.cleanup();
++    }
++  }
++
++  /** The spawn→IPC-connect tail of {@link spawn} — kept separate so the
++   * sensitive-conf cleanup wraps every exit path with one finally. */
++  private async spawnProcessAndConnect(
++    mpvOptions: MpvRuntimeOptions | undefined,
++    args: string[],
++  ): Promise<void> {
+     const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
+       const active = this.activeCycle;
+       // Only the watchdog's stream-stall verdicts mean the feed died. ipc-stalled
+diff --git a/apps/cli/src/infra/player/mpv-playback-url.ts b/apps/cli/src/infra/player/mpv-playback-url.ts
+index c8186206a..8055ca891 100644
+--- a/apps/cli/src/infra/player/mpv-playback-url.ts
++++ b/apps/cli/src/infra/player/mpv-playback-url.ts
+@@ -4,15 +4,17 @@ export type MpvUrlKind = "remote" | "local";
+ 
+ /**
+  * Restricts provider-controlled media targets to HTTP(S); trusted local
+- * surfaces may use files. Remote targets additionally refuse private literal
+- * hosts — a provider-supplied stream/trailer URL must not make mpv (or a
+- * spawn of it) reach the LAN, since mpv fetches the URL itself.
++ * surfaces may use files. Any HTTP(S) URL — remote OR local-kind — refuses
++ * private literal hosts: a provider-supplied stream/trailer URL must not make
++ * mpv (or a spawn of it) reach the LAN, since mpv fetches the URL itself. The
++ * local kind only widens the scheme set to files; it is not a network-target
++ * exemption.
+  */
+ export function isAllowedMpvUrl(url: string, kind: MpvUrlKind): boolean {
+   const trimmed = url.trim();
+   if (!trimmed || trimmed.startsWith("-")) return false;
+   if (/^https?:\/\//i.test(trimmed)) {
+-    return kind === "local" || blockedLiteralTargetReason(trimmed) === null;
++    return blockedLiteralTargetReason(trimmed) === null;
+   }
+   if (kind !== "local") return false;
+   if (/^file:\/\//i.test(trimmed)) return true;
+diff --git a/apps/cli/src/mpv.ts b/apps/cli/src/mpv.ts
+index 51f206f56..24614c35e 100644
+--- a/apps/cli/src/mpv.ts
++++ b/apps/cli/src/mpv.ts
+@@ -1,8 +1,10 @@
+ import { existsSync } from "node:fs";
+-import { unlink } from "node:fs/promises";
++import { rm, unlink, writeFile } from "node:fs/promises";
++import { join } from "node:path";
+ 
+ import type { PlaybackResult } from "@/domain/types";
+ import type { SubtitleTrack } from "@/domain/types";
++import { createPrivateTempDir } from "@/infra/fs/temp-dir";
+ import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
+ import { LOW_SPEC_HLS_BITRATE, LOW_SPEC_YTDL_FORMAT } from "@/infra/player/mpv-hardware-profile";
+ import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
+@@ -124,8 +126,10 @@ export async function launchMpv(opts: {
+   }
+ 
+   try {
++    const sensitiveConf = await writeMpvSensitiveConf(opts, ipcEndpoint);
+     const args = buildMpvArgs({ ...opts, chaptersFile }, ipcServerCliArg(ipcEndpoint), {
+       mpv: opts.mpv,
++      sensitiveOptionsPath: sensitiveConf?.path,
+     });
+     const stats = createPlayerStatsState(ipcEndpoint.path);
+     noteTrustedSeek(stats, opts.startAt ?? 0);
+@@ -164,7 +168,7 @@ export async function launchMpv(opts: {
+     });
+     const unregisterMpv = registerMpvProcess(mpv);
+     try {
+-      return await launchMpvInner(
++      const result = await launchMpvInner(
+         mpv,
+         unregisterMpv,
+         opts,
+@@ -173,6 +177,15 @@ export async function launchMpv(opts: {
+         stats,
+         emitPlaybackEvent,
+       );
++      // The conf file's only reader finished with it during startup — by the
++      // time the IPC endpoint is live, `--include` is long parsed.
++      await sensitiveConf?.cleanup();
++      return result;
++    } catch (error) {
++      // A failed launch still wrote the conf — mpv either died before parsing
++      // it or is gone; neither keeps the file alive.
++      await sensitiveConf?.cleanup();
++      throw error;
+     } finally {
+       unregisterMpv();
+     }
+@@ -581,6 +594,88 @@ export async function cleanupAbortedMpvLaunch(options: {
+   return socketPathCleanedUp;
+ }
+ 
++/**
++ * The options that can carry credentials: stream `http-header-fields` (e.g.
++ * CloudFront signed cookies) and `ytdl-raw-options` (the yt-dlp extractor-args
++ * block may embed a po_token). mpv's argv is world-readable on POSIX while it
++ * runs, so when the caller supplies an owner-only conf path these go there via
++ * `--include` and never touch argv.
++ *
++ * Both the argv and conf paths draw from this one collector so the sensitive
++ * set cannot drift between them.
++ */
++export function collectSensitiveMpvOptions(opts: {
++  readonly url: string;
++  readonly headers?: Record<string, string>;
++  readonly requiresYtdl?: boolean;
++  readonly ytdlRawOptions?: string;
++}): string[] {
++  const lines: string[] = [];
++  const { origin, extraFields } = normalizeStreamHttpHeaders(opts.headers);
++  const headerFields = [...(origin ? [`Origin: ${origin}`] : []), ...extraFields];
++  if (headerFields.length > 0) {
++    lines.push(`http-header-fields=${headerFields.join(",")}`);
++  }
++  if (opts.ytdlRawOptions?.trim() && (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl)) {
++    lines.push(`ytdl-raw-options=${opts.ytdlRawOptions.trim()}`);
++  }
++  return lines;
++}
++
++/** mpv's length-quoting — `%<byteLen>%<value>` — keeps `#`, commas, and spaces intact in conf files. */
++function quoteMpvConfValue(value: string): string {
++  return `%${new TextEncoder().encode(value).length}%${value}`;
++}
++
++/**
++ * Write the sensitive options into an owner-only conf file placed next to the
++ * IPC socket (itself in a private directory) — or a fresh private dir on
++ * Windows, where the endpoint is a named pipe with no filesystem path. Returns
++ * the path for {@link buildMpvArgs}' `sensitiveOptionsPath`, or null when no
++ * sensitive options exist for this stream.
++ *
++ * Lifetime: mpv parses `--include` files once at startup, so the caller may
++ * delete the file as soon as the IPC endpoint is provably live.
++ */
++export async function writeMpvSensitiveConf(
++  opts: {
++    readonly url: string;
++    readonly headers?: Record<string, string>;
++    readonly requiresYtdl?: boolean;
++    readonly ytdlRawOptions?: string;
++  },
++  ipcEndpoint: ReturnType<typeof createMpvIpcEndpoint>,
++): Promise<{ readonly path: string; readonly cleanup: () => Promise<void> } | null> {
++  const lines = collectSensitiveMpvOptions(opts);
++  if (lines.length === 0) return null;
++  const body = `${lines
++    .map((line) => {
++      const eq = line.indexOf("=");
++      return `${line.slice(0, eq)}=${quoteMpvConfValue(line.slice(eq + 1))}`;
++    })
++    .join("\n")}\n`;
++
++  if (ipcEndpoint.kind === "unix_socket") {
++    const path = `${ipcEndpoint.path}.conf`;
++    await writeFile(path, body, { mode: 0o600 });
++    return {
++      path,
++      cleanup: async () => {
++        await rm(path, { force: true }).catch(() => {});
++      },
++    };
++  }
++  const dir = await createPrivateTempDir("mpv-conf");
++  const path = join(dir, "kunai-mpv.conf");
++  await writeFile(path, body, { mode: 0o600 });
++  return {
++    path,
++    cleanup: async () => {
++      await rm(dir, { recursive: true, force: true }).catch(() => {});
++    },
++  };
++}
++
+ export function buildMpvArgs(
+   opts: {
+     url: string;
+@@ -608,6 +703,13 @@ export function buildMpvArgs(
+     scriptPath?: string;
+     /** Single `--script-opts=` value (comma-separated key=value). */
+     scriptOpts?: string;
++    /**
++     * Owner-only conf file the sensitive options (`http-header-fields`,
++     * `ytdl-raw-options`) were written into by {@link writeMpvSensitiveConf}.
++     * When set, they leave argv — which is world-readable on POSIX — and only
++     * `--include=<path>` is emitted.
++     */
++    sensitiveOptionsPath?: string;
+   },
+ ): string[] {
+   if (!isAllowedMpvUrl(opts.url, opts.urlKind ?? "remote")) {
+@@ -626,9 +728,8 @@ export function buildMpvArgs(
+     const ytdlFormat =
+       opts.ytdlFormat ?? (lowSpec ? LOW_SPEC_YTDL_FORMAT : DEFAULT_MPV_YTDL_FORMAT);
+     args.push(`--ytdl-format=${ytdlFormat}`);
+-    if (opts.ytdlRawOptions?.trim()) {
+-      args.push(`--ytdl-raw-options=${opts.ytdlRawOptions.trim()}`);
+-    }
++    // `ytdl-raw-options` (may carry a po_token) is emitted through the
++    // sensitive sink below — it must not ride argv when a conf path exists.
+   } else if (opts.url.toLowerCase().includes(".m3u8") && config?.persistent !== true) {
+     // One-shot only. `--ytdl=no` is process-wide and a later per-file
+     // `ytdl: "yes"` cannot lift it, so a persistent session launched on an HLS
+@@ -639,11 +740,20 @@ export function buildMpvArgs(
+     args.push("--ytdl=no");
+   }
+ 
+-  const { referer, userAgent, origin, extraFields } = normalizeStreamHttpHeaders(opts.headers);
++  const { referer, userAgent } = normalizeStreamHttpHeaders(opts.headers);
+   if (referer) args.push(`--referrer=${referer}`);
+   if (userAgent) args.push(`--user-agent=${userAgent}`);
+-  const headerFields = [...(origin ? [`Origin: ${origin}`] : []), ...extraFields];
+-  if (headerFields.length > 0) args.push(`--http-header-fields=${headerFields.join(",")}`);
++  // argv is world-readable on POSIX (`/proc/<pid>/cmdline`), so
++  // credential-bearing options never ride it when a conf path was supplied —
++  // they land in the owner-only `--include` file the caller wrote instead.
++  const sensitive = collectSensitiveMpvOptions(opts);
++  if (sensitive.length > 0) {
++    if (config?.sensitiveOptionsPath) {
++      args.push(`--include=${config.sensitiveOptionsPath}`);
++    } else {
++      for (const line of sensitive) args.push(`--${line}`);
++    }
++  }
+   // ani-cli plays mp4upload with --tls-verify=no; without it mpv rejects some hosts.
+   const disableTlsVerify = shouldDisableMpvTlsVerify(opts.url, opts.headers);
+   if (disableTlsVerify && !config?.persistent) {
+diff --git a/apps/cli/src/services/playback/deferred-media-materializer.ts b/apps/cli/src/services/playback/deferred-media-materializer.ts
+index 74a3d1463..968d4a09b 100644
+--- a/apps/cli/src/services/playback/deferred-media-materializer.ts
++++ b/apps/cli/src/services/playback/deferred-media-materializer.ts
+@@ -9,6 +9,7 @@ import {
+   type AllMangaAkDeferredDescriptor,
+   type AllMangaAkRepresentation,
+ } from "@kunai/providers";
++import { blockedLiteralTargetReason } from "@kunai/types";
+ 
+ export type MaterializedDeferredMedia = {
+   readonly stream: StreamInfo;
+@@ -46,7 +47,31 @@ export async function materializeDeferredMediaForPlayback(
+   throw new Error(`Unsupported deferred media locator: ${stream.deferredLocator.split(":")[0]}`);
+ }
+ 
++/**
++ * mpv fetches each <BaseURL> itself — the representation URLs came from
++ * upstream JSON, so they get the same scheme + private-literal boundary as
++ * any other provider-controlled media target before they reach the file.
++ */
++function blockedDeferredRepTargetReason(url: string): string | null {
++  let parsed: URL;
++  try {
++    parsed = new URL(url);
++  } catch {
++    return "unparseable representation URL";
++  }
++  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
++    return `scheme ${parsed.protocol}`;
++  }
++  return blockedLiteralTargetReason(url);
++}
++
+ function buildAllMangaAkMpd(descriptor: AllMangaAkDeferredDescriptor): string {
++  for (const rep of [descriptor.video, descriptor.audio]) {
++    const blocked = blockedDeferredRepTargetReason(rep.url);
++    if (blocked !== null) {
++      throw new Error(`Deferred AllManga Ak media names an unsafe target: ${blocked}`);
++    }
++  }
+   const duration =
+     Number.isFinite(descriptor.duration) && descriptor.duration
+       ? ` mediaPresentationDuration="PT${descriptor.duration}S"`
+diff --git a/apps/cli/src/services/playback/hls-manifest-materializer.ts b/apps/cli/src/services/playback/hls-manifest-materializer.ts
+index 92fb92f7a..5aee8a93c 100644
+--- a/apps/cli/src/services/playback/hls-manifest-materializer.ts
++++ b/apps/cli/src/services/playback/hls-manifest-materializer.ts
+@@ -6,6 +6,7 @@ import { createPrivateTempDir } from "@/infra/fs/temp-dir";
+ import { streamNeedsHlsRelay } from "@/infra/player/hls-relay";
+ import {
+   absolutizeHostRootHlsManifest,
++  blockedHlsManifestUriReason,
+   fetchGuardedStreamTarget,
+   isHlsPlaylistUrl,
+   shouldMaterializeHlsManifest,
+@@ -121,6 +122,16 @@ export async function materializeHlsManifestForPlayback(
+     clearTimeout(timeout);
+   }
+ 
++  // mpv fetches every URI the manifest names — segments, keys, maps — so a
++  // poisoned playlist is an SSRF/file-read primitive even when the file itself
++  // needs no rewrite. Checked on the already-fetched text, before the
++  // not-needed early return, so remote-played manifests are covered too.
++  const uriBlockReason = blockedHlsManifestUriReason(manifestText);
++  if (uriBlockReason !== null) {
++    onSkipped?.("blocked-target", `manifest embeds unsafe URI: ${uriBlockReason}`);
++    return null;
++  }
++
+   if (!shouldMaterializeHlsManifest(manifestUrl, manifestText)) {
+     onSkipped?.("not-needed");
+     return null;
+diff --git a/apps/cli/test/unit/infra/player/mpv-args-safety.test.ts b/apps/cli/test/unit/infra/player/mpv-args-safety.test.ts
+index fee9381e9..8746dacd5 100644
+--- a/apps/cli/test/unit/infra/player/mpv-args-safety.test.ts
++++ b/apps/cli/test/unit/infra/player/mpv-args-safety.test.ts
+@@ -1,8 +1,11 @@
+ import { describe, expect, test } from "bun:test";
++import { mkdtempSync, readFileSync, statSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
+ 
+ import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
+ import { isAllowedMpvUrl, isAllowedSubtitleTarget } from "@/infra/player/mpv-playback-url";
+-import { attachLateSubtitles, buildMpvArgs } from "@/mpv";
++import { attachLateSubtitles, buildMpvArgs, writeMpvSensitiveConf } from "@/mpv";
+ 
+ function createIpcSession(commands: unknown[][]): MpvIpcSession {
+   return {
+@@ -24,6 +27,10 @@ describe("mpv URL safety", () => {
+     expect(isAllowedMpvUrl("file:///tmp/movie.mp4", "local")).toBe(true);
+     expect(isAllowedMpvUrl("/tmp/movie.mp4", "remote")).toBe(false);
+     expect(isAllowedMpvUrl("/tmp/movie.mp4", "local")).toBe(true);
++    // "local" widens the scheme set to files; it is not a network-target
++    // exemption — an http(s) URL on a private literal stays blocked either way.
++    expect(isAllowedMpvUrl("https://169.254.169.254/latest/meta-data", "local")).toBe(false);
++    expect(isAllowedMpvUrl("http://127.0.0.1:8080/admin", "local")).toBe(false);
+   });
+ 
+   test("rejects unsafe media argv and terminates options before the URL", () => {
+@@ -68,6 +75,59 @@ describe("mpv URL safety", () => {
+     expect(args.some((arg) => /[\r\n]/.test(arg))).toBe(false);
+   });
+ 
++  test("sensitive options leave argv for an owner-only include file", async () => {
++    const dir = mkdtempSync(join(tmpdir(), "kunai-mpv-conf-test-"));
++    const endpoint = {
++      kind: "unix_socket" as const,
++      path: join(dir, "kunai-mpv-test.sock"),
++    };
++    const opts = {
++      url: "https://cdn.example/video.mp4",
++      headers: { Cookie: "CloudFront-Key-Pair-Id=K; CloudFront-Signature=S" },
++      subtitle: null,
++      displayTitle: "Credentialed stream",
++    };
++
++    const conf = await writeMpvSensitiveConf(opts, endpoint);
++    try {
++      expect(conf).not.toBeNull();
++      const args = buildMpvArgs(opts, null, {
++        sensitiveOptionsPath: conf?.path,
++      });
++
++      // argv carries only the include pointer — never the cookie.
++      expect(args).toContain(`--include=${conf?.path}`);
++      expect(args.some((arg) => arg.includes("CloudFront"))).toBe(false);
++      expect(args.some((arg) => arg.startsWith("--http-header-fields"))).toBe(false);
++
++      const body = readFileSync(conf?.path ?? "", "utf8");
++      expect(body).toContain("http-header-fields=");
++      expect(body).toContain("Cookie: CloudFront-Key-Pair-Id=K");
++      if (process.platform !== "win32") {
++        expect(statSync(conf?.path ?? "").mode & 0o777).toBe(0o600);
++      }
++    } finally {
++      await conf?.cleanup();
++    }
++    // Cleanup removed the file — the window where credentials exist on disk
++    // is bounded by mpv's startup parse, not by the whole playback session.
++    expect(() => statSync(join(dir, "kunai-mpv-test.sock.conf"))).toThrow();
++  });
++
++  test("sensitive options still ride argv when no conf path exists", () => {
++    const args = buildMpvArgs(
++      {
++        url: "https://cdn.example/video.mp4",
++        headers: { Cookie: "session=abc" },
++        subtitle: null,
++        displayTitle: "No conf",
++      },
++      null,
++    );
++    expect(args.some((arg) => arg.startsWith("--http-header-fields="))).toBe(true);
++    expect(args.some((arg) => arg.startsWith("--include="))).toBe(false);
++  });
++
+   test("disables tls-verify only for an mp4upload stream host (ani-cli parity)", () => {
+     const args = buildMpvArgs(
+       {
+diff --git a/apps/cli/test/unit/services/playback/deferred-media-materializer.test.ts b/apps/cli/test/unit/services/playback/deferred-media-materializer.test.ts
+index c80eba5d4..7742acb30 100644
+--- a/apps/cli/test/unit/services/playback/deferred-media-materializer.test.ts
++++ b/apps/cli/test/unit/services/playback/deferred-media-materializer.test.ts
+@@ -68,4 +68,27 @@ describe("deferred media materializer", () => {
+     await materialized.cleanup();
+     expect(existsSync(materialized.stream.url)).toBe(false);
+   });
++
++  test("refuses to write an MPD whose representation targets a private host", async () => {
++    const locator = registerAllMangaAkDeferredDescriptor({
++      duration: 120,
++      video: {
++        url: "http://169.254.169.254/latest/meta-data",
++        mimeType: "video/mp4",
++      },
++      audio: {
++        url: "https://ak-audio.example/audio.mp4?sig=test-audio",
++        mimeType: "audio/mp4",
++      },
++    });
++    const stream: StreamInfo = {
++      url: locator,
++      deferredLocator: locator,
++      headers: {},
++      title: "Ak Test",
++      timestamp: Date.now(),
++    };
++
++    await expect(materializeDeferredMediaForPlayback(stream)).rejects.toThrow("unsafe target");
++  });
+ });
+diff --git a/packages/providers/src/miruro/direct.ts b/packages/providers/src/miruro/direct.ts
+index b1aead3a1..d4cf6fde0 100644
+--- a/packages/providers/src/miruro/direct.ts
++++ b/packages/providers/src/miruro/direct.ts
+@@ -67,7 +67,9 @@ import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers
+ import { finalizeCycleSourceInventory } from "../shared/source-inventory";
+ import { selectReadyStream } from "../shared/startup-selection";
+ import {
++  blockedLiteralTargetReason,
+   isStreamReachabilityVerified,
++  resolvedAddressBlockReason,
+   type StreamReachabilityProbeResult,
+ } from "../shared/stream-reachability";
+ import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+@@ -1617,7 +1619,9 @@ function buildMiruroPipeHeaders(baseUrl: string, referer?: string) {
+ }
+ 
+ const MIRURO_CURL_STATUS_MARKER = "\n__KUNAI_CURL_STATUS__:";
+-const MIRURO_CURL_STATUS_WRITE_OUT = "\n__KUNAI_CURL_STATUS__:%{http_code}";
++// `%{redirect_url}` rides the trailer so redirect hops can be walked
++// in-process — `-L` would hand them to curl without per-hop validation.
++const MIRURO_CURL_STATUS_WRITE_OUT = "\n__KUNAI_CURL_STATUS__:%{http_code}\t%{redirect_url}";
+ /** Abort only when throughput collapses below this for `STALL_SECONDS`. */
+ const MIRURO_CURL_MIN_BYTES_PER_SECOND = 1024;
+ const MIRURO_CURL_STALL_SECONDS = 5;
+@@ -1634,7 +1638,12 @@ const MIRURO_CURL_CONNECT_SECONDS = 5;
+  * and the decoder then reported that transport failure as `pipe-xor-gunzip-failed`.
+  * A non-zero exit means the body is partial — refuse it.
+  */
+-type MiruroCurlResult = { readonly status: number; readonly text: string };
++type MiruroCurlResult = {
++  readonly status: number;
++  readonly text: string;
++  /** `Location` target on a 3xx response; absent when curl reported none. */
++  readonly redirectUrl?: string;
++};
+ 
+ export function interpretMiruroCurlResult(input: {
+   readonly exitCode: number;
+@@ -1650,15 +1659,15 @@ export function interpretMiruroCurlResult(input: {
+     throw new Error(input.stderr.trim() || "curl returned without an HTTP response");
+   }
+ 
+-  const status = Number.parseInt(
+-    input.stdout.slice(index + MIRURO_CURL_STATUS_MARKER.length).trim(),
+-    10,
+-  );
++  const trailer = input.stdout.slice(index + MIRURO_CURL_STATUS_MARKER.length).trim();
++  const tab = trailer.indexOf("\t");
++  const status = Number.parseInt(tab < 0 ? trailer : trailer.slice(0, tab), 10);
+   if (!Number.isFinite(status) || status <= 0) {
+     throw new Error(input.stderr.trim() || "curl returned without an HTTP status");
+   }
+ 
+-  return { status, text: input.stdout.slice(0, index) };
++  const redirectUrl = tab < 0 ? undefined : trailer.slice(tab + 1) || undefined;
++  return { status, text: input.stdout.slice(0, index), redirectUrl };
+ }
+ 
+ /**
+@@ -1762,24 +1771,76 @@ export async function fetchMiruroPipeBody(
+   }
+ 
+   const hasCurlHttp2 = await detectCurlHttp2Support(curl.path);
++  const result = await runMiruroCurlWithHopGuard({
++    curlPath: curl.path,
++    impersonates: curl.impersonates,
++    http2: hasCurlHttp2,
++    headers,
++    url,
++    signal,
++  });
++  return {
++    status: result.status,
++    text: result.text,
++    xObfuscated: isMiruroObfuscatedPipeBody(result.text, null) ? "2" : null,
++    cloudflareHtml: isCloudflareBlockBody(result.text),
++  };
++}
++
++/**
++ * The blocklist verdict for one miruro curl hop. The mirror URL itself comes
++ * from an upstream JSON payload, so every hop — including the first — is
++ * remote-controlled here: scheme, private-literal, and DNS checks all apply.
++ * (The shared transport exempts its first hop as caller intent; miruro's first
++ * hop is payload content, not caller intent.)
++ */
++async function miruroCurlTargetBlockReason(
++  target: string,
++  signal: AbortSignal | undefined,
++): Promise<string | null> {
++  let parsed: URL;
++  try {
++    parsed = new URL(target);
++  } catch {
++    return "unparseable target";
++  }
++  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
++    return `scheme ${parsed.protocol}`;
++  }
++  const literal = blockedLiteralTargetReason(target);
++  if (literal !== null) return literal;
++  if (signal?.aborted === true) return null;
++  return resolvedAddressBlockReason(target, signal);
++}
++
++const MIRURO_CURL_MAX_HOPS = 3;
++
++async function runMiruroCurlOnce(input: {
++  readonly curlPath: string;
++  readonly impersonates: boolean;
++  readonly http2: boolean;
++  readonly headers: Record<string, string>;
++  readonly target: string;
++  readonly signal?: AbortSignal;
++}): Promise<MiruroCurlResult> {
+   const args = [
+-    curl.path,
+-    ...curlCipherArgs(curl.impersonates),
++    input.curlPath,
++    // First argv only: curl reads ~/.curlrc unless -q/--disable leads the
++    // command line — a user config could inject proxy/cert flags here.
++    "-q",
++    ...curlCipherArgs(input.impersonates),
+     "-sS",
+-    ...(hasCurlHttp2 ? ["--http2"] : []),
+-    "-L",
+-    "--max-redirs",
+-    "3",
++    ...(input.http2 ? ["--http2"] : []),
+     "-A",
+-    headers["User-Agent"] ?? USER_AGENT,
++    input.headers["User-Agent"] ?? USER_AGENT,
+     "-H",
+-    `Accept: ${headers.Accept ?? "*/*"}`,
++    `Accept: ${input.headers.Accept ?? "*/*"}`,
+     "-H",
+-    `Accept-Language: ${headers["Accept-Language"] ?? "en-US,en;q=0.9"}`,
++    `Accept-Language: ${input.headers["Accept-Language"] ?? "en-US,en;q=0.9"}`,
+     "-H",
+-    `Referer: ${headers.Referer ?? MIRURO_REFERER}`,
++    `Referer: ${input.headers.Referer ?? MIRURO_REFERER}`,
+     "-H",
+-    `Origin: ${headers.Origin ?? "https://www.miruro.bz"}`,
++    `Origin: ${input.headers.Origin ?? "https://www.miruro.bz"}`,
+     "-H",
+     "sec-fetch-dest: empty",
+     "-H",
+@@ -1808,7 +1869,7 @@ export async function fetchMiruroPipeBody(
+     // an upstream JSON payload, so without this a value beginning with `-`
+     // would be read as curl flags rather than as the address to fetch.
+     "--",
+-    url,
++    input.target,
+   ];
+ 
+   const proc = Bun.spawn(args, {
+@@ -1824,28 +1885,61 @@ export async function fetchMiruroPipeBody(
+       // ignore
+     }
+   };
+-  signal?.addEventListener("abort", onAbort, { once: true });
++  input.signal?.addEventListener("abort", onAbort, { once: true });
+   try {
+     const raw = await new Response(proc.stdout).text();
+     const stderr = await new Response(proc.stderr).text();
+     const exit = await proc.exited;
+-    if (aborted || signal?.aborted) {
++    if (aborted || input.signal?.aborted) {
+       throw new Error("aborted");
+     }
+-    const { status, text } = interpretMiruroCurlResult({
++    return interpretMiruroCurlResult({
+       exitCode: exit,
+       stdout: raw,
+       stderr,
+     });
+-    return {
+-      status,
+-      text,
+-      xObfuscated: isMiruroObfuscatedPipeBody(text, null) ? "2" : null,
+-      cloudflareHtml: isCloudflareBlockBody(text),
+-    };
+   } finally {
+-    signal?.removeEventListener("abort", onAbort);
++    input.signal?.removeEventListener("abort", onAbort);
++  }
++}
++
++/**
++ * Redirect hops are walked in-process instead of `-L` so every target is
++ * re-validated before curl touches it — `-L` would hand the hop to curl
++ * unchecked and resend the miruro headers to whatever host it lands on.
++ */
++async function runMiruroCurlWithHopGuard(input: {
++  readonly curlPath: string;
++  readonly impersonates: boolean;
++  readonly http2: boolean;
++  readonly headers: Record<string, string>;
++  readonly url: string;
++  readonly signal?: AbortSignal;
++}): Promise<MiruroCurlResult> {
++  let target = input.url;
++  for (let hop = 0; hop <= MIRURO_CURL_MAX_HOPS; hop += 1) {
++    const blocked = await miruroCurlTargetBlockReason(target, input.signal);
++    if (blocked !== null) {
++      throw new ProviderHttpError({
++        message: `miruro curl refused unsafe target: ${blocked}`,
++        providerId: MIRURO_PROVIDER_ID,
++        stage: "fetch-curl",
++        code: "blocked",
++        retryable: false,
++      });
++    }
++    const result = await runMiruroCurlOnce({ ...input, target });
++    const redirectUrl = result.redirectUrl;
++    if (!redirectUrl || result.status < 300 || result.status >= 400) {
++      return result;
++    }
++    if (hop === MIRURO_CURL_MAX_HOPS) {
++      throw new Error(`miruro curl redirect chain exceeded ${MIRURO_CURL_MAX_HOPS} hops`);
++    }
++    // Location may be relative — resolve against the hop that produced it.
++    target = new URL(redirectUrl, target).href;
+   }
++  throw new Error("unreachable: miruro curl hop loop");
+ }
+ 
+ async function pipeCall(
+diff --git a/packages/providers/src/shared/hls-manifest.ts b/packages/providers/src/shared/hls-manifest.ts
+index d129dfbb1..5b4beabc9 100644
+--- a/packages/providers/src/shared/hls-manifest.ts
++++ b/packages/providers/src/shared/hls-manifest.ts
+@@ -1,6 +1,7 @@
+ // Pure URL helpers live in core so the CLI mpv relay (infra) can use them too;
+ // re-exported here to keep existing @kunai/providers consumers working.
+ import { isHlsPlaylistUrl, resolveHlsSegmentUrl } from "@kunai/core";
++import { blockedLiteralTargetReason } from "@kunai/types";
+ 
+ export { isHlsPlaylistUrl, resolveHlsSegmentUrl };
+ 
+@@ -103,3 +104,52 @@ export function shouldMaterializeHlsManifest(manifestUrl: string, manifestText:
+   if (!manifestUsesHostRootSegmentPaths(manifestText)) return false;
+   return manifestText.length > FFMPEG_HLS_PARTIAL_READ_BYTES || isKnownHostRootHlsCdn(manifestUrl);
+ }
++
++/** Schemes embedded URIs may carry; everything else is a fetch primitive on hosts we never vetted. */
++const EMBEDDED_URI_ALLOWED_SCHEMES = new Set(["http:", "https:", "data:"]);
++const URI_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
++const URI_ATTRIBUTE_PATTERN = /URI="([^"]+)"/g;
++
++/**
++ * Every URI a fetched manifest tells the player to request — media-segment
++ * lines plus the URI= attributes on #EXT-X-KEY/MAP/MEDIA/I-FRAME-STREAM-INF
++ * tags. mpv fetches these itself at play time, so a poisoned manifest is an
++ * SSRF/file-read primitive regardless of whether we materialize the file.
++ *
++ * Returns the first block reason, or null when every URI is relative
++ * (inherits the already-guarded manifest origin), a public http(s) literal,
++ * or a self-contained `data:` URI (init-segment inlining, the reason ffmpeg's
++ * protocol whitelist carries it).
++ */
++export function blockedHlsManifestUriReason(manifestText: string): string | null {
++  for (const line of manifestText.split(/\r?\n/)) {
++    const trimmed = line.trim();
++    if (!trimmed) continue;
++    if (trimmed.startsWith("#")) {
++      for (const match of trimmed.matchAll(URI_ATTRIBUTE_PATTERN)) {
++        const uri = match[1];
++        if (uri === undefined) continue;
++        const reason = embeddedHlsUriBlockReason(uri);
++        if (reason !== null) return reason;
++      }
++      continue;
++    }
++    const reason = embeddedHlsUriBlockReason(trimmed);
++    if (reason !== null) return reason;
++  }
++  return null;
++}
++
++function embeddedHlsUriBlockReason(uri: string): string | null {
++  if (uri.startsWith("//")) {
++    // Scheme-relative inherits the manifest's https — the host itself is new.
++    return blockedLiteralTargetReason(`https:${uri}`);
++  }
++  if (!URI_SCHEME_PATTERN.test(uri)) return null;
++  const scheme = uri.slice(0, uri.indexOf(":") + 1).toLowerCase();
++  if (!EMBEDDED_URI_ALLOWED_SCHEMES.has(scheme)) {
++    return `embedded URI scheme ${scheme}`;
++  }
++  if (scheme === "data:") return null;
++  return blockedLiteralTargetReason(uri);
++}
+diff --git a/packages/providers/src/shared/provider-http-transport.ts b/packages/providers/src/shared/provider-http-transport.ts
+index 59cdc1857..f146e3f43 100644
+--- a/packages/providers/src/shared/provider-http-transport.ts
++++ b/packages/providers/src/shared/provider-http-transport.ts
+@@ -705,6 +705,10 @@ export async function providerFetchText(
+     }
+     const args = [
+       curl.path,
++      // First argv only: curl reads ~/.curlrc unless -q/--disable leads the
++      // command line — a user config could inject proxy/cert flags into
++      // provider fetches. hls-relay.ts documents the same contract.
++      "-q",
+       "-s",
+       "-A",
+       policy.userAgent,
+diff --git a/packages/providers/src/youtube/yt-dlp-metadata.ts b/packages/providers/src/youtube/yt-dlp-metadata.ts
+index dbe325723..5be20adc9 100644
+--- a/packages/providers/src/youtube/yt-dlp-metadata.ts
++++ b/packages/providers/src/youtube/yt-dlp-metadata.ts
+@@ -56,6 +56,8 @@ export async function extractYtDlpVideoInfo(
+     "--no-warnings",
+     "--no-playlist",
+     ...buildYoutubeYtdlCliArgs(options),
++    // Operand boundary: a watch URL beginning with `-` must not parse as flags.
++    "--",
+   ];
+   args.push(watchUrl);
+ 
+diff --git a/packages/providers/test/curl-argv-terminator.test.ts b/packages/providers/test/curl-argv-terminator.test.ts
+index fcebb90e0..2a0f16a06 100644
+--- a/packages/providers/test/curl-argv-terminator.test.ts
++++ b/packages/providers/test/curl-argv-terminator.test.ts
+@@ -13,7 +13,7 @@ const CURL_ARGV_SITES = [
+   // The shared transport assembles the argv for every provider that delegates
+   // to it (hianime, animekai, anidb, animegg); miruro still builds its own.
+   { file: "src/shared/provider-http-transport.ts", url: "curlTarget" },
+-  { file: "src/miruro/direct.ts", url: "url" },
++  { file: "src/miruro/direct.ts", url: "input.target" },
+ ] as const;
+ 
+ for (const site of CURL_ARGV_SITES) {
+diff --git a/packages/providers/test/hls-manifest.test.ts b/packages/providers/test/hls-manifest.test.ts
+index f7ab8f7c1..df59d09c3 100644
+--- a/packages/providers/test/hls-manifest.test.ts
++++ b/packages/providers/test/hls-manifest.test.ts
+@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
+ 
+ import {
+   absolutizeHostRootHlsManifest,
++  blockedHlsManifestUriReason,
+   isHlsMasterPlaylist,
+   manifestUsesHostRootSegmentPaths,
+   parseFirstHlsMediaSegmentPath,
+@@ -73,4 +74,54 @@ describe("hls-manifest helpers", () => {
+       shouldMaterializeHlsManifest("https://light.goldweather.net/token/index.m3u8", relativeOnly),
+     ).toBe(false);
+   });
++
++  describe("blockedHlsManifestUriReason", () => {
++    test("accepts relative segments, public hosts, and inline data init maps", () => {
++      const manifest = [
++        "#EXTM3U",
++        '#EXT-X-MAP:URI="init-v1.mp4"',
++        '#EXT-X-MAP:URI="data:video/mp4;base64,AAAA"',
++        "#EXTINF:4,",
++        "720/seg-1.ts",
++        "/mirror/seg-2.ts",
++        "https://media.cdn.example/seg-3.ts",
++      ].join("\n");
++      expect(blockedHlsManifestUriReason(manifest)).toBeNull();
++    });
++
++    test("rejects a file:// segment line", () => {
++      const manifest = ["#EXTM3U", "#EXTINF:4,", "file:///etc/passwd"].join("\n");
++      expect(blockedHlsManifestUriReason(manifest)).toContain("scheme");
++    });
++
++    test("rejects a private-literal segment host", () => {
++      const manifest = ["#EXTM3U", "#EXTINF:4,", "http://169.254.169.254/latest/meta-data"].join(
++        "\n",
++      );
++      expect(blockedHlsManifestUriReason(manifest)).toContain("169.254.169.254");
++    });
++
++    test("rejects a scheme-relative private host", () => {
++      const manifest = ["#EXTM3U", "#EXTINF:4,", "//127.0.0.1/seg.ts"].join("\n");
++      expect(blockedHlsManifestUriReason(manifest)).toContain("127.0.0.1");
++    });
++
++    test("rejects a non-http key URI attribute", () => {
++      const manifest = [
++        "#EXTM3U",
++        '#EXT-X-KEY:METHOD=AES-128,URI="file:///etc/kunai-data.sqlite"',
++        "#EXTINF:4,",
++        "seg-1.ts",
++      ].join("\n");
++      expect(blockedHlsManifestUriReason(manifest)).toContain("scheme file:");
++    });
++
++    test("rejects a private-literal URI attribute on a media tag", () => {
++      const manifest = [
++        "#EXTM3U",
++        '#EXT-X-MEDIA:TYPE=AUDIO,URI="https://10.0.0.5/audio.m3u8",GROUP-ID="a"',
++      ].join("\n");
++      expect(blockedHlsManifestUriReason(manifest)).toContain("10.0.0.5");
++    });
++  });
+ });
+diff --git a/packages/providers/test/miruro-direct.test.ts b/packages/providers/test/miruro-direct.test.ts
+index 45b363af7..d03f1fcf0 100644
+--- a/packages/providers/test/miruro-direct.test.ts
++++ b/packages/providers/test/miruro-direct.test.ts
+@@ -588,6 +588,18 @@ describe("interpretMiruroCurlResult", () => {
+       interpretMiruroCurlResult({ exitCode: 0, stdout: `body${marker}0`, stderr: "" }),
+     ).toThrow();
+   });
++
++  test("reads the redirect target off the trailer for the in-process hop walk", () => {
++    const result = interpretMiruroCurlResult({
++      exitCode: 0,
++      stdout: `<html>redirect</html>${marker}301\thttps://cdn2.example/pipe`,
++      stderr: "",
++    });
++
++    expect(result.status).toBe(301);
++    expect(result.text).toBe("<html>redirect</html>");
++    expect(result.redirectUrl).toBe("https://cdn2.example/pipe");
++  });
+ });
+ 
+ describe("miruro audio fallback detection", () => {

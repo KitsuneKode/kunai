@@ -1,0 +1,20 @@
+ Tasks:    15 successful, 15 total
+Cached:    1 cached, 15 total
+  Time:    10.067s 
+ Tasks:    10 successful, 10 total
+Cached:    1 cached, 10 total
+  Time:    14.364s 
+✓ host binary verified (linux-x64 → kunai-linux-x64)
+ Tasks:    9 successful, 9 total
+Cached:    0 cached, 9 total
+  Time:    32.623s 
+✓ release assets verified (2 archive/raw target pairs + 2 manifests, partial)
+ Tasks:    10 successful, 10 total
+Cached:    0 cached, 10 total
+  Time:    18.271s 
+ 13 pass
+ 1 skip
+ 0 fail
+(pass) agent driver · real mpv tier > plays generated media through the real CLI (mpv IPC + history row) [10252.40ms]
+ 10 pass
+ 0 fail

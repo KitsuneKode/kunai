@@ -1,0 +1,31 @@
+{
+  "meaning": "process start to successful --help exit; warm filesystem; not TUI first paint or provider latency",
+  "samples": {
+    "compiled_help": {
+      "milliseconds": [
+        184.65,
+        92.59,
+        89.72,
+        90.0,
+        104.38,
+        89.57,
+        92.96
+      ],
+      "median_ms": 92.59,
+      "max_ms": 184.65
+    },
+    "source_help": {
+      "milliseconds": [
+        141.0,
+        120.56,
+        121.07,
+        119.73,
+        114.37,
+        116.46,
+        120.4
+      ],
+      "median_ms": 120.4,
+      "max_ms": 141.0
+    }
+  }
+}

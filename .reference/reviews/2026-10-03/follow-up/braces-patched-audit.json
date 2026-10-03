@@ -1,0 +1,1 @@
+{"braces":[{"id":1240992,"url":"https://github.com/advisories/GHSA-vfj7-8cjw-p6xm","title":"braces vulnerable to stack-exhaustion denial of service through deeply nested patterns","severity":"high","vulnerable_versions":"<=3.0.3","cwe":["CWE-674"],"cvss":{"score":7.5,"vectorString":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"}}]}

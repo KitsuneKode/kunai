@@ -1,0 +1,48 @@
+{
+  "term_only_control": {
+    "term_handler_ran": true,
+    "returncode": 0
+  },
+  "adjacent_term_kill": [
+    {
+      "term_handler_ran": false,
+      "returncode": -9
+    },
+    {
+      "term_handler_ran": false,
+      "returncode": -9
+    },
+    {
+      "term_handler_ran": false,
+      "returncode": -9
+    },
+    {
+      "term_handler_ran": false,
+      "returncode": -9
+    },
+    {
+      "term_handler_ran": false,
+      "returncode": -9
+    },
+    {
+      "term_handler_ran": false,
+      "returncode": -9
+    },
+    {
+      "term_handler_ran": false,
+      "returncode": -9
+    },
+    {
+      "term_handler_ran": false,
+      "returncode": -9
+    },
+    {
+      "term_handler_ran": false,
+      "returncode": -9
+    },
+    {
+      "term_handler_ran": false,
+      "returncode": -9
+    }
+  ]
+}
