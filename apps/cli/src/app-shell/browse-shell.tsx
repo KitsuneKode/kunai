@@ -1675,11 +1675,13 @@ export function BrowseShell<T>({
             message="Resize terminal to browse results"
           />
         ) : activeOverlay ? (
-          <OverlayPanel
-            overlay={activeOverlay}
-            width={innerWidth}
-            searchReady={searchState === "ready"}
-          />
+          <Box flexDirection="column" flexGrow={1} overflowY="hidden">
+            <OverlayPanel
+              overlay={activeOverlay}
+              width={innerWidth}
+              searchReady={searchState === "ready"}
+            />
+          </Box>
         ) : calendarRoutePending ? (
           <Box marginTop={2} flexGrow={1} flexDirection="column">
             <SakuraLoader

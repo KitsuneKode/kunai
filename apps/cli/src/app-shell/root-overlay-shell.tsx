@@ -2328,11 +2328,13 @@ export function RootOverlayShell({
               ]
         }
       />
-      <OverlayPanel
-        overlay={overlayPanel}
-        width={overlayLayout.contentColumns}
-        maxLinesOverride={maxLines}
-      />
+      <Box flexDirection="column" flexGrow={1} overflowY="hidden">
+        <OverlayPanel
+          overlay={overlayPanel}
+          width={overlayLayout.contentColumns}
+          maxLinesOverride={maxLines}
+        />
+      </Box>
 
       {commandMode ? (
         <CommandPalette
