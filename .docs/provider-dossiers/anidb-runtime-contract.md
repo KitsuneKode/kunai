@@ -1,13 +1,13 @@
 ---
 status: current
-lastReviewed: "2026-10-16"
+lastReviewed: "2026-10-03"
 ---
 
 # Provider: AniDB — runtime contract
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
-**Live check (2026-10-16):** `anidb.app` answers 503 "Under Maintenance" on every
+**Live check (2026-10-03):** `anidb.app` answers 503 "Under Maintenance" on every
 route (Cloudflare-fronted, origin-down HTML page — not a WAF challenge), and
 `hls.anidb.app` 503s identically. The documented outage state persists; the
 status-propagates behavior below is what keeps it honest. Nothing code-side to

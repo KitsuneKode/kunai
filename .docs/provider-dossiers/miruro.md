@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-16"
+lastReviewed: "2026-10-03"
 ---
 
 # Provider: Miruro
@@ -11,12 +11,12 @@ lastReviewed: "2026-10-16"
 
 - **Runtime class:** Direct HTTP catalog API (`/api/v1/*`) by AniList ID, with browser harvest as research tooling.
 - **Production module:** `packages/providers/src/miruro/*` (`catalog.ts` is the API client).
-- **Current status (2026-10-16):** **default anime provider.** Searches and resolves
+- **Current status (2026-10-03):** **default anime provider.** Searches and resolves
   through the catalog API — the `/api/secure/pipe` transport is gone upstream and its
-  client machinery is deleted. See the 2026-10-16 section. The older sections below
+  client machinery is deleted. See the 2026-10-03 section. The older sections below
   are history and say otherwise.
 
-## Production status (2026-10-16) — catalog API migration
+## Production status (2026-10-03) — catalog API migration
 
 Upstream removed `/api/secure/pipe` entirely — every live mirror answers it with an
 SPA 404 page, not an API response. The site now runs on a catalog REST API at

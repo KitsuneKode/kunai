@@ -215,6 +215,36 @@ describe("miruro catalog requests", () => {
     expect(anime?.id).toBe(CATALOG_ID);
     expect(requests.filter((request) => request.url.includes("/api/v1/anime")).length).toBe(2);
   });
+
+  test("a wrong-shaped 200 fails the mirror instead of degrading to empty", async () => {
+    /* `{"data": "nope"}` is markup drift or a captive portal, not an empty
+     * catalog — the mirror must not be recorded healthy for it, and the walk
+     * moves on. */
+    let apiCalls = 0;
+    const { context, requests } = contextWithFetch((url) => {
+      if (url.pathname === "/api/v1/anime") {
+        apiCalls += 1;
+        if (apiCalls === 1) return catalogResponse({ data: "not-an-array" });
+      }
+      return catalogResponse({ data: [{ id: CATALOG_ID, external_ids: { anilist: ["21"] } }] });
+    });
+    mirrorsTesting.reset();
+    const anime = await lookupMiruroAnimeByAnilist(context, "21");
+    mirrorsTesting.reset();
+
+    expect(anime?.id).toBe(CATALOG_ID);
+    expect(requests.filter((request) => request.url.includes("/api/v1/anime")).length).toBe(2);
+  });
+
+  test("every mirror wrong-shaped surfaces the shape error, not empty results", async () => {
+    const { context } = contextWithFetch((url) => {
+      if (url.pathname === "/api/v1/anime") return catalogResponse({ data: { items: [] } });
+      return catalogResponse({ data: [] });
+    });
+    mirrorsTesting.reset();
+    await expect(lookupMiruroAnimeByAnilist(context, "21")).rejects.toThrow(/malformed/);
+    mirrorsTesting.reset();
+  });
 });
 
 describe("mapMiruroCatalogAnime", () => {

@@ -130,6 +130,20 @@ async function fetchCatalogOnce(
 }
 
 /**
+ * Present-but-wrong-shaped fields reject the mirror; intentionally missing or
+ * `null` fields keep their reader-side fallbacks. A 200 whose `data` is a
+ * string is a markup drift or a captive-portal answer, not an empty catalog.
+ */
+function catalogRecordWithArrayFields(...keys: readonly string[]) {
+  return (value: unknown): boolean =>
+    isRecord(value) &&
+    keys.every((key) => {
+      const field = value[key];
+      return field === undefined || field === null || Array.isArray(field);
+    });
+}
+
+/**
  * Walk the mirror list for one catalog call. Mirrors still differ in
  * reachability per network (`.to` was TLS-dead while `.bz`/`.ru`/`.tv`
  * answered on 2026-10-03), so the order/status-page machinery in
@@ -142,6 +156,12 @@ export async function fetchMiruroCatalog(
     readonly query?: Record<string, string>;
     readonly refererPath?: string;
     readonly signal?: AbortSignal;
+    /**
+     * Minimal response contract for the endpoint. Checked before the mirror is
+     * recorded healthy so a wrong-shaped 200 still walks to the next mirror
+     * instead of silently degrading to empty results downstream.
+     */
+    readonly responseContract?: (value: unknown) => boolean;
   } = {},
 ): Promise<unknown> {
   const baseUrls = miruroBaseUrls({
@@ -159,6 +179,11 @@ export async function fetchMiruroCatalog(
         context,
         options.signal ?? context.signal,
       );
+      if (options.responseContract && !options.responseContract(result)) {
+        throw new Error(
+          `${baseUrl} answered 200 with a malformed ${path} body — treating the mirror as failed`,
+        );
+      }
       recordMiruroMirrorSuccess(baseUrl);
       return result;
     } catch (error) {
@@ -312,6 +337,7 @@ export async function searchMiruroCatalog(
     query: { q: query, limit: String(MIRURO_CATALOG_SEARCH_LIMIT), sort: "-popularity" },
     refererPath: "/search?sort=POPULARITY_DESC",
     signal,
+    responseContract: catalogRecordWithArrayFields("data"),
   });
   return readListResponse(value).data ?? [];
 }
@@ -328,6 +354,7 @@ export async function lookupMiruroAnimeByAnilist(
   const value = await fetchMiruroCatalog(context, "/v1/anime", {
     query: { anilist_id_in: anilistId, limit: String(MIRURO_CATALOG_LOOKUP_LIMIT) },
     signal,
+    responseContract: catalogRecordWithArrayFields("data"),
   });
   return readListResponse(value).data?.[0] ?? null;
 }
@@ -345,6 +372,7 @@ export async function listMiruroCatalogEpisodes(
       query: { kind: options.kind ?? "regular", limit: String(MIRURO_CATALOG_EPISODES_LIMIT) },
       refererPath: "/watch",
       signal: options.signal,
+      responseContract: catalogRecordWithArrayFields("data"),
     },
   );
   // SAFETY: isRecord proved an object; `data` is read defensively next.
@@ -362,7 +390,11 @@ export async function fetchMiruroPlay(
   const value = await fetchMiruroCatalog(
     context,
     `/v1/anime/${encodeURIComponent(catalogId)}/episodes/${encodeURIComponent(String(episodeNumber))}/play`,
-    { refererPath: "/watch", signal },
+    {
+      refererPath: "/watch",
+      signal,
+      responseContract: catalogRecordWithArrayFields("tracks", "skip_times"),
+    },
   );
   // SAFETY: isRecord proved an object; callers read play fields defensively.
   return isRecord(value) ? (value as MiruroCatalogPlayResponse) : {};
