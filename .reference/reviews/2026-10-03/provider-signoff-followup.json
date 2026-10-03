@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-03T11:19:26.294Z",
+  "commitSha": "6dd035443a52f75bfa332c10b556371b55e0248c",
+  "version": "0.3.0",
+  "routes": [
+    {
+      "lane": "movie",
+      "configuredProvider": "vidlink",
+      "successfulProvider": null,
+      "resolved": false,
+      "streamCandidates": 0,
+      "streamReachable": null,
+      "failureClass": "provider-drift",
+      "durationMs": 1439
+    },
+    {
+      "lane": "series",
+      "configuredProvider": "vidlink",
+      "successfulProvider": "vidlink",
+      "resolved": true,
+      "streamCandidates": 1,
+      "streamReachable": true,
+      "failureClass": null,
+      "durationMs": 1042
+    },
+    {
+      "lane": "anime",
+      "configuredProvider": "hianime",
+      "successfulProvider": "hianime",
+      "resolved": true,
+      "streamCandidates": 1,
+      "streamReachable": true,
+      "failureClass": null,
+      "durationMs": 3744
+    }
+  ]
+}
