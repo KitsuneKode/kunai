@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-01"
+lastReviewed: "2026-10-16"
 ---
 
 # Provider: AniDB — runtime contract
