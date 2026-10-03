@@ -346,16 +346,14 @@ export const hianimeProviderModule: CoreProviderModule = {
       return null;
     }
     if (catalog.length === 0) return [];
-    return catalog.map(
-      (entry): ProviderEpisodeOption => ({
-        index: entry.number,
-        label: formatAnimeEpisodeLabel(entry.number, entry.title),
-        ...(entry.title && { name: entry.title }),
-        detail: `Episode ${entry.number}`,
-        totalEpisodeCount: catalog.length,
-        providerEpisodeIdentity: { providerId: HIANIME_PROVIDER_ID, value: entry.episodeId },
-      }),
-    );
+    return catalog.map((entry): ProviderEpisodeOption => ({
+      index: entry.number,
+      label: formatAnimeEpisodeLabel(entry.number, entry.title),
+      ...(entry.title && { name: entry.title }),
+      detail: `Episode ${entry.number}`,
+      totalEpisodeCount: catalog.length,
+      providerEpisodeIdentity: { providerId: HIANIME_PROVIDER_ID, value: entry.episodeId },
+    }));
   },
 
   async resolve(input, context) {

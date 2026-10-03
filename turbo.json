@@ -1,16 +1,18 @@
 {
   "$schema": "https://v2-10-0.turborepo.dev/schema.json",
+  // Generated build metadata can contain checkout paths; local artifacts must
+  // stay with their worktree. Remote cache configuration is independent.
+  "cacheDir": ".turbo/cache",
   // Lockfile + root manifest are inputs to every task hash. Without this a
   // dependency-only change (bun install after a catalog bump, no package file
   // touched) replays a cached `build` that still embeds the old versions —
   // same stale-green class as hazard #2, and release jobs use turbo cache.
-  "globalDependencies": ["bun.lock", "package.json"],
+  "globalDependencies": ["bun.lock", "package.json", "patches/*.patch"],
   "tasks": {
     "transit": {
       "dependsOn": ["^transit"]
     },
     "typecheck": {
-      "cache": false,
       "dependsOn": ["transit"],
       // The one blocking-chain task that was cacheable: a green typecheck
       // could be a .turbo/TURBO_TOKEN replay instead of a run (AGENTS.md

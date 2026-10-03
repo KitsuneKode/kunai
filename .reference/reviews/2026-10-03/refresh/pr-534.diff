@@ -1,0 +1,1579 @@
+diff --git a/apps/docs/app/styles/fox.css b/apps/docs/app/styles/fox.css
+index e88bdc932..16ee905a0 100644
+--- a/apps/docs/app/styles/fox.css
++++ b/apps/docs/app/styles/fox.css
+@@ -117,7 +117,7 @@
+   margin: 0.2rem 0 0;
+   color: var(--kunai-text);
+   font-size: 1.05rem;
+-  font-weight: 600;
++  font-weight: var(--kunai-weight-semibold);
+   letter-spacing: -0.02em;
+   text-wrap: balance;
+ }
+@@ -129,20 +129,6 @@
+   line-height: 1.5;
+ }
+ 
+-.kunai-hero-fox {
+-  display: flex;
+-  justify-content: flex-start;
+-  margin-bottom: 0.75rem;
+-}
+-
+-.kunai-flow-card {
+-  position: relative;
+-}
+-
+-.kunai-flow-card .kunai-fox {
+-  margin-left: auto;
+-}
+-
+ .kunai-final-fox {
+   flex: none;
+ }
+@@ -153,37 +139,45 @@
+    JavaScript. `transform-origin` sits low so she pivots on her feet rather than
+    swinging around her middle. */
+ 
++/* The nav mark is hovered many times a day, so it gets a small, quick answer on a plain
++   ease-out. It used to overshoot (scale 1.16 on a bounce curve, 320ms), which is fine for
++   a one-off perk and tiring on something you pass over constantly. Hover is gated to
++   devices that can hover; keyboard focus is not, because focus is not a stuck hover. */
+ .kunai-nav-title .kunai-fox,
+ .kunai-sidebar-banner .kunai-fox {
+-  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
++  transition: transform 160ms var(--ease-out);
+   transform-origin: 50% 88%;
+ }
+ 
+-.kunai-nav-title:hover .kunai-fox,
+-a:hover .kunai-nav-title .kunai-fox,
+ a:focus-visible .kunai-nav-title .kunai-fox {
+-  transform: scale(1.16) rotate(-6deg);
++  transform: scale(1.06) rotate(-3deg);
+ }
+ 
+-.kunai-sidebar-banner:hover .kunai-fox {
+-  transform: scale(1.14) rotate(-5deg);
++@media (hover: hover) and (pointer: fine) {
++  .kunai-nav-title:hover .kunai-fox,
++  a:hover .kunai-nav-title .kunai-fox,
++  .kunai-sidebar-banner:hover .kunai-fox {
++    transform: scale(1.06) rotate(-3deg);
++  }
+ }
+ 
+ /* The larger marks already breathe. One element cannot hold two animations of
+    `transform`, so hovering swaps the loop for a one-shot perk that settles and
+    holds — rather than the two fighting and neither reading. */
+-.kunai-flow-card:hover .kunai-fox--animated,
+-.kunai-fox-banner:hover .kunai-fox--animated {
+-  animation: kunai-fox-perk 340ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
++@media (hover: hover) and (pointer: fine) {
++  .kunai-fox-banner:hover .kunai-fox--animated {
++    animation: kunai-fox-perk 340ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
++  }
+ }
+ 
+ /* Same trap as the breathe loop: the perk keyframes drive `transform`, so a
+    mirrored pose that hovers would drop its `scaleX(-1)` and flip to face the
+    wrong way mid-animation. The flip has to live inside every keyframe set that
+    touches transform, not alongside them. */
+-.kunai-flow-card:hover .kunai-fox--mirrored.kunai-fox--animated,
+-.kunai-fox-banner:hover .kunai-fox--mirrored.kunai-fox--animated {
+-  animation-name: kunai-fox-perk-mirrored;
++@media (hover: hover) and (pointer: fine) {
++  .kunai-fox-banner:hover .kunai-fox--mirrored.kunai-fox--animated {
++    animation-name: kunai-fox-perk-mirrored;
++  }
+ }
+ 
+ @keyframes kunai-fox-perk {
+@@ -225,7 +219,6 @@ a:focus-visible .kunai-nav-title .kunai-fox {
+ @media (prefers-reduced-motion: reduce) {
+   .kunai-fox--animated,
+   .kunai-fox--rewarded,
+-  .kunai-flow-card:hover .kunai-fox--animated,
+   .kunai-fox-banner:hover .kunai-fox--animated {
+     animation: none;
+   }
+@@ -253,6 +246,61 @@ a:focus-visible .kunai-nav-title .kunai-fox {
+   }
+ }
+ 
++/* ── Hero perch ─────────────────────────────────────────────────────────────
++   She sits on the top edge of the terminal window. The plane is the positioning
++   context; her feet are drawn near the bottom of the still, so `bottom: 100%`
++   with a small sink puts them on the frame instead of above it. Pointer events
++   pass through: the live fox reads the pointer from `window`, and a mascot that
++   eats clicks over the window chrome is in the way. */
++
++.kunai-hero-terminal-wrap {
++  position: relative;
++  /* Headroom for the fox, so she is never clipped by the page chrome above. */
++  padding-top: 5.25rem;
++}
++
++.kunai-hero-perch {
++  position: absolute;
++  right: clamp(1rem, 4%, 2.25rem);
++  /* Her feet are drawn a little above the bottom of the still, so a small
++     sink puts them on the ledge rather than hovering over it. */
++  top: calc(5.25rem - 104px + 0.55rem);
++  z-index: 2;
++  pointer-events: none;
++}
++
++@media (max-width: 639.98px) {
++  /* A smaller fox on a phone, where the window is narrow and she would
++     otherwise cover the title bar. */
++  .kunai-hero-perch {
++    right: 0.75rem;
++    scale: 0.78;
++    transform-origin: 100% 100%;
++  }
++}
++
++/* ── Footer patrol ──────────────────────────────────────────────────────────
++   A zero-height lane along the top border of the footer. The fox's feet sit on
++   the border line. She is positioned from JavaScript each frame, so nothing
++   here may transition `transform`. */
++
++.kunai-footer-patrol {
++  position: absolute;
++  top: 0;
++  right: 0;
++  left: 0;
++  height: 0;
++  pointer-events: none;
++}
++
++.kunai-footer-patrol__fox {
++  position: absolute;
++  bottom: -3px;
++  left: 0;
++  /* `will-change` is set from the component only while she is walking and on screen:
++     declared here it would hold a compositor layer on every page forever. */
++}
++
+ /* ── Roamer ─────────────────────────────────────────────────────────────────
+    Kanna loose on the page. Fixed and transformed every frame from a ref, so
+    moving her never queues a React render. Pointer events pass straight through
+@@ -291,20 +339,46 @@ a:focus-visible .kunai-nav-title .kunai-fox {
+   transform: scale(1.08);
+ }
+ 
+-/* The walk bob is driven by the step flag the movement clock flips, not by a
+-   free-running loop — so her footfalls land exactly when she actually moves,
+-   and she is perfectly still the moment she stops. A loop here would keep
+-   bouncing a stationary fox. */
++/* While she walks, the legs are the animation: `KunaiFoxWalker` is posed every
++   frame from the distance she has covered, so her footfalls land exactly when
++   she actually moves and she is perfectly still the moment she stops. Nothing
++   here may add motion of its own, and the hover lift is off so the pose is the
++   only thing moving the drawing. */
+ .kunai-roamer__fox.is-walking {
+-  transition: transform 90ms linear;
++  transition: none;
++}
++
++.kunai-roamer__fox.is-walking:hover {
++  transform: none;
+ }
+ 
+-.kunai-roamer[data-step="a"] .kunai-roamer__fox.is-walking {
+-  transform: translateY(-3px) rotate(-1.5deg);
++/* Walking and resting are different drawings. A short fade from the one that
++   was just mounted hides the hand-off, which would otherwise show as a single
++   frame where the art style changes. */
++.kunai-roamer__fox > img,
++.kunai-roamer__fox > .kunai-fox-walker {
++  animation: kunai-fox-handoff 140ms var(--ease-out) both;
+ }
+ 
+-.kunai-roamer[data-step="b"] .kunai-roamer__fox.is-walking {
+-  transform: translateY(0) rotate(1.5deg);
++@keyframes kunai-fox-handoff {
++  from {
++    opacity: 0.55;
++  }
++  to {
++    opacity: 1;
++  }
++}
++
++/* Facing left is a flip of the one drawing, and it is instant. Easing it would sweep
++   her through zero width (a paper-thin fox for a few frames); the roaming fox already
++   slows on a change of heading, which is what makes a turn read as a turn. */
++.kunai-fox-walker {
++  display: block;
++  overflow: visible;
++}
++
++.kunai-fox-walker[data-facing="left"] {
++  transform: scaleX(-1);
+ }
+ 
+ .kunai-roamer__fox.is-sitting {
+diff --git a/apps/docs/components/brand/README.md b/apps/docs/components/brand/README.md
+index 32bf301f6..249e260c1 100644
+--- a/apps/docs/components/brand/README.md
++++ b/apps/docs/components/brand/README.md
+@@ -20,3 +20,36 @@ unicode glyph.
+ Stills are cut to alpha and quantized by the export script. They must never be shipped as the opaque
+ masters: those carry a solid `#1c1620` plate that shows as a lighter box on the hero and a dark box
+ over a light terminal background.
++
++## Walking
++
++A still can bob but it cannot swing a leg, so whenever she is travelling she is drawn as vector parts
++instead (`kunai-fox-walker.tsx`): the same palette and proportions as the `go` still, rebuilt with a hip
++and a knee on each leg, a tail that sways from its root, and ears that trail the head. Resting poses
++(sitting, napping) stay raster; the roamer cross-fades between the two over 140ms so the hand-off does
++not show as a change of art style.
++
++| file                                    | owns                                                                          |
++| --------------------------------------- | ----------------------------------------------------------------------------- |
++| `lib/fox-gait.ts`                       | pure: stride phase to joint angles, the standing pose, blending between poses |
++| `components/brand/kunai-fox-walker.tsx` | the drawing, and the rig that hangs a pose on it every frame                  |
++| `lib/patrol-machine.ts`                 | pure: where she goes when nothing is steering her (the footer)                |
++| `lib/roamer-machine.ts`                 | pure: where she goes when she is following the pointer                        |
++
++- The stride advances by **distance travelled** (`advancePhase`), never by a timer, so her feet keep pace
++  with her speed and stop on the frame she does.
++- The rig writes `transform` attributes directly; a pose is never React state, because it changes every
++  animation frame.
++- She walks in three places: following the pointer (`kunai-fox-roamer.tsx`, fine pointers only), along the
++  home timeline as the section scrolls (`home-flow-timeline.tsx`), and pacing the footer
++  (`kunai-fox-patrol.tsx`, only while the footer is on screen and the tab is visible).
++- Under `prefers-reduced-motion` she never walks: the roamer is not rendered, the timeline fox stands at the
++  last step, and the footer fox stands still.
++- The drawing faces right. Facing left is `data-facing="left"` flipped in CSS, not a second drawing.
++- She leans into her path. `withHeading` tilts the torso nose-up on a climb and nose-down on a descent
++  (capped at 52 degrees), the head leads a little further, and on a steep climb the front paws reach and
++  the hind legs drive. The heading is smoothed with a fixed time constant, so it feels the same at any
++  frame rate. Facing stays horizontal: a vertical move keeps whichever way she was already facing, and
++  the tilt sign is the same for both facings because the flip is applied outside the rig.
++- If the pose stills are redrawn, redraw the walker's shapes against the new `go` still; the palette
++  constants at the top of `kunai-fox-walker.tsx` are sampled from it.
+diff --git a/apps/docs/components/brand/kunai-fox-patrol.tsx b/apps/docs/components/brand/kunai-fox-patrol.tsx
+new file mode 100644
+index 000000000..285a4dba0
+--- /dev/null
++++ b/apps/docs/components/brand/kunai-fox-patrol.tsx
+@@ -0,0 +1,124 @@
++"use client";
++
++import { type FoxWalkerHandle, KunaiFoxWalker } from "@/components/brand/kunai-fox-walker";
++import { advancePhase, blendPose, type FoxPose, gaitPose, STANDING_POSE } from "@/lib/fox-gait";
++import { createPatrolState, stepPatrol } from "@/lib/patrol-machine";
++import { useEffect, useRef, useState } from "react";
++
++const SIZE = 56;
++/** How long she takes to put her feet down when she reaches a stop. */
++const SETTLE_MS = 200;
++
++/**
++ * Kanna pacing the top of the footer.
++ *
++ * A quiet bit of life at the bottom of every page: she walks a stretch of the
++ * footer's top border, stops for a few seconds, turns and walks somewhere else.
++ * It is the one place the mascot is allowed to move with nothing prompting her,
++ * so it is held to the rules a decoration earns that right with.
++ *
++ * - **Only while seen.** An observer on the lane starts the frame loop when the
++ *   footer scrolls into view and stops it when it leaves. Off screen she costs
++ *   nothing, and she is not walking where no one can watch.
++ * - **Only while the tab is.** A hidden tab pauses the loop too.
++ * - **Never under reduced motion.** She stands still at the left instead; the
++ *   footer reads the same without her.
++ * - **Never in the way.** The lane has `pointer-events: none` and sits on the
++ *   border line, so she cannot cover a link or intercept a tap.
++ *
++ * The movement is `lib/patrol-machine.ts` and the legs are `lib/fox-gait.ts`;
++ * this component only connects them to the drawing and the frame clock.
++ */
++export function KunaiFoxPatrol() {
++  const laneRef = useRef<HTMLDivElement | null>(null);
++  const foxRef = useRef<HTMLDivElement | null>(null);
++  const walkerRef = useRef<FoxWalkerHandle | null>(null);
++  const [facing, setFacing] = useState<"left" | "right">("right");
++
++  useEffect(() => {
++    const lane = laneRef.current;
++    const fox = foxRef.current;
++    if (!lane || !fox) return undefined;
++    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
++      walkerRef.current?.setPose(STANDING_POSE);
++      return undefined;
++    }
++
++    // `tick` is a hoisted function declaration, so it cannot see the narrowing
++    // of `fox` above; a const of the narrowed type carries it in.
++    const foxEl: HTMLDivElement = fox;
++    let state = createPatrolState(0);
++    let phase = 0;
++    let pose: FoxPose = STANDING_POSE;
++    let settleMs = SETTLE_MS;
++    let laneWidth = lane.clientWidth;
++    let frame: number | undefined;
++    let last = 0;
++    let visible = false;
++
++    const observer = new IntersectionObserver(
++      (entries) => {
++        visible = entries.some((entry) => entry.isIntersecting);
++        sync();
++      },
++      { rootMargin: "80px" },
++    );
++    const resizer = new ResizeObserver(() => {
++      laneWidth = lane.clientWidth;
++    });
++
++    function tick(now: number) {
++      frame = requestAnimationFrame(tick);
++      // Clamped: a tab returning from the background hands over one huge delta,
++      // which would teleport her across the lane on the first frame back.
++      const dt = Math.min((now - (last || now)) / 1000, 0.05);
++      last = now;
++
++      const before = state;
++      state = stepPatrol(state, { dt, lane: laneWidth, size: SIZE, rand: Math.random });
++      if (state.facing !== before.facing) setFacing(state.facing);
++
++      if (state.phase === "walking") {
++        settleMs = 0;
++        phase = advancePhase(phase, Math.abs(state.x - before.x), SIZE);
++        pose = gaitPose(phase);
++        walkerRef.current?.setPose(pose);
++      } else if (settleMs < SETTLE_MS) {
++        settleMs += dt * 1000;
++        walkerRef.current?.setPose(blendPose(pose, STANDING_POSE, settleMs / SETTLE_MS));
++      }
++      foxEl.style.transform = `translate3d(${state.x.toFixed(1)}px, 0, 0)`;
++    }
++
++    function sync() {
++      const shouldRun = visible && !document.hidden;
++      if (shouldRun && frame === undefined) {
++        last = 0;
++        foxEl.style.willChange = "transform";
++        frame = requestAnimationFrame(tick);
++      } else if (!shouldRun && frame !== undefined) {
++        cancelAnimationFrame(frame);
++        frame = undefined;
++        foxEl.style.willChange = "auto";
++      }
++    }
++
++    observer.observe(lane);
++    resizer.observe(lane);
++    document.addEventListener("visibilitychange", sync);
++    return () => {
++      observer.disconnect();
++      resizer.disconnect();
++      document.removeEventListener("visibilitychange", sync);
++      if (frame !== undefined) cancelAnimationFrame(frame);
++    };
++  }, []);
++
++  return (
++    <div ref={laneRef} className="kunai-footer-patrol" aria-hidden="true">
++      <div ref={foxRef} className="kunai-footer-patrol__fox">
++        <KunaiFoxWalker ref={walkerRef} size={SIZE} facing={facing} />
++      </div>
++    </div>
++  );
++}
+diff --git a/apps/docs/components/brand/kunai-fox-roamer.tsx b/apps/docs/components/brand/kunai-fox-roamer.tsx
+index ad19cad4c..370f0b4d3 100644
+--- a/apps/docs/components/brand/kunai-fox-roamer.tsx
++++ b/apps/docs/components/brand/kunai-fox-roamer.tsx
+@@ -1,6 +1,17 @@
+ "use client";
+ 
+ import { KunaiFox, type KunaiFoxPose } from "@/components/brand/kunai-fox";
++import { type FoxWalkerHandle, KunaiFoxWalker } from "@/components/brand/kunai-fox-walker";
++import {
++  advancePhase,
++  blendPose,
++  type FoxPose,
++  gaitPose,
++  headingFromMotion,
++  smoothHeading,
++  STANDING_POSE,
++  withHeading,
++} from "@/lib/fox-gait";
+ import {
+   createRoamerState,
+   poseForPhase,
+@@ -33,11 +44,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
+ /**
+  * How the movement itself works — notice, commit, travel, settle, rest — lives
+  * in `lib/roamer-machine.ts`, which is pure and clock-injected so every timing
+- * rule in it is testable without a browser or a real sleep. What stays here is
+- * the presentation: the gait clock, what she says, and when she is allowed to
+- * exist at all.
++ * rule in it is testable without a browser or a real sleep. How her body moves
++ * while she travels lives in `lib/fox-gait.ts`, pure for the same reason. What
++ * stays here is the presentation: wiring distance travelled into the gait, what
++ * she says, and when she is allowed to exist at all.
++ */
++
++/**
++ * How long she takes to put her feet down after she stops.
++ *
++ * Cutting from a mid-stride leg to the resting still in one frame reads as a
++ * glitch; a short blend to a standing pose reads as her arriving. Short enough
++ * that the resting still is up before anyone has looked for it.
+  */
+-const STEP_MS = 190;
++const SETTLE_MS = 160;
+ /**
+  * How long she goes between unprompted lines, by state.
+  *
+@@ -125,9 +145,16 @@ function poolFor(phase: RoamerPhase): readonly string[] {
+ function pickLine(pool: readonly string[], last: string | null): string {
+   const fresh = pool.filter((candidate) => candidate !== last);
+   const choices = fresh.length > 0 ? fresh : pool;
+-  return choices[Math.floor(Math.random() * choices.length)] as string;
++  return choices[Math.floor(Math.random() * choices.length)] ?? pool[0] ?? "";
+ }
+ 
++type GaitState = {
++  phase: number;
++  heading: number;
++  pose: FoxPose;
++  settleMs: number;
++};
++
+ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
+   const hostRef = useRef<HTMLDivElement | null>(null);
+   const frameRef = useRef<number | null>(null);
+@@ -136,13 +163,20 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
+   // `phase` and `facing`, which change rarely and drive what is drawn.
+   const machine = useState(() => ({ current: createRoamerState({ x: -400, y: -400 }) }))[0];
+   const pointer = useRef<{ x: number; y: number } | null>(null);
+-  const stepFlag = useRef(false);
+-  const stepMs = useRef(0);
++  // The walking drawing is vector parts she can swing a leg on; the resting
++  // poses are stills. `walkerRef` is the handle that hangs a pose on the parts,
++  // `gait` the stride she is in, and `settle` how far through putting her feet
++  // down she is. All three advance every frame, so none of them is React state.
++  const walkerRef = useRef<FoxWalkerHandle | null>(null);
++  const gait = useRef<GaitState>({ phase: 0, heading: 0, pose: STANDING_POSE, settleMs: 0 });
+   const lastFrame = useRef(0);
+   const seeded = useRef(false);
+ 
+   const [phase, setPhase] = useState<RoamerPhase>("sitting");
+   const [facing, setFacing] = useState<"left" | "right">("right");
++  // True from the moment she starts walking until she has finished settling, so
++  // the vector drawing is on screen for exactly as long as it has legs to move.
++  const [showWalker, setShowWalker] = useState(false);
+   const [line, setLine] = useState<string | null>(null);
+   const [enabled, setEnabled] = useState(false);
+   // Docs chrome exclusion band: `#nd-sidebar` on the left, `#nd-toc` on the
+@@ -256,15 +290,33 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
+         }
+       }
+ 
+-      // The gait runs on its own clock so footfalls stay even whatever the
+-      // frame rate is doing.
++      // The stride advances by the distance she actually covered, so her feet
++      // keep pace with her speed, ease as she eases, and stop when she does.
++      // Measured after the chrome clamp above: a clamped step that moved her
++      // nowhere must not turn her legs.
++      const finalPos = machine.current.pos;
++      const stepX = finalPos.x - before.pos.x;
++      const stepY = finalPos.y - before.pos.y;
++      const travelled = Math.hypot(stepX, stepY);
++      const stride = gait.current;
+       if (next.phase === "walking") {
+-        stepMs.current += dt * 1000;
+-        if (stepMs.current >= STEP_MS) {
+-          stepMs.current = 0;
+-          stepFlag.current = !stepFlag.current;
+-          host.dataset.step = stepFlag.current ? "a" : "b";
++        stride.settleMs = 0;
++        // Start each walk level; the tilt then follows where she is actually going.
++        if (before.phase !== "walking") stride.heading = 0;
++        // A frame that barely moved her has no meaningful direction; keep the last.
++        if (travelled > 0.2) {
++          stride.heading = smoothHeading(stride.heading, headingFromMotion(stepX, stepY), dt);
+         }
++        stride.phase = advancePhase(stride.phase, travelled, size);
++        // Her path leans off horizontal: nose up to climb, nose down to descend.
++        stride.pose = withHeading(gaitPose(stride.phase), stride.heading);
++        walkerRef.current?.setPose(stride.pose);
++        if (before.phase !== "walking") setShowWalker(true);
++      } else if (showWalkerRef.current) {
++        stride.settleMs += dt * 1000;
++        const t = stride.settleMs / SETTLE_MS;
++        walkerRef.current?.setPose(blendPose(stride.pose, STANDING_POSE, t));
++        if (t >= 1) setShowWalker(false);
+       }
+ 
+       // React state only when it actually changed: this runs every frame, and
+@@ -297,6 +349,14 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
+     phaseRef.current = phase;
+   }, [phase]);
+ 
++  // The frame loop reads this instead of closing over `showWalker`, for the
++  // same reason `phaseRef` exists: the loop is created once per `enabled`, and
++  // a captured value would be frozen at whatever it was on mount.
++  const showWalkerRef = useRef(showWalker);
++  useEffect(() => {
++    showWalkerRef.current = showWalker;
++  }, [showWalker]);
++
+   useEffect(() => {
+     if (!enabled) return undefined;
+     let timer: number;
+@@ -350,7 +410,11 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
+         onClick={() => say(phase === "asleep" ? SLEEPY_LINES : POKED_LINES)}
+         tabIndex={-1}
+       >
+-        <KunaiFox pose={pose} facing={facing} size={size} />
++        {showWalker ? (
++          <KunaiFoxWalker ref={walkerRef} facing={facing} size={size} />
++        ) : (
++          <KunaiFox pose={pose} facing={facing} size={size} />
++        )}
+       </button>
+       <button type="button" className="kunai-roamer__close" onClick={dismiss} tabIndex={-1}>
+         ×
+diff --git a/apps/docs/components/brand/kunai-fox-walker.tsx b/apps/docs/components/brand/kunai-fox-walker.tsx
+new file mode 100644
+index 000000000..960cc0e35
+--- /dev/null
++++ b/apps/docs/components/brand/kunai-fox-walker.tsx
+@@ -0,0 +1,241 @@
++"use client";
++
++import { type FoxPose, type LegAngles, STANDING_POSE } from "@/lib/fox-gait";
++import { forwardRef, useImperativeHandle, useRef } from "react";
++
++/**
++ * Kanna drawn in parts, so she can actually walk.
++ *
++ * The pose stills (`kunai-fox.tsx`) are single raster images: a still can bob
++ * and tilt, but it cannot swing a leg. This is the same animal rebuilt as
++ * vector parts on the same palette and proportions, with a hip and a knee on
++ * each leg, a tail that sways from its root, and ears that trail the head. A
++ * gait (`lib/fox-gait.ts`) turns a point in the stride into joint angles; this
++ * component only knows how to hang those angles on the drawing.
++ *
++ * She is drawn facing right in a 320-unit box, like the `go` still she stands
++ * in for. Facing left is a CSS flip (`data-facing`), not a second drawing.
++ *
++ * ## One source for the transforms
++ *
++ * `partTransforms` is used twice: once at render, so the server HTML already
++ * holds a valid standing pose, and again by the imperative handle, which
++ * rewrites the same attributes every frame. Both go through one function so the
++ * first paint and the animated state can never disagree about where a joint is.
++ * The handle writes attributes directly rather than setting state: the rig
++ * advances every animation frame and must never queue a React render.
++ *
++ * Decorative: `aria-hidden`, no title, never focusable.
++ */
++
++const BODY = "#ff8fb0";
++const BODY_FAR = "#ec7a9c";
++const LIGHT = "#ffc7d8";
++const INK = "#1c1620";
++
++/** Hip joints, in viewBox units. The knee sits `THIGH` below its hip. */
++const FRONT_HIP = { x: 208, y: 230 } as const;
++const BACK_HIP = { x: 104, y: 232 } as const;
++const THIGH = 32;
++const TAIL_ROOT = { x: 108, y: 214 } as const;
++const NECK = { x: 182, y: 200 } as const;
++const EAR_FRONT_BASE = { x: 224, y: 100 } as const;
++const EAR_BACK_BASE = { x: 170, y: 108 } as const;
++const TORSO_CENTRE = { x: 160, y: 232 } as const;
++
++export const WALKER_PARTS = [
++  "rig",
++  "tail",
++  "head",
++  "earFront",
++  "earBack",
++  "frontNear",
++  "frontNearKnee",
++  "frontFar",
++  "frontFarKnee",
++  "backNear",
++  "backNearKnee",
++  "backFar",
++  "backFarKnee",
++] as const;
++export type WalkerPart = (typeof WALKER_PARTS)[number];
++
++function round(value: number): string {
++  return value.toFixed(2);
++}
++
++function rotate(angle: number, at: { readonly x: number; readonly y: number }): string {
++  return `rotate(${round(angle)} ${at.x} ${at.y})`;
++}
++
++function legTransforms(hip: { readonly x: number; readonly y: number }, angles: LegAngles) {
++  return {
++    hip: rotate(angles.hip, hip),
++    knee: rotate(angles.knee, { x: hip.x, y: hip.y + THIGH }),
++  };
++}
++
++/** The `transform` attribute for every moving part of a pose. */
++export function partTransforms(pose: FoxPose) {
++  const frontNear = legTransforms(FRONT_HIP, pose.frontNear);
++  const frontFar = legTransforms(FRONT_HIP, pose.frontFar);
++  const backNear = legTransforms(BACK_HIP, pose.backNear);
++  const backFar = legTransforms(BACK_HIP, pose.backFar);
++  return {
++    rig: `translate(0 ${round(pose.bodyY)}) ${rotate(pose.bodyPitch, TORSO_CENTRE)}`,
++    tail: rotate(pose.tail, TAIL_ROOT),
++    head: `translate(0 ${round(pose.headY)}) ${rotate(pose.headPitch, NECK)}`,
++    earFront: rotate(pose.earNear, EAR_FRONT_BASE),
++    earBack: rotate(pose.earFar, EAR_BACK_BASE),
++    frontNear: frontNear.hip,
++    frontNearKnee: frontNear.knee,
++    frontFar: frontFar.hip,
++    frontFarKnee: frontFar.knee,
++    backNear: backNear.hip,
++    backNearKnee: backNear.knee,
++    backFar: backFar.hip,
++    backFarKnee: backFar.knee,
++  } satisfies Record<WalkerPart, string>;
++}
++
++export type FoxWalkerHandle = {
++  /** Hang a pose on the drawing. Cheap enough to call every animation frame. */
++  readonly setPose: (pose: FoxPose) => void;
++};
++
++type KunaiFoxWalkerProps = {
++  readonly size?: number;
++  readonly facing?: "left" | "right";
++  readonly className?: string;
++};
++
++type LegProps = {
++  readonly hip: { readonly x: number; readonly y: number };
++  readonly part: Extract<WalkerPart, "frontNear" | "frontFar" | "backNear" | "backFar">;
++  readonly fill: string;
++  readonly transforms: Readonly<Record<WalkerPart, string>>;
++};
++
++/** Which part is the knee joint of each leg, so no name is built by string concatenation. */
++const KNEE_PART = {
++  frontNear: "frontNearKnee",
++  frontFar: "frontFarKnee",
++  backNear: "backNearKnee",
++  backFar: "backFarKnee",
++} as const satisfies Record<string, WalkerPart>;
++
++/** Thigh, then a knee, then shin and paw: two segments so the foot can lift. */
++function Leg({ hip, part, fill, transforms }: LegProps) {
++  const kneePart = KNEE_PART[part];
++  return (
++    <g data-part={part} transform={transforms[part]}>
++      <rect x={hip.x - 14} y={hip.y - 8} width={28} height={46} rx={14} fill={fill} />
++      <g data-part={kneePart} transform={transforms[kneePart]}>
++        <rect x={hip.x - 10.5} y={hip.y + 28} width={21} height={34} rx={10.5} fill={fill} />
++        <ellipse cx={hip.x + 5} cy={hip.y + 62} rx={15} ry={8} fill={fill} />
++      </g>
++    </g>
++  );
++}
++
++export const KunaiFoxWalker = forwardRef<FoxWalkerHandle, KunaiFoxWalkerProps>(
++  function KunaiFoxWalker({ size = 58, facing = "right", className }, ref) {
++    const svgRef = useRef<SVGSVGElement | null>(null);
++    // Resolved on first use and then held: a querySelector per part per frame
++    // is a layout-free but needless cost at 60Hz.
++    const partsRef = useRef<Map<WalkerPart, Element> | null>(null);
++    const transforms = partTransforms(STANDING_POSE);
++
++    useImperativeHandle(
++      ref,
++      () => ({
++        setPose(pose) {
++          const svg = svgRef.current;
++          if (!svg) return;
++          if (!partsRef.current) {
++            const found = new Map<WalkerPart, Element>();
++            for (const part of WALKER_PARTS) {
++              const element = svg.querySelector(`[data-part="${part}"]`);
++              if (element) found.set(part, element);
++            }
++            partsRef.current = found;
++          }
++          const next = partTransforms(pose);
++          for (const [part, element] of partsRef.current) {
++            element.setAttribute("transform", next[part]);
++          }
++        },
++      }),
++      [],
++    );
++
++    return (
++      <svg
++        ref={svgRef}
++        viewBox="0 0 320 320"
++        width={size}
++        height={size}
++        aria-hidden="true"
++        focusable="false"
++        className={["kunai-fox-walker", className].filter(Boolean).join(" ")}
++        data-facing={facing}
++      >
++        <g data-part="rig" transform={transforms.rig}>
++          <g data-part="tail" transform={transforms.tail}>
++            <path
++              d="M110,234 C76,250 22,242 12,200 C4,168 16,144 36,138 C46,156 60,162 78,172 C98,184 114,196 116,214 Z"
++              fill={BODY}
++            />
++          </g>
++
++          <Leg hip={BACK_HIP} part="backFar" fill={BODY_FAR} transforms={transforms} />
++          <Leg hip={FRONT_HIP} part="frontFar" fill={BODY_FAR} transforms={transforms} />
++
++          <path
++            d="M78,208 C78,182 124,170 164,174 C208,178 238,194 242,220 C245,244 234,262 214,266 L100,270 C72,266 64,238 78,208 Z"
++            fill={BODY}
++          />
++
++          <Leg hip={BACK_HIP} part="backNear" fill={BODY} transforms={transforms} />
++          <Leg hip={FRONT_HIP} part="frontNear" fill={BODY} transforms={transforms} />
++
++          <g data-part="head" transform={transforms.head}>
++            <g data-part="earBack" transform={transforms.earBack}>
++              <path
++                d="M146,118 C140,90 142,64 150,42 C172,54 192,76 198,100 C182,112 162,120 146,118 Z"
++                fill={BODY}
++              />
++              <path
++                d="M158,104 C155,88 156,72 160,60 C172,68 182,82 185,96 C177,102 167,106 158,104 Z"
++                fill={LIGHT}
++              />
++            </g>
++            <path
++              d="M136,152 C132,108 170,84 210,86 C254,88 276,118 274,148 C274,158 272,166 270,172 C262,198 238,212 208,210 C168,208 140,186 136,152 Z"
++              fill={BODY}
++            />
++            <g data-part="earFront" transform={transforms.earFront}>
++              <path
++                d="M194,96 C196,74 203,56 214,40 C234,56 250,80 254,104 C236,112 212,108 194,96 Z"
++                fill={BODY}
++              />
++              <path
++                d="M208,92 C209,78 213,66 219,56 C230,68 238,82 240,96 C231,98 217,98 208,92 Z"
++                fill={LIGHT}
++              />
++            </g>
++            <path
++              d="M204,174 C212,160 246,158 273,167 C275,190 258,208 232,208 C212,208 200,192 204,174 Z"
++              fill={LIGHT}
++            />
++            <ellipse cx={234} cy={150} rx={8} ry={12.5} fill={INK} />
++            <ellipse cx={272} cy={168} rx={7} ry={5.5} fill={INK} />
++            {/* The kunai she carries: a ring at the mouth and a short blade. */}
++            <circle cx={265} cy={196} r={5} fill="none" stroke={LIGHT} strokeWidth={3} />
++            <path d="M268,190 L316,186 L270,203 Z" fill="#ffe6ee" />
++          </g>
++        </g>
++      </svg>
++    );
++  },
++);
+diff --git a/apps/docs/lib/fox-gait.ts b/apps/docs/lib/fox-gait.ts
+new file mode 100644
+index 000000000..3a2f1d22b
+--- /dev/null
++++ b/apps/docs/lib/fox-gait.ts
+@@ -0,0 +1,257 @@
++/**
++ * How Kanna's body moves when she walks.
++ *
++ * Pure on purpose, like `roamer-machine.ts`: a gait is a function from a point
++ * in the stride to a set of joint angles, and every rule here (which legs pair
++ * up, how long a foot stays planted, when the knee folds) can be pinned by a
++ * test without a browser or a clock. Nothing in this file reads the DOM; the
++ * rig that applies a pose to the drawing lives with the component.
++ *
++ * ## Why the stride is driven by distance, not time
++ *
++ * The old walk flipped a 190ms flag and bobbed one still image, so her feet
++ * kept time whether or not she was getting anywhere: she skated when slow and
++ * jittered when she stopped. Here the phase advances by the pixels she actually
++ * travelled (`advancePhase`), so the legs speed up as she accelerates, slow as
++ * she eases into a stop, and halt on the same frame she does.
++ *
++ * ## Conventions
++ *
++ * She faces right in the drawing. Angles are in degrees and follow SVG:
++ * positive rotates clockwise, which for a leg hanging straight down swings the
++ * foot BACK (towards the tail). Negative reaches forward. Offsets are in the
++ * 320-unit viewBox the drawing is authored in.
++ */
++
++export type LegAngles = {
++  /** Rotation at the hip, which swings the whole leg. */
++  readonly hip: number;
++  /** Rotation at the knee, relative to the thigh. Folds the shin and paw up. */
++  readonly knee: number;
++};
++
++export type FoxPose = {
++  /** Vertical offset of the whole body, in viewBox units. Negative is up. */
++  readonly bodyY: number;
++  /** Nose-up (negative) or nose-down (positive) tilt of the torso. */
++  readonly bodyPitch: number;
++  /** Extra vertical offset of the head over the body, for follow-through. */
++  readonly headY: number;
++  readonly headPitch: number;
++  readonly tail: number;
++  readonly earNear: number;
++  readonly earFar: number;
++  readonly frontNear: LegAngles;
++  readonly frontFar: LegAngles;
++  readonly backNear: LegAngles;
++  readonly backFar: LegAngles;
++};
++
++/** Thigh reach, forward and back, at the extremes of a stride. */
++const REACH_FORWARD = -27;
++const REACH_BACK = 25;
++/** How far the shin folds up at the middle of a swing. */
++const KNEE_LIFT = 54;
++/** A planted leg is not locked straight; a slight bend reads as weight. */
++const KNEE_PLANTED = 7;
++/** Fraction of the stride a foot spends on the ground. A walk is above half. */
++const STANCE_FRACTION = 0.55;
++/** Hind legs trail the diagonal front leg by this much of a stride. */
++const HIND_LAG = 0.05;
++
++function wrap(phase: number): number {
++  const wrapped = phase % 1;
++  return wrapped < 0 ? wrapped + 1 : wrapped;
++}
++
++function lerp(from: number, to: number, t: number): number {
++  return from + (to - from) * t;
++}
++
++function smoothstep(t: number): number {
++  const clamped = Math.min(1, Math.max(0, t));
++  return clamped * clamped * (3 - 2 * clamped);
++}
++
++/**
++ * One leg through one stride, `q` in [0, 1).
++ *
++ * Stance is linear: the foot is planted and the body passes over it, so the
++ * thigh sweeps at constant rate and the foot holds still against the ground.
++ * Swing eases in and out, because a foot picked up and put down accelerates and
++ * decelerates, and the knee folds on a half-sine so it lifts and lands cleanly
++ * at both ends instead of snapping.
++ */
++export function legAngles(q: number): LegAngles {
++  const phase = wrap(q);
++  if (phase < STANCE_FRACTION) {
++    const t = phase / STANCE_FRACTION;
++    return { hip: lerp(REACH_FORWARD, REACH_BACK, t), knee: KNEE_PLANTED };
++  }
++  const t = (phase - STANCE_FRACTION) / (1 - STANCE_FRACTION);
++  return {
++    hip: lerp(REACH_BACK, REACH_FORWARD, smoothstep(t)),
++    knee: KNEE_PLANTED + KNEE_LIFT * Math.sin(Math.PI * t),
++  };
++}
++
++const TAU = Math.PI * 2;
++
++/**
++ * The whole body at one point in the stride, `phase` in [0, 1).
++ *
++ * Diagonal pairs move together (near front with far hind, far front with near
++ * hind), which is how a walking or trotting canine loads its weight. The torso
++ * bobs twice per stride, once per diagonal footfall; the head and tail answer
++ * a beat later, because they hang off the body rather than drive it.
++ */
++export function gaitPose(phase: number): FoxPose {
++  const p = wrap(phase);
++  const bounce = (1 - Math.cos(2 * TAU * p)) / 2; // 0 at each footfall, 1 between
++  const lagged = (1 - Math.cos(2 * TAU * (p - 0.07))) / 2;
++  return {
++    bodyY: -14 * bounce,
++    bodyPitch: 2.2 * Math.sin(2 * TAU * (p + 0.1)),
++    headY: 5 * (lagged - bounce),
++    headPitch: -3.2 * Math.sin(2 * TAU * (p - 0.05)),
++    tail: 9 + 11 * Math.sin(TAU * (p - 0.22)),
++    earNear: 5.5 * Math.sin(2 * TAU * (p - 0.12)),
++    earFar: 5.5 * Math.sin(2 * TAU * (p - 0.16)),
++    frontNear: legAngles(p),
++    backFar: legAngles(p + HIND_LAG),
++    frontFar: legAngles(p + 0.5),
++    backNear: legAngles(p + 0.5 + HIND_LAG),
++  };
++}
++
++/**
++ * The steepest she tilts, however steep the climb.
++ *
++ * A fox does not walk a wall nose-first at 90 degrees; past about this angle the
++ * drawing stops reading as a fox and starts reading as a rotated sprite. A
++ * vertical move is drawn as a steep scramble at this limit, with her facing held
++ * from whichever way she was already going.
++ */
++export const MAX_HEADING_PITCH = 52;
++/** How quickly the tilt follows a change of direction. Fast enough to feel steered, slow enough not to flick. */
++const HEADING_TIME_CONSTANT_S = 0.14;
++
++/**
++ * The direction she is travelling, as degrees above (positive) or below (negative)
++ * horizontal, from one frame's displacement in screen pixels.
++ *
++ * Horizontal travel is the baseline because she is drawn walking sideways: what
++ * the body has to express is only how far her path leans off that. Pure vertical
++ * travel is therefore plus or minus 90, which `withHeading` then limits. Screen y
++ * grows downward, hence the sign flip.
++ */
++export function headingFromMotion(dx: number, dy: number): number {
++  if (dx === 0 && dy === 0) return 0;
++  return (Math.atan2(-dy, Math.abs(dx)) * 180) / Math.PI;
++}
++
++/**
++ * Ease the displayed heading toward the true one, independent of frame rate.
++ *
++ * Her path is steered by a pointer, so its direction can change in a single
++ * frame; a tilt that followed it exactly would snap. An exponential approach
++ * with a fixed time constant gives the same feel at 30, 60 and 144Hz.
++ */
++export function smoothHeading(current: number, target: number, dt: number): number {
++  const k = 1 - Math.exp(-Math.max(0, dt) / HEADING_TIME_CONSTANT_S);
++  return current + (target - current) * k;
++}
++
++/**
++ * Lean a walking pose into the direction of travel.
++ *
++ * Nose-up on a climb and nose-down on a descent, by rotating the torso (the head,
++ * tail and legs ride on it). The head leads a little further than the body, the
++ * way an animal looks where it is going, and on a steep climb the front paws
++ * reach forward and the hind legs drive, so the legs read as pulling her up
++ * rather than shuffling along a tilted line. The sign is the same whichever way
++ * she faces: the facing flip is applied to the whole drawing outside the rig.
++ */
++export function withHeading(pose: FoxPose, headingDeg: number): FoxPose {
++  const limit = MAX_HEADING_PITCH;
++  const tilt = Math.max(-limit, Math.min(limit, headingDeg));
++  const steepness = Math.abs(tilt) / limit; // 0 level, 1 at the limit
++  const climbing = tilt > 0 ? 1 : 0;
++  const reach = steepness * (climbing ? 10 : 4);
++  const drive = steepness * (climbing ? 7 : 0);
++  return {
++    ...pose,
++    // SVG rotation is clockwise-positive, so nose-up is negative.
++    bodyPitch: pose.bodyPitch - tilt,
++    headPitch: pose.headPitch - tilt * 0.3,
++    // Raised tail on a climb for balance; tucked a little on a descent.
++    tail: pose.tail + (climbing ? steepness * 10 : -steepness * 6),
++    frontNear: { ...pose.frontNear, hip: pose.frontNear.hip - reach },
++    frontFar: { ...pose.frontFar, hip: pose.frontFar.hip - reach },
++    backNear: { ...pose.backNear, hip: pose.backNear.hip + drive },
++    backFar: { ...pose.backFar, hip: pose.backFar.hip + drive },
++  };
++}
++
++const PLANTED: LegAngles = { hip: 0, knee: KNEE_PLANTED / 2 };
++
++/** All four feet under her, tail at rest. The pose she holds when she stops. */
++export const STANDING_POSE: FoxPose = {
++  bodyY: 0,
++  bodyPitch: 0,
++  headY: 0,
++  headPitch: 0,
++  tail: 6,
++  earNear: 0,
++  earFar: 0,
++  frontNear: PLANTED,
++  frontFar: PLANTED,
++  backNear: PLANTED,
++  backFar: PLANTED,
++};
++
++function lerpLeg(from: LegAngles, to: LegAngles, t: number): LegAngles {
++  return { hip: lerp(from.hip, to.hip, t), knee: lerp(from.knee, to.knee, t) };
++}
++
++/**
++ * Blend two poses; `t` of 0 is `from`, 1 is `to`.
++ *
++ * Used to settle into `STANDING_POSE` when she stops. Cutting straight to it
++ * snaps a leg that was mid-swing into place; easing a few frames reads as her
++ * putting her feet down.
++ */
++export function blendPose(from: FoxPose, to: FoxPose, t: number): FoxPose {
++  const k = Math.min(1, Math.max(0, t));
++  return {
++    bodyY: lerp(from.bodyY, to.bodyY, k),
++    bodyPitch: lerp(from.bodyPitch, to.bodyPitch, k),
++    headY: lerp(from.headY, to.headY, k),
++    headPitch: lerp(from.headPitch, to.headPitch, k),
++    tail: lerp(from.tail, to.tail, k),
++    earNear: lerp(from.earNear, to.earNear, k),
++    earFar: lerp(from.earFar, to.earFar, k),
++    frontNear: lerpLeg(from.frontNear, to.frontNear, k),
++    frontFar: lerpLeg(from.frontFar, to.frontFar, k),
++    backNear: lerpLeg(from.backNear, to.backNear, k),
++    backFar: lerpLeg(from.backFar, to.backFar, k),
++  };
++}
++
++/**
++ * Pixels of travel per full stride, for a figure drawn `size` px wide.
++ *
++ * Scales with the figure so a big fox takes proportionally big steps. The
++ * factor is a compromise: a true match to her top speed would need her legs to
++ * blur, so strides are a little longer than her short legs could strictly
++ * cover. That reads as brisk, which is the character, rather than as skating.
++ */
++export function strideLength(size: number): number {
++  return size * 1.5;
++}
++
++/** Advance the stride by the distance actually covered. Never moves backwards. */
++export function advancePhase(phase: number, distancePx: number, size: number): number {
++  if (!(distancePx > 0)) return wrap(phase);
++  return wrap(phase + distancePx / strideLength(size));
++}
+diff --git a/apps/docs/lib/patrol-machine.ts b/apps/docs/lib/patrol-machine.ts
+new file mode 100644
+index 000000000..7954620fe
+--- /dev/null
++++ b/apps/docs/lib/patrol-machine.ts
+@@ -0,0 +1,100 @@
++/**
++ * Where Kanna goes when she is pacing a line and nobody is steering her.
++ *
++ * The roaming fox (`roamer-machine.ts`) follows the pointer; this one has no
++ * input at all. She picks a spot on a horizontal lane, walks there, stands for
++ * a while, and picks another. Pure and clock-injected for the same reason as
++ * her sibling: every rule is a timing rule, and a rule that needs a real sleep
++ * to prove is a rule that will flake. The random source is injected too, so a
++ * test can choose "the next stop is far left" instead of hoping for it.
++ */
++
++export type PatrolPhase = "walking" | "pausing";
++
++export type PatrolState = {
++  /** Left edge of the figure along the lane, in pixels. */
++  readonly x: number;
++  readonly target: number;
++  readonly phase: PatrolPhase;
++  /** Milliseconds left to stand before choosing another stop. */
++  readonly pauseMs: number;
++  readonly facing: "left" | "right";
++};
++
++/** An unhurried walk. The roaming fox is brisk because she is chasing something. */
++export const PATROL_SPEED_PX_PER_SEC = 64;
++/** How long she stands at each stop, drawn uniformly from this range. */
++export const PAUSE_RANGE_MS = [2400, 6800] as const;
++/** The shortest hop worth walking. Closer than this reads as shuffling in place. */
++export const MIN_HOP_PX = 140;
++
++export type PatrolStep = {
++  readonly dt: number;
++  /** Width of the lane the figure walks along. */
++  readonly lane: number;
++  /** Width of the figure itself, so it never walks off the right end. */
++  readonly size: number;
++  /** Uniform random in [0, 1). Injected so a test can pick the outcome. */
++  readonly rand: () => number;
++};
++
++function maxX(lane: number, size: number): number {
++  return Math.max(0, lane - size);
++}
++
++export function createPatrolState(x: number): PatrolState {
++  return { x, target: x, phase: "pausing", pauseMs: 0, facing: "right" };
++}
++
++/**
++ * Choose the next stop: somewhere on the lane at least `MIN_HOP_PX` away.
++ *
++ * Falls back to the far end when the lane is too short to offer a real hop, so
++ * a narrow screen still gets a walk rather than a figure that never moves.
++ */
++export function chooseTarget(from: number, lane: number, size: number, rand: () => number): number {
++  const limit = maxX(lane, size);
++  const candidate = rand() * limit;
++  if (Math.abs(candidate - from) >= MIN_HOP_PX) return candidate;
++  // Too close: go to whichever end is further away.
++  const farEnd = from < limit / 2 ? limit : 0;
++  return Math.abs(farEnd - from) >= MIN_HOP_PX ? farEnd : candidate;
++}
++
++/** Advance one frame. Returns a new state; never mutates. */
++export function stepPatrol(state: PatrolState, { dt, lane, size, rand }: PatrolStep): PatrolState {
++  const limit = maxX(lane, size);
++  // A resize can strand her past the new right end. Pull her back rather than
++  // letting her stand in the margin until the next stop.
++  const x = Math.min(Math.max(state.x, 0), limit);
++
++  if (state.phase === "pausing") {
++    const pauseMs = state.pauseMs - dt * 1000;
++    if (pauseMs > 0) return { ...state, x, pauseMs };
++    const target = chooseTarget(x, lane, size, rand);
++    return {
++      x,
++      target,
++      phase: "walking",
++      pauseMs: 0,
++      facing: target >= x ? "right" : "left",
++    };
++  }
++
++  // The stop she was heading for may now be off the lane too; head for the
++  // nearest point that still is.
++  const target = Math.min(Math.max(state.target, 0), limit);
++  const gap = target - x;
++  const travel = PATROL_SPEED_PX_PER_SEC * dt;
++  if (Math.abs(gap) <= travel) {
++    const [low, high] = PAUSE_RANGE_MS;
++    return {
++      x: target,
++      target,
++      phase: "pausing",
++      pauseMs: low + rand() * (high - low),
++      facing: state.facing,
++    };
++  }
++  return { ...state, x: x + Math.sign(gap) * travel, target };
++}
+diff --git a/apps/docs/test/fox-gait.test.ts b/apps/docs/test/fox-gait.test.ts
+new file mode 100644
+index 000000000..2642bc3bf
+--- /dev/null
++++ b/apps/docs/test/fox-gait.test.ts
+@@ -0,0 +1,203 @@
++import { describe, expect, test } from "bun:test";
++
++import {
++  advancePhase,
++  blendPose,
++  type FoxPose,
++  gaitPose,
++  headingFromMotion,
++  legAngles,
++  MAX_HEADING_PITCH,
++  smoothHeading,
++  STANDING_POSE,
++  strideLength,
++  withHeading,
++} from "../lib/fox-gait";
++
++describe("legAngles", () => {
++  test("a foot reaches forward at touchdown and back at lift-off", () => {
++    expect(legAngles(0).hip).toBeLessThan(0);
++    expect(legAngles(0.549).hip).toBeGreaterThan(20);
++  });
++
++  test("the stance sweep is linear, so a planted foot holds still on the ground", () => {
++    const a = legAngles(0.1).hip;
++    const b = legAngles(0.2).hip;
++    const c = legAngles(0.3).hip;
++    expect(b - a).toBeCloseTo(c - b, 6);
++  });
++
++  test("the knee folds only during the swing and lands unfolded", () => {
++    const planted = legAngles(0.3).knee;
++    const midSwing = legAngles(0.775).knee;
++    expect(midSwing).toBeGreaterThan(planted + 40);
++    // The stride is a loop: the end of the swing meets the start of the stance.
++    expect(legAngles(0.999).knee).toBeCloseTo(legAngles(0).knee, 0);
++    expect(legAngles(0.999).hip).toBeCloseTo(legAngles(0).hip, 0);
++  });
++
++  test("a stride is periodic", () => {
++    expect(legAngles(1.25)).toEqual(legAngles(0.25));
++    expect(legAngles(-0.75)).toEqual(legAngles(0.25));
++  });
++});
++
++describe("gaitPose", () => {
++  test("diagonal legs move together and opposite legs half a stride apart", () => {
++    const pose = gaitPose(0.2);
++    // Near front and far hind are the same diagonal; allow for the hind lag.
++    expect(Math.abs(pose.frontNear.hip - pose.backFar.hip)).toBeLessThan(5);
++    // Near front and far front are on opposite sides of the stride.
++    expect(pose.frontNear.hip).not.toBeCloseTo(pose.frontFar.hip, 0);
++  });
++
++  test("the body bobs twice per stride, lowest at each footfall", () => {
++    const footfall = gaitPose(0).bodyY;
++    const between = gaitPose(0.25).bodyY;
++    const nextFootfall = gaitPose(0.5).bodyY;
++    expect(between).toBeLessThan(footfall);
++    expect(footfall).toBeCloseTo(nextFootfall, 6);
++  });
++
++  test("is periodic, so wrapping the phase never pops", () => {
++    // Wrapping goes through floating-point modulo, so compare to the precision
++    // a screen can show rather than bit for bit.
++    // `Number.isFinite` is false for anything that is not a number, so strings and
++    // nested objects pass through the replacer untouched.
++    const round = (pose: FoxPose): FoxPose =>
++      JSON.parse(
++        JSON.stringify(pose, (_key, v) => (Number.isFinite(v) ? Math.round(v * 1e6) / 1e6 : v)),
++      );
++    expect(round(gaitPose(1.37))).toEqual(round(gaitPose(0.37)));
++  });
++
++  test("never lifts her more than the bob allows", () => {
++    for (let step = 0; step < 100; step++) {
++      const pose = gaitPose(step / 100);
++      expect(pose.bodyY).toBeLessThanOrEqual(0);
++      expect(pose.bodyY).toBeGreaterThanOrEqual(-14.0001);
++    }
++  });
++});
++
++describe("blendPose", () => {
++  const mid = gaitPose(0.3);
++
++  test("0 is the start pose and 1 is the end pose", () => {
++    expect(blendPose(mid, STANDING_POSE, 0)).toEqual(mid);
++    expect(blendPose(mid, STANDING_POSE, 1)).toEqual(STANDING_POSE);
++  });
++
++  test("clamps, so an overshooting caller cannot fling a joint past its target", () => {
++    expect(blendPose(mid, STANDING_POSE, 4)).toEqual(STANDING_POSE);
++    expect(blendPose(mid, STANDING_POSE, -2)).toEqual(mid);
++  });
++
++  test("halfway lands every leg between the two", () => {
++    const half = blendPose(mid, STANDING_POSE, 0.5);
++    expect(half.frontNear.hip).toBeCloseTo(mid.frontNear.hip / 2, 6);
++  });
++});
++
++describe("advancePhase", () => {
++  test("a full stride length of travel is exactly one cycle", () => {
++    const size = 58;
++    expect(advancePhase(0.25, strideLength(size), size)).toBeCloseTo(0.25, 9);
++  });
++
++  test("covers distance proportionally, so the legs follow her speed", () => {
++    const size = 58;
++    const slow = advancePhase(0, 10, size);
++    const fast = advancePhase(0, 20, size);
++    expect(fast).toBeCloseTo(slow * 2, 9);
++  });
++
++  test("holds still when she does, and never runs backwards", () => {
++    expect(advancePhase(0.4, 0, 58)).toBe(0.4);
++    expect(advancePhase(0.4, -30, 58)).toBe(0.4);
++    expect(advancePhase(0.4, Number.NaN, 58)).toBe(0.4);
++  });
++
++  test("a bigger fox takes bigger steps", () => {
++    expect(strideLength(116)).toBeCloseTo(strideLength(58) * 2, 9);
++  });
++});
++
++describe("headingFromMotion", () => {
++  test("level travel is level, whichever way she faces", () => {
++    expect(headingFromMotion(5, 0)).toBeCloseTo(0, 9);
++    expect(headingFromMotion(-5, 0)).toBeCloseTo(0, 9);
++  });
++
++  test("up the screen is positive and down is negative", () => {
++    expect(headingFromMotion(5, -5)).toBeCloseTo(45, 6);
++    expect(headingFromMotion(5, 5)).toBeCloseTo(-45, 6);
++  });
++
++  test("leaning left or right of vertical gives the same tilt, because facing is a separate flip", () => {
++    expect(headingFromMotion(-5, -5)).toBeCloseTo(headingFromMotion(5, -5), 9);
++  });
++
++  test("straight up or down is plus or minus 90, and standing still is level", () => {
++    expect(headingFromMotion(0, -3)).toBeCloseTo(90, 6);
++    expect(headingFromMotion(0, 3)).toBeCloseTo(-90, 6);
++    expect(headingFromMotion(0, 0)).toBe(0);
++  });
++});
++
++describe("smoothHeading", () => {
++  test("moves toward the target without overshooting it", () => {
++    const next = smoothHeading(0, 40, 0.016);
++    expect(next).toBeGreaterThan(0);
++    expect(next).toBeLessThan(40);
++  });
++
++  test("two half-steps land where one whole step does, so frame rate does not change the feel", () => {
++    const whole = smoothHeading(0, 40, 0.032);
++    const halves = smoothHeading(smoothHeading(0, 40, 0.016), 40, 0.016);
++    expect(halves).toBeCloseTo(whole, 6);
++  });
++
++  test("never moves on a zero or negative delta", () => {
++    expect(smoothHeading(10, 40, 0)).toBe(10);
++    expect(smoothHeading(10, 40, -1)).toBe(10);
++  });
++});
++
++describe("withHeading", () => {
++  const level = gaitPose(0.3);
++
++  test("a level heading changes nothing", () => {
++    expect(withHeading(level, 0)).toEqual(level);
++  });
++
++  test("climbing lifts the nose (negative pitch) and descending drops it", () => {
++    expect(withHeading(level, 30).bodyPitch).toBeLessThan(level.bodyPitch);
++    expect(withHeading(level, -30).bodyPitch).toBeGreaterThan(level.bodyPitch);
++  });
++
++  test("the tilt is capped, so a vertical move is a steep scramble and not a rotated sprite", () => {
++    const vertical = withHeading(level, 90);
++    expect(level.bodyPitch - vertical.bodyPitch).toBeCloseTo(MAX_HEADING_PITCH, 6);
++    expect(withHeading(level, 200).bodyPitch).toBeCloseTo(vertical.bodyPitch, 9);
++  });
++
++  test("the head leads the body into a climb", () => {
++    const climb = withHeading(level, 40);
++    expect(level.headPitch - climb.headPitch).toBeGreaterThan(0);
++    expect(level.headPitch - climb.headPitch).toBeLessThan(level.bodyPitch - climb.bodyPitch);
++  });
++
++  test("on a climb the front paws reach forward and the hind legs drive back", () => {
++    const climb = withHeading(level, 45);
++    expect(climb.frontNear.hip).toBeLessThan(level.frontNear.hip);
++    expect(climb.backNear.hip).toBeGreaterThan(level.backNear.hip);
++  });
++
++  test("never alters the stride's own timing: the gait still depends on distance only", () => {
++    const a = withHeading(gaitPose(0.2), 30);
++    const b = withHeading(gaitPose(0.2), 30);
++    expect(a).toEqual(b);
++    expect(withHeading(gaitPose(0.2), 30).frontNear.knee).toBe(gaitPose(0.2).frontNear.knee);
++  });
++});
+diff --git a/apps/docs/test/kunai-fox-walker.test.tsx b/apps/docs/test/kunai-fox-walker.test.tsx
+new file mode 100644
+index 000000000..6cd57b57a
+--- /dev/null
++++ b/apps/docs/test/kunai-fox-walker.test.tsx
+@@ -0,0 +1,46 @@
++import { describe, expect, test } from "bun:test";
++
++import { renderToStaticMarkup } from "react-dom/server";
++
++import { KunaiFoxWalker, partTransforms, WALKER_PARTS } from "../components/brand/kunai-fox-walker";
++import { gaitPose, STANDING_POSE } from "../lib/fox-gait";
++
++describe("partTransforms", () => {
++  test("names a transform for every part the drawing exposes", () => {
++    const transforms = partTransforms(gaitPose(0.3));
++    for (const part of WALKER_PARTS) expect(transforms[part]).toMatch(/\S/);
++  });
++
++  test("a different point in the stride moves the legs", () => {
++    const a = partTransforms(gaitPose(0.1));
++    const b = partTransforms(gaitPose(0.6));
++    expect(a.frontNear).not.toBe(b.frontNear);
++    expect(a.backFar).not.toBe(b.backFar);
++  });
++});
++
++describe("KunaiFoxWalker", () => {
++  const html = renderToStaticMarkup(<KunaiFoxWalker size={64} />);
++
++  test("renders every addressable part, so the rig can find all of them", () => {
++    for (const part of WALKER_PARTS) expect(html).toContain(`data-part="${part}"`);
++  });
++
++  test("server output is already a standing pose, not an unposed pile of shapes", () => {
++    const standing = partTransforms(STANDING_POSE);
++    expect(html).toContain(`data-part="frontNear" transform="${standing.frontNear}"`);
++    expect(html).toContain(`data-part="rig" transform="${standing.rig}"`);
++  });
++
++  test("is decorative: hidden from assistive tech and out of the tab order", () => {
++    expect(html).toContain('aria-hidden="true"');
++    expect(html).toContain('focusable="false"');
++    expect(html).not.toContain("<title");
++  });
++
++  test("facing is a flag the stylesheet flips, not a second drawing", () => {
++    const left = renderToStaticMarkup(<KunaiFoxWalker facing="left" />);
++    expect(left).toContain('data-facing="left"');
++    expect(html).toContain('data-facing="right"');
++  });
++});
+diff --git a/apps/docs/test/patrol-machine.test.ts b/apps/docs/test/patrol-machine.test.ts
+new file mode 100644
+index 000000000..1835be6e6
+--- /dev/null
++++ b/apps/docs/test/patrol-machine.test.ts
+@@ -0,0 +1,150 @@
++import { describe, expect, test } from "bun:test";
++
++import {
++  chooseTarget,
++  createPatrolState,
++  MIN_HOP_PX,
++  PATROL_SPEED_PX_PER_SEC,
++  PAUSE_RANGE_MS,
++  type PatrolState,
++  stepPatrol,
++} from "../lib/patrol-machine";
++
++const LANE = 1000;
++const SIZE = 56;
++const constant = (value: number) => () => value;
++
++function walking(x: number, target: number): PatrolState {
++  return {
++    x,
++    target,
++    phase: "walking",
++    pauseMs: 0,
++    facing: target >= x ? "right" : "left",
++  };
++}
++
++describe("stepPatrol: walking", () => {
++  test("covers speed times dt, so pace holds at any frame rate", () => {
++    const next = stepPatrol(walking(100, 900), {
++      dt: 0.5,
++      lane: LANE,
++      size: SIZE,
++      rand: constant(0),
++    });
++    expect(next.x).toBeCloseTo(100 + PATROL_SPEED_PX_PER_SEC * 0.5, 6);
++    expect(next.phase).toBe("walking");
++  });
++
++  test("walks left when the stop is to the left", () => {
++    const next = stepPatrol(walking(500, 100), {
++      dt: 0.1,
++      lane: LANE,
++      size: SIZE,
++      rand: constant(0),
++    });
++    expect(next.x).toBeLessThan(500);
++  });
++
++  test("arrives exactly on the stop, never past it, and starts standing", () => {
++    const next = stepPatrol(walking(100, 102), {
++      dt: 1,
++      lane: LANE,
++      size: SIZE,
++      rand: constant(0.5),
++    });
++    expect(next.x).toBe(102);
++    expect(next.phase).toBe("pausing");
++  });
++
++  test("the pause is drawn from the range", () => {
++    const [low, high] = PAUSE_RANGE_MS;
++    const short = stepPatrol(walking(100, 100), {
++      dt: 1,
++      lane: LANE,
++      size: SIZE,
++      rand: constant(0),
++    });
++    const long = stepPatrol(walking(100, 100), {
++      dt: 1,
++      lane: LANE,
++      size: SIZE,
++      rand: constant(0.999999),
++    });
++    expect(short.pauseMs).toBeCloseTo(low, 3);
++    expect(long.pauseMs).toBeLessThan(high);
++    expect(long.pauseMs).toBeGreaterThan(high - 10);
++  });
++});
++
++describe("stepPatrol: pausing", () => {
++  const standing: PatrolState = {
++    x: 300,
++    target: 300,
++    phase: "pausing",
++    pauseMs: 1000,
++    facing: "right",
++  };
++
++  test("stays put while the pause runs down", () => {
++    const next = stepPatrol(standing, { dt: 0.4, lane: LANE, size: SIZE, rand: constant(0.9) });
++    expect(next.phase).toBe("pausing");
++    expect(next.x).toBe(300);
++    expect(next.pauseMs).toBeCloseTo(600, 6);
++  });
++
++  test("picks a stop and faces it when the pause ends", () => {
++    const next = stepPatrol(
++      { ...standing, pauseMs: 10 },
++      { dt: 0.1, lane: LANE, size: SIZE, rand: constant(0.9) },
++    );
++    expect(next.phase).toBe("walking");
++    expect(next.target).toBeGreaterThan(300);
++    expect(next.facing).toBe("right");
++
++    const left = stepPatrol(
++      { ...standing, pauseMs: 10 },
++      { dt: 0.1, lane: LANE, size: SIZE, rand: constant(0.05) },
++    );
++    expect(left.target).toBeLessThan(300);
++    expect(left.facing).toBe("left");
++  });
++});
++
++describe("chooseTarget", () => {
++  test("never stays within a shuffle of where she already is", () => {
++    for (let step = 0; step < 50; step++) {
++      const from = 400;
++      const target = chooseTarget(from, LANE, SIZE, constant(step / 50));
++      expect(Math.abs(target - from)).toBeGreaterThanOrEqual(MIN_HOP_PX);
++    }
++  });
++
++  test("stays on the lane, with the figure's own width reserved", () => {
++    for (let step = 0; step <= 20; step++) {
++      const target = chooseTarget(0, LANE, SIZE, constant(step / 20));
++      expect(target).toBeGreaterThanOrEqual(0);
++      expect(target).toBeLessThanOrEqual(LANE - SIZE);
++    }
++  });
++
++  test("a lane too short for a real hop still returns a stop on the lane", () => {
++    const target = chooseTarget(0, 120, SIZE, constant(0.1));
++    expect(target).toBeGreaterThanOrEqual(0);
++    expect(target).toBeLessThanOrEqual(64);
++  });
++});
++
++describe("stepPatrol: resize", () => {
++  test("a lane that shrinks under her pulls her back inside it", () => {
++    const stranded = walking(900, 950);
++    const next = stepPatrol(stranded, { dt: 0.016, lane: 400, size: SIZE, rand: constant(0.5) });
++    expect(next.x).toBeLessThanOrEqual(400 - SIZE);
++  });
++
++  test("a fresh state is standing and ready to choose", () => {
++    const state = createPatrolState(10);
++    expect(state.phase).toBe("pausing");
++    expect(state.pauseMs).toBe(0);
++  });
++});

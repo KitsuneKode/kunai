@@ -1,0 +1,56 @@
+{
+  "baseline": "e509732e7cdd3277943b7a705a0fea9004ed0b7f",
+  "mobileCommit": "7de2abaf2",
+  "cliCommit": "021a73a24",
+  "rootTest": {
+    "passCount": 8097,
+    "skipCount": 60,
+    "failCount": 0,
+    "tasks": 26,
+    "cached": 0,
+    "duration": "2m12.378s"
+  },
+  "logs": [
+    {
+      "path": "/tmp/kunai-full-review-20261003/commit-root-test.log",
+      "sha256": "666f03352737c07eec8b9bfc9e130cb660fb03db17a7cdf8bee9baad1cdbc45f"
+    },
+    {
+      "path": "/tmp/kunai-full-review-20261003/commit-typecheck.log",
+      "sha256": "873a9e6112b84caaba2f8181cc06b128837f5b5a6d6cee9259411db7111beb0c"
+    },
+    {
+      "path": "/tmp/kunai-full-review-20261003/commit-lint.log",
+      "sha256": "c33b96c6765a47549aa97da92fe0abac286d8be0d2317b206eb75ef1124b28c5"
+    },
+    {
+      "path": "/tmp/kunai-full-review-20261003/commit-fmt-check.log",
+      "sha256": "4b1d576277646c3cc16dc189df775b6bbde6d2fbcd2619eafd9786d49ff73c7a"
+    },
+    {
+      "path": "/tmp/kunai-full-review-20261003/commit-doc-paths.log",
+      "sha256": "bdb1145a8b5bc77ce405739ade504df190d7e627208b6e8ae0c1ce65f414767c"
+    },
+    {
+      "path": "/tmp/kunai-full-review-20261003/commit-doc-frontmatter.log",
+      "sha256": "caf8f175b9a9e67d9b795ddbaad1ee177dc4cf821babbf4c396d2aef89a10852"
+    },
+    {
+      "path": "/tmp/kunai-full-review-20261003/commit-guard.log",
+      "sha256": "4f28b629b3c14d6677781ce311c6dd3ffe71c7e8194cfb45ef5e1eb006ae2949"
+    },
+    {
+      "path": "/tmp/kunai-full-review-20261003/commit-build.log",
+      "sha256": "7837d51d2655c04a3a89fdb294980cd35147bd978334f845fe2f5dd7abf1635f"
+    },
+    {
+      "path": "/tmp/kunai-full-review-20261003/mobile-commit-checks.log",
+      "sha256": "c68757ecc54ccdcf37a6115e55a8a390ccb3547be836b9aff33226ebbd1adde2"
+    },
+    {
+      "path": "/tmp/kunai-full-review-20261003/commit-docs-build.log",
+      "sha256": "5b0f6672633e31c8d0384bf08630b539a833d644c51678b066cc832044d776b3"
+    }
+  ],
+  "toolingCommit": "99d718266"
+}

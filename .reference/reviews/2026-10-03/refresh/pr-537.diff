@@ -1,0 +1,1398 @@
+diff --git a/apps/docs/app/(home)/home-page-shell.tsx b/apps/docs/app/(home)/home-page-shell.tsx
+index c2b952dad..31a9f5754 100644
+--- a/apps/docs/app/(home)/home-page-shell.tsx
++++ b/apps/docs/app/(home)/home-page-shell.tsx
+@@ -1,14 +1,16 @@
+ import { KunaiFox } from "@/components/brand/kunai-fox";
+ import { KunaiFoxLive } from "@/components/brand/kunai-fox-live";
++import { HomeBento } from "@/components/home/home-bento";
+ import { HomeFlowTimeline } from "@/components/home/home-flow-timeline";
+ import { HomeHeroStatic } from "@/components/home/home-hero-static";
++import { HomeOpenSource } from "@/components/home/home-open-source";
+ import { HomeStarCta } from "@/components/home/home-star-cta";
+-import { HomeSupportStrip } from "@/components/home/home-support-strip";
+ import { HomeTerminalIsland } from "@/components/home/home-terminal-island";
+ import { HomeTerminalStatic } from "@/components/home/home-terminal-static";
+ import { ProviderSummaryCard } from "@/components/home/provider-summary-card";
+ import { StartHereCards } from "@/components/home/start-here-cards";
+ import type { HomeCommandMetadata, HomeProviderMetadata } from "@/components/home/types";
++import { WorkshopShowcase } from "@/components/home/workshop-showcase";
+ import { CopyButton } from "@/components/ui/copy-button";
+ import { SectionHeading } from "@/components/ui/section-heading";
+ import { homeFlow, homeHero, homeHighlights, homeStartCards } from "@/lib/home-content";
+@@ -40,8 +42,10 @@ type HomePageShellProps = {
+  * for anyone who arrived already convinced, and `#install` still resolves for
+  * every link that points at it.
+  *
+- * The one ask for money comes after the guides and before the last install
+- * prompt, so it is never the first thing a visitor is asked for.
++ * The one ask for money comes after the guides and next to the free ways to
++ * help, so it is never the first thing a visitor is asked for. The maintainer's
++ * other projects follow it, just before the last install prompt: someone who
++ * has read this far trusts one tool and is the likeliest to want the next.
+  */
+ export default function HomePageShell({
+   providers,
+@@ -98,19 +102,12 @@ export default function HomePageShell({
+         <HomeFlowTimeline steps={homeFlow} />
+       </section>
+ 
+-      <section className="kunai-home-highlights kunai-band">
+-        <div>
+-          <h2 className="kunai-display-title">Everything stays one keystroke away.</h2>
+-          {usageLine}
++      <section className="kunai-home-highlights kunai-flow-section">
++        <SectionHeading title="Everything stays one keystroke away." />
++        {usageLine}
++        <div className="mt-10">
++          <HomeBento highlights={homeHighlights} providers={providers} />
+         </div>
+-        <ul className="kunai-highlight-list">
+-          {homeHighlights.map((item) => (
+-            <li className="kunai-highlight-row" key={item.label}>
+-              <span className="kunai-step-label">{item.label}</span>
+-              <p className="kunai-type-body m-0 text-sm">{item.detail}</p>
+-            </li>
+-          ))}
+-        </ul>
+       </section>
+ 
+       <section className="kunai-home-providers">
+@@ -128,7 +125,21 @@ export default function HomePageShell({
+         <StartHereCards items={homeStartCards} />
+       </section>
+ 
+-      <HomeSupportStrip />
++      <section className="kunai-home-open kunai-flow-section">
++        <SectionHeading
++          title="Free, open, and kept alive in the open."
++          description="Who makes it, how to help for free, and what sponsorship pays for."
++        />
++        <HomeOpenSource />
++      </section>
++
++      <section className="kunai-home-workshop kunai-flow-section">
++        <SectionHeading
++          title="More from the same workshop."
++          description="Other tools KitsuneKode makes and maintains. Originals only, no forks."
++        />
++        <WorkshopShowcase />
++      </section>
+ 
+       <section className="kunai-home-final kunai-final kunai-surface-shell p-2">
+         <div className="kunai-surface-shell__inner flex flex-col gap-6 p-8 md:flex-row md:items-center md:justify-between">
+diff --git a/apps/docs/app/layout.tsx b/apps/docs/app/layout.tsx
+index c6bbaaca0..0dad1cdaa 100644
+--- a/apps/docs/app/layout.tsx
++++ b/apps/docs/app/layout.tsx
+@@ -3,6 +3,7 @@ import "./global.css";
+ import { PrivacyAnalytics } from "@/components/analytics/privacy-analytics";
+ import { PrivacySpeedInsights } from "@/components/analytics/privacy-speed-insights";
+ import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
++import { NavCompact } from "@/components/layout/nav-compact";
+ import { SiteFooter } from "@/components/layout/site-footer";
+ import { MotionProvider } from "@/components/providers/motion-provider";
+ import { KunaiSearchDialog } from "@/components/search/kunai-search-dialog";
+@@ -73,6 +74,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode
+ 
+             Living in the root layout also means she survives route changes
+             rather than remounting — she keeps walking while you navigate. */}
++        <NavCompact />
+         <KunaiFoxRoamer />
+         <PrivacyAnalytics />
+         <PrivacySpeedInsights />
+diff --git a/apps/docs/app/styles/docs-chrome.css b/apps/docs/app/styles/docs-chrome.css
+index 4af0b73ad..1661b5afe 100644
+--- a/apps/docs/app/styles/docs-chrome.css
++++ b/apps/docs/app/styles/docs-chrome.css
+@@ -38,6 +38,25 @@
+     overflow: hidden;
+   }
+ 
++  /* The bar shrinks once the page has scrolled (see `NavCompact`). It is a scale of
++     the whole pill, not a change of its width or padding: a transform stays on the
++     compositor, where animating the bar's size would reflow it every frame. It
++     scales about its top centre so it tucks toward the top of the page rather than
++     drifting, and it gains a little depth because it is now over content. */
++  #nd-home-layout #nd-nav > div {
++    transform-origin: 50% 0;
++    transition:
++      transform 240ms var(--ease-out),
++      box-shadow 240ms var(--ease-out),
++      background-color 240ms var(--ease-out);
++  }
++
++  html[data-nav-compact="true"] #nd-home-layout #nd-nav > div {
++    transform: scale(0.92);
++    box-shadow: var(--kunai-shadow-md);
++    background: color-mix(in oklab, var(--kunai-surface) 90%, transparent) !important;
++  }
++
+   #nd-sidebar,
+   #nd-toc {
+     backdrop-filter: blur(16px);
+diff --git a/apps/docs/app/styles/home.css b/apps/docs/app/styles/home.css
+index db1cf90fe..dcefc1788 100644
+--- a/apps/docs/app/styles/home.css
++++ b/apps/docs/app/styles/home.css
+@@ -25,6 +25,8 @@
+ .kunai-home-highlights,
+ .kunai-home-providers,
+ .kunai-home-start,
++.kunai-home-open,
++.kunai-home-workshop,
+ .kunai-home-final {
+   margin-top: clamp(2.5rem, 5vw, 4rem);
+ }
+@@ -311,6 +313,12 @@
+ .kunai-section-head {
+   margin-bottom: clamp(2rem, 4vw, 3.5rem);
+ }
++
++/* The bento section prints one quiet line of usage under its heading, so the heading
++   hands over to it sooner than the full section gap would. */
++.kunai-home-highlights .kunai-section-head {
++  margin-bottom: 1rem;
++}
+ .kunai-final {
+   border: 1px solid var(--kunai-line);
+   background: var(--kunai-surface);
+diff --git a/apps/docs/components/home/home-bento.tsx b/apps/docs/components/home/home-bento.tsx
+new file mode 100644
+index 000000000..d7b27e256
+--- /dev/null
++++ b/apps/docs/components/home/home-bento.tsx
+@@ -0,0 +1,171 @@
++import type { HomeProviderMetadata } from "@/components/home/types";
++import type { homeHighlights } from "@/lib/home-content";
++import {
++  IconCalendarEvent,
++  IconDownload,
++  IconHistory,
++  IconSparkles,
++  type Icon,
++} from "@tabler/icons-react";
++
++type Highlight = (typeof homeHighlights)[number];
++
++type HomeBentoProps = {
++  readonly highlights: readonly Highlight[];
++  readonly providers: readonly HomeProviderMetadata[];
++};
++
++/** How many provider names the tile prints before it says "+N more". */
++const PROVIDER_CHIP_LIMIT = 8;
++
++const MODES = ["Anime", "Series", "Movies", "YouTube"] as const;
++
++/**
++ * What "everything stays one keystroke away" means, shown instead of listed.
++ *
++ * Four tiles of two sizes (7/5 over 5/7), not three equal cards: each carries a
++ * small piece of the thing it describes (the four modes, the real provider names,
++ * the commands you reach for when playback stalls), so the section demonstrates
++ * the product where the old list of four rows only described it. Everything is
++ * server-rendered, with no client JavaScript, and the numbers and names come from
++ * the same generated metadata as the rest of the site, so nothing here is typed
++ * twice.
++ *
++ * Each tile is a double bezel: an outer shell with a hairline, an inner plate with
++ * its own highlight, and radii that nest (inner = outer minus the shell padding).
++ */
++export function HomeBento({ highlights, providers }: HomeBentoProps) {
++  const byLabel = new Map(highlights.map((item) => [item.label, item.detail]));
++  const providerNames = [...providers]
++    .sort((a, b) => Number(b.recommended) - Number(a.recommended))
++    .map((provider) => provider.displayName);
++  const shown = providerNames.slice(0, PROVIDER_CHIP_LIMIT);
++  const hidden = providerNames.length - shown.length;
++
++  return (
++    <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
++      <Tile
++        className="md:col-span-7"
++        label="Four catalog modes"
++        detail={byLabel.get("Four catalog modes")}
++      >
++        <div className="mt-6 flex flex-wrap items-center gap-2" aria-hidden="true">
++          {MODES.map((mode, index) => (
++            <span
++              key={mode}
++              className={`rounded-full border px-3.5 py-1.5 text-sm font-medium ${
++                index === 0
++                  ? "border-[var(--kunai-accent-deep)] bg-[color-mix(in_oklab,var(--kunai-accent)_12%,transparent)] text-[var(--kunai-accent)]"
++                  : "text-fd-muted-foreground border-[var(--kunai-line)]"
++              }`}
++            >
++              {mode}
++            </span>
++          ))}
++          <kbd className="border-fd-border bg-fd-card text-fd-muted-foreground ml-1 rounded-md border px-2 py-1 font-mono text-xs">
++            Tab
++          </kbd>
++        </div>
++      </Tile>
++
++      <Tile
++        className="md:col-span-5"
++        label="Direct providers"
++        detail={byLabel.get("Direct providers")}
++      >
++        <p className="mt-5 flex items-baseline gap-3">
++          <span className="text-fd-foreground font-sans text-5xl leading-none font-semibold tabular-nums">
++            {providers.length}
++          </span>
++          <span className="text-fd-muted-foreground text-sm">
++            adapters, resolved on your machine
++          </span>
++        </p>
++        <ul className="m-0 mt-5 flex list-none flex-wrap gap-1.5 p-0">
++          {shown.map((name) => (
++            <li
++              key={name}
++              className="text-fd-muted-foreground rounded-md border border-[var(--kunai-line)] px-2 py-1 font-mono text-xs"
++            >
++              {name}
++            </li>
++          ))}
++          {hidden > 0 ? (
++            <li className="text-fd-muted-foreground px-1 py-1 font-mono text-xs">+{hidden} more</li>
++          ) : null}
++        </ul>
++      </Tile>
++
++      <Tile
++        className="md:col-span-5"
++        label="Continue watching"
++        detail={byLabel.get("Continue watching")}
++      >
++        <ul className="m-0 mt-6 grid list-none grid-cols-2 gap-x-4 gap-y-3 p-0">
++          <Capability icon={IconHistory} label="History" />
++          <Capability icon={IconCalendarEvent} label="Release calendar" />
++          <Capability icon={IconSparkles} label="Recommendations" />
++          <Capability icon={IconDownload} label="Offline downloads" />
++        </ul>
++      </Tile>
++
++      <Tile
++        className="md:col-span-7"
++        label="Recovery built in"
++        detail={byLabel.get("Recovery built in")}
++      >
++        <ol className="m-0 mt-6 flex list-none flex-col gap-2.5 p-0">
++          <Step command="/recover" meaning="First step when a stream stalls" />
++          <Step command="/fallback" meaning="Try another provider (Shift+F during playback)" />
++          <Step command="/diagnostics" meaning="See what happened, redacted by default" />
++        </ol>
++      </Tile>
++    </div>
++  );
++}
++
++function Tile({
++  className,
++  label,
++  detail,
++  children,
++}: {
++  readonly className?: string;
++  readonly label: string;
++  readonly detail: string | undefined;
++  readonly children: React.ReactNode;
++}) {
++  return (
++    <section className={`kunai-surface-shell ${className ?? ""}`}>
++      <div className="kunai-surface-shell__inner flex h-full flex-col p-6 md:p-7">
++        <h3 className="kunai-step-label m-0">{label}</h3>
++        {detail ? (
++          <p className="kunai-type-body mt-3 max-w-prose text-sm text-pretty">{detail}</p>
++        ) : null}
++        {children}
++      </div>
++    </section>
++  );
++}
++
++function Capability({ icon: Glyph, label }: { readonly icon: Icon; readonly label: string }) {
++  return (
++    <li className="text-fd-foreground flex items-center gap-2.5 text-sm">
++      <span className="bg-fd-muted text-fd-primary flex size-7 shrink-0 items-center justify-center rounded-lg">
++        <Glyph className="size-4" stroke={1.5} />
++      </span>
++      {label}
++    </li>
++  );
++}
++
++function Step({ command, meaning }: { readonly command: string; readonly meaning: string }) {
++  return (
++    <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
++      <code className="text-fd-foreground rounded-md border border-[var(--kunai-line)] px-2 py-0.5 font-mono text-xs">
++        {command}
++      </code>
++      <span className="text-fd-muted-foreground">{meaning}</span>
++    </li>
++  );
++}
+diff --git a/apps/docs/components/home/home-open-source.tsx b/apps/docs/components/home/home-open-source.tsx
+new file mode 100644
+index 000000000..f85123206
+--- /dev/null
++++ b/apps/docs/components/home/home-open-source.tsx
+@@ -0,0 +1,160 @@
++import { SponsorWall } from "@/components/support/sponsor-wall";
++import { docsGithubIssueTemplateUrl } from "@/lib/docs-github";
++import { SPONSOR_FUNDS, SPONSOR_URL, SUPPORT_PATH, sponsors } from "@/lib/support";
++import {
++  IconArrowRight,
++  IconBrandGithub,
++  IconBug,
++  IconGitPullRequest,
++  IconHeart,
++  type Icon,
++} from "@tabler/icons-react";
++import Link from "next/link";
++
++const REPO = "https://github.com/KitsuneKode/kunai";
++const GOOD_FIRST_ISSUES = `${REPO}/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22`;
++
++type Way = {
++  readonly icon: Icon;
++  readonly title: string;
++  readonly body: string;
++  readonly href: string;
++  readonly external: boolean;
++};
++
++const WAYS: readonly Way[] = [
++  {
++    icon: IconBug,
++    title: "Report a broken provider",
++    body: "The most useful thing to hear about. Say which one and what you saw.",
++    href: docsGithubIssueTemplateUrl("provider_issue.yml"),
++    external: true,
++  },
++  {
++    icon: IconGitPullRequest,
++    title: "Send a fix",
++    body: "A clearer error, a guide that was wrong, an adapter that drifted.",
++    href: "/docs/developer/contribute",
++    external: false,
++  },
++  {
++    icon: IconBrandGithub,
++    title: "Pick a good first issue",
++    body: "Small, scoped and labelled, for a first contribution.",
++    href: GOOD_FIRST_ISSUES,
++    external: true,
++  },
++];
++
++/**
++ * The people side of the project, on the home page: who makes it, how to help,
++ * and who already does.
++ *
++ * It replaces a single strip that asked for money before it had said what the
++ * money was for or offered anything free. Contributing comes first (it costs
++ * nothing and is what a young project needs most); sponsorship sits beside it,
++ * with what it pays for and an honest empty wall rather than a section that
++ * quietly isn't there.
++ *
++ * Contributors are not listed as a wall because there is one human contributor
++ * and a faux gallery would say otherwise; the maintainer is credited by name, and
++ * the first outside contribution is an invitation, not a placeholder avatar.
++ */
++export function HomeOpenSource() {
++  return (
++    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
++      <div className="flex flex-col gap-6 lg:col-span-7">
++        <p className="text-fd-muted-foreground m-0 max-w-prose text-sm leading-6 text-pretty md:text-base">
++          Kunai is MIT licensed and built in the open by{" "}
++          <a
++            href="https://github.com/KitsuneKode"
++            target="_blank"
++            rel="noreferrer noopener"
++            className="text-fd-foreground underline decoration-[color-mix(in_oklab,var(--kunai-accent)_60%,transparent)] underline-offset-4"
++          >
++            KitsuneKode
++            <span className="sr-only"> (opens GitHub in a new tab)</span>
++          </a>
++          . It has no accounts and no ads, so the only thing that keeps it working is someone
++          keeping up with the providers. Three free ways to help:
++        </p>
++        <ul className="m-0 flex list-none flex-col gap-3 p-0">
++          {WAYS.map((way) => {
++            const Glyph = way.icon;
++            const body = (
++              <>
++                <span className="bg-fd-muted text-fd-primary flex size-9 shrink-0 items-center justify-center rounded-lg">
++                  <Glyph className="size-4" stroke={1.5} />
++                </span>
++                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
++                  <span className="text-fd-foreground text-sm font-medium">{way.title}</span>
++                  <span className="text-fd-muted-foreground text-sm leading-5">{way.body}</span>
++                </span>
++                <IconArrowRight
++                  aria-hidden="true"
++                  className="text-fd-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-[var(--ease-out)] group-hover/way:translate-x-0.5"
++                  stroke={1.5}
++                />
++              </>
++            );
++            const className =
++              "group/way flex items-center gap-3 rounded-xl border border-[var(--kunai-line)] bg-[color-mix(in_oklab,var(--kunai-surface)_70%,transparent)] p-3.5 transition-[border-color,transform] duration-200 ease-[var(--ease-out)] hover:border-[color-mix(in_oklab,var(--kunai-accent)_32%,var(--kunai-line))] active:scale-[0.99]";
++            return (
++              <li key={way.title}>
++                {way.external ? (
++                  <a
++                    href={way.href}
++                    target="_blank"
++                    rel="noreferrer noopener"
++                    className={className}
++                  >
++                    {body}
++                    <span className="sr-only"> (opens in a new tab)</span>
++                  </a>
++                ) : (
++                  <Link href={way.href} className={className}>
++                    {body}
++                  </Link>
++                )}
++              </li>
++            );
++          })}
++        </ul>
++      </div>
++
++      <section aria-labelledby="home-sponsors-title" className="kunai-surface-shell lg:col-span-5">
++        <div className="kunai-surface-shell__inner flex h-full flex-col gap-5 p-6 md:p-7">
++          <div className="flex items-center gap-2.5">
++            <IconHeart className="text-fd-primary size-5" stroke={1.5} aria-hidden="true" />
++            <h3 id="home-sponsors-title" className="m-0 font-sans text-base font-medium">
++              Sponsors
++            </h3>
++          </div>
++          <ul className="m-0 flex list-none flex-col gap-2 p-0">
++            {SPONSOR_FUNDS.map((item) => (
++              <li key={item.title} className="text-fd-muted-foreground text-sm leading-5">
++                <span className="text-fd-foreground font-medium">{item.title}.</span> {item.body}
++              </li>
++            ))}
++          </ul>
++          <SponsorWall sponsors={sponsors} withAction={false} />
++          <div className="mt-auto flex flex-wrap items-center gap-3">
++            <a
++              className="kunai-button kunai-button-primary"
++              href={SPONSOR_URL}
++              rel="noreferrer noopener"
++              target="_blank"
++            >
++              <IconHeart className="mr-1.5 size-4" stroke={1.5} />
++              <span>Sponsor</span>
++              <span className="sr-only"> (opens GitHub Sponsors in a new tab)</span>
++            </a>
++            <Link className="kunai-button kunai-button-quiet" href={SUPPORT_PATH}>
++              How it is spent
++            </Link>
++          </div>
++        </div>
++      </section>
++    </div>
++  );
++}
+diff --git a/apps/docs/components/home/home-support-strip.tsx b/apps/docs/components/home/home-support-strip.tsx
+deleted file mode 100644
+index 9029446fc..000000000
+--- a/apps/docs/components/home/home-support-strip.tsx
++++ /dev/null
+@@ -1,47 +0,0 @@
+-import { SPONSOR_URL, SUPPORT_PATH } from "@/lib/support";
+-import { IconHeart } from "@tabler/icons-react";
+-import Link from "next/link";
+-
+-/**
+- * One quiet ask, after the reasons and before the last install prompt.
+- *
+- * It states what the money is for in a sentence, because "support the project"
+- * with no object is a button people scroll past. The free ways to help live on
+- * `/support`, one click further, so this strip stays a single decision.
+- */
+-export function HomeSupportStrip() {
+-  return (
+-    <section
+-      aria-labelledby="home-support-title"
+-      className="kunai-home-support border-fd-border flex flex-col gap-5 border-t py-10 sm:flex-row sm:items-center sm:justify-between"
+-    >
+-      <div className="flex max-w-2xl flex-col gap-1.5">
+-        <h2
+-          id="home-support-title"
+-          className="text-fd-foreground m-0 font-sans text-lg font-medium"
+-        >
+-          Kunai is free, and someone has to keep up with the providers.
+-        </h2>
+-        <p className="text-fd-muted-foreground m-0 text-sm leading-6 text-pretty">
+-          Providers change their keys and layouts regularly. Sponsorship pays for the time it takes
+-          to keep playback working.
+-        </p>
+-      </div>
+-      <div className="flex shrink-0 flex-wrap items-center gap-3">
+-        <a
+-          className="kunai-button kunai-button-primary"
+-          href={SPONSOR_URL}
+-          rel="noreferrer noopener"
+-          target="_blank"
+-        >
+-          <IconHeart className="mr-1.5 size-4" stroke={1.5} />
+-          <span>Sponsor</span>
+-          <span className="sr-only"> (opens GitHub Sponsors in a new tab)</span>
+-        </a>
+-        <Link className="kunai-button kunai-button-quiet" href={SUPPORT_PATH}>
+-          Other ways to help
+-        </Link>
+-      </div>
+-    </section>
+-  );
+-}
+diff --git a/apps/docs/components/home/workshop-showcase.tsx b/apps/docs/components/home/workshop-showcase.tsx
+new file mode 100644
+index 000000000..9e5ba02bd
+--- /dev/null
++++ b/apps/docs/components/home/workshop-showcase.tsx
+@@ -0,0 +1,126 @@
++import { fetchWorkshopMeta } from "@/lib/github-repos";
++import {
++  presentWorkshopMeta,
++  workshop,
++  type WorkshopMeta,
++  type WorkshopProject,
++} from "@/lib/workshop";
++import { IconArrowUpRight, IconBrandGithub, IconStar } from "@tabler/icons-react";
++
++/**
++ * "Also from the workshop": the maintainer's other original projects.
++ *
++ * Shown on the home page because someone who trusts one tool by a maintainer is
++ * the person most likely to want the next one, and because a project with several
++ * living siblings reads as maintained rather than abandoned. The footer carries
++ * the same list in compressed form; both read `lib/workshop.ts`.
++ *
++ * A card is a preview, not a pitch: the project's own one-line description, the
++ * facts a visitor uses to decide whether to click (language, last updated,
++ * stars once there are enough to mean something) and the two places it lives.
++ * Facts come from a cached GitHub lookup and degrade to the curated copy.
++ */
++export async function WorkshopShowcase() {
++  const meta = await fetchWorkshopMeta();
++
++  return (
++    <ul className="m-0 grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3">
++      {workshop.map((project) => (
++        <li key={project.repo} className="flex">
++          <ProjectCard project={project} meta={meta.get(project.repo)} />
++        </li>
++      ))}
++    </ul>
++  );
++}
++
++function monogram(name: string): string {
++  const cleaned = name.replace(/[^a-zA-Z0-9]+/g, " ").trim();
++  const words = cleaned.split(" ");
++  return (words.length > 1 ? `${words[0]?.[0] ?? ""}${words[1]?.[0] ?? ""}` : cleaned.slice(0, 2))
++    .toLowerCase()
++    .padEnd(2, "·");
++}
++
++function formatUpdated(iso: string): string {
++  const date = new Date(`${iso}T00:00:00Z`);
++  if (Number.isNaN(date.getTime())) return iso;
++  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
++}
++
++export function ProjectCard({
++  project,
++  meta,
++}: {
++  readonly project: WorkshopProject;
++  readonly meta: WorkshopMeta | undefined;
++}) {
++  const facts = presentWorkshopMeta(project, meta);
++  const primaryUrl = project.siteUrl ?? project.repoUrl;
++
++  return (
++    <article className="kunai-surface-shell group/card has-[a:focus-visible]:ring-ring relative flex w-full flex-col transition-[border-color,box-shadow] duration-200 ease-[var(--ease-out)] hover:border-[color-mix(in_oklab,var(--kunai-accent)_32%,transparent)] has-[a:focus-visible]:ring-2">
++      <div className="kunai-surface-shell__inner flex h-full flex-col gap-4 p-5">
++        <header className="flex items-start gap-3">
++          <span
++            aria-hidden="true"
++            className="text-fd-primary flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--kunai-accent)_12%,var(--kunai-surface))] font-mono text-sm font-medium"
++          >
++            {monogram(project.name)}
++          </span>
++          <div className="min-w-0 flex-1">
++            <h3 className="m-0 text-base leading-snug font-medium">
++              {/* The stretched link: the whole card is the target for the project's
++                  main page, while the repository link below sits above it. */}
++              <a
++                href={primaryUrl}
++                target="_blank"
++                rel="noreferrer noopener"
++                className="text-fd-foreground after:absolute after:inset-0 after:content-['']"
++              >
++                {project.name}
++                <span className="sr-only"> (opens in a new tab)</span>
++              </a>
++            </h3>
++            <p className="text-fd-muted-foreground m-0 mt-0.5 text-xs">{project.kind}</p>
++          </div>
++          <IconArrowUpRight
++            aria-hidden="true"
++            className="text-fd-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-[var(--ease-out)] group-hover/card:translate-x-0.5 group-hover/card:-translate-y-0.5"
++            stroke={1.5}
++          />
++        </header>
++
++        <p className="text-fd-muted-foreground m-0 text-sm leading-6 text-pretty">
++          {project.tagline}
++        </p>
++
++        <footer className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1 text-xs">
++          <span className="text-fd-foreground font-mono">{facts.language}</span>
++          {facts.stars !== null ? (
++            <span className="text-fd-muted-foreground inline-flex items-center gap-1 tabular-nums">
++              <IconStar className="size-3.5" stroke={1.5} aria-hidden="true" />
++              {facts.stars}
++              <span className="sr-only"> stars</span>
++            </span>
++          ) : null}
++          {facts.updated ? (
++            <span className="text-fd-muted-foreground tabular-nums">
++              Updated {formatUpdated(facts.updated)}
++            </span>
++          ) : null}
++          <a
++            href={project.repoUrl}
++            target="_blank"
++            rel="noreferrer noopener"
++            className="text-fd-muted-foreground hover:text-fd-foreground relative z-10 ml-auto inline-flex items-center gap-1 rounded-md px-1 py-1 transition-colors duration-150"
++          >
++            <IconBrandGithub className="size-3.5" stroke={1.5} aria-hidden="true" />
++            Source
++            <span className="sr-only">: {project.name} on GitHub (opens in a new tab)</span>
++          </a>
++        </footer>
++      </div>
++    </article>
++  );
++}
+diff --git a/apps/docs/components/layout/nav-compact.tsx b/apps/docs/components/layout/nav-compact.tsx
+new file mode 100644
+index 000000000..661475b09
+--- /dev/null
++++ b/apps/docs/components/layout/nav-compact.tsx
+@@ -0,0 +1,50 @@
++"use client";
++
++import { NAV_COMPACT_AFTER_PX, shouldCompactNav } from "@/lib/nav-compact";
++import { useEffect, useRef } from "react";
++
++/**
++ * Shrinks the floating nav once the page has been scrolled.
++ *
++ * It sets `data-nav-compact` on the root element and the stylesheet does the rest,
++ * so the component renders nothing visible and no React state changes while
++ * scrolling. There is deliberately no scroll listener: an `IntersectionObserver` on
++ * a one-pixel sentinel reports the one transition that matters (top of page ->
++ * scrolled) and costs nothing between the two.
++ *
++ * The shrink itself is a `transform: scale()` in CSS, which stays on the
++ * compositor. Animating the nav's width or padding would reflow the whole bar on
++ * every frame of the transition.
++ */
++export function NavCompact() {
++  const sentinelRef = useRef<HTMLDivElement | null>(null);
++
++  useEffect(() => {
++    const sentinel = sentinelRef.current;
++    if (!sentinel) return undefined;
++    const root = document.documentElement;
++    const observer = new IntersectionObserver(([entry]) => {
++      if (!entry) return;
++      const compact = shouldCompactNav({
++        isIntersecting: entry.isIntersecting,
++        top: entry.boundingClientRect.top,
++      });
++      if (compact) root.dataset.navCompact = "true";
++      else delete root.dataset.navCompact;
++    });
++    observer.observe(sentinel);
++    return () => {
++      observer.disconnect();
++      delete root.dataset.navCompact;
++    };
++  }, []);
++
++  return (
++    <div
++      ref={sentinelRef}
++      aria-hidden="true"
++      className="pointer-events-none absolute left-0 h-px w-px"
++      style={{ top: NAV_COMPACT_AFTER_PX }}
++    />
++  );
++}
+diff --git a/apps/docs/components/layout/site-footer.tsx b/apps/docs/components/layout/site-footer.tsx
+index d565bcad4..a7b6089a5 100644
+--- a/apps/docs/components/layout/site-footer.tsx
++++ b/apps/docs/components/layout/site-footer.tsx
+@@ -3,6 +3,7 @@ import { KunaiFoxPatrol } from "@/components/brand/kunai-fox-patrol";
+ import { codeMetadata } from "@/lib/code-metadata";
+ import { docsGithubIssuesUrl, docsGithubRepoUrl } from "@/lib/docs-github";
+ import { SUPPORT_PATH } from "@/lib/support";
++import { workshop } from "@/lib/workshop";
+ import Link from "next/link";
+ 
+ /**
+@@ -23,6 +24,8 @@ type FooterLink = {
+   readonly href: string;
+   readonly label: string;
+   readonly external?: boolean;
++  /** A short descriptor printed under the label. */
++  readonly note?: string;
+ };
+ 
+ const DOCS_LINKS: readonly FooterLink[] = [
+@@ -54,34 +57,19 @@ const TRUST_LINKS: readonly FooterLink[] = [
+   },
+ ];
+ 
+-/** Sibling tools from the same workshop — each is its own project, not a Kunai feature. */
+-const ECOSYSTEM_LINKS: readonly FooterLink[] = [
+-  {
+-    href: "https://github.com/KitsuneKode/kittymux",
+-    label: "kittymux",
+-    external: true,
+-  },
+-  {
+-    href: "https://github.com/KitsuneKode/sweep",
+-    label: "sweep",
+-    external: true,
+-  },
+-  {
+-    href: "https://github.com/KitsuneKode/portless",
+-    label: "portless",
+-    external: true,
+-  },
+-  {
+-    href: "https://github.com/KitsuneKode/run-cli",
+-    label: "run-cli",
+-    external: true,
+-  },
+-  {
+-    href: "https://github.com/KitsuneKode/arche",
+-    label: "arche",
+-    external: true,
+-  },
+-];
++/**
++ * Sibling projects from the same workshop, from the shared curated list.
++ *
++ * The list lives in `lib/workshop.ts` (also used by the home page) and contains
++ * only the maintainer's own original work: forks are excluded on purpose, so a
++ * fork is never presented here as something KitsuneKode made.
++ */
++const ECOSYSTEM_LINKS: readonly FooterLink[] = workshop.map((project) => ({
++  href: project.repoUrl,
++  label: project.name,
++  note: project.kind,
++  external: true,
++}));
+ 
+ function FooterLinkItem({ link }: { readonly link: FooterLink }) {
+   const className =
+@@ -91,6 +79,9 @@ function FooterLinkItem({ link }: { readonly link: FooterLink }) {
+       <a href={link.href} rel="noreferrer" target="_blank" className={className}>
+         {link.label}
+         <span className="sr-only"> (opens in a new tab)</span>
++        {link.note ? (
++          <span className="text-fd-muted-foreground/80 block text-xs leading-5">{link.note}</span>
++        ) : null}
+       </a>
+     );
+   }
+diff --git a/apps/docs/components/support/sponsor-wall.tsx b/apps/docs/components/support/sponsor-wall.tsx
+index 0c3590783..c88339ebc 100644
+--- a/apps/docs/components/support/sponsor-wall.tsx
++++ b/apps/docs/components/support/sponsor-wall.tsx
+@@ -20,7 +20,18 @@ import Link from "next/link";
+  * itself and offers the one action that fills it is better than a section that
+  * quietly isn't there.
+  */
+-export function SponsorWall({ sponsors }: { readonly sponsors: readonly Sponsor[] }) {
++export function SponsorWall({
++  sponsors,
++  withAction = true,
++}: {
++  readonly sponsors: readonly Sponsor[];
++  /**
++   * Whether the empty wall carries its own "Be the first" button. A section that
++   * already has a Sponsor button turns this off, so one view never offers the same
++   * action twice.
++   */
++  readonly withAction?: boolean;
++}) {
+   if (sponsors.length === 0) {
+     return (
+       <Empty className="border-border bg-card/40 border border-dashed">
+@@ -34,16 +45,18 @@ export function SponsorWall({ sponsors }: { readonly sponsors: readonly Sponsor[
+             says they want to be listed.
+           </EmptyDescription>
+         </EmptyHeader>
+-        <EmptyContent>
+-          <Button
+-            size="sm"
+-            render={<Link href={SPONSOR_URL} target="_blank" rel="noreferrer noopener" />}
+-            nativeButton={false}
+-          >
+-            Be the first
+-            <span className="sr-only"> (opens GitHub Sponsors in a new tab)</span>
+-          </Button>
+-        </EmptyContent>
++        {withAction ? (
++          <EmptyContent>
++            <Button
++              size="sm"
++              render={<Link href={SPONSOR_URL} target="_blank" rel="noreferrer noopener" />}
++              nativeButton={false}
++            >
++              Be the first
++              <span className="sr-only"> (opens GitHub Sponsors in a new tab)</span>
++            </Button>
++          </EmptyContent>
++        ) : null}
+       </Empty>
+     );
+   }
+diff --git a/apps/docs/lib/github-repos.ts b/apps/docs/lib/github-repos.ts
+new file mode 100644
+index 000000000..b811f557e
+--- /dev/null
++++ b/apps/docs/lib/github-repos.ts
+@@ -0,0 +1,72 @@
++import { workshop, type WorkshopMeta } from "./workshop";
++
++const API = "https://api.github.com/repos/KitsuneKode";
++
++/**
++ * Live facts about the workshop repositories: stars, language and last push.
++ *
++ * The same posture as `github-stars.ts`: cached for an hour, an optional token
++ * raises the anonymous rate limit, and every failure resolves to "no data"
++ * rather than throwing, so a rate-limited build still renders the page with the
++ * curated fallback. One request per repository, run in parallel; a repository
++ * that fails does not take the others down with it.
++ */
++async function fetchOne(repo: string): Promise<WorkshopMeta | null> {
++  const token = process.env.GITHUB_TOKEN?.trim();
++  const headers = new Headers({ Accept: "application/vnd.github+json" });
++  if (token) headers.set("Authorization", `Bearer ${token}`);
++  try {
++    const response = await fetch(`${API}/${repo}`, {
++      headers,
++      signal: AbortSignal.timeout(5000),
++      next: { revalidate: 3600 },
++    });
++    if (!response.ok) return null;
++    // `response.json()` is untyped, so this is where the payload takes the shape
++    // GitHub documents for it. Everything read from it below tolerates a missing
++    // field, which is the only way a documented field can go wrong.
++    const payload: GithubRepoPayload | null = await response.json();
++    return parseRepoPayload(payload);
++  } catch {
++    return null;
++  }
++}
++
++/** The fields of GitHub's repository payload this module reads. */
++export type GithubRepoPayload = {
++  readonly fork?: boolean;
++  readonly stargazers_count?: number;
++  readonly language?: string | null;
++  readonly pushed_at?: string | null;
++};
++
++/**
++ * Read the three fields we use from a GitHub repository payload.
++ *
++ * Exported for tests. A fork is rejected here as well as by the curated list: if
++ * a repository in the workshop is ever swapped for a fork upstream, it drops out
++ * of the live data and the page falls back to the curated copy rather than
++ * showing someone else's star count as the maintainer's.
++ */
++export function parseRepoPayload(
++  payload: GithubRepoPayload | null | undefined,
++): WorkshopMeta | null {
++  if (!payload || payload.fork === true) return null;
++  const count = payload.stargazers_count;
++  const stars =
++    count !== undefined && Number.isFinite(count) && count >= 0 ? Math.floor(count) : null;
++  return {
++    stars,
++    language: payload.language ?? null,
++    pushedAt: payload.pushed_at ?? null,
++  };
++}
++
++export async function fetchWorkshopMeta(): Promise<ReadonlyMap<string, WorkshopMeta>> {
++  const entries = await Promise.all(
++    workshop.map(async (project) => [project.repo, await fetchOne(project.repo)] as const),
++  );
++  const meta = new Map<string, WorkshopMeta>();
++  for (const [repo, value] of entries) if (value) meta.set(repo, value);
++  return meta;
++}
+diff --git a/apps/docs/lib/nav-compact.ts b/apps/docs/lib/nav-compact.ts
+new file mode 100644
+index 000000000..ca22ed741
+--- /dev/null
++++ b/apps/docs/lib/nav-compact.ts
+@@ -0,0 +1,22 @@
++/**
++ * When the floating nav should shrink.
++ *
++ * A zero-size sentinel sits a short way down the page. While it is on screen the
++ * visitor is still at the top and the nav keeps its full size; once it has
++ * scrolled up out of the viewport, the nav compacts. Using "not intersecting AND
++ * above the viewport" rather than just "not intersecting" matters: a sentinel that
++ * is below the fold on a very short viewport is also not intersecting, and the nav
++ * must not shrink for a visitor who has not scrolled at all.
++ *
++ * Pure so the rule is tested without a browser; the component only reports what
++ * the observer saw.
++ */
++export function shouldCompactNav(entry: {
++  readonly isIntersecting: boolean;
++  readonly top: number;
++}): boolean {
++  return !entry.isIntersecting && entry.top < 0;
++}
++
++/** Scroll distance, in pixels, before the nav shrinks. */
++export const NAV_COMPACT_AFTER_PX = 56;
+diff --git a/apps/docs/lib/workshop.ts b/apps/docs/lib/workshop.ts
+new file mode 100644
+index 000000000..f3ed0672c
+--- /dev/null
++++ b/apps/docs/lib/workshop.ts
+@@ -0,0 +1,124 @@
++/**
++ * The other things KitsuneKode makes, shown in the footer and on the home page.
++ *
++ * Curated by hand, not read off the GitHub org: a profile fills up with forks,
++ * experiments and coursework, and a showcase of "everything" says nothing about
++ * what the maintainer stands behind. Every entry here is the maintainer's own
++ * original work (not a fork), checked against the GitHub API when it was added.
++ * `portless` is deliberately absent: it is a fork of an upstream project.
++ *
++ * Taglines are written here rather than pulled from each repo's description, so
++ * the page never prints a truncated or stale blurb, but each one restates what
++ * the repository itself says it does.
++ */
++
++const OWNER = "https://github.com/KitsuneKode";
++
++export type WorkshopKind = "CLI" | "Web app" | "Scaffold" | "Terminal tool";
++
++export type WorkshopProject = {
++  /** The GitHub repository name under KitsuneKode. */
++  readonly repo: string;
++  readonly name: string;
++  readonly kind: WorkshopKind;
++  readonly tagline: string;
++  /** Primary language as a fallback when the live lookup is unavailable. */
++  readonly language: string;
++  readonly repoUrl: string;
++  /** A live site or package page, when there is one. */
++  readonly siteUrl?: string;
++  readonly siteLabel?: string;
++};
++
++function defineProject(
++  input: Omit<WorkshopProject, "repoUrl"> & { readonly repoUrl?: string },
++): WorkshopProject {
++  return { ...input, repoUrl: input.repoUrl ?? `${OWNER}/${input.repo}` };
++}
++
++export const workshop: readonly WorkshopProject[] = [
++  defineProject({
++    repo: "arche",
++    name: "Arche",
++    kind: "Scaffold",
++    tagline:
++      "A preset-led scaffold CLI and full-stack TypeScript monorepo: Next.js, Express, tRPC, Better Auth.",
++    language: "TypeScript",
++    siteUrl: "https://arche.kitsunekode.in",
++    siteLabel: "arche.kitsunekode.in",
++  }),
++  defineProject({
++    repo: "sweep",
++    name: "sweep",
++    kind: "CLI",
++    tagline:
++      "Safe, fast artifact cleanup for any project tree: node_modules, dist, .next and target, with hard guardrails.",
++    language: "TypeScript",
++    siteUrl: "https://www.npmjs.com/package/@kitsunekode/sweep",
++    siteLabel: "npm",
++  }),
++  defineProject({
++    repo: "kittymux",
++    name: "kittymux",
++    kind: "Terminal tool",
++    tagline: "An agent-aware workspace layer for kitty: sessions, brand glyphs and a usage HUD.",
++    language: "Python",
++  }),
++  defineProject({
++    repo: "run-cli",
++    name: "run-cli",
++    kind: "CLI",
++    tagline:
++      "A Bun-native CLI that turns project startup into one command, with profiles and shell completions.",
++    language: "TypeScript",
++  }),
++  defineProject({
++    repo: "js-questions-lab",
++    name: "JS Questions Lab",
++    kind: "Web app",
++    tagline:
++      "Interactive JavaScript interview practice with runnable snippets and an event-loop visualiser.",
++    language: "TypeScript",
++    siteUrl: "https://jsquestionslab.kitsunekode.in",
++    siteLabel: "jsquestionslab.kitsunekode.in",
++  }),
++  defineProject({
++    repo: "yt-playlist-dedupe",
++    name: "yt-playlist-dedupe",
++    kind: "CLI",
++    tagline: "A safe Bun CLI that scans a single YouTube playlist and removes duplicate videos.",
++    language: "TypeScript",
++    siteUrl: "https://yt-ddp.kitsunekode.in",
++    siteLabel: "yt-ddp.kitsunekode.in",
++  }),
++];
++
++/** Stars are only worth printing once there are enough to mean something. */
++export const STAR_DISPLAY_FLOOR = 5;
++
++export type WorkshopMeta = {
++  readonly stars: number | null;
++  readonly language: string | null;
++  /** ISO date of the last push, for the "updated" line. */
++  readonly pushedAt: string | null;
++};
++
++/** What a card prints about a project. */
++export type WorkshopFacts = {
++  readonly language: string;
++  readonly stars: number | null;
++  readonly updated: string | null;
++};
++
++/** What the card shows for a project, given whatever the live lookup returned. */
++export function presentWorkshopMeta(
++  project: WorkshopProject,
++  meta: WorkshopMeta | undefined,
++): WorkshopFacts {
++  const stars = meta?.stars ?? null;
++  return {
++    language: meta?.language ?? project.language,
++    stars: stars !== null && stars >= STAR_DISPLAY_FLOOR ? stars : null,
++    updated: meta?.pushedAt ? meta.pushedAt.slice(0, 10) : null,
++  };
++}
+diff --git a/apps/docs/test/home-sections.test.tsx b/apps/docs/test/home-sections.test.tsx
+new file mode 100644
+index 000000000..f8ba0c11c
+--- /dev/null
++++ b/apps/docs/test/home-sections.test.tsx
+@@ -0,0 +1,140 @@
++import { describe, expect, test } from "bun:test";
++
++import { renderToStaticMarkup } from "react-dom/server";
++
++import { HomeBento } from "../components/home/home-bento";
++import { HomeOpenSource } from "../components/home/home-open-source";
++import type { HomeProviderMetadata } from "../components/home/types";
++import { ProjectCard } from "../components/home/workshop-showcase";
++import { SiteFooter } from "../components/layout/site-footer";
++import { homeHighlights } from "../lib/home-content";
++import { shouldCompactNav } from "../lib/nav-compact";
++import { SPONSOR_URL } from "../lib/support";
++import { workshop } from "../lib/workshop";
++
++function providers(count: number): HomeProviderMetadata[] {
++  return Array.from({ length: count }, (_, index) => ({
++    id: `p${index}`,
++    displayName: `Provider ${index}`,
++    description: "",
++    domain: "example.test",
++    recommended: index === 3,
++    mediaKinds: ["series"],
++    capabilities: [],
++    status: "active",
++    notes: [],
++  }));
++}
++
++describe("HomeBento", () => {
++  const html = renderToStaticMarkup(
++    <HomeBento highlights={homeHighlights} providers={providers(12)} />,
++  );
++
++  test("states the real provider count and names providers instead of listing a feature", () => {
++    expect(html).toContain(">12<");
++    expect(html).toContain("Provider 3");
++    expect(html).toContain("+4 more");
++  });
++
++  test("puts the recommended provider first", () => {
++    expect(html.indexOf("Provider 3")).toBeLessThan(html.indexOf("Provider 0"));
++  });
++
++  test("carries all four highlights, in two sizes of tile", () => {
++    for (const item of homeHighlights) expect(html).toContain(item.label);
++    expect(html).toContain("md:col-span-7");
++    expect(html).toContain("md:col-span-5");
++  });
++
++  test("shows the recovery commands the docs actually name", () => {
++    for (const command of ["/recover", "/fallback", "/diagnostics"])
++      expect(html).toContain(command);
++  });
++
++  test("ships no client JavaScript: it is plain server markup", () => {
++    expect(html).not.toContain("<script");
++  });
++});
++
++describe("HomeOpenSource", () => {
++  const html = renderToStaticMarkup(<HomeOpenSource />);
++
++  test("offers the free ways to help before the paid one", () => {
++    expect(html.indexOf("Report a broken provider")).toBeLessThan(html.indexOf("Sponsors"));
++    expect(html).toContain("good+first+issue");
++  });
++
++  test("credits the maintainer by name and links the profile", () => {
++    expect(html).toContain("https://github.com/KitsuneKode");
++    expect(html).toContain("KitsuneKode");
++  });
++
++  test("offers sponsorship exactly once: the wall's own button is off here", () => {
++    expect(html.split(SPONSOR_URL).length - 1).toBe(1);
++    expect(html).not.toContain("Be the first");
++  });
++
++  test("does not fake a contributor wall", () => {
++    expect(html).not.toContain("Contributors");
++  });
++});
++
++describe("ProjectCard", () => {
++  const sweep = workshop.find((project) => project.repo === "sweep")!;
++  const meta = { stars: 12, language: "TypeScript", pushedAt: "2026-09-30T00:00:00Z" };
++
++  test("makes the whole card one link to the project's main page, with source separate", () => {
++    const html = renderToStaticMarkup(<ProjectCard project={sweep} meta={meta} />);
++    expect(html).toContain(`href="${sweep.siteUrl}"`);
++    expect(html).toContain("after:absolute");
++    expect(html).toContain(`href="${sweep.repoUrl}"`);
++  });
++
++  test("falls back to the repository when a project has no site", () => {
++    const kittymux = workshop.find((project) => project.repo === "kittymux")!;
++    const html = renderToStaticMarkup(<ProjectCard project={kittymux} meta={undefined} />);
++    expect(html).toContain(`href="${kittymux.repoUrl}"`);
++  });
++
++  test("prints stars at the floor and above, not below, and the update date", () => {
++    expect(renderToStaticMarkup(<ProjectCard project={sweep} meta={meta} />)).toContain("12");
++    const quiet = renderToStaticMarkup(
++      <ProjectCard project={sweep} meta={{ ...meta, stars: 1 }} />,
++    );
++    expect(quiet).not.toContain("stars");
++    expect(renderToStaticMarkup(<ProjectCard project={sweep} meta={meta} />)).toContain(
++      "Updated Sep 30",
++    );
++  });
++
++  test("opens externally and says so to assistive tech", () => {
++    const html = renderToStaticMarkup(<ProjectCard project={sweep} meta={undefined} />);
++    expect(html).toContain('target="_blank"');
++    expect(html).toContain('rel="noreferrer noopener"');
++    expect(html).toContain("opens in a new tab");
++  });
++});
++
++describe("footer workshop column", () => {
++  const html = renderToStaticMarkup(<SiteFooter />);
++
++  test("lists every curated project and never the fork", () => {
++    for (const project of workshop) expect(html).toContain(project.repoUrl);
++    expect(html).not.toContain("portless");
++  });
++});
++
++describe("shouldCompactNav", () => {
++  test("stays full size while the sentinel is on screen", () => {
++    expect(shouldCompactNav({ isIntersecting: true, top: 10 })).toBe(false);
++  });
++
++  test("shrinks once the sentinel has scrolled up out of view", () => {
++    expect(shouldCompactNav({ isIntersecting: false, top: -20 })).toBe(true);
++  });
++
++  test("does not shrink for a visitor who has not scrolled: a sentinel below the fold is also not intersecting", () => {
++    expect(shouldCompactNav({ isIntersecting: false, top: 900 })).toBe(false);
++  });
++});
+diff --git a/apps/docs/test/site-footer.test.tsx b/apps/docs/test/site-footer.test.tsx
+index 19b464a2b..12ab71008 100644
+--- a/apps/docs/test/site-footer.test.tsx
++++ b/apps/docs/test/site-footer.test.tsx
+@@ -45,9 +45,10 @@ describe("SiteFooter", () => {
+       "https://www.npmjs.com/package/@kitsunekode/kunai",
+       "https://github.com/KitsuneKode/kittymux",
+       "https://github.com/KitsuneKode/sweep",
+-      "https://github.com/KitsuneKode/portless",
+       "https://github.com/KitsuneKode/run-cli",
+       "https://github.com/KitsuneKode/arche",
++      "https://github.com/KitsuneKode/js-questions-lab",
++      "https://github.com/KitsuneKode/yt-playlist-dedupe",
+     ]) {
+       expect(html).toContain(`href="${href}"`);
+     }
+diff --git a/apps/docs/test/support.test.tsx b/apps/docs/test/support.test.tsx
+index 6cfb08c1e..6dc703af7 100644
+--- a/apps/docs/test/support.test.tsx
++++ b/apps/docs/test/support.test.tsx
+@@ -4,7 +4,7 @@ import path from "node:path";
+ 
+ import { renderToStaticMarkup } from "react-dom/server";
+ 
+-import { HomeSupportStrip } from "../components/home/home-support-strip";
++import { HomeOpenSource } from "../components/home/home-open-source";
+ import { SiteFooter } from "../components/layout/site-footer";
+ import { SponsorWall } from "../components/support/sponsor-wall";
+ import { SPONSOR_URL, SUPPORT_PATH, sponsors, supportWays } from "../lib/support";
+@@ -56,13 +56,13 @@ describe("SponsorWall", () => {
+ });
+ 
+ describe("support entry points", () => {
+-  test("the home strip and the footer both reach the support page", () => {
+-    expect(renderToStaticMarkup(<HomeSupportStrip />)).toContain(`href="${SUPPORT_PATH}"`);
++  test("the home section and the footer both reach the support page", () => {
++    expect(renderToStaticMarkup(<HomeOpenSource />)).toContain(`href="${SUPPORT_PATH}"`);
+     expect(renderToStaticMarkup(<SiteFooter />)).toContain(`href="${SUPPORT_PATH}"`);
+   });
+ 
+-  test("the home strip opens sponsorship in a new tab and says so to assistive tech", () => {
+-    const html = renderToStaticMarkup(<HomeSupportStrip />);
++  test("the home section opens sponsorship in a new tab and says so to assistive tech", () => {
++    const html = renderToStaticMarkup(<HomeOpenSource />);
+     expect(html).toContain(SPONSOR_URL);
+     expect(html).toContain('target="_blank"');
+     expect(html).toContain("opens GitHub Sponsors in a new tab");
+diff --git a/apps/docs/test/workshop.test.ts b/apps/docs/test/workshop.test.ts
+new file mode 100644
+index 000000000..a1e36b2cf
+--- /dev/null
++++ b/apps/docs/test/workshop.test.ts
+@@ -0,0 +1,88 @@
++import { describe, expect, test } from "bun:test";
++
++import { parseRepoPayload } from "../lib/github-repos";
++import { presentWorkshopMeta, STAR_DISPLAY_FLOOR, workshop } from "../lib/workshop";
++
++describe("workshop list", () => {
++  test("every project is a distinct repository under the maintainer's account", () => {
++    const repos = workshop.map((project) => project.repo);
++    expect(new Set(repos).size).toBe(repos.length);
++    for (const project of workshop) {
++      expect(project.repoUrl).toBe(`https://github.com/KitsuneKode/${project.repo}`);
++    }
++  });
++
++  test("never lists a fork: portless is an upstream fork and must stay out", () => {
++    // Verified against the GitHub API when the list was written: portless reports
++    // `fork: true`. If a project is ever added here, check `isFork` first.
++    expect(workshop.map((project) => project.repo)).not.toContain("portless");
++  });
++
++  test("every link is https and every project says what it is", () => {
++    for (const project of workshop) {
++      expect(project.repoUrl.startsWith("https://")).toBe(true);
++      if (project.siteUrl) expect(project.siteUrl.startsWith("https://")).toBe(true);
++      expect(project.tagline.length).toBeGreaterThan(20);
++      expect(project.tagline.length).toBeLessThan(140);
++    }
++  });
++
++  test("names the projects the maintainer asked to feature", () => {
++    const repos = workshop.map((project) => project.repo);
++    for (const wanted of ["arche", "sweep", "kittymux", "run-cli", "js-questions-lab"]) {
++      expect(repos).toContain(wanted);
++    }
++  });
++});
++
++describe("presentWorkshopMeta", () => {
++  const project = workshop[0]!;
++
++  test("falls back to the curated language when the live lookup failed", () => {
++    expect(presentWorkshopMeta(project, undefined)).toEqual({
++      language: project.language,
++      stars: null,
++      updated: null,
++    });
++  });
++
++  test("prints stars only once there are enough to mean something", () => {
++    const meta = (stars: number) => ({ stars, language: "Rust", pushedAt: null });
++    expect(presentWorkshopMeta(project, meta(STAR_DISPLAY_FLOOR - 1)).stars).toBeNull();
++    expect(presentWorkshopMeta(project, meta(STAR_DISPLAY_FLOOR)).stars).toBe(STAR_DISPLAY_FLOOR);
++  });
++
++  test("prefers the live language and keeps only the date of the last push", () => {
++    const shown = presentWorkshopMeta(project, {
++      stars: 0,
++      language: "Rust",
++      pushedAt: "2026-09-30T12:34:56Z",
++    });
++    expect(shown.language).toBe("Rust");
++    expect(shown.updated).toBe("2026-09-30");
++  });
++});
++
++describe("parseRepoPayload", () => {
++  test("reads stars, language and last push", () => {
++    expect(
++      parseRepoPayload({
++        fork: false,
++        stargazers_count: 9,
++        language: "TypeScript",
++        pushed_at: "2026-09-26T00:00:00Z",
++      }),
++    ).toEqual({ stars: 9, language: "TypeScript", pushedAt: "2026-09-26T00:00:00Z" });
++  });
++
++  test("rejects a fork, so someone else's star count is never shown as the maintainer's", () => {
++    expect(parseRepoPayload({ fork: true, stargazers_count: 4000 })).toBeNull();
++  });
++
++  test("treats an empty payload as no data and a bad star count as no stars", () => {
++    expect(parseRepoPayload(null)).toBeNull();
++    expect(parseRepoPayload(undefined)).toBeNull();
++    expect(parseRepoPayload({ stargazers_count: -3 })?.stars).toBeNull();
++    expect(parseRepoPayload({ stargazers_count: Number.NaN })?.stars).toBeNull();
++  });
++});

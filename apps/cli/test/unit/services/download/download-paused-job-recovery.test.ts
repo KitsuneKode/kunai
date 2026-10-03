@@ -54,6 +54,7 @@ function buildService(): DownloadService {
     } as ConfigService,
     ytDlpAvailable: true,
     ffprobeAvailable: false,
+    statfs: async () => ({ bavail: 1_000_000_000, bsize: 1024 }),
     // Fail the transfer immediately: this test is about job selection, and a
     // resolver that throws keeps it off the network entirely.
     resolveDownloadStream: () => {
@@ -117,4 +118,37 @@ test("a genuinely deferred job keeps its retry window", async () => {
   await service.processQueue();
 
   expect(repo.get(job.id)?.nextRetryAt).toBe(retryAt);
+});
+
+test("fifty deferred jobs do not hide due work beyond the first page", async () => {
+  const service = buildService();
+  const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  for (let episode = 1; episode <= 51; episode += 1) {
+    const id = `deferred-${episode}`;
+    const createdAt = new Date(Date.UTC(2000, 0, 1, 0, episode)).toISOString();
+    // Existing queued work must remain schedulable regardless of new-admission
+    // disk estimates. Seed the durable intent instead of reserving 51 files.
+    repo.enqueue({
+      id,
+      titleId: "tmdb:starvation",
+      titleName: "Example",
+      mediaKind: "series",
+      season: 1,
+      episode,
+      providerId: "allanime",
+      mode: "anime",
+      streamUrl: "",
+      headers: {},
+      outputPath: join(tempDir, "downloads", `${id}.mp4`),
+      tempPath: join(tempDir, "downloads", `${id}.tmp`),
+      createdAt,
+      updatedAt: createdAt,
+    });
+    if (episode <= 50) repo.pause(id, "deferred", retryAt, createdAt);
+    else {
+      await service.processQueue();
+      expect(repo.get(id)?.retryCount).toBe(1);
+    }
+  }
+  expect(repo.listQueued(50).every((job) => job.nextRetryAt === retryAt)).toBe(true);
 });

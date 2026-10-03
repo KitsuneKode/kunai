@@ -1,0 +1,5 @@
+Docs build	UNKNOWN STEP	2026-10-02T23:37:07.3903602Z ^[[36;1mbun run verify:doc-frontmatter^[[0m
+Docs build	UNKNOWN STEP	2026-10-02T23:37:07.5629290Z $ bun run scripts/verify-doc-frontmatter.ts
+Docs build	UNKNOWN STEP	2026-10-02T23:37:10.2071426Z verify:doc-frontmatter — changed without being reconciled:
+Docs build	UNKNOWN STEP	2026-10-02T23:37:10.2073974Z 4 doc(s) changed in this change set with no change to 'lastReviewed'. Re-read each against the tree and set lastReviewed to today — or, for a mechanical sweep that cannot change meaning, re-run with SKIP_DOC_FRESHNESS=1.
+Docs build	UNKNOWN STEP	2026-10-02T23:37:10.2086246Z error: script "verify:doc-frontmatter" exited with code 1

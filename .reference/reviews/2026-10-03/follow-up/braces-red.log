@@ -1,0 +1,293 @@
+✖ Changesets config: installed parser rejects deeply nested braces and parentheses (3.966225ms)
+✖ Changesets config: compile guards direct ASTs and cannot raise the safe ceiling (4.438123ms)
+✖ Changesets config: expand guards direct ASTs and cannot raise the safe ceiling (1.82454ms)
+✖ Changesets config: stringify guards direct ASTs and cannot raise the safe ceiling (2.065537ms)
+✖ Changesets config: depth boundary and ordinary glob semantics remain compatible (1.654101ms)
+✖ Changesets git: installed parser rejects deeply nested braces and parentheses (2.267169ms)
+✖ Changesets git: compile guards direct ASTs and cannot raise the safe ceiling (0.8132ms)
+✖ Changesets git: expand guards direct ASTs and cannot raise the safe ceiling (1.002323ms)
+✖ Changesets git: stringify guards direct ASTs and cannot raise the safe ceiling (0.78964ms)
+✖ Changesets git: depth boundary and ordinary glob semantics remain compatible (0.963775ms)
+✖ shadcn glob: installed parser rejects deeply nested braces and parentheses (1.942831ms)
+✖ shadcn glob: compile guards direct ASTs and cannot raise the safe ceiling (0.362767ms)
+✖ shadcn glob: expand guards direct ASTs and cannot raise the safe ceiling (0.287064ms)
+✖ shadcn glob: stringify guards direct ASTs and cannot raise the safe ceiling (0.255851ms)
+✖ shadcn glob: depth boundary and ordinary glob semantics remain compatible (0.337723ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 0
+ℹ fail 15
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 44.25539
+
+✖ failing tests:
+
+test at scripts/test/dependency-patches.test.mjs:32:3
+✖ Changesets config: installed parser rejects deeply nested braces and parentheses (3.966225ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:37:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.start (node:internal/test_runner/test:1096:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:385:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:42:5
+✖ Changesets config: compile guards direct ASTs and cannot raise the safe ceiling (4.438123ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:43:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:42:5
+✖ Changesets config: expand guards direct ASTs and cannot raise the safe ceiling (1.82454ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:43:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:42:5
+✖ Changesets config: stringify guards direct ASTs and cannot raise the safe ceiling (2.065537ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:43:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:49:3
+✖ Changesets config: depth boundary and ordinary glob semantics remain compatible (1.654101ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:54:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:32:3
+✖ Changesets git: installed parser rejects deeply nested braces and parentheses (2.267169ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:37:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:42:5
+✖ Changesets git: compile guards direct ASTs and cannot raise the safe ceiling (0.8132ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:43:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:42:5
+✖ Changesets git: expand guards direct ASTs and cannot raise the safe ceiling (1.002323ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:43:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:42:5
+✖ Changesets git: stringify guards direct ASTs and cannot raise the safe ceiling (0.78964ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:43:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:49:3
+✖ Changesets git: depth boundary and ordinary glob semantics remain compatible (0.963775ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:54:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:32:3
+✖ shadcn glob: installed parser rejects deeply nested braces and parentheses (1.942831ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:37:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:42:5
+✖ shadcn glob: compile guards direct ASTs and cannot raise the safe ceiling (0.362767ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:43:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:42:5
+✖ shadcn glob: expand guards direct ASTs and cannot raise the safe ceiling (0.287064ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:43:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:42:5
+✖ shadcn glob: stringify guards direct ASTs and cannot raise the safe ceiling (0.255851ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:43:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }
+
+test at scripts/test/dependency-patches.test.mjs:49:3
+✖ shadcn glob: depth boundary and ordinary glob semantics remain compatible (0.337723ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.
+      at TestContext.<anonymous> (file:///home/kitsunekode/Projects/hacking/kitsunesnipe/.worktrees/full-review-fixes-20261003/scripts/test/dependency-patches.test.mjs:54:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /exceeds max depth/,
+    operator: 'throws',
+    diff: 'simple'
+  }

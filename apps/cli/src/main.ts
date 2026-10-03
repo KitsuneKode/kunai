@@ -640,9 +640,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     );
   }
 
-  // Best-effort: clear any stale `*.old` left by a prior Windows self-replace.
+  // Best-effort: clear the running Kunai binary's own Windows self-replace backup.
   void import("./services/update/self-replace").then(({ cleanupOldBinary }) =>
-    cleanupOldBinary(process.execPath).catch(() => {}),
+    cleanupOldBinary(process.execPath, import.meta.path).catch(() => {}),
   );
 
   // Parse CLI arguments before acquiring the versioned lifetime lock so short

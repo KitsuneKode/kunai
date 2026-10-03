@@ -1,0 +1,626 @@
+diff --git a/apps/cli/src/app/playback/PlaybackPhase.ts b/apps/cli/src/app/playback/PlaybackPhase.ts
+index 090260ccb..052ce7f5f 100644
+--- a/apps/cli/src/app/playback/PlaybackPhase.ts
++++ b/apps/cli/src/app/playback/PlaybackPhase.ts
+@@ -2736,7 +2736,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
+                 providerEpisodeIdentity: currentEpisode.providerEpisodeIdentity,
+                 providerId: invalidateProviderId,
+               }),
+-              preparedStream.url,
++              // Deferred streams record their stable content key — the locator
++              // sitting in `url` is re-minted every resolve and can never match.
++              preparedStream.contentKey ?? preparedStream.url,
+             );
+             await invalidateEpisodePlaybackCaches({
+               cacheStore,
+diff --git a/apps/cli/src/domain/types.ts b/apps/cli/src/domain/types.ts
+index 6122a2973..4b0183f6f 100644
+--- a/apps/cli/src/domain/types.ts
++++ b/apps/cli/src/domain/types.ts
+@@ -116,6 +116,12 @@ export interface EpisodePickerOption {
+ export interface StreamInfo {
+   readonly url: string;
+   readonly deferredLocator?: string;
++  /**
++   * Stable content identity carried from the provider stream — the dead-stream
++   * ledger records and matches this instead of `url` when the URL is an
++   * ephemeral handle (deferred locators change every resolve).
++   */
++  readonly contentKey?: string;
+   readonly headers: Record<string, string>;
+   readonly audioLanguages?: string[];
+   readonly hardSubLanguage?: string;
+diff --git a/apps/cli/src/services/playback/PlaybackResolveService.ts b/apps/cli/src/services/playback/PlaybackResolveService.ts
+index 16491682d..c866c0cf9 100644
+--- a/apps/cli/src/services/playback/PlaybackResolveService.ts
++++ b/apps/cli/src/services/playback/PlaybackResolveService.ts
+@@ -289,7 +289,10 @@ export class PlaybackResolveService {
+ 
+     if (input.prefetchedStream) {
+       const prefetched = input.prefetchedStream;
+-      const blocked = isBlockedStreamUrl(prefetched.url, input.blockedStreamUrls);
++      const blocked = isBlockedStreamUrl(
++        prefetched.contentKey ?? prefetched.url,
++        input.blockedStreamUrls,
++      );
+       const stale = !isStreamTimestampFresh(prefetched);
+       if (!blocked && !stale) {
+         return {
+@@ -322,7 +325,10 @@ export class PlaybackResolveService {
+       await this.deleteCachedStream(cacheKey);
+       cachedStream = null;
+       cacheBecameStale = true;
+-    } else if (cachedStream && isBlockedStreamUrl(cachedStream.url, input.blockedStreamUrls)) {
++    } else if (
++      cachedStream &&
++      isBlockedStreamUrl(cachedStream.contentKey ?? cachedStream.url, input.blockedStreamUrls)
++    ) {
+       await this.deleteCachedStream(cacheKey);
+       cachedStream = null;
+       cacheBecameStale = true;
+@@ -476,7 +482,12 @@ export class PlaybackResolveService {
+           }
+         } else if (
+           inventoryResult.streams.some((stream) =>
+-            isBlockedStreamUrl(stream.url, input.blockedStreamUrls),
++            // Match the same key the ledger records: stable contentKey for
++            // deferred streams (their locator is re-minted every resolve).
++            isBlockedStreamUrl(
++              stream.contentKey ?? stream.url ?? stream.deferredLocator,
++              input.blockedStreamUrls,
++            ),
+           )
+         ) {
+           await this.deleteSourceInventory(inventoryInput);
+diff --git a/apps/cli/src/services/providers/provider-result-adapter.ts b/apps/cli/src/services/providers/provider-result-adapter.ts
+index 55823b050..72d4a370a 100644
+--- a/apps/cli/src/services/providers/provider-result-adapter.ts
++++ b/apps/cli/src/services/providers/provider-result-adapter.ts
+@@ -66,6 +66,7 @@ export function providerResolveResultToStreamInfo(
+   return {
+     url: playableUrl,
+     deferredLocator: selected.deferredLocator,
++    contentKey: selected.contentKey,
+     headers: selected.headers ?? {},
+     audioLanguages: selected.audioLanguages ? [...selected.audioLanguages] : undefined,
+     hardSubLanguage: selected.hardSubLanguage,
+@@ -105,8 +106,8 @@ function selectPreferredStream(
+ ) {
+   const blockedUrls = new Set(selection.blockedStreamUrls ?? []);
+   const streams = result.streams.filter((stream) => {
+-    const playableUrl = stream.url ?? stream.deferredLocator;
+-    return !playableUrl || !blockedUrls.has(playableUrl);
++    const playableKey = stream.contentKey ?? stream.url ?? stream.deferredLocator;
++    return !playableKey || !blockedUrls.has(playableKey);
+   });
+ 
+   const exact = selection.selectedStreamId
+diff --git a/apps/cli/test/unit/services/playback/playback-resolve-service.test.ts b/apps/cli/test/unit/services/playback/playback-resolve-service.test.ts
+index 0e0bb6f66..2ab182fba 100644
+--- a/apps/cli/test/unit/services/playback/playback-resolve-service.test.ts
++++ b/apps/cli/test/unit/services/playback/playback-resolve-service.test.ts
+@@ -1313,6 +1313,67 @@ test("PlaybackResolveService selects an alternate provider stream when the prefe
+   expect(result.stream?.providerResolveResult?.selectedStreamId).toBe("stream:vidking:alt");
+ });
+ 
++test("PlaybackResolveService blocks a deferred stream by its stable content key", async () => {
++  // A deferred stream's locator (and thus its `url`) is re-minted on every
++  // resolve — only the contentKey survives across attempts.
++  const deadContentKey = "https://ak-cdn.example/dead-rep.mp4";
++  const alternateUrl = "https://cdn.example/source-b.m3u8";
++  const cache = createMemoryCache(null);
++  const engine = createMockEngine({
++    result: {
++      status: "resolved",
++      providerId: "vidking",
++      selectedStreamId: "stream:vidking:ak",
++      streams: [
++        {
++          id: "stream:vidking:ak",
++          providerId: "vidking",
++          deferredLocator: "allmanga-ak:fresh-handle-1",
++          contentKey: deadContentKey,
++          protocol: "dash" as const,
++          confidence: 0.9,
++          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
++        },
++        {
++          id: "stream:vidking:alt",
++          providerId: "vidking",
++          url: alternateUrl,
++          protocol: "hls" as const,
++          confidence: 0.8,
++          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
++        },
++      ],
++      subtitles: [],
++      trace: {
++        id: "trace:alt",
++        startedAt: new Date().toISOString(),
++        title: { id: "12345", kind: "movie", title: "Test Movie" },
++        cacheHit: false,
++        steps: [],
++        failures: [],
++      },
++      failures: [],
++    },
++    providerId: "vidking",
++    attempts: [{ providerId: "vidking", result: undefined }],
++  });
++  const service = new PlaybackResolveService({ engine, cacheStore: cache });
++
++  const result = await service.resolve({
++    title,
++    episode: { season: 1, episode: 2 },
++    mode: "series",
++    providerId: "vidking",
++    audioPreference: "original",
++    subtitlePreference: "none",
++    signal: new AbortController().signal,
++    blockedStreamUrls: [deadContentKey],
++  });
++
++  expect(result.stream?.url).toBe(alternateUrl);
++  expect(result.stream?.providerResolveResult?.selectedStreamId).toBe("stream:vidking:alt");
++});
++
+ test("PlaybackResolveService validates stale cached stream and returns it when healthy", async () => {
+   const staleStream = {
+     ...stream,
+diff --git a/packages/providers/src/allmanga/api-client.ts b/packages/providers/src/allmanga/api-client.ts
+index 45a7ecaee..7e3181df0 100644
+--- a/packages/providers/src/allmanga/api-client.ts
++++ b/packages/providers/src/allmanga/api-client.ts
+@@ -106,6 +106,11 @@ export type StreamLink = {
+   readonly protocol?: "hls" | "dash" | "mp4";
+   readonly container?: "m3u8" | "mpd" | "mp4";
+   readonly deferredLocator?: string;
++  /**
++   * Stable content identity for dead-stream bookkeeping when `url` is an
++   * ephemeral deferred locator — the upstream rep URL the locator wraps.
++   */
++  readonly contentKey?: string;
+ };
+ 
+ export type AllMangaAkRepresentation = {
+@@ -1548,6 +1553,7 @@ async function fetchAkLinks(
+     {
+       url: deferredLocator,
+       deferredLocator,
++      contentKey: video.url,
+       quality: `${video.height ?? "auto"}p`,
+       referer,
+       subtitles,
+diff --git a/packages/providers/src/allmanga/direct.ts b/packages/providers/src/allmanga/direct.ts
+index 9c1d5bbac..b22dd8ed7 100644
+--- a/packages/providers/src/allmanga/direct.ts
++++ b/packages/providers/src/allmanga/direct.ts
+@@ -471,7 +471,9 @@ export const allmangaProviderModule: CoreProviderModule = {
+               : undefined;
+           const hardSubLanguage = mode === "sub" && !hasExternalSubs ? "en" : undefined;
+ 
+-          const streamId = `stream:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.url).toString(36)}`;
++          // Deferred links carry an ephemeral locator in `url`; key the stream
++          // id on the stable content so the same pick resolves to the same id.
++          const streamId = `stream:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.contentKey ?? link.url).toString(36)}`;
+           const variantId = `variant:${ALLANIME_PROVIDER_ID}:${sourceId}:${qualityLabel}`;
+ 
+           const headers = buildStreamHeaders(link.referer, ALLANIME_REFERER, DEFAULT_UA);
+@@ -484,6 +486,7 @@ export const allmangaProviderModule: CoreProviderModule = {
+             ...(link.deferredLocator
+               ? { deferredLocator: link.deferredLocator }
+               : { url: link.url }),
++            contentKey: link.contentKey,
+             protocol,
+             container:
+               link.container ?? (protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4"),
+diff --git a/packages/providers/src/animegg/direct.ts b/packages/providers/src/animegg/direct.ts
+index 1185a09cf..2742667d2 100644
+--- a/packages/providers/src/animegg/direct.ts
++++ b/packages/providers/src/animegg/direct.ts
+@@ -33,7 +33,11 @@ import {
+ import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+ import { providerFetchText } from "../shared/provider-http-transport";
+ import { matchProviderCatalogTitle } from "../shared/provider-title-match";
+-import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
++import {
++  classifyProviderFetchFailure,
++  createExhaustedResult,
++  emitTraceEvent,
++} from "../shared/resolve-helpers";
+ import { searchWithPhraseFallback } from "../shared/search-fallback";
+ import {
+   createSourceCandidateFromStream,
+@@ -251,7 +255,10 @@ export const animeggProviderModule: CoreProviderModule = {
+     try {
+       slug = await locateAnimeggShow(input.title, context, events);
+     } catch (error) {
+-      return fail("network-error", `AnimeGG search failed: ${describe(error)}`, true);
++      const { code, retryable } = classifyProviderFetchFailure(
++        error instanceof Error ? error : undefined,
++      );
++      return fail(code, `AnimeGG search failed: ${describe(error)}`, retryable);
+     }
+     if (!slug) {
+       return fail("not-found", `AnimeGG has no show that is clearly "${input.title.title}"`);
+@@ -265,7 +272,10 @@ export const animeggProviderModule: CoreProviderModule = {
+     try {
+       tabs = parseAnimeggEpisodeTabs(await fetchText(episodeUrl, context));
+     } catch (error) {
+-      return fail("network-error", `AnimeGG episode page failed: ${describe(error)}`, true);
++      const { code, retryable } = classifyProviderFetchFailure(
++        error instanceof Error ? error : undefined,
++      );
++      return fail(code, `AnimeGG episode page failed: ${describe(error)}`, retryable);
+     }
+     const picked = selectAnimeggTab(tabs, audio.catalogMode);
+     if (!picked) {
+@@ -286,7 +296,10 @@ export const animeggProviderModule: CoreProviderModule = {
+         await fetchText(animeggEmbedPath(picked.tab.embedId), context),
+       );
+     } catch (error) {
+-      return fail("network-error", `AnimeGG embed failed: ${describe(error)}`, true);
++      const { code, retryable } = classifyProviderFetchFailure(
++        error instanceof Error ? error : undefined,
++      );
++      return fail(code, `AnimeGG embed failed: ${describe(error)}`, retryable);
+     }
+ 
+     const sourceId = `source:${ANIMEGG_PROVIDER_ID}:${picked.tab.mirror.toLowerCase()}:${presentation}`;
+diff --git a/packages/providers/src/animekai/client.ts b/packages/providers/src/animekai/client.ts
+index 123ba0870..59bbeb85f 100644
+--- a/packages/providers/src/animekai/client.ts
++++ b/packages/providers/src/animekai/client.ts
+@@ -9,7 +9,7 @@
+ 
+ import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
+ 
+-import { providerFetch, ProviderHttpError } from "../runtime/fetch";
++import { providerFetch, ProviderHttpError, providerHttpErrorForStatus } from "../runtime/fetch";
+ import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
+ import { parseMegaplayEmbedSourceIds } from "../shared/megaplay-embed";
+ import { TTLCache } from "../shared/provider-cache";
+@@ -212,7 +212,12 @@ export async function animekaiFetchText(
+     referer: options.referer ?? ANIMEKAI_REFERER,
+     extraHeaders: options.extraHeaders,
+     maxTimeSec: options.maxTimeSec,
+-    blockedError: (impersonated) => new Error(animekaiCloudflareBlockMessage(impersonated)),
++    blockedError: (impersonated) =>
++      providerHttpErrorForStatus({
++        status: 403,
++        providerId: ANIMEKAI_PROVIDER_ID,
++        message: animekaiCloudflareBlockMessage(impersonated),
++      }),
+   });
+ }
+ 
+@@ -230,8 +235,13 @@ async function animekaiFetchJson(
+     referer: options.referer ?? ANIMEKAI_REFERER,
+     extraHeaders: options.extraHeaders,
+     maxTimeSec: options.maxTimeSec,
+-    blockedError: (impersonated) => new Error(animekaiCloudflareBlockMessage(impersonated)),
+-    stage: "fetch-json",
++    blockedError: (impersonated) =>
++      providerHttpErrorForStatus({
++        status: 403,
++        providerId: ANIMEKAI_PROVIDER_ID,
++        stage: "fetch-json",
++        message: animekaiCloudflareBlockMessage(impersonated),
++      }),
+   });
+ }
+ 
+diff --git a/packages/providers/src/hianime/client.ts b/packages/providers/src/hianime/client.ts
+index 9ce507bd5..e9db1a974 100644
+--- a/packages/providers/src/hianime/client.ts
++++ b/packages/providers/src/hianime/client.ts
+@@ -9,7 +9,7 @@
+ 
+ import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
+ 
+-import { providerFetch, ProviderHttpError } from "../runtime/fetch";
++import { providerFetch, ProviderHttpError, providerHttpErrorForStatus } from "../runtime/fetch";
+ import { type CurlEnvironment } from "../shared/curl-impersonate";
+ import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
+ import {
+@@ -252,7 +252,12 @@ export async function hianimeFetchText(
+     extraHeaders: options.extraHeaders,
+     maxTimeSec: options.maxTimeSec,
+     curlEnvironment: hianimeCurlEnvironmentForTests,
+-    blockedError: (impersonated) => new Error(cloudflareBlockMessage(impersonated)),
++    blockedError: (impersonated) =>
++      providerHttpErrorForStatus({
++        status: 403,
++        providerId: HIANIME_PROVIDER_ID,
++        message: cloudflareBlockMessage(impersonated),
++      }),
+   });
+ }
+ 
+diff --git a/packages/providers/src/kickassanime/direct.ts b/packages/providers/src/kickassanime/direct.ts
+index 12c552367..7ce664411 100644
+--- a/packages/providers/src/kickassanime/direct.ts
++++ b/packages/providers/src/kickassanime/direct.ts
+@@ -21,13 +21,18 @@ import type {
+   SubtitleCandidate,
+   TitleIdentity,
+ } from "@kunai/types";
++import { providerHttpErrorForStatus } from "@kunai/types";
+ 
+ import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
+ import { formatAnimeSourceDetail } from "../shared/anime-source-presentation";
+ import { directStreamFetchSignal } from "../shared/direct-stream-source";
+ import { parseHlsMasterAudioRenditions, type HlsAudioRendition } from "../shared/hls-ladder";
+ import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+-import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
++import {
++  classifyProviderFetchFailure,
++  createExhaustedResult,
++  emitTraceEvent,
++} from "../shared/resolve-helpers";
+ import { searchWithPhraseFallback } from "../shared/search-fallback";
+ import {
+   createSourceCandidateFromStream,
+@@ -142,7 +147,15 @@ async function fetchJson(
+   init: { readonly method?: "GET" | "POST"; readonly body?: unknown } = {},
+ ): Promise<unknown> {
+   const response = await kaaFetch(context, path, init);
+-  if (!response.ok) throw new Error(`KickAssAnime returned HTTP ${response.status}`);
++  if (!response.ok) {
++    void response.body?.cancel().catch(() => {});
++    throw providerHttpErrorForStatus({
++      status: response.status,
++      message: `KickAssAnime returned HTTP ${response.status}`,
++      providerId: KICKASSANIME_PROVIDER_ID,
++      stage: "fetch-json",
++    });
++  }
+   return response.json();
+ }
+ 
+@@ -209,7 +222,15 @@ async function fetchPlayerPage(
+     headers: { referer: `${currentBase}/`, "user-agent": USER_AGENT },
+     signal: directStreamFetchSignal(context.signal, KAA_FETCH_TIMEOUT_MS),
+   });
+-  if (!response.ok) throw new Error(`KickAssAnime player returned HTTP ${response.status}`);
++  if (!response.ok) {
++    void response.body?.cancel().catch(() => {});
++    throw providerHttpErrorForStatus({
++      status: response.status,
++      message: `KickAssAnime player returned HTTP ${response.status}`,
++      providerId: KICKASSANIME_PROVIDER_ID,
++      stage: "fetch-page",
++    });
++  }
+   return response.text();
+ }
+ 
+@@ -407,7 +428,10 @@ export const kickassanimeProviderModule: CoreProviderModule = {
+     try {
+       slug = await locateKaaShow(input.title, context, events);
+     } catch (error) {
+-      return fail("network-error", `KickAssAnime search failed: ${describe(error)}`, true);
++      const { code, retryable } = classifyProviderFetchFailure(
++        error instanceof Error ? error : undefined,
++      );
++      return fail(code, `KickAssAnime search failed: ${describe(error)}`, retryable);
+     }
+     if (!slug) {
+       const year = input.title.year ? ` (${input.title.year})` : "";
+@@ -450,7 +474,10 @@ export const kickassanimeProviderModule: CoreProviderModule = {
+         }
+       }
+     } catch (error) {
+-      return fail("network-error", `KickAssAnime episode list failed: ${describe(error)}`, true);
++      const { code, retryable } = classifyProviderFetchFailure(
++        error instanceof Error ? error : undefined,
++      );
++      return fail(code, `KickAssAnime episode list failed: ${describe(error)}`, retryable);
+     }
+     if (!located) return fail("not-found", `KickAssAnime has no episode ${episode} for ${slug}`);
+ 
+@@ -463,7 +490,10 @@ export const kickassanimeProviderModule: CoreProviderModule = {
+       server = servers.find((candidate) => PLAYABLE_SERVERS.has(candidate.name));
+       if (server) player = parseKaaPlayerPage(await fetchPlayerPage(context, server));
+     } catch (error) {
+-      return fail("network-error", `KickAssAnime player failed: ${describe(error)}`, true);
++      const { code, retryable } = classifyProviderFetchFailure(
++        error instanceof Error ? error : undefined,
++      );
++      return fail(code, `KickAssAnime player failed: ${describe(error)}`, retryable);
+     }
+     if (!server || !player) {
+       return fail("not-found", `KickAssAnime offered no playable server for ${slug} ${episode}`);
+diff --git a/packages/providers/src/shared/direct-stream-source.ts b/packages/providers/src/shared/direct-stream-source.ts
+index ffea0bc49..c4ede4781 100644
+--- a/packages/providers/src/shared/direct-stream-source.ts
++++ b/packages/providers/src/shared/direct-stream-source.ts
+@@ -15,7 +15,7 @@ import type {
+ import { ProviderHttpError } from "../runtime/fetch";
+ import { resolveTmdbCatalogId } from "./catalog-id";
+ import { verifyCandidateStream } from "./resolve-gate";
+-import { createExhaustedResult, emitTraceEvent } from "./resolve-helpers";
++import { createExhaustedResult, emitTraceEvent, isProviderTimeoutError } from "./resolve-helpers";
+ import { hasResolvableSeriesCoordinates } from "./series-coordinates";
+ import {
+   createStreamId,
+@@ -368,7 +368,7 @@ export async function resolveDirectStreamSource(
+         retryable: false,
+       });
+     }
+-    const timedOut = isTimeoutError(error);
++    const timedOut = isProviderTimeoutError(error);
+     // A ProviderHttpError already carries the classified code and retryability
+     // (e.g. 429 → rate-limited, 403 → blocked); collapsing it to network-error
+     // would retry-storm throttled endpoints and mis-report them as generic
+@@ -474,12 +474,6 @@ export function directStreamFetchSignal(signal: AbortSignal | undefined, ms: num
+   return createTimeoutSignal(signal, ms);
+ }
+ 
+-function isTimeoutError(error: unknown): boolean {
+-  if (!(error instanceof Error)) return false;
+-  if (error.name === "TimeoutError" || error.name === "AbortError") return true;
+-  return /timed out|timeout/i.test(error.message);
+-}
+-
+ function inferProtocol(url: string): StreamCandidate["protocol"] {
+   const lower = url.toLowerCase();
+   if (lower.includes(".m3u8")) return "hls";
+diff --git a/packages/providers/src/shared/resolve-helpers.ts b/packages/providers/src/shared/resolve-helpers.ts
+index a10e643e0..16e043c0a 100644
+--- a/packages/providers/src/shared/resolve-helpers.ts
++++ b/packages/providers/src/shared/resolve-helpers.ts
+@@ -1,4 +1,5 @@
+ import { createResolveTrace, createTraceStep } from "@kunai/core";
++import { ProviderHttpError } from "@kunai/types";
+ import type {
+   CachePolicy,
+   ProviderFailure,
+@@ -101,6 +102,36 @@ function isProviderHealthNeutral(code: ProviderFailure["code"]): boolean {
+   return code === "cancelled" || code === "unsupported-title";
+ }
+ 
++// oxlint-disable-next-line anti-slop/no-unknown-parameters -- boundary probe: this function is what parses the caught value
++export function isProviderTimeoutError(error: unknown): boolean {
++  if (!(error instanceof Error)) return false;
++  if (error.name === "TimeoutError" || error.name === "AbortError") return true;
++  return /timed out|timeout/i.test(error.message);
++}
++
++export interface ClassifiedFetchFailure {
++  readonly code: ProviderFailure["code"];
++  readonly retryable: boolean;
++}
++
++/**
++ * Classify a thrown fetch/resolve error into failure-ledger terms without
++ * string-matching: a ProviderHttpError already carries the right code and
++ * retryability (403 → blocked, 429 → rate-limited, 5xx → provider-unavailable),
++ * so flattening it to `network-error` would retry-storm throttled endpoints
++ * and mislead fallback ordering. Everything else stays a generic,
++ * retryable network failure.
++ */
++export function classifyProviderFetchFailure(error: Error | undefined): ClassifiedFetchFailure {
++  if (error instanceof ProviderHttpError) {
++    return { code: error.code, retryable: error.retryable };
++  }
++  if (error !== undefined && isProviderTimeoutError(error)) {
++    return { code: "timeout", retryable: true };
++  }
++  return { code: "network-error", retryable: true };
++}
++
+ export function emitTraceEvent(
+   events: ProviderTraceEvent[],
+   context: ProviderRuntimeContext | undefined,
+diff --git a/packages/providers/test/kickassanime.test.ts b/packages/providers/test/kickassanime.test.ts
+index f3414a8cf..98afae4a4 100644
+--- a/packages/providers/test/kickassanime.test.ts
++++ b/packages/providers/test/kickassanime.test.ts
+@@ -691,13 +691,13 @@ describe("kickassanimeProviderModule", () => {
+     expect(result.failures[0]?.message).toContain('"Frieren"');
+   });
+ 
+-  test("an HTTP error is retryable and does not go looking for a new domain", async () => {
++  test("an HTTP error keeps its typed classification and does not go looking for a new domain", async () => {
+     const requests: string[] = [];
+     const result = await kickassanimeProviderModule.resolve(
+       resolveInput(),
+       contextWith(() => json({ message: "down" }, 503), requests),
+     );
+-    expect(result.failures[0]).toMatchObject({ code: "network-error", retryable: true });
++    expect(result.failures[0]).toMatchObject({ code: "provider-unavailable", retryable: true });
+     expect(requests.some((request) => request.includes("kickass-anime.ro"))).toBe(false);
+   });
+ 
+diff --git a/packages/providers/test/shared-resolve-helpers.test.ts b/packages/providers/test/shared-resolve-helpers.test.ts
+new file mode 100644
+index 000000000..6f60d0e20
+--- /dev/null
++++ b/packages/providers/test/shared-resolve-helpers.test.ts
+@@ -0,0 +1,54 @@
++import { describe, expect, test } from "bun:test";
++
++import { providerHttpErrorForStatus } from "@kunai/types";
++
++import { classifyProviderFetchFailure } from "../src/shared/resolve-helpers.ts";
++
++describe("classifyProviderFetchFailure", () => {
++  test("a typed HTTP error keeps its status-derived code instead of flattening", () => {
++    expect(
++      classifyProviderFetchFailure(
++        providerHttpErrorForStatus({
++          status: 429,
++          message: "AnimeGG throttled",
++        }),
++      ),
++    ).toEqual({ code: "rate-limited", retryable: true });
++    expect(
++      classifyProviderFetchFailure(
++        providerHttpErrorForStatus({
++          status: 403,
++          message: "edge refused",
++        }),
++      ),
++    ).toEqual({ code: "blocked", retryable: false });
++    expect(
++      classifyProviderFetchFailure(
++        providerHttpErrorForStatus({
++          status: 503,
++          message: "origin down",
++        }),
++      ),
++    ).toEqual({ code: "provider-unavailable", retryable: true });
++  });
++
++  test("a timeout-named error reads as a retryable timeout", () => {
++    const timeout = new Error("request timed out");
++    timeout.name = "TimeoutError";
++    expect(classifyProviderFetchFailure(timeout)).toEqual({
++      code: "timeout",
++      retryable: true,
++    });
++  });
++
++  test("an untyped error stays a retryable network failure", () => {
++    expect(classifyProviderFetchFailure(new Error("socket hangup"))).toEqual({
++      code: "network-error",
++      retryable: true,
++    });
++    expect(classifyProviderFetchFailure(undefined)).toEqual({
++      code: "network-error",
++      retryable: true,
++    });
++  });
++});
+diff --git a/packages/types/src/index.ts b/packages/types/src/index.ts
+index 0cb5c3131..b83800665 100644
+--- a/packages/types/src/index.ts
++++ b/packages/types/src/index.ts
+@@ -276,6 +276,13 @@ export interface StreamCandidate {
+   readonly variantId?: string;
+   readonly url?: string;
+   readonly deferredLocator?: string;
++  /**
++   * Stable identity of the playable payload for dead-stream bookkeeping. Set
++   * when `url` is absent or ephemeral (e.g. a deferred locator minted per
++   * resolve): the value must identify the same upstream content across
++   * resolves so a recorded failure can block the next identical pick.
++   */
++  readonly contentKey?: string;
+   readonly protocol: "hls" | "dash" | "mp4" | "iframe" | "youtube" | "unknown";
+   readonly container?: "m3u8" | "mpd" | "mp4" | "webm" | "unknown";
+   readonly requiresYtdl?: boolean;
+diff --git a/tools/oxlint/anti-slop/baseline.json b/tools/oxlint/anti-slop/baseline.json
+index 3b7eb8853..16d7833b3 100644
+--- a/tools/oxlint/anti-slop/baseline.json
++++ b/tools/oxlint/anti-slop/baseline.json
+@@ -6,7 +6,7 @@
+   "anti-slop(no-object-parameters)": 2,
+   "anti-slop(no-reflect-get)": 2,
+   "anti-slop(no-runtime-typeof)": 832,
+-  "anti-slop(no-unknown-parameters)": 292,
++  "anti-slop(no-unknown-parameters)": 291,
+   "anti-slop(no-unknown-returns)": 59,
+   "anti-slop(no-unsafe-dictionary-type)": 337,
+   "anti-slop(require-safety-comment-for-type-assertion)": 1813

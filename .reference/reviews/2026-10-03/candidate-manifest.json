@@ -1,0 +1,582 @@
+{
+  "baseline": "e509732e7cdd3277943b7a705a0fea9004ed0b7f",
+  "branch": "fix/full-review-blockers-20261003",
+  "files": [
+    {
+      "path": ".changeset/review-queue-recovery-ownership.md",
+      "sha256": "2ae029a42b7af7d09a1ffae64e1743e27f50998dd1349046e85f84a4bbeb04db"
+    },
+    {
+      "path": ".docs/download-offline-onboarding.md",
+      "sha256": "3391d7871f2e72e32f74b7c285d5261c42118f3037872b7178aa9976a73642e5"
+    },
+    {
+      "path": ".docs/features/queue.md",
+      "sha256": "3aa36cabaeb4dc18ec76f4545afde4674adbeea1b21741d2e65b8c692cba8722"
+    },
+    {
+      "path": ".docs/mobile-device-lab.md",
+      "sha256": "3f63b36883438e3ef69a3a69bff179fdbd48c24adc610a0fd4fad50fe412bec7"
+    },
+    {
+      "path": ".docs/mobile-terminal-runtime.md",
+      "sha256": "55ceedba6b33a5a8fe203f493b6f85954011a30bbf4e853bb48b24d9a8262c88"
+    },
+    {
+      "path": ".docs/mpv-in-process-reconnect.md",
+      "sha256": "24b0908285635f1ddc38ef1c6e02a9496200c767a55580bdd5c1f0ce347fd2fd"
+    },
+    {
+      "path": ".docs/release-reliability-gate.md",
+      "sha256": "798ded56fa49d520fe2bbf36e32bc00a4db52c5a87f5c3a2f5d8a7593f3b1147"
+    },
+    {
+      "path": ".docs/repo-infrastructure.md",
+      "sha256": "077fc4479532e09fb0d773566441c8a2e8b9cbf0b2fe63ce2d3c6bdebabe827b"
+    },
+    {
+      "path": ".docs/ux-architecture.md",
+      "sha256": "3a5b705d23fcbe175bb73dafa7342e08a43ebe360caa38abf185e4dc69445d3d"
+    },
+    {
+      "path": ".github/actions/setup-bun-monorepo/action.yml",
+      "sha256": "b7ce25ccd9a0cec157f472f36985c4292b32de06906019bcb7e50afdd400eade"
+    },
+    {
+      "path": ".plans/2026-10-03-production-review.md",
+      "sha256": "d14f56e67b823d9a42143e04123cddd90d469756ec3a05b9b9b71e2be8a988fe"
+    },
+    {
+      "path": ".plans/roadmap.md",
+      "sha256": "024c89336fa7f6e46015c2298414835403fb46b2736c13cc30614f1564332bc5"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/README.md",
+      "sha256": "5185df88d42b959fa6b7e60539a5076cb1ae99e6e5ec277f87c429e6cedd9847"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/allmanga-crypto-freshness.json",
+      "sha256": "f0de3bfbd5ca78e280e3312bf529d5b1b5c1c655be7c8a374dad75b289e5203c"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/dependency-audit.json",
+      "sha256": "5a9adf8fbbd2a854066d8ebb81515723fc033927c4bcee0f7ed3ea13b300efba"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/final-docs-build-fixed-receipt.txt",
+      "sha256": "22769015bc385ea445a9ba06df9ad037710644eb9eda1f99867ef9ea4cd1f38a"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/final-root-test-ready-receipt.txt",
+      "sha256": "4c5c1587b5ba6831e4b854f9b5a694cb0568248117dd1112f41c1f7f2204721d"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/final-runtime-ready-receipt.txt",
+      "sha256": "7170d85949f7b28b3137e9222c329015b9cfa3efd508e1a9ca2c8a9cfb750d0a"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/final-source-ready-receipt.txt",
+      "sha256": "eed884b3a7c1265c333e134098f0123cafe386e074969f772ce3f5ad278e48ef"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/follow-up/braces-frozen-install.log",
+      "sha256": "5b93ca56b2c45e021dfe4852818f4181a337b13ba2cf9f8e3578549b89295a0e"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/follow-up/braces-green-bun.log",
+      "sha256": "1c970d37255faa90ec89dbf4dc3363849fb3f311496bbd590a0bb105ff02dec3"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/follow-up/braces-green-node.log",
+      "sha256": "8436c4b2b2cf0062e679c5704c5cdfd97b92ee9eae69388580705f22df1df284"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/follow-up/braces-patched-audit.json",
+      "sha256": "5a9adf8fbbd2a854066d8ebb81515723fc033927c4bcee0f7ed3ea13b300efba"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/follow-up/braces-red.log",
+      "sha256": "33376e6f94fd70ef17a71965be981eab1e8f954623844b5bce058f09404d26c7"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/follow-up/device-template-rejection.log",
+      "sha256": "3658b550eea06ac747a94687fc65bc027a5adc8be3c539c632dfce82bed418c1"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/follow-up/formatter-ignored-green.log",
+      "sha256": "51ce049b1691ee007ed0086bce5a4223990fd8f3b82714de6192c074d5fa8d3e"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/follow-up/formatter-ignored-red.log",
+      "sha256": "da27bada9160fbe2f2ba39544fcce2cf0d569811f3395ef568318e053f7bfef1"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/follow-up/mobile-hosted-checks.json",
+      "sha256": "888f5448620a3b57ff2a93862809a84a5de929c25a012dd6e800df2df6cbd990"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/follow-up/receipts.json",
+      "sha256": "4f663e1439127ba555c94ea777c76836e4cfc925f96888940f6d8315cfd112db"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/issues.json",
+      "sha256": "68e896d4bcba2b198d624713f943a20d9726adcc9c3de73a5a018d14bd1b1d73"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/pr-details.json",
+      "sha256": "d99dd02f4cbb8d2b2d3677d4dc4f61f9102d1c2bd13b3b806f241dc1d99fe8d4"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/pr-diffs.json",
+      "sha256": "0ec8a8f4d6acbb510da6fb5415b3a23adbbd5ec6adff253446ed7e542f2bd805"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/prs.json",
+      "sha256": "716ff164fc6dc0f0bf7ddd0e26142ec97d495f6beb3232dc4a059c1a5a6be2bd"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/pty-queue-after.txt",
+      "sha256": "4bb6d5fe4e980dc68faf73e44382a9eb05660babdd673a4eda8930314d39f2b5"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/pty-queue-before.txt",
+      "sha256": "4bb6d5fe4e980dc68faf73e44382a9eb05660babdd673a4eda8930314d39f2b5"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/queue-drive-verified.txt",
+      "sha256": "3e516c06857d7e7962afdd8e948ccd8efe5c552ff7ad846eb7759e08d3173729"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/react-diagnostics-final-changed.json",
+      "sha256": "57cdf12c408d5422261a5996dab91ae335b76ca464d81f38b29ceb98cc01882f"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/react-diagnostics.json",
+      "sha256": "34e39913eee5129f7db1174972179bdaafb21e46a11c7a0ede0c2135a10723c1"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/issues.json",
+      "sha256": "2924eee361766b2e83f3a6cf274ed6c753a28a9330896b060579ca65e69965a7"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-528.diff",
+      "sha256": "27eff95073a5badc339789162cf9f1660903a97122cd1fc2a6ee207fd1f71cc3"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-528.json",
+      "sha256": "da24d078ce8a9cbfe229d5eb6aaff03cf59646d731c56ec7cc4fbc5fc5411011"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-532.diff",
+      "sha256": "87ae8780e94e19a740337cc99877fe2034ea9fa606f9bcaa2571874427fa5a69"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-532.json",
+      "sha256": "3541dcb7b3a5bfe519fe099aeab9c7342267a6334508ed5386b7000e5d1de7fc"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-533.diff",
+      "sha256": "57847fd03f7c45576ea22ca9a0ef0578a649705987f5cd4d9ee852c8ae20e12b"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-533.json",
+      "sha256": "d1a94a6168a71d89c78a69f6835b5957fad2291f7cca7d9115cec67711457591"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-534.diff",
+      "sha256": "edd1fa81545c81bd8fa3b1fc6baf20eba54bc523ef6419d666accabc8a80ac55"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-534.json",
+      "sha256": "21f04d5956740d26b715b00f3f1bfd74bedf33adffa0ebee2ffc3d050c2a48c0"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-535.diff",
+      "sha256": "9966c45d276ea4249f50a287f0eef0140e2e4e47521365fdbace0196283ef983"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-535.json",
+      "sha256": "e8939b21da73523f535acd78d0c1743c0d9c49101aac1d4c31ec73d1a97be805"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-536.diff",
+      "sha256": "dff81053e77a73755b6a7a0ad0d00b8dda6631bfaeeae019e2a0bb6b5abac8c1"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-536.json",
+      "sha256": "f468dfe8451a6612c7fdc147d5454159d2804add9b99a2ad4a56199adf272e97"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-537.diff",
+      "sha256": "b805b9d94daefcb3e0bb21bb72cce012add132d21ddf2bb6150dde172ffaac48"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-537.json",
+      "sha256": "785b574d0b1b498741aa9c9c32dbc0300d6ca58bba31d726746a241d25d989d5"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-538.diff",
+      "sha256": "e9dadb854c6891cbf7a78786179adb364a6cbb63eabcf209f5aba60773e3b646"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-538.json",
+      "sha256": "375e2245e5baad96597795b65a74a1fffa4b306d76437db0b37b8b2d6e015d8a"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-539.diff",
+      "sha256": "1e14734f19e6655aaf209f8be3a150aac9264544892f25467d2185bb7e2efa6b"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-539.json",
+      "sha256": "864585fb2e3de21d2cf7db6606f9da9757dfcde6a2f20bc9ee7aaeeb8bfe9766"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-540.diff",
+      "sha256": "560af63ca2fba331a7b772aa47997ad903cb769736a6c9a5ba08826ccafd6216"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-540.json",
+      "sha256": "1143c8b0db188932290c6eda9613cbcfaac2ead9f9d9f0cb5b7e12ecc5991317"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-541.diff",
+      "sha256": "e84523e2cb17825d400e658891bcf32295cdb360afce8e47aeb88f0ce1ce5a50"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-541.json",
+      "sha256": "5b1dab9a6d3d258cc0db403a41d283c8623b5a967dc293ad0bfab1f7e04fc910"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-542.diff",
+      "sha256": "940573b7ba122039d7d849d47307f3187bc5d44ef5862681638cf830b45414f6"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-542.json",
+      "sha256": "48d0aee2a2df1435430c7d0f6f8e914c5736a1775a35c34d5a88a21311e6da5b"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-543.diff",
+      "sha256": "448a17bef478b1e2610d56ee0af151ffdc618c66cb7da22980841d24526d0585"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-543.json",
+      "sha256": "68db98abf168ed831e2b480e79584c14cd7ebd9319bf73f9b57010af647b69c0"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-544.diff",
+      "sha256": "3d660a7d045a86b1b14bee5b2408167ec2eab1b158d0a3f8099e3ea7d739918f"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-544.json",
+      "sha256": "182e209f84929ec4601922249c4bc81447f4b5b539cefee3eb6cf01248e3d56d"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-545.diff",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-545.json",
+      "sha256": "d24515c2e4eec9bd4e2702ed1a71327dc8c97a3dece5e0b909edf4e3b2373313"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-553.diff",
+      "sha256": "e9628514fd75329117aa4fd929cfd0cb8b7b9fc42e9ebc54c8c53fb755b3c1c4"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr-553.json",
+      "sha256": "edb15601fb91d0e765443d47ea1a6862a00b6f14057eb3bfc5350760891f5af9"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr544-docs-failure.txt",
+      "sha256": "2cf6529a271824dd6822078b53f7d6d11814d59c5ce67ac5b1f58a01ea8376d4"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr544-windows-failure.txt",
+      "sha256": "3c6a5bb34186565ceb2e869cce20302ff17b870c9239942bacfa85fdb9653436"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/refresh/pr545-lint-failure.txt",
+      "sha256": "00d3997166a3a819e6209179300f64322b174322d3d342e6d0aab72d64b26634"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/reproductions/pr539-dns-continuity.test.ts",
+      "sha256": "20d80bc58432f3e1af4c9e469711b1d9b75b3c2ccc64ebb176e42173d7645ddb"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/reproductions/pr539-dns-result.txt",
+      "sha256": "013d89f52ed58fef18b153089509575ec80c113c07592f681c2453d03c0c3eab"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/reproductions/pr540-refreshed-result.txt",
+      "sha256": "7d9bb5dda1ce79596a8e733ad8db168a266abcdc0be27413e33d858343f19a57"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/reproductions/pr540-uninstall-result.txt",
+      "sha256": "57c918fd652c44a8b2e12b36d6c41b89a30233106780a4c348df88759e89d55a"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/reproductions/pr544-signal-order.py",
+      "sha256": "a75ce18784064cd58f0ac50e897a3a14760fd361f35138e93fa81915aaf9a255"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/reproductions/pr544-signal-result.json",
+      "sha256": "6be054d6842a33dd7d4bd6a2310e13c92cdfe56892aac3367597e7e705f9aa2e"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/reproductions/pr553-local-green.txt",
+      "sha256": "3f58e8819041e6da648fb397c50d67ff7c3f37217011980fa1b9fdf46c760a15"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/reproductions/pr553-main-red.txt",
+      "sha256": "4d61968bc43515f49b0439c4e4180df6a26c56e812f27a58ddca56dfaccb1c79"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/startup-measurements.json",
+      "sha256": "e1356df78767909e8dbce19afc0f10134a1f87667bfd9f3a76d8b99b3d87ef52"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/verification-receipts.json",
+      "sha256": "5593ddee06a489fe955d70ed438aedbb446ccfc31bd03f88e9976ede105c033a"
+    },
+    {
+      "path": ".reference/reviews/2026-10-03/verification.md",
+      "sha256": "1a3d74b824a20a547c0bf9ae1fa1a9c3ecf4ac0c22739fb07ad0e775cf7e5605"
+    },
+    {
+      "path": "apps/analytics-ingest/package.json",
+      "sha256": "ed2f665bb236f5fac0a0932742d1d4bd32c8a3c62b6e1822681136fb6339c109"
+    },
+    {
+      "path": "apps/cli/src/app-shell/ink-shell.tsx",
+      "sha256": "ca47603456eea2e9ba4f039725c51a94511c680853193313d43841b2417670ed"
+    },
+    {
+      "path": "apps/cli/src/app-shell/loading-shell.tsx",
+      "sha256": "6d7acefb0e4d3ec9f706eca60eb5726e7808b3f3f32cf9b804101255973416c8"
+    },
+    {
+      "path": "apps/cli/src/app-shell/notifications-view.ts",
+      "sha256": "ae082f8fcfd9a729e3ce8c2f2d02bf00f60b6f899fff129604bba2882c9cff92"
+    },
+    {
+      "path": "apps/cli/src/infra/player/playback-watchdog.ts",
+      "sha256": "2966b385ba045d86c8fb2bc1e1bb24d9508ad5710a4e66505d26d12ee2a7c844"
+    },
+    {
+      "path": "apps/cli/src/main.ts",
+      "sha256": "656f0bcbb789a280bb70cf17ba0bf9cb3ff799cf41f54f529605bd1d24354d87"
+    },
+    {
+      "path": "apps/cli/src/services/download/DownloadService.ts",
+      "sha256": "0df274e28175d628b0a85a66e634d462730306511f36433f4a5d37a8a8914de7"
+    },
+    {
+      "path": "apps/cli/src/services/update/native-installer/install-latest.ts",
+      "sha256": "703c7b7fa4f906144b06b6c60677992c61118e580a4084ad717973de864ef03a"
+    },
+    {
+      "path": "apps/cli/src/services/update/native-installer/native-uninstall.ts",
+      "sha256": "c1bc89681cca0e25d368f11ef7ce476aafc1f1608779b97c512d6e65f344375c"
+    },
+    {
+      "path": "apps/cli/src/services/update/self-replace.ts",
+      "sha256": "5e3e3c9373542f987aa1bd348e80c821f52f0b5302f701475898ecd79e48a021"
+    },
+    {
+      "path": "apps/cli/test/unit/app-shell/loading-shell-command-mode.test.tsx",
+      "sha256": "203c0a21af0c42083e0db170a4860fe76db40b415aba3bd3cf5cc7dd1780770a"
+    },
+    {
+      "path": "apps/cli/test/unit/domain/queue/QueueService.test.ts",
+      "sha256": "9adf27c9e3d948f7da4ac4c8a4fc752c4393de934dec20d8faf1a666827a1411"
+    },
+    {
+      "path": "apps/cli/test/unit/infra/player/playback-watchdog.test.ts",
+      "sha256": "b323f6b09c2ab12179360af71afcd597f3ac5db084d27dc32c9c54068c354eb3"
+    },
+    {
+      "path": "apps/cli/test/unit/self-replace.test.ts",
+      "sha256": "914c267aae969aac3f192c0b3935e4a492faa72f92db57c078bff3303a9c5a06"
+    },
+    {
+      "path": "apps/cli/test/unit/services/download/download-paused-job-recovery.test.ts",
+      "sha256": "246675354bdec72f645665733bf101a57fdc6a9ad49020faee8843c0a366003c"
+    },
+    {
+      "path": "apps/cli/test/unit/services/download/download-service.test.ts",
+      "sha256": "21d798578eedf381283951aaa34d80bcc0b8cf00572eb16858d19b5205e1ce00"
+    },
+    {
+      "path": "apps/cli/test/unit/services/update/native-installer/native-uninstall.test.ts",
+      "sha256": "e41ad8d29acddb4bf3018d419d656c3dae2c5e1dbff23f1328527e2463a3f5f4"
+    },
+    {
+      "path": "apps/docs/app/analytics/page.tsx",
+      "sha256": "432bd3cbe7fe7d8d207b880d0a271839c61a238ab7498121fef1c17725251520"
+    },
+    {
+      "path": "apps/docs/app/layout.tsx",
+      "sha256": "4aa7f24b5b61c4d72e3799063222b7725106bcdefaa605aed1756aedbc68dfda"
+    },
+    {
+      "path": "apps/docs/components/analytics/local-time.tsx",
+      "sha256": "fba9505db250d5bc97091f8121f79b596eb5fb7a8a0c363f5b33e05f89cbfe6b"
+    },
+    {
+      "path": "apps/docs/components/analytics/trend-table.tsx",
+      "sha256": "a554b0405a70cd4a8d95ced5445d2e37e11f31efb0412dc309e4dbfc3b150d07"
+    },
+    {
+      "path": "apps/docs/components/analytics/usage-panel.tsx",
+      "sha256": "53fa56830ece783e722d4beefd8360aeb40c3f6333db18040904f7180170209d"
+    },
+    {
+      "path": "apps/docs/components/brand/kunai-fox-roamer.tsx",
+      "sha256": "2ffa68a63fd6ff12b52d4ac880b7f96dffd13f945c2edf0b81ccc92e13b48184"
+    },
+    {
+      "path": "apps/docs/components/layout/site-footer.tsx",
+      "sha256": "8d0b9b49cc20d9faf8fd21696c25f897dd3323a5e306bd1e353748e499499e3b"
+    },
+    {
+      "path": "apps/docs/package.json",
+      "sha256": "d410987a66a55e19848d30661faf75b092da84f95b4f7ee3833a6078e074d85c"
+    },
+    {
+      "path": "apps/docs/test/local-time.test.tsx",
+      "sha256": "9a244bdc9339c0e3792e206d7cbedc263c43ffd4993d24bc22b8ba5d4e47576a"
+    },
+    {
+      "path": "apps/docs/test/roamer-visibility.test.tsx",
+      "sha256": "fb14214aa97bfe33b0347cb81922b35d4510101fe174fbff69a1feb9893ed581"
+    },
+    {
+      "path": "apps/docs/test/trend-table.test.tsx",
+      "sha256": "9239503887fa79b96d14b461c375ba3c9859224267692ac6f43022dc04d3b9d3"
+    },
+    {
+      "path": "apps/docs/test/usage-panel.test.tsx",
+      "sha256": "ac54b88b649f0c7970c1aea337b2cf20bb0f35b5e7990db81ef07f5f5fe998d4"
+    },
+    {
+      "path": "apps/docs/turbo.json",
+      "sha256": "10e044f4a4db0bf601fe6a2428ac12fc4dc425ea118e3fd4c0b79250bb3597ee"
+    },
+    {
+      "path": "apps/mobile/src/application/contracts.ts",
+      "sha256": "9621bf6549696164ee60899d1eaeb2a1072b913b8df05c40d46655e5bc14797c"
+    },
+    {
+      "path": "apps/mobile/src/application/run-mobile-application.ts",
+      "sha256": "e1f8c82f86affffdaa969c3b802e8c9c3c687bd1b2191a572f43afc2e291bbf4"
+    },
+    {
+      "path": "apps/mobile/src/runtime/android/android-player-port.ts",
+      "sha256": "a3ebed9b4092010f384d9ae61ab58aab21b1a3a651fd7c5700b4ce550d2ea3b6"
+    },
+    {
+      "path": "apps/mobile/src/runtime/android/composition.ts",
+      "sha256": "51ef3e588162149a40c02f67979d71ad3e913724fb5a1ab139494cb1ba5bbd00"
+    },
+    {
+      "path": "apps/mobile/src/runtime/android/node-http-port.ts",
+      "sha256": "aa57dc26cde4a932cdf7ae56108cbf479aed7aa5717f9e7120edea7331c0a6f0"
+    },
+    {
+      "path": "apps/mobile/src/runtime/android/node-session.ts",
+      "sha256": "e8b2c533cc2594e9df5832fe1810fe98f1699f483401a23d74c79463e58a82f4"
+    },
+    {
+      "path": "apps/mobile/src/runtime/android/node-state-store.ts",
+      "sha256": "c33a1ab224ce63201040d1b12316feec20d63f89ba8057a2d11fa0352f4d102f"
+    },
+    {
+      "path": "apps/mobile/test/integration/android-session-cancellation.test.ts",
+      "sha256": "a6536e7ebd596e14294f92b7e36ad375330a44db9e1927acf70a5f2ae8cd8542"
+    },
+    {
+      "path": "apps/mobile/test/unit/application/run-mobile-application.test.ts",
+      "sha256": "4581a4c53608bf71d628b106b0f524a4af0da73f153eeba6f0f7a87e99a3e982"
+    },
+    {
+      "path": "apps/mobile/test/unit/runtime/android/android-player-port.test.ts",
+      "sha256": "0d107f9c4004c0736ba5f182756b05fd5b67225be96e23673864b75d92033697"
+    },
+    {
+      "path": "apps/mobile/test/unit/runtime/android/node-http-port.test.ts",
+      "sha256": "da77aa05c07a900c6bf42c7c205d21ec5804b24904e0c8bc02be2abb7af3375c"
+    },
+    {
+      "path": "apps/mobile/test/unit/runtime/android/node-session.test.ts",
+      "sha256": "a35cb222919f6402060e06dc0ae9a24bf7afd86191e82ba8c380fa6548db562f"
+    },
+    {
+      "path": "apps/mobile/test/unit/runtime/android/node-state-store.test.ts",
+      "sha256": "d4e1cb74b043c66bc8728134f61295be37812ebaaf5de60bcf5774d49761120f"
+    },
+    {
+      "path": "bun.lock",
+      "sha256": "2d5a591ca3354dfff0aad1800ddd6f22ee2fc297020cc81a5f69bd4e83084ec7"
+    },
+    {
+      "path": "package.json",
+      "sha256": "69b6f67ff629e69930a139915cac9661f327c95ff07166b8e09f8690777652e2"
+    },
+    {
+      "path": "packages/providers/src/anidb/direct.ts",
+      "sha256": "773056214ea6487c7beaacdfce97ca679e6224237ebc130d29fcdc2117ad32b1"
+    },
+    {
+      "path": "packages/providers/src/animegg/direct.ts",
+      "sha256": "5dad67b82522dcd5ce6311d38dc11cde3081e92ce50ac18165f8570768f37eaa"
+    },
+    {
+      "path": "packages/providers/src/hianime/direct.ts",
+      "sha256": "9bc400597e13ecc00cac3bd51d8eee9e0f992c22ab88857f30351879db2b78d2"
+    },
+    {
+      "path": "packages/relay/src/pinned-transport.ts",
+      "sha256": "2fdfc225ae9008c405cadbc80214e88f6d8e1cc19bf75858537b4f624ce02ae0"
+    },
+    {
+      "path": "packages/storage/src/repositories/download-jobs.ts",
+      "sha256": "751a8a03097666efe8e2f3bdedb9b01e8fa8d462b795ed3f3202b09131d4af50"
+    },
+    {
+      "path": "packages/storage/src/repositories/queue.ts",
+      "sha256": "48603f7e5c69f2accd199b2b9f36259cd69fbfb154cd7f84d9b032da8424d0a5"
+    },
+    {
+      "path": "packages/storage/src/repositories/sync-outbox.ts",
+      "sha256": "1aac9266949d6402db06de53f7417e2bf10861eacf25be617d8d54c6fbe7f9ef"
+    },
+    {
+      "path": "packages/storage/test/download-job-admission.test.ts",
+      "sha256": "c1939ee02931f3353ca7be7983ec9ab7c37147b71e21c8733d90c6f8c70011b0"
+    },
+    {
+      "path": "packages/storage/test/queue-reorder-atomicity.test.ts",
+      "sha256": "68909ae668a539b925fc6fa085585240a2ba5100b455b7e43e7e179b5380488c"
+    },
+    {
+      "path": "patches/README.md",
+      "sha256": "d3ff705a13f788c545dfadfd1d5ca12d45c239bac205938ec1189f846096d67c"
+    },
+    {
+      "path": "patches/braces@3.0.3.patch",
+      "sha256": "58ba366efffb111e51fce827b23f2ab113a5ac1dac9a13407d8fa7b19a933285"
+    },
+    {
+      "path": "scripts/verify-dependency-patches.mjs",
+      "sha256": "7766a6ad982ebcfdc5887c3006f57bc424b5abdd90157a1a57836fa95b42f9d4"
+    },
+    {
+      "path": "tools/oxlint/anti-slop/baseline.json",
+      "sha256": "015a9bafbe6540a38289c868b0ae7b13e9192c24943214eafbfd5f2828a056fc"
+    },
+    {
+      "path": "turbo.json",
+      "sha256": "448f4ec1708ca18cb983a6d4e272827598fc74edd750dfe178210d705ea87df7"
+    }
+  ]
+}

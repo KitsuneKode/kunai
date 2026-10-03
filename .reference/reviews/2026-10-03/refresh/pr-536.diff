@@ -1,0 +1,551 @@
+diff --git a/apps/docs/app/docs/[[...slug]]/page.tsx b/apps/docs/app/docs/[[...slug]]/page.tsx
+index eacdb7792..7206d89cd 100644
+--- a/apps/docs/app/docs/[[...slug]]/page.tsx
++++ b/apps/docs/app/docs/[[...slug]]/page.tsx
+@@ -8,7 +8,7 @@ import {
+   serializeJsonLd,
+   techArticleJsonLd,
+ } from "@/lib/json-ld";
+-import { buildPageMetadata } from "@/lib/page-metadata";
++import { buildPageMetadata, docsOgImagePath } from "@/lib/page-metadata";
+ import { docsCanonicalUrl } from "@/lib/site";
+ import { source } from "@/lib/source";
+ import { troubleshootingFaqEntries } from "@/lib/troubleshooting-faq";
+@@ -46,6 +46,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
+     description: page.data.description ?? "",
+     path: page.url,
+     type: "article",
++    // A card that names this page, so a share of "Troubleshooting" and a share
++    // of "CLI reference" no longer unfurl identically.
++    socialImageUrl: docsOgImagePath(page.url),
+   });
+ }
+ 
+diff --git a/apps/docs/app/og/docs/[[...slug]]/route.tsx b/apps/docs/app/og/docs/[[...slug]]/route.tsx
+new file mode 100644
+index 000000000..d7b193653
+--- /dev/null
++++ b/apps/docs/app/og/docs/[[...slug]]/route.tsx
+@@ -0,0 +1,63 @@
++import { KunaiSocialCard } from "@/lib/brand/social-card";
++import { clipLine, splitHeadline } from "@/lib/brand/split-headline";
++import generatedMascot from "@/lib/generated-mascot.json";
++import { source } from "@/lib/source";
++import { ImageResponse } from "next/og";
++
++export const dynamic = "force-static";
++export const dynamicParams = false;
++
++const SIZE = { width: 1200, height: 630 } as const;
++
++// Inlined at build time, same as the root card: see `app/opengraph-image.tsx`
++// for why this cannot read the PNG from disk here.
++const mascotSrc =
++  generatedMascot.mascotDataUrl.length > 0 ? generatedMascot.mascotDataUrl : undefined;
++
++/** Characters the card's one-line subline fits before it would wrap. */
++const SUBLINE_BUDGET = 96;
++
++/** One card per docs page, generated at build time from the same list the pages use. */
++export function generateStaticParams() {
++  return source.generateParams();
++}
++
++/**
++ * The card shown when a docs page is pasted into Slack, Discord or X.
++ *
++ * It names the page. The site-wide card said "Terminal-first playback guides"
++ * under every link, so a share of "Troubleshooting" and a share of "CLI
++ * reference" were indistinguishable in a chat. The title and description come
++ * from the same frontmatter the page renders, so there is no second copy to
++ * keep in step.
++ *
++ * This is a route handler rather than an `opengraph-image` file because Next
++ * does not allow that convention beneath a catch-all segment, which is what the
++ * docs tree is. The page's metadata points at this path explicitly
++ * (`docsOgImagePath`).
++ *
++ * A slug that resolves to no page still returns the generic card: unfurlers
++ * treat a failed image as no image at all.
++ */
++export async function GET(
++  _request: Request,
++  { params }: { readonly params: Promise<{ readonly slug?: string[] }> },
++) {
++  const page = source.getPage((await params).slug);
++
++  return new ImageResponse(
++    <KunaiSocialCard
++      eyebrow="KUNAI DOCS"
++      headline={splitHeadline(page?.data.title ?? "", "Kunai docs")}
++      subline={
++        page?.data.description
++          ? clipLine(page.data.description, SUBLINE_BUDGET)
++          : "Search, resolve streams, mpv handoff, clean recovery"
++      }
++      command='kunai -S "Your title"'
++      footer="docs · kunai"
++      mascotSrc={mascotSrc}
++    />,
++    { ...SIZE },
++  );
++}
+diff --git a/apps/docs/app/sitemap.ts b/apps/docs/app/sitemap.ts
+index b2fbd0fdc..88e16bc62 100644
+--- a/apps/docs/app/sitemap.ts
++++ b/apps/docs/app/sitemap.ts
+@@ -1,32 +1,52 @@
+-import { indexableReleaseNotesArtifacts, releasePath } from "@/lib/release-notes";
++import {
++  indexableReleaseNotesArtifacts,
++  latestReleaseNotesArtifact,
++  releasePath,
++} from "@/lib/release-notes";
+ import { docsSiteUrl } from "@/lib/site";
+ import { source } from "@/lib/source";
+ import type { MetadataRoute } from "next";
+ 
+ export const dynamic = "force-static";
+ 
++type SitemapEntry = MetadataRoute.Sitemap[number];
++
++/** One entry. `lastModified` is set only when there is a truthful date for the page. */
++function entry(
++  url: string,
++  changeFrequency: SitemapEntry["changeFrequency"],
++  priority: number,
++  lastModified?: string,
++): SitemapEntry {
++  const built: SitemapEntry = { url, changeFrequency, priority };
++  if (lastModified) built.lastModified = lastModified;
++  return built;
++}
++
+ export default function sitemap(): MetadataRoute.Sitemap {
+   const pages = source.getPages();
+   // Withdrawn releases keep their page but leave the sitemap: the point of a
+   // withdrawal is to stop people arriving at that version.
+   const releases = indexableReleaseNotesArtifacts();
++  // The two pages that change when a release ships. Search engines use
++  // `lastmod` to decide what to recrawl, and only when it is truthful, so it is
++  // the latest release's date rather than the build time.
++  const latestRelease = latestReleaseNotesArtifact();
++  const lastReleased = latestRelease?.publishedAt ?? latestRelease?.date ?? undefined;
+ 
+   return [
+-    {
+-      url: docsSiteUrl,
+-      changeFrequency: "weekly",
+-      priority: 1,
+-    },
+-    {
+-      url: `${docsSiteUrl}/releases`,
+-      changeFrequency: "weekly",
+-      priority: 0.8,
+-    },
++    entry(docsSiteUrl, "weekly", 1, lastReleased),
++    entry(`${docsSiteUrl}/releases`, "weekly", 0.8, lastReleased),
+     {
+       url: `${docsSiteUrl}/feedback`,
+       changeFrequency: "monthly",
+       priority: 0.6,
+     },
++    {
++      url: `${docsSiteUrl}/support`,
++      changeFrequency: "monthly",
++      priority: 0.5,
++    },
+     {
+       url: `${docsSiteUrl}/analytics`,
+       changeFrequency: "daily",
+diff --git a/apps/docs/app/w/[code]/opengraph-image.tsx b/apps/docs/app/w/[code]/opengraph-image.tsx
+index c2f0b2d4c..b45c39441 100644
+--- a/apps/docs/app/w/[code]/opengraph-image.tsx
++++ b/apps/docs/app/w/[code]/opengraph-image.tsx
+@@ -1,4 +1,5 @@
+ import { KunaiSocialCard } from "@/lib/brand/social-card";
++import { splitHeadline } from "@/lib/brand/split-headline";
+ import generatedMascot from "@/lib/generated-mascot.json";
+ import { catalogFor, positionFor, titleFor } from "@/lib/share-presentation";
+ import { decodePlaybackTargetWebCode } from "@kunai/types";
+@@ -52,7 +53,7 @@ export default async function ShareOpenGraphImage({
+   return new ImageResponse(
+     <KunaiSocialCard
+       eyebrow="SHARED WITH KUNAI"
+-      headline={splitHeadline(title)}
++      headline={splitHeadline(title, "Shared with Kunai")}
+       subline={`${positionFor(shared.ref)} · ${catalogFor(shared.ref)}`}
+       command="kunai --open <link>"
+       footer="share · kunai"
+@@ -62,56 +63,3 @@ export default async function ShareOpenGraphImage({
+     { ...size },
+   );
+ }
+-
+-/** Characters one headline line fits at the card's type size. */
+-const LINE_BUDGET = 22;
+-
+-/**
+- * Break a title across at most two lines near its middle.
+- *
+- * The card's headline slot is two lines tall. Satori does not wrap for us here
+- * because each line is its own element, so a long title has to be split before
+- * it is handed over or it overflows the card.
+- */
+-export function splitHeadline(title: string): string[] {
+-  // Collapse every whitespace run, not just the ends. A title carrying a newline
+-  // or tab reaches satori as literal control characters inside one text node,
+-  // which lays out unpredictably; and a title that is only whitespace would
+-  // otherwise render an empty headline on an otherwise complete card.
+-  const trimmed = title.replace(/\s+/g, " ").trim();
+-  if (trimmed.length === 0) return ["Shared with Kunai"];
+-  if (trimmed.length <= LINE_BUDGET) return [trimmed];
+-
+-  const words = trimmed.split(/\s+/);
+-  if (words.length === 1) {
+-    // One unbroken token cannot wrap. Cutting it silently would drop the tail
+-    // without the reader ever knowing the title continued, so the ellipsis is
+-    // part of the contract, not decoration.
+-    if (trimmed.length <= LINE_BUDGET * 2) {
+-      return [trimmed.slice(0, LINE_BUDGET), trimmed.slice(LINE_BUDGET)];
+-    }
+-    return [trimmed.slice(0, LINE_BUDGET), `${trimmed.slice(LINE_BUDGET, LINE_BUDGET * 2 - 1)}…`];
+-  }
+-
+-  // Balance the two lines rather than filling the first: a title split as
+-  // "Attack on" / "Titan" reads better than "Attack on Titan: The Final" / "Season".
+-  let best = 1;
+-  let bestDelta = Number.POSITIVE_INFINITY;
+-  for (let cut = 1; cut < words.length; cut++) {
+-    const head = words.slice(0, cut).join(" ").length;
+-    const tail = words.slice(cut).join(" ").length;
+-    const delta = Math.abs(head - tail);
+-    if (delta < bestDelta) {
+-      bestDelta = delta;
+-      best = cut;
+-    }
+-  }
+-  const head = words.slice(0, best).join(" ");
+-  const tail = words.slice(best).join(" ");
+-  return [truncate(head), truncate(tail)];
+-}
+-
+-/** Cut an over-long line, marking it so a dropped tail is never silent. */
+-function truncate(line: string): string {
+-  return line.length <= LINE_BUDGET ? line : `${line.slice(0, LINE_BUDGET - 1)}…`;
+-}
+diff --git a/apps/docs/lib/brand/split-headline.ts b/apps/docs/lib/brand/split-headline.ts
+new file mode 100644
+index 000000000..60bc5b67c
+--- /dev/null
++++ b/apps/docs/lib/brand/split-headline.ts
+@@ -0,0 +1,76 @@
++/**
++ * Headline layout for the social cards.
++ *
++ * Shared by every card route (a shared title, a docs page): they all hand the
++ * same two-line slot a string of unknown length, and each used to need its own
++ * answer to "what if it does not fit".
++ */
++
++/** Characters one headline line fits at the card's type size. */
++const LINE_BUDGET = 22;
++
++/**
++ * Break a title across at most two lines near its middle.
++ *
++ * The card's headline slot is two lines tall. Satori does not wrap for us here
++ * because each line is its own element, so a long title has to be split before
++ * it is handed over or it overflows the card.
++ */
++export function splitHeadline(title: string, emptyFallback: string): string[] {
++  // Collapse every whitespace run, not just the ends. A title carrying a newline
++  // or tab reaches satori as literal control characters inside one text node,
++  // which lays out unpredictably; and a title that is only whitespace would
++  // otherwise render an empty headline on an otherwise complete card.
++  const trimmed = title.replace(/\s+/g, " ").trim();
++  if (trimmed.length === 0) return [emptyFallback];
++  if (trimmed.length <= LINE_BUDGET) return [trimmed];
++
++  const words = trimmed.split(/\s+/);
++  if (words.length === 1) {
++    // One unbroken token cannot wrap. Cutting it silently would drop the tail
++    // without the reader ever knowing the title continued, so the ellipsis is
++    // part of the contract, not decoration.
++    if (trimmed.length <= LINE_BUDGET * 2) {
++      return [trimmed.slice(0, LINE_BUDGET), trimmed.slice(LINE_BUDGET)];
++    }
++    return [trimmed.slice(0, LINE_BUDGET), `${trimmed.slice(LINE_BUDGET, LINE_BUDGET * 2 - 1)}…`];
++  }
++
++  // Balance the two lines rather than filling the first: a title split as
++  // "Attack on" / "Titan" reads better than "Attack on Titan: The Final" / "Season".
++  let best = 1;
++  let bestDelta = Number.POSITIVE_INFINITY;
++  for (let cut = 1; cut < words.length; cut++) {
++    const head = words.slice(0, cut).join(" ").length;
++    const tail = words.slice(cut).join(" ").length;
++    const delta = Math.abs(head - tail);
++    if (delta < bestDelta) {
++      bestDelta = delta;
++      best = cut;
++    }
++  }
++  const head = words.slice(0, best).join(" ");
++  const tail = words.slice(best).join(" ");
++  return [truncate(head), truncate(tail)];
++}
++
++/**
++ * Fit a sentence to one line, ending on a word and marking the cut.
++ *
++ * Cutting mid-word ("resolve a direct stre…") reads as a rendering fault; this
++ * backs up to the last space and drops trailing punctuation so the ellipsis
++ * never follows a comma. A string that already fits is returned unchanged.
++ */
++export function clipLine(text: string, budget: number): string {
++  const collapsed = text.replace(/\s+/g, " ").trim();
++  if (collapsed.length <= budget) return collapsed;
++  const clipped = collapsed.slice(0, budget - 1);
++  const lastSpace = clipped.lastIndexOf(" ");
++  const onWord = lastSpace > budget * 0.5 ? clipped.slice(0, lastSpace) : clipped;
++  return `${onWord.replace(/[,;:.\s]+$/, "")}…`;
++}
++
++/** Cut an over-long line, marking it so a dropped tail is never silent. */
++function truncate(line: string): string {
++  return line.length <= LINE_BUDGET ? line : `${line.slice(0, LINE_BUDGET - 1)}…`;
++}
+diff --git a/apps/docs/lib/json-ld.ts b/apps/docs/lib/json-ld.ts
+index a671178e2..20a38f3a4 100644
+--- a/apps/docs/lib/json-ld.ts
++++ b/apps/docs/lib/json-ld.ts
+@@ -27,10 +27,11 @@ export function websiteJsonLd() {
+ /**
+  * The home page describes an installable application, not just a website.
+  *
+- * `WebSite` alone made Kunai ineligible for the software result Google renders
+- * for a free app — the one that shows the platforms and the price. Every field
+- * here is a fact the repo already asserts elsewhere; nothing is invented, and
+- * there is deliberately no `aggregateRating`, because there are no ratings.
++ * This tells a search engine the platforms, the price, the licence and where to
++ * get it, which `WebSite` alone does not. It does not promise a rich result:
++ * Google's software-app result also asks for a rating or review, and there are
++ * deliberately none here because there are none to claim. Every field is a fact
++ * the repo already asserts elsewhere; nothing is invented.
+  */
+ export function softwareApplicationJsonLd(input: {
+   readonly version: string;
+@@ -42,6 +43,9 @@ export function softwareApplicationJsonLd(input: {
+     name: "Kunai",
+     url: docsSiteUrl,
+     description: input.description,
++    // The same card the site shares, so a crawler that wants a picture of the
++    // app is handed the one a person would see.
++    image: `${docsSiteUrl}/opengraph-image`,
+     applicationCategory: "MultimediaApplication",
+     applicationSubCategory: "Command Line Media Player",
+     operatingSystem: "Linux, macOS, Windows",
+@@ -59,6 +63,12 @@ export function softwareApplicationJsonLd(input: {
+       "@type": "Organization",
+       name: "Kunai",
+       url: "https://github.com/KitsuneKode/kunai",
++      // Where else the project verifiably lives, so the entity is one thing to
++      // a crawler rather than three unconnected pages.
++      sameAs: [
++        "https://github.com/KitsuneKode/kunai",
++        "https://www.npmjs.com/package/@kitsunekode/kunai",
++      ],
+     },
+   };
+ }
+diff --git a/apps/docs/lib/page-metadata.ts b/apps/docs/lib/page-metadata.ts
+index a0da6303d..cb7472dd7 100644
+--- a/apps/docs/lib/page-metadata.ts
++++ b/apps/docs/lib/page-metadata.ts
+@@ -46,8 +46,19 @@ type PageMetadataInput = {
+    * would show the docs card instead of the title that was shared.
+    */
+   readonly socialImage?: "site" | "segment";
++  /**
++   * A card for this page alone, as a site-relative path. For routes that cannot
++   * use the `opengraph-image` file convention: it is not allowed beneath a
++   * catch-all segment, which is what the docs tree is. Wins over `socialImage`.
++   */
++  readonly socialImageUrl?: string;
+ };
+ 
++/** The docs card route for a docs page URL, e.g. `/docs/users/glossary`. */
++export function docsOgImagePath(pageUrl: string): string {
++  return `/og${pageUrl}`;
++}
++
+ function socialDescriptionFor(input: PageMetadataInput): string {
+   const explicit = input.socialDescription?.trim();
+   if (explicit) return explicit;
+@@ -66,6 +77,9 @@ function socialDescriptionFor(input: PageMetadataInput): string {
+ export function buildPageMetadata(input: PageMetadataInput): Metadata {
+   const url = docsCanonicalUrl(input.path);
+   const socialDescription = socialDescriptionFor(input);
++  const ownImage = input.socialImageUrl
++    ? { ...SOCIAL_IMAGE, url: input.socialImageUrl, alt: `Kunai docs: ${input.title}` }
++    : null;
+ 
+   const metadata: Metadata = {
+     title: input.absoluteTitle ? { absolute: input.title } : input.title,
+@@ -77,13 +91,21 @@ export function buildPageMetadata(input: PageMetadataInput): Metadata {
+       url,
+       type: input.type ?? "website",
+       siteName: "Kunai Docs",
+-      ...(input.socialImage === "segment" ? null : { images: [SOCIAL_IMAGE] }),
++      ...(ownImage
++        ? { images: [ownImage] }
++        : input.socialImage === "segment"
++          ? null
++          : { images: [SOCIAL_IMAGE] }),
+     },
+     twitter: {
+       card: "summary_large_image",
+       title: input.title,
+       description: socialDescription,
+-      ...(input.socialImage === "segment" ? null : { images: [TWITTER_IMAGE] }),
++      ...(ownImage
++        ? { images: [ownImage] }
++        : input.socialImage === "segment"
++          ? null
++          : { images: [TWITTER_IMAGE] }),
+     },
+   };
+ 
+diff --git a/apps/docs/test/json-ld.test.ts b/apps/docs/test/json-ld.test.ts
+new file mode 100644
+index 000000000..c489dffda
+--- /dev/null
++++ b/apps/docs/test/json-ld.test.ts
+@@ -0,0 +1,71 @@
++import { describe, expect, test } from "bun:test";
++
++import { softwareApplicationJsonLd } from "../lib/json-ld";
++import { buildPageMetadata, docsOgImagePath } from "../lib/page-metadata";
++
++describe("softwareApplicationJsonLd", () => {
++  const app = softwareApplicationJsonLd({ version: "1.2.3", description: "A terminal client." });
++
++  test("describes a free installable app with its platforms and licence", () => {
++    expect(app["@type"]).toBe("SoftwareApplication");
++    expect(app.isAccessibleForFree).toBe(true);
++    expect(app.offers.price).toBe("0");
++    expect(app.operatingSystem).toContain("Linux");
++    expect(app.license).toContain("LICENSE");
++  });
++
++  test("hands a crawler the same card a person would see", () => {
++    expect(app.image).toMatch(/\/opengraph-image$/);
++  });
++
++  test("connects the project's own pages as one entity", () => {
++    expect(app.author.sameAs).toEqual(
++      expect.arrayContaining([
++        expect.stringContaining("github.com/KitsuneKode/kunai"),
++        expect.stringContaining("npmjs.com/package/@kitsunekode/kunai"),
++      ]),
++    );
++  });
++
++  test("never invents a rating", () => {
++    expect(JSON.stringify(app)).not.toContain("aggregateRating");
++    expect(JSON.stringify(app)).not.toContain("review");
++  });
++});
++
++describe("buildPageMetadata social images", () => {
++  test("a page that ships its own card declares no site-wide image", () => {
++    const own = buildPageMetadata({
++      title: "Troubleshooting",
++      description: "Fix things.",
++      path: "/docs/users/troubleshooting",
++      socialImage: "segment",
++    });
++    expect(own.openGraph).not.toHaveProperty("images");
++    expect(own.twitter).not.toHaveProperty("images");
++  });
++
++  test("a page with its own card path points both networks at it", () => {
++    const own = buildPageMetadata({
++      title: "Glossary",
++      description: "Terms.",
++      path: "/docs/users/glossary",
++      socialImageUrl: docsOgImagePath("/docs/users/glossary"),
++    });
++    expect(own.twitter).toMatchObject({ images: [{ url: "/og/docs/users/glossary" }] });
++    // The alt names the page, not the site, so a screen reader is told what the card is.
++    expect(own.openGraph).toMatchObject({
++      images: [{ url: "/og/docs/users/glossary", alt: expect.stringContaining("Glossary") }],
++    });
++  });
++
++  test("every other page falls back to the site card", () => {
++    const shared = buildPageMetadata({
++      title: "Releases",
++      description: "Notes.",
++      path: "/releases",
++    });
++    expect(shared.openGraph).toHaveProperty("images");
++    expect(shared.twitter).toHaveProperty("images");
++  });
++});
+diff --git a/apps/docs/test/share-social-card.test.ts b/apps/docs/test/share-social-card.test.ts
+index 539eb75a1..3d9af086b 100644
+--- a/apps/docs/test/share-social-card.test.ts
++++ b/apps/docs/test/share-social-card.test.ts
+@@ -2,10 +2,13 @@ import { describe, expect, test } from "bun:test";
+ 
+ import { decodePlaybackTargetWebCode, encodePlaybackTargetShortCode } from "@kunai/types";
+ 
+-import { splitHeadline } from "../app/w/[code]/opengraph-image";
+ import { isKindCrewActive } from "../lib/brand/social-card";
++import { clipLine, splitHeadline as splitHeadlineWith } from "../lib/brand/split-headline";
+ import { catalogFor, initialFor, positionFor, titleFor } from "../lib/share-presentation";
+ 
++/** The share card's empty-title fallback, which these cases were written against. */
++const splitHeadline = (title: string) => splitHeadlineWith(title, "Shared with Kunai");
++
+ describe("splitHeadline", () => {
+   test("a short title stays on one line", () => {
+     expect(splitHeadline("Dune")).toEqual(["Dune"]);
+@@ -62,6 +65,35 @@ describe("splitHeadline", () => {
+   });
+ });
+ 
++describe("clipLine", () => {
++  test("a sentence that fits is returned as written", () => {
++    expect(clipLine("Install Kunai and mpv.", 96)).toBe("Install Kunai and mpv.");
++  });
++
++  test("an over-long sentence ends on a word and is marked", () => {
++    const clipped = clipLine(
++      "Install Kunai, put it on your PATH, install mpv, run setup, and finish",
++      40,
++    );
++    expect(clipped.endsWith("…")).toBe(true);
++    expect(clipped.length).toBeLessThanOrEqual(40);
++    // Never a half word: whatever precedes the ellipsis is a whole word of the input.
++    const lastWord = clipped.slice(0, -1).split(" ").at(-1) ?? "";
++    expect("Install Kunai, put it on your PATH, install mpv, run setup, and finish").toContain(
++      lastWord,
++    );
++  });
++
++  test("the ellipsis never follows a comma", () => {
++    const clipped = clipLine("alpha beta, gamma delta epsilon", 14);
++    expect(clipped).not.toContain(",…");
++  });
++
++  test("collapses whitespace before measuring", () => {
++    expect(clipLine("a\n\n b\t c", 20)).toBe("a b c");
++  });
++});
++
+ describe("share presentation is shared with the landing page", () => {
+   const ref = {
+     kind: "series",

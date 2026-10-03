@@ -1,0 +1,1333 @@
+diff --git a/apps/cli/src/infra/net/guarded-remote-fetch.ts b/apps/cli/src/infra/net/guarded-remote-fetch.ts
+index f40781d7c..017b21a25 100644
+--- a/apps/cli/src/infra/net/guarded-remote-fetch.ts
++++ b/apps/cli/src/infra/net/guarded-remote-fetch.ts
+@@ -70,7 +70,7 @@ export async function fetchGuardedRemoteTarget(
+     // DNS answers are validated only for the platform fetch — an injected impl
+     // owns its destinations, and a stubbed lookup would be pure test flakiness.
+     if (fetchImpl === PLATFORM_FETCH) {
+-      const resolvedBlocked = await resolvedAddressBlockReason(target);
++      const resolvedBlocked = await resolvedAddressBlockReason(target, init.signal ?? undefined);
+       if (resolvedBlocked) {
+         throw new GuardedRemoteFetchError(`Blocked unsafe target: ${resolvedBlocked}`, target);
+       }
+@@ -80,7 +80,12 @@ export async function fetchGuardedRemoteTarget(
+     if (!REDIRECT_STATUSES.has(response.status)) return response;
+ 
+     const location = response.headers.get("location");
+-    await response.body?.cancel("redirected").catch(() => {});
++    // Drain the hop's socket promptly, but a body that never finishes must not
++    // stall the redirect chain — bound the cancel to a short grace.
++    await Promise.race([
++      response.body?.cancel("redirected").catch(() => {}) ?? Promise.resolve(),
++      Bun.sleep(500),
++    ]);
+     if (!location || hop >= maxHops) {
+       throw new GuardedRemoteFetchError("Redirect chain exceeded", target);
+     }
+diff --git a/apps/cli/src/services/download/DownloadService.ts b/apps/cli/src/services/download/DownloadService.ts
+index e2e27c084..6b7cd596d 100644
+--- a/apps/cli/src/services/download/DownloadService.ts
++++ b/apps/cli/src/services/download/DownloadService.ts
+@@ -25,7 +25,11 @@ import {
+ import type { ConfigService } from "@/services/persistence/ConfigService";
+ import { normalizeSubtitleUrl } from "@/subtitle";
+ import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
+-import { fetchGuardedStreamTarget, stripControlCharacters } from "@kunai/providers";
++import {
++  fetchGuardedStreamTarget,
++  readResponseBodyCapped,
++  stripControlCharacters,
++} from "@kunai/providers";
+ import {
+   buildYoutubeYtdlProfile,
+   getYoutubeProviderConfig,
+@@ -72,6 +76,8 @@ const DOWNLOAD_FILE_EXT = ".mp4";
+ const HEARTBEAT_INTERVAL_MS = 15_000;
+ const STALLED_HEARTBEAT_MS = 90_000;
+ const STDERR_MAX_BYTES = 64_000;
++/** A subtitle sidecar is text in the KBs; anything larger is not a subtitle. */
++const SUBTITLE_BODY_MAX_BYTES = 8 * 1024 * 1024;
+ const DEFAULT_ABORT_GRACE_MS = 2_500;
+ const DEFAULT_INACTIVE_WAIT_MS = 5_000;
+ /**
+@@ -1721,7 +1727,14 @@ export class DownloadService {
+         subtitleUrl: job.subtitleUrl,
+         contentType: res.headers.get("content-type"),
+       });
+-      const data = await res.arrayBuffer();
++      const data = await readResponseBodyCapped(res, SUBTITLE_BODY_MAX_BYTES);
++      if (data === null) {
++        return buildRepairableSidecarResult(
++          job,
++          "subtitle",
++          `subtitle response unreadable or exceeds ${SUBTITLE_BODY_MAX_BYTES} bytes`,
++        );
++      }
+       if (data.byteLength <= 0) {
+         return buildRepairableSidecarResult(job, "subtitle", "subtitle response was empty");
+       }
+diff --git a/apps/cli/src/services/offline/offline-artwork-cache.ts b/apps/cli/src/services/offline/offline-artwork-cache.ts
+index 990cd0d10..81c9e39bc 100644
+--- a/apps/cli/src/services/offline/offline-artwork-cache.ts
++++ b/apps/cli/src/services/offline/offline-artwork-cache.ts
+@@ -3,11 +3,15 @@ import { basename, dirname, extname, join } from "node:path";
+ 
+ import { writeAtomicBytes } from "@/infra/fs/atomic-write";
+ import { fetchGuardedRemoteTarget } from "@/infra/net/guarded-remote-fetch";
++import { readResponseBodyCapped } from "@kunai/providers";
+ import type { DownloadJobRecord } from "@kunai/storage";
+ 
+ export type OfflineArtworkFetch = (url: string, init: RequestInit) => Promise<Response>;
+ 
+ const POSTER_CACHE_TIMEOUT_MS = 10_000;
++/** Posters are small images — a chunked body with no declared length must not
++ * be sized by the request timeout alone. */
++const POSTER_BODY_MAX_BYTES = 8 * 1024 * 1024;
+ const inFlightPosterWrites = new Map<string, Promise<string | null>>();
+ 
+ export function resolveOfflinePosterArtifactPath(job: DownloadJobRecord): string {
+@@ -57,8 +61,8 @@ async function fetchAndWritePoster(
+   const contentType = response.headers.get("content-type") ?? "";
+   if (!contentType.toLowerCase().startsWith("image/")) return null;
+ 
+-  const data = await response.arrayBuffer();
+-  if (data.byteLength <= 0) return null;
++  const data = await readResponseBodyCapped(response, POSTER_BODY_MAX_BYTES);
++  if (data === null || data.byteLength <= 0) return null;
+   await writeAtomicBytes(targetPath, data);
+   return targetPath;
+ }
+diff --git a/packages/providers/src/movy/direct.ts b/packages/providers/src/movy/direct.ts
+index 80168e65a..6503f5ee3 100644
+--- a/packages/providers/src/movy/direct.ts
++++ b/packages/providers/src/movy/direct.ts
+@@ -25,7 +25,9 @@ import type {
+ import { parseRetryAfterHeader } from "@kunai/types";
+ 
+ import { ProviderHttpError, providerFetch } from "../runtime/fetch";
++import { readResponseTextCapped } from "../shared/bounded-body";
+ import { resolveTmdbCatalogId } from "../shared/catalog-id";
++import { readJsonObjectBody } from "../shared/json-body";
+ import { cycleExhaustedResult } from "../shared/provider-cycle";
+ import { ProviderQueryCache } from "../shared/provider-query";
+ import { resolveGateBudgetMs, selectVerifiedReadyStream } from "../shared/resolve-gate";
+@@ -121,6 +123,8 @@ const seedCache = new ProviderQueryCache<string, { seed: string; ttlMs: number }
+   maxEntries: 64,
+ });
+ const MOVY_CANDIDATE_TIMEOUT_MS = 15_000;
++/** Sources envelopes are KBs of ciphertext — nothing past this is a payload. */
++const MOVY_BODY_MAX_BYTES = 4 * 1024 * 1024;
+ 
+ async function fetchMovySeed(
+   context: ProviderRuntimeContext,
+@@ -146,8 +150,8 @@ async function fetchMovySeed(
+     }
+     // SAFETY: seed response is a two-field JSON envelope; a missing `seed` is
+     // rejected on the next line, so a shape surprise fails closed.
+-    const body = (await response.json()) as { seed?: string; ttlMs?: number };
+-    if (!body.seed) throw new MovyDecryptError("seed response carried no seed");
++    const body = await readJsonObjectBody<{ seed?: string; ttlMs?: number }>(response);
++    if (!body?.seed) throw new MovyDecryptError("seed response carried no seed");
+     return { seed: body.seed, ttlMs: body.ttlMs ?? 30_000 };
+   });
+   return entry.seed;
+@@ -199,7 +203,14 @@ async function fetchMovyLaneSources(
+         retryable: response.status >= 500 || response.status === 429,
+       });
+     }
+-    const ciphertext = await response.text();
++    // The sources envelope is KBs of ciphertext; an unbounded read lets a
++    // chunked body be sized only by the request timeout.
++    const ciphertext = await readResponseTextCapped(response, MOVY_BODY_MAX_BYTES);
++    if (ciphertext === null) {
++      throw new MovyDecryptError(
++        `${lane}: sources body unreadable or over ${MOVY_BODY_MAX_BYTES} bytes`,
++      );
++    }
+     const plaintext = decryptMovyPayload(ciphertext, seed, mediaId);
+     try {
+       // SAFETY: decrypted payload is the lane's sources envelope; every
+diff --git a/packages/providers/src/rivestream/direct.ts b/packages/providers/src/rivestream/direct.ts
+index 8d72d7bd8..b99b1927a 100644
+--- a/packages/providers/src/rivestream/direct.ts
++++ b/packages/providers/src/rivestream/direct.ts
+@@ -67,6 +67,32 @@ export { RIVESTREAM_PROVIDER_ID };
+ export const RIVESTREAM_REFERER = "https://www.rivestream.app/";
+ export const RIVESTREAM_API_BASE = "https://www.rivestream.app/api/backendfetch";
+ 
++/** Sources × HLS probes is a socket fan-out; keep the burst small so one
++ * resolve cannot starve sibling candidates on a thin link. */
++const RIVESTREAM_EXPAND_CONCURRENCY = 4;
++
++/** Preserve order and results like `Promise.all(items.map(fn))`, but never
++ * run more than `limit` `fn`s at once. */
++async function mapWithConcurrency<T, R>(
++  items: readonly T[],
++  limit: number,
++  fn: (item: T) => Promise<R>,
++): Promise<R[]> {
++  const results: R[] = [];
++  let cursor = 0;
++  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
++    while (cursor < items.length) {
++      const index = cursor;
++      cursor += 1;
++      const item = items[index];
++      if (item === undefined) break;
++      results[index] = await fn(item);
++    }
++  });
++  await Promise.all(workers);
++  return results;
++}
++
+ const USER_AGENT =
+   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+ 
+@@ -1011,9 +1037,14 @@ async function resolveRivestreamProviderCandidate({
+ 
+   // Expand HLS masters into per-rendition rows so the Tracks panel shows the
+   // real ladder (360p/720p/…) instead of a single `auto` row — and a dead
+-  // master host drops out here instead of failing in mpv.
+-  const expandedSources = await Promise.all(
+-    rawSources.map(async (source) => {
++  // master host drops out here instead of failing in mpv. Bounded fan-out:
++  // every source × every probe is a socket, and the API can hand back a dozen
++  // mirrors — on a thin link an unbounded Promise.all turns one resolve into
++  // a burst that starves every sibling candidate.
++  const expandedSources = await mapWithConcurrency(
++    rawSources,
++    RIVESTREAM_EXPAND_CONCURRENCY,
++    async (source) => {
+       if (!source.url || !source.url.includes(".m3u8")) {
+         return { source, variants: null as readonly HlsLadderVariant[] | null };
+       }
+@@ -1038,7 +1069,7 @@ async function resolveRivestreamProviderCandidate({
+             ? inventory.variants
+             : (null as readonly HlsLadderVariant[] | null),
+       };
+-    }),
++    },
+   );
+ 
+   for (const { source, variants: ladder } of expandedSources) {
+diff --git a/packages/providers/src/runtime/fetch.ts b/packages/providers/src/runtime/fetch.ts
+index 2475a6221..94d9f3768 100644
+--- a/packages/providers/src/runtime/fetch.ts
++++ b/packages/providers/src/runtime/fetch.ts
+@@ -7,8 +7,11 @@ import {
+   type ProviderRuntimeContext,
+ } from "@kunai/types";
+ 
++import { readResponseTextCapped } from "../shared/bounded-body";
+ import { createGuardedFetch, PROVIDER_API_SENSITIVE_HEADERS } from "../shared/stream-reachability";
+ 
++const PROVIDER_JSON_MAX_BYTES = 8 * 1024 * 1024;
++
+ // The error contract lives in @kunai/types so the cycle engine's classifier
+ // can read status/code/retryable instead of string-matching messages (#458).
+ // Re-exported here to keep the long-standing import path stable.
+@@ -68,8 +71,20 @@ export async function providerJson<T>(
+     throw createProviderHttpError(response, requestContext);
+   }
+ 
++  // Provider JSON is KBs, not MBs — an unbounded body is a memory vector, not
++  // a payload, so the read is capped before the parse sees it.
++  const text = await readResponseTextCapped(response, PROVIDER_JSON_MAX_BYTES);
++  if (text === null) {
++    throw new ProviderHttpError({
++      providerId: requestContext?.providerId,
++      stage: requestContext?.stage,
++      message: `Provider JSON response unreadable or exceeds ${PROVIDER_JSON_MAX_BYTES} bytes`,
++      code: "network-error",
++      retryable: true,
++    });
++  }
+   try {
+-    return (await response.json()) as T;
++    return JSON.parse(text) as T;
+   } catch (cause) {
+     throw new ProviderHttpError({
+       providerId: requestContext?.providerId,
+diff --git a/packages/providers/src/shared/anime-metadata.ts b/packages/providers/src/shared/anime-metadata.ts
+index f57894aaa..b02d36cee 100644
+--- a/packages/providers/src/shared/anime-metadata.ts
++++ b/packages/providers/src/shared/anime-metadata.ts
+@@ -1,6 +1,7 @@
+ import type { ProviderEpisodeOption, ProviderRuntimeContext } from "@kunai/types";
+ 
+ import { providerFetch } from "../runtime/fetch";
++import { readJsonObjectBody } from "./json-body";
+ import { TTLCache } from "./provider-cache";
+ import { createTimeoutSignal } from "./timeout-signal";
+ 
+@@ -175,7 +176,7 @@ async function fetchJson<T>(
+       headers: { Accept: "application/json" },
+     });
+     if (!response.ok) return null;
+-    return (await response.json()) as T;
++    return readJsonObjectBody<T>(response);
+   } catch {
+     return null;
+   }
+@@ -261,15 +262,15 @@ async function fetchAniListStreamingEpisodes(
+       }),
+     });
+     if (!response.ok) return { episodes, complete: false };
+-    const payload = (await response.json()) as {
++    const payload = await readJsonObjectBody<{
+       readonly data?: {
+         readonly Media?: {
+           readonly idMal?: number | null;
+           readonly streamingEpisodes?: readonly AniListStreamingEpisode[] | null;
+         };
+       };
+-    };
+-    const rows = payload.data?.Media?.streamingEpisodes ?? [];
++    }>(response);
++    const rows = payload?.data?.Media?.streamingEpisodes ?? [];
+     rows.forEach((row, index) => {
+       const number = index + 1;
+       mergeEpisodeMetadata(episodes, number, {
+diff --git a/packages/providers/src/shared/bounded-body.ts b/packages/providers/src/shared/bounded-body.ts
+new file mode 100644
+index 000000000..d3e5577c7
+--- /dev/null
++++ b/packages/providers/src/shared/bounded-body.ts
+@@ -0,0 +1,137 @@
++// =============================================================================
++// bounded-body.ts — hard byte ceilings on untrusted response bodies
++//
++// Every response read off a provider or CDN is sized by whatever the remote
++// chooses to send. A chunked body with no Content-Length is bounded only by
++// the request timeout: on a fast link a hostile or broken host streams
++// hundreds of MB into a single in-memory string — per candidate, per probe.
++// Range headers are advisory; a server that ignores them returns the whole
++// resource as a 200.
++//
++// These readers treat the cap as a hard bound: cancel the stream past it and
++// return null, so the caller fails the body the same way it fails an absent
++// one. Callers decide what null means — most already have an unreachable or
++// parse-failed branch.
++// =============================================================================
++
++/**
++ * Read a stream into memory up to `maxBytes`. Returns the bytes — possibly
++ * empty, matching `Response.text()` on a body that never arrived — when the
++ * stream completes within the cap. Null means over-cap or a read error: the
++ * reader is cancelled so the socket frees promptly, and the caller fails the
++ * body instead of trusting a partial page.
++ */
++export async function readStreamBytesCapped(
++  stream: ReadableStream<Uint8Array> | null | undefined,
++  maxBytes: number,
++): Promise<Uint8Array | null> {
++  if (!stream) return new Uint8Array(0);
++  const reader = stream.getReader();
++  const chunks: Uint8Array[] = [];
++  let received = 0;
++  let overCap = false;
++  try {
++    for (;;) {
++      const { done, value } = await reader.read();
++      if (done) break;
++      received += value.byteLength;
++      if (received > maxBytes) {
++        overCap = true;
++        break;
++      }
++      chunks.push(value);
++    }
++  } catch {
++    return null;
++  } finally {
++    if (overCap) await reader.cancel().catch(() => {});
++    reader.releaseLock();
++  }
++  if (overCap) return null;
++  const bytes = new Uint8Array(received);
++  let offset = 0;
++  for (const chunk of chunks) {
++    bytes.set(chunk, offset);
++    offset += chunk.byteLength;
++  }
++  return bytes;
++}
++
++/**
++ * Response body with a Content-Length precheck: a declared oversize is refused
++ * before a single chunk is consumed, and an undeclared/chunked oversize trips
++ * the stream cap mid-read.
++ */
++export async function readResponseBodyCapped(
++  response: Response,
++  maxBytes: number,
++): Promise<Uint8Array | null> {
++  const declared = Number(response.headers.get("content-length") ?? "");
++  if (Number.isFinite(declared) && declared > maxBytes) {
++    await response.body?.cancel().catch(() => {});
++    return null;
++  }
++  return readStreamBytesCapped(response.body, maxBytes);
++}
++
++export async function readResponseTextCapped(
++  response: Response,
++  maxBytes: number,
++): Promise<string | null> {
++  const bytes = await readResponseBodyCapped(response, maxBytes);
++  if (!bytes) return null;
++  return new TextDecoder().decode(bytes);
++}
++
++/** Byte cap on a piped stream (e.g. a spawned process's stdout). */
++export async function readStreamTextCapped(
++  stream: ReadableStream<Uint8Array> | null | undefined,
++  maxBytes: number,
++): Promise<string | null> {
++  const bytes = await readStreamBytesCapped(stream, maxBytes);
++  if (!bytes) return null;
++  return new TextDecoder().decode(bytes);
++}
++
++/**
++ * Read until at least `neededBytes` have arrived, then cancel and return the
++ * prefix. For probes that only need proof of a non-empty body — the Range
++ * header asks politely, this enforces it when the server answers a Range
++ * request with a full 200 anyway. Returns whatever arrived when the stream
++ * ends short (the caller reads the byte count), null on a read error.
++ */
++export async function readResponseBodyPrefix(
++  response: Response,
++  neededBytes: number,
++): Promise<Uint8Array | null> {
++  const stream = response.body;
++  if (!stream) return new Uint8Array(0);
++  const reader = stream.getReader();
++  const chunks: Uint8Array[] = [];
++  let received = 0;
++  let satisfied = false;
++  try {
++    for (;;) {
++      const { done, value } = await reader.read();
++      if (done) break;
++      chunks.push(value);
++      received += value.byteLength;
++      if (received >= neededBytes) {
++        satisfied = true;
++        break;
++      }
++    }
++  } catch {
++    return null;
++  } finally {
++    if (satisfied) await reader.cancel().catch(() => {});
++    reader.releaseLock();
++  }
++  const bytes = new Uint8Array(received);
++  let offset = 0;
++  for (const chunk of chunks) {
++    bytes.set(chunk, offset);
++    offset += chunk.byteLength;
++  }
++  return bytes;
++}
+diff --git a/packages/providers/src/shared/hls-ladder.ts b/packages/providers/src/shared/hls-ladder.ts
+index 65a8b72aa..7a7dec7c5 100644
+--- a/packages/providers/src/shared/hls-ladder.ts
++++ b/packages/providers/src/shared/hls-ladder.ts
+@@ -1,5 +1,6 @@
+ import type { ProviderFetchPort } from "@kunai/types";
+ 
++import { readResponseTextCapped } from "./bounded-body";
+ import { isHlsMasterPlaylist, isHlsPlaylistUrl } from "./hls-manifest";
+ import { normalizeQualityLabel, qualityRankFromLabel } from "./source-inventory";
+ import { fetchGuardedStreamTarget } from "./stream-reachability";
+@@ -73,6 +74,8 @@ export type ExpandHlsMasterPlaylistOptions = {
+ };
+ 
+ const DEFAULT_MAX_VARIANTS = 12;
++/** A master playlist is line text; past this it is not a playlist but a leak. */
++const LADDER_PLAYLIST_MAX_BYTES = 2 * 1024 * 1024;
+ 
+ /**
+  * Fetch a master HLS playlist and expand `#EXT-X-STREAM-INF` rows into ranked
+@@ -121,7 +124,8 @@ export async function expandHlsMasterInventory(
+       return empty({ kind: "http-error", httpStatus: response.status });
+     }
+ 
+-    const text = await response.text();
++    const text = await readResponseTextCapped(response, LADDER_PLAYLIST_MAX_BYTES);
++    if (text === null) return empty({ kind: "network" });
+     if (!isHlsMasterPlaylist(text)) {
+       return empty({ kind: "not-master", httpStatus: response.status });
+     }
+diff --git a/packages/providers/src/shared/index.ts b/packages/providers/src/shared/index.ts
+index c8924aa10..af68f76f0 100644
+--- a/packages/providers/src/shared/index.ts
++++ b/packages/providers/src/shared/index.ts
+@@ -18,3 +18,4 @@ export * from "./stream-health";
+ export * from "./source-inventory";
+ export * from "./subtitle-helpers";
+ export * from "./markup-text";
++export * from "./bounded-body";
+diff --git a/packages/providers/src/shared/json-body.ts b/packages/providers/src/shared/json-body.ts
+index 7af65c747..44d6c5116 100644
+--- a/packages/providers/src/shared/json-body.ts
++++ b/packages/providers/src/shared/json-body.ts
+@@ -17,10 +17,18 @@
+  * the one place that has the raw body; callers branch on the domain value
+  * (`if (!data?.stream)`) instead of trusting a cast.
+  */
++import { readResponseTextCapped } from "./bounded-body";
++
+ export async function readJsonObjectBody<T>(response: Response): Promise<T | null> {
+-  const body: unknown = await response.json();
++  // Capped before parse — a provider JSON body is never legitimately many MB,
++  // and a chunked body is bounded only by its request timeout without one.
++  const text = await readResponseTextCapped(response, PROVIDER_JSON_BODY_MAX_BYTES);
++  if (text === null) return null;
++  const body: unknown = JSON.parse(text);
+   if (body === null || !(body instanceof Object)) return null;
+   // SAFETY: `instanceof Object` proves a JSON-parsed non-null object/array; the
+   // caller's `T` describes fields it knows the endpoint may carry.
+   return body as T;
+ }
++
++const PROVIDER_JSON_BODY_MAX_BYTES = 8 * 1024 * 1024;
+diff --git a/packages/providers/src/shared/provider-http-transport.ts b/packages/providers/src/shared/provider-http-transport.ts
+index dbbfd06af..59cdc1857 100644
+--- a/packages/providers/src/shared/provider-http-transport.ts
++++ b/packages/providers/src/shared/provider-http-transport.ts
+@@ -27,6 +27,7 @@
+  * classifier reads structure, never message prose (#458).
+  */
+ import {
++  blockedLiteralTargetReason,
+   httpStatusIsRetryable,
+   httpStatusToResolveErrorCode,
+   isRelayedResponse,
+@@ -34,19 +35,33 @@ import {
+   parseRetryAfterHeader,
+   ProviderHttpError,
+   providerHttpErrorForStatus,
++  resolvedAddressBlockReason,
+   type ProviderId,
+   type ProviderRuntimeContext,
+   type ResolveErrorCode,
+ } from "@kunai/types";
+ 
++import { readResponseTextCapped, readStreamTextCapped } from "./bounded-body";
+ import {
+   curlCipherArgs,
+   isCloudflareChallengeText,
+   resolveCurlCandidate,
+   type CurlEnvironment,
+ } from "./curl-impersonate";
++import { createGuardedFetch, PROVIDER_API_SENSITIVE_HEADERS } from "./stream-reachability";
+ import { createTimeoutSignal } from "./timeout-signal";
+ 
++/**
++ * The last-resort leg walks redirects through the same per-hop literal/DNS
++ * blocklist as providerFetch — a bare fetch() would follow Location anywhere.
++ * Hop 0 stays exempt for the same reason: provider endpoints are code-fixed
++ * or user-configured.
++ */
++const guardedTransportFetch = createGuardedFetch({
++  extraSensitiveHeaders: PROVIDER_API_SENSITIVE_HEADERS,
++  allowInitialPrivateTarget: true,
++});
++
+ /* ------------------------------------------------------------------------ */
+ /* Transport failure taxonomy                                               */
+ /* ------------------------------------------------------------------------ */
+@@ -275,10 +290,15 @@ const CURL_SIGTERM_EXIT_CODE = 143;
+ export type CurlHttpTrailer = {
+   readonly body: string;
+   readonly httpCode: number | null;
++  /** `%{redirect_url}` when the caller's `-w` trailer carries it — set only on
++   * a response whose Location curl was configured to report, never followed.
++   * Undefined when the trailer format is plain `%{http_code}`. */
++  readonly redirectUrl?: string;
+ };
+ 
+ /**
+- * Split curl's `-w '\n%{http_code}'` trailer into `{ body, httpCode }`.
++ * Split curl's `-w '\n%{http_code}'` (or `'\n%{http_code}\t%{redirect_url}'`)
++ * trailer into `{ body, httpCode, redirectUrl }`.
+  * `httpCode` is null when curl never received an HTTP response (DNS, TCP, or
+  * TLS failure) — the ani-cli 5.1.4 distinction between "no HTTP response" and
+  * "HTTP NNN", so a dead route is never misread as an HTTP error. curl prints
+@@ -287,11 +307,12 @@ export type CurlHttpTrailer = {
+  * its bytes.
+  */
+ export function splitCurlHttpTrailer(stdout: string): CurlHttpTrailer {
+-  const match = /\n(\d{3})$/.exec(stdout);
++  const match = /\n(\d{3})(?:\t([^\n]*))?$/.exec(stdout);
+   if (!match?.[1]) return { body: stdout, httpCode: null };
+   const code = Number(match[1]);
+   const body = stdout.slice(0, stdout.length - match[0].length);
+-  return { body, httpCode: code === 0 ? null : code };
++  const redirectUrl = match[2]?.trim() || undefined;
++  return { body, httpCode: code === 0 ? null : code, redirectUrl };
+ }
+ 
+ /** The request label for error messages: origin + path, never the query —
+@@ -311,16 +332,38 @@ export type SpawnCurlOnce = (
+   signal?: AbortSignal,
+ ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+ 
++/**
++ * Provider API bodies are pages/JSON in the kilobytes — a flat ceiling both as
++ * `--max-filesize` (kills a declared oversize before a byte flows) and as the
++ * stdout reader cap (catches chunked or misdeclared bodies curl can't see).
++ */
++const PROVIDER_BODY_MAX_BYTES = 8 * 1024 * 1024;
++
+ export function spawnCurlOnce(
+   args: readonly string[],
+   signal?: AbortSignal,
+ ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+   const proc = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe", signal });
+   return Promise.all([
+-    new Response(proc.stdout).text(),
++    readStreamTextCapped(proc.stdout, PROVIDER_BODY_MAX_BYTES),
+     new Response(proc.stderr).text(),
+     proc.exited,
+-  ]).then(([stdout, stderr, exitCode]) => ({ stdout, stderr, exitCode }));
++  ]).then(async ([stdout, stderr, exitCode]) => {
++    if (stdout === null) {
++      // Over-cap stdout: the pipe stops draining, curl dies on EPIPE or we
++      // stop it — either way the request is a failed transport, never a body.
++      proc.kill();
++      await proc.exited.catch(() => {});
++      return {
++        stdout: "",
++        stderr: `stdout exceeded ${PROVIDER_BODY_MAX_BYTES} bytes`,
++        // 63 = CURLE_FILESIZE_EXCEEDED — the transport-kind mapper reads it as
++        // an ordinary network fault, which is the honest classification.
++        exitCode: exitCode === 0 ? 63 : exitCode,
++      };
++    }
++    return { stdout, stderr, exitCode };
++  });
+ }
+ 
+ export type ProviderCurlRunOptions = {
+@@ -581,7 +624,7 @@ export async function providerFetchText(
+     // transport level (relay down, direct fine).
+     let response: Response;
+     try {
+-      response = await fetch(url, {
++      response = await guardedTransportFetch(url, {
+         headers: requestHeaders,
+         signal: createTimeoutSignal(signal, fetchTimeoutMs),
+       });
+@@ -636,47 +679,141 @@ export async function providerFetchText(
+     return text;
+   }
+ 
+-  const args = [
+-    curl.path,
+-    "-sL",
+-    "-A",
+-    policy.userAgent,
+-    ...(policy.referer ? ["-H", `Referer: ${policy.referer}`] : []),
+-    ...Object.entries(policy.extraHeaders ?? {}).flatMap(([name, value]) => [
+-      "-H",
+-      `${name}: ${value}`,
+-    ]),
+-    "--max-time",
+-    String(policy.maxTimeSec ?? 12),
+-    ...curlCipherArgs(curl.impersonates),
+-    "-w",
+-    "\n%{http_code}",
+-    // Everything after `--` is an operand, never an option — upstream JSON can
+-    // hand us URLs beginning with `-` (anidb's guard, adopted everywhere).
+-    "--",
+-    url,
+-  ];
+-  const { body, httpCode } = splitCurlHttpTrailer(
+-    await runProviderCurlWithRetry(args, {
+-      signal,
+-      urlLabel,
+-      label,
+-      providerId: policy.providerId,
+-      stage,
+-      spawnOnce: policy.spawnCurl,
+-    }),
+-  );
+-  // Challenge detection outranks the status on a non-2xx: a CF challenge
+-  // served at 403/404 is a block, not the route's real answer — treating it
+-  // as not-found would tell callers to re-search a catalogue that never
+-  // answered.
+-  if (isChallenge(body)) throw blockedError(curl.impersonates);
+-  if (httpCode !== null && (httpCode < 200 || httpCode > 299)) {
+-    throw statusError(httpCode);
++  // curl's own redirect following stays off: `-L` would chase a Location into
++  // private space, a scheme downgrade, or a non-HTTP protocol with no way for
++  // this process to refuse. Each hop is re-spawned instead so every target
++  // clears the same literal/DNS blocklist the fetch legs answer to — hop 0 is
++  // exempt like guardedDirectFetch, because provider endpoints are code-fixed
++  // or user-configured; redirect hops are the attacker-controlled part.
++  let curlTarget = url;
++  // Referer/extraHeaders carry provider context — possibly an API key — so a
++  // cross-origin hop drops them, mirroring the fetch legs' credential strip.
++  let curlReferer = policy.referer;
++  let curlHeaders: Record<string, string> | undefined = policy.extraHeaders
++    ? { ...policy.extraHeaders }
++    : undefined;
++  for (let hop = 0; ; hop++) {
++    const blockedReason = await curlTargetBlockReason(curlTarget, hop === 0, signal);
++    if (blockedReason !== null) {
++      throw new ProviderHttpError({
++        message: `${label} refused unsafe target ${providerUrlLabel(curlTarget)} (${blockedReason})`,
++        providerId: policy.providerId,
++        stage,
++        code: "blocked",
++        retryable: false,
++      });
++    }
++    const args = [
++      curl.path,
++      "-s",
++      "-A",
++      policy.userAgent,
++      ...(curlReferer ? ["-H", `Referer: ${curlReferer}`] : []),
++      ...Object.entries(curlHeaders ?? {}).flatMap(([name, value]) => ["-H", `${name}: ${value}`]),
++      "--max-time",
++      String(policy.maxTimeSec ?? 12),
++      // Declared-length oversize dies before a byte flows; chunked or
++      // misdeclared bodies hit the stdout reader cap in spawnCurlOnce.
++      "--max-filesize",
++      String(PROVIDER_BODY_MAX_BYTES),
++      ...curlCipherArgs(curl.impersonates),
++      "-w",
++      "\n%{http_code}\t%{redirect_url}",
++      // Everything after `--` is an operand, never an option — upstream JSON
++      // can hand us URLs beginning with `-` (anidb's guard, adopted everywhere).
++      "--",
++      curlTarget,
++    ];
++    const { body, httpCode, redirectUrl } = splitCurlHttpTrailer(
++      await runProviderCurlWithRetry(args, {
++        signal,
++        urlLabel,
++        label,
++        providerId: policy.providerId,
++        stage,
++        spawnOnce: policy.spawnCurl,
++      }),
++    );
++    if (redirectUrl && httpCode !== null && httpCode >= 300 && httpCode < 400) {
++      if (hop >= MAX_PROVIDER_CURL_HOPS) {
++        throw new ProviderHttpError({
++          message: `${label} redirect chain exceeded ${MAX_PROVIDER_CURL_HOPS} hops`,
++          providerId: policy.providerId,
++          stage,
++          code: "blocked",
++          retryable: false,
++        });
++      }
++      let next: URL | null = null;
++      try {
++        next = new URL(redirectUrl, curlTarget);
++      } catch {
++        next = null;
++      }
++      // An unparseable Location is a response, not a redirect — process it.
++      if (next !== null) {
++        const current = new URL(curlTarget);
++        if (current.protocol === "https:" && next.protocol === "http:") {
++          throw new ProviderHttpError({
++            message: `${label} refused https downgrade to ${providerUrlLabel(next.href)}`,
++            providerId: policy.providerId,
++            stage,
++            code: "blocked",
++            retryable: false,
++          });
++        }
++        if (next.origin !== current.origin) {
++          curlReferer = undefined;
++          curlHeaders = undefined;
++        }
++        curlTarget = next.href;
++        continue;
++      }
++    }
++    // Challenge detection outranks the status on a non-2xx: a CF challenge
++    // served at 403/404 is a block, not the route's real answer — treating it
++    // as not-found would tell callers to re-search a catalogue that never
++    // answered.
++    if (isChallenge(body)) throw blockedError(curl.impersonates);
++    if (httpCode !== null && (httpCode < 200 || httpCode > 299)) {
++      throw statusError(httpCode);
++    }
++    const virtual = policy.bodyAsStatus?.(body);
++    if (virtual !== null && virtual !== undefined) throw statusError(virtual);
++    return body;
++  }
++}
++
++/** Match the fetch legs' redirect ceiling — a loop must bound the same way. */
++const MAX_PROVIDER_CURL_HOPS = 4;
++
++/**
++ * The blocklist verdict for one curl hop. Hop 0 mirrors guardedDirectFetch:
++ * provider endpoints are code-fixed or user-configured, so a private literal
++ * or DNS answer is the caller's intent, not a redirect trick. Every later hop
++ * is attacker-controlled and clears both literal and DNS checks. The scheme
++ * check applies on every hop including the first — `curl file:///etc/passwd`
++ * is a read primitive, not a fetch.
++ */
++async function curlTargetBlockReason(
++  target: string,
++  allowInitialPrivate: boolean,
++  signal: AbortSignal | undefined,
++): Promise<string | null> {
++  let parsed: URL;
++  try {
++    parsed = new URL(target);
++  } catch {
++    return "unparseable target";
+   }
+-  const virtual = policy.bodyAsStatus?.(body);
+-  if (virtual !== null && virtual !== undefined) throw statusError(virtual);
+-  return body;
++  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
++    return `scheme ${parsed.protocol}`;
++  }
++  if (allowInitialPrivate) return null;
++  const literal = blockedLiteralTargetReason(target);
++  if (literal !== null) return literal;
++  if (signal?.aborted === true) return null;
++  return resolvedAddressBlockReason(target, signal);
+ }
+ 
+ /** JSON variant — the parse failure is typed `parse-failed`, not a raw throw. */
+@@ -701,8 +838,15 @@ export async function providerFetchJson<T = unknown>(
+   }
+ }
+ 
+-function readResponseText(response: Response): Promise<string> {
+-  return response.text();
++async function readResponseText(response: Response): Promise<string> {
++  // Null is over-cap or a read error — throwing keeps the two call sites'
++  // contract (a thrown read falls to curl / surfaces a transport error)
++  // rather than silently handing "" to challenge/status predicates.
++  const text = await readResponseTextCapped(response, PROVIDER_BODY_MAX_BYTES);
++  if (text === null) {
++    throw new Error(`provider response body exceeds ${PROVIDER_BODY_MAX_BYTES} bytes`);
++  }
++  return text;
+ }
+ 
+ /**
+diff --git a/packages/providers/src/shared/stream-reachability.ts b/packages/providers/src/shared/stream-reachability.ts
+index d39a0e566..13dd19734 100644
+--- a/packages/providers/src/shared/stream-reachability.ts
++++ b/packages/providers/src/shared/stream-reachability.ts
+@@ -4,6 +4,7 @@ import {
+   resolvedAddressBlockReason,
+ } from "@kunai/types";
+ 
++import { readResponseBodyPrefix, readResponseTextCapped } from "./bounded-body";
+ import {
+   HLS_SEGMENT_PROBE_MIN_BYTES,
+   isHlsMasterPlaylist,
+@@ -47,6 +48,8 @@ export type ProbeStreamReachabilityInput = {
+ 
+ const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
+ const SEGMENT_RANGE_HEADER = `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`;
++/** Playlists are line text in the KBs — anything past this is not a playlist. */
++const PLAYLIST_BODY_MAX_BYTES = 2 * 1024 * 1024;
+ const MAX_PROBE_REDIRECT_HOPS = 3;
+ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+ 
+@@ -92,7 +95,10 @@ async function fetchProbeTarget(options: {
+       // DNS once the literals pass — skipped when the caller already aborted so
+       // a cancelled probe does not sit on a resolver round-trip.
+       if (options.resolveNames && !options.parentSignal?.aborted) {
+-        const resolvedBlocked = await resolvedAddressBlockReason(target);
++        const resolvedBlocked = await resolvedAddressBlockReason(
++          target,
++          options.parentSignal ?? undefined,
++        );
+         if (resolvedBlocked) {
+           return { kind: "blocked", reason: `${target} -> ${resolvedBlocked}` };
+         }
+@@ -110,6 +116,12 @@ async function fetchProbeTarget(options: {
+     if (REDIRECT_STATUSES.has(response.status)) {
+       const location = response.headers.get("location");
+       if (location && hop < MAX_PROBE_REDIRECT_HOPS) {
++        // Release the hop's socket promptly, but a body that never drains must
++        // not stall the probe — bound the cancel inside the hop's own budget.
++        await Promise.race([
++          response.body?.cancel("redirected").catch(() => {}) ?? Promise.resolve(),
++          Bun.sleep(Math.min(500, Math.max(0, options.remaining()))),
++        ]);
+         try {
+           const next = new URL(location, target);
+           const current = new URL(target);
+@@ -462,7 +474,19 @@ async function fetchPlaylistText(
+         result: { status: "unreachable", reason: `HTTP ${response.status}`, definitive },
+       };
+     }
+-    const text = await response.text();
++    // A playlist is line-oriented text in the KBs — a chunked body sized only
++    // by the request timeout is not a playlist, it is a memory leak.
++    const text = await readResponseTextCapped(response, PLAYLIST_BODY_MAX_BYTES);
++    if (text === null) {
++      return {
++        status: "fail",
++        result: {
++          status: "unreachable",
++          reason: `playlist body unreadable or exceeds ${PLAYLIST_BODY_MAX_BYTES} bytes`,
++          definitive: false,
++        },
++      };
++    }
+     return { status: "ok", text };
+   } catch (error) {
+     if (controller.signal.aborted || parentSignal?.aborted) {
+@@ -545,7 +569,19 @@ async function probeHlsMediaSegment(
+       };
+     }
+ 
+-    const buffer = new Uint8Array(await response.arrayBuffer());
++    // Range asks politely; this enforces it. A host that answers a 1KiB Range
++    // request with a full 200 segment would otherwise be buffered whole into
++    // memory — per candidate, per probe.
++    const buffer = await readResponseBodyPrefix(response, HLS_SEGMENT_PROBE_MIN_BYTES);
++    if (buffer === null) {
++      // Mid-body disconnect, not an empty file — the CDN answered and then
++      // died; a sibling rung may still be fine.
++      return {
++        status: "unreachable",
++        reason: "HLS segment unreachable: body read failed",
++        definitive: false,
++      };
++    }
+     if (buffer.byteLength < HLS_SEGMENT_PROBE_MIN_BYTES) {
+       return {
+         status: "unreachable",
+diff --git a/packages/providers/src/shared/timeout-signal.ts b/packages/providers/src/shared/timeout-signal.ts
+index 77c698ad7..3584aa4d8 100644
+--- a/packages/providers/src/shared/timeout-signal.ts
++++ b/packages/providers/src/shared/timeout-signal.ts
+@@ -43,3 +43,29 @@ export function combineAbortSignalsManually(signals: readonly AbortSignal[]): Ab
+   }
+   return controller.signal;
+ }
++
++/**
++ * A backoff the caller can cancel. A bare `setTimeout` holds the delay past
++ * an abort, so quitting mid-retry still waits out the sleep while every other
++ * lane has already given up. Resolves false on abort — the caller breaks out
++ * of its retry loop without needing a throw path.
++ */
++export function sleepMs(ms: number, signal?: AbortSignal): Promise<boolean> {
++  if (signal?.aborted === true) return Promise.resolve(false);
++  return new Promise<boolean>((resolve) => {
++    const timer = setTimeout(() => {
++      cleanup();
++      resolve(true);
++    }, ms);
++    timer.unref?.();
++    const onAbort = () => {
++      cleanup();
++      resolve(false);
++    };
++    const cleanup = () => {
++      clearTimeout(timer);
++      signal?.removeEventListener("abort", onAbort);
++    };
++    signal?.addEventListener("abort", onAbort, { once: true });
++  });
++}
+diff --git a/packages/providers/src/vidlink/direct.ts b/packages/providers/src/vidlink/direct.ts
+index c55273737..4c9671ac2 100644
+--- a/packages/providers/src/vidlink/direct.ts
++++ b/packages/providers/src/vidlink/direct.ts
+@@ -28,6 +28,7 @@ import {
+ } from "../shared/hls-ladder";
+ import { readJsonObjectBody } from "../shared/json-body";
+ import { ProviderQueryCache } from "../shared/provider-query";
++import { sleepMs } from "../shared/timeout-signal";
+ import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
+ 
+ export { VIDLINK_PROVIDER_ID };
+@@ -372,7 +373,7 @@ async function fetchVidlinkApi(
+       }
+       if (attempt < maxAttempts && response.status >= 500 && !signal?.aborted) {
+         lastError = error;
+-        await new Promise((resolve) => setTimeout(resolve, 500));
++        if (!(await sleepMs(500, signal))) throw signal?.reason ?? error;
+         continue;
+       }
+       throw error;
+@@ -386,7 +387,7 @@ async function fetchVidlinkApi(
+       }
+       if (attempt >= maxAttempts || signal?.aborted) throw error;
+       lastError = error instanceof Error ? error : new Error(String(error));
+-      await new Promise((resolve) => setTimeout(resolve, 500));
++      if (!(await sleepMs(500, signal))) throw signal?.reason ?? lastError;
+     }
+   }
+   throw lastError ?? new Error("VidLink API fetch failed");
+@@ -461,7 +462,7 @@ async function encryptTmdbId(
+         }
+         lastError = error instanceof Error ? error : new Error(String(error));
+         if (attempt < maxAttempts && !signal?.aborted) {
+-          await new Promise((resolve) => setTimeout(resolve, 500));
++          if (!(await sleepMs(500, signal))) throw signal?.reason ?? lastError;
+         }
+       }
+     }
+diff --git a/packages/providers/test/curl-argv-terminator.test.ts b/packages/providers/test/curl-argv-terminator.test.ts
+index 73bfd2bd1..fcebb90e0 100644
+--- a/packages/providers/test/curl-argv-terminator.test.ts
++++ b/packages/providers/test/curl-argv-terminator.test.ts
+@@ -12,7 +12,7 @@ import { expect, test } from "bun:test";
+ const CURL_ARGV_SITES = [
+   // The shared transport assembles the argv for every provider that delegates
+   // to it (hianime, animekai, anidb, animegg); miruro still builds its own.
+-  { file: "src/shared/provider-http-transport.ts", url: "url" },
++  { file: "src/shared/provider-http-transport.ts", url: "curlTarget" },
+   { file: "src/miruro/direct.ts", url: "url" },
+ ] as const;
+ 
+diff --git a/packages/providers/test/provider-http-transport.test.ts b/packages/providers/test/provider-http-transport.test.ts
+index cc7156e6f..8c664f293 100644
+--- a/packages/providers/test/provider-http-transport.test.ts
++++ b/packages/providers/test/provider-http-transport.test.ts
+@@ -466,6 +466,130 @@ describe("providerFetchText — curl leg", () => {
+     );
+     expect(mustBe(thrown, Error).message).toBe("typed status 503");
+   });
++
++  test("curl never follows redirects in-process: -s not -L, and each hop is spawned", async () => {
++    const argvs: string[][] = [];
++    const text = await providerFetchText(URL_UNDER_TEST, {
++      ...POLICY,
++      context: challengedContext,
++      curlEnvironment: CURL_ENV,
++      spawnCurl: async (args) => {
++        argvs.push([...args]);
++        // First hop redirects same-origin; second answers.
++        return argvs.length === 1
++          ? { stdout: "moved\n301\thttps://provider.example/final", stderr: "", exitCode: 0 }
++          : { stdout: "final page\n200", stderr: "", exitCode: 0 };
++      },
++    });
++    expect(text).toBe("final page");
++    expect(argvs).toHaveLength(2);
++    for (const argv of argvs) {
++      expect(argv).not.toContain("-L");
++      expect(argv).not.toContain("-sL");
++      expect(argv.join(" ")).toContain("%{redirect_url}");
++      expect(argv).toContain("--max-filesize");
++    }
++    // Hop 2 re-asked the redirect target, not the original URL.
++    expect(argvs[1]?.[argvs[1].length - 1]).toBe("https://provider.example/final");
++  });
++
++  test("a curl redirect into private space is refused before the hop spawns", async () => {
++    let spawns = 0;
++    const thrown = await providerFetchText(URL_UNDER_TEST, {
++      ...POLICY,
++      context: challengedContext,
++      curlEnvironment: CURL_ENV,
++      spawnCurl: async () => {
++        spawns += 1;
++        return { stdout: "\n301\thttps://169.254.169.254/latest", stderr: "", exitCode: 0 };
++      },
++    }).then(
++      () => null,
++      (error) => error,
++    );
++    expect(mustBe(thrown, ProviderHttpError).code).toBe("blocked");
++    expect(mustBe(thrown, ProviderHttpError).retryable).toBe(false);
++    expect(mustBe(thrown, ProviderHttpError).message).toContain("refused unsafe target");
++    // The metadata endpoint was never contacted — the hop died in the guard.
++    expect(spawns).toBe(1);
++  });
++
++  test("a curl redirect to a non-http scheme is refused", async () => {
++    const thrown = await providerFetchText(URL_UNDER_TEST, {
++      ...POLICY,
++      context: challengedContext,
++      curlEnvironment: CURL_ENV,
++      spawnCurl: async () => ({
++        stdout: "\n302\tfile:///etc/passwd",
++        stderr: "",
++        exitCode: 0,
++      }),
++    }).then(
++      () => null,
++      (error) => error,
++    );
++    expect(mustBe(thrown, ProviderHttpError).code).toBe("blocked");
++  });
++
++  test("a curl https downgrade hop is refused", async () => {
++    const thrown = await providerFetchText(URL_UNDER_TEST, {
++      ...POLICY,
++      context: challengedContext,
++      curlEnvironment: CURL_ENV,
++      spawnCurl: async () => ({
++        stdout: "\n301\thttp://provider.example/final",
++        stderr: "",
++        exitCode: 0,
++      }),
++    }).then(
++      () => null,
++      (error) => error,
++    );
++    expect(mustBe(thrown, ProviderHttpError).code).toBe("blocked");
++    expect(mustBe(thrown, ProviderHttpError).message).toContain("downgrade");
++  });
++
++  test("a cross-origin curl hop drops Referer and extra headers", async () => {
++    const argvs: string[][] = [];
++    const text = await providerFetchText(URL_UNDER_TEST, {
++      ...POLICY,
++      extraHeaders: { "X-Api-Key": "secret" },
++      context: challengedContext,
++      curlEnvironment: CURL_ENV,
++      spawnCurl: async (args) => {
++        argvs.push([...args]);
++        return argvs.length === 1
++          ? { stdout: "moved\n301\thttps://other-cdn.example/x", stderr: "", exitCode: 0 }
++          : { stdout: "final page\n200", stderr: "", exitCode: 0 };
++      },
++    });
++    expect(text).toBe("final page");
++    const hop0 = argvs[0]?.join("\n") ?? "";
++    const hop1 = argvs[1]?.join("\n") ?? "";
++    expect(hop0).toContain("Referer: https://provider.example/");
++    expect(hop0).toContain("X-Api-Key: secret");
++    expect(hop1).not.toContain("Referer:");
++    expect(hop1).not.toContain("X-Api-Key");
++  });
++
++  test("a curl redirect loop dies at the hop ceiling", async () => {
++    let spawns = 0;
++    const thrown = await providerFetchText(URL_UNDER_TEST, {
++      ...POLICY,
++      context: challengedContext,
++      curlEnvironment: CURL_ENV,
++      spawnCurl: async () => {
++        spawns += 1;
++        return { stdout: "\n301\thttps://provider.example/loop", stderr: "", exitCode: 0 };
++      },
++    }).then(
++      () => null,
++      (error) => error,
++    );
++    expect(mustBe(thrown, ProviderHttpError).code).toBe("blocked");
++    expect(mustBe(thrown, ProviderHttpError).message).toContain("redirect chain exceeded");
++    expect(spawns).toBe(5);
++  });
+ });
+ 
+ describe("providerFetchText — Retry-After capture", () => {
+diff --git a/packages/providers/test/stream-reachability.test.ts b/packages/providers/test/stream-reachability.test.ts
+index 395783425..a194f130a 100644
+--- a/packages/providers/test/stream-reachability.test.ts
++++ b/packages/providers/test/stream-reachability.test.ts
+@@ -122,6 +122,54 @@ describe("stream reachability", () => {
+     expect(isStreamReachableForResolve(probe)).toBe(false);
+   });
+ 
++  test("Range-ignoring 200 segment body is read to the probe prefix, then cancelled", async () => {
++    // A CDN that answers `bytes=0-1023` with a full 200 segment used to be
++    // buffered whole into memory — per candidate, per probe. The reader must
++    // stop once the minimum byte proof arrives and cancel the rest.
++    let cancelled = false;
++    const endlessSegment = new ReadableStream<Uint8Array>({
++      pull(controller) {
++        controller.enqueue(new Uint8Array(8192).fill(0xab));
++      },
++      cancel() {
++        cancelled = true;
++      },
++    });
++
++    const probe = await probeStreamReachability({
++      url: "https://cdn.example/stream.m3u8",
++      fetchImpl: async (url: string) => {
++        if (url.endsWith("stream.m3u8")) {
++          return response(200, "#EXTM3U\n#EXTINF:3,\n/seg-1.ts\n");
++        }
++        return new Response(endlessSegment, {
++          status: 200,
++          headers: { "content-type": "application/octet-stream" },
++        });
++      },
++      timeoutMs: 500,
++    });
++
++    expect(probe).toEqual({ status: "reachable" });
++    expect(cancelled).toBe(true);
++  });
++
++  test("an oversized playlist body is unreachable instead of buffered whole", async () => {
++    // A chunked playlist body is bounded only by the request timeout without
++    // the cap — 3MB of `#` comments is not a playlist, it is a memory leak.
++    const probe = await probeStreamReachability({
++      url: "https://cdn.example/stream.m3u8",
++      fetchImpl: async () => response(200, `#EXTM3U\n${"#".repeat(3 * 1024 * 1024)}\n`),
++      timeoutMs: 500,
++    });
++
++    expect(probe.status).toBe("unreachable");
++    if (probe.status === "unreachable") {
++      expect(probe.reason).toContain("playlist body");
++      expect(probe.definitive).toBe(false);
++    }
++  });
++
+   test("junk tiny segment body is unreachable", async () => {
+     const probe = await probeStreamReachability({
+       url: "https://cdn.example/stream.m3u8",
+diff --git a/packages/types/src/blocked-target.ts b/packages/types/src/blocked-target.ts
+index cee391a42..9eef5214d 100644
+--- a/packages/types/src/blocked-target.ts
++++ b/packages/types/src/blocked-target.ts
+@@ -40,9 +40,12 @@ export function blockedLiteralTargetReason(url: string): string | null {
+   return null;
+ }
+ 
+-export async function resolvedAddressBlockReason(url: string): Promise<string | null> {
++export async function resolvedAddressBlockReason(
++  url: string,
++  signal?: AbortSignal,
++): Promise<string | null> {
+   const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+-  const resolved = await resolveHostAddresses(host);
++  const resolved = await resolveHostAddresses(host, signal);
+   for (const address of resolved) {
+     const reason = isPrivateLiteralAddress(address);
+     if (reason) return `${reason} (DNS answer for ${host})`;
+@@ -123,12 +126,53 @@ export function isPrivateLiteralAddress(host: string): string | null {
+   return null;
+ }
+ 
+-async function resolveHostAddresses(host: string): Promise<string[]> {
++/**
++ * A resolver that accepts the query and never answers (UDP drop, captive DNS)
++ * would otherwise pend past every caller deadline — the lookup happens inside
++ * fetch paths whose advertised budgets assume it returns. Bound it; a dead
++ * lookup yields no answers and the fetch fails on its own, same as an
++ * unresolvable name.
++ */
++const DEFAULT_DNS_LOOKUP_BUDGET_MS = 4_000;
++let dnsLookupBudgetMs = DEFAULT_DNS_LOOKUP_BUDGET_MS;
++
++/** Test seam — the bound is module state so a test need not wait 4s to see it. */
++export function setBlockedTargetDnsBudgetMsForTest(ms: number): void {
++  dnsLookupBudgetMs = ms;
++}
++
++async function resolveHostAddresses(host: string, signal?: AbortSignal): Promise<string[]> {
+   if (parseIpv4(host) || host.includes(":")) return [];
++  if (signal?.aborted) return [];
+   try {
+     const { lookup } = await import("node:dns/promises");
+-    const answers = await lookup(host, { all: true });
+-    return answers.map((a) => a.address);
++    const answers = await new Promise<{ address: string }[] | null>((resolve) => {
++      const timer = setTimeout(() => {
++        cleanup();
++        resolve(null);
++      }, dnsLookupBudgetMs);
++      timer.unref?.();
++      const onAbort = () => {
++        cleanup();
++        resolve(null);
++      };
++      const cleanup = () => {
++        clearTimeout(timer);
++        signal?.removeEventListener("abort", onAbort);
++      };
++      signal?.addEventListener("abort", onAbort, { once: true });
++      lookup(host, { all: true }).then(
++        (value) => {
++          cleanup();
++          return resolve(value);
++        },
++        () => {
++          cleanup();
++          return resolve(null);
++        },
++      );
++    });
++    return (answers ?? []).map((a) => a.address);
+   } catch {
+     // An unresolvable name fails in the fetch anyway — don't pre-empt its error.
+     return [];
+diff --git a/packages/types/test/blocked-target.test.ts b/packages/types/test/blocked-target.test.ts
+new file mode 100644
+index 000000000..981dbc170
+--- /dev/null
++++ b/packages/types/test/blocked-target.test.ts
+@@ -0,0 +1,46 @@
++import { afterEach, describe, expect, mock, test } from "bun:test";
++
++import {
++  resolvedAddressBlockReason,
++  setBlockedTargetDnsBudgetMsForTest,
++} from "../src/blocked-target";
++
++afterEach(() => {
++  setBlockedTargetDnsBudgetMsForTest(4_000);
++  mock.restore();
++});
++
++describe("resolvedAddressBlockReason", () => {
++  test("an aborted caller signal returns null without consulting DNS", async () => {
++    // The lookup is skipped entirely on a dead signal — a cancelled probe must
++    // not sit on a resolver round-trip.
++    const result = await resolvedAddressBlockReason(
++      "https://definitely-not-a-real-host.invalid/",
++      AbortSignal.abort(),
++    );
++    expect(result).toBeNull();
++  });
++
++  test("a DNS lookup that never answers is bounded by the budget", async () => {
++    // A resolver that accepts the query and never answers used to pend past
++    // every caller deadline. Mock it hanging and prove the cap releases the
++    // call with "no answers" — the fetch then fails on its own.
++    mock.module("node:dns/promises", () => ({
++      lookup: () => new Promise(() => {}),
++    }));
++    setBlockedTargetDnsBudgetMsForTest(15);
++
++    const started = Date.now();
++    const result = await resolvedAddressBlockReason("https://example.com/");
++    expect(result).toBeNull();
++    expect(Date.now() - started).toBeLessThan(3_000);
++  });
++
++  test("private DNS answers are blocked with the host named", async () => {
++    mock.module("node:dns/promises", () => ({
++      lookup: () => Promise.resolve([{ address: "10.0.0.4", family: 4 }]),
++    }));
++    const result = await resolvedAddressBlockReason("https://example.com/");
++    expect(result).toContain("DNS answer for example.com");
++  });
++});
+diff --git a/tools/oxlint/anti-slop/baseline.json b/tools/oxlint/anti-slop/baseline.json
+index 6353e67c1..3b7eb8853 100644
+--- a/tools/oxlint/anti-slop/baseline.json
++++ b/tools/oxlint/anti-slop/baseline.json
+@@ -9,5 +9,5 @@
+   "anti-slop(no-unknown-parameters)": 292,
+   "anti-slop(no-unknown-returns)": 59,
+   "anti-slop(no-unsafe-dictionary-type)": 337,
+-  "anti-slop(require-safety-comment-for-type-assertion)": 1815
++  "anti-slop(require-safety-comment-for-type-assertion)": 1813
+ }

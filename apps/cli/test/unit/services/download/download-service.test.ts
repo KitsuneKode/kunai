@@ -2236,6 +2236,12 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
+    // This test covers competing claims, not equal-timestamp UUID ordering.
+    // Anchor A before the records we just wrote without sleeping for a tick.
+    const earlier = new Date(
+      Math.min(Date.parse(firstJob.createdAt), Date.parse(secondJob.createdAt)) - 1,
+    ).toISOString();
+    db.run("UPDATE download_jobs SET created_at = ? WHERE id = ?", [earlier, firstJob.id]);
     const originalMarkRunning = repo.markRunning.bind(repo);
     const claimedJobIds: string[] = [];
     const markRunningSpy = spyOn(repo, "markRunning").mockImplementation((jobId, updatedAt) => {

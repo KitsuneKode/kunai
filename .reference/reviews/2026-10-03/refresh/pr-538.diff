@@ -1,0 +1,207 @@
+diff --git a/apps/docs/app/layout.tsx b/apps/docs/app/layout.tsx
+index 0dad1cdaa..dd0efdf54 100644
+--- a/apps/docs/app/layout.tsx
++++ b/apps/docs/app/layout.tsx
+@@ -6,7 +6,7 @@ import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
+ import { NavCompact } from "@/components/layout/nav-compact";
+ import { SiteFooter } from "@/components/layout/site-footer";
+ import { MotionProvider } from "@/components/providers/motion-provider";
+-import { KunaiSearchDialog } from "@/components/search/kunai-search-dialog";
++import { LazySearchDialog } from "@/components/search/lazy-search-dialog";
+ import { TooltipProvider } from "@/components/ui/tooltip";
+ import { fontClassNames } from "@/lib/fonts";
+ /* eslint-enable import/no-unassigned-import */
+@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode
+       <body className="bg-fd-background text-fd-foreground flex min-h-screen flex-col antialiased">
+         <RootProvider
+           search={{
+-            SearchDialog: KunaiSearchDialog,
++            SearchDialog: LazySearchDialog,
+             links: [
+               ["Getting started", "/docs/users/getting-started"],
+               ["Troubleshooting", "/docs/users/troubleshooting"],
+diff --git a/apps/docs/app/styles/docs-chrome.css b/apps/docs/app/styles/docs-chrome.css
+index 1661b5afe..2be10e0a9 100644
+--- a/apps/docs/app/styles/docs-chrome.css
++++ b/apps/docs/app/styles/docs-chrome.css
+@@ -290,8 +290,13 @@
+    content here (the install notes live in them), so they take the muted token (6.2:1)
+    instead. The selector matches the inline custom properties the highlighter writes, so
+    it follows the theme: if the theme ever changes its comment colour this stops matching,
+-   so recheck the rendered contrast then (`test/palette.test.ts` pins the numbers). */
+-#nd-docs-layout pre span[style*="--shiki-dark: #6A737D"] {
++   so recheck the rendered contrast then (`test/palette.test.ts` pins the numbers).
++
++   It matches on the colour alone, not on `--shiki-dark: #6A737D`. The server writes the
++   attribute without the space after the colon (`--shiki-dark:#6A737D`) while the
++   browser's CSSOM serialises it with one, so a selector spelled either way silently
++   matched nothing on the other. The `i` flag covers the hex's case for the same reason. */
++#nd-docs-layout pre span[style*="#6A737D" i] {
+   --shiki-dark: var(--color-fd-muted-foreground) !important;
+   --shiki-light: var(--color-fd-muted-foreground) !important;
+ }
+diff --git a/apps/docs/components/search/lazy-search-dialog.tsx b/apps/docs/components/search/lazy-search-dialog.tsx
+new file mode 100644
+index 000000000..a44fbad09
+--- /dev/null
++++ b/apps/docs/components/search/lazy-search-dialog.tsx
+@@ -0,0 +1,56 @@
++"use client";
++
++import type { SharedProps } from "fumadocs-ui/components/dialog/search";
++import dynamic from "next/dynamic";
++import { useEffect, useState } from "react";
++
++type LazySearchDialogProps = SharedProps & {
++  readonly api?: string;
++  readonly delayMs?: number;
++};
++
++/**
++ * The real dialog, fetched on demand.
++ *
++ * It pulls in the search client and the Orama matcher, about 265 KB of JavaScript,
++ * and used to be imported straight into the root layout, so every page on the site
++ * downloaded and parsed it before anyone had pressed a key. It is only ever needed
++ * after the visitor opens search, so it now loads then.
++ */
++const KunaiSearchDialog = dynamic(
++  () => import("./kunai-search-dialog").then((module) => module.KunaiSearchDialog),
++  { ssr: false },
++);
++
++/** Any of these means a person is here and about to use the page. */
++const WARM_EVENTS = ["pointerdown", "keydown", "touchstart"] as const;
++
++/**
++ * Mounts the search dialog the first time it is opened, then keeps it mounted so its
++ * downloaded index and typed query survive closing and reopening.
++ *
++ * Opening it cold would wait on the chunk, so the first real input anywhere on the
++ * page starts the download. That keeps Ctrl+K instant for someone who is actually
++ * using the site, while a load that never receives input (a crawler, a Lighthouse
++ * run, a tab left in the background) never pays for it.
++ */
++export function LazySearchDialog(props: LazySearchDialogProps) {
++  const [requested, setRequested] = useState(false);
++
++  useEffect(() => {
++    if (props.open) setRequested(true);
++  }, [props.open]);
++
++  useEffect(() => {
++    const warm = () => void import("./kunai-search-dialog");
++    for (const event of WARM_EVENTS) {
++      window.addEventListener(event, warm, { once: true, passive: true });
++    }
++    return () => {
++      for (const event of WARM_EVENTS) window.removeEventListener(event, warm);
++    };
++  }, []);
++
++  if (!requested && !props.open) return null;
++  return <KunaiSearchDialog {...props} />;
++}
+diff --git a/apps/docs/test/code-comment-contrast.test.ts b/apps/docs/test/code-comment-contrast.test.ts
+new file mode 100644
+index 000000000..abb566b90
+--- /dev/null
++++ b/apps/docs/test/code-comment-contrast.test.ts
+@@ -0,0 +1,42 @@
++import { describe, expect, test } from "bun:test";
++import fs from "node:fs";
++import path from "node:path";
++
++const css = fs.readFileSync(
++  path.resolve(import.meta.dir, "../app/styles/docs-chrome.css"),
++  "utf-8",
++);
++
++/** The rule that lifts code comments off the highlighter's 3.7:1 grey. */
++function commentRuleSelector(): string {
++  const match = css.match(/(#nd-docs-layout pre span\[[^\]]*\])\s*\{/);
++  if (!match?.[1]) throw new Error("comment contrast rule not found in docs-chrome.css");
++  return match[1];
++}
++
++/** Does a `[style*="needle"]` attribute selector, with an optional `i` flag, match this attribute? */
++function matches(selector: string, style: string): boolean {
++  const attr = selector.match(/\[style\*="([^"]+)"(\s+i)?\]/);
++  if (!attr?.[1]) throw new Error(`not a substring attribute selector: ${selector}`);
++  const needle = attr[1];
++  return attr[2] ? style.toLowerCase().includes(needle.toLowerCase()) : style.includes(needle);
++}
++
++describe("code comment contrast override", () => {
++  const selector = commentRuleSelector();
++
++  test("matches the style attribute exactly as the server writes it, with no space after the colon", () => {
++    // Lighthouse read this from the served HTML: the override missed it and the
++    // comments stayed at 3.7:1, failing color-contrast on every page with a code block.
++    expect(matches(selector, "--shiki-light:#6A737D;--shiki-dark:#6A737D")).toBe(true);
++  });
++
++  test("matches the spaced form the browser's CSSOM reports, and a lower-case hex", () => {
++    expect(matches(selector, "--shiki-light: #6A737D; --shiki-dark: #6A737D")).toBe(true);
++    expect(matches(selector, "--shiki-dark:#6a737d")).toBe(true);
++  });
++
++  test("does not touch other token colours", () => {
++    expect(matches(selector, "--shiki-light:#D73A49;--shiki-dark:#F97583")).toBe(false);
++  });
++});
+diff --git a/apps/docs/test/lazy-search.test.tsx b/apps/docs/test/lazy-search.test.tsx
+new file mode 100644
+index 000000000..639371301
+--- /dev/null
++++ b/apps/docs/test/lazy-search.test.tsx
+@@ -0,0 +1,34 @@
++import { describe, expect, test } from "bun:test";
++import fs from "node:fs";
++import path from "node:path";
++
++import { renderToStaticMarkup } from "react-dom/server";
++
++import { LazySearchDialog } from "../components/search/lazy-search-dialog";
++
++const APP_ROOT = path.resolve(import.meta.dir, "..");
++
++describe("lazy search dialog", () => {
++  test("renders nothing until search has been opened, so no dialog code ships with the page", () => {
++    const html = renderToStaticMarkup(<LazySearchDialog open={false} onOpenChange={() => {}} />);
++    expect(html).toBe("");
++  });
++
++  test("the root layout never imports the heavy dialog directly", () => {
++    // The dialog pulls in the search client and Orama (~265 KB of JavaScript). Imported
++    // from the layout it is downloaded and parsed by every page before a key is pressed.
++    // Keep it behind LazySearchDialog; if this fails, search went eager again.
++    const layout = fs.readFileSync(path.join(APP_ROOT, "app/layout.tsx"), "utf-8");
++    expect(layout).not.toMatch(/from\s+"@\/components\/search\/kunai-search-dialog"/);
++    expect(layout).toContain("LazySearchDialog");
++  });
++
++  test("the lazy wrapper imports the dialog dynamically and not at module top level", () => {
++    const lazy = fs.readFileSync(
++      path.join(APP_ROOT, "components/search/lazy-search-dialog.tsx"),
++      "utf-8",
++    );
++    expect(lazy).not.toMatch(/^import .* from "\.\/kunai-search-dialog"/m);
++    expect(lazy).toContain('import("./kunai-search-dialog")');
++  });
++});
+diff --git a/apps/docs/test/palette.test.ts b/apps/docs/test/palette.test.ts
+index f0ccfa91b..40aae515d 100644
+--- a/apps/docs/test/palette.test.ts
++++ b/apps/docs/test/palette.test.ts
+@@ -64,7 +64,9 @@ describe("code-block comments", () => {
+   });
+ 
+   test("comments are re-pointed at the muted token, which passes", () => {
+-    expect(chromeCss).toContain('span[style*="--shiki-dark: #6A737D"]');
++    // Whether the selector matches the served markup is pinned in
++    // `code-comment-contrast.test.ts`; this checks the rule's effect.
++    expect(chromeCss).toContain(`span[style*="${HIGHLIGHTER_COMMENT}" i]`);
+     expect(chromeCss).toMatch(/--shiki-dark:\s*var\(--color-fd-muted-foreground\)\s*!important/);
+   });
+ });

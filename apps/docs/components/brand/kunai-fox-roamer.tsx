@@ -7,7 +7,7 @@ import {
   stepRoamer,
   type RoamerPhase,
 } from "@/lib/roamer-machine";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 /**
  * Kanna, loose on the page.
@@ -62,6 +62,71 @@ const CHATTER_WINDOW_MS: Partial<Record<RoamerPhase, readonly [number, number]>>
 const CHATTER_RECHECK_MS = 1200;
 const BUBBLE_MS = 4200;
 const STORAGE_KEY = "kunai.roamer.dismissed";
+
+/** Browser preferences and dismissal are external state, with an empty SSR snapshot. */
+export function createRoamerVisibilityStore(host: {
+  readonly matchMedia: (
+    query: string,
+  ) => Pick<MediaQueryList, "matches" | "addEventListener" | "removeEventListener">;
+  readonly localStorage: Pick<Storage, "getItem" | "removeItem">;
+  readonly addEventListener: Window["addEventListener"];
+  readonly removeEventListener: Window["removeEventListener"];
+}) {
+  const fine = host.matchMedia("(pointer: fine)");
+  const reduced = host.matchMedia("(prefers-reduced-motion: reduce)");
+  let dismissedForPage: boolean | null = null;
+  const eligible = () => fine.matches && !reduced.matches;
+  return {
+    getSnapshot() {
+      if (!eligible()) return false;
+      if (dismissedForPage !== null) return !dismissedForPage;
+      try {
+        return host.localStorage.getItem(STORAGE_KEY) !== "1";
+      } catch {
+        return true;
+      }
+    },
+    subscribe(onChange: () => void) {
+      const dismiss = () => {
+        dismissedForPage = true;
+        onChange();
+      };
+      const restore = () => {
+        if (!eligible()) return;
+        try {
+          host.localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          // Restore still works for this page view when storage is unavailable.
+        }
+        dismissedForPage = false;
+        onChange();
+      };
+      const storage = (event: StorageEvent) => {
+        if (event.key !== null && event.key !== STORAGE_KEY) return;
+        dismissedForPage = null;
+        onChange();
+      };
+      fine.addEventListener("change", onChange);
+      reduced.addEventListener("change", onChange);
+      host.addEventListener("storage", storage);
+      host.addEventListener("kunai:roamer-dismissed", dismiss);
+      host.addEventListener("kunai:roamer-restore", restore);
+      return () => {
+        fine.removeEventListener("change", onChange);
+        reduced.removeEventListener("change", onChange);
+        host.removeEventListener("storage", storage);
+        host.removeEventListener("kunai:roamer-dismissed", dismiss);
+        host.removeEventListener("kunai:roamer-restore", restore);
+      };
+    },
+  };
+}
+
+let visibilityStore: ReturnType<typeof createRoamerVisibilityStore> | undefined;
+const getVisibilityStore = () => (visibilityStore ??= createRoamerVisibilityStore(window));
+const subscribeVisibility = (onChange: () => void) => getVisibilityStore().subscribe(onChange);
+const getVisibilitySnapshot = () => getVisibilityStore().getSnapshot();
+const getServerVisibilitySnapshot = () => false;
 
 /**
  * What she says, by state.
@@ -144,42 +209,17 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const [phase, setPhase] = useState<RoamerPhase>("sitting");
   const [facing, setFacing] = useState<"left" | "right">("right");
   const [line, setLine] = useState<string | null>(null);
-  const [enabled, setEnabled] = useState(false);
+  const enabled = useSyncExternalStore(
+    subscribeVisibility,
+    getVisibilitySnapshot,
+    getServerVisibilitySnapshot,
+  );
   // Docs chrome exclusion band: `#nd-sidebar` on the left, `#nd-toc` on the
   // right. She must never sit on clickable navigation — a TOC link that hits
   // her quip button reads as a dead link. Rects are cached and re-read on a
   // cadence because getBoundingClientRect every frame is a layout read.
   const exclusionBand = useRef<{ left: number; right: number } | null>(null);
   const exclusionStamp = useRef(0);
-
-  // Resolved after mount so server and client agree on the first render, and so
-  // a dismissal from a previous visit is honoured before she is ever painted.
-  useEffect(() => {
-    const eligible = () =>
-      window.matchMedia("(pointer: fine)").matches &&
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const isDismissed = () => {
-      try {
-        return window.localStorage.getItem(STORAGE_KEY) === "1";
-      } catch {
-        return false;
-      }
-    };
-    if (eligible() && !isDismissed()) setEnabled(true);
-    // "Bring Kanna back" — the reverse of dismiss. Anything on the page can
-    // dispatch this; she clears the flag and walks again without a reload.
-    const restore = () => {
-      if (!eligible()) return;
-      try {
-        window.localStorage.removeItem(STORAGE_KEY);
-      } catch {
-        // An unavailable store just means the restore is session-scoped.
-      }
-      setEnabled(true);
-    };
-    window.addEventListener("kunai:roamer-restore", restore);
-    return () => window.removeEventListener("kunai:roamer-restore", restore);
-  }, []);
 
   const say = useCallback((pool: readonly string[]) => {
     setLine((current) => pickLine(pool, current));
@@ -324,7 +364,6 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   }, [enabled, say]);
 
   const dismiss = useCallback(() => {
-    setEnabled(false);
     try {
       window.localStorage.setItem(STORAGE_KEY, "1");
     } catch {

@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-10-02
+Last updated: 2026-10-03
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -80,6 +80,12 @@ archive and put only the residue here.
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
 | Analytics series + social cards | Serve the retained `daily_rollup` history, adoption/trend charts, per-share OG images                                                | [2026-08-26-analytics-series-and-social-cards.md](./2026-08-26-analytics-series-and-social-cards.md) |
 | User docs overhaul              | Accuracy/framing PR first; then first-run, debugging playbook, coverage, nav, agent-docs, deploy `apps/docs` to kunai.kitsunekode.in | [2026-08-18-user-docs-overhaul.md](./2026-08-18-user-docs-overhaul.md)                               |
+
+### Production review and release repair
+
+| Track                     | Remaining                                                                                                              | Plan                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| October production review | Reconcile 47 PRs/29 issues; close network trust and provider freshness gates; qualify platform/mobile release evidence | [review and ordered residue](2026-10-03-production-review.md) |
 
 ### Verification and CI
 

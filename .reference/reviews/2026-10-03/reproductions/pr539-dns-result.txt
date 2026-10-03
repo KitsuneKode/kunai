@@ -1,0 +1,40 @@
+$ bun run --cwd apps/cli test:file test/unit/infra/net/audit-dns-continuity.test.ts
+$ bun test --timeout=20000 test/unit/infra/net/audit-dns-continuity.test.ts
+bun test v1.4.2 (744846f84)
+
+test/unit/infra/net/audit-dns-continuity.test.ts:
+10 |   return new Response("ok");
+11 | });
+12 | const { fetchGuardedRemoteTarget } = await import("@/infra/net/guarded-remote-fetch");
+13 | test("the connection must use the address checked during DNS preflight", async () => {
+14 |   await fetchGuardedRemoteTarget("https://cdn.example.test/path");
+15 |   expect(new URL(targets.at(-1)!).hostname).toBe("8.8.8.8");
+                                                 ^
+error: expect(received).toBe(expected)
+
+Expected: "8.8.8.8"
+Received: "cdn.example.test"
+
+      at <anonymous> (/tmp/kunai-full-review-20261003/latest-stack/apps/cli/test/unit/infra/net/audit-dns-continuity.test.ts:15:45)
+(fail) the connection must use the address checked during DNS preflight [1.32ms]
+15 |   expect(new URL(targets.at(-1)!).hostname).toBe("8.8.8.8");
+16 | });
+17 | test("DNS failure must not permit an unchecked fetch", async () => {
+18 |   lookupFails = true;
+19 |   const before = targets.length;
+20 |   await expect(fetchGuardedRemoteTarget("https://cdn.example.test/path")).rejects.toThrow();
+                                                                                       ^
+error: expect(received).rejects.toThrow(expected)
+
+Expected promise that rejects
+Received promise that resolved: Promise { <resolved> }
+
+      at <anonymous> (/tmp/kunai-full-review-20261003/latest-stack/apps/cli/test/unit/infra/net/audit-dns-continuity.test.ts:20:83)
+(fail) DNS failure must not permit an unchecked fetch [0.63ms]
+
+ 0 pass
+ 2 fail
+ 2 expect() calls
+Ran 2 tests across 1 file. [17.00ms]
+error: script "test:file" exited with code 1
+error: script "test:cli:file" exited with code 1

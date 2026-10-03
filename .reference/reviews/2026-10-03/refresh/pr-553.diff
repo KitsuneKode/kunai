@@ -1,0 +1,215 @@
+diff --git a/.changeset/playback-palette-owns-keys.md b/.changeset/playback-palette-owns-keys.md
+new file mode 100644
+index 000000000..0a36d9850
+--- /dev/null
++++ b/.changeset/playback-palette-owns-keys.md
+@@ -0,0 +1,11 @@
++---
++"@kitsunekode/kunai": patch
++---
++
++Typing into the playback command palette no longer fires playback keys.
++
++Opening the `/` palette during playback and typing a command name ran the playback
++keys behind it, one letter at a time: `q` stopped playback, and `n`, `p`, `a` and
++`u` skipped, rewound, or toggled autoplay and autoskip. Typing `quit` or `next`
++could end the stream before the command ever ran. The palette now owns the
++keyboard while it is open, and closing it with Escape hands the keys back.
+diff --git a/apps/cli/src/app-shell/loading-shell.tsx b/apps/cli/src/app-shell/loading-shell.tsx
+index ba300c2ed..1e368d4e8 100644
+--- a/apps/cli/src/app-shell/loading-shell.tsx
++++ b/apps/cli/src/app-shell/loading-shell.tsx
+@@ -28,7 +28,11 @@ import { MediaPanel } from "./MediaPanel";
+ import { OffscreenFreeze } from "./offscreen-freeze";
+ import { buildPlaybackKeysPanel, type PlaybackKeysPanelModel } from "./playback-keys-panel";
+ import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
+-import { applyPlaybackShellInputEffect, resolvePlaybackShellInput } from "./playback-shell-input";
++import {
++  applyPlaybackShellInputEffect,
++  resolvePlaybackShellInput,
++  type PlaybackShellInputContext,
++} from "./playback-shell-input";
+ import { ProgressBar } from "./primitives/ProgressBar";
+ import { GlimmerLabel, SakuraBloom } from "./SakuraLoader";
+ import { useShellCommandModeOpen } from "./shell-command-mode";
+@@ -132,6 +136,44 @@ function useRuntimeHealthLine(
+ // Vertical "Mission" checklist (.prototypes/playback-postplay 'Mission card'):
+ // one stage per line with its status glyph, so bootstrap reads as a checklist
+ // being ticked off rather than a horizontal breadcrumb.
++/**
++ * Playback keys live in a child of the frame because `ShellFrame` is what knows
++ * whether the `/` palette is open, and it shares that through context to its
++ * children only. A hook called from `LoadingShell` itself sits above that
++ * provider, always reads "closed", and lets every letter typed into the palette
++ * fire its playback key (`q` stops, `n` skips) behind it.
++ */
++function PlaybackShellInput({
++  input,
++  onCancel,
++  onToggleMemory,
++}: {
++  readonly input: PlaybackShellInputContext;
++  readonly onCancel?: () => void;
++  readonly onToggleMemory: () => void;
++}) {
++  const commandModeOpen = useShellCommandModeOpen();
++
++  useInput((key, modifiers) => {
++    if (commandModeOpen) return;
++    if ((key === "c" && modifiers.ctrl) || key === "\x03") {
++      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
++      return;
++    }
++    if (modifiers.escape && input.cancellable && onCancel) {
++      onCancel();
++      return;
++    }
++
++    const effect = resolvePlaybackShellInput(key, modifiers, input);
++    if (!effect) return;
++
++    applyPlaybackShellInputEffect(effect, input.handlers, onToggleMemory);
++  });
++
++  return null;
++}
++
+ function StageRail({ items }: { items: readonly StageRailItem[] }) {
+   return (
+     <Box flexDirection="column">
+@@ -478,34 +520,15 @@ export const LoadingShell = React.memo(function LoadingShell({
+     ],
+   );
+ 
+-  const commandModeOpen = useShellCommandModeOpen();
+-
+-  useInput((input, key) => {
+-    if (commandModeOpen) return;
+-    if ((input === "c" && key.ctrl) || input === "\x03") {
+-      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
+-      return;
+-    }
+-    if (key.escape && state.cancellable && onCancel) {
+-      onCancel();
+-      return;
+-    }
+-
+-    const effect = resolvePlaybackShellInput(input, key, {
+-      operation: state.operation,
+-      cancellable: Boolean(state.cancellable),
+-      fallbackAvailable: Boolean(state.fallbackAvailable),
+-      canOpenSourcePicker,
+-      recoveryViewActive: Boolean(recoveryView),
+-      playbackTroubleActive,
+-      handlers: playbackInputHandlers,
+-    });
+-    if (!effect) return;
+-
+-    applyPlaybackShellInputEffect(effect, playbackInputHandlers, () => {
+-      setMemoryPanelVisible((visible) => !visible);
+-    });
+-  });
++  const playbackInput: PlaybackShellInputContext = {
++    operation: state.operation,
++    cancellable: Boolean(state.cancellable),
++    fallbackAvailable: Boolean(state.fallbackAvailable),
++    canOpenSourcePicker,
++    recoveryViewActive: Boolean(recoveryView),
++    playbackTroubleActive,
++    handlers: playbackInputHandlers,
++  };
+   const isWide = loadingViewport.breakpoint === "wide";
+   const isWidePlaying = isPlaying && isWide;
+   // Show the metadata panel during bootstrap too — not only once mpv starts — so
+@@ -657,6 +680,11 @@ export const LoadingShell = React.memo(function LoadingShell({
+         state.onCommandAction?.(action);
+       }}
+     >
++      <PlaybackShellInput
++        input={playbackInput}
++        onCancel={onCancel}
++        onToggleMemory={() => setMemoryPanelVisible((visible) => !visible)}
++      />
+       <Box flexDirection="column" justifyContent="space-between" flexGrow={1}>
+         <Box flexDirection="column" flexGrow={1} width="100%">
+           {/* ── Resolving / Loading ───────────────────────────────────────── */}
+diff --git a/apps/cli/test/unit/app-shell/loading-shell-command-mode.test.tsx b/apps/cli/test/unit/app-shell/loading-shell-command-mode.test.tsx
+new file mode 100644
+index 000000000..e1bd3e6b4
+--- /dev/null
++++ b/apps/cli/test/unit/app-shell/loading-shell-command-mode.test.tsx
+@@ -0,0 +1,74 @@
++import { describe, expect, test } from "bun:test";
++
++import { COMMAND_CONTEXTS } from "@/app-shell/commands";
++import { LoadingShell } from "@/app-shell/loading-shell";
++import { fallbackCommandState } from "@/app-shell/shell-command-model";
++import React, { act } from "react";
++
++import { render, stripAnsi } from "../../harness/render-capture";
++
++function mountPlayback() {
++  const calls: string[] = [];
++  const record = (name: string) => () => {
++    calls.push(name);
++  };
++  const handle = render(
++    <LoadingShell
++      state={{
++        title: "Sintel",
++        operation: "playing",
++        commands: fallbackCommandState(COMMAND_CONTEXTS.activePlayback),
++        onCommandAction: () => undefined,
++      }}
++      onStop={record("stop")}
++      onNext={record("next")}
++      onPrevious={record("previous")}
++      onToggleAutoplay={record("autoplay")}
++      onToggleAutoskip={record("autoskip")}
++    />,
++    { columns: 100, rows: 40 },
++  );
++  // A terminal delivers one chunk per keystroke; a multi-character chunk is a paste to Ink.
++  const type = (text: string) => {
++    for (const key of text) handle.stdin.enqueue(key);
++  };
++  return { calls, handle, type };
++}
++
++describe("playback command palette", () => {
++  test("a playback key stops playback while the palette is closed", () => {
++    const { calls, type, handle } = mountPlayback();
++    type("q");
++    expect(calls).toEqual(["stop"]);
++    handle.unmount();
++  });
++
++  test("typing a command name does not fire playback keys behind the palette", () => {
++    const { calls, type, handle } = mountPlayback();
++    type("/");
++    expect(stripAnsi(handle.lastFrame())).toContain("type a command");
++
++    // q stop, n next, p previous, a autoplay, u autoskip: every one is a live key outside the palette.
++    type("quitnpau");
++
++    expect(calls).toEqual([]);
++    expect(stripAnsi(handle.lastFrame())).toContain("quitnpau");
++    handle.unmount();
++  });
++
++  test("closing the palette hands the keys back", async () => {
++    const { calls, type, handle } = mountPlayback();
++    type("/");
++    type("q");
++    // Ink defers a lone ESC briefly to tell it apart from an escape sequence.
++    await act(async () => {
++      handle.stdin.enqueue("\u001b");
++      await new Promise((resolve) => setTimeout(resolve, 60));
++    });
++    expect(calls).toEqual([]);
++
++    type("q");
++    expect(calls).toEqual(["stop"]);
++    handle.unmount();
++  });
++});

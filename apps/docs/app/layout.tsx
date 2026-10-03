@@ -72,7 +72,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
             chrome is full of transforms. Here she is always viewport-relative.
 
             Safe under every rendering mode this site uses. She renders `null`
-            until a mount effect has checked pointer type, reduced motion and
+            until the browser snapshot has checked pointer type, reduced motion and
             the stored dismissal, so static and server output contain nothing of
             her and there is no hydration mismatch to reconcile. She holds no
             server data, so ISR revalidation never invalidates her.

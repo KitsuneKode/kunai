@@ -1,0 +1,2524 @@
+diff --git a/.github/FUNDING.yml b/.github/FUNDING.yml
+index 64d6f2df3..71196b3a4 100644
+--- a/.github/FUNDING.yml
++++ b/.github/FUNDING.yml
+@@ -1 +1,2 @@
+ github: [KitsuneKode]
++custom: ["https://kunai.kitsunekode.in/support"]
+diff --git a/apps/docs/app/(home)/home-page-interactive.tsx b/apps/docs/app/(home)/home-page-interactive.tsx
+index 4b7c1e347..c732a4461 100644
+--- a/apps/docs/app/(home)/home-page-interactive.tsx
++++ b/apps/docs/app/(home)/home-page-interactive.tsx
+@@ -77,7 +77,7 @@ export default function HomePageInteractive() {
+                 tabIndex={activeOs === os ? 0 : -1}
+                 onClick={() => setActiveOs(os)}
+                 onKeyDown={handleTabKeyDown}
+-                className={`os-tab-button text-[11px] tracking-wider uppercase ${
++                className={`os-tab-button tracking-wider uppercase ${
+                   activeOs === os ? "active" : ""
+                 }`}
+               >
+diff --git a/apps/docs/app/(home)/home-page-shell.tsx b/apps/docs/app/(home)/home-page-shell.tsx
+index 2f4faea8f..c2b952dad 100644
+--- a/apps/docs/app/(home)/home-page-shell.tsx
++++ b/apps/docs/app/(home)/home-page-shell.tsx
+@@ -1,7 +1,9 @@
+-import { KunaiFox, type KunaiFoxPose } from "@/components/brand/kunai-fox";
+-import { KunaiFoxBanner } from "@/components/brand/kunai-fox-banner";
++import { KunaiFox } from "@/components/brand/kunai-fox";
++import { KunaiFoxLive } from "@/components/brand/kunai-fox-live";
++import { HomeFlowTimeline } from "@/components/home/home-flow-timeline";
+ import { HomeHeroStatic } from "@/components/home/home-hero-static";
+ import { HomeStarCta } from "@/components/home/home-star-cta";
++import { HomeSupportStrip } from "@/components/home/home-support-strip";
+ import { HomeTerminalIsland } from "@/components/home/home-terminal-island";
+ import { HomeTerminalStatic } from "@/components/home/home-terminal-static";
+ import { ProviderSummaryCard } from "@/components/home/provider-summary-card";
+@@ -18,8 +20,6 @@ import type { ReactNode } from "react";
+ 
+ import HomePageInteractive from "./home-page-interactive";
+ 
+-const FLOW_POSES: readonly KunaiFoxPose[] = ["wait", "go", "idle"];
+-
+ type HomePageShellProps = {
+   readonly providers: readonly HomeProviderMetadata[];
+   readonly paletteCommands: readonly HomeCommandMetadata[];
+@@ -35,10 +35,13 @@ type HomePageShellProps = {
+  *
+  * The install block used to sit directly under the hero, asking for a shell
+  * command before the page had said what Kunai plays or shown a provider. It now
+- * follows the three-step flow, the daily-use band, and the provider table — so
+- * the ask arrives after the reasons. The hero still carries both install
+- * commands for anyone who arrived already convinced, and `#install` still
+- * resolves for every link that points at it.
++ * follows the walk-through, the daily-use band, and the provider table, so the
++ * ask arrives after the reasons. The hero still carries both install commands
++ * for anyone who arrived already convinced, and `#install` still resolves for
++ * every link that points at it.
++ *
++ * The one ask for money comes after the guides and before the last install
++ * prompt, so it is never the first thing a visitor is asked for.
+  */
+ export default function HomePageShell({
+   providers,
+@@ -51,19 +54,30 @@ export default function HomePageShell({
+ }: HomePageShellProps) {
+   return (
+     <main className="kunai-home relative mx-auto min-h-[100dvh] w-[min(1400px,calc(100vw-32px))] overflow-x-hidden py-8 max-md:w-[min(760px,calc(100vw-20px))]">
+-      <section className="kunai-home-hero grid items-center gap-10 pb-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
++      <section className="kunai-home-hero grid items-center gap-10 pb-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+         <HomeHeroStatic cliVersion={cliVersion} providerCount={providers.length} />
+-        <div className="kunai-hero-terminal-plane flex flex-col">
+-          <HomeTerminalIsland
+-            providers={providers}
+-            paletteCommands={paletteCommands}
+-            allCommands={allCommands}
+-            cliVersion={cliVersion}
+-            runtimeBaseline={runtimeBaseline}
+-            fallback={
+-              <HomeTerminalStatic cliVersion={cliVersion} runtimeBaseline={runtimeBaseline} />
+-            }
+-          />
++        {/* She sits on the top edge of the terminal, looking out at the page. That
++            puts the mascot beside the product instead of stacked above the
++            headline, where she used to push the h1 a third of the way down. The
++            wrapper, not the plane, is her positioning context: the plane clips
++            its contents to its rounded border, which would cut her off at the
++            ledge she is sitting on. */}
++        <div className="kunai-hero-terminal-wrap">
++          <div className="kunai-hero-perch" aria-hidden="true">
++            <KunaiFoxLive pose="watch" alertPose="idle" size={104} />
++          </div>
++          <div className="kunai-hero-terminal-plane flex flex-col">
++            <HomeTerminalIsland
++              providers={providers}
++              paletteCommands={paletteCommands}
++              allCommands={allCommands}
++              cliVersion={cliVersion}
++              runtimeBaseline={runtimeBaseline}
++              fallback={
++                <HomeTerminalStatic cliVersion={cliVersion} runtimeBaseline={runtimeBaseline} />
++              }
++            />
++          </div>
+         </div>
+       </section>
+ 
+@@ -79,34 +93,17 @@ export default function HomePageShell({
+       <section className="kunai-home-steps kunai-flow-section">
+         <SectionHeading
+           title="From search to mpv in three steps."
+-          description="One keyboard-driven session covers anime, series, movies, and YouTube — with providers, history, and recovery each one command away."
++          description="It all runs from one keyboard-driven session, and providers, history and recovery are each one command away."
+         />
+-        <div className="kunai-flow">
+-          {homeFlow.map((step, index) => (
+-            <article className="kunai-flow-card premium-card-hover" key={step.title}>
+-              <div className="flex items-start justify-between gap-3">
+-                <span className="kunai-flow-index tabular-nums">
+-                  {String(index + 1).padStart(2, "0")}
+-                </span>
+-                <KunaiFox pose={FLOW_POSES[index] ?? "idle"} size={72} animated />
+-              </div>
+-              <h3 className="kunai-type-title mt-5 text-lg">{step.title}</h3>
+-              <p className="kunai-type-body mt-3 text-xs">{step.description}</p>
+-            </article>
+-          ))}
+-        </div>
++        <HomeFlowTimeline steps={homeFlow} />
+       </section>
+ 
+       <section className="kunai-home-highlights kunai-band">
+-        <KunaiFoxBanner
+-          pose="wait"
+-          eyebrow="Daily client"
+-          title="Anime, series, movies, and YouTube — in one session."
+-        >
+-          Tab cycles the catalog modes. History, recovery, and providers stay one command away.
+-        </KunaiFoxBanner>
+-        <h2 className="kunai-display-title mt-8">Everything stays one keystroke away.</h2>
+-        <ul className="kunai-highlight-list mt-6">
++        <div>
++          <h2 className="kunai-display-title">Everything stays one keystroke away.</h2>
++          {usageLine}
++        </div>
++        <ul className="kunai-highlight-list">
+           {homeHighlights.map((item) => (
+             <li className="kunai-highlight-row" key={item.label}>
+               <span className="kunai-step-label">{item.label}</span>
+@@ -114,7 +111,6 @@ export default function HomePageShell({
+             </li>
+           ))}
+         </ul>
+-        {usageLine}
+       </section>
+ 
+       <section className="kunai-home-providers">
+@@ -132,16 +128,17 @@ export default function HomePageShell({
+         <StartHereCards items={homeStartCards} />
+       </section>
+ 
++      <HomeSupportStrip />
++
+       <section className="kunai-home-final kunai-final kunai-surface-shell p-2">
+         <div className="kunai-surface-shell__inner flex flex-col gap-6 p-8 md:flex-row md:items-center md:justify-between">
+           <KunaiFox className="kunai-final-fox" pose="go" size={112} animated />
+           <div>
+             <h2 className="kunai-display-title max-w-2xl text-3xl md:text-4xl">
+-              Install once, then keep playback predictable.
++              One command to install. Nothing to sign up for.
+             </h2>
+             <p className="kunai-type-body text-fd-muted-foreground mt-3 max-w-xl text-sm">
+-              Recovery stays in the shell. No shared public relay; when you need geo metadata help,
+-              you own the relay URL.
++              Kunai is MIT licensed, has no accounts or ads, and keeps your history on your machine.
+             </p>
+           </div>
+           <div className="flex shrink-0 flex-col gap-3">
+diff --git a/apps/docs/app/global-error.tsx b/apps/docs/app/global-error.tsx
+index 2823b9ab0..d1541c7a8 100644
+--- a/apps/docs/app/global-error.tsx
++++ b/apps/docs/app/global-error.tsx
+@@ -17,7 +17,7 @@ export default function GlobalError({
+         <p className="text-xs font-semibold tracking-widest text-[var(--kunai-accent)] uppercase">
+           Kunai Docs
+         </p>
+-        <h1 className="text-2xl font-light">The docs site hit an unexpected error</h1>
++        <h1 className="text-2xl font-normal">The docs site hit an unexpected error</h1>
+         <p className="text-fd-muted-foreground max-w-md text-sm">
+           {error.message || "Reload the page or head back to the documentation home."}
+         </p>
+diff --git a/apps/docs/app/global.css b/apps/docs/app/global.css
+index 8cf6adffa..6fed3e3c1 100644
+--- a/apps/docs/app/global.css
++++ b/apps/docs/app/global.css
+@@ -15,6 +15,7 @@
+ @import "./styles/docs-chrome.css";
+ @import "./styles/home.css";
+ @import "./styles/fox.css";
++@import "./styles/timeline.css";
+ @import "./styles/charts.css";
+ @import "tw-animate-css";
+ @import "shadcn/tailwind.css";
+@@ -40,14 +41,19 @@ body {
+   color: var(--color-fd-foreground);
+ }
+ 
+-h1,
+-h2,
+-h3,
+-h4,
+-h5,
+-h6,
+-.font-serif {
+-  font-family: var(--font-serif), Georgia, serif;
++/* The display serif is for headings big enough to carry it. h3 and below are
++   sub-24px, where Cormorant's small x-height and hairlines stop being legible,
++   so they inherit the sans body face. A heading that should be serif at a small
++   size is a design question, not a default. */
++@layer base {
++  /* In the base layer so a utility on the element (`font-sans` on a small h2) can
++     override it. Unlayered, this rule outranked every Tailwind utility, and a
++     12px footer heading marked `font-sans` was still rendering in Cormorant. */
++  h1,
++  h2,
++  .font-serif {
++    font-family: var(--font-serif), Georgia, serif;
++  }
+ }
+ 
+ code,
+@@ -105,16 +111,19 @@ pre,
+   transform: scale(0.96);
+ }
+ 
++/* Dark ink on rose, not white on it. White measured 3.6:1 at the light end of the
++   old gradient and 2.1:1 on hover; the ink passes at every point (5.5:1 on the
++   deep end, 9.1:1 on the accent), so the label is readable wherever the gradient is. */
+ .kunai-button-primary {
+   border-color: var(--kunai-accent-deep);
+-  background: linear-gradient(135deg, var(--kunai-accent-deep), #8c2a44);
+-  color: #fff;
+-  box-shadow: 0 8px 24px color-mix(in oklab, var(--kunai-accent-deep) 20%, transparent);
++  background: linear-gradient(135deg in oklab, var(--kunai-accent), var(--kunai-accent-deep));
++  color: var(--kunai-bg);
++  box-shadow: 0 8px 24px color-mix(in oklab, var(--kunai-accent-deep) 24%, transparent);
+ }
+ 
+ .kunai-button-primary:hover {
+-  border-color: var(--kunai-accent);
+-  background: linear-gradient(135deg, var(--kunai-accent), var(--kunai-accent-deep));
++  border-color: var(--kunai-accent-soft);
++  background: linear-gradient(135deg in oklab, var(--kunai-accent-soft), var(--kunai-accent));
+   box-shadow: 0 12px 28px color-mix(in oklab, var(--kunai-accent) 30%, transparent);
+ }
+ 
+@@ -154,14 +163,17 @@ pre,
+ }
+ 
+ @theme inline {
+-  --font-heading: var(--font-serif), Georgia, serif;
++  /* `font-heading` is a UI heading (card and empty-state titles) at 14-16px: sans. */
++  --font-heading: var(--font-sans), system-ui, sans-serif;
+   --radius-sm: calc(var(--kunai-radius-inner) * 0.6);
+   --radius-md: calc(var(--kunai-radius-inner) * 0.8);
+   --radius-lg: var(--kunai-radius-inner);
+   --radius-xl: var(--kunai-radius-outer);
+   --radius-2xl: var(--kunai-radius-shell);
+   --color-ring: var(--ring);
+-  --color-input: var(--border);
++  /* Controls are drawn by their edge, so `border-input` is the 3:1 control border
++     and not the decorative divider (`--border`, 1.5-1.9:1). */
++  --color-input: var(--kunai-line-control);
+   --color-border: var(--border);
+   --color-destructive: var(--kunai-danger);
+   --color-accent-foreground: var(--accent-foreground);
+diff --git a/apps/docs/app/layout.tsx b/apps/docs/app/layout.tsx
+index 2940799ba..c6bbaaca0 100644
+--- a/apps/docs/app/layout.tsx
++++ b/apps/docs/app/layout.tsx
+@@ -4,6 +4,7 @@ import { PrivacyAnalytics } from "@/components/analytics/privacy-analytics";
+ import { PrivacySpeedInsights } from "@/components/analytics/privacy-speed-insights";
+ import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
+ import { SiteFooter } from "@/components/layout/site-footer";
++import { MotionProvider } from "@/components/providers/motion-provider";
+ import { KunaiSearchDialog } from "@/components/search/kunai-search-dialog";
+ import { TooltipProvider } from "@/components/ui/tooltip";
+ import { fontClassNames } from "@/lib/fonts";
+@@ -21,15 +22,6 @@ export const metadata: Metadata = {
+   },
+   description:
+     "Guides for Kunai, the terminal client for anime, series, movies, and YouTube: resolve a stream, hand off to mpv, recover, and use local offline files.",
+-  keywords: [
+-    "kunai",
+-    "terminal streaming",
+-    "anime cli",
+-    "movie cli",
+-    "mpv",
+-    "media cli",
+-    "command line streaming",
+-  ],
+ };
+ 
+ export const viewport: Viewport = {
+@@ -61,7 +53,9 @@ export default function RootLayout({ children }: { readonly children: ReactNode
+             enableSystem: false,
+           }}
+         >
+-          <TooltipProvider>{children}</TooltipProvider>
++          <MotionProvider>
++            <TooltipProvider>{children}</TooltipProvider>
++          </MotionProvider>
+           {/* Site-wide footer — a direct DOM child of body (the providers
+               render no element), so `mt-auto` pins it to the fold on short
+               pages and it sits after the page chrome on every route. */}
+diff --git a/apps/docs/app/styles/docs-chrome.css b/apps/docs/app/styles/docs-chrome.css
+index 1dce43416..4af0b73ad 100644
+--- a/apps/docs/app/styles/docs-chrome.css
++++ b/apps/docs/app/styles/docs-chrome.css
+@@ -79,7 +79,7 @@
+ 
+ #nd-toc [data-toc-title] {
+   font-size: var(--kunai-text-caption);
+-  font-weight: 700;
++  font-weight: var(--kunai-weight-semibold);
+   letter-spacing: var(--kunai-tracking-eyebrow);
+   text-transform: uppercase;
+   color: color-mix(in oklab, var(--color-fd-muted-foreground) 80%, transparent);
+@@ -93,14 +93,14 @@
+ 
+ #nd-toc a[data-active="true"] {
+   color: var(--kunai-accent);
+-  font-weight: 600;
++  font-weight: var(--kunai-weight-semibold);
+ }
+ 
+ #nd-sidebar a[data-active="true"] {
+   color: var(--kunai-accent);
+   background: color-mix(in oklab, var(--kunai-accent) 11%, transparent);
+   border-inline-start: 2px solid var(--kunai-accent);
+-  font-weight: 600;
++  font-weight: var(--kunai-weight-semibold);
+ }
+ 
+ /* Home product hops: color-only active (no thick inset rail competing with page tree) */
+@@ -112,7 +112,7 @@
+ #nd-docs-layout h1 {
+   font-family: var(--font-serif), Georgia, serif;
+   font-size: var(--kunai-text-display);
+-  font-weight: 300;
++  font-weight: var(--kunai-weight-display);
+   line-height: var(--kunai-leading-tight);
+   letter-spacing: -0.03em;
+   text-wrap: balance;
+@@ -175,15 +175,18 @@
+ #nd-docs-layout .prose :where(h2):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+   font-family: var(--font-serif), Georgia, serif;
+   font-size: var(--kunai-text-title);
+-  font-weight: 400;
++  font-weight: var(--kunai-weight-regular);
+   letter-spacing: -0.02em;
+   margin-top: 2.5rem;
+   text-wrap: balance;
+ }
+ 
+ #nd-docs-layout .prose :where(h3, h4):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+-  font-family: var(--font-serif), Georgia, serif;
+-  letter-spacing: -0.015em;
++  /* Sans, not the display serif: Cormorant has a small x-height and hairline
++     strokes that fall apart at 18px. h1 and h2 are large enough to carry it. */
++  font-family: var(--font-sans), system-ui, sans-serif;
++  font-weight: var(--kunai-weight-semibold);
++  letter-spacing: -0.01em;
+   text-wrap: balance;
+ }
+ 
+@@ -264,12 +267,22 @@
+   box-shadow: var(--kunai-shadow-sm);
+ }
+ 
++/* The highlighter's comment colour is #6a737d, 3.7:1 on the code surface. Comments are
++   content here (the install notes live in them), so they take the muted token (6.2:1)
++   instead. The selector matches the inline custom properties the highlighter writes, so
++   it follows the theme: if the theme ever changes its comment colour this stops matching,
++   so recheck the rendered contrast then (`test/palette.test.ts` pins the numbers). */
++#nd-docs-layout pre span[style*="--shiki-dark: #6A737D"] {
++  --shiki-dark: var(--color-fd-muted-foreground) !important;
++  --shiki-light: var(--color-fd-muted-foreground) !important;
++}
++
+ #nd-docs-layout th {
+   background: color-mix(in oklab, var(--kunai-surface-strong) 85%, transparent);
+   color: var(--color-fd-foreground);
+   font-family: var(--font-sans), system-ui, sans-serif;
+-  font-weight: 600;
+-  font-size: 0.72rem;
++  font-weight: var(--kunai-weight-semibold);
++  font-size: var(--kunai-text-caption);
+   text-transform: uppercase;
+   letter-spacing: 0.08em;
+   padding: 0.9rem 1.1rem;
+diff --git a/apps/docs/app/styles/home.css b/apps/docs/app/styles/home.css
+index fc37995f4..db1cf90fe 100644
+--- a/apps/docs/app/styles/home.css
++++ b/apps/docs/app/styles/home.css
+@@ -33,15 +33,6 @@
+   margin-top: 1.5rem;
+ }
+ 
+-.kunai-eyebrow {
+-  margin: 0;
+-  font-size: var(--kunai-text-caption);
+-  font-weight: 700;
+-  letter-spacing: var(--kunai-tracking-eyebrow);
+-  text-transform: uppercase;
+-  color: var(--kunai-accent);
+-}
+-
+ .kunai-reveal {
+   animation: kunai-rise 700ms var(--kunai-ease-out) both;
+ }
+@@ -107,8 +98,8 @@
+   border-radius: 0.5rem;
+   padding: 0.65rem 0.85rem;
+   color: var(--color-fd-muted-foreground);
+-  font-size: 0.72rem;
+-  font-weight: 900;
++  font-size: var(--kunai-text-caption);
++  font-weight: var(--kunai-weight-semibold);
+   letter-spacing: 0.05em;
+   text-transform: uppercase;
+ }
+@@ -135,11 +126,6 @@
+   position: relative;
+ }
+ 
+-.kunai-terminal-body p {
+-  margin: 0;
+-  animation: log-fade-in 200ms var(--kunai-ease-out) both;
+-}
+-
+ .kunai-log-line {
+   display: block;
+   font-family: var(--font-mono), ui-monospace, monospace;
+@@ -148,7 +134,7 @@
+ 
+ .kunai-log-line--prompt {
+   margin-top: 0.5rem;
+-  font-weight: 700;
++  font-weight: var(--kunai-weight-semibold);
+   color: var(--kunai-accent);
+ }
+ 
+@@ -161,7 +147,9 @@
+ }
+ 
+ .kunai-log-line--play {
+-  color: color-mix(in oklab, #7ec8e3 82%, var(--kunai-ok));
++  /* The hand-off to mpv is the `info` signal. A raw cyan here was a tenth hue the system
++     does not have. */
++  color: var(--kunai-info);
+ }
+ 
+ .kunai-log-line--query {
+@@ -169,12 +157,14 @@
+ }
+ 
+ .kunai-log-line--brand {
+-  font-weight: 700;
++  font-weight: var(--kunai-weight-semibold);
+   color: var(--kunai-accent);
+ }
+ 
+ .kunai-log-line--muted {
+-  color: color-mix(in oklab, var(--color-fd-muted-foreground) 72%, transparent);
++  /* The full muted token, not a 72% mix of it: the mix measured 3.6:1 on the
++     terminal body, below the 4.5:1 body text needs. */
++  color: var(--color-fd-muted-foreground);
+ }
+ 
+ .kunai-terminal-input-row {
+@@ -186,17 +176,6 @@
+   padding-top: 0.5rem;
+ }
+ 
+-@keyframes log-fade-in {
+-  from {
+-    opacity: 0;
+-    transform: translateX(-4px);
+-  }
+-  to {
+-    opacity: 1;
+-    transform: translateX(0);
+-  }
+-}
+-
+ /* Terminal interactive cursor */
+ .kunai-cursor {
+   display: inline-block;
+@@ -231,7 +210,6 @@
+   z-index: 10;
+   overflow: hidden;
+   transform-origin: top center;
+-  animation: palette-enter 220ms var(--kunai-ease-soft) both;
+ }
+ 
+ .palette-search-wrapper {
+@@ -245,7 +223,7 @@
+ .palette-search-input {
+   background: transparent;
+   border: none;
+-  color: #fff;
++  color: var(--color-fd-foreground);
+   font-family: inherit;
+   font-size: 0.95rem;
+   width: 100%;
+@@ -266,9 +244,7 @@
+   padding: 0.6rem 0.8rem;
+   border-radius: 0.375rem;
+   cursor: pointer;
+-  transition:
+-    background 150ms var(--kunai-ease-out),
+-    transform 100ms var(--kunai-ease-out);
++  transition: background 150ms var(--kunai-ease-out);
+   font-family: "JetBrains Mono", monospace;
+   font-size: 0.8rem;
+ }
+@@ -280,15 +256,17 @@
+   border-radius: inherit;
+ }
+ 
++/* Selection moves with the arrow keys, so it must not animate or move anything:
++   a transform here ran on every keypress, and the old 3px border-left shifted the
++   text beside it. The marker is an inset shadow, which takes no space. */
+ .palette-item:hover,
+ .palette-item.is-selected {
+   background: var(--kunai-surface);
+-  border-left: 3px solid var(--kunai-accent);
+-  transform: translateX(2px);
++  box-shadow: inset 2px 0 0 var(--kunai-accent);
+ }
+ 
+ .palette-item:active {
+-  transform: scale(0.98);
++  background: var(--kunai-surface-strong);
+ }
+ 
+ .palette-shortcut {
+@@ -324,7 +302,7 @@
+   font-family: var(--font-serif), Georgia, serif;
+   font-size: var(--kunai-text-display);
+   line-height: var(--kunai-leading-tight);
+-  font-weight: 300;
++  font-weight: var(--kunai-weight-display);
+   letter-spacing: -0.03em;
+   text-wrap: balance;
+   color: var(--color-fd-foreground);
+@@ -333,8 +311,6 @@
+ .kunai-section-head {
+   margin-bottom: clamp(2rem, 4vw, 3.5rem);
+ }
+-
+-.kunai-flow-card,
+ .kunai-final {
+   border: 1px solid var(--kunai-line);
+   background: var(--kunai-surface);
+@@ -345,84 +321,6 @@
+     transform 200ms var(--kunai-ease-out);
+ }
+ 
+-.kunai-final:hover {
+-  border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
+-  transform: translateY(-2px);
+-  box-shadow: 0 8px 24px color-mix(in oklab, var(--kunai-accent) 4%, transparent);
+-}
+-
+-.kunai-flow-card p {
+-  color: var(--color-fd-muted-foreground);
+-  text-wrap: pretty;
+-}
+-
+-/* Playback Path Flow */
+-.kunai-flow {
+-  display: grid;
+-  grid-template-columns: repeat(3, minmax(0, 1fr));
+-  gap: 0.85rem;
+-  overflow-x: auto;
+-  padding-bottom: 0.6rem;
+-}
+-
+-.kunai-flow-card {
+-  min-height: 16rem;
+-  border-radius: 0.6rem;
+-  padding: 1.25rem;
+-  animation: card-stagger-in 400ms var(--kunai-ease-out) both;
+-}
+-
+-.kunai-flow-card:nth-child(1) {
+-  animation-delay: 0ms;
+-}
+-.kunai-flow-card:nth-child(2) {
+-  animation-delay: 60ms;
+-}
+-.kunai-flow-card:nth-child(3) {
+-  animation-delay: 120ms;
+-}
+-.kunai-flow-card:nth-child(4) {
+-  animation-delay: 180ms;
+-}
+-.kunai-flow-card:nth-child(5) {
+-  animation-delay: 240ms;
+-}
+-
+-@keyframes card-stagger-in {
+-  from {
+-    opacity: 0;
+-    transform: translateY(12px);
+-  }
+-  to {
+-    opacity: 1;
+-    transform: translateY(0);
+-  }
+-}
+-
+-.kunai-flow-card:hover {
+-  transform: translateY(-4px);
+-  border-color: var(--kunai-accent);
+-  box-shadow: 0 12px 28px var(--kunai-accent-glow);
+-}
+-
+-.kunai-flow-card:active {
+-  transform: translateY(-2px) scale(0.98);
+-}
+-
+-.kunai-flow-card span {
+-  font-family: "JetBrains Mono", monospace;
+-  font-size: 0.8rem;
+-  color: var(--color-fd-muted-foreground);
+-}
+-
+-.kunai-flow-card h3 {
+-  margin: 1.5rem 0 0.5rem;
+-  font-size: 1.25rem;
+-  line-height: 1.1;
+-  font-weight: 800;
+-  text-wrap: balance;
+-}
+-
+ .kunai-status-dot {
+   height: 0.625rem;
+   width: 0.625rem;
+@@ -432,19 +330,11 @@
+ 
+ .kunai-status-dot--focus {
+   background: var(--kunai-accent);
+-  animation: pulse-glow 2.4s var(--kunai-ease-out) infinite;
+-}
+-
+-.kunai-flow-index {
+-  font-family: var(--font-mono), ui-monospace, monospace;
+-  font-size: 0.625rem;
+-  color: color-mix(in oklab, var(--color-fd-muted-foreground) 45%, transparent);
+ }
+ .provider-interactive-tab.is-active {
+-  background: linear-gradient(135deg, var(--kunai-accent-deep), #8c2a44);
+-  border-color: var(--kunai-accent);
+-  color: #fff;
+-  box-shadow: 0 4px 12px var(--kunai-accent-glow);
++  background: color-mix(in oklab, var(--kunai-accent) 10%, var(--kunai-surface));
++  border-color: var(--kunai-accent-deep);
++  color: var(--kunai-accent);
+ }
+ .flag-checkbox-wrapper.is-checked {
+   border-color: var(--kunai-accent);
+@@ -469,9 +359,7 @@
+   .kunai-reveal {
+     animation: none;
+   }
+-
+   .kunai-button,
+-  .kunai-flow-card,
+   .kunai-final,
+   .palette-item {
+     transition: none !important;
+@@ -505,11 +393,6 @@
+     padding: 0.5rem 0.6rem;
+   }
+ 
+-  .kunai-flow {
+-    grid-template-columns: 1fr;
+-    overflow-x: visible;
+-  }
+-
+   .kunai-band h2,
+   .kunai-section-head h2,
+   .kunai-final h2 {
+@@ -523,31 +406,11 @@
+   }
+ }
+ 
+-/* Custom premium hover states */
+-.premium-card-hover {
+-  transition:
+-    transform 350ms var(--kunai-ease-out),
+-    border-color 350ms var(--kunai-ease-out),
+-    box-shadow 350ms var(--kunai-ease-out);
+-}
+-
+-.premium-card-hover:hover {
+-  transform: translateY(-4px) scale(1.005);
+-  border-color: var(--kunai-accent);
+-  box-shadow: var(--kunai-shadow-diffuse), var(--kunai-card-shadow);
+-}
+-
+-.premium-card-hover:active {
+-  transform: translateY(-1px) scale(0.96);
+-}
+-
+ /* Kunai × Fumadocs — extended rules live in docs-chrome.css */
+ 
+ /* Preset pills + interactive chips — unified press feedback */
+ .kunai-terminal-stage button:active,
+-.kunai-flow-card:active,
+-.os-tab-button:active,
+-.kunai-fd-card:active {
++.os-tab-button:active {
+   transform: scale(0.96) !important;
+ }
+ 
+@@ -555,7 +418,7 @@
+ .kunai-home .prose pre,
+ .kunai-home .fd-codeblock,
+ .kunai-home pre:not(#nd-docs-layout pre) {
+-  background-color: #0b070e;
++  background-color: color-mix(in oklab, var(--kunai-bg) 78%, black);
+   border: 1px solid var(--kunai-line);
+   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+   border-radius: 0.75rem;
+@@ -586,9 +449,9 @@
+ }
+ .kunai-home table th {
+   background: color-mix(in oklab, var(--kunai-surface-strong) 80%, transparent);
+-  color: #fff;
++  color: var(--color-fd-foreground);
+   font-family: var(--font-serif);
+-  font-weight: 600;
++  font-weight: var(--kunai-weight-semibold);
+   font-size: 0.9rem;
+   text-transform: uppercase;
+   letter-spacing: 0.05em;
+@@ -606,7 +469,7 @@
+   border-bottom: none;
+ }
+ .kunai-home table tr:hover td {
+-  color: #fff;
++  color: var(--color-fd-foreground);
+   background: color-mix(in oklab, var(--kunai-surface-strong) 40%, transparent);
+ }
+ 
+@@ -646,8 +509,8 @@
+   padding: 0.6rem 1.25rem;
+   white-space: nowrap;
+   flex: 0 0 auto;
+-  font-size: 0.825rem;
+-  font-weight: 700;
++  font-size: var(--kunai-text-code);
++  font-weight: var(--kunai-weight-medium);
+   border-radius: 0.5rem;
+   color: var(--color-fd-muted-foreground);
+   border: 1px solid transparent;
+@@ -658,15 +521,16 @@
+   cursor: pointer;
+ }
+ .os-tab-button:hover {
+-  color: #fff;
++  color: var(--color-fd-foreground);
+   border-color: var(--kunai-line);
+   background-color: var(--kunai-surface-strong);
+ }
++/* Selected, not primary: accent text on the accent fill (7.9:1). A filled gradient here
++   competed with the one primary action per view, and its white label measured 3.6:1. */
+ .os-tab-button.active {
+-  color: #fff;
++  color: var(--kunai-accent);
+   border-color: var(--kunai-accent-deep);
+-  background: linear-gradient(135deg, var(--kunai-accent-deep), #8c2a44);
+-  box-shadow: 0 4px 12px var(--kunai-accent-glow);
++  background: color-mix(in oklab, var(--kunai-accent) 10%, var(--kunai-surface));
+ }
+ 
+ .prereq-badge {
+@@ -675,8 +539,8 @@
+   gap: 0.4rem;
+   padding: 0.25rem 0.6rem;
+   border-radius: 9999px;
+-  font-size: 0.7rem;
+-  font-weight: 700;
++  font-size: var(--kunai-text-caption);
++  font-weight: var(--kunai-weight-medium);
+   font-family: var(--font-mono);
+   border: 1px solid var(--kunai-line);
+ }
+@@ -699,14 +563,16 @@
+   box-shadow: inset 0 1px 0 color-mix(in oklab, white 4%, transparent);
+   transition:
+     border-color var(--kunai-duration-ui) var(--kunai-ease-out),
+-    box-shadow var(--kunai-duration-ui) var(--kunai-ease-out),
+-    transform var(--kunai-duration-ui) var(--kunai-ease-out);
++    box-shadow var(--kunai-duration-ui) var(--kunai-ease-out);
+ }
+ 
+-.install-step-card:hover {
+-  border-color: color-mix(in oklab, var(--kunai-accent) 28%, var(--kunai-line));
+-  box-shadow: var(--kunai-shadow-diffuse), var(--kunai-shadow-sm);
+-  transform: translateY(-2px);
++/* The card is not a link, so it does not lift: a rise implies a click. The edge warms
++   a little, and only where a pointer can hover (touch fires a stuck hover on tap). */
++@media (hover: hover) and (pointer: fine) {
++  .install-step-card:hover {
++    border-color: color-mix(in oklab, var(--kunai-accent) 28%, var(--kunai-line));
++    box-shadow: var(--kunai-shadow-diffuse), var(--kunai-shadow-sm);
++  }
+ }
+ 
+ .kunai-highlight-list {
+@@ -740,10 +606,6 @@
+     grid-template-columns: 1fr;
+     gap: 0.35rem;
+   }
+-
+-  .kunai-flow {
+-    grid-template-columns: 1fr;
+-  }
+ }
+ 
+ /* ── Hero: paired install commands ─────────────────────────────────────────
+@@ -774,10 +636,10 @@
+ 
+ .kunai-hero-install__os {
+   flex: 0 0 auto;
+-  width: 6.5rem;
++  width: 7.5rem;
+   padding-top: 0.1rem;
+   color: var(--color-fd-muted-foreground);
+-  font-size: 0.625rem;
++  font-size: var(--kunai-text-caption);
+   letter-spacing: 0.04em;
+   text-transform: uppercase;
+ }
+@@ -813,7 +675,7 @@
+ 
+ .kunai-hero-kinds__item {
+   position: relative;
+-  font-weight: 600;
++  font-weight: var(--kunai-weight-semibold);
+   letter-spacing: 0.01em;
+   color: var(--color-fd-foreground);
+ }
+@@ -846,7 +708,7 @@
+   padding: 0.1rem 0.4rem;
+   color: color-mix(in oklab, var(--kunai-accent) 70%, var(--color-fd-foreground));
+   font-family: var(--font-mono), ui-monospace, monospace;
+-  font-size: 0.6875rem;
++  font-size: var(--kunai-text-caption);
+   line-height: 1.5;
+ }
+ 
+diff --git a/apps/docs/app/styles/surfaces.css b/apps/docs/app/styles/surfaces.css
+index d07ae2b0e..6f934c3f9 100644
+--- a/apps/docs/app/styles/surfaces.css
++++ b/apps/docs/app/styles/surfaces.css
+@@ -43,7 +43,7 @@
+   background: color-mix(in oklab, var(--kunai-surface) 88%, transparent);
+   padding: 0.5rem 0.75rem;
+   font-family: var(--font-mono), ui-monospace, monospace;
+-  font-size: 0.6875rem;
++  font-size: var(--kunai-text-caption);
+   color: color-mix(in oklab, var(--color-fd-foreground) 82%, transparent);
+ }
+ 
+@@ -79,14 +79,18 @@
+   box-shadow: inset 0 1px 0 color-mix(in oklab, white 5%, transparent);
+ }
+ 
+-.kunai-fd-card:hover {
+-  border-color: color-mix(in oklab, var(--kunai-accent) 32%, var(--kunai-line)) !important;
+-  box-shadow: var(--kunai-shadow-diffuse), var(--kunai-shadow-sm) !important;
+-  transform: translateY(-2px);
++@media (hover: hover) and (pointer: fine) {
++  .kunai-fd-card:hover {
++    border-color: color-mix(in oklab, var(--kunai-accent) 32%, var(--kunai-line)) !important;
++    box-shadow: var(--kunai-shadow-diffuse), var(--kunai-shadow-sm) !important;
++    transform: translateY(-2px);
++  }
+ }
+ 
++/* Card-sized: 0.96 on a surface this wide shrinks it by ~28px, which reads as the
++   page lurching. Buttons keep 0.96; a card takes 0.99. */
+ .kunai-fd-card:active {
+-  transform: scale(0.96) translateY(0) !important;
++  transform: scale(0.99) !important;
+ }
+ 
+ .kunai-hero-glow {
+@@ -102,8 +106,8 @@
+ 
+ .kunai-step-label {
+   font-family: var(--font-mono), ui-monospace, monospace;
+-  font-size: 0.625rem;
+-  font-weight: 700;
++  font-size: var(--kunai-text-caption);
++  font-weight: var(--kunai-weight-semibold);
+   letter-spacing: 0.08em;
+   text-transform: uppercase;
+   color: var(--kunai-accent);
+@@ -111,8 +115,9 @@
+ 
+ .kunai-step-meta {
+   font-family: var(--font-mono), ui-monospace, monospace;
+-  font-size: 0.5625rem;
+-  color: color-mix(in oklab, var(--color-fd-muted-foreground) 72%, transparent);
++  font-size: var(--kunai-text-caption);
++  /* The muted token itself. A 72% mix of it at 9px measured 3.5:1. */
++  color: var(--color-fd-muted-foreground);
+ }
+ 
+ .kunai-callout-warn {
+@@ -120,8 +125,8 @@
+   border: 1px solid color-mix(in oklab, var(--kunai-warning) 22%, transparent);
+   background: color-mix(in oklab, var(--kunai-warning) 8%, transparent);
+   padding: 0.625rem;
+-  font-size: 0.625rem;
+-  font-weight: 300;
++  font-size: var(--kunai-text-caption);
++  font-weight: var(--kunai-weight-regular);
+   color: var(--kunai-warning);
+ }
+ 
+diff --git a/apps/docs/app/styles/timeline.css b/apps/docs/app/styles/timeline.css
+new file mode 100644
+index 000000000..b10a9451b
+--- /dev/null
++++ b/apps/docs/app/styles/timeline.css
+@@ -0,0 +1,139 @@
++/* ── Flow timeline ──────────────────────────────────────────────────────────
++   Three steps on a rail, with Kanna walking along it as the section scrolls.
++
++   The rail and the fox are decoration (`aria-hidden`); the three list items
++   below are the content. At phone width the rail is dropped and the list
++   becomes a vertical timeline, because three columns of prose do not fit a
++   phone and a fox walking down a column would be a different animation.
++
++   Geometry, from the bottom of the track: a number label, a gap, then a dot
++   that the rail passes through. The fox's feet sit on that rail. */
++
++.kunai-timeline {
++  --timeline-label: 1rem;
++  --timeline-gap: 0.45rem;
++  --timeline-dot: 0.6rem;
++  --timeline-rail: calc(var(--timeline-label) + var(--timeline-gap) + var(--timeline-dot) / 2);
++  position: relative;
++  margin-top: clamp(1.75rem, 4vw, 2.75rem);
++}
++
++.kunai-timeline__track {
++  position: relative;
++  display: none;
++  /* Room for the fox (72px) above the rail, plus the labels below it. */
++  height: calc(var(--timeline-rail) + 4.7rem);
++}
++
++@media (min-width: 640px) {
++  .kunai-timeline__track {
++    display: block;
++  }
++}
++
++.kunai-timeline__rail {
++  position: absolute;
++  right: calc(100% / 6);
++  bottom: var(--timeline-rail);
++  left: calc(100% / 6);
++  height: 1px;
++  background: repeating-linear-gradient(
++    90deg,
++    color-mix(in oklab, var(--kunai-accent) 45%, var(--kunai-line)) 0 6px,
++    transparent 6px 12px
++  );
++}
++
++.kunai-timeline__node {
++  position: absolute;
++  bottom: 0;
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: var(--timeline-gap);
++  transform: translateX(-50%);
++  font-family: var(--font-mono), ui-monospace, monospace;
++  font-size: var(--kunai-text-caption);
++  line-height: var(--timeline-label);
++  color: var(--color-fd-muted-foreground);
++}
++
++.kunai-timeline__node::before {
++  content: "";
++  width: var(--timeline-dot);
++  height: var(--timeline-dot);
++  border-radius: 9999px;
++  background: var(--kunai-accent);
++  box-shadow: 0 0 0 4px color-mix(in oklab, var(--kunai-accent) 16%, transparent);
++}
++
++.kunai-timeline__fox {
++  position: absolute;
++  /* Her feet are drawn about 6% up from the bottom of the box; sinking the box
++     by that much puts them on the rail rather than hovering above it. */
++  bottom: calc(var(--timeline-rail) - 0.28rem);
++  pointer-events: none;
++  will-change: transform;
++}
++
++.kunai-timeline__steps {
++  display: grid;
++  grid-template-columns: minmax(0, 1fr);
++  gap: 1.5rem;
++  margin: 0;
++  padding: 0;
++  list-style: none;
++}
++
++.kunai-timeline__step {
++  position: relative;
++  padding-left: 2.5rem;
++  border-left: 1px dashed color-mix(in oklab, var(--kunai-accent) 40%, var(--kunai-line));
++  margin-left: 0.7rem;
++}
++
++/* On a phone the index is the node: a numbered dot sitting on the rail. */
++.kunai-timeline__index {
++  position: absolute;
++  top: 0;
++  left: 0;
++  display: grid;
++  width: 1.4rem;
++  height: 1.4rem;
++  place-items: center;
++  border: 1px solid var(--kunai-line);
++  border-radius: 9999px;
++  background: var(--kunai-surface);
++  font-family: var(--font-mono), ui-monospace, monospace;
++  font-size: var(--kunai-text-caption);
++  color: var(--kunai-accent);
++  transform: translateX(-50%);
++}
++
++.kunai-timeline__step p {
++  color: var(--color-fd-muted-foreground);
++  text-wrap: pretty;
++}
++
++@media (min-width: 640px) {
++  .kunai-timeline__steps {
++    grid-template-columns: repeat(3, minmax(0, 1fr));
++    gap: clamp(1rem, 3vw, 2.5rem);
++  }
++
++  .kunai-timeline__step {
++    margin-left: 0;
++    padding-left: 0;
++    border-left: none;
++    text-align: center;
++  }
++
++  .kunai-timeline__step p {
++    margin-inline: auto;
++    max-width: 24rem;
++  }
++
++  .kunai-timeline__index {
++    display: none;
++  }
++}
+diff --git a/apps/docs/app/styles/typography.css b/apps/docs/app/styles/typography.css
+index fcc697059..a79dce38f 100644
+--- a/apps/docs/app/styles/typography.css
++++ b/apps/docs/app/styles/typography.css
+@@ -4,7 +4,7 @@
+   font-family: var(--font-serif), Georgia, serif;
+   font-size: var(--kunai-text-display);
+   line-height: var(--kunai-leading-tight);
+-  font-weight: 300;
++  font-weight: var(--kunai-weight-display);
+   letter-spacing: -0.03em;
+   text-wrap: balance;
+   color: var(--color-fd-foreground);
+@@ -14,7 +14,7 @@
+   font-family: var(--font-serif), Georgia, serif;
+   font-size: var(--kunai-text-title);
+   line-height: 1.12;
+-  font-weight: 400;
++  font-weight: var(--kunai-weight-regular);
+   letter-spacing: -0.02em;
+   text-wrap: balance;
+   color: var(--color-fd-foreground);
+@@ -39,13 +39,13 @@
+   font-size: var(--kunai-text-caption);
+   letter-spacing: var(--kunai-tracking-eyebrow);
+   text-transform: uppercase;
+-  font-weight: 600;
++  font-weight: var(--kunai-weight-semibold);
+   color: color-mix(in oklab, var(--kunai-accent) 88%, var(--color-fd-foreground));
+ }
+ 
+ .kunai-type-mono {
+   font-family: var(--font-mono), ui-monospace, monospace;
+-  font-size: 0.8125rem;
++  font-size: var(--kunai-text-code);
+   font-variant-numeric: tabular-nums;
+ }
+ 
+@@ -55,7 +55,7 @@
+   font-family: var(--font-serif), Georgia, serif;
+   font-size: var(--kunai-text-display);
+   line-height: var(--kunai-leading-tight);
+-  font-weight: 300;
++  font-weight: var(--kunai-weight-display);
+   letter-spacing: -0.03em;
+   text-wrap: balance;
+   color: var(--color-fd-foreground);
+@@ -64,7 +64,7 @@
+ .kunai-eyebrow {
+   margin: 0;
+   font-size: var(--kunai-text-caption);
+-  font-weight: 700;
++  font-weight: var(--kunai-weight-semibold);
+   letter-spacing: var(--kunai-tracking-eyebrow);
+   text-transform: uppercase;
+   color: var(--kunai-accent);
+@@ -78,8 +78,8 @@
+   border: 1px solid var(--kunai-line);
+   background: color-mix(in oklab, var(--kunai-surface) 72%, transparent);
+   padding: 0.35rem 0.75rem;
+-  font-size: 0.6875rem;
+-  font-weight: 600;
++  font-size: var(--kunai-text-caption);
++  font-weight: var(--kunai-weight-semibold);
+   letter-spacing: 0.12em;
+   text-transform: uppercase;
+   color: color-mix(in oklab, var(--kunai-accent) 80%, var(--color-fd-foreground));
+diff --git a/apps/docs/app/support/layout.tsx b/apps/docs/app/support/layout.tsx
+new file mode 100644
+index 000000000..4f31cb64f
+--- /dev/null
++++ b/apps/docs/app/support/layout.tsx
+@@ -0,0 +1,7 @@
++import { baseOptions } from "@/lib/layout.shared";
++import { HomeLayout } from "fumadocs-ui/layouts/home";
++import type { ReactNode } from "react";
++
++export default function SupportLayout({ children }: { readonly children: ReactNode }) {
++  return <HomeLayout {...baseOptions()}>{children}</HomeLayout>;
++}
+diff --git a/apps/docs/app/support/page.tsx b/apps/docs/app/support/page.tsx
+new file mode 100644
+index 000000000..c9618b7ac
+--- /dev/null
++++ b/apps/docs/app/support/page.tsx
+@@ -0,0 +1,126 @@
++import { SponsorWall } from "@/components/support/sponsor-wall";
++import { Button } from "@/components/ui/button";
++import { buildPageMetadata } from "@/lib/page-metadata";
++import { SPONSOR_FUNDS, SPONSOR_PROMISES, SPONSOR_URL, sponsors, supportWays } from "@/lib/support";
++import { IconArrowUpRight, IconCheck, IconHeart } from "@tabler/icons-react";
++import type { Metadata } from "next";
++import Link from "next/link";
++
++export const dynamic = "force-static";
++
++export const metadata: Metadata = buildPageMetadata({
++  title: "Support Kunai: sponsor the project or help in other ways",
++  absoluteTitle: true,
++  description:
++    "Kunai is free and MIT licensed. See what sponsorship pays for, who backs the project, and the free ways to help: report a broken provider, star the repository, or contribute.",
++  socialDescription:
++    "Kunai is free and MIT licensed. Sponsor the project, or help by reporting a broken provider or contributing.",
++  path: "/support",
++});
++
++export default function SupportPage() {
++  const ways = supportWays();
++
++  return (
++    <main className="kunai-home relative mx-auto flex w-full max-w-5xl flex-1 flex-col gap-14 px-6 py-14 md:px-10">
++      <header className="border-border flex flex-col gap-5 border-b pb-10">
++        <h1 className="kunai-display-title max-w-none text-4xl md:text-5xl">Support Kunai</h1>
++        <p className="text-muted-foreground max-w-2xl text-base leading-7 text-pretty">
++          Kunai is free, MIT licensed, and has no accounts or ads. It keeps working because someone
++          keeps up with the providers it plays from. If it saves you time, here is how to help.
++        </p>
++        <div className="flex flex-wrap items-center gap-3">
++          <Button
++            render={<Link href={SPONSOR_URL} target="_blank" rel="noreferrer noopener" />}
++            nativeButton={false}
++          >
++            <IconHeart stroke={1.5} />
++            Sponsor on GitHub
++            <span className="sr-only"> (opens in a new tab)</span>
++          </Button>
++          <Button variant="ghost" render={<Link href="#other-ways" />} nativeButton={false}>
++            Prefer a free way to help?
++          </Button>
++        </div>
++      </header>
++
++      <section aria-labelledby="funds" className="flex flex-col gap-6">
++        <h2 id="funds" className="kunai-type-title text-2xl">
++          What sponsorship pays for
++        </h2>
++        <ul className="divide-border m-0 flex list-none flex-col divide-y p-0">
++          {SPONSOR_FUNDS.map((item) => (
++            <li
++              key={item.title}
++              className="grid gap-1 py-5 first:pt-0 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] md:gap-8"
++            >
++              <h3 className="text-foreground m-0 text-base font-medium">{item.title}</h3>
++              <p className="text-muted-foreground m-0 text-sm leading-6 text-pretty">{item.body}</p>
++            </li>
++          ))}
++        </ul>
++        <ul className="m-0 flex list-none flex-col gap-2 p-0">
++          {SPONSOR_PROMISES.map((promise) => (
++            <li key={promise} className="text-muted-foreground flex items-start gap-2 text-sm">
++              <IconCheck className="text-primary mt-0.5 size-4 shrink-0" stroke={1.5} />
++              {promise}
++            </li>
++          ))}
++        </ul>
++      </section>
++
++      <section aria-labelledby="sponsors" className="flex flex-col gap-5">
++        <h2 id="sponsors" className="kunai-type-title text-2xl">
++          Sponsors
++        </h2>
++        <SponsorWall sponsors={sponsors} />
++      </section>
++
++      <section id="other-ways" aria-labelledby="ways" className="flex scroll-mt-24 flex-col gap-5">
++        <h2 id="ways" className="kunai-type-title text-2xl">
++          Other ways to help
++        </h2>
++        <ul className="m-0 grid list-none gap-4 p-0 md:grid-cols-3">
++          {ways.map((way) => {
++            const body = (
++              <>
++                <h3 className="text-foreground m-0 flex items-center justify-between gap-2 text-base font-medium">
++                  {way.title}
++                  <IconArrowUpRight
++                    className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-[var(--ease-out)] group-hover/way:translate-x-0.5 group-hover/way:-translate-y-0.5"
++                    stroke={1.5}
++                  />
++                </h3>
++                <p className="text-muted-foreground m-0 text-sm leading-6 text-pretty">
++                  {way.body}
++                </p>
++                <span className="text-primary mt-auto text-sm">{way.cta}</span>
++              </>
++            );
++            const className =
++              "group/way border-border bg-card/60 hover:border-primary flex h-full flex-col gap-3 rounded-xl border p-5 transition-[border-color,transform] duration-200 ease-[var(--ease-out)] active:scale-[0.98]";
++            return (
++              <li key={way.title}>
++                {way.external ? (
++                  <a
++                    href={way.href}
++                    target="_blank"
++                    rel="noreferrer noopener"
++                    className={className}
++                  >
++                    {body}
++                    <span className="sr-only"> (opens in a new tab)</span>
++                  </a>
++                ) : (
++                  <Link href={way.href} className={className}>
++                    {body}
++                  </Link>
++                )}
++              </li>
++            );
++          })}
++        </ul>
++      </section>
++    </main>
++  );
++}
+diff --git a/apps/docs/app/w/[code]/page.tsx b/apps/docs/app/w/[code]/page.tsx
+index 782eae6bb..d89256f2b 100644
+--- a/apps/docs/app/w/[code]/page.tsx
++++ b/apps/docs/app/w/[code]/page.tsx
+@@ -75,7 +75,7 @@ function ValidShareLanding({ shared }: { readonly shared: ParsedKunaiShare }) {
+             />
+             <div className="relative flex items-center justify-between gap-4">
+               <span className="kunai-step-label">Shared through Kunai</span>
+-              <span className="rounded-full border border-[var(--kunai-line)] px-3 py-1 font-mono text-[0.65rem] tracking-[0.14em] text-[var(--color-fd-muted-foreground)] uppercase">
++              <span className="rounded-full border border-[var(--kunai-line)] px-3 py-1 font-mono text-xs tracking-[0.14em] text-[var(--color-fd-muted-foreground)] uppercase">
+                 {ref.kind}
+               </span>
+             </div>
+@@ -145,7 +145,7 @@ function InstallCommand({ label, command }: { readonly label: string; readonly c
+   return (
+     <div className="rounded-xl border border-[var(--kunai-line)] bg-[var(--kunai-bg)] p-3.5">
+       <div className="mb-2 flex items-center justify-between gap-4">
+-        <span className="font-mono text-[0.65rem] tracking-[0.12em] text-[var(--color-fd-muted-foreground)] uppercase">
++        <span className="font-mono text-xs tracking-[0.12em] text-[var(--color-fd-muted-foreground)] uppercase">
+           {label}
+         </span>
+         <CopyButton text={command} label={`share-install-${label}`} />
+diff --git a/apps/docs/components/docs/scope-callout.tsx b/apps/docs/components/docs/scope-callout.tsx
+index 170b4b35e..3e6d780a7 100644
+--- a/apps/docs/components/docs/scope-callout.tsx
++++ b/apps/docs/components/docs/scope-callout.tsx
+@@ -13,17 +13,20 @@ const copy: Record<
+ > = {
+   beta: {
+     type: "info",
+-    title: "Beta scope (read this first)",
++    title: "Beta: what to know first",
+     body: (
+       <>
+-        Kunai is a terminal-first CLI during beta. Preferred install is <code>install.sh</code> /{" "}
+-        <code>install.ps1</code> (self-contained binary, Bun runtime embedded; you do not need Bun).
+-        Bun/npm globals are secondary; npm needs Node on <code>PATH</code>, not Bun. You still need{" "}
+-        <strong>mpv</strong> for playback; setup and browsing work without it. Kunai is a
+-        client-side playback tool. It does not host, upload, mirror, seed, or distribute video
+-        content. Streams and related assets are served by non-affiliated third-party providers. Use
+-        responsibly and in accordance with applicable laws and service terms. Provider availability
+-        changes; recovery commands exist because drift is expected.
++        <strong>Install.</strong> Use <code>install.sh</code> or <code>install.ps1</code>. They
++        install a self-contained binary, so you need neither Bun nor Node. The Bun and npm installs
++        also work; npm needs Node on <code>PATH</code>.
++        <br />
++        <strong>Playback.</strong> You need <strong>mpv</strong> to play anything. Setup and
++        browsing work without it.
++        <br />
++        <strong>Providers.</strong> Kunai is a client-side tool. It does not host, mirror or
++        distribute video. Streams come from third-party providers it is not affiliated with, so use
++        it in line with the law and each provider&apos;s terms. Providers change, which is what the
++        recovery commands are for.
+       </>
+     ),
+   },
+diff --git a/apps/docs/components/home/home-flow-timeline.tsx b/apps/docs/components/home/home-flow-timeline.tsx
+new file mode 100644
+index 000000000..5b661a853
+--- /dev/null
++++ b/apps/docs/components/home/home-flow-timeline.tsx
+@@ -0,0 +1,180 @@
++"use client";
++
++import { type FoxWalkerHandle, KunaiFoxWalker } from "@/components/brand/kunai-fox-walker";
++import { advancePhase, blendPose, type FoxPose, gaitPose, STANDING_POSE } from "@/lib/fox-gait";
++import {
++  domAnimation,
++  LazyMotion,
++  m,
++  useMotionValueEvent,
++  useReducedMotion,
++  useScroll,
++  useSpring,
++  useTransform,
++} from "motion/react";
++import { useEffect, useRef, useState } from "react";
++
++/** Her stride between scroll events: how far into the step cycle, where the scroll last was, and her last pose. */
++type StrideState = {
++  phase: number;
++  last: number;
++  pose: FoxPose;
++};
++
++type FlowStep = {
++  readonly title: string;
++  readonly description: string;
++};
++
++/** Where the first and last step sit along the track, as a share of its width. */
++const FIRST_STOP = 1 / 6;
++const LAST_STOP = 5 / 6;
++/** How long after the last scroll movement before she stops and stands. */
++const STAND_AFTER_MS = 140;
++/** How long she takes to put her feet down. */
++const SETTLE_MS = 180;
++const FOX_SIZE = 72;
++
++/**
++ * The three steps, with Kanna walking between them as the section scrolls.
++ *
++ * The section's whole job is "search, then resolve, then play". A row of three
++ * identical cards says that in words; a fox that walks from the first step to
++ * the third as you read down says it in motion, and it is the one place on the
++ * page where progress is the content. Scroll is the input, so the motion is
++ * never on a timer: she goes exactly as far as you have scrolled, no further.
++ *
++ * ## How she moves
++ *
++ * Scroll progress eases through a spring, so a flick of the wheel becomes a
++ * short walk rather than a teleport. Her stride advances by the distance that
++ * spring covers (`advancePhase`), the same rule the roaming fox uses, so the
++ * feet never turn faster or slower than she travels. When the spring settles
++ * she eases into a standing pose instead of freezing mid-step.
++ *
++ * ## What happens without motion
++ *
++ * Under `prefers-reduced-motion` she stands at the final step and nothing
++ * listens to scroll. Before hydration, and without JavaScript, she stands at
++ * the first step. In both cases the three steps below are ordinary list items,
++ * so nothing a reader needs depends on her.
++ *
++ * Below `sm` the track is hidden and the steps stack as a vertical list: three
++ * columns of prose do not fit a phone, and a fox walking down a column is a
++ * different animation than the one this section earns.
++ */
++export function HomeFlowTimeline({ steps }: { readonly steps: readonly FlowStep[] }) {
++  const blockRef = useRef<HTMLDivElement | null>(null);
++  const trackRef = useRef<HTMLDivElement | null>(null);
++  const walkerRef = useRef<FoxWalkerHandle | null>(null);
++  const reduced = useReducedMotion();
++  const [travelPx, setTravelPx] = useState(0);
++
++  // The distance between the first and last stop, in pixels. Measured, because
++  // the stride is a distance and the track is fluid.
++  useEffect(() => {
++    const track = trackRef.current;
++    if (!track) return undefined;
++    const measure = () => setTravelPx(track.clientWidth * (LAST_STOP - FIRST_STOP));
++    measure();
++    const observer = new ResizeObserver(measure);
++    observer.observe(track);
++    return () => observer.disconnect();
++  }, []);
++
++  const { scrollYProgress } = useScroll({
++    target: blockRef,
++    // Starts as the block's top edge enters the lower part of the viewport and
++    // finishes when its bottom edge is about 40% down the screen, so she spends
++    // roughly one viewport of scroll getting from the first step to the last
++    // and arrives while the reader is still looking at it.
++    offset: ["start 90%", "end 40%"],
++  });
++  const progress = useSpring(scrollYProgress, { stiffness: 110, damping: 26, mass: 0.7 });
++  const walkX = useTransform(progress, (value) => value * travelPx);
++
++  const stride = useRef<StrideState>({ phase: 0, last: 0, pose: STANDING_POSE });
++  const standTimer = useRef<number | undefined>(undefined);
++  const settleFrame = useRef<number | undefined>(undefined);
++
++  useMotionValueEvent(progress, "change", (value) => {
++    if (reduced) return;
++    const state = stride.current;
++    const moved = Math.abs(value - state.last) * travelPx;
++    state.last = value;
++    if (moved === 0) return;
++
++    if (settleFrame.current !== undefined) cancelAnimationFrame(settleFrame.current);
++    settleFrame.current = undefined;
++
++    state.phase = advancePhase(state.phase, moved, FOX_SIZE);
++    state.pose = gaitPose(state.phase);
++    walkerRef.current?.setPose(state.pose);
++
++    window.clearTimeout(standTimer.current);
++    standTimer.current = window.setTimeout(() => {
++      const from = state.pose;
++      const startedAt = performance.now();
++      const settle = (now: number) => {
++        const t = (now - startedAt) / SETTLE_MS;
++        state.pose = blendPose(from, STANDING_POSE, t);
++        walkerRef.current?.setPose(state.pose);
++        settleFrame.current = t < 1 ? requestAnimationFrame(settle) : undefined;
++      };
++      settleFrame.current = requestAnimationFrame(settle);
++    }, STAND_AFTER_MS);
++  });
++
++  useEffect(
++    () => () => {
++      window.clearTimeout(standTimer.current);
++      if (settleFrame.current !== undefined) cancelAnimationFrame(settleFrame.current);
++    },
++    [],
++  );
++
++  return (
++    <LazyMotion features={domAnimation}>
++      <div ref={blockRef} className="kunai-timeline">
++        <div ref={trackRef} className="kunai-timeline__track" aria-hidden="true">
++          <span className="kunai-timeline__rail" />
++          {steps.map((step, index) => (
++            <span
++              className="kunai-timeline__node tabular-nums"
++              key={step.title}
++              style={{ left: `${(FIRST_STOP + (index * (LAST_STOP - FIRST_STOP)) / 2) * 100}%` }}
++            >
++              {String(index + 1).padStart(2, "0")}
++            </span>
++          ))}
++          <m.div
++            className="kunai-timeline__fox"
++            style={{
++              // A plain number under reduced motion: she stands at the last
++              // step and nothing is subscribed to scroll.
++              x: reduced ? travelPx : walkX,
++              left: `${FIRST_STOP * 100}%`,
++              marginLeft: -FOX_SIZE / 2,
++              width: FOX_SIZE,
++              height: FOX_SIZE,
++            }}
++          >
++            <KunaiFoxWalker ref={walkerRef} size={FOX_SIZE} facing="right" />
++          </m.div>
++        </div>
++
++        <ol className="kunai-timeline__steps">
++          {steps.map((step, index) => (
++            <li className="kunai-timeline__step" key={step.title}>
++              <span className="kunai-timeline__index tabular-nums" aria-hidden="true">
++                {String(index + 1).padStart(2, "0")}
++              </span>
++              <h3 className="kunai-type-title">{step.title}</h3>
++              <p className="kunai-type-body mt-2 text-sm">{step.description}</p>
++            </li>
++          ))}
++        </ol>
++      </div>
++    </LazyMotion>
++  );
++}
+diff --git a/apps/docs/components/home/home-hero-static.tsx b/apps/docs/components/home/home-hero-static.tsx
+index b319a3195..d9ae14143 100644
+--- a/apps/docs/components/home/home-hero-static.tsx
++++ b/apps/docs/components/home/home-hero-static.tsx
+@@ -1,4 +1,3 @@
+-import { KunaiFoxLive } from "@/components/brand/kunai-fox-live";
+ import { HeroKindsRow } from "@/components/home/hero-kinds-row";
+ import { HeroProofRow } from "@/components/home/hero-proof-row";
+ import { HomeStarCta } from "@/components/home/home-star-cta";
+@@ -18,10 +17,6 @@ export function HomeHeroStatic({ cliVersion, providerCount }: HomeHeroStaticProp
+ 
+   return (
+     <section className="kunai-hero-static kunai-reveal flex flex-col justify-center">
+-      <div className="kunai-hero-fox">
+-        <KunaiFoxLive pose="idle" alertPose="watch" size={120} />
+-      </div>
+-
+       {/* The heading carries its own weight. The eyebrow that used to sit here
+           read "Terminal-first playback" — a label restating the h1 in smaller
+           type, above a page that never once said what Kunai actually plays. */}
+diff --git a/apps/docs/components/home/home-support-strip.tsx b/apps/docs/components/home/home-support-strip.tsx
+new file mode 100644
+index 000000000..9029446fc
+--- /dev/null
++++ b/apps/docs/components/home/home-support-strip.tsx
+@@ -0,0 +1,47 @@
++import { SPONSOR_URL, SUPPORT_PATH } from "@/lib/support";
++import { IconHeart } from "@tabler/icons-react";
++import Link from "next/link";
++
++/**
++ * One quiet ask, after the reasons and before the last install prompt.
++ *
++ * It states what the money is for in a sentence, because "support the project"
++ * with no object is a button people scroll past. The free ways to help live on
++ * `/support`, one click further, so this strip stays a single decision.
++ */
++export function HomeSupportStrip() {
++  return (
++    <section
++      aria-labelledby="home-support-title"
++      className="kunai-home-support border-fd-border flex flex-col gap-5 border-t py-10 sm:flex-row sm:items-center sm:justify-between"
++    >
++      <div className="flex max-w-2xl flex-col gap-1.5">
++        <h2
++          id="home-support-title"
++          className="text-fd-foreground m-0 font-sans text-lg font-medium"
++        >
++          Kunai is free, and someone has to keep up with the providers.
++        </h2>
++        <p className="text-fd-muted-foreground m-0 text-sm leading-6 text-pretty">
++          Providers change their keys and layouts regularly. Sponsorship pays for the time it takes
++          to keep playback working.
++        </p>
++      </div>
++      <div className="flex shrink-0 flex-wrap items-center gap-3">
++        <a
++          className="kunai-button kunai-button-primary"
++          href={SPONSOR_URL}
++          rel="noreferrer noopener"
++          target="_blank"
++        >
++          <IconHeart className="mr-1.5 size-4" stroke={1.5} />
++          <span>Sponsor</span>
++          <span className="sr-only"> (opens GitHub Sponsors in a new tab)</span>
++        </a>
++        <Link className="kunai-button kunai-button-quiet" href={SUPPORT_PATH}>
++          Other ways to help
++        </Link>
++      </div>
++    </section>
++  );
++}
+diff --git a/apps/docs/components/home/home-terminal-static.tsx b/apps/docs/components/home/home-terminal-static.tsx
+index f487d5fe8..da2c2c857 100644
+--- a/apps/docs/components/home/home-terminal-static.tsx
++++ b/apps/docs/components/home/home-terminal-static.tsx
+@@ -35,7 +35,7 @@ export function HomeTerminalStatic({ cliVersion, runtimeBaseline }: HomeTerminal
+           </span>
+         </div>
+ 
+-        <div className="kunai-terminal-body scrollbar block max-h-[360px] min-h-[260px] w-full text-left">
++        <div className="kunai-terminal-body scrollbar block h-[19rem] w-full text-left">
+           <span className="kunai-log-line kunai-log-line--brand">▌ Kunai Shell v{cliVersion}</span>
+           <span className="kunai-log-line kunai-log-line--muted">
+             Requires mpv {runtimeBaseline.mpv}. The binary install embeds bun {runtimeBaseline.bun}.
+@@ -55,7 +55,7 @@ export function HomeTerminalStatic({ cliVersion, runtimeBaseline }: HomeTerminal
+           <span className="kunai-log-line kunai-log-line--play">[PLAY] handing stream to mpv</span>
+ 
+           <span className="kunai-terminal-input-row">
+-            <span className="kunai-text-accent mr-2 text-xs font-bold">kunai &gt;</span>
++            <span className="kunai-text-accent mr-2 text-xs font-semibold">kunai &gt;</span>
+             <span className="text-fd-muted-foreground font-mono text-xs">
+               Type &apos;/&apos; for commands…
+             </span>
+diff --git a/apps/docs/components/home/start-here-cards.tsx b/apps/docs/components/home/start-here-cards.tsx
+index a9e000f5e..2acd17f53 100644
+--- a/apps/docs/components/home/start-here-cards.tsx
++++ b/apps/docs/components/home/start-here-cards.tsx
+@@ -1,28 +1,63 @@
+ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+ import type { HomeLink } from "@/lib/home-content";
++import {
++  IconArrowRight,
++  IconCompass,
++  IconLifebuoy,
++  IconRocket,
++  IconTerminal2,
++} from "@tabler/icons-react";
+ import Link from "next/link";
++import type { ComponentType } from "react";
+ 
+ type StartHereCardsProps = {
+   readonly items: readonly HomeLink[];
+ };
+ 
++type CardIcon = ComponentType<{ className?: string; stroke?: number }>;
++
++/**
++ * A glyph per destination, so four cards that were four identical text boxes
++ * can be told apart before a word is read. Keyed by href because the list is
++ * curated copy, not data a visitor can reorder; an href with no entry falls back
++ * to the arrow, which is still a valid card.
++ */
++const ICON_BY_HREF = new Map<string, CardIcon>([
++  ["/docs/users/getting-started", IconRocket],
++  ["/docs/users/what-you-can-do", IconCompass],
++  ["/docs/users/troubleshooting", IconLifebuoy],
++  ["/docs/users/cli-reference", IconTerminal2],
++]);
++
+ export function StartHereCards({ items }: StartHereCardsProps) {
+   return (
+     <div className="grid gap-4 sm:grid-cols-2">
+-      {items.map((item) => (
+-        <Link key={item.href} href={item.href} className="group block h-full">
+-          <Card className="border-fd-border bg-fd-card/80 h-full transition-[transform,box-shadow,border-color] duration-200 ease-[var(--ease-out)] group-hover:-translate-y-0.5 group-hover:border-[var(--kunai-accent)] group-active:scale-[0.98]">
+-            <CardHeader className="pb-2">
+-              <CardTitle className="text-base font-medium">{item.title}</CardTitle>
+-            </CardHeader>
+-            <CardContent>
+-              <CardDescription className="text-sm leading-relaxed">
+-                {item.description}
+-              </CardDescription>
+-            </CardContent>
+-          </Card>
+-        </Link>
+-      ))}
++      {items.map((item) => {
++        const Icon = ICON_BY_HREF.get(item.href) ?? IconArrowRight;
++        return (
++          <Link key={item.href} href={item.href} className="group block h-full">
++            <Card className="border-fd-border bg-fd-card/80 h-full transition-[transform,box-shadow,border-color] duration-200 ease-[var(--ease-out)] group-hover:-translate-y-0.5 group-hover:border-[var(--kunai-accent)] group-active:scale-[0.98]">
++              <CardHeader className="pb-2">
++                <CardTitle className="flex items-center gap-3 text-base font-medium">
++                  <span className="bg-fd-muted text-fd-primary flex size-8 shrink-0 items-center justify-center rounded-lg">
++                    <Icon className="size-4" stroke={1.5} />
++                  </span>
++                  <span className="min-w-0 flex-1">{item.title}</span>
++                  <IconArrowRight
++                    className="text-fd-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-[var(--ease-out)] group-hover:translate-x-0.5"
++                    stroke={1.5}
++                  />
++                </CardTitle>
++              </CardHeader>
++              <CardContent>
++                <CardDescription className="text-sm leading-relaxed">
++                  {item.description}
++                </CardDescription>
++              </CardContent>
++            </Card>
++          </Link>
++        );
++      })}
+     </div>
+   );
+ }
+diff --git a/apps/docs/components/home/terminal-command-palette.tsx b/apps/docs/components/home/terminal-command-palette.tsx
+index f043c0005..f27a21138 100644
+--- a/apps/docs/components/home/terminal-command-palette.tsx
++++ b/apps/docs/components/home/terminal-command-palette.tsx
+@@ -40,7 +40,7 @@ export function TerminalCommandPalette({
+             role="presentation"
+           >
+             <span className="palette-search-wrapper">
+-              <span className="kunai-text-accent mr-2 font-bold">/</span>
++              <span className="kunai-text-accent mr-2 font-semibold">/</span>
+               <input
+                 ref={inputRef}
+                 type="text"
+@@ -69,7 +69,7 @@ export function TerminalCommandPalette({
+                 >
+                   <span>
+                     <span className="text-fd-foreground font-semibold">/{cmd.id}</span>
+-                    <span className="kunai-text-accent ml-1.5 text-[10px] opacity-60">
++                    <span className="kunai-text-accent ml-1.5 text-xs opacity-60">
+                       ({cmd.label})
+                     </span>
+                     <span className="kunai-step-meta mt-0.5 block">{cmd.description}</span>
+diff --git a/apps/docs/components/home/terminal-simulator.tsx b/apps/docs/components/home/terminal-simulator.tsx
+index ff575731d..3b5398514 100644
+--- a/apps/docs/components/home/terminal-simulator.tsx
++++ b/apps/docs/components/home/terminal-simulator.tsx
+@@ -15,6 +15,22 @@ interface TerminalSimulatorProps {
+   readonly runtimeBaseline: { readonly bun: string; readonly mpv: string };
+ }
+ 
++/**
++ * The command the demo types for a visitor who has not touched the terminal.
++ *
++ * A search for a real title shows the whole promise in one run: query,
++ * provider, verified stream, hand-off to mpv. It is the same script a visitor
++ * gets from the "/search Dune" preset, so the demo is not a second code path.
++ */
++const DEMO_COMMAND = "/search Dune";
++/** Quiet beat after mount before the first character, so the page lands first. */
++const DEMO_START_MS = 1100;
++/** Per-character delay; jittered so it reads as typing, not a ticker. */
++const DEMO_KEY_MS = 55;
++const DEMO_KEY_JITTER_MS = 40;
++/** Pause between the last character and Enter. */
++const DEMO_SUBMIT_MS = 380;
++
+ const TerminalSimulator = memo(function TerminalSimulator({
+   providers,
+   paletteCommands,
+@@ -41,6 +57,11 @@ const TerminalSimulator = memo(function TerminalSimulator({
+   const paletteInputRef = useRef<HTMLInputElement>(null);
+   const terminalStageRef = useRef<HTMLDivElement>(null);
+   const scriptTimersRef = useRef<number[]>([]);
++  // The demo stops for good the first time the visitor does anything. Held in
++  // refs because the typing loop runs on timers that outlive any one render.
++  const interactedRef = useRef(false);
++  const demoTypingRef = useRef(false);
++  const runCommandRef = useRef<(command: string) => void>(() => {});
+ 
+   const filteredCommands = useMemo(
+     () => commandsForPalette(paletteCommands, allCommands, searchQuery),
+@@ -77,6 +98,49 @@ const TerminalSimulator = memo(function TerminalSimulator({
+     };
+   }, []);
+ 
++  // The demo. Skipped entirely under reduced motion, where a terminal that types
++  // by itself is motion with nothing to opt out of it but this check.
++  useEffect(() => {
++    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
++
++    let timer: number | undefined;
++    let typed = 0;
++
++    const submit = () => {
++      demoTypingRef.current = false;
++      if (interactedRef.current) return;
++      runCommandRef.current(DEMO_COMMAND);
++    };
++    const typeNext = () => {
++      if (interactedRef.current) return;
++      typed += 1;
++      setTerminalInput(DEMO_COMMAND.slice(0, typed));
++      timer = window.setTimeout(
++        typed < DEMO_COMMAND.length ? typeNext : submit,
++        typed < DEMO_COMMAND.length
++          ? DEMO_KEY_MS + Math.random() * DEMO_KEY_JITTER_MS
++          : DEMO_SUBMIT_MS,
++      );
++    };
++
++    timer = window.setTimeout(() => {
++      if (interactedRef.current) return;
++      demoTypingRef.current = true;
++      typeNext();
++    }, DEMO_START_MS);
++    return () => window.clearTimeout(timer);
++  }, []);
++
++  // Anything the visitor does ends the demo. If it was mid-word, the half-typed
++  // command goes with it: leaving "/sea" in the box reads as their typo.
++  const endDemo = () => {
++    interactedRef.current = true;
++    if (demoTypingRef.current) {
++      demoTypingRef.current = false;
++      setTerminalInput("");
++    }
++  };
++
+   // Clamp at read time instead of syncing state in an effect: a stale index
+   // past the filtered list end simply reads as the last row.
+   const selectedIndex =
+@@ -117,6 +181,8 @@ const TerminalSimulator = memo(function TerminalSimulator({
+     );
+   };
+ 
++  runCommandRef.current = runSimulatedCommand;
++
+   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+     if (commandPaletteOpen) {
+       if (filteredCommands.length === 0) return;
+@@ -194,6 +260,9 @@ const TerminalSimulator = memo(function TerminalSimulator({
+           commandPaletteOpen ? "is-focused" : ""
+         }`}
+         aria-label="Kunai terminal preview"
++        onPointerDownCapture={endDemo}
++        onKeyDownCapture={endDemo}
++        onFocusCapture={endDemo}
+       >
+         <div className="kunai-terminal-top">
+           <span className="text-fd-muted-foreground flex items-center gap-1.5 text-xs">
+@@ -208,7 +277,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
+ 
+         <div
+           ref={terminalBodyRef}
+-          className="kunai-terminal-body scrollbar block max-h-[360px] min-h-[260px] w-full cursor-text text-left focus:outline-none"
++          className="kunai-terminal-body scrollbar block h-[19rem] w-full cursor-text text-left focus:outline-none"
+           onClick={focusTerminalInput}
+           role="presentation"
+         >
+@@ -219,11 +288,11 @@ const TerminalSimulator = memo(function TerminalSimulator({
+           ))}
+ 
+           <span className="kunai-terminal-input-row">
+-            <span className="kunai-text-accent mr-2 text-xs font-bold">kunai &gt;</span>
++            <span className="kunai-text-accent mr-2 text-xs font-semibold">kunai &gt;</span>
+             <input
+               ref={terminalInputRef}
+               type="text"
+-              className="text-fd-foreground w-full border-none bg-transparent font-mono text-xs outline-none"
++              className="text-fd-foreground w-full border-none bg-transparent font-mono text-base outline-none sm:text-xs"
+               value={terminalInput}
+               onChange={handleInputChange}
+               onKeyDown={handleKeyDown}
+@@ -256,7 +325,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
+               type="button"
+               key={cmd}
+               onClick={() => onPresetClick(cmd)}
+-              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-[10px] transition-[transform,border-color,background-color,color] duration-150 ease-out active:scale-[0.96]"
++              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-xs transition-[transform,border-color,background-color,color] duration-150 ease-out active:scale-[0.96]"
+             >
+               {cmd}
+             </button>
+diff --git a/apps/docs/components/layout/site-footer.tsx b/apps/docs/components/layout/site-footer.tsx
+index 1a3fc0bfa..d565bcad4 100644
+--- a/apps/docs/components/layout/site-footer.tsx
++++ b/apps/docs/components/layout/site-footer.tsx
+@@ -1,6 +1,8 @@
+ import { KunaiFox } from "@/components/brand/kunai-fox";
++import { KunaiFoxPatrol } from "@/components/brand/kunai-fox-patrol";
+ import { codeMetadata } from "@/lib/code-metadata";
+ import { docsGithubIssuesUrl, docsGithubRepoUrl } from "@/lib/docs-github";
++import { SUPPORT_PATH } from "@/lib/support";
+ import Link from "next/link";
+ 
+ /**
+@@ -36,6 +38,7 @@ const PROJECT_LINKS: readonly FooterLink[] = [
+   { href: "/analytics", label: "Usage analytics" },
+   { href: "/feedback", label: "Feedback" },
+   { href: "/docs/users/kanna", label: "Kanna, the fox" },
++  { href: SUPPORT_PATH, label: "Support Kunai" },
+ ];
+ 
+ const TRUST_LINKS: readonly FooterLink[] = [
+@@ -107,7 +110,7 @@ function FooterColumn({
+ }) {
+   return (
+     <nav aria-label={title} className="flex flex-col gap-2.5">
+-      <h2 className="text-fd-foreground text-xs font-medium tracking-[0.14em] uppercase">
++      <h2 className="text-fd-foreground font-sans text-xs font-medium tracking-[0.14em] uppercase">
+         {title}
+       </h2>
+       <ul className="m-0 flex list-none flex-col gap-2 p-0">
+@@ -123,7 +126,8 @@ function FooterColumn({
+ 
+ export function SiteFooter() {
+   return (
+-    <footer className="border-fd-border mt-auto border-t">
++    <footer className="border-fd-border relative mt-auto border-t">
++      <KunaiFoxPatrol />
+       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 py-12 md:px-10">
+         <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-5">
+           <div className="col-span-2 flex max-w-xs flex-col gap-3 sm:col-span-3 lg:col-span-1">
+diff --git a/apps/docs/components/providers/motion-provider.tsx b/apps/docs/components/providers/motion-provider.tsx
+new file mode 100644
+index 000000000..81bd848c1
+--- /dev/null
++++ b/apps/docs/components/providers/motion-provider.tsx
+@@ -0,0 +1,18 @@
++"use client";
++
++import { MotionConfig } from "motion/react";
++import type { ReactNode } from "react";
++
++/**
++ * Makes every Motion animation on the site honour `prefers-reduced-motion`.
++ *
++ * The stylesheet's reduced-motion block only reaches CSS animations and transitions.
++ * Motion drives its own animations from JavaScript, so a section heading kept sliding
++ * 12px and the demo palette kept springing for people who had asked the OS for less
++ * movement. `reducedMotion="user"` drops transform and layout animation under that
++ * setting and keeps opacity, which is the "gentler, not zero" behaviour the rest of
++ * the site follows.
++ */
++export function MotionProvider({ children }: { readonly children: ReactNode }) {
++  return <MotionConfig reducedMotion="user">{children}</MotionConfig>;
++}
+diff --git a/apps/docs/components/support/sponsor-wall.tsx b/apps/docs/components/support/sponsor-wall.tsx
+new file mode 100644
+index 000000000..0c3590783
+--- /dev/null
++++ b/apps/docs/components/support/sponsor-wall.tsx
+@@ -0,0 +1,74 @@
++import { Button } from "@/components/ui/button";
++import {
++  Empty,
++  EmptyContent,
++  EmptyDescription,
++  EmptyHeader,
++  EmptyMedia,
++  EmptyTitle,
++} from "@/components/ui/empty";
++import { SPONSOR_URL, type Sponsor } from "@/lib/support";
++import { IconHeart } from "@tabler/icons-react";
++import Link from "next/link";
++
++/**
++ * The people who back Kunai, by name.
++ *
++ * Takes the list as a prop rather than importing it, so the empty state and the
++ * populated state can both be rendered and tested without editing the real
++ * list. Empty is the true state at launch, and an empty wall that explains
++ * itself and offers the one action that fills it is better than a section that
++ * quietly isn't there.
++ */
++export function SponsorWall({ sponsors }: { readonly sponsors: readonly Sponsor[] }) {
++  if (sponsors.length === 0) {
++    return (
++      <Empty className="border-border bg-card/40 border border-dashed">
++        <EmptyHeader>
++          <EmptyMedia variant="icon">
++            <IconHeart />
++          </EmptyMedia>
++          <EmptyTitle>No sponsors yet</EmptyTitle>
++          <EmptyDescription className="max-w-md text-pretty">
++            The first sponsor gets this page to themselves. Names appear here only when a sponsor
++            says they want to be listed.
++          </EmptyDescription>
++        </EmptyHeader>
++        <EmptyContent>
++          <Button
++            size="sm"
++            render={<Link href={SPONSOR_URL} target="_blank" rel="noreferrer noopener" />}
++            nativeButton={false}
++          >
++            Be the first
++            <span className="sr-only"> (opens GitHub Sponsors in a new tab)</span>
++          </Button>
++        </EmptyContent>
++      </Empty>
++    );
++  }
++
++  return (
++    <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
++      {sponsors.map((sponsor) => (
++        <li key={sponsor.name}>
++          {sponsor.url ? (
++            <a
++              href={sponsor.url}
++              target="_blank"
++              rel="noreferrer noopener"
++              className="border-border bg-card hover:border-primary inline-flex items-center rounded-lg border px-3 py-1.5 text-sm transition-[border-color] duration-150"
++            >
++              {sponsor.name}
++              <span className="sr-only"> (opens in a new tab)</span>
++            </a>
++          ) : (
++            <span className="border-border bg-card inline-flex items-center rounded-lg border px-3 py-1.5 text-sm">
++              {sponsor.name}
++            </span>
++          )}
++        </li>
++      ))}
++    </ul>
++  );
++}
+diff --git a/apps/docs/components/ui/copy-button.tsx b/apps/docs/components/ui/copy-button.tsx
+index 4a6b514eb..36a5fa78e 100644
+--- a/apps/docs/components/ui/copy-button.tsx
++++ b/apps/docs/components/ui/copy-button.tsx
+@@ -71,7 +71,7 @@ export function CopyButton({ text, label = "copy", className, children }: CopyBu
+                     className="relative inline-flex h-4 min-w-10 items-center justify-center gap-1 text-[var(--kunai-ok)] tabular-nums"
+                   >
+                     <IconCheck className="size-3" stroke={1.5} data-icon="inline-start" />
+-                    <span className="text-[10px]">Copied</span>
++                    <span className="text-xs">Copied</span>
+                   </m.span>
+                 ) : (
+                   <m.span
+@@ -83,7 +83,7 @@ export function CopyButton({ text, label = "copy", className, children }: CopyBu
+                     className="relative inline-flex h-4 min-w-10 items-center justify-center gap-1 tabular-nums"
+                   >
+                     <IconCopy className="size-3" stroke={1.5} data-icon="inline-start" />
+-                    <span className="text-[10px]">Copy</span>
++                    <span className="text-xs">Copy</span>
+                   </m.span>
+                 ))}
+             </AnimatePresence>
+diff --git a/apps/docs/components/ui/toggle.tsx b/apps/docs/components/ui/toggle.tsx
+index 82f4638d8..ee894f8d7 100644
+--- a/apps/docs/components/ui/toggle.tsx
++++ b/apps/docs/components/ui/toggle.tsx
+@@ -5,7 +5,7 @@ import { Toggle as TogglePrimitive } from "@base-ui/react/toggle";
+ import { cva, type VariantProps } from "class-variance-authority";
+ 
+ const toggleVariants = cva(
+-  "group/toggle hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-pressed:bg-muted data-[state=on]:bg-muted dark:aria-invalid:ring-destructive/40 inline-flex items-center justify-center gap-1 rounded-lg text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
++  "group/toggle hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-pressed:bg-muted data-[state=on]:bg-muted dark:aria-invalid:ring-destructive/40 inline-flex items-center justify-center gap-1 rounded-lg text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow] outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+   {
+     variants: {
+       variant: {
+diff --git a/apps/docs/lib/generated-metadata.json b/apps/docs/lib/generated-metadata.json
+index cc90ec735..dc0176c22 100644
+--- a/apps/docs/lib/generated-metadata.json
++++ b/apps/docs/lib/generated-metadata.json
+@@ -2,7 +2,7 @@
+   "version": "0.3.0",
+   "cliVersion": "0.3.0",
+   "cliSourceFingerprint": "48edf6e3f51c283b713dc69d37366517415102b8911d6136f51932b8db757a04",
+-  "docsContentFingerprint": "e52f440d8da5414140ae320e1ee8a17250dc5c018723db2e1a1b1b4ae95cfd2f",
++  "docsContentFingerprint": "dd115ce1eacf29d0ea53aa50035d8ca08c144fbd736e17b3d28795e60e852486",
+   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
+   "commandCount": 82,
+   "providerIds": [
+diff --git a/apps/docs/lib/home-content.ts b/apps/docs/lib/home-content.ts
+index d8e416b45..eaccc1c00 100644
+--- a/apps/docs/lib/home-content.ts
++++ b/apps/docs/lib/home-content.ts
+@@ -33,7 +33,7 @@ export const homeKinds = ["Anime", "Series", "Movies", "YouTube"] as const;
+ export const homeHero = {
+   title: "Watch anime, series and movies from your terminal.",
+   description:
+-    "Kunai searches a title, resolves a stream a direct provider already serves, and hands playback to mpv — with YouTube, downloads, resume, and recovery in the same keyboard-driven session.",
++    "Search anime, series, movies and YouTube, resolve a direct stream on your machine, and play it in mpv, with downloads, resume and recovery built in.",
+   kinds: homeKinds,
+   /** Earns its place by teaching a real hotkey rather than labelling the row. */
+   kindsHint: { key: "Tab", label: "cycles modes" },
+@@ -76,12 +76,12 @@ export const homeFlow: readonly HomeFlowStep[] = [
+   {
+     title: "Search or continue",
+     description:
+-      "Find an episode, a film, or a YouTube video — or resume history, open the release calendar, and browse your offline library from the shell.",
++      "Find an episode, a film or a YouTube video, or pick up where you left off from history, the release calendar or your offline library.",
+   },
+   {
+     title: "Resolve locally",
+     description:
+-      "Kunai asks registered adapters for a stream URL they already serve, then hands that URL to mpv.",
++      "Kunai asks a provider for a stream it already serves, checks that it plays, then hands the URL to mpv.",
+   },
+   {
+     title: "Play in mpv",
+diff --git a/apps/docs/lib/layout.shared.tsx b/apps/docs/lib/layout.shared.tsx
+index 622d878f8..5613928c8 100644
+--- a/apps/docs/lib/layout.shared.tsx
++++ b/apps/docs/lib/layout.shared.tsx
+@@ -2,11 +2,12 @@ import { KannaRestoreButton } from "@/components/brand/kanna-restore-button";
+ import { DocsSidebarBanner } from "@/components/layout/docs-sidebar-banner";
+ import { GithubStarCta } from "@/components/layout/github-star-cta";
+ import { NavTitle } from "@/components/layout/nav-title";
++import { SUPPORT_PATH } from "@/lib/support";
+ import {
+   IconBook,
+   IconClockHour4,
+   IconFileText,
+-  IconMessageReport,
++  IconHeart,
+   IconRadar2,
+   IconTerminal2,
+   IconTool,
+@@ -32,24 +33,33 @@ export function baseOptions(): BaseLayoutProps {
+     // a bare unlabelled pill above a labelled one. Each surface now carries
+     // exactly one GitHub control: `HomeStarCta` in the hero, `GithubStarCta` in
+     // the sidebar footer, both labelled and both showing the star count.
++    // Two audiences read this list. The top bar (`on: "nav"`) shows every
++    // destination. The docs sidebar (`on: "menu"`) used to show the same eight
++    // links above its own page tree, which then repeated "Overview", "Guides"
++    // and "Debug" a screen lower and pushed the first real doc link below the
++    // fold. Only the two destinations that are NOT in the tree, Releases and
++    // Analytics, stay in the sidebar; everything else is the footer's job.
+     links: [
+       {
+         text: "Overview",
+         url: "/docs",
+         icon: <IconFileText className="size-4" stroke={1.5} />,
+         active: "url",
++        on: "nav",
+       },
+       {
+         text: "Guides",
+         url: "/docs/users",
+         icon: <IconBook className="size-4" stroke={1.5} />,
+         active: "nested-url",
++        on: "nav",
+       },
+       {
+         text: "Debug",
+         url: "/docs/developer",
+         icon: <IconTool className="size-4" stroke={1.5} />,
+         active: "nested-url",
++        on: "nav",
+       },
+       {
+         text: "Releases",
+@@ -57,28 +67,31 @@ export function baseOptions(): BaseLayoutProps {
+         icon: <IconClockHour4 className="size-4" stroke={1.5} />,
+         active: "nested-url",
+       },
+-      {
+-        text: "Feedback",
+-        url: "/feedback",
+-        icon: <IconMessageReport className="size-4" stroke={1.5} />,
+-        active: "url",
+-      },
+       {
+         text: "Analytics",
+         url: "/analytics",
+         icon: <IconRadar2 className="size-4" stroke={1.5} />,
+         active: "url",
+       },
++      {
++        text: "Support",
++        url: SUPPORT_PATH,
++        icon: <IconHeart className="size-4" stroke={1.5} />,
++        active: "url",
++        on: "nav",
++      },
+       {
+         text: "Disclaimer",
+         url: "/docs/users/supported-and-unsupported#disclaimer",
+         icon: <IconFileText className="size-4" stroke={1.5} />,
+         active: "url",
++        on: "nav",
+       },
+       {
+         text: "Install",
+         url: "/#install",
+         icon: <IconTerminal2 className="size-4" stroke={1.5} />,
++        on: "nav",
+       },
+     ],
+   };
+diff --git a/apps/docs/lib/support.ts b/apps/docs/lib/support.ts
+new file mode 100644
+index 000000000..55396faf0
+--- /dev/null
++++ b/apps/docs/lib/support.ts
+@@ -0,0 +1,88 @@
++import { docsGithubIssueTemplateUrl, docsGithubRepoUrl } from "./docs-github";
++
++/**
++ * Everything the support surfaces say about backing Kunai, in one place.
++ *
++ * The home page, the `/support` page and the footer all read from here, so a
++ * changed sponsor link or a new sponsor is one edit. `.github/FUNDING.yml`
++ * cannot import this, which is why `apps/docs/test/support.test.tsx` pins the
++ * two together.
++ */
++
++export const SPONSOR_URL = "https://github.com/sponsors/KitsuneKode";
++
++/** The site path `.github/FUNDING.yml` points its custom button at. */
++export const SUPPORT_PATH = "/support";
++
++export type Sponsor = {
++  readonly name: string;
++  /** Where the name links. Omit for a sponsor who prefers a plain name. */
++  readonly url?: string;
++};
++
++/**
++ * Who has sponsored, by their own choice.
++ *
++ * A committed list rather than a live fetch: a sponsor's name on a public page
++ * is something they agree to, so it is added by hand, and the page never goes
++ * blank or leaks a private sponsor because an API call failed. Empty is the
++ * true state today and the page says so instead of hiding the section.
++ */
++export const sponsors: readonly Sponsor[] = [];
++
++export type SupportWay = {
++  readonly title: string;
++  readonly body: string;
++  readonly href: string;
++  readonly cta: string;
++  readonly external: boolean;
++};
++
++/** Ways to help that cost nothing, ahead of the one that costs money. */
++export function supportWays(): readonly SupportWay[] {
++  return [
++    {
++      title: "Report a provider that broke",
++      body: "A provider that stops resolving is the most useful thing to hear about. Say which one and what you saw.",
++      href: docsGithubIssueTemplateUrl("provider_issue.yml"),
++      cta: "Report a provider issue",
++      external: true,
++    },
++    {
++      title: "Star the repository",
++      body: "It is the cheapest signal that Kunai is worth keeping alive, and it helps other people find it.",
++      href: docsGithubRepoUrl(),
++      cta: "Star on GitHub",
++      external: true,
++    },
++    {
++      title: "Improve the docs or the code",
++      body: "Fixes to a guide, a clearer error message or a provider adapter are all welcome.",
++      href: "/docs/developer/contribute",
++      cta: "Read the contributor guide",
++      external: false,
++    },
++  ];
++}
++
++/** What sponsorship pays for, stated as work rather than as a target. */
++export const SPONSOR_FUNDS = [
++  {
++    title: "Keeping providers working",
++    body: "Providers change their keys and layouts regularly. Keeping up takes time every few weeks.",
++  },
++  {
++    title: "The public usage pulse",
++    body: "The small server behind the opt-in analytics page, which publishes counts and nothing else.",
++  },
++  {
++    title: "Making the docs and the shell better",
++    body: "Time for the unglamorous work: testing on three platforms, writing things down, fixing papercuts.",
++  },
++] as const;
++
++/** What it does not buy. Said plainly because the absence is the promise. */
++export const SPONSOR_PROMISES = [
++  "There is no paid tier. Every feature is free for everyone.",
++  "Sponsoring collects nothing about you beyond what GitHub already holds.",
++] as const;
+diff --git a/apps/docs/lighthouserc.json b/apps/docs/lighthouserc.json
+index 5f7ddfbd6..02ab76b8e 100644
+--- a/apps/docs/lighthouserc.json
++++ b/apps/docs/lighthouserc.json
+@@ -4,6 +4,7 @@
+       "url": [
+         "http://127.0.0.1:3456/",
+         "http://127.0.0.1:3456/analytics",
++        "http://127.0.0.1:3456/support",
+         "http://127.0.0.1:3456/docs",
+         "http://127.0.0.1:3456/docs/users/getting-started",
+         "http://127.0.0.1:3456/docs/users/troubleshooting",
+diff --git a/apps/docs/test/palette.test.ts b/apps/docs/test/palette.test.ts
+new file mode 100644
+index 000000000..f0ccfa91b
+--- /dev/null
++++ b/apps/docs/test/palette.test.ts
+@@ -0,0 +1,91 @@
++import { describe, expect, test } from "bun:test";
++import fs from "node:fs";
++import path from "node:path";
++
++const STYLES = path.resolve(import.meta.dir, "../app/styles");
++const tokensCss = fs.readFileSync(path.join(STYLES, "tokens.css"), "utf-8");
++const chromeCss = fs.readFileSync(path.join(STYLES, "docs-chrome.css"), "utf-8");
++const typographyCss = fs.readFileSync(path.join(STYLES, "typography.css"), "utf-8");
++
++function cssVar(css: string, name: string): string {
++  const match = css.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`));
++  if (!match?.[1]) throw new Error(`${name} is not a hex colour in the stylesheet`);
++  return match[1];
++}
++
++function luminance(hex: string): number {
++  const channel = (offset: number) => {
++    const c = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
++    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
++  };
++  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
++}
++
++function ratio(a: string, b: string): number {
++  const [first, second] = [luminance(a), luminance(b)];
++  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
++}
++
++const SURFACES = ["--color-fd-background", "--color-fd-card", "--color-fd-popover"] as const;
++
++describe("docs palette contrast floors", () => {
++  test("muted text reads at 4.5:1 on every docs surface", () => {
++    const muted = cssVar(tokensCss, "--color-fd-muted-foreground");
++    for (const surface of SURFACES) {
++      expect(
++        ratio(muted, cssVar(tokensCss, surface)),
++        `muted on ${surface}`,
++      ).toBeGreaterThanOrEqual(4.5);
++    }
++  });
++
++  test("control borders are a 3:1 edge on every docs surface", () => {
++    const edge = cssVar(tokensCss, "--kunai-line-control");
++    for (const surface of SURFACES) {
++      expect(ratio(edge, cssVar(tokensCss, surface)), `edge on ${surface}`).toBeGreaterThanOrEqual(
++        3,
++      );
++    }
++  });
++
++  test("`border-input` resolves to the control border, not the decorative divider", () => {
++    const global = fs.readFileSync(path.resolve(STYLES, "../global.css"), "utf-8");
++    expect(global).toMatch(/--color-input:\s*var\(--kunai-line-control\)/);
++  });
++});
++
++describe("code-block comments", () => {
++  const HIGHLIGHTER_COMMENT = "#6A737D";
++
++  test("the highlighter's own comment colour fails body contrast on the code surface", () => {
++    // This is the number that justified the override. If it ever passes (the theme
++    // changed), the override below is dead weight and should be deleted.
++    expect(ratio(HIGHLIGHTER_COMMENT, cssVar(tokensCss, "--color-fd-card"))).toBeLessThan(4.5);
++  });
++
++  test("comments are re-pointed at the muted token, which passes", () => {
++    expect(chromeCss).toContain('span[style*="--shiki-dark: #6A737D"]');
++    expect(chromeCss).toMatch(/--shiki-dark:\s*var\(--color-fd-muted-foreground\)\s*!important/);
++  });
++});
++
++describe("type scale", () => {
++  test("body-level text never goes below the 12px caption floor", () => {
++    expect(tokensCss).toContain("--kunai-text-caption: 0.75rem");
++  });
++
++  test("weights come from the four-name scale, never raw 700 or 900", () => {
++    const sources = [
++      "home.css",
++      "surfaces.css",
++      "docs-chrome.css",
++      "typography.css",
++      "fox.css",
++      "timeline.css",
++    ]
++      .map((file) => fs.readFileSync(path.join(STYLES, file), "utf-8"))
++      .join("\n");
++    expect(sources).not.toMatch(/font-weight:\s*(700|800|900)\b/);
++    expect(typographyCss).toContain("var(--kunai-weight-display)");
++  });
++});
+diff --git a/apps/docs/test/render.test.ts b/apps/docs/test/render.test.ts
+index b1a2b6a42..25477187b 100644
+--- a/apps/docs/test/render.test.ts
++++ b/apps/docs/test/render.test.ts
+@@ -54,8 +54,8 @@ describe("docs shell", () => {
+           url: "/releases",
+         }),
+         expect.objectContaining({
+-          text: "Feedback",
+-          url: "/feedback",
++          text: "Support",
++          url: "/support",
+         }),
+         expect.objectContaining({
+           text: "Analytics",
+@@ -64,4 +64,18 @@ describe("docs shell", () => {
+       ]),
+     );
+   });
++
++  /**
++   * The docs sidebar renders every link whose `on` is not "nav" above its own
++   * page tree. Showing the whole list there repeated "Overview", "Guides" and
++   * "Debug" a screen below themselves and pushed the first real doc link under
++   * the fold. Only destinations the tree does not contain may appear there.
++   */
++  test("the docs sidebar carries only destinations outside the page tree", () => {
++    const sidebarLinks = (baseOptions().links ?? [])
++      .filter((link) => !("on" in link) || link.on !== "nav")
++      .map((link) => ("text" in link ? link.text : null));
++
++    expect(sidebarLinks).toEqual(["Releases", "Analytics"]);
++  });
+ });
+diff --git a/apps/docs/test/support.test.tsx b/apps/docs/test/support.test.tsx
+new file mode 100644
+index 000000000..6cfb08c1e
+--- /dev/null
++++ b/apps/docs/test/support.test.tsx
+@@ -0,0 +1,77 @@
++import { describe, expect, test } from "bun:test";
++import fs from "node:fs";
++import path from "node:path";
++
++import { renderToStaticMarkup } from "react-dom/server";
++
++import { HomeSupportStrip } from "../components/home/home-support-strip";
++import { SiteFooter } from "../components/layout/site-footer";
++import { SponsorWall } from "../components/support/sponsor-wall";
++import { SPONSOR_URL, SUPPORT_PATH, sponsors, supportWays } from "../lib/support";
++
++const REPO_ROOT = path.resolve(import.meta.dir, "../../..");
++
++describe("FUNDING.yml", () => {
++  const funding = fs.readFileSync(path.join(REPO_ROOT, ".github/FUNDING.yml"), "utf-8");
++
++  test("points GitHub's sponsor button at the same account the site links to", () => {
++    const handle = new URL(SPONSOR_URL).pathname.split("/").pop();
++    expect(funding).toContain(`github: [${handle}]`);
++  });
++
++  test("points its custom button at the support page", () => {
++    expect(funding).toMatch(new RegExp(`custom:.*${SUPPORT_PATH}`));
++  });
++});
++
++describe("SponsorWall", () => {
++  test("an empty list says so and offers the action that fills it", () => {
++    const html = renderToStaticMarkup(<SponsorWall sponsors={[]} />);
++    expect(html).toContain("No sponsors yet");
++    expect(html).toContain(SPONSOR_URL);
++    expect(html).toContain('rel="noreferrer noopener"');
++  });
++
++  test("a populated list names each sponsor and links only those with a url", () => {
++    const html = renderToStaticMarkup(
++      <SponsorWall
++        sponsors={[{ name: "Acme Anime Club", url: "https://example.test/" }, { name: "A friend" }]}
++      />,
++    );
++    expect(html).not.toContain("No sponsors yet");
++    expect(html).toContain("Acme Anime Club");
++    expect(html).toContain('href="https://example.test/"');
++    expect(html).toContain("A friend");
++    // A sponsor with no url is plain text, never a dead link.
++    expect(html.match(/<a /g)).toHaveLength(1);
++  });
++
++  test("the committed list is what the page renders", () => {
++    // Guards the declaration -> reader seam: adding a sponsor to the list must
++    // be enough for them to appear, with no second place to edit.
++    const html = renderToStaticMarkup(<SponsorWall sponsors={sponsors} />);
++    if (sponsors.length === 0) expect(html).toContain("No sponsors yet");
++    for (const sponsor of sponsors) expect(html).toContain(sponsor.name);
++  });
++});
++
++describe("support entry points", () => {
++  test("the home strip and the footer both reach the support page", () => {
++    expect(renderToStaticMarkup(<HomeSupportStrip />)).toContain(`href="${SUPPORT_PATH}"`);
++    expect(renderToStaticMarkup(<SiteFooter />)).toContain(`href="${SUPPORT_PATH}"`);
++  });
++
++  test("the home strip opens sponsorship in a new tab and says so to assistive tech", () => {
++    const html = renderToStaticMarkup(<HomeSupportStrip />);
++    expect(html).toContain(SPONSOR_URL);
++    expect(html).toContain('target="_blank"');
++    expect(html).toContain("opens GitHub Sponsors in a new tab");
++  });
++
++  test("every way to help names where it goes", () => {
++    for (const way of supportWays()) {
++      expect(way.href.length).toBeGreaterThan(1);
++      expect(way.external).toBe(/^https?:\/\//.test(way.href));
++    }
++  });
++});
+diff --git a/docs/users/getting-started.mdx b/docs/users/getting-started.mdx
+index 3b0e98744..eb16f3f6c 100644
+--- a/docs/users/getting-started.mdx
++++ b/docs/users/getting-started.mdx
+@@ -5,14 +5,6 @@ description: Install Kunai, put it on your PATH, install mpv, run setup, and com
+ 
+ Kunai is a terminal-first media shell. You search for a title, pick what to watch, Kunai resolves a direct-provider stream on your machine, and hands playback to `mpv`. The shell stays alive so you can recover, continue, or pick something else without restarting.
+ 
+-<KunaiFoxBanner
+-  pose="go"
+-  eyebrow="Start here"
+-  title="Search a title. Resolve a stream. Hand it to mpv."
+->
+-  Setup and browsing work without mpv. Playback is the only step that needs it on PATH.
+-</KunaiFoxBanner>
+-
+ **Who this is for:** anyone installing Kunai for the first time.
+ 
+ <ScopeCallout variant="beta" />

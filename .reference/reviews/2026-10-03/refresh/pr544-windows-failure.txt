@@ -1,0 +1,90 @@
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1281077Z 115 | 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1281377Z 116 |     expect(existsSync(deadSock)).toBe(false);
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1281873Z                                        ^
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1282336Z error: expect(received).toBe(expected)
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1283558Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1285255Z Expected: false
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1285608Z Received: true
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1285798Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1286256Z       at <anonymous> (D:\a\kunai\kunai\apps\cli\test\unit\mpv-ipc-endpoint.test.ts:116:34)
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1286874Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1323179Z ##[error]Expected: false
+Windows CLI parity	UNKNOWN STEP	Received: true
+Windows CLI parity	UNKNOWN STEP	
+Windows CLI parity	UNKNOWN STEP	      at <anonymous> (D:\a\kunai\kunai\apps\cli\test\unit\mpv-ipc-endpoint.test.ts:116:34)
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1335416Z (pass) Windows pipe path uses backslashes, never the forward-slash spelling [0.11ms]
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1336584Z (pass) builds a unix socket endpoint with simulated POSIX filesystem facts off Windows [0.38ms]
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1337642Z (fail) sweep unlinks a dead socket and its conf, keeps a live pair [8.21ms]
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:39:51.1339029Z (pass) sweep removes only aged orphan confs so an in-flight spawn's conf survives [1.97ms]
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6023423Z (skip) executeRollback activation and refusal > refuses invalid --to without change
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6024644Z (skip) executeRollback activation and refusal > refuses active lock, corrupt, missing, and non-native without change
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6025730Z (skip) executeRollback activation and refusal > dry-run performs no write
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6027073Z (skip) executeRollback activation and refusal > restores launcher when manifest write fails after swap
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6028423Z (skip) executeRollback activation and refusal > refuses shared activation contention without changing launcher or manifest
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6029992Z (skip) executeRollback activation and refusal > refuses when package ownership replaces the native manifest after planning
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6031447Z (skip) executeRollback activation and refusal > refuses when a different native publication replaces the same active version
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6032638Z (skip) version lock > surfaces failure to remove an owner-matching lifecycle guard
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6033693Z (skip) activation lock > does not hot-loop when exclusive creation fails while the lock path is absent
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6034834Z (skip) activation lock > surfaces an injected release cleanup failure and preserves ownership
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6035808Z (skip) downloadToFile > stalled response cleans partial file and retries
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6036665Z (skip) downloadToFile > stalled final attempt removes partial destination
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6037614Z (skip) diagnostics retention > ages a symlink by the link itself, never by what it points at
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038242Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038248Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038364Z 1 tests failed:
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038856Z (fail) sweep unlinks a dead socket and its conf, keeps a live pair [8.21ms]
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6039572Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6025730Z (skip) executeRollback activation and refusal > dry-run performs no write
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6027073Z (skip) executeRollback activation and refusal > restores launcher when manifest write fails after swap
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6028423Z (skip) executeRollback activation and refusal > refuses shared activation contention without changing launcher or manifest
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6029992Z (skip) executeRollback activation and refusal > refuses when package ownership replaces the native manifest after planning
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6031447Z (skip) executeRollback activation and refusal > refuses when a different native publication replaces the same active version
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6032638Z (skip) version lock > surfaces failure to remove an owner-matching lifecycle guard
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6033693Z (skip) activation lock > does not hot-loop when exclusive creation fails while the lock path is absent
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6034834Z (skip) activation lock > surfaces an injected release cleanup failure and preserves ownership
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6035808Z (skip) downloadToFile > stalled response cleans partial file and retries
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6036665Z (skip) downloadToFile > stalled final attempt removes partial destination
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6037614Z (skip) diagnostics retention > ages a symlink by the link itself, never by what it points at
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038242Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038248Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038364Z 1 tests failed:
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038856Z (fail) sweep unlinks a dead socket and its conf, keeps a live pair [8.21ms]
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6039572Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6039685Z  5936 pass
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6039937Z  30 skip
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6027073Z (skip) executeRollback activation and refusal > restores launcher when manifest write fails after swap
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6028423Z (skip) executeRollback activation and refusal > refuses shared activation contention without changing launcher or manifest
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6029992Z (skip) executeRollback activation and refusal > refuses when package ownership replaces the native manifest after planning
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6031447Z (skip) executeRollback activation and refusal > refuses when a different native publication replaces the same active version
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6032638Z (skip) version lock > surfaces failure to remove an owner-matching lifecycle guard
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6033693Z (skip) activation lock > does not hot-loop when exclusive creation fails while the lock path is absent
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6034834Z (skip) activation lock > surfaces an injected release cleanup failure and preserves ownership
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6035808Z (skip) downloadToFile > stalled response cleans partial file and retries
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6036665Z (skip) downloadToFile > stalled final attempt removes partial destination
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6037614Z (skip) diagnostics retention > ages a symlink by the link itself, never by what it points at
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038242Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038248Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038364Z 1 tests failed:
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038856Z (fail) sweep unlinks a dead socket and its conf, keeps a live pair [8.21ms]
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6039572Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6039685Z  5936 pass
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6039937Z  30 skip
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6040191Z  1 fail
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6028423Z (skip) executeRollback activation and refusal > refuses shared activation contention without changing launcher or manifest
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6029992Z (skip) executeRollback activation and refusal > refuses when package ownership replaces the native manifest after planning
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6031447Z (skip) executeRollback activation and refusal > refuses when a different native publication replaces the same active version
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6032638Z (skip) version lock > surfaces failure to remove an owner-matching lifecycle guard
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6033693Z (skip) activation lock > does not hot-loop when exclusive creation fails while the lock path is absent
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6034834Z (skip) activation lock > surfaces an injected release cleanup failure and preserves ownership
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6035808Z (skip) downloadToFile > stalled response cleans partial file and retries
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6036665Z (skip) downloadToFile > stalled final attempt removes partial destination
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6037614Z (skip) diagnostics retention > ages a symlink by the link itself, never by what it points at
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038242Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038248Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038364Z 1 tests failed:
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6038856Z (fail) sweep unlinks a dead socket and its conf, keeps a live pair [8.21ms]
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6039572Z 
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6039685Z  5936 pass
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6039937Z  30 skip
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6040191Z  1 fail
+Windows CLI parity	UNKNOWN STEP	2026-10-02T23:40:59.6040466Z  20385 expect() calls

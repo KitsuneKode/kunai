@@ -1,0 +1,364 @@
+diff --git a/.changeset/ember-dusk-contrast-refinement.md b/.changeset/ember-dusk-contrast-refinement.md
+new file mode 100644
+index 000000000..2f55e3f91
+--- /dev/null
++++ b/.changeset/ember-dusk-contrast-refinement.md
+@@ -0,0 +1,13 @@
++---
++"@kitsunekode/kunai": patch
++---
++
++Refine the Ember Dusk palette: secondary text stays readable on the selected row, and unrelated signals stop sharing a colour.
++
++`muted` text measured 3.99:1 on the selected-row band, under the 4.5:1 body floor, so it is now slightly lighter and passes everywhere (4.57:1 on the band). The brand, the surfaces and the rose accent are unchanged.
++
++The milestone, anime, movie and series colours moved apart on the hue wheel. The milestone periwinkle sat 20° from the anime orchid and read as one purple; it is now 46° away.
++
++On 16-colour terminals the accent, the anime kind, the milestone and the mixed-day blend were all the same `magenta`, and the warning and movie kind were both `yellow`. Each signal now has its own colour, and a test fails if two of them collapse again.
++
++There is a new `lineControl` token for control edges (inputs, outlined buttons, toggles) at 3:1 against the surface they sit on.
+diff --git a/.reference/design/brand/kunai-brand-system.md b/.reference/design/brand/kunai-brand-system.md
+index e562006cf..4cca5ac9e 100644
+--- a/.reference/design/brand/kunai-brand-system.md
++++ b/.reference/design/brand/kunai-brand-system.md
+@@ -54,6 +54,7 @@ Rationale: the current Sakura ramp is all one rose-brown hue with tiny steps (no
+ | line            | `#473b51`          | borders               |
+ | lineSoft        | `#281f2e`          | hairline dividers     |
+ | lineStrong      | `#62526c`          | strong dividers       |
++| lineControl     | `#786782`          | **control edge** (inputs, outlined buttons, toggles): 3:1 on every surface |
+ | scrim           | `rgba(8,5,9,0.66)` | overlay dim           |
+ 
+ ### Text
+@@ -62,9 +63,11 @@ Rationale: the current Sakura ramp is all one rose-brown hue with tiny steps (no
+ | ------- | --------- |
+ | text    | `#f6eff4` |
+ | textDim | `#cabfca` |
+-| muted   | `#968a98` |
++| muted   | `#a195a3` |
+ | dim     | `#665b69` |
+ 
++`text`, `textDim` and `muted` are body-readable (4.5:1) on every surface, including the selected-row band. `dim` is **disabled or decorative only** (2.8:1 on `surface`); never put a sentence in it.
++
+ ### Brand accent — rose (focus · selection · brand · primary action ONLY)
+ 
+ | token      | hex                            |
+@@ -84,22 +87,43 @@ Rationale: the current Sakura ramp is all one rose-brown hue with tiny steps (no
+ | warn      | `#f59a3c` | warnFill      | `#2e2012` |
+ | danger    | `#ff5d5d` | dangerFill    | `#341515` |
+ | info      | `#5fb6ff` | infoFill      | `#112230` |
+-| milestone | `#8b7bf0` | milestoneFill | `#1c1830` |
++| milestone | `#6d85f6` | milestoneFill | `#151a32` |
+ 
+-(`okDim #3a9a78`, `warnDim #b06f28`, `dangerDim #a02b2b`, `infoDim #3c7fbf`, `milestoneDim #4a417c`.)
++(`okDim #3a9a78`, `warnDim #b06f28`, `dangerDim #a02b2b`, `infoDim #3c7fbf`, `milestoneDim #39467f`. The `*Dim` steps are fills, bars and borders; they are not text colours.)
+ 
+ ### Content kinds (tags / dots — distinct from brand & semantics)
+ 
+ | token      | hex       | hue     |
+ | ---------- | --------- | ------- |
+-| typeAnime  | `#c98bff` | orchid  |
+-| typeSeries | `#4fd1c5` | teal    |
+-| typeMovie  | `#f4c45c` | gold    |
++| typeAnime  | `#d885f1` | orchid  |
++| typeSeries | `#4ad0cf` | teal    |
++| typeMovie  | `#ebc95c` | gold    |
+ | typeMixed  | `#968a98` | neutral |
+ 
++### 1.1 refinements (measured, not restyled)
++
++The brand, the surface ramp and the rose accent are unchanged. Every change below fixes a number that was measured, in OKLCH, against the surfaces the colour actually renders on:
++
++| change | before | after | why |
++| --- | --- | --- | --- |
++| `muted` | `#968a98` | `#a195a3` | 3.99:1 on the selected-row band (`surfaceActive`), under the 4.5:1 body floor. Now 4.57:1 there and 5.4-6.8:1 elsewhere. |
++| `lineControl` (new) | n/a | `#786782` | `line` is a 1.5-1.9:1 divider. A control marked only by its edge needs 3:1 (WCAG 1.4.11). `border-input` in the docs now points here. |
++| `milestone` family | hue 287 | hue 272 | 20° from the anime orchid, which read as one purple. Now 46° from it. |
++| `typeAnime` | hue 307 | hue 318 | Moves away from milestone; still orchid, still 44° from the brand rose. |
++| `typeMovie` | hue 84 | hue 92 | 22° from `warn`. Now 30°. |
++| `typeSeries` | hue 187 | hue 194 | 24° from `ok`. Now 31°. |
++
++Lightness and chroma are unchanged on every hue nudge, so contrast on `bg` and `surface` stays 5.3-12:1. `accent`, `ok`, `warn`, `danger`, `bg` and `surface` are pinned by `apps/docs/test/token-drift.test.ts` and did not move; `danger` stays 22° from the accent, which is acceptable because they never share a row (error vs selection).
++
++Docs UI follows the same rules: primary buttons carry dark ink on rose (white measured 3.6:1, and 2.1:1 on hover); a selected tab is accent text on the accent fill, not a second filled gradient competing with the one primary action.
++
+ ### ANSI-256 fallbacks (low-color terminals)
+ 
+-bg `#121212` · surface `#1c1c1c` · elevated `#262626` · active `#303030` · accent `#ff87af` · accentDeep `#d75f87` · ok `#5fd7af` · warn `#ffaf5f` · danger `#ff5f5f` · info `#5fafff` · milestone `#875fff` · anime `#af87ff` · series `#5fd7d7` · movie `#ffd75f`.
++bg `#121212` · surface `#1c1c1c` · elevated `#262626` · active `#303030` · accent `#ff87af` · accentDeep `#d75f87` · ok `#5fd7af` · warn `#ffaf5f` · danger `#ff5f5f` · info `#5fafff` · milestone `#5f87ff` · anime `#d787ff` · series `#5fd7d7` · movie `#ffd75f` · lineControl `#767676`.
++
++### 16-colour terminals
++
++Six hues plus their bright twins. Every signal that carries meaning gets its own entry, because collapsing them makes one colour mean several things (the accent, anime, milestone and the mixed-day blend were all literal `magenta`, and `warn` and the movie kind were both `yellow`): accent `magenta` · anime `magentaBright` · milestone `blueBright` · info `blue` · ok `green` · warn `yellow` · movie `yellowBright` · danger `red` · series `cyan` · mixed `gray`. `apps/cli/test/unit/app-shell/color-resolution.test.ts` fails if two of them collapse again.
+ 
+ ### Hierarchy rule
+ 
+diff --git a/apps/cli/test/unit/app-shell/color-resolution.test.ts b/apps/cli/test/unit/app-shell/color-resolution.test.ts
+index 7501a252c..ead294d1f 100644
+--- a/apps/cli/test/unit/app-shell/color-resolution.test.ts
++++ b/apps/cli/test/unit/app-shell/color-resolution.test.ts
+@@ -21,6 +21,75 @@ describe("design color resolution", () => {
+     },
+   );
+ 
++  /**
++   * On 16 colours there are only six hues and their bright twins, so a careless
++   * mapping makes unrelated signals the same colour: the brand accent, the anime
++   * kind, the milestone and the mixed-day blend were all literal "magenta", and
++   * the warning and the movie kind were both "yellow". One colour has to mean one
++   * thing, so every signal that carries meaning gets its own entry here.
++   */
++  test("no two meaning-carrying tokens collapse to one colour on 16-colour terminals", () => {
++    const resolved = resolveDesignTokens("16");
++    const signals = [
++      "accent",
++      "ok",
++      "warn",
++      "danger",
++      "info",
++      "milestone",
++      "typeAnime",
++      "typeSeries",
++      "typeMovie",
++    ] as const;
++    const seen = new Map<string, string>();
++    for (const name of signals) {
++      const value = resolved[name];
++      const clash = seen.get(value);
++      expect(clash, `${name} and ${clash} both resolve to "${value}"`).toBeUndefined();
++      seen.set(value, name);
++    }
++  });
++
++  describe("text and control contrast on the surfaces they render on (truecolor)", () => {
++    const t = resolveDesignTokens("truecolor");
++    const luminance = (hex: string): number => {
++      const channel = (offset: number) => {
++        const c = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
++        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
++      };
++      return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
++    };
++    const ratio = (a: string, b: string): number => {
++      const [first, second] = [luminance(a), luminance(b)];
++      return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
++    };
++
++    test.each(["text", "textDim", "muted"] as const)(
++      "%s is body-readable (4.5:1) on every surface, including the selected row",
++      (token) => {
++        for (const surface of ["bg", "surface", "surfaceElevated", "surfaceActive"] as const) {
++          expect(ratio(t[token], t[surface]), `${token} on ${surface}`).toBeGreaterThanOrEqual(4.5);
++        }
++      },
++    );
++
++    test("lineControl is a 3:1 edge on every surface a control sits on", () => {
++      for (const surface of ["bg", "surface", "surfaceElevated"] as const) {
++        expect(
++          ratio(t.lineControl, t[surface]),
++          `lineControl on ${surface}`,
++        ).toBeGreaterThanOrEqual(3);
++      }
++    });
++
++    test("the decorative line stays decorative, so nothing leans on it to mark a control", () => {
++      // If `line` ever reaches 3:1 this is no longer a distinction worth keeping,
++      // and lineControl can be retired. Until then, it is the tell that the two
++      // tokens mean different things.
++      expect(ratio(t.line, t.surface)).toBeLessThan(3);
++    });
++  });
++
+   test("detects remote/tmux-safe color levels without truecolor hints", () => {
+     expect(detectTerminalColorLevel({ COLORTERM: "truecolor", TERM: "xterm-256color" })).toBe(
+       "truecolor",
+diff --git a/apps/docs/app/styles/tokens.css b/apps/docs/app/styles/tokens.css
+index 3eca9e555..26ac006b4 100644
+--- a/apps/docs/app/styles/tokens.css
++++ b/apps/docs/app/styles/tokens.css
+@@ -6,7 +6,7 @@
+   --color-fd-primary-foreground: #100b0f;
+   --color-fd-border: color-mix(in oklab, #473b51 70%, transparent);
+   --color-fd-muted: #1c1620;
+-  --color-fd-muted-foreground: #968a98;
++  --color-fd-muted-foreground: #a195a3;
+   --color-fd-accent: #2a2030;
+   --color-fd-accent-foreground: #f6eff4;
+   --color-fd-popover: #1c1620;
+@@ -17,6 +17,8 @@
+   --color-fd-secondary-foreground: #f6eff4;
+   --color-fd-ring: #ff8fb0;
+   --color-fd-overlay: rgba(8, 5, 9, 0.72);
++  /* Border for controls (inputs, outlined buttons, toggles): 3:1 on every surface. */
++  --kunai-line-control: #786782;
+   --fd-layout-width: 92rem;
+ 
+   /* shadcn semantic aliases */
+@@ -62,11 +64,28 @@
+   --kunai-text-title: clamp(1.65rem, 2.8vw, 2.35rem);
+   --kunai-text-lead: clamp(1rem, 1.4vw, 1.125rem);
+   --kunai-text-body: 0.9375rem;
+-  --kunai-text-caption: 0.6875rem;
++  /* The smallest text anywhere on the site. Labels, meta and captions stop here:
++     below 12px Outfit and JetBrains Mono lose their counters and the hairlines of
++     the serif disappear. If something will not fit at this size, shorten it. */
++  --kunai-text-caption: 0.75rem;
++  --kunai-text-code: 0.8125rem;
+   --kunai-leading-tight: 1.05;
+   --kunai-leading-body: 1.65;
+   --kunai-tracking-eyebrow: 0.16em;
+ 
++  /* Weight scale. Four names, and nothing else is written as a number.
++     - regular   body copy, code, table cells
++     - medium    UI that is acted on: nav, tabs, buttons, labels
++     - semibold  headings below display size, emphasis, active state
++     - display   Cormorant at 28px and up only; it is too thin to read below that
++     Outfit and JetBrains Mono ship as variable fonts, so a weight costs nothing
++     to load. 700 and 900 are retired: at these sizes they read as shouting, not
++     as a further step of hierarchy. */
++  --kunai-weight-regular: 400;
++  --kunai-weight-medium: 500;
++  --kunai-weight-semibold: 600;
++  --kunai-weight-display: 300;
++
+   /* Surfaces — concentric radii (outer = inner + padding) */
+   --kunai-radius-shell: 1.25rem;
+   --kunai-radius-outer: 1rem;
+diff --git a/apps/docs/lib/brand/tokens.ts b/apps/docs/lib/brand/tokens.ts
+index b06593f3f..a1f1be271 100644
+--- a/apps/docs/lib/brand/tokens.ts
++++ b/apps/docs/lib/brand/tokens.ts
+@@ -7,7 +7,7 @@ export const kunaiBrand = {
+   lineSoft: "#281f2e",
+   text: "#f6eff4",
+   textDim: "#cabfca",
+-  muted: "#968a98",
++  muted: "#a195a3",
+   accent: "#ff8fb0",
+   accentDeep: "#d85f86",
+   accentSoft: "#ffc6d8",
+@@ -17,8 +17,8 @@ export const kunaiBrand = {
+   markStroke: "#cb6178",
+   markSpark: "#f6c4cd",
+   ink: "#140d11",
+-  typeAnime: "#c98bff",
+-  typeSeries: "#4fd1c5",
+-  typeMovie: "#f4c45c",
++  typeAnime: "#d885f1",
++  typeSeries: "#4ad0cf",
++  typeMovie: "#ebc95c",
+   info: "#5fb6ff",
+ } as const;
+diff --git a/apps/docs/test/token-drift.test.ts b/apps/docs/test/token-drift.test.ts
+index 54a278db0..1f8016edf 100644
+--- a/apps/docs/test/token-drift.test.ts
++++ b/apps/docs/test/token-drift.test.ts
+@@ -10,6 +10,10 @@ const EXPECTED_HEX = {
+   "--color-fd-background": "#100b0f",
+   "--color-fd-card": "#1c1620",
+   "--color-fd-primary": "#ff8fb0",
++  // Text and control-edge tokens that carry a contrast floor (4.5:1 / 3:1). A silent
++  // drift between the CLI palette and the docs would break the floor on one side.
++  "--color-fd-muted-foreground": "#a195a3",
++  "--kunai-line-control": "#786782",
+   "--kunai-ok": "#54d6a0",
+   "--kunai-warning": "#f59a3c",
+   "--kunai-danger": "#ff5d5d",
+diff --git a/packages/design/src/color-resolution.ts b/packages/design/src/color-resolution.ts
+index 67a24bab7..9e4d62f27 100644
+--- a/packages/design/src/color-resolution.ts
++++ b/packages/design/src/color-resolution.ts
+@@ -26,6 +26,7 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
+   line: { ansi256: "#5f5f5f", ansi16: "gray" },
+   lineSoft: { ansi256: "#303030", ansi16: "gray" },
+   lineStrong: { ansi256: "#875f87", ansi16: "white" },
++  lineControl: { ansi256: "#767676", ansi16: "gray" },
+ 
+   accent: { ansi256: "#ff87af", ansi16: "magenta" },
+   accentSoft: { ansi256: "#ffd7df", ansi16: "white" },
+@@ -50,8 +51,10 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
+   infoDim: { ansi256: "#5f87d7", ansi16: "blue" },
+   infoFill: { ansi256: "#1c2633", ansi16: "black" },
+ 
+-  milestone: { ansi256: "#875fff", ansi16: "magenta" },
+-  milestoneDim: { ansi256: "#5f5fd7", ansi16: "magenta" },
++  // On 16 colours the periwinkle takes bright blue, so it stays apart from the
++  // brand magenta and from `info` (plain blue).
++  milestone: { ansi256: "#5f87ff", ansi16: "blueBright" },
++  milestoneDim: { ansi256: "#5f5fd7", ansi16: "blue" },
+   milestoneFill: { ansi256: "#1c1a30", ansi16: "black" },
+ 
+   text: { ansi256: "#eeeeee", ansi16: "white" },
+@@ -60,10 +63,12 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
+   dim: { ansi256: "#808080", ansi16: "gray" },
+   faint: { ansi256: "#5f5f5f", ansi16: "gray" },
+ 
+-  typeAnime: { ansi256: "#af87ff", ansi16: "magenta" },
++  // Bright magenta, not the accent's plain magenta: anime is a content kind and the
++  // accent marks where you are, and on 16 colours they used to be the same colour.
++  typeAnime: { ansi256: "#d787ff", ansi16: "magentaBright" },
+   typeSeries: { ansi256: "#5fd7d7", ansi16: "cyan" },
+-  typeMovie: { ansi256: "#ffd75f", ansi16: "yellow" },
+-  typeMixed: { ansi256: "#af87d7", ansi16: "magenta" },
++  typeMovie: { ansi256: "#ffd75f", ansi16: "yellowBright" },
++  typeMixed: { ansi256: "#af87d7", ansi16: "gray" },
+ };
+ 
+ const HEAT_RAMP_FALLBACKS: Record<"ansi256" | "ansi16", ResolvedHeatRamp> = {
+diff --git a/packages/design/src/tokens.ts b/packages/design/src/tokens.ts
+index 33c11b496..06707789f 100644
+--- a/packages/design/src/tokens.ts
++++ b/packages/design/src/tokens.ts
+@@ -26,6 +26,10 @@ const raised = "#44354d";
+ const line = "#473b51";
+ const lineSoft = "#281f2e";
+ const lineStrong = "#62526c";
++// Border for things you operate (inputs, outlined buttons, toggles). `line` is a
++// decorative divider at 1.5-1.9:1; a control whose edge is the only thing
++// marking it needs 3:1 against the surface it sits on (WCAG 1.4.11).
++const lineControl = "#786782";
+ 
+ // Brand / focus / selection / in-progress — rose, two-step for depth.
+ const accent = "#ff8fb0";
+@@ -56,22 +60,23 @@ const info = "#5fb6ff";
+ const infoDim = "#3c7fbf";
+ const infoFill = "#112230";
+ 
+-// Series-complete milestone — a single deliberate indigo. Never reuse elsewhere.
+-const milestone = "#8b7bf0";
+-const milestoneDim = "#4a417c";
+-const milestoneFill = "#1c1830";
++// Series-complete milestone — a single deliberate periwinkle. Never reuse elsewhere.
++// Its hue sits 46° from the orchid anime kind (it was 20°, which read as one purple).
++const milestone = "#6d85f6";
++const milestoneDim = "#39467f";
++const milestoneFill = "#151a32";
+ 
+ // Text ramp — warm white → faint. Carries ~80% of hierarchy.
+ const text = "#f6eff4";
+ const textDim = "#cabfca";
+-const muted = "#968a98";
+-const dim = "#665b69";
+-const faint = "#3a3340";
++const muted = "#a195a3"; // 4.57:1 even on the selected-row band
++const dim = "#665b69"; // DISABLED or decorative only: 2.8:1 on surface, fails as body text
++const faint = "#3a3340"; // rules and ghost glyphs, never text
+ 
+ // Media-type hues — Stats + Calendar surfaces (see THE ONE RULE above).
+-const typeAnime = "#c98bff"; // orchid
+-const typeSeries = "#4fd1c5"; // teal
+-const typeMovie = "#f4c45c"; // gold
++const typeAnime = "#d885f1"; // orchid
++const typeSeries = "#4ad0cf"; // teal
++const typeMovie = "#ebc95c"; // gold
+ const typeMixed = "#a48fb8"; // soft plum — the optical blend, for mixed days
+ 
+ // Watch-activity heat ramp — rose, 5-step (brand-aligned; mint stays reserved
+@@ -89,6 +94,7 @@ export const tokens = {
+   line,
+   lineSoft,
+   lineStrong,
++  lineControl,
+ 
+   // ---- semantic accents (use these in new code) ----
+   accent,

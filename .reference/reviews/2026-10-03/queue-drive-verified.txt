@@ -1,0 +1,48 @@
+$ bun test/agent/drive.ts --mpv fake --show "frame,queue" --evidence "/tmp/kunai-full-review-20261003/queue-drive-verified" --verify-citation "Added Smoke Movie (2026) to Up Next" --verify-citation "tmdb:smoke-movie-1" --keys smoke "<enter>" "<wait:Smoke>" q
+
+== frame ==
+ 🦊 Kunai  ·   Search   series · Smoke Videasy                                              ● ready
+
+ 2 results · Smoke TMDB
+
+ Search title
+ ────────────────────────────────────────────────────────────────────────────────────────────
+
+ ────────────────────────────────────────────────────────────────────────────────────────────
+
+
+   Smoke Series (2026)                              Series
+ ┌────────────────────────┐
+ │ seriesection           │
+ │                        │
+ │ Search for a title to  │
+ │ preview details here.  │
+ │ WatchlistNot saved ·   │
+ │ ─── Synopsis           │
+ │ Overview Compiled …    │
+ │ ─── Detailsok…         │
+ │ Title aliNo alternate  │
+ │ Audio andaudio         │
+ │ Provider Overview      │
+ │ Image souNo poster     │
+ │ ▼ scroll URL…          │
+ ✓ Added Smoke Movie (2026) to Up Next
+
+ Search
+ [enter] play  [↑↓] navigate · ↑↓ end…  [i] details  [/] commands
+
+== queue ==
+[
+  {
+    "id": "8c4aa029-c5f8-4fa9-acc4-28e7dcc59e1a",
+    "title_id": "tmdb:smoke-movie-1",
+    "absolute_episode": null,
+    "status": "pending",
+    "last_failure_json": null
+  }
+]
+
+== evidence ==
+/tmp/kunai-full-review-20261003/queue-drive-verified/transcript.md
+
+== citations verified: 2 ==

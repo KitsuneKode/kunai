@@ -1,0 +1,573 @@
+diff --git a/.docs/download-offline-onboarding.md b/.docs/download-offline-onboarding.md
+index 61edeeaa2..8288ebeb7 100644
+--- a/.docs/download-offline-onboarding.md
++++ b/.docs/download-offline-onboarding.md
+@@ -156,7 +156,14 @@ accounts, usage ping, done. Implementation is
+   artifact is adopted without another network request; an invalid regular file is removed before
+   bounded retry. This closes the unavoidable filesystem-rename/SQLite-commit crash window.
+ - Abort terminates active download processes (`yt-dlp`), deletes temporary files, and persists an aborted job state.
++- A wedged download cannot sit forever: `--socket-timeout` only bounds a hung
++  read, so the job additionally dies after 120s of total stdout/stderr silence
++  (any output line re-arms it — a live transfer talks constantly). The kill
++  record in the job's stderr says `treating as wedged`.
+ - App shutdown pauses active downloads, cleans temporary workers, and leaves jobs retryable.
++  The last-resort kill sends SIGTERM before SIGKILL: yt-dlp's TERM handler is
++  what reaps its own children (an ffmpeg merge is a child process), so a bare
++  KILL could orphan it mid-merge.
+ - Abort or shutdown requested while stream resolution is pending prevents a later
+   downloader launch and fresh-stream metadata writes. When resolution settles,
+   the queue preserves the recorded abort/pause decision without consuming a
+diff --git a/.docs/providers.md b/.docs/providers.md
+index bff516650..538b09109 100644
+--- a/.docs/providers.md
++++ b/.docs/providers.md
+@@ -207,7 +207,13 @@ attaches has to ride `http-header-fields`, which is why
+ Those fields (and `ytdl-raw-options`, which can carry a PO token) never ride
+ mpv argv: `writeMpvSensitiveConf` writes them to an owner-only `--include`
+ conf next to the IPC socket, deleted once the endpoint proves mpv's startup
+-parse is done — argv is world-readable via `/proc/<pid>/cmdline`.
++parse is done — argv is world-readable via `/proc/<pid>/cmdline`. A crashed
++session leaves the socket file (and possibly the conf) behind: endpoint
++creation kicks a once-per-process sweep that connect-probes every
++`kunai-mpv-*.sock` — a refused connect means dead, so the socket and its conf
++are unlinked; an answering socket belongs to a live instance and is left
++alone. A conf with no socket sibling only goes once it's old, so a just-spawned
++process's conf is never swept out from under it.
+ 
+ **Per-candidate timeouts are clamped to the attempt budget.**
+ `providerCycleCandidateTimeoutMs` (in `packages/core/src/provider-attempt-budget.ts`)
+diff --git a/apps/cli/src/infra/player/mpv-ipc-endpoint.ts b/apps/cli/src/infra/player/mpv-ipc-endpoint.ts
+index e038ccc69..c80fc009b 100644
+--- a/apps/cli/src/infra/player/mpv-ipc-endpoint.ts
++++ b/apps/cli/src/infra/player/mpv-ipc-endpoint.ts
+@@ -1,4 +1,4 @@
+-import { lstatSync, mkdirSync, statSync } from "node:fs";
++import { lstatSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
+ import { posix as posixPath } from "node:path";
+ 
+ /** Where Bun connects for mpv JSON IPC (`--input-ipc-server` value). */
+@@ -194,6 +194,98 @@ export function newMpvIpcSessionId(): string {
+  * accepts either spelling, so the backslash form is the one that satisfies both
+  * ends (verified against mpv on Windows for each combination).
+  */
++/**
++ * A crashed session leaves `kunai-mpv-*.sock` entries (and now `*.sock.conf`
++ * siblings) in the private dir. Sweep them once per process: a socket that
++ * refuses a connect is dead and safe to unlink — one that answers belongs to
++ * another running instance's mpv, and unlinking its path would sever that
++ * session's reconnects.
++ *
++ * Conf files are never probed — they can legally precede their socket by a
++ * few instructions (the launch writes the conf before mpv binds). A conf is
++ * only removed when its socket sibling is absent or dead AND the conf is old;
++ * fresh confs are in-flight spawns, not litter.
++ */
++const STALE_CONF_MIN_AGE_MS = 60_000;
++
++async function unixSocketIsLive(path: string): Promise<boolean> {
++  try {
++    const socket = await Promise.race([
++      Bun.connect({ unix: path, socket: { data: () => {} } }).then((s) => {
++        s.end();
++        return true;
++      }),
++      Bun.sleep(300).then(() => false),
++    ]);
++    return socket;
++  } catch {
++    return false;
++  }
++}
++
++export async function sweepStaleMpvIpcArtifacts(
++  env: Record<string, string | undefined> = Bun.env,
++  isSocketLive: (path: string) => Promise<boolean> = unixSocketIsLive,
++): Promise<void> {
++  for (const dir of mpvIpcSocketDirCandidates(env)) {
++    let entries: string[];
++    try {
++      entries = readdirSync(dir);
++    } catch {
++      continue;
++    }
++    for (const entry of entries) {
++      if (!/^kunai-mpv-[^/]+\.sock$/.test(entry)) continue;
++      const sockPath = posixPath.join(dir, entry);
++      if (await isSocketLive(sockPath)) continue;
++      try {
++        if (lstatSync(sockPath).isSocket()) unlinkSync(sockPath);
++      } catch {
++        continue;
++      }
++      const confPath = `${sockPath}.conf`;
++      try {
++        unlinkSync(confPath);
++      } catch {
++        // No sibling conf — the common case.
++      }
++    }
++    // Orphan confs whose socket never materialized (crash between write and
++    // bind). Age check keeps a just-written conf of an in-flight spawn safe.
++    for (const entry of entries) {
++      if (!/^kunai-mpv-[^/]+\.sock\.conf$/.test(entry)) continue;
++      const confPath = posixPath.join(dir, entry);
++      try {
++        const sibling = confPath.slice(0, -".conf".length);
++        const facts = statSync(confPath);
++        const now = Date.now();
++        if (now - facts.mtimeMs < STALE_CONF_MIN_AGE_MS) continue;
++        try {
++          statSync(sibling);
++          continue; // socket file exists — live or dead, its sweep owns the conf
++        } catch {
++          unlinkSync(confPath);
++        }
++      } catch {
++        // stat failed or unlink failed — leave it, cosmetic at worst.
++      }
++    }
++  }
++}
++
++let staleArtifactSweepStarted = false;
++
++/** Fire-and-forget once-per-process sweep; endpoint creation stays synchronous. */
++export function sweepStaleMpvIpcArtifactsOnce(
++  env: Record<string, string | undefined> = Bun.env,
++): void {
++  if (staleArtifactSweepStarted) return;
++  staleArtifactSweepStarted = true;
++  void sweepStaleMpvIpcArtifacts(env).catch(() => {
++    // Best effort — a dead sweep never blocks playback.
++  });
++}
++
+ export function createMpvIpcEndpoint(
+   sessionId: string,
+   platform: NodeJS.Platform = process.platform,
+@@ -201,6 +293,8 @@ export function createMpvIpcEndpoint(
+     readonly env?: Record<string, string | undefined>;
+     /** Injectable filesystem boundary for deterministic directory trust checks. */
+     readonly directoryOperations?: MpvIpcDirectoryOperations;
++    /** Set false in tests that construct endpoints without touching real dirs. */
++    readonly sweep?: boolean;
+   } = {},
+ ): MpvIpcEndpoint {
+   if (platform === "win32") {
+@@ -211,6 +305,9 @@ export function createMpvIpcEndpoint(
+       path: `\\\\.\\pipe\\kunai-mpv-${ipcPipeSuffix(sessionId)}`,
+     };
+   }
++  if (options.sweep !== false) {
++    sweepStaleMpvIpcArtifactsOnce(options.env ?? Bun.env);
++  }
+   return {
+     kind: "unix_socket",
+     path: resolveUnixSocketPath(
+diff --git a/apps/cli/src/services/download/DownloadService.ts b/apps/cli/src/services/download/DownloadService.ts
+index 6b7cd596d..a65aa7311 100644
+--- a/apps/cli/src/services/download/DownloadService.ts
++++ b/apps/cli/src/services/download/DownloadService.ts
+@@ -1114,9 +1114,20 @@ export class DownloadService {
+    * buffering GBs of RAM after Kunai is gone. This is the hard backstop.
+    */
+   killActiveProcessesSync(): void {
++    // TERM sweep first: yt-dlp's handler reaps its own children (an ffmpeg
++    // merge is a child process) before exiting, and a bare SIGKILL orphans
++    // them. The kernel queues both signals in order, so a responsive child
++    // can start its reap before the KILL lands.
+     for (const active of this.activeProcesses.values()) {
+       try {
+         active.releaseIo?.();
++        active.process.kill("SIGTERM");
++      } catch {
++        // best effort — process may already be gone
++      }
++    }
++    for (const active of this.activeProcesses.values()) {
++      try {
+         active.process.kill("SIGKILL");
+       } catch {
+         // best effort — process may already be gone
+@@ -1339,6 +1350,10 @@ export class DownloadService {
+     const handle = runYtDlpProcess({
+       args,
+       maxStderrBytes: STDERR_MAX_BYTES,
++      // --socket-timeout bounds a hung read, but a server dribbling bytes or a
++      // fragment-retry loop can stay alive without producing a progress line.
++      // Two minutes of total output silence is a wedge, not a slow download.
++      idleTimeoutMs: 120_000,
+       onStdoutLine: (line) => {
+         const match = line.match(/\[download\]\s+([\d.]+)%/);
+         if (match && match[1]) {
+diff --git a/apps/cli/src/services/persistence/ConfigServiceImpl.ts b/apps/cli/src/services/persistence/ConfigServiceImpl.ts
+index e78f415ea..4b3b463da 100644
+--- a/apps/cli/src/services/persistence/ConfigServiceImpl.ts
++++ b/apps/cli/src/services/persistence/ConfigServiceImpl.ts
+@@ -908,9 +908,17 @@ export class ConfigServiceImpl implements ConfigService {
+     // runs the catch and the finally before this assignment would have happened,
+     // so assigning afterwards left an already-rejected promise in `saveInFlight`
+     // that every later `flushPending()` would await.
++    // Chain on the prior in-flight write. The store's atomic rename makes a
++    // single write crash-safe, but it cannot order two overlapping writes —
++    // an older snapshot's rename landing after a newer one is last-write-loses.
++    // Serializing also means the IIFE reads `this.config` after the prior
++    // write settles, so the write that starts last always carries the newest
++    // state.
++    const prior = this.saveInFlight;
+     this.saveInFlight = pending;
+     void (async () => {
+       try {
++        if (prior) await prior.catch(() => {});
+         await this.persistConfig(this.config);
+         resolve?.();
+       } catch (error) {
+@@ -924,6 +932,9 @@ export class ConfigServiceImpl implements ConfigService {
+ 
+   async reset(): Promise<void> {
+     this.config = { ...DEFAULT_CONFIG };
++    // Order behind any in-flight debounced write — otherwise a save already
++    // renaming on disk can land after the reset and resurrect stale values.
++    if (this.saveInFlight) await this.saveInFlight.catch(() => {});
+     await this.persistConfig(this.config);
+   }
+ }
+diff --git a/apps/cli/test/unit/mpv-ipc-endpoint.test.ts b/apps/cli/test/unit/mpv-ipc-endpoint.test.ts
+index e0cfc7d56..24be404c6 100644
+--- a/apps/cli/test/unit/mpv-ipc-endpoint.test.ts
++++ b/apps/cli/test/unit/mpv-ipc-endpoint.test.ts
+@@ -1,10 +1,14 @@
+ import { expect, test } from "bun:test";
++import { mkdtempSync, mkdirSync, writeFileSync, existsSync, utimesSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
+ 
+ import {
+   createMpvIpcEndpoint,
+   ipcServerCliArg,
+   mpvIpcTransportTag,
+   shouldUnlinkUnixSocket,
++  sweepStaleMpvIpcArtifacts,
+ } from "@/infra/player/mpv-ipc-endpoint";
+ 
+ const BACKSLASH = String.fromCharCode(92);
+@@ -72,3 +76,67 @@ test("builds a unix socket endpoint with simulated POSIX filesystem facts off Wi
+   expect(mpvIpcTransportTag(endpoint)).toBe("unix");
+   expect(shouldUnlinkUnixSocket(endpoint)).toBe(true);
+ });
++
++/** A real bound unix socket gives the sweep an honest socket inode to judge. */
++function bindTestSocket(path: string) {
++  const server = Bun.listen({
++    unix: path,
++    socket: {
++      data() {},
++      open() {},
++      close() {},
++      error() {},
++    },
++  });
++  return { stop: () => server.stop(true) };
++}
++
++function ipcDirUnder(root: string): string {
++  const dir = join(root, "kunai-ipc");
++  mkdirSync(dir, { recursive: true });
++  return dir;
++}
++
++test("sweep unlinks a dead socket and its conf, keeps a live pair", async () => {
++  const root = mkdtempSync(join(tmpdir(), "kunai-ipc-sweep-"));
++  const dir = ipcDirUnder(root);
++
++  const deadSock = join(dir, "kunai-mpv-dead.sock");
++  const liveSock = join(dir, "kunai-mpv-live.sock");
++  const dead = bindTestSocket(deadSock);
++  const live = bindTestSocket(liveSock);
++  writeFileSync(`${deadSock}.conf`, "http-header-fields=Cookie: dead=1\n");
++  writeFileSync(`${liveSock}.conf`, "http-header-fields=Cookie: live=1\n");
++
++  try {
++    // The probe, not file existence, decides: `dead` is reported dead even
++    // though its socket inode is bound — the liveness verdict is the contract.
++    await sweepStaleMpvIpcArtifacts({ TMPDIR: root }, async (path) => path === liveSock);
++
++    expect(existsSync(deadSock)).toBe(false);
++    expect(existsSync(`${deadSock}.conf`)).toBe(false);
++    expect(existsSync(liveSock)).toBe(true);
++    expect(existsSync(`${liveSock}.conf`)).toBe(true);
++  } finally {
++    dead.stop();
++    live.stop();
++  }
++});
++
++test("sweep removes only aged orphan confs so an in-flight spawn's conf survives", async () => {
++  const root = mkdtempSync(join(tmpdir(), "kunai-ipc-sweep-"));
++  const dir = ipcDirUnder(root);
++
++  // Confs whose `.sock` sibling was never bound (crash between write and bind).
++  const staleConf = join(dir, "kunai-mpv-crashed.sock.conf");
++  const freshConf = join(dir, "kunai-mpv-inflight.sock.conf");
++  writeFileSync(staleConf, "http-header-fields=Cookie: old=1\n");
++  writeFileSync(freshConf, "http-header-fields=Cookie: new=1\n");
++  const old = new Date(Date.now() - 120_000);
++  utimesSync(staleConf, old, old);
++
++  await sweepStaleMpvIpcArtifacts({ TMPDIR: root }, async () => false);
++
++  expect(existsSync(staleConf)).toBe(false);
++  expect(existsSync(freshConf)).toBe(true);
++});
+diff --git a/apps/cli/test/unit/services/persistence/config-save-debounce.test.ts b/apps/cli/test/unit/services/persistence/config-save-debounce.test.ts
+index 2ae780533..af2c42fb7 100644
+--- a/apps/cli/test/unit/services/persistence/config-save-debounce.test.ts
++++ b/apps/cli/test/unit/services/persistence/config-save-debounce.test.ts
+@@ -163,6 +163,47 @@ describe("ConfigService.save debounce", () => {
+     expect(saves).toBe(1);
+     await service.flushPending();
+   });
++
++  test("an overlapping write cannot land after a newer one", async () => {
++    // The store's atomic rename makes each write crash-safe but cannot order
++    // two writes running at once — if the first save's rename finished after
++    // the second, stale state would win the file. Saves must chain.
++    const landed: string[] = [];
++    let releaseFirst!: () => void;
++    let writes = 0;
++    const store = {
++      load: async () => ({ ...DEFAULT_CONFIG }),
++      save: (config: { analyticsEndpoint?: string }) => {
++        writes += 1;
++        if (writes === 1) {
++          return new Promise<void>((resolve) => {
++            releaseFirst = () => {
++              landed.push(config.analyticsEndpoint ?? "");
++              resolve();
++            };
++          });
++        }
++        landed.push(config.analyticsEndpoint ?? "");
++        return Promise.resolve();
++      },
++      reset: async () => {},
++    };
++    const service = await ConfigServiceImpl.load(store);
++
++    const first = service.save();
++    const firstFlush = service.flushPending();
++    // Write A is now held in the store. Queue write B behind it with newer data.
++    await drainMicrotasks();
++    await service.update({ analyticsEndpoint: "https://new.example" });
++    const second = service.save();
++    const secondFlush = service.flushPending();
++    await drainMicrotasks();
++
++    releaseFirst();
++    await Promise.all([first, firstFlush, second, secondFlush]);
++
++    expect(landed).toEqual(["", "https://new.example"]);
++  });
+ });
+ 
+ /**
+diff --git a/packages/providers/src/youtube/spawn-ytdlp.ts b/packages/providers/src/youtube/spawn-ytdlp.ts
+index 376ef6c89..348e7c07a 100644
+--- a/packages/providers/src/youtube/spawn-ytdlp.ts
++++ b/packages/providers/src/youtube/spawn-ytdlp.ts
+@@ -34,6 +34,13 @@ export type RunYtDlpProcessOptions = {
+   readonly signal?: AbortSignal;
+   readonly maxStderrBytes?: number;
+   readonly exitGraceMs?: number;
++  /**
++   * Liveness bound for long-running jobs: any stdout/stderr line resets it,
++   * and expiry terminates the process. `--socket-timeout` only covers a hung
++   * read — a server dribbling bytes or a retry loop can keep a download alive
++   * without ever producing progress.
++   */
++  readonly idleTimeoutMs?: number;
+   readonly onStdoutLine?: (line: string) => void;
+   readonly onStderrLine?: (line: string) => void;
+   readonly spawn?: YtDlpSpawn;
+@@ -82,13 +89,31 @@ export function runYtDlpProcess(options: RunYtDlpProcessOptions): RunYtDlpProces
+   };
+   options.signal?.addEventListener("abort", onAbort, { once: true });
+ 
++  // Any output line is liveness proof; silence past the bound means wedged.
++  let idleTimer: ReturnType<typeof setTimeout> | undefined;
++  const armIdleTimer = () => {
++    if (options.idleTimeoutMs === undefined) return;
++    if (idleTimer !== undefined) clearTimeout(idleTimer);
++    idleTimer = setTimeout(() => {
++      stderrAcc = appendBoundedText(
++        stderrAcc,
++        `kunai: no output for ${options.idleTimeoutMs}ms — treating as wedged`,
++        maxStderrBytes,
++      );
++      terminate();
++    }, options.idleTimeoutMs);
++  };
++
+   let stderrAcc = "";
+   const stdoutPromise = readStreamLines({
+     stream: proc.stdout,
+     signal: ioController.signal,
+     maxBytes: DEFAULT_STREAMING_OUTPUT_LIMIT_BYTES,
+     label: "yt-dlp stdout",
+-    onLine: (line) => options.onStdoutLine?.(line),
++    onLine: (line) => {
++      armIdleTimer();
++      options.onStdoutLine?.(line);
++    },
+   });
+   const stderrPromise = readStreamLines({
+     stream: proc.stderr,
+@@ -96,6 +121,7 @@ export function runYtDlpProcess(options: RunYtDlpProcessOptions): RunYtDlpProces
+     maxBytes: maxStderrBytes,
+     label: "yt-dlp stderr",
+     onLine: (line) => {
++      armIdleTimer();
+       stderrAcc = appendBoundedText(stderrAcc, line, maxStderrBytes);
+       options.onStderrLine?.(line);
+     },
+@@ -120,9 +146,12 @@ export function runYtDlpProcess(options: RunYtDlpProcessOptions): RunYtDlpProces
+         exitGraceMs,
+       });
+       if (forceKillId !== undefined) clearTimeout(forceKillId);
++      if (idleTimer !== undefined) clearTimeout(idleTimer);
+     }
+   })();
+ 
++  armIdleTimer();
++
+   return {
+     process: proc,
+     completed,
+diff --git a/packages/providers/test/youtube/spawn-ytdlp.test.ts b/packages/providers/test/youtube/spawn-ytdlp.test.ts
+index 1842ea49c..1e1505b28 100644
+--- a/packages/providers/test/youtube/spawn-ytdlp.test.ts
++++ b/packages/providers/test/youtube/spawn-ytdlp.test.ts
+@@ -145,6 +145,94 @@ describe("runYtDlpProcess", () => {
+     await expect(handle.completed).rejects.toThrow("yt-dlp stderr exceeded 8 bytes");
+     expect(killSignals.length).toBeGreaterThan(0);
+   });
++
++  test("idle timeout terminates a silent process and records the wedge", async () => {
++    const killSignals: (string | number | undefined)[] = [];
++    const out = pushableStream();
++    const err = pushableStream();
++    const proc = createFakeProcess({
++      stdout: out.stream,
++      stderr: err.stream,
++      onKill: (signal) => {
++        killSignals.push(signal);
++        // A dying process closes its pipes; the fake must do the same or the
++        // line readers hang past the process exit.
++        out.close();
++        err.close();
++      },
++      autoExit: false,
++    });
++
++    const handle = runYtDlpProcess({
++      args: ["--newline"],
++      idleTimeoutMs: 30,
++      exitGraceMs: 5,
++      spawn: () => proc,
++    });
++
++    const result = await handle.completed;
++    expect(killSignals).toEqual(["SIGTERM"]);
++    expect(result.exitCode).toBe(143);
++    expect(result.stderr).toContain("treating as wedged");
++  });
++
++  test("an output line re-arms the idle timer", async () => {
++    const out = pushableStream();
++    const err = pushableStream();
++    const killAt: number[] = [];
++    const started = Date.now();
++    const proc = createFakeProcess({
++      stdout: out.stream,
++      stderr: err.stream,
++      onKill: () => {
++        killAt.push(Date.now());
++        out.close();
++        err.close();
++      },
++      autoExit: false,
++    });
++
++    const handle = runYtDlpProcess({
++      args: ["--newline"],
++      idleTimeoutMs: 80,
++      exitGraceMs: 5,
++      spawn: () => proc,
++    });
++
++    await Bun.sleep(40);
++    out.push("[download] 1.0%\n");
++    await Bun.sleep(40);
++    out.push("[download] 2.0%\n");
++
++    const result = await handle.completed;
++    // A non-resetting timer fires ~80ms after spawn — before the second line's
++    // own 80ms window (~160ms) could elapse. 140 leaves scheduler margin.
++    const firstKillAt = killAt.at(0);
++    expect(firstKillAt).toBeDefined();
++    expect((firstKillAt ?? 0) - started).toBeGreaterThanOrEqual(140);
++    expect(result.exitCode).toBe(143);
++  });
++
++  test("no idle timeout leaves a silent process alone", async () => {
++    const killSignals: (string | number | undefined)[] = [];
++    const proc = createFakeProcess({
++      stdout: hangingStream(),
++      stderr: hangingStream(),
++      onKill: (signal) => killSignals.push(signal),
++      autoExit: false,
++    });
++
++    const handle = runYtDlpProcess({
++      args: ["--newline"],
++      exitGraceMs: 5,
++      spawn: () => proc,
++    });
++
++    await Bun.sleep(60);
++    expect(killSignals).toEqual([]);
++    handle.cancel("test done");
++    await expect(handle.completed).rejects.toThrow("yt-dlp cancelled");
++  });
+ });
+ 
+ function createFakeProcess(options: {
+@@ -172,6 +260,28 @@ function createFakeProcess(options: {
+   };
+ }
+ 
++function pushableStream() {
++  let controller!: ReadableStreamDefaultController<Uint8Array>;
++  const stream = new ReadableStream<Uint8Array>({
++    start: (c) => {
++      controller = c;
++    },
++  });
++  let closed = false;
++  return {
++    stream,
++    push: (text: string) => {
++      if (!closed) controller.enqueue(new TextEncoder().encode(text));
++    },
++    close: () => {
++      if (!closed) {
++        closed = true;
++        controller.close();
++      }
++    },
++  };
++}
++
+ function streamFromText(text: string): ReadableStream<Uint8Array> {
+   return new ReadableStream<Uint8Array>({
+     start(controller) {
