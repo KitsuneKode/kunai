@@ -1,6 +1,6 @@
 # Production review and remaining release work — 2026-10-03
 
-Status: mobile repair committed and opened as [PR #554](https://github.com/KitsuneKode/kunai/pull/554); CLI/storage and tooling repairs are committed on the review branch. Nothing merged, deployed or released.
+Status: committed repairs are open as [mobile #554](https://github.com/KitsuneKode/kunai/pull/554), [CLI/tooling/security #556](https://github.com/KitsuneKode/kunai/pull/556), and [status publication #557](https://github.com/KitsuneKode/kunai/pull/557). Nothing merged, released or deployed to production.
 
 This pass reviewed the feature map, subsystem contracts, source/callers/tests,
 current main, open PR and issue inventories, selected CI failures, provider
@@ -64,7 +64,9 @@ hunks are mechanical. A user-facing CLI patch changeset records the fixes.
    and semantic comparison drops timestamps even when a fresh observation
    occurred. Use a clean publication worktree with only the status artifact,
    controlled bot hooks and branch-aware retries; distinguish observation
-   freshness from semantic changes. Derive/justify roster coverage against
+   freshness from semantic changes. PR #557 now implements that plumbing with
+   seven local-Git regressions, including stale-result protection and a remote
+   branch advance during push. Actual scheduled publication remains unverified. Derive/justify roster coverage against
    `loadProductionProviderModules`. Obtain region/title/direct/relay evidence
    rather than treating a publish failure as proof an upstream provider died.
    A fresh metadata-only AllManga bootstrap check here returns HTTP 200,
@@ -81,7 +83,10 @@ hunks are mechanical. A user-facing CLI patch changeset records the fixes.
    physical terminal protocols and actual provider/player journeys. Hosted doc
    coverage and optional Postgres/provider fixtures are separate gates. Root
    green alone does not certify these skipped or external paths.
-7. **Trusted publication and support.** Resolve #529 with nine-package OIDC
+7. **Trusted publication and support.** Main was reported unprotected by the
+   branch API on October 3. Enforce reviewed changes and required checks through
+   repository rules before treating CI ready as an actual merge barrier; no
+   account/rules settings were changed here. Resolve #529 with nine-package OIDC
    account evidence and candidate preservation. Verify disclosure/support and
    sponsorship destinations, documented support matrix, rollback/withdrawal
    procedure and redacted issue evidence before announcing production support.
@@ -341,3 +346,26 @@ GitHub tracker state or deployment was changed.
 Root tests passing establish the local repair candidate. They do not establish
 the readiness of any unmerged cumulative PR head, real physical mobile device,
 actual provider network, hosted Postgres, all native installers or app store.
+
+## Hosted follow-up and remaining action
+
+At exact heads `7de2abaf2` (#554) and `6dd035443` (#556), all applicable hosted
+checks passed. #556 also exercised Windows/macOS CLI parity, hosted Postgres,
+Linux binary/npm packaging, docs coverage and six glibc/musl native-installer
+cells. These advance the corresponding CI gates; real terminals, physical
+phones, live regional provider playback and release/account trust remain
+separate. Current #557 verification belongs to its PR and seven-Git-regression
+receipt; no scheduled sweep or live status publication was triggered.
+
+Review order is #554 → #556 → #557. The original dirty checkout is preserved.
+The reference manifest remains a snapshot of the #556 candidate at
+`6dd035443a52f75bfa332c10b556371b55e0248c`, rather than a claim that subsequent
+follow-up branches have identical source. New PR #555 independently addresses
+per-test-process profile isolation; review it alongside these repairs, keeping
+normal-runtime and test-preload behavior distinct.
+
+The user chose physical qualification of the terminal preview first, with both
+Android and iPhone available. The checksummed local transfer kit and deliberately
+unpassed evidence templates are ready. Device setup/observations are still
+pending; the kit tests HTTPS/state/input/VLC host boundaries, not a complete
+mobile catalog/search application or a store binary.

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-03"
 ---
 
 # Kunai — Provider Guide
@@ -14,6 +14,31 @@ For new providers and major provider rewrites, start with the intake workflow in
 For concrete example patterns and demo provider shapes, use [.docs/provider-examples.md](./provider-examples.md).
 
 For **auto-skip timing** (IntroDB + AniSkip), **MAL / catalog identity** for anime, and **templates for wiring new anime providers** into that pipeline, read [.docs/playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md).
+
+## Published status observations
+
+The scheduled `.github/workflows/provider-status-sweep.yml` writes the configured
+live probe results to `apps/docs/lib/generated-provider-status.json`. Its current
+eight-probe roster is narrower than the desktop production registry; an omitted
+provider has no measured row. Runner-region results do not prove every user's
+network, title or playback request.
+
+`.github/scripts/publish-provider-status.sh` snapshots that output and publishes
+only the status artifact from a fresh detached worktree at the dispatch branch's
+current remote head. Probe/runtime edits are never committed, reset, stashed or
+rebased. Commit and push hooks are disabled only for those bot commands. A
+concurrent branch advance triggers up to three clean attempts; a newer remote
+observation wins over an older candidate. Identical observations are idempotent.
+
+`generatedAt` is the actual sweep observation time and advances after a new
+sweep even when every provider stays healthy. A daily freshness update is
+meaningful evidence; do not suppress it as timing noise. This script fixes
+publication plumbing; it does not run a new sweep or manufacture a healthy row.
+
+Local Git regression tests exercise dirty-checkout preservation, one-artifact
+publication, branch choice, fresh timestamps, idempotency, stale-result
+protection, concurrent remote advancement and hook isolation. Windows skips
+these Bash workflow mechanics; the publication job runs on Ubuntu.
 
 ## Direction: Provider SDK (Implemented)
 
