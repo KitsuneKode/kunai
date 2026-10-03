@@ -75,7 +75,16 @@ export function ensureSessionProviderMatchesLane(
   providerRegistry: SessionProviderLaneLookup,
 ): string {
   const state = stateManager.getState();
-  const providerId = resolveProviderIdForSessionLane(state, providerRegistry);
+  let providerId: string;
+  try {
+    providerId = resolveProviderIdForSessionLane(state, providerRegistry);
+  } catch {
+    // An empty lane has nothing to correct toward — a ghost provider id can
+    // reach here when a switch ran without a registry. Keeping the current id
+    // lets downstream "provider not found" errors speak instead of throwing
+    // inside a remount path that has no recovery story.
+    return state.provider;
+  }
   if (providerId !== state.provider) {
     stateManager.dispatch({ type: "SET_PROVIDER", provider: providerId });
   }

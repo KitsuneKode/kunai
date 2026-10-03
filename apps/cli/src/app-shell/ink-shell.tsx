@@ -978,11 +978,17 @@ export function AppRoot({ container }: { container: Container }) {
                   reason,
                 });
               },
-              switchSessionMode: () => {
-                switchSessionMode(container.stateManager, container.providerRegistry);
+              switchSessionMode: (_sm, _registry, direction) => {
+                // Forward direction — without it Shift+Tab during playback
+                // cycled forward like Tab.
+                return switchSessionMode(
+                  container.stateManager,
+                  container.providerRegistry,
+                  direction,
+                );
               },
               setSessionLane: (_sm, mode) => {
-                setSessionLane(container.stateManager, mode, container.providerRegistry);
+                return setSessionLane(container.stateManager, mode, container.providerRegistry);
               },
               routeSearchShellAction: async (nextAction) => {
                 const { routeSearchShellAction } = await import("./command-router");

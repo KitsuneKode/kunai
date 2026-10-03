@@ -1,6 +1,17 @@
+import type { SessionLaneSwitchResult } from "@/app/session/mode-switch";
 import type { QueuePlaybackIntent } from "@/domain/queue/queue-playback-intent";
+import type { SessionProviderLaneLookup } from "@/domain/session/session-display";
 
 import type { ShellAction } from "./types";
+
+/** Lane switches can be declined when no provider serves the lane — say why. */
+function reportLaneSwitch(
+  deps: ActivePlaybackCommandDispatchDeps,
+  result: SessionLaneSwitchResult,
+): void {
+  if (result.switched) return;
+  deps.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: result.reason });
+}
 
 export type ActivePlaybackStreamPickerAction =
   | "source"
@@ -62,13 +73,13 @@ export type ActivePlaybackCommandDispatchDeps = {
   ) => Promise<unknown> | unknown;
   readonly switchSessionMode: (
     stateManager: ActivePlaybackCommandDispatchDeps["stateManager"],
-    providerRegistry?: undefined,
+    providerRegistry?: SessionProviderLaneLookup,
     direction?: "forward" | "backward",
-  ) => void;
+  ) => SessionLaneSwitchResult;
   readonly setSessionLane: (
     stateManager: ActivePlaybackCommandDispatchDeps["stateManager"],
     mode: "series" | "anime" | "youtube",
-  ) => void;
+  ) => SessionLaneSwitchResult;
   readonly routeSearchShellAction: (
     action: ShellAction,
     deps: ActivePlaybackCommandDispatchDeps,
@@ -212,23 +223,26 @@ export async function dispatchActivePlaybackCommand(
     return "handled";
   }
   if (action === "toggle-mode" || action === "toggle-mode-reverse") {
-    deps.switchSessionMode(
-      deps.stateManager,
-      undefined,
-      action === "toggle-mode-reverse" ? "backward" : "forward",
+    reportLaneSwitch(
+      deps,
+      deps.switchSessionMode(
+        deps.stateManager,
+        undefined,
+        action === "toggle-mode-reverse" ? "backward" : "forward",
+      ),
     );
     return "handled";
   }
   if (action === "series-mode") {
-    deps.setSessionLane(deps.stateManager, "series");
+    reportLaneSwitch(deps, deps.setSessionLane(deps.stateManager, "series"));
     return "handled";
   }
   if (action === "anime-mode") {
-    deps.setSessionLane(deps.stateManager, "anime");
+    reportLaneSwitch(deps, deps.setSessionLane(deps.stateManager, "anime"));
     return "handled";
   }
   if (action === "youtube-mode") {
-    deps.setSessionLane(deps.stateManager, "youtube");
+    reportLaneSwitch(deps, deps.setSessionLane(deps.stateManager, "youtube"));
     return "handled";
   }
 

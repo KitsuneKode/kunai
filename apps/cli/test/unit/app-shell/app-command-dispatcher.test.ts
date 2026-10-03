@@ -80,8 +80,14 @@ function createDeps(calls: string[]): ActivePlaybackCommandDispatchDeps {
       calls.push(`stream-picker:${action}:${reason}`),
     openEpisodePicker: async (_deps, reason) => calls.push(`episode-picker:${reason}`),
     enqueueCurrentPlaybackDownload: async (_deps, reason) => calls.push(`download:${reason}`),
-    switchSessionMode: () => calls.push("switch-mode"),
-    setSessionLane: () => calls.push("set-lane"),
+    switchSessionMode: () => {
+      calls.push("switch-mode");
+      return { switched: true } as const;
+    },
+    setSessionLane: () => {
+      calls.push("set-lane");
+      return { switched: true } as const;
+    },
     routeSearchShellAction: async (action: ShellAction) => {
       calls.push(`route:${action}`);
       return "handled";

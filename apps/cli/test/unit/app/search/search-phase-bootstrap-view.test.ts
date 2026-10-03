@@ -201,14 +201,10 @@ test("an inter-mount playback feedback note arrives as a browse warning", async 
     openBrowseShell: async (input) => {
       browseInputs.push(input);
       if (browseInputs.length === 1) {
-        // What an inter-mount phase leaves behind — e.g. DownloadOnlyPhase's
-        // eligibility gate setting "Download unavailable: …" before its
-        // `continue` lands back on this remount.
-        stateManager.dispatch({
-          type: "SET_PLAYBACK_FEEDBACK",
-          note: "Download unavailable: Downloads are disabled.",
-        });
-        return { type: "action", action: "noop-action-for-test" };
+        // The real download branch: no selected result → the workflow dispatches
+        // a playback-feedback note and the loop `continue`s to the remount. The
+        // same channel carries DownloadOnlyPhase's "Download unavailable: …".
+        return { type: "action", action: "download" };
       }
       return { type: "cancelled" };
     },
@@ -222,11 +218,9 @@ test("an inter-mount playback feedback note arrives as a browse warning", async 
   expect(browseInputs).toHaveLength(2);
   // Mount 1 predates the note — baseline protection keeps it off this mount.
   expect(browseInputs[0]?.initialWarnings ?? []).not.toContain(
-    "Download unavailable: Downloads are disabled.",
+    "Choose a title before queueing a download.",
   );
-  expect(browseInputs[1]?.initialWarnings).toContain(
-    "Download unavailable: Downloads are disabled.",
-  );
+  expect(browseInputs[1]?.initialWarnings).toContain("Choose a title before queueing a download.");
   // Consumed on lift: the note does not linger for a later playback surface.
   expect(stateManager.getState().playbackNote).toBeNull();
 });

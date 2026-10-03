@@ -162,23 +162,41 @@ export async function dispatchPaletteCommand(
     return workflows.resolveQuit(container);
   }
   if (action === "toggle-mode" || action === "toggle-mode-reverse") {
-    switchSessionMode(
+    const result = switchSessionMode(
       stateManager,
       container.providerRegistry,
       action === "toggle-mode-reverse" ? "backward" : "forward",
     );
+    if (!result.switched) {
+      // No provider serves the target lane — the key would otherwise be a
+      // silent no-op (or an unhandled throw out of the registry).
+      stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: result.reason });
+      return "handled";
+    }
     return "mode-switch";
   }
   if (action === "series-mode") {
-    setSessionLane(stateManager, "series", container.providerRegistry);
+    const result = setSessionLane(stateManager, "series", container.providerRegistry);
+    if (!result.switched) {
+      stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: result.reason });
+      return "handled";
+    }
     return "mode-switch";
   }
   if (action === "anime-mode") {
-    setSessionLane(stateManager, "anime", container.providerRegistry);
+    const result = setSessionLane(stateManager, "anime", container.providerRegistry);
+    if (!result.switched) {
+      stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: result.reason });
+      return "handled";
+    }
     return "mode-switch";
   }
   if (action === "youtube-mode") {
-    setSessionLane(stateManager, "youtube", container.providerRegistry);
+    const result = setSessionLane(stateManager, "youtube", container.providerRegistry);
+    if (!result.switched) {
+      stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: result.reason });
+      return "handled";
+    }
     return "mode-switch";
   }
   if (action === "help") {
