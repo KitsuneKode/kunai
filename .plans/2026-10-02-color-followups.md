@@ -4,7 +4,7 @@
 
 ## Status
 
-- **Status:** PROPOSED — follow-ups only. The retune itself is done in the working copy.
+- **Status:** PROPOSED — one follow-up left (item 1). The retune and the status-text tokens have landed.
 - **Priority:** P2
 - **Effort:** S per item
 - **Risk:** LOW (colors only), but item 1 touches files that open PRs also edit
@@ -13,7 +13,8 @@
 
 ## What is already done
 
-- The text tiers were retuned by APCA, lightness only, hue and chroma held: `textDim` Lc 76, `muted` Lc 61, `dim` Lc 46 (were 70, 41, 20; the old `dim` was Lc 15 on the selected row). The 256-colour fallbacks meet the same targets. `apps/cli/test/unit/app-shell/text-tier-contrast.test.ts` enforces both.
+- The text tiers were retuned by APCA, lightness only, hue and chroma held, to reach Lc 75, 60 and 45 on the canvas, the panel and the selection fill (`accentFill`, the ground every selected row, tab and picker option is painted on): `textDim` Lc 77, `muted` Lc 62, `dim` Lc 47 on the canvas (were 70, 41, 20; the old `dim` was Lc 18 on the selection fill). The 256-colour fallbacks meet the same targets. `apps/cli/test/unit/app-shell/text-tier-contrast.test.ts` enforces both levels and all three grounds.
+- `danger` (Lc 46 on the canvas) and `milestone` (Lc 40) were too dark to read as text, against about 60 for `accent`, `warn` and `info`. Text now reads `dangerText` (`#ff9791`) and `milestoneText` (`#b2adf5`), the same hues lifted to Lc 60 on all three grounds. `danger` stays for the one border and the petal art, and `status-text-tokens.test.ts` keeps text from reading the vivid originals again. This plan first described these as badge text on `dangerFill` and `milestoneFill`; the CLI never draws that pairing (neither fill is read anywhere), so the figures that matter are the ones on the canvas.
 - 17 redundant `dimColor` props (unconditional, same element as a `dim` or `muted` token) were removed in files no open PR touches.
 - The docs site keeps its own palette copy; its `muted-foreground` intentionally stays put because `charts.css` reuses it as the chart residual de-emphasis gray.
 
@@ -28,11 +29,7 @@ On `main`, 89 lines use `dimColor` and 74 of them share a line with `palette.dim
 
 Do the 46 after those PRs land, with the same mechanical rule: where the same element sets `color={palette.dim}` or `color={palette.muted}`, drop `dimColor`. Leave uses that set no token (they dim the default foreground) and judge multi-line and conditional cases by hand. Then re-record `apps/cli/test/vhs/ui-demo.tape` and regenerate `.reference/design/brand/demo-ui-walkthrough.*`.
 
-## 2. Role tokens for status text on a tinted fill
-
-Measured as badge text on its own fill: `danger` on `dangerFill` is Lc 44 and `milestone` on `milestoneFill` is Lc 39 (WCAG 5.5 and 5.1, so the usual check passes). The others are Lc 57–66. Lifting `danger` itself would repaint the alarm red everywhere it is a fill or icon. Add `dangerText` and `milestoneText` role tokens, lightness lifted only, and point status badges at them. A lightness-only lift to Lc 60 gives about `#ff9892` and `#b1abff`; remeasure after choosing.
-
-## 3. Optional, low value
+## 2. Optional, low value
 
 - Collapse near-duplicate neutrals only if a hairline ever needs to differ from a surface: `lineSoft` (L 0.257) and `surfaceElevated` (0.262); `line` (0.374) and `raised` (0.355).
 - The canvas hue (333°) sits 21° off the rest of the neutral ramp (312°). Imperceptible at chroma 0.012, and `#100b0f` is pinned across docs, art and recordings. Not recommended.

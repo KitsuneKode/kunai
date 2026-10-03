@@ -9,6 +9,9 @@ import { resolveDesignTokens } from "@kunai/design";
  */
 const TARGETS = { textDim: 75, muted: 60, dim: 45 } as const;
 const TIERS = ["textDim", "muted", "dim"] as const;
+/** Colored status text is held to the label floor, like the accent, warn and info it sits beside. */
+const STATUS_TEXT_TARGET = 60;
+const STATUS_TEXT = ["dangerText", "milestoneText"] as const;
 
 // APCA-W3 0.0.98G-4g (SA98G), the algorithm `apca-w3` implements. Only light-on-dark is needed here.
 function luminance(hex: string): number {
@@ -41,10 +44,27 @@ describe("lc", () => {
 describe.each(["truecolor", "256"] as const)("text tiers at %s color", (level) => {
   const tokens = resolveDesignTokens(level);
 
+  // The ground a row is actually painted on: canvas, panel, and `accentFill`, which is what every
+  // selected row, tab and picker option uses (the one `surfaceActive` consumer is a single card).
+  const grounds = { canvas: tokens.bg, panel: tokens.surface, "selected row": tokens.accentFill };
+
   for (const tier of TIERS) {
-    test(`${tier} reaches its Lc target on the canvas and the panel`, () => {
-      expect(lc(tokens[tier], tokens.bg)).toBeGreaterThanOrEqual(TARGETS[tier]);
-      expect(lc(tokens[tier], tokens.surface)).toBeGreaterThanOrEqual(TARGETS[tier]);
+    test(`${tier} reaches its Lc target on every ground`, () => {
+      for (const [name, ground] of Object.entries(grounds)) {
+        expect(lc(tokens[tier], ground), `${tier} on ${name}`).toBeGreaterThanOrEqual(
+          TARGETS[tier],
+        );
+      }
+    });
+  }
+
+  for (const role of STATUS_TEXT) {
+    test(`${role} reaches Lc ${STATUS_TEXT_TARGET} on every ground`, () => {
+      for (const [name, ground] of Object.entries(grounds)) {
+        expect(lc(tokens[role], ground), `${role} on ${name}`).toBeGreaterThanOrEqual(
+          STATUS_TEXT_TARGET,
+        );
+      }
     });
   }
 

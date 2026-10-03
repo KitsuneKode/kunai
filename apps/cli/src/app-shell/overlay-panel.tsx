@@ -276,7 +276,7 @@ export function OverlayPanel({
                       : option.tone === "info"
                         ? semanticToneColor("info")
                         : option.tone === "error"
-                          ? palette.danger
+                          ? palette.dangerText
                           : null;
                 // Treatment C: selection is shown by a single accent bar (rendered by
                 // PickerOptionRow) + the elevated surface, not per-row ✓/▶/○ marker soup.
@@ -313,7 +313,7 @@ export function OverlayPanel({
                           selected={selected}
                           accentColor={rowAccentColor}
                           pickerAccent={pickerAccent}
-                          labelColor={option.tone === "error" ? palette.danger : undefined}
+                          labelColor={option.tone === "error" ? palette.dangerText : undefined}
                         />
                       </Text>
                       {isHistoryPicker && option.historyProgress ? (
