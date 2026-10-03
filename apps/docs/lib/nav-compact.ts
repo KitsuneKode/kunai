@@ -1,3 +1,5 @@
+import { isScrolledPast } from "./scrolled-past";
+
 /**
  * When the floating nav should shrink, and when a shrunken nav stays open.
  *
@@ -36,7 +38,7 @@ export function shouldCompactNav(entry: {
   readonly isIntersecting: boolean;
   readonly top: number;
 }): boolean {
-  return !entry.isIntersecting && entry.top < 0;
+  return isScrolledPast(entry);
 }
 
 /** Scroll distance, in pixels, before the nav shrinks. */
