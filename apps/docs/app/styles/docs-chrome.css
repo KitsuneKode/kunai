@@ -38,23 +38,231 @@
     overflow: hidden;
   }
 
-  /* The bar shrinks once the page has scrolled (see `NavCompact`). It is a scale of
-     the whole pill, not a change of its width or padding: a transform stays on the
-     compositor, where animating the bar's size would reflow it every frame. It
-     scales about its top centre so it tucks toward the top of the page rather than
-     drifting, and it gains a little depth because it is now over content. */
+  /*
+   * The compact nav.
+   *
+   * Once the page has scrolled (`NavCompact` sets `data-nav-compact`), the bar
+   * keeps the mark, the wordmark and a search icon, and everything else folds
+   * away: the links, the search label and its key hint. Hovering the bar, moving
+   * keyboard focus into it, or pinning it open with the expander restores all of
+   * it. It is the same bar in two sizes, not two bars.
+   *
+   * The pill is content-sized and centred, so as its contents fold the pill
+   * itself narrows around the middle. Each folding part animates its own width
+   * (`grid-template-columns: 1fr -> 0fr` for the links, `max-width` for the search
+   * label), because a text node and a link of unknown width cannot be animated
+   * from `auto` any other way. The bar is small and fixed over the page, so the
+   * reflow is cheap and moves nothing else: the header keeps its 56px so the
+   * content under it never shifts.
+   *
+   * Durations come from the motion tokens, which are zero under
+   * `prefers-reduced-motion`, so the states still change and only the movement
+   * goes.
+   */
+  #nd-home-layout #nd-nav {
+    --nav-expand: calc(var(--dur-panel) * 1.25);
+    /* How long the bar lingers open after the pointer leaves, so grazing its edge
+       does not make it flicker shut and open. */
+    --nav-linger: calc(var(--dur-panel) * 0.65);
+    /* Clicks pass through the strip of header around the pill instead of being
+       swallowed by an invisible 56px bar. */
+    pointer-events: none;
+  }
+
   #nd-home-layout #nd-nav > div {
-    transform-origin: 50% 0;
+    pointer-events: auto;
     transition:
-      transform 240ms var(--ease-out),
-      box-shadow 240ms var(--ease-out),
-      background-color 240ms var(--ease-out);
+      box-shadow var(--dur-panel) var(--ease-out),
+      background-color var(--dur-panel) var(--ease-out);
   }
 
   html[data-nav-compact="true"] #nd-home-layout #nd-nav > div {
-    transform: scale(0.92);
     box-shadow: var(--kunai-shadow-md);
-    background: color-mix(in oklab, var(--kunai-surface) 90%, transparent) !important;
+    background: color-mix(in oklab, var(--kunai-surface) 92%, transparent) !important;
+  }
+
+  #nd-home-layout #nd-nav nav {
+    transition: height var(--nav-expand) var(--ease-drawer);
+  }
+
+  #nd-home-layout #nd-nav nav > ul {
+    transition:
+      gap var(--nav-expand) var(--ease-drawer),
+      padding-inline var(--nav-expand) var(--ease-drawer);
+  }
+
+  #nd-home-layout #nd-nav nav > ul > li {
+    display: grid;
+    grid-template-columns: 1fr;
+    transition:
+      grid-template-columns var(--nav-expand) var(--ease-drawer),
+      opacity var(--dur-pop) var(--ease-out);
+  }
+
+  #nd-home-layout #nd-nav nav > ul > li > a {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    transition:
+      padding-inline var(--nav-expand) var(--ease-drawer),
+      color var(--dur-press) var(--ease-out);
+  }
+
+  /* The search button: icon always, label and key hint when there is room. */
+  #nd-home-layout #nd-nav .kunai-nav-search {
+    transition:
+      padding var(--nav-expand) var(--ease-drawer),
+      background-color var(--dur-press) var(--ease-out),
+      color var(--dur-press) var(--ease-out);
+  }
+
+  #nd-home-layout #nd-nav .kunai-nav-search__label,
+  #nd-home-layout #nd-nav .kunai-nav-search__keys {
+    display: inline-flex;
+    overflow: hidden;
+    white-space: nowrap;
+    margin-inline-start: 0.5rem;
+    transition:
+      max-width var(--nav-expand) var(--ease-drawer),
+      margin-inline-start var(--nav-expand) var(--ease-drawer),
+      opacity var(--dur-pop) var(--ease-out);
+  }
+
+  #nd-home-layout #nd-nav .kunai-nav-search__label {
+    max-width: 5rem;
+  }
+
+  #nd-home-layout #nd-nav .kunai-nav-search__keys {
+    max-width: 7rem;
+    gap: 0.125rem;
+  }
+
+  /* The expander: there only while the bar is folded. */
+  .kunai-nav-expander {
+    display: grid;
+    grid-template-columns: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-columns var(--nav-expand) var(--ease-drawer),
+      opacity var(--dur-pop) var(--ease-out);
+  }
+
+  .kunai-nav-expander > button {
+    /* Its width is its padding, so the grid track can fold it to nothing; a fixed
+       width would hold the track open at 32px even when it is meant to be gone. */
+    min-width: 0;
+    overflow: hidden;
+    padding-inline: 0;
+    transition:
+      padding-inline var(--nav-expand) var(--ease-drawer),
+      color var(--dur-press) var(--ease-out),
+      background-color var(--dur-press) var(--ease-out);
+  }
+
+  .kunai-nav-expander > button[aria-expanded="true"] {
+    color: var(--kunai-accent);
+    background: color-mix(in oklab, var(--kunai-accent) 14%, transparent);
+  }
+
+  /*
+   * Folded: compact, and not hover-open, not keyboard-focused, not pinned open.
+   * The selector is spelled out in each rule below; it is the same one every time.
+   * Hover is the `data-nav-hover` attribute `NavCompact` maintains, not `:hover`,
+   * because it has to ignore the brand and the search icon when the bar is shut
+   * (see `nextNavHover`). Focus is `:focus-visible`, not `:focus-within`, because a
+   * mouse click on an in-page link leaves focus on it, and the bar must not stay
+   * open behind the pointer.
+   */
+  html[data-nav-compact="true"]:not([data-nav-open], [data-nav-hover])
+    #nd-home-layout
+    #nd-nav
+    > div:not(:has(:focus-visible))
+    nav {
+    height: 2.75rem;
+    transition-delay: var(--nav-linger);
+  }
+
+  html[data-nav-compact="true"]:not([data-nav-open], [data-nav-hover])
+    #nd-home-layout
+    #nd-nav
+    > div:not(:has(:focus-visible))
+    nav
+    > ul {
+    gap: 0;
+    padding-inline: 0;
+    transition-delay: var(--nav-linger);
+  }
+
+  html[data-nav-compact="true"]:not([data-nav-open], [data-nav-hover])
+    #nd-home-layout
+    #nd-nav
+    > div:not(:has(:focus-visible))
+    nav
+    > ul
+    > li {
+    grid-template-columns: 0fr;
+    opacity: 0;
+    transition-delay: var(--nav-linger);
+  }
+
+  html[data-nav-compact="true"]:not([data-nav-open], [data-nav-hover])
+    #nd-home-layout
+    #nd-nav
+    > div:not(:has(:focus-visible))
+    nav
+    > ul
+    > li
+    > a {
+    padding-inline: 0;
+    transition-delay: var(--nav-linger);
+  }
+
+  html[data-nav-compact="true"]:not([data-nav-open], [data-nav-hover])
+    #nd-home-layout
+    #nd-nav
+    > div:not(:has(:focus-visible))
+    .kunai-nav-search {
+    padding: 0.5rem;
+    transition-delay: var(--nav-linger);
+  }
+
+  html[data-nav-compact="true"]:not([data-nav-open], [data-nav-hover])
+    #nd-home-layout
+    #nd-nav
+    > div:not(:has(:focus-visible))
+    .kunai-nav-search__label,
+  html[data-nav-compact="true"]:not([data-nav-open], [data-nav-hover])
+    #nd-home-layout
+    #nd-nav
+    > div:not(:has(:focus-visible))
+    .kunai-nav-search__keys {
+    max-width: 0;
+    margin-inline-start: 0;
+    opacity: 0;
+    transition-delay: var(--nav-linger);
+  }
+
+  /* The expander shows while compact, whether the bar is folded or pinned open
+     (pinned, it is the way to close it). It hides under hover, where the bar is
+     already open. */
+  html[data-nav-compact="true"]:not([data-nav-hover])
+    #nd-home-layout
+    #nd-nav
+    > div:not(:has(:focus-visible))
+    .kunai-nav-expander {
+    grid-template-columns: 1fr;
+    opacity: 1;
+    transition-delay: var(--nav-linger);
+  }
+
+  html[data-nav-compact="true"]:not([data-nav-hover])
+    #nd-home-layout
+    #nd-nav
+    > div:not(:has(:focus-visible))
+    .kunai-nav-expander
+    > button {
+    padding-inline: 0.5rem;
+    transition-delay: var(--nav-linger);
   }
 
   #nd-sidebar,
@@ -81,6 +289,13 @@
   #nd-docs-layout .prose,
   #nd-docs-layout [data-toc-popover] {
     max-width: 100%;
+  }
+}
+
+/* Phones keep Fumadocs' own menu button; the expander is a desktop control. */
+@media (max-width: 767.98px) {
+  .kunai-nav-expander {
+    display: none;
   }
 }
 
