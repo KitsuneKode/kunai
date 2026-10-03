@@ -119,12 +119,11 @@ export function withYoutubePlayerClient(extractorArgs: string | undefined, clien
 
 /** Build yt-dlp CLI args shared by metadata extract, download, and mpv raw-options. */
 export function buildYoutubeYtdlCliArgs(options: YoutubeYtdlOptionsInput): string[] {
-  const args: string[] = [
-    // Redirects from a youtube URL may only stay on https — no downgrade to
-    // http, and no exotic protocols (ftp/file/...) yt-dlp would otherwise honor.
-    "--proto-redir",
-    "https",
-  ];
+  // Redirect protocol pinning is NOT expressible as a yt-dlp flag — there is
+  // no `--proto-redir` (that is a curl option). yt-dlp's own hardening covers
+  // the intent (file: needs --enable-file-urls, off by default), and every URL
+  // it hands back still passes our literal-target boundary before mpv sees it.
+  const args: string[] = [];
   if (options.cookiesFromBrowser?.trim()) {
     args.push("--cookies-from-browser", options.cookiesFromBrowser.trim());
   }
@@ -150,8 +149,9 @@ export function buildYoutubeYtdlCliArgs(options: YoutubeYtdlOptionsInput): strin
 
 /** mpv --ytdl-raw-options values (comma-separated key=value pairs per flag). */
 export function buildYoutubeMpvYtdlRawOptions(options: YoutubeYtdlOptionsInput): readonly string[] {
-  // Same redirect pin as the CLI args — mpv drives yt-dlp through raw options.
-  const raw: string[] = ["proto-redir=https"];
+  // No proto-redir entry — see buildYoutubeYtdlCliArgs: it is a curl option,
+  // and an unknown raw-option makes yt-dlp exit with Usage on every invoke.
+  const raw: string[] = [];
   if (options.cookiesFromBrowser?.trim()) {
     raw.push(formatMpvKeyValueOption("cookies-from-browser", options.cookiesFromBrowser.trim()));
   }
