@@ -14,6 +14,9 @@
  */
 export function storageRootEnv(dir: string): Record<string, string> {
   return {
+    // OS vault entries are global to the account, even under a shadow HOME.
+    // Keep test credentials in the file vault under the redirected config dir.
+    KUNAI_CREDENTIAL_BACKEND: "file",
     // Linux (freedesktop).
     XDG_CACHE_HOME: dir,
     XDG_DATA_HOME: dir,
