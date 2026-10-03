@@ -3,6 +3,7 @@ import "./global.css";
 import { PrivacyAnalytics } from "@/components/analytics/privacy-analytics";
 import { PrivacySpeedInsights } from "@/components/analytics/privacy-speed-insights";
 import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
+import { NavCompact } from "@/components/layout/nav-compact";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { MotionProvider } from "@/components/providers/motion-provider";
 import { KunaiSearchDialog } from "@/components/search/kunai-search-dialog";
@@ -73,6 +74,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
 
             Living in the root layout also means she survives route changes
             rather than remounting — she keeps walking while you navigate. */}
+        <NavCompact />
         <KunaiFoxRoamer />
         <PrivacyAnalytics />
         <PrivacySpeedInsights />

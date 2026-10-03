@@ -20,7 +20,18 @@ import Link from "next/link";
  * itself and offers the one action that fills it is better than a section that
  * quietly isn't there.
  */
-export function SponsorWall({ sponsors }: { readonly sponsors: readonly Sponsor[] }) {
+export function SponsorWall({
+  sponsors,
+  withAction = true,
+}: {
+  readonly sponsors: readonly Sponsor[];
+  /**
+   * Whether the empty wall carries its own "Be the first" button. A section that
+   * already has a Sponsor button turns this off, so one view never offers the same
+   * action twice.
+   */
+  readonly withAction?: boolean;
+}) {
   if (sponsors.length === 0) {
     return (
       <Empty className="border-border bg-card/40 border border-dashed">
@@ -34,16 +45,18 @@ export function SponsorWall({ sponsors }: { readonly sponsors: readonly Sponsor[
             says they want to be listed.
           </EmptyDescription>
         </EmptyHeader>
-        <EmptyContent>
-          <Button
-            size="sm"
-            render={<Link href={SPONSOR_URL} target="_blank" rel="noreferrer noopener" />}
-            nativeButton={false}
-          >
-            Be the first
-            <span className="sr-only"> (opens GitHub Sponsors in a new tab)</span>
-          </Button>
-        </EmptyContent>
+        {withAction ? (
+          <EmptyContent>
+            <Button
+              size="sm"
+              render={<Link href={SPONSOR_URL} target="_blank" rel="noreferrer noopener" />}
+              nativeButton={false}
+            >
+              Be the first
+              <span className="sr-only"> (opens GitHub Sponsors in a new tab)</span>
+            </Button>
+          </EmptyContent>
+        ) : null}
       </Empty>
     );
   }

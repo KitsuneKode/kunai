@@ -38,6 +38,25 @@
     overflow: hidden;
   }
 
+  /* The bar shrinks once the page has scrolled (see `NavCompact`). It is a scale of
+     the whole pill, not a change of its width or padding: a transform stays on the
+     compositor, where animating the bar's size would reflow it every frame. It
+     scales about its top centre so it tucks toward the top of the page rather than
+     drifting, and it gains a little depth because it is now over content. */
+  #nd-home-layout #nd-nav > div {
+    transform-origin: 50% 0;
+    transition:
+      transform 240ms var(--ease-out),
+      box-shadow 240ms var(--ease-out),
+      background-color 240ms var(--ease-out);
+  }
+
+  html[data-nav-compact="true"] #nd-home-layout #nd-nav > div {
+    transform: scale(0.92);
+    box-shadow: var(--kunai-shadow-md);
+    background: color-mix(in oklab, var(--kunai-surface) 90%, transparent) !important;
+  }
+
   #nd-sidebar,
   #nd-toc {
     backdrop-filter: blur(16px);

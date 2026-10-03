@@ -3,6 +3,7 @@ import { KunaiFoxPatrol } from "@/components/brand/kunai-fox-patrol";
 import { codeMetadata } from "@/lib/code-metadata";
 import { docsGithubIssuesUrl, docsGithubRepoUrl } from "@/lib/docs-github";
 import { SUPPORT_PATH } from "@/lib/support";
+import { workshop } from "@/lib/workshop";
 import Link from "next/link";
 
 /**
@@ -23,6 +24,8 @@ type FooterLink = {
   readonly href: string;
   readonly label: string;
   readonly external?: boolean;
+  /** A short descriptor printed under the label. */
+  readonly note?: string;
 };
 
 const DOCS_LINKS: readonly FooterLink[] = [
@@ -54,34 +57,19 @@ const TRUST_LINKS: readonly FooterLink[] = [
   },
 ];
 
-/** Sibling tools from the same workshop — each is its own project, not a Kunai feature. */
-const ECOSYSTEM_LINKS: readonly FooterLink[] = [
-  {
-    href: "https://github.com/KitsuneKode/kittymux",
-    label: "kittymux",
-    external: true,
-  },
-  {
-    href: "https://github.com/KitsuneKode/sweep",
-    label: "sweep",
-    external: true,
-  },
-  {
-    href: "https://github.com/KitsuneKode/portless",
-    label: "portless",
-    external: true,
-  },
-  {
-    href: "https://github.com/KitsuneKode/run-cli",
-    label: "run-cli",
-    external: true,
-  },
-  {
-    href: "https://github.com/KitsuneKode/arche",
-    label: "arche",
-    external: true,
-  },
-];
+/**
+ * Sibling projects from the same workshop, from the shared curated list.
+ *
+ * The list lives in `lib/workshop.ts` (also used by the home page) and contains
+ * only the maintainer's own original work: forks are excluded on purpose, so a
+ * fork is never presented here as something KitsuneKode made.
+ */
+const ECOSYSTEM_LINKS: readonly FooterLink[] = workshop.map((project) => ({
+  href: project.repoUrl,
+  label: project.name,
+  note: project.kind,
+  external: true,
+}));
 
 function FooterLinkItem({ link }: { readonly link: FooterLink }) {
   const className =
@@ -91,6 +79,9 @@ function FooterLinkItem({ link }: { readonly link: FooterLink }) {
       <a href={link.href} rel="noreferrer" target="_blank" className={className}>
         {link.label}
         <span className="sr-only"> (opens in a new tab)</span>
+        {link.note ? (
+          <span className="text-fd-muted-foreground/80 block text-xs leading-5">{link.note}</span>
+        ) : null}
       </a>
     );
   }
