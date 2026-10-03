@@ -370,9 +370,7 @@ export function BrowseShell<T>({
   const calendarRouteKind = calendarRouteState.state.kind;
   const calendarRoutePending = calendarRouteKind === "loading" || calendarRouteKind === "retrying";
 
-  const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
-    buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
-  );
+  const [companionSecondary, setCompanionSecondary] = useState<DetailsPanelData["secondary"]>(null);
 
   // Calendar view detection and day-strip derived state.
   // Route identity is authoritative; a structured `calendar` item is only
@@ -929,19 +927,17 @@ export function BrowseShell<T>({
     [calendarDayFilter, calendarOptionsForDay],
   );
 
+  // Primary facts are derived in-render from settledOption so the header and
+  // the fact rows can never disagree: only `secondary` (the async provider
+  // lookup) is allowed to lag, and it arrives as its own update.
+  const companionPrimary = buildDetailsPanelDataFromBrowseOption(settledOption).primary;
   useEffect(() => {
-    const primaryData = buildDetailsPanelDataFromBrowseOption(settledOption);
-    setCompanionDetails(primaryData);
     let cancelled = false;
     void (async () => {
       await Bun.sleep(32);
       if (cancelled) return;
       const secondary = resolveBrowseDetailsSecondary(settledOption, { providerName: provider });
-      setCompanionDetails((current) => ({
-        ...current,
-        primary: primaryData.primary,
-        secondary,
-      }));
+      setCompanionSecondary(secondary);
     })();
     return () => {
       cancelled = true;
@@ -1845,8 +1841,8 @@ export function BrowseShell<T>({
                   />
                 ) : (
                   <DetailsSheetUI
-                    data={companionDetails}
-                    lines={buildDetailsSheetLines(selectedOption, companionDetails.secondary)}
+                    data={{ primary: companionPrimary, secondary: companionSecondary }}
+                    lines={buildDetailsSheetLines(settledOption, companionSecondary)}
                     width={previewWidth}
                     scrollIndex={0}
                     maxVisibleLines={viewport.breakpoint === "wide" ? 14 : 10}
