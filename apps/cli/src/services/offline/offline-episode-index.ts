@@ -3,7 +3,11 @@ import {
   type OfflineAvailabilityIndex,
 } from "@/domain/playback-source/offline-availability";
 import type { EpisodeInfo } from "@/domain/types";
-import { providerEpisodeIdentitiesEqual, type ProviderEpisodeIdentity } from "@kunai/types";
+import {
+  encodeProviderEpisodeIdentity,
+  providerEpisodeIdentitiesEqual,
+  type ProviderEpisodeIdentity,
+} from "@kunai/types";
 
 import type { OfflineAssetService } from "./OfflineAssetService";
 
@@ -114,4 +118,34 @@ export function findReadyJobIdForEpisode(
             options.providerEpisodeIdentity,
           )),
     )?.originJobId;
+}
+
+/** Locally indexed episode choices, including seasons and provider-native identities. */
+export function listReadyEpisodes(
+  offlineAssetService: OfflineAssetService,
+  titleId: string,
+): readonly EpisodeInfo[] {
+  const episodes = new Map<string, EpisodeInfo>();
+  for (const asset of offlineAssetService.listTitleAssets(titleId)) {
+    if (
+      asset.state !== "ready" ||
+      typeof asset.season !== "number" ||
+      typeof asset.episode !== "number" ||
+      !Number.isInteger(asset.season) ||
+      !Number.isInteger(asset.episode) ||
+      asset.season < 1 ||
+      asset.episode < 1
+    )
+      continue;
+    const episode: EpisodeInfo = {
+      season: asset.season,
+      episode: asset.episode,
+      providerEpisodeIdentity: asset.providerEpisodeIdentity,
+    };
+    const identity = asset.providerEpisodeIdentity
+      ? encodeProviderEpisodeIdentity(asset.providerEpisodeIdentity)
+      : "";
+    episodes.set(`${episode.season}:${episode.episode}:${identity}`, episode);
+  }
+  return [...episodes.values()].sort((a, b) => a.season - b.season || a.episode - b.episode);
 }

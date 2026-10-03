@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-03"
+lastReviewed: "2026-10-04"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -300,6 +300,13 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
   only for online acquisition. Source authority is resolved before adapter lookup, and local
   playback skips provider selection, traces, health feedback, remote prefetch, and post-play
   release reconciliation. Manual Next and autoplay use the offline episode index.
+- Active and post-play episode pickers list locally ready episodes across downloaded seasons,
+  retaining provider-native episode identity. They never fetch a catalog during local playback.
+- Local Tracks shows the downloaded source as a fact and delegates embedded audio/subtitle changes
+  to the player. Provider, source, and acquisition audio-mode switches require opening the title
+  online; stale track picks show feedback without changing preferences, invalidating caches, or
+  replaying the local file. The stream's local presentation marker never grants file access:
+  the player still requires exact path matching against a validated local source.
 - The full player-options path preserves that verified origin by exact media/sidecar path match, so
   resume, autoplay, timing, track preferences, and cancellation remain available without weakening
   mpv URL safety. A local launch failure is a local player problem: it never invalidates provider

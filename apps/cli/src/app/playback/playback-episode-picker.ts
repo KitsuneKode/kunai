@@ -41,6 +41,7 @@ export type PlaybackEpisodePickerInput = {
   downloadedEpisodes?: ReadonlySet<string>;
   /** False for offline-library launches; the picker then reads only the local index. */
   networkAllowed?: boolean;
+  localEpisodes?: readonly EpisodeInfo[];
   loadEpisodes?: typeof fetchEpisodes;
 };
 
@@ -60,6 +61,7 @@ export async function buildPlaybackEpisodePickerOptions({
   releaseBadges,
   downloadedEpisodes,
   networkAllowed = true,
+  localEpisodes,
   loadEpisodes = fetchEpisodes,
 }: PlaybackEpisodePickerInput): Promise<PlaybackEpisodePickerOptions> {
   const watchedByEpisode = new Map(
@@ -78,20 +80,25 @@ export async function buildPlaybackEpisodePickerOptions({
   }
 
   if (!networkAllowed) {
-    const prefix = `${currentEpisode.season}:`;
-    const episodes = [...(downloadedEpisodes ?? [])]
-      .filter((key) => key.startsWith(prefix))
-      .map((key) => Number(key.slice(prefix.length)))
-      .filter((episode) => Number.isInteger(episode) && episode > 0)
-      .sort((left, right) => left - right);
-    const options = episodes.map((episode) =>
+    const episodes: readonly EpisodeInfo[] =
+      localEpisodes ??
+      [...(downloadedEpisodes ?? [])]
+        .filter((key) => key.startsWith(`${currentEpisode.season}:`))
+        .map((key) => ({ season: currentEpisode.season, episode: Number(key.split(":")[1]) }))
+        .filter((entry) => Number.isInteger(entry.episode) && entry.episode > 0)
+        .sort((a, b) => a.episode - b.episode);
+    const multipleSeasons = episodes.some((entry) => entry.season !== currentEpisode.season);
+    const options = episodes.map((entry) =>
       buildEpisodePickerOption({
-        season: currentEpisode.season,
-        episode,
-        label: `Episode ${episode}`,
+        season: entry.season,
+        episode: entry.episode,
+        providerEpisodeIdentity: entry.providerEpisodeIdentity,
+        label: multipleSeasons
+          ? `S${entry.season} · Episode ${entry.episode}`
+          : `Episode ${entry.episode}`,
         offlineDownloaded: true,
-        current: episode === currentEpisode.episode,
-        history: watchedByEpisode.get(`${currentEpisode.season}:${episode}`),
+        current: entry.season === currentEpisode.season && entry.episode === currentEpisode.episode,
+        history: watchedByEpisode.get(`${entry.season}:${entry.episode}`),
       }),
     );
     return {
@@ -361,6 +368,6 @@ function mergeEpisodeDetail(
 function getInitialIndex(options: readonly ShellPickerOption<string>[], value: string): number {
   return Math.max(
     0,
-    options.findIndex((option) => option.value === value),
+    options.findIndex((option) => option.value === value || option.value.startsWith(`${value}:`)),
   );
 }

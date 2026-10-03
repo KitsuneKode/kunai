@@ -99,6 +99,44 @@ describe("retired-provider playback through the real container and phase", () =>
     });
   });
 
+  for (const scenario of ["series-postplay", "anime-postplay"]) {
+    test(`${scenario}: Episodes selects a downloaded row without remote metadata`, async () => {
+      const report = await runScenario(scenario);
+      expect(report.played).toHaveLength(2);
+      expect(report.played[1].filePath).toBe(join(report.dir, "owned-2.mp4"));
+      expect(report.pickerValues).toHaveLength(2);
+      expect(report.calls).toEqual({
+        registry: 0,
+        health: 0,
+        cache: 0,
+        selection: 0,
+        trace: 0,
+        network: 0,
+      });
+      if (scenario.startsWith("anime")) {
+        expect(report.currentEpisode.providerEpisodeIdentity).toEqual({
+          providerId: "retired-provider",
+          value: "OVA",
+        });
+      }
+    });
+  }
+
+  test("local Tracks shows file facts and refuses stale provider picks without changing preferences", async () => {
+    const report = await runScenario("movie-postplay-tracks");
+    expect(report.panelProviderRows).toBe(0);
+    expect(report.played).toHaveLength(1);
+    expect(report.provider).toBe("retired-provider");
+    expect(report.calls).toEqual({
+      registry: 0,
+      health: 0,
+      cache: 0,
+      selection: 0,
+      trace: 0,
+      network: 0,
+    });
+  });
+
   test("online acquisition still requires an available provider", async () => {
     const report = await runScenario("online");
     expect(report.played).toEqual([]);

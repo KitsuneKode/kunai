@@ -1,16 +1,16 @@
+import { capturePlaybackShellError } from "@/app-shell/playback-shell-error-capture";
+import {
+  openTracksPanel,
+  openPlaybackEpisodePicker,
+  buildPickerActionContext,
+  openSubtitlePicker,
+} from "@/app-shell/workflows";
 // =============================================================================
 // Playback Phase
 //
 // Handles episode selection → stream resolve → MPV playback → post-playback.
 // Returns when user wants to go back to search or switch mode.
 // =============================================================================
-
-import { capturePlaybackShellError } from "@/app-shell/playback-shell-error-capture";
-import {
-  openTracksPanel,
-  buildPickerActionContext,
-  openSubtitlePicker,
-} from "@/app-shell/workflows";
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { consumeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
@@ -171,6 +171,7 @@ import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import { usesProviderNativeEpisodeCatalog } from "@/domain/media/provider-native-episodes";
 import { enrichExternalIdsWithVideoMeta } from "@/domain/media/video-meta";
+import { decodeEpisodeSelectionValue } from "@/domain/playback/episode-selection";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/domain/playback/playback-history";
 import {
   didPlaybackReachCompletionThreshold,
@@ -237,6 +238,7 @@ import {
 import { queueHistoryMirror } from "@/services/media-actions/create-container-media-action-router";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
+import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
 import { findNextReadyEpisode } from "@/services/offline/offline-episode-index";
 import {
   createPlaybackStartupTimeline,
@@ -1184,16 +1186,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             selection: StreamSelectionIntent | null,
             resumeSeconds: number,
             reason: string,
-          ): Promise<ReturnType<typeof startEpisodeNavigation>> => {
+          ): Promise<ReturnType<typeof startEpisodeNavigation> | null> => {
             const { resolveTracksPanelPick } = await import("@/app/playback/tracks-panel-pick");
             const resolved = await resolveTracksPanelPick(picked, selection, {
               container,
               title,
               episode: pickedEpisode,
               currentProviderId: resolvedProviderId,
+              playbackSourceKind: sourceAuthority.kind,
               resumeSeconds,
               reason,
             });
+
+            if (resolved.kind === "noop" && sourceAuthority.kind === "local") return null;
 
             const restart = await applyTrackPickRestart({
               resolved,
@@ -1429,6 +1434,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 animeEpisodes: currentAnimeEpisodes,
                 watchedEntries,
                 downloadedEpisodes,
+                localEpisodes: localPlayback
+                  ? listReadyEpisodes(container.offlineAssetService, offlineTitleId)
+                  : undefined,
                 loadEpisodes: loadEpisodesOnce,
               }),
           );
@@ -3332,15 +3340,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              run.pendingStart = await completeSourceTrackPick(
+              const trackStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
                 selection,
                 restartResume,
                 "playback-control-track-override",
               );
-              recordTrackOverrideSelected(picked, selection);
-              continue;
+              if (trackStart) {
+                run.pendingStart = trackStart;
+                recordTrackOverrideSelected(picked, selection);
+                continue;
+              }
             }
           }
 
@@ -3365,15 +3376,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              run.pendingStart = await completeSourceTrackPick(
+              const trackStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
                 selection,
                 restartResume,
                 "playback-control-track-override",
               );
-              recordTrackOverrideSelected(picked, selection);
-              continue;
+              if (trackStart) {
+                run.pendingStart = trackStart;
+                recordTrackOverrideSelected(picked, selection);
+                continue;
+              }
             }
           }
 
@@ -3402,15 +3416,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              run.pendingStart = await completeSourceTrackPick(
+              const trackStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
                 selection,
                 restartResume,
                 "playback-control-track-override",
               );
-              recordTrackOverrideSelected(picked, selection);
-              continue;
+              if (trackStart) {
+                run.pendingStart = trackStart;
+                recordTrackOverrideSelected(picked, selection);
+                continue;
+              }
             }
           }
 
@@ -3778,6 +3795,24 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             invalidateRecentEpisodeStream,
             openPlaybackShell,
             chooseEpisodeFromMetadata: async (input) => {
+              if (sourceAuthority.kind === "local") {
+                const picker = await buildPlaybackEpisodePickerOptions({
+                  title,
+                  currentEpisode,
+                  isAnime: isAnimePlayback,
+                  networkAllowed: false,
+                  localEpisodes: listReadyEpisodes(container.offlineAssetService, offlineTitleId),
+                  watchedEntries: historyRepository.listByTitleIdentity(historyTitleLookup),
+                });
+                const picked = await openPlaybackEpisodePicker(
+                  container,
+                  currentEpisode.season,
+                  picker,
+                );
+                return picked && picker.options.some((row) => row.value === picked)
+                  ? decodeEpisodeSelectionValue(picked)
+                  : null;
+              }
               const { chooseEpisodeFromMetadata } = await import("@/session-flow");
               const outcome = await chooseEpisodeFromMetadata(input);
               // The post-play menu branches on success only, so report the

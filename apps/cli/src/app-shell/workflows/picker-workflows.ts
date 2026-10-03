@@ -5,6 +5,7 @@ import {
   type ListShellActionContext,
 } from "@/app-shell/pickers";
 import { buildTracksPanelData } from "@/app-shell/tracks-panel-data";
+import type { ShellPickerOption } from "@/app-shell/types";
 import type { Container } from "@/container";
 import {
   annotateCurrentTrackFailure,
@@ -260,5 +261,19 @@ export async function openAnimeEpisodeListPicker(
       label: episode.index === currentEpisode ? `${episode.label}  ·  current` : episode.label,
       detail: episode.detail,
     })),
+  });
+}
+
+/** Open already prepared episode choices without performing catalog acquisition. */
+export function openPlaybackEpisodePicker(
+  container: Container,
+  season: number,
+  picker: { readonly options: readonly ShellPickerOption<string>[]; readonly initialIndex: number },
+): Promise<string | null> {
+  return openSessionPicker(container.stateManager, {
+    type: "episode_picker",
+    season,
+    options: picker.options,
+    initialIndex: picker.initialIndex,
   });
 }

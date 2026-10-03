@@ -1,14 +1,51 @@
+import { mock } from "bun:test";
 import { join } from "node:path";
 
-import { PlaybackPhase } from "@/app/playback/PlaybackPhase";
+import { buildTracksPanelData } from "@/app-shell/tracks-panel-data";
 import { createContainer, disposeContainer } from "@/container";
 import type { PlaybackResult, TitleInfo } from "@/domain/types";
 import type { PlayerOptions } from "@/infra/player/PlayerService";
 import { DownloadJobsRepository } from "@kunai/storage";
 
 const scenario = process.argv[2] ?? "movie";
+const postplay = scenario.includes("postplay");
+const tracks = scenario === "movie-postplay-tracks";
+const pickerValues: string[] = [];
+let panelProviderRows = 0;
+let shellCalls = 0;
+const inkShell = await import("@/app-shell/ink-shell");
+if (postplay) {
+  // Mock UI input only in this isolated child; container, index and phase are real.
+  mock.module("@/app-shell/ink-shell", () => ({
+    ...inkShell,
+    openListShell: async () => null,
+    openPlaybackShell: async ({ container }: { container: import("@/container").Container }) => {
+      if (++shellCalls > 1) return "search";
+      if (!tracks) return "pick-episode";
+      const panel = await buildTracksPanelData(container.stateManager.getState().stream, container);
+      panelProviderRows =
+        panel.groups
+          .find((group) => group.section === "provider")
+          ?.rows.filter((row) => row.enabled).length ?? 0;
+      // A stale/forged selection must also be refused at the application boundary.
+      return { type: "track-selection", pick: { section: "provider", value: "vidlink" } };
+    },
+  }));
+  const sessionPicker = await import("@/app-shell/session-picker");
+  mock.module("@/app-shell/session-picker", () => ({
+    ...sessionPicker,
+    openSessionPicker: async (
+      _manager: unknown,
+      picker: { options: readonly { value: string }[] },
+    ) => {
+      pickerValues.push(...picker.options.map((row) => row.value));
+      return picker.options[1]?.value ?? null;
+    },
+  }));
+}
+const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
 const container = await createContainer({
-  providerModulesOverride: [],
+  ...(tracks ? {} : { providerModulesOverride: [] }),
   searchServiceDefinitions: [],
 });
 const stop = new AbortController();
@@ -54,6 +91,9 @@ try {
       mediaKind: anime ? "anime" : series ? "series" : "movie",
       mode: anime ? "anime" : "series",
       providerId: sourceProvider,
+      providerEpisodeIdentity: anime
+        ? { providerId: sourceProvider, value: episode === 1 ? "0" : "OVA" }
+        : undefined,
       season: series ? 1 : undefined,
       episode: series ? episode : undefined,
       streamUrl: "https://example.invalid/unreachable",
@@ -91,9 +131,10 @@ try {
     });
   }
 
-  container.providerRegistry.get = () => {
+  const originalGet = container.providerRegistry.get.bind(container.providerRegistry);
+  container.providerRegistry.get = (id) => {
     calls.registry++;
-    return undefined;
+    return tracks ? originalGet(id) : undefined;
   };
   container.providerRegistry.getCompatible = () => {
     calls.registry++;
@@ -150,9 +191,13 @@ try {
         event: { type: "playback-progress", positionSeconds: 20, durationSeconds: 120 },
       });
       options.onNearEof?.();
-      if (series && played.length === 1 && !autoplay)
+      if (series && played.length === 1 && !autoplay && !postplay)
         container.playerControl.signalPlaybackAction("next");
-      else if (!playerFailure && !(autoplay && played.length === 1))
+      else if (
+        !playerFailure &&
+        !(autoplay && played.length === 1) &&
+        !(postplay && played.length === 1)
+      )
         stop.abort("test verified handoff");
       return {
         endReason: playerFailure ? "error" : autoplay && played.length === 1 ? "eof" : "quit",
@@ -176,6 +221,10 @@ try {
     "RESULT " +
       JSON.stringify({
         result,
+        pickerValues,
+        panelProviderRows,
+        provider: container.stateManager.getState().provider,
+        currentEpisode: container.stateManager.getState().currentEpisode,
         calls,
         problem: container.stateManager.getState().playbackProblem,
         played: played.map((options) => ({
