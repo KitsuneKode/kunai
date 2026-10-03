@@ -27,6 +27,8 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   availableRanges,
+  CLOCK_SEAM_HOURS,
+  clockSeamIn,
   dayToEpoch,
   formatDayTick,
   isRangeKey,
@@ -56,8 +58,8 @@ import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "rec
  *   rather than dropping them, so the stack always sums to `active`: a true
  *   partition of the day's installs, not independent series glued together.
  * - **Total** draws `lifetime` alone: installs ever observed, a cumulative
- *   count that can legitimately fall when retention folds silent installs
- *   into the retired counter.
+ *   count. Retention moves a silent install out of the live table but into
+ *   the retired counter, which the total includes, so it only ever grows.
  *
  * Stacking `active + new` would draw `a + b` and overstate the population on
  * every single day — the views keep the nested pair and the partition on
@@ -124,7 +126,7 @@ function roundTenth(value: number | null): number | null {
   return value === null ? null : Math.round(value * 10) / 10;
 }
 
-export function ChartInstalls({
+function ChartInstallsView({
   points,
   from,
   to,
@@ -177,6 +179,10 @@ export function ChartInstalls({
       marker.day >= firstVisible &&
       marker.day <= lastVisible,
   );
+  // The day the labels changed from UTC to IST covers 18.5 hours, so it reads low.
+  // Marked on the chart and named under it, because an unexplained dip invites the
+  // wrong conclusion about the release that happened to land near it.
+  const seam = clockSeamIn(visible.map((point) => point.day));
   // `null`, not 0, where the wire did not publish the field — recharts treats
   // null as a gap, while 0 would draw a false floor under every old point.
   const hasNew = visible.some((point) => point.newInstalls !== null);
@@ -375,7 +381,7 @@ export function ChartInstalls({
           */}
           <AreaChart
             data={data}
-            margin={{ left: 4, right: 20, top: markers.length > 0 ? 20 : 4 }}
+            margin={{ left: 4, right: 20, top: markers.length > 0 || seam ? 20 : 4 }}
             onMouseMove={(state) => reportHover(state?.activeLabel)}
             onMouseLeave={() => onDayHover?.(null)}
             onClick={(state) => reportHover(state?.activeLabel)}
@@ -468,6 +474,20 @@ export function ChartInstalls({
                 }}
               />
             ))}
+            {seam ? (
+              <ReferenceLine
+                x={dayToEpoch(seam)}
+                stroke="var(--kunai-chart-marker)"
+                strokeDasharray="1 3"
+                ifOverflow="visible"
+                label={{
+                  value: "IST",
+                  position: "top",
+                  fill: "var(--kunai-chart-marker)",
+                  fontSize: 12,
+                }}
+              />
+            ) : null}
             {effectiveMetric === "total" ? (
               <Area
                 dataKey="lifetimeInstalls"
@@ -541,7 +561,22 @@ export function ChartInstalls({
             <ChartLegend content={<ChartLegendContent />} />
           </AreaChart>
         </ChartContainer>
+        {seam ? (
+          <p className="text-muted-foreground m-0 mt-2 px-2 text-xs text-pretty sm:px-0">
+            Day labels switch from UTC to IST at the dotted line, so{" "}
+            {formatDayTick(dayToEpoch(seam))} covers {CLOCK_SEAM_HOURS} hours and reads low. Nothing
+            was lost.
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );
 }
+
+/**
+ * Memoised on purpose. The parent holds the hovered day and re-renders on every
+ * day boundary the pointer crosses; without this the whole recharts tree
+ * re-rendered with it, in the middle of the gesture that caused it. Every prop is
+ * stable (server-built arrays and a `setState` callback), so the memo holds.
+ */
+export const ChartInstalls = React.memo(ChartInstallsView);
