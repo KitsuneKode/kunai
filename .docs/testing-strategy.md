@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-04"
 ---
 
 # Kunai — Testing Strategy
@@ -749,3 +749,17 @@ For CLI UX:
 
 - prefer VHS tapes over brittle pseudo-interactive assertions when the real need is visual review
 - prefer deterministic state tests over VHS when the real need is behavior confidence
+
+## Automated PR review
+
+CodeRabbit configuration belongs in `.coderabbit.yaml` and must validate against
+[its published schema](https://coderabbit.ai/integrations/schema.v2.json). Tool settings
+are nested under `reviews.tools`; a root-level `tools` object is ignored by the bot.
+`reviews.auto_review.base_branches` includes `.*` so stacked PRs targeting feature
+branches are eligible alongside default-branch PRs. `reviews.fail_commit_status`
+reports review errors as failures instead of successful checks.
+
+A successful bot status is not evidence of a completed review: inspect the review
+or walkthrough for skipped-review and configuration warnings. Draft and explicitly
+excluded-title rules still apply. This configuration enables reviews; it does not
+make them required by branch protection or prove that a hosted review ran.
