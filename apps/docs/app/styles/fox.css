@@ -333,6 +333,13 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   display: block;
   transform-origin: 50% 90%;
   transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* She can be carried. A finger that starts on her must drag her, not scroll the page
+     or select her; a mouse gets the grab cursor so it is findable without a manual. */
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .kunai-roamer__fox:hover {
@@ -389,6 +396,26 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   animation: kunai-roamer-snooze 4.4s cubic-bezier(0.37, 0, 0.63, 1) infinite;
 }
 
+/* Held in the air by the scruff: lifted, tilted, and a little sorry for herself. The
+   transition is off so she follows the hand exactly instead of trailing it. */
+.kunai-roamer__fox.is-carried {
+  cursor: grabbing;
+  transition: none;
+  transform: scale(1.1) rotate(-5deg);
+  filter: drop-shadow(0 10px 8px rgb(0 0 0 / 0.38));
+  animation: none;
+}
+
+.kunai-roamer__fox.is-carried:hover {
+  transform: scale(1.1) rotate(-5deg);
+}
+
+/* Sulking is quiet: a little muted. The flat ears are the pose; this only adds to it,
+   and it fades with the mood a few seconds after she cools off. */
+.kunai-roamer__fox.is-sulking {
+  filter: saturate(0.7);
+}
+
 @keyframes kunai-roamer-snooze {
   0%,
   100% {
@@ -417,6 +444,36 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   line-height: 1.4;
   text-wrap: balance;
   animation: kunai-roamer-say 220ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Near a side of the window her bubble opens inward, so it is never cut off by the edge.
+   The animation drops the centring translate those two do not have. */
+.kunai-roamer__bubble[data-side="left"] {
+  left: 0;
+  transform: none;
+  animation-name: kunai-roamer-say-side;
+}
+
+.kunai-roamer__bubble[data-side="right"] {
+  left: auto;
+  right: 0;
+  transform: none;
+  animation-name: kunai-roamer-say-side;
+}
+
+.kunai-roamer__bubble {
+  max-width: min(15rem, calc(100vw - 2rem));
+}
+
+@keyframes kunai-roamer-say-side {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes kunai-roamer-say {
@@ -448,6 +505,19 @@ a:focus-visible .kunai-nav-title .kunai-fox {
 
 .kunai-roamer:hover .kunai-roamer__close {
   opacity: 1;
+}
+
+/* A touch screen has no hover, so the dismiss control would never appear and she could
+   not be sent away. There it is always shown, and large enough to hit with a thumb. */
+@media (pointer: coarse) {
+  .kunai-roamer__close {
+    top: -10px;
+    right: -10px;
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.95rem;
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

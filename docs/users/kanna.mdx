@@ -71,7 +71,7 @@ Three states, and the way out is a real way out.
 | ----------------- | ---------------------------------------------------------------------- |
 | unset             | the picture where your terminal can draw it, the glyph everywhere else |
 | `KUNAI_PET=glyph` | keep the companion, but only ever as `🦊`                              |
-| `KUNAI_PET=off`   | retire her entirely; no picture, no glyph, no lines                   |
+| `KUNAI_PET=off`   | retire her entirely; no picture, no glyph, no lines                    |
 
 ```bash
 KUNAI_PET=off kunai
@@ -81,11 +81,33 @@ KUNAI_PET=off kunai
 
 `KUNAI_POSTER=0` turns off images without retiring her, since the glyph is not an image. Both variables sit alongside the rest of the environment overrides in [Customization](/docs/users/customization).
 
+## The fox on this website
+
+On the website she is off duty, which is why she is chattier and has a temper here and not in your terminal. She follows your pointer, sits down when you stop, and curls up after a while.
+
+You can tell her where to be:
+
+| Do this                     | And she                                                           |
+| --------------------------- | ----------------------------------------------------------------- |
+| Carry her (drag) and let go | stays exactly there, and remembers it on every page and next time |
+| Press `s`                   | stays where she is                                                |
+| Press `c`                   | comes to your pointer                                             |
+| Press `n`                   | goes to sleep where she is                                        |
+| Click or tap her            | says something; the second time, how the controls work            |
+
+The keys are plain letters, so they do nothing while you are typing in a field, with a search or menu open, or with Ctrl, Alt or Cmd held, and they never swallow a key that meant something else.
+
+She has opinions about being managed. Carrying her and telling her to stay annoy her, a little each time. After a few she gets short with you, and after a few more she sulks: ears flat, muttering instead of chatting, and refusing to come when called. That lasts under a minute, wears off by itself if you leave her alone, and nothing on the page ever depends on her.
+
+On a touch screen there is no pointer to follow, so she perches asleep in the bottom-left corner. Tap her to wake her, drag her wherever you like and she stays there, and tap the **×** to send her away. The keys need a keyboard, so there they do not apply.
+
+To remove her, use the **×** beside her. A **Bring Kanna back** button appears at the bottom of the docs sidebar to undo it, and she remembers either choice.
+
 ## Reduced motion
 
 Every animation on this site and in the terminal is gated on your system's reduced-motion preference. With it on, the illustrated stills hold still; she does not breathe, lean, or react.
 
-The roaming fox is the exception: she is not frozen, she is not rendered at all. Something that follows your pointer has no still version worth showing, so `KunaiFoxRoamer` returns nothing under reduced motion and the stylesheet hides her as a second guard. Every other surface keeps its artwork; only the movement stops.
+The roaming fox is the exception: she is not frozen, she is not rendered at all, on any device. Something that follows your pointer, or can be carried about, has no still version worth showing, so `KunaiFoxRoamer` returns nothing under reduced motion and the stylesheet hides her as a second guard. Every other surface keeps its artwork; only the movement stops.
 
 ## Credits
 

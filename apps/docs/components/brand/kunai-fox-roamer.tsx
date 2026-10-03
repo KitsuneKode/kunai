@@ -12,13 +12,34 @@ import {
   STANDING_POSE,
   withHeading,
 } from "@/lib/fox-gait";
+import { commandForKey, type KannaCommand } from "@/lib/kanna-controls";
+import {
+  CALM,
+  isStubborn,
+  linesFor,
+  moodOf,
+  react as reactMood,
+  SULKING_MUTTERS,
+  tipFor,
+  type KannaEvent,
+  type Mood,
+  type MoodState,
+  type Reaction,
+} from "@/lib/kanna-mood";
+import { parsePlace, PLACE_KEY, type Place, seedFor, toPlace } from "@/lib/kanna-place";
 import {
   createRoamerState,
   poseForPhase,
   stepRoamer,
   type RoamerPhase,
 } from "@/lib/roamer-machine";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 /**
  * Kanna, loose on the page.
@@ -33,12 +54,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * way, and one chatty line in someone's shell is a bug. A marketing page is her
  * off duty. Same character, different room.
  *
+ * ## Telling her where to be
+ *
+ * She follows the pointer until you say otherwise. Carry her somewhere and she
+ * stays there, and remembers it across pages and visits; `s` makes her stay where
+ * she is, `c` calls her back, `n` sends her to sleep. She has opinions about being
+ * managed: carrying her and telling her to stay annoy her (`lib/kanna-mood.ts`),
+ * and past a point she sulks, which means flat ears, grumbling, and refusing to come
+ * when called for a short while. It is bounded and it wears off; nothing on the page
+ * ever depends on her.
+ *
+ * ## On a touch screen
+ *
+ * There is no pointer to follow, so she perches in the bottom-left corner asleep.
+ * Tap to wake her, drag to move her (she stays where you leave her), tap the × to
+ * dismiss her.
+ *
  * ## Restraint
  *
  * She is dismissible and stays dismissed, she never covers anything (pointer
- * events pass straight through except on her), she only exists on a fine
- * pointer, and `prefers-reduced-motion` removes her entirely rather than
- * freezing her mid-page.
+ * events pass straight through except on her), and `prefers-reduced-motion`
+ * removes her entirely rather than freezing her mid-page.
  */
 
 /**
@@ -82,6 +118,20 @@ const CHATTER_WINDOW_MS: Partial<Record<RoamerPhase, readonly [number, number]>>
 const CHATTER_RECHECK_MS = 1200;
 const BUBBLE_MS = 4200;
 const STORAGE_KEY = "kunai.roamer.dismissed";
+/** How much smaller she is on a touch screen. */
+const TOUCH_SCALE = 0.8;
+/** How far the pointer must travel with her held before it is a carry, not a click. */
+const DRAG_START_PX = 6;
+/** How far from a side the window must leave her before her bubble opens inward. */
+const BUBBLE_EDGE_PX = 150;
+
+type BubbleSide = "left" | "center" | "right";
+
+function bubbleSideFor(x: number): BubbleSide {
+  if (x < BUBBLE_EDGE_PX) return "left";
+  if (x > window.innerWidth - BUBBLE_EDGE_PX) return "right";
+  return "center";
+}
 
 /**
  * What she says, by state.
@@ -132,10 +182,9 @@ const SLEEPY_LINES = [
   "mm. filler episode.",
 ] as const;
 
-const POKED_LINES = ["hey.", "you clicked me. bold.", "yes?", "i'm working.", "rude."] as const;
-
-/** The pool that matches what she is visibly doing. */
-function poolFor(phase: RoamerPhase): readonly string[] {
+/** The pool that matches what she is visibly doing, and how she feels about it. */
+function poolFor(phase: RoamerPhase, mood: Mood): readonly string[] {
+  if (mood === "sulking") return SULKING_MUTTERS;
   if (phase === "asleep") return SLEEPY_LINES;
   if (phase === "walking") return WALKING_LINES;
   return RESTING_LINES;
@@ -155,7 +204,12 @@ type GaitState = {
   settleMs: number;
 };
 
-export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
+export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number }) {
+  // Smaller on a touch screen, where she sits in a corner over the page instead of
+  // trailing a pointer beside it, so she takes less of a small screen. Set once, on
+  // mount, from the same query that decides she perches.
+  const [coarse, setCoarse] = useState(false);
+  const size = coarse ? Math.round(fullSize * TOUCH_SCALE) : fullSize;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
   // Her whole movement state lives in a ref, not React state: it advances every
@@ -171,6 +225,24 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const gait = useRef<GaitState>({ phase: 0, heading: 0, pose: STANDING_POSE, settleMs: 0 });
   const lastFrame = useRef(0);
   const seeded = useRef(false);
+  // Where she has been told to be. While pinned she ignores the pointer and simply
+  // rests where she is, which is what makes "stay" cost no new movement code.
+  const pinned = useRef(false);
+  const perched = useRef(false);
+  const moodState = useRef<MoodState>(CALM);
+  const drag = useRef<{
+    dx: number;
+    dy: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressClick = useRef(false);
+  const pokes = useRef(0);
+  const [mood, setMood] = useState<Mood>("content");
+  const [carried, setCarried] = useState(false);
+  const [bubbleSide, setBubbleSide] = useState<BubbleSide>("center");
+  const bubbleSideRef = useRef<BubbleSide>("center");
 
   const [phase, setPhase] = useState<RoamerPhase>("sitting");
   const [facing, setFacing] = useState<"left" | "right">("right");
@@ -189,9 +261,9 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   // Resolved after mount so server and client agree on the first render, and so
   // a dismissal from a previous visit is honoured before she is ever painted.
   useEffect(() => {
-    const eligible = () =>
-      window.matchMedia("(pointer: fine)").matches &&
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // A fine pointer gives her something to follow; a touch screen gets a perch.
+    // Only the reduced-motion preference turns her off altogether.
+    const eligible = () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const isDismissed = () => {
       try {
         return window.localStorage.getItem(STORAGE_KEY) === "1";
@@ -199,7 +271,30 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
         return false;
       }
     };
-    if (eligible() && !isDismissed()) setEnabled(true);
+    // Where she starts: the place she was last left, if there is one, and on a touch
+    // screen (nothing to follow) a perch in the corner, asleep. Otherwise she waits
+    // for the pointer and is dropped in beside it on first sight.
+    const seedPlace = () => {
+      perched.current = !window.matchMedia("(pointer: fine)").matches;
+      setCoarse(perched.current);
+      const view = { width: window.innerWidth, height: window.innerHeight };
+      let saved: Place | null = null;
+      try {
+        saved = parsePlace(window.localStorage.getItem(PLACE_KEY));
+      } catch {
+        // No store, no remembered place: she just starts fresh.
+      }
+      const seed = seedFor({ perched: perched.current, saved, view, margin: fullSize / 2 + 4 });
+      if (seed) {
+        machine.current = { ...createRoamerState(seed.at), phase: seed.phase };
+        pinned.current = true;
+        seeded.current = true;
+      }
+    };
+    if (eligible() && !isDismissed()) {
+      seedPlace();
+      setEnabled(true);
+    }
     // "Bring Kanna back" — the reverse of dismiss. Anything on the page can
     // dispatch this; she clears the flag and walks again without a reload.
     const restore = () => {
@@ -213,11 +308,78 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     };
     window.addEventListener("kunai:roamer-restore", restore);
     return () => window.removeEventListener("kunai:roamer-restore", restore);
-  }, []);
+  }, [machine, fullSize]);
 
   const say = useCallback((pool: readonly string[]) => {
     setLine((current) => pickLine(pool, current));
   }, []);
+
+  // What happened to her, and how she feels about it. Updates her mood and returns
+  // the reaction, so the caller can pick the line that fits.
+  const feel = useCallback((event: KannaEvent): Reaction => {
+    const reaction = reactMood(moodState.current, event, Date.now());
+    moodState.current = reaction.state;
+    setMood(reaction.mood);
+    return reaction;
+  }, []);
+
+  /** She reacts, and says so. */
+  const respond = useCallback(
+    (event: KannaEvent): Reaction => {
+      const reaction = feel(event);
+      say(linesFor(event, reaction.mood, reaction.outcome));
+      return reaction;
+    },
+    [feel, say],
+  );
+
+  // Where she was left, kept across pages and visits so "stay" means stay.
+  const remember = useCallback(() => {
+    try {
+      window.localStorage.setItem(
+        PLACE_KEY,
+        JSON.stringify(
+          toPlace(machine.current.pos, { width: window.innerWidth, height: window.innerHeight }),
+        ),
+      );
+    } catch {
+      // No store: she stays for this page view and forgets after.
+    }
+  }, [machine]);
+
+  const forget = useCallback(() => {
+    try {
+      window.localStorage.removeItem(PLACE_KEY);
+    } catch {
+      // Nothing was remembered to forget.
+    }
+  }, []);
+
+  /** Tell her where to be: stay where she is, come to the pointer, or go to sleep. */
+  const run = useCallback(
+    (command: KannaCommand) => {
+      const here = machine.current;
+      if (command === "come") {
+        const reaction = respond("come");
+        if (reaction.outcome === "refused") return;
+        pinned.current = false;
+        forget();
+        // Woken, if she was asleep, so she notices the pointer and walks to it.
+        if (here.phase === "asleep") machine.current = { ...here, phase: "sitting", restMs: 0 };
+        return;
+      }
+      pinned.current = true;
+      machine.current = {
+        ...here,
+        committed: here.pos,
+        phase: command === "nap" ? "asleep" : "sitting",
+        restMs: 0,
+      };
+      remember();
+      respond(command === "nap" ? "nap" : "stay");
+    },
+    [machine, respond, forget, remember],
+  );
 
   // Clear whatever she last said, on its own timer, so a new line always gets
   // its full read regardless of what triggered it.
@@ -263,7 +425,13 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       }
 
       const before = machine.current;
-      const next = stepRoamer(before, { pointer: pointer.current, dt });
+      // While she is carried she is where the hand puts her. While she is pinned, or
+      // sulking, she ignores the pointer and rests where she is. Otherwise she
+      // follows it, as she always did.
+      const ignoringPointer = pinned.current || isStubborn(moodState.current, Date.now());
+      const next = drag.current
+        ? before
+        : stepRoamer(before, { pointer: ignoringPointer ? null : pointer.current, dt });
       machine.current = next;
 
       // Keep her out of the docs chrome columns — sidebar on the left, TOC on
@@ -288,6 +456,16 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
         if (clampedX !== next.pos.x) {
           machine.current = { ...next, pos: { ...next.pos, x: clampedX } };
         }
+      }
+
+      // Keep her inside the window. A place chosen on a big screen, a resize, or a
+      // carry to the edge must never leave her half off the page.
+      {
+        const margin = size / 2 + 4;
+        const here = machine.current.pos;
+        const x = Math.min(Math.max(here.x, margin), Math.max(margin, window.innerWidth - margin));
+        const y = Math.min(Math.max(here.y, margin), Math.max(margin, window.innerHeight - margin));
+        if (x !== here.x || y !== here.y) machine.current = { ...machine.current, pos: { x, y } };
       }
 
       // The stride advances by the distance she actually covered, so her feet
@@ -321,10 +499,18 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
 
       // React state only when it actually changed: this runs every frame, and
       // setting an identical phase would re-render the whole subtree at 60Hz.
-      if (next.phase !== before.phase) setPhase(next.phase);
+      // Compared with what is drawn, not with the previous step: the phase is also
+      // set from outside the step (a nap, being woken, being put down), and a
+      // comparison with the previous step would never notice those.
+      if (machine.current.phase !== phaseRef.current) setPhase(machine.current.phase);
       if (next.facing !== before.facing) setFacing(next.facing);
 
       const pos = machine.current.pos;
+      const side = bubbleSideFor(pos.x);
+      if (side !== bubbleSideRef.current) {
+        bubbleSideRef.current = side;
+        setBubbleSide(side);
+      }
       host.style.transform = `translate3d(${(pos.x - size / 2).toFixed(1)}px, ${(
         pos.y -
         size / 2
@@ -339,6 +525,37 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       frameRef.current = null;
     };
   }, [enabled, size, machine]);
+
+  // The keys. Plain letters, so `commandForKey` is strict about where they count:
+  // never with a modifier, never in a field, never in a dialog such as search.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (!seeded.current) return;
+      const element = event.target instanceof Element ? event.target : null;
+      const command = commandForKey(
+        event,
+        element
+          ? {
+              tagName: element.tagName,
+              isContentEditable: element instanceof HTMLElement && element.isContentEditable,
+              inDialog: element.closest('[role="dialog"], dialog') !== null,
+            }
+          : null,
+      );
+      if (command) run(command);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [enabled, run]);
+
+  // Her mood fades while nobody is touching her, so re-read it now and then. React
+  // ignores a set to the value it already has, so this costs nothing while it is steady.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const timer = window.setInterval(() => setMood(moodOf(moodState.current, Date.now())), 5000);
+    return () => window.clearInterval(timer);
+  }, [enabled]);
 
   // Unprompted chatter. `phase` is read through a ref rather than a dependency
   // on purpose: as a dependency it re-ran this effect every time she started or
@@ -373,7 +590,9 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
         () => {
           // Silent until she has actually been seen, and never over a line the
           // reader is still reading.
-          if (seeded.current) say(poolFor(phaseRef.current));
+          if (seeded.current) {
+            say(poolFor(phaseRef.current, moodOf(moodState.current, Date.now())));
+          }
           schedule();
         },
         min + Math.random() * (max - min),
@@ -382,6 +601,69 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     schedule();
     return () => window.clearTimeout(timer);
   }, [enabled, say]);
+
+  // Carrying her. Pointer capture keeps the drag with her however fast the hand
+  // moves, and the same handlers serve a mouse and a finger.
+  const onFoxPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const pos = machine.current.pos;
+    drag.current = {
+      dx: pos.x - event.clientX,
+      dy: pos.y - event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onFoxPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const held = drag.current;
+    if (!held) return;
+    if (!held.moved) {
+      if (Math.hypot(event.clientX - held.startX, event.clientY - held.startY) < DRAG_START_PX) {
+        return;
+      }
+      held.moved = true;
+      setCarried(true);
+      setShowWalker(false);
+      respond("picked-up");
+    }
+    const pos = { x: event.clientX + held.dx, y: event.clientY + held.dy };
+    machine.current = { ...machine.current, pos, committed: pos, phase: "idle", restMs: 0 };
+  };
+
+  const onFoxPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const held = drag.current;
+    drag.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (!held?.moved) return;
+    // The click that follows a carry is not a poke.
+    suppressClick.current = true;
+    setCarried(false);
+    pinned.current = true;
+    machine.current = { ...machine.current, phase: "sitting", restMs: 0 };
+    remember();
+    respond("placed");
+  };
+
+  // A tap or click. The second one teaches the controls, once, in her own voice.
+  const poke = () => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    pokes.current += 1;
+    const here = machine.current;
+    if (here.phase === "asleep") machine.current = { ...here, phase: "sitting", restMs: 0 };
+    if (pokes.current === 2) {
+      say([tipFor(!perched.current)]);
+      return;
+    }
+    respond("poked");
+  };
 
   const dismiss = useCallback(() => {
     setEnabled(false);
@@ -396,18 +678,31 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
 
   if (!enabled) return null;
 
-  const pose: KunaiFoxPose = poseForPhase(phase);
+  // Carried, or sulking while she rests, she wears the put-out face.
+  const resting = phase !== "walking" && phase !== "asleep";
+  const pose: KunaiFoxPose =
+    carried || (mood === "sulking" && resting) ? "oops" : poseForPhase(phase);
 
   return (
     // Hidden from assistive tech, and out of the tab order, on purpose: she
     // only ever appears for a fine pointer, so there is no keyboard path that
     // could reach her and nothing here that is not decorative.
     <div ref={hostRef} className="kunai-roamer" aria-hidden="true">
-      {line ? <p className="kunai-roamer__bubble">{line}</p> : null}
+      {line ? (
+        <p className="kunai-roamer__bubble" data-side={bubbleSide}>
+          {line}
+        </p>
+      ) : null}
       <button
         type="button"
-        className={`kunai-roamer__fox is-${phase}`}
-        onClick={() => say(phase === "asleep" ? SLEEPY_LINES : POKED_LINES)}
+        className={`kunai-roamer__fox is-${phase}${carried ? " is-carried" : ""}${
+          !carried && mood === "sulking" ? " is-sulking" : ""
+        }`}
+        onClick={poke}
+        onPointerDown={onFoxPointerDown}
+        onPointerMove={onFoxPointerMove}
+        onPointerUp={onFoxPointerUp}
+        onPointerCancel={onFoxPointerUp}
         tabIndex={-1}
       >
         {showWalker ? (
