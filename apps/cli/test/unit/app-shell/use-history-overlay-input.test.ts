@@ -109,7 +109,7 @@ describe("handleHistoryOverlayInput", () => {
         onRedraw: () => calls.push("redraw"),
         pendingDelete: null,
         setPendingDelete: () => {},
-        onHistoryMutated: () => {},
+        onHistoryMutated: () => calls.push("history-mutated"),
         onConfirmSelection: () => {},
       },
     );
@@ -121,11 +121,13 @@ describe("handleHistoryOverlayInput", () => {
     await queueSettled;
     await Promise.resolve();
 
+    // The row's queue badge comes from the reloaded snapshot — a bare repaint
+    // would keep showing the pre-queue row.
     expect(calls).toEqual([
       "queue-start",
       "queue-finished",
       "status:Queued from history",
-      "redraw",
+      "history-mutated",
     ]);
   });
 

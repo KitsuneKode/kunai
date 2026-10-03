@@ -137,7 +137,9 @@ function runHistoryRowAction(
     .run({ actionId: action.actionId, item: action.item, source: "history" })
     .then((result) => {
       ctx.setOverlayStatus(result.status === "unsupported" ? result.reason : action.status);
-      ctx.onRedraw();
+      // Row actions mutate history (watched toggles, queue badges) — reload,
+      // not just repaint, or the list keeps showing the pre-action snapshot.
+      ctx.onHistoryMutated();
       return undefined;
     })
     .catch((error: unknown) => {
@@ -336,7 +338,7 @@ export function handleHistoryOverlayInput(
           ctx.setOverlayStatus(
             result.status === "unsupported" ? result.reason : "Queued from history",
           );
-          ctx.onRedraw();
+          ctx.onHistoryMutated();
           return undefined;
         })
         .catch((error: unknown) => {
