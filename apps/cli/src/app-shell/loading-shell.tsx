@@ -489,37 +489,60 @@ export const LoadingShell = React.memo(function LoadingShell({
     return () => clearTimeout(timer);
   }, [escapeNotice]);
 
+  // The input handler reads through a ref: state/handlers re-derive every
+  // render (stream lands, trouble flags flip, optional keys appear), and a
+  // keypress must never resolve against a stale bootstrap snapshot.
+  const liveInputContextRef = React.useRef({
+    state,
+    commandModeOpen,
+    onCancel,
+    canOpenSourcePicker,
+    recoveryView,
+    playbackTroubleActive,
+    playbackInputHandlers,
+  });
+  liveInputContextRef.current = {
+    state,
+    commandModeOpen,
+    onCancel,
+    canOpenSourcePicker,
+    recoveryView,
+    playbackTroubleActive,
+    playbackInputHandlers,
+  };
+
   useInput((input, key) => {
-    if (commandModeOpen) return;
+    const live = liveInputContextRef.current;
+    if (live.commandModeOpen) return;
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
       return;
     }
     if (key.escape) {
-      if (state.cancellable && onCancel) {
-        onCancel();
+      if (live.state.cancellable && live.onCancel) {
+        live.onCancel();
         return;
       }
       // Only the live resolve reads as a stuck wait — recovery/trouble views
       // already present their own decision keys.
-      if (state.operation !== "playing" && !recoveryView && !playbackTroubleActive) {
+      if (live.state.operation !== "playing" && !live.recoveryView && !live.playbackTroubleActive) {
         setEscapeNotice((current) => ({ seq: (current?.seq ?? 0) + 1 }));
       }
       return;
     }
 
     const effect = resolvePlaybackShellInput(input, key, {
-      operation: state.operation,
-      cancellable: Boolean(state.cancellable),
-      fallbackAvailable: Boolean(state.fallbackAvailable),
-      canOpenSourcePicker,
-      recoveryViewActive: Boolean(recoveryView),
-      playbackTroubleActive,
-      handlers: playbackInputHandlers,
+      operation: live.state.operation,
+      cancellable: Boolean(live.state.cancellable),
+      fallbackAvailable: Boolean(live.state.fallbackAvailable),
+      canOpenSourcePicker: live.canOpenSourcePicker,
+      recoveryViewActive: Boolean(live.recoveryView),
+      playbackTroubleActive: live.playbackTroubleActive,
+      handlers: live.playbackInputHandlers,
     });
     if (!effect) return;
 
-    applyPlaybackShellInputEffect(effect, playbackInputHandlers, () => {
+    applyPlaybackShellInputEffect(effect, live.playbackInputHandlers, () => {
       setMemoryPanelVisible((visible) => !visible);
     });
   });
