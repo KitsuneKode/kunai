@@ -966,7 +966,9 @@ export function createCurlReachabilityFetch(
     if (contentType) headers.set("content-type", contentType);
     if (redirectUrl) headers.set("location", redirectUrl);
     return new Response(
-      body.byteLength === 0 || CURL_NULL_BODY_STATUSES.has(status) ? null : body,
+      body.byteLength === 0 || CURL_NULL_BODY_STATUSES.has(status)
+        ? null
+        : new Blob([new Uint8Array(body)]),
       { status, headers },
     );
   };
