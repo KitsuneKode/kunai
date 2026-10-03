@@ -3,7 +3,7 @@ import { KunaiFoxPatrol } from "@/components/brand/kunai-fox-patrol";
 import { codeMetadata } from "@/lib/code-metadata";
 import { docsGithubIssuesUrl, docsGithubRepoUrl } from "@/lib/docs-github";
 import { SUPPORT_PATH } from "@/lib/support";
-import { workshop } from "@/lib/workshop";
+import { primaryUrl, workshop } from "@/lib/workshop";
 import Link from "next/link";
 
 /**
@@ -24,8 +24,6 @@ type FooterLink = {
   readonly href: string;
   readonly label: string;
   readonly external?: boolean;
-  /** A short descriptor printed under the label. */
-  readonly note?: string;
 };
 
 const DOCS_LINKS: readonly FooterLink[] = [
@@ -42,6 +40,7 @@ const PROJECT_LINKS: readonly FooterLink[] = [
   { href: "/feedback", label: "Feedback" },
   { href: "/docs/users/kanna", label: "Kanna, the fox" },
   { href: SUPPORT_PATH, label: "Support Kunai" },
+  { href: "/workshop#contact", label: "Contact" },
 ];
 
 const TRUST_LINKS: readonly FooterLink[] = [
@@ -60,16 +59,23 @@ const TRUST_LINKS: readonly FooterLink[] = [
 /**
  * Sibling projects from the same workshop, from the shared curated list.
  *
+ * Names only. A footer is for finding the way somewhere, and a descriptor under
+ * each name made this the tallest column on every page and the loudest thing in
+ * it. What each project is, with a picture, lives on `/workshop`, which the last
+ * link opens.
+ *
  * The list lives in `lib/workshop.ts` (also used by the home page) and contains
  * only the maintainer's own original work: forks are excluded on purpose, so a
  * fork is never presented here as something KitsuneKode made.
  */
-const ECOSYSTEM_LINKS: readonly FooterLink[] = workshop.map((project) => ({
-  href: project.repoUrl,
-  label: project.name,
-  note: project.kind,
-  external: true,
-}));
+const ECOSYSTEM_LINKS: readonly FooterLink[] = [
+  ...workshop.map((project) => ({
+    href: primaryUrl(project),
+    label: project.name,
+    external: true,
+  })),
+  { href: "/workshop", label: "All projects" },
+];
 
 function FooterLinkItem({ link }: { readonly link: FooterLink }) {
   const className =
@@ -79,9 +85,6 @@ function FooterLinkItem({ link }: { readonly link: FooterLink }) {
       <a href={link.href} rel="noreferrer" target="_blank" className={className}>
         {link.label}
         <span className="sr-only"> (opens in a new tab)</span>
-        {link.note ? (
-          <span className="text-fd-muted-foreground/80 block text-xs leading-5">{link.note}</span>
-        ) : null}
       </a>
     );
   }

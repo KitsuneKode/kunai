@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import fs from "node:fs";
+import path from "node:path";
 
 import { parseRepoPayload } from "../lib/github-repos";
-import { presentWorkshopMeta, STAR_DISPLAY_FLOOR, workshop } from "../lib/workshop";
+import {
+  presentWorkshopMeta,
+  primaryUrl,
+  projectsIn,
+  STAR_DISPLAY_FLOOR,
+  workshop,
+} from "../lib/workshop";
 
 describe("workshop list", () => {
   test("every project is a distinct repository under the maintainer's account", () => {
@@ -27,10 +35,63 @@ describe("workshop list", () => {
     }
   });
 
-  test("names the projects the maintainer asked to feature", () => {
+  test("names the projects the maintainer asked to feature, in the order they asked for", () => {
+    expect(workshop.map((project) => project.repo)).toEqual([
+      "Kitsu-Lab",
+      "kyma",
+      "js-questions-lab",
+      "sweep",
+      "kittymux",
+      "yt-playlist-dedupe",
+      "hyprland-caffeine-mode",
+    ]);
+  });
+
+  test("leaves out the projects the maintainer asked to hold back", () => {
     const repos = workshop.map((project) => project.repo);
-    for (const wanted of ["arche", "sweep", "kittymux", "run-cli", "js-questions-lab"]) {
-      expect(repos).toContain(wanted);
+    expect(repos).not.toContain("arche");
+    expect(repos).not.toContain("run-cli");
+  });
+
+  test("products come before tools, so the group order is the list order", () => {
+    const groups = workshop.map((project) => project.group);
+    expect(groups).toEqual([...groups].sort((a, b) => (a === b ? 0 : a === "products" ? -1 : 1)));
+    expect(projectsIn("products").map((project) => project.repo)).toEqual([
+      "Kitsu-Lab",
+      "kyma",
+      "js-questions-lab",
+    ]);
+    expect(projectsIn("tools")[0]?.repo).toBe("sweep");
+  });
+
+  test("every preview points at a real screenshot bundled with the site", () => {
+    // A preview that 404s is a broken image on the page. They are bundled, not hot-linked,
+    // so a visitor makes no request to another host for them.
+    for (const project of workshop) {
+      if (!project.preview) continue;
+      expect(project.preview.startsWith("/workshop/")).toBe(true);
+      const file = path.resolve(import.meta.dir, "../public", project.preview.slice(1));
+      expect(fs.existsSync(file)).toBe(true);
+      expect(fs.statSync(file).size).toBeGreaterThan(5_000);
+      // A screenshot is a page of content, not a megabyte of it.
+      expect(fs.statSync(file).size).toBeLessThan(150_000);
+    }
+  });
+
+  test("a project with a live site is shown with a preview of it", () => {
+    for (const project of projectsIn("products")) expect(project.preview).toBeDefined();
+  });
+
+  test("a card's name goes to the site when there is one, and the source when there is not", () => {
+    const byRepo = new Map(workshop.map((project) => [project.repo, project]));
+    expect(primaryUrl(byRepo.get("kyma")!)).toBe("https://kyma.kitsunekode.in");
+    expect(primaryUrl(byRepo.get("kittymux")!)).toBe("https://github.com/KitsuneKode/kittymux");
+  });
+
+  test("the page summary says more than the home tagline, and is not an essay", () => {
+    for (const project of workshop) {
+      expect(project.summary.length).toBeGreaterThan(project.tagline.length);
+      expect(project.summary.length).toBeLessThan(260);
     }
   });
 });

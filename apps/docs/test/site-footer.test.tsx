@@ -43,18 +43,34 @@ describe("SiteFooter", () => {
       "https://github.com/KitsuneKode/kunai",
       "https://github.com/KitsuneKode/kunai/issues",
       "https://www.npmjs.com/package/@kitsunekode/kunai",
+      // A project with a site links to the site; one without links to its source.
+      "https://kitsulab.kitsunekode.in",
+      "https://kyma.kitsunekode.in",
+      "https://jsquestionslab.kitsunekode.in",
+      "https://www.npmjs.com/package/@kitsunekode/sweep",
       "https://github.com/KitsuneKode/kittymux",
-      "https://github.com/KitsuneKode/sweep",
-      "https://github.com/KitsuneKode/run-cli",
-      "https://github.com/KitsuneKode/arche",
-      "https://github.com/KitsuneKode/js-questions-lab",
-      "https://github.com/KitsuneKode/yt-playlist-dedupe",
+      "https://yt-ddp.kitsunekode.in",
+      "https://github.com/KitsuneKode/hyprland-caffeine-mode",
     ]) {
       expect(html).toContain(`href="${href}"`);
     }
     expect(html).toContain('target="_blank"');
     expect(html).toContain("opens in a new tab");
     expect(html).toContain('rel="noreferrer"');
+  });
+
+  test("the workshop column is names only and leads to the full page", () => {
+    // Descriptors under every name made this the tallest column on every page. What each
+    // project is lives on /workshop, which the last link opens.
+    for (const descriptor of ["Playground", "Terminal tool", "Desktop tool", "Web app"]) {
+      expect(html).not.toContain(descriptor);
+    }
+    expect(html).toContain('href="/workshop"');
+    expect(html).toContain("All projects");
+  });
+
+  test("offers a way to make contact", () => {
+    expect(html).toContain('href="/workshop#contact"');
   });
 
   test("internal links stay in-app (no new tab)", () => {
