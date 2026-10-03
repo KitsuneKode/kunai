@@ -9,6 +9,12 @@ export type PlaybackOutcome =
   | "back_to_search"
   | "back_to_results"
   | "back_to_history"
+  // Object variants carry the failure reason through to the bounce surface:
+  // playbackNote is wiped by the phase's own finally and again by
+  // RESET_CONTENT, so feedback that must reach the user rides the outcome
+  // itself and lands on the next shell as a one-shot warning.
+  | { type: "back_to_results"; notice?: string }
+  | { type: "back_to_history"; notice?: string }
   | "mode_switch"
   | "quit"
   | { type: "browse_route"; route: "calendar" | "random" }

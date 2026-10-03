@@ -299,7 +299,7 @@ describe("PlaybackResolveCoordinator", () => {
   test("records cache and health diagnostics through one event bridge", async () => {
     const events: unknown[] = [];
     const diagnostics = {
-      record: (event: unknown) => events.push(event),
+      record: (event: Parameters<DiagnosticsService["record"]>[0]) => events.push(event),
       getRecent: () => [],
       getSnapshot: () => [],
       clear: () => {},
@@ -345,7 +345,7 @@ describe("PlaybackResolveCoordinator", () => {
   test("records provider fallback timeline diagnostics", async () => {
     const events: unknown[] = [];
     const diagnostics = {
-      record: (event: unknown) => events.push(event),
+      record: (event: Parameters<DiagnosticsService["record"]>[0]) => events.push(event),
       getRecent: () => [],
       getSnapshot: () => [],
       clear: () => {},
@@ -392,7 +392,7 @@ describe("PlaybackResolveCoordinator", () => {
   test("propagates resolve correlation into provider timeline diagnostics", async () => {
     const events: unknown[] = [];
     const diagnostics = {
-      record: (event: unknown) => events.push(event),
+      record: (event: Parameters<DiagnosticsService["record"]>[0]) => events.push(event),
       getRecent: () => [],
       getSnapshot: () => [],
       clear: () => {},
@@ -431,7 +431,7 @@ describe("PlaybackResolveCoordinator", () => {
   test("records source attempt breadcrumbs in provider timeline diagnostics", async () => {
     const events: unknown[] = [];
     const diagnostics = {
-      record: (event: unknown) => events.push(event),
+      record: (event: Parameters<DiagnosticsService["record"]>[0]) => events.push(event),
       getRecent: () => [],
       getSnapshot: () => [],
       clear: () => {},
@@ -476,7 +476,7 @@ describe("PlaybackResolveCoordinator", () => {
   test("records physical provider attempt and fallback evidence", async () => {
     const events: unknown[] = [];
     const diagnostics = {
-      record: (event: unknown) => events.push(event),
+      record: (event: Parameters<DiagnosticsService["record"]>[0]) => events.push(event),
       getRecent: () => [],
       getSnapshot: () => [],
       clear: () => {},
@@ -567,13 +567,16 @@ describe("PlaybackResolveCoordinator", () => {
   test("maps provider failure codes to real diagnostic classes, not raw or 'unknown'", async () => {
     const events: unknown[] = [];
     const diagnostics = {
-      record: (event: unknown) => events.push(event),
+      record: (event: Parameters<DiagnosticsService["record"]>[0]) => events.push(event),
       getRecent: () => [],
       getSnapshot: () => [],
       clear: () => {},
       buildSupportBundle: () => {
         throw new Error("not needed");
       },
+      // SAFETY: deliberately partial DiagnosticsService stub — this test only
+      // exercises record(); the rest throws on contact.
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub's incompatible member shapes force the unknown hop
     } as unknown as DiagnosticsService;
     const blockedFailure = {
       providerId: "vidking",
@@ -630,13 +633,16 @@ describe("PlaybackResolveCoordinator", () => {
   test("maps non-enum provider classes on the timeline to a real diagnostic class", async () => {
     const events: unknown[] = [];
     const diagnostics = {
-      record: (event: unknown) => events.push(event),
+      record: (event: Parameters<DiagnosticsService["record"]>[0]) => events.push(event),
       getRecent: () => [],
       getSnapshot: () => [],
       clear: () => {},
       buildSupportBundle: () => {
         throw new Error("not needed");
       },
+      // SAFETY: deliberately partial DiagnosticsService stub — this test only
+      // exercises record(); the rest throws on contact.
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub's incompatible member shapes force the unknown hop
     } as unknown as DiagnosticsService;
     // "not-found" classifies as provider-empty — not a DiagnosticFailureClass —
     // so the previous cast leaked an invalid enum value into the rollup.
@@ -677,7 +683,7 @@ describe("PlaybackResolveCoordinator", () => {
   test("records playback recovery decisions through diagnostics", async () => {
     const events: unknown[] = [];
     const diagnostics = {
-      record: (event: unknown) => events.push(event),
+      record: (event: Parameters<DiagnosticsService["record"]>[0]) => events.push(event),
       getRecent: () => [],
       getSnapshot: () => [],
       clear: () => {},
@@ -710,7 +716,7 @@ describe("PlaybackResolveCoordinator", () => {
   test("records provider selection decisions through diagnostics", async () => {
     const events: unknown[] = [];
     const diagnostics = {
-      record: (event: unknown) => events.push(event),
+      record: (event: Parameters<DiagnosticsService["record"]>[0]) => events.push(event),
       getRecent: () => [],
       getSnapshot: () => [],
       clear: () => {},

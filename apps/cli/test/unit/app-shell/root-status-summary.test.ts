@@ -46,6 +46,64 @@ describe("buildRootStatusSummary", () => {
     expect(summary.alert?.tone).toBe("warning");
   });
 
+  test("a playback note outranks the standing session flags as the alert", () => {
+    const base = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state: {
+        ...base,
+        mode: "series",
+        provider: "vidking",
+        view: "playback",
+        playbackStatus: "playing",
+        // A key-answer note set during playing used to land only in the
+        // loading diagnostics strip — invisible on the playing surface.
+        playbackNote: "No fallback provider for this stream.",
+        autoplaySessionPaused: true,
+      },
+      currentViewLabel: "playback",
+      rootStatus: "playing",
+    });
+
+    // Notes carry their own glyph — the alert repeats them verbatim.
+    expect(summary.alert?.text).toBe("No fallback provider for this stream.");
+    expect(summary.alert?.tone).toBe("info");
+  });
+
+  test("playbackProblem still outranks a playback note", () => {
+    const base = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state: {
+        ...base,
+        mode: "series",
+        provider: "vidking",
+        view: "playback",
+        playbackStatus: "playing",
+        playbackNote: "No next episode.",
+        playbackProblem: {
+          stage: "mpv",
+          severity: "blocking",
+          cause: "decoder crashed",
+          userMessage: "The decoder crashed.",
+          recommendedAction: "refresh",
+          secondaryActions: ["diagnostics"],
+        },
+      },
+      currentViewLabel: "playback",
+      rootStatus: "playing",
+    });
+
+    expect(summary.alert?.text).toBe("⚠ issue · decoder crashed");
+    expect(summary.alert?.tone).toBe("error");
+  });
+
   test("uses hardsub inventory in the root playback subtitle header", () => {
     const base = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },

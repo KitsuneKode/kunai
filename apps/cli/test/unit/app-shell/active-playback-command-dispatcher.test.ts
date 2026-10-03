@@ -155,6 +155,8 @@ describe("dispatchActivePlaybackCommand", () => {
       canToggleAutoplay: false,
     });
 
+    // "ignored" is the refusal signal — dispatchAppCommand maps it to the
+    // user-visible reason the shell flashes on the note channel.
     expect(result).toBe("ignored");
     expect(calls).toEqual([]);
   });
@@ -258,6 +260,8 @@ describe("dispatchActivePlaybackCommand", () => {
 
     expect(calls).toEqual([
       "dispatch:SET_SESSION_AUTOSKIP_PAUSED",
+      // The flag has its own standing banner — a stale key-answer note clears.
+      "dispatch:SET_PLAYBACK_FEEDBACK",
       "autoskip:false:playback-loading-command-autoskip",
     ]);
   });
@@ -380,9 +384,11 @@ function createDeps(
     },
     switchSessionMode: () => {
       calls.push("switch-mode");
+      return { switched: true };
     },
     setSessionLane: () => {
       calls.push("set-lane");
+      return { switched: true };
     },
     routeSearchShellAction: async (action: ShellAction) => {
       calls.push(`route:${action}`);

@@ -833,7 +833,13 @@ export function RootOverlayShell({
     ...(overlay.type === "diagnostics"
       ? ([{ key: "e", label: "export bundle", primary: true }] satisfies readonly FooterAction[])
       : []),
-    { key: "/", label: "commands", action: "command-mode" },
+    // Settings owns `/` itself — it is the search prefix there, and advertising
+    // it as palette here would double-fire both consumers on one keypress.
+    ...(overlay.type === "settings"
+      ? []
+      : ([
+          { key: "/", label: "commands", action: "command-mode" },
+        ] satisfies readonly FooterAction[])),
     { key: "esc", label: "close", action: "quit" },
   ];
   const { commandMode, commandInput, commandCursor, highlightedIndex, paletteNotice } =
@@ -841,6 +847,7 @@ export function RootOverlayShell({
       footerActions,
       commands,
       escapeAction: null,
+      slashHandledExternally: overlay.type === "settings",
       onResolve: (action) => {
         resolveRootSurfaceCommand({ container, state, action });
       },
@@ -1894,6 +1901,10 @@ export function RootOverlayShell({
           pendingDelete: historyPendingDelete,
           sourceChoiceTitleId: historySourceChoiceTitleId,
         }) &&
+        // `/` is the command-palette chord on every overlay footer — the filter
+        // must not also eat it, or one press opens the palette and leaves a
+        // stray "/" filtering the list behind it.
+        !(input === "/" && !key.ctrl && !key.meta) &&
         filterEditor.handleInput(input, key)
       ) {
         return;
@@ -2317,11 +2328,13 @@ export function RootOverlayShell({
               ]
         }
       />
-      <OverlayPanel
-        overlay={overlayPanel}
-        width={overlayLayout.contentColumns}
-        maxLinesOverride={maxLines}
-      />
+      <Box flexDirection="column" flexGrow={1} overflowY="hidden">
+        <OverlayPanel
+          overlay={overlayPanel}
+          width={overlayLayout.contentColumns}
+          maxLinesOverride={maxLines}
+        />
+      </Box>
 
       {commandMode ? (
         <CommandPalette

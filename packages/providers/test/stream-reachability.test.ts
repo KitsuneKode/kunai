@@ -3,10 +3,12 @@ import { describe, expect, test } from "bun:test";
 import { HLS_SEGMENT_PROBE_MIN_BYTES } from "../src/shared/hls-manifest";
 import {
   createGuardedFetch,
+  isConfiguredInitialTarget,
   isStreamReachableForPlaybackPreflight,
   isStreamReachableForResolve,
   probeStreamReachability,
   PROVIDER_API_SENSITIVE_HEADERS,
+  registerConfiguredEndpointOrigins,
   shouldAbortPlaybackForPreflight,
 } from "../src/shared/stream-reachability";
 
@@ -205,6 +207,29 @@ describe("stream reachability", () => {
     if (probe.status === "unreachable") {
       expect(probe.reason).toContain("text/html");
     }
+  });
+
+  test("a declared-HTML segment that is actually MPEG-TS is reachable", async () => {
+    // Upstreams disguise real segments as HTML documents to defeat
+    // content-type filters — vidrock's obsidiancircuit lane serves valid TS
+    // as `page-N.html`. The declared type is a claim; the bytes decide.
+    const tsSegment = new Uint8Array(HLS_SEGMENT_PROBE_MIN_BYTES);
+    tsSegment[0] = 0x47;
+    tsSegment[188] = 0x47;
+    tsSegment[376] = 0x47;
+
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/stream.m3u8",
+      fetchImpl: async (url: string) => {
+        if (url.endsWith("stream.m3u8")) {
+          return response(200, "#EXTM3U\n#EXTINF:3,\n/page-0.html\n");
+        }
+        return response(200, tsSegment, { "content-type": "text/html; charset=utf-8" });
+      },
+      timeoutMs: 200,
+    });
+
+    expect(probe).toEqual({ status: "reachable" });
   });
 
   test("abort mid-probe returns timeout", async () => {
@@ -549,7 +574,10 @@ describe("guarded provider fetch", () => {
       urls.push(url);
       return response(200, "ok");
     };
-    const lenient = createGuardedFetch({ fetchImpl, allowInitialPrivateTarget: true });
+    const lenient = createGuardedFetch({
+      fetchImpl,
+      allowInitialPrivateTarget: () => true,
+    });
 
     // A user-configured self-hosted endpoint (Invidious/Piped) is legitimate.
     const res = await lenient("http://127.0.0.1:3000/api/v1/search?q=x");
@@ -563,7 +591,7 @@ describe("guarded provider fetch", () => {
         : response(200);
     };
     await expect(
-      createGuardedFetch({ fetchImpl: redirecting, allowInitialPrivateTarget: true })(
+      createGuardedFetch({ fetchImpl: redirecting, allowInitialPrivateTarget: () => true })(
         "http://127.0.0.1:3000/x",
       ),
     ).rejects.toThrow("Blocked unsafe fetch target");
@@ -579,5 +607,218 @@ describe("guarded provider fetch", () => {
       "Blocked unsafe fetch target",
     );
     expect(called).toBe(false);
+  });
+
+  test("a Request input's own signal reaches the fetch impl when init carries none", async () => {
+    const controller = new AbortController();
+    let observed: AbortSignal | null | undefined;
+    const fetchImpl = async (_url: string, init: RequestInit) => {
+      observed = init.signal;
+      return response(200);
+    };
+    await guarded(fetchImpl)(new Request("https://api.example/a", { signal: controller.signal }));
+    expect(observed).toBe(controller.signal);
+
+    // And the caller's abort state is visible to the impl, not just the object.
+    controller.abort();
+    let abortedSeen = false;
+    const abortImpl = async (_url: string, init: RequestInit) => {
+      abortedSeen = init.signal?.aborted === true;
+      return response(200);
+    };
+    await guarded(abortImpl)(new Request("https://api.example/b", { signal: controller.signal }));
+    expect(abortedSeen).toBe(true);
+  });
+
+  test("a 303 redirect demotes the next hop to GET and drops the body", async () => {
+    const calls: { method: string; body: string | null; contentType: string | null }[] = [];
+    const fetchImpl = async (url: string, init: RequestInit) => {
+      calls.push({
+        method: init.method ?? "GET",
+        body: init.body ? await new Response(init.body).text() : null,
+        contentType: new Headers(init.headers).get("content-type"),
+      });
+      if (url === "https://api.example/a") {
+        return response(303, "", { location: "https://api.example/b" });
+      }
+      return response(200);
+    };
+
+    const request = new Request("https://api.example/a", {
+      method: "POST",
+      headers: { "content-type": "text/plain", "x-keep": "y" },
+      body: "payload",
+    });
+    const res = await guarded(fetchImpl)(request);
+
+    expect(res.status).toBe(200);
+    expect(calls[0]?.method).toBe("POST");
+    // Fetch semantics: the second hop is a bodiless GET with the request-body
+    // headers removed — replaying the POST would be a different request.
+    expect(calls[1]?.method).toBe("GET");
+    expect(calls[1]?.body).toBeNull();
+    expect(calls[1]?.contentType).toBeNull();
+  });
+
+  test("a 302 answering a POST demotes to GET; a 302 answering a PUT does not", async () => {
+    const seen: { url: string; method: string }[] = [];
+    const fetchImpl = async (url: string, init: RequestInit) => {
+      seen.push({ url, method: init.method ?? "GET" });
+      if (!url.endsWith("/next")) {
+        return response(302, "", { location: `${url}/next` });
+      }
+      return response(200);
+    };
+
+    await guarded(fetchImpl)("https://api.example/p", { method: "POST", body: "p" });
+    await guarded(fetchImpl)("https://api.example/u", { method: "PUT", body: "p" });
+
+    expect(seen.map((c) => c.method)).toEqual(["POST", "GET", "PUT", "PUT"]);
+  });
+
+  test("allowInitialPrivateTarget as a predicate scopes the exemption per URL", async () => {
+    const fetchImpl = async () => response(200, "ok");
+    const lanOnly = createGuardedFetch({
+      fetchImpl,
+      allowInitialPrivateTarget: (url) => url.startsWith("http://127.0.0.1:3000"),
+    });
+
+    expect((await lanOnly("http://127.0.0.1:3000/api/v1/search")).status).toBe(200);
+    // The provider-supplied-URL case — a private target outside the
+    // configured endpoint — never inherits the exemption.
+    await expect(lanOnly("http://10.0.0.1/admin")).rejects.toThrow("Blocked unsafe fetch target");
+    await expect(lanOnly("http://127.0.0.1:9999/other")).rejects.toThrow(
+      "Blocked unsafe fetch target",
+    );
+  });
+
+  test("isConfiguredInitialTarget exempts only registered endpoint origins", async () => {
+    registerConfiguredEndpointOrigins("reachability-test", [
+      "http://192.168.1.50:8000",
+      "not a url",
+      undefined,
+    ]);
+    const lane = createGuardedFetch({
+      fetchImpl: async () => response(200, "ok"),
+      allowInitialPrivateTarget: isConfiguredInitialTarget,
+    });
+
+    expect((await lane("http://192.168.1.50:8000/api/v1/search")).status).toBe(200);
+    // Same host, different port is a different origin — not exempt.
+    await expect(lane("http://192.168.1.50:8001/")).rejects.toThrow("Blocked unsafe fetch target");
+    // An unregistered private address stays blocked.
+    await expect(lane("http://10.99.0.1/")).rejects.toThrow("Blocked unsafe fetch target");
+  });
+});
+
+describe("stream reachability — fingerprint retry", () => {
+  // Bun's fetch carries a `preconnect` member, so a bare function is not
+  // assignable — graft it on like the app-side fixtures do.
+  const stubPlatformFetch = (status: number) =>
+    Object.assign(async () => response(status), {
+      preconnect: globalThis.fetch.preconnect,
+    });
+
+  test("a definitive Bun 403 retries over the player-shaped transport and reaches", async () => {
+    const calls: string[] = [];
+    // No fetchImpl — the platform path is the one that gets fingerprinted.
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = stubPlatformFetch(403);
+    try {
+      const probe = await probeStreamReachability({
+        url: "https://vault.example/stream.mp4",
+        timeoutMs: 500,
+        curlFetchImpl: async (url, init) => {
+          calls.push(`${init.method ?? "GET"} ${url}`);
+          return response(206, new Uint8Array(1));
+        },
+      });
+      expect(probe).toEqual({ status: "reachable" });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    expect(calls.length).toBeGreaterThan(0);
+  });
+
+  test("a 403 the curl transport also refuses stays unreachable", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = stubPlatformFetch(403);
+    try {
+      const probe = await probeStreamReachability({
+        url: "https://vault.example/stream.mp4",
+        timeoutMs: 500,
+        curlFetchImpl: async () => response(403),
+      });
+      expect(probe.status).toBe("unreachable");
+      if (probe.status === "unreachable") expect(probe.definitive).toBe(true);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test("curlFetchImpl null disables the retry entirely", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = stubPlatformFetch(403);
+    try {
+      const probe = await probeStreamReachability({
+        url: "https://vault.example/stream.mp4",
+        timeoutMs: 500,
+        curlFetchImpl: null,
+      });
+      expect(probe.status).toBe("unreachable");
+      if (probe.status === "unreachable") expect(probe.reason).toBe("HTTP 403");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test("an injected primary impl owns its transport — no retry unless it opts in", async () => {
+    let curlCalled = false;
+    const fetchImpl = async () => response(403);
+    const probe = await probeStreamReachability({
+      url: "https://vault.example/stream.mp4",
+      fetchImpl,
+      timeoutMs: 500,
+      curlFetchImpl: async () => {
+        curlCalled = true;
+        return response(206, new Uint8Array(1));
+      },
+    });
+    // Opted in — the curl impl was supplied, so the retry is allowed.
+    expect(curlCalled).toBe(true);
+    expect(probe).toEqual({ status: "reachable" });
+  });
+
+  test("an injected impl without a curl fallback is trusted with its own 403", async () => {
+    let curlCalled = false;
+    const probe = await probeStreamReachability({
+      url: "https://vault.example/stream.mp4",
+      fetchImpl: async () => response(403),
+      timeoutMs: 500,
+      curlFetchImpl: undefined,
+    });
+    expect(probe.status).toBe("unreachable");
+    expect(curlCalled).toBe(false);
+  });
+
+  test("a non-403 definitive verdict does not spend a curl retry", async () => {
+    let curlCalled = false;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = stubPlatformFetch(404);
+    try {
+      const probe = await probeStreamReachability({
+        url: "https://vault.example/stream.mp4",
+        timeoutMs: 500,
+        curlFetchImpl: async () => {
+          curlCalled = true;
+          return response(206, new Uint8Array(1));
+        },
+      });
+      expect(probe.status).toBe("unreachable");
+      if (probe.status === "unreachable") expect(probe.reason).toBe("HTTP 404");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    expect(curlCalled).toBe(false);
   });
 });

@@ -34,6 +34,31 @@ const SGR_MOUSE_PATTERN = new RegExp(`${ESC}\\[<(\\d+);(\\d+);(\\d+)([Mm])`, "g"
 const SGR_MOUSE_PARTIAL = new RegExp(`${ESC}\\[<[0-9;]*$`);
 const SGR_MOUSE_EXACT = new RegExp(`^${ESC}\\[<(\\d+);(\\d+);(\\d+)([Mm])$`);
 
+// ── Non-SGR reports: stripped, never parsed ─────────────────────────────────
+//
+// We enable SGR (1006) ourselves, so a legacy report arriving means the
+// terminal is misbehaving or a previous program left mode 9/1000 lit without
+// it. X10 sends `ESC [ M Cb Cx Cy` — three bytes, each value+32 so always
+// ≥ 0x20 (decoded UTF-8 can fuse two raw bytes ≥0x80 into one char, which is
+// why the third byte class is loose); urxvt sends `ESC [ Cb ; Cx ; Cy M`
+// without the `<`. Both shapes never appear as terminal input outside mouse
+// reporting, so dropping them is safe — the alternative is three garbage
+// keypresses in Ink per mouse event.
+const LEGACY_MOUSE_PATTERN = new RegExp(
+  `${ESC}\\[M[\\x20-\\u00ff\\ufffd]{3}|${ESC}\\[\\d+;\\d+;\\d+M`,
+  "g",
+);
+/**
+ * `\x1b[M` (plus up to 2 payload bytes) or a urxvt `Cb;Cx;Cy` prefix cut at a
+ * chunk end. The urxvt arm matches a leading number plus up to two `;` groups,
+ * which also holds mid-sequence keystrokes like a split `\x1b[1;5` (modified
+ * arrow) — safe because a held prefix is only prepended to the next chunk, and
+ * a recombined sequence that isn't a mouse report passes through untouched.
+ */
+const LEGACY_MOUSE_PARTIAL = new RegExp(
+  `${ESC}\\[M[\\x20-\\u00ff\\ufffd]{0,2}$|${ESC}\\[\\d+(;\\d*){0,2}$`,
+);
+
 type DecodedButton = {
   readonly button: MouseButton;
   readonly kind: MouseEvent["kind"];
@@ -103,7 +128,20 @@ export function splitMouseSequences(chunk: string): MouseSplitResult {
   const partial = SGR_MOUSE_PARTIAL.exec(tail);
   if (partial) {
     input += tail.slice(0, partial.index);
-    return { input, events, pendingTail: partial[0] };
+    return { input: stripLegacyMouse(input), events, pendingTail: partial[0] };
   }
-  return { input: input + tail, events, pendingTail: "" };
+  input += tail;
+  const legacyPartial = LEGACY_MOUSE_PARTIAL.exec(input);
+  if (legacyPartial) {
+    input = input.slice(0, legacyPartial.index);
+    return { input: stripLegacyMouse(input), events, pendingTail: legacyPartial[0] };
+  }
+  return { input: stripLegacyMouse(input), events, pendingTail: "" };
+}
+
+/** Remove X10/urxvt reports from already-SGR-split input. Pure drop — see the
+ * pattern comment for why these are never dispatched as events. */
+function stripLegacyMouse(input: string): string {
+  LEGACY_MOUSE_PATTERN.lastIndex = 0;
+  return input.replace(LEGACY_MOUSE_PATTERN, "");
 }

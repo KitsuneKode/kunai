@@ -24,7 +24,7 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
-import { parseRetryAfterHeader, ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
+import { parseRetryAfterHeader } from "@kunai/types";
 
 import {
   miruroInventorySourceId,
@@ -37,7 +37,7 @@ import {
   type AnimeEpisodeMetadata,
   fetchAnimeEpisodeMetadataByNumber,
   formatAnimeEpisodeLabel,
-  mergeMiruroPipeEpisodeMetadata,
+  mergeMiruroEpisodeMetadata,
   shouldSkipExternalEpisodeMetadataEnrichment,
 } from "../shared/anime-metadata";
 import {
@@ -47,121 +47,52 @@ import {
   miruroSubtitleDeliveryToMode,
 } from "../shared/anime-source-presentation";
 import {
-  curlCipherArgs,
-  type CurlCandidate,
-  isCloudflareBlockBody,
-  isCloudflareChallengeText,
-  resolveCurlCandidate,
-} from "../shared/curl-impersonate";
-import {
   expandHlsMasterInventory,
   isHlsDeadHostStatus,
   looksLikeHlsMasterUrl,
 } from "../shared/hls-ladder";
-import { isJsonNumber, isJsonObject, isJsonString, type JsonObject } from "../shared/json-value";
+import { isJsonNumber, isJsonString, type JsonObject } from "../shared/json-value";
 import { TTLCache } from "../shared/provider-cache";
 import { appendCycleEventsToResult, cycleExhaustedResult } from "../shared/provider-cycle";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
-import { ProviderQueryCache } from "../shared/provider-query";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import {
-  blockedLiteralTargetReason,
   isStreamReachabilityVerified,
-  resolvedAddressBlockReason,
   type StreamReachabilityProbeResult,
 } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
-import { miruroManifest, MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER } from "./manifest";
 import {
-  MIRURO_KNOWN_PIPE_BASE_URLS,
-  miruroPipeBaseUrls,
-  recordMiruroMirrorSuccess,
-} from "./mirrors";
+  fetchMiruroPlay,
+  listMiruroCatalogEpisodes,
+  lookupMiruroAnimeByAnilist,
+  MiruroCatalogError,
+  searchMiruroCatalog,
+  type MiruroCatalogAnime,
+  type MiruroCatalogPlayResponse,
+  type MiruroCatalogProvider,
+  type MiruroCatalogServer,
+} from "./catalog";
+import {
+  miruroManifest,
+  MIRURO_PROVIDER_ID,
+  MIRURO_SERVER_TRY_ORDER,
+  rankMiruroServerId,
+} from "./manifest";
 
 export { MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER };
 /** Canonical site origin (browser uses www; bare host redirects). */
 export const MIRURO_REFERER = "https://www.miruro.bz/";
-/**
- * The statically known pipe hosts. `mirrors.ts` owns the live order and can add
- * mirrors Miruro's status page lists; this stays as the cold-start fallback.
- *
- * `www.` only: that is what Chrome hits for `/api/secure/pipe`, and the bare
- * origins are 301 redirects to it. `miruro.com` is excluded because it serves a
- * landing page with no pipe at all.
- */
-export const MIRURO_PIPE_BASE_URLS = MIRURO_KNOWN_PIPE_BASE_URLS;
-
-/**
- * Consecutive Cloudflare HTML 403s before abandoning the remaining mirrors.
- *
- * Two different mirror domains refusing in a row is already evidence the block
- * follows the client rather than the host, and every further mirror would cost a
- * full request to learn the same thing. Deliberately not raised alongside the
- * mirror list: more mirrors makes fail-fast worth more, not less.
- */
-export const MIRURO_WAF_FAIL_FAST_THRESHOLD = 2;
-
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 /**
- * One Cloudflare-gated pipe call. Short on purpose: when a mirror is blocked it
- * fails fast enough that the next mirror is still reachable inside the attempt
- * budget, which is what turned a dub request into a ~24s wait.
+ * One candidate lane's resolve budget. Short on purpose: a lane that cannot
+ * produce a verified stream quickly should not hold siblings back inside the
+ * attempt budget — that is what turned a dub request into a ~24s wait.
  */
 const MIRURO_CANDIDATE_TIMEOUT_MS = 5_000;
-const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
-
-function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal) return Bun.sleep(ms);
-  if (signal.aborted) return Promise.resolve();
-  return Promise.race([
-    Bun.sleep(ms),
-    new Promise<void>((resolve) => {
-      const onAbort = () => {
-        signal.removeEventListener("abort", onAbort);
-        resolve();
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-    }),
-  ]);
-}
-
-let miruroPipeRetrySleepImpl: (ms: number, signal?: AbortSignal) => Promise<void> = sleepAbortable;
-
-const miruroPipeRetrySleep = (ms: number, signal?: AbortSignal) =>
-  miruroPipeRetrySleepImpl(ms, signal);
-
-export function setMiruroPipeRetrySleepForTest(
-  sleep: ((ms: number, signal?: AbortSignal) => Promise<void>) | null,
-): void {
-  miruroPipeRetrySleepImpl = sleep ?? sleepAbortable;
-}
-
-// Keyed by binary path — the resolved candidate can change if PATH changes
-// mid-process, and probing bare "curl" could report features of a different
-// binary than the one pipeCall spawns. Probe results are process-lifetime
-// facts (the binary does not change mid-run), so one week is "permanent".
-const curlHttp2Probes = new ProviderQueryCache<string, boolean>({
-  ttlMs: 7 * 24 * 60 * 60 * 1000,
-});
-
-function detectCurlHttp2Support(curlPath: string): Promise<boolean> {
-  return curlHttp2Probes.query(curlPath, () => probeCurlHttp2Support(curlPath));
-}
-
-async function probeCurlHttp2Support(curlPath: string): Promise<boolean> {
-  try {
-    const proc = Bun.spawn([curlPath, "--version"], { stdout: "pipe", stderr: "ignore" });
-    const [features, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-    return exitCode === 0 && /\bHTTP2\b/i.test(features);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Ceilings for the module-level caches. They were unbounded, so a long anime
  * session accumulated one entry per title/episode probed and never freed them —
@@ -190,7 +121,7 @@ export function clearMiruroCachesForTest(): void {
   sourceCache.clear();
 }
 
-type MiruroPipeStream = {
+type MiruroStream = {
   readonly url?: string;
   readonly type?: "hls" | "embed" | "mp4";
   readonly quality?: string;
@@ -214,15 +145,15 @@ function isNumericQualityLabel(value: string): boolean {
 }
 
 export type MiruroSourcesResponse = {
-  readonly streams?: readonly MiruroPipeStream[];
-  readonly subtitles?: readonly MiruroPipeSubtitle[];
-  readonly thumbnails?: readonly MiruroPipeThumbnail[];
+  readonly streams?: readonly MiruroStream[];
+  readonly subtitles?: readonly MiruroSubtitle[];
+  readonly thumbnails?: readonly MiruroThumbnail[];
   readonly intro?: { readonly start: number; readonly end: number };
   readonly outro?: { readonly start: number; readonly end: number };
   readonly download?: string;
 };
 
-type MiruroPipeSubtitle = {
+type MiruroSubtitle = {
   readonly url?: string;
   readonly file?: string;
   readonly lang?: string;
@@ -230,7 +161,7 @@ type MiruroPipeSubtitle = {
   readonly label?: string;
 };
 
-type MiruroPipeThumbnail = {
+type MiruroThumbnail = {
   readonly url?: string;
   readonly file?: string;
   readonly type?: string;
@@ -297,25 +228,6 @@ type MiruroCycleCandidateMetadata = {
   readonly sourceDetail?: string;
 };
 
-function base64urlToBytes(s: string): Uint8Array {
-  const pad = (4 - (s.length % 4)) % 4;
-  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad);
-  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-}
-
-function bytesToBase64url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-export function createMiruroPipeRequestUrls(
-  encodedPayload: string,
-  baseUrls: readonly string[] = MIRURO_PIPE_BASE_URLS,
-): string[] {
-  return baseUrls.map((baseUrl) => `${baseUrl}/api/secure/pipe?e=${encodedPayload}`);
-}
-
 export async function createMiruroResultFromPayload({
   input,
   sourceData,
@@ -339,7 +251,7 @@ export async function createMiruroResultFromPayload({
       startupPriority: input.startupPriority,
     });
   const sourceId = miruroInventorySourceId(serverProfile.id, audioCategory);
-  const { streams: expandedStreams, deadHosts } = await expandMiruroPipeStreams(
+  const { streams: expandedStreams, deadHosts } = await expandMiruroStreams(
     sourceData.streams ?? [],
     context,
     context?.signal,
@@ -566,7 +478,7 @@ export async function createMiruroResultFromPayload({
       startedAt,
       endedAt,
       steps: [
-        createTraceStep("provider", "Resolved Miruro through pipe API", {
+        createTraceStep("provider", "Resolved Miruro through catalog API", {
           providerId: MIRURO_PROVIDER_ID,
           attributes: { streams: streams.length },
         }),
@@ -584,7 +496,7 @@ export async function createMiruroResultFromPayload({
 }
 
 function createMiruroSubtitles(
-  subtitles: readonly MiruroPipeSubtitle[] | undefined,
+  subtitles: readonly MiruroSubtitle[] | undefined,
   sourceId: string,
   cachePolicy: CachePolicy,
 ): SubtitleCandidate[] {
@@ -610,7 +522,7 @@ function createMiruroSubtitles(
 }
 
 function firstMiruroThumbnailUrl(
-  thumbnails: readonly MiruroPipeThumbnail[] | undefined,
+  thumbnails: readonly MiruroThumbnail[] | undefined,
 ): string | undefined {
   const thumbnail = thumbnails?.find((entry) => entry.url || entry.file);
   return thumbnail?.url ?? thumbnail?.file;
@@ -646,12 +558,7 @@ function normalizeMiruroTimingSegment(
 function sortMiruroProviderEntries(
   entries: readonly (readonly [string, MiruroProviderEntry | undefined])[],
 ): readonly (readonly [string, MiruroProviderEntry | undefined])[] {
-  const rank = (key: string): number => {
-    // SAFETY: indexOf only checks membership; a non-member returns -1.
-    const index = MIRURO_SERVER_TRY_ORDER.indexOf(key as (typeof MIRURO_SERVER_TRY_ORDER)[number]);
-    return index >= 0 ? index : MIRURO_SERVER_TRY_ORDER.length;
-  };
-  return [...entries].sort(([a], [b]) => rank(a) - rank(b));
+  return [...entries].sort(([a], [b]) => rankMiruroServerId(a) - rankMiruroServerId(b));
 }
 
 /**
@@ -898,13 +805,13 @@ function collectMiruroAvailableAudioModes(
 }
 
 /**
- * Normalise Miruro pipe stream rows into final, playable leaves.
+ * Normalise Miruro source stream rows into final, playable leaves.
  *
  * Miruro servers return two incompatible shapes:
  *  - Labeled leaf playlists (e.g. `kiwi`): each row carries `quality` /
  *    `resolution` (`1080p`, `720p`, `360p`) and a direct `.m3u8` URL. The
- *    quality ladder comes straight from the pipe.
- *  - Unlabeled master playlists (e.g. `bonk`, `pewe`, `bee`): rows have no
+ *    quality ladder comes straight from the source data.
+ *  - Unlabeled master playlists (e.g. `icarus`, `vault-*-direct`): rows have no
  *    `quality`, and the HLS row is a `master.m3u8`.
  *
  * For labeled streams the quality is already final and passes through.
@@ -919,22 +826,22 @@ function collectMiruroAvailableAudioModes(
  * Expansion fetches are run in parallel and capped at 1.5 s so that
  * gatekept CDNs (owocdn via kwik.cx) do not block the pipeline.
  */
-async function expandMiruroPipeStreams(
-  streams: readonly MiruroPipeStream[],
+async function expandMiruroStreams(
+  streams: readonly MiruroStream[],
   context: ProviderRuntimeContext | undefined,
   signal?: AbortSignal,
-): Promise<{ streams: MiruroPipeStream[]; deadHosts: string[] }> {
+): Promise<{ streams: MiruroStream[]; deadHosts: string[] }> {
   const seen = new Set<string>();
-  const out: MiruroPipeStream[] = [];
+  const out: MiruroStream[] = [];
   const deadHosts: string[] = [];
 
-  function push(stream: MiruroPipeStream): void {
+  function push(stream: MiruroStream): void {
     if (!stream.url || seen.has(stream.url)) return;
     seen.add(stream.url);
     out.push({ ...stream, isActive: stream.isActive ?? true });
   }
 
-  const expandable: { stream: MiruroPipeStream; url: string; referer: string }[] = [];
+  const expandable: { stream: MiruroStream; url: string; referer: string }[] = [];
 
   for (const stream of streams) {
     if (!stream.url || stream.type === "embed") continue;
@@ -1071,7 +978,7 @@ function createMiruroServerProfile(
   return {
     id: providerKey,
     label: miruroTechnicalServerLabel(providerKey),
-    // Align with catalog defaults: sub assumes hardsub until pipe proves soft.
+    // Align with catalog defaults: sub assumes hardsub until the catalog proves soft.
     subtitleDelivery: audioCategory === "sub" ? "hardcoded" : "unknown",
     hardSubLanguage: audioCategory === "sub" ? "en" : undefined,
   };
@@ -1089,13 +996,13 @@ function resolveMiruroSubtitlePresentation(
   sourceData: MiruroSourcesResponse,
   preferredSubtitleLanguage?: string,
 ): MiruroSubtitlePresentation {
-  const pipeSubtitles = (sourceData.subtitles ?? []).filter(
+  const sourceSubtitles = (sourceData.subtitles ?? []).filter(
     (subtitle) => subtitle.url || subtitle.file,
   );
-  if (pipeSubtitles.length > 0) {
+  if (sourceSubtitles.length > 0) {
     const subtitleLanguages = [
       ...new Set(
-        pipeSubtitles
+        sourceSubtitles
           .map((subtitle) =>
             normalizeIsoLanguageCode(
               subtitle.lang ?? subtitle.language ?? subtitle.label ?? "unknown",
@@ -1134,7 +1041,7 @@ function resolveMiruroPlaybackHost(streamUrl: string | undefined): string {
   }
 }
 
-function rankMiruroStreams(streams: readonly MiruroPipeStream[]): MiruroPipeStream[] {
+function rankMiruroStreams(streams: readonly MiruroStream[]): MiruroStream[] {
   return streams
     .map((stream, index) => ({ stream, index }))
     .sort((a, b) => {
@@ -1150,7 +1057,7 @@ function rankMiruroStreams(streams: readonly MiruroPipeStream[]): MiruroPipeStre
     .map(({ stream }) => stream);
 }
 
-function isMiruroCdnStream(stream: MiruroPipeStream): boolean {
+function isMiruroCdnStream(stream: MiruroStream): boolean {
   if (!stream.url) return false;
   try {
     const host = new URL(stream.url).hostname.toLowerCase();
@@ -1164,7 +1071,7 @@ function isMiruroCdnStream(stream: MiruroPipeStream): boolean {
  * `bonk`'s CDN (ibyteimg.com) is image-only and serves PNG placeholders for
  * video segments — such streams must never count as a successful resolve.
  */
-function isMiruroPlaceholderStream(stream: MiruroPipeStream): boolean {
+function isMiruroPlaceholderStream(stream: MiruroStream): boolean {
   if (!stream.url) return false;
   try {
     return new URL(stream.url).hostname.toLowerCase().includes("ibyteimg");
@@ -1173,196 +1080,8 @@ function isMiruroPlaceholderStream(stream: MiruroPipeStream): boolean {
   }
 }
 
-function qualityRankFromMiruroStream(stream: MiruroPipeStream): number {
+function qualityRankFromMiruroStream(stream: MiruroStream): number {
   return animeQualityFields(stream.quality, stream.resolution?.height).qualityRank;
-}
-
-function xorDecrypt(encrypted: Uint8Array, key: Uint8Array): Uint8Array {
-  const result = new Uint8Array(encrypted.length);
-  for (let i = 0; i < encrypted.length; i++) {
-    result[i] = (encrypted[i] ?? 0) ^ (key[i % key.length] ?? 0);
-  }
-  return result;
-}
-
-/** Which endpoint contract a pipe body is expected to satisfy. */
-export type MiruroPipeExpectedKind = "episodes" | "sources" | "search";
-
-/**
- * One row of the pipe's `search` endpoint. Miruro relays AniList's catalog, so
- * this is AniList's Media shape — which is what lets the search keep working
- * when AniList's own API is down, while still yielding AniList ids.
- */
-export type MiruroSearchMedia = {
-  readonly id?: number;
-  readonly idMal?: number | null;
-  readonly type?: string | null;
-  readonly format?: string | null;
-  readonly status?: string | null;
-  readonly isAdult?: boolean | null;
-  readonly episodes?: number | null;
-  readonly duration?: number | null;
-  readonly averageScore?: number | null;
-  readonly popularity?: number | null;
-  readonly seasonYear?: number | null;
-  readonly startDate?: { readonly year?: number | null } | null;
-  readonly description?: string | null;
-  readonly title?: {
-    readonly english?: string | null;
-    readonly romaji?: string | null;
-    readonly native?: string | null;
-    readonly userPreferred?: string | null;
-  } | null;
-  readonly coverImage?: {
-    readonly extraLarge?: string | null;
-    readonly large?: string | null;
-  } | null;
-  readonly bannerImage?: string | null;
-};
-
-/**
- * One code per decode stage. A rotated key, a bumped obfuscation version, and a
- * reshaped endpoint payload all look like "provider returned nothing" without
- * these, which is exactly the silent exhaustion this provider used to produce.
- */
-export type MiruroPipeDecodeFailureCode =
-  | "pipe-key-missing"
-  | "pipe-version-mismatch"
-  | "pipe-base64-invalid"
-  | "pipe-xor-gunzip-failed"
-  | "pipe-json-syntax-invalid"
-  | "pipe-json-shape-invalid";
-
-/**
- * The message is the stage code and nothing else. Key hex, the encrypted body,
- * decrypted plaintext, and native parser messages (which quote body bytes) must
- * never reach a log line or a provider failure.
- */
-export class MiruroPipeDecodeError extends Error {
-  readonly code: MiruroPipeDecodeFailureCode;
-
-  constructor(code: MiruroPipeDecodeFailureCode) {
-    super(code);
-    this.name = "MiruroPipeDecodeError";
-    this.code = code;
-  }
-}
-
-/** The only obfuscation version this decoder understands. */
-const MIRURO_PIPE_OBFUSCATION_VERSION = "2";
-
-/**
- * `base64url(xor(gzipHeader, PIPE_KEY))` — present only on gzipped bodies, which
- * is why the `x-obfuscated` header is still required for plain ones.
- */
-const MIRURO_PIPE_GZIP_BODY_PREFIX = "bh4YNPj7";
-
-function parsePipeKey(keyHex: string | undefined): Uint8Array | null {
-  if (!keyHex || !/^(?:[0-9a-fA-F]{2})+$/.test(keyHex)) return null;
-  return new Uint8Array((keyHex.match(/.{2}/g) ?? []).map((byte) => parseInt(byte, 16)));
-}
-
-function isRecord<T>(value: T): value is T & JsonObject {
-  return isJsonObject(value);
-}
-
-const MIRURO_EPISODES_KEYS = ["providers", "mappings"] as const;
-const MIRURO_SOURCES_KEYS = [
-  "streams",
-  "subtitles",
-  "thumbnails",
-  "intro",
-  "outro",
-  "download",
-] as const;
-
-function isMiruroEpisodesResponse<T>(value: T): value is T & MiruroEpisodesResponse {
-  if (!isRecord(value)) return false;
-  if (MIRURO_SOURCES_KEYS.some((key) => key in value)) return false;
-  if (!MIRURO_EPISODES_KEYS.some((key) => key in value)) return false;
-  if ("providers" in value && !isRecord(value.providers)) return false;
-  if ("mappings" in value && !isRecord(value.mappings)) return false;
-  return true;
-}
-
-function isMiruroSearchResponse<T>(value: T): value is T & readonly MiruroSearchMedia[] {
-  // An empty list is a legitimate "no matches", not a shape failure.
-  return Array.isArray(value) && value.every((row) => isRecord(row) && isJsonNumber(row.id));
-}
-
-function isMiruroSourcesResponse<T>(value: T): value is T & MiruroSourcesResponse {
-  if (!isRecord(value)) return false;
-  if (MIRURO_EPISODES_KEYS.some((key) => key in value)) return false;
-  if (!MIRURO_SOURCES_KEYS.some((key) => key in value)) return false;
-  if ("streams" in value && !Array.isArray(value.streams)) return false;
-  if ("subtitles" in value && !Array.isArray(value.subtitles)) return false;
-  return true;
-}
-
-/**
- * Decode one obfuscated pipe body. Every stage that can fail — key, version,
- * base64, XOR/gunzip, JSON syntax, endpoint schema — raises its own code, so a
- * key rotation is never mistaken for a Cloudflare block or an empty catalog.
- */
-export function decodeMiruroPipePayload(input: {
-  readonly body: string;
-  readonly obfuscationVersion: string | null;
-  readonly expectedKind: MiruroPipeExpectedKind;
-  readonly keyHex?: string;
-}): MiruroEpisodesResponse | MiruroSourcesResponse | readonly MiruroSearchMedia[] {
-  const key = parsePipeKey(input.keyHex);
-  if (!key) throw new MiruroPipeDecodeError("pipe-key-missing");
-
-  const versionMatches =
-    input.obfuscationVersion === MIRURO_PIPE_OBFUSCATION_VERSION ||
-    (input.obfuscationVersion === null && input.body.startsWith(MIRURO_PIPE_GZIP_BODY_PREFIX));
-  if (!versionMatches) throw new MiruroPipeDecodeError("pipe-version-mismatch");
-
-  let encrypted: Uint8Array;
-  try {
-    encrypted = base64urlToBytes(input.body);
-  } catch {
-    throw new MiruroPipeDecodeError("pipe-base64-invalid");
-  }
-
-  let json: string;
-  try {
-    const decrypted = xorDecrypt(encrypted, key);
-    // SAFETY: decrypted.buffer is the Uint8Array's own backing buffer, which
-    // gunzipSync requires as an ArrayBuffer.
-    json =
-      decrypted[0] === 31 && decrypted[1] === 139
-        ? new TextDecoder().decode(Bun.gunzipSync(decrypted.buffer as ArrayBuffer))
-        : new TextDecoder().decode(decrypted);
-  } catch {
-    throw new MiruroPipeDecodeError("pipe-xor-gunzip-failed");
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    throw new MiruroPipeDecodeError("pipe-json-syntax-invalid");
-  }
-
-  if (input.expectedKind === "episodes") {
-    if (!isMiruroEpisodesResponse(parsed)) {
-      throw new MiruroPipeDecodeError("pipe-json-shape-invalid");
-    }
-    return parsed;
-  }
-
-  if (input.expectedKind === "search") {
-    if (!isMiruroSearchResponse(parsed)) {
-      throw new MiruroPipeDecodeError("pipe-json-shape-invalid");
-    }
-    return parsed;
-  }
-
-  if (!isMiruroSourcesResponse(parsed)) {
-    throw new MiruroPipeDecodeError("pipe-json-shape-invalid");
-  }
-  return parsed;
 }
 
 const MIRURO_ANILIST_ID_PREFIX = "anilist:";
@@ -1375,7 +1094,7 @@ function parsePositiveDecimalId(value: string | undefined): string | null {
 
 /**
  * The single AniList identity reader for both `listEpisodes()` and `resolve()`.
- * Every Miruro pipe query is keyed on a real AniList id, so a bare, padded, or
+ * Every Miruro catalog query is keyed on a real AniList id, so a bare, padded, or
  * foreign-catalog id must fail closed here rather than reach the API and come
  * back as an unexplained empty catalog.
  */
@@ -1392,7 +1111,7 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 /**
  * A finished catalog does not change, so it earns the long persistence that
- * makes the restart win worthwhile — the ~6s Cloudflare-gated pipe call is paid
+ * makes the restart win worthwhile — the multi-request catalog fetch is paid
  * once every 12h rather than once per session.
  */
 const MIRURO_EPISODES_TTL_FINISHED_MS = 12 * HOUR_MS;
@@ -1449,6 +1168,26 @@ export function computeMiruroEpisodesPersistTtlMs(
   );
 }
 
+/**
+ * AniList id → catalog anime row. The bridge is stable for a title's lifetime,
+ * so a session-cached lookup keeps `resolve` and `listEpisodes` from paying a
+ * second request each.
+ */
+async function getMiruroCatalogAnime(
+  context: ProviderRuntimeContext,
+  anilistId: string,
+  signal?: AbortSignal,
+): Promise<MiruroCatalogAnime | null> {
+  const cacheKey = `catalog-anime:${anilistId}`;
+  // SAFETY: this cache key namespace only ever holds MiruroCatalogAnime
+  // values written by lookupMiruroAnimeByAnilist below.
+  const hit = episodeCache.get(cacheKey) as MiruroCatalogAnime | null;
+  if (hit) return hit;
+  const anime = await lookupMiruroAnimeByAnilist(context, anilistId, signal);
+  if (anime) episodeCache.set(cacheKey, anime);
+  return anime;
+}
+
 /** Shared episode list fetch for listEpisodes + resolve. */
 export async function getMiruroEpisodesResponse(
   context: ProviderRuntimeContext,
@@ -1459,11 +1198,11 @@ export async function getMiruroEpisodesResponse(
 
   // 1. In-memory: instant within a session.
   // SAFETY: this cache key namespace only ever holds MiruroEpisodesResponse
-  // values written by pipeCall below.
+  // values written by the catalog fetch below.
   const memoryHit = episodeCache.get(cacheKey) as MiruroEpisodesResponse | null;
   if (memoryHit) return memoryHit;
 
-  // 2. Persistent: survives a restart, so the cold ~6s pipe call is paid once
+  // 2. Persistent: survives a restart, so the cold catalog fetch is paid once
   //    per catalog per TTL rather than once per session.
   const persistentHit = await context.cache?.read<MiruroEpisodesResponse>(
     MIRURO_EPISODES_CACHE_NAMESPACE,
@@ -1474,8 +1213,40 @@ export async function getMiruroEpisodesResponse(
     return persistentHit;
   }
 
-  // 3. Network.
-  const epData = await pipeCall(context, "episodes", { anilistId: Number(anilistId) }, signal);
+  // 3. Network: anilist → catalog id → episode list. The lookup is cached in
+  //    the same namespace — the bridge is stable for a title's lifetime.
+  const anime = await getMiruroCatalogAnime(context, anilistId, signal);
+  if (!anime) return null;
+  const catalogKind = anime.format === "MOVIE" ? "film" : "regular";
+  const catalogEpisodes = await listMiruroCatalogEpisodes(context, anime.id, {
+    kind: catalogKind,
+    signal,
+  });
+  const entries: MiruroEpisodeEntry[] = catalogEpisodes.flatMap((entry) => {
+    if (!isJsonNumber(entry.episode_number) || entry.episode_number <= 0) return [];
+    return [
+      {
+        id: `${anime.id}:${entry.episode_number}`,
+        number: entry.episode_number,
+        title: entry.title ?? undefined,
+        description: entry.synopsis ?? undefined,
+        image: entry.thumbnail_url ?? undefined,
+        airDate: entry.air_date ?? undefined,
+        // canon_type is the catalog's own filler classification — manga_canon
+        // is the "not filler" marker, everything else is non-canon content.
+        filler:
+          isJsonString(entry.canon_type) && entry.canon_type.length > 0
+            ? entry.canon_type !== "manga_canon"
+            : undefined,
+      },
+    ];
+  });
+  // The catalog list is the canonical episode rail. `episode_counts.dub` is a
+  // count, not a per-episode map, so dub availability is honest only at play
+  // time — listing it here would invent episode numbers upstream never gave.
+  const epData: MiruroEpisodesResponse = {
+    providers: { catalog: { episodes: { sub: entries } } },
+  };
   episodeCache.set(cacheKey, epData);
   const catalogEntries = selectMiruroEpisodeCatalogEntries(epData);
   if (catalogEntries.length > 0) {
@@ -1531,7 +1302,7 @@ export async function fetchMiruroEpisodeCatalog(
   if (entries.length === 0) return null;
 
   const metadata = new Map<number, AnimeEpisodeMetadata>();
-  mergeMiruroPipeEpisodeMetadata(metadata, entries);
+  mergeMiruroEpisodeMetadata(metadata, entries);
 
   const malId = readMiruroMappingMalId(epData?.mappings);
   const skipExternal = shouldSkipExternalEpisodeMetadataEnrichment(metadata, entries.length);
@@ -1577,539 +1348,34 @@ export async function fetchMiruroEpisodeCatalog(
   });
 }
 
-function isMiruroObfuscatedPipeBody(body: string, xObfuscated: string | null): boolean {
-  return body.startsWith("bh4YNPj7") || xObfuscated === "2";
-}
-
-function isHtmlBody(body: string): boolean {
-  const head = body.slice(0, 200).toLowerCase();
-  return head.includes("<!doctype html") || head.includes("<html");
-}
-
-/**
- * Upstream-unavailable statuses the mirror returns when one of its own backing
- * servers is down. These are per-server facts, never evidence about the mirror's
- * reachability, so they must not count toward the WAF fail-fast.
- */
-const MIRURO_UPSTREAM_UNAVAILABLE_STATUSES = new Set([444, 502, 503, 504]);
-
-export function describeMiruroPipeFailure(status: number, body: string): string {
-  if (isCloudflareBlockBody(body)) return `HTTP ${status} (cloudflare html)`;
-  if (MIRURO_UPSTREAM_UNAVAILABLE_STATUSES.has(status)) {
-    return `HTTP ${status} (upstream server unavailable)`;
-  }
-  return `HTTP ${status}`;
-}
-
-function buildMiruroPipeHeaders(baseUrl: string, referer?: string) {
-  const origin = baseUrl.replace(/\/$/, "");
-  return {
-    "User-Agent": USER_AGENT,
-    Accept: "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    Referer: referer?.trim() || `${origin}/`,
-    Origin: origin,
-    "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"Windows"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-origin",
-  };
-}
-
-const MIRURO_CURL_STATUS_MARKER = "\n__KUNAI_CURL_STATUS__:";
-// `%{redirect_url}` rides the trailer so redirect hops can be walked
-// in-process — `-L` would hand them to curl without per-hop validation.
-const MIRURO_CURL_STATUS_WRITE_OUT = "\n__KUNAI_CURL_STATUS__:%{http_code}\t%{redirect_url}";
-/** Abort only when throughput collapses below this for `STALL_SECONDS`. */
-const MIRURO_CURL_MIN_BYTES_PER_SECOND = 1024;
-const MIRURO_CURL_STALL_SECONDS = 5;
-/** Backstop only; the engine's attempt timeout is the real bound. */
-const MIRURO_CURL_MAX_SECONDS = 25;
-const MIRURO_CURL_CONNECT_SECONDS = 5;
-
-/**
- * Read one curl invocation's outcome.
- *
- * curl writes its `-w` status line even when the transfer aborts part-way, so
- * the presence of the marker is **not** proof of a complete body. Trusting it
- * let a truncated multi-megabyte episode catalog through as a healthy HTTP 200,
- * and the decoder then reported that transport failure as `pipe-xor-gunzip-failed`.
- * A non-zero exit means the body is partial — refuse it.
- */
-type MiruroCurlResult = {
-  readonly status: number;
-  readonly text: string;
-  /** `Location` target on a 3xx response; absent when curl reported none. */
-  readonly redirectUrl?: string;
-};
-
-export function interpretMiruroCurlResult(input: {
-  readonly exitCode: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}): MiruroCurlResult {
-  if (input.exitCode !== 0) {
-    throw new Error(input.stderr.trim() || `curl exit ${input.exitCode}`);
-  }
-
-  const index = input.stdout.lastIndexOf(MIRURO_CURL_STATUS_MARKER);
-  if (index < 0) {
-    throw new Error(input.stderr.trim() || "curl returned without an HTTP response");
-  }
-
-  const trailer = input.stdout.slice(index + MIRURO_CURL_STATUS_MARKER.length).trim();
-  const tab = trailer.indexOf("\t");
-  const status = Number.parseInt(tab < 0 ? trailer : trailer.slice(0, tab), 10);
-  if (!Number.isFinite(status) || status <= 0) {
-    throw new Error(input.stderr.trim() || "curl returned without an HTTP status");
-  }
-
-  const redirectUrl = tab < 0 ? undefined : trailer.slice(tab + 1) || undefined;
-  return { status, text: input.stdout.slice(0, index), redirectUrl };
-}
-
-/**
- * Bun/Node fetch often gets CF 403 HTML on /api/secure/pipe while the same URL works
- * with curl --http2 (browser network capture on www.miruro.bz). Prefer native fetch,
- * then fall back to curl HTTP/2 when available.
- *
- * When `wafLikely` is set (prior mirror already returned CF HTML), skip the long curl
- * wait — curl rarely clears a region-wide WAF block and burns the resolve budget.
- */
-export async function fetchMiruroPipeBody(
-  url: string,
-  headers: Record<string, string>,
-  signal?: AbortSignal,
-  fetchPort?: ProviderRuntimeContext["fetch"],
-  options: { readonly wafLikely?: boolean } = {},
-): Promise<{
-  readonly status: number;
-  readonly text: string;
-  readonly xObfuscated: string | null;
-  readonly cloudflareHtml: boolean;
-}> {
-  const requester = fetchPort?.fetch.bind(fetchPort) ?? fetch;
-  // Always bound the fetch, even when the caller passes a signal — a stalled
-  // pipe connection must not hang the whole resolve. The signal bounds the
-  // whole leg including the single CF-challenge retry below.
-  const timeoutSignal = AbortSignal.timeout(options.wafLikely ? 3_000 : 8_000);
-  const requestSignal = signal ? anySignal(signal, timeoutSignal) : timeoutSignal;
-
-  // The pipe's managed challenge is intermittent — a challenged response on an
-  // otherwise-healthy window clears on a plain refetch often enough to be
-  // worth one cheap retry before paying for a curl subprocess. wafLikely
-  // means a sibling mirror already saw a challenge, so don't re-poll.
-  let response: Response | undefined;
-  let responseText = "";
-  const attempts = options.wafLikely ? 1 : 2;
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    response = await requester(url, { signal: requestSignal, headers });
-    responseText = await response.text();
-    const challenged = response.status === 403 || isCloudflareChallengeText(responseText);
-    if (!challenged || attempt === attempts) break;
-    await miruroPipeRetrySleep(400 + Math.floor(Math.random() * 400), requestSignal);
-    if (requestSignal.aborted) break;
-  }
-  // An abort landing inside the retry sleep resolves it rather than rejecting
-  // — without this check the challenged response would fall through to the
-  // curl fallback, whose abort listener on an already-dead signal never fires
-  // and the subprocess would run to --max-time after the caller walked away.
-  if (requestSignal.aborted) {
-    throw signal?.reason instanceof Error ? signal.reason : new Error("aborted");
-  }
-  if (response === undefined) {
-    throw new Error("Miruro pipe fetch did not produce a response");
-  }
-  if (
-    response.ok &&
-    isMiruroObfuscatedPipeBody(responseText, response.headers.get("x-obfuscated"))
-  ) {
-    return {
-      status: response.status,
-      text: responseText,
-      xObfuscated: response.headers.get("x-obfuscated"),
-      cloudflareHtml: false,
-    };
-  }
-  // Curl is a response-level Cloudflare fallback, not a retry for transport
-  // failures. Request exceptions propagate to pipeCall's next-mirror loop.
-  if (
-    response.ok &&
-    !isHtmlBody(responseText) &&
-    !isMiruroObfuscatedPipeBody(responseText, response.headers.get("x-obfuscated"))
-  ) {
-    return {
-      status: response.status,
-      text: responseText,
-      xObfuscated: response.headers.get("x-obfuscated"),
-      cloudflareHtml: false,
-    };
-  }
-
-  const fetchWasCloudflare = isCloudflareBlockBody(responseText);
-
-  // Region-wide WAF: do not spend 20s of curl on every remaining mirror.
-  if (options.wafLikely && fetchWasCloudflare) {
-    return {
-      status: response.status || 403,
-      text: responseText,
-      xObfuscated: null,
-      cloudflareHtml: true,
-    };
-  }
-
-  const curl = resolveCurlCandidate();
-  if (!curl) {
-    return {
-      status: response.status || 403,
-      text: responseText,
-      xObfuscated: null,
-      cloudflareHtml: fetchWasCloudflare,
-    };
-  }
-
-  const hasCurlHttp2 = await detectCurlHttp2Support(curl.path);
-  const result = await runMiruroCurlWithHopGuard({
-    curlPath: curl.path,
-    impersonates: curl.impersonates,
-    http2: hasCurlHttp2,
-    headers,
-    url,
-    signal,
-  });
-  return {
-    status: result.status,
-    text: result.text,
-    xObfuscated: isMiruroObfuscatedPipeBody(result.text, null) ? "2" : null,
-    cloudflareHtml: isCloudflareBlockBody(result.text),
-  };
-}
-
-/**
- * The blocklist verdict for one miruro curl hop. The mirror URL itself comes
- * from an upstream JSON payload, so every hop — including the first — is
- * remote-controlled here: scheme, private-literal, and DNS checks all apply.
- * (The shared transport exempts its first hop as caller intent; miruro's first
- * hop is payload content, not caller intent.)
- */
-async function miruroCurlTargetBlockReason(
-  target: string,
-  signal: AbortSignal | undefined,
-): Promise<string | null> {
-  let parsed: URL;
-  try {
-    parsed = new URL(target);
-  } catch {
-    return "unparseable target";
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return `scheme ${parsed.protocol}`;
-  }
-  const literal = blockedLiteralTargetReason(target);
-  if (literal !== null) return literal;
-  if (signal?.aborted === true) return null;
-  return resolvedAddressBlockReason(target, signal);
-}
-
-const MIRURO_CURL_MAX_HOPS = 3;
-
-async function runMiruroCurlOnce(input: {
-  readonly curlPath: string;
-  readonly impersonates: boolean;
-  readonly http2: boolean;
-  readonly headers: Record<string, string>;
-  readonly target: string;
-  readonly signal?: AbortSignal;
-}): Promise<MiruroCurlResult> {
-  const args = [
-    input.curlPath,
-    // First argv only: curl reads ~/.curlrc unless -q/--disable leads the
-    // command line — a user config could inject proxy/cert flags here.
-    "-q",
-    ...curlCipherArgs(input.impersonates),
-    "-sS",
-    ...(input.http2 ? ["--http2"] : []),
-    "-A",
-    input.headers["User-Agent"] ?? USER_AGENT,
-    "-H",
-    `Accept: ${input.headers.Accept ?? "*/*"}`,
-    "-H",
-    `Accept-Language: ${input.headers["Accept-Language"] ?? "en-US,en;q=0.9"}`,
-    "-H",
-    `Referer: ${input.headers.Referer ?? MIRURO_REFERER}`,
-    "-H",
-    `Origin: ${input.headers.Origin ?? "https://www.miruro.bz"}`,
-    "-H",
-    "sec-fetch-dest: empty",
-    "-H",
-    "sec-fetch-mode: cors",
-    "-H",
-    "sec-fetch-site: same-origin",
-    "-w",
-    MIRURO_CURL_STATUS_WRITE_OUT,
-    // A long-running series' episode catalog is multiple megabytes, so a flat
-    // wall-clock cap truncates a perfectly healthy transfer. Bound the stall
-    // instead: abort only when throughput collapses. The engine's own attempt
-    // timeout still caps total time, and the ceiling is a backstop.
-    "--speed-limit",
-    String(MIRURO_CURL_MIN_BYTES_PER_SECOND),
-    "--speed-time",
-    String(MIRURO_CURL_STALL_SECONDS),
-    // The stall bound above starts counting only once bytes flow, so a mirror
-    // whose TCP connect hangs would otherwise hold the whole `--max-time`. With
-    // several mirrors to get through, that is the difference between trying the
-    // next one and losing the attempt budget to one unreachable host.
-    "--connect-timeout",
-    String(MIRURO_CURL_CONNECT_SECONDS),
-    "--max-time",
-    String(MIRURO_CURL_MAX_SECONDS),
-    // Everything after `--` is an operand, never an option. The URL comes from
-    // an upstream JSON payload, so without this a value beginning with `-`
-    // would be read as curl flags rather than as the address to fetch.
-    "--",
-    input.target,
-  ];
-
-  const proc = Bun.spawn(args, {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  let aborted = false;
-  const onAbort = () => {
-    aborted = true;
-    try {
-      proc.kill();
-    } catch {
-      // ignore
-    }
-  };
-  input.signal?.addEventListener("abort", onAbort, { once: true });
-  try {
-    const raw = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
-    const exit = await proc.exited;
-    if (aborted || input.signal?.aborted) {
-      throw new Error("aborted");
-    }
-    return interpretMiruroCurlResult({
-      exitCode: exit,
-      stdout: raw,
-      stderr,
-    });
-  } finally {
-    input.signal?.removeEventListener("abort", onAbort);
-  }
-}
-
-/**
- * Redirect hops are walked in-process instead of `-L` so every target is
- * re-validated before curl touches it — `-L` would hand the hop to curl
- * unchecked and resend the miruro headers to whatever host it lands on.
- */
-async function runMiruroCurlWithHopGuard(input: {
-  readonly curlPath: string;
-  readonly impersonates: boolean;
-  readonly http2: boolean;
-  readonly headers: Record<string, string>;
-  readonly url: string;
-  readonly signal?: AbortSignal;
-}): Promise<MiruroCurlResult> {
-  let target = input.url;
-  for (let hop = 0; hop <= MIRURO_CURL_MAX_HOPS; hop += 1) {
-    const blocked = await miruroCurlTargetBlockReason(target, input.signal);
-    if (blocked !== null) {
-      throw new ProviderHttpError({
-        message: `miruro curl refused unsafe target: ${blocked}`,
-        providerId: MIRURO_PROVIDER_ID,
-        stage: "fetch-curl",
-        code: "blocked",
-        retryable: false,
-      });
-    }
-    const result = await runMiruroCurlOnce({ ...input, target });
-    const redirectUrl = result.redirectUrl;
-    if (!redirectUrl || result.status < 300 || result.status >= 400) {
-      return result;
-    }
-    if (hop === MIRURO_CURL_MAX_HOPS) {
-      throw new Error(`miruro curl redirect chain exceeded ${MIRURO_CURL_MAX_HOPS} hops`);
-    }
-    // Location may be relative — resolve against the hop that produced it.
-    target = new URL(redirectUrl, target).href;
-  }
-  throw new Error("unreachable: miruro curl hop loop");
-}
-
-async function pipeCall(
-  context: ProviderRuntimeContext,
-  path: "episodes",
-  query: Record<string, string | number>,
-  signal?: AbortSignal,
-): Promise<MiruroEpisodesResponse>;
-async function pipeCall(
-  context: ProviderRuntimeContext,
-  path: "sources",
-  query: Record<string, string | number>,
-  signal?: AbortSignal,
-): Promise<MiruroSourcesResponse>;
-async function pipeCall(
-  context: ProviderRuntimeContext,
-  path: "search",
-  query: Record<string, string | number>,
-  signal?: AbortSignal,
-): Promise<readonly MiruroSearchMedia[]>;
-async function pipeCall(
-  context: ProviderRuntimeContext,
-  path: MiruroPipeExpectedKind,
-  query: Record<string, string | number>,
-  signal?: AbortSignal,
-): Promise<MiruroEpisodesResponse | MiruroSourcesResponse | readonly MiruroSearchMedia[]> {
-  const q: Record<string, string> = {};
-  for (const [k, v] of Object.entries(query)) q[k] = String(v);
-
-  const payload = { path, method: "GET" as const, query: q, body: null, version: "0.2.0" };
-  const encoded = bytesToBase64url(new TextEncoder().encode(JSON.stringify(payload)));
-  let lastError: Error | undefined;
-  let wafHits = 0;
-
-  const anilistId =
-    isJsonNumber(query.anilistId) || isJsonString(query.anilistId) ? String(query.anilistId) : null;
-
-  const baseUrls = miruroPipeBaseUrls({
-    fetchImpl: context.fetch?.fetch.bind(context.fetch),
-  });
-  for (const url of createMiruroPipeRequestUrls(encoded, baseUrls)) {
-    const baseUrl = new URL(url).origin;
-    // Match browser watch-page referer when we have an AniList id (user capture pattern).
-    const referer = anilistId ? `${baseUrl}/watch/${anilistId}` : `${baseUrl}/`;
-    const headers = buildMiruroPipeHeaders(baseUrl, referer);
-    try {
-      const candidate = await fetchMiruroPipeBody(
-        url,
-        headers,
-        signal ?? context.signal,
-        context.fetch,
-        { wafLikely: wafHits > 0 },
-      );
-      if (
-        candidate.status >= 200 &&
-        candidate.status < 300 &&
-        isMiruroObfuscatedPipeBody(candidate.text, candidate.xObfuscated)
-      ) {
-        // Reachability to individual mirrors flaps, so the one that just worked
-        // leads the next call rather than paying to rediscover it.
-        recordMiruroMirrorSuccess(baseUrl);
-        // Decode failures are a key/version/schema problem, not a mirror problem —
-        // every remaining mirror would fail identically, so surface it immediately
-        // instead of burning the budget and reporting it as a network error.
-        return decodeMiruroPipePayload({
-          body: candidate.text,
-          obfuscationVersion: candidate.xObfuscated,
-          expectedKind: path,
-          keyHex: PIPE_KEY,
-        });
-      }
-      if (candidate.cloudflareHtml) {
-        wafHits += 1;
-        lastError = providerHttpErrorForStatus({
-          status: candidate.status || 403,
-          message: `HTTP ${candidate.status || 403} (cloudflare html)`,
-          providerId: MIRURO_PROVIDER_ID,
-          stage: "pipe-fetch",
-        });
-        if (wafHits >= MIRURO_WAF_FAIL_FAST_THRESHOLD) {
-          throw new Error(miruroWafBlockMessage(), { cause: lastError });
-        }
-        continue;
-      }
-      lastError = providerHttpErrorForStatus({
-        status: candidate.status,
-        message: describeMiruroPipeFailure(candidate.status, candidate.text),
-        providerId: MIRURO_PROVIDER_ID,
-        stage: "pipe-fetch",
-      });
-      // Try next mirror; curl fallback already attempted inside fetchMiruroPipeBody.
-    } catch (error) {
-      if (error instanceof MiruroPipeDecodeError) throw error;
-      lastError = error instanceof Error ? error : new Error("pipe request failed");
-      if (error instanceof Error && isMiruroWafBlockError(error)) {
-        throw error;
-      }
-    }
-  }
-
-  const message = lastError instanceof Error ? lastError.message : "request failed";
-  // A status-bearing failure keeps its verdict through the wrap — otherwise a
-  // persistent 429/5xx re-enters the engine as an untyped retryable error and
-  // never reaches quarantine (#458).
-  if (lastError instanceof ProviderHttpError) {
-    throw new ProviderHttpError({
-      message: `Miruro pipe network request failed: ${message}`,
-      providerId: MIRURO_PROVIDER_ID,
-      stage: "pipe-fetch",
-      status: lastError.status,
-      code: lastError.code,
-      retryable: lastError.retryable,
-      cause: lastError,
-    });
-  }
-  throw new Error(`Miruro pipe network request failed: ${message}`, { cause: lastError });
-}
-
-/**
- * One owner for the WAF-block signal. `runProviderCycle` stops the whole cycle on
- * it, so this prefix and `isMiruroWafBlockError` must not drift apart.
- */
-const MIRURO_WAF_BLOCK_PREFIX =
-  "Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML).";
-
-/**
- * The remedy depends on what curl we actually used, so ask before advising.
- *
- * A plain-curl TLS handshake is fingerprinted by Cloudflare long before any
- * header is read, and an impersonate build clears it locally — so telling a user
- * on plain curl to stand up a relay sends them to the most expensive fix first.
- * ani-cli reaches the same conclusion from the other direction: it dies with
- * "Blocked by cloudflare. Try installing curl-impersonate" only when
- * `$curl_exe` is still plain `curl` (ani-cli:171, v5.0.4).
- */
-export function miruroWafBlockMessage(curl: CurlCandidate | null = resolveCurlCandidate()): string {
-  if (!curl?.impersonates) {
-    return `${MIRURO_WAF_BLOCK_PREFIX} Install curl-impersonate (a curl_chrome*/curl_firefox* build on PATH) so the TLS handshake is not fingerprinted; a user-owned relay (providerRelay.baseUrl) in an ungated region also bypasses this.`;
-  }
-  return `${MIRURO_WAF_BLOCK_PREFIX} curl-impersonate (${curl.profile}) was already used and still blocked, so the block is region-wide: a user-owned relay (providerRelay.baseUrl) in an ungated region can bypass it.`;
-}
-
-function isMiruroWafBlockError(error: Error): boolean {
-  return error.message.includes("Cloudflare WAF on multiple mirrors");
-}
-
-/**
- * Map a pipe exception onto a distinct resolve failure. Decode drift is not a
- * network fault and is not retryable; a WAF block is neither of those.
- */
-type MiruroPipeFailure = {
+type MiruroResolveFailure = {
   readonly code: ResolveErrorCode;
   readonly message: string;
   readonly retryable: boolean;
 };
 
-function classifyMiruroPipeError<T>(error: T): MiruroPipeFailure {
-  if (error instanceof MiruroPipeDecodeError) {
-    return {
-      code: "parse-failed",
-      message: `Miruro pipe payload could not be decoded (${error.code})`,
-      retryable: false,
-    };
-  }
-  if (error instanceof Error && isMiruroWafBlockError(error)) {
-    return { code: "blocked", message: error.message, retryable: true };
+function classifyMiruroResolveError<T>(error: T): MiruroResolveFailure {
+  if (error instanceof MiruroCatalogError) {
+    if (error.status === 400) {
+      // "Unsupported catalog request" is the allowlist refusing a query shape
+      // this code should never have produced — a bug, not a retryable outage.
+      return {
+        code: "not-found",
+        message: `Miruro catalog rejected the request shape: ${error.message}`,
+        retryable: false,
+      };
+    }
+    if (error.status === 404) {
+      return { code: "not-found", message: error.message, retryable: false };
+    }
+    if (error.status === 429 || error.status >= 500) {
+      return { code: "blocked", message: error.message, retryable: true };
+    }
+    return { code: "network-error", message: error.message, retryable: true };
   }
   return {
     code: "network-error",
-    message: error instanceof Error ? error.message : "Miruro pipe API failed",
+    message: error instanceof Error ? error.message : "Miruro request failed",
     retryable: true,
   };
 }
@@ -2269,80 +1535,184 @@ function stripSearchDescription(value: string | null | undefined): string {
   );
 }
 
+function firstMiruroExternalId(ids: readonly string[] | undefined): string | undefined {
+  const value = ids?.[0]?.trim();
+  return value ? value : undefined;
+}
+
 /**
- * Map one pipe search row onto a provider search result with exactly the
- * identity the AniList search service produces — `id` is the bare AniList id and
+ * Catalog `/v1/anime` row → provider search result with exactly the identity
+ * the AniList search service produces — `id` is the bare AniList id and
  * `externalIds.anilistId` carries it — so a show found here and the same show
  * found through AniList are one title in history, not two.
  *
- * Filters match that service's query (`type:ANIME`, `isAdult:false`,
- * `status_not:NOT_YET_RELEASED`). The server honours `type`, but a missing or
- * ignored filter would leak manga and novels into an anime picker, so it is
+ * Rows without an AniList id are dropped: `resolveMiruroAnilistId` is how
+ * resolve finds the title again, so a result it cannot name would dead-end
+ * after selection. Filters match the AniList service's query (`type:ANIME`,
+ * `isAdult:false`, `status_not:NOT_YET_RELEASED`) — a missing or ignored
+ * upstream filter would leak manga and novels into an anime picker, so it is
  * enforced here as well.
- *
- * `dubLanguages` on these rows is deliberately unused: it is voice-actor
- * language data, not availability — the One Piece manga lists eleven dubs.
  */
-export function mapMiruroSearchMedia(media: MiruroSearchMedia): ProviderSearchResult | null {
-  if (!isJsonNumber(media.id) || !Number.isInteger(media.id) || media.id <= 0) return null;
-  if (media.type && media.type !== "ANIME") return null;
-  if (media.isAdult === true) return null;
-  if (media.status === "NOT_YET_RELEASED") return null;
+export function mapMiruroCatalogAnime(anime: MiruroCatalogAnime): ProviderSearchResult | null {
+  const externalIds = anime.external_ids;
+  const anilistId = firstMiruroExternalId(externalIds?.anilist);
+  if (!anilistId) return null;
+  if (anime.is_adult === true) return null;
+  if (anime.status === "NOT_YET_RELEASED") return null;
 
-  const english = media.title?.english?.trim() || undefined;
-  const romaji = media.title?.romaji?.trim() || undefined;
-  const native = media.title?.native?.trim() || undefined;
-  const title = english ?? romaji ?? native ?? media.title?.userPreferred?.trim();
+  const english = anime.title?.english?.trim() || undefined;
+  const romaji = anime.title?.romaji?.trim() || undefined;
+  const native = anime.title?.native?.trim() || undefined;
+  const title = english ?? romaji ?? native;
   if (!title) return null;
 
-  const anilistId = String(media.id);
-  const malId =
-    isJsonNumber(media.idMal) && Number.isInteger(media.idMal) && media.idMal > 0
-      ? String(media.idMal)
-      : undefined;
-  const posterUrl = media.coverImage?.extraLarge ?? media.coverImage?.large ?? undefined;
-  const year = media.startDate?.year ?? media.seasonYear ?? undefined;
+  const malId = firstMiruroExternalId(externalIds?.mal);
+  const posterUrl =
+    anime.cover_image?.extra_large?.trim() || anime.cover_image?.large?.trim() || undefined;
+  const year = anime.season_year ?? undefined;
   const episodeCount =
-    isJsonNumber(media.episodes) && media.episodes > 0 ? media.episodes : undefined;
+    isJsonNumber(anime.episode_count) && anime.episode_count > 0 ? anime.episode_count : undefined;
   const altNames = romaji && romaji !== title ? [romaji] : [];
 
   return {
     id: anilistId,
-    type: miruroSearchContentType(media.format, media.episodes),
+    type: miruroSearchContentType(anime.format, anime.episode_count ?? null),
     title,
     ...(year ? { year: String(year) } : null),
-    overview: stripSearchDescription(media.description),
+    overview: stripSearchDescription(anime.description),
     posterPath: posterUrl ?? null,
-    // The catalog data is AniList's, relayed by Miruro. Declaring it lets search
-    // routing skip a redundant AniList enrichment pass — which is the call that
-    // fails when AniList's API is down, the case this search exists for.
+    // The catalog is AniList-bridged upstream (external_ids), so declaring the
+    // source lets search routing skip a redundant AniList enrichment pass.
     metadataSource: "AniList",
-    rating: isJsonNumber(media.averageScore) ? media.averageScore / 10 : null,
-    popularity: isJsonNumber(media.popularity) ? media.popularity : null,
+    rating: isJsonNumber(anime.average_score) ? anime.average_score / 10 : null,
+    popularity: isJsonNumber(anime.popularity) ? anime.popularity : null,
     ...(episodeCount ? { episodeCount } : null),
-    ...(isJsonNumber(media.duration) && media.duration > 0
-      ? { durationSeconds: media.duration * 60 }
+    ...(isJsonNumber(anime.episode_duration_minutes) && anime.episode_duration_minutes > 0
+      ? { durationSeconds: anime.episode_duration_minutes * 60 }
       : null),
     ...(english && english !== title ? { englishTitle: english } : null),
     ...(native ? { nativeTitle: native } : null),
     ...(altNames.length > 0 ? { altNames } : null),
     externalIds: { anilistId, ...(malId ? { malId } : null) },
-    ...(posterUrl || media.bannerImage
+    ...(posterUrl || anime.banner_image
       ? {
           artwork: {
             ...(posterUrl ? { posterUrl, thumbnailUrl: posterUrl } : null),
-            ...(media.bannerImage ? { backdropUrl: media.bannerImage } : null),
+            ...(anime.banner_image ? { backdropUrl: anime.banner_image } : null),
           },
         }
       : null),
   };
 }
 
+/**
+ * Synthesize the `MiruroSourcesResponse` one cycle candidate feeds
+ * `createMiruroResultFromPayload`, from the play matrix's provider+server cell.
+ * The catalog shape is a superset of the old pipe's: per-server `Referer`
+ * headers land on `stream.referer`, which the payload builder already turns
+ * into the stream's request headers.
+ */
+function synthesizeMiruroSourceData(
+  provider: MiruroCatalogProvider,
+  server: MiruroCatalogServer,
+  play: MiruroCatalogPlayResponse,
+): MiruroSourcesResponse {
+  const referer = server.headers?.["Referer"] ?? server.headers?.["referer"];
+  const streams: MiruroStream[] = (server.streams ?? []).flatMap((stream) => {
+    if (!isJsonString(stream.url) || stream.url.length === 0) return [];
+    return [
+      {
+        url: stream.url,
+        type: stream.format === "mp4" ? "mp4" : "hls",
+        quality: stream.quality ?? undefined,
+        referer: referer ?? undefined,
+        resolution: stream.resolution ?? undefined,
+        codec: stream.codec ?? undefined,
+      },
+    ];
+  });
+
+  // skip_times kinds follow the site's own mapping: `op*` → intro, `ed*` → outro.
+  let intro: { readonly start: number; readonly end: number } | undefined;
+  let outro: { readonly start: number; readonly end: number } | undefined;
+  for (const segment of play.skip_times ?? []) {
+    const start = segment.start_seconds;
+    const end = segment.end_seconds;
+    if (!isJsonNumber(start) || !isJsonNumber(end)) continue;
+    if (segment.kind?.includes("op")) intro = { start, end };
+    else if (segment.kind?.includes("ed")) outro = { start, end };
+  }
+
+  return {
+    streams,
+    subtitles: (provider.subtitles ?? []).map((subtitle) => ({
+      url: subtitle.url ?? subtitle.file,
+      label: subtitle.label,
+      language: subtitle.language,
+    })),
+    thumbnails: provider.thumbnails ?? undefined,
+    intro,
+    outro,
+    download: provider.downloads?.find((entry) => isJsonString(entry.url))?.url,
+  };
+}
+
+type MiruroPlaySynthesis = {
+  readonly providers: Record<string, MiruroProviderEntry>;
+  readonly sourceDataByKey: ReadonlyMap<string, MiruroSourcesResponse>;
+};
+
+/**
+ * The play matrix in the shape `buildMiruroCycleCandidates` consumes: one
+ * provider entry per (provider, server) lane that actually carries direct
+ * streams for the episode. Embed-only lanes are dropped here — the pipe used
+ * to return them and let each one fail downstream, which is how dead backends
+ * spent cycle budget.
+ */
+function synthesizeMiruroPlayProviders(
+  play: MiruroCatalogPlayResponse,
+  episodeNum: number,
+  catalogEpisodeId: string,
+): MiruroPlaySynthesis {
+  const providers: Record<string, MiruroProviderEntry> = {};
+  const sourceDataByKey = new Map<string, MiruroSourcesResponse>();
+  const episodeEntry: MiruroEpisodeEntry = { id: catalogEpisodeId, number: episodeNum };
+
+  for (const track of play.tracks ?? []) {
+    const audioCategory: MiruroAudioCategory | null =
+      track.track === "sub" || track.track === "ssub"
+        ? "sub"
+        : track.track === "dub"
+          ? "dub"
+          : null;
+    if (!audioCategory) continue;
+    for (const provider of track.providers ?? []) {
+      for (const server of provider.servers ?? []) {
+        if (!isJsonString(server.server) || server.server.length === 0) continue;
+        const sourceData = synthesizeMiruroSourceData(provider, server, play);
+        if (sourceData.streams?.length === 0) continue;
+        const serverId = server.server;
+        const key = `${serverId}|${audioCategory}`;
+        const existing = providers[serverId];
+        providers[serverId] = {
+          episodes: {
+            sub: audioCategory === "sub" ? [episodeEntry] : (existing?.episodes?.sub ?? undefined),
+            dub: audioCategory === "dub" ? [episodeEntry] : (existing?.episodes?.dub ?? undefined),
+          },
+        };
+        if (!sourceDataByKey.has(key)) sourceDataByKey.set(key, sourceData);
+      }
+    }
+  }
+
+  return { providers, sourceDataByKey };
+}
+
 export const miruroProviderModule: CoreProviderModule = {
   providerId: MIRURO_PROVIDER_ID,
   manifest: miruroManifest,
   /**
-   * Search through Miruro's own pipe, so the anime lane can find titles when
+   * Search through Miruro's own catalog, so the anime lane can find titles when
    * AniList's API is unavailable (disabled outright on 2026-09-10).
    *
    * Every failure returns `null` rather than throwing, and that is the contract
@@ -2354,9 +1724,9 @@ export const miruroProviderModule: CoreProviderModule = {
     const query = input.query.trim();
     if (!query) return null;
     try {
-      const media = await pipeCall(context, "search", { q: query, type: "ANIME" }, context.signal);
+      const media = await searchMiruroCatalog(context, query, context.signal);
       const results = media
-        .map(mapMiruroSearchMedia)
+        .map(mapMiruroCatalogAnime)
         .filter((result): result is ProviderSearchResult => result !== null);
       return results.length > 0 ? results : null;
     } catch (error) {
@@ -2384,7 +1754,7 @@ export const miruroProviderModule: CoreProviderModule = {
     if (input.mediaKind !== "anime") {
       return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
         code: "unsupported-title",
-        message: "Miruro pipe resolver only supports anime",
+        message: "Miruro resolver only supports anime",
         retryable: false,
       });
     }
@@ -2392,7 +1762,7 @@ export const miruroProviderModule: CoreProviderModule = {
     if (!input.allowedRuntimes.includes("direct-http")) {
       return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
         code: "runtime-missing",
-        message: "Miruro pipe resolver requires direct-http runtime",
+        message: "Miruro resolver requires direct-http runtime",
         retryable: false,
       });
     }
@@ -2401,7 +1771,7 @@ export const miruroProviderModule: CoreProviderModule = {
     if (!anilistId) {
       return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
         code: "unsupported-title",
-        message: "Miruro pipe resolver requires a numeric AniList ID",
+        message: "Miruro resolver requires a numeric AniList ID",
         retryable: false,
       });
     }
@@ -2414,7 +1784,7 @@ export const miruroProviderModule: CoreProviderModule = {
     emitTraceEvent(events, context, {
       type: "provider:start",
       providerId: MIRURO_PROVIDER_ID,
-      message: "Started Miruro pipe resolution",
+      message: "Started Miruro resolution",
     });
 
     const cachePolicy = createProviderCachePolicy({
@@ -2426,33 +1796,47 @@ export const miruroProviderModule: CoreProviderModule = {
       startupPriority: input.startupPriority,
     });
 
-    // Time the episodes fetch inclusive of failure: a Cloudflare block throws
-    // here, and that is the case whose latency most needs attributing.
-    const episodesStartedAt = performance.now();
-    const emitEpisodesStage = (providerCount: number, failed: boolean) =>
+    // The catalog play call is one request for the whole matrix: tracks,
+    // providers, servers, direct streams, subtitles, downloads. It replaced
+    // the per-server sources calls the pipe needed — its latency is the
+    // number worth attributing, inclusive of failure.
+    const playStartedAt = performance.now();
+    let playStageEmitted = false;
+    const emitPlayStage = (laneCount: number, failed: boolean) => {
+      playStageEmitted = true;
       emitTraceEvent(events, context, {
         type: failed ? "source:failed" : "source:success",
         providerId: MIRURO_PROVIDER_ID,
-        sourceId: "source:miruro:episodes",
-        message: "Fetched Miruro episode catalog",
-        durationMs: performance.now() - episodesStartedAt,
-        attributes: { providers: providerCount },
+        sourceId: "source:miruro:play",
+        message: "Fetched Miruro play catalog",
+        durationMs: performance.now() - playStartedAt,
+        attributes: { lanes: laneCount },
       });
+    };
 
     try {
-      let epData: Awaited<ReturnType<typeof getMiruroEpisodesResponse>>;
-      try {
-        epData = await getMiruroEpisodesResponse(context, anilistId, context.signal);
-      } catch (episodesError) {
-        emitEpisodesStage(0, true);
-        throw episodesError;
-      }
-      const providerCount = epData?.providers ? Object.keys(epData.providers).length : 0;
-      emitEpisodesStage(providerCount, providerCount === 0);
-      if (!epData?.providers || Object.keys(epData.providers).length === 0) {
+      const anime = await getMiruroCatalogAnime(context, anilistId, context.signal);
+      if (!anime) {
+        emitPlayStage(0, true);
         return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
           code: "not-found",
-          message: "No episode data from miruro pipe API",
+          message: `No Miruro catalog entry for AniList ID ${anilistId}`,
+          retryable: true,
+        });
+      }
+      const catalogEpisodeId = `${anime.id}:${episodeNum}`;
+      const play = await fetchMiruroPlay(context, anime.id, episodeNum, context.signal);
+      const { providers, sourceDataByKey } = synthesizeMiruroPlayProviders(
+        play,
+        episodeNum,
+        catalogEpisodeId,
+      );
+      const laneCount = Object.keys(providers).length;
+      emitPlayStage(laneCount, laneCount === 0);
+      if (laneCount === 0) {
+        return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
+          code: "not-found",
+          message: `No Miruro play data for episode ${episodeNum}`,
           retryable: true,
         });
       }
@@ -2461,7 +1845,7 @@ export const miruroProviderModule: CoreProviderModule = {
         input.preferredAudioLanguage ?? input.preferredPresentation ?? "original",
       ).catalogMode;
       const fallbackAudio = targetAudio === "dub" ? "sub" : "dub";
-      const availableModes = collectMiruroAvailableAudioModes(epData.providers, episodeNum);
+      const availableModes = collectMiruroAvailableAudioModes(providers, episodeNum);
       if (availableModes.length > 0) {
         emitTraceEvent(events, context, {
           type: "inventory:audio-modes",
@@ -2471,7 +1855,7 @@ export const miruroProviderModule: CoreProviderModule = {
         });
       }
       const cycleCandidates = buildMiruroCycleCandidates({
-        providers: epData.providers,
+        providers,
         episodeNum,
         targetAudio,
         fallbackAudio,
@@ -2506,7 +1890,7 @@ export const miruroProviderModule: CoreProviderModule = {
         emit: context.emit,
         // Skips a server whose backend is quarantined, so a dead one costs a
         // probe for its first few plays instead of on every episode. The keys
-        // are server ids (`pewe`, `moo`): sub and dub share a backend.
+        // are server ids (`animepahe`, `icarus-1-1`): sub and dub share a backend.
         endpointHealth: context.endpointHealth,
         titleId: input.title.id,
         maxAttemptsPerCandidate: 1,
@@ -2514,35 +1898,18 @@ export const miruroProviderModule: CoreProviderModule = {
           input.startupPriority ?? "balanced",
           MIRURO_CANDIDATE_TIMEOUT_MS,
         ),
-        // Every candidate goes through the same two pipe hosts — one region-wide
-        // Cloudflare block means the rest will fail identically, so stop early.
-        shouldStopAfterFailure: (failure) =>
-          failure.failureClass === "candidate-blocked" &&
-          failure.message.toLowerCase().includes("cloudflare"),
+        // No early stop: every lane's streams came from the one play call, so a
+        // per-lane failure is endpoint evidence only. A region-wide catalog
+        // block surfaces at the play fetch above and never reaches the cycle.
         resolveCandidate: async (candidate, cycleContext) => {
           const metadata = parseMiruroCycleCandidateMetadata(candidate, context);
           const serverProfile = createMiruroServerProfile(
             metadata.serverId,
             metadata.audioCategory,
           );
-          const srcCacheKey = `sources:${metadata.episodeId}:${metadata.audioCategory}:${metadata.serverId}`;
-          // SAFETY: the sources: key namespace only ever holds
-          // MiruroSourcesResponse values written by pipeCall.
-          let srcData = sourceCache.get(srcCacheKey) as MiruroSourcesResponse | null;
-          if (!srcData) {
-            srcData = await pipeCall(
-              context,
-              "sources",
-              {
-                episodeId: metadata.episodeId,
-                anilistId: Number(anilistId),
-                provider: metadata.serverId,
-                category: metadata.audioCategory,
-              },
-              cycleContext.signal,
-            );
-            sourceCache.set(srcCacheKey, srcData);
-          }
+          // The play matrix already returned this lane's streams — the pipe
+          // needed a second call per server, the catalog does not.
+          const srcData = sourceDataByKey.get(`${metadata.serverId}|${metadata.audioCategory}`);
 
           const rawStreams =
             srcData?.streams?.filter((s) => (s.type === "hls" || s.type === "mp4") && s.url) ?? [];
@@ -2579,7 +1946,7 @@ export const miruroProviderModule: CoreProviderModule = {
             });
           }
 
-          // The pipe hands out a backend's URL whether or not that backend is up:
+          // The catalog hands out a backend's URL whether or not that backend is up:
           // `pewe` kept returning hls.anidb.app URLs through AniDB's maintenance.
           // Without this check the first such server wins the cycle and mpv is
           // handed a dead host while healthy servers go untried.
@@ -2658,7 +2025,7 @@ export const miruroProviderModule: CoreProviderModule = {
           attempts: cycleResult.attempts,
           fallback: {
             code: "not-found",
-            message: "No HLS streams from miruro sources pipe",
+            message: "No HLS streams from Miruro sources",
             retryable: true,
           },
           evidence: {
@@ -2727,7 +2094,10 @@ export const miruroProviderModule: CoreProviderModule = {
         });
       }
 
-      const classified = classifyMiruroPipeError(error);
+      // A throw from the lookup or play fetch skipped the stage event — the
+      // fetch is where the time went, so its failure must still be timed.
+      if (!playStageEmitted) emitPlayStage(0, true);
+      const classified = classifyMiruroResolveError(error);
       failures.push({
         providerId: MIRURO_PROVIDER_ID,
         ...classified,

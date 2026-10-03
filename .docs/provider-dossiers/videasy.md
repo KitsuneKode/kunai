@@ -1,13 +1,27 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-10-03"
 ---
 
 # Provider: Videasy
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
-## Production status (2026-11) — catalog host moved
+## Production status (2026-10-03) — streaming API confirmed dead, no drifted host
+
+Re-probed the whole family live: `www.vidking.net`/`vidking.net` have **no A
+record**; `api.speedracelight.com` resolves (Cloudflare edge) but every
+`/api/sources/*` path returns **502**; `api.wingsdatabase.com` is NXDOMAIN;
+`db.speedracelight.com` 429s everything; `db.wingsdatabase.com` answers only the
+`/3` TMDB catalog proxy (sources paths 404); `api.videasy.net`/`videasy.net`
+are dead. The `enc-dec` decrypt oracle is moot — there is no encrypted blob to
+decrypt. Verdict unchanged: operator shutdown, not endpoint drift. The lane
+already routes around it — `vidlink` is `provider`, videasy sits third in
+`providerPriority` behind rivestream, and endpoint health keeps the per-episode
+tax to one bounded probe per heal TTL. Removal stays deferred on the dossier's
+2026-09-21 reasoning.
+
+## Production status (2026-10-03) — catalog host moved
 
 `api.videasy.to` and `db.videasy.to` are **NXDOMAIN** on public resolvers —
 the TMDB-format catalog (`/3/search/multi`, `/{movie|tv}/{id}?append_to_response=external_ids`)
@@ -43,7 +57,7 @@ already does the right job — one bounded probe per heal TTL, honest
 `network-error` reporting, automatic resurrection if upstream ever returns.
 Re-evaluate removal only if the upstream stays dead for months or a
 replacement default provider is chosen deliberately. (They resurfaced on a
-new domain — see the 2026-11 entry above.)
+new domain — see the 2026-10-03 catalog entry above.)
 
 ## Production status (2026-08-13) — cache and transport hardening
 

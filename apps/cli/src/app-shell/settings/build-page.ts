@@ -1,5 +1,6 @@
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
+import { truncateLine } from "../shell-text";
 import { isSettingVisible } from "./gates";
 import { describeProviderOrder } from "./provider-order";
 import { buildSettingsRegistry } from "./registry";
@@ -45,7 +46,7 @@ function valueSummaryFor(def: SettingRowDef, config: KitsuneConfig): string {
           return "configured";
         }
       }
-      return raw.length > 32 ? `${raw.slice(0, 29)}…` : raw;
+      return truncateLine(raw, 32);
     }
     case "submenu":
       return def.summarize(config);
@@ -115,7 +116,10 @@ export function buildSettingsPage(
   ctx: SettingsRegistryContext,
   options?: { readonly searchQuery?: string; readonly activeSectionIndex?: number },
 ): BuiltSettingsPage {
-  const search = options?.searchQuery?.trim().toLowerCase() ?? "";
+  // `/` opens settings search by seeding "/" into searchQuery so the bar reads
+  // "Search: /query". The slash is the prompt, not the pattern — strip it or
+  // every /-started query filters against a literal slash and matches nothing.
+  const search = options?.searchQuery?.trim().replace(/^\//, "").toLowerCase() ?? "";
   const defs = buildSettingsRegistry(ctx).filter((row) => isSettingVisible(row, ctx));
   const rows: BuiltSettingsRow[] = [];
   const rowById = new Map<string, BuiltSettingsRow>();

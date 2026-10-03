@@ -197,7 +197,9 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
             return (
               <Box key={`sec-${group.section}`}>
                 <Text color={focused ? palette.accent : palette.dim}>{focused ? "▸ " : "  "}</Text>
-                <Box width={9}>
+                {/* 10 not 9: "Subtitles" is 9 chars and would fill the cell
+                    flush, welding onto the value that follows it. */}
+                <Box width={10}>
                   <Text color={active ? palette.text : palette.muted} bold={active} wrap="truncate">
                     {group.title}
                   </Text>

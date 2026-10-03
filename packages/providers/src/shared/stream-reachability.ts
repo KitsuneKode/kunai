@@ -4,7 +4,12 @@ import {
   resolvedAddressBlockReason,
 } from "@kunai/types";
 
-import { readResponseBodyPrefix, readResponseTextCapped } from "./bounded-body";
+import {
+  readResponseBodyPrefix,
+  readResponseTextCapped,
+  readStreamBytesCapped,
+} from "./bounded-body";
+import { curlCipherArgs, resolveCurlCandidate } from "./curl-impersonate";
 import {
   HLS_SEGMENT_PROBE_MIN_BYTES,
   isHlsMasterPlaylist,
@@ -44,6 +49,17 @@ export type ProbeStreamReachabilityInput = {
   readonly fetchImpl?: StreamReachabilityFetch;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
+  /**
+   * Transport used for the fingerprint retry: a definitive `HTTP 403` from
+   * Bun's fetch can be a TLS-client verdict rather than the stream's — the
+   * player-shaped clients (mpv, curl) often pass where Bun's handshake is
+   * refused (miruro's `vault-*.uwucdn.top`/`owocdn.top` measured this,
+   * 2026-10-03). When absent the retry resolves curl/curl-impersonate from
+   * PATH; `null` disables it. The retry only fires on the platform-fetch
+   * path — an injected `fetchImpl` owns its transport unless it opts in by
+   * passing one explicitly.
+   */
+  readonly curlFetchImpl?: StreamReachabilityFetch | null;
 };
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
@@ -77,16 +93,16 @@ async function fetchProbeTarget(options: {
   readonly resolveNames: boolean;
   readonly extraSensitiveHeaders?: readonly string[];
   /**
-   * Skip literal/DNS checks on hop 0 only. For callers whose first URL is
-   * code-fixed or user-configured (a self-hosted Invidious instance), while
-   * provider-controlled redirect targets stay fully guarded.
+   * Skip literal/DNS checks on hop 0 only, for the URLs this predicate
+   * approves — a self-hosted Invidious instance the user configured, not a
+   * provider-supplied target. Redirect hops stay fully guarded regardless.
    */
-  readonly allowInitialPrivateTarget?: boolean;
+  readonly allowInitialPrivateTarget?: (url: string) => boolean;
 }): Promise<ProbeFetchOutcome> {
   let target = options.url;
   let init = options.init;
   for (let hop = 0; ; hop++) {
-    const exemptInitialHop = hop === 0 && options.allowInitialPrivateTarget === true;
+    const exemptInitialHop = hop === 0 && (options.allowInitialPrivateTarget?.(target) ?? false);
     if (!exemptInitialHop) {
       const literalBlocked = blockedLiteralTargetReason(target);
       if (literalBlocked) {
@@ -130,6 +146,19 @@ async function fetchProbeTarget(options: {
           if (current.protocol === "https:" && next.protocol === "http:") {
             return { kind: "blocked", reason: `${target} -> https downgrade` };
           }
+          // Fetch redirect semantics: a 303 — or a 301/302 answering a POST —
+          // replays the next hop as GET with no body and no request-body
+          // headers. Replaying init unchanged would send a request the
+          // platform fetch never would have made.
+          const method = (init.method ?? "GET").toUpperCase();
+          const replayAsGet =
+            (response.status === 303 && method !== "GET" && method !== "HEAD") ||
+            ((response.status === 301 || response.status === 302) && method === "POST");
+          if (replayAsGet) {
+            const headers = new Headers(init.headers);
+            for (const name of REQUEST_BODY_HEADER_NAMES) headers.delete(name);
+            init = { ...init, method: "GET", headers, body: undefined };
+          }
           // Match undici's own redirect hygiene: credentials do not cross
           // origins, even when every hop individually validates as public.
           if (next.origin !== current.origin && init.headers) {
@@ -151,6 +180,19 @@ async function fetchProbeTarget(options: {
 }
 
 const CREDENTIAL_HEADERS = new Set(["authorization", "cookie", "proxy-authorization"]);
+
+/**
+ * Headers that describe a body — removed when a redirect demotes the next hop
+ * to GET, matching the fetch spec's request-body-header list (plus
+ * content-length, which a bodiless request must not carry either).
+ */
+const REQUEST_BODY_HEADER_NAMES = [
+  "content-encoding",
+  "content-language",
+  "content-length",
+  "content-location",
+  "content-type",
+] as const;
 
 function stripCredentialHeaders(
   headers: RequestInit["headers"],
@@ -190,6 +232,48 @@ export function fetchGuardedStreamTarget(options: {
 }
 
 /**
+ * Hop-0 private-target exemption list for the shared guarded-fetch lanes.
+ * Provider-supplied URLs are untrusted and always pass the literal/DNS gate;
+ * the only legitimate private hop-0 targets are endpoints the user configured
+ * themselves — self-hosted Invidious/Piped instances legitimately live on a
+ * LAN address. Registrations are tagged so a reconfigured provider replaces
+ * its entries instead of accumulating stale ones.
+ */
+const configuredInitialTargetOrigins = new Map<string, ReadonlySet<string>>();
+
+export function registerConfiguredEndpointOrigins(
+  tag: string,
+  urls: readonly (string | undefined | null)[],
+): void {
+  const origins = new Set<string>();
+  for (const url of urls) {
+    if (!url) continue;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        origins.add(parsed.origin);
+      }
+    } catch {
+      // A malformed configured URL fails on its own when used — no origin.
+    }
+  }
+  configuredInitialTargetOrigins.set(tag, origins);
+}
+
+export function isConfiguredInitialTarget(url: string): boolean {
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return false;
+  }
+  for (const origins of configuredInitialTargetOrigins.values()) {
+    if (origins.has(origin)) return true;
+  }
+  return false;
+}
+
+/**
  * Provider-secret headers that must never survive a cross-origin redirect on
  * the API-fetch path. The stream probe keeps the narrower credential set on
  * purpose — mpv replays the candidate's real headers, so the probe mirrors
@@ -215,11 +299,13 @@ export function createGuardedFetch(
     readonly fetchImpl?: StreamReachabilityFetch;
     readonly extraSensitiveHeaders?: readonly string[];
     /**
-     * The first request URL is code-fixed or user-configured (e.g. a
-     * self-hosted Invidious instance), so literal private targets pass on
-     * hop 0. Redirect hops — the attacker-controlled part — stay guarded.
+     * Hop-0 private-target pass, decided per URL. The shared provider lanes
+     * take `isConfiguredInitialTarget` so only genuinely user-configured
+     * endpoint origins (a self-hosted Invidious/Piped instance) qualify — a
+     * provider-supplied URL pointing at a LAN address stays blocked. Redirect
+     * hops — the attacker-controlled part — stay guarded regardless.
      */
-    readonly allowInitialPrivateTarget?: boolean;
+    readonly allowInitialPrivateTarget?: (url: string) => boolean;
   } = {},
 ): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
   return async (input, init) => {
@@ -258,7 +344,8 @@ async function normalizeGuardedRequest(
   init: RequestInit | undefined,
 ): Promise<{ url: string; init: RequestInit }> {
   if (!(input instanceof Request)) {
-    return { url: typeof input === "string" ? input : input.toString(), init: init ?? {} };
+    // string and URL both serialize through String() — no branching needed.
+    return { url: String(input), init: init ?? {} };
   }
   const headers = new Headers(input.headers);
   new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
@@ -268,7 +355,9 @@ async function normalizeGuardedRequest(
     init?.body ?? (hasBody ? await input.clone().arrayBuffer() : undefined);
   return {
     url: input.url,
-    init: { ...init, method, headers, body },
+    // The Request's own signal survives normalization when init carries none —
+    // a dropped signal silently disarms the caller's cancellation here.
+    init: { ...init, method, headers, body, signal: init?.signal ?? input.signal },
   };
 }
 
@@ -276,44 +365,96 @@ async function normalizeGuardedRequest(
 export async function probeStreamReachability(
   input: ProbeStreamReachabilityInput,
 ): Promise<StreamReachabilityProbeResult> {
-  const fetchImpl = input.fetchImpl ?? fetch;
-  const timeoutMs = input.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + (input.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS);
   const remaining = () => Math.max(100, deadline - Date.now());
-  const headers = input.headers ?? {};
   // Injected fetches own their destinations; real fetches get DNS answers
   // re-validated so a public name cannot resolve to a private address.
   const resolveNames = input.fetchImpl === undefined;
+
+  const first = await probeStreamReachabilityOnce(
+    input,
+    input.fetchImpl ?? fetch,
+    deadline,
+    remaining,
+    resolveNames,
+  );
+  if (
+    first.status !== "unreachable" ||
+    first.definitive !== true ||
+    !isFingerprintRetryStatus(first.reason) ||
+    input.signal?.aborted === true ||
+    (input.fetchImpl !== undefined && input.curlFetchImpl === undefined)
+  ) {
+    return first;
+  }
+  const injectedCurl = input.curlFetchImpl !== undefined;
+  const curlFetch =
+    input.curlFetchImpl === undefined ? resolveDefaultCurlProbeFetch() : input.curlFetchImpl;
+  if (curlFetch === null) return first;
+  // The retry shares the first attempt's deadline — a retry that starts with
+  // near-zero budget always dies at the timer and reports "timeout", which
+  // downgrades the first attempt's definitive refusal into a non-answer.
+  // The floor only gates the real curl spawn (process start + connect need
+  // real time); an injected impl's owner knows its own transport cost.
+  if (!injectedCurl && deadline - Date.now() < CURL_RETRY_MIN_REMAINING_MS) return first;
+  // Curl is the player-shaped client — its verdict replaces the Bun refusal
+  // outright: a reach is proof the fingerprint was the problem, a repeated or
+  // different definitive status is the more accurate death verdict, and an
+  // inconclusive outcome honestly degrades to "not proven dead".
+  return probeStreamReachabilityOnce(input, curlFetch, deadline, remaining, resolveNames);
+}
+
+function probeStreamReachabilityOnce(
+  input: ProbeStreamReachabilityInput,
+  fetchImpl: StreamReachabilityFetch,
+  deadline: number,
+  remaining: () => number,
+  resolveNames: boolean,
+): Promise<StreamReachabilityProbeResult> {
+  const headers = input.headers ?? {};
 
   if (isHlsPlaylistUrl(input.url)) {
     return probeHlsManifest(fetchImpl, input.url, headers, remaining, input.signal, resolveNames);
   }
 
-  try {
-    const head = await probeHttpStatus(fetchImpl, input.url, {
-      method: "HEAD",
-      headers,
+  return (async () => {
+    try {
+      const head = await probeHttpStatus(fetchImpl, input.url, {
+        method: "HEAD",
+        headers,
+        remainingMs: remaining,
+        parentSignal: input.signal,
+        resolveNames,
+      });
+      if (head.status === "reachable") return head;
+      if (head.status === "timeout") return head;
+      if (head.status === "unreachable" && head.definitive) return head;
+    } catch {
+      if (Date.now() >= deadline) return { status: "timeout" };
+    }
+
+    if (Date.now() >= deadline) return { status: "timeout" };
+
+    return probeHttpStatus(fetchImpl, input.url, {
+      method: "GET",
+      headers: { ...headers, Range: "bytes=0-0" },
       remainingMs: remaining,
       parentSignal: input.signal,
       resolveNames,
+      healthyStatus: (status) => (status >= 200 && status < 300) || status === 206,
     });
-    if (head.status === "reachable") return head;
-    if (head.status === "timeout") return head;
-    if (head.status === "unreachable" && head.definitive) return head;
-  } catch {
-    if (Date.now() >= deadline) return { status: "timeout" };
-  }
+  })();
+}
 
-  if (Date.now() >= deadline) return { status: "timeout" };
-
-  return probeHttpStatus(fetchImpl, input.url, {
-    method: "GET",
-    headers: { ...headers, Range: "bytes=0-0" },
-    remainingMs: remaining,
-    parentSignal: input.signal,
-    resolveNames,
-    healthyStatus: (status) => (status >= 200 && status < 300) || status === 206,
-  });
+/**
+ * The statuses a second client can legitimately overturn. 403 is the TLS-
+ * fingerprint verdict CDNs hand Bun while curl/mpv pass — worth one retry with
+ * the player-shaped transport. Other 4xx are content verdicts (expired
+ * signature, wrong referer, quota) that a different client identity does not
+ * change; 5xx are already non-definitive so they never reach this check.
+ */
+function isFingerprintRetryStatus(reason: string): boolean {
+  return reason.includes("HTTP 403");
 }
 
 /** Provider resolve gates allow slow CDNs through as unverified; only definitive failures block. */
@@ -562,11 +703,20 @@ async function probeHlsMediaSegment(
 
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     if (contentType.includes("text/html")) {
-      return {
-        status: "unreachable",
-        reason: "HLS segment unreachable: content-type text/html",
-        definitive: true,
-      };
+      // A declared HTML type is meant to catch the CDN error page masquerading
+      // as a segment — but upstreams also disguise real segments as HTML to
+      // defeat exactly this check (vidrock's obsidiancircuit lane serves 2.6MB
+      // of MPEG-TS as `page-N.html`, measured 2026-10-03). The bytes are the
+      // evidence: refuse only when the body is not actually TS.
+      const prefix = await readResponseBodyPrefix(response, HLS_SEGMENT_PROBE_MIN_BYTES);
+      if (prefix === null || !hasMpegTsSyncSignature(prefix)) {
+        return {
+          status: "unreachable",
+          reason: "HLS segment unreachable: content-type text/html",
+          definitive: true,
+        };
+      }
+      return { status: "reachable" };
     }
 
     // Range asks politely; this enforces it. A host that answers a 1KiB Range
@@ -684,6 +834,19 @@ async function probeHttpStatus(
 }
 
 /**
+ * MPEG-TS packets are 188 bytes, each opening with the 0x47 sync byte — two
+ * consecutive syncs are ~1-in-65k by accident, three ~1-in-16M, so matching
+ * (0, 188, 376) is reliable proof of TS. A 4-byte-prefixed m2ts variant (sync
+ * at 4, 196, 384+4) exists but is rare in HLS; checking the plain layout
+ * keeps the rescue honest instead of "any binary blob passes".
+ */
+function hasMpegTsSyncSignature(buffer: Uint8Array): boolean {
+  return (
+    buffer.byteLength > 376 && buffer[0] === 0x47 && buffer[188] === 0x47 && buffer[376] === 0x47
+  );
+}
+
+/**
  * Every 4xx is a refusal, and a refusal is a verdict.
  *
  * 429 was briefly treated as transient on the theory that a CDN throttling a CLI
@@ -728,4 +891,176 @@ function isDefinitiveNetworkError(message: string): boolean {
     lower.includes("unknown scheme") ||
     lower.includes("url using bad/illegal format")
   );
+}
+
+/* ------------------------------------------------------------------------ */
+/* Curl fallback transport — the player-shaped client                        */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * `%{redirect_url}` and `%{content_type}` ride the `-w` trailer so redirect
+ * hops can be walked in-process — `-L` would hand them to curl without the
+ * per-hop target validation `fetchProbeTarget` owns.
+ */
+const CURL_PROBE_MARKER = "\n__KUNAI_PROBE__:";
+const CURL_PROBE_WRITE_OUT = "\n__KUNAI_PROBE__:%{http_code}\t%{redirect_url}\t%{content_type}";
+const CURL_PROBE_MARKER_BYTES = new TextEncoder().encode(CURL_PROBE_MARKER);
+/** The trailer is ~100 bytes; a wider window would be scanning body. */
+const CURL_PROBE_TRAILER_WINDOW = 1024;
+/** Segment/playlist probes read bounded bodies — the cap guards the misbehaving rest. */
+const CURL_PROBE_BODY_MAX_BYTES = 4 * 1024 * 1024;
+const CURL_PROBE_CONNECT_TIMEOUT_SEC = 5;
+/** Backstop only; the caller's AbortSignal is the real deadline. */
+const CURL_PROBE_MAX_TIME_SEC = 30;
+/**
+ * Minimum budget a fingerprint retry needs to produce an honest verdict —
+ * below this the shared deadline kills curl before its answer lands, which
+ * would replace a definitive refusal with a fake timeout.
+ */
+const CURL_RETRY_MIN_REMAINING_MS = 750;
+
+export type CurlProbeSpawn = (
+  args: readonly string[],
+  signal?: AbortSignal,
+) => Promise<{ readonly stdout: Uint8Array; readonly stderr: string; readonly exitCode: number }>;
+
+async function spawnCurlProbeOnce(args: readonly string[], signal?: AbortSignal) {
+  const proc = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe", signal });
+  const stderrP = new Response(proc.stderr).text();
+  const stdout = await readStreamBytesCapped(proc.stdout, CURL_PROBE_BODY_MAX_BYTES);
+  // The cap tripped — kill now rather than waiting on the exited promise, so
+  // a curl that keeps streaming after the reader cancelled dies immediately.
+  if (stdout === null) proc.kill();
+  const [stderr, exitCode] = await Promise.all([stderrP, proc.exited]);
+  if (stdout === null) {
+    return {
+      stdout: new Uint8Array(),
+      stderr: `stdout exceeded ${CURL_PROBE_BODY_MAX_BYTES} bytes`,
+      exitCode: exitCode === 0 ? 63 : exitCode,
+    };
+  }
+  return { stdout, stderr, exitCode };
+}
+
+type CurlProbeOutcome = {
+  readonly status: number;
+  readonly redirectUrl: string | null;
+  readonly contentType: string | null;
+  readonly body: Uint8Array;
+};
+
+/** `%{redirect_url}`/`%{content_type}` are single-line values — tabs cannot appear in them. */
+function interpretCurlProbeResult(stdout: Uint8Array, stderr: string): CurlProbeOutcome {
+  const window = stdout.subarray(Math.max(0, stdout.byteLength - CURL_PROBE_TRAILER_WINDOW));
+  let markerAt = -1;
+  for (let i = window.byteLength - CURL_PROBE_MARKER_BYTES.byteLength; i >= 0; i--) {
+    let match = true;
+    for (let j = 0; j < CURL_PROBE_MARKER_BYTES.byteLength; j++) {
+      if (window[i + j] !== CURL_PROBE_MARKER_BYTES[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      markerAt = i;
+      break;
+    }
+  }
+  if (markerAt < 0) {
+    throw new Error(stderr.trim() || "curl returned without an HTTP response");
+  }
+  const trailer = new TextDecoder()
+    .decode(window.subarray(markerAt + CURL_PROBE_MARKER_BYTES.byteLength))
+    .trim();
+  const [statusText = "", redirectUrl = "", contentType = ""] = trailer.split("\t");
+  const status = Number.parseInt(statusText, 10);
+  // Response's constructor only accepts real HTTP statuses — anything else
+  // means curl's trailer was truncated, which is a transport fault.
+  if (!Number.isFinite(status) || status < 200 || status > 599) {
+    throw new Error(stderr.trim() || "curl returned without an HTTP status");
+  }
+  const bodyEnd = stdout.byteLength - window.byteLength + markerAt;
+  return {
+    status,
+    redirectUrl: redirectUrl || null,
+    contentType: contentType || null,
+    body: stdout.subarray(0, bodyEnd),
+  };
+}
+
+/** Statuses whose responses are defined as bodiless — Response rejects a body for them. */
+const CURL_NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+export type CurlReachabilityFetchOptions = {
+  readonly curlPath: string;
+  /**
+   * True when `curlPath` is a curl-impersonate wrapper — it already ships the
+   * browser handshake, so forcing a cipher list would undo the fingerprint it
+   * exists to provide.
+   */
+  readonly impersonates?: boolean;
+  /** Spawn seam for tests — drives outcomes without a real binary. */
+  readonly spawn?: CurlProbeSpawn;
+};
+
+/**
+ * A `StreamReachabilityFetch` backed by curl — the player-shaped transport for
+ * the 403-fingerprint retry. Redirects are never followed (`-L` absent): the
+ * hop walker re-validates each `Location` target itself. The URL is terminated
+ * by `--` because provider streams can begin with an option-shaped path.
+ */
+export function createCurlReachabilityFetch(
+  options: CurlReachabilityFetchOptions,
+): StreamReachabilityFetch {
+  return async (url, init) => {
+    const method = (init.method ?? "GET").toUpperCase();
+    const args = [
+      options.curlPath,
+      // First argv only: curl reads ~/.curlrc unless -q leads the command line.
+      "-q",
+      ...curlCipherArgs(options.impersonates === true),
+      "-sS",
+      "--compressed",
+      "--connect-timeout",
+      String(CURL_PROBE_CONNECT_TIMEOUT_SEC),
+      "--max-filesize",
+      String(CURL_PROBE_BODY_MAX_BYTES),
+      "--max-time",
+      String(CURL_PROBE_MAX_TIME_SEC),
+      ...(method === "HEAD" ? ["-I"] : method === "GET" ? [] : ["-X", method]),
+    ];
+    new Headers(init.headers).forEach((value, name) => {
+      args.push("-H", `${name}: ${value}`);
+    });
+    args.push("-w", CURL_PROBE_WRITE_OUT, "-o", "-", "--", url);
+
+    const spawn = options.spawn ?? spawnCurlProbeOnce;
+    const result = await spawn(args, init.signal ?? undefined);
+    if (init.signal?.aborted) {
+      throw init.signal.reason instanceof Error ? init.signal.reason : new Error("aborted");
+    }
+    if (result.exitCode !== 0) {
+      throw new Error(result.stderr.trim() || `curl exit ${result.exitCode}`);
+    }
+    const { status, redirectUrl, contentType, body } = interpretCurlProbeResult(
+      result.stdout,
+      result.stderr,
+    );
+    const headers = new Headers();
+    if (contentType) headers.set("content-type", contentType);
+    if (redirectUrl) headers.set("location", redirectUrl);
+    return new Response(
+      body.byteLength === 0 || CURL_NULL_BODY_STATUSES.has(status)
+        ? null
+        : new Blob([new Uint8Array(body)]),
+      { status, headers },
+    );
+  };
+}
+
+/** curl/curl-impersonate from PATH, or null on a machine with neither. */
+function resolveDefaultCurlProbeFetch(): StreamReachabilityFetch | null {
+  const curl = resolveCurlCandidate();
+  if (curl === null) return null;
+  return createCurlReachabilityFetch({ curlPath: curl.path, impersonates: curl.impersonates });
 }

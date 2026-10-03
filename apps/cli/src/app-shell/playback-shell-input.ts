@@ -21,6 +21,8 @@ export type PlaybackShellInputHandlers = {
   readonly onToggleFavorite?: () => void;
   readonly onFallback?: () => void;
   readonly onCommandAction?: (action: ShellAction) => void;
+  /** A key resolved to a capability that is off — tell the user why it refused. */
+  readonly onNote?: (note: string) => void;
 };
 
 export type PlaybackShellInputContext = {
@@ -53,6 +55,7 @@ export type PlaybackShellInputEffect =
   | { readonly kind: "stop-after-current" }
   | { readonly kind: "toggle-favorite" }
   | { readonly kind: "toggle-memory-panel" }
+  | { readonly kind: "note"; readonly note: string }
   | { readonly kind: "shell-action"; readonly action: ShellAction };
 
 function normalizedKey(input: string): string {
@@ -68,11 +71,16 @@ function resolveRecoveryOrTroubleKeys(
   if (key === "r" && handlers.onRecover) return { kind: "recover" };
   // Fallback is Shift+F on purpose — a provider switch must never fire from a
   // stray lowercase keypress, so only the raw uppercase input qualifies.
-  if (rawInput === "F" && ctx.fallbackAvailable && handlers.onFallback) {
-    return { kind: "fallback" };
+  if (rawInput === "F" && handlers.onFallback) {
+    return ctx.fallbackAvailable
+      ? { kind: "fallback" }
+      : { kind: "note", note: "No fallback provider for this stream." };
   }
-  if (key === "o" && ctx.canOpenSourcePicker && handlers.onPickSource)
-    return { kind: "pick-source" };
+  if (key === "o" && handlers.onPickSource) {
+    return ctx.canOpenSourcePicker
+      ? { kind: "pick-source" }
+      : { kind: "note", note: "No alternate sources on this stream." };
+  }
   if (key === "d" && handlers.onCommandAction) {
     return { kind: "shell-action", action: "diagnostics" };
   }
@@ -205,6 +213,9 @@ export function applyPlaybackShellInputEffect(
       return;
     case "toggle-memory-panel":
       onToggleMemoryPanel?.();
+      return;
+    case "note":
+      handlers.onNote?.(effect.note);
       return;
     case "shell-action":
       handlers.onCommandAction?.(effect.action);

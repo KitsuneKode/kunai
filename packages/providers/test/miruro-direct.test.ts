@@ -1,26 +1,16 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { getMiruroKnownCatalog } from "../src/catalogs/miruro";
 import {
   buildMiruroCycleCandidates,
-  fetchMiruroPipeBody,
   computeMiruroEpisodesPersistTtlMs,
   createMiruroResultFromPayload,
-  decodeMiruroPipePayload,
-  describeMiruroPipeFailure,
-  interpretMiruroCurlResult,
-  mapMiruroSearchMedia,
-  miruroProviderModule,
-  probeMiruroBackendDown,
-  type MiruroSearchMedia,
-  miruroWafBlockMessage,
   isMiruroAudioFallback,
-  MiruroPipeDecodeError,
-  type MiruroPipeDecodeFailureCode,
-  setMiruroPipeRetrySleepForTest,
+  miruroProviderModule,
   MIRURO_SERVER_TRY_ORDER,
+  probeMiruroBackendDown,
   resolveMiruroAnilistId,
   type MiruroServerProfile,
 } from "../src/miruro/direct";
@@ -48,7 +38,7 @@ const KIWI_SUB: MiruroServerProfile = {
 };
 
 /**
- * A labelled leaf playlist — `expandMiruroPipeStreams` passes it through without
+ * A labelled leaf playlist — `expandMiruroStreams` passes it through without
  * a network fetch, so the builder stays deterministic.
  */
 const SOURCE_DATA = {
@@ -253,17 +243,16 @@ describe("resolveMiruroAnilistId", () => {
 
 describe("Miruro server order has one authority", () => {
   const EXPECTED_ORDER: readonly string[] = [
-    "pewe",
-    "moo",
-    "bee",
-    "ally",
-    "bonk",
-    "dune",
-    "ANIMEKAI",
-    "ANIMEZ",
-    "ZORO",
-    "kiwi",
-    "hop",
+    "animepahe",
+    "icarus",
+    "vault-6-direct",
+    "Vid",
+    "HD",
+    "Vidstream",
+    "Vidplay",
+    "BYFMS",
+    "DGHG",
+    "Bird",
   ];
 
   const episodes = { sub: [{ id: "ep-1", number: 1 }] };
@@ -274,7 +263,7 @@ describe("Miruro server order has one authority", () => {
 
   test("the known catalog is built from the same order", () => {
     const catalogServers = getMiruroKnownCatalog(["sub"]).map((entry) =>
-      entry.sourceId.replace(/^source:miruro:pipe:/, "").replace(/:sub$/, ""),
+      entry.sourceId.replace(/^source:miruro:catalog:/, "").replace(/:sub$/, ""),
     );
 
     expect(catalogServers).toEqual([...EXPECTED_ORDER]);
@@ -322,7 +311,7 @@ describe("Miruro server order has one authority", () => {
         targetAudio: "dub",
         fallbackAudio: "sub",
         preferredSubtitleDelivery: "hardcoded",
-        preferredSourceId: "source:miruro:pipe:moo:sub",
+        preferredSourceId: "source:miruro:catalog:moo:sub",
       });
       expect(tryOrder(candidates)[0]).toBe("moo:sub");
     });
@@ -342,10 +331,10 @@ describe("Miruro server order has one authority", () => {
   test("discovered providers are ranked by the canonical order", () => {
     const candidates = buildMiruroCycleCandidates({
       providers: {
-        bonk: { episodes },
-        ZORO: { episodes },
-        kiwi: { episodes },
-        bee: { episodes },
+        "HD-2": { episodes },
+        "vault-6-direct-1": { episodes },
+        Bird: { episodes },
+        animepahe: { episodes },
       },
       episodeNum: 1,
       targetAudio: "sub",
@@ -353,10 +342,10 @@ describe("Miruro server order has one authority", () => {
     });
 
     expect(candidates.map((candidate) => candidate.serverId)).toEqual([
-      "bee",
-      "bonk",
-      "ZORO",
-      "kiwi",
+      "animepahe",
+      "vault-6-direct-1",
+      "HD-2",
+      "Bird",
     ]);
   });
 
@@ -364,9 +353,9 @@ describe("Miruro server order has one authority", () => {
     const candidates = buildMiruroCycleCandidates({
       providers: {
         zzz: { episodes },
-        bonk: { episodes },
+        "icarus-2-3": { episodes },
         aaa: { episodes },
-        kiwi: { episodes },
+        Vid: { episodes },
       },
       episodeNum: 1,
       targetAudio: "sub",
@@ -374,136 +363,11 @@ describe("Miruro server order has one authority", () => {
     });
 
     expect(candidates.map((candidate) => candidate.serverId)).toEqual([
-      "bonk",
-      "kiwi",
+      "icarus-2-3",
+      "Vid",
       "zzz",
       "aaa",
     ]);
-  });
-});
-
-describe("decodeMiruroPipePayload", () => {
-  const FIXTURES = new URL("./fixtures/miruro/", import.meta.url);
-  const read = (name: string) => Bun.file(new URL(name, FIXTURES)).text();
-  const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
-
-  const decode = (
-    body: string,
-    expectedKind: "episodes" | "sources",
-    overrides: { obfuscationVersion?: string | null; keyHex?: string } = {},
-  ) =>
-    decodeMiruroPipePayload({
-      body,
-      obfuscationVersion:
-        "obfuscationVersion" in overrides ? (overrides.obfuscationVersion ?? null) : "2",
-      expectedKind,
-      keyHex: "keyHex" in overrides ? overrides.keyHex : PIPE_KEY,
-    });
-
-  const expectCode = (run: () => unknown, code: MiruroPipeDecodeFailureCode) => {
-    try {
-      run();
-    } catch (error) {
-      expect(error).toBeInstanceOf(MiruroPipeDecodeError);
-      expect((error as MiruroPipeDecodeError).code).toBe(code);
-      return;
-    }
-    throw new Error(`expected ${code} but decode succeeded`);
-  };
-
-  let episodesUnderForeignKey = "";
-  let sourcesUnderForeignKey = "";
-
-  beforeAll(async () => {
-    episodesUnderForeignKey = await read("pipe-wrong-key-episodes-v2.txt");
-    sourcesUnderForeignKey = await read("pipe-wrong-key-sources-v2.txt");
-  });
-
-  test("decodes a plain version-2 episodes body", async () => {
-    const decoded = decode(await read("pipe-valid-episodes-v2.txt"), "episodes");
-
-    expect(decoded).toMatchObject({
-      mappings: { malId: 21 },
-      providers: { kiwi: { episodes: { sub: [{ id: "kiwi-ep-1", number: 1 }] } } },
-    });
-  });
-
-  test("decodes a gzipped version-2 sources body", async () => {
-    const decoded = decode(await read("pipe-valid-sources-v2.txt"), "sources");
-
-    expect(decoded).toMatchObject({
-      streams: [{ url: "https://uwucdn.top/stream/1080/index.m3u8", quality: "1080p" }],
-      intro: { start: 0, end: 90 },
-    });
-  });
-
-  test("reports a missing or unusable key distinctly", async () => {
-    const body = await read("pipe-valid-episodes-v2.txt");
-
-    expectCode(() => decode(body, "episodes", { keyHex: undefined }), "pipe-key-missing");
-    expectCode(() => decode(body, "episodes", { keyHex: "" }), "pipe-key-missing");
-    expectCode(() => decode(body, "episodes", { keyHex: "zz" }), "pipe-key-missing");
-  });
-
-  test("reports an unexpected obfuscation version distinctly", async () => {
-    const body = await read("pipe-valid-episodes-v2.txt");
-
-    expectCode(
-      () => decode(body, "episodes", { obfuscationVersion: "3" }),
-      "pipe-version-mismatch",
-    );
-    expectCode(
-      () => decode(body, "episodes", { obfuscationVersion: null }),
-      "pipe-version-mismatch",
-    );
-  });
-
-  test("reports a base64 failure distinctly", () => {
-    expectCode(() => decode("!!!not base64!!!", "episodes"), "pipe-base64-invalid");
-  });
-
-  test("reports an XOR/gunzip failure distinctly", async () => {
-    const body = await read("pipe-truncated-gzip-sources-v2.txt");
-
-    expectCode(() => decode(body, "sources"), "pipe-xor-gunzip-failed");
-  });
-
-  test("reports a JSON syntax failure distinctly", async () => {
-    const body = await read("pipe-wrong-key-episodes-v2.txt");
-
-    expectCode(() => decode(body, "episodes"), "pipe-json-syntax-invalid");
-  });
-
-  // A rotated key does not announce itself: XOR always "succeeds", so the failure
-  // surfaces at whichever later stage the garbage breaks. Both codes are still
-  // actionable and neither is silent, which is the point.
-  test("a rotated key surfaces at the stage its garbage actually breaks", async () => {
-    expectCode(() => decode(episodesUnderForeignKey, "episodes"), "pipe-json-syntax-invalid");
-    expectCode(() => decode(sourcesUnderForeignKey, "sources"), "pipe-json-syntax-invalid");
-  });
-
-  test("reports endpoint schema drift distinctly", async () => {
-    const episodesBody = await read("pipe-valid-episodes-v2.txt");
-    const sourcesBody = await read("pipe-valid-sources-v2.txt");
-
-    expectCode(() => decode(episodesBody, "sources"), "pipe-json-shape-invalid");
-    expectCode(() => decode(sourcesBody, "episodes"), "pipe-json-shape-invalid");
-  });
-
-  test("never leaks the key, the encrypted body, or plaintext in a public failure", async () => {
-    const body = await read("pipe-wrong-key-episodes-v2.txt");
-
-    try {
-      decode(body, "episodes");
-      throw new Error("expected decode to fail");
-    } catch (error) {
-      expect(error).toBeInstanceOf(MiruroPipeDecodeError);
-      const rendered = `${(error as Error).name}: ${(error as Error).message}\n${(error as Error).stack ?? ""}`;
-      expect(rendered).not.toContain(PIPE_KEY);
-      expect(rendered).not.toContain(body.slice(0, 16));
-      expect(rendered).not.toContain("Romance Dawn");
-      expect((error as MiruroPipeDecodeError).message).toBe("pipe-json-syntax-invalid");
-    }
   });
 });
 
@@ -545,60 +409,6 @@ describe("subtitle format comes from evidence", () => {
     });
 
     expect(result?.subtitles.map((subtitle) => subtitle.format)).toEqual(["vtt", "srt", "unknown"]);
-  });
-});
-
-describe("interpretMiruroCurlResult", () => {
-  const marker = "\n__KUNAI_CURL_STATUS__:";
-
-  test("accepts a complete transfer and strips the status marker", () => {
-    const result = interpretMiruroCurlResult({
-      exitCode: 0,
-      stdout: `bh4YNPj7payload${marker}200`,
-      stderr: "",
-    });
-
-    expect(result).toEqual({ status: 200, text: "bh4YNPj7payload" });
-  });
-
-  /**
-   * curl writes its `-w` status line even when `--max-time` aborts mid-body, so
-   * the marker alone is not proof of a complete transfer. Accepting it fed a
-   * truncated payload to the decoder, which then reported a transport failure as
-   * `pipe-xor-gunzip-failed` — a real Miruro live failure.
-   */
-  test("rejects a truncated transfer even though curl still reported HTTP 200", () => {
-    expect(() =>
-      interpretMiruroCurlResult({
-        exitCode: 28,
-        stdout: `bh4YNPj7partial${marker}200`,
-        stderr: "curl: (28) Operation timed out after 8001 milliseconds with 1024 bytes received",
-      }),
-    ).toThrow("Operation timed out");
-  });
-
-  test("rejects a transfer that produced no HTTP status at all", () => {
-    expect(() =>
-      interpretMiruroCurlResult({ exitCode: 0, stdout: "no marker here", stderr: "" }),
-    ).toThrow();
-    expect(() =>
-      interpretMiruroCurlResult({ exitCode: 0, stdout: `body${marker}not-a-number`, stderr: "" }),
-    ).toThrow();
-    expect(() =>
-      interpretMiruroCurlResult({ exitCode: 0, stdout: `body${marker}0`, stderr: "" }),
-    ).toThrow();
-  });
-
-  test("reads the redirect target off the trailer for the in-process hop walk", () => {
-    const result = interpretMiruroCurlResult({
-      exitCode: 0,
-      stdout: `<html>redirect</html>${marker}301\thttps://cdn2.example/pipe`,
-      stderr: "",
-    });
-
-    expect(result.status).toBe(301);
-    expect(result.text).toBe("<html>redirect</html>");
-    expect(result.redirectUrl).toBe("https://cdn2.example/pipe");
   });
 });
 
@@ -663,104 +473,6 @@ describe("computeMiruroEpisodesPersistTtlMs", () => {
   test("uses the newest air date across mixed entries", () => {
     const entries = [ep("2020-01-01T00:00:00.000Z"), ep(new Date(NOW - 6 * DAY).toISOString())];
     expect(computeMiruroEpisodesPersistTtlMs(entries, NOW)).toBe(DAY);
-  });
-});
-
-describe("fetchMiruroPipeBody CF-challenge retry", () => {
-  test("a challenged first fetch is refetched once and can clear to a valid body", async () => {
-    let calls = 0;
-    const sleepCalls: number[] = [];
-    setMiruroPipeRetrySleepForTest((ms) => {
-      sleepCalls.push(ms);
-      return Promise.resolve();
-    });
-    try {
-      const fetchPort = {
-        fetch: async () => {
-          calls += 1;
-          if (calls === 1) {
-            return new Response("<!DOCTYPE html><html><title>Just a moment</title>", {
-              status: 403,
-            });
-          }
-          return new Response("bh4YNPj7obfuscated-pipe-body", { status: 200 });
-        },
-      };
-      const result = await fetchMiruroPipeBody(
-        "https://www.miruro.bz/api/secure/pipe?x=1",
-        {},
-        undefined,
-        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-        fetchPort as never,
-      );
-      expect(calls).toBe(2);
-      expect(result.status).toBe(200);
-      expect(result.cloudflareHtml).toBe(false);
-      expect(sleepCalls.length).toBe(1);
-      expect(sleepCalls[0]).toBeGreaterThanOrEqual(400);
-      expect(sleepCalls[0]).toBeLessThan(800);
-    } finally {
-      setMiruroPipeRetrySleepForTest(null);
-    }
-  });
-
-  test("wafLikely skips the retry — a region-wide block is not re-polled", async () => {
-    let calls = 0;
-    setMiruroPipeRetrySleepForTest(() => {
-      throw new Error("sleep must not run when wafLikely is set");
-    });
-    try {
-      const fetchPort = {
-        fetch: async () => {
-          calls += 1;
-          return new Response("<html>just a moment</html>", { status: 403 });
-        },
-      };
-      const result = await fetchMiruroPipeBody(
-        "https://www.miruro.bz/api/secure/pipe?x=1",
-        {},
-        undefined,
-        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-        fetchPort as never,
-        { wafLikely: true },
-      );
-      expect(calls).toBe(1);
-      expect(result.cloudflareHtml).toBe(true);
-    } finally {
-      setMiruroPipeRetrySleepForTest(null);
-    }
-  });
-
-  test("an abort inside the retry wait stops the leg — no curl subprocess is spawned", async () => {
-    const controller = new AbortController();
-    let calls = 0;
-    // The abort lands while the retry wait is in flight — the challenged
-    // response must not fall through to the curl fallback (whose listener on
-    // an already-dead signal never fires).
-    setMiruroPipeRetrySleepForTest(() => {
-      controller.abort();
-      return Promise.resolve();
-    });
-    try {
-      const fetchPort = {
-        fetch: async () => {
-          calls += 1;
-          return new Response("<html>just a moment</html>", { status: 403 });
-        },
-      };
-      await expect(
-        fetchMiruroPipeBody(
-          "https://www.miruro.bz/api/secure/pipe?x=1",
-          {},
-          controller.signal,
-          // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-          fetchPort as never,
-        ),
-      ).rejects.toThrow();
-      expect(calls).toBe(1);
-    } finally {
-      setMiruroPipeRetrySleepForTest(null);
-    }
   });
 });
 
@@ -843,165 +555,7 @@ describe("Cloudflare block detection separates a WAF block from a dead upstream"
   });
 });
 
-describe("describeMiruroPipeFailure names the failure the mirror actually had", () => {
-  test("reports an upstream-unavailable status as an upstream failure", () => {
-    // 444 is what the mirror returns when a backing server (pewe/ally/hop) is
-    // down. Calling it Cloudflare sent users to configure a relay that cannot
-    // help.
-    expect(describeMiruroPipeFailure(444, UPSTREAM_502_PAGE)).toBe(
-      "HTTP 444 (upstream server unavailable)",
-    );
-    expect(describeMiruroPipeFailure(502, UPSTREAM_502_PAGE)).toBe(
-      "HTTP 502 (upstream server unavailable)",
-    );
-  });
-
-  test("still reports a real Cloudflare block as cloudflare html", () => {
-    expect(describeMiruroPipeFailure(403, CLOUDFLARE_BLOCK_PAGE)).toBe(
-      "HTTP 403 (cloudflare html)",
-    );
-  });
-
-  test("leaves an unremarkable status unqualified", () => {
-    expect(describeMiruroPipeFailure(418, "{}")).toBe("HTTP 418");
-  });
-});
-
-describe("the WAF block message advises the cheapest fix that can still work", () => {
-  test("tells a plain-curl user to install curl-impersonate before suggesting a relay", () => {
-    const message = miruroWafBlockMessage({
-      path: "/usr/bin/curl",
-      impersonates: false,
-      profile: null,
-    });
-    expect(message).toContain("curl-impersonate");
-    expect(message.indexOf("curl-impersonate")).toBeLessThan(message.indexOf("providerRelay"));
-  });
-
-  test("tells a user who already impersonated that the block is region-wide", () => {
-    const message = miruroWafBlockMessage({
-      path: "/usr/bin/curl_chrome150",
-      impersonates: true,
-      profile: "chrome150",
-    });
-    expect(message).toContain("chrome150");
-    expect(message).toContain("providerRelay");
-  });
-
-  test("keeps the prefix runProviderCycle keys on", () => {
-    for (const curl of [
-      null,
-      { path: "/usr/bin/curl_chrome150", impersonates: true, profile: "chrome150" },
-    ]) {
-      expect(miruroWafBlockMessage(curl)).toContain("Cloudflare WAF on multiple mirrors");
-    }
-  });
-});
-
-/**
- * Trimmed from a live 2026-09-11 `search` response for `q: "one piece"`, taken
- * while AniList's own API was answering 403 "temporarily disabled".
- */
-const ONE_PIECE_ROW: MiruroSearchMedia = {
-  id: 21,
-  idMal: 21,
-  type: "ANIME",
-  format: "TV",
-  status: "RELEASING",
-  isAdult: false,
-  episodes: null,
-  duration: 24,
-  averageScore: 87,
-  popularity: 749552,
-  seasonYear: 1999,
-  startDate: { year: 1999 },
-  description: "Gold Roger was known as the Pirate King.<br><br>\nEnter Monkey D. Luffy.",
-  title: { native: "ONE PIECE", romaji: "ONE PIECE", english: "ONE PIECE" },
-  coverImage: {
-    extraLarge: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21.jpg",
-    large: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21.jpg",
-  },
-  bannerImage: "https://s4.anilist.co/file/anilistcdn/media/anime/banner/21.jpg",
-};
-
 describe("Miruro search", () => {
-  test("carries the same identity the AniList search service produces", () => {
-    const result = mapMiruroSearchMedia(ONE_PIECE_ROW);
-
-    // A bare AniList id plus externalIds.anilistId is exactly what
-    // definitions/anilist.ts emits, so history sees one title, not two.
-    expect(result?.id).toBe("21");
-    expect(result?.externalIds).toEqual({ anilistId: "21", malId: "21" });
-    expect(result?.title).toBe("ONE PIECE");
-    expect(result?.type).toBe("series");
-    expect(result?.year).toBe("1999");
-    expect(result?.rating).toBe(8.7);
-    expect(result?.durationSeconds).toBe(24 * 60);
-    expect(result?.overview).toBe(
-      "Gold Roger was known as the Pirate King. Enter Monkey D. Luffy.",
-    );
-    expect(result?.posterPath).toContain("/cover/large/");
-    expect(result?.artwork?.backdropUrl).toContain("/banner/");
-  });
-
-  test("declares AniList as the metadata source so routing skips re-enriching it", () => {
-    // SearchRoutingService skips enrichment only for `metadataSource ===
-    // "AniList"` with a poster. Enrichment calls AniList's API — the thing that
-    // is down in the case this search exists for.
-    const result = mapMiruroSearchMedia(ONE_PIECE_ROW);
-    expect(result?.metadataSource).toBe("AniList");
-    expect(result?.posterPath).toBeTruthy();
-  });
-
-  test("drops what the AniList service's query would have excluded", () => {
-    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, type: "MANGA", format: "MANGA" })).toBeNull();
-    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, isAdult: true })).toBeNull();
-    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, status: "NOT_YET_RELEASED" })).toBeNull();
-  });
-
-  test("rejects a row with no usable AniList id or title", () => {
-    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, id: 0 })).toBeNull();
-    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, id: 1.5 })).toBeNull();
-    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, id: undefined })).toBeNull();
-    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, title: {} })).toBeNull();
-  });
-
-  test("omits a MAL id it does not have rather than inventing one", () => {
-    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, idMal: null })?.externalIds).toEqual({
-      anilistId: "21",
-    });
-  });
-
-  test("falls back to romaji when there is no English title, and keeps it as an alias", () => {
-    const result = mapMiruroSearchMedia({
-      ...ONE_PIECE_ROW,
-      title: { romaji: "Sousou no Frieren", native: "葬送のフリーレン" },
-    });
-    expect(result?.title).toBe("Sousou no Frieren");
-    expect(result?.nativeTitle).toBe("葬送のフリーレン");
-    expect(result?.altNames).toBeUndefined();
-
-    const withEnglish = mapMiruroSearchMedia({
-      ...ONE_PIECE_ROW,
-      title: { english: "Frieren", romaji: "Sousou no Frieren" },
-    });
-    expect(withEnglish?.title).toBe("Frieren");
-    expect(withEnglish?.altNames).toEqual(["Sousou no Frieren"]);
-  });
-
-  test("classifies structure the way the CLI's AniList format rule does", () => {
-    const type = (format: string | null, episodes: number | null) =>
-      mapMiruroSearchMedia({ ...ONE_PIECE_ROW, format, episodes })?.type;
-    expect(type("MOVIE", 1)).toBe("movie");
-    expect(type("SPECIAL", 1)).toBe("movie");
-    expect(type("OVA", 1)).toBe("movie");
-    expect(type("SPECIAL", 12)).toBe("series");
-    // TV and ONA stay series even with one episode aired.
-    expect(type("ONA", 1)).toBe("series");
-    expect(type("TV", 1)).toBe("series");
-    expect(type(null, 1)).toBe("series");
-  });
-
   test("a failed search still returns null, but says so in the trace", async () => {
     const events: { type: string; sourceId?: string; message: string }[] = [];
     // SAFETY: the search path reads only providerId, now, emit and fetch; the
@@ -1174,55 +728,5 @@ describe("probeMiruroBackendDown", () => {
     const { context, seen } = withStatus(503);
     expect(await probeMiruroBackendDown("/tmp/local/stream.mpd", {}, context)).toBeNull();
     expect(seen).toHaveLength(0);
-  });
-});
-
-describe("decodeMiruroPipePayload for search", () => {
-  const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
-  // Plain (un-gzipped) version-2 body: base64url(xor(json, key)).
-  const encode = (value: unknown): string => {
-    const key = Uint8Array.from(
-      (PIPE_KEY.match(/.{2}/g) ?? []).map((hex) => Number.parseInt(hex, 16)),
-    );
-    const bytes = new TextEncoder().encode(JSON.stringify(value));
-    const xored = bytes.map((byte, index) => byte ^ (key[index % key.length] ?? 0));
-    let binary = "";
-    for (const byte of xored) binary += String.fromCharCode(byte);
-    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  };
-  const decode = (value: unknown) =>
-    decodeMiruroPipePayload({
-      body: encode(value),
-      obfuscationVersion: "2",
-      expectedKind: "search",
-      keyHex: PIPE_KEY,
-    });
-
-  test("accepts a list of media rows", () => {
-    expect(decode([ONE_PIECE_ROW])).toEqual([ONE_PIECE_ROW]);
-  });
-
-  test("accepts an empty list as a real no-match, not a shape failure", () => {
-    expect(decode([])).toEqual([]);
-  });
-
-  test("rejects an episodes-shaped body sent to the search contract", () => {
-    try {
-      decode({ providers: {}, mappings: {} });
-    } catch (error) {
-      expect((error as MiruroPipeDecodeError).code).toBe("pipe-json-shape-invalid");
-      return;
-    }
-    throw new Error("expected a shape failure");
-  });
-
-  test("rejects rows without a numeric id", () => {
-    try {
-      decode([{ id: "21" }]);
-    } catch (error) {
-      expect((error as MiruroPipeDecodeError).code).toBe("pipe-json-shape-invalid");
-      return;
-    }
-    throw new Error("expected a shape failure");
   });
 });

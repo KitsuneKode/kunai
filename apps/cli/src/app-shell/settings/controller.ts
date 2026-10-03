@@ -375,8 +375,13 @@ export function handleSettingsKey(
     return { handled: false, state };
   }
 
-  if (!key.ctrl && !key.meta && input.length === 1 && input >= " " && input !== "/") {
-    const nextQuery = state.searchQuery + input;
+  // Multi-char chunks arrive on paste and fast typing (one pty read = one
+  // input event). A single-char gate silently drops them — the search row
+  // looks focused but typing does nothing. `/` is stripped from chunks: it is
+  // the search-prefix mnemonic, never part of a query.
+  const searchChunk = !key.ctrl && !key.meta ? printableInputChunk(input).replaceAll("/", "") : "";
+  if (searchChunk) {
+    const nextQuery = state.searchQuery + searchChunk;
     const filtered = buildSettingsPage(ctx.registryCtx, {
       searchQuery: nextQuery,
       activeSectionIndex: state.activeSectionIndex,

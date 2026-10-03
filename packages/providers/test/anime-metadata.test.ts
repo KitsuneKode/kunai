@@ -8,7 +8,7 @@ import {
   fetchAnimeEpisodeMetadataByNumber,
   formatAnimeEpisodeLabel,
   getSeededEpisodeMetadata,
-  mergeMiruroPipeEpisodeMetadata,
+  mergeMiruroEpisodeMetadata,
   parseAllMangaEpisodeNumber,
   pipeEpisodeMetadataTitleCoverage,
   seedEpisodeMetadataFromProvider,
@@ -37,9 +37,9 @@ describe("anime metadata helpers", () => {
     ).toBe(12);
   });
 
-  test("mergeMiruroPipeEpisodeMetadata captures stills and enrich prefers longer titles", () => {
+  test("mergeMiruroEpisodeMetadata captures stills and enrich prefers longer titles", () => {
     const metadata = new Map<number, import("../src/shared/anime-metadata").AnimeEpisodeMetadata>();
-    mergeMiruroPipeEpisodeMetadata(metadata, [
+    mergeMiruroEpisodeMetadata(metadata, [
       {
         number: 1,
         title: "I'm Luffy!",
@@ -47,7 +47,7 @@ describe("anime metadata helpers", () => {
         image: "https://image.tmdb.org/t/p/original/still.jpg",
       },
     ]);
-    mergeMiruroPipeEpisodeMetadata(metadata, []);
+    mergeMiruroEpisodeMetadata(metadata, []);
     metadata.set(1, {
       number: 1,
       title: "I'm Luffy! The Man Who Will Become the Pirate King!",

@@ -87,6 +87,14 @@ archive and put only the residue here.
 | -------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | Test and CI maturity | Native crash diagnosis, merge enforcement, measured CI cost, coverage and agent verification gaps | [2026-09-12-test-ci-audit.md](./2026-09-12-test-ci-audit.md) |
 
+### Reliability-sweep residue
+
+Deferred items from the provider/shell reliability stack (#528→#545), tracked as issues
+rather than plans: unicode glyph fallback (#546), terminal query/response channel
+isolation (#547), headless resolve/`--json` (#548), `-e` episode flag (#549),
+stream-health consolidation (#550), fake-mpv verify modes (#551), mouse region
+coverage (#552). Layering-ratchet residue stays on #111.
+
 ### Structure
 
 | Track                        | Remaining                                                                                                                                                                                                                                                              | Plan                                                                                                   |

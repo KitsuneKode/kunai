@@ -286,7 +286,7 @@ async function fetchAniListStreamingEpisodes(
   return { episodes, complete: true };
 }
 
-export function mergeMiruroPipeEpisodeMetadata(
+export function mergeMiruroEpisodeMetadata(
   target: Map<number, AnimeEpisodeMetadata>,
   entries: readonly {
     readonly number: number;

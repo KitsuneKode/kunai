@@ -262,7 +262,7 @@ export function bootstrapServices(input: {
     offlineAssetService,
   });
   downloadService.onEvent((event) => {
-    if (event.type === "deleted") offlineAssetService.removeForJob(event.jobId);
+    if (event.type === "deleting") offlineAssetService.removeForJob(event.jobId);
   });
   // Repairs libraries damaged before deleteJob emitted ahead of the row delete.
   // Ownerless assets still read `ready`, so the library advertises titles it

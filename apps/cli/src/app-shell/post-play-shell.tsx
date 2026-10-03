@@ -532,9 +532,9 @@ export const PostPlayShell = React.memo(function PostPlayShell({
 
   return (
     <ViewportResizeGate kind="playback" message="Resize terminal to see post-play options">
-      <Box flexDirection="row" paddingX={1}>
+      <Box flexDirection="row" paddingX={1} overflowY="hidden">
         {/* ── Left / body column ─────────────────────────────────────────── */}
-        <Box flexDirection="column" width={bodyWidth}>
+        <Box flexDirection="column" width={bodyWidth} alignSelf="flex-start">
           {/* Title hero */}
           <Text color={palette.text} bold wrap="truncate-end">
             {truncateLine(title, bodyWidth)}

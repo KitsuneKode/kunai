@@ -370,9 +370,13 @@ export function BrowseShell<T>({
   const calendarRouteKind = calendarRouteState.state.kind;
   const calendarRoutePending = calendarRouteKind === "loading" || calendarRouteKind === "retrying";
 
-  const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
-    buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
-  );
+  // Secondary data is keyed by the option it was resolved for: reads gate on
+  // identity so the settle window can't pair one option's facts with the
+  // previous option's rows while the new lookup is still in flight.
+  const [companionSecondaryEntry, setCompanionSecondaryEntry] = useState<{
+    readonly option: BrowseShellOption<T> | undefined;
+    readonly data: DetailsPanelData["secondary"];
+  } | null>(null);
 
   // Calendar view detection and day-strip derived state.
   // Route identity is authoritative; a structured `calendar` item is only
@@ -768,6 +772,7 @@ export function BrowseShell<T>({
     if (!notificationDetailsPending) return;
     const item = takeNotificationDetailsItem();
     if (!item) return;
+    // SAFETY: browseOptionFromMediaItem yields the option shape openDetailsOverlay reads; the generic payload is opaque at this call site.
     openDetailsOverlay(browseOptionFromMediaItem(item) as BrowseShellOption<T>, "notification");
   }, [notificationDetailsPending, openDetailsOverlay]);
 
@@ -929,19 +934,23 @@ export function BrowseShell<T>({
     [calendarDayFilter, calendarOptionsForDay],
   );
 
+  // Primary facts are derived in-render from settledOption so the header and
+  // the fact rows can never disagree: only `secondary` (the async provider
+  // lookup) is allowed to lag, and it arrives keyed to the option it
+  // describes — a settledOption change reads null (loading) until its own
+  // lookup lands, never a previous option's rows.
+  const companionPrimary = buildDetailsPanelDataFromBrowseOption(settledOption).primary;
+  const companionSecondary =
+    companionSecondaryEntry !== null && companionSecondaryEntry.option === settledOption
+      ? companionSecondaryEntry.data
+      : null;
   useEffect(() => {
-    const primaryData = buildDetailsPanelDataFromBrowseOption(settledOption);
-    setCompanionDetails(primaryData);
     let cancelled = false;
     void (async () => {
       await Bun.sleep(32);
       if (cancelled) return;
       const secondary = resolveBrowseDetailsSecondary(settledOption, { providerName: provider });
-      setCompanionDetails((current) => ({
-        ...current,
-        primary: primaryData.primary,
-        secondary,
-      }));
+      setCompanionSecondaryEntry({ option: settledOption, data: secondary });
     })();
     return () => {
       cancelled = true;
@@ -1679,11 +1688,13 @@ export function BrowseShell<T>({
             message="Resize terminal to browse results"
           />
         ) : activeOverlay ? (
-          <OverlayPanel
-            overlay={activeOverlay}
-            width={innerWidth}
-            searchReady={searchState === "ready"}
-          />
+          <Box flexDirection="column" flexGrow={1} overflowY="hidden">
+            <OverlayPanel
+              overlay={activeOverlay}
+              width={innerWidth}
+              searchReady={searchState === "ready"}
+            />
+          </Box>
         ) : calendarRoutePending ? (
           <Box marginTop={2} flexGrow={1} flexDirection="column">
             <SakuraLoader
@@ -1828,6 +1839,7 @@ export function BrowseShell<T>({
                 marginTop={companionBesideList ? 0 : 1}
                 flexDirection="column"
                 width={previewWidth}
+                overflowY="hidden"
               >
                 {showPreviewRail && previewRailModel ? (
                   <PreviewRail
@@ -1845,8 +1857,8 @@ export function BrowseShell<T>({
                   />
                 ) : (
                   <DetailsSheetUI
-                    data={companionDetails}
-                    lines={buildDetailsSheetLines(selectedOption, companionDetails.secondary)}
+                    data={{ primary: companionPrimary, secondary: companionSecondary }}
+                    lines={buildDetailsSheetLines(settledOption, companionSecondary)}
                     width={previewWidth}
                     scrollIndex={0}
                     maxVisibleLines={viewport.breakpoint === "wide" ? 14 : 10}

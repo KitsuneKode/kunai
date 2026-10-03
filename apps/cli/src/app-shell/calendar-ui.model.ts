@@ -7,7 +7,7 @@ import type { SearchResult } from "@/domain/types";
 
 import type { StateBlockModel } from "./primitives/StateBlock.model";
 import { RETURN_LOOP_CALENDAR_EMPTY_TAIL } from "./return-loop-copy";
-import { truncateLine } from "./shell-text";
+import { measureColumns, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 
 export type CalendarDay = {
@@ -309,10 +309,10 @@ export { computeCalendarRowLayout } from "./primitives/list-row-layout";
 /** Shorten long schedule status copy so the right column stays readable. */
 export function compactCalendarStatusLabel(label: string, maxColumns: number): string {
   let normalized = label.trim().replace(/^[·✓◷◐×]\s+/, "");
-  if (normalized.length <= maxColumns) return normalized;
+  if (measureColumns(normalized) <= maxColumns) return normalized;
   if (normalized.startsWith("aired · ")) {
     const tail = normalized.slice("aired · ".length);
-    return tail.length <= maxColumns ? tail : truncateLine(tail, maxColumns);
+    return measureColumns(tail) <= maxColumns ? tail : truncateLine(tail, maxColumns);
   }
   if (normalized.startsWith("airs today · ")) {
     return "today";

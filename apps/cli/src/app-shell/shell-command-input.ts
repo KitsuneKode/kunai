@@ -19,6 +19,7 @@ export function useShellInput({
   commands,
   disabled = false,
   letterKeysHandledExternally = false,
+  slashHandledExternally = false,
   escapeAction = "quit",
   onResolve,
 }: {
@@ -27,6 +28,12 @@ export function useShellInput({
   disabled?: boolean;
   /** When true, letter footer shortcuts are owned by the playback surface; `/` still opens commands. */
   letterKeysHandledExternally?: boolean;
+  /**
+   * When true, the surface owns `/` itself (settings uses it as the search
+   * prefix). Without this the key double-fires: the palette opens here while
+   * the surface also starts a search behind it.
+   */
+  slashHandledExternally?: boolean;
   escapeAction?: ShellAction | null;
   onResolve: (action: ShellAction) => void;
 }) {
@@ -120,6 +127,12 @@ export function useShellInput({
     }
 
     if (route.command === "open-command-palette" && commands.length > 0) {
+      if (slashHandledExternally) {
+        // `/` is the surface's own binding (e.g. settings search prefix) — the
+        // palette must not steal it while the surface also consumes the key.
+        recordInputDrop("shell-input", "handled-externally", input);
+        return;
+      }
       setCommandMode(true);
       setCommandInput("");
       setPaletteNotice(null);
@@ -132,6 +145,10 @@ export function useShellInput({
     );
     if (footerAction) {
       if (footerAction.action === "command-mode") {
+        if (slashHandledExternally) {
+          recordInputDrop("shell-input", "handled-externally", input);
+          return;
+        }
         setCommandMode(true);
         setCommandInput("");
         setHighlightedIndex(0);

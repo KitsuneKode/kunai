@@ -1,12 +1,13 @@
 /**
- * Which hosts to send Miruro pipe requests to, and in what order.
+ * Which hosts to send Miruro API requests to, and in what order.
  *
- * Every Miruro backend is reached through `/api/secure/pipe` on one of these
- * hosts, so this list is the anime lane's single point of failure. It has three
- * layers, each covering a failure the one before cannot:
+ * The Miruro backend is reached through `/api/v1/*` on one of these hosts
+ * (the `/api/secure/pipe` endpoint was removed upstream), so this list is
+ * the anime lane's single point of failure. It has three layers, each
+ * covering a failure the one before cannot:
  *
  * 1. **A static list, verified by hand**, so a cold start never waits on
- *    anything. All four served the pipe on 2026-09-11.
+ *    anything. All four served the catalog API on 2026-10-16.
  * 2. **Miruro's own status page** (Uptime Kuma, public JSON), read in the
  *    background and cached. It names mirrors Kunai has not heard of yet, and
  *    reports which ones are down from its vantage point. A mirror it calls down
@@ -17,7 +18,7 @@
  *    the rest of the session should not pay to rediscover that.
  */
 
-export const MIRURO_KNOWN_PIPE_BASE_URLS = [
+export const MIRURO_KNOWN_BASE_URLS = [
   "https://www.miruro.bz",
   "https://www.miruro.ru",
   "https://www.miruro.to",
@@ -35,8 +36,8 @@ export const MIRURO_STATUS_HEARTBEAT_URL =
  */
 const MIRROR_NAME = /^miruro\.[a-z]{2,12}$/;
 
-/** In the status page's "mirrors" group, but serves a landing page with no pipe. */
-const NON_PIPE_MIRRORS = new Set(["miruro.com"]);
+/** In the status page's "mirrors" group, but serves a landing page with no API. */
+const NON_API_MIRRORS = new Set(["miruro.com"]);
 
 const STATUS_TTL_MS = 30 * 60_000;
 const STATUS_TIMEOUT_MS = 4_000;
@@ -69,7 +70,7 @@ export function parseMiruroStatusMirrors(page: unknown, heartbeat: unknown): Mir
     for (const monitor of group.monitorList) {
       if (!isRecord(monitor)) continue;
       const name = typeof monitor.name === "string" ? monitor.name.trim().toLowerCase() : "";
-      if (!MIRROR_NAME.test(name) || NON_PIPE_MIRRORS.has(name)) continue;
+      if (!MIRROR_NAME.test(name) || NON_API_MIRRORS.has(name)) continue;
       const history = beats[String(monitor.id)];
       const latest = Array.isArray(history) ? history.at(-1) : undefined;
       const status = isRecord(latest) ? latest.status : undefined;
@@ -83,7 +84,7 @@ export function parseMiruroStatusMirrors(page: unknown, heartbeat: unknown): Mir
  * Known mirrors first in their fixed order, then any the status page added.
  * Mirrors it reports down go to the back. The last mirror that answered leads.
  */
-export function orderMiruroPipeBaseUrls(input: {
+export function orderMiruroBaseUrls(input: {
   readonly known: readonly string[];
   readonly discovered: readonly MiruroMirrorStatus[];
   readonly lastSuccess?: string | null;
@@ -127,17 +128,17 @@ async function refreshMiruroStatus(fetchImpl: StatusFetch, now: number): Promise
     discovered = { mirrors: parseMiruroStatusMirrors(page, heartbeat), at: now };
   } catch {
     // Keep what we had and wait out the TTL: a status page that is down must
-    // not be re-asked on every pipe call, and the static list still works.
+    // not be re-asked on every call, and the static list still works.
     discovered = { mirrors: discovered?.mirrors ?? [], at: now };
   }
 }
 
 /**
- * The pipe base URLs to try, in order. Never waits on the network: a stale or
+ * The Miruro base URLs to try, in order. Never waits on the network: a stale or
  * missing status snapshot starts a background refresh and the current best list
  * is returned immediately.
  */
-export function miruroPipeBaseUrls(
+export function miruroBaseUrls(
   options: { readonly now?: number; readonly fetchImpl?: StatusFetch } = {},
 ): string[] {
   const now = options.now ?? Date.now();
@@ -146,14 +147,14 @@ export function miruroPipeBaseUrls(
       refreshing = null;
     });
   }
-  return orderMiruroPipeBaseUrls({
-    known: MIRURO_KNOWN_PIPE_BASE_URLS,
+  return orderMiruroBaseUrls({
+    known: MIRURO_KNOWN_BASE_URLS,
     discovered: discovered?.mirrors ?? [],
     lastSuccess: lastSuccessBaseUrl,
   });
 }
 
-/** Called when a mirror returns a decodable pipe body. */
+/** Called when a mirror returns a decodable catalog body. */
 export function recordMiruroMirrorSuccess(baseUrl: string): void {
   lastSuccessBaseUrl = baseUrl;
 }

@@ -68,11 +68,8 @@ describe("youtube ytdl options", () => {
       }),
     );
 
-    // proto-redir=https leads: yt-dlp may not follow a youtube URL into a
-    // downgraded or exotic-protocol redirect (mpv consumes this via
-    // --ytdl-raw-options).
     expect(joined).toBe(
-      "proto-redir=https,sponsorblock-remove=%13%sponsor,intro,no-live-from-start=,sub-langs=%3%all",
+      "sponsorblock-remove=%13%sponsor,intro,no-live-from-start=,sub-langs=%3%all",
     );
   });
 

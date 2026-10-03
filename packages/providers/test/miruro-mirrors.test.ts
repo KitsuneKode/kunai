@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   __testing,
-  MIRURO_KNOWN_PIPE_BASE_URLS,
-  miruroPipeBaseUrls,
-  orderMiruroPipeBaseUrls,
+  MIRURO_KNOWN_BASE_URLS,
+  miruroBaseUrls,
+  orderMiruroBaseUrls,
   parseMiruroStatusMirrors,
   recordMiruroMirrorSuccess,
 } from "../src/miruro/mirrors";
@@ -99,41 +99,43 @@ describe("parseMiruroStatusMirrors", () => {
   });
 });
 
-describe("orderMiruroPipeBaseUrls", () => {
+describe("orderMiruroBaseUrls", () => {
   const known = ["https://www.miruro.bz", "https://www.miruro.ru"];
 
   test("keeps the known order when nothing is discovered", () => {
-    expect(orderMiruroPipeBaseUrls({ known, discovered: [] })).toEqual(known);
+    expect(orderMiruroBaseUrls({ known, discovered: [] })).toEqual(known);
   });
 
   test("appends a mirror Kunai did not ship with", () => {
-    expect(
-      orderMiruroPipeBaseUrls({ known, discovered: [{ name: "miruro.xyz", up: true }] }),
-    ).toEqual([...known, "https://www.miruro.xyz"]);
+    expect(orderMiruroBaseUrls({ known, discovered: [{ name: "miruro.xyz", up: true }] })).toEqual([
+      ...known,
+      "https://www.miruro.xyz",
+    ]);
   });
 
   test("moves a mirror the status page calls down to the back, never dropping it", () => {
     // The status page's vantage point is not the user's: a mirror it cannot
     // reach may be the only one the user can.
-    expect(
-      orderMiruroPipeBaseUrls({ known, discovered: [{ name: "miruro.bz", up: false }] }),
-    ).toEqual(["https://www.miruro.ru", "https://www.miruro.bz"]);
+    expect(orderMiruroBaseUrls({ known, discovered: [{ name: "miruro.bz", up: false }] })).toEqual([
+      "https://www.miruro.ru",
+      "https://www.miruro.bz",
+    ]);
   });
 
   test("the mirror that last answered leads", () => {
     expect(
-      orderMiruroPipeBaseUrls({ known, discovered: [], lastSuccess: "https://www.miruro.ru" }),
+      orderMiruroBaseUrls({ known, discovered: [], lastSuccess: "https://www.miruro.ru" }),
     ).toEqual(["https://www.miruro.ru", "https://www.miruro.bz"]);
   });
 
   test("a last success that is no longer a mirror is ignored", () => {
     expect(
-      orderMiruroPipeBaseUrls({ known, discovered: [], lastSuccess: "https://www.gone.test" }),
+      orderMiruroBaseUrls({ known, discovered: [], lastSuccess: "https://www.gone.test" }),
     ).toEqual(known);
   });
 
   test("never repeats a mirror", () => {
-    const ordered = orderMiruroPipeBaseUrls({
+    const ordered = orderMiruroBaseUrls({
       known,
       discovered: [{ name: "miruro.bz", up: true }],
       lastSuccess: "https://www.miruro.bz",
@@ -143,10 +145,10 @@ describe("orderMiruroPipeBaseUrls", () => {
   });
 });
 
-describe("miruroPipeBaseUrls", () => {
+describe("miruroBaseUrls", () => {
   test("a cold start returns the shipped mirrors without waiting on the network", () => {
     let called = false;
-    const urls = miruroPipeBaseUrls({
+    const urls = miruroBaseUrls({
       fetchImpl: async () => {
         called = true;
         return json(STATUS_PAGE);
@@ -154,7 +156,7 @@ describe("miruroPipeBaseUrls", () => {
     });
 
     // The refresh is kicked off, but the caller is never blocked on it.
-    expect(urls).toEqual([...MIRURO_KNOWN_PIPE_BASE_URLS]);
+    expect(urls).toEqual([...MIRURO_KNOWN_BASE_URLS]);
     expect(called).toBe(true);
   });
 
@@ -162,11 +164,11 @@ describe("miruroPipeBaseUrls", () => {
     const fetchImpl = async (url: string) =>
       json(url.includes("heartbeat") ? HEARTBEAT : STATUS_PAGE);
 
-    miruroPipeBaseUrls({ fetchImpl, now: 1_000 });
+    miruroBaseUrls({ fetchImpl, now: 1_000 });
     await __testing.settle();
 
     // miruro.to is reported down, so it drops behind the rest.
-    expect(miruroPipeBaseUrls({ fetchImpl, now: 2_000 })).toEqual([
+    expect(miruroBaseUrls({ fetchImpl, now: 2_000 })).toEqual([
       "https://www.miruro.bz",
       "https://www.miruro.ru",
       "https://www.miruro.tv",
@@ -175,7 +177,7 @@ describe("miruroPipeBaseUrls", () => {
   });
 
   test("a status page that fails leaves the shipped mirrors in place", async () => {
-    miruroPipeBaseUrls({
+    miruroBaseUrls({
       fetchImpl: async () => {
         throw new Error("offline");
       },
@@ -183,7 +185,7 @@ describe("miruroPipeBaseUrls", () => {
     });
     await __testing.settle();
 
-    expect(miruroPipeBaseUrls({ now: 2_000 })).toEqual([...MIRURO_KNOWN_PIPE_BASE_URLS]);
+    expect(miruroBaseUrls({ now: 2_000 })).toEqual([...MIRURO_KNOWN_BASE_URLS]);
   });
 
   test("a failed refresh is not retried until the cache expires", async () => {
@@ -193,16 +195,16 @@ describe("miruroPipeBaseUrls", () => {
       throw new Error("offline");
     };
 
-    miruroPipeBaseUrls({ fetchImpl, now: 1_000 });
+    miruroBaseUrls({ fetchImpl, now: 1_000 });
     await __testing.settle();
     const afterFirst = calls;
 
-    miruroPipeBaseUrls({ fetchImpl, now: 2_000 });
+    miruroBaseUrls({ fetchImpl, now: 2_000 });
     await __testing.settle();
     expect(calls).toBe(afterFirst);
 
     // Past the TTL it tries again.
-    miruroPipeBaseUrls({ fetchImpl, now: 1_000 + 31 * 60_000 });
+    miruroBaseUrls({ fetchImpl, now: 1_000 + 31 * 60_000 });
     await __testing.settle();
     expect(calls).toBeGreaterThan(afterFirst);
   });
@@ -210,11 +212,11 @@ describe("miruroPipeBaseUrls", () => {
   test("a mirror that answered leads the next call", async () => {
     const fetchImpl = async (url: string) =>
       json(url.includes("heartbeat") ? HEARTBEAT : STATUS_PAGE);
-    miruroPipeBaseUrls({ fetchImpl, now: 1_000 });
+    miruroBaseUrls({ fetchImpl, now: 1_000 });
     await __testing.settle();
 
     recordMiruroMirrorSuccess("https://www.miruro.tv");
 
-    expect(miruroPipeBaseUrls({ fetchImpl, now: 2_000 })[0]).toBe("https://www.miruro.tv");
+    expect(miruroBaseUrls({ fetchImpl, now: 2_000 })[0]).toBe("https://www.miruro.tv");
   });
 });

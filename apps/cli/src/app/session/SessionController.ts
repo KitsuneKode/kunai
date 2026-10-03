@@ -117,12 +117,18 @@ export class SessionController {
             spendBootstrapIntent(pending);
           } else {
             // Phase 1: Search
+            // The notice is consumed here, not by spendBootstrapIntent: it is
+            // for the *next* browse mount only, and a title-queued iteration
+            // must not carry it forward into a later, unrelated search.
+            const browseNotice = pending.browseNotice;
+            pending.browseNotice = undefined;
             const searchResult = await this.executePhase(
               {
                 initialQuery: pending.initialQuery,
                 initialRoute: pending.initialRoute,
                 preserveExistingSearch: pending.preserveExistingSearch,
                 autoPickSearchResultIndex: pending.autoPickSearchResultIndex,
+                browseNotice,
               } satisfies SearchPhaseInput,
               new (await import("@/app/search/SearchPhase")).SearchPhase(),
             );
@@ -178,12 +184,21 @@ export class SessionController {
                 },
               }),
             );
+            const playbackErrorNote = `Playback failed: ${playbackResult.error.message}${
+              playbackResult.error.retryable ? " (try a different provider)" : ""
+            }`;
             stateManager.dispatch({
               type: "SET_PLAYBACK_FEEDBACK",
-              note: `Playback failed: ${playbackResult.error.message}${
-                playbackResult.error.retryable ? " (try a different provider)" : ""
-              }`,
+              note: playbackErrorNote,
             });
+            // The error path continues without RESET_CONTENT, so the note
+            // survives in state — but nothing on the browse surface reads
+            // playbackNote. Hand it forward the same way bounce notices ride,
+            // and clear the state copy: SearchPhase's inter-mount reader diffs
+            // playbackNote against its baseline and would flash the same error
+            // a second time.
+            pending.browseNotice = playbackErrorNote;
+            stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: null });
             continue;
           }
 
@@ -224,14 +239,23 @@ export class SessionController {
             stateManager.dispatch({ type: "RESET_CONTENT" });
             continue;
           }
-          if (outcome === "back_to_results") {
+          // The structured outcomes above all `continue`; an object reaching
+          // here can only be a notice-carrying bounce variant.
+          const bounceTo = typeof outcome === "object" ? outcome.type : outcome;
+          if (bounceTo === "back_to_results" || bounceTo === "back_to_history") {
+            // Object bounce variants carry the failure reason — playbackNote
+            // is wiped by the phase's finally AND by RESET_CONTENT, so the
+            // notice travels on the outcome and lands on the next browse
+            // mount as a one-shot warning instead of vanishing silently.
+            const notice = typeof outcome === "object" ? outcome.notice : undefined;
             stateManager.dispatch({ type: "RESET_CONTENT" });
-            pending.preserveExistingSearch = true;
-          }
-          if (outcome === "back_to_history") {
-            pending.initialRoute = "history";
-            stateManager.dispatch({ type: "RESET_CONTENT" });
-            pending.preserveExistingSearch = false;
+            if (bounceTo === "back_to_results") {
+              pending.preserveExistingSearch = true;
+            } else {
+              pending.initialRoute = "history";
+              pending.preserveExistingSearch = false;
+            }
+            pending.browseNotice = notice;
           }
           if (outcome === "back_to_search") {
             // Returning to a fresh search must drop the finished session's

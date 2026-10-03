@@ -54,7 +54,11 @@ reviews:
       - "DO NOT MERGE"
       - "draft"
     drafts: false
-    base_branches: []
+    # Stacked PRs target each other, not main — review every base so a stack
+    # never silently skips review. This is a regex list, and the default
+    # branch is always included regardless.
+    base_branches:
+      - ".*"
   finishing_touches:
     docstrings:
       enabled: false

@@ -325,7 +325,7 @@ export const LocalSection = React.memo(function LocalSection({
   marginTop?: number;
 }) {
   return (
-    <Box marginTop={marginTop} flexDirection="column">
+    <Box marginTop={marginTop} flexDirection="column" flexShrink={0}>
       <Text color={semanticToneColor(tone)}>{title}</Text>
       <Box marginTop={1} flexDirection="column">
         {children}

@@ -77,6 +77,7 @@ test("forceCloseRootContent refuses to settle an incompatible kind", async () =>
 test("forceCloseRootContent settles a compatible kind", async () => {
   const mounted = mountRootContent({
     kind: "browse",
+    // SAFETY: mounts against the loosest fallback union member this overload accepts.
     fallbackValue: "cancelled" as "cancelled" | "launch-playback",
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     renderContent: () => null as never,

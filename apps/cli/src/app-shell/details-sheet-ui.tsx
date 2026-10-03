@@ -70,7 +70,7 @@ export function DetailsSheet({
   const synopsisLines = wrapSynopsis(model.synopsis.text, Math.max(20, width - 2), 6);
 
   return (
-    <Box flexDirection="column" width={width}>
+    <Box flexDirection="column" width={width} flexShrink={0}>
       {/* Header: poster + title/meta/genres */}
       <Box flexDirection="row">
         <Box width={POSTER_COLS} marginRight={2}>

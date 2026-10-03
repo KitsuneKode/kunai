@@ -43,7 +43,7 @@ export function PreviewRail({
   const bodyWidth = Math.max(16, width - 2);
   const overviewLines = model.overview ? wrapText(model.overview, bodyWidth, 3) : [];
   return (
-    <Box flexDirection="column" width={width}>
+    <Box flexDirection="column" width={width} flexShrink={0}>
       {/* Poster slot — height-reserved so the metadata below never jumps when
           artwork resolves. The real poster renders borderless; the fallback is a
           framed placeholder tile (initials centred in a poster-shaped frame) so it

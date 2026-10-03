@@ -910,9 +910,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 mode: stateManager.getState().mode,
               });
             }
+            const bounceTo =
+              title.launchSource === "history" ? "back_to_history" : "back_to_results";
             return {
               status: "success",
-              value: title.launchSource === "history" ? "back_to_history" : "back_to_results",
+              value:
+                outcome.kind === "unavailable"
+                  ? { type: bounceTo, notice: outcome.reason }
+                  : bounceTo,
             };
           }
           const selection = outcome.selection;

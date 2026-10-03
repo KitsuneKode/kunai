@@ -35,9 +35,11 @@ const COMMANDS: readonly ResolvedAppCommand[] = [
 function ShellInputProbe({
   onResolve,
   exposeSetLocked,
+  slashHandledExternally = false,
 }: {
   readonly onResolve: (action: ShellAction) => void;
   readonly exposeSetLocked: (setLocked: (locked: boolean) => void) => void;
+  readonly slashHandledExternally?: boolean;
 }) {
   const [locked, setLocked] = useState(false);
   useEffect(() => {
@@ -48,6 +50,7 @@ function ShellInputProbe({
     footerActions: FOOTER_ACTIONS,
     commands: COMMANDS,
     disabled: locked,
+    slashHandledExternally,
     onResolve,
   });
 
@@ -133,6 +136,31 @@ describe("useShellInput command mode lock transitions", () => {
     handle.stdin.enqueue("zzz");
     handle.stdin.enqueue("\r");
     expect(handle.lastFrame()).toContain("no command matches that");
+
+    handle.unmount();
+  });
+
+  test("slashHandledExternally keeps / with the surface instead of opening the palette", () => {
+    const seen: ShellAction[] = [];
+    const handle = render(
+      <ShellInputProbe
+        onResolve={(action) => seen.push(action)}
+        exposeSetLocked={() => {}}
+        slashHandledExternally
+      />,
+    );
+
+    // Both `/` entry points — the router's open-command-palette command and a
+    // command-mode footer action — must yield when the surface owns the key.
+    // Settings uses `/` as its search prefix; without this the palette opened
+    // while the settings query also swallowed the slash.
+    handle.stdin.enqueue("/");
+    expect(handle.lastFrame()).toContain("unlocked:normal");
+    expect(seen).toEqual([]);
+
+    // Other footer keys still work under the flag.
+    handle.stdin.enqueue("o");
+    expect(seen).toEqual(["source"]);
 
     handle.unmount();
   });

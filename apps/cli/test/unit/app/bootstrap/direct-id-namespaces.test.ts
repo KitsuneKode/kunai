@@ -96,6 +96,31 @@ describe("namespaced -i/--id", () => {
     expect(intent.directTitle).toBeNull();
     expect(intent.logs.some((l) => l.kind === "id-lane-conflict" && l.lane === "anime")).toBe(true);
   });
+
+  test("a youtube id with -a -y resolves — the parser's -y win leaves no lane conflict", () => {
+    // parseCliArgs clears args.anime and warns itself; the intent layer must
+    // then see a consistent picture rather than conflict on a flag that
+    // already lost.
+    const intent = resolveBootstrapIntent(parse(["-a", "-y", "-i", "youtube:dQw4w9WgXcQ"]));
+    expect(intent.directTitle?.externalIds?.youtubeId).toBe("dQw4w9WgXcQ");
+    expect(intent.logs.some((l) => l.kind === "id-lane-conflict")).toBe(false);
+  });
+
+  test("an anime-namespace id with -a -y still conflicts — the winning lane is youtube", () => {
+    const intent = resolveBootstrapIntent(parse(["-a", "-y", "-i", "anilist:21"]));
+    expect(intent.directTitle).toBeNull();
+    expect(intent.logs.some((l) => l.kind === "id-lane-conflict" && l.lane === "youtube")).toBe(
+      true,
+    );
+  });
+
+  test("--jump is flagged when -i opens a title directly, even with -S present", () => {
+    const intent = resolveBootstrapIntent(
+      parse(["-S", "Dune", "-i", "438631", "-t", "movie", "--jump", "2"]),
+    );
+    expect(intent.directTitle?.id).toBe("438631");
+    expect(intent.logs.some((l) => l.kind === "flag-ignored" && l.flag === "--jump")).toBe(true);
+  });
 });
 
 describe("bare -i back-compat", () => {

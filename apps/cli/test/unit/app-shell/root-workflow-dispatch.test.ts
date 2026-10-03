@@ -12,6 +12,8 @@ function createHarness(
   topOverlay: SessionState["activeModals"][number] | null = null,
 ) {
   const dispatched: Dispatched[] = [];
+  // SAFETY: deliberately partial test stub — the dispatcher only reads the members defined below.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub's narrower member shapes force the unknown hop
   const container = {
     stateManager: {
       getState: () => ({ activeModals: topOverlay ? [topOverlay] : [] }),
@@ -22,10 +24,10 @@ function createHarness(
     },
     featureFlags: { attentionInbox: options.attentionInbox ?? true },
     diagnosticsService: { record: () => {} },
-    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   } as unknown as Container;
 
   // SAFETY: deliberately partial test stub — the resolver only reads provider/mode.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub's narrower shape forces the unknown hop
   const state = { provider: "hianime", mode: "anime" } as unknown as SessionState;
   return { container, state, dispatched };
 }
@@ -79,6 +81,7 @@ describe("resolveRootSurfaceCommand", () => {
         filterQuery: "",
       },
     );
+    // SAFETY: "library" is a ShellAction member; the literal needs no widened annotation.
     resolveRootSurfaceCommand({ container, state, action: "library" as ShellAction });
     expect(dispatched).toEqual([
       { type: "CANCEL_PICKER", id: "picker-7" },

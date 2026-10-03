@@ -88,3 +88,147 @@ test("a successful bootstrap search opens the results view, not the search surfa
   expect(state.view).toBe("results");
   expect(browseInput?.initialResults).toHaveLength(1);
 });
+
+/**
+ * A bounce notice must reach the browse shell's warnings strip.
+ *
+ * `SET_PLAYBACK_FEEDBACK` notes are wiped twice before the next surface can
+ * read them — once by PlaybackPhase's own `finally` and again by
+ * RESET_CONTENT in the bounce. SessionController therefore carries the reason
+ * on the structured outcome (`{ type: "back_to_results", notice }`) and hands
+ * it in as `browseNotice`; if the merge is dropped, an episode-catalog failure
+ * silently lands the user back on results — the exact regression this pins.
+ */
+test("a browseNotice arrives as a browse-shell warning row", async () => {
+  const stateManager = new SessionStateManagerImpl({ logger });
+  let browseInput: Parameters<typeof openBrowseShell<SearchResult>>[0] | undefined;
+
+  const provider = {
+    metadata: { id: "videasy", isAnimeProvider: false, isYoutubeProvider: false },
+  };
+  // SAFETY: deliberately partial Container stub — the test only exercises the members it defines.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub's incompatible member shapes force the unknown hop
+  const container = {
+    stateManager,
+    connectivity: new Connectivity(() => true),
+    logger,
+    diagnosticsService: { record: () => {} },
+    config: {
+      offlineMode: false,
+      animeLanguageProfile: { audio: "original", subtitle: "en" },
+      youtubeLanguageProfile: { audio: "original", subtitle: "none" },
+      animeTitlePreference: "provider",
+      getRaw: () => ({}),
+    },
+    searchRegistry: { getDefault: () => ({ metadata: { id: "tmdb" } }) },
+    providerRegistry: { get: () => provider, getDefaultForMode: () => provider },
+    queueService: { peekNext: () => null },
+    releaseProgressCache: {
+      summarizeActive: () => ({ episodeCount: 0, titleCount: 0 }),
+      getByTitleIds: () => new Map(),
+    },
+    offlineAssetService: { listNextReadyByTitleCursors: () => [] },
+  } as unknown as Container;
+
+  const phase = new SearchPhase({
+    // SAFETY: the stubbed searchTitles returns a fixed page — enough for the phase under test.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub signature is narrower than typeof searchTitles, forcing the unknown hop
+    searchTitles: (async () => ({
+      results: [],
+      strategy: "direct",
+      sourceId: "tmdb",
+      evidence: undefined,
+    })) as unknown as typeof searchTitles,
+    openBrowseShell: async (input) => {
+      browseInput = input;
+      return { type: "cancelled" };
+    },
+  });
+
+  await phase.execute(
+    { browseNotice: "Could not load season data for this title. Check your connection." },
+    { container, signal: new AbortController().signal },
+  );
+
+  expect(browseInput?.initialWarnings).toContain(
+    "Could not load season data for this title. Check your connection.",
+  );
+});
+
+/**
+ * Notes dispatched between browse mounts must reach the next mount.
+ *
+ * Phases that run while browse is unmounted — DownloadOnlyPhase's
+ * eligibility gate ("Download unavailable: …") and the filter-chip loop's
+ * "Filter added: …" — signal via SET_PLAYBACK_FEEDBACK, which only the
+ * playback surface reads. SearchPhase lifts a note that changed since the
+ * last mount onto the warnings strip and clears it; if the lift is dropped,
+ * `d` with downloads disabled bounces the user back to results with no
+ * visible reason — the regression this pins.
+ */
+test("an inter-mount playback feedback note arrives as a browse warning", async () => {
+  const stateManager = new SessionStateManagerImpl({ logger });
+  const browseInputs: Parameters<typeof openBrowseShell<SearchResult>>[0][] = [];
+
+  const provider = {
+    metadata: { id: "videasy", isAnimeProvider: false, isYoutubeProvider: false },
+  };
+  // SAFETY: deliberately partial Container stub — the test only exercises the members it defines.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub's incompatible member shapes force the unknown hop
+  const container = {
+    stateManager,
+    connectivity: new Connectivity(() => true),
+    logger,
+    diagnosticsService: { record: () => {} },
+    config: {
+      offlineMode: false,
+      animeLanguageProfile: { audio: "original", subtitle: "en" },
+      youtubeLanguageProfile: { audio: "original", subtitle: "none" },
+      animeTitlePreference: "provider",
+      getRaw: () => ({}),
+    },
+    searchRegistry: { getDefault: () => ({ metadata: { id: "tmdb" } }) },
+    providerRegistry: { get: () => provider, getDefaultForMode: () => provider },
+    queueService: { peekNext: () => null },
+    releaseProgressCache: {
+      summarizeActive: () => ({ episodeCount: 0, titleCount: 0 }),
+      getByTitleIds: () => new Map(),
+    },
+    offlineAssetService: { listNextReadyByTitleCursors: () => [] },
+  } as unknown as Container;
+
+  const phase = new SearchPhase({
+    // SAFETY: the stubbed searchTitles returns a fixed page — enough for the phase under test.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub signature is narrower than typeof searchTitles, forcing the unknown hop
+    searchTitles: (async () => ({
+      results: [],
+      strategy: "direct",
+      sourceId: "tmdb",
+      evidence: undefined,
+    })) as unknown as typeof searchTitles,
+    openBrowseShell: async (input) => {
+      browseInputs.push(input);
+      if (browseInputs.length === 1) {
+        // The real download branch: no selected result → the workflow dispatches
+        // a playback-feedback note and the loop `continue`s to the remount. The
+        // same channel carries DownloadOnlyPhase's "Download unavailable: …".
+        return { type: "action", action: "download" };
+      }
+      return { type: "cancelled" };
+    },
+  });
+
+  await phase.execute(
+    { initialQuery: "dune" },
+    { container, signal: new AbortController().signal },
+  );
+
+  expect(browseInputs).toHaveLength(2);
+  // Mount 1 predates the note — baseline protection keeps it off this mount.
+  expect(browseInputs[0]?.initialWarnings ?? []).not.toContain(
+    "Choose a title before queueing a download.",
+  );
+  expect(browseInputs[1]?.initialWarnings).toContain("Choose a title before queueing a download.");
+  // Consumed on lift: the note does not linger for a later playback surface.
+  expect(stateManager.getState().playbackNote).toBeNull();
+});

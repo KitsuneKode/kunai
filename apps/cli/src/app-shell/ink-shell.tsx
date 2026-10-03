@@ -91,7 +91,13 @@ import { CommandPalette } from "./shell-command-ui";
 import { InputField } from "./shell-frame";
 import { LocalSection, ResizeBlocker, ShellFooter, TransientRowSlot } from "./shell-primitives";
 import { clearShellScreenArtifacts } from "./shell-screen-clear";
-import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
+import {
+  getWindowStart,
+  measureColumns,
+  padColumnsEnd,
+  truncateLine,
+  wrapText,
+} from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import { sixelOverlayManager } from "./sixel-overlay";
 import { PosterOutput } from "./SixelPosterPane";
@@ -681,7 +687,7 @@ export function AppRoot({ container }: { container: Container }) {
         // `detail` already leads with the status for an unavailable provider, so
         // composing it here is what produced "unavailable · unavailable · …".
         const composed = presenceStatusDetail(snapshot.status, snapshot.detail, " · ");
-        const detail = composed.length > 56 ? `${composed.slice(0, 53).trimEnd()}…` : composed;
+        const detail = truncateLine(composed, 56);
         const tone: ShellStatusTone = snapshot.status === "error" ? "error" : "warning";
         setPresenceBootLine({
           text: `Discord presence · ${detail}`,
@@ -789,6 +795,7 @@ export function AppRoot({ container }: { container: Container }) {
       networkAvailable,
       playbackIsLocal,
       playbackProblem: state.playbackProblem,
+      playbackNote: state.playbackNote,
       autoplaySessionPaused: state.autoplaySessionPaused,
       autoskipSessionPaused: state.autoskipSessionPaused,
       stopAfterCurrent: state.stopAfterCurrent,
@@ -810,6 +817,7 @@ export function AppRoot({ container }: { container: Container }) {
       networkAvailable,
       playbackIsLocal,
       state.playbackProblem,
+      state.playbackNote,
       state.autoplaySessionPaused,
       state.autoskipSessionPaused,
       state.stopAfterCurrent,
@@ -972,11 +980,17 @@ export function AppRoot({ container }: { container: Container }) {
                   reason,
                 });
               },
-              switchSessionMode: () => {
-                switchSessionMode(container.stateManager, container.providerRegistry);
+              switchSessionMode: (_sm, _registry, direction) => {
+                // Forward direction — without it Shift+Tab during playback
+                // cycled forward like Tab.
+                return switchSessionMode(
+                  container.stateManager,
+                  container.providerRegistry,
+                  direction,
+                );
               },
               setSessionLane: (_sm, mode) => {
-                setSessionLane(container.stateManager, mode, container.providerRegistry);
+                return setSessionLane(container.stateManager, mode, container.providerRegistry);
               },
               routeSearchShellAction: async (nextAction) => {
                 const { routeSearchShellAction } = await import("./command-router");
@@ -991,9 +1005,12 @@ export function AppRoot({ container }: { container: Container }) {
           },
         });
         if (result.status !== "ignored" || !result.reason) return;
+        // The note channel renders on the playing surface (header alert);
+        // `detail` only ever paints in the loading diagnostics strip, which
+        // made every refused-key reason invisible exactly when it mattered.
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
-          detail: result.reason,
+          note: result.reason,
         });
       })();
     },
@@ -1602,7 +1619,7 @@ function ListShell<T>({
                           ? palette.warnDim
                           : palette.dim;
                   const secondary = option.detail
-                    ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - option.label.length - 4))}`
+                    ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - measureColumns(option.label) - 4))}`
                     : "";
                   const rowText = truncateLine(`${option.label}${secondary}`, rowWidth - 2);
                   const highlighted = selected && !option.disabled;
@@ -1641,7 +1658,12 @@ function ListShell<T>({
                 {windowEnd < filteredOptions.length && <Text color={palette.dim}> ▼ ...</Text>}
               </Box>
               {!ultraCompact && showCompanion ? (
-                <Box marginLeft={2} flexDirection="column" width={companionWidth}>
+                <Box
+                  marginLeft={2}
+                  flexDirection="column"
+                  width={companionWidth}
+                  overflowY="hidden"
+                >
                   <LocalSection title="Current Selection" tone="success" marginTop={0}>
                     {showHeavyPoster ? (
                       <Box flexDirection="column" marginBottom={1}>

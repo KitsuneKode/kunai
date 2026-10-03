@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-03"
+lastReviewed: "2026-10-03"
 ---
 
 # Mobile terminal runtime

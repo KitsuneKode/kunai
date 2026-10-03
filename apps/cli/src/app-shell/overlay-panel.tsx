@@ -212,7 +212,12 @@ export function OverlayPanel({
     : contentWidth;
 
   return (
-    <Box marginTop={insideOverlay ? 0 : 1} flexDirection="column" paddingX={insideOverlay ? 0 : 1}>
+    <Box
+      marginTop={insideOverlay ? 0 : 1}
+      flexDirection="column"
+      paddingX={insideOverlay ? 0 : 1}
+      flexShrink={0}
+    >
       {insideOverlay ? null : (
         <>
           <Text color={palette.text} bold>
@@ -370,6 +375,10 @@ export function OverlayPanel({
       ) : isLineOverlay && overlay.loading ? (
         <LoadingState message="Loading panel…" framed />
       ) : overlay.type === "details" && overlay.sheet ? (
+        // No overflowY here: a nested clip REPLACES the mount wrapper's clip
+        // (output.clip keeps only the innermost region), and this box keeps its
+        // natural height — its bound would extend below the wrapper's and let
+        // rows paint into the footer.
         <Box marginTop={1} flexDirection="column">
           <DetailsSheet
             model={overlay.sheet}
@@ -415,7 +424,7 @@ export function OverlayPanel({
               // then wrapped body. Either way: no blank line between facts.
               if (detailLines.length <= 1) {
                 return (
-                  <Box key={`${line.label}-${line.detail ?? ""}`}>
+                  <Box key={`${line.label}-${line.detail ?? ""}`} columnGap={1}>
                     <Text color={resolvePanelTone(line.tone)}>
                       {padColumnsEnd(truncateLine(line.label, labelWidth), labelWidth)}
                     </Text>

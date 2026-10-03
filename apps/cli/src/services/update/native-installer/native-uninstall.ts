@@ -215,7 +215,7 @@ export async function nativeUninstall(
       }
       // Only remove the dir once nothing foreign remains — a recursive rm here
       // would sweep files the installer never wrote.
-      const remaining = await readdir(layout.transactionsDir).catch(() => [] as string[]);
+      const remaining: string[] = await readdir(layout.transactionsDir).catch(() => []);
       if (remaining.length === 0) {
         transactionsOk = await tryRemove(layout.transactionsDir, removed, failed, rmImpl);
       }

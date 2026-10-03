@@ -69,6 +69,16 @@ export async function fetchGuardedRemoteTarget(
     }
     // DNS answers are validated only for the platform fetch — an injected impl
     // owns its destinations, and a stubbed lookup would be pure test flakiness.
+    //
+    // Residual TOCTOU: the lookup here and fetch's own internal lookup are two
+    // resolutions; a fast-rebind DNS could answer clean to us and dirty to the
+    // fetch. Checking *every* answer defeats mixed-answer rebinding; the clean→
+    // dirty flip between the two lookups is the remaining gap. True pinning —
+    // connect to the validated IP while preserving Host/SNI — has no seam on
+    // Bun's native fetch (no `lookup`/`dispatcher`/`servername` option), and
+    // `dns.prefetch` resolves its own answer rather than ours. Anything short
+    // of a hand-rolled TLS+HTTP stack narrows the window without closing it,
+    // so the check stays advisory-tight rather than pretending to be pinned.
     if (fetchImpl === PLATFORM_FETCH) {
       const resolvedBlocked = await resolvedAddressBlockReason(target, init.signal ?? undefined);
       if (resolvedBlocked) {

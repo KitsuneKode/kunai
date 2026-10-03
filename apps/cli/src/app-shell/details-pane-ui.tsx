@@ -41,9 +41,9 @@ const DETAIL_FACT_LABEL_WIDTH = 10;
 function FactRow({ label, value, width }: { label: string; value: string; width: number }) {
   const labelWidth = Math.min(DETAIL_FACT_LABEL_WIDTH, Math.max(6, label.length + 1));
   return (
-    <Box>
+    <Box columnGap={1}>
       <Text color={palette.dim}>{padColumnsEnd(truncateLine(label, labelWidth), labelWidth)}</Text>
-      <Text color={palette.text}>{truncateLine(value, width - labelWidth - 2)}</Text>
+      <Text color={palette.text}>{truncateLine(value, width - labelWidth - 1)}</Text>
     </Box>
   );
 }
@@ -87,9 +87,10 @@ export function DetailsSheetUI({
       borderStyle="single"
       borderColor={palette.line}
       paddingX={1}
+      flexShrink={0}
     >
       <Text color={palette.text} bold>
-        {truncateLine(primary.title, width - 2)}
+        {truncateLine(primary.title, width - 4)}
       </Text>
       <Text color={palette.muted}>
         {[primary.type, primary.year, ...(primary.genres?.slice(0, 3) ?? [])]
@@ -108,7 +109,7 @@ export function DetailsSheetUI({
               {line.label}
             </Text>
           ) : (
-            <Box key={`${line.label}:${line.detail ?? ""}`}>
+            <Box key={`${line.label}:${line.detail ?? ""}`} columnGap={1}>
               <Text color={palette.dim}>
                 {padColumnsEnd(
                   truncateLine(line.label, DETAIL_FACT_LABEL_WIDTH),
@@ -116,7 +117,7 @@ export function DetailsSheetUI({
                 )}
               </Text>
               <Text color={sheetLineColor(line.tone)}>
-                {truncateLine(line.detail ?? "", width - DETAIL_FACT_LABEL_WIDTH - 2)}
+                {truncateLine(line.detail ?? "", width - DETAIL_FACT_LABEL_WIDTH - 5)}
               </Text>
             </Box>
           ),
@@ -156,7 +157,7 @@ export function DetailsPaneUI({
   const seriesStateColor = seriesState ? SERIES_STATE_COLORS[seriesState] : palette.dim;
 
   return (
-    <Box flexDirection="row" width={width}>
+    <Box flexDirection="row" width={width} flexShrink={0}>
       <Box width={1} marginRight={1}>
         <Text color={seriesStateColor}>{"│"}</Text>
       </Box>

@@ -24,6 +24,13 @@ export interface PendingSessionBootstrap {
   initialRoute?: SearchStartupRoute;
   preserveExistingSearch: boolean;
   autoPickSearchResultIndex?: number;
+  /**
+   * A one-shot message the next browse mount should flash — not launch intent
+   * but cross-surface: playback feedback set just before a back_to_results /
+   * back_to_history bounce is wiped by RESET_CONTENT before the shell mounts,
+   * so the controller captures it here and the search phase renders it once.
+   */
+  browseNotice?: string;
 }
 
 export interface SessionBootstrapInput {
@@ -61,4 +68,5 @@ export function spendBootstrapIntent(pending: PendingSessionBootstrap): void {
   pending.initialRoute = undefined;
   pending.preserveExistingSearch = false;
   pending.autoPickSearchResultIndex = undefined;
+  pending.browseNotice = undefined;
 }

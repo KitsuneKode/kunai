@@ -349,6 +349,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   onToggleFavorite,
   isFavorite,
   onFallback,
+  onNote,
 }: {
   state: LoadingShellState;
   onCancel?: () => void;
@@ -371,6 +372,8 @@ export const LoadingShell = React.memo(function LoadingShell({
   /** Read at render, so the marker follows the list rather than a local copy. */
   isFavorite?: () => boolean;
   onFallback?: () => void;
+  /** A capability-gated key was pressed while off — surface the refusal reason. */
+  onNote?: (note: string) => void;
 }) {
   const [memoryPanelVisible, setMemoryPanelVisible] = React.useState(false);
   // Forces a frame after a toggle: `isFavorite` reads through to the list, so
@@ -454,6 +457,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       onStopAfterCurrent,
       onToggleFavorite: onToggleFavorite ? handleToggleFavorite : undefined,
       onFallback,
+      onNote,
       onCommandAction: state.onCommandAction,
     }),
     [
@@ -474,6 +478,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       onToggleFavorite,
       handleToggleFavorite,
       onFallback,
+      onNote,
       state.onCommandAction,
     ],
   );
@@ -489,37 +494,65 @@ export const LoadingShell = React.memo(function LoadingShell({
     return () => clearTimeout(timer);
   }, [escapeNotice]);
 
+  // The input handler reads through a ref: state/handlers re-derive every
+  // render (stream lands, trouble flags flip, optional keys appear), and a
+  // keypress must never resolve against a stale bootstrap snapshot. The
+  // refresh runs in a layout effect so the ref only ever holds committed
+  // context — writing it during render would hand the handler a tree that
+  // was never committed.
+  const liveInputContextRef = React.useRef({
+    state,
+    commandModeOpen,
+    onCancel,
+    canOpenSourcePicker,
+    recoveryView,
+    playbackTroubleActive,
+    playbackInputHandlers,
+  });
+  React.useLayoutEffect(() => {
+    liveInputContextRef.current = {
+      state,
+      commandModeOpen,
+      onCancel,
+      canOpenSourcePicker,
+      recoveryView,
+      playbackTroubleActive,
+      playbackInputHandlers,
+    };
+  });
+
   useInput((input, key) => {
-    if (commandModeOpen) return;
+    const live = liveInputContextRef.current;
+    if (live.commandModeOpen) return;
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
       return;
     }
     if (key.escape) {
-      if (state.cancellable && onCancel) {
-        onCancel();
+      if (live.state.cancellable && live.onCancel) {
+        live.onCancel();
         return;
       }
       // Only the live resolve reads as a stuck wait — recovery/trouble views
       // already present their own decision keys.
-      if (state.operation !== "playing" && !recoveryView && !playbackTroubleActive) {
+      if (live.state.operation !== "playing" && !live.recoveryView && !live.playbackTroubleActive) {
         setEscapeNotice((current) => ({ seq: (current?.seq ?? 0) + 1 }));
       }
       return;
     }
 
     const effect = resolvePlaybackShellInput(input, key, {
-      operation: state.operation,
-      cancellable: Boolean(state.cancellable),
-      fallbackAvailable: Boolean(state.fallbackAvailable),
-      canOpenSourcePicker,
-      recoveryViewActive: Boolean(recoveryView),
-      playbackTroubleActive,
-      handlers: playbackInputHandlers,
+      operation: live.state.operation,
+      cancellable: Boolean(live.state.cancellable),
+      fallbackAvailable: Boolean(live.state.fallbackAvailable),
+      canOpenSourcePicker: live.canOpenSourcePicker,
+      recoveryViewActive: Boolean(live.recoveryView),
+      playbackTroubleActive: live.playbackTroubleActive,
+      handlers: live.playbackInputHandlers,
     });
     if (!effect) return;
 
-    applyPlaybackShellInputEffect(effect, playbackInputHandlers, () => {
+    applyPlaybackShellInputEffect(effect, live.playbackInputHandlers, () => {
       setMemoryPanelVisible((visible) => !visible);
     });
   });
@@ -678,7 +711,7 @@ export const LoadingShell = React.memo(function LoadingShell({
         <Box flexDirection="column" flexGrow={1} width="100%">
           {/* ── Resolving / Loading ───────────────────────────────────────── */}
           {!isPlaying && (
-            <Box flexDirection="row" flexGrow={1}>
+            <Box flexDirection="row" flexGrow={1} overflowY="hidden">
               <Box flexDirection="column" justifyContent="center" flexGrow={1} paddingY={1}>
                 {/* Signature ❀ bloom + glimmer stage label, then stage context */}
                 <Box flexDirection="row" marginTop={1} alignItems="flex-start">
@@ -831,7 +864,7 @@ export const LoadingShell = React.memo(function LoadingShell({
 
           {/* ── Playing ───────────────────────────────────────────────────── */}
           {isPlaying && (
-            <Box marginTop={1} flexDirection="row" flexGrow={1}>
+            <Box marginTop={1} flexDirection="row" flexGrow={1} overflowY="hidden">
               <Box flexDirection="column" flexGrow={1}>
                 {/* Control deck (.prototypes/playback-postplay): progress leads,
                   then a single NOW facts line + GO key-hints, then the mpv hint.

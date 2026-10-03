@@ -198,6 +198,11 @@ export function buildRootStatusSummary({
       text: `⚠ issue · ${state.playbackProblem.cause}`,
       tone: state.playbackProblem.severity === "blocking" ? "error" : "warning",
     };
+  } else if (state.playbackNote) {
+    // Answers the last action ("No fallback provider for this stream", "♥
+    // Favourited …") — outranks the standing session flags because it is the
+    // transient one. Notes carry their own glyph/tone, so none is added here.
+    alert = { text: state.playbackNote, tone: "info" };
   } else if (state.autoplaySessionPaused) {
     alert = { text: "⚠ autoplay paused", tone: "warning" };
   } else if (state.autoskipSessionPaused) {

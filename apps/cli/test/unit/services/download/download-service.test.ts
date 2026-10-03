@@ -273,6 +273,34 @@ describe("DownloadService", () => {
       expect(await Bun.file(first!.outputPath).text()).toBe("first owner's bytes");
       expect(repo.get(first!.id)?.status).toBe("completed");
     });
+
+    test("deleting fires while the row exists, deleted after it is gone", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      const job = await service.enqueue({
+        title: { id: "tmdb:900", type: "movie", name: "Ordering" },
+        providerId: "vidking",
+      });
+      // The download-manager shell refreshes its list on `deleted` — if the
+      // event still fired before repo.delete, the refresh would read the row
+      // back and paint a stale failed job forever.
+      const seen: { type: string; rowGone: boolean }[] = [];
+      const unsubscribe = service.onEvent((event) => {
+        if (event.type === "deleting" || event.type === "deleted") {
+          seen.push({ type: event.type, rowGone: repo.get(job.id) === undefined });
+        }
+      });
+      await service.deleteJob(job.id);
+      unsubscribe();
+      expect(seen).toEqual([
+        { type: "deleting", rowGone: false },
+        { type: "deleted", rowGone: true },
+      ]);
+    });
     test("an anime job is named episode-only, with no season folder", async () => {
       const service = buildService({
         repo,

@@ -100,6 +100,12 @@ export type SearchPhaseInput = {
   autoPickSearchResultIndex?: number;
   /** Return catalog identity without anime provider mapping; callers can map after an explicit action gate. */
   deferAnimeProviderMapping?: boolean;
+  /**
+   * One-shot notice the browse mount should render once — used for playback
+   * feedback that outlives a RESET_CONTENT bounce (e.g. "Could not load
+   * season data"), which would otherwise vanish before the user sees it.
+   */
+  browseNotice?: string;
 };
 
 import {
@@ -327,6 +333,18 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       let pendingSearchWarnings: readonly string[] = [];
       let pendingSearchEmptyMessage: string | undefined;
       let initialSearchError: string | undefined;
+      // Phases that run between browse mounts (the download gate, queue/follow
+      // workflows) signal through SET_PLAYBACK_FEEDBACK — but only the playback
+      // surface reads playbackNote, so a note set while browse was unmounted
+      // would render nowhere. The baseline is whatever note predates this loop:
+      // a changed note at mount time belongs to the inter-mount window and gets
+      // lifted onto the warnings strip, then cleared so the next mount diffs
+      // against a clean baseline.
+      let browseNoteBaseline = stateManager.getState().playbackNote;
+      // The phase-input notice belongs to the FIRST browse mount only — the
+      // input object is loop-invariant, so it must be consumed into pending
+      // state or every remount (bounce, provider switch) re-flashes it.
+      let pendingBrowseNotice = input?.browseNotice?.trim();
 
       while (true) {
         const currentState = stateManager.getState();
@@ -585,6 +603,17 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         pendingSearchEvidence = undefined;
         pendingSearchWarnings = [];
         pendingSearchEmptyMessage = undefined;
+        // A bounce notice rides the same warnings strip the shell already
+        // renders — one mount, one flash, then it is gone.
+        const browseNotice = pendingBrowseNotice;
+        pendingBrowseNotice = undefined;
+        const noteNow = stateManager.getState().playbackNote;
+        let interMountNote: string | undefined;
+        if (noteNow && noteNow !== browseNoteBaseline) {
+          interMountNote = noteNow;
+          stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: null });
+        }
+        browseNoteBaseline = stateManager.getState().playbackNote;
 
         const outcomePromise = this.dependencies.openBrowseShell({
           mode: syncedState.mode,
@@ -653,7 +682,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   `${browseState.searchResults.length} recommendation picks · loaded`)
                 : `${initialBrowse.options.length} results · previous search${initialBrowse.subtitleSuffix}`
               : undefined,
-          initialWarnings,
+          initialWarnings:
+            browseNotice || interMountNote
+              ? [
+                  ...initialWarnings,
+                  ...(browseNotice ? [browseNotice] : []),
+                  ...(interMountNote ? [interMountNote] : []),
+                ]
+              : initialWarnings,
           initialSelectedIndex: browseState.selectedResultIndex,
           initialEmptyMessage,
           placeholder:

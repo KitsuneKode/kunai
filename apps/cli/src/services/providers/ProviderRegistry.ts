@@ -109,7 +109,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                       .slice(0, 3)
                       .map((v) => ({ kind: "synonym" as const, value: stripControlCharacters(v) })),
                   ],
-                  year: r.year ?? "",
+                  year: r.year ? stripControlCharacters(r.year) : "",
                   overview: stripControlCharacters(r.overview ?? ""),
                   posterPath,
                   posterSource: posterPath ? ("provider" as const) : undefined,
@@ -171,18 +171,22 @@ export class ProviderRegistryImpl implements ProviderRegistry {
               if (!episodes) return null;
               return episodes.map((ep) => {
                 const detail = ep.detail ? stripControlCharacters(ep.detail) : ep.detail;
+                // The preview read must come from the sanitized artwork — the
+                // raw provider thumbnail can be a local path or private literal
+                // that `resolvePosterUrl` would then treat as a file.
+                const artwork = sanitizeProviderArtwork(ep.artwork);
                 return {
                   index: ep.index,
                   label: ep.label ? stripControlCharacters(ep.label) : ep.label,
                   providerEpisodeIdentity: ep.providerEpisodeIdentity,
                   name: ep.name ? stripControlCharacters(ep.name) : ep.name,
                   detail,
-                  previewImageUrl: ep.artwork?.thumbnailUrl,
+                  previewImageUrl: artwork?.thumbnailUrl,
                   airDate: ep.release?.airDate,
                   overview: detail,
                   externalIds: ep.externalIds,
                   release: ep.release,
-                  artwork: sanitizeProviderArtwork(ep.artwork),
+                  artwork,
                   totalEpisodeCount: ep.totalEpisodeCount,
                 };
               });

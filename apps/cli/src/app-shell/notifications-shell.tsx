@@ -93,7 +93,7 @@ export function NotificationsShell({
 
   const rail =
     showRail && view.rail ? (
-      <Box flexDirection="column" width={RAIL_WIDTH}>
+      <Box flexDirection="column" width={RAIL_WIDTH} overflowY="hidden">
         <PreviewRail
           model={{ ...view.rail.preview, posterState: previewPosterState }}
           width={RAIL_WIDTH}

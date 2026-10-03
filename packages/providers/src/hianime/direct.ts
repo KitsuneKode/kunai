@@ -112,6 +112,7 @@ function parseExplicitSource(
 ): { mode: HianimeAudioMode; serverIndex?: number } | undefined {
   const match = /^source:hianime:(sub|dub)(?::(\d+))?$/.exec(preferredSourceId ?? "");
   if (!match) return undefined;
+  // SAFETY: the regex alternative is literally (sub|dub) — both HianimeAudioMode members.
   const mode = match[1] as HianimeAudioMode;
   const serverIndex = match[2] !== undefined ? Number.parseInt(match[2], 10) : undefined;
   return { mode, ...(serverIndex !== undefined && { serverIndex }) };

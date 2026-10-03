@@ -1,11 +1,17 @@
 ---
 status: current
-lastReviewed: "2026-09-01"
+lastReviewed: "2026-10-03"
 ---
 
 # Provider: AniDB — runtime contract
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+**Live check (2026-10-03):** `anidb.app` answers 503 "Under Maintenance" on every
+route (Cloudflare-fronted, origin-down HTML page — not a WAF challenge), and
+`hls.anidb.app` 503s identically. The documented outage state persists; the
+status-propagates behavior below is what keeps it honest. Nothing code-side to
+fix — re-probe before writing any change.
 
 Catalog capabilities live in [anidb-metadata-capabilities.md](./anidb-metadata-capabilities.md).
 This file holds the runtime behaviour that used to sit in `.docs/providers.md`.

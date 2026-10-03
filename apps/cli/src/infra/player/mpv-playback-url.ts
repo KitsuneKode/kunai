@@ -10,11 +10,32 @@ export type MpvUrlKind = "remote" | "local";
  * local kind only widens the scheme set to files; it is not a network-target
  * exemption.
  */
+/**
+ * Test seam: under `KUNAI_COMPILED_SMOKE=1` the fixture provider remaps its
+ * stream URLs onto `KUNAI_SMOKE_MEDIA_BASE` — a harness-served origin, not
+ * provider input (the agent-verification real-mpv tier serves generated
+ * media on 127.0.0.1, which the private-literal boundary correctly refuses).
+ * URLs on that exact origin are the fixture's own, so the boundary does not
+ * apply to them. Both vars only ever exist in verification runs — production
+ * never sets them — and the match is origin-scoped so a provider-crafted
+ * `http://127.0.0.1:PORT.evil.test/` cannot slip past on a string prefix.
+ */
+function isSmokeFixtureTarget(url: string): boolean {
+  if (process.env.KUNAI_COMPILED_SMOKE !== "1") return false;
+  const base = process.env.KUNAI_SMOKE_MEDIA_BASE?.trim().replace(/\/+$/, "");
+  if (!base) return false;
+  try {
+    return new URL(url).origin === new URL(base).origin;
+  } catch {
+    return false;
+  }
+}
+
 export function isAllowedMpvUrl(url: string, kind: MpvUrlKind): boolean {
   const trimmed = url.trim();
   if (!trimmed || trimmed.startsWith("-")) return false;
   if (/^https?:\/\//i.test(trimmed)) {
-    return blockedLiteralTargetReason(trimmed) === null;
+    return isSmokeFixtureTarget(trimmed) || blockedLiteralTargetReason(trimmed) === null;
   }
   if (kind !== "local") return false;
   if (/^file:\/\//i.test(trimmed)) return true;
@@ -58,9 +79,11 @@ export function isAllowedSubtitleTarget(
   kind: MpvUrlKind,
   stream?: SubtitleStreamContext,
 ): boolean {
+  // isAllowedMpvUrl already applies the scheme gate, the literal-target
+  // boundary, and the smoke-fixture seam — a second literal check here would
+  // only re-block exempted harness URLs.
   if (!isAllowedMpvUrl(url, kind)) return false;
   if (kind !== "remote") return true;
-  if (blockedLiteralTargetReason(url) !== null) return false;
   if (!stream || !hasCredentialHeaders(stream.headers)) return true;
   try {
     return new URL(url).origin === new URL(stream.url).origin;

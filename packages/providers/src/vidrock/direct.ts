@@ -33,13 +33,17 @@ const VIDROCK_KEY_HEX = "7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5
 const VIDROCK_GCM_IV_LENGTH = 12;
 
 /**
- * The stream hosts (cdn.ngcorp.*, the workers.dev lanes) drop any request that
- * carries a real User-Agent and accept requests whose UA header is a single
- * space — which is also what `mpv --user-agent=" "` sends to every playlist and
- * segment request. A real browser UA fails; an absent UA is not expressible in
- * ffmpeg, so the space is the working value.
+ * The stream hosts (cdn.ngcorp.*, obsidiancircuit.site lanes) answer only the
+ * site's own player identity. The old contract — no Referer and a space-only
+ * User-Agent — inverted: an absent vidrock.net Referer is refused outright
+ * now, and obsidiancircuit additionally requires the Origin. Measured live on
+ * 2026-10-03; the User-Agent value no longer factors once those are right.
  */
-const STREAM_USER_AGENT = " ";
+const STREAM_HEADERS: Record<string, string> = {
+  referer: REFERER,
+  origin: ORIGIN,
+  "user-agent": USER_AGENT,
+};
 
 interface VidrockServerEntry {
   readonly url?: string | null;
@@ -116,11 +120,9 @@ export function resolveVidrockDirect(
         if (url.includes("/playlist/")) {
           let playlist: Awaited<ReturnType<typeof fetchPlaylist>>;
           try {
-            // Playlist URLs live on the same ngcorp hosts as the streams:
-            // they require the single-space UA and die on a Referer.
-            playlist = await fetchPlaylist(url, ctx, {
-              "User-Agent": STREAM_USER_AGENT,
-            });
+            // Playlist URLs live on the same ngcorp hosts as the streams —
+            // same referer/origin gate.
+            playlist = await fetchPlaylist(url, ctx, STREAM_HEADERS);
           } catch (error) {
             if (ctx.signal?.aborted) throw error;
             continue;
@@ -156,9 +158,7 @@ export function resolveVidrockDirect(
 
       const payload: DirectStreamPayload = {
         streams,
-        // No Referer: the ngcorp segment hosts stall connections that carry
-        // vidrock.net as referer; the playlist host itself needs no headers.
-        headers: { "user-agent": STREAM_USER_AGENT },
+        headers: { ...STREAM_HEADERS },
       };
       return payload;
     },

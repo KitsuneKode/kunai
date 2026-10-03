@@ -6,11 +6,6 @@ import type {
   ProviderRuntimeContext,
 } from "@kunai/types";
 
-import {
-  createMiruroPipeRequestUrls,
-  MIRURO_PIPE_BASE_URLS,
-  MIRURO_WAF_FAIL_FAST_THRESHOLD,
-} from "../src/miruro/direct";
 import { rivestreamProviderModule } from "../src/rivestream/direct";
 
 const SERVICES = ["deadmirror", "goodmirror"] as const;
@@ -76,16 +71,6 @@ function buildContext(
 }
 
 describe("provider cycling correctness", () => {
-  test("miruro fail-fast budget stays capped at two mirror refusals", async () => {
-    // One pipe URL per base; the fail-fast threshold deliberately does not
-    // track the mirror count. Two different mirror domains returning CF HTML
-    // is already evidence the block follows the client, and each extra mirror
-    // would cost a full request to learn the same thing.
-    expect(createMiruroPipeRequestUrls("probe").length).toBe(MIRURO_PIPE_BASE_URLS.length);
-    expect(MIRURO_WAF_FAIL_FAST_THRESHOLD).toBe(2);
-    expect(MIRURO_WAF_FAIL_FAST_THRESHOLD).toBeLessThan(MIRURO_PIPE_BASE_URLS.length);
-  });
-
   test("rivestream consults endpoint health and skips a quarantined mirror", async () => {
     const { resolve: resolveStream } = rivestreamProviderModule;
     if (!resolveStream) throw new Error("rivestream module must expose resolve");

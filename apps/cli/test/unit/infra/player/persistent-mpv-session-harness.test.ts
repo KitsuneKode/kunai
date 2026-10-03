@@ -28,6 +28,7 @@ function createFakeProcess() {
     }),
     killed: false,
     exitCode: null as number | null,
+    // SAFETY: null widened to the field union so later assignments type-check.
     signalCode: null as NodeJS.Signals | null,
     kill() {
       this.killed = true;
@@ -361,6 +362,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
         primarySubtitle: null,
         onPlaybackEvent: (event) => events.push(event.type),
       },
+      // SAFETY: partial config fixture — the session under test reads only these keys.
       kitsuneConfig: {
         mpvInProcessStreamReconnect: false,
         mpvInProcessStreamReconnectMaxAttempts: 0,
