@@ -192,6 +192,10 @@ export type DownloadEvent =
   | { type: "complete"; jobId: string }
   | { type: "failed"; jobId: string; error: string }
   | { type: "aborted"; jobId: string }
+  // `deleting` fires while the row still exists (listeners that cascade on the
+  // job row — offline assets — must run before it is gone). `deleted` fires
+  // after the repo delete, so list-refresh listeners read the final state.
+  | { type: "deleting"; jobId: string }
   | { type: "deleted"; jobId: string };
 
 export type DownloadQueueKickSource =
@@ -1199,13 +1203,14 @@ export class DownloadService {
         await rm(posterPath, { force: true }).catch(() => {});
       }
     }
-    // Emit before deleting the row, not after. `offline_assets.origin_job_id` is
-    // `ON DELETE SET NULL` with foreign keys enabled, so once the job row is
+    // `deleting` fires before the row delete, not after. `offline_assets.origin_job_id`
+    // is `ON DELETE SET NULL` with foreign keys enabled, so once the job row is
     // gone the listener's `deleteByOriginJobId(jobId)` matches nothing and the
     // asset is orphaned: still `state='ready'`, still advertised as downloaded,
     // but unplayable because its originJobId is now null.
-    this.emit({ type: "deleted", jobId });
+    this.emit({ type: "deleting", jobId });
     this.deps.repo.delete(jobId);
+    this.emit({ type: "deleted", jobId });
   }
 
   private async executeYtDlpDownload(job: DownloadJobRecord): Promise<DownloadJobRecord> {
