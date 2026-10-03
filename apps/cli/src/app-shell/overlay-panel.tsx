@@ -381,7 +381,7 @@ export function OverlayPanel({
           />
         </Box>
       ) : overlay.type === "details" && overlay.detailData ? (
-        <Box marginTop={1} flexDirection="column">
+        <Box marginTop={1} flexDirection="column" overflowY="hidden">
           <DetailsSheetUI
             data={overlay.detailData}
             lines={overlay.lines}
@@ -415,7 +415,7 @@ export function OverlayPanel({
               // then wrapped body. Either way: no blank line between facts.
               if (detailLines.length <= 1) {
                 return (
-                  <Box key={`${line.label}-${line.detail ?? ""}`}>
+                  <Box key={`${line.label}-${line.detail ?? ""}`} columnGap={1}>
                     <Text color={resolvePanelTone(line.tone)}>
                       {padColumnsEnd(truncateLine(line.label, labelWidth), labelWidth)}
                     </Text>

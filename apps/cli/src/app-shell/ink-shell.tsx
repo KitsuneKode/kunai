@@ -1647,7 +1647,12 @@ function ListShell<T>({
                 {windowEnd < filteredOptions.length && <Text color={palette.dim}> ▼ ...</Text>}
               </Box>
               {!ultraCompact && showCompanion ? (
-                <Box marginLeft={2} flexDirection="column" width={companionWidth}>
+                <Box
+                  marginLeft={2}
+                  flexDirection="column"
+                  width={companionWidth}
+                  overflowY="hidden"
+                >
                   <LocalSection title="Current Selection" tone="success" marginTop={0}>
                     {showHeavyPoster ? (
                       <Box flexDirection="column" marginBottom={1}>

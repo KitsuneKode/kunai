@@ -336,7 +336,7 @@ export function DownloadConfirmationContent({
         </Box>
       </Box>
       {layout.showRail ? (
-        <Box marginLeft={2}>
+        <Box marginLeft={2} overflowY="hidden">
           <PreviewRail model={railModel} width={layout.railWidth} poster={poster} />
         </Box>
       ) : null}

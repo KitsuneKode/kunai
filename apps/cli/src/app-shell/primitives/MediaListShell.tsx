@@ -34,7 +34,7 @@ export const MediaListShell = React.memo(function MediaListShell({
         {list}
       </Box>
       {showRail ? (
-        <Box marginLeft={2} flexDirection="column">
+        <Box marginLeft={2} flexDirection="column" overflowY="hidden">
           {rail ??
             (railModel ? (
               <PreviewRail model={railModel} width={railWidth} poster={poster} />

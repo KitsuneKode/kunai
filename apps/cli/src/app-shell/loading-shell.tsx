@@ -678,7 +678,7 @@ export const LoadingShell = React.memo(function LoadingShell({
         <Box flexDirection="column" flexGrow={1} width="100%">
           {/* ── Resolving / Loading ───────────────────────────────────────── */}
           {!isPlaying && (
-            <Box flexDirection="row" flexGrow={1}>
+            <Box flexDirection="row" flexGrow={1} overflowY="hidden">
               <Box flexDirection="column" justifyContent="center" flexGrow={1} paddingY={1}>
                 {/* Signature ❀ bloom + glimmer stage label, then stage context */}
                 <Box flexDirection="row" marginTop={1} alignItems="flex-start">
@@ -831,7 +831,7 @@ export const LoadingShell = React.memo(function LoadingShell({
 
           {/* ── Playing ───────────────────────────────────────────────────── */}
           {isPlaying && (
-            <Box marginTop={1} flexDirection="row" flexGrow={1}>
+            <Box marginTop={1} flexDirection="row" flexGrow={1} overflowY="hidden">
               <Box flexDirection="column" flexGrow={1}>
                 {/* Control deck (.prototypes/playback-postplay): progress leads,
                   then a single NOW facts line + GO key-hints, then the mpv hint.

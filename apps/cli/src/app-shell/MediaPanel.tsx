@@ -127,9 +127,14 @@ function FactRows({
   return (
     <Box flexDirection="column">
       {facts.map((fact) => (
-        <Box key={`${fact.label}:${fact.value}`} flexDirection="row" flexWrap="nowrap">
+        <Box
+          key={`${fact.label}:${fact.value}`}
+          flexDirection="row"
+          flexWrap="nowrap"
+          columnGap={1}
+        >
           <Text color={palette.muted}>
-            {padColumnsEnd(truncateLine(fact.label, FACT_LABEL_WIDTH), FACT_LABEL_WIDTH)}{" "}
+            {padColumnsEnd(truncateLine(fact.label, FACT_LABEL_WIDTH), FACT_LABEL_WIDTH)}
           </Text>
           <Text color={fact.tone ? statusColor(fact.tone) : palette.textDim}>
             {truncateLine(fact.value, valueWidth)}
@@ -232,78 +237,85 @@ export const MediaPanel = React.memo(function MediaPanel({
       borderTop={false}
       borderRight={false}
       borderBottom={false}
+      overflowY="hidden"
     >
-      <PosterSlot
-        url={model.posterUrl}
-        width={innerWidth}
-        active={active}
-        placementSlot={placementSlot}
-        allowKitty={allowKitty}
-        allowSixel={allowSixel}
-      />
+      {/* Inner column never shrinks: under a squeezed parent the content keeps
+          natural height and the root's overflowY clip cuts the tail. Without
+          this, yoga collapses rows to zero height and they weld together —
+          the "2006urite"-class corruption in .docs/debugging-map.md. */}
+      <Box flexDirection="column" flexShrink={0}>
+        <PosterSlot
+          url={model.posterUrl}
+          width={innerWidth}
+          active={active}
+          placementSlot={placementSlot}
+          allowKitty={allowKitty}
+          allowSixel={allowSixel}
+        />
 
-      {/* Header: badge + title + secondary line */}
-      <Box marginTop={1}>
-        <Text color={palette.accent}>{`❀ ${model.kindBadge}`}</Text>
-      </Box>
-      <Text color={palette.text} bold>
-        {truncateLine(model.title, innerWidth)}
-      </Text>
-      {model.secondary ? (
-        <Text color={palette.muted}>{truncateLine(model.secondary, innerWidth)}</Text>
-      ) : null}
-
-      {/* Details facts */}
-      {model.facts.length > 0 ? (
-        <>
-          <SectionLabel label="details" width={innerWidth} />
-          <FactRows facts={model.facts} width={innerWidth} />
-        </>
-      ) : null}
-
-      {/* Synopsis (clamped) */}
-      {synopsisLines.length > 0 ? (
-        <>
-          <SectionLabel label="synopsis" width={innerWidth} />
-          <Box flexDirection="column">
-            {synopsisLines.map((line, index) => (
-              // eslint-disable-next-line react/no-array-index-key -- clamped, stable order
-              <Text key={`syn-${index}`} color={palette.textDim}>
-                {line}
-              </Text>
-            ))}
-          </Box>
-        </>
-      ) : null}
-
-      {/* Prev / up next / resume mini-cards — Kitty/Sixel when slotted */}
-      {model.miniCards.map((card) => (
-        <React.Fragment key={card.kind}>
-          <SectionLabel label={card.section} width={innerWidth} />
-          <MiniCard
-            card={card}
-            title={model.title}
-            width={innerWidth}
-            active={active}
-            allowKitty={allowKitty}
-            allowSixel={allowSixel}
-            placementSlot={miniCardPlacementSlot(card, placementSlot)}
-          />
-        </React.Fragment>
-      ))}
-
-      {/* Progress */}
-      {model.progress ? (
-        <Box marginTop={1} flexDirection="row" flexWrap="nowrap">
-          <ProgressBar
-            value={model.progress.percent}
-            max={100}
-            width={Math.max(8, innerWidth - measureColumns(model.progress.label) - 1)}
-            color={palette.accent}
-          />
-          <Text color={palette.muted}> {model.progress.label}</Text>
+        {/* Header: badge + title + secondary line */}
+        <Box marginTop={1}>
+          <Text color={palette.accent}>{`❀ ${model.kindBadge}`}</Text>
         </Box>
-      ) : null}
+        <Text color={palette.text} bold>
+          {truncateLine(model.title, innerWidth)}
+        </Text>
+        {model.secondary ? (
+          <Text color={palette.muted}>{truncateLine(model.secondary, innerWidth)}</Text>
+        ) : null}
+
+        {/* Details facts */}
+        {model.facts.length > 0 ? (
+          <>
+            <SectionLabel label="details" width={innerWidth} />
+            <FactRows facts={model.facts} width={innerWidth} />
+          </>
+        ) : null}
+
+        {/* Synopsis (clamped) */}
+        {synopsisLines.length > 0 ? (
+          <>
+            <SectionLabel label="synopsis" width={innerWidth} />
+            <Box flexDirection="column">
+              {synopsisLines.map((line, index) => (
+                // eslint-disable-next-line react/no-array-index-key -- clamped, stable order
+                <Text key={`syn-${index}`} color={palette.textDim}>
+                  {line}
+                </Text>
+              ))}
+            </Box>
+          </>
+        ) : null}
+
+        {/* Prev / up next / resume mini-cards — Kitty/Sixel when slotted */}
+        {model.miniCards.map((card) => (
+          <React.Fragment key={card.kind}>
+            <SectionLabel label={card.section} width={innerWidth} />
+            <MiniCard
+              card={card}
+              title={model.title}
+              width={innerWidth}
+              active={active}
+              allowKitty={allowKitty}
+              allowSixel={allowSixel}
+              placementSlot={miniCardPlacementSlot(card, placementSlot)}
+            />
+          </React.Fragment>
+        ))}
+
+        {/* Progress */}
+        {model.progress ? (
+          <Box marginTop={1} flexDirection="row" flexWrap="nowrap">
+            <ProgressBar
+              value={model.progress.percent}
+              max={100}
+              width={Math.max(8, innerWidth - measureColumns(model.progress.label) - 1)}
+              color={palette.accent}
+            />
+            <Text color={palette.muted}> {model.progress.label}</Text>
+          </Box>
+        ) : null}
+      </Box>
     </Box>
   );
 });

@@ -1824,6 +1824,7 @@ export function BrowseShell<T>({
                 marginTop={companionBesideList ? 0 : 1}
                 flexDirection="column"
                 width={previewWidth}
+                overflowY="hidden"
               >
                 {showPreviewRail && previewRailModel ? (
                   <PreviewRail
