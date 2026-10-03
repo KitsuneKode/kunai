@@ -43,7 +43,7 @@ import {
   shouldUnlinkUnixSocket,
 } from "./mpv-ipc-endpoint";
 import { shouldEmitPlaybackProgress } from "./mpv-playback-kernel";
-import type { MpvUrlKind } from "./mpv-playback-url";
+import type { MpvUrlKind, SubtitleStreamContext } from "./mpv-playback-url";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import {
   applyEndFileEvent,
@@ -274,6 +274,16 @@ export class PersistentMpvSession {
   } | null = null;
 
   private playbackStream: StreamInfo;
+
+  /**
+   * url + headers only — the exact projection subtitle-target validation
+   * needs. Passing the whole StreamInfo works structurally but a renamed or
+   * removed `headers` field would silently disable the credential-origin
+   * check on provider-controlled subtitle URLs.
+   */
+  private get subtitleStreamContext(): SubtitleStreamContext {
+    return { url: this.playbackStream.url, headers: this.playbackStream.headers };
+  }
   private mpvInProcessStreamReconnectEnabled = true;
   private mpvInProcessStreamReconnectMaxAttempts = 1;
   private reconnectBaseBackoffMs = IN_PROCESS_RECONNECT_BASE_BACKOFF_MS;
@@ -1193,7 +1203,7 @@ export class PersistentMpvSession {
       onAttached,
       primarySubtitleUrlKind,
       isCurrent,
-      this.playbackStream,
+      this.subtitleStreamContext,
     );
   }
 
@@ -1219,7 +1229,7 @@ export class PersistentMpvSession {
         primarySubtitle: selection.subtitleUrl,
         subtitleTracks: selection.subtitleTracks,
       },
-      this.playbackStream,
+      this.subtitleStreamContext,
     );
     if (attached.attachedCount <= 0) return false;
     this.emitPlaybackEventFor(this.currentCycleOptions(), {
@@ -1233,7 +1243,7 @@ export class PersistentMpvSession {
     const result = await this.subtitleManager.attachSubtitles(
       this.ipcSession,
       attachment,
-      this.playbackStream,
+      this.subtitleStreamContext,
     );
 
     if (result.attachedCount > 0) {

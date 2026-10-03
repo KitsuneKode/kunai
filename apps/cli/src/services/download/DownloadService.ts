@@ -1782,15 +1782,18 @@ export class DownloadService {
     result: DownloadSidecarResult,
     updatedAt: string,
   ): void {
+    // Sidecar messages embed provider-derived text (blocked-target reasons
+    // name the provider's URL; download errors echo upstream stderr) — strip
+    // control characters before they land in SQLite or a diagnostics record.
+    const message = result.message ? stripControlCharacters(result.message) : undefined;
     if (result.status === "expected-missing" || result.status === "failed") {
       this.deps.repo.markRepairable(
         jobId,
         {
           artifactStatus: result.status,
-          message: result.message ?? `${result.artifact} sidecar needs repair`,
+          message: message ?? `${result.artifact} sidecar needs repair`,
           repairMetadataJson:
-            result.repairMetadataJson ??
-            JSON.stringify({ artifact: result.artifact, message: result.message }),
+            result.repairMetadataJson ?? JSON.stringify({ artifact: result.artifact, message }),
         },
         updatedAt,
       );
@@ -1803,7 +1806,7 @@ export class DownloadService {
           jobId,
           artifact: result.artifact,
           artifactStatus: result.status,
-          message: result.message ?? null,
+          message: message ?? null,
         },
       });
       return;
@@ -1813,7 +1816,7 @@ export class DownloadService {
         jobId,
         {
           artifactStatus: "optional-missing",
-          message: result.message ?? `${result.artifact} sidecar was unavailable`,
+          message: message ?? `${result.artifact} sidecar was unavailable`,
           repairMetadataJson: result.repairMetadataJson,
         },
         updatedAt,
@@ -2466,13 +2469,17 @@ function buildRepairableSidecarResult(
   artifact: "subtitle" | "artwork",
   message: string,
 ): DownloadSidecarResult {
+  // `message` can carry provider/upstream text (error.message, blocked-target
+  // reasons naming the provider URL) — strip control characters before it
+  // reaches SQLite or diagnostics via either field that embeds it.
+  const clean = stripControlCharacters(message);
   return {
     artifact,
     status: "expected-missing",
-    message,
+    message: clean,
     repairMetadataJson: JSON.stringify({
       artifact,
-      message,
+      message: clean,
       outputPath: job.outputPath,
       subtitleUrl: job.subtitleUrl,
       subtitleLanguage: job.subtitleLanguage,

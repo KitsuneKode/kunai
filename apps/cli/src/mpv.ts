@@ -205,6 +205,11 @@ async function launchMpvInner(
   stats: ReturnType<typeof createPlayerStatsState>,
   emitPlaybackEvent: (event: PlayerPlaybackEvent) => void,
 ): Promise<PlaybackResult> {
+  // The subtitle validator only needs url + headers — project them
+  // explicitly so a future option-shape change cannot silently drop the
+  // credential-origin check through structural typing.
+  const subtitleStream: SubtitleStreamContext = { url: opts.url, headers: opts.headers };
+
   let ipcSession: MpvIpcSession | null = null;
   let endFileResolve: ((reason: string | undefined) => void) | null = null;
   const endFileReceived = new Promise<string | undefined>((resolve) => {
@@ -327,7 +332,7 @@ async function launchMpvInner(
           (trackCount) => {
             emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
           },
-          opts,
+          subtitleStream,
         );
         return attached > 0;
       },
@@ -338,7 +343,7 @@ async function launchMpvInner(
           (trackCount) => {
             emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
           },
-          opts,
+          subtitleStream,
         );
       },
       async skipCurrentSegment() {
@@ -440,7 +445,7 @@ async function launchMpvInner(
       emitPlaybackEvent({ type: "ipc-connected" });
       emitPlaybackEvent({ type: "opening-stream" });
       notifyPlayerReady();
-      const trackCount = allowedLaunchSubtitleFiles({ ...opts, stream: opts }).length;
+      const trackCount = allowedLaunchSubtitleFiles({ ...opts, stream: subtitleStream }).length;
       if (trackCount > 0) {
         emitPlaybackEvent({ type: "subtitle-inventory-ready", trackCount });
         emitPlaybackEvent({ type: "subtitle-attached", trackCount });
@@ -760,7 +765,13 @@ export function buildMpvArgs(
     args.push("--tls-verify=no");
   }
 
-  for (const file of allowedLaunchSubtitleFiles({ ...opts, stream: opts })) {
+  for (const file of allowedLaunchSubtitleFiles({
+    ...opts,
+    // url + headers only — the exact projection the credential-origin check
+    // needs, so an option-shape change cannot drop it through structural
+    // typing.
+    stream: { url: opts.url, headers: opts.headers },
+  })) {
     args.push(`--sub-file=${file}`);
   }
 

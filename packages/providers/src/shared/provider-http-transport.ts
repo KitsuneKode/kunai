@@ -48,18 +48,22 @@ import {
   resolveCurlCandidate,
   type CurlEnvironment,
 } from "./curl-impersonate";
-import { createGuardedFetch, PROVIDER_API_SENSITIVE_HEADERS } from "./stream-reachability";
+import {
+  createGuardedFetch,
+  isConfiguredInitialTarget,
+  PROVIDER_API_SENSITIVE_HEADERS,
+} from "./stream-reachability";
 import { createTimeoutSignal } from "./timeout-signal";
 
 /**
  * The last-resort leg walks redirects through the same per-hop literal/DNS
  * blocklist as providerFetch — a bare fetch() would follow Location anywhere.
- * Hop 0 stays exempt for the same reason: provider endpoints are code-fixed
- * or user-configured.
+ * Hop 0 is exempt only for origins the user configured themselves; a
+ * provider-supplied target URL stays fully guarded even on this leg.
  */
 const guardedTransportFetch = createGuardedFetch({
   extraSensitiveHeaders: PROVIDER_API_SENSITIVE_HEADERS,
-  allowInitialPrivateTarget: true,
+  allowInitialPrivateTarget: isConfiguredInitialTarget,
 });
 
 /* ------------------------------------------------------------------------ */

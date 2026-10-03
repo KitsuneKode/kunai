@@ -93,16 +93,16 @@ async function fetchProbeTarget(options: {
   readonly resolveNames: boolean;
   readonly extraSensitiveHeaders?: readonly string[];
   /**
-   * Skip literal/DNS checks on hop 0 only. For callers whose first URL is
-   * code-fixed or user-configured (a self-hosted Invidious instance), while
-   * provider-controlled redirect targets stay fully guarded.
+   * Skip literal/DNS checks on hop 0 only, for the URLs this predicate
+   * approves — a self-hosted Invidious instance the user configured, not a
+   * provider-supplied target. Redirect hops stay fully guarded regardless.
    */
-  readonly allowInitialPrivateTarget?: boolean;
+  readonly allowInitialPrivateTarget?: (url: string) => boolean;
 }): Promise<ProbeFetchOutcome> {
   let target = options.url;
   let init = options.init;
   for (let hop = 0; ; hop++) {
-    const exemptInitialHop = hop === 0 && options.allowInitialPrivateTarget === true;
+    const exemptInitialHop = hop === 0 && (options.allowInitialPrivateTarget?.(target) ?? false);
     if (!exemptInitialHop) {
       const literalBlocked = blockedLiteralTargetReason(target);
       if (literalBlocked) {
@@ -146,6 +146,19 @@ async function fetchProbeTarget(options: {
           if (current.protocol === "https:" && next.protocol === "http:") {
             return { kind: "blocked", reason: `${target} -> https downgrade` };
           }
+          // Fetch redirect semantics: a 303 — or a 301/302 answering a POST —
+          // replays the next hop as GET with no body and no request-body
+          // headers. Replaying init unchanged would send a request the
+          // platform fetch never would have made.
+          const method = (init.method ?? "GET").toUpperCase();
+          const replayAsGet =
+            (response.status === 303 && method !== "GET" && method !== "HEAD") ||
+            ((response.status === 301 || response.status === 302) && method === "POST");
+          if (replayAsGet) {
+            const headers = new Headers(init.headers);
+            for (const name of REQUEST_BODY_HEADER_NAMES) headers.delete(name);
+            init = { ...init, method: "GET", headers, body: undefined };
+          }
           // Match undici's own redirect hygiene: credentials do not cross
           // origins, even when every hop individually validates as public.
           if (next.origin !== current.origin && init.headers) {
@@ -167,6 +180,19 @@ async function fetchProbeTarget(options: {
 }
 
 const CREDENTIAL_HEADERS = new Set(["authorization", "cookie", "proxy-authorization"]);
+
+/**
+ * Headers that describe a body — removed when a redirect demotes the next hop
+ * to GET, matching the fetch spec's request-body-header list (plus
+ * content-length, which a bodiless request must not carry either).
+ */
+const REQUEST_BODY_HEADER_NAMES = [
+  "content-encoding",
+  "content-language",
+  "content-length",
+  "content-location",
+  "content-type",
+] as const;
 
 function stripCredentialHeaders(
   headers: RequestInit["headers"],
@@ -206,6 +232,48 @@ export function fetchGuardedStreamTarget(options: {
 }
 
 /**
+ * Hop-0 private-target exemption list for the shared guarded-fetch lanes.
+ * Provider-supplied URLs are untrusted and always pass the literal/DNS gate;
+ * the only legitimate private hop-0 targets are endpoints the user configured
+ * themselves — self-hosted Invidious/Piped instances legitimately live on a
+ * LAN address. Registrations are tagged so a reconfigured provider replaces
+ * its entries instead of accumulating stale ones.
+ */
+const configuredInitialTargetOrigins = new Map<string, ReadonlySet<string>>();
+
+export function registerConfiguredEndpointOrigins(
+  tag: string,
+  urls: readonly (string | undefined | null)[],
+): void {
+  const origins = new Set<string>();
+  for (const url of urls) {
+    if (!url) continue;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        origins.add(parsed.origin);
+      }
+    } catch {
+      // A malformed configured URL fails on its own when used — no origin.
+    }
+  }
+  configuredInitialTargetOrigins.set(tag, origins);
+}
+
+export function isConfiguredInitialTarget(url: string): boolean {
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return false;
+  }
+  for (const origins of configuredInitialTargetOrigins.values()) {
+    if (origins.has(origin)) return true;
+  }
+  return false;
+}
+
+/**
  * Provider-secret headers that must never survive a cross-origin redirect on
  * the API-fetch path. The stream probe keeps the narrower credential set on
  * purpose — mpv replays the candidate's real headers, so the probe mirrors
@@ -231,11 +299,13 @@ export function createGuardedFetch(
     readonly fetchImpl?: StreamReachabilityFetch;
     readonly extraSensitiveHeaders?: readonly string[];
     /**
-     * The first request URL is code-fixed or user-configured (e.g. a
-     * self-hosted Invidious instance), so literal private targets pass on
-     * hop 0. Redirect hops — the attacker-controlled part — stay guarded.
+     * Hop-0 private-target pass, decided per URL. The shared provider lanes
+     * take `isConfiguredInitialTarget` so only genuinely user-configured
+     * endpoint origins (a self-hosted Invidious/Piped instance) qualify — a
+     * provider-supplied URL pointing at a LAN address stays blocked. Redirect
+     * hops — the attacker-controlled part — stay guarded regardless.
      */
-    readonly allowInitialPrivateTarget?: boolean;
+    readonly allowInitialPrivateTarget?: (url: string) => boolean;
   } = {},
 ): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
   return async (input, init) => {
@@ -285,7 +355,9 @@ async function normalizeGuardedRequest(
     init?.body ?? (hasBody ? await input.clone().arrayBuffer() : undefined);
   return {
     url: input.url,
-    init: { ...init, method, headers, body },
+    // The Request's own signal survives normalization when init carries none —
+    // a dropped signal silently disarms the caller's cancellation here.
+    init: { ...init, method, headers, body, signal: init?.signal ?? input.signal },
   };
 }
 

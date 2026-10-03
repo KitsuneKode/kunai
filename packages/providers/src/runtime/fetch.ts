@@ -8,7 +8,11 @@ import {
 } from "@kunai/types";
 
 import { readResponseTextCapped } from "../shared/bounded-body";
-import { createGuardedFetch, PROVIDER_API_SENSITIVE_HEADERS } from "../shared/stream-reachability";
+import {
+  createGuardedFetch,
+  isConfiguredInitialTarget,
+  PROVIDER_API_SENSITIVE_HEADERS,
+} from "../shared/stream-reachability";
 
 const PROVIDER_JSON_MAX_BYTES = 8 * 1024 * 1024;
 
@@ -19,9 +23,11 @@ export { ProviderHttpError, providerHttpErrorForStatus };
 
 const guardedDirectFetch = createGuardedFetch({
   extraSensitiveHeaders: PROVIDER_API_SENSITIVE_HEADERS,
-  // User-configured endpoints (self-hosted Invidious/Piped) are legitimately
-  // private; only redirect hops are attacker-controlled and stay guarded.
-  allowInitialPrivateTarget: true,
+  // A blanket hop-0 exemption would let a provider-supplied URL (e.g.
+  // stream.playlist) reach a private target unchecked. Only endpoints the
+  // user actually configured — self-hosted Invidious/Piped instances — get
+  // the pass; everything else stays guarded from hop 0.
+  allowInitialPrivateTarget: isConfiguredInitialTarget,
 });
 
 export interface ProviderHttpRequestContext {

@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { relayRpcRequestSchema } from "@kunai/schemas";
+import { parseIpv4 } from "@kunai/types";
 
 import { filterForwardHeaders, mergeRelayHeaders, RelayValidationError } from "./forward-headers";
 import {
@@ -391,12 +392,15 @@ function isLoopbackOrigin(origin: string | null): boolean {
   if (!origin) return true;
   try {
     const host = new URL(origin).hostname.replace(/^\[|\]$/g, "").toLowerCase();
-    return (
-      host === "localhost" ||
-      host.endsWith(".localhost") ||
-      host === "::1" ||
-      host.startsWith("127.")
-    );
+    if (host === "localhost" || host.endsWith(".localhost") || host === "::1") {
+      return true;
+    }
+    // A real IPv4 loopback literal only. The URL parser canonicalises exotic
+    // numeric forms (0x7f…, 2130706433, 127.1) to dotted-quad before this
+    // point, and a DNS-rebinding name like `127.attacker.example` does not
+    // parse — the old `startsWith("127.")` substring check cleared it.
+    const parts = parseIpv4(host);
+    return parts !== null && parts[0] === 127;
   } catch {
     return false;
   }

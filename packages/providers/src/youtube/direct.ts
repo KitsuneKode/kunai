@@ -21,6 +21,7 @@ import type {
 } from "@kunai/types";
 
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import { registerConfiguredEndpointOrigins } from "../shared/stream-reachability";
 import { formatDurationSeconds } from "./format-duration";
 import {
   buildYoutubeWatchUrl,
@@ -92,6 +93,10 @@ let globalYoutubeConfig: YoutubeProviderConfig & { metadataService?: YoutubeMeta
 export function configureYoutubeProvider(config: YoutubeProviderConfig): void {
   const metadataService = resolveMetadataService(config);
   globalYoutubeConfig = { ...config, metadataService };
+  // Self-hosted Invidious/Piped instances are the one class of legitimately
+  // private hop-0 target — register their origins so the shared guarded-fetch
+  // lanes exempt exactly these, not whatever a provider-supplied URL claims.
+  registerConfiguredEndpointOrigins("youtube", [config.invidiousInstanceUrl, config.pipedApiUrl]);
 }
 
 async function searchYoutube(

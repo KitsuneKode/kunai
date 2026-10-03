@@ -506,6 +506,26 @@ test("handleRpcRequest in local-loopback mode refuses foreign browser origins", 
   });
   expect(foreign.status).toBe(403);
 
+  // A DNS-rebinding hostname that merely *begins* with "127." is a foreign
+  // origin — the literal-prefix check must see a real IPv4 loopback literal.
+  for (const origin of ["http://127.evil.example", "http://127.attacker.example:80"]) {
+    const rebound = await handleRpcRequest(post(origin), {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+    });
+    expect(rebound.status).toBe(403);
+  }
+
+  // Exotic numeric forms the URL parser canonicalises to a loopback literal
+  // still pass — they really are the loopback target.
+  const canonicalised = await handleRpcRequest(post("http://127.1:8080"), {
+    providerId: "allanime",
+    registry: providerRegistry,
+    authorization: localLoopbackAuthorization,
+  });
+  expect(canonicalised.status).not.toBe(403);
+
   for (const origin of ["http://localhost:3000", "http://127.0.0.1:8080", null]) {
     const res = await handleRpcRequest(post(origin), {
       providerId: "allanime",

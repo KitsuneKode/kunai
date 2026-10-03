@@ -69,18 +69,20 @@ export function parseIpv4(host: string): [number, number, number, number] | null
 function isPrivateIpv4(parts: readonly [number, number, number, number]): boolean {
   const a = parts[0];
   const b = parts[1];
+  const c = parts[2];
   return (
     a === 0 ||
     a === 10 ||
     a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) || // CGNAT
+    (a === 100 && b >= 64 && b <= 127) || // CGNAT 100.64.0.0/10
     (a === 169 && b === 254) || // link-local
     (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 0) ||
+    (a === 192 && b === 0 && c === 0) || // 192.0.0.0/24 IETF protocol assignments
+    (a === 192 && b === 0 && c === 2) || // TEST-NET-1
     (a === 192 && b === 168) ||
-    (a === 198 && (b === 18 || b === 19)) || // benchmarking
-    (a === 198 && b === 51) ||
-    (a === 203 && b === 0) ||
+    (a === 198 && (b === 18 || b === 19)) || // benchmarking 198.18.0.0/15
+    (a === 198 && b === 51 && c === 100) || // TEST-NET-2
+    (a === 203 && b === 0 && c === 113) || // TEST-NET-3
     a >= 224 // multicast + reserved + broadcast
   );
 }
