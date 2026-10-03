@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildOfflinePlaybackLaunch,
+  prepareOfflinePlaybackLaunch,
   requestUnifiedOfflinePlayback,
   titleInfoFromDownloadJob,
 } from "@/app/offline/offline-playback-launch";
@@ -24,6 +25,33 @@ function readyJob(overrides: Partial<DownloadJobRecord> = {}): DownloadJobRecord
 }
 
 describe("requestUnifiedOfflinePlayback", () => {
+  for (const mode of ["series", "anime", "youtube"] as const) {
+    test(`${mode}: offline launch preserves retired provider provenance without registry lookup`, async () => {
+      const job = readyJob({
+        providerId: "retired-provider",
+        mode,
+        mediaKind: mode === "anime" ? "anime" : mode === "youtube" ? "video" : "series",
+      });
+      const dispatches: Array<{ type: string; provider?: string; mode?: string }> = [];
+      const container = {
+        stateManager: {
+          getState: () => ({ provider: "current-provider" }),
+          dispatch: (event: { type: string; provider?: string; mode?: string }) =>
+            dispatches.push(event),
+        },
+        offlineLibraryService: { getPlayableSource: async () => ({ status: "ready", job }) },
+        providerRegistry: {
+          get: () => {
+            throw new Error("offline launch must not read providers");
+          },
+        },
+      } as unknown as Container;
+      const launch = await prepareOfflinePlaybackLaunch(container, job.id);
+      expect(launch?.title.launchSource).toBe("offline-library");
+      expect(dispatches).toContainEqual({ type: "SET_MODE", mode, provider: "retired-provider" });
+    });
+  }
+
   test("returns direct handoff without module-global mailbox", async () => {
     const dispatches: string[] = [];
     const container = {

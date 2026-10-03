@@ -295,6 +295,11 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
 - An offline-library launch keeps its explicit local-only origin through episode selection and
   playback. The validated local source is handed to the local mpv path, including local subtitle
   sidecars, rather than being represented as a remote stream URL.
+- A validated local artifact remains playable when its recorded provider is no longer registered.
+  Provider identity remains provenance for history and sharing; registration becomes mandatory
+  only for online acquisition. Source authority is resolved before adapter lookup, and local
+  playback skips provider selection, traces, health feedback, remote prefetch, and post-play
+  release reconciliation. Manual Next and autoplay use the offline episode index.
 - The full player-options path preserves that verified origin by exact media/sidecar path match, so
   resume, autoplay, timing, track preferences, and cancellation remain available without weakening
   mpv URL safety. A local launch failure is a local player problem: it never invalidates provider

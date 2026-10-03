@@ -70,6 +70,20 @@ describe("retired-provider playback through the real container and phase", () =>
     });
   }
 
+  test("next downloaded episode retains its saved resume offer after provider retirement", async () => {
+    const report = await runScenario("series-resume");
+    expect(report.played).toHaveLength(2);
+    expect(report.played[1].resumePromptAt).toBe(30);
+    expect(report.calls).toEqual({
+      registry: 0,
+      health: 0,
+      cache: 0,
+      selection: 0,
+      trace: 0,
+      network: 0,
+    });
+  });
+
   test("local player failure never invalidates or penalizes the retired provider", async () => {
     const report = await runScenario("movie-error");
     expect(report.played).toHaveLength(1);

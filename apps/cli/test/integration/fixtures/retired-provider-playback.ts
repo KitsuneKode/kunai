@@ -79,6 +79,18 @@ try {
     container.offlineAssetService.adoptCompletedJob(completed);
   }
 
+  if (scenario === "series-resume") {
+    container.historyRepository.upsertProgress({
+      title: { id: title.id, kind: "series", title: title.name },
+      episode: { season: 1, episode: 2 },
+      positionSeconds: 30,
+      durationSeconds: 120,
+      completed: false,
+      providerId: sourceProvider,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   container.providerRegistry.get = () => {
     calls.registry++;
     return undefined;
@@ -172,6 +184,7 @@ try {
           subtitlePath: options.localPlaybackSource?.subtitlePath,
           providerId: options.localPlaybackSource?.providerId,
           startAt: options.startAt,
+          resumePromptAt: options.resumePromptAt,
           timing: options.timing,
           generationHook: typeof options.onGenerationActivated === "function",
           abortSignal: options.abortSignal === stop.signal,
