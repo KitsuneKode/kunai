@@ -5,10 +5,13 @@ import {
   dayToEpoch,
   delta,
   formatDayTick,
+  namedBucketCount,
   namedVersionCount,
   platformColumns,
   platformLabel,
+  releaseMarkers,
   residualShare,
+  rollingMean,
   sliceRange,
 } from "../lib/analytics-derive";
 import type { SeriesPoint } from "../lib/analytics-series";
@@ -185,5 +188,72 @@ describe("platformColumns", () => {
   test("an unexpected bucket sorts between the named platforms and the residual", () => {
     const points = [day(0, 9, { linux: 4, freebsd: 2, other: 3 })];
     expect(platformColumns(points)).toEqual(["linux", "freebsd", "other"]);
+  });
+});
+
+describe("namedBucketCount", () => {
+  test("counts only real, non-empty buckets from one breakdown", () => {
+    expect(namedBucketCount({ "0.3.0": 5, other: 9, "0.2.0": 0 })).toBe(1);
+  });
+
+  test("a breakdown that is all residual names nothing", () => {
+    expect(namedBucketCount({ other: 3 })).toBe(0);
+    expect(namedBucketCount({})).toBe(0);
+  });
+
+  test("agrees with residualShare: a tile cannot say 0% suppressed and name nothing", () => {
+    const counts = { "0.3.0": 5 };
+    expect(residualShare(counts)).toBe(0);
+    expect(namedBucketCount(counts)).toBeGreaterThan(0);
+  });
+});
+
+describe("rollingMean", () => {
+  test("shortens at the start instead of padding with zeros", () => {
+    expect(rollingMean([4, 6, 8], 3)).toEqual([4, 5, 6]);
+  });
+
+  test("slides once the window is full", () => {
+    expect(rollingMean([1, 2, 3, 4], 2)).toEqual([1, 1.5, 2.5, 3.5]);
+  });
+
+  test("skips nulls and keeps a gap where a window has no real value", () => {
+    expect(rollingMean([null, null, 6], 2)).toEqual([null, null, 6]);
+    expect(rollingMean([2, null, 4], 2)).toEqual([2, 2, 4]);
+  });
+});
+
+describe("releaseMarkers", () => {
+  const points = [day(0), day(1), day(2), day(3)];
+
+  test("keeps only releases inside the plotted window, oldest first", () => {
+    const markers = releaseMarkers(points, [
+      { date: "2026-01-03", tag: "v2" },
+      { date: "2025-12-30", tag: "v0" },
+      { date: "2026-01-02", tag: "v1" },
+      { date: "2026-02-01", tag: "v9" },
+    ]);
+    expect(markers.map((m) => m.tag)).toEqual(["v1", "v2"]);
+  });
+
+  test("includes both edges of the window", () => {
+    const markers = releaseMarkers(points, [
+      { date: "2026-01-01", tag: "first" },
+      { date: "2026-01-04", tag: "last" },
+    ]);
+    expect(markers).toHaveLength(2);
+  });
+
+  test("reads the day from a timestamp and ignores unparseable dates", () => {
+    const markers = releaseMarkers(points, [
+      { date: "2026-01-02T10:00:00Z", tag: "iso" },
+      { date: null, tag: "undated" },
+      { date: "soon", tag: "bad" },
+    ]);
+    expect(markers).toEqual([{ day: "2026-01-02", tag: "iso" }]);
+  });
+
+  test("an empty window has no markers", () => {
+    expect(releaseMarkers([], [{ date: "2026-01-02", tag: "v1" }])).toEqual([]);
   });
 });
