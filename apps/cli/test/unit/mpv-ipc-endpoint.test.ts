@@ -97,31 +97,37 @@ function ipcDirUnder(root: string): string {
   return dir;
 }
 
-test("sweep unlinks a dead socket and its conf, keeps a live pair", async () => {
-  const root = mkdtempSync(join(tmpdir(), "kunai-ipc-sweep-"));
-  const dir = ipcDirUnder(root);
+// POSIX-only: the sweep is unreachable on Windows (the endpoint returns a
+// named pipe before it runs), and Windows fs does not mark AF_UNIX inodes
+// isSocket() anyway — the lstat guard would skip every unlink there.
+test.skipIf(process.platform === "win32")(
+  "sweep unlinks a dead socket and its conf, keeps a live pair",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "kunai-ipc-sweep-"));
+    const dir = ipcDirUnder(root);
 
-  const deadSock = join(dir, "kunai-mpv-dead.sock");
-  const liveSock = join(dir, "kunai-mpv-live.sock");
-  const dead = bindTestSocket(deadSock);
-  const live = bindTestSocket(liveSock);
-  writeFileSync(`${deadSock}.conf`, "http-header-fields=Cookie: dead=1\n");
-  writeFileSync(`${liveSock}.conf`, "http-header-fields=Cookie: live=1\n");
+    const deadSock = join(dir, "kunai-mpv-dead.sock");
+    const liveSock = join(dir, "kunai-mpv-live.sock");
+    const dead = bindTestSocket(deadSock);
+    const live = bindTestSocket(liveSock);
+    writeFileSync(`${deadSock}.conf`, "http-header-fields=Cookie: dead=1\n");
+    writeFileSync(`${liveSock}.conf`, "http-header-fields=Cookie: live=1\n");
 
-  try {
-    // The probe, not file existence, decides: `dead` is reported dead even
-    // though its socket inode is bound — the liveness verdict is the contract.
-    await sweepStaleMpvIpcArtifacts({ TMPDIR: root }, async (path) => path === liveSock);
+    try {
+      // The probe, not file existence, decides: `dead` is reported dead even
+      // though its socket inode is bound — the liveness verdict is the contract.
+      await sweepStaleMpvIpcArtifacts({ TMPDIR: root }, async (path) => path === liveSock);
 
-    expect(existsSync(deadSock)).toBe(false);
-    expect(existsSync(`${deadSock}.conf`)).toBe(false);
-    expect(existsSync(liveSock)).toBe(true);
-    expect(existsSync(`${liveSock}.conf`)).toBe(true);
-  } finally {
-    dead.stop();
-    live.stop();
-  }
-});
+      expect(existsSync(deadSock)).toBe(false);
+      expect(existsSync(`${deadSock}.conf`)).toBe(false);
+      expect(existsSync(liveSock)).toBe(true);
+      expect(existsSync(`${liveSock}.conf`)).toBe(true);
+    } finally {
+      dead.stop();
+      live.stop();
+    }
+  },
+);
 
 test("sweep removes only aged orphan confs so an in-flight spawn's conf survives", async () => {
   const root = mkdtempSync(join(tmpdir(), "kunai-ipc-sweep-"));
