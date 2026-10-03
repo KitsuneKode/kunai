@@ -70,7 +70,7 @@ export function miruroInventorySourceId(
   serverId: string,
   audioCategory: MiruroAudioCategory,
 ): string {
-  return `source:${MIRURO_PROVIDER_ID}:pipe:${serverId}:${audioCategory}`;
+  return `source:${MIRURO_PROVIDER_ID}:catalog:${serverId}:${audioCategory}`;
 }
 
 /**

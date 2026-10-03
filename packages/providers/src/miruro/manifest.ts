@@ -3,27 +3,59 @@ import { defineProviderManifest } from "@kunai/core";
 export const MIRURO_PROVIDER_ID = "miruro" as const;
 
 /**
- * The one Miruro server order. Discovery ranking, fallback construction when the
- * pipe returns no provider map, and the known-catalog placeholder rows all read
- * this list.
+ * The one Miruro server order, in family names. Discovery ranking, fallback
+ * construction when the play matrix names nothing known, and the known-catalog
+ * placeholder rows all read this list — rankMiruroServerId maps the catalog's
+ * versioned `server` strings (`icarus-1-1`, `vault-6-direct-1`, `HD-2`) back to
+ * their family, so a lane that renames its instance suffix keeps its rank.
  *
- * `pewe` (AniDB HLS) and `moo` (AnimeGG MP4) are fast and reliable (~300-500ms),
- * followed by `bee` (Anikoto) and `ally` (AllManga). Stalling/444-returning
- * servers (`kiwi`, `hop`) go to the end so they do not block faster candidates.
+ * Ordered by evidence (2026-10-03): `animepahe` serves labeled multi-quality
+ * HLS direct; the `icarus`/`vault-*-direct` lanes serve direct streams plus
+ * subtitle tracks; `Vid`/`HD-*` are the KickassAnime/Anikoto lanes with
+ * subtitle inventory; the `Vidstream`/`Vidplay`/`BYFMS`/`DGHG`/`Bird` lanes
+ * are mostly embed-only upstream. Anything unlisted ranks after these, in
+ * play-response order.
  */
 export const MIRURO_SERVER_TRY_ORDER = [
-  "pewe",
-  "moo",
-  "bee",
-  "ally",
-  "bonk",
-  "dune",
-  "ANIMEKAI",
-  "ANIMEZ",
-  "ZORO",
-  "kiwi",
-  "hop",
+  "animepahe",
+  "icarus",
+  "vault-6-direct",
+  "Vid",
+  "HD",
+  "Vidstream",
+  "Vidplay",
+  "BYFMS",
+  "DGHG",
+  "Bird",
 ] as const;
+
+/**
+ * Family matchers in TRY_ORDER sequence — the catalog's `server` strings carry
+ * per-instance suffixes, so ranking matches the family, not the literal name.
+ * `Vid` is exact-matched so it cannot swallow `Vidstream`/`Vidplay`.
+ */
+const MIRURO_SERVER_FAMILY_PATTERNS = [
+  /^animepahe$/i,
+  /^icarus/i,
+  /^vault-\d+-direct/i,
+  /^vid$/i,
+  /^hd-\d+/i,
+  /^vidstream/i,
+  /^vidplay/i,
+  /^byfms$/i,
+  /^dghg$/i,
+  /^bird$/i,
+] as const;
+
+/**
+ * Rank a catalog `server` string into its TRY_ORDER family. Unlisted families
+ * share the tail rank so the play response's own order breaks ties — upstream's
+ * order beats a guess.
+ */
+export function rankMiruroServerId(serverId: string): number {
+  const index = MIRURO_SERVER_FAMILY_PATTERNS.findIndex((pattern) => pattern.test(serverId));
+  return index >= 0 ? index : MIRURO_SERVER_FAMILY_PATTERNS.length;
+}
 
 export const miruroManifest = defineProviderManifest({
   id: MIRURO_PROVIDER_ID,
@@ -88,6 +120,7 @@ export const miruroManifest = defineProviderManifest({
     ],
   },
   notes: [
+    "2026-10-03: `/api/secure/pipe` is gone on every mirror (SPA 404) — upstream replaced it with a catalog REST API at `/api/v1/*`. Success bodies are `application/octet-stream` = XOR('miruro/catalog') + gzip + JSON; errors are plain `application/problem+json`. Query shapes are allowlisted to the site's own calls (search limit ∈ {5,15}, `*_id_in` + limit=100, `episodes` needs `kind` + limit=10000, `play` takes no query). Bun fetch clears the shape gate with a browser header set — the old pipe's TLS-fingerprint CF block does not apply here. One `play` call returns the full track/provider/server matrix with direct stream URLs and per-server Referer headers.",
     "2026-07-16: Browser network on www.miruro.bz/watch/{anilistId}/... uses GET /api/secure/pipe?e=… (200 plain + x-obfuscated). HLS on vault*.ultracloud / owocdn with stream.referer https://kwik.cx/.",
     "Bun fetch often gets CF 403 HTML on pipe; production path falls back to curl --http2 with browser headers (dossier-proven on this machine).",
     "2026-09-11: all four www. mirrors (.bz, .ru, .to, .tv) serve /api/secure/pipe — the earlier 'miruro.tv/.to are TLS-dead' reading came from a network whose reachability to them flaps (same host timed out, failed fast, then answered within minutes). Bare origins are 301 redirects to www.; miruro.com is a landing page with no pipe and is excluded by name.",

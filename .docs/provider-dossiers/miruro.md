@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-03"
+lastReviewed: "2026-10-16"
 ---
 
 # Provider: Miruro
@@ -9,11 +9,58 @@ lastReviewed: "2026-10-03"
 
 ## Summary
 
-- **Runtime class:** Direct HTTP pipe API by AniList ID, with browser harvest as research tooling.
-- **Production module:** `packages/providers/src/miruro/*`.
-- **Current status (2026-09-11):** **default anime provider.** Searches and resolves
-  through its own pipe, with no dependency on AniList's API or on AniDB; see the
-  2026-09-11 section. The older sections below are history and say otherwise.
+- **Runtime class:** Direct HTTP catalog API (`/api/v1/*`) by AniList ID, with browser harvest as research tooling.
+- **Production module:** `packages/providers/src/miruro/*` (`catalog.ts` is the API client).
+- **Current status (2026-10-16):** **default anime provider.** Searches and resolves
+  through the catalog API — the `/api/secure/pipe` transport is gone upstream and its
+  client machinery is deleted. See the 2026-10-16 section. The older sections below
+  are history and say otherwise.
+
+## Production status (2026-10-16) — catalog API migration
+
+Upstream removed `/api/secure/pipe` entirely — every live mirror answers it with an
+SPA 404 page, not an API response. The site now runs on a catalog REST API at
+`/api/v1/*`, reverse-engineered from the site's own bundle and verified live:
+
+- **`catalog.ts` is the client.** Success bodies arrive as
+  `application/octet-stream`: XOR every byte with the ASCII key `miruro/catalog`,
+  gunzip, parse JSON. Errors arrive as plain `application/problem+json` and surface
+  as `MiruroCatalogError` with the upstream `detail` string.
+- **The query shapes are allowlisted to the site's own calls.** Anything else gets a
+  400 "Unsupported catalog request" — not a WAF page, an app-level refuse. The
+  working shapes: search `/api/v1/anime?q=…&limit=15&sort=-popularity`, the AniList
+  bridge `/api/v1/anime?anilist_id_in=…&limit=100`, episodes
+  `/api/v1/anime/{id}/episodes?kind=regular|film&limit=10000`, and
+  `/api/v1/anime/{id}/episodes/{n}/play` with no query at all. A browser header set
+  (UA, Accept, Accept-Language, Referer to a site page) rides every call; Bun fetch
+  passes the gate, so the old pipe's TLS-fingerprint curl fallback does not apply
+  here.
+- **One `play` call returns the whole matrix**: tracks (sub/ssub/dub), providers,
+  servers, direct stream URLs, per-server `Referer` headers, subtitle tracks,
+  `skip_times` (intro/outro), thumbnails, and downloads. The pipe needed a
+  `sources` call per server; the catalog replaces all of it.
+- **`direct.ts` synthesizes the old shapes.** Play responses are mapped onto the
+  existing `MiruroEpisodesResponse`/`MiruroSourcesResponse` structures, so the
+  candidate builder, stream expansion, subtitle presentation, source inventory,
+  endpoint health, and audio-fallback machinery all run unchanged. The pipe decode
+  layer, pipe curl transport, WAF fail-fast, and the AniList-relay search mapper
+  are deleted — nothing referenced them.
+- **Server names are catalog-native.** `MIRURO_SERVER_TRY_ORDER` holds family names
+  (`animepahe`, `icarus`, `vault-6-direct`, `Vid`, `HD`, `Vidstream`, `Vidplay`,
+  `BYFMS`, `DGHG`, `Bird`) and `rankMiruroServerId()` maps the catalog's versioned
+  `server` strings (`icarus-1-1`, `vault-6-direct-1`, `HD-2`) back to their family,
+  so a lane renaming its instance suffix keeps its rank. The opaque pipe names
+  (`pewe`, `moo`, `bee`…) and their character-theme labels are gone.
+- **Stream hosts still fingerprint Bun.** `vault-*.uwucdn.top`/`owocdn.top` answer
+  Bun fetch with HTTP 403 while curl/mpv get a valid playlist with the provider's
+  declared headers. `probeStreamReachability` now retries a definitive Bun-side 403
+  once over a player-shaped curl transport (bounded body/time, `--`-terminated argv,
+  per-hop redirect validation) — this fixes the playback preflight that could kill
+  mpv before IPC connected, not just the smoke.
+- **Dead-server evidence moved upstream.** The catalog play matrix only returns
+  lanes that have streams, so `shouldStopAfterFailure` was removed — a per-lane
+  failure is endpoint-scoped by construction, and a region-wide block surfaces at
+  the play fetch itself.
 
 ## Production status (2026-08-13) — truth and resilience pass
 

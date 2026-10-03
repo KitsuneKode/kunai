@@ -5,25 +5,29 @@ import { miruroInventorySourceId, getMiruroKnownCatalog } from "../src/catalogs/
 import { mergeKnownCatalogSources } from "../src/shared/known-catalog";
 
 test("miruroInventorySourceId keeps sub and dub as distinct source ids", () => {
-  expect(miruroInventorySourceId("kiwi", "sub")).toBe("source:miruro:pipe:kiwi:sub");
-  expect(miruroInventorySourceId("kiwi", "dub")).toBe("source:miruro:pipe:kiwi:dub");
-  expect(miruroInventorySourceId("kiwi", "sub")).not.toBe(miruroInventorySourceId("kiwi", "dub"));
+  expect(miruroInventorySourceId("icarus", "sub")).toBe("source:miruro:catalog:icarus:sub");
+  expect(miruroInventorySourceId("icarus", "dub")).toBe("source:miruro:catalog:icarus:dub");
+  expect(miruroInventorySourceId("icarus", "sub")).not.toBe(
+    miruroInventorySourceId("icarus", "dub"),
+  );
 });
 
-test("getMiruroKnownCatalog uses hybrid character-primary labels", () => {
+test("getMiruroKnownCatalog labels catalog-era servers by their own names", () => {
   const catalog = getMiruroKnownCatalog(["sub", "dub"]);
-  const kiwiSub = catalog.find((entry) => entry.sourceId.endsWith(":kiwi:sub"));
-  const kiwiDub = catalog.find((entry) => entry.sourceId.endsWith(":kiwi:dub"));
-  expect(kiwiSub).toBeDefined();
-  expect(kiwiDub).toBeDefined();
-  expect(kiwiSub?.sourceId).not.toBe(kiwiDub?.sourceId);
-  expect(kiwiSub?.label).toBe("Gintoki");
-  expect(kiwiDub?.label).toBe("Kagura");
-  expect(kiwiSub?.subtitle).toBe("Sub · hard sub");
-  expect(kiwiDub?.subtitle).toBe("Dub · subtitles unknown");
-  expect(kiwiSub?.metadata?.flavorArchetype).toBe("Gintoki · sub");
-  expect(kiwiDub?.metadata?.flavorArchetype).toBe("Kagura · dub");
-  expect(kiwiSub?.host).toBe("www.miruro.bz");
+  const icarusSub = catalog.find((entry) => entry.sourceId.endsWith(":icarus:sub"));
+  const icarusDub = catalog.find((entry) => entry.sourceId.endsWith(":icarus:dub"));
+  expect(icarusSub).toBeDefined();
+  expect(icarusDub).toBeDefined();
+  expect(icarusSub?.sourceId).not.toBe(icarusDub?.sourceId);
+  // Catalog server names are already legible — the Gintama theme existed to
+  // decode the pipe's opaque names, so these fall back to the technical label.
+  expect(icarusSub?.label).toBe("Icarus");
+  expect(icarusDub?.label).toBe("Icarus");
+  expect(icarusSub?.subtitle).toBe("Sub · hard sub");
+  expect(icarusDub?.subtitle).toBe("Dub · subtitles unknown");
+  expect(icarusSub?.metadata?.flavorArchetype).toBe("Icarus · sub");
+  expect(icarusDub?.metadata?.flavorArchetype).toBe("Icarus · dub");
+  expect(icarusSub?.host).toBe("www.miruro.bz");
 });
 
 test("getMiruroKnownCatalog only exposes audio categories confirmed for the title", () => {
@@ -34,7 +38,7 @@ test("getMiruroKnownCatalog only exposes audio categories confirmed for the titl
   expect(catalog.some((entry) => entry.sourceId.endsWith(":dub"))).toBe(false);
 });
 
-test("allmanga keeps technical Sub/Dub · Server labels; miruro uses characters", () => {
+test("allmanga keeps technical Sub/Dub · Server labels; miruro names its servers", () => {
   const allmangaSub = getAllmangaKnownCatalog("sub");
   const allmangaDub = getAllmangaKnownCatalog("dub");
   const defaultSub = allmangaSub.find((entry) => entry.sourceId.endsWith(":default"));
@@ -46,7 +50,8 @@ test("allmanga keeps technical Sub/Dub · Server labels; miruro uses characters"
 
   const miruro = getMiruroKnownCatalog(["sub"]);
   expect(miruro.every((entry) => !entry.label.startsWith("Sub · "))).toBe(true);
-  expect(miruro.some((entry) => entry.label === "Gintoki")).toBe(true);
+  expect(miruro.some((entry) => entry.label === "Animepahe")).toBe(true);
+  expect(miruro.some((entry) => entry.label === "Icarus")).toBe(true);
   expect(allmangaSub.every((entry) => entry.label.startsWith("Sub · "))).toBe(true);
 });
 

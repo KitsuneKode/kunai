@@ -4,7 +4,12 @@ import {
   resolvedAddressBlockReason,
 } from "@kunai/types";
 
-import { readResponseBodyPrefix, readResponseTextCapped } from "./bounded-body";
+import {
+  readResponseBodyPrefix,
+  readResponseTextCapped,
+  readStreamBytesCapped,
+} from "./bounded-body";
+import { curlCipherArgs, resolveCurlCandidate } from "./curl-impersonate";
 import {
   HLS_SEGMENT_PROBE_MIN_BYTES,
   isHlsMasterPlaylist,
@@ -44,6 +49,17 @@ export type ProbeStreamReachabilityInput = {
   readonly fetchImpl?: StreamReachabilityFetch;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
+  /**
+   * Transport used for the fingerprint retry: a definitive `HTTP 403` from
+   * Bun's fetch can be a TLS-client verdict rather than the stream's — the
+   * player-shaped clients (mpv, curl) often pass where Bun's handshake is
+   * refused (miruro's `vault-*.uwucdn.top`/`owocdn.top` measured this,
+   * 2026-10-03). When absent the retry resolves curl/curl-impersonate from
+   * PATH; `null` disables it. The retry only fires on the platform-fetch
+   * path — an injected `fetchImpl` owns its transport unless it opts in by
+   * passing one explicitly.
+   */
+  readonly curlFetchImpl?: StreamReachabilityFetch | null;
 };
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
@@ -276,44 +292,89 @@ async function normalizeGuardedRequest(
 export async function probeStreamReachability(
   input: ProbeStreamReachabilityInput,
 ): Promise<StreamReachabilityProbeResult> {
-  const fetchImpl = input.fetchImpl ?? fetch;
-  const timeoutMs = input.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + (input.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS);
   const remaining = () => Math.max(100, deadline - Date.now());
-  const headers = input.headers ?? {};
   // Injected fetches own their destinations; real fetches get DNS answers
   // re-validated so a public name cannot resolve to a private address.
   const resolveNames = input.fetchImpl === undefined;
+
+  const first = await probeStreamReachabilityOnce(
+    input,
+    input.fetchImpl ?? fetch,
+    deadline,
+    remaining,
+    resolveNames,
+  );
+  if (
+    first.status !== "unreachable" ||
+    first.definitive !== true ||
+    !isFingerprintRetryStatus(first.reason) ||
+    input.signal?.aborted === true ||
+    (input.fetchImpl !== undefined && input.curlFetchImpl === undefined)
+  ) {
+    return first;
+  }
+  const curlFetch =
+    input.curlFetchImpl === undefined ? resolveDefaultCurlProbeFetch() : input.curlFetchImpl;
+  if (curlFetch === null) return first;
+  // Curl is the player-shaped client — its verdict replaces the Bun refusal
+  // outright: a reach is proof the fingerprint was the problem, a repeated or
+  // different definitive status is the more accurate death verdict, and an
+  // inconclusive outcome honestly degrades to "not proven dead".
+  return probeStreamReachabilityOnce(input, curlFetch, deadline, remaining, resolveNames);
+}
+
+function probeStreamReachabilityOnce(
+  input: ProbeStreamReachabilityInput,
+  fetchImpl: StreamReachabilityFetch,
+  deadline: number,
+  remaining: () => number,
+  resolveNames: boolean,
+): Promise<StreamReachabilityProbeResult> {
+  const headers = input.headers ?? {};
 
   if (isHlsPlaylistUrl(input.url)) {
     return probeHlsManifest(fetchImpl, input.url, headers, remaining, input.signal, resolveNames);
   }
 
-  try {
-    const head = await probeHttpStatus(fetchImpl, input.url, {
-      method: "HEAD",
-      headers,
+  return (async () => {
+    try {
+      const head = await probeHttpStatus(fetchImpl, input.url, {
+        method: "HEAD",
+        headers,
+        remainingMs: remaining,
+        parentSignal: input.signal,
+        resolveNames,
+      });
+      if (head.status === "reachable") return head;
+      if (head.status === "timeout") return head;
+      if (head.status === "unreachable" && head.definitive) return head;
+    } catch {
+      if (Date.now() >= deadline) return { status: "timeout" };
+    }
+
+    if (Date.now() >= deadline) return { status: "timeout" };
+
+    return probeHttpStatus(fetchImpl, input.url, {
+      method: "GET",
+      headers: { ...headers, Range: "bytes=0-0" },
       remainingMs: remaining,
       parentSignal: input.signal,
       resolveNames,
+      healthyStatus: (status) => (status >= 200 && status < 300) || status === 206,
     });
-    if (head.status === "reachable") return head;
-    if (head.status === "timeout") return head;
-    if (head.status === "unreachable" && head.definitive) return head;
-  } catch {
-    if (Date.now() >= deadline) return { status: "timeout" };
-  }
+  })();
+}
 
-  if (Date.now() >= deadline) return { status: "timeout" };
-
-  return probeHttpStatus(fetchImpl, input.url, {
-    method: "GET",
-    headers: { ...headers, Range: "bytes=0-0" },
-    remainingMs: remaining,
-    parentSignal: input.signal,
-    resolveNames,
-    healthyStatus: (status) => (status >= 200 && status < 300) || status === 206,
-  });
+/**
+ * The statuses a second client can legitimately overturn. 403 is the TLS-
+ * fingerprint verdict CDNs hand Bun while curl/mpv pass — worth one retry with
+ * the player-shaped transport. Other 4xx are content verdicts (expired
+ * signature, wrong referer, quota) that a different client identity does not
+ * change; 5xx are already non-definitive so they never reach this check.
+ */
+function isFingerprintRetryStatus(reason: string): boolean {
+  return reason.includes("HTTP 403");
 }
 
 /** Provider resolve gates allow slow CDNs through as unverified; only definitive failures block. */
@@ -750,4 +811,170 @@ function isDefinitiveNetworkError(message: string): boolean {
     lower.includes("unknown scheme") ||
     lower.includes("url using bad/illegal format")
   );
+}
+
+/* ------------------------------------------------------------------------ */
+/* Curl fallback transport — the player-shaped client                        */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * `%{redirect_url}` and `%{content_type}` ride the `-w` trailer so redirect
+ * hops can be walked in-process — `-L` would hand them to curl without the
+ * per-hop target validation `fetchProbeTarget` owns.
+ */
+const CURL_PROBE_MARKER = "\n__KUNAI_PROBE__:";
+const CURL_PROBE_WRITE_OUT = "\n__KUNAI_PROBE__:%{http_code}\t%{redirect_url}\t%{content_type}";
+const CURL_PROBE_MARKER_BYTES = new TextEncoder().encode(CURL_PROBE_MARKER);
+/** The trailer is ~100 bytes; a wider window would be scanning body. */
+const CURL_PROBE_TRAILER_WINDOW = 1024;
+/** Segment/playlist probes read bounded bodies — the cap guards the misbehaving rest. */
+const CURL_PROBE_BODY_MAX_BYTES = 4 * 1024 * 1024;
+const CURL_PROBE_CONNECT_TIMEOUT_SEC = 5;
+/** Backstop only; the caller's AbortSignal is the real deadline. */
+const CURL_PROBE_MAX_TIME_SEC = 30;
+
+export type CurlProbeSpawn = (
+  args: readonly string[],
+  signal?: AbortSignal,
+) => Promise<{ readonly stdout: Uint8Array; readonly stderr: string; readonly exitCode: number }>;
+
+async function spawnCurlProbeOnce(args: readonly string[], signal?: AbortSignal) {
+  const proc = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe", signal });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    readStreamBytesCapped(proc.stdout, CURL_PROBE_BODY_MAX_BYTES),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (stdout === null) {
+    proc.kill();
+    await proc.exited.catch(() => {});
+    return {
+      stdout: new Uint8Array(),
+      stderr: `stdout exceeded ${CURL_PROBE_BODY_MAX_BYTES} bytes`,
+      exitCode: exitCode === 0 ? 63 : exitCode,
+    };
+  }
+  return { stdout, stderr, exitCode };
+}
+
+/** `%{redirect_url}`/`%{content_type}` are single-line values — tabs cannot appear in them. */
+function interpretCurlProbeResult(
+  stdout: Uint8Array,
+  stderr: string,
+): {
+  readonly status: number;
+  readonly redirectUrl: string | null;
+  readonly contentType: string | null;
+  readonly body: Uint8Array;
+} {
+  const window = stdout.subarray(Math.max(0, stdout.byteLength - CURL_PROBE_TRAILER_WINDOW));
+  let markerAt = -1;
+  for (let i = window.byteLength - CURL_PROBE_MARKER_BYTES.byteLength; i >= 0; i--) {
+    let match = true;
+    for (let j = 0; j < CURL_PROBE_MARKER_BYTES.byteLength; j++) {
+      if (window[i + j] !== CURL_PROBE_MARKER_BYTES[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      markerAt = i;
+      break;
+    }
+  }
+  if (markerAt < 0) {
+    throw new Error(stderr.trim() || "curl returned without an HTTP response");
+  }
+  const trailer = new TextDecoder()
+    .decode(window.subarray(markerAt + CURL_PROBE_MARKER_BYTES.byteLength))
+    .trim();
+  const [statusText = "", redirectUrl = "", contentType = ""] = trailer.split("\t");
+  const status = Number.parseInt(statusText, 10);
+  // Response's constructor only accepts real HTTP statuses — anything else
+  // means curl's trailer was truncated, which is a transport fault.
+  if (!Number.isFinite(status) || status < 200 || status > 599) {
+    throw new Error(stderr.trim() || "curl returned without an HTTP status");
+  }
+  const bodyEnd = stdout.byteLength - window.byteLength + markerAt;
+  return {
+    status,
+    redirectUrl: redirectUrl || null,
+    contentType: contentType || null,
+    body: stdout.subarray(0, bodyEnd),
+  };
+}
+
+/** Statuses whose responses are defined as bodiless — Response rejects a body for them. */
+const CURL_NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+export type CurlReachabilityFetchOptions = {
+  readonly curlPath: string;
+  /**
+   * True when `curlPath` is a curl-impersonate wrapper — it already ships the
+   * browser handshake, so forcing a cipher list would undo the fingerprint it
+   * exists to provide.
+   */
+  readonly impersonates?: boolean;
+  /** Spawn seam for tests — drives outcomes without a real binary. */
+  readonly spawn?: CurlProbeSpawn;
+};
+
+/**
+ * A `StreamReachabilityFetch` backed by curl — the player-shaped transport for
+ * the 403-fingerprint retry. Redirects are never followed (`-L` absent): the
+ * hop walker re-validates each `Location` target itself. The URL is terminated
+ * by `--` because provider streams can begin with an option-shaped path.
+ */
+export function createCurlReachabilityFetch(
+  options: CurlReachabilityFetchOptions,
+): StreamReachabilityFetch {
+  return async (url, init) => {
+    const method = (init.method ?? "GET").toUpperCase();
+    const args = [
+      options.curlPath,
+      // First argv only: curl reads ~/.curlrc unless -q leads the command line.
+      "-q",
+      ...curlCipherArgs(options.impersonates === true),
+      "-sS",
+      "--compressed",
+      "--connect-timeout",
+      String(CURL_PROBE_CONNECT_TIMEOUT_SEC),
+      "--max-filesize",
+      String(CURL_PROBE_BODY_MAX_BYTES),
+      "--max-time",
+      String(CURL_PROBE_MAX_TIME_SEC),
+      ...(method === "HEAD" ? ["-I"] : method === "GET" ? [] : ["-X", method]),
+    ];
+    new Headers(init.headers).forEach((value, name) => {
+      args.push("-H", `${name}: ${value}`);
+    });
+    args.push("-w", CURL_PROBE_WRITE_OUT, "-o", "-", "--", url);
+
+    const spawn = options.spawn ?? spawnCurlProbeOnce;
+    const result = await spawn(args, init.signal ?? undefined);
+    if (init.signal?.aborted) {
+      throw init.signal.reason instanceof Error ? init.signal.reason : new Error("aborted");
+    }
+    if (result.exitCode !== 0) {
+      throw new Error(result.stderr.trim() || `curl exit ${result.exitCode}`);
+    }
+    const { status, redirectUrl, contentType, body } = interpretCurlProbeResult(
+      result.stdout,
+      result.stderr,
+    );
+    const headers = new Headers();
+    if (contentType) headers.set("content-type", contentType);
+    if (redirectUrl) headers.set("location", redirectUrl);
+    return new Response(
+      body.byteLength === 0 || CURL_NULL_BODY_STATUSES.has(status) ? null : body,
+      { status, headers },
+    );
+  };
+}
+
+/** curl/curl-impersonate from PATH, or null on a machine with neither. */
+function resolveDefaultCurlProbeFetch(): StreamReachabilityFetch | null {
+  const curl = resolveCurlCandidate();
+  if (curl === null) return null;
+  return createCurlReachabilityFetch({ curlPath: curl.path, impersonates: curl.impersonates });
 }

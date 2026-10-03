@@ -12,7 +12,6 @@ import {
   createStreamId,
   createVariantCandidateFromStream,
   createMiruroResultFromPayload,
-  createMiruroPipeRequestUrls,
   decodeVideasyGuardedPayload,
   getMiruroEpisodesResponse,
   miruroProviderModule,
@@ -1209,7 +1208,7 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
   });
 });
 
-test("miruro infers hardsub when sub stream has no pipe subtitles", async () => {
+test("miruro infers hardsub when sub stream has no catalog subtitles", async () => {
   const result = await createMiruroResultFromPayload({
     input: {
       title: {
@@ -1315,11 +1314,15 @@ test("miruro source cycling orders preferred subtitle delivery before fallback a
   const canonical = [...MIRURO_SERVER_TRY_ORDER];
   expect(dub.map((candidate) => candidate.serverId)).toEqual(canonical);
   expect(sub.map((candidate) => candidate.serverId)).toEqual(canonical);
-  expect(dub.map((candidate) => candidate.label).slice(0, 3)).toEqual(["Soyo", "Kyubei", "Okita"]);
+  expect(dub.map((candidate) => candidate.label).slice(0, 3)).toEqual([
+    "Animepahe",
+    "Icarus",
+    "Vault 6 Direct",
+  ]);
   expect(sub.map((candidate) => candidate.label).slice(0, 3)).toEqual([
-    "Soyo",
-    "Kyubei",
-    "Shinpachi",
+    "Animepahe",
+    "Icarus",
+    "Vault 6 Direct",
   ]);
 });
 
@@ -1407,25 +1410,6 @@ test("miruro stream selection prefers active CDN HLS over direct kwik candidates
   expect(result?.streams).toHaveLength(3);
 });
 
-test("miruro pipe requests cover every official mirror", () => {
-  // `www.` only: that is what the browser hits for /api/secure/pipe, and the
-  // bare hosts just redirect. All four served the pipe on 2026-09-11; the
-  // earlier "miruro.tv/.to are TLS-dead" reading came from a network whose
-  // reachability to them flaps.
-  expect(createMiruroPipeRequestUrls("payload")).toEqual([
-    "https://www.miruro.bz/api/secure/pipe?e=payload",
-    "https://www.miruro.ru/api/secure/pipe?e=payload",
-    "https://www.miruro.to/api/secure/pipe?e=payload",
-    "https://www.miruro.tv/api/secure/pipe?e=payload",
-  ]);
-});
-
-test("miruro pipe requests follow a supplied mirror order", () => {
-  expect(createMiruroPipeRequestUrls("payload", ["https://www.miruro.to"])).toEqual([
-    "https://www.miruro.to/api/secure/pipe?e=payload",
-  ]);
-});
-
 test("miruro episode lookup preserves network failures as provider evidence", async () => {
   await expect(
     getMiruroEpisodesResponse(
@@ -1441,7 +1425,7 @@ test("miruro episode lookup preserves network failures as provider evidence", as
       },
       "999001",
     ),
-  ).rejects.toThrow("Miruro pipe network request failed: ConnectionRefused");
+  ).rejects.toThrow("ConnectionRefused");
 });
 
 test("miruro resolve times the episodes stage even when it fails", async () => {
@@ -1476,7 +1460,7 @@ test("miruro resolve times the episodes stage even when it fails", async () => {
   );
 
   expect(result.status).toBe("exhausted");
-  const episodeStage = events.find((event) => event.sourceId === "source:miruro:episodes");
+  const episodeStage = events.find((event) => event.sourceId === "source:miruro:play");
   expect(episodeStage).toBeDefined();
   expect(typeof episodeStage?.durationMs).toBe("number");
 });
@@ -1591,7 +1575,7 @@ test("m3u8 quality extraction exposes sorted playable variants", async () => {
 test("variant tree builder creates stable grouped variant ordering", () => {
   const variants = new VariantTreeBuilder({
     providerId: "miruro",
-    sourceId: "source:miruro:pipe",
+    sourceId: "source:miruro:catalog",
   })
     .addVariant({
       label: "Dub 720p",

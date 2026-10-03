@@ -604,3 +604,108 @@ describe("guarded provider fetch", () => {
     expect(called).toBe(false);
   });
 });
+
+describe("stream reachability — fingerprint retry", () => {
+  test("a definitive Bun 403 retries over the player-shaped transport and reaches", async () => {
+    const calls: string[] = [];
+    // No fetchImpl — the platform path is the one that gets fingerprinted.
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => response(403)) as unknown as typeof fetch;
+    try {
+      const probe = await probeStreamReachability({
+        url: "https://vault.example/stream.mp4",
+        timeoutMs: 500,
+        curlFetchImpl: async (url, init) => {
+          calls.push(`${init.method ?? "GET"} ${url}`);
+          return response(206, new Uint8Array(1));
+        },
+      });
+      expect(probe).toEqual({ status: "reachable" });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    expect(calls.length).toBeGreaterThan(0);
+  });
+
+  test("a 403 the curl transport also refuses stays unreachable", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => response(403)) as unknown as typeof fetch;
+    try {
+      const probe = await probeStreamReachability({
+        url: "https://vault.example/stream.mp4",
+        timeoutMs: 500,
+        curlFetchImpl: async () => response(403),
+      });
+      expect(probe.status).toBe("unreachable");
+      if (probe.status === "unreachable") expect(probe.definitive).toBe(true);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test("curlFetchImpl null disables the retry entirely", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => response(403)) as unknown as typeof fetch;
+    try {
+      const probe = await probeStreamReachability({
+        url: "https://vault.example/stream.mp4",
+        timeoutMs: 500,
+        curlFetchImpl: null,
+      });
+      expect(probe.status).toBe("unreachable");
+      if (probe.status === "unreachable") expect(probe.reason).toBe("HTTP 403");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test("an injected primary impl owns its transport — no retry unless it opts in", async () => {
+    let curlCalled = false;
+    const fetchImpl = async () => response(403);
+    const probe = await probeStreamReachability({
+      url: "https://vault.example/stream.mp4",
+      fetchImpl,
+      timeoutMs: 500,
+      curlFetchImpl: async () => {
+        curlCalled = true;
+        return response(206, new Uint8Array(1));
+      },
+    });
+    // Opted in — the curl impl was supplied, so the retry is allowed.
+    expect(curlCalled).toBe(true);
+    expect(probe).toEqual({ status: "reachable" });
+  });
+
+  test("an injected impl without a curl fallback is trusted with its own 403", async () => {
+    let curlCalled = false;
+    const probe = await probeStreamReachability({
+      url: "https://vault.example/stream.mp4",
+      fetchImpl: async () => response(403),
+      timeoutMs: 500,
+      curlFetchImpl: undefined,
+    });
+    expect(probe.status).toBe("unreachable");
+    expect(curlCalled).toBe(false);
+  });
+
+  test("a non-403 definitive verdict does not spend a curl retry", async () => {
+    let curlCalled = false;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => response(404)) as unknown as typeof fetch;
+    try {
+      const probe = await probeStreamReachability({
+        url: "https://vault.example/stream.mp4",
+        timeoutMs: 500,
+        curlFetchImpl: async () => {
+          curlCalled = true;
+          return response(206, new Uint8Array(1));
+        },
+      });
+      expect(probe.status).toBe("unreachable");
+      if (probe.status === "unreachable") expect(probe.reason).toBe("HTTP 404");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    expect(curlCalled).toBe(false);
+  });
+});
