@@ -79,22 +79,31 @@
   --kunai-chart-marker: #8b8391;
   /*
    * npm registry downloads — deliberately outside the rose family. It is a
-   * third-party counter on a different day grid, so it takes a muted
-   * slate-indigo: enough hue to read as its own series, not a faded rose,
-   * and no collision with the platform band colours.
+   * third-party counter on a different day grid, so it takes the theme's own
+   * periwinkle blue (the milestone hue in `packages/design`) rather than a
+   * greyed lavender: a clear second colour on the page, never a faded rose,
+   * and not one of the platform hues. Contrast against its surface is 3:1+
+   * in both modes.
    */
-  --kunai-chart-npm: #5c6490;
+  --kunai-chart-npm: #4a5fd0;
   /*
-   * Platform partition — one band per OS bucket. These are categorical, so
-   * they step outside the rose hue entirely but stay at the same muted
-   * saturation; `other` is the quietest since it is the suppressed residue,
-   * and `extra` only ever serves an out-of-schema bucket.
+   * Platform partition — one band per OS bucket, categorical, so they step
+   * outside the rose hue. Amber / violet / teal are the three theme-adjacent
+   * hues that stay apart for every reader: validated as ALL-PAIRS, not just
+   * adjacent, against the surface each renders on.
+   *
+   *   light — #9a6a1c / #6b4fcf / #0a8aa6 on #fcfcfb · ΔE 18.9 normal, 11.2 worst-CVD
+   *   dark  — #bf8836 / #8f74e0 / #2ba5b8 on #1c1620 · ΔE 18.1 normal,  9.5 worst-CVD
+   *
+   * `other` is the suppressed residue, not a category, so it takes the page's
+   * de-emphasis grey instead of a hue; `extra` only ever serves an
+   * out-of-schema bucket and sits one step off it.
    */
-  --kunai-chart-os-windows: #4a7caa;
-  --kunai-chart-os-macos: #8a7f96;
-  --kunai-chart-os-linux: #a6853f;
-  --kunai-chart-os-other: #cfc6cb;
-  --kunai-chart-os-extra: #5f8a72;
+  --kunai-chart-os-windows: #0a8aa6;
+  --kunai-chart-os-macos: #6b4fcf;
+  --kunai-chart-os-linux: #9a6a1c;
+  --kunai-chart-os-other: #8b8391;
+  --kunai-chart-os-extra: #a99fae;
 }
 
 :root.dark {
@@ -103,12 +112,12 @@
   --kunai-chart-new: #ffc9d9;
   --kunai-chart-avg: #f6eff4;
   --kunai-chart-marker: #a195a3;
-  --kunai-chart-npm: #8d96c6;
-  --kunai-chart-os-windows: #7ba8d1;
-  --kunai-chart-os-macos: #b0a8bc;
-  --kunai-chart-os-linux: #d1ae62;
-  --kunai-chart-os-other: #57505c;
-  --kunai-chart-os-extra: #7fae93;
+  --kunai-chart-npm: #6d85f6;
+  --kunai-chart-os-windows: #2ba5b8;
+  --kunai-chart-os-macos: #8f74e0;
+  --kunai-chart-os-linux: #bf8836;
+  --kunai-chart-os-other: #8a7f93;
+  --kunai-chart-os-extra: #b5a9bb;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -118,12 +127,12 @@
     --kunai-chart-new: #ffc9d9;
     --kunai-chart-avg: #f6eff4;
     --kunai-chart-marker: #a195a3;
-    --kunai-chart-npm: #8d96c6;
-    --kunai-chart-os-windows: #7ba8d1;
-    --kunai-chart-os-macos: #b0a8bc;
-    --kunai-chart-os-linux: #d1ae62;
-    --kunai-chart-os-other: #57505c;
-    --kunai-chart-os-extra: #7fae93;
+    --kunai-chart-npm: #6d85f6;
+    --kunai-chart-os-windows: #2ba5b8;
+    --kunai-chart-os-macos: #8f74e0;
+    --kunai-chart-os-linux: #bf8836;
+    --kunai-chart-os-other: #8a7f93;
+    --kunai-chart-os-extra: #b5a9bb;
   }
 }
 

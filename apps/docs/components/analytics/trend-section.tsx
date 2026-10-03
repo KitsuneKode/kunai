@@ -1,3 +1,4 @@
+import { HowToRead } from "@/components/analytics/how-to-read";
 import { TrendSync } from "@/components/analytics/trend-sync";
 import { releaseMarkers } from "@/lib/analytics-derive";
 import type { DocsAnalyticsSeries } from "@/lib/analytics-series";
@@ -39,6 +40,8 @@ export function TrendSection({ series }: { readonly series: DocsAnalyticsSeries 
         so read them as a pulse rather than a measurement — Kunai deliberately collects no IP or
         identity that would let it prove otherwise.
       </p>
+
+      <HowToRead series={series} />
     </div>
   );
 }
