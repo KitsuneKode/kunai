@@ -1,6 +1,17 @@
 "use client";
 
 import { KunaiFox, type KunaiFoxPose } from "@/components/brand/kunai-fox";
+import { type FoxWalkerHandle, KunaiFoxWalker } from "@/components/brand/kunai-fox-walker";
+import {
+  advancePhase,
+  blendPose,
+  type FoxPose,
+  gaitPose,
+  headingFromMotion,
+  smoothHeading,
+  STANDING_POSE,
+  withHeading,
+} from "@/lib/fox-gait";
 import {
   createRoamerState,
   poseForPhase,
@@ -33,11 +44,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 /**
  * How the movement itself works — notice, commit, travel, settle, rest — lives
  * in `lib/roamer-machine.ts`, which is pure and clock-injected so every timing
- * rule in it is testable without a browser or a real sleep. What stays here is
- * the presentation: the gait clock, what she says, and when she is allowed to
- * exist at all.
+ * rule in it is testable without a browser or a real sleep. How her body moves
+ * while she travels lives in `lib/fox-gait.ts`, pure for the same reason. What
+ * stays here is the presentation: wiring distance travelled into the gait, what
+ * she says, and when she is allowed to exist at all.
  */
-const STEP_MS = 190;
+
+/**
+ * How long she takes to put her feet down after she stops.
+ *
+ * Cutting from a mid-stride leg to the resting still in one frame reads as a
+ * glitch; a short blend to a standing pose reads as her arriving. Short enough
+ * that the resting still is up before anyone has looked for it.
+ */
+const SETTLE_MS = 160;
 /**
  * How long she goes between unprompted lines, by state.
  *
@@ -125,8 +145,15 @@ function poolFor(phase: RoamerPhase): readonly string[] {
 function pickLine(pool: readonly string[], last: string | null): string {
   const fresh = pool.filter((candidate) => candidate !== last);
   const choices = fresh.length > 0 ? fresh : pool;
-  return choices[Math.floor(Math.random() * choices.length)] as string;
+  return choices[Math.floor(Math.random() * choices.length)] ?? pool[0] ?? "";
 }
+
+type GaitState = {
+  phase: number;
+  heading: number;
+  pose: FoxPose;
+  settleMs: number;
+};
 
 export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -136,13 +163,20 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   // `phase` and `facing`, which change rarely and drive what is drawn.
   const machine = useState(() => ({ current: createRoamerState({ x: -400, y: -400 }) }))[0];
   const pointer = useRef<{ x: number; y: number } | null>(null);
-  const stepFlag = useRef(false);
-  const stepMs = useRef(0);
+  // The walking drawing is vector parts she can swing a leg on; the resting
+  // poses are stills. `walkerRef` is the handle that hangs a pose on the parts,
+  // `gait` the stride she is in, and `settle` how far through putting her feet
+  // down she is. All three advance every frame, so none of them is React state.
+  const walkerRef = useRef<FoxWalkerHandle | null>(null);
+  const gait = useRef<GaitState>({ phase: 0, heading: 0, pose: STANDING_POSE, settleMs: 0 });
   const lastFrame = useRef(0);
   const seeded = useRef(false);
 
   const [phase, setPhase] = useState<RoamerPhase>("sitting");
   const [facing, setFacing] = useState<"left" | "right">("right");
+  // True from the moment she starts walking until she has finished settling, so
+  // the vector drawing is on screen for exactly as long as it has legs to move.
+  const [showWalker, setShowWalker] = useState(false);
   const [line, setLine] = useState<string | null>(null);
   const [enabled, setEnabled] = useState(false);
   // Docs chrome exclusion band: `#nd-sidebar` on the left, `#nd-toc` on the
@@ -256,15 +290,33 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
         }
       }
 
-      // The gait runs on its own clock so footfalls stay even whatever the
-      // frame rate is doing.
+      // The stride advances by the distance she actually covered, so her feet
+      // keep pace with her speed, ease as she eases, and stop when she does.
+      // Measured after the chrome clamp above: a clamped step that moved her
+      // nowhere must not turn her legs.
+      const finalPos = machine.current.pos;
+      const stepX = finalPos.x - before.pos.x;
+      const stepY = finalPos.y - before.pos.y;
+      const travelled = Math.hypot(stepX, stepY);
+      const stride = gait.current;
       if (next.phase === "walking") {
-        stepMs.current += dt * 1000;
-        if (stepMs.current >= STEP_MS) {
-          stepMs.current = 0;
-          stepFlag.current = !stepFlag.current;
-          host.dataset.step = stepFlag.current ? "a" : "b";
+        stride.settleMs = 0;
+        // Start each walk level; the tilt then follows where she is actually going.
+        if (before.phase !== "walking") stride.heading = 0;
+        // A frame that barely moved her has no meaningful direction; keep the last.
+        if (travelled > 0.2) {
+          stride.heading = smoothHeading(stride.heading, headingFromMotion(stepX, stepY), dt);
         }
+        stride.phase = advancePhase(stride.phase, travelled, size);
+        // Her path leans off horizontal: nose up to climb, nose down to descend.
+        stride.pose = withHeading(gaitPose(stride.phase), stride.heading);
+        walkerRef.current?.setPose(stride.pose);
+        if (before.phase !== "walking") setShowWalker(true);
+      } else if (showWalkerRef.current) {
+        stride.settleMs += dt * 1000;
+        const t = stride.settleMs / SETTLE_MS;
+        walkerRef.current?.setPose(blendPose(stride.pose, STANDING_POSE, t));
+        if (t >= 1) setShowWalker(false);
       }
 
       // React state only when it actually changed: this runs every frame, and
@@ -296,6 +348,14 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  // The frame loop reads this instead of closing over `showWalker`, for the
+  // same reason `phaseRef` exists: the loop is created once per `enabled`, and
+  // a captured value would be frozen at whatever it was on mount.
+  const showWalkerRef = useRef(showWalker);
+  useEffect(() => {
+    showWalkerRef.current = showWalker;
+  }, [showWalker]);
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -350,7 +410,11 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
         onClick={() => say(phase === "asleep" ? SLEEPY_LINES : POKED_LINES)}
         tabIndex={-1}
       >
-        <KunaiFox pose={pose} facing={facing} size={size} />
+        {showWalker ? (
+          <KunaiFoxWalker ref={walkerRef} facing={facing} size={size} />
+        ) : (
+          <KunaiFox pose={pose} facing={facing} size={size} />
+        )}
       </button>
       <button type="button" className="kunai-roamer__close" onClick={dismiss} tabIndex={-1}>
         ×
