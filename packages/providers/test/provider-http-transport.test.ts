@@ -184,6 +184,33 @@ describe("providerFetchText — context leg", () => {
     expect(curlRan).toBe(false);
   });
 
+  test("a frozen or primitive relay-owned throw still reaches here marked", async () => {
+    /* `Object.freeze`d errors and primitives cannot carry the marker field —
+     * the marker wraps them in a carrier Error instead of letting the value
+     * escape unmarked, which would silently break `fallbackToDirect: false`. */
+    for (const value of [Object.freeze(new Error("frozen")), "primitive throw", 42]) {
+      let curlRan = false;
+      let thrown: unknown;
+      try {
+        await providerFetchText(URL_UNDER_TEST, {
+          ...POLICY,
+          context: contextWith(async () => {
+            throw markRelayOwnedError(value);
+          }),
+          curlEnvironment: CURL_ENV,
+          spawnCurl: async () => {
+            curlRan = true;
+            return { stdout: "x\n200", stderr: "", exitCode: 0 };
+          },
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(isRelayOwnedError(thrown)).toBe(true);
+      expect(curlRan).toBe(false);
+    }
+  });
+
   test("a mid-body disconnect on a relayed response reports via relay, not via curl", async () => {
     /* Reading the relayed body is still relay traffic — a disconnect there
      * must not become a fresh direct request for the same URL. */

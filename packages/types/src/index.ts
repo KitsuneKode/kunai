@@ -641,13 +641,26 @@ export const RELAY_OWNED_ERROR_FIELD = "kunaiRelayOwnedFailure";
 /** Narrow carrier for the marker — a known optional field, not an open map. */
 type RelayOwnedCarrier = { kunaiRelayOwnedFailure?: unknown };
 
-export function markRelayOwnedError<T>(error: T): T {
+export function markRelayOwnedError<T>(error: T): T | Error {
   // oxlint-disable-next-line anti-slop/no-runtime-typeof -- marker survives error reconstitution because it is duck-typed; no prototype is trusted
   if (typeof error === "object" && error !== null) {
-    // SAFETY: object-guarded above; the marker is an optional own-property we own end to end.
-    (error as RelayOwnedCarrier)[RELAY_OWNED_ERROR_FIELD] = true;
+    try {
+      // SAFETY: object-guarded above; the marker is an optional own-property we own end to end.
+      (error as RelayOwnedCarrier)[RELAY_OWNED_ERROR_FIELD] = true;
+      return error;
+    } catch {
+      /* Frozen, sealed, or a throwing proxy — the value cannot carry the
+       * marker itself, so fall through to the carrier wrapper. Without it the
+       * throw would escape unmarked and the privacy promise below breaks. */
+    }
   }
-  return error;
+  /* A primitive or non-extensible throw cannot carry the marker itself —
+   * wrap it so relay ownership still reaches downstream transports and the
+   * `fallbackToDirect: false` promise holds. */
+  const wrapped = new Error("relay-owned request failed", { cause: error });
+  // SAFETY: fresh Error; the marker is an optional own-property we own end to end.
+  (wrapped as RelayOwnedCarrier)[RELAY_OWNED_ERROR_FIELD] = true;
+  return wrapped;
 }
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- boundary probe: the thrown value's type is exactly what the predicate answers
