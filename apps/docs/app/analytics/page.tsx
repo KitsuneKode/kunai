@@ -26,6 +26,10 @@ export default async function AnalyticsPage() {
     fetchDocsAnalyticsSeries(),
     fetchNpmDownloads(),
   ]);
+  // This async server route samples the request clock once per ISR generation.
+  // Freezing it at module load would hide an ingest outage behind a fresh badge.
+  // oxlint-disable-next-line react/purity
+  const nowMs = Date.now();
 
   return (
     /*
@@ -47,7 +51,7 @@ export default async function AnalyticsPage() {
         </p>
       </header>
 
-      <UsagePanel metrics={metrics} series={series} />
+      <UsagePanel metrics={metrics} series={series} nowMs={nowMs} />
       <TrendSection series={series} />
       <NpmSection series={npm} />
       <BreakdownSection metrics={metrics} />

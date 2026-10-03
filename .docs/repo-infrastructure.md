@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-03"
 ---
 
 # Kunai — Repo Infrastructure
@@ -35,7 +35,7 @@ The monorepo uses [Bun catalogs](https://bun.sh/docs/pm/catalogs) in the root
 - `catalog:cli` — `commander`, `ink` (CLI runtime)
 - `catalog:lint` — `oxlint`, `oxfmt` (root only; turbo package scripts +
   lint-staged resolve them via workspace hoist)
-- `catalog:providers` — `@assemblyscript/loader`, `crypto-js`, `@types/crypto-js`
+- `catalog:providers` — `@assemblyscript/loader`; provider crypto uses built-in APIs
 - `catalog:repo` — `turbo` (root orchestration only)
 - `catalog:web` — Next.js, Fumadocs, Tailwind, Motion, Base UI, Tabler icons,
   docs UI helpers, and docs TypeScript 5.9 (`apps/docs` only)
@@ -46,6 +46,13 @@ or `next` tags.
 Root `overrides` dedupe known transitive drift (`@types/node`, `fumadocs-core`,
 `fumadocs-ui`). Fumadocs still pulls Radix + `lucide-react` transitively; do not
 re-catalog those as direct docs deps — docs UI uses Base UI + Tabler.
+
+`braces@3.0.3` has a tracked Bun depth-limit patch for CVE-2026-93687. Shared
+CI setup checks the installed Changesets/shadcn paths after frozen install with
+`bun run verify:dependency-patches`; [patch maintenance](../patches/README.md)
+records provenance, compatibility, and removal criteria. The registry audit
+still flags 3.0.3 because upstream has no patched release; behavioral verification
+does not turn that audit green.
 
 `.reference/experiments` is **outside** the default workspace, so it cannot use
 `catalog:` protocols. Main installs stay lean; research deps install only via
@@ -151,7 +158,6 @@ every directory the gate scans (`apps/cli/src/{services,domain,infra,app}`,
 would otherwise skip the check meant to catch it. It runs `setup-bun` without
 `bun install` — the script imports only `node:fs` and `node:path`.
 
-<<<<<<< HEAD
 `scripts/ci-affected-run.ts` wraps `--affected` because a PR touching only
 non-package files (`.github/`, `install.sh`, `tools/`, `docs/`, `.docs/`) used
 to select zero workspace tasks and exit 0 — four green legs that ran nothing.
@@ -301,3 +307,41 @@ Release workflow details live in [RELEASING.md](../RELEASING.md). Infrastructure
 - Branch protection configuration lives in GitHub settings.
 - Binary publishing is tracked separately in packaging/release plans.
 - Typecheck does not run in pre-commit; it belongs in CI and pre-push/full local verification.
+
+## Local cache and CI evidence ownership
+
+Turbo uses an explicit `.turbo/cache` directory per checkout. Its automatic
+worktree cache sharing can otherwise restore outputs containing absolute paths
+from another checkout. Remote cache remains separately configured. The setup
+action restores and saves only `.turbo/cache`, so run summaries under
+`.turbo/runs` belong to the current CI attempt rather than a cached previous job.
+Verification tasks remain uncached; build caching and affected-package selection
+continue to provide reuse without replacing fresh release evidence.
+
+## React documentation rendering
+
+Viewer-local timestamps use a `useSyncExternalStore` server snapshot so UTC
+markup remains identical during hydration and useful without JavaScript.
+Analytics snapshot age receives one request clock sample from the async server
+route per ISR generation; the route retains a narrow purity-lint exception
+because freezing that clock would make the stale badge unreliable. The footer
+year is a deployment/module snapshot, not a continuously updating clock.
+
+Chart-hover table expansion adjusts its monotonic reveal count before commit,
+so the matching row is present without an effect-driven render cascade. Rows
+stay revealed when hover ends. Kanna visibility subscribes to pointer preference,
+reduced motion, storage, dismissal, and restoration changes through a browser
+external store, using an empty server snapshot. This preserves dismissal before
+paint and supports restoration even when browser storage is denied.
+
+The docs build declares `BUN_INSTALL_CACHE_DIR` in its package Turbo task
+environment, extending the root list rather than replacing it.
+`apps/docs/next.config.mjs` consumes this path to include Bun's global dependency
+store in the Turbopack and tracing roots. Turbo strict mode otherwise drops a
+custom cache path, making an isolated installation build fail with dependency
+symlinks outside the filesystem root. The cache path participates in the build
+hash because changing it changes generated absolute paths.
+
+The root `test:live:allmanga-crypto` command forwards to the CLI's existing
+metadata-only freshness probe; it does not resolve or play a video. It is an
+opt-in live command, outside default unit/integration CI.

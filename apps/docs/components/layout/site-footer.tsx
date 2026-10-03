@@ -3,6 +3,9 @@ import { codeMetadata } from "@/lib/code-metadata";
 import { docsGithubIssuesUrl, docsGithubRepoUrl } from "@/lib/docs-github";
 import Link from "next/link";
 
+// Copyright follows the deployed server's year, never the viewer's clock.
+const COPYRIGHT_YEAR = new Date().getUTCFullYear();
+
 /**
  * The site footer — every surface's last read.
  *
@@ -147,7 +150,7 @@ export function SiteFooter() {
         </div>
         <div className="border-fd-border text-fd-muted-foreground flex flex-col gap-2 border-t pt-6 text-xs sm:flex-row sm:items-center sm:justify-between">
           <p className="m-0">
-            © {new Date().getFullYear()} KitsuneKode. Docs for Kunai v{codeMetadata.cliVersion}.
+            © {COPYRIGHT_YEAR} KitsuneKode. Docs for Kunai v{codeMetadata.cliVersion}.
           </p>
           <p className="m-0">Kanna, the fox, wanders these pages.</p>
         </div>
