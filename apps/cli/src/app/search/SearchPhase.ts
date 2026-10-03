@@ -333,6 +333,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       let pendingSearchWarnings: readonly string[] = [];
       let pendingSearchEmptyMessage: string | undefined;
       let initialSearchError: string | undefined;
+      // Phases that run between browse mounts (the download gate, queue/follow
+      // workflows) signal through SET_PLAYBACK_FEEDBACK — but only the playback
+      // surface reads playbackNote, so a note set while browse was unmounted
+      // would render nowhere. The baseline is whatever note predates this loop:
+      // a changed note at mount time belongs to the inter-mount window and gets
+      // lifted onto the warnings strip, then cleared so the next mount diffs
+      // against a clean baseline.
+      let browseNoteBaseline = stateManager.getState().playbackNote;
 
       while (true) {
         const currentState = stateManager.getState();
@@ -594,6 +602,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         // A bounce notice rides the same warnings strip the shell already
         // renders — one mount, one flash, then it is gone with the input.
         const browseNotice = input?.browseNotice?.trim();
+        const noteNow = stateManager.getState().playbackNote;
+        let interMountNote: string | undefined;
+        if (noteNow && noteNow !== browseNoteBaseline) {
+          interMountNote = noteNow;
+          stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: null });
+        }
+        browseNoteBaseline = stateManager.getState().playbackNote;
 
         const outcomePromise = this.dependencies.openBrowseShell({
           mode: syncedState.mode,
@@ -662,7 +677,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   `${browseState.searchResults.length} recommendation picks · loaded`)
                 : `${initialBrowse.options.length} results · previous search${initialBrowse.subtitleSuffix}`
               : undefined,
-          initialWarnings: browseNotice ? [...initialWarnings, browseNotice] : initialWarnings,
+          initialWarnings:
+            browseNotice || interMountNote
+              ? [
+                  ...initialWarnings,
+                  ...(browseNotice ? [browseNotice] : []),
+                  ...(interMountNote ? [interMountNote] : []),
+                ]
+              : initialWarnings,
           initialSelectedIndex: browseState.selectedResultIndex,
           initialEmptyMessage,
           placeholder:
