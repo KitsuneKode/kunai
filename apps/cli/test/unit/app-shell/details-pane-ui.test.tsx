@@ -114,6 +114,7 @@ describe("MediaPanel fact rows", () => {
       contentKind: "anime",
       titleType: "series",
       title: "Gintama",
+      // SAFETY: partial TitleDetail fixture — the panel only renders the listed fields.
       titleDetail: {
         type: "series",
         year: "2006",

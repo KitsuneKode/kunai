@@ -17,7 +17,7 @@ const CATALOG_KEY = "miruro/catalog";
 const CATALOG_ID = "q9k1BcVSC-_RZOwRbIy6xvndxAXIt3Tb";
 
 /** The wire body the site actually serves: gzip JSON, XORed with the key. */
-async function encodeCatalog(value: unknown): Promise<Uint8Array> {
+async function encodeCatalog(value: Parameters<typeof JSON.stringify>[0]): Promise<Uint8Array> {
   const json = new TextEncoder().encode(JSON.stringify(value));
   const gzipped = new Uint8Array(
     await new Response(
@@ -31,7 +31,7 @@ async function encodeCatalog(value: unknown): Promise<Uint8Array> {
   return gzipped;
 }
 
-const catalogResponse = async (value: unknown, status = 200) =>
+const catalogResponse = async (value: Parameters<typeof JSON.stringify>[0], status = 200) =>
   new Response(await encodeCatalog(value), {
     status,
     headers: { "content-type": "application/octet-stream" },
@@ -39,11 +39,10 @@ const catalogResponse = async (value: unknown, status = 200) =>
 
 type SeenRequest = { url: string; headers: Record<string, string> };
 
-function contextWithFetch(handler: (url: URL) => Promise<Response> | Response): {
-  context: ProviderRuntimeContext;
-  requests: SeenRequest[];
-} {
+function contextWithFetch(handler: (url: URL) => Promise<Response> | Response) {
   const requests: SeenRequest[] = [];
+  // SAFETY: the stub supplies only the context fields the catalog client
+  // reads — providerId plus the fetch lane; the rest is unused under test.
   const context = {
     providerId: "miruro",
     fetch: {
@@ -58,7 +57,7 @@ function contextWithFetch(handler: (url: URL) => Promise<Response> | Response): 
         return handler(url);
       },
     },
-  } as unknown as ProviderRuntimeContext;
+  } as ProviderRuntimeContext;
   return { context, requests };
 }
 
@@ -168,9 +167,9 @@ describe("miruro catalog requests", () => {
       await searchMiruroCatalog(context, "x");
       expect.unreachable("should have thrown");
     } catch (error) {
-      expect(error).toBeInstanceOf(MiruroCatalogError);
-      expect((error as MiruroCatalogError).status).toBe(400);
-      expect((error as MiruroCatalogError).detail).toBe("Unsupported catalog request.");
+      if (!(error instanceof MiruroCatalogError)) throw error;
+      expect(error.status).toBe(400);
+      expect(error.detail).toBe("Unsupported catalog request.");
     } finally {
       mirrorsTesting.reset();
     }

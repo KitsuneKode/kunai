@@ -656,13 +656,7 @@ export class PersistentMpvSession {
       code: target?.exitCode ?? (closed ? 0 : null),
       // A crash signal observed before/during teardown outranks the signal we
       // sent — the player faulted, it was not stopped.
-      signal:
-        target?.signalCode ??
-        (target?.killed
-          ? ("SIGTERM" as NodeJS.Signals)
-          : closed
-            ? null
-            : ("SIGKILL" as NodeJS.Signals)),
+      signal: target?.signalCode ?? (target?.killed ? "SIGTERM" : closed ? null : "SIGKILL"),
       // target.killed is only set when a kill() actually delivered — an
       // external SIGKILL racing our teardown leaves it false and still
       // classifies as a crash, not a quit.
@@ -826,7 +820,7 @@ export class PersistentMpvSession {
           code,
           // A real crash signal (SIGSEGV/...) must reach recordPlayerExit so it
           // classifies as an error, never as a completed watch.
-          signal: proc.signalCode ?? (proc.killed ? ("SIGTERM" as NodeJS.Signals) : null),
+          signal: proc.signalCode ?? (proc.killed ? "SIGTERM" : null),
           // proc.killed is the initiated-by-us bit: our teardown calls
           // proc.kill(); an OOM-killer or external `kill -9` leaves it false,
           // so an unowned SIGKILL classifies as a crash instead of a quit.

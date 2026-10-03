@@ -87,6 +87,7 @@ function mountWithMouse(node: React.ReactElement) {
     instance = inkRender(
       <MouseDispatchProvider dispatcher={dispatcher}>{node}</MouseDispatchProvider>,
       {
+        // SAFETY: the in-memory stdio stubs implement the members ink 7.x touches — the cast bridges ink's concrete stream types.
         stdout: stdoutForInk as NodeJS.WriteStream,
         stdin: stdinForInk as NodeJS.ReadStream,
         debug: true,

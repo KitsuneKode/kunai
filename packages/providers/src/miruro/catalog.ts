@@ -23,6 +23,8 @@
  *    Cloudflare block does not apply here.
  */
 
+/* oxlint-disable anti-slop/no-runtime-typeof anti-slop/no-unknown-parameters anti-slop/no-unknown-returns anti-slop/no-unsafe-dictionary-type -- this module IS the I/O-boundary parser for the catalog's XOR-gzipped, untyped upstream JSON; the duck-type probes establish the contract (providers carry no schema-runtime dep) */
+
 import type { ProviderRuntimeContext } from "@kunai/types";
 
 import { providerFetch } from "../runtime/fetch";
@@ -52,7 +54,7 @@ export class MiruroCatalogError extends Error {
   }
 }
 
-function buildCatalogHeaders(baseUrl: string, refererPath: string): Record<string, string> {
+function buildCatalogHeaders(baseUrl: string, refererPath: string) {
   return {
     "user-agent": CATALOG_USER_AGENT,
     accept: "*/*",
@@ -286,6 +288,7 @@ export type MiruroCatalogPlayResponse = {
 /* ------------------------------------------------------------------ */
 
 function readListResponse(value: unknown): MiruroCatalogListResponse {
+  // SAFETY: isRecord proved an object; field readers below tolerate missing keys.
   return isRecord(value) ? (value as MiruroCatalogListResponse) : {};
 }
 
@@ -334,6 +337,7 @@ export async function listMiruroCatalogEpisodes(
       signal: options.signal,
     },
   );
+  // SAFETY: isRecord proved an object; `data` is read defensively next.
   const parsed = isRecord(value) ? (value as MiruroCatalogEpisodesResponse) : {};
   return parsed.data ?? [];
 }
@@ -350,5 +354,6 @@ export async function fetchMiruroPlay(
     `/v1/anime/${encodeURIComponent(catalogId)}/episodes/${encodeURIComponent(String(episodeNumber))}/play`,
     { refererPath: "/watch", signal },
   );
+  // SAFETY: isRecord proved an object; callers read play fields defensively.
   return isRecord(value) ? (value as MiruroCatalogPlayResponse) : {};
 }

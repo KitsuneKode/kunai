@@ -555,6 +555,7 @@ export interface EndpointHealthPort {
  */
 export interface ProviderCachePort {
   read<T = unknown>(namespace: string, key: string): Promise<T | null>;
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- the port stores caller-typed values opaquely; unknown IS the storage contract
   write(namespace: string, key: string, value: unknown, ttlMs: number): Promise<void>;
 }
 

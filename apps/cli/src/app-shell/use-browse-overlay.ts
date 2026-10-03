@@ -75,12 +75,16 @@ export function useBrowseOverlay<T>(input: { readonly mode: ShellMode }) {
       // row, not a forced dump into the search field.
 
       const seed = buildBrowseDetailsSheetSeed(option);
-      const value = option.value as unknown as Partial<SearchResult>;
+      // SAFETY: option.value carries the origin row payload the sheet seed
+      // reads; Partial lets absent fields degrade cleanly.
+      const value = option.value as Partial<SearchResult>;
       const titleId = typeof value?.id === "string" ? value.id : undefined;
       const cached = titleId ? (peekTitleDetail(titleId, seed.type) ?? null) : null;
 
       setCurrent({
         type: "details",
+        // SAFETY: the details overlay only reads shared option fields; the
+        // generic row payload stays opaque downstream.
         option: option as BrowseShellOption<unknown>,
         origin: ctx.origin,
         title: panel.title,
@@ -154,7 +158,9 @@ export function useBrowseOverlay<T>(input: { readonly mode: ShellMode }) {
       // selection may have moved on (filter, notification-opened sheet).
       const detailsOption =
         overlay.type === "details"
-          ? ((overlay.option as BrowseShellOption<T> | undefined) ?? ctx.selectedOption ?? null)
+          ? // SAFETY: a details overlay always stores a BrowseShellOption — the
+            // cast recovers it; ?? covers the absent case.
+            ((overlay.option as BrowseShellOption<T> | undefined) ?? ctx.selectedOption ?? null)
           : null;
 
       if (key.return && overlay.type === "details") {

@@ -985,7 +985,7 @@ export class DownloadService {
       const pendingSource = this.pendingQueueKickSource;
       this.pendingQueueKickSource = null;
       if (pendingSource && !this.shutdownRequested) {
-        void this.processQueue().catch((pendingError: unknown) => {
+        void this.processQueue().catch((pendingError) => {
           this.reportQueuePassFailure(pendingSource, pendingError);
         });
       }

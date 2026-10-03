@@ -59,8 +59,8 @@ export async function decryptAnimekaiSourcesBlob(enc: string): Promise<unknown> 
   }
 }
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- the decrypted blob is exactly what this parser validates
 /** Decrypted blob → `{file: <master m3u8>}`; the only field the stream needs. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- the decrypted blob is exactly what this parser validates
 export function animekaiMasterUrlFromDecrypted(json: unknown): string {
   return wrapAnimekaiDecode(() => megaplayMasterUrlFromDecrypted(json));
 }

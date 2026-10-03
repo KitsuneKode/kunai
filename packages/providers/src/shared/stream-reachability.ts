@@ -274,7 +274,8 @@ async function normalizeGuardedRequest(
   init: RequestInit | undefined,
 ): Promise<{ url: string; init: RequestInit }> {
   if (!(input instanceof Request)) {
-    return { url: typeof input === "string" ? input : input.toString(), init: init ?? {} };
+    // string and URL both serialize through String() — no branching needed.
+    return { url: String(input), init: init ?? {} };
   }
   const headers = new Headers(input.headers);
   new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
@@ -857,16 +858,15 @@ async function spawnCurlProbeOnce(args: readonly string[], signal?: AbortSignal)
   return { stdout, stderr, exitCode };
 }
 
-/** `%{redirect_url}`/`%{content_type}` are single-line values — tabs cannot appear in them. */
-function interpretCurlProbeResult(
-  stdout: Uint8Array,
-  stderr: string,
-): {
+type CurlProbeOutcome = {
   readonly status: number;
   readonly redirectUrl: string | null;
   readonly contentType: string | null;
   readonly body: Uint8Array;
-} {
+};
+
+/** `%{redirect_url}`/`%{content_type}` are single-line values — tabs cannot appear in them. */
+function interpretCurlProbeResult(stdout: Uint8Array, stderr: string): CurlProbeOutcome {
   const window = stdout.subarray(Math.max(0, stdout.byteLength - CURL_PROBE_TRAILER_WINDOW));
   let markerAt = -1;
   for (let i = window.byteLength - CURL_PROBE_MARKER_BYTES.byteLength; i >= 0; i--) {

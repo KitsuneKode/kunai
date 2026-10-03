@@ -29,6 +29,9 @@ const MEDIA_PLAYLIST =
 const SEGMENT_BODY = new Uint8Array(2048);
 
 function seriesInput(): ProviderResolveInput {
+  // SAFETY: deliberately partial resolve input — the provider under test reads
+  // only the fields defined below.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the narrower literal forces the unknown hop
   return {
     title: {
       id: "1396",
@@ -44,7 +47,7 @@ function seriesInput(): ProviderResolveInput {
   } as unknown as ProviderResolveInput;
 }
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: Parameters<typeof JSON.stringify>[0]): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: { "Content-Type": "application/json" },
@@ -53,7 +56,7 @@ function jsonResponse(body: unknown): Response {
 
 function sourceEnvelope(url: string) {
   return {
-    data: { sources: [{ url, quality: "1080p" }], captions: [] as never[] },
+    data: { sources: [{ url, quality: "1080p" }], captions: [] },
   };
 }
 
@@ -67,14 +70,17 @@ function contextServing(
   streamHostResponse: (url: string, referer: string | null) => Response,
   calls: FetchCall[],
 ): ProviderRuntimeContext {
+  // SAFETY: deliberately partial context stub — the provider under test only
+  // reads now/signal/emit/fetch.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub's narrower fetch lane forces the unknown hop
   return {
     now: () => "2026-10-03T00:00:00.000Z",
     signal: AbortSignal.timeout(30_000),
     emit: () => {},
     fetch: {
       runtime: "direct-http",
-      fetch: async (input: unknown, init?: RequestInit) => {
-        const url = String(input);
+      fetch: async (input: string | URL | Request, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
         if (url.includes("VideoProviderServices")) {
           return jsonResponse({ data: [...services] });
         }

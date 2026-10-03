@@ -284,10 +284,12 @@ type HistoryEntryResult = {
   readonly title: { readonly queuePlaybackIntent?: QueuePlaybackIntent };
 };
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- this guard IS the boundary parse for an untyped palette result
 function isHistoryEntryResult(value: unknown): value is HistoryEntryResult {
   return (
     typeof value === "object" &&
     value !== null &&
+    // SAFETY: the object + non-null checks above justify the property probe.
     (value as { type?: unknown }).type === "history-entry"
   );
 }

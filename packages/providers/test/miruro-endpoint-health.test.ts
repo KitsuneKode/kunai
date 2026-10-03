@@ -17,7 +17,7 @@ const DEAD_HLS = "https://hls.anidb.app/stream/dead/master.m3u8";
 const GOOD_MP4 = "https://www.animegg.org/play/1/video.mp4";
 
 /** `application/octet-stream`: gzip, then XOR every byte with the catalog key. */
-async function encodeCatalog(value: unknown): Promise<Uint8Array> {
+async function encodeCatalog(value: Parameters<typeof JSON.stringify>[0]): Promise<Uint8Array> {
   const json = new TextEncoder().encode(JSON.stringify(value));
   const gzipped = new Uint8Array(
     await new Response(
@@ -31,7 +31,7 @@ async function encodeCatalog(value: unknown): Promise<Uint8Array> {
   return gzipped;
 }
 
-const catalog = async (value: unknown) =>
+const catalog = async (value: Parameters<typeof JSON.stringify>[0]) =>
   new Response(await encodeCatalog(value), {
     status: 200,
     headers: { "content-type": "application/octet-stream" },
@@ -84,6 +84,9 @@ function harness(options: {
   const requests: string[] = [];
   const failures: Recorded[] = [];
   const successes: string[] = [];
+  // SAFETY: deliberately partial context stub — the provider reads only
+  // providerId/now/endpointHealth/fetch here.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub's narrower endpoint-health lane forces the unknown hop
   const context = {
     providerId: "miruro",
     now: () => "2026-09-12T00:00:00.000Z",

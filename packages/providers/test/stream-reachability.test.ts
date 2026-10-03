@@ -606,11 +606,18 @@ describe("guarded provider fetch", () => {
 });
 
 describe("stream reachability — fingerprint retry", () => {
+  // Bun's fetch carries a `preconnect` member, so a bare function is not
+  // assignable — graft it on like the app-side fixtures do.
+  const stubPlatformFetch = (status: number) =>
+    Object.assign(async () => response(status), {
+      preconnect: globalThis.fetch.preconnect,
+    });
+
   test("a definitive Bun 403 retries over the player-shaped transport and reaches", async () => {
     const calls: string[] = [];
     // No fetchImpl — the platform path is the one that gets fingerprinted.
     const realFetch = globalThis.fetch;
-    globalThis.fetch = (async () => response(403)) as unknown as typeof fetch;
+    globalThis.fetch = stubPlatformFetch(403);
     try {
       const probe = await probeStreamReachability({
         url: "https://vault.example/stream.mp4",
@@ -629,7 +636,7 @@ describe("stream reachability — fingerprint retry", () => {
 
   test("a 403 the curl transport also refuses stays unreachable", async () => {
     const realFetch = globalThis.fetch;
-    globalThis.fetch = (async () => response(403)) as unknown as typeof fetch;
+    globalThis.fetch = stubPlatformFetch(403);
     try {
       const probe = await probeStreamReachability({
         url: "https://vault.example/stream.mp4",
@@ -645,7 +652,7 @@ describe("stream reachability — fingerprint retry", () => {
 
   test("curlFetchImpl null disables the retry entirely", async () => {
     const realFetch = globalThis.fetch;
-    globalThis.fetch = (async () => response(403)) as unknown as typeof fetch;
+    globalThis.fetch = stubPlatformFetch(403);
     try {
       const probe = await probeStreamReachability({
         url: "https://vault.example/stream.mp4",
@@ -691,7 +698,7 @@ describe("stream reachability — fingerprint retry", () => {
   test("a non-403 definitive verdict does not spend a curl retry", async () => {
     let curlCalled = false;
     const realFetch = globalThis.fetch;
-    globalThis.fetch = (async () => response(404)) as unknown as typeof fetch;
+    globalThis.fetch = stubPlatformFetch(404);
     try {
       const probe = await probeStreamReachability({
         url: "https://vault.example/stream.mp4",

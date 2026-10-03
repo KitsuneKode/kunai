@@ -106,6 +106,8 @@ test("a browseNotice arrives as a browse-shell warning row", async () => {
   const provider = {
     metadata: { id: "videasy", isAnimeProvider: false, isYoutubeProvider: false },
   };
+  // SAFETY: deliberately partial Container stub — the test only exercises the members it defines.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub's incompatible member shapes force the unknown hop
   const container = {
     stateManager,
     connectivity: new Connectivity(() => true),
@@ -129,6 +131,8 @@ test("a browseNotice arrives as a browse-shell warning row", async () => {
   } as unknown as Container;
 
   const phase = new SearchPhase({
+    // SAFETY: the stubbed searchTitles returns a fixed page — enough for the phase under test.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub signature is narrower than typeof searchTitles, forcing the unknown hop
     searchTitles: (async () => ({
       results: [],
       strategy: "direct",
@@ -169,6 +173,8 @@ test("an inter-mount playback feedback note arrives as a browse warning", async 
   const provider = {
     metadata: { id: "videasy", isAnimeProvider: false, isYoutubeProvider: false },
   };
+  // SAFETY: deliberately partial Container stub — the test only exercises the members it defines.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub's incompatible member shapes force the unknown hop
   const container = {
     stateManager,
     connectivity: new Connectivity(() => true),
@@ -192,6 +198,8 @@ test("an inter-mount playback feedback note arrives as a browse warning", async 
   } as unknown as Container;
 
   const phase = new SearchPhase({
+    // SAFETY: the stubbed searchTitles returns a fixed page — enough for the phase under test.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the stub signature is narrower than typeof searchTitles, forcing the unknown hop
     searchTitles: (async () => ({
       results: [],
       strategy: "direct",

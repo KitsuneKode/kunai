@@ -1179,6 +1179,8 @@ async function getMiruroCatalogAnime(
   signal?: AbortSignal,
 ): Promise<MiruroCatalogAnime | null> {
   const cacheKey = `catalog-anime:${anilistId}`;
+  // SAFETY: this cache key namespace only ever holds MiruroCatalogAnime
+  // values written by lookupMiruroAnimeByAnilist below.
   const hit = episodeCache.get(cacheKey) as MiruroCatalogAnime | null;
   if (hit) return hit;
   const anime = await lookupMiruroAnimeByAnilist(context, anilistId, signal);
@@ -1621,7 +1623,7 @@ function synthesizeMiruroSourceData(
     return [
       {
         url: stream.url,
-        type: (stream.format === "mp4" ? "mp4" : "hls") as "hls" | "mp4",
+        type: stream.format === "mp4" ? "mp4" : "hls",
         quality: stream.quality ?? undefined,
         referer: referer ?? undefined,
         resolution: stream.resolution ?? undefined,

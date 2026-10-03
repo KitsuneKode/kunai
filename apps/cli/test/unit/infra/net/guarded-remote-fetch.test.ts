@@ -10,6 +10,7 @@ function fakeFetch(impl: (url: string, init: RequestInit) => Promise<Response> |
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : String(input);
     return impl(url, init ?? {});
+    // SAFETY: the stub implements the fetch call shape the guard exercises; preconnect is unused here.
   }) as typeof fetch;
 }
 

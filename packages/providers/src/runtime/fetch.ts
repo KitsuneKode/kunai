@@ -84,6 +84,7 @@ export async function providerJson<T>(
     });
   }
   try {
+    // SAFETY: T is the caller-declared payload contract; JSON.parse is untyped by spec.
     return JSON.parse(text) as T;
   } catch (cause) {
     throw new ProviderHttpError({

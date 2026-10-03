@@ -766,6 +766,7 @@ export function BrowseShell<T>({
     if (!notificationDetailsPending) return;
     const item = takeNotificationDetailsItem();
     if (!item) return;
+    // SAFETY: browseOptionFromMediaItem yields the option shape openDetailsOverlay reads; the generic payload is opaque at this call site.
     openDetailsOverlay(browseOptionFromMediaItem(item) as BrowseShellOption<T>, "notification");
   }, [notificationDetailsPending, openDetailsOverlay]);
 
