@@ -4,6 +4,7 @@ import { PrivacyAnalytics } from "@/components/analytics/privacy-analytics";
 import { PrivacySpeedInsights } from "@/components/analytics/privacy-speed-insights";
 import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
 import { SiteFooter } from "@/components/layout/site-footer";
+import { MotionProvider } from "@/components/providers/motion-provider";
 import { KunaiSearchDialog } from "@/components/search/kunai-search-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { fontClassNames } from "@/lib/fonts";
@@ -21,15 +22,6 @@ export const metadata: Metadata = {
   },
   description:
     "Guides for Kunai, the terminal client for anime, series, movies, and YouTube: resolve a stream, hand off to mpv, recover, and use local offline files.",
-  keywords: [
-    "kunai",
-    "terminal streaming",
-    "anime cli",
-    "movie cli",
-    "mpv",
-    "media cli",
-    "command line streaming",
-  ],
 };
 
 export const viewport: Viewport = {
@@ -61,7 +53,9 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
             enableSystem: false,
           }}
         >
-          <TooltipProvider>{children}</TooltipProvider>
+          <MotionProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+          </MotionProvider>
           {/* Site-wide footer — a direct DOM child of body (the providers
               render no element), so `mt-auto` pins it to the fold on short
               pages and it sits after the page chrome on every route. */}
