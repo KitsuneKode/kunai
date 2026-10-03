@@ -83,9 +83,9 @@ archive and put only the residue here.
 
 ### Production review and release repair
 
-| Track                     | Remaining                                                                                                              | Plan                                                          |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| October production review | Reconcile 47 PRs/29 issues; close network trust and provider freshness gates; qualify platform/mobile release evidence | [review and ordered residue](2026-10-03-production-review.md) |
+| Track                     | Remaining                                                                                                                           | Plan                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| October production review | Review repairs #554/#556/#557; close runtime-stack network/process gates, qualify provider publication and physical mobile evidence | [review and ordered residue](2026-10-03-production-review.md) |
 
 ### Verification and CI
 
