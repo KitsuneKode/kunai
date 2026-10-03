@@ -6,6 +6,8 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import type { SourceInventoryCacheInput } from "@/services/playback/SourceInventoryService";
 import type { ProviderResolveResult } from "@kunai/types";
 
+import { createTestStateManager } from "../../helpers/session-state";
+
 const config = {
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
   seriesLanguageProfile: { audio: "original", subtitle: "none", quality: "720p" },
@@ -15,14 +17,15 @@ const config = {
 
 describe("buildTracksPanelData", () => {
   test("local playback exposes file facts without provider inventory or registry access", async () => {
+    // SAFETY: This test double supplies the exact members read by the exercised workflow.
     const container = {
-      stateManager: { getState: () => ({ mode: "series", provider: "retired-provider" }) },
+      stateManager: createTestStateManager("retired-provider"),
       providerRegistry: {
-        getAll: () => {
+        getAll: (): ReturnType<Container["providerRegistry"]["getAll"]> => {
           throw new Error("local playback read providers");
         },
       },
-    } as unknown as Container;
+    } as Container;
     const data = await buildTracksPanelData(
       {
         url: "/owned/file.mp4",

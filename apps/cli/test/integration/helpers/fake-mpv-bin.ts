@@ -169,8 +169,9 @@ async function serveIpc(
         if (!lifecycleStarted && activeSocket) {
           lifecycleStarted = true;
           // Match --idle=no for one-shot callers; pooled sessions retain the process.
-          void runPlaybackLifecycle(activeSocket, mode, currentUrl).then(() => {
+          void runPlaybackLifecycle(activeSocket, mode, currentUrl).then((outcome) => {
             if (oneShot && mode !== "hold") quitRequested = true;
+            return outcome;
           });
         }
       },

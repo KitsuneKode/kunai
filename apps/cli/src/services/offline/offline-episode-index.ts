@@ -127,19 +127,19 @@ export function listReadyEpisodes(
 ): readonly EpisodeInfo[] {
   const episodes = new Map<string, EpisodeInfo>();
   for (const asset of offlineAssetService.listTitleAssets(titleId)) {
+    const season = asset.season ?? 0;
+    const episodeNumber = asset.episode ?? 0;
     if (
       asset.state !== "ready" ||
-      typeof asset.season !== "number" ||
-      typeof asset.episode !== "number" ||
-      !Number.isInteger(asset.season) ||
-      !Number.isInteger(asset.episode) ||
-      asset.season < 1 ||
-      asset.episode < 1
+      !Number.isInteger(season) ||
+      !Number.isInteger(episodeNumber) ||
+      season < 1 ||
+      episodeNumber < 1
     )
       continue;
     const episode: EpisodeInfo = {
-      season: asset.season,
-      episode: asset.episode,
+      season,
+      episode: episodeNumber,
       providerEpisodeIdentity: asset.providerEpisodeIdentity,
     };
     const identity = asset.providerEpisodeIdentity

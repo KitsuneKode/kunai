@@ -10,6 +10,7 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 describe("root overlay picker model", () => {
   test("Tracks subtitle uses the current source label instead of a retired provider", () => {
+    // SAFETY: The subtitle branch reads only provider and overlay; settings config is unused.
     expect(
       getRootOverlaySubtitle({
         overlay: {

@@ -64,7 +64,7 @@ describe("playback source authority", () => {
 
   test("online acquisition returns the exact registered provider after local policy declines", async () => {
     const events: string[] = [];
-    // Only object identity is needed; this test does not invoke the adapter.
+    // SAFETY: Only provider object identity is exercised; no adapter method is invoked.
     const provider = { metadata: { id: "registered" } } as Provider;
     const result = await resolvePlaybackSourceAuthority({
       configuredProviderId: "registered",

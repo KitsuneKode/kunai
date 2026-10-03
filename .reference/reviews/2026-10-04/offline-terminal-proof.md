@@ -68,3 +68,16 @@ omits it, and needs a leading space when passing `--offline` as `--command`.
 Those harness usability issues remain outside this playback fix.
 The short-clip post-play frame still has overlapping title text and acquisition
 wording that should be adapted for local playback in a separate UI pass.
+
+## Hosted-CI follow-up
+
+The initial hosted run at `1468696b4` failed the two new HTTP-negative launcher
+controls and the additional anti-slop baseline gate. The tests mocked HTTP but
+used a DNS name; lookup latency allowed fake playback to connect before the
+preflight result. The fixture now uses a mocked public-IP literal, so no DNS or
+actual HTTP request is needed. Production preflight policy is unchanged: a
+definitive early failure aborts before IPC; established IPC retains its existing
+leniency. Fixture environment reads now occur in main(), callback/fetch shims
+are typed, and test workflows use actual state reducers. The checked-in lint
+baseline was not increased or bypassed. Full final gates include the separate
+anti-slop baseline and agent-loop commands used by CI.
