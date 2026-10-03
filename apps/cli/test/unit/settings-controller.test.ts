@@ -232,3 +232,28 @@ test("Esc on dirty main settings closes without reverting immediate-applied draf
   expect(result.closeOverlay).toBe(true);
   expect(result.state.draft.showMemory).toBe(draft.showMemory);
 });
+
+test("settings search accepts multi-char chunks and strips the / prefix when filtering", () => {
+  const registryCtx = mockRegistryCtx(baseConfig());
+  const ctx = { container: createContainerFixture().container, registryCtx };
+  let state = createSettingsUiState(baseConfig());
+
+  // `/` seeds the search bar with the literal prefix — the "Search: /…" display
+  // contract — and must not be stolen by the palette or counted as a filter term.
+  const opened = handleSettingsKey("/", inkKey({}), state, ctx);
+  expect(opened.state.searchQuery).toBe("/");
+
+  // A pty read can deliver several chars as one input event (paste, fast
+  // typing). The old single-char gate silently dropped them — the search bar
+  // looked armed but typing did nothing.
+  const typed = handleSettingsKey("footer", inkKey({}), opened.state, ctx);
+  expect(typed.state.searchQuery).toBe("/footer");
+  state = typed.state;
+
+  // The filter sees "footer", not "/footer" — otherwise every /-started query
+  // filtered for a literal slash and matched nothing.
+  const page = buildSettingsPage(registryCtx, { searchQuery: state.searchQuery });
+  const ids = page.rows.map((row) => row.def.id);
+  expect(ids).toContain("footerHints");
+  expect(ids).not.toContain("providerRelayBaseUrl");
+});

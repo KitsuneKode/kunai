@@ -284,21 +284,29 @@ function LibraryTab({
         return;
       }
       if (input === "\u001b") return;
+      // Paste and fast typing deliver multi-char chunks as one input event —
+      // a single-char gate silently drops them. x/X/p/P stay action keys only
+      // as lone presses; inside a typed chunk they are just letters.
+      const filterChunk =
+        !key.ctrl && !key.meta
+          ? input
+              .split("")
+              .filter((char) => {
+                const code = char.charCodeAt(0);
+                return code >= 0x20 && code <= 0x7e;
+              })
+              .join("")
+          : "";
       if (
-        input.length === 1 &&
-        !key.ctrl &&
-        !key.meta &&
+        filterChunk &&
         !key.return &&
         !key.escape &&
         !key.upArrow &&
         !key.downArrow &&
         !key.tab &&
-        input !== "x" &&
-        input !== "X" &&
-        input !== "p" &&
-        input !== "P"
+        !(input.length === 1 && (input === "x" || input === "X" || input === "p" || input === "P"))
       ) {
-        setFilterQuery((query) => query + input);
+        setFilterQuery((query) => query + filterChunk);
         return;
       }
       if (totalRows === 0) return;

@@ -116,7 +116,10 @@ export function buildSettingsPage(
   ctx: SettingsRegistryContext,
   options?: { readonly searchQuery?: string; readonly activeSectionIndex?: number },
 ): BuiltSettingsPage {
-  const search = options?.searchQuery?.trim().toLowerCase() ?? "";
+  // `/` opens settings search by seeding "/" into searchQuery so the bar reads
+  // "Search: /query". The slash is the prompt, not the pattern — strip it or
+  // every /-started query filters against a literal slash and matches nothing.
+  const search = options?.searchQuery?.trim().replace(/^\//, "").toLowerCase() ?? "";
   const defs = buildSettingsRegistry(ctx).filter((row) => isSettingVisible(row, ctx));
   const rows: BuiltSettingsRow[] = [];
   const rowById = new Map<string, BuiltSettingsRow>();
