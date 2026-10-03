@@ -1,7 +1,7 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "4a8f4f0132d756acb11de4bb5059756308dffdbed54ab84aa1c3fc9012db3052",
+  "cliSourceFingerprint": "82f98d097bd09f81dbe5700f155640974707ed04b1f02ca5efa68a1488c966e2",
   "docsContentFingerprint": "366d3c5bfe807241c61c8b47d937f172177b3556239103169dadcf18e07e13d7",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
@@ -204,6 +204,7 @@
       ],
       "status": "active",
       "notes": [
+        "2026-10-03: `/api/secure/pipe` is gone on every mirror (SPA 404) — upstream replaced it with a catalog REST API at `/api/v1/*`. Success bodies are `application/octet-stream` = XOR('miruro/catalog') + gzip + JSON; errors are plain `application/problem+json`. Query shapes are allowlisted to the site's own calls (search limit ∈ {5,15}, `*_id_in` + limit=100, `episodes` needs `kind` + limit=10000, `play` takes no query). Bun fetch clears the shape gate with a browser header set — the old pipe's TLS-fingerprint CF block does not apply here. One `play` call returns the full track/provider/server matrix with direct stream URLs and per-server Referer headers.",
         "2026-07-16: Browser network on www.miruro.bz/watch/{anilistId}/... uses GET /api/secure/pipe?e=… (200 plain + x-obfuscated). HLS on vault*.ultracloud / owocdn with stream.referer https://kwik.cx/.",
         "Bun fetch often gets CF 403 HTML on pipe; production path falls back to curl --http2 with browser headers (dossier-proven on this machine).",
         "2026-09-11: all four www. mirrors (.bz, .ru, .to, .tv) serve /api/secure/pipe — the earlier 'miruro.tv/.to are TLS-dead' reading came from a network whose reachability to them flaps (same host timed out, failed fast, then answered within minutes). Bare origins are 301 redirects to www.; miruro.com is a landing page with no pipe and is excluded by name.",
