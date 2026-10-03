@@ -207,6 +207,29 @@ describe("stream reachability", () => {
     }
   });
 
+  test("a declared-HTML segment that is actually MPEG-TS is reachable", async () => {
+    // Upstreams disguise real segments as HTML documents to defeat
+    // content-type filters — vidrock's obsidiancircuit lane serves valid TS
+    // as `page-N.html`. The declared type is a claim; the bytes decide.
+    const tsSegment = new Uint8Array(HLS_SEGMENT_PROBE_MIN_BYTES);
+    tsSegment[0] = 0x47;
+    tsSegment[188] = 0x47;
+    tsSegment[376] = 0x47;
+
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/stream.m3u8",
+      fetchImpl: async (url: string) => {
+        if (url.endsWith("stream.m3u8")) {
+          return response(200, "#EXTM3U\n#EXTINF:3,\n/page-0.html\n");
+        }
+        return response(200, tsSegment, { "content-type": "text/html; charset=utf-8" });
+      },
+      timeoutMs: 200,
+    });
+
+    expect(probe).toEqual({ status: "reachable" });
+  });
+
   test("abort mid-probe returns timeout", async () => {
     const controller = new AbortController();
     const probe = await probeStreamReachability({

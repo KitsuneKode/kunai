@@ -184,65 +184,75 @@ export async function resolveDirectStreamSource(
 
     let streamReachabilityVerified: boolean | undefined;
     if (resolveGateProbe) {
+      const gated = streams.slice(0, RESOLVE_GATE_MAX_PROBES).filter((c) => c.url);
+      // Probe the bounded candidate set concurrently: a slow or poisoned lane
+      // must not serialize its siblings' probes into the attempt budget — a
+      // three-lane sequential walk can spend the whole budget proving the
+      // first lane dead and never reach the one that plays. Preference stays
+      // ranked: the winner is the lowest-index accepted verdict, not the
+      // fastest probe.
+      const verdicts = await Promise.all(
+        gated.map(async (candidate) => ({
+          candidate,
+          verdict: await verifyCandidateStream({
+            stream: candidate,
+            context,
+            ...(options.resolveGateTimeoutMs === undefined
+              ? null
+              : { timeoutMs: options.resolveGateTimeoutMs }),
+          }),
+        })),
+      );
+
+      // Aborts land while probes are in flight. Their results are meaningless
+      // then — the caller is gone — so nothing may become a stream failure or
+      // a verified selection.
+      const cancelled = context.signal?.aborted === true;
+      const accepted = cancelled
+        ? undefined
+        : verdicts.find(
+            (
+              entry,
+            ): entry is {
+              candidate: StreamCandidate;
+              verdict: { accepted: true; verified: boolean };
+            } => entry.verdict.accepted,
+          );
+
       let gateFailure: ProviderFailure | undefined;
-
-      let cancelled = false;
-
-      for (const candidate of streams.slice(0, RESOLVE_GATE_MAX_PROBES)) {
-        // A cancelled resolve must not keep spending probes, and must not be
-        // recorded as a stream failure — the caller went away, the CDN is fine.
-        if (context.signal?.aborted) {
-          cancelled = true;
-          break;
+      if (!cancelled) {
+        for (const { candidate, verdict } of verdicts) {
+          if (verdict.accepted) continue;
+          const probe = verdict.probe;
+          const reason = verdict.reason;
+          // Keep the first rejection: it is the highest-ranked candidate, so
+          // it describes the failure the user would otherwise have seen.
+          gateFailure ??= {
+            providerId,
+            code: probe?.status === "timeout" ? "timeout" : "not-found",
+            message: `${label} selected stream is unreachable (${reason})`,
+            retryable: true,
+            at: context.now(),
+          };
+          emitTraceEvent(events, context, {
+            type: "source:failed",
+            providerId,
+            sourceId,
+            streamId: candidate.id,
+            message: `${label} resolve-gate probe failed`,
+            attributes: { reason, probe: probe?.status ?? "failed" },
+          });
         }
-        if (!candidate.url) continue;
+      }
 
-        const verdict = await verifyCandidateStream({
-          stream: candidate,
-          context,
-          ...(options.resolveGateTimeoutMs === undefined
-            ? null
-            : { timeoutMs: options.resolveGateTimeoutMs }),
-        });
-
-        // The abort may have landed while this probe was in flight. Its result
-        // is then meaningless — the caller is gone — so it must not become a
-        // stream failure or a verified selection.
-        if (context.signal?.aborted) {
-          cancelled = true;
-          break;
-        }
-
-        if (verdict.accepted) {
-          selectedStream = candidate;
-          // Only a probe that actually reached the stream counts as verified.
-          // This flag makes later phases skip probing as "provider-attested",
-          // so letting a timeout set it would switch off the playback preflight
-          // for a stream nothing ever reached.
-          streamReachabilityVerified = verdict.verified;
-          gateFailure = undefined;
-          break;
-        }
-
-        const probe = verdict.probe;
-        const reason = verdict.reason;
-        // Keep the first rejection: it is the highest-ranked candidate, so it
-        // describes the failure the user would otherwise have seen.
-        gateFailure ??= {
-          providerId,
-          code: probe?.status === "timeout" ? "timeout" : "not-found",
-          message: `${label} selected stream is unreachable (${reason})`,
-          retryable: true,
-          at: context.now(),
-        };
-        emitTraceEvent(events, context, {
-          type: "source:failed",
-          providerId,
-          sourceId,
-          streamId: candidate.id,
-          message: `${label} resolve-gate probe failed`,
-          attributes: { reason, probe: probe?.status ?? "failed" },
-        });
+      if (accepted) {
+        selectedStream = accepted.candidate;
+        // Only a probe that actually reached the stream counts as verified.
+        // This flag makes later phases skip probing as "provider-attested",
+        // so letting a timeout set it would switch off the playback preflight
+        // for a stream nothing ever reached.
+        streamReachabilityVerified = accepted.verdict.verified;
+        gateFailure = undefined;
       }
 
       // Cancellation outranks a partial gate failure. If the caller aborted, any

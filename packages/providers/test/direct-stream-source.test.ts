@@ -169,6 +169,49 @@ describe("direct stream resolve gate", () => {
     expect(result.healthDelta).toBeUndefined();
   });
 
+  test("a hanging lane does not serialize its sibling's probe into the budget", async () => {
+    // VidRock's API answers lanes whose playlists can be ad-poisoned or
+    // disguised — the dead lane's probe stalls while a sibling verifies.
+    // Sequentially the first lane's stall consumed the attempt budget and the
+    // working lane was never reached; the gate races the bounded set instead.
+    let releaseDeadLane!: (response: Response) => void;
+    const deadLane = new Promise<Response>((resolve) => {
+      releaseDeadLane = resolve;
+    });
+
+    const result = await resolveDirectStreamSource({
+      providerId: "vidlink",
+      host: "vidlink.pro",
+      label: "VidLink",
+      input: createInput(),
+      context: createContext(async (url) => {
+        if (url.includes("dead.example")) {
+          // Hangs until the live lane proves out — a sequential walk would
+          // wait here forever and never reach the sibling.
+          return deadLane;
+        }
+        if (url.endsWith(".mp4")) {
+          // The sibling's probe releasing the stalled lane is what makes this
+          // a concurrency check: sequential code never gets here.
+          releaseDeadLane(new Response("gone", { status: 404 }));
+          return new Response("ok");
+        }
+        throw new Error(`unexpected ${url}`);
+      }),
+      fetchPayload: async () => ({
+        streams: [
+          { url: "https://dead.example/1080.mp4", qualityHint: "1080p" },
+          { url: "https://live.example/720.mp4", qualityHint: "720p" },
+        ],
+      }),
+      resolveGateProbe: true,
+    });
+
+    expect(result.status).toBe("resolved");
+    // The live lane wins even though the higher-ranked lane only settled later.
+    expect(result.selectedStreamId).toBeTruthy();
+  });
+
   test("season 0 specials are resolvable, and a missing episode still fails closed", async () => {
     const special = await resolveDirectStreamSource({
       providerId: "vidlink",

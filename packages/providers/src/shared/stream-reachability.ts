@@ -562,11 +562,20 @@ async function probeHlsMediaSegment(
 
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     if (contentType.includes("text/html")) {
-      return {
-        status: "unreachable",
-        reason: "HLS segment unreachable: content-type text/html",
-        definitive: true,
-      };
+      // A declared HTML type is meant to catch the CDN error page masquerading
+      // as a segment — but upstreams also disguise real segments as HTML to
+      // defeat exactly this check (vidrock's obsidiancircuit lane serves 2.6MB
+      // of MPEG-TS as `page-N.html`, measured 2026-10-03). The bytes are the
+      // evidence: refuse only when the body is not actually TS.
+      const prefix = await readResponseBodyPrefix(response, HLS_SEGMENT_PROBE_MIN_BYTES);
+      if (prefix === null || !hasMpegTsSyncSignature(prefix)) {
+        return {
+          status: "unreachable",
+          reason: "HLS segment unreachable: content-type text/html",
+          definitive: true,
+        };
+      }
+      return { status: "reachable" };
     }
 
     // Range asks politely; this enforces it. A host that answers a 1KiB Range
@@ -681,6 +690,19 @@ async function probeHttpStatus(
     clearTimeout(timeout);
     options.parentSignal?.removeEventListener("abort", onParentAbort);
   }
+}
+
+/**
+ * MPEG-TS packets are 188 bytes, each opening with the 0x47 sync byte — two
+ * consecutive syncs are ~1-in-65k by accident, three ~1-in-16M, so matching
+ * (0, 188, 376) is reliable proof of TS. A 4-byte-prefixed m2ts variant (sync
+ * at 4, 196, 384+4) exists but is rare in HLS; checking the plain layout
+ * keeps the rescue honest instead of "any binary blob passes".
+ */
+function hasMpegTsSyncSignature(buffer: Uint8Array): boolean {
+  return (
+    buffer.byteLength > 376 && buffer[0] === 0x47 && buffer[188] === 0x47 && buffer[376] === 0x47
+  );
 }
 
 /**
