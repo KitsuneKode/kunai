@@ -20,7 +20,9 @@ export type HomeFlowStep = {
 };
 
 /**
- * The four catalog modes, in the order `Tab` cycles them in the shell.
+ * The four kinds of media Kunai plays, in the order the hero names them. These are
+ * kinds, not modes: the shell has three modes (series, which includes movies, anime
+ * and YouTube), and `lib/home-bento.ts` holds those.
  *
  * These live in the server-rendered hero on purpose. The terminal simulator is
  * the only other place on this page that names what Kunai plays, and it is
@@ -52,7 +54,7 @@ const providerCount = codeMetadata.providerIds.length;
 
 export const homeHighlights = [
   {
-    label: "Four catalog modes",
+    label: "Three catalog modes",
     detail:
       "Series, anime, and YouTube each get their own mode. Tab cycles them; /anime, /series, and /youtube jump straight to one.",
   },

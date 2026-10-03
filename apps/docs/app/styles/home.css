@@ -854,3 +854,65 @@
     padding: 0.6rem 0.75rem;
   }
 }
+
+/*
+ * The interactive bento.
+ *
+ * The spotlight is a soft glow that follows the pointer across whichever tile it is
+ * on. `BentoStage` sets `--mx` and `--my` on that tile and `data-spot` while the
+ * pointer is over it; nothing renders in React, the browser just repaints a
+ * gradient. It sits above the plate's own background and below its content
+ * (`isolation: isolate` makes a stacking context, so a z-index of -1 lands between
+ * the two), and touch never sets it because a finger has no hover.
+ */
+.kunai-bento-plate {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.kunai-bento-plate::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    22rem circle at var(--mx, 50%) var(--my, 50%),
+    color-mix(in oklab, var(--kunai-accent) 11%, transparent),
+    transparent 70%
+  );
+  transition: opacity var(--dur-panel) var(--ease-out);
+}
+
+.kunai-bento-plate[data-spot="true"]::before {
+  opacity: 1;
+}
+
+/* A mode panel eases in when its tab is chosen. */
+.kunai-bento-panel:not([hidden]) {
+  animation: kunai-bento-in var(--dur-panel) var(--ease-out) both;
+}
+
+/* The recovery pane prints its lines one after another. The stagger is an inline
+   `calc(<index> * var(--dur-press))`, and that token is zero under reduced motion,
+   so there the lines are simply present. */
+.kunai-bento-line {
+  animation: kunai-bento-in var(--dur-panel) var(--ease-out) both;
+}
+
+.kunai-bento-term {
+  background: color-mix(in oklab, var(--kunai-bg) 70%, transparent);
+}
+
+@keyframes kunai-bento-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

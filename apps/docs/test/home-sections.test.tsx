@@ -31,10 +31,10 @@ describe("HomeBento", () => {
     <HomeBento highlights={homeHighlights} providers={providers(12)} />,
   );
 
-  test("states the real provider count and names providers instead of listing a feature", () => {
+  test("states the real provider count and names every provider, with none hidden behind a count", () => {
     expect(html).toContain(">12<");
-    expect(html).toContain("Provider 3");
-    expect(html).toContain("+4 more");
+    for (let index = 0; index < 12; index += 1) expect(html).toContain(`Provider ${index}`);
+    expect(html).not.toContain("more</li>");
   });
 
   test("puts the recommended provider first", () => {
@@ -47,13 +47,47 @@ describe("HomeBento", () => {
     expect(html).toContain("md:col-span-5");
   });
 
-  test("shows the recovery commands the docs actually name", () => {
+  test("the mode tile is a real tablist of the CLI's three modes, not four media kinds", () => {
+    expect(html).toContain('role="tablist"');
+    expect([...html.matchAll(/role="tab"/g)].length).toBeGreaterThanOrEqual(3);
+    for (const label of ["Series &amp; movies", "Anime", "YouTube"]) expect(html).toContain(label);
+    expect(html).toContain("Three catalog modes");
+    expect(html).not.toContain("Four catalog modes");
+  });
+
+  test("opens on the mode Tab starts from, with only that tab in the tab order", () => {
+    const series = html.match(/<button[^>]*id="[^"]*-tab-series"[^>]*>/)?.[0] ?? "";
+    expect(series).toContain('aria-selected="true"');
+    expect(series).toContain('tabindex="0"');
+    const anime = html.match(/<button[^>]*id="[^"]*-tab-anime"[^>]*>/)?.[0] ?? "";
+    expect(anime).toContain('aria-selected="false"');
+    expect(anime).toContain('tabindex="-1"');
+  });
+
+  test("every mode's panel is in the server HTML, so a crawler and a no-JS reader get all three", () => {
+    for (const slash of ["/series", "/anime", "/youtube"]) expect(html).toContain(slash);
+    expect([...html.matchAll(/role="tabpanel"/g)].length).toBeGreaterThanOrEqual(3);
+    // The inactive ones are hidden, not absent.
+    expect([...html.matchAll(/role="tabpanel"[^>]*hidden/g)].length).toBe(2);
+  });
+
+  test("the providers tile reports how many search the selected mode", () => {
+    expect(html).toContain("of 12 search series &amp; movies");
+  });
+
+  test("shows the recovery commands the docs actually name, starting on /recover", () => {
     for (const command of ["/recover", "/fallback", "/diagnostics"])
+      expect(html).toContain(command);
+    expect(html).toContain("Refreshing the stream from the same provider");
+  });
+
+  test("lists the ways back into what was watched, each with its command", () => {
+    for (const command of ["/history", "/calendar", "/recs", "/library"])
       expect(html).toContain(command);
   });
 
-  test("ships no client JavaScript: it is plain server markup", () => {
-    expect(html).not.toContain("<script");
+  test("the Tab keycap is a button, since a web page cannot take over the Tab key", () => {
+    expect(html).toMatch(/<button[^>]*aria-label="Tab: switch to the next mode"/);
   });
 });
 
