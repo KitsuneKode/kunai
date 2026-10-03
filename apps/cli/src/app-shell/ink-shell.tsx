@@ -795,6 +795,7 @@ export function AppRoot({ container }: { container: Container }) {
       networkAvailable,
       playbackIsLocal,
       playbackProblem: state.playbackProblem,
+      playbackNote: state.playbackNote,
       autoplaySessionPaused: state.autoplaySessionPaused,
       autoskipSessionPaused: state.autoskipSessionPaused,
       stopAfterCurrent: state.stopAfterCurrent,
@@ -816,6 +817,7 @@ export function AppRoot({ container }: { container: Container }) {
       networkAvailable,
       playbackIsLocal,
       state.playbackProblem,
+      state.playbackNote,
       state.autoplaySessionPaused,
       state.autoskipSessionPaused,
       state.stopAfterCurrent,
@@ -1003,9 +1005,12 @@ export function AppRoot({ container }: { container: Container }) {
           },
         });
         if (result.status !== "ignored" || !result.reason) return;
+        // The note channel renders on the playing surface (header alert);
+        // `detail` only ever paints in the loading diagnostics strip, which
+        // made every refused-key reason invisible exactly when it mattered.
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
-          detail: result.reason,
+          note: result.reason,
         });
       })();
     },

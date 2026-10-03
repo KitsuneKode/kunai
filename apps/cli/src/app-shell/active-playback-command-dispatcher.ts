@@ -130,6 +130,9 @@ export async function dispatchActivePlaybackCommand(
       type: "SET_SESSION_AUTOPLAY_PAUSED",
       paused: !deps.stateManager.getState().autoplaySessionPaused,
     });
+    // A session flag has its own standing banner — clear a stale key-answer
+    // note so it cannot mask the flag the press just changed.
+    deps.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: null });
     return "handled";
   }
   if (action === "toggle-autoskip") {
@@ -138,6 +141,7 @@ export async function dispatchActivePlaybackCommand(
       type: "SET_SESSION_AUTOSKIP_PAUSED",
       paused,
     });
+    deps.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: null });
     deps.playerControl.updateCurrentPlaybackAutoSkipEnabled?.(
       !paused,
       "playback-loading-command-autoskip",
@@ -149,6 +153,7 @@ export async function dispatchActivePlaybackCommand(
       type: "SET_SESSION_STOP_AFTER_CURRENT",
       enabled: !deps.stateManager.getState().stopAfterCurrent,
     });
+    deps.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: null });
     return "handled";
   }
   if (action === "search" || action === "back-to-search") {

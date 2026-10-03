@@ -86,17 +86,37 @@ export function resolvePlaybackBindingEffect(
       if (input.cancellable && handlers.onCancel) return { kind: "cancel" };
       return null;
     case "player-next":
-      return handlers.onNext ? { kind: "next" } : null;
+      return handlers.onNext ? { kind: "next" } : { kind: "note", note: "No next episode." };
     case "player-previous":
-      return handlers.onPrevious ? { kind: "previous" } : null;
+      return handlers.onPrevious
+        ? { kind: "previous" }
+        : { kind: "note", note: "No previous episode." };
     case "player-fallback":
-      return input.fallbackAvailable && handlers.onFallback ? { kind: "fallback" } : null;
+      if (input.fallbackAvailable && handlers.onFallback) return { kind: "fallback" };
+      if (!handlers.onFallback) return null;
+      return {
+        kind: "note",
+        note: input.isPlaying
+          ? "No fallback provider for this stream."
+          : "Fallback unlocks once the stream resolves.",
+      };
     case "player-source":
-      return input.canOpenSourcePicker && handlers.onPickSource ? { kind: "pick-source" } : null;
+      if (input.canOpenSourcePicker && handlers.onPickSource) return { kind: "pick-source" };
+      if (!handlers.onPickSource) return null;
+      return {
+        kind: "note",
+        note: input.isPlaying
+          ? "No alternate sources on this stream."
+          : "Sources appear once the stream resolves.",
+      };
     case "player-episode":
-      return handlers.onPickEpisode ? { kind: "pick-episode" } : null;
+      return handlers.onPickEpisode
+        ? { kind: "pick-episode" }
+        : { kind: "note", note: "No episode list for this title." };
     case "player-favorite":
-      return handlers.onToggleFavorite ? { kind: "toggle-favorite" } : null;
+      return handlers.onToggleFavorite
+        ? { kind: "toggle-favorite" }
+        : { kind: "note", note: "Nothing playing to favourite yet." };
     case "player-skip":
       return handlers.onSkipSegment ? { kind: "skip-segment" } : null;
     case "player-quality":
@@ -106,11 +126,15 @@ export function resolvePlaybackBindingEffect(
     case "player-return-search":
       return handlers.onReturnToSearch ? { kind: "return-to-search" } : null;
     case "player-autoplay":
-      return handlers.onToggleAutoplay ? { kind: "toggle-autoplay" } : null;
+      return handlers.onToggleAutoplay
+        ? { kind: "toggle-autoplay" }
+        : { kind: "note", note: "Autoplay applies when a next episode exists." };
     case "player-autoskip":
       return handlers.onToggleAutoskip ? { kind: "toggle-autoskip" } : null;
     case "player-stop-after-current":
-      return handlers.onStopAfterCurrent ? { kind: "stop-after-current" } : null;
+      return handlers.onStopAfterCurrent
+        ? { kind: "stop-after-current" }
+        : { kind: "note", note: "Nothing is queued after this." };
     case "player-refresh":
       // The mpv bridge maps ctrl+r to its "refresh" request; the terminal chord
       // resolves to the same recover-stream effect instead of being a dead key.

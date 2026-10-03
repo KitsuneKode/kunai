@@ -349,6 +349,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   onToggleFavorite,
   isFavorite,
   onFallback,
+  onNote,
 }: {
   state: LoadingShellState;
   onCancel?: () => void;
@@ -371,6 +372,8 @@ export const LoadingShell = React.memo(function LoadingShell({
   /** Read at render, so the marker follows the list rather than a local copy. */
   isFavorite?: () => boolean;
   onFallback?: () => void;
+  /** A capability-gated key was pressed while off — surface the refusal reason. */
+  onNote?: (note: string) => void;
 }) {
   const [memoryPanelVisible, setMemoryPanelVisible] = React.useState(false);
   // Forces a frame after a toggle: `isFavorite` reads through to the list, so
@@ -454,6 +457,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       onStopAfterCurrent,
       onToggleFavorite: onToggleFavorite ? handleToggleFavorite : undefined,
       onFallback,
+      onNote,
       onCommandAction: state.onCommandAction,
     }),
     [
@@ -474,6 +478,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       onToggleFavorite,
       handleToggleFavorite,
       onFallback,
+      onNote,
       state.onCommandAction,
     ],
   );

@@ -130,6 +130,79 @@ describe("resolvePlaybackShellInput", () => {
     expect(resolvePlaybackShellInput("q", emptyKey(), ctx)).toBeNull();
   });
 
+  test("refused gated keys explain themselves instead of going silent", () => {
+    const ctx = {
+      operation: "playing" as const,
+      cancellable: false,
+      fallbackAvailable: false,
+      canOpenSourcePicker: false,
+      recoveryViewActive: false,
+      playbackTroubleActive: false,
+      handlers: handlers({
+        onNext: undefined,
+        onPrevious: undefined,
+        onPickEpisode: undefined,
+        onToggleAutoplay: undefined,
+        onStopAfterCurrent: undefined,
+      }),
+    };
+    expect(resolvePlaybackShellInput("F", { shift: true }, ctx)).toEqual({
+      kind: "note",
+      note: "No fallback provider for this stream.",
+    });
+    expect(resolvePlaybackShellInput("o", emptyKey(), ctx)).toEqual({
+      kind: "note",
+      note: "No alternate sources on this stream.",
+    });
+    expect(resolvePlaybackShellInput("n", emptyKey(), ctx)).toEqual({
+      kind: "note",
+      note: "No next episode.",
+    });
+    expect(resolvePlaybackShellInput("p", emptyKey(), ctx)).toEqual({
+      kind: "note",
+      note: "No previous episode.",
+    });
+    expect(resolvePlaybackShellInput("e", emptyKey(), ctx)).toEqual({
+      kind: "note",
+      note: "No episode list for this title.",
+    });
+    expect(resolvePlaybackShellInput("a", emptyKey(), ctx)).toEqual({
+      kind: "note",
+      note: "Autoplay applies when a next episode exists.",
+    });
+  });
+
+  test("refused gated keys during resolve name the pending stream", () => {
+    const ctx = {
+      operation: "loading" as const,
+      cancellable: true,
+      fallbackAvailable: false,
+      canOpenSourcePicker: false,
+      recoveryViewActive: false,
+      playbackTroubleActive: false,
+      handlers: handlers({ onCancel: () => {} }),
+    };
+    expect(resolvePlaybackShellInput("F", { shift: true }, ctx)).toEqual({
+      kind: "note",
+      note: "Fallback unlocks once the stream resolves.",
+    });
+    expect(resolvePlaybackShellInput("o", emptyKey(), ctx)).toEqual({
+      kind: "note",
+      note: "Sources appear once the stream resolves.",
+    });
+  });
+
+  test("applyPlaybackShellInputEffect note routes to onNote", () => {
+    const seen: string[] = [];
+    applyPlaybackShellInputEffect(
+      { kind: "note", note: "No fallback provider for this stream." },
+      handlers({
+        onNote: (note) => seen.push(note),
+      }),
+    );
+    expect(seen).toEqual(["No fallback provider for this stream."]);
+  });
+
   test("applyPlaybackShellInputEffect cancel invokes onCancel", () => {
     let cancelled = false;
     applyPlaybackShellInputEffect(

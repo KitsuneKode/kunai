@@ -386,6 +386,9 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
       onReturnToSearch={handlers.onReturnToSearch}
       onToggleFavorite={favoriteTitle ? toggleFavorite : undefined}
       isFavorite={favoriteTitle ? isFavorite : undefined}
+      onNote={(note) =>
+        input.container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note })
+      }
     />
   );
 }
