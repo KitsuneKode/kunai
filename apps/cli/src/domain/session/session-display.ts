@@ -75,9 +75,13 @@ export function ensureSessionProviderMatchesLane(
   providerRegistry: SessionProviderLaneLookup,
 ): string {
   const state = stateManager.getState();
+  if (sessionProviderMatchesLane(state, providerRegistry)) return state.provider;
+  // getDefaultForMode is the only call here that may legitimately throw (an
+  // empty lane), so the try wraps exactly that: a registry that fails on
+  // `get` or a metadata read surfaces instead of being swallowed.
   let providerId: string;
   try {
-    providerId = resolveProviderIdForSessionLane(state, providerRegistry);
+    providerId = providerRegistry.getDefaultForMode(state.mode).metadata.id;
   } catch {
     // An empty lane has nothing to correct toward — a ghost provider id can
     // reach here when a switch ran without a registry. Keeping the current id
@@ -85,8 +89,6 @@ export function ensureSessionProviderMatchesLane(
     // inside a remount path that has no recovery story.
     return state.provider;
   }
-  if (providerId !== state.provider) {
-    stateManager.dispatch({ type: "SET_PROVIDER", provider: providerId });
-  }
+  stateManager.dispatch({ type: "SET_PROVIDER", provider: providerId });
   return providerId;
 }

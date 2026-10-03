@@ -159,6 +159,9 @@ export interface CaptureOptions {
 interface MountedCapture {
   readonly stdout: CaptureStdout;
   readonly stdin: CaptureStdin;
+  /** In-place prop update — React reconciles the existing tree, keeping
+   * hook state, effects, and event registrations alive across the call. */
+  update(next: ReactElement): void;
   unmount(): void;
 }
 
@@ -168,7 +171,7 @@ function mount(node: ReactElement, options: CaptureOptions = {}): MountedCapture
     options.rows ?? DEFAULT_ROWS,
   );
   const stdin = new CaptureStdin();
-  let instance: { unmount(): void };
+  let instance: { rerender(node: ReactElement): void; unmount(): void };
   act(() => {
     instance = inkRender(node, {
       // Cast: our stand-ins implement the slice of the stream API Ink touches.
@@ -183,6 +186,11 @@ function mount(node: ReactElement, options: CaptureOptions = {}): MountedCapture
   return {
     stdout,
     stdin,
+    update: (next) => {
+      act(() => {
+        instance.rerender(next);
+      });
+    },
     unmount: () => {
       act(() => {
         instance.unmount();
@@ -433,6 +441,13 @@ export interface RenderHandle {
    * cleanup (timers, subscriptions) runs before the next tree mounts.
    */
   rerender(next: ReactElement): void;
+  /**
+   * Re-render new props into the SAME mounted tree — hook state, effects,
+   * and useInput registrations survive. Reach for this (not `rerender`)
+   * when a test must prove a handler honours post-mount props: a remount
+   * hands every closure fresh props and silently masks stale-snapshot bugs.
+   */
+  update(next: ReactElement): void;
   /** Unmount the current tree and detach all listeners. Idempotent. */
   unmount(): void;
 }
@@ -515,6 +530,12 @@ export function render(node: ReactElement, options: CaptureOptions = {}): Render
     },
     rerender(next) {
       remount(next);
+    },
+    update(next) {
+      if (unmounted) {
+        throw new Error("render: cannot update after unmount");
+      }
+      active.update(next);
     },
     unmount() {
       if (unmounted) return;

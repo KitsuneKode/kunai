@@ -370,7 +370,13 @@ export function BrowseShell<T>({
   const calendarRouteKind = calendarRouteState.state.kind;
   const calendarRoutePending = calendarRouteKind === "loading" || calendarRouteKind === "retrying";
 
-  const [companionSecondary, setCompanionSecondary] = useState<DetailsPanelData["secondary"]>(null);
+  // Secondary data is keyed by the option it was resolved for: reads gate on
+  // identity so the settle window can't pair one option's facts with the
+  // previous option's rows while the new lookup is still in flight.
+  const [companionSecondaryEntry, setCompanionSecondaryEntry] = useState<{
+    readonly option: BrowseShellOption<T> | undefined;
+    readonly data: DetailsPanelData["secondary"];
+  } | null>(null);
 
   // Calendar view detection and day-strip derived state.
   // Route identity is authoritative; a structured `calendar` item is only
@@ -930,15 +936,21 @@ export function BrowseShell<T>({
 
   // Primary facts are derived in-render from settledOption so the header and
   // the fact rows can never disagree: only `secondary` (the async provider
-  // lookup) is allowed to lag, and it arrives as its own update.
+  // lookup) is allowed to lag, and it arrives keyed to the option it
+  // describes — a settledOption change reads null (loading) until its own
+  // lookup lands, never a previous option's rows.
   const companionPrimary = buildDetailsPanelDataFromBrowseOption(settledOption).primary;
+  const companionSecondary =
+    companionSecondaryEntry !== null && companionSecondaryEntry.option === settledOption
+      ? companionSecondaryEntry.data
+      : null;
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       await Bun.sleep(32);
       if (cancelled) return;
       const secondary = resolveBrowseDetailsSecondary(settledOption, { providerName: provider });
-      setCompanionSecondary(secondary);
+      setCompanionSecondaryEntry({ option: settledOption, data: secondary });
     })();
     return () => {
       cancelled = true;

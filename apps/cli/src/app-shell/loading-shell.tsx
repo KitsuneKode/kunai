@@ -496,7 +496,10 @@ export const LoadingShell = React.memo(function LoadingShell({
 
   // The input handler reads through a ref: state/handlers re-derive every
   // render (stream lands, trouble flags flip, optional keys appear), and a
-  // keypress must never resolve against a stale bootstrap snapshot.
+  // keypress must never resolve against a stale bootstrap snapshot. The
+  // refresh runs in a layout effect so the ref only ever holds committed
+  // context — writing it during render would hand the handler a tree that
+  // was never committed.
   const liveInputContextRef = React.useRef({
     state,
     commandModeOpen,
@@ -506,15 +509,17 @@ export const LoadingShell = React.memo(function LoadingShell({
     playbackTroubleActive,
     playbackInputHandlers,
   });
-  liveInputContextRef.current = {
-    state,
-    commandModeOpen,
-    onCancel,
-    canOpenSourcePicker,
-    recoveryView,
-    playbackTroubleActive,
-    playbackInputHandlers,
-  };
+  React.useLayoutEffect(() => {
+    liveInputContextRef.current = {
+      state,
+      commandModeOpen,
+      onCancel,
+      canOpenSourcePicker,
+      recoveryView,
+      playbackTroubleActive,
+      playbackInputHandlers,
+    };
+  });
 
   useInput((input, key) => {
     const live = liveInputContextRef.current;

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-02"
+lastReviewed: "2026-10-16"
 ---
 
 # Provider: AllManga / AllAnime
@@ -13,7 +13,7 @@ lastReviewed: "2026-10-02"
 - **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli` — historical only: ani-cli v5 (2026-08-01) moved to anidb.app and deleted its AllAnime code, so the live mkissa JS chunk is the sole source of truth now.
 - **Production module:** `packages/providers/src/allmanga/*`.
 - **Current status (2026-07-18):** Episode resolve requires ani-cli `aaReq` AES-GCM attestation + rotated hex decrypt key (`origin/fix`). Without it the API returns `AA_CRYPTO_MISSING`. Search/episode catalog POST paths still work without `aaReq`.
-- **Live check (2026-10-16):** GraphQL catalog+search answer 200 from this network; crypto-freshness smoke reports `diagnosis: "current"` (build 177, epoch 2961 vs pinned 2960 — inside tolerance). The episode-sources leg returns `NEED_CAPTCHA` on this network — IP/reputation gating, not crypto staleness or a transport block, so there is nothing to fix in code; `AllMangaCaptchaError` already names the remedy (user relay in an ungated region).
+- **Live check (2026-10-16):** GraphQL catalog+search answer 200 from this network; crypto-freshness smoke reports `diagnosis: "current"` (build 177, epoch 2961 vs pinned 2960 — inside tolerance). The episode-sources leg returns `NEED_CAPTCHA` on this network — upstream IP/reputation gating, not crypto staleness or a transport block, so there is nothing to fix in code. `AllMangaCaptchaError` surfaces this diagnosis; whether a user's own `providerRelay.baseUrl` (a user-owned, user-configured option) is reachable from an accepted network is that user's call — Kunai does not ship a relay and must not treat the captcha as something to work around.
 
 ## Current Evidence
 

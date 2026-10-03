@@ -98,6 +98,34 @@ describe("resolveBootstrapIntent", () => {
     ]);
   });
 
+  test("a youtube id under both lane flags resolves — the winning lane decides the conflict", () => {
+    // Callers that bypass parseCliArgs can hand in both flags true; the
+    // conflict check must judge the id against the lane that actually won,
+    // not against a flag that already lost.
+    const intent = resolveBootstrapIntent(args({ id: "youtube:abc", anime: true, youtube: true }));
+    expect(intent.directTitle?.externalIds?.youtubeId).toBe("abc");
+    expect(intent.logs.some((l) => l.kind === "id-lane-conflict")).toBe(false);
+  });
+
+  test("an anime-namespace id under both lane flags still conflicts with the winning lane", () => {
+    const intent = resolveBootstrapIntent(args({ id: "anilist:21", anime: true, youtube: true }));
+    expect(intent.directTitle).toBeNull();
+    expect(intent.logs.some((l) => l.kind === "id-lane-conflict" && l.lane === "youtube")).toBe(
+      true,
+    );
+  });
+
+  test("--jump is flagged when -i opens a title directly, even with -S present", () => {
+    const logs = resolveBootstrapIntent(
+      args({ search: "Dune", id: "438631", type: "movie", jump: 2 }),
+    ).logs;
+    expect(logs).toContainEqual({
+      kind: "flag-ignored",
+      flag: "--jump",
+      detail: "-i/--id opens its title directly, so there is no result list to pick from",
+    });
+  });
+
   test("warns when -S is shadowed by a resolvable -i", () => {
     const logs = resolveBootstrapIntent(args({ search: "dune", id: "438631", type: "movie" })).logs;
     expect(logs).toContainEqual({

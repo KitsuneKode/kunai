@@ -341,6 +341,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       // lifted onto the warnings strip, then cleared so the next mount diffs
       // against a clean baseline.
       let browseNoteBaseline = stateManager.getState().playbackNote;
+      // The phase-input notice belongs to the FIRST browse mount only — the
+      // input object is loop-invariant, so it must be consumed into pending
+      // state or every remount (bounce, provider switch) re-flashes it.
+      let pendingBrowseNotice = input?.browseNotice?.trim();
 
       while (true) {
         const currentState = stateManager.getState();
@@ -600,8 +604,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         pendingSearchWarnings = [];
         pendingSearchEmptyMessage = undefined;
         // A bounce notice rides the same warnings strip the shell already
-        // renders — one mount, one flash, then it is gone with the input.
-        const browseNotice = input?.browseNotice?.trim();
+        // renders — one mount, one flash, then it is gone.
+        const browseNotice = pendingBrowseNotice;
+        pendingBrowseNotice = undefined;
         const noteNow = stateManager.getState().playbackNote;
         let interMountNote: string | undefined;
         if (noteNow && noteNow !== browseNoteBaseline) {

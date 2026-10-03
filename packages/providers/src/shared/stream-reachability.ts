@@ -315,9 +315,16 @@ export async function probeStreamReachability(
   ) {
     return first;
   }
+  const injectedCurl = input.curlFetchImpl !== undefined;
   const curlFetch =
     input.curlFetchImpl === undefined ? resolveDefaultCurlProbeFetch() : input.curlFetchImpl;
   if (curlFetch === null) return first;
+  // The retry shares the first attempt's deadline — a retry that starts with
+  // near-zero budget always dies at the timer and reports "timeout", which
+  // downgrades the first attempt's definitive refusal into a non-answer.
+  // The floor only gates the real curl spawn (process start + connect need
+  // real time); an injected impl's owner knows its own transport cost.
+  if (!injectedCurl && deadline - Date.now() < CURL_RETRY_MIN_REMAINING_MS) return first;
   // Curl is the player-shaped client — its verdict replaces the Bun refusal
   // outright: a reach is proof the fingerprint was the problem, a repeated or
   // different definitive status is the more accurate death verdict, and an
@@ -833,6 +840,12 @@ const CURL_PROBE_BODY_MAX_BYTES = 4 * 1024 * 1024;
 const CURL_PROBE_CONNECT_TIMEOUT_SEC = 5;
 /** Backstop only; the caller's AbortSignal is the real deadline. */
 const CURL_PROBE_MAX_TIME_SEC = 30;
+/**
+ * Minimum budget a fingerprint retry needs to produce an honest verdict —
+ * below this the shared deadline kills curl before its answer lands, which
+ * would replace a definitive refusal with a fake timeout.
+ */
+const CURL_RETRY_MIN_REMAINING_MS = 750;
 
 export type CurlProbeSpawn = (
   args: readonly string[],
@@ -841,14 +854,13 @@ export type CurlProbeSpawn = (
 
 async function spawnCurlProbeOnce(args: readonly string[], signal?: AbortSignal) {
   const proc = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe", signal });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    readStreamBytesCapped(proc.stdout, CURL_PROBE_BODY_MAX_BYTES),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const stderrP = new Response(proc.stderr).text();
+  const stdout = await readStreamBytesCapped(proc.stdout, CURL_PROBE_BODY_MAX_BYTES);
+  // The cap tripped — kill now rather than waiting on the exited promise, so
+  // a curl that keeps streaming after the reader cancelled dies immediately.
+  if (stdout === null) proc.kill();
+  const [stderr, exitCode] = await Promise.all([stderrP, proc.exited]);
   if (stdout === null) {
-    proc.kill();
-    await proc.exited.catch(() => {});
     return {
       stdout: new Uint8Array(),
       stderr: `stdout exceeded ${CURL_PROBE_BODY_MAX_BYTES} bytes`,

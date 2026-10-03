@@ -175,6 +175,30 @@ describe("miruro catalog requests", () => {
     }
   });
 
+  test("a non-JSON non-2xx body still surfaces the HTTP status, not a SyntaxError", async () => {
+    // SPA fallback pages and empty edge responses are not decodable — the
+    // status check must run before the decoder or the failure downgrades to
+    // a retryable parse error and loses the status entirely.
+    const { context } = contextWithFetch(
+      () =>
+        new Response("<!doctype html><title>Bad Gateway</title>", {
+          status: 502,
+          headers: { "content-type": "text/html" },
+        }),
+    );
+    mirrorsTesting.reset();
+    try {
+      await searchMiruroCatalog(context, "x");
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      if (!(error instanceof MiruroCatalogError)) throw error;
+      expect(error.status).toBe(502);
+      expect(error.detail).toBeUndefined();
+    } finally {
+      mirrorsTesting.reset();
+    }
+  });
+
   test("the next mirror is tried when the first fails", async () => {
     let apiCalls = 0;
     const { context, requests } = contextWithFetch((url) => {

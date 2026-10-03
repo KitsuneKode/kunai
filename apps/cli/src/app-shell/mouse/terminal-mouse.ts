@@ -48,8 +48,16 @@ const LEGACY_MOUSE_PATTERN = new RegExp(
   `${ESC}\\[M[\\x20-\\u00ff\\ufffd]{3}|${ESC}\\[\\d+;\\d+;\\d+M`,
   "g",
 );
-/** `\x1b[M` (plus up to 2 payload bytes) or `\x1b[…;…` cut at a chunk end. */
-const LEGACY_MOUSE_PARTIAL = new RegExp(`${ESC}\\[M[\\x20-\\u00ff\\ufffd]{0,2}$`);
+/**
+ * `\x1b[M` (plus up to 2 payload bytes) or a urxvt `Cb;Cx;Cy` prefix cut at a
+ * chunk end. The urxvt arm matches a leading number plus up to two `;` groups,
+ * which also holds mid-sequence keystrokes like a split `\x1b[1;5` (modified
+ * arrow) — safe because a held prefix is only prepended to the next chunk, and
+ * a recombined sequence that isn't a mouse report passes through untouched.
+ */
+const LEGACY_MOUSE_PARTIAL = new RegExp(
+  `${ESC}\\[M[\\x20-\\u00ff\\ufffd]{0,2}$|${ESC}\\[\\d+(;\\d*){0,2}$`,
+);
 
 type DecodedButton = {
   readonly button: MouseButton;

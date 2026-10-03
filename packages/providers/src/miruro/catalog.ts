@@ -112,11 +112,21 @@ async function fetchCatalogOnce(
     signal,
   });
   const body = new Uint8Array(await response.arrayBuffer());
-  const parsed = await decodeMiruroCatalogBody(body, response.headers.get("content-type"));
   if (!response.ok) {
-    throw new MiruroCatalogError(response.status, readProblemDetail(parsed));
+    // Errors are problem+json, but a non-2xx can also be a SPA fallback page
+    // or an empty edge response — decode only to mine the detail, and never
+    // let an undecodable error body demote the status to a SyntaxError.
+    let detail: string | undefined;
+    try {
+      detail = readProblemDetail(
+        await decodeMiruroCatalogBody(body, response.headers.get("content-type")),
+      );
+    } catch {
+      detail = undefined;
+    }
+    throw new MiruroCatalogError(response.status, detail);
   }
-  return parsed;
+  return decodeMiruroCatalogBody(body, response.headers.get("content-type"));
 }
 
 /**

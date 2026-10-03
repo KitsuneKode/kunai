@@ -193,8 +193,12 @@ export class SessionController {
             });
             // The error path continues without RESET_CONTENT, so the note
             // survives in state — but nothing on the browse surface reads
-            // playbackNote. Hand it forward the same way bounce notices ride.
+            // playbackNote. Hand it forward the same way bounce notices ride,
+            // and clear the state copy: SearchPhase's inter-mount reader diffs
+            // playbackNote against its baseline and would flash the same error
+            // a second time.
             pending.browseNotice = playbackErrorNote;
+            stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: null });
             continue;
           }
 

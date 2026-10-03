@@ -42,9 +42,10 @@ test("o opens the source picker after the stream lands mid-mount", async () => {
 
   try {
     // The surface mounts during bootstrap when no stream exists yet; the
-    // picker key must not latch that snapshot. Rerender with the playing
-    // surface that does have stream candidates.
-    handle.rerender(<LoadingShell state={PLAYING_STATE} onPickSource={() => (picked += 1)} />);
+    // picker key must not latch that snapshot. Update the mounted tree in
+    // place — `rerender` remounts and would hand a fresh closure the new
+    // props even if the live-ref fix regressed.
+    handle.update(<LoadingShell state={PLAYING_STATE} onPickSource={() => (picked += 1)} />);
 
     await act(async () => {
       handle.stdin.enqueue(["o"]);
@@ -66,7 +67,8 @@ test("esc cancels via the latest cancellable flag, not the mount one", async () 
   });
 
   try {
-    handle.rerender(
+    // In-place update, same reasoning as the source-picker case above.
+    handle.update(
       <LoadingShell state={{ ...PLAYING_STATE, cancellable: false }} onCancel={onCancel} />,
     );
 

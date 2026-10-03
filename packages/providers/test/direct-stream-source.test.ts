@@ -208,8 +208,13 @@ describe("direct stream resolve gate", () => {
     });
 
     expect(result.status).toBe("resolved");
-    // The live lane wins even though the higher-ranked lane only settled later.
-    expect(result.selectedStreamId).toBeTruthy();
+    // The live lane wins even though the higher-ranked lane only settled
+    // later — assert the winner is the live candidate, not just any stream.
+    const winner =
+      result.status === "resolved"
+        ? result.streams.find((stream) => stream.id === result.selectedStreamId)
+        : undefined;
+    expect(winner?.url).toBe("https://live.example/720.mp4");
   });
 
   test("season 0 specials are resolvable, and a missing episode still fails closed", async () => {
