@@ -64,7 +64,9 @@ describe("code-block comments", () => {
   });
 
   test("comments are re-pointed at the muted token, which passes", () => {
-    expect(chromeCss).toContain('span[style*="--shiki-dark: #6A737D"]');
+    // Whether the selector matches the served markup is pinned in
+    // `code-comment-contrast.test.ts`; this checks the rule's effect.
+    expect(chromeCss).toContain(`span[style*="${HIGHLIGHTER_COMMENT}" i]`);
     expect(chromeCss).toMatch(/--shiki-dark:\s*var\(--color-fd-muted-foreground\)\s*!important/);
   });
 });
