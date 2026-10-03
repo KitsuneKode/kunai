@@ -100,6 +100,12 @@ export type SearchPhaseInput = {
   autoPickSearchResultIndex?: number;
   /** Return catalog identity without anime provider mapping; callers can map after an explicit action gate. */
   deferAnimeProviderMapping?: boolean;
+  /**
+   * One-shot notice the browse mount should render once — used for playback
+   * feedback that outlives a RESET_CONTENT bounce (e.g. "Could not load
+   * season data"), which would otherwise vanish before the user sees it.
+   */
+  browseNotice?: string;
 };
 
 import {
@@ -585,6 +591,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         pendingSearchEvidence = undefined;
         pendingSearchWarnings = [];
         pendingSearchEmptyMessage = undefined;
+        // A bounce notice rides the same warnings strip the shell already
+        // renders — one mount, one flash, then it is gone with the input.
+        const browseNotice = input?.browseNotice?.trim();
 
         const outcomePromise = this.dependencies.openBrowseShell({
           mode: syncedState.mode,
@@ -653,7 +662,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   `${browseState.searchResults.length} recommendation picks · loaded`)
                 : `${initialBrowse.options.length} results · previous search${initialBrowse.subtitleSuffix}`
               : undefined,
-          initialWarnings,
+          initialWarnings: browseNotice ? [...initialWarnings, browseNotice] : initialWarnings,
           initialSelectedIndex: browseState.selectedResultIndex,
           initialEmptyMessage,
           placeholder:

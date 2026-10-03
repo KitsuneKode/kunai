@@ -88,3 +88,65 @@ test("a successful bootstrap search opens the results view, not the search surfa
   expect(state.view).toBe("results");
   expect(browseInput?.initialResults).toHaveLength(1);
 });
+
+/**
+ * A bounce notice must reach the browse shell's warnings strip.
+ *
+ * `SET_PLAYBACK_FEEDBACK` notes are wiped twice before the next surface can
+ * read them — once by PlaybackPhase's own `finally` and again by
+ * RESET_CONTENT in the bounce. SessionController therefore carries the reason
+ * on the structured outcome (`{ type: "back_to_results", notice }`) and hands
+ * it in as `browseNotice`; if the merge is dropped, an episode-catalog failure
+ * silently lands the user back on results — the exact regression this pins.
+ */
+test("a browseNotice arrives as a browse-shell warning row", async () => {
+  const stateManager = new SessionStateManagerImpl({ logger });
+  let browseInput: Parameters<typeof openBrowseShell<SearchResult>>[0] | undefined;
+
+  const provider = {
+    metadata: { id: "videasy", isAnimeProvider: false, isYoutubeProvider: false },
+  };
+  const container = {
+    stateManager,
+    connectivity: new Connectivity(() => true),
+    logger,
+    diagnosticsService: { record: () => {} },
+    config: {
+      offlineMode: false,
+      animeLanguageProfile: { audio: "original", subtitle: "en" },
+      youtubeLanguageProfile: { audio: "original", subtitle: "none" },
+      animeTitlePreference: "provider",
+      getRaw: () => ({}),
+    },
+    searchRegistry: { getDefault: () => ({ metadata: { id: "tmdb" } }) },
+    providerRegistry: { get: () => provider, getDefaultForMode: () => provider },
+    queueService: { peekNext: () => null },
+    releaseProgressCache: {
+      summarizeActive: () => ({ episodeCount: 0, titleCount: 0 }),
+      getByTitleIds: () => new Map(),
+    },
+    offlineAssetService: { listNextReadyByTitleCursors: () => [] },
+  } as unknown as Container;
+
+  const phase = new SearchPhase({
+    searchTitles: (async () => ({
+      results: [],
+      strategy: "direct",
+      sourceId: "tmdb",
+      evidence: undefined,
+    })) as unknown as typeof searchTitles,
+    openBrowseShell: async (input) => {
+      browseInput = input;
+      return { type: "cancelled" };
+    },
+  });
+
+  await phase.execute(
+    { browseNotice: "Could not load season data for this title. Check your connection." },
+    { container, signal: new AbortController().signal },
+  );
+
+  expect(browseInput?.initialWarnings).toContain(
+    "Could not load season data for this title. Check your connection.",
+  );
+});
