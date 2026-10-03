@@ -1,0 +1,50 @@
+{
+  "recordedAt": "2026-10-03T11:26:19.914Z",
+  "phonePlaybackObserved": false,
+  "reports": [
+    {
+      "lane": "movie",
+      "providerId": "vidlink",
+      "resolved": false,
+      "errorType": "ProviderResolveFailureError",
+      "failureCodes": [
+        "not-found"
+      ]
+    },
+    {
+      "lane": "series",
+      "providerId": "vidlink",
+      "resolved": true,
+      "failureCodes": [],
+      "headerKeys": [
+        "referer",
+        "origin",
+        "user-agent",
+        "Cookie",
+        "Referer",
+        "Origin"
+      ],
+      "portableUrl": true,
+      "noHeaderStatus": 403,
+      "smallProbeComplete": true,
+      "probeBytes": 146
+    },
+    {
+      "lane": "anime",
+      "providerId": "hianime",
+      "resolved": true,
+      "failureCodes": [],
+      "headerKeys": [
+        "Referer",
+        "Origin",
+        "User-Agent"
+      ],
+      "portableUrl": true,
+      "noHeaderStatus": 403,
+      "smallProbeComplete": true,
+      "probeBytes": 146
+    }
+  ],
+  "sourceCommit": "6dd035443a52f75bfa332c10b556371b55e0248c",
+  "method": "Production registry resolver; bounded credential-free GET without headers; no phone observation"
+}

@@ -1,7 +1,7 @@
 import { normalizeMediaKind, presentMedia } from "@/domain/media/media-presentation";
 import type { QueueEntry } from "@/services/storage/storage-read-models";
 
-export type QueueRowState = "playing" | "pending" | "played";
+export type QueueRowState = "next" | "starting" | "pending" | "played";
 
 export type QueueViewRow = {
   readonly id: string;
@@ -89,7 +89,7 @@ export function buildQueueView(input: BuildQueueViewInput): QueueView {
     };
   }
 
-  const firstUnplayedId = unplayed[0]?.id;
+  const firstPendingId = unplayed.find((entry) => entry.status === "pending")?.id;
   const ordered = [...played, ...unplayed];
   let unplayedPos = 0;
   const rows: QueueViewRow[] = ordered.map((entry) => {
@@ -100,7 +100,13 @@ export function buildQueueView(input: BuildQueueViewInput): QueueView {
       title: entry.title,
       episodeLabel: episodeLabel(entry),
       sourceLabel: sourceLabel(entry.source),
-      state: isPlayed ? "played" : entry.id === firstUnplayedId ? "playing" : "pending",
+      state: isPlayed
+        ? "played"
+        : entry.status === "in-flight"
+          ? "starting"
+          : entry.id === firstPendingId
+            ? "next"
+            : "pending",
       position: isPlayed ? 0 : unplayedPos,
       posterUrl: input.resolvePoster(entry.titleId),
       titleId: entry.titleId,

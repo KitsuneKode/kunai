@@ -46,6 +46,12 @@ The current shell exposes:
 
 ## Ordering and claims
 
+The overlay labels the first pending row **up next**, and an in-flight claim
+**starting**. Neither proves that the player began. The queue records a row as
+played only after confirmed playback startup; that record means the intent was
+consumed, not that the video finished. Current playback must come from the
+player lifecycle, never from the first unplayed row or a VLC handoff return code.
+
 Explicit reordering does not disable placement actions. Queue next precedes
 lower-priority pending rows; after-current-series precedes end placement. Equal
 priorities retain insertion order, and existing rows retain their relative order.
