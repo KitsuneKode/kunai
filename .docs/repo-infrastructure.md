@@ -65,7 +65,9 @@ Default workspace packages: `apps/cli`, `apps/docs`, `apps/relay-server`,
 
 `bun install` runs the root `prepare` script and installs Husky hooks.
 
-The pre-commit hook runs staged-file lint/format only:
+The pre-commit hook runs staged-file lint/format only. Its formatter commands
+allow an all-ignored batch (for example captured reference source) to be empty;
+active matched files still undergo the normal formatter check:
 
 ```sh
 bunx lint-staged

@@ -179,10 +179,10 @@
   "lint-staged": {
     "**/*.{ts,tsx}": [
       "oxlint",
-      "oxfmt --write"
+      "oxfmt --write --no-error-on-unmatched-pattern"
     ],
     "**/*.{json,md,mdx,yml,yaml,toml}": [
-      "oxfmt --write"
+      "oxfmt --write --no-error-on-unmatched-pattern"
     ],
     "apps/cli/package.json": [
       "bun run guard"
