@@ -1228,7 +1228,7 @@ describe("AllManga provider evidence fixtures", () => {
     using fetchMock = await mockAllMangaFetch({
       subSourceFixture: "fast-and-slow-baseline",
       fastBaselineDelayMs: 10,
-      slowBaselineDelayMs: 400,
+      slowBaselineDelayMs: 1500,
     });
 
     const links = await resolveEpisodeSources({
@@ -1240,7 +1240,10 @@ describe("AllManga provider evidence fixtures", () => {
       epStr: "1",
       mode: "sub",
       sourceLane: "baseline",
-      adapterWaitBudgetMs: 20,
+      // Wide margins both ways: the fast lane must settle inside the budget
+      // and the budget must fire long before the slow lane's timer — a loaded
+      // CI runner can stretch 10ms→20ms races into double aborts otherwise.
+      adapterWaitBudgetMs: 100,
       signal: new AbortController().signal,
     } as Parameters<typeof resolveEpisodeSources>[0]);
 
