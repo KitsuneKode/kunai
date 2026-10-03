@@ -476,7 +476,12 @@ export const rivestreamProviderModule: CoreProviderModule = {
         candidateTimeoutMs,
         // Every service is fetched through the same www.rivestream.app front
         // door — a block there repeats identically for the rest, so stop early.
-        shouldStopAfterFailure: (failure) => failure.failureClass === "candidate-blocked",
+        // An endpoint-scoped refusal is different evidence: the resolve gate
+        // proved one service's mirrors dead, which says nothing about sibling
+        // services hosted elsewhere (citadel and primevids serve off
+        // valhallastream entirely) — the cycle must walk on.
+        shouldStopAfterFailure: (failure) =>
+          failure.failureClass === "candidate-blocked" && failure.endpointScoped !== true,
         resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           if (!provider) {
@@ -958,42 +963,19 @@ function isRivestreamAbortOrTimeoutError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
 
-export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, string> | null {
-  let params: URLSearchParams;
-  try {
-    params = new URL(sourceUrl).searchParams;
-  } catch {
-    return null;
-  }
-  const raw = params.get("headers");
-  if (!raw) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-  const headers: Record<string, string> = {};
-  for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
-    if (typeof value !== "string") continue;
-    const cleaned = value.replace(/[\r\n]/g, "").trim();
-    if (!name.trim() || !cleaned) continue;
-    headers[name.trim()] = cleaned;
-  }
-  return Object.keys(headers).length > 0 ? headers : null;
-}
-
-export function resolveRivestreamStreamHeaders(sourceUrl: string): Record<string, string> {
-  const proxyHeaders = parseRivestreamProxyHeaders(sourceUrl);
-  if (!proxyHeaders) {
-    return { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT };
-  }
-  const headers: Record<string, string> = { ...proxyHeaders };
-  if (!Object.keys(headers).some((name) => name.toLowerCase() === "user-agent")) {
-    headers["user-agent"] = USER_AGENT;
-  }
-  return headers;
+/**
+ * Client-facing headers for any stream URL the API hands back.
+ *
+ * A `m3u8-proxy` URL can carry a `headers=` JSON param — that is the proxy's
+ * own credential for the upstream it wraps, not something the client replays.
+ * Replaying it sends the upstream's referer to a proxy that only answers the
+ * site's own identity: measured live, `proxy.valhallastream.com` returns 403
+ * to the embedded `bingr.one` referer and 200 to Rivestream's. Every URL the
+ * API ships has to play for rivestream.app's own player, which sends exactly
+ * this header set — the param stays in the URL where the proxy reads it.
+ */
+export function resolveRivestreamStreamHeaders(): Record<string, string> {
+  return { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT };
 }
 
 async function resolveRivestreamProviderCandidate({
@@ -1080,7 +1062,7 @@ async function resolveRivestreamProviderCandidate({
       : source.url.includes(".mpd")
         ? "dash"
         : "mp4";
-    const streamHeaders = resolveRivestreamStreamHeaders(source.url);
+    const streamHeaders = resolveRivestreamStreamHeaders();
     const normalizedAudioLanguage =
       inferRivestreamAudioLanguage(provider, qualityStr) ??
       normalizeIsoLanguageCode(input.preferredAudioLanguage);
