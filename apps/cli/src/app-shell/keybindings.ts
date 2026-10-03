@@ -1138,9 +1138,26 @@ export function publicShortcutMetadata(): readonly PublicShortcutMetadata[] {
 function matchChord(chord: KeyChord, input: string, key: LineEditorKey): boolean {
   if (chord.ctrl ? key.ctrl !== true : key.ctrl === true) return false;
   if (chord.meta ? key.meta !== true : key.meta === true) return false;
-  if (chord.shift ? key.shift !== true : false) return false;
-  if (chord.named) return key[chord.named] === true;
-  return chord.input !== undefined && input === chord.input;
+  if (chord.named) {
+    if (key[chord.named] !== true) return false;
+    // Named keys keep the flag requirement — Shift+Tab arrives as a distinct
+    // named input, so there is no character to carry the modifier.
+    return chord.shift ? key.shift === true : true;
+  }
+  if (chord.input === undefined) return false;
+  // Printable chords: the character itself encodes Shift — stock terminals
+  // deliver "F" for Shift+f with no separate modifier flag, so requiring
+  // key.shift as well made every Shift+letter chord unpressable. An uppercase
+  // chord input is itself the proof; a lowercase + shift chord means the
+  // shifted character. Flag-reporting terminals (kitty) match the raw char
+  // plus flag as before.
+  if (input === chord.input) {
+    return !chord.shift || chord.input !== chord.input.toLowerCase() || key.shift === true;
+  }
+  if (chord.shift) {
+    return input === chord.input.toUpperCase() || (key.shift === true && input === chord.input);
+  }
+  return false;
 }
 
 function globalBindings(): readonly KeyBinding[] {

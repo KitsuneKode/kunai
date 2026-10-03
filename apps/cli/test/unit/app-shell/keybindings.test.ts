@@ -158,6 +158,21 @@ test("matchBinding matches browse watchlist and follow chords", () => {
   expect(matchBinding("browse", "q", {})?.id).toBe("browse-queue");
 });
 
+test("Shift+letter chords match the shifted char with no key.shift flag", () => {
+  // Stock terminals send Shift+f as the literal character "F" — no separate
+  // modifier flag ever arrives, so a chord that also demanded key.shift was
+  // unpressable. The character is itself the shift proof.
+  expect(matchBinding("browse", "W", {})?.id).toBe("browse-follow");
+  expect(matchBinding("browse", "N", {})?.id).toBe("browse-notifications");
+  expect(matchBinding("player", "F", {})?.id).toBe("player-fallback");
+  expect(matchBinding("history", "X", {})?.id).toBe("history-delete-title");
+
+  // …and the guard stays: a bare lowercase press must never reach a
+  // destructive or disruptive shifted binding.
+  expect(matchBinding("player", "f", {})?.id).not.toBe("player-fallback");
+  expect(matchBinding("browse", "n", {})?.id).not.toBe("browse-notifications");
+});
+
 test("bindingForCommand links stable slash commands to browse shortcuts", () => {
   expect(bindingForCommand("bookmark")?.id).toBe("browse-watchlist");
   expect(bindingForCommand("follow")?.id).toBe("browse-follow");
