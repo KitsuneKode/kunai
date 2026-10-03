@@ -2,13 +2,18 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildOfflinePlaybackLaunch,
+  prepareOfflinePlaybackLaunch,
   requestUnifiedOfflinePlayback,
   titleInfoFromDownloadJob,
 } from "@/app/offline/offline-playback-launch";
 import type { Container } from "@/container";
+import { buildLocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { DownloadJobRecord } from "@kunai/storage";
 
+import { createTestStateManager } from "../../helpers/session-state";
+
 function readyJob(overrides: Partial<DownloadJobRecord> = {}): DownloadJobRecord {
+  // SAFETY: Synthetic job supplies all fields read by the launch projection; persistence is not used.
   return {
     id: "job-1",
     titleId: "tv:demo",
@@ -24,23 +29,65 @@ function readyJob(overrides: Partial<DownloadJobRecord> = {}): DownloadJobRecord
 }
 
 describe("requestUnifiedOfflinePlayback", () => {
+  for (const mode of ["series", "anime", "youtube"] as const) {
+    test(`${mode}: offline launch preserves retired provider provenance without registry lookup`, async () => {
+      const job = readyJob({
+        providerId: "retired-provider",
+        mode,
+        mediaKind: mode === "anime" ? "anime" : mode === "youtube" ? "video" : "series",
+      });
+      const dispatches: Array<{ type: string; provider?: string; mode?: string }> = [];
+      const stateManager = createTestStateManager("current-provider");
+      const dispatch = stateManager.dispatch.bind(stateManager);
+      stateManager.dispatch = (event) => {
+        dispatches.push(event);
+        dispatch(event);
+      };
+      // SAFETY: Real session state; service double only supplies the playable job consumed here.
+      const container = {
+        stateManager,
+        offlineLibraryService: {
+          getPlayableSource: async (
+            _jobId: string,
+          ): ReturnType<Container["offlineLibraryService"]["getPlayableSource"]> => ({
+            status: "ready",
+            job,
+            source: buildLocalPlaybackSource(job, null),
+          }),
+        },
+        providerRegistry: {
+          get: (_id: string): ReturnType<Container["providerRegistry"]["get"]> => {
+            throw new Error("offline launch must not read providers");
+          },
+        },
+      } as Container;
+      const launch = await prepareOfflinePlaybackLaunch(container, job.id);
+      expect(launch?.title.launchSource).toBe("offline-library");
+      expect(dispatches).toContainEqual({ type: "SET_MODE", mode, provider: "retired-provider" });
+    });
+  }
+
   test("returns direct handoff without module-global mailbox", async () => {
     const dispatches: string[] = [];
+    const stateManager = createTestStateManager();
+    const dispatch = stateManager.dispatch.bind(stateManager);
+    stateManager.dispatch = (event) => {
+      dispatches.push(event.type);
+      dispatch(event);
+    };
+    // SAFETY: Real session state; service double only supplies the playable job consumed here.
     const container = {
-      config: { offlineMode: false },
-      stateManager: {
-        dispatch: (event: { type: string }) => {
-          dispatches.push(event.type);
-        },
-        getState: () => ({ provider: "vidking" }),
-      },
+      stateManager,
       offlineLibraryService: {
-        getPlayableSource: async () => ({
-          status: "ready" as const,
+        getPlayableSource: async (
+          _jobId: string,
+        ): ReturnType<Container["offlineLibraryService"]["getPlayableSource"]> => ({
+          status: "ready",
           job: readyJob(),
+          source: buildLocalPlaybackSource(readyJob(), null),
         }),
       },
-    } as unknown as Container;
+    } as Container;
 
     const result = await requestUnifiedOfflinePlayback(container, "job-1");
     expect(result).toEqual({
