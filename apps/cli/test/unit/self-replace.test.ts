@@ -92,8 +92,36 @@ test("cleanupOldBinary removes stale .old files", async () => {
   await Bun.write(bin, "CUR");
   await Bun.write(`${bin}.old`, "STALE");
 
-  await cleanupOldBinary(bin);
+  await cleanupOldBinary(bin, "/$bunfs/root/main.js");
 
   expect(existsSync(`${bin}.old`)).toBe(false);
   expect(existsSync(bin)).toBe(true);
 });
+
+test("cleanupOldBinary preserves foreign backups beside the executable", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kunai-replace-"));
+  made.push(dir);
+  const bin = join(dir, "kunai.exe");
+  const foreign = join(dir, "user-backup.old");
+  await Bun.write(bin, "CURRENT");
+  await Bun.write(`${bin}.old`, "PREVIOUS");
+  await Bun.write(foreign, "KEEP");
+
+  await cleanupOldBinary(bin, "B:\\~BUN\\root\\main.js");
+
+  expect(existsSync(`${bin}.old`)).toBe(false);
+  expect(await Bun.file(foreign).text()).toBe("KEEP");
+});
+
+for (const entrypoint of ["/project/apps/cli/src/main.ts", "/npm/kunai/dist/kunai.js"]) {
+  test(`startup preserves the Bun runtime backup for ${entrypoint}`, async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-replace-"));
+    made.push(dir);
+    const runtime = join(dir, "bun");
+    await Bun.write(`${runtime}.old`, "BUN BACKUP");
+
+    await cleanupOldBinary(runtime, entrypoint);
+
+    expect(await Bun.file(`${runtime}.old`).text()).toBe("BUN BACKUP");
+  });
+}

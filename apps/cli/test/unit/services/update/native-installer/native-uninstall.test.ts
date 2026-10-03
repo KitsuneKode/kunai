@@ -122,6 +122,35 @@ async function seedUserData(layout: ReturnType<typeof getInstallLayoutPaths>, ro
 }
 
 describe("nativeUninstall residue and preservation", () => {
+  test("preserves foreign JSON, text, and directories in the transaction root", async () => {
+    const { layout } = await makeRoot();
+    await seedManagedUnixInstall(layout);
+    const foreignJson = join(layout.transactionsDir, "notes.json");
+    const foreignText = join(layout.transactionsDir, "notes.txt");
+    const foreignDir = join(layout.transactionsDir, "personal");
+    await writeFile(foreignJson, '{"note":"keep"}');
+    await writeFile(foreignText, "keep");
+    await mkdir(foreignDir);
+    await writeFile(join(foreignDir, "data.json"), "keep");
+    const abandoned = await beginInstallTransaction(layout, {
+      kind: "upgrade",
+      version: "1.2.3",
+      pid: 2_147_483_646,
+    });
+
+    const result = await nativeUninstall({ layout, platform: "linux" });
+
+    expect(result.status).toBe("removed");
+    expect(await readFile(foreignJson, "utf8")).toBe('{"note":"keep"}');
+    expect(await readFile(foreignText, "utf8")).toBe("keep");
+    expect(await readFile(join(foreignDir, "data.json"), "utf8")).toBe("keep");
+    expect(existsSync(join(layout.transactionsDir, `${abandoned.id}.json`))).toBe(false);
+    expect(result.preserved).toEqual(
+      expect.arrayContaining([foreignJson, foreignText, foreignDir]),
+    );
+    expect(result.failed).toEqual([]);
+  });
+
   test("default uninstall removes owned lifecycle state and preserves user data", async () => {
     const { root, layout } = await makeRoot();
     await seedManagedUnixInstall(layout);

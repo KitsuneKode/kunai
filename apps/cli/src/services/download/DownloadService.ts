@@ -1757,13 +1757,17 @@ export class DownloadService {
   }
 
   private selectEligibleQueuedJob(nowIso: string): DownloadJobRecord | null {
-    const now = Date.parse(nowIso);
-    const queued = this.deps.repo.listQueued(50);
-    for (const job of queued) {
-      if (this.claimedJobIds.has(job.id)) continue;
-      if (!job.nextRetryAt) return job;
-      const retryAt = Date.parse(job.nextRetryAt);
-      if (Number.isFinite(retryAt) && retryAt <= now) return job;
+    const pageSize = 50;
+    let after: { readonly createdAt: string; readonly id: string } | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const queued = this.deps.repo.listDueQueued(nowIso, pageSize, after);
+      if (queued.length === 0) return null;
+      for (const job of queued) {
+        if (!this.claimedJobIds.has(job.id)) return job;
+      }
+      const last = queued.at(-1);
+      if (!last || queued.length < pageSize) return null;
+      after = { createdAt: last.createdAt, id: last.id };
     }
     return null;
   }
@@ -1771,15 +1775,14 @@ export class DownloadService {
   /**
    * Repair for an unparseable `next_retry_at`, not the ordinary resume path.
    *
-   * The ordinary case needs nothing from here: `selectEligibleQueuedJob` scans
-   * `listQueued`, which is unfiltered by retry time, and takes any job whose
-   * `next_retry_at` has elapsed. A shutdown pause (`next_retry_at = now`) is
+   * The ordinary case needs nothing from here: `listDueQueued` filters retry time before limiting the page,
+   * so deferred work cannot hide a later eligible job. A shutdown pause (`next_retry_at = now`) is
    * therefore already eligible on the next pass.
    *
    * What it does do is narrow and load-bearing. `listPaused` compares
    * `next_retry_at` as a *string* in SQL, so a corrupt value like `not-a-date`
    * sorts greater than any timestamp and is returned here, while
-   * `selectEligibleQueuedJob` requires `Number.isFinite` and skips it forever.
+   * the due query excludes it forever because it sorts after the current ISO timestamp.
    * Without this pass such a row is stranded for the life of the install.
    *
    * Verified against a real database rather than by reading: a future-dated

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-12"
+lastReviewed: "2026-10-03"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -27,6 +27,12 @@ startup, same-URL replay, normal replacement, and both enabled/disabled baseline
 ## When it runs
 
 1. **`network-read-dead`** (from `playback-watchdog`): demuxer reports network + underrun + `raw-input-rate === 0` while paused-for-cache, sustained for ~8s. Fires at most once per stall incident from the watchdog; **reconnect attempts** are still capped per cycle.
+
+An explicit user pause or `idle-active` suspends the watchdog clocks.
+`core-idle` alone does not: mpv can report it while waiting for network cache,
+which is exactly when starvation detection must remain active. Even a simultaneous
+`paused-for-cache` does not override an explicit user pause. The watchdog suite
+uses injected clocks to cover both cases without wall-clock sleeps.
 
 2. **Premature EOF** (playback-stats guard): `end-file` with `eof` was **demoted** to `unknown` because trusted progress was inconsistent with a full watch (`eofDemotedByPrematureGuard`).
 
