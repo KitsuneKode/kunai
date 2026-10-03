@@ -11,6 +11,7 @@ import { ProviderSummaryCard } from "@/components/home/provider-summary-card";
 import { StartHereCards } from "@/components/home/start-here-cards";
 import type { HomeCommandMetadata, HomeProviderMetadata } from "@/components/home/types";
 import { WorkshopShowcase } from "@/components/home/workshop-showcase";
+import { ContributorCredit } from "@/components/support/contributor-list";
 import { CopyButton } from "@/components/ui/copy-button";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { homeFlow, homeHero, homeHighlights, homeStartCards } from "@/lib/home-content";
@@ -130,7 +131,7 @@ export default function HomePageShell({
           title="Free, open, and kept alive in the open."
           description="Who makes it, how to help for free, and what sponsorship pays for."
         />
-        <HomeOpenSource />
+        <HomeOpenSource contributorCredit={<ContributorCredit />} />
       </section>
 
       <section className="kunai-home-workshop kunai-flow-section">

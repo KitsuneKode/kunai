@@ -10,6 +10,7 @@ import {
   type Icon,
 } from "@tabler/icons-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 const REPO = "https://github.com/KitsuneKode/kunai";
 const GOOD_FIRST_ISSUES = `${REPO}/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22`;
@@ -60,7 +61,12 @@ const WAYS: readonly Way[] = [
  * and a faux gallery would say otherwise; the maintainer is credited by name, and
  * the first outside contribution is an invitation, not a placeholder avatar.
  */
-export function HomeOpenSource() {
+export function HomeOpenSource({
+  contributorCredit = null,
+}: {
+  /** A line crediting outside contributors, or nothing when there are none. */
+  readonly contributorCredit?: ReactNode;
+} = {}) {
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
       <div className="flex flex-col gap-6 lg:col-span-7">
@@ -78,6 +84,7 @@ export function HomeOpenSource() {
           . It has no accounts and no ads, so the only thing that keeps it working is someone
           keeping up with the providers. Three free ways to help:
         </p>
+        {contributorCredit}
         <ul className="m-0 flex list-none flex-col gap-3 p-0">
           {WAYS.map((way) => {
             const Glyph = way.icon;
@@ -137,6 +144,16 @@ export function HomeOpenSource() {
               </li>
             ))}
           </ul>
+          <p className="text-fd-foreground m-0 text-sm leading-5">
+            Sponsors can have a shout-out on this page and on{" "}
+            <Link
+              href={SUPPORT_PATH}
+              className="underline decoration-[color-mix(in_oklab,var(--kunai-accent)_60%,transparent)] underline-offset-4"
+            >
+              the support page
+            </Link>
+            , if they want one.
+          </p>
           <SponsorWall sponsors={sponsors} withAction={false} />
           <div className="mt-auto flex flex-wrap items-center gap-3">
             <a

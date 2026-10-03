@@ -1,3 +1,4 @@
+import { listContributors, type Contributor, type GithubContributorPayload } from "./contributors";
 import { workshop, type WorkshopMeta } from "./workshop";
 
 const API = "https://api.github.com/repos/KitsuneKode";
@@ -69,4 +70,33 @@ export async function fetchWorkshopMeta(): Promise<ReadonlyMap<string, WorkshopM
   const meta = new Map<string, WorkshopMeta>();
   for (const [repo, value] of entries) if (value) meta.set(repo, value);
   return meta;
+}
+
+const CONTRIBUTORS_URL = "https://api.github.com/repos/KitsuneKode/kunai/contributors?per_page=100";
+
+/**
+ * The people who have contributed to Kunai, other than its maintainer.
+ *
+ * Cached for an hour, with an optional token for the rate limit, and every failure
+ * is an empty list: the contributors section is shown only when there is someone
+ * to show, so a failed lookup and a project with no outside contributors yet look
+ * the same, which is the safe way for them to look. `listContributors` does the
+ * filtering; it exists because GitHub's list includes agents and bots.
+ */
+export async function fetchContributors(): Promise<readonly Contributor[]> {
+  const token = process.env.GITHUB_TOKEN?.trim();
+  const headers = new Headers({ Accept: "application/vnd.github+json" });
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  try {
+    const response = await fetch(CONTRIBUTORS_URL, {
+      headers,
+      signal: AbortSignal.timeout(5000),
+      next: { revalidate: 3600 },
+    });
+    if (!response.ok) return [];
+    const payload: readonly GithubContributorPayload[] | null = await response.json();
+    return listContributors(payload, "KitsuneKode");
+  } catch {
+    return [];
+  }
 }

@@ -1,12 +1,25 @@
+import { ContributorList } from "@/components/support/contributor-list";
 import { SponsorWall } from "@/components/support/sponsor-wall";
 import { Button } from "@/components/ui/button";
+import { contactChannels, GITHUB_PROFILE_URL } from "@/lib/contact";
+import { fetchContributors } from "@/lib/github-repos";
 import { buildPageMetadata } from "@/lib/page-metadata";
-import { SPONSOR_FUNDS, SPONSOR_PROMISES, SPONSOR_URL, sponsors, supportWays } from "@/lib/support";
+import {
+  SPONSOR_FUNDS,
+  SPONSOR_LISTING_STEPS,
+  SPONSOR_PERKS,
+  SPONSOR_PROMISES,
+  SPONSOR_URL,
+  sponsors,
+  supportWays,
+} from "@/lib/support";
 import { IconArrowUpRight, IconCheck, IconHeart } from "@tabler/icons-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-export const dynamic = "force-static";
+// Regenerated hourly: the contributor list is fetched, and a person who sends a first
+// change should appear without anyone shipping the docs.
+export const revalidate = 3600;
 
 export const metadata: Metadata = buildPageMetadata({
   title: "Support Kunai: sponsor the project or help in other ways",
@@ -18,8 +31,12 @@ export const metadata: Metadata = buildPageMetadata({
   path: "/support",
 });
 
-export default function SupportPage() {
+export default async function SupportPage() {
   const ways = supportWays();
+  const contributors = await fetchContributors();
+  const listingContacts = contactChannels.filter(
+    (channel) => channel.id === "discussions" || channel.id === "email",
+  );
 
   return (
     <main className="kunai-home relative mx-auto flex w-full max-w-5xl flex-1 flex-col gap-14 px-6 py-14 md:px-10">
@@ -69,11 +86,82 @@ export default function SupportPage() {
         </ul>
       </section>
 
-      <section aria-labelledby="sponsors" className="flex flex-col gap-5">
+      <section aria-labelledby="sponsors" className="flex flex-col gap-6">
         <h2 id="sponsors" className="kunai-type-title text-2xl">
           Sponsors
         </h2>
+        <ul className="m-0 grid list-none gap-4 p-0 md:grid-cols-2">
+          {SPONSOR_PERKS.map((perk) => (
+            <li
+              key={perk.title}
+              className="border-border bg-card/60 flex flex-col gap-1.5 rounded-xl border p-5"
+            >
+              <h3 className="text-foreground m-0 flex items-center gap-2 text-base font-medium">
+                <IconHeart
+                  className="text-primary size-4 shrink-0"
+                  stroke={1.5}
+                  aria-hidden="true"
+                />
+                {perk.title}
+              </h3>
+              <p className="text-muted-foreground m-0 text-sm leading-6 text-pretty">{perk.body}</p>
+            </li>
+          ))}
+        </ul>
         <SponsorWall sponsors={sponsors} />
+        <div className="flex flex-col gap-3">
+          <h3 className="text-foreground m-0 text-base font-medium">How to be listed</h3>
+          <ol className="m-0 flex list-none flex-col gap-2 p-0">
+            {SPONSOR_LISTING_STEPS.map((step, index) => (
+              <li key={step} className="text-muted-foreground flex items-start gap-3 text-sm">
+                <span className="kunai-step-label mt-0.5 w-5 shrink-0 tabular-nums">
+                  {index + 1}
+                </span>
+                {step}
+              </li>
+            ))}
+          </ol>
+          <p className="text-muted-foreground m-0 text-sm">
+            Reach the maintainer:{" "}
+            {listingContacts.map((channel, index) => (
+              <span key={channel.id}>
+                {index > 0 ? " · " : ""}
+                <a
+                  href={channel.href}
+                  {...(channel.external ? { target: "_blank", rel: "noreferrer noopener" } : {})}
+                  className="text-foreground underline underline-offset-4"
+                >
+                  {channel.label}
+                  {channel.external ? <span className="sr-only"> (opens in a new tab)</span> : null}
+                </a>
+              </span>
+            ))}
+            .
+          </p>
+        </div>
+      </section>
+
+      <section aria-labelledby="people" className="flex flex-col gap-4">
+        <h2 id="people" className="kunai-type-title text-2xl">
+          Who makes it
+        </h2>
+        <p className="text-muted-foreground m-0 max-w-2xl text-sm leading-6 text-pretty">
+          Kunai is built and maintained by{" "}
+          <a
+            href={GITHUB_PROFILE_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="text-foreground underline underline-offset-4"
+          >
+            KitsuneKode
+            <span className="sr-only"> (opens in a new tab)</span>
+          </a>
+          .{" "}
+          {contributors.length > 0
+            ? "And by the people who have sent changes:"
+            : "People who send changes are listed here as they arrive."}
+        </p>
+        {contributors.length > 0 ? <ContributorList contributors={contributors} /> : null}
       </section>
 
       <section id="other-ways" aria-labelledby="ways" className="flex scroll-mt-24 flex-col gap-5">

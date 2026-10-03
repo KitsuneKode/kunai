@@ -41,8 +41,8 @@ export function SponsorWall({
           </EmptyMedia>
           <EmptyTitle>No sponsors yet</EmptyTitle>
           <EmptyDescription className="max-w-md text-pretty">
-            The first sponsor gets this page to themselves. Names appear here only when a sponsor
-            says they want to be listed.
+            Sponsor, tell the maintainer how you would like to be credited, and your name goes here
+            and on the home page. Nothing is listed unless you ask.
           </EmptyDescription>
         </EmptyHeader>
         {withAction ? (

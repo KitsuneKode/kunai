@@ -86,3 +86,26 @@ export const SPONSOR_PROMISES = [
   "There is no paid tier. Every feature is free for everyone.",
   "Sponsoring collects nothing about you beyond what GitHub already holds.",
 ] as const;
+
+/**
+ * What sponsoring gets you besides the work it pays for. Kept to what the
+ * maintainer actually does: a name on the site, chosen by the sponsor. No tiers, and
+ * no perk that would make a feature depend on money.
+ */
+export const SPONSOR_PERKS = [
+  {
+    title: "A shout-out on the site",
+    body: "Your name or handle, linked if you like, on this page and in the sponsor panel on the home page.",
+  },
+  {
+    title: "You choose how you appear",
+    body: "By name, by handle, with a link or without one, or not at all. Nothing is listed unless you ask for it.",
+  },
+] as const;
+
+/** How a sponsor gets listed, in order. The list is added to by hand. */
+export const SPONSOR_LISTING_STEPS = [
+  "Sponsor on GitHub.",
+  "Tell the maintainer how you would like to be credited, in a Discussion or by email.",
+  "Your name goes on this page and on the home page once the maintainer adds it.",
+] as const;
