@@ -14,6 +14,42 @@ const config = {
 } as KitsuneConfig;
 
 describe("buildTracksPanelData", () => {
+  test("local playback exposes file facts without provider inventory or registry access", async () => {
+    const container = {
+      stateManager: { getState: () => ({ mode: "series", provider: "retired-provider" }) },
+      providerRegistry: {
+        getAll: () => {
+          throw new Error("local playback read providers");
+        },
+      },
+    } as unknown as Container;
+    const data = await buildTracksPanelData(
+      {
+        url: "/owned/file.mp4",
+        playbackSourceKind: "local",
+        headers: {},
+        title: "Owned file",
+        timestamp: 1,
+      },
+      container,
+    );
+    expect(data.providerLabel).toBe("Local file");
+    expect(data.groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          section: "source",
+          selectable: false,
+          rows: [
+            expect.objectContaining({ label: "Downloaded file", selected: true, enabled: false }),
+          ],
+        }),
+      ]),
+    );
+    expect(
+      data.groups.every((group) => !group.selectable && group.rows.every((row) => !row.enabled)),
+    ).toBe(true);
+  });
+
   test("cross-provider inventory hints use quality-partitioned cache identity", async () => {
     const inventoryReads: SourceInventoryCacheInput[] = [];
     const cached: ProviderResolveResult = {

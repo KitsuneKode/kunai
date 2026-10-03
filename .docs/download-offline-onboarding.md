@@ -311,6 +311,13 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
   resume, autoplay, timing, track preferences, and cancellation remain available without weakening
   mpv URL safety. A local launch failure is a local player problem: it never invalidates provider
   caches or enters source/provider failover.
+- mpv's one-shot launcher and pooled loadfile path skip HTTP preflight only for a file
+  admitted by explicit local authority. HTTP(S) targets still receive network preflight,
+  including an HTTP(S) URL accidentally tagged local. The URL and exact-path trust gates
+  remain intact; provider URLs never gain local-file permission from a display marker.
+- mpv's shutdown can clear duration while retaining position. Playback results keep
+  the duration observed in that playback cycle for both history and premature-EOF
+  checks, so a short completed file persists without loosening interrupted-stream checks.
 - Offline playback does not start remote subtitle or timing-metadata lookup, provider prefetch, or
   recommendation warming. Local next-episode readiness, cached timing, and local subtitle sidecars
   remain available.

@@ -86,7 +86,12 @@ async function runPlaybackLifecycle(
   return "continue";
 }
 
-async function serveIpc(socketPath: string, mode: Mode, initialUrl: string | null): Promise<void> {
+async function serveIpc(
+  socketPath: string,
+  mode: Mode,
+  initialUrl: string | null,
+  oneShot: boolean,
+): Promise<void> {
   try {
     unlinkSync(socketPath);
   } catch {
@@ -163,9 +168,10 @@ async function serveIpc(socketPath: string, mode: Mode, initialUrl: string | nul
 
         if (!lifecycleStarted && activeSocket) {
           lifecycleStarted = true;
-          // Persistent sessions intentionally stay alive after the initial
-          // lifecycle so a later loadfile command can start another one.
-          void runPlaybackLifecycle(activeSocket, mode, currentUrl);
+          // Match --idle=no for one-shot callers; pooled sessions retain the process.
+          void runPlaybackLifecycle(activeSocket, mode, currentUrl).then(() => {
+            if (oneShot && mode !== "hold") quitRequested = true;
+          });
         }
       },
       close() {
@@ -216,7 +222,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  await serveIpc(socketPath, mode, initialUrl);
+  await serveIpc(socketPath, mode, initialUrl, argv.includes("--idle=no"));
   process.exit(0);
 }
 

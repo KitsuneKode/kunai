@@ -139,6 +139,7 @@ export function getRootOverlaySubtitle({
   if (overlay.type === "recommendation_picker")
     return `${overlay.options.length} picks based on your watch history`;
   if (overlay.type === "tracks_panel") {
+    if (overlay.providerLabel) return overlay.providerLabel;
     const provider = state.provider;
     return provider ? `Provider ${provider}` : "Choose source, quality, or audio";
   }
