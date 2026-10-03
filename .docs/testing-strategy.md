@@ -42,6 +42,16 @@ Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integratio
 
 ## Verification loop for contributors and agents
 
+Use `storageRootEnv()` from `apps/cli/test/helpers/storage-env.ts` for every
+throwaway profile. It redirects HOME/XDG/APPDATA and forces
+`KUNAI_CREDENTIAL_BACKEND=file`: native credential vault entries belong to the
+OS account and are not isolated by a different HOME. `createCredentialVault()`
+consumes that existing override before probing an OS backend. The common
+compiled/agent profile harness inherits it, and `applyStorageRootEnv()` restores
+the prior override with the other environment values. Backend-specific tests
+must use explicit injected environment and spawn ports; they must never probe
+the developer's credential store.
+
 1. Start with the feature map and the owning test file. Use
    `bun run --cwd apps/cli test:file test/unit/<area>/<file>.test.ts` for a focused
    reproduction; the package script supplies the timeout budget and preload.
