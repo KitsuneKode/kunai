@@ -45,10 +45,12 @@ Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integratio
 1. Start with the feature map and the owning test file. Use
    `bun run --cwd apps/cli test:file test/unit/<area>/<file>.test.ts` for a focused
    reproduction; the package script supplies the timeout budget and preload.
-   The preload also points the process's config, data and cache roots at a
-   throwaway directory, so a test that forgets to isolate itself cannot write the
-   developer's real profile. A test that needs a specific root still calls
-   `applyStorageRootEnv` from `test/helpers/storage-env.ts`.
+   `bun test` runs with the developer's real home, so a test that mounts a shell
+   or boots a service writes the real profile unless it isolates itself
+   (`BrowseShell` saves a submitted query to search history, for one). Isolate
+   with `applyStorageRootEnv` from `test/helpers/storage-env.ts`. To check a
+   suspect test, compare the real profile's mtime and hash around a multi-file
+   run; a lone file can exit before the async write lands and look clean.
 2. Change the failure trigger deliberately: deferred resolve/reject, cancellation,
    injected clock, or fake timer. A sleep is not an acknowledgement. A generous
    test timeout bounds a hang; it does not prove synchronization.
