@@ -33,7 +33,7 @@ function stateGlyph(state: ScopedDependencyRow["state"]): string {
 
 function stateColor(state: ScopedDependencyRow["state"]): string {
   if (state === "ok") return palette.ok;
-  if (state === "blocking") return palette.danger;
+  if (state === "blocking") return palette.dangerText;
   return palette.warn;
 }
 

@@ -80,7 +80,7 @@ export function RootOverlayLoader(props: RootOverlayLoaderProps): React.ReactEle
   if (loadError) {
     return (
       <Box flexDirection="column" paddingX={1}>
-        <Text color={palette.danger} bold>
+        <Text color={palette.dangerText} bold>
           Panel unavailable
         </Text>
         <Text color={palette.muted}>Esc to close, then try again.</Text>

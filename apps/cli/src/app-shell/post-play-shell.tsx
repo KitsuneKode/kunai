@@ -94,7 +94,7 @@ export type PostPlayShellProps = {
 function heroColor(color: PostPlayView["heroColor"]): string {
   if (color === "accent") return palette.accent;
   if (color === "ok") return palette.ok;
-  if (color === "milestone") return palette.milestone;
+  if (color === "milestone") return palette.milestoneText;
   return palette.dim;
 }
 
@@ -545,7 +545,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
             milestone banner + catalog stats + optional personal watch-time. */}
           {view.celebration ? (
             <Box flexDirection="column" marginTop={1}>
-              <Text color={palette.milestone} bold>
+              <Text color={palette.milestoneText} bold>
                 {view.heroLabel}
               </Text>
               <Text color={palette.muted}>

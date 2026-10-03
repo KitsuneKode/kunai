@@ -711,7 +711,7 @@ export function SetupShell({
 
         {confirmingAbort ? (
           <Box marginTop={1}>
-            <Text color={palette.danger} bold>
+            <Text color={palette.dangerText} bold>
               Press esc again to quit without saving
             </Text>
             <Text color={palette.muted}> — any other key stays.</Text>
