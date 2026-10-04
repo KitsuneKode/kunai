@@ -15,7 +15,7 @@ export function ProviderSummaryCard({ summary }: ProviderSummaryCardProps) {
       <div className="kunai-surface-shell__inner flex flex-col gap-6 p-6 md:flex-row md:items-center md:justify-between md:p-8">
         <div className="max-w-2xl">
           <p className="kunai-type-mono text-fd-foreground text-2xl font-medium tracking-tight">
-            {summary.count} providers · {summary.activeCount} active
+            {summary.count} providers registered
           </p>
           <p className="kunai-type-body text-fd-muted-foreground mt-3 text-sm leading-relaxed">
             Kunai talks to third-party adapters on your machine. Registered adapters today:{" "}

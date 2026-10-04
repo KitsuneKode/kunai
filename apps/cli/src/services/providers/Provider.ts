@@ -78,7 +78,6 @@ export function createProviderFromModule(
     name: manifest.displayName,
     aliases: manifest.aliases,
     description: manifest.description,
-    recommended: manifest.recommended,
     isAnimeProvider: lane === "anime",
     isYoutubeProvider: lane === "youtube",
     providerLane: lane,

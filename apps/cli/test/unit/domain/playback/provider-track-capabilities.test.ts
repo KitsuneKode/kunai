@@ -11,7 +11,6 @@ const providers: readonly ProviderMetadata[] = [
     isAnimeProvider: false,
     isYoutubeProvider: false,
     providerLane: "series",
-    recommended: true,
   },
   {
     id: "allanime",
@@ -20,7 +19,6 @@ const providers: readonly ProviderMetadata[] = [
     isAnimeProvider: true,
     isYoutubeProvider: false,
     providerLane: "anime",
-    recommended: true,
   },
   {
     id: "miruro",
@@ -29,7 +27,6 @@ const providers: readonly ProviderMetadata[] = [
     isAnimeProvider: true,
     isYoutubeProvider: false,
     providerLane: "anime",
-    recommended: false,
   },
 ];
 

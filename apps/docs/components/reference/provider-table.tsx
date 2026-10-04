@@ -1,16 +1,6 @@
 import { codeMetadata } from "@/lib/code-metadata";
 import Link from "next/link";
 
-const STATUS_LABEL: Record<string, string> = {
-  active: "Active",
-  candidate: "Candidate",
-  production: "Production",
-};
-
-function statusLabel(status: string): string {
-  return STATUS_LABEL[status] ?? status;
-}
-
 export function ProviderTable() {
   return (
     <div className="not-prose overflow-x-auto">
@@ -20,7 +10,6 @@ export function ProviderTable() {
             <th className="py-2 pr-4 font-medium">Provider</th>
             <th className="py-2 pr-4 font-medium">Domain</th>
             <th className="py-2 pr-4 font-medium">Media</th>
-            <th className="py-2 pr-4 font-medium">Status</th>
             <th className="py-2 font-medium">Description</th>
           </tr>
         </thead>
@@ -38,7 +27,6 @@ export function ProviderTable() {
               </td>
               <td className="py-3 pr-4 font-mono text-xs">{provider.domain}</td>
               <td className="py-3 pr-4 font-mono text-xs">{provider.mediaKinds.join(", ")}</td>
-              <td className="py-3 pr-4 font-mono text-xs">{statusLabel(provider.status)}</td>
               <td className="py-3 text-xs leading-relaxed">{provider.description}</td>
             </tr>
           ))}

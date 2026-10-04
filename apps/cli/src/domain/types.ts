@@ -253,7 +253,6 @@ export interface ProviderMetadata {
   readonly name: string;
   readonly aliases?: readonly string[];
   readonly description: string;
-  readonly recommended: boolean;
   readonly isAnimeProvider: boolean;
   readonly isYoutubeProvider: boolean;
   readonly providerLane: ProviderLane;

@@ -48,7 +48,7 @@ export function simulatedCommandScript(
     if (primaryProvider) {
       log(`[INFO] Selected provider: ${primaryProvider.displayName} (${primaryProvider.domain})`);
       wait(500);
-      log(`[INFO] Resolving stream parameters [status: ${primaryProvider.status}]...`);
+      log(`[INFO] Resolving stream parameters...`);
       wait(700);
       if (primaryProvider.capabilities.includes("quality-ranked")) {
         log("[ OK ] Stream verified: 1080p selected (variants: 720p, 480p)");
