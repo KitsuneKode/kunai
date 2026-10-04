@@ -304,6 +304,8 @@ async function launchMpvInner(
   opts.onControlReady?.(control);
   emitPlaybackEvent({ type: "mpv-process-started" });
 
+  // `killed` survives into recordPlayerExit as the exit signal, so a process we
+  // terminated can never be promoted to a natural eof downstream.
   const exitPromise = mpv.exited.then((code) => ({
     code,
     signal: mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null,
@@ -445,6 +447,9 @@ async function launchMpvInner(
   await ipcBootstrap;
 
   // Wait for the end-file IPC event (or timeout) before finalizing playback result.
+  // A timeout here — e.g. a keep-open session that never emits end-file — leaves
+  // endReason unknown, and unknown never writes completed:true downstream
+  // (recordPlayerExit refuses to infer eof without an end-file event).
   await Promise.race([endFileReceived, Bun.sleep(1_500).then(() => undefined)]);
 
   await closeIpcSession(ipcSession);
@@ -624,6 +629,8 @@ export function buildMpvArgs(
     // keep-open=no is intentional: with keep-open=yes, mpv silently pauses at the last
     // frame on natural EOF and never fires the end-file IPC event, so play() hangs and
     // auto-advance is unreachable. keep-open=no fires end-file with reason "eof" reliably.
+    // Completion depends on that event: without it the result stays unknown and history
+    // is never marked completed.
     // idle=yes keeps the process alive between episodes; force-window=immediate gives
     // instant visual feedback while mpv is still resolving the media.
     args.push("--keep-open=no");

@@ -96,9 +96,7 @@ describe("contract conformance", () => {
    */
   test("every registered command is offered by at least one palette context", () => {
     // Nested `/sync-connect-*` stay under `/sync`. `/favorites` is ADR-retired.
-    // `/clear-history` is deliberately buried.
     const KNOWN_UNREACHABLE_COMMANDS = new Set([
-      "clear-history",
       "favorites",
       "sync-connect-anilist",
       "sync-connect-tmdb",

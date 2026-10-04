@@ -174,6 +174,7 @@ import { shouldPersistHistory, toHistoryTimestamp } from "@/domain/playback/play
 import {
   didPlaybackReachCompletionThreshold,
   resolveEpisodeAvailability,
+  shouldMarkEpisodeCompleted,
   toEpisodeNavigationState,
 } from "@/domain/playback/playback-policy";
 import {
@@ -2573,6 +2574,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               effectiveTiming.current,
               quitThresholdMode,
             );
+            // History durability: `didComplete` counts a voluntary quit near
+            // the end (resume/session UX), but completed:true is forever — it
+            // clears the resume point. Only a clean natural EOF may set it;
+            // a quit, kill, crash, timeout, or keep-open no-end-file outcome
+            // stays resumable even past the threshold.
+            const shouldMarkCompleted = shouldMarkEpisodeCompleted(
+              result,
+              effectiveTiming.current,
+              quitThresholdMode,
+            );
             const evidence = trustedProgressFromPlaybackResult(result);
             const decision = evaluateProgressEngage(evidence, {
               reachedCompletionThreshold: didComplete,
@@ -2618,7 +2629,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               this.playbackLedger.finalize({
                 positionSeconds: historyTimestamp,
                 durationSeconds: result.duration,
-                completed: didComplete,
+                completed: shouldMarkCompleted,
                 providerId: resolvedProviderId,
                 posterUrl: title.posterUrl,
                 bumpLastWatched: decision.shouldBumpLastWatched,
@@ -2632,10 +2643,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 episode: episodeIdentity,
                 positionSeconds: historyTimestamp,
                 durationSeconds: result.duration,
-                completed: didComplete,
+                completed: shouldMarkCompleted,
                 watchedSeconds: didComplete ? result.duration : historyTimestamp,
                 lastWatchedAt,
-                completedAt: didComplete ? new Date().toISOString() : null,
+                completedAt: shouldMarkCompleted ? new Date().toISOString() : null,
                 providerId: resolvedProviderId,
                 posterUrl: title.posterUrl,
                 updatedAt: new Date().toISOString(),
@@ -2685,7 +2696,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 },
               });
             }
-            if (didComplete) {
+            if (shouldMarkCompleted) {
               const epStr =
                 title.type === "series"
                   ? ` S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}`
