@@ -15,6 +15,8 @@ export * from "./kickassanime/manifest";
 export * from "./kickassanime/site";
 export * from "./miruro/direct";
 export * from "./miruro/manifest";
+export * from "./movy/direct";
+export * from "./movy/manifest";
 export * from "./rivestream/direct";
 export * from "./rivestream/manifest";
 export * from "./catalogs";

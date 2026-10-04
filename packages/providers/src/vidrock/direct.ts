@@ -28,8 +28,14 @@ const VIDROCK_FETCH_TIMEOUT_MS = 20_000;
  * AES-256-GCM key recovered from the site's player bundle (vidrock.net). The
  * API answers `GET /api/movie/{tmdbId}` / `GET /api/tv/{tmdbId}/{s}/{e}` with a
  * map of server lanes whose `url` fields are base64url(iv ‖ ciphertext).
+ *
+ * Exported for the rotation canary in `test/vidrock-crypto.test.ts`: when
+ * upstream redeploys with a new key, the pinned shape + live-vector decrypt
+ * fail fast in CI instead of surfacing as empty resolves. Recovery: re-extract
+ * the hex constant from the site's `index-*.js` (search `AES-GCM`/`importKey`);
+ * see `.docs/provider-dossiers/vidrock.md` (key rotation).
  */
-const VIDROCK_KEY_HEX = "7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f";
+export const VIDROCK_KEY_HEX = "7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f";
 const VIDROCK_GCM_IV_LENGTH = 12;
 
 /**

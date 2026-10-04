@@ -66,7 +66,7 @@ describe("@kunai/config parse boundary", () => {
 
   test("defaults put VidLink first in the series automatic lane", () => {
     expect(DEFAULT_CONFIG.provider).toBe("vidlink");
-    expect(DEFAULT_CONFIG.providerPriority).toEqual(["rivestream", "videasy"]);
+    expect(DEFAULT_CONFIG.providerPriority).toEqual(["rivestream", "vidrock", "videasy"]);
   });
 
   test("anime lane leads with a provider that answers and keeps the rest of the order behind it", () => {

@@ -223,6 +223,13 @@ title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
 
 ## Risks And Drift Watchlist
 
+- **Single-server SPOF:** only ZokoAnime resolves — HD-1/Vidstream-2 answer
+  410 upstream and VidPlay-1 (`vidtube.site`) is a different JWPlayer-style
+  page with no `window.__P`. A ZokoAnime outage therefore fails the lane, not
+  a server. Next lane candidate is VidPlay-1 (page shape captured under
+  Unknown above; needs its own extractor — a new player parser, not a config
+  flip, so it stays docs-only until measured live). Megaplay revival is the
+  fallback watch, not a plan.
 - What is likely to change first: embed obfuscation (`otaku-embed-v1` key,
   `window.__P` name), embed host (`zokoanime.video`), CDN host
   (`hls2.aniwatchtv.uk`), servers HTML attributes. Megaplay already died once.

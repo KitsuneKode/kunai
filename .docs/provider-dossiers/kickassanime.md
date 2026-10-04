@@ -100,6 +100,13 @@ is parsed but never chosen — its manifest 404'd for the title tested, and its
 `src` carries a doubled slash (`https:////bl.krussdomi.com`) that the URL
 normalizer repairs if it is ever enabled.
 
+**Single-server SPOF:** a VidStreaming outage has no second server today (also
+recorded in `research.ts`, which is why this stays a dossier note rather than
+a code change). Next lane candidate is BirdStream: enabling it is
+`PLAYABLE_SERVERS` in `direct.ts` plus DASH handling, but only against a live
+title whose BirdStream manifest answers 200 — enabling it blind would trade a
+diagnosable `not-found` for mpv failures.
+
 ## Subtitle Inventory
 
 External `.vtt` tracks, one per language, emitted as `SubtitleCandidate` with
