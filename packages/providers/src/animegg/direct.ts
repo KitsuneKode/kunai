@@ -331,11 +331,14 @@ export const animeggProviderModule: CoreProviderModule = {
     });
 
     // Resolve gate: probe the selected stream with its own headers before
-    // reporting success, walking the remaining ladder on refusal.
+    // reporting success. Keep the chosen rung first (including fast/explicit
+    // picks), then walk the remaining ladder by quality rather than page order.
     const gated = await selectVerifiedStream({
       streams: [
         selection.selected,
-        ...streams.filter((stream) => stream.id !== selection.selected.id),
+        ...streams
+          .filter((stream) => stream.id !== selection.selected.id)
+          .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0)),
       ].slice(0, 3),
       context,
       signal: context.signal,

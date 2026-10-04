@@ -132,6 +132,10 @@ Source and quality pickers must read from cached inventory.
 
 Never let one selected source overwrite another source's inventory. Store the full normalized result, then store user selection as separate playback intent.
 
+Resolve-gate fallback preserves the initial selection intent in `selectionDecision.reason`;
+`selectedQualityRank` describes the accepted rung actually shipped. AnimeGG keeps the
+chosen rung first, then ranks remaining fallback rungs by quality before its three-candidate cap.
+
 ## Resolve Work Identity And Request Economy
 
 Playback resolve work is deduped by a local `ResolveWorkKey` owned by the CLI

@@ -296,6 +296,71 @@ describe("selectAnimeggTab", () => {
 });
 
 describe("AnimeGG resolve gate", () => {
+  test.each([{ readyRanks: [480, 720] }, { readyRanks: [720, 480] }])(
+    "ranks healthy fallback rungs independently of page order %j",
+    async ({ readyRanks }) => {
+      const probes: string[] = [];
+      const files = [
+        ...readyRanks.map((rank) => ({
+          file: `https://ready-${rank}-cdn.example/${rank}.mp4`,
+          label: `${rank}p`,
+        })),
+        { file: "https://refused-cdn.example/1080.mp4", label: "1080p" },
+      ];
+      const result = await animeggProviderModule.resolve(
+        {
+          title: {
+            id: "anilist:21",
+            kind: "anime",
+            title: "Owned fixture",
+            externalIds: { providerNativeIds: { animegg: "one-piece" } },
+          },
+          episode: { episode: 1 },
+          mediaKind: "anime",
+          intent: "play",
+          allowedRuntimes: ["direct-http"],
+          startupPriority: "quality-first",
+          qualityPreference: "1080p",
+        },
+        {
+          now: () => "2026-10-04T00:00:00.000Z",
+          fetch: {
+            runtime: "direct-http",
+            fetch: async (input) => {
+              const url = String(input);
+              if (url.includes("/embed/")) {
+                const entries = files
+                  .map(({ file, label }) => `{file: "${file}", label: "${label}"}`)
+                  .join(",");
+                return new Response(`<script>var videoSources = [${entries}];</script>`);
+              }
+              if (url.includes("-cdn.example/")) {
+                probes.push(url);
+                return url.includes("refused-cdn")
+                  ? new Response("fixture refusal", { status: 403 })
+                  : new Response(null, {
+                      headers: { "content-type": "video/mp4", "content-length": "1024" },
+                    });
+              }
+              return new Response(EPISODE_HTML);
+            },
+          },
+        },
+      );
+      expect(result.status).toBe("resolved");
+      expect(
+        result.streams.find((stream) => stream.id === result.selectedStreamId)?.qualityRank,
+      ).toBe(720);
+      expect(result.streams.map((stream) => stream.qualityRank).sort()).toEqual([480, 720]);
+      expect(result.variants).toHaveLength(2);
+      expect(result.selectionDecision?.selectedQualityRank).toBe(720);
+      expect([...new Set(probes)]).toEqual([
+        "https://refused-cdn.example/1080.mp4",
+        "https://ready-720-cdn.example/720.mp4",
+      ]);
+    },
+  );
+
   test("refused-host fallback ships only the accepted rung and reports its actual quality", async () => {
     const probes: string[] = [];
     const embed =
