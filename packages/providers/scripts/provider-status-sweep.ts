@@ -18,11 +18,15 @@ import type { ProviderModule, ProviderResolveInput, ProviderRuntimeContext } fro
 
 import { allmangaProviderModule } from "../src/allmanga/direct";
 import { anidbProviderModule } from "../src/anidb/direct";
+import { animeggProviderModule } from "../src/animegg/direct";
 import { hianimeProviderModule } from "../src/hianime/direct";
+import { kickassanimeProviderModule } from "../src/kickassanime/direct";
 import { miruroProviderModule } from "../src/miruro/direct";
+import { movyProviderModule } from "../src/movy/direct";
 import { rivestreamProviderModule } from "../src/rivestream/direct";
 import { videasyProviderModule } from "../src/videasy/index";
 import { vidlinkProviderModule } from "../src/vidlink/direct";
+import { vidrockProviderModule } from "../src/vidrock/direct";
 import { youtubeProviderModule } from "../src/youtube/index";
 
 const OUTPUT_PATH = path.resolve(
@@ -125,7 +129,10 @@ interface ProbeSpec {
   readonly input: ProviderResolveInput;
 }
 
-const PROBES: readonly ProbeSpec[] = [
+// Exported for the roster-parity test in apps/cli — a production module with no
+// probe row is invisible on the status board. Guarded below so importing this
+// list never runs the sweep itself.
+export const PROBES: readonly ProbeSpec[] = [
   {
     id: "videasy",
     module: videasyProviderModule,
@@ -142,6 +149,18 @@ const PROBES: readonly ProbeSpec[] = [
     id: "rivestream",
     module: rivestreamProviderModule,
     frontDoor: "https://www.rivestream.app",
+    input: MOVIE_INPUT,
+  },
+  {
+    id: "vidrock",
+    module: vidrockProviderModule,
+    frontDoor: "https://vidrock.net",
+    input: MOVIE_INPUT,
+  },
+  {
+    id: "movy",
+    module: movyProviderModule,
+    frontDoor: "https://api.wecollege.net",
     input: MOVIE_INPUT,
   },
   {
@@ -168,6 +187,18 @@ const PROBES: readonly ProbeSpec[] = [
     id: "miruro",
     module: miruroProviderModule,
     frontDoor: "https://www.miruro.bz",
+    input: ONE_PIECE_ANILIST,
+  },
+  {
+    id: "animegg",
+    module: animeggProviderModule,
+    frontDoor: "https://www.animegg.org",
+    input: ONE_PIECE_ANILIST,
+  },
+  {
+    id: "kickassanime",
+    module: kickassanimeProviderModule,
+    frontDoor: "https://kaa.lt",
     input: ONE_PIECE_ANILIST,
   },
   {
@@ -300,4 +331,4 @@ async function main() {
   console.log(`wrote ${OUTPUT_PATH}`);
 }
 
-await main();
+if (import.meta.main) await main();

@@ -274,6 +274,12 @@ describe("parseKaaPlayerPage", () => {
     ).toBe("https://bl.krussdomi.com/x/manifest.mpd");
   });
 
+  test("pins the protocol-relative manifest cat-player ships now to https", () => {
+    expect(parseKaaPlayerPage(playerHtml("//bl.krussdomi.com/x/master.m3u8"))?.manifest).toBe(
+      "https://bl.krussdomi.com/x/master.m3u8",
+    );
+  });
+
   test("refuses a manifest that is not https", () => {
     expect(parseKaaPlayerPage(playerHtml("http://hls.krussdomi.com/m.m3u8"))).toBeNull();
   });
@@ -629,7 +635,33 @@ describe("kickassanimeProviderModule", () => {
     expect(result.failures[0]?.code).toBe("not-found");
   });
 
-  test("no VidStreaming server is no stream — the others are not played blind", async () => {
+  test("plays the CatStream name the servers list carries now", async () => {
+    const result = await kickassanimeProviderModule.resolve(
+      resolveInput(),
+      contextWith(
+        catalogRoute({
+          servers: {
+            servers: [
+              {
+                name: "CatStream",
+                shortName: "Cat",
+                src: "https://krussdomi.com/cat-player/player?id=ZmE1OGI4&type=hls&source=catstream",
+              },
+              SERVERS_BODY.servers[1],
+            ],
+          },
+        }),
+      ),
+    );
+    expect(result.status).toBe("resolved");
+    expect(result.streams[0]).toMatchObject({
+      url: "https://hls.krussdomi.com/manifest/67d0c079169c31976b8d7970/master.m3u8",
+      protocol: "hls",
+      serverName: "CatStream",
+    });
+  });
+
+  test("no playable server is no stream — the others are not played blind", async () => {
     const result = await kickassanimeProviderModule.resolve(
       resolveInput(),
       contextWith(catalogRoute({ servers: { servers: [SERVERS_BODY.servers[1]] } })),

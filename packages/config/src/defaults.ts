@@ -42,8 +42,10 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // has rotted — api.videasy.to (the provider's TMDB-mirror DB and legacy
   // endpoint host) no longer resolves at DNS, so title-metadata enrichment
   // depends on the mirror chain. The wings stream endpoints on
-  // api.speedracelight.com still answer, so Videasy stays registered and last
-  // in the order — a working fallback, not a removal.
+  // api.speedracelight.com answered CF 502 from 2026-09-21 and every player
+  // host (player.videasy.to, cineby.at, cineplay.to) is unreachable — Videasy
+  // stays registered and last in the order so an upstream revival needs no
+  // code change.
   provider: "vidlink",
   // HiAnime leads the anime lane. AniDB stays registered and in the priority
   // tail because it still carries the only verified AID cross-link and XML

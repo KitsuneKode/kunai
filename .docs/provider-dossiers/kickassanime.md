@@ -39,8 +39,9 @@ Observed directly on 2026-09-12 unless noted.
 - Locales: `ja-JP` is sub, `en-US` is dub. Both listings exist for Frieren, with
   **different episode slugs** (ep 1: `f897b3` vs `aa83b7`).
 - `GET /api/show/<slug>/episode/ep-<n>-<epSlug>` → `{servers[], next_ep_slug, …}`.
-  Servers seen: `VidStreaming` (HLS) and `BirdStream` (DASH).
-- The VidStreaming page `https://krussdomi.com/cat-player/player?id=…` carries
+  Servers seen: `CatStream` (HLS) and `BirdStream` (DASH); `VidStreaming` was the
+  older name for the same cat-player lane and stays accepted.
+- The CatStream page `https://krussdomi.com/cat-player/player?id=…` carries
   the stream as serialized **Astro island props** — `[0, value]` for a value,
   `[1, [...]]` for an array — holding `manifest` and every `subtitles[]` track.
   Nothing on the path is encrypted; the site's own JS is obfuscated but unused.
@@ -95,10 +96,12 @@ signal, and no probe over these URLs should be trusted to judge the stream.
 
 ## Candidate Stream Inventory
 
-One source per episode (VidStreaming), one stream: the master. BirdStream's DASH
-is parsed but never chosen — its manifest 404'd for the title tested, and its
-`src` carries a doubled slash (`https:////bl.krussdomi.com`) that the URL
-normalizer repairs if it is ever enabled.
+One source per episode (CatStream, formerly listed as VidStreaming), one stream:
+the master. Its `manifest` now arrives protocol-relative
+(`//bl.krussdomi.com/…`) — the normalizer pins it to https; the older doubled
+slash (`https:////bl.krussdomi.com`) form is still repaired the same way.
+BirdStream's DASH is parsed but never chosen — its manifest 404'd for the title
+tested.
 
 ## Subtitle Inventory
 

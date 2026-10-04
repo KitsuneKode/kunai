@@ -646,6 +646,8 @@ export const allmangaProviderModule: CoreProviderModule = {
           signal: context.signal,
           now: context.now,
           emit: context.emit,
+          endpointHealth: context.endpointHealth,
+          titleId: input.title.id,
           maxAttemptsPerCandidate: 1,
           candidateTimeoutMs: providerCycleCandidateTimeoutMs(
             startupPriority,
@@ -698,6 +700,10 @@ export const allmangaProviderModule: CoreProviderModule = {
                   message: `AllManga source is unreachable (${verdict.reason})`,
                   retryable: false,
                   at: context.now(),
+                  // The gate probed this candidate's own stream URL, so the
+                  // refusal is evidence about that source host alone — not a
+                  // provider-wide or regional verdict.
+                  endpointScoped: true,
                 });
               }
             }
@@ -900,6 +906,10 @@ export function buildAllmangaCycleCandidates(
       id: `candidate:${stream.id}`,
       providerId: ALLANIME_PROVIDER_ID,
       sourceId: stream.sourceId,
+      // The endpoint key is the stream's own host, so a quarantined mirror is
+      // skipped for every title it would fail on, while a host that merely
+      // lacks one title stays in the pool.
+      serverId: stream.sourceEvidence?.[0]?.host,
       variantId: stream.variantId,
       streamId: stream.id,
       groupId: stream.presentation,

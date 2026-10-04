@@ -5,6 +5,8 @@ import { RELAY_CAPABLE_PROVIDER_OPTIONS } from "@/domain/provider-relay-settings
 import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
 import { DEFAULT_CONFIG } from "@kunai/config";
 
+import { PROBES as STATUS_SWEEP_PROBES } from "../../../../../packages/providers/scripts/provider-status-sweep.ts";
+
 describe("production provider defaults", () => {
   test("every configured lane default is a registered production module", async () => {
     const modules = await loadProductionProviderModules(
@@ -61,6 +63,18 @@ describe("production provider defaults", () => {
       "vidrock",
       "youtube",
     ]);
+  });
+
+  test("the status sweep probes every production module — an unprobed provider is invisible", async () => {
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    const probed = STATUS_SWEEP_PROBES.map((probe) => probe.id).sort();
+    const registered = modules.map((module) => module.providerId).sort();
+    // The sweep sat at 8 of 12 probes while vidrock, movy, animegg and
+    // kickassanime shipped — the board could not see them. This pin makes a
+    // missing probe row a test failure instead of a silent gap.
+    expect(probed).toEqual(registered);
   });
 
   test("the relay settings list covers every production provider that declares relayProfile", async () => {
