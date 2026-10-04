@@ -726,7 +726,7 @@ export function buildProviderMemoryPanelLines(input: {
     const fallbackNote =
       effective && !isProviderFallbackEligible(effective) ? " · skipped in auto-fallback" : "";
     lines.push({
-      label: formatProviderName(provider),
+      label: provider.name,
       detail: badge ? `${badge}${fallbackNote}` : "no failure memory",
       tone:
         effective?.effectiveStatus === "down"
@@ -770,9 +770,7 @@ export function buildProviderPickerOptions({
     const crossLaneDetail = isCrossLane?.(provider) ? "via linked catalog id" : null;
     const baseDetail = formatProviderDetail(provider);
     const baseLabel =
-      provider.id === currentProvider
-        ? `${formatProviderName(provider)}  ·  current`
-        : formatProviderName(provider);
+      provider.id === currentProvider ? `${provider.name}  ·  current` : provider.name;
     return {
       value: provider.id,
       label: healthLabelSuffix ? `${baseLabel}${healthLabelSuffix}` : baseLabel,
@@ -780,11 +778,6 @@ export function buildProviderPickerOptions({
       previewImageUrl,
     };
   });
-}
-
-function formatProviderName(provider: ProviderMetadata): string {
-  const status = provider.status === "candidate" ? "candidate" : null;
-  return status ? `${provider.name}  ·  ${status}` : provider.name;
 }
 
 function formatProviderDetail(provider: ProviderMetadata): string {

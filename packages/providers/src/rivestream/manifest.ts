@@ -43,7 +43,6 @@ export const rivestreamManifest = defineProviderManifest({
   relayProfile: {
     upstreamHosts: ["www.rivestream.app"],
   },
-  status: "candidate",
   notes: [
     "Bypasses Playwright entirely by generating the 32-bit MurmurHash signature natively in Node.js.",
   ],

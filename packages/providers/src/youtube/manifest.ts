@@ -46,6 +46,5 @@ export const youtubeManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: false,
-  status: "production",
   notes: ["Metadata via Invidious/Piped; playback via youtube.com watch URLs and mpv ytdl."],
 });

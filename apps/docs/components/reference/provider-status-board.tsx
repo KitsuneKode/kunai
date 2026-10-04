@@ -1,29 +1,31 @@
-import { providerStatus, type ProviderSweepStatus } from "@/lib/provider-status";
+import {
+  displayStatus,
+  providerStatus,
+  type ProviderDisplayStatus,
+  type ProviderSweepStatus,
+} from "@/lib/provider-status";
 
 const STATUS_STYLE = {
-  healthy: {
-    label: "Healthy",
+  working: {
+    label: "Working",
     className: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
   },
-  degraded: {
-    label: "Degraded",
+  limited: {
+    label: "Limited",
     className: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
   },
-  blocked: {
-    label: "Region-gated",
-    className: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
-  },
   down: {
-    label: "Maintenance",
-    className: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-  },
-  dead: {
-    label: "Unreachable",
+    label: "Down",
     className: "bg-red-500/15 text-red-600 dark:text-red-400",
   },
-} satisfies Record<ProviderSweepStatus, { label: string; className: string }>;
+} satisfies Record<ProviderDisplayStatus, { label: string; className: string }>;
 
-const ORDER = {
+const GROUP_ORDER = { working: 0, limited: 1, down: 2 } satisfies Record<
+  ProviderDisplayStatus,
+  number
+>;
+
+const DETAIL_ORDER = {
   healthy: 0,
   degraded: 1,
   blocked: 2,
@@ -40,7 +42,10 @@ function checkedAgo(iso: string): string {
 
 export function ProviderStatusBoard() {
   const rows = [...providerStatus.providers].sort(
-    (a, b) => ORDER[a.effectiveStatus] - ORDER[b.effectiveStatus],
+    (a, b) =>
+      GROUP_ORDER[displayStatus(a.effectiveStatus)] -
+        GROUP_ORDER[displayStatus(b.effectiveStatus)] ||
+      DETAIL_ORDER[a.effectiveStatus] - DETAIL_ORDER[b.effectiveStatus],
   );
   return (
     <div className="not-prose space-y-3">
@@ -62,7 +67,7 @@ export function ProviderStatusBoard() {
           </thead>
           <tbody>
             {rows.map((row) => {
-              const style = STATUS_STYLE[row.effectiveStatus];
+              const style = STATUS_STYLE[displayStatus(row.effectiveStatus)];
               return (
                 <tr key={row.id} className="border-fd-border/50 border-b align-top">
                   <td className="py-3 pr-4 font-mono text-xs font-medium">{row.id}</td>
@@ -72,6 +77,9 @@ export function ProviderStatusBoard() {
                     >
                       {style.label}
                     </span>
+                    <div className="text-fd-muted-foreground mt-1 font-mono text-[10px]">
+                      {row.effectiveStatus}
+                    </div>
                   </td>
                   <td className="py-3 pr-4 font-mono text-xs">
                     {row.resolveStatus}

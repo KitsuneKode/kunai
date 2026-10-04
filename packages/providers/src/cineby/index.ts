@@ -67,8 +67,7 @@ export const cinebyManifest = defineProviderManifest({
   browserSafe: false,
   relaySafe: false,
   // Research standing lives in `research.ts` (`cineby` is `research-only`
-  // there); this field is display-only and the module is not registered.
-  status: "candidate",
+  // there); the module is not registered in the production roster.
   notes: [
     "Research wrapper only; production fallback order still prefers the proven vidking module.",
     "Keeps flavor labels and audio-language hints while reusing the VidKing direct engine.",

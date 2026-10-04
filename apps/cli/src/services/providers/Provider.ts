@@ -83,7 +83,6 @@ export function createProviderFromModule(
     isYoutubeProvider: lane === "youtube",
     providerLane: lane,
     catalogIdentity: resolveProviderCatalogIdentity(manifest),
-    status: manifest.status,
     domain: manifest.domain,
   };
 

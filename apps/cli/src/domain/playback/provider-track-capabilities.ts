@@ -15,13 +15,6 @@ export type BuildProviderTrackCapabilitiesInput = {
   readonly healthByProviderId?: Readonly<Record<string, ProviderHealthHint>>;
 };
 
-function formatProviderLabel(provider: ProviderMetadata): string {
-  if (provider.status === "candidate") {
-    return `${provider.name}  ·  candidate`;
-  }
-  return provider.name;
-}
-
 function healthDetail(providerId: string, health?: ProviderHealthHint): string | undefined {
   if (!health) return undefined;
   const parts: string[] = [];
@@ -55,7 +48,7 @@ export function buildProviderTrackCapabilities(
       const health = input.healthByProviderId?.[provider.id];
       return {
         section: "provider",
-        label: formatProviderLabel(provider),
+        label: provider.name,
         value: provider.id,
         selected,
         enabled: !selected,
