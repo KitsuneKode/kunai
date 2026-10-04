@@ -22,7 +22,10 @@ import { bootSurface } from "./frame-match";
 import { startTmuxSession, tmuxSessionStatePath } from "./tmux-session";
 
 const CLI_ROOT = resolve(import.meta.dirname, "../..");
-const itTmux = Bun.which("tmux") ? it : it.skip;
+function itTmux(name: string, run: () => Promise<void>) {
+  const test = Bun.which("tmux") ? it : it.skip;
+  test(name, run);
+}
 
 async function cli(...args: string[]) {
   const proc = Bun.spawn([process.execPath, "test/agent/session.ts", ...args], {
@@ -71,6 +74,32 @@ describe("held session CLI", () => {
     const result = await cli("start", "--keep-profile", "--typo");
     expect(result.code).toBe(2);
     expect(result.err).toContain("unknown flag: --typo");
+  });
+
+  it("rejects malformed nested sidecar fields before attaching", async () => {
+    const name = `invalid-sidecar-${process.pid}`;
+    const profile = createIsolatedCliProfile(name);
+    const statePath = tmuxSessionStatePath(name);
+    try {
+      writeFileSync(
+        statePath,
+        JSON.stringify({
+          name,
+          profile: { ...profile, paths: { ...profile.paths, dataDbPath: 42 } },
+          runScript: join(profile.rootDir, "run.sh"),
+          startedAt: "test",
+          keepProfile: true,
+        }),
+      );
+      const result = await cli("inspect", "tables", "--name", name);
+      expect(result.code).toBe(1);
+      expect(result.err).toContain("corrupt session sidecar");
+      expect(existsSync(statePath)).toBe(true);
+      expect(existsSync(profile.rootDir)).toBe(true);
+    } finally {
+      rmSync(statePath, { force: true });
+      disposeIsolatedCliProfile(profile);
+    }
   });
 
   itTmux(

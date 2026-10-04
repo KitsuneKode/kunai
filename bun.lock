@@ -50,6 +50,7 @@
         "@types/bun": "catalog:",
         "@types/react": "catalog:",
         "jpeg-js": "^0.4.4",
+        "zod": "catalog:",
       },
       "optionalDependencies": {
         "@kitsunekode/kunai-darwin-arm64": "0.3.0",

@@ -127,7 +127,8 @@
     "@kunai/types": "workspace:*",
     "@types/bun": "catalog:",
     "@types/react": "catalog:",
-    "jpeg-js": "^0.4.4"
+    "jpeg-js": "^0.4.4",
+    "zod": "catalog:"
   },
   "peerDependencies": {
     "typescript": "catalog:"

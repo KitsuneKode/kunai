@@ -34,9 +34,11 @@ function unwrapAffectedRun(command: string, wanted: string): string | undefined 
 }
 
 async function graph(command: string, affected = false) {
-  // Only the first `&&` segment is a turbo invocation; anything after it is a
-  // plain script step the dry-run graph cannot model.
-  const source = unwrapAffectedRun(command, "lint") ?? command.split("&&")[0];
+  // Preflight steps run before the graph; find its actual Turbo segment.
+  // Plain script steps cannot be modeled by a Turbo dry run.
+  const source =
+    unwrapAffectedRun(command, "lint") ??
+    command.split("&&").find((segment) => /^(?:bunx\s+)?turbo\s/.test(segment.trim()));
   const args = (source ?? "").trim().split(/\s+/);
   if (args[0] === "bunx") args.shift();
   expect(args.shift()).toBe("turbo");

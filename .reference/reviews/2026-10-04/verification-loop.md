@@ -13,7 +13,8 @@ release, current-main signoff or physical-phone qualification.
   before repair and now enters the real offline Library and passes doctor.
 - Startup waited on the brand word rather than an interactive screen. The
   readiness predicate accepts visible setup/browse/search/library chrome with
-  key hints and rejects brand-only output. Doctor additionally checks pane
+  key hints and rejects brand-only output. Sidecars decode their full profile through Zod at the file boundary.
+  Doctor additionally checks pane
   liveness, contained storage and file credentials, and consent/install-ID state.
 - Shell double quotes executed command substitution in an environment value.
   A harmless owned temporary marker reproduced it. Literal paths/environment
@@ -53,7 +54,7 @@ non-launched sidecar. No qualification claim relies on that failed run.
 ## Checks
 
 Fresh full workspace: 8,140 pass, 60 skip, zero fail; 26 tasks, zero cached.
-Final agent tier: 23 pass, one skip (opt-in real mpv), zero fail.
+Final agent tier: 24 pass, one skip (opt-in real mpv), zero fail.
 Fresh typecheck: 15 tasks; lint: 14 tasks with zero errors (existing warnings
 remain); full build: 10 tasks. Formatting, document paths and skill validation
 passed. Agent tests are a separate tier from default unit/integration.
@@ -64,6 +65,23 @@ one warning/fixed-warning pair for AppRoot's changed fingerprint. A separate
 parent scan confirmed identical cyclomatic 30, cognitive 35 and nesting 4:
 this change does not reduce that existing complexity debt. The parent full
 scan has other pre-existing diagnostics; this is not a clean-codebase claim.
+
+## Hosted CI follow-up
+
+The initial candidate passed ordinary local lint but failed the hosted lint
+baseline on additional raw shape checks and module-load tmux probes. The parser
+now uses a schema at its read boundary, and tmux availability is checked within
+a function. The baseline passes without raising counts or suppressing findings.
+Zod is an existing catalog dependency newly declared only for CLI test tooling;
+it is not imported by the shipping application. A malformed nested-path case
+proves rejection before attach or inspection.
+
+The docs job rejected changed design/testing docs retaining old review dates.
+Their owning contracts were reread against current code, review dates advanced,
+and the testing doc's stale cache claim corrected. A new `ci:preflight` runs the
+same lint baseline and doc checks before both long local CI paths, including the
+normal branch-push gate. Ordinary lint alone is not that gate. Hosted checks
+must be refreshed at the final head; the initial failures are not ignored.
 
 ## Still open
 

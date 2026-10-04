@@ -6,7 +6,10 @@ import { join } from "node:path";
 import { bootSurface } from "./frame-match";
 import { startTmuxSession } from "./tmux-session";
 
-const itTmux = Bun.which("tmux") ? it : it.skip;
+function itTmux(name: string, run: () => Promise<void>) {
+  const test = Bun.which("tmux") ? it : it.skip;
+  test(name, run);
+}
 
 describe("tmux session env validation", () => {
   itTmux("rejects a hostile env name and cleans up its sandbox", async () => {

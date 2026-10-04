@@ -31,6 +31,8 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
+import { z } from "zod";
+
 import { advertisedKeys, bootSurface, frameMatcher } from "./frame-match";
 import { decodeKeyToken } from "./keys";
 import { createProfileInspector } from "./profile-inspector";
@@ -113,10 +115,11 @@ function loadSidecar(name: string): SessionSidecar {
       `no session "${name}" (missing ${path}). Start one: bun run agent:session -- start --name ${name}`,
     );
   }
-  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-  if (!isSessionSidecar(parsed)) {
+  const result = sessionSidecarSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+  if (!result.success) {
     throw new Error(`corrupt session sidecar ${path} — delete it and start a fresh session`);
   }
+  const parsed = result.data;
   if (parsed.name !== name) throw new Error(`session sidecar name does not match ${name}`);
   assertIsolatedProfile(parsed);
   return parsed;
@@ -176,27 +179,31 @@ function assertIsolatedProfile(sidecar: SessionSidecar): void {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Check every field read by attach, isolation validation and inspection. */
-function isSessionSidecar(v: unknown): v is SessionSidecar {
-  if (!isRecord(v) || !isRecord(v.profile)) return false;
-  const { profile } = v;
-  const paths = profile.paths;
-  return (
-    typeof v.name === "string" &&
-    typeof v.runScript === "string" &&
-    typeof v.startedAt === "string" &&
-    (v.keepProfile === undefined || typeof v.keepProfile === "boolean") &&
-    typeof profile.rootDir === "string" &&
-    isRecord(profile.env) &&
-    Object.values(profile.env).every((value) => typeof value === "string") &&
-    isRecord(paths) &&
-    ["configPath", "dataDbPath", "cacheDbPath"].every((key) => typeof paths[key] === "string")
-  );
-}
+/** Decode the entire persisted profile contract at the sidecar read boundary. */
+const sessionSidecarSchema = z.object({
+  name: z.string(),
+  runScript: z.string(),
+  startedAt: z.string(),
+  keepProfile: z.boolean().optional(),
+  profile: z.object({
+    rootDir: z.string(),
+    configHome: z.string(),
+    dataHome: z.string(),
+    cacheHome: z.string(),
+    env: z.record(z.string(), z.string()),
+    paths: z.object({
+      configDir: z.string(),
+      dataDir: z.string(),
+      cacheDir: z.string(),
+      tempDir: z.string(),
+      configPath: z.string(),
+      mpvBridgePath: z.string(),
+      dataDbPath: z.string(),
+      cacheDbPath: z.string(),
+      logPath: z.string(),
+    }),
+  }),
+}) satisfies z.ZodType<SessionSidecar>;
 
 function attach(name: string) {
   const sidecar = loadSidecar(name);
