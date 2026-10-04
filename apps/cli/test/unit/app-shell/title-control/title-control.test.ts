@@ -171,6 +171,8 @@ function playbackCtx(
     isAnime: false,
     preselectedEpisode: { season: 1, episode: 3 },
     history: {
+      season: 1,
+      episode: 3,
       positionSeconds: 600,
       durationSeconds: 1200,
       completed: false,
@@ -181,6 +183,33 @@ function playbackCtx(
 }
 
 describe("smart auto-launch", () => {
+  test("offline auto-entry does not use another episode's history", () => {
+    expect(
+      resolvePlaybackEpisodeEntry(
+        playbackCtx({
+          launchSource: "offline-library",
+          preselectedEpisode: { season: 1, episode: 2 },
+        }),
+      ),
+    ).toEqual({ kind: "auto", selection: { season: 1, episode: 2 } });
+  });
+  test("online auto-entry defers when the saved position belongs to a different episode", () => {
+    expect(
+      resolvePlaybackEpisodeEntry(playbackCtx({ preselectedEpisode: { season: 1, episode: 2 } })),
+    ).toEqual({ kind: "menu" });
+  });
+  test("offline anime selection retains its downloaded season", () => {
+    expect(
+      resolvePlaybackEpisodeEntry(
+        playbackCtx({
+          isAnime: true,
+          launchSource: "offline-library",
+          preselectedEpisode: { season: 2, episode: 3 },
+          history: null,
+        }),
+      ),
+    ).toEqual({ kind: "auto", selection: { season: 2, episode: 3 } });
+  });
   test("instant launch on clean resume with saved position", () => {
     const ctx = playbackCtx();
     expect(shouldAutoLaunchPlayback(ctx)).toBe(true);

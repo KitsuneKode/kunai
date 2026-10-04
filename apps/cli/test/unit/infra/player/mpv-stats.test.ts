@@ -42,11 +42,12 @@ describe("mpv-stats", () => {
       applyObservedPropertySample(stats, { name: "time-pos", value: pos, observedAt: 102 + pos });
     }
     applyObservedPropertySample(stats, { name: "duration", value: null, observedAt: 503 });
-    applyEndFileEvent(stats, "eof", 504);
+    applyObservedPropertySample(stats, { name: "time-pos", value: 401, observedAt: 504 });
+    applyEndFileEvent(stats, "eof", 505);
     const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
     expect(result).toMatchObject({
       duration: 2000,
-      watchedSeconds: 400,
+      watchedSeconds: 401,
       endReason: "unknown",
       suspectedDeadStream: true,
     });

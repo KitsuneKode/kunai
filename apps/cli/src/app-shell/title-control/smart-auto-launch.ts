@@ -1,6 +1,8 @@
 import type { EpisodeSelectionResult } from "@/session-flow";
 
 export type PlaybackHistorySnapshot = {
+  readonly season?: number | null;
+  readonly episode?: number | null;
   readonly positionSeconds: number;
   readonly durationSeconds?: number;
   readonly completed: boolean;
@@ -24,6 +26,19 @@ export type PlaybackEpisodeEntry =
 
 const FINISHED_RATIO = 0.95;
 
+function selectedSeason(ctx: PlaybackEpisodeEntryContext): number {
+  return ctx.isAnime && ctx.launchSource !== "offline-library"
+    ? 1
+    : (ctx.preselectedEpisode?.season ?? 1);
+}
+
+function historyMatchesSelectedEpisode(ctx: PlaybackEpisodeEntryContext): boolean {
+  return (
+    ctx.history?.season === selectedSeason(ctx) &&
+    ctx.history?.episode === ctx.preselectedEpisode?.episode
+  );
+}
+
 function isPlaybackFinished(history: PlaybackHistorySnapshot): boolean {
   if (history.completed) return true;
   const duration = history.durationSeconds ?? 0;
@@ -41,7 +56,7 @@ export function shouldAutoLaunchPlayback(ctx: PlaybackEpisodeEntryContext): bool
   if (ctx.flags.season || ctx.flags.episode) return true;
   if (ctx.failedProvider) return false;
   if (!ctx.preselectedEpisode) return false;
-  if (!ctx.history) {
+  if (!ctx.history || !historyMatchesSelectedEpisode(ctx)) {
     if (!ctx.isAnime && (ctx.seasonCount ?? 0) > 1) return false;
     return false;
   }
@@ -63,9 +78,9 @@ export function resolvePlaybackEpisodeEntry(
     return { kind: "menu" };
   }
 
-  const season = ctx.isAnime ? 1 : (ctx.preselectedEpisode.season ?? 1);
+  const season = selectedSeason(ctx);
   const episode = ctx.preselectedEpisode.episode;
-  const history = ctx.history;
+  const history = historyMatchesSelectedEpisode(ctx) ? ctx.history : null;
   if (!history) {
     return {
       kind: "auto",

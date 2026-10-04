@@ -29,6 +29,17 @@ function readyJob(overrides: Partial<DownloadJobRecord> = {}): DownloadJobRecord
 }
 
 describe("requestUnifiedOfflinePlayback", () => {
+  test("retains the selected anime artifact identity at its numeric episode", () => {
+    const identity = { providerId: "retired-provider", value: "new-catalog-row" };
+    const launch = buildOfflinePlaybackLaunch(
+      readyJob({
+        mediaKind: "anime",
+        mode: "anime",
+        providerEpisodeIdentity: identity,
+      }),
+    );
+    expect(launch.episode?.providerEpisodeIdentity).toEqual(identity);
+  });
   for (const mode of ["series", "anime", "youtube"] as const) {
     test(`${mode}: offline launch preserves retired provider provenance without registry lookup`, async () => {
       const job = readyJob({

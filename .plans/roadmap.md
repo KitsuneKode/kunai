@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-10-03
+Last updated: 2026-10-04
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -83,6 +83,8 @@ archive and put only the residue here.
 | User docs overhaul              | Accuracy/framing PR first; then first-run, debugging playbook, coverage, nav, agent-docs, deploy `apps/docs` to kunai.kitsunekode.in | [2026-08-18-user-docs-overhaul.md](./2026-08-18-user-docs-overhaul.md)                               |
 
 ### Production review and release repair
+
+Current integration order and gates: [2026-10-04 release integration](2026-10-04-release-integration.md). The 57-PR/28-issue snapshot is revision-bound; merges and publication remain pending.
 
 | Track                     | Remaining                                                                                                              | Plan                                                          |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
