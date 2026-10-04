@@ -7,6 +7,7 @@ import {
   formatOfflineLibraryGroupDetail,
   formatOfflineShelfBadge,
   formatOfflineShelfDetail,
+  canUseRemoteArtwork,
   groupOfflineLibraryEntries,
   type OfflineArtworkPolicy,
   type OfflineLibraryEntry,
@@ -73,7 +74,9 @@ export function createOfflineLibraryEngine(): OfflineLibraryEngine {
           }),
           badge: formatOfflineShelfBadge(entry.job, entry.status),
           detail: formatOfflineShelfDetail(entry.job, entry.status, group.contentType),
-          previewImageUrl: entry.job.thumbnailPath ?? entry.job.posterUrl,
+          previewImageUrl:
+            entry.job.thumbnailPath ??
+            (canUseRemoteArtwork(artworkPolicy ?? {}) ? entry.job.posterUrl : undefined),
           playable: entry.status === "ready",
         }));
         const nextPlayable = shelfEntries.find((entry) => entry.playable)?.presentation;

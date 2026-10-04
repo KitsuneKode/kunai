@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
 
+import type { ProviderTraceEventType, ResolveErrorCode } from "@kunai/types";
+import { z } from "zod";
+
 import {
   episodeIdentitySchema,
   providerArtworkInfoSchema,
@@ -12,6 +15,7 @@ import {
   providerSourceCandidateSchema,
   providerSourceInventorySchema,
   providerTraceEventSchema,
+  resolveErrorCodeSchema,
   providerVariantCandidateSchema,
   relayRpcErrorSchema,
   relayRpcRequestSchema,
@@ -311,4 +315,30 @@ test("provider health schema keeps rates bounded", () => {
       recentFailureRate: 1.4,
     }),
   ).toThrow();
+});
+
+// Bidirectional parity pins: each line fails typecheck the moment the zod enum
+// and the type union drift in either direction — the failure mode that let
+// yt-dlp-missing/missing-input and the audio trace events silently drop.
+const _errorCodeUnionCoversSchema: z.infer<typeof resolveErrorCodeSchema> extends ResolveErrorCode
+  ? true
+  : never = true;
+const _errorCodeSchemaCoversUnion: ResolveErrorCode extends z.infer<typeof resolveErrorCodeSchema>
+  ? true
+  : never = true;
+const _traceEventUnionCoversSchema: z.infer<
+  typeof providerTraceEventSchema
+>["type"] extends ProviderTraceEventType
+  ? true
+  : never = true;
+const _traceEventSchemaCoversUnion: ProviderTraceEventType extends z.infer<
+  typeof providerTraceEventSchema
+>["type"]
+  ? true
+  : never = true;
+
+test("resolve error code schema accepts every live failure code", () => {
+  for (const code of resolveErrorCodeSchema.options) {
+    expect(resolveErrorCodeSchema.safeParse(code).success).toBe(true);
+  }
 });
