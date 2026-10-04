@@ -281,8 +281,12 @@ describe("stream reachability", () => {
       "http://169.254.169.254/latest/meta-data",
       "http://127.0.0.1:8080/internal",
       "http://10.0.0.4/lan",
+      "http://172.16.5.4/lan",
+      "http://172.31.255.250/lan",
       "http://192.168.1.10/jellyfin",
+      "http://0.0.0.0/internal",
       "http://[::1]/loopback",
+      "http://[::ffff:7f00:1]/mapped-loopback",
       "http://[fd00::5]/ula",
       "https://localhost/private",
       "http://nas/intranet",
@@ -304,6 +308,21 @@ describe("stream reachability", () => {
       }
       expect(called).toBe(false);
     }
+  });
+
+  test("a normal public CDN host is fetched, not blocked", async () => {
+    let called = false;
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/movie.mp4",
+      fetchImpl: async () => {
+        called = true;
+        return response(200);
+      },
+      timeoutMs: 50,
+    });
+
+    expect(called).toBe(true);
+    expect(probe).toEqual({ status: "reachable" });
   });
 
   test("follows a public redirect but refuses a redirect into a private target", async () => {

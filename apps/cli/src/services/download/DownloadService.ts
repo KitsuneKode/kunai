@@ -312,6 +312,13 @@ export class DownloadService {
       // Volume stats go through deps so unit tests don't read host disk — the
       // suite's verdict must not depend on how full the test volume happens to be.
       readonly statfs?: (path: string) => Promise<{ bavail: number; bsize: number }>;
+      /**
+       * Default download directory override. Without it the fallback derives
+       * from `getKunaiPaths().dataDbPath`, so a test that resolves the default
+       * without an isolated storage root computes a path under the developer's
+       * real profile. The user's configured `downloadPath` still wins over this.
+       */
+      readonly defaultDownloadDir?: string;
     },
   ) {}
 
@@ -1962,9 +1969,8 @@ export class DownloadService {
 
   private resolveDefaultDownloadDirectory(): string {
     const configuredBase = this.deps.config.downloadPath.trim();
-    return configuredBase.length > 0
-      ? configuredBase
-      : join(dirname(getKunaiPaths().dataDbPath), "downloads");
+    if (configuredBase.length > 0) return configuredBase;
+    return this.deps.defaultDownloadDir ?? join(dirname(getKunaiPaths().dataDbPath), "downloads");
   }
 
   private statfs(path: string): Promise<{ bavail: number; bsize: number }> {
