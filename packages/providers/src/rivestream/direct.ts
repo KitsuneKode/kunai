@@ -34,7 +34,7 @@ import {
 } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import {
-  findLastCycleFailure,
+  cycleExhaustionFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import {
@@ -574,18 +574,10 @@ export const rivestreamProviderModule: CoreProviderModule = {
       }
 
       if (!cycleResult.selected) {
-        const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-        const failure = cycleFailure
-          ? {
-              code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-              message: cycleFailure.message,
-              retryable: cycleFailure.retryable,
-            }
-          : {
-              code: "not-found" as const,
-              message: "All internal servers exhausted without returning streams.",
-              retryable: true,
-            };
+        const failure = cycleExhaustionFailure(
+          cycleResult,
+          "All internal servers exhausted without returning streams.",
+        );
         return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, failure, {
           cachePolicy,
           events,

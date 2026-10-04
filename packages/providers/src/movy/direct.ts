@@ -25,7 +25,7 @@ import type {
 import { ProviderHttpError, providerFetch } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import {
-  findLastCycleFailure,
+  cycleExhaustionFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import {
@@ -661,18 +661,7 @@ export async function resolveMovyDirect(
   }
 
   if (!cycleResult.selected) {
-    const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-    const failure = cycleFailure
-      ? {
-          code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-          message: cycleFailure.message,
-          retryable: cycleFailure.retryable,
-        }
-      : {
-          code: "not-found" as const,
-          message: "All Movy lanes exhausted without streams",
-          retryable: true,
-        };
+    const failure = cycleExhaustionFailure(cycleResult, "All Movy lanes exhausted without streams");
     return createExhaustedResult(input, context, MOVY_PROVIDER_ID, failure, {
       cachePolicy,
       events,

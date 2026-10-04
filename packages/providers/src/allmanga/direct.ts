@@ -28,10 +28,7 @@ import {
   formatAnimeSourceArchetype,
   formatAnimeSourceLabel,
 } from "../shared/anime-source-presentation";
-import {
-  findLastCycleFailure,
-  providerFailureCodeFromCycleFailure,
-} from "../shared/provider-cycle";
+import { cycleExhaustionFailure, findLastCycleFailure } from "../shared/provider-cycle";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
 import { resolveGateBudgetMs, verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -752,21 +749,11 @@ export const allmangaProviderModule: CoreProviderModule = {
       }
       if (!selectedStream) {
         const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-        const failure: ProviderFailure = cycleFailure
-          ? {
-              providerId: ALLANIME_PROVIDER_ID,
-              code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-              message: cycleFailure.message,
-              retryable: cycleFailure.retryable,
-              at: cycleFailure.at,
-            }
-          : {
-              providerId: ALLANIME_PROVIDER_ID,
-              code: "not-found",
-              message: "No selectable AllManga streams were mapped.",
-              retryable: true,
-              at: context.now(),
-            };
+        const failure: ProviderFailure = {
+          providerId: ALLANIME_PROVIDER_ID,
+          ...cycleExhaustionFailure(cycleResult, "No selectable AllManga streams were mapped."),
+          at: cycleFailure?.at ?? context.now(),
+        };
         failures.push(failure);
         return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, failure);
       }

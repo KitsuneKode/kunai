@@ -168,6 +168,30 @@ describe("resolveMovyDirect", () => {
     expect(requestedLanes).not.toContain("denver");
   });
 
+  test("reports quarantine honestly when every lane is skipped", async () => {
+    // `stopReason: "all-quarantined"` yields zero attempts — the failure must
+    // name the quarantine, not claim the lanes were tried and exhausted.
+    let fetches = 0;
+    const endpointHealth: EndpointHealthPort = {
+      shouldTry: () => false,
+      recordSuccess: () => {},
+      recordFailure: () => {},
+    };
+    const ctx = {
+      ...contextReturning(() => {
+        fetches += 1;
+        return new Response("{}", { status: 500 });
+      }),
+      endpointHealth,
+    };
+
+    const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+    expect(result.status).toBe("exhausted");
+    expect(fetches).toBe(0);
+    expect(result.failures?.[0]?.code).toBe("provider-unavailable");
+    expect(result.failures?.[0]?.message).toContain("quarantined");
+  });
+
   test("exhausts when every lane fails", async () => {
     const ctx = contextReturning((url) => {
       if (url.includes("/seed")) {
