@@ -195,4 +195,31 @@ describe("held session CLI", () => {
       rmSync(foreign, { recursive: true, force: true });
     }
   });
+
+  it("refuses to delete another session's temporary profile", async () => {
+    const name = `stop-owner-${crypto.randomUUID()}`;
+    const profile = createIsolatedCliProfile(`other-owner-${process.pid}`);
+    const statePath = tmuxSessionStatePath(name);
+    try {
+      writeFileSync(profile.paths.configPath, "{}");
+      writeFileSync(
+        statePath,
+        JSON.stringify({
+          name,
+          profile,
+          runScript: join(profile.rootDir, "run.sh"),
+          startedAt: "test",
+          keepProfile: false,
+        }),
+      );
+      const result = await cli("stop", "--name", name);
+      expect(result.code).toBe(1);
+      expect(result.err).toContain("refusing to delete unexpected profile dir");
+      expect(existsSync(profile.paths.configPath)).toBe(true);
+      expect(existsSync(statePath)).toBe(true);
+    } finally {
+      rmSync(statePath, { force: true });
+      disposeIsolatedCliProfile(profile);
+    }
+  });
 });

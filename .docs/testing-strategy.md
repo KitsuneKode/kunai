@@ -77,7 +77,8 @@ remains a developer-controlled shell fragment of extra main.ts arguments.
 Reports belong outside the temporary profile. Failed interactive startup saves
 a diagnostic report outside the profile and stops only its created session;
 `--keep-profile` preserves the shadow directory. Existing sidecars are checked
-before any inspector read or cleanup. Tests for these commands live in the
+before any inspector read or cleanup; deletion additionally requires the
+profile directory to belong to the requested session name. Tests for these commands live in the
 separate `bun run test:agent` tier, not the default unit/integration suites.
 
 The debounce contract in

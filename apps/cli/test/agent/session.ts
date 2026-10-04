@@ -420,7 +420,7 @@ async function main(): Promise<void> {
       if (
         !sidecar.keepProfile &&
         (dirname(root) !== realpathSync(tmpdir()) ||
-          !basename(root).startsWith("kunai-integration-"))
+          !basename(root).startsWith(`kunai-integration-${name}-`))
       ) {
         // Paranoia FIRST: a refusal must not leave a half-cleaned state —
         // check before killing the session or touching the sidecar.

@@ -21,7 +21,8 @@ release, current-main signoff or physical-phone qualification.
   before launch. Extra CLI arguments remain a trusted developer shell fragment.
 - Failed interactive startup captures evidence outside the shadow profile,
   stops the created session and removes its sidecar. Stop refuses unexpected
-  deletion before killing a session; a retained caller-owned profile can stop.
+  deletion before killing a session; a mismatched session-name/profile prefix
+  reproduced a further cross-profile deletion and is now rejected; a retained caller-owned profile can stop.
 - Setup used terminal columns inside a padded root. Real 80x24 captures showed
   wrapped divider cells. The rendered regression failed at 72/80/100/140;
   shared root padding is now deducted from frame and content budgets. All 21
@@ -52,7 +53,7 @@ non-launched sidecar. No qualification claim relies on that failed run.
 ## Checks
 
 Fresh full workspace: 8,140 pass, 60 skip, zero fail; 26 tasks, zero cached.
-Final agent tier: 22 pass, one skip (opt-in real mpv), zero fail.
+Final agent tier: 23 pass, one skip (opt-in real mpv), zero fail.
 Fresh typecheck: 15 tasks; lint: 14 tasks with zero errors (existing warnings
 remain); full build: 10 tasks. Formatting, document paths and skill validation
 passed. Agent tests are a separate tier from default unit/integration.
