@@ -49,6 +49,15 @@ const RANGE_DAYS: Readonly<Record<Exclude<RangeKey, "all">, number>> = {
 };
 
 /**
+ * Narrow a control's string back to a `RangeKey`. Select and ToggleGroup hand
+ * values back as plain strings, so the boundary re-validates rather than
+ * asserts — a string that is not a key is a no-op, not a stored lie.
+ */
+export function isRangeKey(value: string | null | undefined): value is RangeKey {
+  return value === "7d" || value === "30d" || value === "all";
+}
+
+/**
  * The ranges worth offering for a given window.
  *
  * A range only earns a button if it actually *cuts* the data. dashboard-01 can
@@ -141,4 +150,49 @@ export function namedVersionCount(points: readonly SeriesPoint[]): number {
     }
   }
   return seen.size;
+}
+
+/**
+ * Display names for the closed `os` keyspace. `darwin`/`win32` are platform
+ * identifiers, not names a reader should have to decode. Anything outside the
+ * known set passes through unchanged — the same call is safe on version and
+ * arch buckets, whose labels are already the right display form.
+ */
+export function platformLabel(key: string): string {
+  switch (key) {
+    case "linux":
+      return "Linux";
+    case "darwin":
+      return "macOS";
+    case "win32":
+      return "Windows";
+    case RESIDUAL_LABEL:
+      return "Other";
+    default:
+      return key;
+  }
+}
+
+/**
+ * The platform buckets the window actually published, in canonical order with
+ * the residual last. A bucket absent from every point earns no column — the
+ * table should not promise a series that is empty end to end. Returns [] when
+ * `byOs` is empty across the window (an unpublishable or pre-field series).
+ */
+export function platformColumns(points: readonly SeriesPoint[]): readonly string[] {
+  const seen = new Set<string>();
+  for (const point of points) {
+    // A key that only ever appears at 0 is an empty promise of a series —
+    // same rule `namedVersionCount` uses for the version dimension.
+    for (const [bucket, count] of Object.entries(point.byOs)) {
+      if (count > 0) seen.add(bucket);
+    }
+  }
+  const named = ["linux", "darwin", "win32"].filter((key) => seen.delete(key));
+  // `seen.delete` above removes the named keys as it collects them; whatever
+  // remains beyond the residual is an unexpected key and sorts before it.
+  const unexpected = [...seen].filter((key) => key !== RESIDUAL_LABEL).sort();
+  const columns = [...named, ...unexpected];
+  if (seen.has(RESIDUAL_LABEL)) columns.push(RESIDUAL_LABEL);
+  return columns;
 }

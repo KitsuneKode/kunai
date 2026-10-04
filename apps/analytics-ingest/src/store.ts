@@ -10,9 +10,22 @@ export type DailyRollup = {
   /** Persisted cron completion time; public `updatedAt` must report this value. */
   readonly computedAt: string;
   readonly activeInstalls: number;
+  /**
+   * Installs first seen on `day`. Unlike `lifetimeInstalls` this IS exact for
+   * every day the raw window can roll up: a first-seen row survives pruning
+   * until its own day passes the retention window. The caveat is semantic —
+   * an install returning after retirement is indistinguishable from a
+   * first-ever install and counts as new on the day it returns.
+   */
+  readonly newInstalls: number;
   readonly byVersion: Readonly<Record<string, number>>;
   readonly byOs: Readonly<Record<string, number>>;
   readonly byArch: Readonly<Record<string, number>>;
+  /**
+   * Installs ever observed: live `install_lifetime` rows with `first_seen` on
+   * or before `day`, plus the retired counter. Not a unique-install total —
+   * an install that returns after its row was retired is counted again.
+   */
   readonly lifetimeInstalls: number;
 };
 
@@ -62,7 +75,9 @@ export type AnalyticsStore = {
   pruneRawBefore(day: string): Promise<number>;
   /**
    * Deletes install rows unseen since `day`, adding them to the retired counter
-   * so the lifetime total stays exact. A no-op when retention is disabled.
+   * so the published total keeps them. The fold discards identity: a returning
+   * install writes a fresh row and is counted again. A no-op when retention is
+   * disabled.
    */
   pruneLifetimeBefore(day: string): Promise<PruneLifetimeResult>;
 };

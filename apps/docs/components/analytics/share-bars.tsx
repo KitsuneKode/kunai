@@ -1,4 +1,4 @@
-import { residualShare } from "@/lib/analytics-derive";
+import { platformLabel, residualShare } from "@/lib/analytics-derive";
 import { rankShareBuckets, type ShareBucket } from "@/lib/analytics-metrics";
 import { getReleaseByTag, releasePath } from "@/lib/release-notes";
 import Link from "next/link";
@@ -37,12 +37,14 @@ function ShareRow({ bucket }: { readonly bucket: ShareBucket }) {
           bucket.residual ? "text-muted-foreground" : "text-foreground font-medium"
         }`}
       >
+        {/* Lookups stay on the raw key — `darwin` must keep matching its
+            release-query fail-closed path while readers see `macOS`. */}
         {release ? (
           <Link href={releasePath(bucket.label)} className="underline-offset-4 hover:underline">
-            {bucket.label}
+            {platformLabel(bucket.label)}
           </Link>
         ) : (
-          bucket.label
+          platformLabel(bucket.label)
         )}
       </th>
       {/*

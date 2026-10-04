@@ -159,8 +159,13 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres bucket cardinality", () => {
     const day = "1999-07-01";
 
     // 12 installs on 12 invented-but-valid semvers, plus a real one with mass.
-    for (let n = 1; n <= 12; n += 1) await ping(store, day, n, { version: `9.9.${n}` });
-    for (let n = 20; n <= 25; n += 1) await ping(store, day, n, { version: "0.3.0" });
+    // Concurrent, not sequential: every ping is a Postgres round trip and the
+    // writes touch distinct install rows, so ordering between them cannot
+    // matter — sequential made the test timing-fragile for no gain.
+    await Promise.all([
+      ...Array.from({ length: 12 }, (_, i) => ping(store, day, i + 1, { version: `9.9.${i + 1}` })),
+      ...Array.from({ length: 6 }, (_, i) => ping(store, day, i + 20, { version: "0.3.0" })),
+    ]);
 
     const rollup = await store.rollUpDay(day);
 

@@ -1,6 +1,8 @@
+import { NpmSection } from "@/components/analytics/npm-downloads";
 import { TrendSection } from "@/components/analytics/trend-section";
 import { BreakdownSection, TrustSection, UsagePanel } from "@/components/analytics/usage-panel";
 import { fetchDocsAnalyticsMetrics } from "@/lib/analytics-metrics";
+import { fetchNpmDownloads } from "@/lib/analytics-npm";
 import { fetchDocsAnalyticsSeries } from "@/lib/analytics-series";
 import { buildPageMetadata } from "@/lib/page-metadata";
 import type { Metadata } from "next";
@@ -18,10 +20,11 @@ export const metadata: Metadata = buildPageMetadata({
 });
 
 export default async function AnalyticsPage() {
-  // Both are optional: the page renders whichever the endpoints can supply.
-  const [metrics, series] = await Promise.all([
+  // All three are optional: the page renders whichever endpoints can supply.
+  const [metrics, series, npm] = await Promise.all([
     fetchDocsAnalyticsMetrics(),
     fetchDocsAnalyticsSeries(),
+    fetchNpmDownloads(),
   ]);
 
   return (
@@ -46,6 +49,7 @@ export default async function AnalyticsPage() {
 
       <UsagePanel metrics={metrics} series={series} />
       <TrendSection series={series} />
+      <NpmSection series={npm} />
       <BreakdownSection metrics={metrics} />
       <TrustSection />
     </main>

@@ -13,6 +13,7 @@ function series(
   points: readonly {
     day: string;
     active?: number;
+    newInstalls?: number | null;
     byVersion?: Record<string, number>;
     byOs?: Record<string, number>;
     byArch?: Record<string, number>;
@@ -25,6 +26,7 @@ function series(
     points: points.map((p) => ({
       day: p.day,
       activeInstalls: p.active ?? 10,
+      newInstalls: p.newInstalls ?? null,
       lifetimeInstalls: 50,
       byVersion: p.byVersion ?? { "0.3.0": 10 },
       byOs: p.byOs ?? { linux: 10 },
@@ -79,6 +81,30 @@ describe("parseDocsAnalyticsSeries", () => {
     });
     expect(parseDocsAnalyticsSeries(bad("byOs"))).toBeNull();
     expect(parseDocsAnalyticsSeries(bad("byArch"))).toBeNull();
+  });
+
+  /**
+   * `newInstalls` is newer than every field around it, so cached/CDN copies of
+   * the series can legitimately lack it. Absent means "not published", never
+   * "zero" — and a malformed one must not poison an otherwise good window.
+   */
+  test("newInstalls parses when present, maps to null when absent or bad", () => {
+    const parsed = parseDocsAnalyticsSeries({
+      ...valid,
+      points: [
+        { ...valid.points[0], newInstalls: 3.9 },
+        { ...valid.points[1], newInstalls: "3" },
+      ],
+    });
+    expect(parsed?.points[0]?.newInstalls).toBe(3);
+    expect(parsed?.points[1]?.newInstalls).toBeNull();
+    expect(
+      parseDocsAnalyticsSeries({
+        ...valid,
+        points: [{ ...valid.points[0], newInstalls: -1 }],
+      })?.points[0]?.newInstalls,
+    ).toBeNull();
+    expect(parseDocsAnalyticsSeries(valid)?.points[0]?.newInstalls).toBeNull();
   });
 
   /**

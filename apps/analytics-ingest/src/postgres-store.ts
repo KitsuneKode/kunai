@@ -86,15 +86,26 @@ function bucketJsonCte(alias: string, column: "version" | "os" | "arch"): string
  * from different snapshots, so a ping landing mid-rollup published dimension
  * counts that did not add up to the active total. And the lifetime figure was
  * `count(*) from install_lifetime` — every install ever, *including ones first
- * seen after the day being rolled up. Cron rolls up yesterday just after
- * midnight UTC, so today's installs were already inflating yesterday's number,
+ * seen after the day being rolled up. Cron rolls up yesterday just after the
+ * day boundary, so today's installs were already inflating yesterday's number,
  * and recomputing an old day produced a different answer every time.
  *
- * `first_seen <= day` makes the figure a function of the day it labels, and one
- * statement makes every component share a snapshot.
+ * `first_seen <= day` makes the live half a function of the day it labels, and
+ * one statement makes every component share a snapshot. The retired half is a
+ * single counter with no dates — as-of-now, not as-of-`day` — which cannot
+ * skew a recompute because a prunable row was always last seen before every
+ * day the raw window can still reach. What it does mean: an install that
+ * returns after retirement writes a fresh `install_lifetime` row while still
+ * counting inside `lifetime_retired` — cumulative observations, not a
+ * unique-install total.
  */
 export const ROLL_UP_DAY_SQL = `with active as (
   select count(*)::int as n from ping_day where day = $1::date
+), fresh as (
+  -- first_seen = day is exact here: such a row has last_seen >= day and can
+  -- only ever be pruned once that day is past the retention window — by which
+  -- point the raw window has long since stopped offering it for rollup.
+  select count(*)::int as n from install_lifetime where first_seen = $1::date
 ), lifetime as (
   select (
     (select count(*) from install_lifetime where first_seen <= $1::date)
@@ -105,9 +116,10 @@ export const ROLL_UP_DAY_SQL = `with active as (
    ${bucketJsonCte("by_arch", "arch")},
 persisted as (
   insert into daily_rollup
-    (day, active_installs, by_version, by_os, by_arch, lifetime_installs, computed_at)
+    (day, active_installs, new_installs, by_version, by_os, by_arch, lifetime_installs, computed_at)
   select $1::date,
          (select n from active),
+         (select n from fresh),
          (select j from by_version),
          (select j from by_os),
          (select j from by_arch),
@@ -115,6 +127,7 @@ persisted as (
          now()
   on conflict (day) do update set
     active_installs = excluded.active_installs,
+    new_installs = excluded.new_installs,
     by_version = excluded.by_version,
     by_os = excluded.by_os,
     by_arch = excluded.by_arch,
@@ -122,6 +135,7 @@ persisted as (
     computed_at = now()
   returning day::text as day,
             active_installs,
+            new_installs,
             by_version,
             by_os,
             by_arch,
@@ -130,7 +144,7 @@ persisted as (
 )
 select * from persisted`;
 
-const ROLLUP_COLUMNS = `day::text as day, active_installs, by_version, by_os, by_arch,
+const ROLLUP_COLUMNS = `day::text as day, active_installs, new_installs, by_version, by_os, by_arch,
   lifetime_installs, computed_at::text as computed_at`;
 
 function toRollup(row: Record<string, unknown>): DailyRollup {
@@ -138,6 +152,7 @@ function toRollup(row: Record<string, unknown>): DailyRollup {
     day: String(row.day),
     computedAt: String(row.computed_at),
     activeInstalls: Number(row.active_installs),
+    newInstalls: Number(row.new_installs),
     byVersion: row.by_version as Record<string, number>,
     byOs: row.by_os as Record<string, number>,
     byArch: row.by_arch as Record<string, number>,
@@ -215,8 +230,13 @@ export function createPostgresAnalyticsStore(
     },
 
     async pruneRawBefore(day: string): Promise<number> {
+      // ingest_budget is day-keyed too — a past day's admission count means
+      // nothing once the day is gone, so the table would otherwise grow one
+      // row per day forever. The return counts ping_day rows only; the budget
+      // sweep is housekeeping, not a signal worth reporting.
       const rows = (await sql.query(
-        `with deleted as (delete from ping_day where day < $1::date returning 1)
+        `with deleted as (delete from ping_day where day < $1::date returning 1),
+              budget as (delete from ingest_budget where day < $1::date returning 1)
          select count(*)::int as n from deleted`,
         [day],
       )) as { n: number }[];

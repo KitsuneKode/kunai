@@ -32,6 +32,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "daily",
       priority: 0.55,
     },
+    {
+      url: `${docsSiteUrl}/privacy`,
+      changeFrequency: "monthly",
+      priority: 0.5,
+    },
     ...releases.map((release) => ({
       url: `${docsSiteUrl}${releasePath(release.tag)}`,
       changeFrequency: "monthly" as const,

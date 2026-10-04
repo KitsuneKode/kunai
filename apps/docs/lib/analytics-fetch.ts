@@ -14,6 +14,8 @@
  * path as an unreachable one.
  */
 
+import type { JsonValue } from "@kunai/types";
+
 /**
  * Generous against the real payloads and still far below anything that
  * threatens a build: 180 days of rollups is roughly 40 KB.
@@ -70,7 +72,7 @@ async function readCapped(response: Response): Promise<string | null> {
 export async function fetchAnalyticsJson(
   url: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<unknown> {
+): Promise<JsonValue> {
   try {
     const response = await fetchImpl(url, {
       headers: { accept: "application/json" },
@@ -80,7 +82,10 @@ export async function fetchAnalyticsJson(
     if (!response.ok) return null;
     const text = await readCapped(response);
     if (text === null) return null;
-    return JSON.parse(text) as unknown;
+    // SAFETY: JSON.parse produces exactly the JsonValue grammar — plain
+    // objects, arrays, strings, numbers, booleans, null. Naming the boundary
+    // type lets every downstream parser stay inside it.
+    return JSON.parse(text) as JsonValue;
   } catch {
     return null;
   }

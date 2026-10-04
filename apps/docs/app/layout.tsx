@@ -3,6 +3,7 @@ import "./global.css";
 import { PrivacyAnalytics } from "@/components/analytics/privacy-analytics";
 import { PrivacySpeedInsights } from "@/components/analytics/privacy-speed-insights";
 import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
+import { SiteFooter } from "@/components/layout/site-footer";
 import { KunaiSearchDialog } from "@/components/search/kunai-search-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { fontClassNames } from "@/lib/fonts";
@@ -61,6 +62,10 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
           }}
         >
           <TooltipProvider>{children}</TooltipProvider>
+          {/* Site-wide footer — a direct DOM child of body (the providers
+              render no element), so `mt-auto` pins it to the fold on short
+              pages and it sits after the page chrome on every route. */}
+          <SiteFooter />
         </RootProvider>
         {/* A direct child of <body>, not nested in the provider tree: `position:
             fixed` resolves against the nearest transformed ancestor, and page

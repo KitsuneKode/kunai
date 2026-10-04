@@ -14,6 +14,10 @@
 // And one thing across source comments in apps/** and packages/**:
 //   3. Doc and file paths cited in comments resolve on disk.
 //
+// Plus the mechanical half of the `.plans/` index contract:
+//   4. roadmap.md indexes every `.plans/*.md`, and LANDED rows point into
+//      `.archive/` — a landed plan does not stay in `.plans/`.
+//
 // (3) exists because a comment is documentation that no doc checker could see.
 // Three files pointed at `docs/superpowers/` and two at a plan that had been
 // archived; nothing failed, because nothing was looking. Comments are checked
@@ -68,7 +72,11 @@ const HISTORICAL_MARKERS = [
   "does not exist",
 ];
 
-type Finding = { readonly file: string; readonly target: string; readonly line: number };
+export type Finding = {
+  readonly file: string;
+  readonly target: string;
+  readonly line: number;
+};
 
 function collectMarkdown(entry: string): string[] {
   const abs = join(ROOT, entry);
@@ -202,29 +210,118 @@ function checkSourceFile(relative: string): Finding[] {
   return findings;
 }
 
-const sourceFiles = SOURCE_GLOBS.flatMap((pattern) => [
-  ...new Bun.Glob(pattern).scanSync({ cwd: ROOT }),
-])
-  .map((path) => path.replaceAll("\\", "/"))
-  .filter((path) => !SOURCE_SKIP.test(path));
+// ---------------------------------------------------------------------------
+// Roadmap hygiene
+// ---------------------------------------------------------------------------
+//
+// `.plans/` is the only plan directory and `roadmap.md` its only index — "a
+// plan that is not indexed here does not exist." Two of its rules are
+// mechanical, so they are checked here:
+//
+//   1. Every `.plans/*.md` file must appear as a roadmap link. An added plan
+//      with no row is invisible work — the drift this guards against.
+//   2. A row whose status is LANDED must point into `.archive/` — a landed
+//      plan does not stay in `.plans/`. (The converse does not hold: PARTIAL
+//      rows legitimately point at archived plans whose core landed.)
+//
+// What this cannot check is whether a TODO row's work is actually finished.
+// Status truth stays human.
+//
+// Exported for `apps/cli/test/unit/scripts/verify-doc-paths.test.ts`.
 
-const files = SCANNED_ROOTS.flatMap(collectMarkdown);
-const findings = [...files.flatMap(checkFile), ...sourceFiles.flatMap(checkSourceFile)];
+export function checkRoadmap(roadmapText: string, planFiles: readonly string[]): Finding[] {
+  const findings: Finding[] = [];
+  const indexed = new Set<string>();
+  // Forward slashes: `resolve` returns OS-native separators, so prefix checks
+  // must normalize first or every row fails on Windows.
+  const plansDir = `${ROOT}/.plans`.replaceAll("\\", "/");
+  const archiveDir = `${ROOT}/.archive`.replaceAll("\\", "/");
+  const roadmapDir = dirname(join(ROOT, ".plans/roadmap.md"));
 
-if (findings.length > 0) {
-  console.error(`\nDead paths in agent-facing docs and comments (${findings.length}):\n`);
-  for (const { file, line, target } of findings) {
-    console.error(`  ${file}:${line}  →  ${target}`);
+  roadmapText.split("\n").forEach((line, index) => {
+    const links = [...line.matchAll(MD_LINK)]
+      .map((match) => match[1])
+      .filter((target): target is string => Boolean(target));
+    if (links.length === 0) return;
+
+    // Rows are `| link | issue | remaining | STATUS |`; the trailing pipe
+    // leaves an empty last cell, so the status is the second-to-last field.
+    const cells = line.split("|").map((cell) => cell.trim());
+    const status = cells.at(-2) ?? "";
+
+    for (const target of links) {
+      if (target.startsWith("http")) continue;
+      const resolved = resolve(roadmapDir, target).replaceAll("\\", "/");
+      if (resolved.startsWith(plansDir + "/")) indexed.add(resolved);
+      if (
+        (status === "LANDED" || status.startsWith("LANDED ")) &&
+        !resolved.startsWith(archiveDir + "/")
+      ) {
+        findings.push({
+          file: ".plans/roadmap.md",
+          target: `${target} (LANDED row must point into .archive/)`,
+          line: index + 1,
+        });
+      }
+    }
+  });
+
+  for (const name of planFiles) {
+    if (name === "roadmap.md" || !name.endsWith(".md")) continue;
+    if (!indexed.has(`${plansDir}/${name}`)) {
+      findings.push({
+        file: `.plans/${name}`,
+        target: "not indexed by .plans/roadmap.md",
+        line: 1,
+      });
+    }
   }
-  console.error(
-    `\nFix the doc, or — if the path is cited as history — say so on the same line
-(e.g. "the old x.ts was removed"). Add to ALLOWED_MISSING only when the path
-genuinely cannot exist on a clean checkout.\n`,
-  );
-  process.exit(1);
+
+  return findings;
 }
 
-console.log(
-  `verify:doc-paths — ${files.length} docs and ${sourceFiles.length} source files scanned, ` +
-    `all paths resolve.`,
-);
+// `import.meta.main` keeps the executable half out of the test import —
+// pulling in `checkRoadmap` must not run the repo-wide scan or exit.
+if (import.meta.main) {
+  const sourceFiles = SOURCE_GLOBS.flatMap((pattern) => [
+    ...new Bun.Glob(pattern).scanSync({ cwd: ROOT }),
+  ])
+    .map((path) => path.replaceAll("\\", "/"))
+    .filter((path) => !SOURCE_SKIP.test(path));
+
+  const files = SCANNED_ROOTS.flatMap(collectMarkdown);
+
+  const roadmapPath = join(ROOT, ".plans/roadmap.md");
+  const roadmapFindings = existsSync(roadmapPath)
+    ? checkRoadmap(
+        readFileSync(roadmapPath, "utf8"),
+        readdirSync(join(ROOT, ".plans"), { withFileTypes: true })
+          .filter((entry) => entry.isFile())
+          .map((entry) => entry.name),
+      )
+    : [];
+
+  const findings = [
+    ...files.flatMap(checkFile),
+    ...sourceFiles.flatMap(checkSourceFile),
+    ...roadmapFindings,
+  ];
+
+  if (findings.length > 0) {
+    console.error(`\nDead paths in agent-facing docs and comments (${findings.length}):\n`);
+    for (const { file, line, target } of findings) {
+      console.error(`  ${file}:${line}  →  ${target}`);
+    }
+    console.error(
+      `\nFix the doc, or — if the path is cited as history — say so on the same line
+(e.g. "the old x.ts was removed"). Add to ALLOWED_MISSING only when the path
+genuinely cannot exist on a clean checkout.\n`,
+    );
+    process.exit(1);
+  }
+
+  console.log(
+    `verify:doc-paths — ${files.length} docs and ${sourceFiles.length} source files scanned, ` +
+      `all paths resolve.`,
+  );
+}
