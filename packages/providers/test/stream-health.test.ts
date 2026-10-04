@@ -164,6 +164,7 @@ describe("stream health", () => {
       calls.every(
         (call) =>
           call.init.headers === undefined ||
+          // SAFETY: the stubbed fetch records whatever init the probe forwarded; headers is a plain object here.
           (call.init.headers as Record<string, string>).Referer ===
             "https://provider.example/watch",
       ),

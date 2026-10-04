@@ -218,6 +218,7 @@ export function buildTrackCapabilities(
     { rows: TrackCapability[]; emptyReason?: string }
   >();
   const push = (capability: TrackCapability): void => {
+    // SAFETY: a fresh accumulator is empty by construction; the cast only names the row type.
     const entry = bySection.get(capability.section) ?? { rows: [] as TrackCapability[] };
     entry.rows.push(capability);
     bySection.set(capability.section, entry);
@@ -343,6 +344,7 @@ export function composeTrackPanelGroups(
     });
   }
   for (const group of inventoryGroups) {
+    // SAFETY: a fresh accumulator is empty by construction; the cast only names the row type.
     const entry = bySection.get(group.section) ?? { rows: [] as TrackCapability[] };
     bySection.set(group.section, {
       rows: [...entry.rows, ...group.rows],

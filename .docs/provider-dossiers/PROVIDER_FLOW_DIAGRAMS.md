@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-05-06"
+lastReviewed: "2026-10-04"
 ---
 
 # Kunai Provider Extraction Flows (Mermaid Diagrams) 🥷✨

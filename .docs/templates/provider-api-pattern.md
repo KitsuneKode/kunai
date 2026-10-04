@@ -1,6 +1,6 @@
 ---
 status: superseded
-lastReviewed: "2026-04-23"
+lastReviewed: "2026-10-04"
 ---
 
 # Provider Pattern Template — API First With Embed Fallback
