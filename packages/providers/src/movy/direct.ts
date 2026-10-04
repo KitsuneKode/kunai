@@ -552,6 +552,11 @@ export async function resolveMovyDirect(
     signal: context.signal,
     now: context.now,
     emit: context.emit,
+    // Each lane is a different upstream scraper, so a lane's health evidence
+    // belongs to that lane alone — wiring the port is what makes
+    // `endpointScoped` on the gate refusal below mean anything.
+    endpointHealth: context.endpointHealth,
+    titleId: input.title.id,
     maxAttemptsPerCandidate: 1,
     candidateTimeoutMs,
     resolveCandidate: async (candidate, candidateContext) => {
@@ -578,7 +583,18 @@ export async function resolveMovyDirect(
         // candidate-empty) — rewrapping them would flatten every lane error
         // into not-found and hide transient/server evidence from provider
         // health and offline detection.
-        if (error instanceof ProviderCycleFailureError) throw error;
+        if (error instanceof ProviderCycleFailureError) {
+          // The gate's own verdict carries `endpointScoped`; keep it visible in
+          // the resolve's failure list instead of only in the cycle attempts.
+          failures.push({
+            providerId: MOVY_PROVIDER_ID,
+            code: providerFailureCodeFromCycleFailure(error.failure.failureClass),
+            message: error.failure.message,
+            retryable: error.failure.retryable,
+            at: context.now(),
+          });
+          throw error;
+        }
         // A caller abort is not lane evidence — record nothing, spend nothing.
         if (context.signal?.aborted) throw error;
         const message = error instanceof Error ? error.message : `Movy lane ${lane} failed`;

@@ -22,7 +22,7 @@ sequenceDiagram
     participant DB as theanimecommunity.com
     participant CDN as pro.ultracloud.cc
 
-    UI->>Core: resolveStream(AniList ID: 21, Sub)
+    UI->>Core: resolve(AniList ID: 21, Sub)
     Note over Core: No search needed. Native AniList ID routing.
     Core->>DB: GET /api/v1/episodes/21/1
     DB-->>Core: JSON { sources: { sub: [...], dub: [...] } }
@@ -47,7 +47,7 @@ sequenceDiagram
     participant Anikai as anikai.to
     participant Ext as Custom TypeScript Extractor
 
-    UI->>Core: resolveStream(AniList ID: 21, SoftSub)
+    UI->>Core: resolve(AniList ID: 21, SoftSub)
     Core->>Map: translateId(21)
     Map-->>Core: Slug: 'one-piece-dk6r'
 
@@ -88,7 +88,7 @@ sequenceDiagram
     participant WASM as module1_patched.wasm
     participant Wyzie as sub.wyzie.io
 
-    UI->>Core: resolveStream(TMDB ID: 127529)
+    UI->>Core: resolve(TMDB ID: 127529)
     Core->>API: GET /mb-flix/sources-with-title?tmdbId=127529
     API-->>Core: Encrypted Hex Payload
 
@@ -120,7 +120,7 @@ sequenceDiagram
     participant Hash as TypeScript Hash Generator
     participant API as rivestream.app/api
 
-    UI->>Core: resolveStream(TMDB ID: 533535)
+    UI->>Core: resolve(TMDB ID: 533535)
     Core->>Hash: generateSecretKey(533535)
     Note over Hash: Uses ported 32-bit MurmurHash & cArray salt
     Hash-->>Core: secretKey: 'NTU2ZjdhYTc='
@@ -143,7 +143,7 @@ sequenceDiagram
     participant Core as @kunai/core (AllAnime Provider)
     participant GQL as api.allanime.day
 
-    UI->>Core: resolveStream(Show ID, Dub)
+    UI->>Core: resolve(Show ID, Dub)
     Core->>GQL: POST { query: "...", variables: { type: "dub" } }
     Note over Core: Must pass 'Referer: https://youtu-chan.com'
     GQL-->>Core: Encrypted Hex String (sourceUrls)

@@ -593,11 +593,24 @@ describe("kickassanimeProviderModule", () => {
     ).toContain("no dub for episode 1");
   });
 
-  test("a master that cannot be read still plays, rather than failing the episode", async () => {
+  test("a manifest the gate proves dead is not shipped to mpv", async () => {
     const result = await kickassanimeProviderModule.resolve(
       resolveInput(),
       contextWith(catalogRoute({ master: null })),
     );
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("not-found");
+  });
+
+  test("an unreadable master the gate cannot verdict still plays", async () => {
+    // A 5xx is non-definitive: mpv retries the identical request, so the old
+    // leniency stays for inconclusive answers while 404s fail closed.
+    const base = catalogRoute({ master: null });
+    const route: Route = (url) =>
+      new URL(url).hostname === "hls.krussdomi.com"
+        ? new Response("upstream error", { status: 500 })
+        : base(url, undefined);
+    const result = await kickassanimeProviderModule.resolve(resolveInput(), contextWith(route));
     expect(result.status).toBe("resolved");
     expect(result.streams[0]).toMatchObject({ presentation: "sub", qualityLabel: "auto" });
   });

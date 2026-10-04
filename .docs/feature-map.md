@@ -81,18 +81,18 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 
 ## Playback
 
-| Feature                                    | Owned by                                                                                                            | Docs                                                                             |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Playback state machine                     | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                                        | [architecture.md](./architecture.md)                                             |
-| mpv launch + IPC (socket / named pipe)     | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                                | [quickstart.md](./quickstart.md)                                                 |
-| Persistent session + autoplay              | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                                 | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
-| Intro/credits auto-skip (IntroDB, AniSkip) | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                                | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
-| Timing sources and merge                   | `apps/cli/src/infra/timing/*` — `PlaybackTimingAggregator` merges IntroDB, AniSkip, and provider-native timings     | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
-| Subtitles                                  | `apps/cli/src/subtitle.ts`                                                                                          | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
-| Recovery / fallback / `/recover`           | `apps/cli/src/domain/recovery/*`                                                                                    | [debugging-map.md](./debugging-map.md)                                           |
-| Post-playback actions                      | `apps/cli/src/app/post-play/*`                                                                                      | [ux-architecture.md](./ux-architecture.md)                                       |
-| Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — playable refs, progress/completion policy, problem classification, local streams | [architecture.md](./architecture.md)                                             |
-| Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                             | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
+| Feature                                    | Owned by                                                                                                        | Docs                                                                             |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Playback state machine                     | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                                    | [architecture.md](./architecture.md)                                             |
+| mpv launch + IPC (socket / named pipe)     | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                            | [quickstart.md](./quickstart.md)                                                 |
+| Persistent session + autoplay              | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                             | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
+| Intro/credits auto-skip (IntroDB, AniSkip) | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                            | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
+| Timing sources and merge                   | `apps/cli/src/infra/timing/*` — `PlaybackTimingAggregator` merges IntroDB, AniSkip, and provider-native timings | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
+| Subtitles                                  | `apps/cli/src/subtitle.ts`                                                                                      | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
+| Recovery / fallback / `/recover`           | `apps/cli/src/domain/recovery/*`                                                                                | [debugging-map.md](./debugging-map.md)                                           |
+| Post-playback actions                      | `apps/cli/src/app/post-play/*`                                                                                  | [ux-architecture.md](./ux-architecture.md)                                       |
+| Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — progress/completion policy, problem classification, local streams            | [architecture.md](./architecture.md)                                             |
+| Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                         | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
 
 ## Library and personal state
 

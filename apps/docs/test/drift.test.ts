@@ -312,11 +312,22 @@ describe("docs codegen drift", () => {
   });
 
   test("published docs do not describe config surfaces the runtime never reads", () => {
-    // `providers.json` and `autoDownload` were documented while nothing in the
-    // runtime consumed them — `autoDownload` is force-pinned to "off" on load
-    // and on update. If either surface ever becomes real, delete the row here
-    // AND restore the doc, in the same change.
-    const phantomSurfaces = [/providers\.json/, /`autoDownload`/, /"autoDownload"/];
+    // These config/file surfaces were documented while nothing in the runtime
+    // consumed them; the keys are deleted now, and this guard keeps the docs
+    // from resurrecting them. If any surface ever becomes real, delete the row
+    // here AND restore the doc, in the same change.
+    const phantomSurfaces = [
+      /providers\.json/,
+      /`autoDownload`/,
+      /"autoDownload"/,
+      /`autoDownloadNextCount`/,
+      /"`autoDownloadNextCount`"/,
+      /`subLang`/,
+      /`animeLang`/,
+      /`headless`/,
+      /`artworkPreviewsEnabled`/,
+      /`powerSaverAllowManualArtwork`/,
+    ];
     for (const filePath of listDocFiles(DOCS_ROOT)) {
       const content = fs.readFileSync(filePath, "utf-8");
       for (const banned of phantomSurfaces) {

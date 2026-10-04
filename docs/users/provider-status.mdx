@@ -11,8 +11,8 @@ A scheduled job resolves a known-good title through every production provider on
 ## What the statuses mean
 
 - **Working**: upstream reachable and a real resolve returned playable lanes.
-- **Limited**: the provider works somewhere but not for the sweep — either upstream responds yet resolve exhausted without a clear block reason (`degraded`, usually a scheme rotation or partial outage), or the sweep network is challenged (`blocked`: Cloudflare WAF, captcha). Region-gated providers often work from other regions or through a user-owned relay (`providerRelay.baseUrl`).
-- **Down**: nobody can resolve through it right now — upstream reports maintenance (`down`, 503 pages) or the front door does not answer at all (`dead`: DNS or connection failure). A sustained dead reading means the provider is gone for everyone; a one-off can be a runner-side network fault.
+- **Limited**: the provider works somewhere but not for the sweep: either upstream responds yet resolve exhausted without a clear block reason (`degraded`, usually a scheme rotation or partial outage), or the sweep network is challenged (`blocked`: Cloudflare WAF, captcha). Region-gated providers often work from other regions or through a user-owned relay (`providerRelay.baseUrl`).
+- **Down**: nobody can resolve through it right now: upstream reports maintenance (`down`, 503 pages) or the front door does not answer at all (`dead`: DNS or connection failure). A sustained dead reading means the provider is gone for everyone; a one-off can be a runner-side network fault.
 
 The small tag under each badge is the raw sweep verdict (`healthy`, `degraded`, `blocked`, `down`, `dead`) and the note column carries the specifics.
 

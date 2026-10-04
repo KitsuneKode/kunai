@@ -8,6 +8,7 @@ import {
   formatOfflineShelfBadge,
   formatOfflineShelfDetail,
   groupOfflineLibraryEntries,
+  type OfflineArtworkPolicy,
   type OfflineLibraryEntry,
 } from "@/services/offline/offline-library";
 
@@ -51,13 +52,16 @@ export type OfflineLibraryShelf = {
 };
 
 export type OfflineLibraryEngine = {
-  buildShelf(entries: readonly OfflineLibraryEntry[]): OfflineLibraryShelf;
+  buildShelf(
+    entries: readonly OfflineLibraryEntry[],
+    artworkPolicy?: OfflineArtworkPolicy,
+  ): OfflineLibraryShelf;
 };
 
 export function createOfflineLibraryEngine(): OfflineLibraryEngine {
   return {
-    buildShelf(entries) {
-      const groups = groupOfflineLibraryEntries(entries).map((group) => {
+    buildShelf(entries, artworkPolicy) {
+      const groups = groupOfflineLibraryEntries(entries, artworkPolicy).map((group) => {
         const shelfEntries = group.entries.map((entry) => ({
           jobId: entry.job.id,
           presentation: presentMedia({

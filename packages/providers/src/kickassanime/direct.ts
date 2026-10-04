@@ -470,6 +470,9 @@ export const kickassanimeProviderModule: CoreProviderModule = {
         signal: context.signal,
       });
       if (!verdict.accepted) {
+        // Retryable on purpose, unlike the sibling not-founds above: a re-resolve
+        // re-fetches the player page and mints a fresh signed manifest URL, so a
+        // refusal caused by a stale signature genuinely can succeed next try.
         return fail("not-found", `KickAssAnime manifest is unreachable (${verdict.reason})`, true);
       }
     }

@@ -14,7 +14,6 @@ export type OfflineLibraryEntry = {
 
 export type OfflineArtworkPolicy = {
   readonly networkAvailable?: boolean;
-  readonly artworkPreviewsEnabled?: boolean;
   readonly allowRemoteArtwork?: boolean;
 };
 
@@ -266,10 +265,7 @@ function resolveOfflinePreviewImage(
 
 function canUseRemoteArtwork(policy: OfflineArtworkPolicy): boolean {
   if (policy.allowRemoteArtwork === false) return false;
-  return (
-    policy.allowRemoteArtwork === true ||
-    (policy.networkAvailable === true && policy.artworkPreviewsEnabled !== false)
-  );
+  return policy.allowRemoteArtwork === true || policy.networkAvailable === true;
 }
 
 export function offlineStatusIcon(status: OfflineArtifactStatus): string {

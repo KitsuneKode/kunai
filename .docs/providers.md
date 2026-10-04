@@ -426,7 +426,7 @@ one iteration, AES-256-CBC with PKCS7); `crypto-js` is no longer a dependency.
   `loadProductionProviderModules()` is the single production provider list
 - The `ProviderRegistry` (engine compat wrapper) is built automatically from engine modules
 
-No separate CLI adapter file is needed. The `createProviderFromModule()` factory in `apps/cli/src/services/providers/Provider.ts` creates the CLI `Provider` wrapper with `resolveStream` (calls module), `metadata`, `canHandle`, and optional `search`/`listEpisodes`.
+No separate CLI adapter file is needed. The `createProviderFromModule()` factory in `apps/cli/src/services/providers/Provider.ts` creates the CLI `Provider` wrapper with `metadata`, `canHandle`, and optional `search`/`listEpisodes`; stream resolution runs through the engine path (`module.resolve(input, context)`), never through the wrapper.
 
 ## Workflow Reminder
 
@@ -596,7 +596,8 @@ only the contracts every provider must honour.
 | YouTube             | [youtube.md](./provider-dossiers/youtube.md)                                                                                                                      |
 
 Cineby is **not** a production provider: it is a research-only Videasy-flavor
-wrapper (`packages/providers/src/cineby`, `status: "research"`, kept out of
+wrapper (`packages/providers/src/cineby`, marked `"research-only"` in
+`packages/providers/src/research.ts`, kept out of
 `loadProductionProviderModules()` until it passes the provider quality gate).
 Its dossiers ([cineby.md](./provider-dossiers/cineby.md) ·
 [cineby-anime.md](./provider-dossiers/cineby-anime.md)) are research material,

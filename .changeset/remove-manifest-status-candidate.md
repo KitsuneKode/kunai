@@ -1,5 +1,5 @@
 ---
-"@kunai/cli": patch
+"@kitsunekode/kunai": patch
 ---
 
 Remove the manifest `status` field (`production`/`candidate`) — it was a

@@ -160,7 +160,8 @@ to the player.
 
 **Caveats:** anime mode must be active. Sub and dub are separate episode fetches; a show without
 English audio plays subbed and says so in the playback trace. Each season is its own entry in
-HiAnime's catalogue, so a season jump is a new title rather than a deeper episode number. On
+HiAnime's catalogue, so a season jump is a new title rather than a deeper episode number. Only the
+ZokoAnime server is resolved; other servers the catalogue lists are observed but unsupported. On
 networks where Kunai's own HTTP client meets Cloudflare, it falls back to `curl`.
 
 </ProviderDocSection>
@@ -187,16 +188,6 @@ on Kunai's behalf if you run one. Some servers burn subtitles into the video
 rather than shipping a separate track, and one opens on a short site bumper before the episode.
 If `miruro.bz` itself is unreachable, every one of its backends is too, and Kunai falls back to
 the providers behind it.
-
-</ProviderDocSection>
-
-<ProviderDocSection id="hianime" title="HiAnime">
-
-**Adapter role:** the automatic anime lane's lead, Kunai's shipped `animeProvider`. Sub and dub resolve through the ZokoAnime server with soft English subtitles; each season is a separate catalog title.
-
-**Config id:** `hianime`. The shipped lane is `animeProvider: "hianime"` with `animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb", "allanime"]`.
-
-**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks need `curl` installed for HiAnime requests to get past Cloudflare. Only the ZokoAnime server is resolved; other servers the catalog lists are observed but unsupported.
 
 </ProviderDocSection>
 
