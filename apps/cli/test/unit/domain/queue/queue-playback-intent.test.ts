@@ -24,7 +24,7 @@ test("intent carries absolute anime episode", () => {
   });
 });
 
-test("intent preserves season/episode and source", () => {
+test("intent preserves season/episode", () => {
   const seriesEntry: QueueEntry = {
     ...ANIME_ENTRY,
     id: "queue-9",

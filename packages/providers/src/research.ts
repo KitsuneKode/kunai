@@ -124,7 +124,7 @@ export const providerResearchProfiles = [
     providerId: "kickassanime",
     status: "production",
     migrationAction: "promote-direct-provider",
-    migrationRank: 40,
+    migrationRank: 50,
     dossierPath: ".docs/provider-dossiers/kickassanime.md",
     evidencePaths: ["packages/providers/src/kickassanime/site.ts"],
     runtimeClass: "direct-http JSON catalog + Astro island player",
@@ -135,7 +135,7 @@ export const providerResearchProfiles = [
     subtitleStrategy:
       "External .vtt tracks straight from the player props — the only anime source in the tree with soft subs rather than burned-in.",
     productionGap:
-      "BirdStream's DASH is parsed but never chosen (its manifest 404'd on the title tested), so a VidStreaming outage has no second server.",
+      "Upstream rotated the playable server name (VidStreaming → CatStream); production now accepts either. BirdStream's DASH is still parsed but never chosen, so the fallback story is single-server.",
   },
   {
     providerId: "anikoto",

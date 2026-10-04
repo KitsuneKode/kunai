@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
+import type {
+  EndpointHealthPort,
+  ProviderResolveInput,
+  ProviderRuntimeContext,
+} from "@kunai/types";
 
 import {
   buildMovyCycleCandidates,
@@ -124,6 +128,44 @@ describe("resolveMovyDirect", () => {
     expect(
       result.sources?.some((s) => s.id === "source:movy:denver" && s.status === "selected"),
     ).toBe(true);
+  });
+
+  test("consults endpoint health and skips a quarantined lane without fetching it", async () => {
+    const seen: string[] = [];
+    const requestedLanes: string[] = [];
+    const endpointHealth: EndpointHealthPort = {
+      shouldTry: (_providerId, endpoint) => {
+        seen.push(endpoint);
+        return endpoint !== "denver";
+      },
+      recordSuccess: () => {},
+      recordFailure: () => {},
+    };
+    const ctx = {
+      ...contextReturning((url) => {
+        const lane = url.match(/\/(\w+)\/sources/)?.[1];
+        if (lane) requestedLanes.push(lane);
+        if (url.includes("/seed")) {
+          return new Response(JSON.stringify({ seed: FIXTURE.seed, ttlMs: 30000 }), {
+            status: 200,
+          });
+        }
+        if (url.includes("/atlanta/sources")) {
+          return new Response(FIXTURE.body, { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "Error", message: "lane down" }), {
+          status: 500,
+        });
+      }),
+      endpointHealth,
+    };
+
+    const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+    expect(result.status).toBe("resolved");
+    // Health was consulted for denver, but the quarantined lane was never
+    // asked over HTTP — the cycle skipped it before any sources fetch.
+    expect(seen).toContain("denver");
+    expect(requestedLanes).not.toContain("denver");
   });
 
   test("exhausts when every lane fails", async () => {
