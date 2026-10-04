@@ -107,8 +107,8 @@
     "test:live:offline-beta": "bun run --cwd apps/cli test:live:offline-beta",
     "test:live:videasy": "bun run --cwd apps/cli test:live:videasy",
     "test:live:videasy:suite": "bun run --cwd apps/cli test:live:videasy:suite",
-    "ci": "turbo run typecheck lint //#lint:root fmt:check test --summarize && bun run verify:doc-paths && bun run verify:doc-frontmatter && bun run verify:parity-references && bun run verify:doc-coverage",
-    "ci:affected": "bun run scripts/ci-affected-run.ts typecheck --summarize && bun run scripts/ci-affected-run.ts lint \"//#lint:root\" --summarize && bun run scripts/ci-affected-run.ts fmt:check --summarize && bun run scripts/ci-affected-run.ts test --summarize",
+    "ci": "bun run ci:preflight && turbo run typecheck lint //#lint:root fmt:check test --summarize && bun run verify:parity-references && bun run verify:doc-coverage",
+    "ci:affected": "bun run ci:preflight && bun run scripts/ci-affected-run.ts typecheck --summarize && bun run scripts/ci-affected-run.ts lint \"//#lint:root\" --summarize && bun run scripts/ci-affected-run.ts fmt:check --summarize && bun run scripts/ci-affected-run.ts test --summarize",
     "build": "turbo run build build:binary:host --filter=@kitsunekode/kunai",
     "brand:social": "bun .reference/design/brand/generate-social-cards.mjs",
     "build:binaries": "turbo run build:binaries --filter=@kitsunekode/kunai",
@@ -154,7 +154,8 @@
     "build:npm-platform": "bun run --cwd apps/cli build:npm-platform",
     "release:publish": "bun run scripts/publish-npm-release.ts",
     "release:publish:check": "bun run scripts/publish-npm-release.ts",
-    "verify:dependency-patches": "bun run scripts/verify-dependency-patches.mjs"
+    "verify:dependency-patches": "bun run scripts/verify-dependency-patches.mjs",
+    "ci:preflight": "bun run lint:anti-slop:baseline && bun run verify:doc-paths && bun run verify:doc-frontmatter"
   },
   "dependencies": {
     "typescript": "catalog:"

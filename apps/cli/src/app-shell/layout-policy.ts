@@ -164,6 +164,9 @@ export function getBrowseCommandPaletteMaxVisible(
   return Math.max(1, Math.min(18, availableRows));
 }
 
+/** Columns reserved on each side of the app root. */
+export const ROOT_HORIZONTAL_PADDING = 1;
+
 /** Rows consumed by AppRoot header and padding above shell content. */
 export const ROOT_CHROME_ROWS = 4;
 
