@@ -27,7 +27,21 @@ export function ProviderTable() {
               </td>
               <td className="py-3 pr-4 font-mono text-xs">{provider.domain}</td>
               <td className="py-3 pr-4 font-mono text-xs">{provider.mediaKinds.join(", ")}</td>
-              <td className="py-3 text-xs leading-relaxed">{provider.description}</td>
+              <td className="py-3 text-xs leading-relaxed">
+                {provider.description}
+                {provider.notes.length > 0 && (
+                  <details className="mt-1.5">
+                    <summary className="text-fd-muted-foreground cursor-pointer text-[11px]">
+                      Known limitations ({provider.notes.length})
+                    </summary>
+                    <ul className="text-fd-muted-foreground mt-1.5 list-disc space-y-1 pl-4 text-[11px]">
+                      {provider.notes.map((note) => (
+                        <li key={note.slice(0, 40)}>{note}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

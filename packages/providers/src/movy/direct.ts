@@ -28,6 +28,11 @@ import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
+import {
+  dropRefusedStreams,
+  resolveGateBudgetMs,
+  selectVerifiedStream,
+} from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
@@ -260,6 +265,7 @@ async function resolveMovyLaneCandidate({
   laneParams,
   tmdbId,
   signal,
+  gateTimeoutMs,
 }: {
   readonly candidate: ProviderCycleCandidate;
   readonly lane: MovyLane;
@@ -268,6 +274,7 @@ async function resolveMovyLaneCandidate({
   readonly laneParams: Record<string, string>;
   readonly tmdbId: number;
   readonly signal?: AbortSignal;
+  readonly gateTimeoutMs: number;
 }): Promise<MovyResolvedCandidate> {
   const sourceId = candidate.sourceId ?? providerInventorySourceId(MOVY_PROVIDER_ID, lane);
   const displayLabel = `Movy ${lane}`;
@@ -372,7 +379,35 @@ async function resolveMovyLaneCandidate({
     });
   }
 
-  return { provider: lane, streams, variants, subtitles };
+  // Probe before accepting the lane: a lane payload can carry dead mirrors
+  // (the status sweep caught a Denver source answering 404), and reporting it
+  // unprobed is the videasy failure shape — success claimed for a stream that
+  // cannot play. The gate only rejects on a definitive refusal; a slow or
+  // non-committal host still ships.
+  const selection = await selectVerifiedStream({
+    streams,
+    context,
+    signal,
+    timeoutMs: gateTimeoutMs,
+  });
+  if (!selection.accepted) {
+    throw createProviderCycleFailureError(candidate, {
+      failureClass: "candidate-blocked",
+      message: `${displayLabel}: ${selection.reason}`,
+      retryable: false,
+      at: context.now(),
+      // Every rung of this lane was refused by probing its own URLs, so it is
+      // durable evidence about that lane's endpoints rather than our network.
+      endpointScoped: true,
+    });
+  }
+  // Keep the alternatives, drop the rungs the gate proved dead.
+  const gatedStreams = dropRefusedStreams(streams, selection.refusedHosts);
+  const gatedVariants = variants.filter((variant) =>
+    gatedStreams.some((stream) => stream.variantId === variant.id),
+  );
+
+  return { provider: lane, streams: gatedStreams, variants: gatedVariants, subtitles };
 }
 
 export function buildMovyCycleCandidates(
@@ -503,6 +538,14 @@ export async function resolveMovyDirect(
     message: `Movy resolving TMDB ${tmdbId} across ${cycleCandidates.length} lanes`,
   });
 
+  // The attempt budget caps this, so the gate has to be sized against what the
+  // candidate actually gets rather than the number chosen here.
+  const candidateTimeoutMs = providerCycleCandidateTimeoutMs(
+    input.startupPriority ?? "balanced",
+    MOVY_CANDIDATE_TIMEOUT_MS,
+  );
+  const gateTimeoutMs = resolveGateBudgetMs(candidateTimeoutMs);
+
   const cycleResult = await runProviderCycle({
     providerId: MOVY_PROVIDER_ID,
     candidates: cycleCandidates,
@@ -510,10 +553,7 @@ export async function resolveMovyDirect(
     now: context.now,
     emit: context.emit,
     maxAttemptsPerCandidate: 1,
-    candidateTimeoutMs: providerCycleCandidateTimeoutMs(
-      input.startupPriority ?? "balanced",
-      MOVY_CANDIDATE_TIMEOUT_MS,
-    ),
+    candidateTimeoutMs,
     resolveCandidate: async (candidate, candidateContext) => {
       // SAFETY: serverId/lane were minted by this module's own lane roster
       // when the candidates were declared; a stray value resolves as a lane
@@ -531,6 +571,7 @@ export async function resolveMovyDirect(
           // it the fetch is never cancelled and a stalled lane leaks its
           // socket until TCP timeout.
           signal: candidateContext.signal,
+          gateTimeoutMs,
         });
       } catch (error) {
         // resolveMovyLaneCandidate already classifies its own failures (e.g.

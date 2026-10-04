@@ -213,11 +213,14 @@ export function buildTrackCapabilities(
   if (!view) return [];
 
   const mediaKind = options.mediaKind;
-  const bySection = new Map<TrackCapabilitySection, TrackCapability[]>();
+  const bySection = new Map<
+    TrackCapabilitySection,
+    { rows: TrackCapability[]; emptyReason?: string }
+  >();
   const push = (capability: TrackCapability): void => {
-    const rows = bySection.get(capability.section) ?? [];
-    rows.push(capability);
-    bySection.set(capability.section, rows);
+    const entry = bySection.get(capability.section) ?? { rows: [] as TrackCapability[] };
+    entry.rows.push(capability);
+    bySection.set(capability.section, entry);
   };
 
   for (const group of view.sourceGroups) {
@@ -329,30 +332,40 @@ export function composeTrackPanelGroups(
   inventoryGroups: readonly TrackCapabilityGroup[],
   mediaKind?: string,
 ): readonly TrackCapabilityGroup[] {
-  const bySection = new Map<TrackCapabilitySection, TrackCapability[]>();
-  if (providerGroup && providerGroup.rows.length > 0) {
-    bySection.set(providerGroup.section, [...providerGroup.rows]);
+  const bySection = new Map<
+    TrackCapabilitySection,
+    { rows: TrackCapability[]; emptyReason?: string }
+  >();
+  if (providerGroup && (providerGroup.rows.length > 0 || providerGroup.emptyReason)) {
+    bySection.set(providerGroup.section, {
+      rows: [...providerGroup.rows],
+      emptyReason: providerGroup.emptyReason,
+    });
   }
   for (const group of inventoryGroups) {
-    const rows = bySection.get(group.section) ?? [];
-    bySection.set(group.section, [...rows, ...group.rows]);
+    const entry = bySection.get(group.section) ?? { rows: [] as TrackCapability[] };
+    bySection.set(group.section, {
+      rows: [...entry.rows, ...group.rows],
+      emptyReason: entry.emptyReason ?? group.emptyReason,
+    });
   }
   return orderTrackCapabilityGroups(bySection, trackSectionOrderForMediaKind(mediaKind));
 }
 
 function orderTrackCapabilityGroups(
-  bySection: Map<TrackCapabilitySection, TrackCapability[]>,
+  bySection: Map<TrackCapabilitySection, { rows: TrackCapability[]; emptyReason?: string }>,
   sectionOrder: readonly TrackCapabilitySection[],
 ): readonly TrackCapabilityGroup[] {
   const groups: TrackCapabilityGroup[] = [];
   for (const section of sectionOrder) {
-    const rows = bySection.get(section);
-    if (!rows || rows.length === 0) continue;
+    const entry = bySection.get(section);
+    if (!entry || (entry.rows.length === 0 && !entry.emptyReason)) continue;
     groups.push({
       section,
       title: SECTION_TITLES[section],
-      rows,
-      selectable: rows.some((row) => row.enabled),
+      rows: entry.rows,
+      selectable: entry.rows.some((row) => row.enabled),
+      emptyReason: entry.emptyReason,
     });
   }
   return groups;

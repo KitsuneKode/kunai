@@ -7,7 +7,6 @@
 import type { TuningConfig } from "./tuning";
 
 export type {
-  AutoDownloadMode,
   ConfigTuningOverrides,
   ContinueSourcePreference,
   DiscoverMode,

@@ -3,6 +3,7 @@ import type { ListShellActionContext } from "@/app-shell/pickers/list-shell-type
 import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "@/app-shell/session-picker";
 import { describeEpisodeWatchPresentation } from "@/app/playback/playback-episode-picker";
 import type { Container } from "@/container";
+import { markCurrentLabel } from "@/domain/current-label";
 import type { OverlayPickerOption } from "@/domain/session/SessionState";
 import {
   formatEpisodePickerDetail,
@@ -76,7 +77,7 @@ export function buildSeasonPickerOptions(
     const entry = normalizeSeasonEntry(season);
     return {
       value: String(entry.number),
-      label: entry.number === currentSeason ? `${entry.name}  ·  current` : entry.name,
+      label: markCurrentLabel(entry.name, entry.number === currentSeason),
       previewImageUrl: entry.posterPath,
     };
   });

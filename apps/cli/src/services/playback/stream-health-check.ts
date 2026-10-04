@@ -15,17 +15,6 @@ import {
   type StreamReachabilityProbeResult,
 } from "@kunai/providers";
 
-export type StreamHealthCheckInput = {
-  readonly url: string;
-  readonly headers?: Record<string, string>;
-  readonly fetchImpl?: StreamReachabilityFetch;
-  readonly timeoutMs?: number;
-  readonly signal?: AbortSignal;
-  readonly cachedAt?: number | null;
-  readonly streamReachabilityVerified?: boolean;
-  readonly requiresYtdl?: boolean;
-};
-
 /** Last-chance playback handoff check. Lenient on timeout so mpv can still try. */
 export async function checkStreamPreflight(
   url: string,
@@ -51,29 +40,4 @@ export async function checkStreamPreflight(
     fetchImpl: options.fetchImpl,
   });
   return result.probe ?? { status: "reachable" };
-}
-
-/** Strict resolve/cache validation for a stream URL. */
-export async function checkStreamHealth(
-  input: StreamHealthCheckInput & {
-    readonly phase?: Extract<StreamHealthPhase, "resolve-gate" | "cache-revalidate">;
-    readonly force?: boolean;
-  },
-): Promise<boolean> {
-  const phase =
-    input.phase ??
-    (input.cachedAt !== undefined && input.cachedAt !== null ? "cache-revalidate" : "resolve-gate");
-  const result = await runStreamHealthCheck({
-    phase,
-    url: input.url,
-    headers: input.headers,
-    cachedAt: input.cachedAt,
-    streamReachabilityVerified: input.streamReachabilityVerified,
-    requiresYtdl: input.requiresYtdl,
-    force: input.force,
-    fetchImpl: input.fetchImpl,
-    timeoutMs: input.timeoutMs,
-    signal: input.signal,
-  });
-  return result.healthy;
 }

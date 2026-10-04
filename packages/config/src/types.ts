@@ -13,7 +13,6 @@ export type PresencePrivacy = "full" | "private";
 /** Opt-in usage ping. Fresh installs stay `unset` and never send network traffic. */
 export type AnalyticsPreference = "unset" | "enabled" | "disabled";
 export type DiscoverMode = "auto" | "unified" | "anime-only" | "series-only";
-export type AutoDownloadMode = "off" | "next" | "season";
 export type RecoveryMode = "guided" | "fallback-first" | "manual";
 
 /** Runtime tuning override bag; CLI tuning module resolves typed values. */
@@ -60,8 +59,6 @@ export interface KitsuneConfig {
   providerDefaultsRevision?: number;
   youtubeLanguageProfile: MediaLanguageProfile;
   youtubeMetadata: YouTubeMetadataConfig;
-  /** @deprecated use animeLanguageProfile/seriesLanguageProfile/movieLanguageProfile */
-  subLang: string;
   /**
    * User-owned Wyzie API key for the external subtitle search
    * (https://store.wyzie.io/redeem). Empty by default and never shipped with a
@@ -70,13 +67,10 @@ export interface KitsuneConfig {
    * no key the external lookup is skipped and only provider subtitles are used.
    */
   wyzieApiKey: string;
-  /** @deprecated use animeLanguageProfile/seriesLanguageProfile/movieLanguageProfile */
-  animeLang: "sub" | "dub";
   animeLanguageProfile: MediaLanguageProfile;
   seriesLanguageProfile: MediaLanguageProfile;
   movieLanguageProfile: MediaLanguageProfile;
   animeTitlePreference: "english" | "romaji" | "native" | "provider";
-  headless: boolean;
   showMemory: boolean;
   autoNext: boolean;
   autoplayRecommendations: boolean;
@@ -91,7 +85,6 @@ export interface KitsuneConfig {
   minimalMode: boolean;
   zenMode: boolean;
   powerSaverMode: boolean;
-  powerSaverAllowManualArtwork: boolean;
   skipRecap: boolean;
   skipIntro: boolean;
   skipPreview: boolean;
@@ -114,14 +107,11 @@ export interface KitsuneConfig {
   videasyAppId: "vidking" | "bc-frontend";
   downloadsEnabled: boolean;
   offlineMode: boolean;
-  autoDownload: AutoDownloadMode;
-  autoDownloadNextCount: number;
   maxConcurrentDownloads: number;
   defaultDownloadQuality: string;
   autoCleanupWatched: boolean;
   recoveryMode: RecoveryMode;
   startupPriority: StartupPriority;
-  artworkPreviewsEnabled: boolean;
   offlineArtworkCacheEnabled: boolean;
   offlineFreeSpaceReserveBytes: number;
   offlineUnknownEpisodeEstimateBytes: number;

@@ -27,6 +27,7 @@ import { formatAnimeSourceDetail } from "../shared/anime-source-presentation";
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { parseHlsMasterAudioRenditions, type HlsAudioRendition } from "../shared/hls-ladder";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   createSourceCandidateFromStream,
@@ -194,8 +195,9 @@ async function fetchMasterPlaylist(
     });
     return response.ok ? await response.text() : null;
   } catch {
-    // A master this adapter cannot read is not a dead stream: mpv fetches it
-    // again itself. Only the audio naming is lost, so the sub label stands.
+    // A master this adapter cannot read is not yet a dead stream: the caller
+    // gates the shipped URL on `null`, and only the audio naming is lost when
+    // that probe passes. Returning null — not throwing — keeps those distinct.
     return null;
   }
 }
@@ -457,6 +459,20 @@ export const kickassanimeProviderModule: CoreProviderModule = {
 
     const headers = kaaStreamHeaders(server.src);
     const master = await fetchMasterPlaylist(context, player.manifest, headers);
+    if (master === null) {
+      // The adapter could not read the manifest but would still ship that URL —
+      // mpv retries the identical request. A definitive gate refusal is proof
+      // the manifest host is dead; a timeout or non-definitive answer is not,
+      // which keeps the old "mpv fetches it again" leniency.
+      const verdict = await verifyCandidateStream({
+        stream: { url: player.manifest, headers },
+        context,
+        signal: context.signal,
+      });
+      if (!verdict.accepted) {
+        return fail("not-found", `KickAssAnime manifest is unreachable (${verdict.reason})`, true);
+      }
+    }
     const selected = selectKaaAudio(
       master ? parseHlsMasterAudioRenditions(master) : [],
       audio.catalogMode,

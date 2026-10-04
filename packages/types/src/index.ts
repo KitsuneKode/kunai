@@ -573,8 +573,7 @@ export interface ProviderResolveInput {
   readonly preferredSubtitleDelivery?: SubtitleDelivery;
   readonly qualityPreference?: string;
   readonly startupPriority?: StartupPriority;
-  readonly regionHint?: string;
-  readonly intent: "browse" | "focused" | "prefetch" | "play" | "refresh" | "autoplay";
+  readonly intent: "play" | "refresh";
   readonly allowedRuntimes: readonly ProviderRuntime[];
 }
 

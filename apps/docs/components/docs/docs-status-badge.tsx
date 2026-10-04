@@ -13,7 +13,9 @@ type DocsStatusBadgeProps = {
 };
 
 export function DocsStatusBadge({ status }: DocsStatusBadgeProps) {
-  if (!status || !(status in statusVariant)) {
+  // `shipped` is the steady state — a badge on every finished page is chrome,
+  // not signal. Only out-of-band states earn the chip.
+  if (!status || status === "shipped" || !(status in statusVariant)) {
     return null;
   }
 

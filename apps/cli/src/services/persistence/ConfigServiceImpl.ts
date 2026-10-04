@@ -3,7 +3,6 @@
 // =============================================================================
 
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
-import { normalizeAutoDownloadNextCount } from "@/services/download/download-scope-policy";
 import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
   DEFAULT_OFFLINE_RUNWAY_TARGET,
@@ -17,7 +16,6 @@ import { isJsonString, type ProviderRelayConfig, type StartupPriority } from "@k
 import type {
   ConfigService,
   KitsuneConfig,
-  AutoDownloadMode,
   QuitNearEndBehavior,
   QuitNearEndThresholdMode,
   PresencePrivacy,
@@ -42,13 +40,6 @@ function normalizeProviderIdList(
 ): readonly string[] {
   if (!Array.isArray(values)) return fallback.map(migrateLegacyProviderId);
   return [...new Set(values.map((value) => migrateLegacyProviderId(value.trim())).filter(Boolean))];
-}
-
-function normalizeDefaultSubtitleLanguage(subLang: string | undefined): string {
-  if (!subLang || subLang === "none" || subLang === "fzf" || subLang === "interactive") {
-    return DEFAULT_CONFIG.subLang;
-  }
-  return subLang;
 }
 
 function normalizeSubtitlePreference(value: string | undefined): string {
@@ -229,12 +220,9 @@ export class ConfigServiceImpl implements ConfigService {
         loaded.youtubeLanguageProfile ?? DEFAULT_CONFIG.youtubeLanguageProfile,
       ),
       youtubeMetadata: normalizeYoutubeMetadata(loaded.youtubeMetadata),
-      subLang: normalizeDefaultSubtitleLanguage(loaded.subLang),
       animeLanguageProfile: normalizeLanguageProfile(loaded.animeLanguageProfile),
       seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
       movieLanguageProfile: normalizeLanguageProfile(loaded.movieLanguageProfile),
-      autoDownload: "off",
-      autoDownloadNextCount: normalizeAutoDownloadNextCount(loaded.autoDownloadNextCount),
       offlineFreeSpaceReserveBytes: normalizeBytes(
         loaded.offlineFreeSpaceReserveBytes,
         DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
@@ -384,16 +372,8 @@ export class ConfigServiceImpl implements ConfigService {
     return [...this.config.animeProviderPriority];
   }
 
-  get subLang(): string {
-    return this.config.subLang;
-  }
-
   get wyzieApiKey(): string {
     return this.config.wyzieApiKey;
-  }
-
-  get animeLang(): "sub" | "dub" {
-    return this.config.animeLang;
   }
 
   get animeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
@@ -410,10 +390,6 @@ export class ConfigServiceImpl implements ConfigService {
 
   get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
     return this.config.animeTitlePreference;
-  }
-
-  get headless(): boolean {
-    return this.config.headless;
   }
 
   get showMemory(): boolean {
@@ -524,14 +500,6 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.offlineMode;
   }
 
-  get autoDownload(): AutoDownloadMode {
-    return this.config.autoDownload;
-  }
-
-  get autoDownloadNextCount(): number {
-    return this.config.autoDownloadNextCount;
-  }
-
   get maxConcurrentDownloads(): number {
     return normalizeMaxConcurrentDownloads(this.config.maxConcurrentDownloads);
   }
@@ -554,10 +522,6 @@ export class ConfigServiceImpl implements ConfigService {
 
   get startupPriority(): StartupPriority {
     return this.config.startupPriority;
-  }
-
-  get artworkPreviewsEnabled(): boolean {
-    return this.config.artworkPreviewsEnabled;
   }
 
   get offlineArtworkCacheEnabled(): boolean {
@@ -692,10 +656,6 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.powerSaverMode;
   }
 
-  get powerSaverAllowManualArtwork(): boolean {
-    return this.config.powerSaverAllowManualArtwork;
-  }
-
   get tuning(): TuningConfig {
     return resolveTuning(this.config.tuningOverrides);
   }
@@ -730,9 +690,6 @@ export class ConfigServiceImpl implements ConfigService {
     this.config = {
       ...this.config,
       ...partial,
-      ...(partial.subLang !== undefined
-        ? { subLang: normalizeDefaultSubtitleLanguage(partial.subLang) }
-        : null),
       ...(partial.providerPriority !== undefined
         ? { providerPriority: normalizeProviderIdList(partial.providerPriority) }
         : null),
@@ -748,10 +705,6 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.movieLanguageProfile
         ? { movieLanguageProfile: normalizeLanguageProfile(partial.movieLanguageProfile) }
         : null),
-      ...(partial.autoDownloadNextCount !== undefined
-        ? { autoDownloadNextCount: normalizeAutoDownloadNextCount(partial.autoDownloadNextCount) }
-        : null),
-      ...(partial.autoDownload !== undefined ? { autoDownload: "off" as const } : null),
       ...(partial.offlineFreeSpaceReserveBytes !== undefined
         ? {
             offlineFreeSpaceReserveBytes: normalizeBytes(

@@ -265,8 +265,3 @@ export interface SearchMetadata {
   readonly name: string;
   readonly description: string;
 }
-
-// Capabilities
-export interface ProviderCapabilities {
-  readonly contentTypes: ContentType[];
-}

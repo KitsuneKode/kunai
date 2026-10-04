@@ -82,7 +82,6 @@ import { SqliteCacheStoreImpl } from "../services/persistence/SqliteCacheStoreIm
 import { StorageMaintenanceService } from "../services/persistence/StorageMaintenanceService";
 import { realSyncTokenFileIo, SyncTokenStore } from "../services/persistence/SyncTokenStore";
 import { EpisodePlaybackSelectionService } from "../services/playback/EpisodePlaybackSelectionService";
-import { MediaTrackService } from "../services/playback/MediaTrackService";
 import { ProviderEndpointHealthService } from "../services/playback/ProviderEndpointHealthService";
 import { SourceInventoryService } from "../services/playback/SourceInventoryService";
 import { TitlePlaybackSourceService } from "../services/playback/TitlePlaybackSourceService";
@@ -132,7 +131,6 @@ export type PersistenceBootstrap = {
   readonly catalogCrosswalk: CatalogCrosswalkRepository;
   readonly playbackEventRepository: PlaybackEventRepository;
   readonly cacheStore: SqliteCacheStoreImpl;
-  readonly mediaTrackService: MediaTrackService;
   readonly recommendationCache: RecommendationCacheRepository;
   readonly providerHealth: ProviderHealthRepository;
   readonly endpointHealth: ProviderEndpointHealthService;
@@ -280,7 +278,6 @@ export async function bootstrapPersistence(
   const catalogCrosswalk = new CatalogCrosswalkRepository(cacheDb);
   const playbackEventRepository = new PlaybackEventRepository(dataDb);
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
-  const mediaTrackService = new MediaTrackService();
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
   const providerHealth = new ProviderHealthRepository(cacheDb);
   const { listDeprecatedVidkingEndpoints } = await import("@kunai/providers/videasy");
@@ -445,7 +442,6 @@ export async function bootstrapPersistence(
     catalogCrosswalk,
     playbackEventRepository,
     cacheStore,
-    mediaTrackService,
     recommendationCache,
     providerHealth,
     endpointHealth,

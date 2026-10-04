@@ -5,6 +5,7 @@ import {
 } from "@/domain/continuation/history-bucket";
 import { type ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
+import { markCurrentLabel } from "@/domain/current-label";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
@@ -769,8 +770,7 @@ export function buildProviderPickerOptions({
     const healthDetail = healthBadge ? `Health: ${healthBadge}` : null;
     const crossLaneDetail = isCrossLane?.(provider) ? "via linked catalog id" : null;
     const baseDetail = formatProviderDetail(provider);
-    const baseLabel =
-      provider.id === currentProvider ? `${provider.name}  ·  current` : provider.name;
+    const baseLabel = markCurrentLabel(provider.name, provider.id === currentProvider);
     return {
       value: provider.id,
       label: healthLabelSuffix ? `${baseLabel}${healthLabelSuffix}` : baseLabel,

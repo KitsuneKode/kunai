@@ -104,7 +104,7 @@ const payload = {
   streamReachable,
   resolverAttestedReachable,
   ...providerSmokeProfilePayload(profile),
-  animeLang: container.config.animeLang,
+  animeLang: container.config.animeLanguageProfile.audio === "dub" ? "dub" : "sub",
   cacheCleared: clearCache,
 };
 

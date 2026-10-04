@@ -1,19 +1,14 @@
 import type {
   EpisodeInfo,
   EpisodePickerOption,
-  ProviderCapabilities,
   ProviderMetadata,
   ShellMode,
-  StreamInfo,
   TitleInfo,
   YouTubeResultKind,
 } from "@/domain/types";
 import type { CoreProviderManifest, CoreProviderModule } from "@kunai/core";
 import { resolveProviderCatalogIdentity, resolveProviderLaneFromModule } from "@kunai/core";
 import type { StartupPriority } from "@kunai/types";
-
-import { providerResolveResultToStreamInfo } from "./provider-result-adapter";
-import { streamRequestToResolveInput } from "./stream-request-adapter";
 
 export interface StreamRequest {
   title: TitleInfo;
@@ -37,9 +32,7 @@ export interface EpisodeListRequest {
 
 export interface Provider {
   readonly metadata: ProviderMetadata;
-  readonly capabilities: ProviderCapabilities;
   canHandle(title: TitleInfo): boolean;
-  resolveStream(request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null>;
   listEpisodes?(
     request: EpisodeListRequest,
     signal?: AbortSignal,
@@ -55,16 +48,10 @@ export interface Provider {
   ): Promise<import("@/domain/types").SearchResult[] | null>;
 }
 
-export type ProviderResolveFn = (
-  request: StreamRequest,
-  signal?: AbortSignal,
-) => Promise<StreamInfo | null>;
-
 export function createProviderFromModule(
   module: CoreProviderModule,
   opts: {
     readonly mode: ShellMode;
-    readonly resolveStream?: ProviderResolveFn;
     readonly search?: Provider["search"];
     readonly listEpisodes?: Provider["listEpisodes"];
     readonly canHandle?: (title: TitleInfo) => boolean;
@@ -85,17 +72,9 @@ export function createProviderFromModule(
     domain: manifest.domain,
   };
 
-  const capabilities: ProviderCapabilities = {
-    contentTypes: manifest.mediaKinds.filter(
-      (k): k is "movie" | "series" => k === "movie" || k === "series",
-    ),
-  };
-
   return {
     metadata,
-    capabilities,
     canHandle: opts.canHandle ?? defaultCanHandle(manifest),
-    resolveStream: opts.resolveStream ?? defaultResolveStream(module, opts.mode),
     search: opts.search,
     listEpisodes: opts.listEpisodes,
   };
@@ -107,30 +86,5 @@ function defaultCanHandle(manifest: CoreProviderManifest) {
       return title.id.startsWith("youtube:") || Boolean(title.externalIds?.youtubeId);
     }
     return manifest.mediaKinds.includes(title.type) || manifest.mediaKinds.includes("anime");
-  };
-}
-
-function defaultResolveStream(module: CoreProviderModule, mode: ShellMode): ProviderResolveFn {
-  return async (request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null> => {
-    const catalogIdentity = resolveProviderCatalogIdentity(module.manifest);
-    const input = streamRequestToResolveInput(
-      request,
-      mode,
-      "play",
-      catalogIdentity,
-      module.manifest.id,
-    );
-    const result = await module.resolve(input, {
-      now: () => new Date().toISOString(),
-      signal,
-    });
-
-    if (!result.streams.length) return null;
-
-    return providerResolveResultToStreamInfo({
-      result,
-      title: request.title.name,
-      subtitlePreference: request.subtitlePreference,
-    });
   };
 }
