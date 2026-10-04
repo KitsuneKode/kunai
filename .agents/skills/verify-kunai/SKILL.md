@@ -90,6 +90,7 @@ Environment knobs:
 cd apps/cli
 
 bun run agent:session -- start --name myrun      # tmux session, real main.ts, fresh sandbox
+bun run agent:session -- doctor --name myrun     # liveness, recognized surface, isolated file vault
 bun run agent:session -- see --name myrun        # capture-pane → the actual screen
 bun run agent:session -- do smoke "<enter>" --name myrun   # positional keys
 bun run agent:session -- wait-for "Smoke" --name myrun     # wait for pane text (`/re/` = regex)
@@ -111,7 +112,7 @@ reopen, prove state survived. `see` is the real rendered pane
 
 ## What a real verification looks like
 
-Prove "enqueue survives relaunch":
+Prove "enqueue survives relaunch and explicit restore":
 
 ```sh
 bun run agent:session -- start --name q1
@@ -120,7 +121,12 @@ bun run agent:session -- wait-for "Smoke" --name q1
 bun run agent:session -- do q --name q1
 bun run agent:session -- inspect queue --name q1          # row in queue table
 bun run agent:session -- relaunch --name q1
-bun run agent:session -- do Q --name q1                   # Up Next surface
+bun run agent:session -- do / --name q1
+bun run agent:session -- wait-for "Command palette" --name q1
+bun run agent:session -- do queue --name q1
+bun run agent:session -- wait-for "/up-next" --name q1
+bun run agent:session -- do "<enter>" --name q1             # Up Next surface
+bun run agent:session -- do r --name q1                   # explicit restore after restart
 bun run agent:session -- inspect queue --name q1          # still there
 bun run agent:session -- stop --name q1
 ```
@@ -149,7 +155,10 @@ fixture stream URL via `KUNAI_SMOKE_MEDIA_BASE`, and wraps `mpv` with
 ## The rules (these exist because they've each been violated)
 
 1. **Never point anything at the real profile.** No `KUNAI_CONFIG_DIR`, no
-   real `~/.config/kunai`. The drivers isolate via HOME/XDG/APPDATA — if you
+   real `~/.config/kunai`. The drivers isolate via HOME/XDG/APPDATA **and force the file credential
+   backend**. Native vaults are account-wide; changing HOME does not isolate them.
+   The held-session launcher rejects overrides of its storage roots or credential
+   backend. If you
    need a custom env, pass `--set-env`, don't export globals.
 2. **Analytics stays off.** The seeded profile has it explicitly declined.
    `dispose()` asserts no `installId` was minted — if your key plan toggles it
@@ -160,10 +169,12 @@ fixture stream URL via `KUNAI_SMOKE_MEDIA_BASE`, and wraps `mpv` with
    produce the quote, you didn't verify it — say so.
 4. **A skip is not a pass.** tmux missing → session commands fail loudly;
    real-mpv absent → the test prints a skip line. Neither means verified.
-5. **Wait like a human.** A frame can render before its input handlers attach.
-   `<wait:>`/`--wait-for` on the surface you intend to type into, every time.
-   Typing into a not-yet-live surface drops keys — that failure is real UX
-   truth, not a flaky test.
+5. **Drive one transition at a time.** Open the palette with `/`, capture it,
+   type the query, inspect the selected command, then Enter. A rendered frame
+   does not prove every handler is attached. Wait for the target surface and
+   check the committed effect; do not burst keys across a surface transition.
+   If fast input or paste drops keys, retain it as a separate reproduction;
+   a slower successful retry does not fix the product bug.
 6. **Fixture catalog only.** `smoke` matches `Smoke Movie`, `Smoke Series`,
    `Smoke Anime`, `Return To Shell`, and friends. Other queries legitimately
    return zero results — that's the fixture working, not a bug.
@@ -171,8 +182,40 @@ fixture stream URL via `KUNAI_SMOKE_MEDIA_BASE`, and wraps `mpv` with
    before `config.json` does. Always `<wait-config:...>` (or `waitForBackend`)
    before concluding "persisted" — or "no-op".
 
+## Health, coverage, and release claims
+
+Run `doctor` before driving a held session and after an unexpected result. It
+checks pane liveness, recognized interactive chrome, contained storage paths,
+file credentials, and no analytics opt-in/install ID. It does **not** establish
+provider reachability, player progress, the source revision, or handler readiness.
+An app logo alone is not readiness; an offline Library need not show the logo.
+
+Route the requested feature through [.docs/feature-map.md](../../../.docs/feature-map.md)
+and use [scenario coverage](references/scenarios.md). Read the owning handler
+and real callee, including cancellation, reverse actions and every entrypoint.
+For each finding record: trigger, expected behavior, observed frame, committed
+state, disproof attempted, and whether it is repaired or blocked on a prerequisite.
+Do not label a whole feature verified from one happy path.
+
+Before reporting a fix, reproduce its failure with the prior behavior, run the
+regression, then execute the repaired user path on a healthy held session.
+Distinguish fixtures, real terminal, compiled artifact, real mpv, live provider,
+and physical phone evidence. A VLC-open event proves handoff, not playback or
+completion. A local test pass does not establish hosted Windows/macOS results.
+
 ## When something fails
 
+- Capture `report` into an evidence directory **outside** the profile before
+  cleanup. Failed interactive startup captures a separate temporary report and
+  stops the session it created; early launch failures also dispose owned profiles.
+  `--keep-profile` retains the shadow profile for inspection, never a live profile.
+- Run `doctor`. If unhealthy, inspect the evidence, relaunch that named session
+  once, and recheck. If the same failure returns, stop and record the concrete
+  blocker instead of repeating inputs or increasing timeouts.
+- Stop only the session this run created; never kill all tmux sessions or process
+  names. Confirm its sidecar is gone and evidence still exists. A retained custom
+  temporary profile may be stopped, but deletion of an unexpected directory is
+  refused before the session is killed.
 - Read the journal first (`--show journal`, or `transcript.md` in the bundle) —
   every step shows the input and what the backend did.
 - `waitForFrame`/`--wait-for` timeouts print the label; re-run with

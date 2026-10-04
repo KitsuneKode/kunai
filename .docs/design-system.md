@@ -111,7 +111,10 @@ Kunai feels like a calm, fast media command shell: content-first in normal use, 
 
 Loading · success · empty · error — see [.reference/design/cli/02-state-ux.md](../.reference/design/cli/02-state-ux.md). Failure/recovery surfaces (`playback did not start`, `stream stalled`, `no source`, `provider degraded`, diagnostics) are first-class, not afterthoughts — they are where a scraper app earns trust.
 
-Width budget is owned by the container, not the terminal: inside a root overlay
+Width budget is owned by the container, not the terminal. Setup subtracts
+`ROOT_HORIZONTAL_PADDING` on both sides before sizing its frame and content.
+Its committed captures include the padded parent; rendering setup by itself
+would miss wrapped dividers in the real app. Inside a root overlay
 `OverlayLayoutProvider.contentColumns` is authoritative, because the frame consumes the
 difference. Narrow list surfaces stay full-width and actionable and drop their companion rail
 first; a wide surface adds one constrained rail driven by the settled selection, never by the raw

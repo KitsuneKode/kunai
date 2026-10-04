@@ -68,6 +68,18 @@ the developer's credential store.
    command, exit status, failures, skips, and cache status. Separate local Linux,
    hosted Windows/macOS, opt-in database/native, and live-provider evidence.
 
+For live CLI behavior use the repo's `verify-kunai` skill and the held-session
+`doctor` command. It checks liveness, interactive chrome, contained profile
+paths, file credentials and no analytics opt-in; it does not verify source
+revision, provider availability or player progress. The launcher shell-quotes
+literal environment/path values and refuses storage/vault overrides. `--command`
+remains a developer-controlled shell fragment of extra main.ts arguments.
+Reports belong outside the temporary profile. Failed interactive startup saves
+a diagnostic report outside the profile and stops only its created session;
+`--keep-profile` preserves the shadow directory. Existing sidecars are checked
+before any inspector read or cleanup. Tests for these commands live in the
+separate `bun run test:agent` tier, not the default unit/integration suites.
+
 The debounce contract in
 `apps/cli/test/unit/app-shell/settle-value.test.tsx` advances Bun fake timers inside
 React `act()`. It covers the pre-deadline frame, the final frame, and cancellation

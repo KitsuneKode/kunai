@@ -6,7 +6,7 @@
  * loop survives across agent turns and cleanup is `stop` (or `tmux kill-session`).
  *
  *   start    --name N --seed onboarded|fresh --width C --rows R --no-fake-mpv
- *            --command "bun src/main.ts"    (default session name: kunai-agent)
+ *            --command "--offline"        (extra main.ts arguments; default name: kunai-agent)
  *   see      print the current rendered pane (add --raw for ANSI colors)
  *   do       send keys: `do smoke "<enter>"` — same key vocabulary as agent:drive
  *   wait-for <text>     block until the pane contains text (bounded);
@@ -19,10 +19,19 @@
  * Citations: `report` + grep is the mechanical check — quote lines that exist
  * in the bundle, never claim from memory.
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { advertisedKeys, frameMatcher } from "./frame-match";
+import { advertisedKeys, bootSurface, frameMatcher } from "./frame-match";
 import { decodeKeyToken } from "./keys";
 import { createProfileInspector } from "./profile-inspector";
 import {
@@ -30,6 +39,7 @@ import {
   startTmuxSession,
   tmuxSessionStatePath,
   type SessionSidecar,
+  type TmuxSession,
 } from "./tmux-session";
 
 function usage(): never {
@@ -37,6 +47,7 @@ function usage(): never {
   start [--name N] [--seed onboarded|fresh] [--width C] [--rows R]
         [--no-fake-mpv] [--command "..."] [--keep-profile] [--set-env K=V]...
   see [--name N] [--raw]
+  doctor [--name N]          check liveness, interactive surface and profile isolation
   do <key>... [--name N]      keys: text types literally, <enter> <esc> <up> ...
   keys [--name N]             list the [key] hints the current pane advertises
   wait-for <text> [--name N]
@@ -68,10 +79,15 @@ function rejectUnknownFlags(argv: string[], known: readonly string[]): void {
       console.error(`unknown flag: ${arg}`);
       usage();
     }
+    if (["--no-fake-mpv", "--keep-profile", "--raw"].includes(arg)) continue;
     const next = argv[i + 1];
-    if (next !== undefined && !next.startsWith("--")) {
-      i += 1; // skip the flag's value
+    if (next === undefined) {
+      console.error(`missing value for ${arg}`);
+      usage();
     }
+    // An app argument such as --offline belongs to --command, even though
+    // it looks like a harness flag. Boolean switches consume no value.
+    i += 1;
   }
 }
 
@@ -101,20 +117,84 @@ function loadSidecar(name: string): SessionSidecar {
   if (!isSessionSidecar(parsed)) {
     throw new Error(`corrupt session sidecar ${path} — delete it and start a fresh session`);
   }
+  if (parsed.name !== name) throw new Error(`session sidecar name does not match ${name}`);
+  assertIsolatedProfile(parsed);
   return parsed;
 }
 
-/** Real shape guard — `in`-narrowing, no assertions. */
-function isSessionSidecar(v: unknown): v is SessionSidecar {
-  if (typeof v !== "object" || v === null) return false;
-  if (!("profile" in v) || !("runScript" in v)) return false;
-  const { profile, runScript } = v;
+function within(root: string, path: string): boolean {
+  // Resolve existing ancestors too: an absent DB below a symlink must not
+  // bypass containment merely because the final file has not been created.
+  let ancestor = resolve(path);
+  const missing: string[] = [];
+  while (!existsSync(ancestor)) {
+    const parent = dirname(ancestor);
+    if (parent === ancestor) return false;
+    missing.unshift(basename(ancestor));
+    ancestor = parent;
+  }
+  const resolved = join(realpathSync(ancestor), ...missing);
+  const rel = relative(root, resolved);
   return (
-    typeof runScript === "string" &&
-    typeof profile === "object" &&
-    profile !== null &&
-    "rootDir" in profile &&
-    typeof profile.rootDir === "string"
+    rel !== ".." &&
+    !rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) &&
+    !isAbsolute(rel)
+  );
+}
+
+/** Validate the inspector's paths before any database or config read. */
+function assertIsolatedProfile(sidecar: SessionSidecar): void {
+  const { profile } = sidecar;
+  const root = realpathSync(profile.rootDir);
+  const temporaryRoot = realpathSync(tmpdir());
+  if (root === temporaryRoot || !within(temporaryRoot, root)) {
+    throw new Error("session profile must be a private directory inside the temporary root");
+  }
+  for (const key of [
+    "HOME",
+    "USERPROFILE",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+    "APPDATA",
+    "LOCALAPPDATA",
+  ]) {
+    const value = profile.env[key];
+    if (!value || realpathSync(value) !== root)
+      throw new Error(`session storage root ${key} is not isolated`);
+  }
+  if (profile.env.KUNAI_CREDENTIAL_BACKEND !== "file") {
+    throw new Error("session credential backend must be file; native vaults are account-wide");
+  }
+  for (const path of [
+    sidecar.runScript,
+    profile.paths.configPath,
+    profile.paths.dataDbPath,
+    profile.paths.cacheDbPath,
+  ]) {
+    if (!within(root, path)) throw new Error("session inspector path escapes the shadow profile");
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Check every field read by attach, isolation validation and inspection. */
+function isSessionSidecar(v: unknown): v is SessionSidecar {
+  if (!isRecord(v) || !isRecord(v.profile)) return false;
+  const { profile } = v;
+  const paths = profile.paths;
+  return (
+    typeof v.name === "string" &&
+    typeof v.runScript === "string" &&
+    typeof v.startedAt === "string" &&
+    (v.keepProfile === undefined || typeof v.keepProfile === "boolean") &&
+    typeof profile.rootDir === "string" &&
+    isRecord(profile.env) &&
+    Object.values(profile.env).every((value) => typeof value === "string") &&
+    isRecord(paths) &&
+    ["configPath", "dataDbPath", "cacheDbPath"].every((key) => typeof paths[key] === "string")
   );
 }
 
@@ -126,6 +206,28 @@ function attach(name: string) {
     runScript: sidecar.runScript,
     keepProfile: true, // stop owns deletion; attach never does
   });
+}
+
+async function writeReport(session: TmuxSession, dir: string): Promise<void> {
+  const frame = await session.see();
+  const inspect = session.inspect();
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "frame.txt"), `${frame}\n`);
+  writeFileSync(join(dir, "frame-raw.txt"), `${await session.seeRaw()}\n`);
+  writeFileSync(
+    join(dir, "backend.json"),
+    `${JSON.stringify(
+      {
+        dead: await session.isDead(),
+        config: inspect.config(),
+        tables: inspect.tables(),
+        history: inspect.history(),
+        queue: inspect.queue(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 async function main(): Promise<void> {
@@ -184,9 +286,53 @@ async function main(): Promise<void> {
       };
       writeFileSync(tmuxSessionStatePath(name), `${JSON.stringify(sidecar)}\n`);
       // Boot takes a beat — wait for the shell chrome before reporting ready.
-      await session.waitFor((f) => f.includes("Kunai"), "shell boot");
+      try {
+        await session.waitFor((f) => bootSurface(f) !== null, "interactive startup surface");
+      } catch (error) {
+        // Evidence lives outside the profile stop() owns. Never leave a
+        // failed boot attached as if it were a healthy held session.
+        const evidence = mkdtempSync(join(tmpdir(), `kunai-start-failure-${name}-`));
+        try {
+          await writeReport(session, evidence);
+        } catch (captureError) {
+          writeFileSync(join(evidence, "capture-error.txt"), String(captureError));
+        } finally {
+          await session.stop();
+          rmSync(tmuxSessionStatePath(name), { force: true });
+        }
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}\nEvidence retained at ${evidence}`,
+          { cause: error },
+        );
+      }
       console.log(`started tmux session "${name}" · profile ${session.profile.rootDir}`);
       console.log(`see it:  bun run agent:session -- see --name ${name}`);
+      break;
+    }
+
+    case "doctor": {
+      rejectUnknownFlags(rest, ["--name"]);
+      const sidecar = loadSidecar(name);
+      const session = attach(name);
+      if (await session.isDead())
+        throw new Error(`session ${name} exited; relaunch before driving it`);
+      const surface = bootSurface(await session.see());
+      if (!surface)
+        throw new Error(
+          `session ${name} has no ready interactive surface; capture evidence and relaunch`,
+        );
+      const config = session.inspect().config();
+      if (
+        config.analytics === "enabled" ||
+        (config.installId !== undefined && config.installId !== "")
+      ) {
+        throw new Error(
+          "session analytics privacy check failed; retain evidence and stop this run",
+        );
+      }
+      console.log(`healthy ${name} · ${surface} · credential backend file`);
+      console.log(`shadow profile: ${sidecar.profile.rootDir}`);
+      console.log(`launch script: ${sidecar.runScript}`);
       break;
     }
 
@@ -230,7 +376,7 @@ async function main(): Promise<void> {
       rejectUnknownFlags(rest, ["--name"]);
       const session = attach(name);
       await session.relaunch();
-      await session.waitFor((f) => f.includes("Kunai"), "relaunch boot");
+      await session.waitFor((f) => bootSurface(f) !== null, "interactive relaunch surface");
       console.log(await session.see());
       break;
     }
@@ -262,25 +408,7 @@ async function main(): Promise<void> {
       const dir = positionalArgs(rest)[0];
       if (!dir) usage();
       const session = attach(name);
-      const frame = await session.see();
-      const inspect = session.inspect();
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "frame.txt"), `${frame}\n`);
-      writeFileSync(join(dir, "frame-raw.txt"), `${await session.seeRaw()}\n`);
-      writeFileSync(
-        join(dir, "backend.json"),
-        `${JSON.stringify(
-          {
-            dead: await session.isDead(),
-            config: inspect.config(),
-            tables: inspect.tables(),
-            history: inspect.history(),
-            queue: inspect.queue(),
-          },
-          null,
-          2,
-        )}\n`,
-      );
+      await writeReport(session, dir);
       console.log(`evidence: ${dir}/frame.txt ${dir}/backend.json`);
       break;
     }
@@ -288,7 +416,12 @@ async function main(): Promise<void> {
     case "stop": {
       rejectUnknownFlags(rest, ["--name"]);
       const sidecar = loadSidecar(name);
-      if (!sidecar.profile.rootDir.includes("kunai-integration-")) {
+      const root = realpathSync(sidecar.profile.rootDir);
+      if (
+        !sidecar.keepProfile &&
+        (dirname(root) !== realpathSync(tmpdir()) ||
+          !basename(root).startsWith("kunai-integration-"))
+      ) {
         // Paranoia FIRST: a refusal must not leave a half-cleaned state —
         // check before killing the session or touching the sidecar.
         throw new Error(`refusing to delete unexpected profile dir: ${sidecar.profile.rootDir}`);

@@ -29,6 +29,122 @@ operation must execute on the phone. A descriptor server needs a new bounded,
 authorized API and returns metadata only; media remains direct. Neither option
 is implemented or physically qualified.
 
+## Local companion proposal, 2026-10-04
+
+The user selected **both playback destinations**: control desktop mpv and hand
+an eligible direct stream to VLC on the phone. Computer-off phone use remains
+an independent requirement. This section is a proposed design, not an
+implemented server, frontend, native wrapper, or approved release date.
+
+### One application, several presentations
+
+Use the same queue identity, claim/ack/rollback, history decisions, artifact
+validation and download policy under CLI and touch surfaces. Reuse the provider
+engine and storage packages; extract the smallest application seam needed for
+one shared vertical slice. The current `packages/core` owns provider/resolver
+primitives, not all application logic: queue and playback policy still live in
+`apps/cli/src/app` and `apps/cli/src/domain/queue`. A new client must not import
+the CLI app or Ink. See [runtime ownership](../.docs/runtime-boundary-map.md).
+
+```mermaid
+flowchart LR
+  CLI[Terminal UI] --> Runtime[Shared application services]
+  Web[Touch UI] --> API[Paired local API]
+  API --> Runtime
+  Native[Future native UI] --> API
+  Runtime --> Storage[Owned profile and SQLite]
+  Runtime --> Resolve[Direct-provider engine]
+  Runtime --> MPV[Desktop player port]
+  Resolve --> Handoff[Eligible phone handoff]
+```
+
+Run one service owner for the profile; two independent CLI/web workers must
+not compete to claim queue items or acknowledge different player sessions.
+The terminal is a presentation attached to this owner. First implementation
+can keep the owner in the CLI process, with an explicit warning that closing
+Kunai stops the companion. Background/headless lifetime is a later explicit
+mode, with the existing profile-lock and shutdown contracts retained.
+
+### Framework choice and extendibility
+
+The lowest initial packaging burden is **TanStack Router + Query with static
+assets served by Bun**. TanStack Start is reasonable if its server routes or
+future rendering requirements earn the added build/server adapter. Start
+[SPA mode](https://tanstack.com/start/latest/docs/framework/react/guide/spa-mode)
+supports a client-rendered shell with server features and external APIs;
+SSR is unnecessary for a private control panel. Its
+[hosting guide](https://tanstack.com/start/latest/docs/framework/react/guide/hosting)
+includes Bun. Prove the chosen production build can be bundled and started
+without Vite, source checkout, npm installation or an internet asset host.
+
+Keep a documented, versioned HTTP/event contract independent of Start RPC.
+[Server functions](https://tanstack.com/start/latest/docs/framework/react/guide/server-functions)
+are for Start's own client; stable endpoints for later native clients belong
+in server routes or a plain local transport adapter. Validate and authorize
+every endpoint: route-level beforeLoad checks are not a data boundary.
+If Start is used, preserve its CSRF middleware rather than assuming typed
+functions are safe merely because the UI uses them.
+
+Keep `apps/docs` as the public docs app. Bundle a small version-matched help
+subset into the companion at build time; it should work without a hosted site.
+Reuse design tokens and application contracts, not the entire docs runtime.
+A native wrapper can reuse the touch frontend, but local resolver execution,
+background tasks, player callbacks and storage permissions remain native work.
+
+### First useful touch slice
+
+1. From Kunai, choose Connect phone, explicitly enable LAN access, scan a QR,
+   and exchange a short-lived one-time pairing challenge. Show paired devices,
+   revoke controls, connection state, server version and capability availability.
+   No account or operated public website is required for this local mode.
+2. Show Now Playing, Up Next and offline availability. Distinguish available
+   **on computer** from downloaded **on this phone**. Offer buttons as well as
+   optional drag/gesture reorder, large touch targets, labeled controls, visible
+   focus, screen-reader status and reduced motion. Persist user intent after
+   acknowledgement; on disconnect show uncertainty and resync before retry.
+3. A destination chooser offers Computer or This phone. Desktop actions use
+   the player port and its actual progress. Phone actions only offer providers
+   whose request profile the target player can reproduce. VLC handoff does
+   not assert playback started/completed; expose manual return/next until a
+   verified callback contract exists. Do not consume Up Next merely on open.
+4. Use service-owned snapshots plus versioned events for queue/download/player
+   changes. Reconnect fetches a fresh snapshot; bounded events include identity,
+   sequence and source revision. Mutations carry an idempotency key and expected
+   state revision so repeated taps/reconnect cannot enqueue or claim twice.
+5. Downloads run on the host and report committed job/artifact state. Retry,
+   cancel and local resume need separate tests. Browser UI/metadata cache is
+   not an offline video library or proof of phone background downloading.
+
+Bind loopback by default. LAN access requires explicit enablement, Host/Origin
+validation, device-scoped authorization, bounded bodies/rates and path/URL
+allowlists. Do not expose a shell, arbitrary files, wildcard CORS or a media
+proxy. One-time pairing does not encrypt plain HTTP: qualify a secure transport
+before exposing persistent private control beyond the trusted preview. Plain
+LAN HTTP is also not a secure-context Home Screen/service-worker guarantee.
+The mobile browser sees the computer's address, not its own localhost.
+
+### Delivery experiment and acceptance gates
+
+The first experiment is a bundled browser companion on the same LAN while
+Kunai runs: no public hosting, app-store submission or phone terminal UI.
+A bookmark can make this quick to reopen; a remembered device can reconnect
+when Kunai next starts without keeping a website online. Do not couple this
+experiment to local AI, a global native-app rewrite or migration of public docs.
+
+After shared queue/metadata works, Android can investigate a phone-local
+Termux launcher serving the same touch assets on loopback. It still needs
+host/runtime and background qualification. iPhone's a-Shell preview must not
+be described as an always-running local daemon; computer-off resolution and
+background/offline handling need a separately proven host or native route.
+The companion alone therefore does not satisfy standalone phone parity.
+
+Accept the slice only after: a production artifact starts from a clean install;
+nontechnical pairing works on both physical phones; wrong-origin/unpaired and
+revoked-device requests fail; repeat taps/reconnect preserve exact queue
+identity; both destinations report only observable states; interrupted/failed
+playback preserves intent; and local offline playback works after restart
+without provider lookup. No calendar promise replaces these gates.
+
 ## Concrete source observations
 
 The queue overlay used to label its first unplayed row `playing`, regardless
