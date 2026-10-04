@@ -17,7 +17,7 @@ const ANIME_ENTRY: QueueEntry = {
 };
 
 test("intent carries absolute anime episode", () => {
-  expect(queuePlaybackIntentFromEntry(ANIME_ENTRY, "queue")).toMatchObject({
+  expect(queuePlaybackIntentFromEntry(ANIME_ENTRY)).toMatchObject({
     queueEntryId: "queue-17",
     titleId: "anilist:16498",
     absoluteEpisode: 13,
@@ -34,13 +34,12 @@ test("intent preserves season/episode and source", () => {
     episode: 4,
     absoluteEpisode: undefined,
   };
-  expect(queuePlaybackIntentFromEntry(seriesEntry, "auto-next")).toEqual({
+  expect(queuePlaybackIntentFromEntry(seriesEntry)).toEqual({
     queueEntryId: "queue-9",
     titleId: "tmdb:1396",
     mediaKind: "series",
     season: 2,
     episode: 4,
     absoluteEpisode: undefined,
-    source: "auto-next",
   });
 });

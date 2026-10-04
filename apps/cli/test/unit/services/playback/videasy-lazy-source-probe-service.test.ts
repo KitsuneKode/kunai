@@ -202,7 +202,7 @@ function runtimeContext(signal?: AbortSignal): ProviderRuntimeContext {
   return {
     now: () => "2026-05-28T00:00:00.000Z",
     signal,
-    retryPolicy: { maxAttempts: 1, backoff: "none", delayMs: 0 },
+    retryPolicy: { maxAttempts: 1 },
   };
 }
 

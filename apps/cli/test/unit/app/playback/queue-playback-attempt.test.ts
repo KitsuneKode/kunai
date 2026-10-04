@@ -9,7 +9,6 @@ const INTENT: QueuePlaybackIntent = {
   titleId: "anilist:42",
   mediaKind: "anime",
   absoluteEpisode: 13,
-  source: "queue",
 };
 
 describe("createQueuePlaybackAttempt", () => {

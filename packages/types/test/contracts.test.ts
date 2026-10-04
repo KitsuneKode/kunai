@@ -17,12 +17,7 @@ import type {
   ProviderTraceEvent,
   ResolveTrace,
 } from "../src/index";
-import {
-  decodeProviderEpisodeIdentity,
-  encodeProviderEpisodeIdentity,
-  getProviderResolveStatus,
-  getProviderSourceInventory,
-} from "../src/index";
+import { decodeProviderEpisodeIdentity, encodeProviderEpisodeIdentity } from "../src/index";
 
 test("provider episode identity encoding is delimiter-safe and exact", () => {
   const identity = { providerId: "all:anime", value: " OVA:Zero " };
@@ -58,7 +53,7 @@ test("provider resolve result requires trace and immutable candidate arrays", ()
 
   expect(result.trace.id).toBe("trace-1");
   expect(result.streams.length).toBe(0);
-  expect(getProviderResolveStatus(result)).toBe("exhausted");
+  expect(result.status).toBe("exhausted");
 });
 
 test("provider resolve result status is the source of truth for playable output", () => {
@@ -107,8 +102,8 @@ test("provider resolve result status is the source of truth for playable output"
     failures: [],
   };
 
-  expect(getProviderResolveStatus(resolved)).toBe("resolved");
-  expect(getProviderResolveStatus(exhausted)).toBe("exhausted");
+  expect(resolved.status).toBe("resolved");
+  expect(exhausted.status).toBe("exhausted");
 });
 
 test("provider sdk contract models selected output plus discovered source inventory", async () => {
@@ -389,7 +384,7 @@ test("provider metadata v2 contract carries native ids release artwork and langu
   expect(result.artwork?.seekBarVttUrl).toContain("thumbs.vtt");
 });
 
-test("provider source inventory facade preserves playable facts without resolve bookkeeping", () => {
+test("provider source inventory projection preserves playable facts without resolve bookkeeping", () => {
   const result: ProviderResolveResult = {
     status: "resolved",
     providerId: "miruro",
@@ -434,7 +429,17 @@ test("provider source inventory facade preserves playable facts without resolve 
     ],
   };
 
-  const inventory: ProviderSourceInventory = getProviderSourceInventory(result);
+  const inventory: ProviderSourceInventory = {
+    providerId: result.providerId,
+    selectedStreamId: result.selectedStreamId,
+    sources: result.sources,
+    variants: result.variants,
+    streams: result.streams,
+    subtitles: result.subtitles,
+    externalIds: result.externalIds,
+    release: result.release,
+    artwork: result.artwork,
+  };
 
   expect(inventory.providerId).toBe("miruro");
   expect(inventory.selectedStreamId).toBe("stream-1");

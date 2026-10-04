@@ -2537,10 +2537,8 @@ function emitRetryIfNeeded(
   });
 }
 
-function isRetryableFailure(context: ProviderRuntimeContext, failure: ProviderFailure): boolean {
-  if (!failure.retryable) return false;
-  const retryableCodes = context.retryPolicy?.retryableCodes;
-  return !retryableCodes || retryableCodes.includes(failure.code);
+function isRetryableFailure(_context: ProviderRuntimeContext, failure: ProviderFailure): boolean {
+  return failure.retryable === true;
 }
 
 function normalizeVidkingAudioLanguage(

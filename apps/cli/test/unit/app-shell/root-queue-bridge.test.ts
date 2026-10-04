@@ -44,7 +44,7 @@ function setupQueue() {
 test("claimQueuePlaybackLaunch claims row B via beginPlayback, not head", () => {
   const { db, repo, service, head, selected } = setupQueue();
 
-  const launch = claimQueuePlaybackLaunch(service, selected.id, "queue");
+  const launch = claimQueuePlaybackLaunch(service, selected.id);
 
   expect(launch).toEqual({
     title: "selected",
@@ -53,7 +53,6 @@ test("claimQueuePlaybackLaunch claims row B via beginPlayback, not head", () => 
       titleId: "selected",
       mediaKind: "anime",
       absoluteEpisode: 13,
-      source: "queue",
     },
   });
   expect(repo.getById(head.id)?.status).toBe("pending");
@@ -64,7 +63,7 @@ test("claimQueuePlaybackLaunch claims row B via beginPlayback, not head", () => 
 
 test("failed compare-and-set leaves overlay open (no resolve, no close)", () => {
   const { db, service, selected } = setupQueue();
-  expect(claimQueuePlaybackLaunch(service, selected.id, "queue")).toBeDefined();
+  expect(claimQueuePlaybackLaunch(service, selected.id)).toBeDefined();
 
   const resolve = mock(() => {});
   const closeOverlay = mock(() => {});
@@ -88,7 +87,7 @@ test("Enter path resolves bridge with claimed intent then closes overlay", () =>
   expect(resolve).toHaveBeenCalledTimes(1);
   expect(resolve.mock.calls[0]?.[0]).toMatchObject({
     title: "selected",
-    intent: { queueEntryId: selected.id, absoluteEpisode: 13, source: "queue" },
+    intent: { queueEntryId: selected.id, absoluteEpisode: 13 },
   });
   expect(closeOverlay).toHaveBeenCalledTimes(1);
 

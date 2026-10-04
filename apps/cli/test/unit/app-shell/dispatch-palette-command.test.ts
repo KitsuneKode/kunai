@@ -144,7 +144,6 @@ describe("dispatchPaletteCommand", () => {
         titleId: "anilist:99",
         mediaKind: "anime",
         absoluteEpisode: 13,
-        source: "queue",
       },
     };
     waitForRootQueueSelection.mockImplementationOnce(async () => claimed);

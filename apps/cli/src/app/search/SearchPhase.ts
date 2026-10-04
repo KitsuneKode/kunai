@@ -1122,7 +1122,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               continue;
             }
             // Claim the exact peeked row — do not re-peek after claim.
-            const launch = claimQueuePlaybackLaunch(container.queueService, next.id, "queue");
+            const launch = claimQueuePlaybackLaunch(container.queueService, next.id);
             if (!launch) {
               logger.info("Queue-next claim failed; leaving row pending for retry", {
                 queueEntryId: next.id,

@@ -3605,10 +3605,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (playlistAutoNext?.kind === "queue") {
             const nextPlaylistItem = playlistAutoNext.entry;
             const selectedQueueId = nextPlaylistItem.id;
-            const autoNextIntent = container.queueService.beginPlayback(
-              selectedQueueId,
-              "auto-next",
-            );
+            const autoNextIntent = container.queueService.beginPlayback(selectedQueueId);
             if (autoNextIntent) {
               const nextPlaylistLabel =
                 formatQueueEntryLabel(nextPlaylistItem) ?? nextPlaylistItem.title;
