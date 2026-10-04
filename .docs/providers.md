@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-04"
 ---
 
 # Kunai — Provider Guide
@@ -31,7 +31,7 @@ apps/cli shell
 
 - `@kunai/types` — canonical TypeScript contracts: `ProviderModule`, `ProviderResolveResult`, `StreamCandidate`, `SubtitleCandidate`, `ProviderFailure`, `ResolveTrace`
 - `@kunai/core` — `ProviderEngine` (orchestration, retry, timeout, fallback), `CoreProviderManifest`, `defineProviderManifest`, `resolveWithFallback`, cache-policy helpers
-- `@kunai/providers` — supported direct-provider modules (`videasy`, `vidlink`, `rivestream`, `allmanga`, `anidb`, `hianime`, `animegg`, `kickassanime`, `miruro`, `youtube`) plus research/candidate modules kept out of the production resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
+- `@kunai/providers` — supported direct-provider modules (`videasy`, `vidlink`, `vidrock`, `rivestream`, `movy`, `allmanga`, `anidb`, `hianime`, `animegg`, `kickassanime`, `miruro`, `youtube`) plus research/candidate modules kept out of the production resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
 - `@kunai/storage` — SQLite cache, history, health, source inventory, trace persistence
 - `@kunai/schemas` — Zod validation schemas for all shared types
 - `apps/cli` — Ink UX, mpv IPC, `ProviderRegistry` (engine compat wrapper), `provider-result-adapter`/`stream-request-adapter` (type conversion), playback orchestration
@@ -176,12 +176,25 @@ here. The rule is _what may be persisted_, not whether to cache:
   `hianime:episodes`, `vidlink:enc-dec`) so `/reset-provider-health`-style
   sweeps can scope them.
 
-**Stream verification has two boundaries, and only one is universal.** The
-resolve-gate is opt-in per provider: VidLink enables it through
-`resolveDirectStreamSource`, Videasy runs its own probe as a negative gate only
-(it rejects definitive failures but attests nothing — issue #361 showed a green
-probe can 403 the very next request on signed CDN URLs), and YouTube is attested
-by construction. The playback preflight is the universal boundary: any stream
+**Stream verification has two boundaries.** Production direct providers route
+resolve-time candidate checks through the shared `verifyCandidateStream` gate,
+directly or through its candidate walk. Coverage derives the adapter keys from
+`loadProductionProviderModules()` rather than maintaining an eight-provider
+list beside a twelve-provider registry. YouTube's watch-URL/ytdl runtime and
+Miruro's measured probe-budget limitation have explicit exemptions in
+`packages/providers/test/provider-resolve-gate-coverage.test.ts`; an exemption
+is not direct-media verification.
+
+Movy, HiAnime and AnimeGG check the chosen stream first and walk at most three
+ranked candidates. Definitively refused hosts are removed from returned streams
+and variant inventories. KickassAnime checks its single master, including its
+media playlist/segment through the shared HLS probe, and cannot report success
+for a definitively missing master. Cancellation during the probe returns a
+cancelled result without a provider-success event. The candidate's own headers
+are passed to its probe, not reconstructed separately. Slow/indeterminate probes
+retain the shared unverified policy; this does not attest that playback will work.
+
+The playback preflight is the universal boundary: any stream
 that is not provider-attested inside `playbackTrustMs` is probed at handoff, and
 the probe races mpv's `loadfile`, so it adds no wait — a definitive dead URL
 fails fast only when mpv itself also fails. Stream age alone used to waive that

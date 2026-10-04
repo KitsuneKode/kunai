@@ -27,6 +27,7 @@ import { formatAnimeSourceDetail } from "../shared/anime-source-presentation";
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { parseHlsMasterAudioRenditions, type HlsAudioRendition } from "../shared/hls-ladder";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   createSourceCandidateFromStream,
@@ -526,6 +527,24 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       preferredSourceId: input.preferredSourceId,
       favoriteSourceNames: input.favoriteSourceNames,
     });
+
+    // Resolve gate: KickassAnime ships exactly one stream, so that stream must
+    // probe reachable — with its own headers — before success is reported.
+    const verdict = await verifyCandidateStream({
+      stream: selection.selected,
+      context,
+      signal: context.signal,
+    });
+    if (context.signal?.aborted) {
+      return fail("cancelled", "KickassAnime resolve-gate probe was cancelled");
+    }
+    if (!verdict.accepted) {
+      return fail(
+        "not-found",
+        `KickassAnime selected stream is unreachable (${verdict.reason})`,
+        true,
+      );
+    }
     const sources: ProviderSourceCandidate[] = [
       createSourceCandidateFromStream({
         providerId: KICKASSANIME_PROVIDER_ID,

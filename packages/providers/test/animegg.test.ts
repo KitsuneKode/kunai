@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { locateAnimeggShow, resolveAnimeggSlug, selectAnimeggTab } from "../src/animegg/direct";
+import {
+  animeggProviderModule,
+  locateAnimeggShow,
+  resolveAnimeggSlug,
+  selectAnimeggTab,
+} from "../src/animegg/direct";
 import {
   animeggStreamUrl,
   parseAnimeggEmbedSources,
@@ -288,4 +293,141 @@ describe("selectAnimeggTab", () => {
   test("no tabs is no stream, not a silent pick", () => {
     expect(selectAnimeggTab([], "sub")).toBeNull();
   });
+});
+
+describe("AnimeGG resolve gate", () => {
+  test("refused-host fallback ships only the accepted rung and reports its actual quality", async () => {
+    const probes: string[] = [];
+    const embed =
+      '<script>var videoSources = [{file: "https://refused-cdn.example/1080.mp4", label: "1080p"}, {file: "https://ready-cdn.example/720.mp4", label: "720p"}];</script>';
+    const result = await animeggProviderModule.resolve(
+      {
+        title: {
+          id: "anilist:21",
+          kind: "anime",
+          title: "Owned fixture",
+          externalIds: { providerNativeIds: { animegg: "one-piece" } },
+        },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      {
+        now: () => "2026-10-04T00:00:00.000Z",
+        fetch: {
+          runtime: "direct-http",
+          fetch: async (input) => {
+            const url = String(input);
+            if (url.includes("/embed/")) return new Response(embed);
+            if (url.includes("-cdn.example/")) {
+              probes.push(url);
+              return url.includes("refused-cdn")
+                ? new Response("fixture refusal", { status: 403 })
+                : new Response(null, {
+                    headers: { "content-type": "video/mp4", "content-length": "1024" },
+                  });
+            }
+            return new Response(EPISODE_HTML);
+          },
+        },
+      },
+    );
+    expect(result.status).toBe("resolved");
+    expect(result.streams).toHaveLength(1);
+    expect(result.streams[0]?.url).toBe("https://ready-cdn.example/720.mp4");
+    expect(result.selectedStreamId).toBe(result.streams[0]?.id);
+    expect(result.variants).toHaveLength(1);
+    expect(result.selectionDecision?.selectedQualityRank).toBe(720);
+    // The shared health checker may confirm a refusal; assert host walk order,
+    // not its internal retry count.
+    expect([...new Set(probes)]).toEqual([
+      "https://refused-cdn.example/1080.mp4",
+      "https://ready-cdn.example/720.mp4",
+    ]);
+  });
+
+  test("pinning the selected mirror retains the requested quality and probe headers", async () => {
+    const probeHeaders: Headers[] = [];
+    const result = await animeggProviderModule.resolve(
+      {
+        title: {
+          id: "anilist:21",
+          kind: "anime",
+          title: "Owned fixture",
+          externalIds: { providerNativeIds: { animegg: "one-piece" } },
+        },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+        preferredSourceId: "source:animegg:animegg:sub",
+        qualityPreference: "1080p",
+      },
+      {
+        now: () => "2026-10-04T00:00:00.000Z",
+        fetch: {
+          runtime: "direct-http",
+          fetch: async (input, init) => {
+            const url = String(input);
+            if (url.includes("/embed/")) return new Response(EMBED_HTML);
+            if (url.includes("/play/")) {
+              probeHeaders.push(new Headers(init?.headers));
+              return new Response(null, {
+                headers: { "content-type": "video/mp4", "content-length": "1024" },
+              });
+            }
+            return new Response(EPISODE_HTML);
+          },
+        },
+      },
+    );
+    expect(result.status).toBe("resolved");
+    const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+    expect(selected?.qualityLabel).toBe("1080p");
+    expect(probeHeaders.length).toBeGreaterThan(0);
+    expect(probeHeaders[0]?.get("referer")).toBe(selected?.headers?.referer);
+    expect(probeHeaders[0]?.get("user-agent")).toBe(selected?.headers?.["user-agent"]);
+  });
+
+  test.each(["refused", "cancelled"])(
+    "a %s selected media file never reports provider success",
+    async (outcome) => {
+      const controller = new AbortController();
+      const result = await animeggProviderModule.resolve(
+        {
+          title: {
+            id: "anilist:21",
+            kind: "anime",
+            title: "Owned fixture",
+            externalIds: { providerNativeIds: { animegg: "one-piece" } },
+          },
+          episode: { episode: 1 },
+          mediaKind: "anime",
+          intent: "play",
+          allowedRuntimes: ["direct-http"],
+        },
+        {
+          now: () => "2026-10-04T00:00:00.000Z",
+          signal: controller.signal,
+          fetch: {
+            runtime: "direct-http",
+            fetch: async (input) => {
+              const url = String(input);
+              if (url.includes("/embed/")) return new Response(EMBED_HTML);
+              if (url.includes("/play/")) {
+                if (outcome === "cancelled") controller.abort();
+                return new Response("fixture refusal", { status: 403 });
+              }
+              return new Response(EPISODE_HTML);
+            },
+          },
+        },
+      );
+      expect(result.status).toBe("exhausted");
+      if (outcome === "cancelled")
+        expect(result.failures.some((failure) => failure.code === "cancelled")).toBe(true);
+      expect(result.trace.events?.some((event) => event.type === "provider:success")).toBe(false);
+    },
+  );
 });

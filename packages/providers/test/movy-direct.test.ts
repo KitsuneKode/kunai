@@ -42,14 +42,14 @@ const MOVIE_INPUT: ProviderResolveInput = {
 };
 
 function contextReturning(
-  handler: (url: string) => Response | Promise<Response>,
+  handler: (url: string, init?: RequestInit) => Response | Promise<Response>,
 ): ProviderRuntimeContext {
   return {
     ...TEST_CONTEXT,
     // SAFETY: test stub — supplies only the fetch surface this module calls.
     fetch: {
       runtime: "direct-http",
-      fetch: async (url: string | URL | Request) => handler(String(url)),
+      fetch: async (url: string | URL | Request, init?: RequestInit) => handler(String(url), init),
     } as ProviderRuntimeContext["fetch"],
   };
 }
@@ -83,6 +83,28 @@ afterEach(() => {
 });
 
 describe("resolveMovyDirect", () => {
+  test.each(["refused", "cancelled"])(
+    "a %s selected CDN never reports provider success",
+    async (outcome) => {
+      const controller = new AbortController();
+      const ctx = {
+        ...contextReturning((url, init) => {
+          if (url.includes("/seed"))
+            return new Response(JSON.stringify({ seed: FIXTURE.seed, ttlMs: 30000 }));
+          if (url.includes("/denver/sources")) return new Response(FIXTURE.body);
+          if (outcome === "cancelled" && init?.redirect === "manual") controller.abort();
+          return new Response("fixture refusal", { status: 403 });
+        }),
+        signal: controller.signal,
+      };
+      const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+      expect(result.status).toBe("exhausted");
+      if (outcome === "cancelled")
+        expect(result.failures.some((failure) => failure.code === "cancelled")).toBe(true);
+      expect(result.trace.events?.some((event) => event.type === "provider:success")).toBe(false);
+    },
+  );
+
   test("rejects non-movie/series titles", async () => {
     const result = await movyProviderModule.resolve(
       { ...MOVIE_INPUT, mediaKind: "anime" },
