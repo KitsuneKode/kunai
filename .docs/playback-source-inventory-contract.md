@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-07-19"
+lastReviewed: "2026-10-04"
 ---
 
 # Playback Source Inventory Contract
@@ -121,12 +121,20 @@ requires another call to materialize a specific quality.
 
 Source and quality pickers must read from cached inventory.
 
-- Source change: select the best stream from the chosen `sourceId`.
+- Source change: select the best stream from the chosen `sourceId`. A pin that already
+  selected an audio/mirror lane must not become an explicit first-rung choice: HiAnime
+  consumes its sub/dub pin before quality selection, and AnimeGG ignores the matching
+  active-mirror pin when ranking that mirror's qualities. An explicit stream id still
+  chooses the exact rung.
 - Quality change: select the chosen stream or variant without recomputing inventory.
 - Subtitle change: select from `subtitles` or a separately cached subtitle list; do not refetch unrelated streams.
 - Audio/sub-dub change: reuse cached inventory only if that audio mode was included in the inventory. Otherwise resolve a separate inventory key for the requested mode.
 
 Never let one selected source overwrite another source's inventory. Store the full normalized result, then store user selection as separate playback intent.
+
+Resolve-gate fallback preserves the initial selection intent in `selectionDecision.reason`;
+`selectedQualityRank` describes the accepted rung actually shipped. AnimeGG keeps the
+chosen rung first, then ranks remaining fallback rungs by quality before its three-candidate cap.
 
 ## Resolve Work Identity And Request Economy
 
