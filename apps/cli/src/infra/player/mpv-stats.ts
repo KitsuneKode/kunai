@@ -33,6 +33,8 @@ export interface PlayerStatsState {
   readonly socketPath?: string;
   latestIpcSample: PlayerStatsSample | null;
   lastNonZeroSample: PlayerStatsSample | null;
+  /** Last positive duration observed in this playback cycle, independent of position updates. */
+  lastPositiveDurationSeconds: number;
   endReason: EndReason;
   playerExitedCleanly: boolean;
   playerExitCode: number | null;
@@ -84,7 +86,7 @@ function isMeaningful(sample: Pick<PlayerStatsSample, "positionSeconds" | "durat
 // history rather than interpreting that terminal reset as an unknown duration.
 function observedDuration(state: PlayerStatsState, sample: PlayerStatsSample | null): number {
   const duration = sample?.durationSeconds ?? 0;
-  return duration > 0 ? duration : (state.lastNonZeroSample?.durationSeconds ?? 0);
+  return duration > 0 ? duration : state.lastPositiveDurationSeconds;
 }
 
 function preferStrongerProgressSample(
@@ -107,6 +109,7 @@ export function createPlayerStatsState(socketPath?: string): PlayerStatsState {
     socketPath,
     latestIpcSample: null,
     lastNonZeroSample: null,
+    lastPositiveDurationSeconds: 0,
     endReason: "unknown",
     playerExitedCleanly: false,
     playerExitCode: null,
@@ -384,6 +387,8 @@ export function applyObservedPropertySample(
     default:
       return;
   }
+
+  if (next.durationSeconds > 0) state.lastPositiveDurationSeconds = next.durationSeconds;
 
   if (update.name === "time-pos" || update.name === "playback-time") {
     advanceTrustedProgressSeconds(

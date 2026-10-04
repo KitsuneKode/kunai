@@ -278,7 +278,9 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
 - Normal online search keeps provider playback online-first by default even when a downloaded
   copy exists; downloaded state is a badge/action, not a silent hijack.
 - Continue-style flows may prefer a ready local file before provider resolution, but online
-  continuation must remain an explicit action when local episodes are exhausted or broken.
+  continuation must remain an explicit action when local episodes are exhausted or broken. A known
+  selected local episode (or movie) is validated before provider lookup and remote title enrichment;
+  the explicit streaming preference retains online acquisition behavior.
 - History/Continue rows may promote a cached downloaded next episode and show cached `N new`.
   When durable local identity exists, Enter explicitly plays that downloaded episode through the
   validated offline path. Otherwise the row directs the user to `/library`; ordinary online history
@@ -300,6 +302,9 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
   only for online acquisition. Source authority is resolved before adapter lookup, and local
   playback skips provider selection, traces, health feedback, remote prefetch, and post-play
   release reconciliation. Manual Next and autoplay use the offline episode index.
+- Initial downloaded launches retain the selected job's provider-native episode identity and season.
+  Numeric season/episode coordinates alone must not choose a different catalog artifact. A saved
+  position is used for instant entry only when its season and episode match the selected episode.
 - Active and post-play episode pickers list locally ready episodes across downloaded seasons,
   retaining provider-native episode identity. They never fetch a catalog during local playback.
 - Local Tracks shows the downloaded source as a fact and delegates embedded audio/subtitle changes
@@ -317,7 +322,9 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
   remain intact; provider URLs never gain local-file permission from a display marker.
 - mpv's shutdown can clear duration while retaining position. Playback results keep
   the duration observed in that playback cycle for both history and premature-EOF
-  checks, so a short completed file persists without loosening interrupted-stream checks.
+  checks, even when a later position event arrives after duration is cleared. This retained value
+  resets with each playback cycle, so a short completed file persists without loosening
+  interrupted-stream checks or inheriting another file's duration.
 - Offline playback does not start remote subtitle or timing-metadata lookup, provider prefetch, or
   recommendation warming. Local next-episode readiness, cached timing, and local subtitle sidecars
   remain available.
