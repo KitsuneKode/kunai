@@ -1,3 +1,4 @@
+import { scrubbedChildEnv } from "../shared/child-env";
 import { terminateProcessTree } from "../shared/process-tree";
 
 const DEFAULT_YTDLP_TIMEOUT_MS = 45_000;
@@ -55,6 +56,7 @@ const defaultYtDlpSpawn: YtDlpSpawn = (command) => {
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
+    env: scrubbedChildEnv(),
     // A detached POSIX spawn leads its own process group, so kill() below can
     // reach ffmpeg mux children instead of orphaning them. Windows has no
     // group signals — taskkill /T in terminateProcessTree covers the tree.

@@ -45,6 +45,7 @@ import {
   formatAnimeSourceDetail,
   miruroSubtitleDeliveryToMode,
 } from "../shared/anime-source-presentation";
+import { scrubbedChildEnv } from "../shared/child-env";
 import {
   curlCipherArgs,
   type CurlCandidate,
@@ -152,7 +153,11 @@ function detectCurlHttp2Support(curlPath: string): Promise<boolean> {
 
 async function probeCurlHttp2Support(curlPath: string): Promise<boolean> {
   try {
-    const proc = Bun.spawn([curlPath, "--version"], { stdout: "pipe", stderr: "ignore" });
+    const proc = Bun.spawn([curlPath, "--version"], {
+      stdout: "pipe",
+      stderr: "ignore",
+      env: scrubbedChildEnv(),
+    });
     const [features, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
     return exitCode === 0 && /\bHTTP2\b/i.test(features);
   } catch {
@@ -1817,6 +1822,7 @@ export async function fetchMiruroPipeBody(
   const proc = Bun.spawn(args, {
     stdout: "pipe",
     stderr: "pipe",
+    env: scrubbedChildEnv(),
   });
   let aborted = false;
   const onAbort = () => {

@@ -34,6 +34,7 @@ export {
   type AnidbSearchResult,
   type AnidbSeasonEvidence,
 } from "./browse-parser";
+import { scrubbedChildEnv } from "../shared/child-env";
 
 export const ANIDB_BASE = "https://anidb.app";
 export const ANIDB_REFERER = "https://anidb.app/";
@@ -419,6 +420,7 @@ function defaultSpawnOnce(
     stdout: "pipe",
     stderr: "pipe",
     signal,
+    env: scrubbedChildEnv(),
   });
   return Promise.all([
     new Response(proc.stdout).text(),

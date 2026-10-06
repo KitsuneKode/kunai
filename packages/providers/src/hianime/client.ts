@@ -11,6 +11,7 @@ import { isRelayedResponse, providerHttpErrorForStatus } from "@kunai/types";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { ProviderHttpError } from "../runtime/fetch";
+import { scrubbedChildEnv } from "../shared/child-env";
 import {
   curlCipherArgs,
   isCloudflareChallengeText,
@@ -213,7 +214,12 @@ function spawnCurlOnce(
   args: readonly string[],
   signal?: AbortSignal,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe", signal });
+  const proc = Bun.spawn([...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+    signal,
+    env: scrubbedChildEnv(),
+  });
   return Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
