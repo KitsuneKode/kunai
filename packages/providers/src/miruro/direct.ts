@@ -1770,6 +1770,7 @@ export async function fetchMiruroPipeBody(
   const hasCurlHttp2 = await detectCurlHttp2Support(curl.path);
   const args = [
     curl.path,
+    ...curl.prefixArgs,
     ...curlCipherArgs(curl.impersonates),
     "-sS",
     ...(hasCurlHttp2 ? ["--http2"] : []),

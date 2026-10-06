@@ -237,6 +237,35 @@ describe("buildDoctorReport", () => {
     expect(text).toContain("Remediation");
   });
 
+  test("treats curl helper execution failure as an error finding", async () => {
+    const { root, layout } = await makeRoot();
+    await seedLegacyManifestAndStaleState(root, layout);
+
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: process.platform === "win32" ? "win32" : "linux",
+      fileExists: existsSync,
+      probeCapabilities: async () =>
+        emptyCapabilities({
+          issues: [
+            {
+              id: "curl-invocation-failed",
+              severity: "degraded",
+              message: "Resolved curl invocation failed to execute (C:\\tools\\curl-impersonate.exe).",
+              install: { fallback: "https://github.com/lexiforest/curl-impersonate/releases" },
+              remediation: ["Re-run `kunai --setup` to repair Kunai-managed curl-impersonate."],
+            },
+          ],
+        }),
+    });
+
+    const finding = report.findings.find((candidate) => candidate.code === "curl-invocation-failed");
+    expect(finding?.severity).toBe("error");
+  });
+
   test("text formatting includes remediations for error findings", async () => {
     const { layout } = await makeRoot();
     const report = await buildDoctorReport({

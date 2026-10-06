@@ -31,6 +31,7 @@ export interface CapabilityIssue {
     | "ffmpeg-missing"
     | "curl-missing"
     | "curl-impersonate-missing"
+    | "curl-invocation-failed"
     | "poster-rendering-unavailable";
   readonly severity: CapabilitySeverity;
   readonly message: string;
@@ -147,6 +148,11 @@ export async function probeCapabilities(
     which?: (command: string) => string | null;
     /** PATH listing seam for curl-impersonate discovery. Injected by tests. */
     listPathEntries?: () => readonly string[];
+    /** Curl invocation seam for capability probes. Injected by tests. */
+    canExecuteCurlInvocation?: (invocation: {
+      readonly path: string;
+      readonly prefixArgs: readonly string[];
+    }) => boolean;
     /** Filesystem probe seam for flatpak mpv discovery. Injected by tests. */
     exists?: (path: string) => boolean;
   } = {},
@@ -168,10 +174,22 @@ export async function probeCapabilities(
   // for the literal "curl": it discovers curl-impersonate builds from PATH and
   // prefers them, so a literal probe both under-reports a capable host and
   // over-reports one carrying only plain curl.
+  const canExecuteCurlInvocation =
+    options.canExecuteCurlInvocation ??
+    ((invocation: { readonly path: string; readonly prefixArgs: readonly string[] }) => {
+      try {
+        const proc = Bun.spawnSync([invocation.path, ...invocation.prefixArgs, "--version"]);
+        return proc.exitCode === 0;
+      } catch {
+        return false;
+      }
+    });
   const resolvedCurl = resolveAnidbCurl({
     which,
     ...(options.listPathEntries && { listPathEntries: options.listPathEntries }),
   });
+  const curlInvocationRuns =
+    resolvedCurl === null ? false : canExecuteCurlInvocation(resolvedCurl);
   const curl: CurlCapability = {
     present: resolvedCurl !== null,
     impersonates: resolvedCurl?.impersonates ?? false,
@@ -221,7 +239,22 @@ export async function probeCapabilities(
     });
   }
 
-  if (!curl.present) {
+  if (resolvedCurl && !curlInvocationRuns) {
+    const install = resolvedCurl.impersonates ? CURL_IMPERSONATE_INSTALL : CURL_INSTALL;
+    const remediation = buildRemediationLines(install);
+    issues.push({
+      id: "curl-invocation-failed",
+      severity: "degraded",
+      message:
+        `Resolved curl invocation failed to execute (${resolvedCurl.path}). ` +
+        "Anime providers cannot use this helper until it is repaired.",
+      install,
+      remediation:
+        resolvedCurl.impersonates && process.platform === "win32"
+          ? ["Re-run `kunai --setup` to repair Kunai-managed curl-impersonate.", ...remediation]
+          : remediation,
+    });
+  } else if (!curl.present) {
     issues.push({
       id: "curl-missing",
       // Anime is one mode, so this degrades that route rather than blocking the

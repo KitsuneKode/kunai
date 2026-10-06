@@ -293,6 +293,7 @@ export async function hianimeFetchText(
 
   const args = [
     curl.path,
+    ...curl.prefixArgs,
     "-sL",
     "-A",
     HIANIME_USER_AGENT,

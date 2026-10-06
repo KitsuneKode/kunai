@@ -15,6 +15,7 @@ function pathWith(...commands: readonly string[]) {
   return {
     which: (command: string) => (commands.includes(command) ? `/usr/bin/${command}` : null),
     listPathEntries: () => commands,
+    canExecuteCurlInvocation: () => true,
   };
 }
 
@@ -33,6 +34,7 @@ function windowsPathWith(...commands: readonly string[]) {
       return hit ? `C:\\tools\\${hit}` : null;
     },
     listPathEntries: () => commands,
+    canExecuteCurlInvocation: () => true,
   };
 }
 
@@ -161,5 +163,18 @@ describe("probeCapabilities — curl for the default anime provider", () => {
 
     expect(snapshot.curl.present).toBe(true);
     expect(snapshot.curl.impersonates).toBe(false);
+  });
+
+  test("raises a degraded issue when resolved curl exists but cannot execute", async () => {
+    const snapshot = await probeCapabilities({
+      which: (command) => (command === "curl_chrome150.bat" ? "C:\\tools\\curl_chrome150.bat" : null),
+      listPathEntries: () => ["curl_chrome150.bat"],
+      canExecuteCurlInvocation: () => false,
+    });
+
+    expect(snapshot.curl.present).toBe(true);
+    const issue = snapshot.issues.find((candidate) => candidate.id === "curl-invocation-failed");
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe("degraded");
   });
 });

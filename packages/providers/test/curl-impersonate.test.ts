@@ -38,6 +38,7 @@ describe("resolveCurlCandidate PATH scan", () => {
     expect(candidate?.impersonates).toBe(true);
     expect(candidate?.profile).toBe("ff99");
     expect(candidate?.path).toBe(join(shim, "curl_ff99"));
+    expect(candidate?.prefixArgs).toEqual([]);
   });
 
   test("drops a wrapper that left PATH on the next resolve", () => {
@@ -52,5 +53,49 @@ describe("resolveCurlCandidate PATH scan", () => {
     // A stale cache would keep returning the old wrapper name/path.
     const candidate = resolveCurlCandidate();
     expect(candidate?.path ?? "").not.toContain("curl_ff88");
+  });
+
+  test("on Windows, managed .bat wrappers execute curl-impersonate.exe directly", () => {
+    const root = mkdtempSync(join(tmpdir(), "curl-win-managed-"));
+    dirs.push(root);
+    const wrapper = join(root, "curl_chrome150.bat");
+    const backend = join(root, "curl-impersonate.exe");
+    writeFileSync(wrapper, "@echo off\r\n");
+    writeFileSync(backend, "MZ");
+
+    const candidate = resolveCurlCandidate({
+      platform: "win32",
+      listPathEntries: () => ["curl_chrome150.bat"],
+      which: (command) => (command === "curl_chrome150.bat" ? wrapper : null),
+      fileExists: (path) => path === backend,
+    });
+
+    expect(candidate).toEqual({
+      path: backend,
+      prefixArgs: ["--compressed", "--impersonate", "chrome150"],
+      impersonates: true,
+      profile: "chrome150",
+    });
+  });
+
+  test("on Windows, wrapper execution remains as fallback when backend is missing", () => {
+    const root = mkdtempSync(join(tmpdir(), "curl-win-fallback-"));
+    dirs.push(root);
+    const wrapper = join(root, "curl_firefox147.cmd");
+    writeFileSync(wrapper, "@echo off\r\n");
+
+    const candidate = resolveCurlCandidate({
+      platform: "win32",
+      listPathEntries: () => ["curl_firefox147.cmd"],
+      which: (command) => (command === "curl_firefox147.cmd" ? wrapper : null),
+      fileExists: () => false,
+    });
+
+    expect(candidate).toEqual({
+      path: wrapper,
+      prefixArgs: [],
+      impersonates: true,
+      profile: "firefox147",
+    });
   });
 });

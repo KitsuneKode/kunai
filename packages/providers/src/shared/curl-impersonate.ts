@@ -14,11 +14,13 @@
  * `curl_<browser><version>[_os]`, so the shape is stable even though the
  * versions turn over every few weeks; discovery tracks it without edits.
  */
-import { readdirSync } from "node:fs";
-import { delimiter as PATH_DELIMITER, join } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
+import { delimiter as PATH_DELIMITER, dirname, extname, join } from "node:path";
 
 export type CurlCandidate = {
   readonly path: string;
+  /** Prefix args required before request-specific flags/URL. */
+  readonly prefixArgs: readonly string[];
   readonly impersonates: boolean;
   /**
    * Browser profile of the selected impersonate build (`chrome150`), or `null`
@@ -37,6 +39,10 @@ export type CurlEnvironment = {
   readonly which: (command: string) => string | null;
   /** Executable basenames visible on PATH, in PATH order. */
   readonly listPathEntries: () => readonly string[];
+  /** Filesystem existence probe seam. */
+  readonly fileExists: (path: string) => boolean;
+  /** Platform probe seam for Windows wrapper behavior tests. */
+  readonly platform: NodeJS.Platform;
 };
 
 /**
@@ -166,6 +172,8 @@ export function resolveCurlCandidate(
   const which =
     environment.which ?? ((command: string) => Bun.which(command, { PATH: process.env.PATH }));
   const listPathEntries = environment.listPathEntries ?? defaultListPathEntries;
+  const fileExists = environment.fileExists ?? existsSync;
+  const platform = environment.platform ?? process.platform;
 
   let best: ParsedWrapper | null = null;
   for (const entry of listPathEntries()) {
@@ -177,16 +185,31 @@ export function resolveCurlCandidate(
   if (best) {
     const resolved = which(best.name);
     if (resolved) {
+      const profile = `${best.family}${best.version}${best.revision}`;
+      const extension = extname(resolved).toLowerCase();
+      const isWindowsWrapper = platform === "win32" && (extension === ".bat" || extension === ".cmd");
+      if (isWindowsWrapper) {
+        const backend = join(dirname(resolved), "curl-impersonate.exe");
+        if (fileExists(backend)) {
+          return {
+            path: backend,
+            prefixArgs: ["--compressed", "--impersonate", profile],
+            impersonates: true,
+            profile,
+          };
+        }
+      }
       return {
         path: resolved,
+        prefixArgs: [],
         impersonates: true,
-        profile: `${best.family}${best.version}${best.revision}`,
+        profile,
       };
     }
   }
 
   const plain = which("curl");
-  return plain ? { path: plain, impersonates: false, profile: null } : null;
+  return plain ? { path: plain, prefixArgs: [], impersonates: false, profile: null } : null;
 }
 
 /**

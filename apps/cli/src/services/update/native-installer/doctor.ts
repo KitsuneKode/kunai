@@ -414,7 +414,7 @@ function collectFindings(input: {
     // install health, and without mpv Kunai cannot play at all — report it as
     // an error so the exit code is honest for scripts. yt-dlp/ffmpeg/curl stay
     // warnings: each gates one lane, not the product.
-    const core = issue.id === "mpv-missing";
+    const core = issue.id === "mpv-missing" || issue.id === "curl-invocation-failed";
     findings.push({
       severity: issue.severity === "fatal" || core ? "error" : "warning",
       code: issue.id,
