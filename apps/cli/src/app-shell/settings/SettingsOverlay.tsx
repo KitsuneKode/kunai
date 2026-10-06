@@ -150,7 +150,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           </Text>
         )}
         <Text color={palette.dim}>{page.subtitle}</Text>
-        <SettingsSearchBar query={state.searchQuery} />
+        <SettingsSearchBar query={state.searchQuery} focused={state.searchFocused} />
         <Box marginTop={1}>
           <StateBlock
             model={{
@@ -186,7 +186,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           dense
         />
       ) : null}
-      <SettingsSearchBar query={state.searchQuery} />
+      <SettingsSearchBar query={state.searchQuery} focused={state.searchFocused} />
       <Box marginTop={1} flexDirection="column">
         {start > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
         {visible.map((row, index) => {

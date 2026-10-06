@@ -317,27 +317,67 @@ export function handleSettingsKey(
   }
 
   if (key.escape) {
+    // Search-mode Esc ladder: leave the search field first (dropping the
+    // typed filter), then an applied filter, and only then the overlay.
+    if (state.searchFocused || state.searchQuery) {
+      return {
+        handled: true,
+        state: { ...state, searchQuery: "", searchFocused: false, error: null },
+      };
+    }
     return { handled: true, state, closeOverlay: true };
   }
 
   if (input === "/" && !key.ctrl && !key.meta) {
-    const nextQuery = state.searchQuery + "/";
-    const filtered = buildSettingsPage(ctx.registryCtx, {
-      searchQuery: nextQuery,
-      activeSectionIndex: state.activeSectionIndex,
-    });
+    // `/` enters the filter — it is not itself filter text.
     return {
       handled: true,
-      state: {
-        ...state,
-        searchQuery: nextQuery,
-        selectedIndex: firstSelectableRowIndex(filtered),
-        error: null,
-      },
+      state: { ...state, searchFocused: true, error: null },
     };
   }
 
-  if (key.tab && !state.searchQuery.trim()) {
+  if (state.searchFocused) {
+    if (key.return) {
+      return {
+        handled: true,
+        state: { ...state, searchFocused: false, error: null },
+      };
+    }
+    if (key.backspace || key.delete) {
+      const nextQuery = state.searchQuery.slice(0, -1);
+      const filtered = buildSettingsPage(ctx.registryCtx, {
+        searchQuery: nextQuery,
+        activeSectionIndex: state.activeSectionIndex,
+      });
+      return {
+        handled: true,
+        state: {
+          ...state,
+          searchQuery: nextQuery,
+          selectedIndex: firstSelectableRowIndex(filtered),
+        },
+      };
+    }
+    const printable = !key.ctrl && !key.meta ? printableInputChunk(input) : "";
+    if (printable) {
+      const nextQuery = state.searchQuery + printable;
+      const filtered = buildSettingsPage(ctx.registryCtx, {
+        searchQuery: nextQuery,
+        activeSectionIndex: state.activeSectionIndex,
+      });
+      return {
+        handled: true,
+        state: {
+          ...state,
+          searchQuery: nextQuery,
+          selectedIndex: resolveSelectableRowIndex(filtered, state.selectedIndex),
+        },
+      };
+    }
+    // Arrows and other non-printable keys still navigate the filtered list.
+  }
+
+  if (key.tab && !state.searchQuery.trim() && !state.searchFocused) {
     // Tab forward, Shift+Tab reverse — same pattern as help/calendar/history tabs.
     const sectionCount = listSettingsSectionLabels(ctx.registryCtx).length;
     if (sectionCount > 1) {
@@ -354,41 +394,6 @@ export function handleSettingsKey(
         },
       };
     }
-  }
-
-  if (key.backspace || key.delete) {
-    if (state.searchQuery.length > 0) {
-      const nextQuery = state.searchQuery.slice(0, -1);
-      const filtered = buildSettingsPage(ctx.registryCtx, {
-        searchQuery: nextQuery,
-        activeSectionIndex: state.activeSectionIndex,
-      });
-      return {
-        handled: true,
-        state: {
-          ...state,
-          searchQuery: nextQuery,
-          selectedIndex: firstSelectableRowIndex(filtered),
-        },
-      };
-    }
-    return { handled: false, state };
-  }
-
-  if (!key.ctrl && !key.meta && input.length === 1 && input >= " " && input !== "/") {
-    const nextQuery = state.searchQuery + input;
-    const filtered = buildSettingsPage(ctx.registryCtx, {
-      searchQuery: nextQuery,
-      activeSectionIndex: state.activeSectionIndex,
-    });
-    return {
-      handled: true,
-      state: {
-        ...state,
-        searchQuery: nextQuery,
-        selectedIndex: resolveSelectableRowIndex(filtered, state.selectedIndex),
-      },
-    };
   }
 
   if (key.upArrow || input === "k") {

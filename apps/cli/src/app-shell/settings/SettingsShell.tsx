@@ -177,7 +177,13 @@ export function SettingsShell({
     { isActive: !commandMode },
   );
 
-  const footerMode = state.inputMode.active ? "input" : state.submenuId ? "submenu" : "main";
+  const footerMode = state.inputMode.active
+    ? "input"
+    : state.submenuId
+      ? "submenu"
+      : state.searchFocused
+        ? "search"
+        : "main";
 
   return (
     <>

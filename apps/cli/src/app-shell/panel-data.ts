@@ -765,14 +765,19 @@ export function buildProviderPickerOptions({
     const effective = getProviderHealth
       ? resolveEffectiveProviderHealth(getProviderHealth(provider.id))
       : undefined;
-    const healthBadge = formatProviderHealthBadge(effective ?? undefined);
+    const isCurrentProvider = provider.id === currentProvider;
+    // The same current-aware badge feeds the detail line — the label fix
+    // without it left "skipped in auto-fallback" on the playing provider.
+    const healthBadge = formatProviderHealthBadge(effective ?? undefined, undefined, {
+      isCurrentProvider,
+    });
     const healthLabelSuffix = formatProviderHealthPickerLabelSuffix(effective ?? undefined, {
-      isCurrentProvider: provider.id === currentProvider,
+      isCurrentProvider,
     });
     const healthDetail = healthBadge ? `Health: ${healthBadge}` : null;
     const crossLaneDetail = isCrossLane?.(provider) ? "via linked catalog id" : null;
     const baseDetail = formatProviderDetail(provider);
-    const baseLabel = markCurrentLabel(provider.name, provider.id === currentProvider);
+    const baseLabel = markCurrentLabel(provider.name, isCurrentProvider);
     return {
       value: provider.id,
       label: healthLabelSuffix ? `${baseLabel}${healthLabelSuffix}` : baseLabel,
