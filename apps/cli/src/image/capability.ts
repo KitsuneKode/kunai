@@ -177,6 +177,14 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   const terminal = detectTerminal(env);
   const override = normalizeProtocol(env.KUNAI_IMAGE_PROTOCOL);
 
+  // A dumb terminal or an explicit no-colour request cannot render even the
+  // half-block path — it is ANSI colour markup like everything else. Explicit
+  // KUNAI_IMAGE_PROTOCOL overrides still win: the user asked for that
+  // protocol specifically.
+  if (override === "auto" && (env.TERM === "dumb" || env.NO_COLOR !== undefined)) {
+    return noneCapability(terminal, "terminal reports no colour support");
+  }
+
   if (override === "invalid") {
     debugImage(`Invalid KUNAI_IMAGE_PROTOCOL value: ${env.KUNAI_IMAGE_PROTOCOL ?? ""}`);
   }
