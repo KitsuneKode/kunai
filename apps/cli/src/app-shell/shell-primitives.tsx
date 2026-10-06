@@ -39,6 +39,9 @@ export function TransientRowSlot({
 /** Optional footer glyphs — off by default for calmer Claude Code–style footers. */
 const FOOTER_GLYPHS: Record<string, string> = {};
 
+/** The way back after `/pet` — rendered as an action hint, not a control. */
+const PET_RESTORE_ACTION = { key: "/pet", label: "kanna" } as const;
+
 export type ContextStripItem = {
   label: string;
   tone?: InlineBadgeTone;
@@ -135,23 +138,21 @@ export function Footer({
   const { cols } = useShellDimensions();
   const terminalWidth = terminalWidthProp ?? cols;
   const taskWidth = Math.max(20, terminalWidth - 4);
+  // Kanna removed via /pet or settings leaves every footer with a way back:
+  // a display-only hint naming the command. It goes through the width-fit pass
+  // like any other action — last in, first dropped when space runs out — and
+  // hides entirely when an env pin makes the toggle a dead control.
+  const kannaHidden = companionMode() === "off" && companionToggleable();
   const visibleActions = React.useMemo(
     () =>
       selectFooterActions(
-        actions,
+        kannaHidden ? [...actions, PET_RESTORE_ACTION] : actions,
         mode,
         mode === "detailed" ? terminalWidth : undefined,
         maxVisible,
       ),
-    [actions, mode, terminalWidth, maxVisible],
+    [actions, kannaHidden, mode, terminalWidth, maxVisible],
   );
-  // Kanna removed via /pet or settings leaves every footer with a way back:
-  // a display-only hint naming the command. Hidden when an env pin makes the
-  // toggle a dead control.
-  const renderActions =
-    companionMode() === "off" && companionToggleable()
-      ? [...visibleActions, { key: "/pet", label: "kanna" }]
-      : visibleActions;
 
   if (commandMode) {
     return (
@@ -175,9 +176,9 @@ export function Footer({
   return (
     <Box flexDirection="column" marginTop={1}>
       <Text color={palette.text}>{truncateLine(taskLabel, taskWidth)}</Text>
-      {renderActions.length > 0 ? (
+      {visibleActions.length > 0 ? (
         <Box flexWrap="nowrap" marginTop={1}>
-          {renderActions.map((action, index) => {
+          {visibleActions.map((action, index) => {
             const glyph = FOOTER_GLYPHS[action.key] ?? "";
             const keyDisplay = glyph ? `${glyph}§${action.key}` : action.key;
             // Tasteful 3-role hierarchy instead of one rose key + a wall of grey:
@@ -199,7 +200,7 @@ export function Footer({
             return (
               <Box
                 key={`${action.key}-${action.label}`}
-                marginRight={index === renderActions.length - 1 ? 0 : 2}
+                marginRight={index === visibleActions.length - 1 ? 0 : 2}
                 marginBottom={1}
               >
                 <Text bold={role === "primary"} color={keyColor}>
