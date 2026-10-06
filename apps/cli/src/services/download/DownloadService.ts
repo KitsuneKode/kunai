@@ -967,9 +967,9 @@ export class DownloadService {
 
   async drainQueue(maxWaitMs = 60_000): Promise<void> {
     const deadline = Date.now() + maxWaitMs;
-    while (this.hasActiveJobs() && Date.now() < deadline) {
+    while (!this.shutdownRequested && this.hasActiveJobs() && Date.now() < deadline) {
       await this.processQueue();
-      if (this.hasActiveJobs()) {
+      if (!this.shutdownRequested && this.hasActiveJobs()) {
         await Bun.sleep(250);
       }
     }

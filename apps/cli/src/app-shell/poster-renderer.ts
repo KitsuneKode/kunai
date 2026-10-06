@@ -246,11 +246,15 @@ export async function renderPreparedPoster(
       };
     }
     if (plan.renderer === "sixel") {
-      const sixel = renderSixelFromImage(poster.image, {
-        ...pixelBudgetForCells(cols, rows),
-        maxColors: APP_SHELL_SIXEL_MAX_COLORS,
-        maxBytes: APP_SHELL_SIXEL_MAX_BYTES,
-      });
+      const sixel = renderSixelFromImage(
+        poster.image,
+        {
+          ...pixelBudgetForCells(cols, rows),
+          maxColors: APP_SHELL_SIXEL_MAX_COLORS,
+          maxBytes: APP_SHELL_SIXEL_MAX_BYTES,
+        },
+        signal,
+      );
       if (!sixel) return { kind: "none" };
       return {
         kind: "sixel",

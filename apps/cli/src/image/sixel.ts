@@ -351,17 +351,21 @@ const SIXEL_DEGRADE_ATTEMPTS = 4;
 export function renderSixelFromImage(
   decoded: DecodedImage,
   options: SixelRenderOptions,
+  signal?: AbortSignal,
 ): string | null {
   if (decoded.width === 0 || decoded.height === 0) return null;
+  if (signal?.aborted) return null;
 
   let width = options.maxWidth;
   let height = options.maxHeight;
   let colors = Math.min(256, Math.max(2, options.maxColors ?? 256));
   for (let attempt = 0; attempt < SIXEL_DEGRADE_ATTEMPTS; attempt += 1) {
+    if (signal?.aborted) return null;
     const fitted = fitDimensions(decoded, width, height);
     const resampled = resampleRgba(decoded, fitted.width, fitted.height);
     const sixel = encodeSixel(quantize(resampled, fitted.width, fitted.height, colors));
     if (options.maxBytes === undefined || sixel.length <= options.maxBytes) return sixel;
+    if (signal?.aborted) return null;
     // Over budget: colours first (halving the palette roughly halves the
     // per-band passes), then dimensions. Either step alone may suffice, and
     // the loop bounds the extra encode work on the failure path.

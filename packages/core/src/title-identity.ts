@@ -64,8 +64,9 @@ export function resolveCanonicalCatalogTitleId(
 /** Canonical title id for history / prefs / continuation lookups (alias for clarity at call sites). */
 export function resolveHistoryLookupTitleId(
   title: Pick<TitleIdentityInput, "id" | "kind" | "externalIds">,
+  options?: CanonicalTitleIdOptions,
 ): string {
-  return resolveCanonicalCatalogTitleId(title);
+  return resolveCanonicalCatalogTitleId(title, options);
 }
 
 export function looksLikeOpaqueProviderNativeId(

@@ -132,7 +132,7 @@ export function usePosterSurfaceBoundaryCleanup(active: boolean): void {
     if (!active) return undefined;
     undisplayPlacementsKeepCache();
     return () => {
-      clearRenderedPosterImages();
+      undisplayPlacementsKeepCache();
     };
   }, [active]);
 }

@@ -50,8 +50,8 @@ function FactRow({ label, value, width }: { label: string; value: string; width:
   const labelWidth = Math.min(DETAIL_FACT_LABEL_WIDTH, Math.max(6, label.length + 1));
   return (
     <Box>
-      <Text color={palette.dim}>{padColumnsEnd(truncateLine(label, labelWidth), labelWidth)}</Text>
-      <Text color={palette.text}>{truncateLine(value, width - labelWidth - 2)}</Text>
+      <Text color={palette.dim}>{padColumnsEnd(truncateLine(label, labelWidth), labelWidth)} </Text>
+      <Text color={palette.text}>{truncateLine(value, width - labelWidth - 3)}</Text>
     </Box>
   );
 }
@@ -121,10 +121,10 @@ export function DetailsSheetUI({
                 {padColumnsEnd(
                   truncateLine(line.label, DETAIL_FACT_LABEL_WIDTH),
                   DETAIL_FACT_LABEL_WIDTH,
-                )}
+                )}{" "}
               </Text>
               <Text color={sheetLineColor(line.tone)}>
-                {truncateLine(line.detail ?? "", width - DETAIL_FACT_LABEL_WIDTH - 2)}
+                {truncateLine(line.detail ?? "", width - DETAIL_FACT_LABEL_WIDTH - 3)}
               </Text>
             </Box>
           ),

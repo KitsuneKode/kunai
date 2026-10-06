@@ -121,10 +121,12 @@ export function parseMpvIpcLine(raw: string): MpvIpcMessage | null {
 export async function waitForMpvIpcEndpoint(
   endpoint: MpvIpcEndpoint,
   timeoutMs = 3_000,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   let delay = 10;
   while (Date.now() < deadline) {
+    if (signal?.aborted) return false;
     try {
       const s = await Bun.connect<SocketState>({
         unix: endpoint.path,
@@ -143,6 +145,7 @@ export async function waitForMpvIpcEndpoint(
     } catch {
       // Pipe/socket not ready yet — retry after backoff.
     }
+    if (signal?.aborted) return false;
     await Bun.sleep(delay);
     delay = Math.min(delay * 2, 100);
   }

@@ -443,58 +443,62 @@ export class HistoryRepository {
       readonly externalIds?: ProviderExternalIds;
     },
   ): boolean {
-    let changed = false;
-    if (metadata.title) {
-      // Repair only rows still stored under a stand-in name. A row whose title a
-      // catalog or a user already supplied is never overwritten from here — the
-      // healer resolves from an id, and a wrong repair is unrecoverable where a
-      // missed one is not.
-      const rows = this.db
-        .query<{ key: string; title: string }, [string]>(
-          "SELECT key, title FROM history_progress WHERE title_id = ?",
-        )
-        .all(titleId);
-      for (const row of rows) {
-        if (!isPlaceholderTitleName(row.title, titleId)) continue;
+    return this.db.transaction(() => {
+      let changed = false;
+      if (metadata.title) {
+        // Repair only rows still stored under a stand-in name. A row whose title a
+        // catalog or a user already supplied is never overwritten from here — the
+        // healer resolves from an id, and a wrong repair is unrecoverable where a
+        // missed one is not.
+        const rows = this.db
+          .query<{ key: string; title: string }, [string]>(
+            "SELECT key, title FROM history_progress WHERE title_id = ?",
+          )
+          .all(titleId);
+        const updateTitleStmt = this.db.query(
+          "UPDATE history_progress SET title = ? WHERE key = ?",
+        );
+        for (const row of rows) {
+          if (!isPlaceholderTitleName(row.title, titleId)) continue;
+          const result = updateTitleStmt.run(metadata.title, row.key);
+          changed ||= result.changes > 0;
+        }
+      }
+      if (metadata.posterUrl) {
         const result = this.db
-          .query("UPDATE history_progress SET title = ? WHERE key = ?")
-          .run(metadata.title, row.key);
+          .query(
+            "UPDATE history_progress SET poster_url = ? WHERE title_id = ? AND (poster_url IS NULL OR poster_url = '')",
+          )
+          .run(metadata.posterUrl, titleId);
         changed ||= result.changes > 0;
       }
-    }
-    if (metadata.posterUrl) {
-      const result = this.db
-        .query(
-          "UPDATE history_progress SET poster_url = ? WHERE title_id = ? AND (poster_url IS NULL OR poster_url = '')",
-        )
-        .run(metadata.posterUrl, titleId);
-      changed ||= result.changes > 0;
-    }
-    const externalIdsJson = serializeExternalIds(metadata.externalIds);
-    if (externalIdsJson) {
-      const rows = this.db
-        .query<{ key: string; external_ids_json: string | null }, [string]>(
-          "SELECT key, external_ids_json FROM history_progress WHERE title_id = ?",
-        )
-        .all(titleId);
+      const externalIdsJson = serializeExternalIds(metadata.externalIds);
+      if (externalIdsJson) {
+        const rows = this.db
+          .query<{ key: string; external_ids_json: string | null }, [string]>(
+            "SELECT key, external_ids_json FROM history_progress WHERE title_id = ?",
+          )
+          .all(titleId);
 
-      for (const row of rows) {
-        const existing = parseExternalIds(row.external_ids_json);
-        const shouldReplaceEmpty = !row.external_ids_json;
-        const merged = shouldReplaceEmpty
-          ? metadata.externalIds
-          : mergeBackfillExternalIds(existing, metadata.externalIds);
-        const nextJson = serializeExternalIds(merged);
-        if (!nextJson || nextJson === row.external_ids_json) continue;
-        this.db
-          .query("UPDATE history_progress SET external_ids_json = ? WHERE key = ?")
-          .run(nextJson, row.key);
-        changed = true;
+        const updateExtStmt = this.db.query(
+          "UPDATE history_progress SET external_ids_json = ? WHERE key = ?",
+        );
+        for (const row of rows) {
+          const existing = parseExternalIds(row.external_ids_json);
+          const shouldReplaceEmpty = !row.external_ids_json;
+          const merged = shouldReplaceEmpty
+            ? metadata.externalIds
+            : mergeBackfillExternalIds(existing, metadata.externalIds);
+          const nextJson = serializeExternalIds(merged);
+          if (!nextJson || nextJson === row.external_ids_json) continue;
+          updateExtStmt.run(nextJson, row.key);
+          changed = true;
+        }
+
+        this.titleAliases.upsertAliases(titleId, externalIdsToAliases(metadata.externalIds));
       }
-
-      this.titleAliases.upsertAliases(titleId, externalIdsToAliases(metadata.externalIds));
-    }
-    return changed;
+      return changed;
+    })();
   }
 
   listRecent(limit = 20): readonly HistoryProgress[] {
@@ -679,7 +683,16 @@ export class HistoryRepository {
     return ordered;
   }
 
-  listAllProgress(): readonly HistoryProgress[] {
+  listAllProgress(options?: { limit?: number; offset?: number }): readonly HistoryProgress[] {
+    if (options?.limit !== undefined) {
+      const offset = options.offset ?? 0;
+      return this.db
+        .query<HistoryProgressRow, [number, number]>(
+          "SELECT * FROM history_progress LIMIT ? OFFSET ?",
+        )
+        .all(options.limit, offset)
+        .map(mapHistoryRow);
+    }
     return this.db
       .query<HistoryProgressRow, []>("SELECT * FROM history_progress")
       .all()

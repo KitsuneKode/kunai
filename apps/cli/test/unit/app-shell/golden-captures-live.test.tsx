@@ -16,6 +16,7 @@ import {
   CAPTURE_WIDTHS,
   captureAllWidths,
   captureFramesSettled,
+  stripAnsi,
   type CaptureWidth,
 } from "../../harness/render-capture";
 
@@ -43,7 +44,12 @@ async function expectLiveMatch(
 ): Promise<void> {
   const file = path.join(CAPTURE_DIR, `${surface}.${width}.txt`);
   const committed = await readFile(file, "utf8");
-  const live = `# ${surface} · ${width} (${CAPTURE_WIDTHS[width]}×${rows})\n${frame}\n`;
+  const cleanFrame = stripAnsi(frame)
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .join("\n")
+    .replace(/\s+$/, "");
+  const live = `# ${surface} · ${width} (${CAPTURE_WIDTHS[width]}×${rows})\n${cleanFrame}\n`;
   expect(
     live,
     `${surface}.${width}.txt does not match a fresh render — re-run the surface's capture script in apps/cli/test/harness/`,
@@ -52,16 +58,21 @@ async function expectLiveMatch(
 
 describe("committed captures match a live re-render", () => {
   let previousPoster: string | undefined;
+  let previousPet: string | undefined;
   let previousReducedMotion: string | undefined;
   beforeAll(() => {
     previousPoster = process.env.KUNAI_POSTER;
     process.env.KUNAI_POSTER = "0";
+    previousPet = process.env.KUNAI_PET;
+    process.env.KUNAI_PET = "off";
     previousReducedMotion = process.env.KUNAI_REDUCED_MOTION;
     process.env.KUNAI_REDUCED_MOTION = "1";
   });
   afterAll(() => {
     if (previousPoster === undefined) delete process.env.KUNAI_POSTER;
     else process.env.KUNAI_POSTER = previousPoster;
+    if (previousPet === undefined) delete process.env.KUNAI_PET;
+    else process.env.KUNAI_PET = previousPet;
     if (previousReducedMotion === undefined) delete process.env.KUNAI_REDUCED_MOTION;
     else process.env.KUNAI_REDUCED_MOTION = previousReducedMotion;
   });

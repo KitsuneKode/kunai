@@ -235,6 +235,7 @@ export class PersistentMpvSession {
   } | null = null;
   private readyWorkFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private terminationPromise: Promise<void> | null = null;
+  private closePromise: Promise<void> | null = null;
   private terminated = false;
   private lastSkipTo = -1;
   private nearEofFired = false;
@@ -553,6 +554,12 @@ export class PersistentMpvSession {
   }
 
   async close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closePromise = this.performClose();
+    return this.closePromise;
+  }
+
+  private async performClose(): Promise<void> {
     this.currentCycleOptions().onPlaybackEvent?.({ type: "player-closing" });
     this.clearReadyWorkFallback();
     this.pendingReadyWork = null;
@@ -571,8 +578,8 @@ export class PersistentMpvSession {
 
     if (this.ipcSession) {
       this.abortResumeChoiceWaitForCycleEnd();
-      void this.ipcSession.send(["set_property", "user-data/kunai-loading", ""], 500);
-      const result = await this.ipcSession.send(["quit"], 1_000);
+      void this.ipcSession.send(["set_property", "user-data/kunai-loading", ""], 400);
+      const result = await this.ipcSession.send(["quit"], 500);
       if (!result.ok) {
         target?.kill("SIGTERM");
       }
@@ -580,14 +587,14 @@ export class PersistentMpvSession {
       target?.kill("SIGTERM");
     }
 
-    let closed = await this.waitForProcessClose(target, 1_500);
+    let closed = await this.waitForProcessClose(target, 800);
     if (!closed) {
       target?.kill("SIGTERM");
-      closed = await this.waitForProcessClose(target, 1_500);
+      closed = await this.waitForProcessClose(target, 800);
     }
     if (!closed) {
       target?.kill("SIGKILL");
-      closed = await this.waitForProcessClose(target, 1_000);
+      closed = await this.waitForProcessClose(target, 500);
     }
 
     await this.handleProcessTermination({
@@ -1632,8 +1639,12 @@ export class PersistentMpvSession {
         ? Math.min(this.reconnectMaxBackoffMs, this.reconnectBaseBackoffMs * 2 ** (nextAttempt - 2))
         : 0;
     if (backoffBefore > 0) {
-      await Bun.sleep(backoffBefore);
-      if (!this.isGenerationCurrent(reconnectGeneration)) return false;
+      const sleepDeadline = Date.now() + backoffBefore;
+      while (Date.now() < sleepDeadline) {
+        if (this.retired || !this.isGenerationCurrent(reconnectGeneration)) return false;
+        await Bun.sleep(Math.min(50, Math.max(1, sleepDeadline - Date.now())));
+      }
+      if (this.retired || !this.isGenerationCurrent(reconnectGeneration)) return false;
     }
 
     this.reconnectInFlight = true;
