@@ -449,8 +449,12 @@ export const rivestreamProviderModule: CoreProviderModule = {
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs,
         // Every service is fetched through the same www.rivestream.app front
-        // door — a block there repeats identically for the rest, so stop early.
-        shouldStopAfterFailure: (failure) => failure.failureClass === "candidate-blocked",
+        // door — a block there repeats identically for the rest, so stop
+        // early. Endpoint-scoped refusals name one service's own stream CDN,
+        // not the shared front door: stopping on them forfeits every untried
+        // service to a single dead mirror.
+        shouldStopAfterFailure: (failure) =>
+          failure.failureClass === "candidate-blocked" && failure.endpointScoped !== true,
         resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           if (!provider) {

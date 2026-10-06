@@ -80,6 +80,10 @@ export function providerFailureCodeFromCycleFailure(
       return "expired";
     case "candidate-blocked":
       return "blocked";
+    case "candidate-rate-limited":
+      return "rate-limited";
+    case "candidate-server-error":
+      return "provider-unavailable";
     case "candidate-parse":
       return "parse-failed";
     case "candidate-unsupported":
