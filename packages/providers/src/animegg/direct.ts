@@ -241,6 +241,7 @@ export const animeggProviderModule: CoreProviderModule = {
     // classified code/retryability instead of a blanket retryable
     // network-error, so a catalog-miss 404 does not re-run the resolve or
     // degrade provider health.
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- catch-clause values arrive as unknown; instanceof narrows below.
     const failFetch = (label: string, error: unknown) =>
       error instanceof ProviderHttpError
         ? fail(error.code, `AnimeGG ${label} failed: ${describe(error)}`, error.retryable)

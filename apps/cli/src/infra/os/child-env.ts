@@ -19,11 +19,11 @@ const SECRET_ENV_SUFFIX =
 export function scrubbedChildEnv(
   env: Record<string, string | undefined> = process.env,
 ): Record<string, string> {
-  const scrubbed: Record<string, string> = {};
+  const scrubbed = new Map<string, string>();
   for (const [name, value] of Object.entries(env)) {
     if (value === undefined) continue;
     if (SECRET_ENV_SUFFIX.test(name)) continue;
-    scrubbed[name] = value;
+    scrubbed.set(name, value);
   }
-  return scrubbed;
+  return Object.fromEntries(scrubbed);
 }
