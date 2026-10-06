@@ -4,6 +4,7 @@ import {
   ProviderEndpointHealthRepository,
   ProviderHealthRepository,
   ResolveTraceRepository,
+  SourceInventoryRepository,
   StreamCacheRepository,
 } from "../src/index";
 import { createTempStoreRegistry } from "./helpers/temp-store";
@@ -127,4 +128,36 @@ test("resolve traces: a poisoned row is skipped, valid traces still load", () =>
   expect(repo.get("trace-bad")).toBeUndefined();
   expect(repo.get("trace-schema")).toBeUndefined();
   expect(repo.listRecent().map((trace) => trace.id)).toEqual(["trace-good"]);
+});
+
+test("source inventory: a poisoned row is evicted and treated as a miss", () => {
+  const db = stores.store("poison-source-inventory", "cache");
+  const repo = new SourceInventoryRepository(db);
+  repo.set(
+    "good-key",
+    "vidlink",
+    "tmdb:1",
+    { sources: [{ id: "src-1", name: "Source 1" }] },
+    "2099-01-01T00:00:00.000Z",
+  );
+  db.query(
+    `INSERT INTO source_inventory
+       (inventory_key, provider_id, title_id, inventory_json, expires_at, created_at, last_accessed_at)
+     VALUES ('bad-key', 'vidlink', 'tmdb:1', 'not-valid-json', '2099-01-01T00:00:00.000Z', ?, ?)`,
+  ).run(NOW, NOW);
+  db.query(
+    `INSERT INTO source_inventory
+       (inventory_key, provider_id, title_id, inventory_json, expires_at, created_at, last_accessed_at)
+     VALUES ('bad-schema', 'vidlink', 'tmdb:1', '{"sources": 123}', '2099-01-01T00:00:00.000Z', ?, ?)`,
+  ).run(NOW, NOW);
+
+  expect(repo.get("good-key")?.inventory).toEqual({ sources: [{ id: "src-1", name: "Source 1" }] });
+  expect(repo.get("bad-key")).toBeUndefined();
+  expect(repo.get("bad-schema")).toBeUndefined();
+
+  const remaining = db
+    .query<{ inventory_key: string }, []>("SELECT inventory_key FROM source_inventory")
+    .all()
+    .map((row) => row.inventory_key);
+  expect(remaining).toEqual(["good-key"]);
 });

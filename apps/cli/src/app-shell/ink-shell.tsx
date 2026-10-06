@@ -2096,7 +2096,7 @@ function StatsShell({
       )}
 
       <Box marginTop={1} flexDirection="column">
-        <Text color={palette.dim}>{"─".repeat(Math.min(innerWidth, cols - 4))}</Text>
+        <Text color={palette.dim}>{"─".repeat(Math.max(0, Math.min(innerWidth, cols - 4)))}</Text>
         {copiedFlash ? (
           <Box marginTop={1}>
             <Text color={copiedFlash.startsWith("Copied") ? palette.ok : palette.danger}>

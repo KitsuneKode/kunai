@@ -383,6 +383,9 @@ async function fetchVidlinkApi(
       }
       throw error;
     } catch (error) {
+      if (error instanceof ProviderHttpError && !error.retryable) {
+        throw error;
+      }
       if (!(error instanceof ProviderHttpError) && !signal?.aborted) {
         endpointHealth.recordFailure(VIDLINK_API_ENDPOINT, { class: "transient", titleId });
       }
@@ -450,6 +453,9 @@ async function encryptTmdbId(
       endpointHealth.recordSuccess(ENC_DEC_ENDPOINT);
       return data.result;
     } catch (error) {
+      if (error instanceof ProviderHttpError && !error.retryable) {
+        throw error;
+      }
       if (!signal?.aborted) {
         const failureClass =
           error instanceof ProviderHttpError ? vidlinkFailureClass(error.code) : "transient";

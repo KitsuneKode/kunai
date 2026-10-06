@@ -789,6 +789,14 @@ export const dataMigrations: readonly Migration[] = [
       WHERE played_at IS NOT NULL AND status != 'played';
     `,
   },
+  {
+    id: "041_data_offline_assets_origin_job_index",
+    database: "data",
+    sql: `
+      CREATE INDEX IF NOT EXISTS idx_offline_assets_origin_job_id
+        ON offline_assets(origin_job_id);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

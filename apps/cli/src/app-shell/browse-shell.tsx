@@ -1656,11 +1656,11 @@ export function BrowseShell<T>({
       // Closed loop: the last row wraps to the first instead of dropping back
       // into the search box. Bouncing to the query zone here made row 0
       // unreachable going down whenever the remembered row was the last one.
-      if (boundedSelectedIndex >= displayOptions.length - 1) {
-        setSelectedIndex(0);
-        return;
-      }
-      setSelectedIndex((current) => current + 1);
+      setSelectedIndex((current) => {
+        const max = displayOptions.length - 1;
+        const bounded = Math.min(Math.max(0, current), max);
+        return bounded >= max ? 0 : bounded + 1;
+      });
       return;
     }
 
@@ -1676,11 +1676,11 @@ export function BrowseShell<T>({
         dispatchFocusZone({ type: "arrow-up" });
         return;
       }
-      if (boundedSelectedIndex === 0) {
-        setSelectedIndex(displayOptions.length - 1);
-        return;
-      }
-      setSelectedIndex((current) => current - 1);
+      setSelectedIndex((current) => {
+        const max = displayOptions.length - 1;
+        const bounded = Math.min(Math.max(0, current), max);
+        return bounded <= 0 ? max : bounded - 1;
+      });
       return;
     }
 

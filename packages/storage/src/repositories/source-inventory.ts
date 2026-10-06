@@ -71,7 +71,9 @@ export class SourceInventoryRepository {
     }
 
     if (isExpired(row.expires_at, now)) {
-      this.delete(inventoryKey);
+      this.db
+        .query("DELETE FROM source_inventory WHERE inventory_key = ? AND expires_at = ?")
+        .run(inventoryKey, row.expires_at);
       return undefined;
     }
 
@@ -81,13 +83,17 @@ export class SourceInventoryRepository {
       .run(accessedAt, inventoryKey);
 
     // Same contract as stream-cache reads: a row whose inventory shape is
-    // corrupt is not a hit — throw so the service layer records it as a cache
-    // failure instead of handing garbage downstream. The repository is generic,
-    // so the check is structural: the fields consumers read must be arrays of
-    // objects with string ids when they exist at all.
-    const parsed: unknown = JSON.parse(row.inventory_json);
+    // corrupt is a cache miss, not a crash — evict so the provider resolves fresh.
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.inventory_json);
+    } catch {
+      this.delete(inventoryKey);
+      return undefined;
+    }
     if (!isSourceInventoryRecord(parsed)) {
-      throw new Error(`invalid source_inventory row for ${row.inventory_key}`);
+      this.delete(inventoryKey);
+      return undefined;
     }
 
     return {
