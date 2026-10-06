@@ -175,6 +175,7 @@ describe("buildDependencyRows", () => {
     const plain = await probeCapabilities({
       which: (command) => (command === "curl" ? "/usr/bin/curl" : null),
       listPathEntries: () => ["curl"],
+      canExecuteCurlInvocation: () => true,
     });
     const row = buildDependencyRows(plain).find((r) => r.id === "curl-impersonate");
     expect(row?.state).toBe("degraded");
