@@ -255,7 +255,7 @@ test("diagnostic events: a poisoned context_json reads as absent instead of cras
   const db = stores.store("poison-diagnostic-events", "cache");
   const repo = new DiagnosticEventsRepository(db);
   repo.insert({
-    timestamp: NOW,
+    timestamp: Date.parse(NOW),
     level: "warn",
     category: "playback",
     operation: "playback.test",
@@ -266,7 +266,7 @@ test("diagnostic events: a poisoned context_json reads as absent instead of cras
     `INSERT INTO diagnostic_events
        (timestamp, level, category, operation, message, context_json, created_at)
      VALUES (?, 'warn', 'playback', 'playback.test', 'bad event', 'not json{', ?)`,
-  ).run(NOW, NOW);
+  ).run(Date.parse(NOW), NOW);
 
   const events = repo.listRecent(10);
   expect(events).toHaveLength(2);
