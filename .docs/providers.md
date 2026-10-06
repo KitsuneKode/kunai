@@ -218,6 +218,13 @@ Provider priority is user-configurable:
 
 - `provider` / `animeProvider` remain the default provider for a new session mode.
 - `providerPriority` controls movie/series fallback and picker order.
+  The shipped default is `["rivestream", "vidrock", "videasy"]` behind the
+  `vidlink` lane lead: Rivestream first (eleven-service local cycle behind the
+  shared resolve gate), VidRock second (multi-lane AES-GCM payloads behind the
+  direct-stream gate), Videasy last and still loaded (session/turnstile-gated
+  with a rotted `videasy.to` domain — a working fallback, not a removal).
+  Unlisted providers (e.g. `movy`, still `candidate` status) stay reachable
+  after configured entries.
 - `animeProviderPriority` controls anime fallback and picker order.
 - Priority lists are applied when the provider engine is built and read again
   during playback resolve, so settings changes affect fallback order without a
