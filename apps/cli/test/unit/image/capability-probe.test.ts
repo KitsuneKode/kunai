@@ -96,3 +96,31 @@ describe("image capability with a terminal probe", () => {
     );
   });
 });
+
+describe("image capability no-colour honesty", () => {
+  test("TERM=dumb selects no renderer in auto mode", () => {
+    withChafa(true);
+    capabilityTesting.resetMemo();
+    const capability = detectImageCapability({ TERM: "dumb" });
+    expect(capability.renderer).toBe("none");
+    expect(capability.available).toBe(false);
+  });
+
+  test("NO_COLOR selects no renderer in auto mode", () => {
+    withChafa(true);
+    capabilityTesting.resetMemo();
+    const capability = detectImageCapability({ TERM: "xterm-256color", NO_COLOR: "1" });
+    expect(capability.renderer).toBe("none");
+  });
+
+  test("an explicit protocol override still wins over NO_COLOR", () => {
+    withChafa(true);
+    capabilityTesting.resetMemo();
+    const capability = detectImageCapability({
+      TERM: "xterm-256color",
+      NO_COLOR: "1",
+      KUNAI_IMAGE_PROTOCOL: "half-block",
+    });
+    expect(capability.renderer).toBe("half-block");
+  });
+});
