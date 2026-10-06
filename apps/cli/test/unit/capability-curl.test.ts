@@ -15,6 +15,7 @@ function pathWith(...commands: readonly string[]) {
   return {
     which: (command: string) => (commands.includes(command) ? `/usr/bin/${command}` : null),
     listPathEntries: () => commands,
+    canExecuteCurlInvocation: () => true,
   };
 }
 
@@ -33,6 +34,7 @@ function windowsPathWith(...commands: readonly string[]) {
       return hit ? `C:\\tools\\${hit}` : null;
     },
     listPathEntries: () => commands,
+    canExecuteCurlInvocation: () => true,
   };
 }
 
@@ -134,9 +136,16 @@ describe("probeCapabilities — curl for the default anime provider", () => {
   // could never see a correctly installed Windows setup — it reported "plain
   // curl, no CF bypass" forever and the user had nothing left to try.
   test("discovers the .bat wrappers the Windows release actually ships", async () => {
-    const snapshot = await probeCapabilities(
-      pathWith("curl.exe", "curl_chrome150.bat", "curl_chrome116.bat"),
-    );
+    const backendPath = "C:\\tools\\curl-impersonate.exe";
+    const snapshot = await probeCapabilities({
+      platform: "win32",
+      ...windowsPathWith("curl.exe", "curl_chrome150.bat", "curl_chrome116.bat"),
+      exists: (path) => path === backendPath,
+      readTextFile: (path) =>
+        path.includes("chrome150")
+          ? '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome150" %*'
+          : '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome116" %*',
+    });
 
     expect(snapshot.curl).toMatchObject({
       present: true,
@@ -147,9 +156,16 @@ describe("probeCapabilities — curl for the default anime provider", () => {
   });
 
   test("ranks .cmd and extensionless wrappers by build, not by extension", async () => {
-    const snapshot = await probeCapabilities(
-      pathWith("curl", "curl_chrome116", "curl_chrome150.cmd"),
-    );
+    const backendPath = "C:\\tools\\curl-impersonate.exe";
+    const snapshot = await probeCapabilities({
+      platform: "win32",
+      ...windowsPathWith("curl", "curl_chrome116", "curl_chrome150.cmd"),
+      exists: (path) => path === backendPath,
+      readTextFile: (path) =>
+        path.includes("chrome150")
+          ? '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome150" %*'
+          : null,
+    });
 
     expect(snapshot.curl.profile).toBe("chrome150");
   });
@@ -161,5 +177,41 @@ describe("probeCapabilities — curl for the default anime provider", () => {
 
     expect(snapshot.curl.present).toBe(true);
     expect(snapshot.curl.impersonates).toBe(false);
+  });
+
+  test("raises a degraded issue when resolved curl exists but cannot execute", async () => {
+    const snapshot = await probeCapabilities({
+      which: (command) => (command === "curl_chrome150" ? "/usr/bin/curl_chrome150" : null),
+      listPathEntries: () => ["curl_chrome150"],
+      canExecuteCurlInvocation: () => false,
+    });
+
+    expect(snapshot.curl.present).toBe(true);
+    const issue = snapshot.issues.find((candidate) => candidate.id === "curl-invocation-failed");
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe("degraded");
+  });
+
+  test("a Windows .bat wrapper resolves to the sibling curl-impersonate.exe with impersonate prefix args", async () => {
+    const spawned: { readonly path: string; readonly prefixArgs: readonly string[] }[] = [];
+    const backendPath = "C:\\tools\\curl-impersonate.exe";
+    const snapshot = await probeCapabilities({
+      platform: "win32",
+      which: (command) =>
+        command === "curl_chrome150.bat" ? "C:\\tools\\curl_chrome150.bat" : null,
+      listPathEntries: () => ["curl_chrome150.bat"],
+      exists: (path) => path === backendPath,
+      readTextFile: () => '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome150" %*',
+      canExecuteCurlInvocation: (invocation) => {
+        spawned.push(invocation);
+        return true;
+      },
+    });
+
+    expect(spawned[0]?.path).toBe(backendPath);
+    expect(spawned[0]?.prefixArgs).toEqual(["--compressed", "--impersonate", "chrome150"]);
+    expect(snapshot.curl.impersonates).toBe(true);
+    expect(snapshot.curl.profile).toBe("chrome150");
+    expect(snapshot.issues.some((issue) => issue.id === "curl-invocation-failed")).toBe(false);
   });
 });

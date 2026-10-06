@@ -328,6 +328,7 @@ describe("anidb curl selection", () => {
   test("prefers the newest curl-impersonate build over plain curl", () => {
     expect(resolveAnidbCurl(onPath(["curl", "curl_chrome116", "curl_chrome150"]))).toEqual({
       path: "/usr/bin/curl_chrome150",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome150",
     });
@@ -342,6 +343,7 @@ describe("anidb curl selection", () => {
     const future = ["curl", "curl_chrome199", "curl_firefox210"];
     expect(resolveAnidbCurl(onPath(future))).toEqual({
       path: "/usr/bin/curl_chrome199",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome199",
     });
@@ -352,6 +354,7 @@ describe("anidb curl selection", () => {
   test("ranks family before version so a high Safari number cannot outrank Chrome", () => {
     expect(resolveAnidbCurl(onPath(["curl_safari260", "curl_chrome150"]))).toEqual({
       path: "/usr/bin/curl_chrome150",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome150",
     });
@@ -360,6 +363,7 @@ describe("anidb curl selection", () => {
   test("orders a revision suffix above the bare version", () => {
     expect(resolveAnidbCurl(onPath(["curl_chrome133", "curl_chrome133a"]))).toEqual({
       path: "/usr/bin/curl_chrome133a",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome133a",
     });
@@ -370,6 +374,7 @@ describe("anidb curl selection", () => {
   test("skips mobile builds in favour of an older desktop one", () => {
     expect(resolveAnidbCurl(onPath(["curl", "curl_chrome131_android", "curl_chrome116"]))).toEqual({
       path: "/usr/bin/curl_chrome116",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome116",
     });
@@ -378,6 +383,7 @@ describe("anidb curl selection", () => {
   test("never selects a tor build", () => {
     expect(resolveAnidbCurl(onPath(["curl", "curl_tor145"]))).toEqual({
       path: "/usr/bin/curl",
+      prefixArgs: [],
       impersonates: false,
       profile: null,
     });
@@ -386,6 +392,7 @@ describe("anidb curl selection", () => {
   test("marks plain curl as non-impersonating so cipher flags are applied", () => {
     expect(resolveAnidbCurl(onPath(["curl"]))).toEqual({
       path: "/usr/bin/curl",
+      prefixArgs: [],
       impersonates: false,
       profile: null,
     });
@@ -399,7 +406,7 @@ describe("anidb curl selection", () => {
         which: (cmd: string) => (cmd === "curl" ? "/usr/bin/curl" : null),
         listPathEntries: () => ["curl", "curl_chrome150"],
       }),
-    ).toEqual({ path: "/usr/bin/curl", impersonates: false, profile: null });
+    ).toEqual({ path: "/usr/bin/curl", prefixArgs: [], impersonates: false, profile: null });
   });
 
   test("reports no curl at all so the caller can fall back to fetch", () => {
