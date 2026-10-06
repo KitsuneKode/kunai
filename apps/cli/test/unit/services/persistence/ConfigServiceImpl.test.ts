@@ -103,6 +103,27 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).animeProviderPriority).toEqual(["allanime", "miruro"]);
   });
 
+  test("a null sync sub-object on disk cannot collapse the live config shape", async () => {
+    // SAFETY: models a hand-edited config.json — `{"sync":{"anilist":null}}` is
+    // valid JSON but violates the declared KitsuneConfig shape.
+    const store = new MemoryConfigStore({
+      sync: { anilist: null, tmdb: { enabled: true } } as never,
+    });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.sync.anilist).toEqual(DEFAULT_CONFIG.sync.anilist);
+    expect(service.sync.tmdb.enabled).toBe(true);
+    expect(service.sync.anilist.enabled).toBe(DEFAULT_CONFIG.sync.anilist.enabled);
+  });
+
+  test("a null sync section on disk falls back to the default sync config", async () => {
+    // SAFETY: deliberately poisoned JSON shape — validates the non-object guard.
+    const store = new MemoryConfigStore({ sync: null as never });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.sync).toEqual(DEFAULT_CONFIG.sync);
+  });
+
   test("normalizes invalid stored startup priority to balanced", async () => {
     const service = await ConfigServiceImpl.load(
       new MemoryConfigStore({

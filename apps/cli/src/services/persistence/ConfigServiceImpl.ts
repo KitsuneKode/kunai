@@ -8,7 +8,7 @@ import {
   DEFAULT_OFFLINE_RUNWAY_TARGET,
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
-import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
+import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS, mergeKitsuneConfig } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
 import {
@@ -196,9 +196,13 @@ export class ConfigServiceImpl implements ConfigService {
       loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
     const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(loaded);
     const migratedSeriesDefaults = shouldMigrateInheritedSeriesDefaults(loaded);
+    // mergeKitsuneConfig supplies the base: object-valued keys (sync and its
+    // anilist/tmdb sections, language profiles, youtubeMetadata, relay config,
+    // title-provider prefs) overlay DEFAULT_CONFIG field-by-field, so a
+    // hand-edited `{"sync":{"anilist":null}}` can never put null where
+    // unguarded readers do `config.sync.anilist.enabled`.
     service.config = {
-      ...DEFAULT_CONFIG,
-      ...loaded,
+      ...mergeKitsuneConfig(DEFAULT_CONFIG, loaded),
       ...(migratedSeriesDefaults
         ? {
             provider: DEFAULT_CONFIG.provider,
@@ -256,11 +260,6 @@ export class ConfigServiceImpl implements ConfigService {
       offlineDefaultRunwayTarget: normalizeRunwayTarget(loaded.offlineDefaultRunwayTarget),
       protectedDownloadJobIds: normalizeStringList(loaded.protectedDownloadJobIds),
       favoriteSources: normalizeStringList(loaded.favoriteSources),
-      // `sync: null` (or any non-object) must not reach SyncService — its
-      // readers dereference pausedUntil/anilist without guards.
-      sync: isJsonObject(loaded.sync)
-        ? { ...DEFAULT_CONFIG.sync, ...loaded.sync }
-        : DEFAULT_CONFIG.sync,
       recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),

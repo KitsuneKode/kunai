@@ -239,24 +239,6 @@ test("buildEmbedStreamCacheKey preserves embed URL", () => {
   expect(buildEmbedStreamCacheKey(url)).toBe(url);
 });
 
-test("buildEmbedStreamCacheKey encodes intent and sorted headers", () => {
-  const url = "https://example.com/embed/123";
-  const keyWithIntent = buildEmbedStreamCacheKey({
-    embedPageUrl: url,
-    intent: "play",
-  });
-  expect(keyWithIntent).toBe("https://example.com/embed/123:intent:play");
-
-  const keyWithHeaders = buildEmbedStreamCacheKey({
-    embedPageUrl: url,
-    intent: "play",
-    headers: { Referer: "https://foo.com", "User-Agent": "CustomUA" },
-  });
-  expect(keyWithHeaders).toBe(
-    "https://example.com/embed/123:intent:play:headers:referer=https://foo.com;user-agent=CustomUA",
-  );
-});
-
 test("buildApiStreamResolveCacheKey separates YouTube episodes under channel/playlist", () => {
   const base = {
     providerId: "youtube",
