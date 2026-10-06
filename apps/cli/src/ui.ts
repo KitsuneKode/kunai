@@ -51,7 +51,11 @@ export interface CapabilityIssue {
  * carried.
  */
 export interface CurlCapability {
-  /** Any usable curl — plain or an impersonate build. */
+  /**
+   * A curl resolved on PATH — plain or impersonating. Executability is a
+   * separate fact reported as `curl-invocation-failed`; a resolved path that
+   * cannot spawn still sets this true so diagnostics can say what was found.
+   */
   readonly present: boolean;
   /** True only when a curl-impersonate build was selected. */
   readonly impersonates: boolean;
