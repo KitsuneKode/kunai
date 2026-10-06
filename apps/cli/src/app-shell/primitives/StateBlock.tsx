@@ -3,6 +3,7 @@ import React from "react";
 
 import { companionFallbackGlyph, companionMode } from "../companion-policy";
 import { companionLineFor } from "../kanna-voice";
+import { sanitizeTerminalText } from "../shell-text";
 import { palette, semanticToneColor } from "../shell-theme";
 import { ActionList } from "./ActionList";
 import {
@@ -45,9 +46,11 @@ export function StateBlock({
   return (
     <Box flexDirection="column">
       <Text color={color} bold>
-        {getStateBlockGlyph(model.kind)} {model.title}
+        {getStateBlockGlyph(model.kind)} {sanitizeTerminalText(model.title)}
       </Text>
-      {model.detail ? <Text color={palette.muted}>{model.detail}</Text> : null}
+      {model.detail ? (
+        <Text color={palette.muted}>{sanitizeTerminalText(model.detail)}</Text>
+      ) : null}
       {companion ? (
         <Text color={palette.dim}>
           {companionFallbackGlyph()} {companion}

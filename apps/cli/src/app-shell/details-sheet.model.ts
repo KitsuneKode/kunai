@@ -11,6 +11,8 @@ import type { TitleDetail, TitleLink } from "@/domain/catalog/title-detail";
 import { isFinished } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
 
+import { sanitizeTerminalText } from "./shell-text";
+
 export type DetailsSheetSeed = {
   readonly title: string;
   readonly type: "movie" | "series";
@@ -103,7 +105,7 @@ export function buildDetailsSheet(input: {
   const typeLabel = seed.type === "movie" ? "Movie" : "Series";
   const metaLine = [
     typeLabel,
-    seed.year,
+    seed.year !== undefined ? sanitizeTerminalText(seed.year) : undefined,
     typeof score === "number" ? `★${score.toFixed(1)}` : undefined,
     status,
   ]
@@ -119,20 +121,23 @@ export function buildDetailsSheet(input: {
 
   return {
     header: {
-      title: seed.title,
+      title: sanitizeTerminalText(seed.title),
       posterUrl: detail?.artwork?.poster ?? seed.posterUrl,
       metaLine,
       score,
-      genres: genres.slice(0, 4),
+      genres: genres.slice(0, 4).map(sanitizeTerminalText),
       statusLabel: status,
     },
-    synopsis: { loading: detail === null && !seed.synopsis, text: synopsisText },
+    synopsis: {
+      loading: detail === null && !seed.synopsis,
+      text: sanitizeTerminalText(synopsisText),
+    },
     facts: {
       loading: detail === null,
-      studio: detail?.studios?.slice(0, 2).join(" · ") || undefined,
+      studio: detail?.studios?.slice(0, 2).map(sanitizeTerminalText).join(" · ") || undefined,
       episodes,
       runtime: detail?.runtimeMinutes ? `${detail.runtimeMinutes} min` : undefined,
-      contentRating: detail?.contentRating || undefined,
+      contentRating: detail?.contentRating ? sanitizeTerminalText(detail.contentRating) : undefined,
     },
     your: {
       progressLabel: progressLabel(history),
@@ -142,16 +147,21 @@ export function buildDetailsSheet(input: {
     },
     cast: {
       loading: detail === null,
-      names: (detail?.cast ?? []).slice(0, 8).map((member) => member.name),
+      names: (detail?.cast ?? []).slice(0, 8).map((member) => sanitizeTerminalText(member.name)),
     },
     seasons: {
       loading: detail === null,
       items: (detail?.seasons ?? []).map((season) => ({
         season: season.season,
-        label: season.name ?? `Season ${season.season}`,
+        label: sanitizeTerminalText(season.name ?? `Season ${season.season}`),
       })),
     },
-    links: { items: detail?.externalLinks ? [...detail.externalLinks] : [] },
+    links: {
+      items: (detail?.externalLinks ?? []).map((link) => ({
+        label: sanitizeTerminalText(link.label),
+        url: sanitizeTerminalText(link.url),
+      })),
+    },
     trailerUrl: detail?.trailerUrl,
   };
 }

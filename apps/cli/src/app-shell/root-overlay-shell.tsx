@@ -58,6 +58,7 @@ import { requestBrowseIdleContextRefresh } from "./browse-idle-context";
 import { cancelRootOverlay } from "./cancel-root-overlay";
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
 import { diagnosticsVisibleRows } from "./diagnostics-dashboard-model";
+import { sanitizeTerminalText } from "./shell-text";
 
 /** The ContextStrip line drawn above the panel, inside the content area. */
 const DIAGNOSTICS_CONTEXT_STRIP_ROWS = 1;
@@ -626,7 +627,13 @@ export function RootOverlayShell({
   const [asyncLines, setAsyncLines] = useState<readonly ShellPanelLine[] | null>(null);
   const [loadingAsyncLines, setLoadingAsyncLines] = useState(overlay.type === "history");
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [overlayStatus, setOverlayStatus] = useState<string | null>(null);
+  const [overlayStatusRaw, setOverlayStatusRaw] = useState<string | null>(null);
+  const overlayStatus = overlayStatusRaw;
+  // Status lines can embed provider/history titles — sanitize at entry so every
+  // producer stays escape-safe without each call site remembering to.
+  const setOverlayStatus = useCallback((message: string | null) => {
+    setOverlayStatusRaw(message === null ? null : sanitizeTerminalText(message));
+  }, []);
   const [overlayClosePending, setOverlayClosePending] = useState(false);
   const [notificationActionDedupKey, setNotificationActionDedupKey] = useState<string | null>(null);
   const [notificationPlayConfirm, setNotificationPlayConfirm] = useState<{
@@ -1147,7 +1154,7 @@ export function RootOverlayShell({
     if (!overlayStatus) return undefined;
     const timer = setTimeout(() => setOverlayStatus(null), 2500);
     return () => clearTimeout(timer);
-  }, [overlayStatus]);
+  }, [overlayStatus, setOverlayStatus]);
 
   const runNotificationAction = (
     dedupKey: string | null | undefined,
@@ -2212,8 +2219,8 @@ export function RootOverlayShell({
           taskLabel={
             historyPendingDelete
               ? historyPendingDelete.kind === "episode"
-                ? `Delete episode progress for ${historyPendingDelete.label}? y confirm · Esc cancel`
-                : `Delete all history for ${historyPendingDelete.label}? y confirm · Esc cancel`
+                ? `Delete episode progress for ${sanitizeTerminalText(historyPendingDelete.label)}? y confirm · Esc cancel`
+                : `Delete all history for ${sanitizeTerminalText(historyPendingDelete.label)}? y confirm · Esc cancel`
               : historySourceChoiceTitleId
                 ? "History · l local, s stream, Esc cancel"
                 : "History"

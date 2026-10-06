@@ -55,6 +55,43 @@ describe("buildDetailsSheet", () => {
     expect(sheet.cast.names).toEqual(["Atsumi"]);
   });
 
+  it("strips terminal control sequences from provider-controlled text", () => {
+    const detail: TitleDetail = {
+      id: "1",
+      type: "series",
+      title: "Frieren",
+      synopsis: "Synopsis\x1b[2J with clears",
+      genres: ["Adv\x07enture"],
+      studios: ["Mad\x1b[31mhouse"],
+      contentRating: "TV-14\x1b]8;;https://evil\x07",
+      cast: [{ name: "Atsumi\x1b[H", kind: "voice" }],
+      seasons: [{ season: 1, name: "S\x071", episodeCount: 28 }],
+      externalLinks: [{ label: "MAL\x1b[8m", url: "https://mal/1" }],
+    };
+    const sheet = buildDetailsSheet({
+      seed: { ...seed, title: "Frie\x1b]52;c;eA==\x07ren", year: "20\x0723" },
+      detail,
+      history: null,
+      availability: null,
+    });
+    const hasControlChars = (value: string) =>
+      [...value].some((ch) => {
+        const code = ch.charCodeAt(0);
+        return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+      });
+    expect(sheet.header.title).toBe("Frieren");
+    expect(sheet.header.metaLine).toBe("Series · 2023 · ★8.9");
+    expect(hasControlChars(sheet.header.metaLine)).toBe(false);
+    expect(sheet.header.genres.every((genre) => !hasControlChars(genre))).toBe(true);
+    expect(hasControlChars(sheet.synopsis.text)).toBe(false);
+    expect(sheet.facts.studio).toBe("Madhouse");
+    expect(sheet.facts.contentRating).toBe("TV-14");
+    expect(sheet.cast.names).toEqual(["Atsumi"]);
+    expect(sheet.seasons.items[0]?.label).toBe("S1");
+    expect(hasControlChars(sheet.links.items[0]?.label ?? "")).toBe(false);
+    expect(hasControlChars(sheet.links.items[0]?.url ?? "")).toBe(false);
+  });
+
   it("builds the your-progress block from history", () => {
     const sheet = buildDetailsSheet({
       seed,
