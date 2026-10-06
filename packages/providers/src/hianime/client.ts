@@ -19,6 +19,7 @@ import {
 } from "../shared/curl-impersonate";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
+import { blockedLiteralTargetReason } from "../shared/stream-reachability";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import {
   decodeHianimeEmbedPage,
@@ -195,16 +196,40 @@ export function cloudflareBlockMessage(impersonated: boolean): string {
     : "hianime blocked by Cloudflare (try curl-impersonate)";
 }
 
+/** curl killed by SIGINT / SIGTERM — 128 + signal number. */
+const HIANIME_CURL_SIGINT_EXIT_CODE = 130;
+const HIANIME_CURL_SIGTERM_EXIT_CODE = 143;
+
 export async function runHianimeCurlWithRetry(
   args: readonly string[],
   signal?: AbortSignal,
   url?: string,
+  spawnOnce: (
+    args: readonly string[],
+    signal?: AbortSignal,
+  ) => Promise<{ stdout: string; stderr: string; exitCode: number }> = spawnCurlOnce,
 ): Promise<string> {
-  let result = await spawnCurlOnce(args, signal);
+  let result = await spawnOnce(args, signal);
   if (result.exitCode === CURL_TIMEOUT_EXIT_CODE) {
-    result = await spawnCurlOnce(args, signal);
+    result = await spawnOnce(args, signal);
   }
   if (result.exitCode !== 0) {
+    // Quitting kunai mid-resolve kills curl; without this "connection error
+    // (curl exit 130)" classifies as a retryable network fault instead of the
+    // cancellation it is — same fix as runAnidbCurlWithRetry.
+    if (signal?.aborted === true) {
+      throw signal.reason instanceof Error
+        ? signal.reason
+        : new DOMException("Aborted", "AbortError");
+    }
+    if (
+      result.exitCode === HIANIME_CURL_SIGINT_EXIT_CODE ||
+      result.exitCode === HIANIME_CURL_SIGTERM_EXIT_CODE
+    ) {
+      // AbortError so the cycle classifier reads a kill as user cancellation,
+      // not a retryable network fault.
+      throw new DOMException(`hianime curl cancelled (exit ${result.exitCode})`, "AbortError");
+    }
     throw new Error(hianimeCurlFailureMessage(result.stdout, result.stderr, result.exitCode, url));
   }
   return result.stdout;
@@ -310,6 +335,9 @@ export async function hianimeFetchText(
     ...curlCipherArgs(curl.impersonates),
     "-w",
     "\n%{http_code}",
+    // Everything after `--` is an operand, never an option — the URL arrives
+    // from upstream markup, so a leading `-` must never read as curl flags.
+    "--",
     url,
   ];
   // Exit 0 only means curl is happy: a 403/404/410 page still needs the
@@ -547,7 +575,11 @@ export async function resolveHianimeEpisodeStreams({
   );
 
   const embedUrl = supported.find((server) => server.audioMode === requestedMode)?.embedUrl;
-  if (!embedUrl) {
+  // The embed URL is a base64 field scraped from upstream markup — provider-
+  // controlled text. Without the target gate a hostile payload could name a
+  // LAN/loopback/file: target and the fetch+curl fallback would go there —
+  // the same gate fetchAnidbMasterUrl applies to its embed URLs.
+  if (!embedUrl || blockedLiteralTargetReason(embedUrl) !== null) {
     return {
       availableModes,
       observedServers,

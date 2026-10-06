@@ -34,9 +34,13 @@ export function createKeyedInflight(): Inflight {
     if (!task) {
       task = work();
       inflight.set(key, task);
-      void task.finally(() => {
+      // then(drop, drop), not finally: a discarded `task.finally` promise
+      // adopts the task's rejection and surfaces as an unhandled rejection
+      // whenever work() throws.
+      const drop = () => {
         if (inflight.get(key) === task) inflight.delete(key);
-      });
+      };
+      void task.then(drop, drop);
     }
     if (!signal) return task;
     return new Promise<T | null>((resolve) => {

@@ -114,7 +114,12 @@ function readPathEntries(): readonly string[] {
       for (const entry of readdirSync(dir)) {
         // Cheap prefix gate before the regex — a PATH directory can hold
         // thousands of entries and this runs on the capability-probe path.
-        if (entry.startsWith("curl_")) entries.push(entry);
+        // Case-insensitive like WRAPPER_PATTERN: win32 filesystems happily
+        // hold `Curl_chrome150.bat`, and skipping it would silently degrade to
+        // plain curl on a machine that has impersonation installed.
+        if (entry.length > 5 && entry.slice(0, 5).toLowerCase() === "curl_") {
+          entries.push(entry);
+        }
       }
     } catch {
       // An unreadable or absent PATH directory is normal, not an error.

@@ -278,7 +278,12 @@ function curlFetchOnce(
       settled = true;
       clearTimeout(watchdog);
       const buf = Buffer.concat(chunks);
-      if (code !== 0 && buf.length === 0) {
+      // Any non-zero exit means curl itself reports a transport failure — the
+      // buffered bytes can be a truncated transfer that still carries a
+      // parseable trailer (`-w` prints http_code for partial bodies too), so
+      // relaying them would hand mpv a cut playlist stamped with the upstream
+      // status. Only exit 0 reaches the trailer parse.
+      if (code !== 0) {
         reject(new Error(`curl exit ${code}: ${stderr.slice(0, 120)}`));
         return;
       }

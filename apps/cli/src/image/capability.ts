@@ -156,7 +156,12 @@ function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
     // Multiplexer detection feeds the result, so it has to feed the key too.
     env.TMUX ?? "",
     env.STY ?? "",
+    env.ZELLIJ ?? "",
+    env.ZELLIJ_SESSION_NAME ?? "",
     env.TERM ?? "",
+    // The auto-path treats NO_COLOR like TERM=dumb — omitting it would serve
+    // a pre-NO_COLOR result to an env that should get none.
+    env.NO_COLOR ?? "",
   ]);
 }
 

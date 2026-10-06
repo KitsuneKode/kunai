@@ -23,6 +23,26 @@ export function parseKitsuneConfigPartial<T>(value: T): Partial<KitsuneConfig> {
   return parsed.success ? { ...rest, providerRelay: parsed.data } : rest;
 }
 
+/**
+ * Object-valued keys overlay the base instead of replacing it. A hand-edited
+ * `{"sync": {"anilist": null}}` or `{"animeLanguageProfile": null}` would
+ * otherwise put `null` where every reader does `x.y.z`, and a partial object
+ * would drop the keys it doesn't name. Only JSON objects merge; anything else
+ * keeps the base value.
+ */
+const mergeObjectField = <T extends object>(base: T, value: unknown): T =>
+  isJsonObject(value) ? { ...base, ...(value as Partial<T>) } : base;
+
+function mergeSyncConfig(base: KitsuneConfig["sync"], partial: unknown): KitsuneConfig["sync"] {
+  if (!isJsonObject(partial)) return base;
+  const { anilist, tmdb, ...rest } = partial;
+  return {
+    ...(rest as Omit<KitsuneConfig["sync"], "anilist" | "tmdb">),
+    anilist: mergeObjectField(base.anilist, anilist),
+    tmdb: mergeObjectField(base.tmdb, tmdb),
+  };
+}
+
 export function mergeKitsuneConfig(
   base: KitsuneConfig,
   partial: Partial<KitsuneConfig>,
@@ -33,5 +53,21 @@ export function mergeKitsuneConfig(
     ...(partial.providerRelay !== undefined
       ? { providerRelay: parseProviderRelayConfig(partial.providerRelay) }
       : null),
+    youtubeLanguageProfile: mergeObjectField(
+      base.youtubeLanguageProfile,
+      partial.youtubeLanguageProfile,
+    ),
+    animeLanguageProfile: mergeObjectField(base.animeLanguageProfile, partial.animeLanguageProfile),
+    seriesLanguageProfile: mergeObjectField(
+      base.seriesLanguageProfile,
+      partial.seriesLanguageProfile,
+    ),
+    movieLanguageProfile: mergeObjectField(base.movieLanguageProfile, partial.movieLanguageProfile),
+    youtubeMetadata: mergeObjectField(base.youtubeMetadata, partial.youtubeMetadata),
+    titleProviderPreferences: mergeObjectField(
+      base.titleProviderPreferences,
+      partial.titleProviderPreferences,
+    ),
+    sync: mergeSyncConfig(base.sync, partial.sync),
   };
 }

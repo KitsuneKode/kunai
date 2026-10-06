@@ -352,7 +352,7 @@ function OptionsPane({
               bold={highlighted || capability.selected}
               wrap="truncate"
             >
-              {capability.label}
+              {sanitizeTerminalText(capability.label)}
             </Text>
             {capability.detail || tag ? (
               <Text color={highlighted ? palette.accentSoft : palette.dim}>

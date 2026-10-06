@@ -74,6 +74,7 @@ export {
   decodeHianimeEmbedPage,
   resolveHianimeEpisodeStreams,
   resolveHianimeShow,
+  runHianimeCurlWithRetry,
   searchHianime,
   splitCurlHttpTrailer,
   type HianimeAudioMode,
