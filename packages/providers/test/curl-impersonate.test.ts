@@ -179,3 +179,62 @@ describe("resolveCurlCandidate PATH scan", () => {
     });
   });
 });
+
+describe("resolveCurlCandidate Windows wrapper handling", () => {
+  const env = (
+    entries: string[],
+    resolved: Record<string, string>,
+    readTextFile: (path: string) => string | null = () => null,
+  ) => ({
+    platform: "win32" as const,
+    listPathEntries: () => entries,
+    which: (command: string) => resolved[command] ?? null,
+    fileExists: () => true,
+    readTextFile,
+  });
+
+  test("an unreadable .bat falls to plain curl — it can prove nothing about the backend", () => {
+    const candidate = resolveCurlCandidate(
+      env(["curl_chrome150.bat"], {
+        "curl_chrome150.bat": "C:\\cf\\curl_chrome150.bat",
+        curl: "C:\\Windows\\System32\\curl.exe",
+      }),
+    );
+    // No readable wrapper text means no proven `--impersonate` forward, so the
+    // bat itself is never spawned (BatBadBut). Plain curl keeps the provider
+    // working minus the TLS fingerprint.
+    expect(candidate).toEqual({
+      path: "C:\\Windows\\System32\\curl.exe",
+      prefixArgs: [],
+      impersonates: false,
+      profile: null,
+    });
+  });
+
+  test("a real .exe wrapper still impersonates on win32", () => {
+    const candidate = resolveCurlCandidate(
+      env(["curl_chrome150.exe", "curl_ff99.bat"], {
+        "curl_chrome150.exe": "C:\\cf\\curl_chrome150.exe",
+      }),
+    );
+    expect(candidate?.profile).toBe("chrome150");
+  });
+
+  test("a .bat shim as plain curl prefers the executable on win32", () => {
+    const candidate = resolveCurlCandidate(
+      env([], { curl: "C:\\shims\\curl.bat", "curl.exe": "C:\\Windows\\System32\\curl.exe" }),
+    );
+    expect(candidate?.path).toBe("C:\\Windows\\System32\\curl.exe");
+  });
+
+  test("a POSIX host with only a .bat resolves no curl at all", () => {
+    // WSL interop or a copied Windows dir can put batch files on PATH — they
+    // can never execve, so they count as absent, not as a broken candidate.
+    const candidate = resolveCurlCandidate({
+      platform: "linux",
+      listPathEntries: () => ["curl_ff99.bat"],
+      which: (command: string) => (command === "curl_ff99.bat" ? "/opt/cf/curl_ff99.bat" : null),
+    });
+    expect(candidate).toBeNull();
+  });
+});

@@ -1,3 +1,5 @@
+import { terminateProcessTree } from "../shared/process-tree";
+
 const DEFAULT_YTDLP_TIMEOUT_MS = 45_000;
 const DEFAULT_YTDLP_STDOUT_LIMIT_BYTES = 16 * 1024 * 1024;
 const DEFAULT_YTDLP_STDERR_LIMIT_BYTES = 1024 * 1024;
@@ -45,14 +47,26 @@ export type RunYtDlpProcessHandle = {
   cancel: (reason?: string) => void;
 };
 
-const defaultYtDlpSpawn: YtDlpSpawn = (command) =>
+const defaultYtDlpSpawn: YtDlpSpawn = (command) => {
+  const detached = process.platform !== "win32";
   // SAFETY: pipe/ignore stdio makes Bun.spawn expose the stdout, stderr,
   // exited, and kill members consumed by YtDlpProcess.
-  Bun.spawn([...command], {
+  const proc = Bun.spawn([...command], {
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
+    // A detached POSIX spawn leads its own process group, so kill() below can
+    // reach ffmpeg mux children instead of orphaning them. Windows has no
+    // group signals — taskkill /T in terminateProcessTree covers the tree.
+    detached,
   }) as YtDlpProcess;
+  return {
+    stdout: proc.stdout,
+    stderr: proc.stderr,
+    exited: proc.exited,
+    kill: (signal) => terminateProcessTree(proc, signal, { detached }),
+  };
+};
 
 export function runYtDlpProcess(options: RunYtDlpProcessOptions): RunYtDlpProcessHandle {
   if (options.signal?.aborted) {

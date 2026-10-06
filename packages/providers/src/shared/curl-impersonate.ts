@@ -62,10 +62,11 @@ const FAMILY_RANK = ["chrome", "firefox", "ff", "safari", "edge"] as const;
  * `curl_chrome150`, `curl_chrome133a`, `curl_firefox147`, `curl_safari260_ios`.
  *
  * The Windows release ships its wrappers as `.bat` around `curl-impersonate.exe`
- * — there are no extensionless wrappers in that archive at all — so matching
- * only `.exe` meant no Windows install could ever be discovered, however
- * correctly the user had set it up. `.cmd` is accepted alongside it because a
- * repackager may ship either.
+ * — there are no extensionless wrappers in that archive at all. They still
+ * match here so the ranking seam sees them, but `resolveCurlCandidate` skips
+ * `.bat`/`.cmd` on win32: `Bun.spawn`'s BatBadBut guard refuses argv with
+ * cmd.exe metacharacters, which every provider request carries, so the wrapper
+ * was discoverable yet unspawnable — a green probe over a guaranteed throw.
  */
 const WRAPPER_PATTERN = /^curl_([a-z]+?)(\d+)([a-z]*)(?:_(android|ios))?(?:\.(?:exe|bat|cmd))?$/i;
 
@@ -251,7 +252,11 @@ export function resolveCurlCandidate(
     };
   }
 
-  const plain = which("curl");
+  let plain = which("curl");
+  if (platform === "win32" && plain && /\.(?:bat|cmd)$/i.test(plain)) {
+    // A shim in PATH can precede System32 curl.exe — prefer the executable.
+    plain = which("curl.exe");
+  }
   return plain ? { path: plain, prefixArgs: [], impersonates: false, profile: null } : null;
 }
 

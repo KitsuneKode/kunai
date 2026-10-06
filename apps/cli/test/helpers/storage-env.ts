@@ -26,6 +26,12 @@ export function storageRootEnv(dir: string): Record<string, string> {
     // `homedir()` itself does not honour HOME on macOS.
     HOME: dir,
     USERPROFILE: dir,
+    // Temp scratch. `getKunaiPaths().tempDir` resolves through these, and so
+    // does `os.tmpdir()` — without them a sandboxed run still writes playlists
+    // and IPC sockets into the developer's real temp.
+    TMPDIR: dir,
+    TMP: dir,
+    TEMP: dir,
   };
 }
 
