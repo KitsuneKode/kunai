@@ -43,6 +43,7 @@ export type ShellAction =
   | "about"
   | "update"
   | "image-pane"
+  | "pet"
   | "toggle-autoplay"
   | "toggle-autoskip"
   | "stop-after-current"
@@ -464,6 +465,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "about":
     case "update":
     case "image-pane":
+    case "pet":
     case "toggle-autoplay":
     case "toggle-autoskip":
     case "stop-after-current":

@@ -41,15 +41,15 @@ Details live in `apps/cli/src/image/capability.ts`.
 
 ## Environment variables
 
-| Variable                | Purpose                                                                            |
-| ----------------------- | ---------------------------------------------------------------------------------- |
-| `KUNAI_POSTER`          | `0` / `false` disables poster flows                                                |
-| `KUNAI_PET`             | `off` retires the companion; `glyph` pins it to 🦊 (never half-block)              |
-| `KUNAI_IMAGE_PROTOCOL`  | Force or constrain renderer (see capability module)                                |
-| `KUNAI_IMAGE_SIZE`      | Legacy size hint; unused by the Ink poster path (kept for env compatibility)       |
-| `KUNAI_IMAGE_DEBUG`     | `1` enables `[kunai:image]` debug lines                                            |
-| `KUNAI_IMAGE_PROBE`     | `0` / `false` skips the startup graphics probe (falls back to name heuristics)     |
-| `KUNAI_IMAGE_TRANSPORT` | `file` / `direct` / `auto` — how Kitty pixel data reaches the terminal (see below) |
+| Variable                | Purpose                                                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `KUNAI_POSTER`          | `0` / `false` disables poster flows                                                                                                                    |
+| `KUNAI_PET`             | `off` retires the companion; `glyph` pins it to 🦊 (never half-block). Per-run pin — the stored toggle is config `companionPet` via `/pet` or settings |
+| `KUNAI_IMAGE_PROTOCOL`  | Force or constrain renderer (see capability module)                                                                                                    |
+| `KUNAI_IMAGE_SIZE`      | Legacy size hint; unused by the Ink poster path (kept for env compatibility)                                                                           |
+| `KUNAI_IMAGE_DEBUG`     | `1` enables `[kunai:image]` debug lines                                                                                                                |
+| `KUNAI_IMAGE_PROBE`     | `0` / `false` skips the startup graphics probe (falls back to name heuristics)                                                                         |
+| `KUNAI_IMAGE_TRANSPORT` | `file` / `direct` / `auto` — how Kitty pixel data reaches the terminal (see below)                                                                     |
 
 ### `KUNAI_IMAGE_TRANSPORT`
 

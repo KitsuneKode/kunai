@@ -35,6 +35,7 @@ export type AppCommandId =
   | "about"
   | "update"
   | "image-pane"
+  | "pet"
   | "toggle-autoplay"
   | "toggle-autoskip"
   | "stop-after-current"
@@ -120,6 +121,7 @@ export const COMMAND_CONTEXTS = {
     "setup",
     "settings",
     "image-pane",
+    "pet",
     "sync",
     "providers",
     "presence",
@@ -511,6 +513,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Image Pane",
     aliases: ["image", "preview", "poster"],
     description: "Toggle the image and details companion pane",
+  },
+  {
+    id: "pet",
+    label: "Companion",
+    aliases: ["pet", "kanna", "companion", "mascot", "fox"],
+    description: "Show or hide Kanna, the fox on empty and error screens",
   },
   {
     id: "toggle-autoplay",
@@ -1084,6 +1092,9 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
     case "clear-history":
     case "export-diagnostics":
     case "report-issue":
+    // /pet stays available even when an env pin makes it a no-op — the handler
+    // says why, which teaches more than a disabled row.
+    case "pet":
       return { enabled: true };
 
     case "details":

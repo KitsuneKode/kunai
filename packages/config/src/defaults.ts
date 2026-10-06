@@ -92,6 +92,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   skipPreview: false,
   skipCredits: true,
   footerHints: "detailed",
+  companionPet: "auto",
   quitNearEndBehavior: "continue",
   continueSourcePreference: "auto",
   quitNearEndThresholdMode: "credits-or-90-percent",

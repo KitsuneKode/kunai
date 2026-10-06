@@ -10,6 +10,7 @@ import {
 } from "@/app-shell/pickers";
 
 export { buildPickerActionContext };
+import { companionToggleable } from "@/app-shell/companion-policy";
 import { exportLocalSupportBundle } from "@/app-shell/export-local-support-bundle";
 import {
   buildExternalOpenFallback,
@@ -878,6 +879,7 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
     c.stateManager.dispatch({ type: "TOGGLE_COMPANION_PANE" });
     return "handled";
   },
+  pet: async (c) => handleCompanionToggle(c),
   "mark-anime": (c) => handleMarkKind(c, "anime"),
   "mark-series": (c) => handleMarkKind(c, "series"),
   share: (c) => handleShare(c),
@@ -1150,6 +1152,29 @@ async function handleForgetTitleProviderPreference(container: Container): Promis
     note: cleared
       ? `Forgot provider preference for ${title.name}.`
       : `No saved provider preference for ${title.name}.`,
+  });
+  return "handled";
+}
+
+/**
+ * `/pet` — the in-app way back for Kanna. The toggle writes the persisted
+ * `companionPet` preference; `companion-policy`'s preference source reads it
+ * live, so she appears/disappears on the next render without a restart.
+ */
+async function handleCompanionToggle(container: Container): Promise<"handled"> {
+  if (!companionToggleable()) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "KUNAI_PET pins the companion for this run — unset it to change her here.",
+    });
+    return "handled";
+  }
+  const next = container.config.companionPet === "off" ? "auto" : "off";
+  await container.config.update({ companionPet: next });
+  await container.config.save();
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: next === "off" ? "Kanna is resting. /pet brings her back." : "Kanna is back.",
   });
   return "handled";
 }

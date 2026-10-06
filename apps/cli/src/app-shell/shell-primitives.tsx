@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { companionMode, companionToggleable } from "./companion-policy";
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
 import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
@@ -144,6 +145,13 @@ export function Footer({
       ),
     [actions, mode, terminalWidth, maxVisible],
   );
+  // Kanna removed via /pet or settings leaves every footer with a way back:
+  // a display-only hint naming the command. Hidden when an env pin makes the
+  // toggle a dead control.
+  const renderActions =
+    companionMode() === "off" && companionToggleable()
+      ? [...visibleActions, { key: "/pet", label: "kanna" }]
+      : visibleActions;
 
   if (commandMode) {
     return (
@@ -167,9 +175,9 @@ export function Footer({
   return (
     <Box flexDirection="column" marginTop={1}>
       <Text color={palette.text}>{truncateLine(taskLabel, taskWidth)}</Text>
-      {visibleActions.length > 0 ? (
+      {renderActions.length > 0 ? (
         <Box flexWrap="nowrap" marginTop={1}>
-          {visibleActions.map((action, index) => {
+          {renderActions.map((action, index) => {
             const glyph = FOOTER_GLYPHS[action.key] ?? "";
             const keyDisplay = glyph ? `${glyph}§${action.key}` : action.key;
             // Tasteful 3-role hierarchy instead of one rose key + a wall of grey:
@@ -191,7 +199,7 @@ export function Footer({
             return (
               <Box
                 key={`${action.key}-${action.label}`}
-                marginRight={index === visibleActions.length - 1 ? 0 : 2}
+                marginRight={index === renderActions.length - 1 ? 0 : 2}
                 marginBottom={1}
               >
                 <Text bold={role === "primary"} color={keyColor}>

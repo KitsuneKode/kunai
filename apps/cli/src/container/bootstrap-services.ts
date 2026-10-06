@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 
 import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playback-checkpoint";
 
+import { setCompanionPreferenceSource } from "../app-shell/companion-policy";
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
 import { whichLive } from "../infra/os/which";
@@ -147,6 +148,10 @@ export function bootstrapServices(input: {
 
   const offlineTitleIdentity = new OfflineTitleIdentityService(historyTitleAliases, offlineAssets);
   const offlineAssetService = new OfflineAssetService(offlineAssets, offlineTitleIdentity);
+  // The companion reads her stored preference through this source, so `/pet`
+  // and the settings row take effect on the next render — no restart, and no
+  // separate state to drift out of sync with config.json.
+  setCompanionPreferenceSource(() => config.companionPet);
   const connectivity = new Connectivity(() => config.offlineMode);
   const notificationSinkRegistry = new NotificationSinkRegistry();
   notificationSinkRegistry.register(
