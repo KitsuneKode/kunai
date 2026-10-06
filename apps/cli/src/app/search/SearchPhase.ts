@@ -16,6 +16,7 @@ import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import type { CalendarRouteRequest } from "@/app-shell/hooks/use-calendar-route";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { chooseFromListShell } from "@/app-shell/pickers";
+import { getRootContentSession, waitForRootContentSlot } from "@/app-shell/root-content-state";
 import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
 import {
   applyHistorySelectionProvider,
@@ -586,6 +587,17 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         pendingSearchWarnings = [];
         pendingSearchEmptyMessage = undefined;
 
+        // A picker mounted by a detached overlay workflow (e.g. /providers run
+        // from Up Next) owns the content slot until the user dismisses it.
+        // Mounting browse now would evict and cancel it; wait for the slot
+        // instead. If the mount lands first and the picker evicts it anyway,
+        // the cancelled-outcome branch below recognizes the eviction and
+        // loops back here — after the picker settles.
+        await waitForRootContentSlot(context.signal);
+        if (context.signal.aborted) {
+          return { status: "cancelled" };
+        }
+
         const outcomePromise = this.dependencies.openBrowseShell({
           mode: syncedState.mode,
           provider: syncedState.provider,
@@ -961,6 +973,20 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         if (outcome.type === "cancelled") {
+          // A foreign session that displaced this browse (a picker a detached
+          // overlay workflow mounted after browse) resolves it with the
+          // cancelled fallback — indistinguishable from a real Esc here except
+          // that the slot is still held. Wait for the foreign session to
+          // settle, then remount rather than reporting a cancel the user
+          // never made.
+          const holdingSession = getRootContentSession();
+          if (holdingSession !== null && holdingSession.kind !== "browse") {
+            await waitForRootContentSlot(context.signal);
+            if (context.signal.aborted) {
+              return { status: "cancelled" };
+            }
+            continue;
+          }
           return { status: "cancelled" };
         }
 

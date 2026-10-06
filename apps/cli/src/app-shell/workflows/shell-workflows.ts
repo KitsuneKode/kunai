@@ -10,7 +10,7 @@ import {
 } from "@/app-shell/pickers";
 
 export { buildPickerActionContext };
-import { companionToggleable } from "@/app-shell/companion-policy";
+import { companionFallbackGlyph, companionToggleable } from "@/app-shell/companion-policy";
 import { exportLocalSupportBundle } from "@/app-shell/export-local-support-bundle";
 import {
   buildExternalOpenFallback,
@@ -87,6 +87,7 @@ import type { SyncPushSummary } from "@/services/sync/SyncService";
 import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
 
+import { cancelRootOverlay } from "../cancel-root-overlay";
 import { openTrackerConnectShell } from "../tracker-connect-shell";
 import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
@@ -849,6 +850,21 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   downloads: (c) => handleLibraryOverlay(c, "queue"),
   library: (c) => handleLibraryOverlay(c, "library"),
   menu: (c) => handleTitleControlMenu(c),
+  // modalPicker lists /notifications but the dispatcher's inbox route lives in
+  // dispatch-palette-command — without a map entry the picker's Enter dropped
+  // it. Inform-and-return overlays are the picker's contract, so this opens
+  // the panel rather than the launch-capable inbox flow.
+  notifications: (c) => {
+    if (!c.featureFlags.attentionInbox) {
+      c.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: "Attention inbox is disabled.",
+      });
+      return Promise.resolve("handled" as const);
+    }
+    c.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "notifications" } });
+    return Promise.resolve("handled" as const);
+  },
   help: (c) => handleStaticOverlay(c, "help"),
   docs: async (c) => {
     await openDocsUrl(c);
@@ -919,6 +935,13 @@ export async function handleShellAction({
   return "unhandled";
 }
 
+/**
+ * Ids `handleShellAction` can actually run. The modalPicker context routes its
+ * commands straight here, so coverage tests assert its listing stays inside
+ * this set — the palette's "listed but dead on Enter" failure mode.
+ */
+export const SHELL_WORKFLOW_COMMAND_IDS: ReadonlySet<string> = new Set(Object.keys(actionHandlers));
+
 /** Close the active overlay (or cancel a picker) before running a workflow command. */
 export async function runShellWorkflowFromOverlay(
   container: Container,
@@ -932,8 +955,15 @@ export async function runShellWorkflowFromOverlay(
 ): Promise<ShellWorkflowResult> {
   if (options.cancelPickerId) {
     container.stateManager.dispatch({ type: "CANCEL_PICKER", id: options.cancelPickerId });
-  } else if (container.stateManager.getState().activeModals.length > 0) {
-    container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+  } else {
+    const topOverlay = container.stateManager.getState().activeModals.at(-1);
+    if (topOverlay) {
+      // cancelRootOverlay, not a bare CLOSE_TOP_OVERLAY: a queue or history
+      // overlay may have a pending bridge selection (openRootQueueSelection /
+      // openRootHistorySelection awaits it), and orphaning that promise parks
+      // the phase loop on an inputless idle surface.
+      cancelRootOverlay(topOverlay, container.stateManager);
+    }
   }
   const execute = options.execute ?? handleShellAction;
   return execute({ action, container });
@@ -1174,7 +1204,10 @@ async function handleCompanionToggle(container: Container): Promise<"handled"> {
   await container.config.save();
   container.stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
-    note: next === "off" ? "Kanna is resting. /pet brings her back." : "Kanna is back.",
+    note:
+      next === "off"
+        ? "Kanna is resting. /pet brings her back."
+        : `${companionFallbackGlyph()} Kanna is back.`,
   });
   return "handled";
 }

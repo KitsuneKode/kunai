@@ -1,4 +1,4 @@
-import type { SessionState } from "@/domain/session/SessionState";
+import type { OverlayState, SessionState } from "@/domain/session/SessionState";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import type { RootOwnedOverlay } from "./root-shell-state";
@@ -30,9 +30,9 @@ export function isRootChoiceOverlay(
 }
 
 export function isRootMediaPickerOverlay(
-  overlay: RootOwnedOverlay,
+  overlay: OverlayState,
 ): overlay is Extract<
-  RootOwnedOverlay,
+  OverlayState,
   | { type: "season_picker" }
   | { type: "episode_picker" }
   | { type: "subtitle_picker" }

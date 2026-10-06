@@ -1,13 +1,13 @@
+import type { OverlayState } from "@/domain/session/SessionState";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 
 import { hasPendingRootHistorySelection, resolveRootHistorySelection } from "./root-history-bridge";
 import { isRootMediaPickerOverlay } from "./root-overlay-model";
 import { hasPendingRootQueueSelection, resolveRootQueueSelection } from "./root-queue-bridge";
-import type { RootOwnedOverlay } from "./root-shell-state";
 
 /** Cancel a root overlay without orphaning a picker or workflow awaiting its result. */
 export function cancelRootOverlay(
-  overlay: RootOwnedOverlay,
+  overlay: OverlayState,
   stateManager: Pick<SessionStateManager, "dispatch">,
 ): void {
   if (isRootMediaPickerOverlay(overlay) && overlay.id) {

@@ -62,6 +62,27 @@ import { diagnosticsVisibleRows } from "./diagnostics-dashboard-model";
 /** The ContextStrip line drawn above the panel, inside the content area. */
 const DIAGNOSTICS_CONTEXT_STRIP_ROWS = 1;
 
+/**
+ * Palette commands the root overlay resolves inline — each maps to an overlay
+ * swap in `onResolve`. Exported so the command-registry coverage test can
+ * assert every advertised rootOverlay command has a reader here or in
+ * PALETTE_WORKFLOW_ACTIONS.
+ */
+export const ROOT_OVERLAY_NAV_COMMANDS: ReadonlySet<ShellAction> = new Set([
+  "settings",
+  "presence",
+  "help",
+  "about",
+  "diagnostics",
+  "downloads",
+  "notifications",
+  "continue",
+  "history",
+  "provider",
+  "library",
+  "up-next",
+]);
+
 import { buildDiagnosticsPanelInput, buildDiagnosticsSpanModel } from "./diagnostics-panel-source";
 import {
   resolveDiagnosticsExpandedSpanIds,
@@ -160,7 +181,7 @@ import {
   type TracksNavState,
 } from "./tracks-panel-nav";
 import { TracksPanelShell } from "./tracks-panel-shell";
-import type { BrowseShellResult, FooterAction, ShellPanelLine } from "./types";
+import type { BrowseShellResult, FooterAction, ShellAction, ShellPanelLine } from "./types";
 import { handleHistoryOverlayInput, type HistoryDeletePending } from "./use-history-overlay-input";
 import {
   createNotificationsOverlayState,
@@ -849,18 +870,7 @@ export function RootOverlayShell({
     commands,
     escapeAction: null,
     onResolve: (action) => {
-      if (
-        action === "settings" ||
-        action === "presence" ||
-        action === "help" ||
-        action === "about" ||
-        action === "diagnostics" ||
-        action === "downloads" ||
-        action === "notifications" ||
-        action === "continue" ||
-        action === "history" ||
-        action === "provider"
-      ) {
+      if (ROOT_OVERLAY_NAV_COMMANDS.has(action)) {
         if (action === "notifications" && !container.featureFlags.attentionInbox) {
           container.stateManager.dispatch({
             type: "SET_PLAYBACK_FEEDBACK",
@@ -887,13 +897,19 @@ export function RootOverlayShell({
               }
             : action === "history" || action === "continue"
               ? { type: "history" as const, initialFilterMode: "watching" as const }
-              : action === "notifications"
-                ? { type: "notifications" as const }
-                : action === "downloads"
-                  ? { type: "downloads" as const }
-                  : action === "settings" || action === "presence"
-                    ? { type: "settings" as const }
-                    : { type: action };
+              : action === "up-next"
+                ? { type: "queue" as const }
+                : action === "library"
+                  ? { type: "library" as const, view: "library" as const }
+                  : action === "notifications"
+                    ? { type: "notifications" as const }
+                    : action === "downloads"
+                      ? { type: "downloads" as const }
+                      : action === "settings" || action === "presence"
+                        ? { type: "settings" as const }
+                        : action === "about"
+                          ? { type: "about" as const }
+                          : { type: "help" as const };
         if ((isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") && overlay.id) {
           container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
         }
@@ -901,14 +917,6 @@ export function RootOverlayShell({
           type: "OPEN_OVERLAY",
           overlay: nextOverlay,
         });
-        return;
-      }
-      if (action === "library") {
-        const nextOverlay = { type: "library" as const, view: "library" as const };
-        if ((isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") && overlay.id) {
-          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
-        }
-        container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
         return;
       }
       if (PALETTE_WORKFLOW_ACTIONS.has(action)) {

@@ -39,8 +39,13 @@ export function TransientRowSlot({
 /** Optional footer glyphs — off by default for calmer Claude Code–style footers. */
 const FOOTER_GLYPHS: Record<string, string> = {};
 
-/** The way back after `/pet` — rendered as an action hint, not a control. */
-const PET_RESTORE_ACTION = { key: "/pet", label: "kanna" } as const;
+/**
+ * The way back after `/pet` — rendered as an action hint, not a control.
+ * `action` names the real command so the footer selector can pin it: appended
+ * last, it would lose every slot race, and it is the only in-shell route back
+ * once she is hidden.
+ */
+const PET_RESTORE_ACTION = { key: "/pet", label: "kanna", action: "pet" } as const;
 
 export type ContextStripItem = {
   label: string;
@@ -57,25 +62,35 @@ export function selectFooterActions(
 
   const hardLimit = maxVisible ?? DETAILED_FOOTER_ACTION_LIMIT;
 
+  // The pet-restore hint is pinned, not width-fitted: it is the only in-shell
+  // route back once the fox is hidden, so letting it lose the slot race —
+  // which appended-last guaranteed at any sane width — would remove the
+  // feature it advertises. It does not count against the caps.
+  const pinnedRestore = enabledActions.filter((action) => action.action === "pet");
+  const pool = enabledActions.filter((action) => action.action !== "pet");
+  const withPinned = (list: readonly FooterAction[]) => [...list, ...pinnedRestore];
+
   if (mode === "minimal") {
     const limit = Math.min(MINIMAL_FOOTER_ACTION_LIMIT, hardLimit);
-    const commandAction = enabledActions.find((action) => action.action === "command-mode");
+    const commandAction = pool.find((action) => action.action === "command-mode");
     if (commandAction?.primary) {
-      return [
-        commandAction,
-        ...enabledActions.filter((action) => action.action !== "command-mode"),
-      ].slice(0, limit);
+      return withPinned(
+        [commandAction, ...pool.filter((action) => action.action !== "command-mode")].slice(
+          0,
+          limit,
+        ),
+      );
     }
-    const primaryActions = enabledActions
+    const primaryActions = pool
       .filter((action) => action.action !== "command-mode")
       .slice(0, commandAction ? limit - 1 : limit);
-    return commandAction ? [...primaryActions, commandAction] : primaryActions;
+    return withPinned(commandAction ? [...primaryActions, commandAction] : primaryActions);
   }
 
   // Detailed mode: keep the persistent footer glanceable. Deeper actions belong
   // behind / commands so the footer never turns into a wrapped command paragraph.
-  const commandAction = enabledActions.find((action) => action.action === "command-mode");
-  const nonCommandActions = enabledActions.filter((action) => action.action !== "command-mode");
+  const commandAction = pool.find((action) => action.action === "command-mode");
+  const nonCommandActions = pool.filter((action) => action.action !== "command-mode");
 
   if (terminalWidth && terminalWidth > 0) {
     const widthLimit =
@@ -83,7 +98,7 @@ export function selectFooterActions(
     const primaryLimit = Math.min(hardLimit, Math.max(1, widthLimit));
 
     const capped = nonCommandActions.slice(0, primaryLimit);
-    return commandAction ? [...capped, commandAction] : capped;
+    return withPinned(commandAction ? [...capped, commandAction] : capped);
   }
 
   // Fallback: fixed limit
@@ -91,7 +106,7 @@ export function selectFooterActions(
     0,
     commandAction ? DETAILED_FOOTER_VISIBLE_LIMIT : hardLimit,
   );
-  return commandAction ? [...primaryActions, commandAction] : primaryActions;
+  return withPinned(commandAction ? [...primaryActions, commandAction] : primaryActions);
 }
 
 export const InlineBadge = React.memo(function InlineBadge({
@@ -139,9 +154,10 @@ export function Footer({
   const terminalWidth = terminalWidthProp ?? cols;
   const taskWidth = Math.max(20, terminalWidth - 4);
   // Kanna removed via /pet or settings leaves every footer with a way back:
-  // a display-only hint naming the command. It goes through the width-fit pass
-  // like any other action — last in, first dropped when space runs out — and
-  // hides entirely when an env pin makes the toggle a dead control.
+  // a display-only hint naming the command. selectFooterActions pins it outside
+  // the width-fit caps — it is the only restore affordance, so it cannot lose
+  // the slot race — and it hides entirely when an env pin makes the toggle a
+  // dead control.
   const kannaHidden = companionMode() === "off" && companionToggleable();
   const visibleActions = React.useMemo(
     () =>

@@ -20,6 +20,8 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "details",
   "setup",
   "settings",
+  "image-pane",
+  "pet",
   "trending",
   "random",
   "surprise",
