@@ -229,4 +229,55 @@ describe("FileStorage", () => {
     await expect(recovered.read<{ ok: boolean }>("config")).resolves.toEqual({ ok: true });
     await expect(readFile(configPath, "utf8")).resolves.toContain('"ok": true');
   });
+
+  test("a corrupt read quarantines the live file: writes divert until acknowledged", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const corrupt = "{ this is not json";
+    await writeFile(configPath, corrupt);
+
+    const warnings: string[] = [];
+    const storage = new FileStorage({ config: configPath }, (message) => warnings.push(message));
+    await expect(storage.read("config")).resolves.toBeNull();
+    expect(storage.needsRecovery).toBe(true);
+
+    // The next save must not replace the user's bytes with in-memory defaults:
+    // it lands in a timestamped recovery file and the live file is untouched.
+    await storage.write("config", { provider: "videasy" });
+    await expect(readFile(configPath, "utf8")).resolves.toBe(corrupt);
+    const recovered = (await readdir(dir))
+      .filter((name) => name.startsWith("config.json.recovered."))
+      .sort();
+    expect(recovered).toHaveLength(1);
+    await expect(readFile(join(dir, recovered[0]!), "utf8")).resolves.toContain("videasy");
+    expect(storage.needsRecovery).toBe(true);
+
+    // Explicit user action lifts the quarantine; the following write lands live.
+    storage.acknowledgeRecovery();
+    expect(storage.needsRecovery).toBe(false);
+    await storage.write("config", { provider: "videasy" });
+    await expect(readFile(configPath, "utf8")).resolves.toContain("videasy");
+  });
+
+  test("a clean read after an external repair lifts the quarantine on its own", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    await writeFile(configPath, "{ broken");
+
+    const storage = new FileStorage({ config: configPath });
+    await expect(storage.read("config")).resolves.toBeNull();
+    expect(storage.needsRecovery).toBe(true);
+
+    // The user hand-repairs the file outside this process; the next read
+    // proves it healthy and writes go live again with no explicit action.
+    await writeFile(configPath, '{"provider":"videasy"}');
+    await expect(storage.read<{ provider: string }>("config")).resolves.toEqual({
+      provider: "videasy",
+    });
+    expect(storage.needsRecovery).toBe(false);
+    await storage.write("config", { provider: "vidlink" });
+    await expect(readFile(configPath, "utf8")).resolves.toContain("vidlink");
+  });
 });
