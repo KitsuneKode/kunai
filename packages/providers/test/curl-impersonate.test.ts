@@ -135,6 +135,28 @@ describe("resolveCurlCandidate PATH scan", () => {
     });
   });
 
+  test("on POSIX, a .bat surfaced through WSL interop PATH is not executable curl", () => {
+    // execve cannot run batch text — reporting it as an impersonating build
+    // would claim Cloudflare bypass over a guaranteed ENOEXEC.
+    const candidate = resolveCurlCandidate({
+      platform: "linux",
+      listPathEntries: () => ["curl_chrome150.bat", "curl"],
+      which: (command) =>
+        command === "curl_chrome150.bat"
+          ? "/mnt/c/tools/curl_chrome150.bat"
+          : command === "curl"
+            ? "/usr/bin/curl"
+            : null,
+    });
+
+    expect(candidate).toEqual({
+      path: "/usr/bin/curl",
+      prefixArgs: [],
+      impersonates: false,
+      profile: null,
+    });
+  });
+
   test("on Windows, a host with only legacy wrappers falls back to plain curl", () => {
     const candidate = resolveCurlCandidate({
       platform: "win32",

@@ -221,8 +221,13 @@ export function resolveCurlCandidate(
     if (!resolved) continue;
     const profile = `${wrapper.family}${wrapper.version}${wrapper.revision}`;
     const extension = pathApi.extname(resolved).toLowerCase();
-    const isWindowsWrapper = platform === "win32" && (extension === ".bat" || extension === ".cmd");
-    if (!isWindowsWrapper) {
+    const isCmdWrapper = extension === ".bat" || extension === ".cmd";
+    // On POSIX a cmd wrapper can surface through WSL's interop PATH or an
+    // MSYS-style dir, but execve cannot run it — treating it as "found" would
+    // claim impersonation over a guaranteed ENOEXEC. The honest read on this
+    // host is plain curl (or no curl).
+    if (isCmdWrapper && platform !== "win32") continue;
+    if (!isCmdWrapper) {
       return { path: resolved, prefixArgs: [], impersonates: true, profile };
     }
     // Bun.spawn refuses .bat/.cmd argv carrying cmd metacharacters
