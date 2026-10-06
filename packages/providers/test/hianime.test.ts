@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { classifyProviderFailure } from "@kunai/core";
 import type { LooseJsonValue, ProviderRuntimeContext } from "@kunai/types";
 
 import {
@@ -23,6 +24,7 @@ import {
   parseHianimeServersHtml,
   resolveHianimeEpisodeStreams,
   resolveHianimeShow,
+  runHianimeCurlWithRetry,
   fetchHianimeEpisodeCatalog,
   hianimeFetchText,
   splitCurlHttpTrailer,
@@ -572,6 +574,85 @@ describe("hianime module resolve", () => {
     );
     expect(result.status).toBe("exhausted");
     expect(result.failures[0]).toMatchObject({ code: "unsupported-title" });
+  });
+
+  test("a server embed URL pointing at a private address is never fetched", async () => {
+    clearHianimeCachesForTest();
+    // The embed URL is a base64 field in provider-controlled markup — without
+    // the literal-target gate a hostile page could aim the fetch+curl fallback
+    // at link-local or LAN targets (SSRF by markup). AniDB's embed fetch gates
+    // the same way.
+    const hostile = "http://169.254.169.254/latest/meta-data";
+    const hostileServers = `<div class="item server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="${Buffer.from(hostile).toString("base64")}">`;
+    let hostileFetches = 0;
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => {
+        if (url === hostile) hostileFetches++;
+        if (url.includes("/api/theme/episode/servers")) {
+          return jsonResponse({ status: true, html: hostileServers });
+        }
+        return happyRouter(url);
+      }),
+    );
+    expect(hostileFetches).toBe(0);
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]).toMatchObject({ code: "not-found", retryable: false });
+  });
+});
+
+describe("hianime curl cancellation", () => {
+  function spawnExiting(exitCode: number) {
+    return async () => ({ stdout: "", stderr: "", exitCode });
+  }
+
+  test("a signal-killed curl reports cancellation, not a retryable network fault", async () => {
+    const error = await runHianimeCurlWithRetry(
+      ["curl"],
+      undefined,
+      undefined,
+      spawnExiting(130),
+    ).catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("cancelled");
+  });
+
+  test("an aborted caller reports cancellation even when curl exits non-zero", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const error = await runHianimeCurlWithRetry(
+      ["curl"],
+      controller.signal,
+      undefined,
+      spawnExiting(1),
+    ).catch((thrown: unknown) => thrown);
+
+    // The signal's own reason is rethrown (a DOMException named AbortError),
+    // which the failure classifier reads as a user cancellation.
+    expect(error).toBeInstanceOf(Error);
+    expect(classifyProviderFailure({ message: (error as Error).message }).failureClass).toBe(
+      "user-cancelled",
+    );
+  });
+
+  test("a real connection failure still reports the transport error", async () => {
+    const error = await runHianimeCurlWithRetry(
+      ["curl"],
+      undefined,
+      undefined,
+      spawnExiting(7),
+    ).catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("connection error");
+    expect((error as Error).message).not.toContain("cancelled");
   });
 });
 

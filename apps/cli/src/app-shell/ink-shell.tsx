@@ -273,8 +273,8 @@ async function openPlaybackStreamSelectionPicker(
   // Validate quality/source/audio picks against the cached inventory before
   // applying: the panel rows were rendered from a snapshot, and a re-resolve
   // in between leaves ids that no longer exist. Applying blindly keeps the
-  // old stream while reporting success. A stale pick returns here with the
-  // miss recorded in diagnostics; a live pick falls through to apply below.
+  // old stream while reporting success. A stale pick drops here with the
+  // reason surfaced and recorded; a live pick falls through to apply below.
   if (
     title &&
     episode &&
@@ -292,7 +292,20 @@ async function openPlaybackStreamSelectionPicker(
       resumeSeconds: 0,
       reason,
     });
-    if (resolved.kind === "stale-pick") return;
+    if (resolved.kind === "stale-pick") {
+      container.diagnosticsService.record({
+        level: "warn",
+        category: "playback",
+        operation: "playback.track-pick-stale",
+        message: "Track panel pick dropped — selection no longer matches inventory",
+        context: { section: picked.section, reason: resolved.reason },
+      });
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: resolved.reason,
+      });
+      return;
+    }
   }
 
   // Source switches restart the episode; quality/audio/hardsub swap the active

@@ -27,29 +27,9 @@ export function buildApiStreamResolveCacheKey(input: {
   return `api-resolve:${parts.join(":")}`;
 }
 
-export interface EmbedStreamCacheKeyOptions {
-  readonly embedPageUrl: string;
-  readonly intent?: string;
-  readonly headers?: Record<string, string>;
-}
-
-/** Embed scrapes key the cache by canonical embed page URL with optional intent and headers. */
-export function buildEmbedStreamCacheKey(input: string | EmbedStreamCacheKeyOptions): string {
-  if (typeof input === "string") {
-    return input;
-  }
-  const parts = [input.embedPageUrl];
-  if (input.intent) {
-    parts.push(`intent:${normalizePart(input.intent)}`);
-  }
-  if (input.headers && Object.keys(input.headers).length > 0) {
-    const sorted = Object.keys(input.headers)
-      .sort()
-      .map((k) => `${k.toLowerCase()}=${input.headers![k]}`)
-      .join(";");
-    parts.push(`headers:${sorted}`);
-  }
-  return parts.join(":");
+/** Embed scrapes key the cache by canonical embed page URL. */
+export function buildEmbedStreamCacheKey(embedPageUrl: string): string {
+  return embedPageUrl;
 }
 
 function buildManifestDrivenPolicyParts(input: {

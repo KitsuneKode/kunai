@@ -8,6 +8,7 @@
 // =============================================================================
 
 import type { TitleDetail, TitleLink } from "@/domain/catalog/title-detail";
+import { sanitizeTerminalText } from "@/domain/text-display";
 import { isFinished } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
 
@@ -117,41 +118,51 @@ export function buildDetailsSheet(input: {
       : undefined;
   const synopsisText = detail?.synopsis ?? seed.synopsis ?? "";
 
+  // Every string below came from TMDB or a provider — sanitize at the model
+  // boundary so no render site can emit CSI/OSC/C0 bytes verbatim.
   return {
     header: {
-      title: seed.title,
+      title: sanitizeTerminalText(seed.title),
       posterUrl: detail?.artwork?.poster ?? seed.posterUrl,
-      metaLine,
+      metaLine: sanitizeTerminalText(metaLine),
       score,
-      genres: genres.slice(0, 4),
+      genres: genres.slice(0, 4).map(sanitizeTerminalText),
       statusLabel: status,
     },
-    synopsis: { loading: detail === null && !seed.synopsis, text: synopsisText },
+    synopsis: {
+      loading: detail === null && !seed.synopsis,
+      text: sanitizeTerminalText(synopsisText),
+    },
     facts: {
       loading: detail === null,
-      studio: detail?.studios?.slice(0, 2).join(" · ") || undefined,
+      studio: detail?.studios?.slice(0, 2).map(sanitizeTerminalText).join(" · ") || undefined,
       episodes,
       runtime: detail?.runtimeMinutes ? `${detail.runtimeMinutes} min` : undefined,
-      contentRating: detail?.contentRating || undefined,
+      contentRating: detail?.contentRating ? sanitizeTerminalText(detail.contentRating) : undefined,
     },
     your: {
       progressLabel: progressLabel(history),
-      providers: availability?.providers ?? [],
+      providers: (availability?.providers ?? []).map(sanitizeTerminalText),
       offline: availability?.offline ?? false,
-      subs: availability?.subs ?? [],
+      subs: (availability?.subs ?? []).map(sanitizeTerminalText),
     },
     cast: {
       loading: detail === null,
-      names: (detail?.cast ?? []).slice(0, 8).map((member) => member.name),
+      names: (detail?.cast ?? []).slice(0, 8).map((member) => sanitizeTerminalText(member.name)),
     },
     seasons: {
       loading: detail === null,
       items: (detail?.seasons ?? []).map((season) => ({
         season: season.season,
-        label: season.name ?? `Season ${season.season}`,
+        label: sanitizeTerminalText(season.name ?? `Season ${season.season}`),
       })),
     },
-    links: { items: detail?.externalLinks ? [...detail.externalLinks] : [] },
+    links: {
+      items: (detail?.externalLinks ?? []).map((link) => ({
+        ...link,
+        label: sanitizeTerminalText(link.label),
+      })),
+    },
     trailerUrl: detail?.trailerUrl,
   };
 }

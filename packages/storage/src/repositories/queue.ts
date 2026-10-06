@@ -1,4 +1,4 @@
-import type { ProviderExternalIds } from "@kunai/types";
+import { isJsonObject, type ProviderExternalIds } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
 
@@ -566,7 +566,7 @@ function parseExternalIds(value: string | null): ProviderExternalIds | undefined
   if (!value) return undefined;
   try {
     const parsed: unknown = JSON.parse(value);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+    if (!isJsonObject(parsed)) return undefined;
     // SAFETY: the object/array/null check above leaves a plain JSON object —
     // the externalIds contract shape.
     return parsed as ProviderExternalIds;

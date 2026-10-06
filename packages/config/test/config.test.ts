@@ -64,6 +64,44 @@ describe("@kunai/config parse boundary", () => {
     expect(merged.providerRelay).toEqual(DEFAULT_CONFIG.providerRelay);
   });
 
+  test("mergeKitsuneConfig keeps the base sync section on a null payload", () => {
+    // A hand-edited `"sync": {"anilist": null}` previously put null where
+    // setup-workflows reads `current.sync.anilist.enabled` — a TypeError on the
+    // first run after the edit.
+    const merged = mergeKitsuneConfig(DEFAULT_CONFIG, {
+      sync: { anilist: null } as never,
+    });
+    expect(merged.sync.anilist).toEqual(DEFAULT_CONFIG.sync.anilist);
+    expect(merged.sync.tmdb).toEqual(DEFAULT_CONFIG.sync.tmdb);
+  });
+
+  test("mergeKitsuneConfig survives a fully null sync and merges a partial section", () => {
+    const nulled = mergeKitsuneConfig(DEFAULT_CONFIG, { sync: null as never });
+    expect(nulled.sync).toEqual(DEFAULT_CONFIG.sync);
+
+    const partial = mergeKitsuneConfig(DEFAULT_CONFIG, {
+      sync: { anilist: { enabled: true } } as never,
+    });
+    expect(partial.sync.anilist.enabled).toBe(true);
+    // Keys the partial didn't name keep the base, not undefined.
+    expect(partial.sync.anilist.trackWatched).toBe(DEFAULT_CONFIG.sync.anilist.trackWatched);
+    expect(partial.sync.tmdb).toEqual(DEFAULT_CONFIG.sync.tmdb);
+  });
+
+  test("mergeKitsuneConfig protects the language profiles and youtubeMetadata the same way", () => {
+    const merged = mergeKitsuneConfig(DEFAULT_CONFIG, {
+      animeLanguageProfile: null as never,
+      youtubeMetadata: "junk" as never,
+      seriesLanguageProfile: { audio: "ja" } as never,
+    });
+    expect(merged.animeLanguageProfile).toEqual(DEFAULT_CONFIG.animeLanguageProfile);
+    expect(merged.youtubeMetadata).toEqual(DEFAULT_CONFIG.youtubeMetadata);
+    expect(merged.seriesLanguageProfile.audio).toBe("ja");
+    expect(merged.seriesLanguageProfile.subtitle).toBe(
+      DEFAULT_CONFIG.seriesLanguageProfile.subtitle,
+    );
+  });
+
   test("defaults put VidLink first in the series automatic lane", () => {
     expect(DEFAULT_CONFIG.provider).toBe("vidlink");
     expect(DEFAULT_CONFIG.providerPriority).toEqual(["rivestream", "videasy"]);

@@ -47,7 +47,23 @@ export async function handleRpcRequest(
   request: Request,
   options: RelayHandlerOptions,
 ): Promise<Response> {
-  if (request.method === "OPTIONS") return corsPreflightResponse();
+  const corsOrigin = resolveAllowedCorsOrigin(
+    request.headers.get("origin"),
+    options.corsAllowedOrigins,
+  );
+  if (request.method === "OPTIONS") return corsPreflightResponse(corsOrigin);
+  const response = await dispatchRpcRequest(request, options);
+  if (corsOrigin) {
+    response.headers.set("Access-Control-Allow-Origin", corsOrigin);
+    if (corsOrigin !== "*") response.headers.append("Vary", "Origin");
+  }
+  return response;
+}
+
+async function dispatchRpcRequest(
+  request: Request,
+  options: RelayHandlerOptions,
+): Promise<Response> {
   if (request.method !== "POST") {
     return relayError("method-not-allowed", options.providerId, "RPC route requires POST", 405);
   }
@@ -311,7 +327,6 @@ async function relayUpstreamResponse(
   method: RelayMethod,
 ): Promise<Response> {
   const headers = filteredResponseHeaders(upstream.headers);
-  headers.set("Access-Control-Allow-Origin", "*");
 
   if (method === "HEAD" || !upstream.body) {
     return new Response(null, {
@@ -368,20 +383,35 @@ export function relayError(
   return Response.json(body, {
     status,
     headers: {
-      "Access-Control-Allow-Origin": "*",
       [RELAY_ERROR_CODE_HEADER]: code,
     },
   });
 }
 
-function corsPreflightResponse(): Response {
+/**
+ * Origins opt in through `corsAllowedOrigins`. `"*"` stays expressible for
+ * deployments that genuinely serve browsers, but an absent request Origin or
+ * an unlisted one emits nothing — browsers then refuse to expose the response.
+ */
+function resolveAllowedCorsOrigin(
+  origin: string | null,
+  allowedOrigins: readonly string[] | undefined,
+): string | undefined {
+  if (!allowedOrigins || allowedOrigins.length === 0) return undefined;
+  if (allowedOrigins.includes("*")) return "*";
+  return origin && allowedOrigins.includes(origin) ? origin : undefined;
+}
+
+function corsPreflightResponse(corsOrigin: string | undefined): Response {
+  if (!corsOrigin) return new Response(null, { status: 204 });
   return new Response(null, {
     status: 204,
     headers: {
       "Access-Control-Allow-Headers": "Authorization, Content-Type",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": corsOrigin,
       "Access-Control-Max-Age": "600",
+      ...(corsOrigin !== "*" ? { Vary: "Origin" } : null),
     },
   });
 }

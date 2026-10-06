@@ -62,7 +62,9 @@ export async function extractYtDlpVideoInfo(
     // beginning with `-` is parsed as yt-dlp options (option injection).
     "--",
   ];
-  args.push(watchUrl);
+  // `--` before the positional URL: a watchUrl starting with `-` must be a
+  // target, not an injected yt-dlp option.
+  args.push("--", watchUrl);
 
   const proc = await spawnYtDlpWithTimeout({ args, signal: options.signal, spawn: options.spawn });
 

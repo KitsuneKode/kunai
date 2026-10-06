@@ -45,6 +45,7 @@ import {
   formatAnimeSourceDetail,
   miruroSubtitleDeliveryToMode,
 } from "../shared/anime-source-presentation";
+import { scrubbedChildEnv } from "../shared/child-env";
 import {
   curlCipherArgs,
   type CurlCandidate,
@@ -152,7 +153,11 @@ function detectCurlHttp2Support(curlPath: string): Promise<boolean> {
 
 async function probeCurlHttp2Support(curlPath: string): Promise<boolean> {
   try {
-    const proc = Bun.spawn([curlPath, "--version"], { stdout: "pipe", stderr: "ignore" });
+    const proc = Bun.spawn([curlPath, "--version"], {
+      stdout: "pipe",
+      stderr: "ignore",
+      env: scrubbedChildEnv(),
+    });
     const [features, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
     return exitCode === 0 && /\bHTTP2\b/i.test(features);
   } catch {
@@ -973,6 +978,7 @@ async function expandMiruroPipeStreams(
       const combinedSignal = signal ? anySignal(signal, expandSignal) : expandSignal;
       return expandHlsMasterInventory({
         fetch: fetchImpl,
+        resolvesLocally: context?.fetch?.resolvesLocally,
         masterUrl: url,
         headers: fetchHeaders,
         signal: combinedSignal,
@@ -1710,7 +1716,9 @@ export async function fetchMiruroPipeBody(
   // curl fallback, whose abort listener on an already-dead signal never fires
   // and the subprocess would run to --max-time after the caller walked away.
   if (requestSignal.aborted) {
-    throw signal?.reason instanceof Error ? signal.reason : new Error("aborted");
+    throw signal?.reason instanceof Error
+      ? signal.reason
+      : new DOMException("Aborted", "AbortError");
   }
   if (response === undefined) {
     throw new Error("Miruro pipe fetch did not produce a response");
@@ -1814,26 +1822,26 @@ export async function fetchMiruroPipeBody(
     url,
   ];
 
+  // `signal` goes to Bun.spawn itself rather than an addEventListener after
+  // spawn: an abort landing between the aborted-check above and a listener
+  // registration would never fire, leaving curl to run out --max-time with no
+  // caller. Bun kills the child the moment the signal aborts, whenever that is.
   const proc = Bun.spawn(args, {
     stdout: "pipe",
     stderr: "pipe",
+    signal,
+    env: scrubbedChildEnv(),
   });
-  let aborted = false;
-  const onAbort = () => {
-    aborted = true;
-    try {
-      proc.kill();
-    } catch {
-      // ignore
-    }
-  };
-  signal?.addEventListener("abort", onAbort, { once: true });
   try {
     const raw = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();
     const exit = await proc.exited;
-    if (aborted || signal?.aborted) {
-      throw new Error("aborted");
+    if (signal?.aborted) {
+      // An AbortError-class throw is what the cycle classifier recognizes as
+      // user cancellation — a plain Error("aborted") reads as candidate-unknown.
+      throw signal.reason instanceof Error
+        ? signal.reason
+        : new DOMException("Aborted", "AbortError");
     }
     const { status, text } = interpretMiruroCurlResult({
       exitCode: exit,
@@ -1846,8 +1854,13 @@ export async function fetchMiruroPipeBody(
       xObfuscated: isMiruroObfuscatedPipeBody(text, null) ? "2" : null,
       cloudflareHtml: isCloudflareBlockBody(text),
     };
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
+  } catch (error) {
+    try {
+      proc.kill();
+    } catch {
+      // Already exited.
+    }
+    throw error;
   }
 }
 
@@ -2107,7 +2120,15 @@ export async function probeMiruroBackendDown(
   signal?: AbortSignal,
 ): Promise<number | null> {
   if (!/^https?:\/\//i.test(url)) return null;
-  if (MIRURO_UNPROBEABLE_STREAM_HOSTS.has(new URL(url).hostname)) return null;
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    // "https://" satisfies the prefix test but has no host — an unparseable
+    // stream row is a dud, not probe evidence.
+    return null;
+  }
+  if (MIRURO_UNPROBEABLE_STREAM_HOSTS.has(hostname)) return null;
   const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
   const timeout = AbortSignal.timeout(MIRURO_BACKEND_PROBE_TIMEOUT_MS);
   try {
@@ -2433,17 +2454,36 @@ export const miruroProviderModule: CoreProviderModule = {
           // MiruroSourcesResponse values written by pipeCall.
           let srcData = sourceCache.get(srcCacheKey) as MiruroSourcesResponse | null;
           if (!srcData) {
-            srcData = await pipeCall(
-              context,
-              "sources",
-              {
-                episodeId: metadata.episodeId,
-                anilistId: Number(anilistId),
-                provider: metadata.serverId,
-                category: metadata.audioCategory,
-              },
-              cycleContext.signal,
-            );
+            try {
+              srcData = await pipeCall(
+                context,
+                "sources",
+                {
+                  episodeId: metadata.episodeId,
+                  anilistId: Number(anilistId),
+                  provider: metadata.serverId,
+                  category: metadata.audioCategory,
+                },
+                cycleContext.signal,
+              );
+            } catch (error) {
+              // A typed decode failure says the pipe answered with a payload we
+              // cannot read — endpoint evidence, not a transient network blip.
+              // Without this wrap the cycle classifier message-matches it to
+              // candidate-unknown (retryable) and every remaining candidate
+              // re-pays the same doomed fetch before exhaustion.
+              if (error instanceof MiruroPipeDecodeError) {
+                throw createProviderCycleFailureError(candidate, {
+                  failureClass: "candidate-parse",
+                  message:
+                    `${serverProfile.label} ` +
+                    `(${metadata.serverId}/${metadata.audioCategory}) pipe payload could not be decoded (${error.code})`,
+                  retryable: false,
+                  at: context.now(),
+                });
+              }
+              throw error;
+            }
             sourceCache.set(srcCacheKey, srcData);
           }
 

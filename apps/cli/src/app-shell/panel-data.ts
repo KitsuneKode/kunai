@@ -24,7 +24,6 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
   formatProviderHealthBadge,
   formatProviderHealthPickerLabelSuffix,
-  isProviderFallbackEligible,
   resolveEffectiveProviderHealth,
 } from "@/services/playback/provider-health-policy";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
@@ -723,12 +722,12 @@ export function buildProviderMemoryPanelLines(input: {
 
   for (const provider of laneProviders) {
     const effective = resolveEffectiveProviderHealth(input.getProviderHealth(provider.id));
+    // The badge already appends "skipped in auto-fallback" for a down row —
+    // appending it again here used to print the note twice.
     const badge = formatProviderHealthBadge(effective ?? undefined);
-    const fallbackNote =
-      effective && !isProviderFallbackEligible(effective) ? " · skipped in auto-fallback" : "";
     lines.push({
       label: provider.name,
-      detail: badge ? `${badge}${fallbackNote}` : "no failure memory",
+      detail: badge ?? "no failure memory",
       tone:
         effective?.effectiveStatus === "down"
           ? "error"
@@ -765,14 +764,19 @@ export function buildProviderPickerOptions({
     const effective = getProviderHealth
       ? resolveEffectiveProviderHealth(getProviderHealth(provider.id))
       : undefined;
-    const healthBadge = formatProviderHealthBadge(effective ?? undefined);
+    const isCurrentProvider = provider.id === currentProvider;
+    // The same current-aware badge feeds the detail line — the label fix
+    // without it left "skipped in auto-fallback" on the playing provider.
+    const healthBadge = formatProviderHealthBadge(effective ?? undefined, undefined, {
+      isCurrentProvider,
+    });
     const healthLabelSuffix = formatProviderHealthPickerLabelSuffix(effective ?? undefined, {
-      isCurrentProvider: provider.id === currentProvider,
+      isCurrentProvider,
     });
     const healthDetail = healthBadge ? `Health: ${healthBadge}` : null;
     const crossLaneDetail = isCrossLane?.(provider) ? "via linked catalog id" : null;
     const baseDetail = formatProviderDetail(provider);
-    const baseLabel = markCurrentLabel(provider.name, provider.id === currentProvider);
+    const baseLabel = markCurrentLabel(provider.name, isCurrentProvider);
     return {
       value: provider.id,
       label: healthLabelSuffix ? `${baseLabel}${healthLabelSuffix}` : baseLabel,

@@ -21,6 +21,7 @@ import {
   BALANCED_QUALITY_WAIT_BUDGET_MS,
   QUALITY_FIRST_WAIT_BUDGET_MS,
 } from "../shared/startup-selection";
+import { blockedLiteralTargetReason } from "../shared/stream-reachability";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { anidbNumericId, parseAnidbBrowseHtml, type AnidbSearchResult } from "./browse-parser";
 
@@ -33,6 +34,7 @@ export {
   type AnidbSearchResult,
   type AnidbSeasonEvidence,
 } from "./browse-parser";
+import { scrubbedChildEnv } from "../shared/child-env";
 
 export const ANIDB_BASE = "https://anidb.app";
 export const ANIDB_REFERER = "https://anidb.app/";
@@ -212,6 +214,82 @@ function splitAnidbStatus(stdout: string): { readonly body: string; readonly sta
   return { body: stdout.slice(0, cut), status: Number.isFinite(status) ? status : 0 };
 }
 
+/** Like ANIDB_STATUS_WRITE_OUT but also reports `redirect_url` — used only on the redirect-manual path, which never follows (`-s`, not `-sL`). */
+const ANIDB_MANUAL_WRITE_OUT = ["-w", "\n%{http_code} %{redirect_url}"] as const;
+
+function splitAnidbStatusAndRedirect(stdout: string): {
+  readonly body: string;
+  readonly status: number;
+  readonly redirectUrl: string;
+} {
+  const cut = stdout.lastIndexOf("\n");
+  const line = cut < 0 ? stdout : stdout.slice(cut + 1);
+  const match = /^(\d{3})(?:\s+(.*))?$/.exec(line);
+  const status = match?.[1] ? Number.parseInt(match[1], 10) : 0;
+  return {
+    body: cut < 0 ? "" : stdout.slice(0, cut),
+    status: Number.isFinite(status) ? status : 0,
+    redirectUrl: match?.[2]?.trim() ?? "",
+  };
+}
+
+/**
+ * One request that does NOT follow redirects, returning status/Location so the
+ * caller can re-validate each hop. `anidbFetchText`'s curl path follows inside
+ * curl (`-sL`), which would bypass the per-hop blocklist `fetchProbeTarget`
+ * applies — so the HLS master expansion routes here instead.
+ */
+async function anidbFetchRedirectAware(
+  url: string,
+  options: {
+    readonly context?: ProviderRuntimeContext;
+    readonly signal?: AbortSignal;
+  },
+): Promise<Response> {
+  const headers = { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER };
+  if (options.context?.fetch) {
+    return options.context.fetch.fetch(url, {
+      headers,
+      signal: createTimeoutSignal(options.signal, 15_000),
+      redirect: "manual",
+    });
+  }
+  const curl = resolveAnidbCurl();
+  if (!curl) {
+    return fetch(url, {
+      headers,
+      signal: createTimeoutSignal(options.signal, 15_000),
+      redirect: "manual",
+    });
+  }
+  const args = [
+    curl.path,
+    ...curl.prefixArgs,
+    "-s",
+    "-A",
+    ANIDB_USER_AGENT,
+    "-H",
+    `Referer: ${ANIDB_REFERER}`,
+    "--max-time",
+    "12",
+    ...anidbCipherArgs(curl.impersonates),
+    ...ANIDB_MANUAL_WRITE_OUT,
+    "--",
+    url,
+  ];
+  const stdout = await runAnidbCurlWithRetry(args, options.signal);
+  const { body, status, redirectUrl } = splitAnidbStatusAndRedirect(stdout);
+  if (status < 200 || status > 599) {
+    throw new AnidbHttpStatusError(status);
+  }
+  const responseHeaders = new Headers({
+    "content-type": "application/vnd.apple.mpegurl",
+  });
+  if (redirectUrl) responseHeaders.set("location", redirectUrl);
+  const nullBody = status === 204 || status === 304 || (status >= 300 && status < 400);
+  return new Response(nullBody ? null : body, { status, headers: responseHeaders });
+}
+
 /**
  * Statuses where a better TLS fingerprint can still change the answer, so the
  * curl fallback is worth a request. Everything else — a missing id, a 5xx
@@ -245,7 +323,33 @@ export async function anidbFetchText(
         headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
         signal: createTimeoutSignal(options.signal, 15_000),
       });
-      if (response.ok) {
+      if (isRelayedResponse(response)) {
+        /* The relay answered for this request — re-asking the same URL direct
+         * would silently bypass the relay the user deployed (#460). Treat the
+         * response as final, including a 403/429 the old code used to retry
+         * with a better TLS fingerprint.
+         *
+         * One documented exception: a 404 can be the relay's own
+         * `unknown-provider` miss rather than anidb.app's verdict — a relay
+         * deployed before this provider existed answers that way. Reading it
+         * as the catalogue's verdict marks the title permanently missing, so
+         * that one case still falls through to let curl settle it. */
+        if (response.status === 404) {
+          // Falls through to curl below.
+        } else {
+          const text = await response.text();
+          if (response.ok) {
+            if (isAnidbMaintenanceText(text)) {
+              throw new AnidbHttpStatusError(503);
+            }
+            if (!isCloudflareChallengeText(text)) {
+              return text;
+            }
+            throw new AnidbBlockedError("anidb blocked by Cloudflare via relay");
+          }
+          throw new AnidbHttpStatusError(response.status);
+        }
+      } else if (response.ok) {
         const text = await response.text();
         if (isAnidbMaintenanceText(text)) {
           throw new AnidbHttpStatusError(503);
@@ -253,25 +357,19 @@ export async function anidbFetchText(
         if (!isCloudflareChallengeText(text)) {
           return text;
         }
-      } else if (
-        !isFingerprintRetryableStatus(response.status) &&
-        !(response.status === 404 && isRelayedResponse(response))
-      ) {
+      } else if (!isFingerprintRetryableStatus(response.status)) {
         // Falling through to curl exists so a Cloudflare challenge gets a
         // second chance with a better TLS fingerprint. An upstream outage or
         // a genuine 404 is not a fingerprint problem, so it is answered here.
-        //
-        // A 404 that arrived over a relay hop is a different fact. A relay
-        // deployed before this provider existed answers `unknown-provider`
-        // with a 404 of its own, and reading that as anidb.app's verdict marks
-        // the catalogue permanently missing and caches the miss — which took
-        // the whole anime lane down behind a stale relay while the same id
-        // resolved fine over curl. Let curl settle it: a genuine 404 still
-        // throws below, one request later.
         throw new AnidbHttpStatusError(response.status);
       }
     } catch (error) {
-      if (error instanceof AnidbHttpStatusError) throw error;
+      // Relayed-final outcomes above throw inside this try — without the
+      // rethrow a relayed verdict would fall to curl and silently bypass the
+      // user's relay, which is exactly the bypass the check exists to stop.
+      if (error instanceof AnidbHttpStatusError || error instanceof AnidbBlockedError) {
+        throw error;
+      }
       // A cancelled caller is not a fingerprint problem either. Without this
       // an abort during the context fetch is swallowed and the fallback spends
       // a whole curl request on work nobody is waiting for. Checked against
@@ -398,6 +496,7 @@ function defaultSpawnOnce(
     stdout: "pipe",
     stderr: "pipe",
     signal,
+    env: scrubbedChildEnv(),
   });
   return Promise.all([
     new Response(proc.stdout).text(),
@@ -796,6 +895,10 @@ export async function fetchAnidbMasterUrl(
   signal?: AbortSignal,
   context?: ProviderRuntimeContext,
 ): Promise<string | null> {
+  // The embed_url is scraped from upstream JSON — provider-controlled text.
+  // Without the target gate a hostile or compromised payload could name a
+  // LAN/loopback/`file:` target and the fetch+curl fallback would go there.
+  if (blockedLiteralTargetReason(embedUrl) !== null) return null;
   const page = await anidbFetchText(embedUrl, { signal, context });
   const match = /file:\s*'([^']+)'/.exec(page);
   return match?.[1]?.trim() || null;
@@ -824,23 +927,15 @@ export async function resolveAnidbLanguageStreams(options: {
   if (!masterUrl) return empty();
 
   const inventory = await expandHlsMasterInventory({
-    fetch: async (url: string, init?: RequestInit) => {
-      try {
-        const text = await anidbFetchText(url, {
-          signal: (init?.signal instanceof AbortSignal ? init.signal : undefined) ?? options.signal,
-          context: options.context,
-        });
-        return new Response(text, {
-          status: 200,
-          headers: { "content-type": "application/vnd.apple.mpegurl" },
-        });
-      } catch (error) {
-        if (error instanceof AnidbHttpStatusError) {
-          return new Response(null, { status: error.status });
-        }
-        throw error;
-      }
-    },
+    resolvesLocally: options.context?.fetch?.resolvesLocally,
+    // `fetchProbeTarget` passes `redirect: "manual"` and walks each hop itself
+    // so the per-hop blocklist applies — routing that through `anidbFetchText`
+    // (curl `-sL`) would follow redirects inside curl and bypass it entirely.
+    fetch: (url: string, init?: RequestInit) =>
+      anidbFetchRedirectAware(url, {
+        signal: (init?.signal instanceof AbortSignal ? init.signal : undefined) ?? options.signal,
+        context: options.context,
+      }),
     masterUrl,
     headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
     signal: options.signal,

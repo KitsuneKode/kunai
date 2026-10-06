@@ -68,6 +68,8 @@ test("provider health: one poisoned row does not blank the list or crash reads",
 
   expect(repo.get("vidlink")?.consecutiveFailures).toBe(2);
   expect(repo.get("movy")).toBeUndefined();
+  // SAFETY: the row's stored providerId does not round-trip through the
+  // ProviderId brand — the point is that the poisoned row reads as absent.
   expect(repo.get("rivestream" as never)).toBeUndefined();
   expect(repo.list().map((h) => h.providerId)).toEqual(["vidlink"]);
 });

@@ -1632,6 +1632,7 @@ async function fetchM3u8Variants({
   readonly signal?: AbortSignal;
 }): Promise<StreamLink[]> {
   const inventory = await expandHlsMasterInventory({
+    resolvesLocally: context.fetch?.resolvesLocally,
     fetch: (requestUrl: string, init?: RequestInit) =>
       providerFetch(context, requestUrl, {
         ...init,

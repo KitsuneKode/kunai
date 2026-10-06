@@ -12,6 +12,7 @@ import {
   type DirectStreamInput,
   type DirectStreamPayload,
 } from "../shared/direct-stream-source";
+import { blockedLiteralTargetReason } from "../shared/stream-reachability";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { vidrockManifest, VIDROCK_PROVIDER_ID } from "./manifest";
 
@@ -118,7 +119,7 @@ export function resolveVidrockDirect(
           try {
             // Playlist URLs live on the same ngcorp hosts as the streams:
             // they require the single-space UA and die on a Referer.
-            playlist = await fetchPlaylist(url, ctx.signal, {
+            playlist = await fetchPlaylist(url, ctx, {
               "User-Agent": STREAM_USER_AGENT,
             });
           } catch (error) {
@@ -199,12 +200,16 @@ export async function decryptVidrockStreamUrl(
 
 async function fetchPlaylist(
   url: string,
-  signal: AbortSignal | undefined,
+  ctx: ProviderRuntimeContext,
   headers: Record<string, string>,
 ): Promise<{ url: string; resolution: string }[]> {
-  const response = await fetch(url, {
+  // The URL comes out of upstream ciphertext — provider-supplied, not vetted.
+  // Route through the fetch port like every other call (test transports,
+  // relay) and refuse literal private targets before any bytes move.
+  if (blockedLiteralTargetReason(url) !== null) return [];
+  const response = await providerFetch(ctx, url, {
     headers,
-    signal: directStreamFetchSignal(signal, VIDROCK_FETCH_TIMEOUT_MS),
+    signal: directStreamFetchSignal(ctx.signal, VIDROCK_FETCH_TIMEOUT_MS),
   });
   if (!response.ok) return [];
   const data: unknown = await response.json();
