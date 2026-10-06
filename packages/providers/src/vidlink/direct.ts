@@ -239,6 +239,7 @@ export function resolveVidlinkDirect(
         };
         if (looksLikeHlsMasterUrl(stream.playlist) || /\.m3u8(?:[?#]|$)/i.test(stream.playlist)) {
           const inventory = await expandHlsMasterInventory({
+            resolvesLocally: ctx.fetch?.resolvesLocally,
             fetch: (url: string, init?: RequestInit) =>
               providerFetch(ctx, url, {
                 ...init,

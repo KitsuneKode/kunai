@@ -1015,6 +1015,7 @@ async function resolveRivestreamProviderCandidate({
         return { source, variants: null as readonly HlsLadderVariant[] | null };
       }
       const inventory = await expandHlsMasterInventory({
+        resolvesLocally: context.fetch?.resolvesLocally,
         fetch: context.fetch?.fetch.bind(context.fetch) ?? fetch,
         masterUrl: source.url,
         headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },

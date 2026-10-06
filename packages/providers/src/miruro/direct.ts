@@ -978,6 +978,7 @@ async function expandMiruroPipeStreams(
       const combinedSignal = signal ? anySignal(signal, expandSignal) : expandSignal;
       return expandHlsMasterInventory({
         fetch: fetchImpl,
+        resolvesLocally: context?.fetch?.resolvesLocally,
         masterUrl: url,
         headers: fetchHeaders,
         signal: combinedSignal,

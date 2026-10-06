@@ -573,6 +573,7 @@ export async function resolveHianimeEpisodeStreams({
       ((url: string, init?: RequestInit) => fetch(url, init));
     const inventory = await expandHlsMasterInventory({
       fetch: fetchImpl,
+      resolvesLocally: context.fetch?.resolvesLocally,
       masterUrl: payload.src,
       headers: ladderHeaders,
       signal: createTimeoutSignal(signal, 15_000),

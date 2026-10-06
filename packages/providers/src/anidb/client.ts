@@ -851,6 +851,7 @@ export async function resolveAnidbLanguageStreams(options: {
   if (!masterUrl) return empty();
 
   const inventory = await expandHlsMasterInventory({
+    resolvesLocally: options.context?.fetch?.resolvesLocally,
     fetch: async (url: string, init?: RequestInit) => {
       try {
         const text = await anidbFetchText(url, {
