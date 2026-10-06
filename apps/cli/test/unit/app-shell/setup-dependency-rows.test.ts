@@ -254,6 +254,7 @@ describe("selectStartupIssueRows", () => {
     const healthy = await probeCapabilities({
       which: (command) => `/usr/bin/${command}`,
       listPathEntries: () => ["curl", "curl_chrome150"],
+      canExecuteCurlInvocation: () => true,
     });
     const selected = selectStartupIssueRows(buildDependencyRows(healthy), {
       mode: "anime",

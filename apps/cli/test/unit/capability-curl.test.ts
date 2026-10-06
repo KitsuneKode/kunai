@@ -136,9 +136,16 @@ describe("probeCapabilities — curl for the default anime provider", () => {
   // could never see a correctly installed Windows setup — it reported "plain
   // curl, no CF bypass" forever and the user had nothing left to try.
   test("discovers the .bat wrappers the Windows release actually ships", async () => {
-    const snapshot = await probeCapabilities(
-      pathWith("curl.exe", "curl_chrome150.bat", "curl_chrome116.bat"),
-    );
+    const backendPath = "C:\\tools\\curl-impersonate.exe";
+    const snapshot = await probeCapabilities({
+      platform: "win32",
+      ...windowsPathWith("curl.exe", "curl_chrome150.bat", "curl_chrome116.bat"),
+      exists: (path) => path === backendPath,
+      readTextFile: (path) =>
+        path.includes("chrome150")
+          ? '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome150" %*'
+          : '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome116" %*',
+    });
 
     expect(snapshot.curl).toMatchObject({
       present: true,
@@ -149,9 +156,16 @@ describe("probeCapabilities — curl for the default anime provider", () => {
   });
 
   test("ranks .cmd and extensionless wrappers by build, not by extension", async () => {
-    const snapshot = await probeCapabilities(
-      pathWith("curl", "curl_chrome116", "curl_chrome150.cmd"),
-    );
+    const backendPath = "C:\\tools\\curl-impersonate.exe";
+    const snapshot = await probeCapabilities({
+      platform: "win32",
+      ...windowsPathWith("curl", "curl_chrome116", "curl_chrome150.cmd"),
+      exists: (path) => path === backendPath,
+      readTextFile: (path) =>
+        path.includes("chrome150")
+          ? '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome150" %*'
+          : null,
+    });
 
     expect(snapshot.curl.profile).toBe("chrome150");
   });
@@ -167,9 +181,8 @@ describe("probeCapabilities — curl for the default anime provider", () => {
 
   test("raises a degraded issue when resolved curl exists but cannot execute", async () => {
     const snapshot = await probeCapabilities({
-      which: (command) =>
-        command === "curl_chrome150.bat" ? "C:\\tools\\curl_chrome150.bat" : null,
-      listPathEntries: () => ["curl_chrome150.bat"],
+      which: (command) => (command === "curl_chrome150" ? "/usr/bin/curl_chrome150" : null),
+      listPathEntries: () => ["curl_chrome150"],
       canExecuteCurlInvocation: () => false,
     });
 
