@@ -56,18 +56,15 @@ describe("resolveCurlCandidate PATH scan", () => {
   });
 
   test("on Windows, managed .bat wrappers execute curl-impersonate.exe directly", () => {
-    const root = mkdtempSync(join(tmpdir(), "curl-win-managed-"));
-    dirs.push(root);
-    const wrapper = join(root, "curl_chrome150.bat");
-    const backend = join(root, "curl-impersonate.exe");
-    writeFileSync(wrapper, "@echo off\r\n");
-    writeFileSync(backend, "MZ");
+    const wrapper = "C:\\tools\\curl_chrome150.bat";
+    const backend = "C:\\tools\\curl-impersonate.exe";
 
     const candidate = resolveCurlCandidate({
       platform: "win32",
       listPathEntries: () => ["curl_chrome150.bat"],
       which: (command) => (command === "curl_chrome150.bat" ? wrapper : null),
       fileExists: (path) => path === backend,
+      readTextFile: () => '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome150" %*',
     });
 
     expect(candidate).toEqual({
@@ -78,24 +75,85 @@ describe("resolveCurlCandidate PATH scan", () => {
     });
   });
 
-  test("on Windows, wrapper execution remains as fallback when backend is missing", () => {
-    const root = mkdtempSync(join(tmpdir(), "curl-win-fallback-"));
-    dirs.push(root);
-    const wrapper = join(root, "curl_firefox147.cmd");
-    writeFileSync(wrapper, "@echo off\r\n");
+  test("on Windows, a backend-less wrapper falls through to plain curl", () => {
+    const wrapper = "C:\\tools\\curl_firefox147.cmd";
 
+    // A .cmd wrapper whose sibling curl-impersonate.exe is gone cannot be
+    // spawned at all — returning it would claim impersonation over a guaranteed
+    // BatBadBut throw. Plain curl is the honest answer.
     const candidate = resolveCurlCandidate({
       platform: "win32",
-      listPathEntries: () => ["curl_firefox147.cmd"],
-      which: (command) => (command === "curl_firefox147.cmd" ? wrapper : null),
+      listPathEntries: () => ["curl_firefox147.cmd", "curl"],
+      which: (command) =>
+        command === "curl_firefox147.cmd"
+          ? wrapper
+          : command === "curl"
+            ? "C:\\Windows\\System32\\curl.exe"
+            : null,
       fileExists: () => false,
+      readTextFile: () => '"%~dp0curl-impersonate.exe" --compressed --impersonate "ff147" %*',
     });
 
     expect(candidate).toEqual({
-      path: wrapper,
+      path: "C:\\Windows\\System32\\curl.exe",
       prefixArgs: [],
+      impersonates: false,
+      profile: null,
+    });
+  });
+
+  test("on Windows, a legacy inline-flag wrapper is skipped for a modern one", () => {
+    // safari170-era wrappers embed the full handshake as explicit flags —
+    // `curl-impersonate.exe --impersonate safari170` is not a real target and
+    // would die on an unrecognized-target error. A modern wrapper further down
+    // the ranking still wins.
+    const safariWrapper = "C:\\tools\\curl_safari170.bat";
+    const ffWrapper = "C:\\tools\\curl_firefox147.bat";
+    const backend = "C:\\tools\\curl-impersonate.exe";
+
+    const candidate = resolveCurlCandidate({
+      platform: "win32",
+      listPathEntries: () => ["curl_safari170.bat", "curl_firefox147.bat"],
+      which: (command) =>
+        command === "curl_safari170.bat"
+          ? safariWrapper
+          : command === "curl_firefox147.bat"
+            ? ffWrapper
+            : null,
+      fileExists: (path) => path === backend,
+      readTextFile: (path) =>
+        path === ffWrapper
+          ? '"%~dp0curl-impersonate.exe" --compressed --impersonate "ff147" %*'
+          : '"%~dp0curl-impersonate.exe" --tlsv1.2 --ciphers "AES128-SHA" --http2 %*',
+    });
+
+    expect(candidate).toEqual({
+      path: backend,
+      prefixArgs: ["--compressed", "--impersonate", "ff147"],
       impersonates: true,
-      profile: "firefox147",
+      profile: "ff147",
+    });
+  });
+
+  test("on Windows, a host with only legacy wrappers falls back to plain curl", () => {
+    const candidate = resolveCurlCandidate({
+      platform: "win32",
+      listPathEntries: () => ["curl_edge101.bat", "curl"],
+      which: (command) =>
+        command === "curl_edge101.bat"
+          ? "C:\\tools\\curl_edge101.bat"
+          : command === "curl"
+            ? "C:\\Windows\\System32\\curl.exe"
+            : null,
+      fileExists: () => true,
+      readTextFile: () => '"%~dp0curl-impersonate.exe" --tlsv1.3 --ciphers "AES256-SHA" %*',
+    });
+
+    expect(candidate).toEqual({
+      path: "C:\\Windows\\System32\\curl.exe",
+      prefixArgs: [],
+      impersonates: false,
+      profile: null,
     });
   });
 });

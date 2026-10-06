@@ -153,11 +153,16 @@ export async function probeCapabilities(
       readonly path: string;
       readonly prefixArgs: readonly string[];
     }) => boolean;
-    /** Filesystem probe seam for flatpak mpv discovery. Injected by tests. */
+    /** Filesystem existence seam — flatpak mpv and the Windows curl-impersonate backend check. Injected by tests. */
     exists?: (path: string) => boolean;
+    /** Wrapper-content seam for the Windows curl-impersonate forwarder check. Injected by tests. */
+    readTextFile?: (path: string) => string | null;
+    /** Platform seam for Windows-only curl-impersonate paths. Injected by tests. */
+    platform?: NodeJS.Platform;
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
+  const platform = options.platform ?? process.platform;
   const which = options.which ?? ((command: string) => whichLive(command));
   const issues: CapabilityIssue[] = [];
   // Flatpak io.mpv.Mpv counts as present — a which-only probe reports
@@ -178,7 +183,14 @@ export async function probeCapabilities(
     options.canExecuteCurlInvocation ??
     ((invocation: { readonly path: string; readonly prefixArgs: readonly string[] }) => {
       try {
-        const proc = Bun.spawnSync([invocation.path, ...invocation.prefixArgs, "--version"]);
+        const proc = Bun.spawnSync({
+          cmd: [invocation.path, ...invocation.prefixArgs, "--version"],
+          stdout: "ignore",
+          stderr: "ignore",
+          // A hung or AV-held binary must not stall the probe — --version is a
+          // sub-second run on any healthy install.
+          timeout: 5_000,
+        });
         return proc.exitCode === 0;
       } catch {
         return false;
@@ -186,10 +198,12 @@ export async function probeCapabilities(
     });
   const resolvedCurl = resolveAnidbCurl({
     which,
+    platform,
     ...(options.listPathEntries && { listPathEntries: options.listPathEntries }),
+    ...(options.exists && { fileExists: options.exists }),
+    ...(options.readTextFile && { readTextFile: options.readTextFile }),
   });
-  const curlInvocationRuns =
-    resolvedCurl === null ? false : canExecuteCurlInvocation(resolvedCurl);
+  const curlInvocationRuns = resolvedCurl === null ? false : canExecuteCurlInvocation(resolvedCurl);
   const curl: CurlCapability = {
     present: resolvedCurl !== null,
     impersonates: resolvedCurl?.impersonates ?? false,
@@ -250,7 +264,7 @@ export async function probeCapabilities(
         "Anime providers cannot use this helper until it is repaired.",
       install,
       remediation:
-        resolvedCurl.impersonates && process.platform === "win32"
+        resolvedCurl.impersonates && platform === "win32"
           ? ["Re-run `kunai --setup` to repair Kunai-managed curl-impersonate.", ...remediation]
           : remediation,
     });

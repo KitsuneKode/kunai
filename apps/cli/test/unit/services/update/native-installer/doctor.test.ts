@@ -254,7 +254,8 @@ describe("buildDoctorReport", () => {
             {
               id: "curl-invocation-failed",
               severity: "degraded",
-              message: "Resolved curl invocation failed to execute (C:\\tools\\curl-impersonate.exe).",
+              message:
+                "Resolved curl invocation failed to execute (C:\\tools\\curl-impersonate.exe).",
               install: { fallback: "https://github.com/lexiforest/curl-impersonate/releases" },
               remediation: ["Re-run `kunai --setup` to repair Kunai-managed curl-impersonate."],
             },
@@ -262,7 +263,9 @@ describe("buildDoctorReport", () => {
         }),
     });
 
-    const finding = report.findings.find((candidate) => candidate.code === "curl-invocation-failed");
+    const finding = report.findings.find(
+      (candidate) => candidate.code === "curl-invocation-failed",
+    );
     expect(finding?.severity).toBe("error");
   });
 
