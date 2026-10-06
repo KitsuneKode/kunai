@@ -11,7 +11,12 @@ import {
 import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
-import { isJsonString, type ProviderRelayConfig, type StartupPriority } from "@kunai/types";
+import {
+  isJsonObject,
+  isJsonString,
+  type ProviderRelayConfig,
+  type StartupPriority,
+} from "@kunai/types";
 
 import type {
   ConfigService,
@@ -28,60 +33,59 @@ import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
-function normalizeSeriesProvider(value: unknown, fallback = DEFAULT_CONFIG.provider): string {
+function normalizeSeriesProvider<T>(value: T, fallback = DEFAULT_CONFIG.provider): string {
   // Config JSON is untrusted at load: a number or object here must degrade to
   // the default, not crash startup on .trim().
-  const normalized = typeof value === "string" ? value.trim() : "";
+  const normalized = isJsonString(value) ? value.trim() : "";
   if (!normalized) return fallback;
   return migrateLegacyProviderId(normalized);
 }
 
-function normalizeProviderIdList(
-  values: unknown,
+function normalizeProviderIdList<T>(
+  values: T,
   fallback: readonly string[] = [],
 ): readonly string[] {
   if (!Array.isArray(values)) return fallback.map(migrateLegacyProviderId);
   return [
     ...new Set(
       values
-        .filter((value): value is string => typeof value === "string")
+        .filter(isJsonString)
         .map((value) => migrateLegacyProviderId(value.trim()))
         .filter(Boolean),
     ),
   ];
 }
 
-function normalizeSubtitlePreference(value: unknown): string {
-  if (typeof value !== "string" || !value) return "none";
+function normalizeSubtitlePreference<T>(value: T): string {
+  if (!isJsonString(value) || !value) return "none";
   if (value === "fzf") return "interactive";
   return value;
 }
 
-function normalizeQualityPreference(value: unknown): string {
-  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+function normalizeQualityPreference<T>(value: T): string {
+  const normalized = isJsonString(value) ? value.trim().toLowerCase() : "";
   if (!normalized || normalized === "auto") return "best";
   return normalized;
 }
 
-function normalizeLanguageProfile(profile: unknown): KitsuneConfig["animeLanguageProfile"] {
-  if (typeof profile !== "object" || profile === null || Array.isArray(profile)) {
+function normalizeLanguageProfile<T>(profile: T): KitsuneConfig["animeLanguageProfile"] {
+  if (!isJsonObject(profile)) {
     return { audio: "original", subtitle: "none", quality: "best" };
   }
-  const raw = profile as { audio?: unknown; subtitle?: unknown; quality?: unknown };
   return {
-    audio: typeof raw.audio === "string" && raw.audio ? raw.audio : "original",
-    subtitle: normalizeSubtitlePreference(raw.subtitle),
-    quality: normalizeQualityPreference(raw.quality),
+    audio: isJsonString(profile.audio) && profile.audio ? profile.audio : "original",
+    subtitle: normalizeSubtitlePreference(profile.subtitle),
+    quality: normalizeQualityPreference(profile.quality),
   };
 }
 
 function normalizeTitleProviderPreferences(
   value: Record<string, string> | undefined,
 ): Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  if (!isJsonObject(value)) return {};
   const normalized: Record<string, string> = {};
   for (const [titleId, providerId] of Object.entries(value)) {
-    if (typeof titleId !== "string" || typeof providerId !== "string") continue;
+    if (!isJsonString(providerId)) continue;
     const trimmedTitleId = titleId.trim();
     const trimmedProviderId = providerId.trim();
     if (!trimmedTitleId || !trimmedProviderId) continue;
@@ -254,10 +258,9 @@ export class ConfigServiceImpl implements ConfigService {
       favoriteSources: normalizeStringList(loaded.favoriteSources),
       // `sync: null` (or any non-object) must not reach SyncService — its
       // readers dereference pausedUntil/anilist without guards.
-      sync:
-        typeof loaded.sync === "object" && loaded.sync !== null && !Array.isArray(loaded.sync)
-          ? { ...DEFAULT_CONFIG.sync, ...loaded.sync }
-          : DEFAULT_CONFIG.sync,
+      sync: isJsonObject(loaded.sync)
+        ? { ...DEFAULT_CONFIG.sync, ...loaded.sync }
+        : DEFAULT_CONFIG.sync,
       recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
@@ -885,12 +888,12 @@ export class ConfigServiceImpl implements ConfigService {
   }
 }
 
-function normalizeStringList(values: unknown): readonly string[] {
+function normalizeStringList<T>(values: T): readonly string[] {
   if (!Array.isArray(values)) return [];
   return [
     ...new Set(
       values
-        .filter((value): value is string => typeof value === "string")
+        .filter(isJsonString)
         .map((value) => value.trim())
         .filter(Boolean),
     ),
@@ -1014,7 +1017,7 @@ const SHIPPED_VIDEASY_DEFAULT_PRIORITIES: ReadonlyArray<readonly string[]> = [
  */
 function shouldMigrateInheritedSeriesDefaults(loaded: Partial<KitsuneConfig>): boolean {
   if (readProviderDefaultsRevision(loaded) >= CURRENT_PROVIDER_DEFAULTS_REVISION) return false;
-  const provider = typeof loaded.provider === "string" ? loaded.provider.trim() : "";
+  const provider = isJsonString(loaded.provider) ? loaded.provider.trim() : "";
   if (migrateLegacyProviderId(provider) !== "videasy") return false;
   const priority = loaded.providerPriority;
   // A missing or unreadable priority cannot carry a deliberate ordering —

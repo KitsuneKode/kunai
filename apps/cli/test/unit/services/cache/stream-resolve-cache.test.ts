@@ -299,12 +299,15 @@ test("a manifest with a missing or malformed cachePolicy degrades to a plain key
   expect(() =>
     buildApiStreamResolveCacheKey({
       ...base,
+      // SAFETY: a cache record missing cachePolicy must not crash the key
+      // builder — cache payloads are untrusted at read time.
       providerManifest: { id: "vidlink" } as never,
     }),
   ).not.toThrow();
   expect(() =>
     buildApiStreamResolveCacheKey({
       ...base,
+      // SAFETY: same — a string where the cachePolicy object belongs.
       providerManifest: { id: "vidlink", cachePolicy: "not-an-object" } as never,
     }),
   ).not.toThrow();

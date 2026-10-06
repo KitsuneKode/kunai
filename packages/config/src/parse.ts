@@ -1,4 +1,5 @@
 import type { ProviderRelayConfig } from "@kunai/types";
+import { isJsonObject } from "@kunai/types";
 
 import { DEFAULT_CONFIG } from "./defaults";
 import { kitsuneProviderRelayConfigSchema } from "./schema";
@@ -9,19 +10,17 @@ export function parseProviderRelayConfig(value: unknown): ProviderRelayConfig {
   return parsed.success ? parsed.data : DEFAULT_CONFIG.providerRelay;
 }
 
-export function parseKitsuneConfigPartial(value: unknown): Partial<KitsuneConfig> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+export function parseKitsuneConfigPartial<T>(value: T): Partial<KitsuneConfig> {
+  if (!isJsonObject(value)) return {};
   // providerRelay is the only schema-checked field; a bad value there must
   // not poison every other key. Validate it apart from the passthrough rest.
-  const { providerRelay, ...rest } = value as Record<string, unknown>;
-  const result: Record<string, unknown> = { ...rest };
-  if (providerRelay !== undefined) {
-    const parsed = kitsuneProviderRelayConfigSchema.safeParse(providerRelay);
-    if (parsed.success) result.providerRelay = parsed.data;
-  }
-  // SAFETY: the rest is the passthrough boundary — unknown keys survive for
-  // forward compatibility exactly as kitsuneConfigPartialSchema defined it.
-  return result as Partial<KitsuneConfig>;
+  // SAFETY: untyped keys pass through for forward compatibility exactly as
+  // kitsuneConfigPartialSchema defined them; providerRelay is re-validated
+  // below before it can reach the result.
+  const { providerRelay, ...rest } = value as Partial<KitsuneConfig>;
+  if (providerRelay === undefined) return rest;
+  const parsed = kitsuneProviderRelayConfigSchema.safeParse(providerRelay);
+  return parsed.success ? { ...rest, providerRelay: parsed.data } : rest;
 }
 
 export function mergeKitsuneConfig(

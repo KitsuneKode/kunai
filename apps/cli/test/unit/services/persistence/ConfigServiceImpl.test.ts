@@ -710,13 +710,15 @@ describe("ConfigServiceImpl untrusted-shape hardening", () => {
     // config.json is user-editable — a number where a provider id belongs must
     // not crash startup on .trim().
     const service = await ConfigServiceImpl.load(
+      // SAFETY: every field is deliberately wrong-typed — the test proves load()
+      // degrades each to defaults instead of throwing on poisoned config.json.
       new MemoryConfigStore({
-        provider: 42 as never,
-        animeProvider: { id: "allanime" } as never,
-        youtubeProvider: ["youtube"] as never,
-        providerPriority: "vidking,vidlink" as never,
-        animeProviderPriority: [42, " allanime ", null] as never,
-      }),
+        provider: 42,
+        animeProvider: { id: "allanime" },
+        youtubeProvider: ["youtube"],
+        providerPriority: "vidking,vidlink",
+        animeProviderPriority: [42, " allanime ", null],
+      } as never),
     );
 
     expect(service.getRaw().provider).toBe(DEFAULT_CONFIG.provider);
@@ -727,14 +729,15 @@ describe("ConfigServiceImpl untrusted-shape hardening", () => {
 
   test("wrong-typed language profiles and lists fall back without throwing", async () => {
     const service = await ConfigServiceImpl.load(
+      // SAFETY: same wrong-typed fixture pattern as the test above.
       new MemoryConfigStore({
-        animeLanguageProfile: "sub" as never,
-        seriesLanguageProfile: [1, 2] as never,
-        protectedDownloadJobIds: { a: true } as never,
-        favoriteSources: "vidlink" as never,
-        sync: null as never,
-        titleProviderPreferences: [["tmdb:1", "vidking"]] as never,
-      }),
+        animeLanguageProfile: "sub",
+        seriesLanguageProfile: [1, 2],
+        protectedDownloadJobIds: { a: true },
+        favoriteSources: "vidlink",
+        sync: null,
+        titleProviderPreferences: [["tmdb:1", "vidking"]],
+      } as never),
     );
 
     expect(service.getRaw().animeLanguageProfile).toEqual({
@@ -755,6 +758,8 @@ describe("ConfigServiceImpl untrusted-shape hardening", () => {
     const service = await ConfigServiceImpl.load(
       new MemoryConfigStore({
         provider: "videasy",
+        // SAFETY: a string where an array belongs — proves the unreadable
+        // priority cannot shield the dead videasy default from migration.
         providerPriority: "vidlink" as never,
       }),
     );
