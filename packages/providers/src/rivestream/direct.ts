@@ -1217,9 +1217,13 @@ function rivestreamFailureClassFromProviderError(
   | "candidate-empty"
   | "candidate-timeout"
   | "candidate-blocked"
+  | "candidate-rate-limited"
+  | "candidate-server-error"
   | "candidate-parse" {
   if (error.code === "timeout") return "candidate-timeout";
   if (error.code === "blocked") return "candidate-blocked";
+  if (error.code === "rate-limited") return "candidate-rate-limited";
+  if (error.code === "provider-unavailable") return "candidate-server-error";
   if (error.code === "parse-failed") return "candidate-parse";
   if (error.code === "not-found") return "candidate-empty";
   return "candidate-network";
