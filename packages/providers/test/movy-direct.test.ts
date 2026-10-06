@@ -65,8 +65,10 @@ describe("decryptMovyPayload", () => {
     // a shape surprise fails the expectations, never ships silently.
     const parsed = JSON.parse(plain) as { sources?: { url?: string }[] };
     expect(Array.isArray(parsed.sources)).toBe(true);
-    expect(parsed.sources?.length).toBeGreaterThan(0);
-    expect(parsed.sources?.[0]?.url).toMatch(/^https?:\/\//);
+    expect(parsed.sources?.length).toBe(1);
+    expect(parsed.sources?.[0]?.url).toBe(
+      "https://mbph.stillhaven.top/mp4/3mRCP1BX_cl-Yj_NcKYNQdKQuuqi6OW44Lyb7BXnLJUbeGfmEBhOkJ2Ext9sqv-Mt2ePyC6PuF49m0f1pCxgQlO_XCNVwu1GKF9oSV2VephzPXk9zBuVBOyypRCtJldYv866Hif8KOLrtXdUd6wo0tDGmsm3cdpdce6jawy6Gpj2z3A95OyXZkyPmRp0gkmHQ1BDZ1dhU5JXdjjUo9EdA-t-GA9l7R3pfZw3zOidE5I9Ey_Ecn3CiYvh432bBC0v",
+    );
   });
 
   test("rejects a wrong seed via the mvm1 magic check", () => {
