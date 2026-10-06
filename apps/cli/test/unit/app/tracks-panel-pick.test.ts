@@ -45,9 +45,12 @@ describe("matchTrackSelectionAgainstInventory", () => {
     // row like {} or {sources:[]} reaches here with streams undefined.
     expect(matchTrackSelectionAgainstInventory({ sourceId: null, streamId: "s1" }, {})).toBeNull();
     expect(
-      matchTrackSelectionAgainstInventory({ sourceId: "a", streamId: null }, {
-        sources: [],
-      } as never),
+      matchTrackSelectionAgainstInventory(
+        { sourceId: "a", streamId: null },
+        // SAFETY: {sources:[]} is the poisoned-row shape the repository
+        // validator accepts — the cast manufactures exactly that payload.
+        { sources: [] } as never,
+      ),
     ).toBeNull();
   });
 });
