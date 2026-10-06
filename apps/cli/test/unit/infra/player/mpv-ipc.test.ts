@@ -39,25 +39,43 @@ function createCloseTimerHarness(): CloseTimerHarness {
   };
 }
 
+type FakeSocketHarness = {
+  readonly end: () => number;
+  readonly terminate: () => number;
+  readonly emitData: (chunk: Buffer) => void;
+  readonly written: () => readonly string[];
+};
+
 async function withFakeMpvSocket(
   closeOnEnd: boolean,
-  run: (counts: { readonly end: () => number; readonly terminate: () => number }) => Promise<void>,
+  run: (harness: FakeSocketHarness) => Promise<void>,
 ): Promise<void> {
   const bun = Bun as unknown as { connect: typeof Bun.connect };
   const originalConnect = bun.connect;
   let endCount = 0;
   let terminateCount = 0;
+  const writtenPayloads: string[] = [];
+  let currentSocket: FakeSocket | null = null;
+  let currentSocketHandler: {
+    data?(socket: FakeSocket, data: Buffer): void;
+    close?(socket: FakeSocket): void;
+  } | null = null;
+
   bun.connect = (async (rawOptions: unknown) => {
     const options = rawOptions as {
       data: FakeSocketState;
       socket: {
+        data?(socket: FakeSocket, data: Buffer): void;
         close(socket: FakeSocket): void;
       };
     };
+    currentSocketHandler = options.socket;
     const socket: FakeSocket = {
       data: options.data,
       readyState: 1,
-      write() {},
+      write(payload: string) {
+        writtenPayloads.push(payload);
+      },
       end() {
         endCount++;
         if (closeOnEnd) options.socket.close(socket);
@@ -66,11 +84,20 @@ async function withFakeMpvSocket(
         terminateCount++;
       },
     };
+    currentSocket = socket;
     return socket;
   }) as typeof Bun.connect;
 
   try {
-    await run({ end: () => endCount, terminate: () => terminateCount });
+    await run({
+      end: () => endCount,
+      terminate: () => terminateCount,
+      emitData: (chunk: Buffer) => {
+        if (!currentSocket || !currentSocketHandler?.data) throw new Error("Socket not connected");
+        currentSocketHandler.data(currentSocket, chunk);
+      },
+      written: () => writtenPayloads,
+    });
   } finally {
     bun.connect = originalConnect;
   }
@@ -203,6 +230,66 @@ describe("mpv-ipc", () => {
       await Promise.resolve();
       expect(counts.terminate()).toBe(1);
       expect(resolutionCount).toBe(1);
+    });
+  });
+
+  test("reassembles fragmented multi-byte UTF-8 chunks without replacement character corruption", async () => {
+    const propertyUpdates: Array<{ name: string; value: unknown }> = [];
+    await withFakeMpvSocket(true, async ({ emitData }) => {
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+        onPropertyUpdate({ name, value }) {
+          propertyUpdates.push({ name, value });
+        },
+        onEndFile() {},
+      });
+
+      const fullMessage = Buffer.from(
+        '{"event":"property-change","name":"media-title","data":"🦊"}\n',
+        "utf8",
+      );
+      const emojiIndex = fullMessage.indexOf(Buffer.from("🦊"));
+      const chunk1 = fullMessage.subarray(0, emojiIndex + 2);
+      const chunk2 = fullMessage.subarray(emojiIndex + 2);
+
+      emitData(chunk1);
+      emitData(chunk2);
+
+      expect(propertyUpdates).toEqual([{ name: "media-title", value: "🦊" }]);
+      await session.close();
+    });
+  });
+
+  test("cleans up command request tracking on error responses", async () => {
+    await withFakeMpvSocket(true, async ({ emitData, written }) => {
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+        onPropertyUpdate() {},
+        onEndFile() {},
+      });
+
+      const cmdPromise = session.send(["bad_command"]);
+      const payloads = written();
+      // SAFETY: Harness verifies command payload serialized with request_id
+      const lastPayload = JSON.parse(payloads[payloads.length - 1]!) as { request_id: number };
+
+      emitData(
+        Buffer.from(
+          JSON.stringify({
+            request_id: lastPayload.request_id,
+            error: "command not found",
+          }) + "\n",
+          "utf8",
+        ),
+      );
+
+      const result = await cmdPromise;
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe("command not found");
+      }
+
+      await session.close();
     });
   });
 });

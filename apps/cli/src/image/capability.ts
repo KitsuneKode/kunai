@@ -194,13 +194,23 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   }
 
   if (override === "iterm") {
-    return buildCapability({
-      terminal,
-      protocol: "iterm-inline",
-      renderer: "iterm-inline",
-      available: true,
-      reason: "forced iTerm2 inline images",
-    });
+    // A forced protocol must still be one the terminal speaks: emitting a
+    // whole PNG as base64 into conhost legacy / Windows Terminal / xterm
+    // dumps raw bytes across the UI. iterm2 owns the protocol unconditionally;
+    // VSCode is version-gated; anything else falls back to half-block.
+    if (supportsItermInlineImages(terminal, env)) {
+      return buildCapability({
+        terminal,
+        protocol: "iterm-inline",
+        renderer: "iterm-inline",
+        available: true,
+        reason: "forced iTerm2 inline images",
+      });
+    }
+    debugImage(
+      `KUNAI_IMAGE_PROTOCOL=iterm ignored: ${terminal} does not report inline-image support`,
+    );
+    return halfBlockCapability(terminal, "forced iterm unsupported here; half-block fallback");
   }
 
   if (override === "sixel") {

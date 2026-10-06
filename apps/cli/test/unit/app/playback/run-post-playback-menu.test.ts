@@ -406,7 +406,7 @@ describe("runPostPlaybackMenu", () => {
       episode: 1,
     };
     let peekCalls = 0;
-    const beginCalls: Array<{ id: string; source: string }> = [];
+    const beginCalls: Array<{ id: string }> = [];
     const deps = createDeps({
       container: {
         logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
@@ -418,8 +418,8 @@ describe("runPostPlaybackMenu", () => {
             // peek would return a different row — claim must still use the id.
             return peekCalls === 1 ? advertised : reorderedHead;
           },
-          beginPlayback: (id: string, source: string) => {
-            beginCalls.push({ id, source });
+          beginPlayback: (id: string) => {
+            beginCalls.push({ id });
             if (id !== advertised.id) return undefined;
             return {
               queueEntryId: advertised.id,
@@ -427,7 +427,6 @@ describe("runPostPlaybackMenu", () => {
               mediaKind: "series",
               season: advertised.season,
               episode: advertised.episode,
-              source,
             };
           },
           getAll: () => [reorderedHead, advertised],
@@ -468,7 +467,6 @@ describe("runPostPlaybackMenu", () => {
             mediaKind: "series",
             season: 1,
             episode: 3,
-            source: "post-play",
           },
         },
         mode: "series",
@@ -476,7 +474,7 @@ describe("runPostPlaybackMenu", () => {
         episode: 3,
       },
     });
-    expect(beginCalls).toEqual([{ id: "qe-advertised", source: "post-play" }]);
+    expect(beginCalls).toEqual([{ id: "qe-advertised" }]);
   });
 });
 

@@ -5,6 +5,7 @@ import {
 } from "@/domain/continuation/history-bucket";
 import { type ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
+import { markCurrentLabel } from "@/domain/current-label";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
@@ -726,7 +727,7 @@ export function buildProviderMemoryPanelLines(input: {
     const fallbackNote =
       effective && !isProviderFallbackEligible(effective) ? " · skipped in auto-fallback" : "";
     lines.push({
-      label: formatProviderName(provider),
+      label: provider.name,
       detail: badge ? `${badge}${fallbackNote}` : "no failure memory",
       tone:
         effective?.effectiveStatus === "down"
@@ -765,14 +766,13 @@ export function buildProviderPickerOptions({
       ? resolveEffectiveProviderHealth(getProviderHealth(provider.id))
       : undefined;
     const healthBadge = formatProviderHealthBadge(effective ?? undefined);
-    const healthLabelSuffix = formatProviderHealthPickerLabelSuffix(effective ?? undefined);
+    const healthLabelSuffix = formatProviderHealthPickerLabelSuffix(effective ?? undefined, {
+      isCurrentProvider: provider.id === currentProvider,
+    });
     const healthDetail = healthBadge ? `Health: ${healthBadge}` : null;
     const crossLaneDetail = isCrossLane?.(provider) ? "via linked catalog id" : null;
     const baseDetail = formatProviderDetail(provider);
-    const baseLabel =
-      provider.id === currentProvider
-        ? `${formatProviderName(provider)}  ·  current`
-        : formatProviderName(provider);
+    const baseLabel = markCurrentLabel(provider.name, provider.id === currentProvider);
     return {
       value: provider.id,
       label: healthLabelSuffix ? `${baseLabel}${healthLabelSuffix}` : baseLabel,
@@ -780,11 +780,6 @@ export function buildProviderPickerOptions({
       previewImageUrl,
     };
   });
-}
-
-function formatProviderName(provider: ProviderMetadata): string {
-  const status = provider.status === "candidate" ? "candidate" : null;
-  return status ? `${provider.name}  ·  ${status}` : provider.name;
 }
 
 function formatProviderDetail(provider: ProviderMetadata): string {

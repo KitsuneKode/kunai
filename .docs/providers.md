@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-04"
 ---
 
 # Kunai — Provider Guide
@@ -31,7 +31,7 @@ apps/cli shell
 
 - `@kunai/types` — canonical TypeScript contracts: `ProviderModule`, `ProviderResolveResult`, `StreamCandidate`, `SubtitleCandidate`, `ProviderFailure`, `ResolveTrace`
 - `@kunai/core` — `ProviderEngine` (orchestration, retry, timeout, fallback), `CoreProviderManifest`, `defineProviderManifest`, `resolveWithFallback`, cache-policy helpers
-- `@kunai/providers` — supported direct-provider modules (`videasy`, `vidlink`, `rivestream`, `allmanga`, `anidb`, `hianime`, `animegg`, `kickassanime`, `miruro`, `youtube`) plus research/candidate modules kept out of the production resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
+- `@kunai/providers` — supported direct-provider modules (`videasy`, `vidlink`, `rivestream`, `vidrock`, `movy`, `allmanga`, `anidb`, `hianime`, `animegg`, `kickassanime`, `miruro`, `youtube`) plus research/candidate modules kept out of the production resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
 - `@kunai/storage` — SQLite cache, history, health, source inventory, trace persistence
 - `@kunai/schemas` — Zod validation schemas for all shared types
 - `apps/cli` — Ink UX, mpv IPC, `ProviderRegistry` (engine compat wrapper), `provider-result-adapter`/`stream-request-adapter` (type conversion), playback orchestration
@@ -136,7 +136,7 @@ Providers share a persisted endpoint-health gate on `ProviderRuntimeContext.endp
 - **server-error** (persistent 5xx): quarantine ~1h, triggered by failures across ≥2 distinct titles **or** ≥3 consecutive failures on a single title. The single-title trigger exists because normal viewing stays on one title, so the distinct-title rule alone never fired in practice. A success clears the streak.
 - **transient** (timeout/network): in-memory cooldown only; never persisted.
 
-`runProviderCycle` skips quarantined candidates (`source:skipped`, reason `quarantined`) and records failures/successes by class. Videasy seeds deprecated routes (`1movies`, Sanji) into the gate; runtime quarantine can still learn new dead endpoints. VidLink participates per-endpoint across its two hard dependencies (`vidlink.pro` API and `enc-dec.app`): classified non-OK statuses feed the gate (429/403/timeout/network → transient, persistent 5xx → server-error), while 404 stays title-shaped and never records health evidence. A pinned title source is cleared when its endpoint is quarantined. Resolve-gate stream probes allow slow CDN timeouts (unverified) but fail on definitive 4xx/5xx; playback preflight re-resolves the same provider once with `intent: "refresh"` before cross-provider fallback.
+`runProviderCycle` skips quarantined candidates (`source:skipped`, reason `quarantined`) and records failures/successes by class. Videasy seeds deprecated routes (`1movies`, Sanji) into the gate; runtime quarantine can still learn new dead endpoints. VidLink participates per-endpoint across its two hard dependencies (`vidlink.pro` API and `enc-dec.app`): classified non-OK statuses feed the gate (429/403/timeout/network → transient, persistent 5xx → server-error), while 404 stays title-shaped and never records health evidence. AllManga keys its cycle candidates on the stream's own source host (`metadata.sourceHost`), so a mirror host that refuses the resolve-gate probe (`endpointScoped`) is quarantined once instead of being re-probed on every resolve; a host that merely lacks the title stays in the pool. A pinned title source is cleared when its endpoint is quarantined. Resolve-gate stream probes allow slow CDN timeouts (unverified) but fail on definitive 4xx/5xx; playback preflight re-resolves the same provider once with `intent: "refresh"` before cross-provider fallback.
 
 **Every 4xx is definitive at the resolve gate.** `isDefinitiveHttpStatus` in
 `packages/providers/src/shared/stream-reachability.ts` treats the whole 4xx range
@@ -426,7 +426,7 @@ one iteration, AES-256-CBC with PKCS7); `crypto-js` is no longer a dependency.
   `loadProductionProviderModules()` is the single production provider list
 - The `ProviderRegistry` (engine compat wrapper) is built automatically from engine modules
 
-No separate CLI adapter file is needed. The `createProviderFromModule()` factory in `apps/cli/src/services/providers/Provider.ts` creates the CLI `Provider` wrapper with `resolveStream` (calls module), `metadata`, `canHandle`, and optional `search`/`listEpisodes`.
+No separate CLI adapter file is needed. The `createProviderFromModule()` factory in `apps/cli/src/services/providers/Provider.ts` creates the CLI `Provider` wrapper with `metadata`, `canHandle`, and optional `search`/`listEpisodes`; stream resolution runs through the engine path (`module.resolve(input, context)`), never through the wrapper.
 
 ## Workflow Reminder
 
@@ -596,7 +596,8 @@ only the contracts every provider must honour.
 | YouTube             | [youtube.md](./provider-dossiers/youtube.md)                                                                                                                      |
 
 Cineby is **not** a production provider: it is a research-only Videasy-flavor
-wrapper (`packages/providers/src/cineby`, `status: "research"`, kept out of
+wrapper (`packages/providers/src/cineby`, marked `"research-only"` in
+`packages/providers/src/research.ts`, kept out of
 `loadProductionProviderModules()` until it passes the provider quality gate).
 Its dossiers ([cineby.md](./provider-dossiers/cineby.md) ·
 [cineby-anime.md](./provider-dossiers/cineby-anime.md)) are research material,

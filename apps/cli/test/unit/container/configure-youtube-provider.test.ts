@@ -60,3 +60,38 @@ test("an unset PO token stays unset rather than becoming an empty string", () =>
 
   expect(getYoutubeProviderConfig().poToken).toBeUndefined();
 });
+
+test("purges cached metadata on startup when YouTube config has drifted", () => {
+  const initialConfig = {
+    youtubeMetadata: { cookiesFromBrowser: "chrome" },
+  } as Pick<KitsuneConfig, "youtubeMetadata">;
+
+  applyYoutubeProviderConfig(initialConfig, db);
+
+  // Insert a cached metadata row
+  const now = new Date().toISOString();
+  db.query(
+    `INSERT INTO youtube_metadata_cache (video_id, payload_json, source, fetched_at, expires_at)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run("vid123", JSON.stringify({ id: "vid123" }), "yt-dlp", now, "2099-01-01T00:00:00.000Z");
+
+  expect(db.query("SELECT COUNT(*) as count FROM youtube_metadata_cache").get()).toEqual({
+    count: 1,
+  });
+
+  // Re-running with identical config preserves cache
+  applyYoutubeProviderConfig(initialConfig, db);
+  expect(db.query("SELECT COUNT(*) as count FROM youtube_metadata_cache").get()).toEqual({
+    count: 1,
+  });
+
+  // Re-running with drifted config purges cache
+  const driftedConfig = {
+    youtubeMetadata: { cookiesFromBrowser: "firefox" },
+  } as Pick<KitsuneConfig, "youtubeMetadata">;
+
+  applyYoutubeProviderConfig(driftedConfig, db);
+  expect(db.query("SELECT COUNT(*) as count FROM youtube_metadata_cache").get()).toEqual({
+    count: 0,
+  });
+});

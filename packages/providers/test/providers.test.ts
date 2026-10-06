@@ -240,7 +240,7 @@ test("vidking direct resolver preserves nonretryable direct failure evidence", a
     },
     {
       now: () => "2026-05-01T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 2, backoff: "none" },
+      retryPolicy: { maxAttempts: 2 },
       emit: (event) => events.push(event),
       fetch: createFetchWithSeedMock(async (input) => {
         if (seedUrls.has(input)) {
@@ -282,7 +282,7 @@ test("vidking direct resolver does not retry definitive 404 responses or duplica
     },
     {
       now: () => "2026-05-26T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 2, backoff: "none" },
+      retryPolicy: { maxAttempts: 2 },
       fetch: {
         runtime: "direct-http",
         fetch: async (input) => {
@@ -323,7 +323,7 @@ test("vidking direct resolver sends Videasy session headers when provided", asyn
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: {
         runtime: "direct-http",
         fetch: async (_input, init) => {
@@ -360,7 +360,7 @@ test("vidking direct resolver reads Videasy session token from runtime auth", as
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       auth: {
         getSecret: (providerId, key) =>
           (providerId === "videasy" || providerId === "vidking") && key === "videasySessionToken"
@@ -404,7 +404,7 @@ test("vidking direct resolver can pair a session with a Bitcine app id", async (
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       auth: {
         getSecret: (providerId, key) => {
           if (providerId !== "videasy" && providerId !== "vidking") return undefined;
@@ -457,7 +457,7 @@ test("vidking session transport covers every registered Videasy flavor", async (
       },
       {
         now: () => "2026-06-04T00:00:00.000Z",
-        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        retryPolicy: { maxAttempts: 1 },
         fetch: isWingsEndpoint
           ? createFetchWithSeedMock(async (input, init) => {
               requested.set(flavor.id, {
@@ -534,7 +534,7 @@ test("vidking preferred source targets that flavor then falls back to Phase A mi
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: createFetchWithSeedMock(async (input) => {
         requestedUrls.push(String(input));
         return jsonResponse({ error: "session_missing" });
@@ -574,7 +574,7 @@ test("vidking stops source fanout after a provider-wide session guard failure", 
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       endpointHealth: passthroughEndpointHealth,
       fetch: createFetchWithSeedMock(async (input) => {
         requestedUrls.push(String(input));
@@ -609,7 +609,7 @@ test("vidking direct resolver classifies Videasy session guard responses as bloc
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 2, backoff: "none" },
+      retryPolicy: { maxAttempts: 2 },
       fetch: {
         runtime: "direct-http",
         fetch: async () => jsonResponse({ error: "session_missing" }),
@@ -669,7 +669,7 @@ test("vidking direct resolver can target a flavored endpoint without broad serve
     },
     {
       now: () => "2026-05-01T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: createFetchWithSeedMock(async (input) => {
         requestedUrls.push(String(input));
         return new Response("", { status: 504 });
@@ -719,7 +719,7 @@ test("vidking refresh intent cycles the wider flavor source set", async () => {
     },
     {
       now: () => "2026-05-01T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: {
         runtime: "direct-http",
         fetch: async (input) => {
@@ -1499,7 +1499,7 @@ test("negative fixture maps blocked vidking host to structured failure", async (
     },
     {
       now: () => "2026-05-19T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: {
         runtime: "direct-http",
         fetch: async () => jsonResponse(blocked.body, blocked.status),

@@ -12,7 +12,7 @@ provider-level Playwright access or a config schema extension.
 
 **Problem.** When the user presses Esc during stream resolution, we call
 `resolveController.abort()`. The `AbortSignal` is forwarded to `resolveWithFallback`
-and on to each `p.resolveStream(..., signal)`, but individual providers do not act on it
+and on to each provider `resolve(...)` call (formerly `p.resolveStream`), but individual providers do not act on it
 mid-scrape. The Playwright browser page continues running until it finishes or times out.
 The user sees "Cancelling…" and eventually gets back to results — but a background
 Chromium scrape is still alive consuming memory and CPU.
@@ -30,7 +30,7 @@ signal.addEventListener(
 );
 ```
 
-Where to do this: inside each provider's `resolveStream` method (or the shared
+Where to do this: inside each provider's `resolve` implementation (or the shared
 scraper helper it delegates to), right after `page` is acquired from the browser pool.
 
 **Scope.** Touches every Playwright-backed provider. Should be done as part of a
@@ -82,7 +82,7 @@ timeout, treat it as a failure and move to the next candidate.
 Implementation sketch:
 
 - Extend `ProviderConfig` / provider override schema with `resolveTimeoutMs`
-- In `PlaybackPhase`, read it from the provider registry and wrap `p.resolveStream`
+- In `PlaybackPhase`, read it from the provider registry and wrap the resolve call
   with `Promise.race([resolve(), Bun.sleep(timeout).then(() => null)])` when set
 - Default: no timeout (current behavior)
 

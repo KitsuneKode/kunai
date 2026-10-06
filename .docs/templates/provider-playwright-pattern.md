@@ -1,11 +1,18 @@
 ---
-status: current
-lastReviewed: "2026-04-23"
+status: superseded
+lastReviewed: "2026-10-04"
 ---
 
 # Provider Pattern Template — Playwright Embed Capture
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+> **Superseded.** The `kind: "api" | "playwright"` provider contract and
+> `resolveStream`/`../../src/providers/types` imports below are from the removed
+> legacy layer. The live contract is `CoreProviderModule` (`@kunai/core`):
+> `manifest.ts` via `defineProviderManifest` plus a `direct.ts` exposing
+> `resolve(input, context)` — see `packages/providers/src/vidrock/` for the
+> minimal exemplar and `.docs/providers.md` for registration.
 
 Use this as a copyable reference when the provider is mostly "build a URL, load a page, intercept the real stream."
 

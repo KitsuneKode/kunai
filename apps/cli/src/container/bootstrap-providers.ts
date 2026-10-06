@@ -158,10 +158,13 @@ export async function bootstrapProviders(
     let ordered: readonly CoreProviderModule[] = providerModules;
     return () => {
       const priority = createProviderPrioritySnapshot(config);
+      const raw = config.getRaw();
       const key = [
         priority.providerPriority.join(","),
         priority.animeProviderPriority.join(","),
         (priority.youtubeProviderPriority ?? []).join(","),
+        raw.providerRelay?.enabled ? "relay-on" : "relay-off",
+        JSON.stringify(raw.providerRelay?.providers ?? {}),
       ].join("|");
       if (key !== cacheKey) {
         cacheKey = key;

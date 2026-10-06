@@ -122,4 +122,30 @@ describe("track pick restart policy", () => {
     });
     expect(calls).toEqual(["episode:vidking:1:4:1080p"]);
   });
+
+  test("stale pick resumes in place with a notice instead of applying", async () => {
+    const { calls, effects } = createEffects();
+
+    const result = await applyTrackPickRestart({
+      resolved: {
+        kind: "stale-pick",
+        section: "quality",
+        reason: "That stream is no longer available.",
+      },
+      currentProviderId: "vidking",
+      episode,
+      resumeSeconds: 33,
+      effects,
+    });
+
+    expect(result).toEqual({
+      startIntent: { startAt: 33, resumePromptAt: 0, suppressResumePrompt: true },
+      resolvedProviderId: "vidking",
+      requiresFreshResolve: false,
+      notice: "That stream is no longer available.",
+    });
+    // Nothing applied, nothing invalidated: the old stream keeps playing and
+    // the caller toasts the notice instead of pretending the pick worked.
+    expect(calls).toEqual([]);
+  });
 });

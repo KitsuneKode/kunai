@@ -573,23 +573,12 @@ export interface ProviderResolveInput {
   readonly preferredSubtitleDelivery?: SubtitleDelivery;
   readonly qualityPreference?: string;
   readonly startupPriority?: StartupPriority;
-  readonly regionHint?: string;
-  readonly intent: "browse" | "focused" | "prefetch" | "play" | "refresh" | "autoplay";
+  readonly intent: "play" | "refresh";
   readonly allowedRuntimes: readonly ProviderRuntime[];
 }
 
-export type ProviderRetryBackoff = "none" | "fixed" | "exponential";
-
 export interface ProviderRetryPolicy {
   readonly maxAttempts: number;
-  readonly backoff: ProviderRetryBackoff;
-  readonly delayMs?: number;
-  readonly retryableCodes?: readonly ResolveErrorCode[];
-}
-
-export interface ProviderAbortState {
-  readonly aborted: boolean;
-  readonly reason?: "user-cancelled" | "provider-fallback" | "timeout" | "shutdown";
 }
 
 export interface ProviderFetchPort {
@@ -778,45 +767,19 @@ export interface ProviderResolveResult extends ProviderSourceInventory {
   readonly streamReachabilityVerified?: boolean;
 }
 
-export function isProviderStreamReachabilityVerified(
-  result: Pick<ProviderResolveResult, "streamReachabilityVerified"> | null | undefined,
-): boolean {
-  return result?.streamReachabilityVerified === true;
-}
-
-export function getProviderSourceInventory(result: ProviderResolveResult): ProviderSourceInventory {
-  return {
-    providerId: result.providerId,
-    selectedStreamId: result.selectedStreamId,
-    sources: result.sources,
-    variants: result.variants,
-    streams: result.streams,
-    subtitles: result.subtitles,
-    externalIds: result.externalIds,
-    release: result.release,
-    artwork: result.artwork,
-  };
-}
-
-export function getProviderResolveStatus(
-  result: Pick<ProviderResolveResult, "status">,
-): ProviderResolveResult["status"] {
-  return result.status;
-}
-
 export function isProviderResolveResultResolved(
   result: ProviderResolveResult,
 ): result is ProviderResolveResult & {
   readonly status: "resolved";
   readonly streams: readonly [StreamCandidate, ...StreamCandidate[]];
 } {
-  return result.status === "resolved" && result.streams.length > 0;
-}
-
-export function isProviderResolveResultExhausted(
-  result: ProviderResolveResult,
-): result is ProviderResolveResult & { readonly status: "exhausted" } {
-  return result.status === "exhausted";
+  return (
+    result.status === "resolved" &&
+    // A stream with neither a url nor a deferred locator cannot play — a
+    // result made only of those is exhausted wearing a resolved status, and
+    // accepting it would stop the fallback chain at a provider with nothing.
+    result.streams.some((stream) => Boolean(stream.url ?? stream.deferredLocator))
+  );
 }
 
 export type ProviderFailureClass =
@@ -866,22 +829,6 @@ export interface ProviderModule<TContext extends ProviderRuntimeContext = Provid
     input: ProviderEpisodeListInput,
     context: TContext,
   ): Promise<readonly ProviderEpisodeOption[] | null>;
-}
-
-export interface PlaybackRecoveryEvent {
-  readonly id: string;
-  readonly at: string;
-  readonly reason:
-    | "manifest-expired"
-    | "segment-failure"
-    | "buffering-timeout"
-    | "provider-fallback"
-    | "subtitle-fallback"
-    | "manual-retry";
-  readonly fromProviderId?: ProviderId;
-  readonly toProviderId?: ProviderId;
-  readonly resumeSeconds?: number;
-  readonly traceId?: string;
 }
 
 export * from "./json-value";

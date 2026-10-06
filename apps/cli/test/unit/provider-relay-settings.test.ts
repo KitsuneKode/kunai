@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
   describeProviderRelay,
   describeProviderRelayEnabled,
   describeProviderRelayProviders,
   isSafeProviderRelayBaseUrl,
   toggleProviderRelayProvider,
-} from "@/services/providers/provider-relay-settings";
+} from "@/domain/provider-relay-settings";
+import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 const baseConfig = {
   providerRelay: {

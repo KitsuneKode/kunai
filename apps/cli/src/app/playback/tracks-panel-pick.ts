@@ -1,4 +1,5 @@
 import { applyUserProviderSwitch } from "@/app/playback/playback-provider-switch";
+import { buildSourceInventoryCacheInput } from "@/app/playback/playback-source-cache-invalidation";
 import { invalidateTitlePlaybackCaches } from "@/app/playback/playback-title-cache-invalidation";
 import type { StreamSelectionIntent } from "@/app/playback/source-quality";
 import type { Container } from "@/container";
@@ -27,6 +28,11 @@ export type TracksPanelPickResult =
       readonly kind: "stream-selection";
       readonly section: DecodedTrackSelection["section"];
       readonly selection: StreamSelectionIntent;
+    }
+  | {
+      readonly kind: "stale-pick";
+      readonly section: DecodedTrackSelection["section"];
+      readonly reason: string;
     };
 
 export type TrackPickTransitionContext = {
@@ -183,9 +189,71 @@ export async function resolveTracksPanelPick(
     return { kind: "noop" };
   }
 
+  // The panel rows were built from an inventory snapshot; a re-resolve or
+  // provider switch between render and pick leaves ids that no longer exist.
+  // Applying blindly keeps playing the old stream while reporting success, so
+  // validate against the cached inventory and say so instead.
+  if (selection.streamId ?? selection.sourceId) {
+    const stale = await staleTrackSelectionReason(selection, context);
+    if (stale) return { kind: "stale-pick", section: picked.section, reason: stale };
+  }
+
   return {
     kind: "stream-selection",
     section: picked.section,
     selection,
   };
+}
+
+/**
+ * Null when the pick still names a live stream/source in the cached
+ * inventory, otherwise a human-readable reason. A missing cache row is not
+ * staleness — without inventory there is nothing to contradict the pick, and
+ * the apply path re-resolves from the provider.
+ */
+async function staleTrackSelectionReason(
+  selection: StreamSelectionIntent,
+  context: TracksPanelPickContext,
+): Promise<string | null> {
+  const { container, title, episode, currentProviderId } = context;
+  const mode = container.stateManager.getState().mode;
+  const cached = await container.sourceInventory
+    .get(
+      buildSourceInventoryCacheInput(
+        currentProviderId,
+        title,
+        episode,
+        mode,
+        container.config.getRaw(),
+      ),
+    )
+    .catch(() => null);
+  return matchTrackSelectionAgainstInventory(selection, cached);
+}
+
+/**
+ * Pure half of stale-pick detection, exported for tests: the fetch above is
+ * the only impure step, and the decision must be unit-coverable without a
+ * container stub.
+ */
+export function matchTrackSelectionAgainstInventory(
+  selection: StreamSelectionIntent,
+  inventory: {
+    readonly streams: readonly { readonly id: string; readonly sourceId?: string }[];
+  } | null,
+): string | null {
+  if (!inventory) return null;
+  if (
+    selection.streamId &&
+    !inventory.streams.some((candidate) => candidate.id === selection.streamId)
+  ) {
+    return "That stream is no longer available — the source list changed. Pick again from the refreshed list.";
+  }
+  if (
+    selection.sourceId &&
+    !inventory.streams.some((candidate) => candidate.sourceId === selection.sourceId)
+  ) {
+    return "That source is no longer available — the source list changed. Pick again from the refreshed list.";
+  }
+  return null;
 }

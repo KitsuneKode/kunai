@@ -1,8 +1,12 @@
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
 import type { ProviderRegistry } from "@/services/providers/ProviderRegistry";
 import { mergeProviderNativeId } from "@kunai/core";
-import { looksLikeAnidbShowId, searchAllManga, type AllMangaSearchResult } from "@kunai/providers";
-import type { ProviderId } from "@kunai/types";
+import {
+  looksLikeAnidbShowId,
+  resolveAnimeAudioIntent,
+  searchAllManga,
+  type AllMangaSearchResult,
+} from "@kunai/providers";
 
 export type AnimeProviderMappingContext = {
   readonly mode: ShellMode;
@@ -89,11 +93,7 @@ export async function mapAnimeDiscoveryResultToProviderNative(
   // opaque ids, so it may only ever populate the allanime id slot — writing one
   // into another provider's slot pins an id that provider cannot resolve.
   if (context.providerId === "allanime" && !Number.isNaN(discoveryAniListId)) {
-    const animeLang =
-      context.animeLanguageProfile.audio === "ja" ||
-      context.animeLanguageProfile.audio === "original"
-        ? ("sub" as const)
-        : ("dub" as const);
+    const animeLang = resolveAnimeAudioIntent(context.animeLanguageProfile.audio).catalogMode;
     for (const query of providerSearchQueries(result)) {
       const matches = await searchProviderNative(
         { providerId: "allanime", now: () => new Date().toISOString(), signal: context.signal },

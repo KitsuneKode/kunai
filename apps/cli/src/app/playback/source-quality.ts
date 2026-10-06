@@ -4,6 +4,7 @@ import {
 } from "@/app/playback/playback-source-ui";
 import { formatPlaybackStreamRoute } from "@/app/playback/playback-startup-format";
 import { formatLanguageBadge, formatSourceEvidence } from "@/app/playback/track-format";
+import { markCurrentLabel } from "@/domain/current-label";
 import { isSubtitlePreferenceDisabled } from "@/domain/media/media-preferences";
 import {
   describeStreamCandidateMediaDetail,
@@ -16,7 +17,7 @@ import {
 } from "@/domain/playback/track-capabilities";
 import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
-import { buildPlaybackSourceInventoryView } from "@/services/playback/PlaybackSourceInventoryProjection";
+import { projectPlaybackSourceInventory } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type {
   PlaybackLanguageOptionView,
   PlaybackSourceGroupView,
@@ -186,9 +187,7 @@ export function buildStreamPickerOptions(stream: StreamInfo): readonly StreamOpt
       const selected = candidate.id === result.selectedStreamId;
       return {
         value: candidate.id,
-        label: selected
-          ? `${sourceLabel}  ·  ${qualityLabel}  ·  current`
-          : `${sourceLabel}  ·  ${qualityLabel}`,
+        label: markCurrentLabel(`${sourceLabel}  ·  ${qualityLabel}`, selected),
         detail: describeStreamCandidateMediaDetail(candidate, result.subtitles),
         selected,
         rank: candidate.qualityRank ?? 0,
@@ -276,17 +275,17 @@ export function buildStreamInventoryView(
 ): PlaybackSourceInventoryView | null {
   const result = stream?.providerResolveResult;
   if (!result) return null;
-  return buildPlaybackSourceInventoryView(result, { selectedSubtitleUrl: stream?.subtitle });
+  return projectPlaybackSourceInventory(result, { selectedSubtitleUrl: stream?.subtitle });
 }
 
 export function buildSourcePickerOptions(stream: StreamInfo): readonly SourceOption[] {
   const result = stream.providerResolveResult;
   if (!result) return [];
 
-  const projection = buildPlaybackSourceInventoryView(result);
+  const projection = projectPlaybackSourceInventory(result);
   return projection.sourceGroups.map((group) => ({
     value: group.id,
-    label: group.state === "selected" ? `${group.label}  ·  current` : group.label,
+    label: markCurrentLabel(group.label, group.state === "selected"),
     detail: describeProjectedSourceDetail(group, result),
   }));
 }
@@ -295,7 +294,7 @@ export function buildQualityPickerOptions(stream: StreamInfo): readonly QualityO
   const result = stream.providerResolveResult;
   if (!result) return [];
 
-  const projection = buildPlaybackSourceInventoryView(result);
+  const projection = projectPlaybackSourceInventory(result);
   return result.streams
     .filter((candidate) => isPlayableStreamCandidate(candidate))
     .map((candidate) => {
@@ -305,7 +304,7 @@ export function buildQualityPickerOptions(stream: StreamInfo): readonly QualityO
       const label = candidate.qualityLabel ?? candidate.container ?? candidate.id;
       return {
         value: candidate.id,
-        label: candidate.id === result.selectedStreamId ? `${label}  ·  current` : label,
+        label: markCurrentLabel(label, candidate.id === result.selectedStreamId),
         detail: [
           describeStreamCandidateMediaDetail(candidate, result.subtitles),
           ...(option?.hints ?? []),
@@ -355,7 +354,7 @@ export function buildPlaybackControlSummary(stream: StreamInfo | null): Playback
     };
   }
 
-  const projection = buildPlaybackSourceInventoryView(result, {
+  const projection = projectPlaybackSourceInventory(result, {
     selectedSubtitleUrl: stream.subtitle,
   });
   const playableStreams = result.streams.filter((candidate) =>
@@ -423,7 +422,7 @@ export function formatPlaybackSourceLine(stream: StreamInfo | null): string | nu
   const result = stream?.providerResolveResult;
   if (!result) return formatPlaybackStreamRoute(stream ?? ({} as StreamInfo));
 
-  const projection = buildPlaybackSourceInventoryView(result, {
+  const projection = projectPlaybackSourceInventory(result, {
     selectedSubtitleUrl: stream.subtitle,
   });
   const sourceName =
@@ -463,6 +462,25 @@ export function applyPreferredStreamSelection(
       [...result.streams]
         .filter((candidate) => candidate.sourceId === selection.sourceId)
         .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0))[0] ?? null;
+  }
+
+  if (selected && !selected.url) {
+    // The pinned stream is dead (re-resolve dropped its URL, or the group row
+    // pointed at the first of several same-label streams and that one died).
+    // Fail over to a same-group sibling with a URL before giving up: same
+    // source, same quality label, best rank first. Only then is the pick
+    // genuinely unplayable.
+    const label = selected.qualityLabel ?? null;
+    selected =
+      [...result.streams]
+        .filter(
+          (candidate) =>
+            candidate.id !== selected?.id &&
+            candidate.sourceId === selected?.sourceId &&
+            (candidate.qualityLabel ?? null) === label &&
+            candidate.url,
+        )
+        .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0))[0] ?? selected;
   }
 
   if (!selected?.url) return stream;
@@ -531,7 +549,7 @@ function describeLanguages(label: string, values: readonly (string | undefined)[
 
 function buildSubtitleTrackPickerOptions(stream: StreamInfo): readonly MediaTrackPickerOption[] {
   const projection = stream.providerResolveResult
-    ? buildPlaybackSourceInventoryView(stream.providerResolveResult, {
+    ? projectPlaybackSourceInventory(stream.providerResolveResult, {
         selectedSubtitleUrl: stream.subtitle,
       })
     : null;
@@ -549,7 +567,7 @@ function buildSubtitleTrackPickerOptions(stream: StreamInfo): readonly MediaTrac
     const source = track.sourceName ?? track.sourceKind ?? stream.subtitleSource;
     options.push({
       value: `subtitle:${encodeURIComponent(track.url)}`,
-      label: current ? `${subtitleBadge}  ·  current` : subtitleBadge,
+      label: markCurrentLabel(subtitleBadge, current),
       detail:
         [track.display, track.release, formatSourceEvidence({ nativeLabel: source ?? undefined })]
           .filter(Boolean)
@@ -567,7 +585,7 @@ function buildSubtitleTrackPickerOptions(stream: StreamInfo): readonly MediaTrac
       : "Subtitle";
     options.push({
       value: `subtitle:${encodeURIComponent(option.subtitleUrl)}`,
-      label: option.state === "selected" ? `${subtitleBadge}  ·  current` : subtitleBadge,
+      label: markCurrentLabel(subtitleBadge, option.state === "selected"),
       detail:
         [option.label, formatSourceEvidence({ nativeLabel: option.nativeLabels.join(", ") })]
           .filter(Boolean)
@@ -582,7 +600,7 @@ function buildLanguageTrackPickerOptions(stream: StreamInfo): readonly MediaTrac
   const result = stream.providerResolveResult;
   if (!result) return [];
 
-  const projection = buildPlaybackSourceInventoryView(result);
+  const projection = projectPlaybackSourceInventory(result);
   return projection.languageOptions
     .filter((option) => option.role === "audio" || option.role === "hardsub")
     .sort((left, right) => mediaTrackRoleRank(left.role) - mediaTrackRoleRank(right.role))
@@ -607,7 +625,7 @@ function buildLanguageTrackOptionFromProjection(
       value: `${option.role}:${encodeURIComponent(option.language)}:${encodeURIComponent(
         candidate.id,
       )}`,
-      label: option.state === "selected" ? `${languageBadge}  ·  current` : languageBadge,
+      label: markCurrentLabel(languageBadge, option.state === "selected"),
       detail: [
         "Switches to cached stream inventory",
         formatSourceEvidence({ nativeLabel: sourceLabel }),
@@ -623,7 +641,7 @@ function describeProjectedSourceLabel(
   candidate: StreamCandidate,
   result: NonNullable<StreamInfo["providerResolveResult"]>,
 ): string {
-  const projection = buildPlaybackSourceInventoryView(result);
+  const projection = projectPlaybackSourceInventory(result);
   const group = projection.sourceGroups.find((sourceGroup) =>
     candidate.sourceId ? sourceGroup.sourceIds.includes(candidate.sourceId) : false,
   );

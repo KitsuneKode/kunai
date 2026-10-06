@@ -77,12 +77,9 @@ export function episodeInfoFromMediaItemIdentity(item: MediaItemIdentity): Episo
 
 export function titleInfoFromQueueEntry(
   entry: QueueEntry,
-  sourceOrIntent: QueuePlaybackIntent["source"] | QueuePlaybackIntent = "queue",
+  intent?: QueuePlaybackIntent,
 ): TitleInfo {
-  const queuePlaybackIntent =
-    typeof sourceOrIntent === "string"
-      ? queuePlaybackIntentFromEntry(entry, sourceOrIntent)
-      : sourceOrIntent;
+  const queuePlaybackIntent = intent ?? queuePlaybackIntentFromEntry(entry);
   return {
     id: entry.titleId,
     type: entry.contentType ?? (entry.mediaKind === "movie" ? "movie" : "series"),

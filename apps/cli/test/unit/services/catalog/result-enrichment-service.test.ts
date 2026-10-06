@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 import type { SearchResult } from "@/domain/types";
 import {
+  MAX_ENRICHMENT_CACHE_ENTRIES,
   ResultEnrichmentService,
   buildResultEnrichment,
+  resultEnrichmentKey,
 } from "@/services/catalog/ResultEnrichmentService";
 import type { ContinuationViewDecision } from "@/services/continuation/ContinueWatchingService";
 import type { RecordedOfflineStatus } from "@/services/offline/OfflineAssetService";
@@ -305,6 +307,61 @@ describe("ResultEnrichmentService", () => {
       }).badges,
     ).toContainEqual({ label: "downloaded", tone: "success" });
   });
+
+  test("evicts oldest entries past the cache bound instead of growing forever", async () => {
+    let offlineCalls = 0;
+    const service = new ResultEnrichmentService({
+      historyRepository: historyRepository([]),
+      offlineLibraryService: {
+        peekRecordedArtifactStatuses: async () => {
+          offlineCalls += 1;
+          return [];
+        },
+      },
+      now: () => 1,
+      ttlMs: 60_000,
+    });
+
+    const total = MAX_ENRICHMENT_CACHE_ENTRIES + 5;
+    const batch = Array.from({ length: total }, (_, index) =>
+      result({ id: `title-${index}`, title: `Title ${index}` }),
+    );
+    await service.enrichResults(batch);
+    expect(offlineCalls).toBe(1);
+
+    // The first entries were evicted by the later ones: re-enriching one
+    // refetches instead of serving an evicted row from cache…
+    await service.enrichResults([result({ id: "title-0", title: "Title 0" })]);
+    expect(offlineCalls).toBe(2);
+    // …while a recently cached row still serves without refetching.
+    await service.enrichResults([result({ id: `title-${total - 1}`, title: "Last" })]);
+    expect(offlineCalls).toBe(2);
+  });
+
+  test("expired entries are swept on read and refetched, not served", async () => {
+    let now = 1;
+    let offlineCalls = 0;
+    const service = new ResultEnrichmentService({
+      historyRepository: historyRepository([]),
+      offlineLibraryService: {
+        peekRecordedArtifactStatuses: async () => {
+          offlineCalls += 1;
+          return [];
+        },
+      },
+      now: () => now,
+      ttlMs: 100,
+    });
+
+    await service.enrichResults([result()]);
+    expect(offlineCalls).toBe(1);
+    await service.enrichResults([result()]);
+    expect(offlineCalls).toBe(1);
+
+    now = 10_000;
+    await service.enrichResults([result()]);
+    expect(offlineCalls).toBe(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -386,5 +443,16 @@ describe("ResultEnrichmentService cancellation", () => {
     }
     expect((error as { name?: string } | undefined)?.name).toBe("AbortError");
     expect(peekCalls).toBe(0);
+  });
+
+  test("resultEnrichmentKey separates anime from general lane for identical ids", () => {
+    const generalMovie = result({ id: "123", type: "movie", isAnime: false });
+    const animeMovie = result({ id: "123", type: "movie", isAnime: true });
+    const explicitLane = result({ id: "123", type: "movie", resolvedLane: "youtube" });
+
+    expect(resultEnrichmentKey(generalMovie)).toBe("movie:123");
+    expect(resultEnrichmentKey(animeMovie)).toBe("anime:movie:123");
+    expect(resultEnrichmentKey(explicitLane)).toBe("youtube:movie:123");
+    expect(resultEnrichmentKey(generalMovie)).not.toBe(resultEnrichmentKey(animeMovie));
   });
 });

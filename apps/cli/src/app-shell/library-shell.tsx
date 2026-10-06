@@ -1,4 +1,5 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
+import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
 import {
@@ -203,7 +204,10 @@ function LibraryTab({
     };
   }, [container]);
 
-  const shelf = entries ? createOfflineLibraryEngine().buildShelf(entries) : null;
+  const networkAvailable = useConnectivityOnline(container.connectivity);
+  const shelf = entries
+    ? createOfflineLibraryEngine().buildShelf(entries, { networkAvailable })
+    : null;
   const protectedIds = useMemo(
     () => new Set(container.config.protectedDownloadJobIds),
     [container.config.protectedDownloadJobIds],

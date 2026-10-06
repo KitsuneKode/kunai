@@ -88,8 +88,8 @@ test("a reorder interrupted mid-batch leaves the original ordering, not a partia
     .getAll("session")
     .map((entry) => [entry.title, entry.queuePosition] as const);
 
-  // Reverse the queue, failing on the third of four writes.
-  const { db: flaky } = failingDbAfter(store, 3);
+  // Reverse the queue, failing the single set-based write.
+  const { db: flaky } = failingDbAfter(store, 1);
   const flakyRepo = new QueueRepository(flaky);
 
   expect(() => flakyRepo.setQueuePositions([...ids].reverse())).toThrow(

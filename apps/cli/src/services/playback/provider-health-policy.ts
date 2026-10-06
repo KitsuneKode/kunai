@@ -129,12 +129,17 @@ export function formatProviderHealthBadge(
 
 export function formatProviderHealthPickerLabelSuffix(
   health: EffectiveProviderHealth | undefined,
-  now: Date = new Date(),
+  options?: { readonly now?: Date; readonly isCurrentProvider?: boolean },
 ): string | null {
   if (!health) return null;
   if (health.effectiveStatus !== "down" && health.effectiveStatus !== "degraded") {
     return null;
   }
-  const badge = formatProviderHealthBadge(health, now);
+  const now = options?.now ?? new Date();
+  // "skipped in auto-fallback" on the provider currently playing is a false
+  // statement — it is running, not skipped.
+  const badge = options?.isCurrentProvider
+    ? formatProviderHealthBadge(health, now)?.replace(/ · skipped in auto-fallback$/, "")
+    : formatProviderHealthBadge(health, now);
   return badge ? `  ·  ${badge}` : null;
 }

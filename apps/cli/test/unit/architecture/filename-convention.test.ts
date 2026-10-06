@@ -115,7 +115,6 @@ const PASCAL_CASE_TS_ALLOWLIST = new Set<string>([
   "services/persistence/StorageMaintenanceService.ts",
   "services/persistence/SyncTokenStore.ts",
   "services/playback/EpisodePlaybackSelectionService.ts",
-  "services/playback/MediaTrackService.ts",
   "services/playback/PlaybackResolveCoordinator.ts",
   "services/playback/PlaybackResolveService.ts",
   "services/playback/PlaybackResolveWorkService.ts",

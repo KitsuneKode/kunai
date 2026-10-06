@@ -12,7 +12,6 @@ export type HomeProviderMetadata = {
   readonly recommended: boolean;
   readonly mediaKinds: readonly string[];
   readonly capabilities: readonly string[];
-  readonly status: string;
   readonly notes: readonly string[];
 };
 

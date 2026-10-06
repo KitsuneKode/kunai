@@ -1,3 +1,4 @@
+import { buildProviderPickerOptions } from "@/app-shell/panel-data";
 import {
   chooseEpisodeFromOptions,
   chooseFromListShell,
@@ -6,6 +7,7 @@ import {
 } from "@/app-shell/pickers";
 import { buildTracksPanelData } from "@/app-shell/tracks-panel-data";
 import type { Container } from "@/container";
+import { markCurrentLabel } from "@/domain/current-label";
 import {
   annotateCurrentTrackFailure,
   decodeTrackSelection,
@@ -15,27 +17,31 @@ import {
 import type { EpisodePickerOption, StreamInfo } from "@/domain/types";
 import { scheduleVideasyLazySourceProbesFromContainer } from "@/services/playback/schedule-videasy-lazy-probes";
 import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
+import type { ProviderHealth, ProviderId } from "@kunai/types";
 
-import { createSessionPickerId, openSessionPicker, waitForSessionPicker } from "../session-picker";
+import {
+  createSessionPickerId,
+  openSessionPicker,
+  parsePickerValue,
+  waitForSessionPicker,
+} from "../session-picker";
 
 export async function openProviderPicker({
   currentProvider,
   providers,
   actionContext,
+  getProviderHealth,
 }: {
   currentProvider: string;
   providers: readonly import("@/domain/types").ProviderMetadata[];
   actionContext?: ListShellActionContext;
+  getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
 }): Promise<string | null> {
   return chooseFromListShell({
     title: "Choose provider",
     subtitle: `Current provider ${currentProvider}`,
     actionContext,
-    options: providers.map((provider) => ({
-      value: provider.id,
-      label: provider.id === currentProvider ? `${provider.name}  ·  current` : provider.name,
-      detail: provider.description,
-    })),
+    options: buildProviderPickerOptions({ providers, currentProvider, getProviderHealth }),
   });
 }
 
@@ -202,7 +208,7 @@ export async function openAnimeEpisodePicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: Math.max(0, currentEpisode - 1),
+      initialIndex: currentEpisode >= 1 && currentEpisode <= count ? currentEpisode - 1 : -1,
       options: episodes.map((episode) => ({
         value: String(episode),
         label: `Episode ${episode}`,
@@ -210,7 +216,7 @@ export async function openAnimeEpisodePicker(
         badge: episode === currentEpisode ? "current" : undefined,
       })),
     });
-    return picked ? Number.parseInt(picked, 10) : null;
+    return parsePickerValue(picked);
   }
   return chooseFromListShell({
     title: "Choose episode",
@@ -218,7 +224,7 @@ export async function openAnimeEpisodePicker(
     actionContext,
     options: episodes.map((episode) => ({
       value: episode,
-      label: episode === currentEpisode ? `Episode ${episode}  ·  current` : `Episode ${episode}`,
+      label: markCurrentLabel(`Episode ${episode}`, episode === currentEpisode),
     })),
   });
 }
@@ -235,10 +241,7 @@ export async function openAnimeEpisodeListPicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: Math.max(
-        0,
-        episodes.findIndex((episode) => episode.index === currentEpisode),
-      ),
+      initialIndex: episodes.findIndex((episode) => episode.index === currentEpisode),
       options: episodes.map((episode) => ({
         value: String(episode.index),
         label: episode.label,
@@ -248,7 +251,7 @@ export async function openAnimeEpisodeListPicker(
         badge: episode.index === currentEpisode ? "current" : undefined,
       })),
     });
-    return picked ? Number.parseInt(picked, 10) : null;
+    return parsePickerValue(picked);
   }
 
   return chooseFromListShell({
@@ -257,7 +260,7 @@ export async function openAnimeEpisodeListPicker(
     actionContext,
     options: episodes.map((episode) => ({
       value: episode.index,
-      label: episode.index === currentEpisode ? `${episode.label}  ·  current` : episode.label,
+      label: markCurrentLabel(episode.label, episode.index === currentEpisode),
       detail: episode.detail,
     })),
   });

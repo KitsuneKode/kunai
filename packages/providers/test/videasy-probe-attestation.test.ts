@@ -48,7 +48,7 @@ describe("videasy resolve-gate attestation (#361)", () => {
     const context = {
       now: () => "2026-09-12T00:00:00.000Z",
       signal: AbortSignal.timeout(30_000),
-      retryPolicy: { maxAttempts: 1, backoff: "none" as const },
+      retryPolicy: { maxAttempts: 1 as const },
       endpointHealth: passthroughEndpointHealth,
       fetch: {
         runtime: "direct-http" as const,

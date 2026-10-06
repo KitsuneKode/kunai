@@ -1,62 +1,42 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildTrackPickTransitionContext } from "@/app/playback/tracks-panel-pick";
+import { matchTrackSelectionAgainstInventory } from "@/app/playback/tracks-panel-pick";
 
-const episode = { season: 1, episode: 3 };
+const inventory = (streams: readonly { readonly id: string; readonly sourceId?: string }[]) => ({
+  streams,
+});
 
-describe("tracks panel pick transition context", () => {
-  test("captures provider switches from the provider before mutation", () => {
+describe("matchTrackSelectionAgainstInventory", () => {
+  test("a live stream id is not stale", () => {
     expect(
-      buildTrackPickTransitionContext({
-        titleId: "1396",
-        episode,
-        fromProviderId: "vidking",
-        selection: { sourceId: null, streamId: null, providerId: "rivestream" },
-      }),
-    ).toEqual({
-      titleId: "1396",
-      season: 1,
-      episode: 3,
-      fromProvider: "vidking",
-      provider: "rivestream",
-    });
+      matchTrackSelectionAgainstInventory(
+        { sourceId: null, streamId: "s1" },
+        inventory([{ id: "s1", sourceId: "a" }]),
+      ),
+    ).toBeNull();
   });
 
-  test("captures cross-provider source switches with the source id", () => {
+  test("a stream id missing after re-resolve is stale", () => {
     expect(
-      buildTrackPickTransitionContext({
-        titleId: "1396",
-        episode,
-        fromProviderId: "vidking",
-        selection: {
-          sourceId: null,
-          streamId: null,
-          crossProviderSource: { providerId: "rivestream", sourceId: "server-2" },
-        },
-      }),
-    ).toEqual({
-      titleId: "1396",
-      season: 1,
-      episode: 3,
-      fromProvider: "vidking",
-      provider: "rivestream",
-      sourceId: "server-2",
-    });
+      matchTrackSelectionAgainstInventory(
+        { sourceId: null, streamId: "gone" },
+        inventory([{ id: "s1", sourceId: "a" }]),
+      ),
+    ).toContain("no longer available");
   });
 
-  test("keeps same-provider stream switches small", () => {
+  test("a source id missing after provider switch is stale", () => {
     expect(
-      buildTrackPickTransitionContext({
-        titleId: "1396",
-        episode,
-        fromProviderId: "vidking",
-        selection: { sourceId: null, streamId: "1080p" },
-      }),
-    ).toEqual({
-      titleId: "1396",
-      season: 1,
-      episode: 3,
-      streamId: "1080p",
-    });
+      matchTrackSelectionAgainstInventory(
+        { sourceId: "gone", streamId: null },
+        inventory([{ id: "s1", sourceId: "a" }]),
+      ),
+    ).toContain("no longer available");
+  });
+
+  test("a missing cache row is not staleness", () => {
+    expect(
+      matchTrackSelectionAgainstInventory({ sourceId: null, streamId: "s1" }, null),
+    ).toBeNull();
   });
 });

@@ -98,7 +98,7 @@ import {
 import { buildDetailsSheet } from "./details-sheet.model";
 import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
-import { deleteAllKittyImages } from "./image-pane";
+import { undisplayPlacementsKeepCache } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
 import { buildFooterActionsFromBindings } from "./keybindings";
 import {
@@ -150,7 +150,10 @@ import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 function clearShellScreen() {
   if (process.stdout.isTTY) {
-    deleteAllKittyImages();
+    // Placements must go (the frame is cleared), but source bytes stay warm:
+    // wiping the 48MB+32MB byte caches here refetches + redecodes every poster
+    // the moment the user returns. Full wipe is for session shutdown only.
+    undisplayPlacementsKeepCache();
   }
 }
 
@@ -1653,11 +1656,11 @@ export function BrowseShell<T>({
       // Closed loop: the last row wraps to the first instead of dropping back
       // into the search box. Bouncing to the query zone here made row 0
       // unreachable going down whenever the remembered row was the last one.
-      if (boundedSelectedIndex >= displayOptions.length - 1) {
-        setSelectedIndex(0);
-        return;
-      }
-      setSelectedIndex((current) => current + 1);
+      setSelectedIndex((current) => {
+        const max = displayOptions.length - 1;
+        const bounded = Math.min(Math.max(0, current), max);
+        return bounded >= max ? 0 : bounded + 1;
+      });
       return;
     }
 
@@ -1673,11 +1676,11 @@ export function BrowseShell<T>({
         dispatchFocusZone({ type: "arrow-up" });
         return;
       }
-      if (boundedSelectedIndex === 0) {
-        setSelectedIndex(displayOptions.length - 1);
-        return;
-      }
-      setSelectedIndex((current) => current - 1);
+      setSelectedIndex((current) => {
+        const max = displayOptions.length - 1;
+        const bounded = Math.min(Math.max(0, current), max);
+        return bounded <= 0 ? max : bounded - 1;
+      });
       return;
     }
 

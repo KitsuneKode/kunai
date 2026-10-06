@@ -218,10 +218,17 @@ async function settleYtDlpProcess(options: {
   readonly stderrPromise: Promise<string>;
   readonly exitGraceMs: number;
 }): Promise<void> {
-  await Promise.race([
-    Promise.allSettled([options.stdoutPromise, options.stderrPromise, options.proc.exited]),
-    new Promise((resolve) => setTimeout(resolve, options.exitGraceMs)),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.allSettled([options.stdoutPromise, options.stderrPromise, options.proc.exited]),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, options.exitGraceMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 async function readStreamText(options: {

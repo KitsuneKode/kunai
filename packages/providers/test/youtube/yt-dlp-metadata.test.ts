@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+import type { YtDlpProcess } from "../../src/youtube/spawn-ytdlp";
 import {
   buildYtdlFormatSelector,
+  extractYtDlpVideoInfo,
   mapYtDlpFormatsToQualityLabels,
 } from "../../src/youtube/yt-dlp-metadata";
 
@@ -43,5 +45,38 @@ describe("mapYtDlpFormatsToQualityLabels", () => {
       { label: "1080p", rank: 1080, formatId: "1" },
       { label: "720p", rank: 720, formatId: "2" },
     ]);
+  });
+});
+
+describe("extractYtDlpVideoInfo argv", () => {
+  test("terminates options with -- before the provider-influenced watch URL", async () => {
+    const seen: string[][] = [];
+    const spawn = (command: readonly string[]): YtDlpProcess => {
+      seen.push([...command]);
+      const payload = new TextEncoder().encode(JSON.stringify({ id: "abc" }));
+      const stream = (bytes: Uint8Array) =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(bytes);
+            controller.close();
+          },
+        });
+      return {
+        stdout: stream(payload),
+        stderr: stream(new Uint8Array()),
+        exited: Promise.resolve(0),
+        kill: () => undefined,
+      };
+    };
+
+    // A watch URL shaped like a flag must not be parsed as yt-dlp options.
+    const hostile = "--dump-json";
+    await extractYtDlpVideoInfo(hostile, { spawn });
+    expect(seen).toHaveLength(1);
+    const argv = seen[0] ?? [];
+    // ["yt-dlp", ...flags, "--", url]
+    expect(argv[0]).toBe("yt-dlp");
+    expect(argv[argv.length - 2]).toBe("--");
+    expect(argv[argv.length - 1]).toBe(hostile);
   });
 });

@@ -144,7 +144,6 @@ function createManifest(
     cachePolicy: { ttlClass: "metadata", scope: "local", keyParts: [] },
     browserSafe: true,
     relaySafe: true,
-    status: "production",
     catalogIdentity,
   };
 }

@@ -30,3 +30,9 @@ test("registry allows only provider metadata hosts", () => {
 test("registry rejects hosts owned by another provider", () => {
   expect(registry.isHostAllowed("allanime", "https://miruro.bz/api", "metadata")).toBe(false);
 });
+
+test("registry fails closed on any non-metadata kind", () => {
+  expect(registry.isHostAllowed("allanime", "https://allanime.day/path", "media" as never)).toBe(
+    false,
+  );
+});

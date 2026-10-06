@@ -145,6 +145,50 @@ describe("stream health", () => {
     });
   });
 
+  test("resolve-gate retries a non-definitive probe once, preserving headers", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const result = await runStreamHealthCheck({
+      phase: "resolve-gate",
+      url: "https://cdn.example/video.mp4",
+      headers: { Referer: "https://provider.example/watch" },
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+        return new Response("", { status: calls.length >= 3 ? 200 : 500 });
+      },
+      cachedAt: Date.now(),
+      now: Date.now(),
+    });
+
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(
+      calls.every(
+        (call) =>
+          call.init.headers === undefined ||
+          // SAFETY: the stubbed fetch records whatever init the probe forwarded; headers is a plain object here.
+          (call.init.headers as Record<string, string>).Referer ===
+            "https://provider.example/watch",
+      ),
+    ).toBe(true);
+    expect(result.probe?.status).toBe("reachable");
+  });
+
+  test("resolve-gate does not retry a definitive refusal", async () => {
+    const calls: string[] = [];
+    const result = await runStreamHealthCheck({
+      phase: "resolve-gate",
+      url: "https://cdn.example/video.mp4",
+      fetchImpl: async (url) => {
+        calls.push(String(url));
+        return new Response("", { status: 404 });
+      },
+      cachedAt: Date.now(),
+      now: Date.now(),
+    });
+
+    expect(calls.length).toBe(1);
+    expect(result.probe?.status).toBe("unreachable");
+  });
+
   test("playback-preflight stays lenient on timeout", () => {
     expect(evaluateStreamHealth("playback-preflight", { status: "timeout" })).toBe(true);
     expect(evaluateStreamHealth("resolve-gate", { status: "timeout" })).toBe(true);

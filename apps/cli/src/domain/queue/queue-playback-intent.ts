@@ -13,7 +13,6 @@ export interface QueuePlaybackIntent {
   readonly season?: number;
   readonly episode?: number;
   readonly absoluteEpisode?: number;
-  readonly source: "queue" | "auto-next" | "post-play";
 }
 
 function normalizeMediaKind(mediaKind: string): QueuePlaybackIntent["mediaKind"] {
@@ -21,10 +20,7 @@ function normalizeMediaKind(mediaKind: string): QueuePlaybackIntent["mediaKind"]
   return "series";
 }
 
-export function queuePlaybackIntentFromEntry(
-  entry: QueueEntry,
-  source: QueuePlaybackIntent["source"],
-): QueuePlaybackIntent {
+export function queuePlaybackIntentFromEntry(entry: QueueEntry): QueuePlaybackIntent {
   return {
     queueEntryId: entry.id,
     titleId: entry.titleId,
@@ -34,6 +30,5 @@ export function queuePlaybackIntentFromEntry(
     season: entry.season,
     episode: entry.episode,
     absoluteEpisode: entry.absoluteEpisode,
-    source,
   };
 }

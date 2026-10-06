@@ -107,12 +107,45 @@ export function createProviderCycleFailureError(
   return new ProviderCycleFailureError(failure);
 }
 
+function failOpenEndpointHealth(port: EndpointHealthPort): EndpointHealthPort {
+  return {
+    shouldTry(providerId, endpoint) {
+      try {
+        return port.shouldTry(providerId, endpoint);
+      } catch {
+        // A broken health store must not quarantine live lanes.
+        return true;
+      }
+    },
+    recordSuccess(providerId, endpoint) {
+      try {
+        port.recordSuccess(providerId, endpoint);
+      } catch {
+        // Advisory evidence — a resolved stream is worth more than its record.
+      }
+    },
+    recordFailure(providerId, endpoint, info) {
+      try {
+        port.recordFailure(providerId, endpoint, info);
+      } catch {
+        // Advisory evidence — the cycle's own failure result stands alone.
+      }
+    },
+  };
+}
+
 export async function runProviderCycle<TResolved>(
   input: RunProviderCycleInput<TResolved>,
 ): Promise<ProviderCycleResult<TResolved>> {
   const now = input.now ?? (() => new Date().toISOString());
   const events: ProviderTraceEvent[] = [];
   const attempts: ProviderCycleAttempt[] = [];
+  // Endpoint health is advisory evidence, not a resolve dependency: a throwing
+  // port must never skip live lanes, discard a resolved stream, or crash the
+  // cycle. shouldTry fails open; record calls are best-effort.
+  const endpointHealth = input.endpointHealth
+    ? failOpenEndpointHealth(input.endpointHealth)
+    : undefined;
 
   const emit = (event: ProviderTraceEvent) => {
     events.push(event);
@@ -150,7 +183,7 @@ export async function runProviderCycle<TResolved>(
   const hedgeDelayMs = Math.max(0, input.hedgeDelayMs ?? 0);
   if (hedgeDelayMs > 0) {
     return runProviderCycleRaced({
-      input,
+      input: { ...input, endpointHealth },
       hedgeDelayMs,
       candidateTimeoutMs,
       now,
@@ -170,11 +203,7 @@ export async function runProviderCycle<TResolved>(
 
   for (const candidate of orderCycleCandidates(input.candidates)) {
     const endpoint = candidate.serverId;
-    if (
-      endpoint &&
-      input.endpointHealth &&
-      !input.endpointHealth.shouldTry(input.providerId, endpoint)
-    ) {
+    if (endpoint && endpointHealth && !endpointHealth.shouldTry(input.providerId, endpoint)) {
       skippedQuarantined += 1;
       emit(
         createCycleTraceEvent("source:skipped", candidate, now(), {
@@ -225,8 +254,8 @@ export async function runProviderCycle<TResolved>(
         emit(
           createCycleTraceEvent("source:success", candidate, endedAt, { attempt: attemptNumber }),
         );
-        if (endpoint && input.endpointHealth) {
-          input.endpointHealth.recordSuccess(input.providerId, endpoint);
+        if (endpoint && endpointHealth) {
+          endpointHealth.recordSuccess(input.providerId, endpoint);
         }
         return {
           selected,
@@ -250,10 +279,10 @@ export async function runProviderCycle<TResolved>(
           }),
         );
 
-        if (endpoint && input.endpointHealth) {
+        if (endpoint && endpointHealth) {
           const endpointFailureClass = classifyEndpointFailureFromCycleFailure(failure);
           if (endpointFailureClass) {
-            input.endpointHealth.recordFailure(input.providerId, endpoint, {
+            endpointHealth.recordFailure(input.providerId, endpoint, {
               class: endpointFailureClass,
               titleId: input.titleId,
               at: failure.at,

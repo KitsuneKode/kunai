@@ -582,11 +582,29 @@ export function RootOverlayShell({
   const [tracksFavorites, setTracksFavorites] = useState<readonly string[]>(
     overlay.type === "tracks_panel" ? overlay.favorites : EMPTY_TRACKS_FAVORITES,
   );
+  const [tracksFrozenUntil, setTracksFrozenUntil] = useState(0);
+  const tracksPanelGroups = overlay.type === "tracks_panel" ? overlay.groups : null;
+  useEffect(() => {
+    if (!tracksPanelGroups) return;
+    setTracksFrozenUntil(Date.now() + 300);
+    setTracksNav((prev) => {
+      const group = tracksPanelGroups[prev.sectionIndex];
+      const maxIndex = (group?.rows.length ?? 1) - 1;
+      if (prev.optionIndex > maxIndex && maxIndex >= 0) {
+        return { ...prev, optionIndex: maxIndex };
+      }
+      return prev;
+    });
+  }, [tracksPanelGroups]);
   const pickerFilterQuery = isRootMediaPickerOverlay(overlay)
     ? (overlay.filterQuery ?? "")
     : filterQuery;
   const pickerSelectedIndex = isRootMediaPickerOverlay(overlay)
-    ? (overlay.selectedIndex ?? (overlay.type === "episode_picker" ? overlay.initialIndex : 0) ?? 0)
+    ? (overlay.selectedIndex ??
+      (overlay.type === "episode_picker" || overlay.type === "season_picker"
+        ? overlay.initialIndex
+        : 0) ??
+      0)
     : selectedIndex;
   const filterEditor = useLineEditor({
     value: pickerFilterQuery,
@@ -851,7 +869,10 @@ export function RootOverlayShell({
           return;
         }
         if (action === "diagnostics") {
-          if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+          if (
+            (isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") &&
+            overlay.id
+          ) {
             container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
           }
           void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
@@ -873,7 +894,7 @@ export function RootOverlayShell({
                   : action === "settings" || action === "presence"
                     ? { type: "settings" as const }
                     : { type: action };
-        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+        if ((isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") && overlay.id) {
           container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
         }
         container.stateManager.dispatch({
@@ -884,7 +905,7 @@ export function RootOverlayShell({
       }
       if (action === "library") {
         const nextOverlay = { type: "library" as const, view: "library" as const };
-        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+        if ((isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") && overlay.id) {
           container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
         }
         container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
@@ -1445,6 +1466,9 @@ export function RootOverlayShell({
         return;
       }
       if (key.return) {
+        if (Date.now() < tracksFrozenUntil) {
+          return;
+        }
         if (tracksNav.focusedPane === "sections") {
           setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "enter-section" }, navCtx));
           return;
@@ -1453,7 +1477,11 @@ export function RootOverlayShell({
           focusedGroup?.section === "source"
             ? sortByFavorites(focusedGroup.rows, tracksFavorites, (r) => r.label)
             : (focusedGroup?.rows ?? []);
-        const row = sorted[tracksNav.optionIndex];
+        const safeOptionIndex = Math.min(
+          Math.max(0, tracksNav.optionIndex),
+          Math.max(0, sorted.length - 1),
+        );
+        const row = sorted[safeOptionIndex];
         if (!focusedGroup || !row) return;
         if (!row.enabled) {
           setOverlayStatus(
@@ -1462,7 +1490,6 @@ export function RootOverlayShell({
           );
           return;
         }
-        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
         container.stateManager.dispatch({
           type: "RESOLVE_PICKER",
           id: overlay.id,

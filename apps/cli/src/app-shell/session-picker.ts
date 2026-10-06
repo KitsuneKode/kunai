@@ -10,7 +10,11 @@ type PickerOverlayInputBase = {
 
 type PickerOverlayInput =
   | ({ readonly type: "subtitle_picker" } & PickerOverlayInputBase)
-  | ({ readonly type: "season_picker"; readonly currentSeason: number } & PickerOverlayInputBase)
+  | ({
+      readonly type: "season_picker";
+      readonly currentSeason: number;
+      readonly initialIndex?: number;
+    } & PickerOverlayInputBase)
   | ({
       readonly type: "episode_picker";
       readonly season: number;
@@ -27,6 +31,17 @@ export type SessionPickerOverlay = PickerModalOverlayState;
  * that don't know it fail safe: it decodes as no valid episode → cancel.
  */
 export const EPISODE_PICKER_SWITCH_SEASON = "__kunai:switch-season__";
+
+/**
+ * Decode a picker result value into an episode/season number. Reserved tokens
+ * (switch-season), empty strings, and non-numeric payloads are not episodes —
+ * they cancel instead of becoming NaN or episode 1 downstream.
+ */
+export function parsePickerValue(value: string | null | undefined): number | null {
+  if (!value || !/^-?\d+$/.test(value.trim())) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 let pickerSequence = 0;
 

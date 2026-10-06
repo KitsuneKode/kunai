@@ -70,7 +70,6 @@ const redirectProbeManifest = {
       "Content-Type": "application/json",
     },
   },
-  status: "candidate",
 } satisfies CoreProviderManifest;
 
 const redirectRegistry = buildProviderRelayRegistry([

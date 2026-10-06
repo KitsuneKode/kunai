@@ -11,6 +11,17 @@ interface ProviderEndpointHealthRow {
   readonly updated_at: string;
 }
 
+function parseStoredRecord(healthJson: string): ProviderEndpointHealthRecord | undefined {
+  try {
+    const parsed = providerEndpointHealthSchema.safeParse(JSON.parse(healthJson));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    // Endpoint health feeds quarantine checks on the resolve hot path — a
+    // poisoned row is a miss, never a crash.
+    return undefined;
+  }
+}
+
 export class ProviderEndpointHealthRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
@@ -53,9 +64,8 @@ export class ProviderEndpointHealthRepository {
       )
       .get(providerId, endpoint);
 
-    return row === null
-      ? undefined
-      : providerEndpointHealthSchema.parse(JSON.parse(row.health_json));
+    if (row === null) return undefined;
+    return parseStoredRecord(row.health_json);
   }
 
   list(): ProviderEndpointHealthRecord[] {
@@ -68,7 +78,12 @@ export class ProviderEndpointHealthRepository {
         `,
       )
       .all();
-    return rows.map((row) => providerEndpointHealthSchema.parse(JSON.parse(row.health_json)));
+    const records: ProviderEndpointHealthRecord[] = [];
+    for (const row of rows) {
+      const parsed = parseStoredRecord(row.health_json);
+      if (parsed) records.push(parsed);
+    }
+    return records;
   }
 
   isQuarantined(providerId: ProviderId, endpoint: string, nowIso: string): boolean {

@@ -215,4 +215,64 @@ describe("BackgroundWorkScheduler", () => {
     ).toBe(false);
     expect(scheduler.pendingCount()).toBe(0);
   });
+
+  test("sheds the lowest-priority oldest item past the queue bound", async () => {
+    const shed: Array<Record<string, unknown>> = [];
+    const scheduler = new BackgroundWorkScheduler({
+      maxConcurrent: 1,
+      maxQueued: 2,
+      diagnostics: {
+        record: (event) => {
+          shed.push(event as Record<string, unknown>);
+        },
+      },
+    });
+    const ran: string[] = [];
+    const work = (id: string, lane: BackgroundWorkLane) => ({
+      id,
+      lane,
+      run: async () => {
+        ran.push(id);
+      },
+    });
+
+    expect(scheduler.enqueue(work("warm-1", "recommendation-warm"))).toBe(true);
+    expect(scheduler.enqueue(work("warm-2", "recommendation-warm"))).toBe(true);
+    // Full: the playback-critical item evicts the oldest low-value item.
+    expect(scheduler.enqueue(work("critical", "playback-critical"))).toBe(true);
+    expect(scheduler.pendingCount()).toBe(2);
+
+    await scheduler.drain();
+    expect(ran).toEqual(["critical", "warm-2"]);
+    expect(
+      shed.some(
+        (event) =>
+          event.operation === "background.work.shed" &&
+          (event.context as { shedId?: string } | undefined)?.shedId === "warm-1",
+      ),
+    ).toBe(true);
+  });
+
+  test("same-id re-enqueue coalesces instead of counting toward the bound", async () => {
+    const scheduler = new BackgroundWorkScheduler({ maxConcurrent: 1, maxQueued: 1 });
+    const ran: string[] = [];
+    scheduler.enqueue({
+      id: "prefetch",
+      lane: "next-episode-prefetch",
+      run: async () => {
+        ran.push("stale");
+      },
+    });
+    scheduler.enqueue({
+      id: "prefetch",
+      lane: "next-episode-prefetch",
+      run: async () => {
+        ran.push("fresh");
+      },
+    });
+
+    expect(scheduler.pendingCount()).toBe(1);
+    await scheduler.drain();
+    expect(ran).toEqual(["fresh"]);
+  });
 });

@@ -66,10 +66,6 @@ export const hianimeManifest = defineProviderManifest({
     // (ZokoAnime is the only resolved server), so they stay out.
     upstreamHosts: ["hianime.at", "zokoanime.video", "aniwatchtv.uk"],
   },
-  // Production since it became the anime lane default (providerDefaultsRevision
-  // 3): it is the configured provider search hits first, so it cannot wear the
-  // `· candidate` marker.
-  status: "production",
   notes: [
     "Parity with ani-cli v5.1.4: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
     "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",

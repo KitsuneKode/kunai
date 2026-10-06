@@ -1,3 +1,5 @@
+import { StringDecoder } from "node:string_decoder";
+
 import type { MpvIpcEndpoint } from "./mpv-ipc-endpoint";
 
 export const MPV_OBSERVED_PROPERTIES = [
@@ -121,10 +123,12 @@ export function parseMpvIpcLine(raw: string): MpvIpcMessage | null {
 export async function waitForMpvIpcEndpoint(
   endpoint: MpvIpcEndpoint,
   timeoutMs = 3_000,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   let delay = 10;
   while (Date.now() < deadline) {
+    if (signal?.aborted) return false;
     try {
       const s = await Bun.connect<SocketState>({
         unix: endpoint.path,
@@ -143,6 +147,7 @@ export async function waitForMpvIpcEndpoint(
     } catch {
       // Pipe/socket not ready yet — retry after backoff.
     }
+    if (signal?.aborted) return false;
     await Bun.sleep(delay);
     delay = Math.min(delay * 2, 100);
   }
@@ -168,6 +173,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
   let closed = false;
   let closePromise: Promise<void> | null = null;
   let bufferValue = "";
+  const decoder = new StringDecoder("utf8");
 
   const drainPending = (error: string) => {
     for (const [requestId, pending] of Array.from(pendingCommands)) {
@@ -190,7 +196,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
       open() {},
       data(_socket, data) {
         if (closed) return;
-        bufferValue += data.toString();
+        bufferValue += decoder.write(data);
         let nl = bufferValue.indexOf("\n");
         while (nl !== -1) {
           const line = bufferValue.slice(0, nl);
@@ -388,14 +394,11 @@ function dispatchMessage(
     return;
   }
 
-  if (
-    typeof message.request_id === "number" &&
-    requestIds.has(message.request_id) &&
-    message.error === "success"
-  ) {
+  if (typeof message.request_id === "number" && requestIds.has(message.request_id)) {
     const name = requestIds.get(message.request_id);
-    if (!name) return;
     requestIds.delete(message.request_id);
-    onPropertyUpdate({ name, value: message.data, observedAt });
+    if (name && message.error === "success") {
+      onPropertyUpdate({ name, value: message.data, observedAt });
+    }
   }
 }

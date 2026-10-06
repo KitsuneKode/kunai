@@ -47,12 +47,12 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
 
     const steps: ExitStep[] = ["footer-gone", "fox", "closing", "done"];
     steps.forEach((s) => {
-      timers.push(
-        setTimeout(() => {
-          setStep(s);
-          if (s === "done") onDone();
-        }, timings[s]),
-      );
+      const timer = setTimeout(() => {
+        setStep(s);
+        if (s === "done") onDone();
+      }, timings[s]);
+      timer.unref?.();
+      timers.push(timer);
     });
 
     return () => timers.forEach(clearTimeout);

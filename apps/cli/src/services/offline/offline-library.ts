@@ -14,7 +14,6 @@ export type OfflineLibraryEntry = {
 
 export type OfflineArtworkPolicy = {
   readonly networkAvailable?: boolean;
-  readonly artworkPreviewsEnabled?: boolean;
   readonly allowRemoteArtwork?: boolean;
 };
 
@@ -212,7 +211,7 @@ export function formatOfflineShelfDetail(
     job.subtitlePath ? "subtitles cached" : "no subtitles cached",
     formatDownloadSidecarNote(job),
     job.introSkipJson ? "timing cached" : null,
-    job.thumbnailPath ? "thumbnail ready" : job.posterUrl ? "poster cached" : null,
+    job.thumbnailPath ? "thumbnail ready" : job.posterUrl ? "poster linked" : null,
     status === "ready" ? basename(dirname(job.outputPath)) : offlineStatusLabel(status),
   ].filter(Boolean);
   return parts.join(" · ");
@@ -264,12 +263,9 @@ function resolveOfflinePreviewImage(
   );
 }
 
-function canUseRemoteArtwork(policy: OfflineArtworkPolicy): boolean {
+export function canUseRemoteArtwork(policy: OfflineArtworkPolicy): boolean {
   if (policy.allowRemoteArtwork === false) return false;
-  return (
-    policy.allowRemoteArtwork === true ||
-    (policy.networkAvailable === true && policy.artworkPreviewsEnabled !== false)
-  );
+  return policy.allowRemoteArtwork === true || policy.networkAvailable === true;
 }
 
 export function offlineStatusIcon(status: OfflineArtifactStatus): string {

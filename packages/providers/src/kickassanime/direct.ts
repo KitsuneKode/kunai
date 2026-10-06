@@ -27,6 +27,7 @@ import { formatAnimeSourceDetail } from "../shared/anime-source-presentation";
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { parseHlsMasterAudioRenditions, type HlsAudioRendition } from "../shared/hls-ladder";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   createSourceCandidateFromStream,
@@ -57,7 +58,7 @@ const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 /** The only server whose stream played end to end; see the manifest notes. */
-const PLAYABLE_SERVERS = new Set(["VidStreaming"]);
+const PLAYABLE_SERVERS = new Set(["VidStreaming", "CatStream"]);
 
 const SUB_LOCALE = "ja-JP";
 const DUB_LOCALE = "en-US";
@@ -192,10 +193,18 @@ async function fetchMasterPlaylist(
       headers,
       signal: directStreamFetchSignal(context.signal, KAA_FETCH_TIMEOUT_MS),
     });
-    return response.ok ? await response.text() : null;
-  } catch {
-    // A master this adapter cannot read is not a dead stream: mpv fetches it
-    // again itself. Only the audio naming is lost, so the sub label stands.
+    if (!response.ok) return null;
+    const body = await response.text();
+    // A 204 or an HTML error page is not a readable manifest — returning null
+    // hands the ship decision to the gate probe instead of skipping it.
+    return body.includes("#EXTM3U") ? body : null;
+  } catch (error) {
+    // An abort is not an unreadable manifest — swallowing it lets the gate
+    // probe an already-dead signal and ship a stream on a cancelled resolve.
+    if (context.signal?.aborted) throw error;
+    // A master this adapter cannot read is not yet a dead stream: the caller
+    // gates the shipped URL on `null`, and only the audio naming is lost when
+    // that probe passes. Returning null — not throwing — keeps those distinct.
     return null;
   }
 }
@@ -387,6 +396,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
         { cachePolicy, events, startedAt },
       );
 
+    if (context.signal?.aborted) return fail("cancelled", "resolve cancelled");
     if (input.mediaKind !== "anime")
       return fail("unsupported-title", "KickAssAnime only supports anime");
     let slug: string | null;
@@ -457,6 +467,23 @@ export const kickassanimeProviderModule: CoreProviderModule = {
 
     const headers = kaaStreamHeaders(server.src);
     const master = await fetchMasterPlaylist(context, player.manifest, headers);
+    if (master === null) {
+      // The adapter could not read the manifest but would still ship that URL —
+      // mpv retries the identical request. A definitive gate refusal is proof
+      // the manifest host is dead; a timeout or non-definitive answer is not,
+      // which keeps the old "mpv fetches it again" leniency.
+      const verdict = await verifyCandidateStream({
+        stream: { url: player.manifest, headers },
+        context,
+        signal: context.signal,
+      });
+      if (!verdict.accepted) {
+        // Retryable on purpose, unlike the sibling not-founds above: a re-resolve
+        // re-fetches the player page and mints a fresh signed manifest URL, so a
+        // refusal caused by a stale signature genuinely can succeed next try.
+        return fail("not-found", `KickAssAnime manifest is unreachable (${verdict.reason})`, true);
+      }
+    }
     const selected = selectKaaAudio(
       master ? parseHlsMasterAudioRenditions(master) : [],
       audio.catalogMode,

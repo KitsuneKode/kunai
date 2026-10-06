@@ -1,8 +1,8 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "48edf6e3f51c283b713dc69d37366517415102b8911d6136f51932b8db757a04",
-  "docsContentFingerprint": "e52f440d8da5414140ae320e1ee8a17250dc5c018723db2e1a1b1b4ae95cfd2f",
+  "cliSourceFingerprint": "89f903c2a415aa32f9027e5058c348d3036b593e91a2118f628ef4f28ee1264e",
+  "docsContentFingerprint": "e6621e73e6c3a9fd2239fada1d2440c4b85fcb01b6549be9cb58896d2cf690a4",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
   "providerIds": [
@@ -28,7 +28,6 @@
       "recommended": false,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
-      "status": "active",
       "notes": [
         "2026-07-16: active stream API is api.speedracelight.com (player.videasy.to / cineby.at).",
         "2026-08-26: the api.wingsdatabase.com seed mirror was removed — NXDOMAIN on public resolvers; the surviving apex does not serve /seed. db.wingsdatabase.com still resolves and stays listed.",
@@ -50,7 +49,6 @@
       "recommended": true,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked"],
-      "status": "active",
       "notes": [
         "Browserless: TMDB id is encrypted via enc-dec.app, then sources are fetched from vidlink.pro/api/b.",
         "Returns a multi-quality HLS playlist (mpv selects the rendition) plus provider subtitles.",
@@ -65,7 +63,6 @@
       "recommended": false,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "multi-source", "quality-ranked"],
-      "status": "active",
       "notes": [
         "Browserless fallback: GET vidrock.net/api/{movie|tv}/… returns a map of",
         "server lanes whose url fields are AES-256-GCM ciphertexts; each decrypts",
@@ -78,12 +75,11 @@
     {
       "id": "rivestream",
       "displayName": "Rivestream",
-      "description": "Candidate movies/series adapter; quality varies by title",
+      "description": "Mirror-aggregator for movies/series; coverage varies by title",
       "domain": "rivestream.app",
       "recommended": true,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
-      "status": "candidate",
       "notes": ["Bypasses Playwright entirely by generating the 32-bit MurmurHash signature natively in Node.js."]
     },
     {
@@ -94,7 +90,6 @@
       "recommended": false,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked", "multi-source"],
-      "status": "candidate",
       "notes": [
         "Browserless: TMDB id gets a short-lived seed from api.wecollege.net/seed, then each named lane (atlanta, denver, miami, …) answers an encrypted `/{lane}/sources` payload that the client XOR-decrypts into {sources, subtitles}.",
         "Each lane is a distinct upstream scraper (stillhaven, vidzy, workers.dev proxies, multi-language mirrors); lanes surface as individual sources so server switching and fallback cycling apply per lane.",
@@ -110,7 +105,6 @@
       "recommended": true,
       "mediaKinds": ["anime"],
       "capabilities": ["search", "episode-list", "source-resolve", "quality-ranked"],
-      "status": "active",
       "notes": [
         "Parity with ani-cli v5.0 (2026-08-01): browse search, /api/frontend anime episodes + episode languages, embed → HLS master.",
         "Episode metadata follows the explicit anidb.app → official anidb.net AID cross-link, then reads official XML; AniList/Jikan fill missing fields and still artwork.",
@@ -128,7 +122,6 @@
       "recommended": false,
       "mediaKinds": ["anime"],
       "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
-      "status": "active",
       "notes": [
         "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
         "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
@@ -151,7 +144,6 @@
         "multi-source",
         "quality-ranked"
       ],
-      "status": "production",
       "notes": [
         "Parity with ani-cli v5.1.4: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
         "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
@@ -176,7 +168,6 @@
         "multi-source",
         "quality-ranked"
       ],
-      "status": "active",
       "notes": [
         "2026-07-16: Browser network on www.miruro.bz/watch/{anilistId}/... uses GET /api/secure/pipe?e=… (200 plain + x-obfuscated). HLS on vault*.ultracloud / owocdn with stream.referer https://kwik.cx/.",
         "Bun fetch often gets CF 403 HTML on pipe; production path falls back to curl --http2 with browser headers (dossier-proven on this machine).",
@@ -202,7 +193,6 @@
       "recommended": true,
       "mediaKinds": ["anime"],
       "capabilities": ["search", "episode-list", "source-resolve", "quality-ranked"],
-      "status": "active",
       "notes": [
         "2026-09-11: added as the anime lane's independent second source. Its value is what it does NOT share with Miruro: its own catalog (provider-native slugs, no AniList), its own site, its own CDN. Miruro reaches AnimeGG too, as its `moo` server — but only through miruro.bz, so it dies with Miruro. This adapter does not.",
         "Four plain HTML documents, no JavaScript and no crypto: /search/?q= -> /series/<slug> -> /<slug>-episode-<n> -> /embed/<id>, which carries `var videoSources = [{file, label}]` of direct MP4s.",
@@ -223,7 +213,6 @@
       "recommended": true,
       "mediaKinds": ["anime"],
       "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
-      "status": "active",
       "notes": [
         "2026-09-11: added as a second anime source independent of Miruro, and the only one that ships subtitles as separate tracks rather than burned in.",
         "Catalog is a plain JSON API: POST /api/fsearch {query, page}; GET /api/show/<slug>/episodes?ep=<page>&lang=<locale>; GET /api/show/<slug>/episode/ep-<n>-<epSlug> -> servers. Locales: ja-JP is sub, en-US is dub; dub coverage is often partial (Naruto: 2 of 220).",
@@ -232,7 +221,7 @@
         "mpv applies the stream's referer and Origin to --sub-file / sub-add requests too, so subtitles load with no per-track headers (verified: sid=1 external webvtt).",
         "Sub and dub are usually ONE file: the master carries a dub per audio rendition (Frieren ships nine, Japanese marked DEFAULT), so both locales hand back the same manifest id. The track is mpv's to choose via --alang, which is why `selectKaaAudio` reads the rendition group instead of trusting the locale — and why Kunai's audio setting had to stop reaching mpv as the literal `dub`, which matched no track and played Japanese.",
         "The variant playlists are video-only (the audio lives in the rendition group), so the ladder is never expanded into per-quality URLs — mpv gets the master and picks. That is also why qualityRank is 0 rather than an invented height.",
-        "Only VidStreaming (HLS) is used. BirdStream serves DASH with many subtitle languages, but its manifest answered 404 for the title tested; the doubled slash in its URL (https:////bl.krussdomi.com) is normalized if it is ever enabled.",
+        "Only the HLS lanes are used: the servers list rotated VidStreaming to CatStream on the same cat-player page (2026-10-04), and both names stay playable. BirdStream serves DASH with many subtitle languages, but its manifest answered 404 for the title tested; the doubled slash in its URL (https:////bl.krussdomi.com) is normalized if it is ever enabled. CatStream's manifest now arrives protocol-relative (//bl.krussdomi.com/…), pinned to https by the same normalizer.",
         "The domain rotates (kaa.to -> kaa.mx -> kickass-anime.ro -> kaa.lt). kickass-anime.ro still 301s to the current one and is asked when kaa.lt stops answering at connection level. Its redirect is read by hand (redirect: manual) and accepted only for an https `kaa.<tld>` / `kickass-anime.<tld>` host: an old alias can lapse and be bought, and following it blindly would hand the new owner the API base and every stream URL behind it."
       ]
     },
@@ -244,7 +233,6 @@
       "recommended": true,
       "mediaKinds": ["video"],
       "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
-      "status": "production",
       "notes": ["Metadata via Invidious/Piped; playback via youtube.com watch URLs and mpv ytdl."]
     }
   ],

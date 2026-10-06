@@ -575,11 +575,7 @@ export async function runPostPlaybackMenu(
       }
       if (postAction.type === "play-queue-entry") {
         // Claim the exact advertised id — do not substitute a reordered peekNext head.
-        const launch = claimQueuePlaybackLaunch(
-          container.queueService,
-          postAction.queueEntryId,
-          "post-play",
-        );
+        const launch = claimQueuePlaybackLaunch(container.queueService, postAction.queueEntryId);
         if (!launch) {
           container.logger.info("Post-play queue claim failed; leaving row pending for retry", {
             queueEntryId: postAction.queueEntryId,
