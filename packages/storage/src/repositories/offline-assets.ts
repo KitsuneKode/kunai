@@ -103,6 +103,10 @@ export class OfflineAssetsRepository {
   upsertPlayable(input: OfflineAssetInput): OfflineAssetRecord {
     const identityKey = createOfflineAssetIdentityKey(input);
     const existing = this.getByIdentityKey(identityKey);
+    // Identical input must not write: the library screen re-adopts every
+    // completed job on every open, and an unconditional UPSERT is one
+    // autocommitted WAL write — an fsync — per job, on a read path.
+    if (existing && offlineAssetMatchesInput(existing, input)) return existing;
     const id = existing?.id ?? crypto.randomUUID();
     const createdAt = existing?.createdAt ?? input.updatedAt;
     const protectedValue = input.protected ?? existing?.protected ?? false;
@@ -390,6 +394,27 @@ export function createOfflineAssetIdentityKey(
     parts.push(encodeProviderEpisodeIdentity(input.providerEpisodeIdentity));
   }
   return parts.join(":");
+}
+
+/**
+ * Whether the stored row already equals what `upsertPlayable` would write.
+ * Only the columns ON CONFLICT actually replaces are compared — identity-key
+ * collision already proves the keyed fields equal, and `protected` falls back
+ * to the stored value when the input omits it.
+ */
+function offlineAssetMatchesInput(record: OfflineAssetRecord, input: OfflineAssetInput): boolean {
+  return (
+    record.titleName === input.titleName &&
+    (record.originJobId ?? null) === (input.originJobId ?? null) &&
+    record.filePath === input.filePath &&
+    record.state === input.state &&
+    (record.byteSize ?? null) === (input.byteSize ?? null) &&
+    (record.durationMs ?? null) === (input.durationMs ?? null) &&
+    (record.timingJson ?? null) === (input.timingJson ?? null) &&
+    (record.lastValidatedAt ?? null) === (input.lastValidatedAt ?? null) &&
+    record.protected === (input.protected ?? record.protected) &&
+    record.updatedAt === input.updatedAt
+  );
 }
 
 function mapAssetRow(row: OfflineAssetRow): OfflineAssetRecord {

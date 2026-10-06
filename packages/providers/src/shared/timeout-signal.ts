@@ -28,6 +28,29 @@ export function combineAbortSignals(signals: readonly AbortSignal[]): AbortSigna
   return combineAbortSignalsManually(signals);
 }
 
+/**
+ * A wait that ends early when the caller's signal aborts — never resolves
+ * *after* the deadline, only before. A bare `setTimeout` retry makes a cancel
+ * wait out the full delay; here the abort listener clears the timer and frees
+ * the loop immediately.
+ */
+export function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal || ms <= 0) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(ms, 0)));
+  }
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    const onAbort = () => finish();
+    const timer = setTimeout(finish, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /** Manual combine used when `AbortSignal.any` is unavailable. Exported for tests. */
 export function combineAbortSignalsManually(signals: readonly AbortSignal[]): AbortSignal {
   const controller = new AbortController();

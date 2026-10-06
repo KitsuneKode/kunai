@@ -797,6 +797,18 @@ export const dataMigrations: readonly Migration[] = [
         ON offline_assets(origin_job_id);
     `,
   },
+  {
+    id: "042_data_history_title_aliases_alias_index",
+    database: "data",
+    sql: `
+      -- lookupTitleIdByAliasId probes alias_id alone for every history
+      -- identity lookup, but the PK is (alias_ns, alias_id) and the only
+      -- secondary index was on title_id — every probe was a full scan of the
+      -- alias table. A dedicated alias_id index turns those probes into seeks.
+      CREATE INDEX IF NOT EXISTS idx_history_title_aliases_alias
+        ON history_title_aliases(alias_id);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

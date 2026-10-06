@@ -38,7 +38,7 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * and literal ranges, no DNS — so an injected fetch sees no extra microtask.
  * `resolvedAddressBlockReason` adds DNS answer validation for the real path.
  */
-function blockedLiteralTargetReason(url: string): string | null {
+export function blockedLiteralTargetReason(url: string): string | null {
   let parsed: URL;
   try {
     parsed = new URL(url);
