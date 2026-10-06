@@ -334,7 +334,7 @@ export class ConfigServiceImpl implements ConfigService {
       migratedAnimeDefaults ||
       migratedSeriesDefaults
     ) {
-      await service.persistConfig(service.config);
+      await service.persistConfig();
       service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
     }
     return service;
@@ -347,7 +347,29 @@ export class ConfigServiceImpl implements ConfigService {
    * any vault failure we fall through to the unscrubbed write so the value is
    * never lost to a failed migration.
    */
-  private async persistConfig(config: KitsuneConfig): Promise<void> {
+  /**
+   * Serializes config.json writes. A persist's `await store.load()` yields the
+   * loop, so two overlapping persists can each merge over a snapshot missing
+   * the other's write — the last one to land reverts it, and its dirty keys
+   * were already cleared. Chaining makes every write read the file the
+   * previous write left behind.
+   */
+  private persistChain: Promise<void> = Promise.resolve();
+
+  private persistConfig(): Promise<void> {
+    const run = this.persistChain.then(() => this.persistConfigNow());
+    this.persistChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async persistConfigNow(): Promise<void> {
+    // Read the live config when the write actually runs — a chained persist
+    // executes after any updates queued behind it, and a stale snapshot here
+    // would write old values for keys it then clears from dirtyKeys.
+    const config = this.config;
     // When this process has updated keys, write per-key over the CURRENT file
     // rather than our loaded-at-boot snapshot. The merge window shrinks a
     // lost-update race from the session's lifetime to one read→write pair; a
@@ -901,7 +923,7 @@ export class ConfigServiceImpl implements ConfigService {
     this.saveInFlight = pending;
     void (async () => {
       try {
-        await this.persistConfig(this.config);
+        await this.persistConfig();
         resolve?.();
       } catch (error) {
         reject?.(error instanceof Error ? error : String(error));
@@ -919,7 +941,7 @@ export class ConfigServiceImpl implements ConfigService {
     for (const key of Object.keys(DEFAULT_CONFIG) as (keyof KitsuneConfig)[]) {
       this.dirtyKeys.add(key);
     }
-    await this.persistConfig(this.config);
+    await this.persistConfig();
   }
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
-import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
+import { DEFAULT_CONFIG, type KitsuneConfig } from "@/services/persistence/ConfigStore";
 
 function createCountingStore() {
   let saves = 0;
@@ -86,8 +86,10 @@ describe("ConfigService.save debounce", () => {
 
     const pending = service.save();
     // Stands in for the debounce timer firing: the write starts and
-    // `savePending` is cleared.
+    // `savePending` is cleared. The persist chain defers the store call by a
+    // microtask, so drain once before expecting the write to be in flight.
     const started = service.flushPending();
+    await drainMicrotasks();
     expect(saves).toBe(1);
 
     let lateFlushSettled = false;
@@ -127,10 +129,61 @@ describe("ConfigService.save debounce", () => {
       () => null,
       (error: unknown) => error as Error,
     );
+    await drainMicrotasks();
     rejectSave(new Error("disk full"));
 
     expect((await saved)?.message).toBe("disk full");
     expect((await flushed)?.message).toBe("disk full");
+  });
+
+  test("a save started mid-persist is not reverted by the first write's stale merge", async () => {
+    // persist() merges dirty keys over a fresh store.load(). Unchained, a
+    // second persist starting during that await merges over a snapshot that
+    // predates the first write — and lands last, reverting it on disk.
+    let nextLoadGate: Promise<void> | null = null;
+    let onDisk: KitsuneConfig = { ...DEFAULT_CONFIG };
+    const store = {
+      load: () => {
+        // Snapshot at call time — a real read can race a concurrent write and
+        // return the pre-write bytes, which is exactly the hazard under test.
+        const read = { ...onDisk };
+        const gate = nextLoadGate ?? Promise.resolve();
+        nextLoadGate = null;
+        return gate.then(() => read);
+      },
+      save: (doc: KitsuneConfig) => {
+        onDisk = { ...doc };
+        return Promise.resolve();
+      },
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+
+    // Boot may load more than once (read + migration merge-back), so arm the
+    // gate after the service exists, not by call index.
+    let releaseFirstPersistLoad!: () => void;
+    nextLoadGate = new Promise<void>((resolve) => {
+      releaseFirstPersistLoad = resolve;
+    });
+    await service.update({ provider: "allanime" });
+    const firstSave = service.save();
+    const firstFlush = service.flushPending();
+    await drainMicrotasks();
+
+    // Persist A is parked inside store.load(); persist B writes past it.
+    // Both values are deliberately non-default — a revert to the pre-A
+    // snapshot is only observable when the default does not hide it.
+    await service.update({ downloadsEnabled: true });
+    const secondSave = service.save();
+    const secondFlush = service.flushPending();
+    await drainMicrotasks();
+
+    releaseFirstPersistLoad();
+    await Promise.all([firstSave, firstFlush, secondSave, secondFlush]);
+
+    // Whatever order the merges run in, both updates must survive to disk.
+    expect(onDisk.provider).toBe("allanime");
+    expect(onDisk.downloadsEnabled).toBe(true);
   });
 
   test("a synchronous store throw does not strand the in-flight handle", async () => {
