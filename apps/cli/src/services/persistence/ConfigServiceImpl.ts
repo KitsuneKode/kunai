@@ -360,7 +360,7 @@ export class ConfigServiceImpl implements ConfigService {
         const onDisk = await this.store.load();
         const dirtySubset: Partial<KitsuneConfig> = {};
         for (const key of writtenKeys) {
-          (dirtySubset as Record<string, unknown>)[key] = config[key];
+          Object.assign(dirtySubset, { [key]: config[key] });
         }
         toWrite = { ...DEFAULT_CONFIG, ...onDisk, ...dirtySubset };
       } catch {
@@ -915,6 +915,7 @@ export class ConfigServiceImpl implements ConfigService {
   async reset(): Promise<void> {
     this.config = { ...DEFAULT_CONFIG };
     // Reset must write every key, not just session-dirty ones.
+    // SAFETY: Object.keys of DEFAULT_CONFIG only yields KitsuneConfig keys.
     for (const key of Object.keys(DEFAULT_CONFIG) as (keyof KitsuneConfig)[]) {
       this.dirtyKeys.add(key);
     }

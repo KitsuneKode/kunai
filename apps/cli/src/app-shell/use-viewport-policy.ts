@@ -50,8 +50,8 @@ export function shouldSettleViewportImmediately(
 export type ResizeSource = {
   readonly columns?: number;
   readonly rows?: number;
-  on(event: "resize", listener: () => void): unknown;
-  off(event: "resize", listener: () => void): unknown;
+  on(event: "resize", listener: () => void): void;
+  off(event: "resize", listener: () => void): void;
 };
 
 type ResizeSubscriber = (next: ViewportDimensions) => void;
