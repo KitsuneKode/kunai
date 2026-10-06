@@ -239,10 +239,10 @@ async function staleTrackSelectionReason(
 export function matchTrackSelectionAgainstInventory(
   selection: StreamSelectionIntent,
   inventory: {
-    readonly streams: readonly { readonly id: string; readonly sourceId?: string }[];
+    readonly streams?: readonly { readonly id: string; readonly sourceId?: string }[];
   } | null,
 ): string | null {
-  if (!inventory) return null;
+  if (!inventory || !Array.isArray(inventory.streams)) return null;
   if (
     selection.streamId &&
     !inventory.streams.some((candidate) => candidate.id === selection.streamId)
