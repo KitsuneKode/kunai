@@ -40,6 +40,7 @@ export interface SyncReconciliationOptions {
 const DEFAULT_BATCH_SIZE = 25;
 const DEFAULT_MAX_ROWS = 250;
 const DEFAULT_TIME_BUDGET_MS = 250;
+const CORRUPT_ATTEMPT_RECHECK_MS = 30_000;
 
 /**
  * Project tracker-neutral local mutation facts into consent-gated outbox rows.
@@ -62,6 +63,9 @@ export async function reconcileSyncMutations(
     : deps.syncService.lifetimeSignal;
   if (signal.aborted) return { processed: 0, queued: 0, retained: 0 };
   const startedAt = now();
+  // Rows whose payload can never map out have no path forward — drop them up
+  // front so listDue sees a clean queue instead of wedging on the poisoned row.
+  deps.syncReconciliationRepository.purgeUnprojectable();
   const snapshot = deps.syncReconciliationRepository.listDue(wallNow(), maxRows + 1);
   const records = snapshot.slice(0, maxRows);
   let needsContinuation = snapshot.length > maxRows;
@@ -152,7 +156,13 @@ export async function reconcileSyncMutations(
       const nextAttemptAt = deps.syncReconciliationRepository.nextAttemptAt();
       if (nextAttemptAt) {
         needsContinuation = true;
-        continuationDelayMs = Math.max(1, Date.parse(nextAttemptAt) - currentWallTime.getTime());
+        const wakeAt = Date.parse(nextAttemptAt);
+        // A poisoned timestamp parses to NaN; Math.max(1, NaN) is NaN and
+        // setTimeout(NaN) fires immediately — a silent tight loop. Recheck on
+        // a bounded cadence instead.
+        continuationDelayMs = Number.isFinite(wakeAt)
+          ? Math.max(1, wakeAt - currentWallTime.getTime())
+          : CORRUPT_ATTEMPT_RECHECK_MS;
       }
     }
   }

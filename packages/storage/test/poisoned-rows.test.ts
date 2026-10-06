@@ -1,11 +1,14 @@
 import { afterEach, expect, test } from "bun:test";
 
 import {
+  DiagnosticEventsRepository,
   ProviderEndpointHealthRepository,
   ProviderHealthRepository,
   ResolveTraceRepository,
   SourceInventoryRepository,
   StreamCacheRepository,
+  SyncOutboxRepository,
+  SyncReconciliationRepository,
 } from "../src/index";
 import { createTempStoreRegistry } from "./helpers/temp-store";
 
@@ -160,4 +163,115 @@ test("source inventory: a poisoned row is evicted and treated as a miss", () => 
     .all()
     .map((row) => row.inventory_key);
   expect(remaining).toEqual(["good-key"]);
+});
+
+test("sync outbox: a poisoned payload_json claims as undefined instead of wedging the queue", () => {
+  const db = stores.store("poison-sync-outbox", "data");
+  const repo = new SyncOutboxRepository(db);
+  repo.enqueue(
+    {
+      trackerId: "anilist",
+      dedupeKey: "good-intent",
+      payload: { kind: "list:add", item: { titleId: "tmdb:1" } },
+    },
+    new Date(NOW),
+  );
+  db.query(
+    `INSERT INTO sync_outbox
+       (id, tracker_id, dedupe_key, payload_json, generation, attempts, state,
+        next_attempt_at, created_at, updated_at)
+     VALUES ('poison-row', 'anilist', 'poisoned', 'not json{', 1, 0, 'pending', ?, ?, ?)`,
+  ).run(NOW, NOW, NOW);
+  // Valid JSON that is not an object answers NULL to every json_extract term —
+  // it used to suppress the upsert and silently drop fresh intent.
+  db.query(
+    `INSERT INTO sync_outbox
+       (id, tracker_id, dedupe_key, payload_json, generation, attempts, state,
+        next_attempt_at, created_at, updated_at)
+     VALUES ('scalar-row', 'tmdb', 'scalar', '5', 1, 0, 'pending', ?, ?, ?)`,
+  ).run(NOW, NOW, NOW);
+
+  const claims = repo.claimDue(10, new Date("2026-08-16T00:01:00.000Z"));
+  expect(claims.map((c) => c.dedupeKey).sort()).toEqual(["good-intent", "poisoned", "scalar"]);
+  const poisoned = claims.find((c) => c.dedupeKey === "poisoned");
+  expect(poisoned?.payload).toBeUndefined();
+  expect(claims.find((c) => c.dedupeKey === "good-intent")?.payload).toEqual({
+    kind: "list:add",
+    item: { titleId: "tmdb:1" },
+  });
+});
+
+test("sync outbox: enqueue supersedes a stored row whose payload cannot answer the comparison", () => {
+  const db = stores.store("poison-sync-outbox-enqueue", "data");
+  const repo = new SyncOutboxRepository(db);
+  const next = { kind: "progress:set", progress: 4, status: "watching" };
+
+  for (const [dedupeKey, payloadJson] of [
+    ["was-malformed", "not json{"],
+    ["was-scalar", "5"],
+    ["was-array", "[1,2]"],
+  ] as const) {
+    db.query(
+      `INSERT INTO sync_outbox
+         (id, tracker_id, dedupe_key, payload_json, generation, attempts, state,
+          next_attempt_at, created_at, updated_at)
+       VALUES (?, 'anilist', ?, ?, 1, 0, 'pending', ?, ?, ?)`,
+    ).run(`row-${dedupeKey}`, dedupeKey, payloadJson, NOW, NOW, NOW);
+  }
+
+  for (const dedupeKey of ["was-malformed", "was-scalar", "was-array"]) {
+    const stored = repo.enqueue({ trackerId: "anilist", dedupeKey, payload: next }, new Date(NOW));
+    expect(stored.payload).toEqual(next);
+    expect(stored.generation).toBe(2);
+  }
+});
+
+test("sync reconciliation: poisoned payload rows are skipped by listings and purged", () => {
+  const db = stores.store("poison-sync-reconciliation", "data");
+  const repo = new SyncReconciliationRepository(db);
+  repo.record({ kind: "history", historyKey: "h-good", localMutationId: "mut-1" }, new Date(NOW));
+  for (const [id, json] of [
+    ["poison-1", "not json{"],
+    ["poison-2", "5"],
+  ] as const) {
+    db.query(
+      `INSERT INTO sync_reconciliation
+         (id, mutation_kind, entity_key, payload_json, generation, attempt_count,
+          next_attempt_at, created_at, updated_at)
+       VALUES (?, 'history', ?, ?, 1, 0, ?, ?, ?)`,
+    ).run(id, `ek-${id}`, json, NOW, NOW, NOW);
+  }
+
+  const due = repo.listDue(new Date("2026-08-16T00:01:00.000Z"));
+  expect(due.map((r) => r.id)).toHaveLength(1);
+  expect(repo.listPending().map((r) => r.id)).toHaveLength(1);
+
+  expect(repo.purgeUnprojectable()).toBe(2);
+  expect(repo.purgeUnprojectable()).toBe(0);
+  expect(repo.listPending()).toHaveLength(1);
+});
+
+test("diagnostic events: a poisoned context_json reads as absent instead of crashing the list", () => {
+  const db = stores.store("poison-diagnostic-events", "cache");
+  const repo = new DiagnosticEventsRepository(db);
+  repo.insert({
+    timestamp: NOW,
+    level: "warn",
+    category: "playback",
+    operation: "playback.test",
+    message: "good event",
+    context: { detail: "kept" },
+  });
+  db.query(
+    `INSERT INTO diagnostic_events
+       (timestamp, level, category, operation, message, context_json, created_at)
+     VALUES (?, 'warn', 'playback', 'playback.test', 'bad event', 'not json{', ?)`,
+  ).run(NOW, NOW);
+
+  const events = repo.listRecent(10);
+  expect(events).toHaveLength(2);
+  const bad = events.find((e) => e.message === "bad event");
+  expect(bad?.context).toBeUndefined();
+  const good = events.find((e) => e.message === "good event");
+  expect(good?.context).toEqual({ detail: "kept" });
 });

@@ -95,3 +95,28 @@ test("relay development carries resolved host, port, and auth into server behavi
   );
   expect(response.status).toBe(401);
 });
+
+test("relay development parses RELAY_CORS_ORIGINS into an origin allowlist", () => {
+  const policy = resolveRelayDevelopmentPolicy({
+    RELAY_CORS_ORIGINS: " https://app.example , http://localhost:5173 ,, ",
+  });
+  expect(policy.corsOrigins).toEqual(["https://app.example", "http://localhost:5173"]);
+});
+
+test.each([undefined, "", "   ", " , ,"])(
+  "relay development leaves the allowlist unset for unusable input %s",
+  (origins) => {
+    expect(
+      resolveRelayDevelopmentPolicy({ RELAY_CORS_ORIGINS: origins }).corsOrigins,
+    ).toBeUndefined();
+  },
+);
+
+test.each(["not a url", "https://app.example/path", "https://app.example?q=1"])(
+  "relay development rejects non-origin entry %s",
+  (origin) => {
+    expect(() => resolveRelayDevelopmentPolicy({ RELAY_CORS_ORIGINS: origin })).toThrow(
+      "RELAY_CORS_ORIGINS",
+    );
+  },
+);

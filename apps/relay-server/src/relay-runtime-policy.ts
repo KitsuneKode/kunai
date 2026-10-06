@@ -9,12 +9,14 @@ export interface RelayDevelopmentEnvironment {
   readonly PORT?: string;
   readonly RELAY_HOST?: string;
   readonly RELAY_TOKEN?: string;
+  readonly RELAY_CORS_ORIGINS?: string;
 }
 
 export interface RelayDevelopmentPolicy {
   readonly hostname: string;
   readonly port: number;
   readonly authorization: RelayAuthorizationPolicy;
+  readonly corsOrigins?: readonly string[];
 }
 
 export function resolveRelayDevelopmentPolicy(
@@ -31,7 +33,33 @@ export function resolveRelayDevelopmentPolicy(
     hostname,
     port: resolvePort(env.PORT),
     authorization: token ? { mode: "bearer", token } : { mode: "local-loopback" },
+    corsOrigins: parseCorsOrigins(env.RELAY_CORS_ORIGINS),
   };
+}
+
+function parseCorsOrigins(value: string | undefined): readonly string[] | undefined {
+  if (value === undefined) return undefined;
+  const origins = value
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+  if (origins.length === 0) return undefined;
+  for (const origin of origins) {
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new Error(
+        `RELAY_CORS_ORIGINS entries must be origins like https://app.example; received ${origin}`,
+      );
+    }
+    if (parsed.origin !== origin) {
+      throw new Error(
+        `RELAY_CORS_ORIGINS entries must be bare origins (scheme://host[:port]); received ${origin}`,
+      );
+    }
+  }
+  return origins;
 }
 
 export function createRelayDevServerOptions(policy: RelayDevelopmentPolicy) {
@@ -39,7 +67,10 @@ export function createRelayDevServerOptions(policy: RelayDevelopmentPolicy) {
     hostname: policy.hostname,
     port: policy.port,
     fetch(request: Request) {
-      return handleRelayRequest(request, { authorization: policy.authorization });
+      return handleRelayRequest(request, {
+        authorization: policy.authorization,
+        corsOrigins: policy.corsOrigins,
+      });
     },
   };
 }

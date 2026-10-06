@@ -3,6 +3,7 @@ import { basename, dirname, extname, join } from "node:path";
 
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import { readBoundedBody } from "@/services/network/bounded-body";
+import { fetchGuardedStreamTarget } from "@kunai/providers";
 import type { DownloadJobRecord } from "@kunai/storage";
 
 export type OfflineArtworkFetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -48,12 +49,23 @@ async function fetchAndWritePoster(
   const posterUrl = job.posterUrl;
   if (!posterUrl) return null;
 
-  const fetchImpl = fetchImplOverride ?? fetch;
-  const response = await fetchImpl(posterUrl, {
-    signal: AbortSignal.timeout(POSTER_CACHE_TIMEOUT_MS),
-    headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8" },
-  });
-  if (!response.ok) return null;
+  // Provider-supplied poster URLs are untrusted, same as stream URLs — the
+  // guarded fetch revalidates DNS and every redirect hop. An injected fetch
+  // owns its destination, matching the subtitle convention.
+  const response = fetchImplOverride
+    ? await fetchImplOverride(posterUrl, {
+        signal: AbortSignal.timeout(POSTER_CACHE_TIMEOUT_MS),
+        headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8" },
+      })
+    : await fetchGuardedStreamTarget({
+        fetchImpl: fetch,
+        url: posterUrl,
+        init: {
+          headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8" },
+        },
+        signal: AbortSignal.timeout(POSTER_CACHE_TIMEOUT_MS),
+      }).then((outcome) => (outcome.kind === "response" ? outcome.response : null));
+  if (!response || !response.ok) return null;
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().startsWith("image/")) return null;
   if (!response.body) return null;

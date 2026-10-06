@@ -53,9 +53,12 @@ Bun is the supported runtime for development. Use `bun run dev -- <flags>` to la
 ### Link globally (optional)
 
 ```sh
-bun run link:global
+bun run link:global   # builds dist/kunai.mjs + dist/bin host binary first
 kunai --setup
 ```
+
+The linked `kunai` runs the checkout's own compiled binary (Node.js must be on
+PATH — the launcher is plain Node ESM), never a published package.
 
 </Step>
 <Step>

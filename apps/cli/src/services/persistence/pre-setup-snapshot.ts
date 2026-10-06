@@ -49,6 +49,28 @@ export const RESTORABLE_SETUP_FIELDS = [
 ] as const satisfies readonly (keyof KitsuneConfig)[];
 
 /**
+ * Keys owned by the analytics consent contract. They are stripped from the
+ * snapshot at write time — a backup that can resurrect a revoked consent or
+ * resurrect a cleared `installId` is a consent bypass wearing an undo hat —
+ * and stripped again at read time so a `.bak` written by an older build is
+ * just as safe to restore.
+ */
+const CONSENT_OWNED_CONFIG_KEYS = [
+  "analytics",
+  "analyticsNoticeShown",
+  "installId",
+  "lastAnalyticsPingAt",
+  "analyticsRetryAfter",
+  "analyticsEndpoint",
+] as const satisfies readonly (keyof KitsuneConfig)[];
+
+function stripConsentOwnedKeys(config: Partial<KitsuneConfig>): Partial<KitsuneConfig> {
+  const stripped = { ...config };
+  for (const key of CONSENT_OWNED_CONFIG_KEYS) delete stripped[key];
+  return stripped;
+}
+
+/**
  * Sibling of `config.json`, and exactly one of them.
  *
  * A growing history is a maintenance burden nobody asked for — and a directory
@@ -89,7 +111,7 @@ export function setupPatchIsRestorable(
  */
 export async function writePreSetupSnapshot(config: KitsuneConfig): Promise<boolean> {
   try {
-    await writeAtomicSecretJson(preSetupSnapshotPath(), config);
+    await writeAtomicSecretJson(preSetupSnapshotPath(), stripConsentOwnedKeys(config));
     return true;
   } catch {
     return false;
@@ -102,7 +124,7 @@ export async function readPreSetupSnapshot(): Promise<Partial<KitsuneConfig> | n
     const raw = await readFile(preSetupSnapshotPath(), "utf8");
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    return parsed as Partial<KitsuneConfig>;
+    return stripConsentOwnedKeys(parsed as Partial<KitsuneConfig>);
   } catch {
     return null;
   }

@@ -47,6 +47,30 @@ export async function handleRpcRequest(
   request: Request,
   options: RelayHandlerOptions,
 ): Promise<Response> {
+  const response = await dispatchRpcRequest(request, options);
+  if (!options.corsOrigins) return response;
+  // Allowlist mode: every emitter above wrote the wildcard; rewrite it to the
+  // request Origin when listed and drop it otherwise, so a disallowed page can
+  // neither preflight nor read.
+  const origin = request.headers.get("origin");
+  const headers = new Headers(response.headers);
+  if (origin && options.corsOrigins.includes(origin)) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.append("Vary", "Origin");
+  } else {
+    headers.delete("Access-Control-Allow-Origin");
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+async function dispatchRpcRequest(
+  request: Request,
+  options: RelayHandlerOptions,
+): Promise<Response> {
   if (request.method === "OPTIONS") return corsPreflightResponse();
   if (request.method !== "POST") {
     return relayError("method-not-allowed", options.providerId, "RPC route requires POST", 405);

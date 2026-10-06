@@ -245,7 +245,7 @@ function Get-ReleaseAssetName {
 function Resolve-PublishedVersion {
   if ($DryRun -and $Version -eq 'latest') { return 'dry-run' }
   if ($Version -ne 'latest') { return (Get-NormalizedVersion $Version) }
-  $release = Invoke-RestMethod -Uri $ReleasesApi -Headers @{ 'user-agent' = 'kunai-installer' }
+  $release = Invoke-RestMethod -Uri $ReleasesApi -Headers @{ 'user-agent' = 'kunai-installer' } -TimeoutSec 30
   $tag = [string]$release.tag_name
   return (Get-NormalizedVersion $tag)
 }
