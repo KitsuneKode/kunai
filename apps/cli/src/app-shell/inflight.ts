@@ -27,6 +27,9 @@ export function createKeyedInflight(): Inflight {
     signal?: AbortSignal,
   ): Promise<T | null> {
     if (signal?.aborted) return null;
+    // SAFETY: the map is shared across generic instantiations, so it stores
+    // Promise<unknown>. Keys are per-resource — every joiner for one key runs
+    // the same work() type, so the stored promise is always Promise<T> here.
     let task = inflight.get(key) as Promise<T> | undefined;
     if (!task) {
       task = work();
