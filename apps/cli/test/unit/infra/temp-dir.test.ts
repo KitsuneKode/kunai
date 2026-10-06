@@ -17,10 +17,12 @@ describe("createPrivateTempDir", () => {
     }
   });
 
-  test("follows TMPDIR into a sandbox instead of the shared OS tmp", async () => {
+  test("follows the platform temp override into a sandbox instead of the shared OS tmp", async () => {
     const sandbox = await mkdtemp(join(tmpdir(), "kunai-tmpdir-override-"));
-    const previous = process.env.TMPDIR;
-    process.env.TMPDIR = sandbox;
+    // Windows resolves tempDir from TEMP ?? TMP; POSIX from TMPDIR.
+    const key = process.platform === "win32" ? "TEMP" : "TMPDIR";
+    const previous = process.env[key];
+    process.env[key] = sandbox;
     try {
       const dir = await createPrivateTempDir("hls");
       try {
@@ -29,8 +31,8 @@ describe("createPrivateTempDir", () => {
         await rm(dir, { recursive: true, force: true });
       }
     } finally {
-      if (previous === undefined) delete process.env.TMPDIR;
-      else process.env.TMPDIR = previous;
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
       await rm(sandbox, { recursive: true, force: true });
     }
   });
