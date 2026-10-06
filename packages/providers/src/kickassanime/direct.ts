@@ -193,8 +193,15 @@ async function fetchMasterPlaylist(
       headers,
       signal: directStreamFetchSignal(context.signal, KAA_FETCH_TIMEOUT_MS),
     });
-    return response.ok ? await response.text() : null;
-  } catch {
+    if (!response.ok) return null;
+    const body = await response.text();
+    // A 204 or an HTML error page is not a readable manifest — returning null
+    // hands the ship decision to the gate probe instead of skipping it.
+    return body.includes("#EXTM3U") ? body : null;
+  } catch (error) {
+    // An abort is not an unreadable manifest — swallowing it lets the gate
+    // probe an already-dead signal and ship a stream on a cancelled resolve.
+    if (context.signal?.aborted) throw error;
     // A master this adapter cannot read is not yet a dead stream: the caller
     // gates the shipped URL on `null`, and only the audio naming is lost when
     // that probe passes. Returning null — not throwing — keeps those distinct.
@@ -389,6 +396,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
         { cachePolicy, events, startedAt },
       );
 
+    if (context.signal?.aborted) return fail("cancelled", "resolve cancelled");
     if (input.mediaKind !== "anime")
       return fail("unsupported-title", "KickAssAnime only supports anime");
     let slug: string | null;

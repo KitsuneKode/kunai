@@ -352,7 +352,9 @@ describe("matchKaaShow", () => {
   });
 
   test("two rows with the name is no match, not the first of them", () => {
-    const twins = [...rows, { ...rows[0]!, slug: "sousou-no-frieren-9999" }];
+    const first = rows[0];
+    if (!first) throw new Error("fixture rows empty");
+    const twins = [...rows, { ...first, slug: "sousou-no-frieren-9999" }];
     expect(matchKaaShow(twins, { title: "Sousou no Frieren" })).toBeNull();
   });
 
@@ -600,6 +602,52 @@ describe("kickassanimeProviderModule", () => {
     );
     expect(result.status).toBe("exhausted");
     expect(result.failures[0]?.code).toBe("not-found");
+  });
+
+  test("a 200 master body that is not a playlist goes through the gate", async () => {
+    // An HTML error page used to count as a "readable master" and skip the
+    // gate entirely — a dead stream shipped with no verification at all.
+    const requests: string[] = [];
+    const result = await kickassanimeProviderModule.resolve(
+      resolveInput(),
+      contextWith(catalogRoute({ master: "<html><body>Bad Gateway</body></html>" }), requests),
+    );
+    const manifestHits = requests.filter((r) => r.includes("master.m3u8"));
+    // The gate probed the manifest URL after the HTML body failed the #EXTM3U
+    // sniff — the ship decision no longer rests on HTTP 200 alone.
+    expect(manifestHits.length).toBeGreaterThanOrEqual(2);
+    expect(["resolved", "exhausted"]).toContain(result.status);
+  });
+
+  test("a resolve that starts cancelled reports cancelled, not a network failure", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const context = contextWith(catalogRoute());
+    const result = await kickassanimeProviderModule.resolve(resolveInput(), {
+      ...context,
+      signal: controller.signal,
+    });
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("cancelled");
+  });
+
+  test("an abort mid-master-fetch rejects instead of shipping a cancelled stream", async () => {
+    const controller = new AbortController();
+    const base = catalogRoute();
+    const route: Route = (url, init) => {
+      if (new URL(url).hostname === "hls.krussdomi.com" && !controller.signal.aborted) {
+        controller.abort();
+        return Promise.reject(new DOMException("Aborted", "AbortError"));
+      }
+      return base(url, init);
+    };
+    const context = contextWith(route);
+    await expect(
+      kickassanimeProviderModule.resolve(resolveInput(), {
+        ...context,
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow();
   });
 
   test("an unreadable master the gate cannot verdict still plays", async () => {

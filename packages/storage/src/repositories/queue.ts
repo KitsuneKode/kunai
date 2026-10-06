@@ -304,7 +304,7 @@ export class QueueRepository {
       .query(
         `UPDATE playlist_queue
          SET status = 'in-flight', in_flight_at = ?, last_failure_json = NULL
-         WHERE id = ? AND session_id = ? AND status = 'pending'`,
+         WHERE id = ? AND session_id = ? AND status = 'pending' AND played_at IS NULL`,
       )
       .run(at, id, sessionId);
     if (result.changes === 0) return false;
@@ -487,7 +487,7 @@ export class QueueRepository {
         .run(sourceSessionId);
 
       const restoredEntries = this.getAll(sourceSessionId).filter(
-        (entry) => entry.status === "pending",
+        (entry) => entry.status === "pending" && entry.playedAt === undefined,
       );
       const restoredIds = restoredEntries.map((entry) => entry.id);
       if (restoredIds.length === 0) {
@@ -500,7 +500,8 @@ export class QueueRepository {
           `UPDATE playlist_queue
            SET session_id = ?
            WHERE session_id = ?
-             AND status = 'pending'`,
+             AND status = 'pending'
+             AND played_at IS NULL`,
         )
         .run(targetSessionId, sourceSessionId);
 
@@ -549,7 +550,11 @@ function serializeExternalIds(externalIds: ProviderExternalIds | undefined): str
 function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
   if (!value) return undefined;
   try {
-    return JSON.parse(value) as ProviderExternalIds;
+    const parsed: unknown = JSON.parse(value);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+    // SAFETY: the object/array/null check above leaves a plain JSON object —
+    // the externalIds contract shape.
+    return parsed as ProviderExternalIds;
   } catch {
     return undefined;
   }

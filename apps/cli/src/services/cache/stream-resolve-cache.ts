@@ -45,7 +45,7 @@ function buildManifestDrivenPolicyParts(input: {
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
 }): readonly string[] {
-  const baseTokens = input.providerManifest?.cachePolicy.keyParts ?? [
+  const baseTokens = input.providerManifest?.cachePolicy?.keyParts ?? [
     "provider",
     input.providerId,
     "media-kind",

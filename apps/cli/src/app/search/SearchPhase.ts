@@ -1065,8 +1065,23 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               } else {
                 const queueNext = container.queueService.peekNext();
                 if (queueNext && latestIdleContext?.playlistNext?.titleId === queueNext.titleId) {
-                  const title = titleInfoFromQueueEntry(queueNext);
-                  stateManager.dispatch({ type: "SELECT_TITLE", title });
+                  // Claim like play-queue-next does: an attached-but-unclaimed
+                  // intent can never satisfy the in-flight ack CAS, so the
+                  // head row would stay pending forever after it played.
+                  const launch = claimQueuePlaybackLaunch(container.queueService, queueNext.id);
+                  if (launch) {
+                    stateManager.dispatch({
+                      type: "SELECT_TITLE",
+                      title: titleInfoFromQueuePlaybackLaunch(launch),
+                    });
+                  } else {
+                    logger.info("Idle playlist-next claim failed; priming without queue intent", {
+                      queueEntryId: queueNext.id,
+                    });
+                    const { queuePlaybackIntent: _unclaimed, ...title } =
+                      titleInfoFromQueueEntry(queueNext);
+                    stateManager.dispatch({ type: "SELECT_TITLE", title });
+                  }
                 }
               }
             } else {

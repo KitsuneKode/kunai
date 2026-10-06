@@ -143,15 +143,23 @@ async function fetchMovySeed(
       retryable: response.status >= 500 || response.status === 429,
     });
   }
-  // SAFETY: seed response is a two-field JSON envelope; a missing `seed` is
-  // rejected on the next line, so a shape surprise fails closed.
-  const body = (await response.json()) as { seed?: string; ttlMs?: number };
-  if (!body.seed) throw new MovyDecryptError("seed response carried no seed");
+  // SAFETY: the seed envelope is untrusted — `seed` must be a non-empty string
+  // (a number/boolean decrypts to a TypeError), and `ttlMs` must be a finite
+  // positive number (a string concatenates onto Date.now() into an immortal
+  // entry). Either surprise fails closed and never reaches the cache.
+  const body = (await response.json()) as { seed?: unknown; ttlMs?: unknown } | null;
+  if (!body || typeof body.seed !== "string" || !body.seed) {
+    throw new MovyDecryptError("seed response carried no usable seed");
+  }
+  const ttlMs =
+    typeof body.ttlMs === "number" && Number.isFinite(body.ttlMs) && body.ttlMs > 0
+      ? body.ttlMs
+      : 30_000;
 
   seedCache.delete(cacheKey);
   seedCache.set(cacheKey, {
     seed: body.seed,
-    expiresAt: Date.now() + (body.ttlMs ?? 30_000),
+    expiresAt: Date.now() + ttlMs,
   });
   while (seedCache.size > SEED_CACHE_MAX) {
     const oldest = seedCache.keys().next();
@@ -208,12 +216,20 @@ async function fetchMovyLaneSources(
       });
     }
     const ciphertext = await response.text();
-    const plaintext = decryptMovyPayload(ciphertext, seed, mediaId);
     try {
+      const plaintext = decryptMovyPayload(ciphertext, seed, mediaId);
       // SAFETY: decrypted payload is the lane's sources envelope; every
       // consumer reads optional fields and empty sources fail closed below.
       return JSON.parse(plaintext) as MovySourcesPayload;
     } catch (error) {
+      // A seed that cannot decrypt this lane's ciphertext does not fit it —
+      // treat it like the 401 the site uses: drop the cached seed, refetch,
+      // retry once. Otherwise one bad draw poisons the seed cache for its
+      // whole TTL and every later resolve of the title fails.
+      if (attempt === 0) {
+        invalidateMovySeed(mediaId);
+        continue;
+      }
       throw new MovyDecryptError(`${lane}: decrypted payload was not JSON`, { cause: error });
     }
   }

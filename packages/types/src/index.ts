@@ -773,7 +773,13 @@ export function isProviderResolveResultResolved(
   readonly status: "resolved";
   readonly streams: readonly [StreamCandidate, ...StreamCandidate[]];
 } {
-  return result.status === "resolved" && result.streams.length > 0;
+  return (
+    result.status === "resolved" &&
+    // A stream with neither a url nor a deferred locator cannot play — a
+    // result made only of those is exhausted wearing a resolved status, and
+    // accepting it would stop the fallback chain at a provider with nothing.
+    result.streams.some((stream) => Boolean(stream.url ?? stream.deferredLocator))
+  );
 }
 
 export type ProviderFailureClass =

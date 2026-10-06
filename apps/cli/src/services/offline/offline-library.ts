@@ -211,7 +211,7 @@ export function formatOfflineShelfDetail(
     job.subtitlePath ? "subtitles cached" : "no subtitles cached",
     formatDownloadSidecarNote(job),
     job.introSkipJson ? "timing cached" : null,
-    job.thumbnailPath ? "thumbnail ready" : job.posterUrl ? "poster cached" : null,
+    job.thumbnailPath ? "thumbnail ready" : job.posterUrl ? "poster linked" : null,
     status === "ready" ? basename(dirname(job.outputPath)) : offlineStatusLabel(status),
   ].filter(Boolean);
   return parts.join(" · ");

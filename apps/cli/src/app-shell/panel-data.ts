@@ -766,7 +766,9 @@ export function buildProviderPickerOptions({
       ? resolveEffectiveProviderHealth(getProviderHealth(provider.id))
       : undefined;
     const healthBadge = formatProviderHealthBadge(effective ?? undefined);
-    const healthLabelSuffix = formatProviderHealthPickerLabelSuffix(effective ?? undefined);
+    const healthLabelSuffix = formatProviderHealthPickerLabelSuffix(effective ?? undefined, {
+      isCurrentProvider: provider.id === currentProvider,
+    });
     const healthDetail = healthBadge ? `Health: ${healthBadge}` : null;
     const crossLaneDetail = isCrossLane?.(provider) ? "via linked catalog id" : null;
     const baseDetail = formatProviderDetail(provider);

@@ -262,3 +262,75 @@ describe("buildMovyCycleCandidates", () => {
     expect(Math.min(...candidates.map((c) => c.priority ?? 0))).toBe(paris?.priority ?? -1);
   });
 });
+
+describe("movy seed cache — untrusted envelope", () => {
+  test("a non-string seed fails closed and is never cached", async () => {
+    let seedCalls = 0;
+    const ctx = contextReturning((url) => {
+      if (url.includes("/seed")) {
+        seedCalls += 1;
+        return new Response(JSON.stringify({ seed: 12345, ttlMs: 30000 }), { status: 200 });
+      }
+      return new Response(FIXTURE.body, { status: 200 });
+    });
+
+    const r1 = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+    expect(r1.status).toBe("exhausted");
+    const r2 = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+    expect(r2.status).toBe("exhausted");
+    // A poisoned seed must not be cached — every lane refetches rather than
+    // reusing a stored non-string.
+    expect(seedCalls).toBeGreaterThan(2);
+  });
+
+  test("a null body fails closed instead of throwing a TypeError", async () => {
+    const ctx = contextReturning((url) =>
+      url.includes("/seed")
+        ? new Response("null", { status: 200 })
+        : new Response(FIXTURE.body, { status: 200 }),
+    );
+    const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+    expect(result.status).toBe("exhausted");
+    expect(result.failures?.some((f) => f.code === "parse-failed")).toBe(true);
+  });
+
+  test("a string ttlMs degrades to the default TTL rather than corrupting expiry", async () => {
+    let seedCalls = 0;
+    const ctx = contextReturning((url) => {
+      if (url.includes("/seed")) {
+        seedCalls += 1;
+        return new Response(JSON.stringify({ seed: FIXTURE.seed, ttlMs: "30000" }), {
+          status: 200,
+        });
+      }
+      if (url.includes("/denver/sources")) return new Response(FIXTURE.body, { status: 200 });
+      return new Response("{}", { status: 500 });
+    });
+
+    const r1 = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+    expect(r1.status).toBe("resolved");
+    const r2 = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+    expect(r2.status).toBe("resolved");
+    // The entry is cached on sane arithmetic — no second seed fetch.
+    expect(seedCalls).toBe(1);
+  });
+
+  test("a seed that cannot decrypt a lane is dropped, refetched, and retried once", async () => {
+    let seedCalls = 0;
+    const ctx = contextReturning((url) => {
+      if (url.includes("/seed")) {
+        seedCalls += 1;
+        // First draw is a well-formed seed that does not fit the ciphertext;
+        // the retry draw serves the good one — the site's own 401 recovery.
+        const seed = seedCalls === 1 ? "0.wrongseed" : FIXTURE.seed;
+        return new Response(JSON.stringify({ seed, ttlMs: 30000 }), { status: 200 });
+      }
+      if (url.includes("/denver/sources")) return new Response(FIXTURE.body, { status: 200 });
+      return new Response("{}", { status: 500 });
+    });
+
+    const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+    expect(result.status).toBe("resolved");
+    expect(seedCalls).toBe(2);
+  });
+});

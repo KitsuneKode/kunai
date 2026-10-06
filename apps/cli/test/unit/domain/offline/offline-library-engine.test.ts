@@ -170,6 +170,6 @@ describe("OfflineLibraryEngine", () => {
     const shelf = createOfflineLibraryEngine().buildShelf([]);
 
     expect(shelf.summary).toBe("No completed local videos yet");
-    expect(shelf.emptyActions).toEqual(["Open downloads queue", "Search online"]);
+    expect(shelf.groups).toEqual([]);
   });
 });

@@ -125,3 +125,79 @@ describe("runProviderCycle endpoint health", () => {
     expect(endpointHealth.failures).toEqual([]);
   });
 });
+
+test("a throwing shouldTry fails open — the lane is attempted, not skipped", async () => {
+  // Endpoint health is advisory evidence: a broken health store must not
+  // quarantine live lanes or crash the resolve.
+  const endpointHealth: EndpointHealthPort = {
+    shouldTry: () => {
+      throw new Error("health store exploded");
+    },
+    recordSuccess: () => {},
+    recordFailure: () => {},
+  };
+  const candidates: ProviderCycleCandidate[] = [
+    { id: "a", providerId: "movy", serverId: "denver", priority: 0 },
+  ];
+
+  const result = await runProviderCycle({
+    providerId: "movy",
+    candidates,
+    endpointHealth,
+    resolveCandidate: async () => ({ ok: true }),
+  });
+
+  expect(result.stopReason).toBe("resolved");
+  expect(result.attempts).toHaveLength(1);
+});
+
+test("a throwing recordSuccess does not lose the resolved stream", async () => {
+  const endpointHealth: EndpointHealthPort = {
+    shouldTry: () => true,
+    recordSuccess: () => {
+      throw new Error("disk full");
+    },
+    recordFailure: () => {},
+  };
+  const candidates: ProviderCycleCandidate[] = [
+    { id: "a", providerId: "movy", serverId: "denver", priority: 0 },
+  ];
+
+  const result = await runProviderCycle({
+    providerId: "movy",
+    candidates,
+    endpointHealth,
+    resolveCandidate: async () => ({ ok: true }),
+  });
+
+  expect(result.selected).toEqual({ ok: true });
+  expect(result.stopReason).toBe("resolved");
+});
+
+test("a throwing recordFailure does not kill the cycle mid-walk", async () => {
+  const endpointHealth: EndpointHealthPort = {
+    shouldTry: () => true,
+    recordSuccess: () => {},
+    recordFailure: () => {
+      throw new Error("disk full");
+    },
+  };
+  const candidates: ProviderCycleCandidate[] = [
+    { id: "a", providerId: "movy", serverId: "denver", priority: 0 },
+    { id: "b", providerId: "movy", serverId: "atlanta", priority: 1 },
+  ];
+
+  const result = await runProviderCycle({
+    providerId: "movy",
+    candidates,
+    endpointHealth,
+    resolveCandidate: async (candidate) => {
+      if (candidate.serverId === "denver") throw new Error("lane down");
+      return { ok: true };
+    },
+  });
+
+  expect(result.stopReason).toBe("resolved");
+  // Denver failed and was retried within budget before atlanta won.
+  expect(result.attempts.at(-1)?.candidate.serverId).toBe("atlanta");
+});

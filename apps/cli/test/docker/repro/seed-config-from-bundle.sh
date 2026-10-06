@@ -74,7 +74,7 @@ SETTINGS_JSON="$(jq -c '
       maxConcurrentDownloads, defaultDownloadQuality, autoCleanupWatched,
       recoveryMode, startupPriority,
       offlineArtworkCacheEnabled, updateChecksEnabled, autoApplyBinaryUpdates,
-      updateChannel, updateCheckIntervalDays,
+      updateCheckIntervalDays, providerDefaultsRevision,
       providerRelay: (
         .providerRelay
         | if type != "object" then null else

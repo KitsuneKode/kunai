@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import type { ProviderCycleCandidate } from "@kunai/types";
 import { ProviderHttpError } from "@kunai/types";
@@ -453,3 +453,34 @@ test("provider-wide blocked evidence does not poison endpoint health", async () 
 function fixedClock(): () => string {
   return () => "2026-05-19T00:00:00.000Z";
 }
+
+describe("hostile candidate rejections", () => {
+  test("a candidate rejecting with a non-Error value is classified, not a crash", async () => {
+    const result = await runProviderCycle({
+      providerId: "movy",
+      candidates: [
+        { id: "a", providerId: "movy", serverId: "denver", priority: 0 },
+        { id: "b", providerId: "movy", serverId: "atlanta", priority: 1 },
+      ],
+      resolveCandidate: async (candidate) => {
+        if (candidate.serverId === "denver") throw "lane exploded as a string";
+        return { ok: true };
+      },
+    });
+    expect(result.stopReason).toBe("resolved");
+    expect(result.attempts[0]?.failure).toBeDefined();
+  });
+
+  test("a candidate rejecting with null still produces a failure record", async () => {
+    const result = await runProviderCycle({
+      providerId: "movy",
+      candidates: [{ id: "a", providerId: "movy", serverId: "denver", priority: 0 }],
+      resolveCandidate: async () => {
+        throw null;
+      },
+    });
+    expect(result.stopReason).not.toBe("resolved");
+    expect(result.attempts.length).toBeGreaterThan(0);
+    expect(result.attempts.every((attempt) => attempt.failure)).toBe(true);
+  });
+});

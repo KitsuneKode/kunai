@@ -365,7 +365,15 @@ export async function bootstrapPersistence(
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
     diagnostics: diagnosticsService,
   });
-  const resolveTraceSink = new ResolveTraceSink(new ResolveTraceRepository(cacheDb));
+  const resolveTraceSink = new ResolveTraceSink(new ResolveTraceRepository(cacheDb), {
+    onFailure: (failure) => {
+      logger.warn("Resolve trace sink failed", {
+        category: "runtime",
+        operation: `diagnostics.trace.${failure.operation}.failed`,
+        error: failure.message,
+      });
+    },
+  });
   const episodePlaybackSelection = new EpisodePlaybackSelectionService(
     join(paths.configDir, "episode-playback-selections.json"),
   );

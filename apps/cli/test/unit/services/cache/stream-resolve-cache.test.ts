@@ -238,3 +238,32 @@ test("buildEmbedStreamCacheKey preserves embed URL", () => {
   const url = "https://example.com/embed/123";
   expect(buildEmbedStreamCacheKey(url)).toBe(url);
 });
+
+test("a manifest with a missing or malformed cachePolicy degrades to a plain key", () => {
+  const title = { id: "abc", type: "series" as const, name: "X", year: "2020" };
+  const base = {
+    providerId: "vidlink",
+    title,
+    episode: { season: 1, episode: 3 },
+    mode: "series" as const,
+    audioPreference: "original",
+    subtitlePreference: "en",
+    qualityPreference: "1080p",
+  };
+
+  expect(() =>
+    buildApiStreamResolveCacheKey({ ...base, providerManifest: undefined }),
+  ).not.toThrow();
+  expect(() =>
+    buildApiStreamResolveCacheKey({
+      ...base,
+      providerManifest: { id: "vidlink" } as never,
+    }),
+  ).not.toThrow();
+  expect(() =>
+    buildApiStreamResolveCacheKey({
+      ...base,
+      providerManifest: { id: "vidlink", cachePolicy: "not-an-object" } as never,
+    }),
+  ).not.toThrow();
+});

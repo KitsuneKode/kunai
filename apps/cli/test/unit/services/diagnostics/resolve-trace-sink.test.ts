@@ -84,3 +84,39 @@ describe("ResolveTraceSink", () => {
     expect(seen).toEqual([5]);
   });
 });
+
+describe("ResolveTraceSink failure reporting", () => {
+  test("a storage fault reports once per operation, not once per call", () => {
+    const failures: string[] = [];
+    const sink = new ResolveTraceSink(
+      store({
+        add: () => {
+          throw new Error("schema drift");
+        },
+        listRecent: () => {
+          throw new Error("schema drift");
+        },
+      }),
+      { onFailure: (failure) => failures.push(`${failure.operation}:${failure.message}`) },
+    );
+
+    sink.record(trace("a"));
+    sink.record(trace("b"));
+    sink.listRecent();
+    sink.listRecent();
+
+    expect(failures).toEqual(["record:schema drift", "listRecent:schema drift"]);
+  });
+
+  test("the sink works without an onFailure hook", () => {
+    const sink = new ResolveTraceSink(
+      store({
+        add: () => {
+          throw new Error("gone");
+        },
+      }),
+    );
+
+    expect(() => sink.record(trace("a"))).not.toThrow();
+  });
+});

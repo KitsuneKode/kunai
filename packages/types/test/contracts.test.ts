@@ -17,7 +17,11 @@ import type {
   ProviderTraceEvent,
   ResolveTrace,
 } from "../src/index";
-import { decodeProviderEpisodeIdentity, encodeProviderEpisodeIdentity } from "../src/index";
+import {
+  decodeProviderEpisodeIdentity,
+  encodeProviderEpisodeIdentity,
+  isProviderResolveResultResolved,
+} from "../src/index";
 
 test("provider episode identity encoding is delimiter-safe and exact", () => {
   const identity = { providerId: "all:anime", value: " OVA:Zero " };
@@ -447,4 +451,59 @@ test("provider source inventory projection preserves playable facts without reso
   expect(inventory.artwork?.seekBarVttUrl).toContain("seek.vtt");
   expect("failures" in inventory).toBe(false);
   expect("trace" in inventory).toBe(false);
+});
+
+test("resolved status with only unusable streams does not pass the resolved gate", () => {
+  const trace: ResolveTrace = {
+    id: "trace-1",
+    startedAt: "2026-04-29T00:00:00.000Z",
+    title: { id: "tmdb:1", kind: "movie", title: "Example" },
+    cacheHit: false,
+    steps: [],
+    failures: [],
+  };
+  const ghostStream = {
+    id: "stream-ghost",
+    providerId: "vidking",
+    protocol: "hls" as const,
+    confidence: 0.9,
+    cachePolicy: {
+      ttlClass: "stream-manifest" as const,
+      scope: "local" as const,
+      keyParts: ["provider", "vidking", "1"],
+    },
+  };
+  const base = {
+    providerId: "vidking",
+    subtitles: [] as const,
+    trace,
+    failures: [] as const,
+  };
+
+  // Every stream lacking both url and deferredLocator is a ghost — the result
+  // is exhausted wearing a resolved status, and the fallback chain must move on.
+  expect(
+    isProviderResolveResultResolved({
+      ...base,
+      status: "resolved",
+      streams: [ghostStream],
+    }),
+  ).toBe(false);
+  expect(
+    isProviderResolveResultResolved({
+      ...base,
+      status: "resolved",
+      streams: [
+        ghostStream,
+        { ...ghostStream, id: "stream-real", url: "https://cdn.example/m.m3u8" },
+      ],
+    }),
+  ).toBe(true);
+  expect(
+    isProviderResolveResultResolved({
+      ...base,
+      status: "resolved",
+      streams: [{ ...ghostStream, deferredLocator: "provider:vidking:stream-ghost" }],
+    }),
+  ).toBe(true);
 });

@@ -12,6 +12,8 @@ import {
   type TrackCapability,
   type TrackCapabilityGroup,
 } from "@/domain/playback/track-capabilities";
+import { providerPickerLanesForTitle, shellModeToProviderLane } from "@/domain/provider-lane";
+import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
 import type { EpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
 import { availableAudioModesFromTrace } from "@/services/playback/PlaybackSourceInventoryProjection";
 
@@ -121,9 +123,16 @@ export async function buildTracksPanelData(
   });
 
   const providers = container.providerRegistry.getAll().map((provider) => provider.metadata);
+  // Same eligibility as the provider picker: a linked title can switch into
+  // the other lane's providers, and the playing provider is always listed.
+  const tracksLanes = providerPickerLanesForTitle(
+    shellModeToProviderLane(state.mode),
+    state.currentTitle ? resolveTitleLaneEligibility(state.currentTitle) : null,
+  );
   const providerGroup = buildProviderTrackCapabilities({
     providers,
     mode: state.mode === "anime" ? "anime" : "series",
+    lanes: tracksLanes,
     currentProviderId: result?.providerId ?? state.provider,
     healthByProviderId: buildHealthHints(container, state.currentTitle?.id),
   });

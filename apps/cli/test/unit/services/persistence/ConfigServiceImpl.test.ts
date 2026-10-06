@@ -704,3 +704,61 @@ describe("session overrides", () => {
     expect((await store.load()).zenMode).toBe(false);
   });
 });
+
+describe("ConfigServiceImpl untrusted-shape hardening", () => {
+  test("wrong-typed provider and priority fields degrade to defaults, not a crash", async () => {
+    // config.json is user-editable — a number where a provider id belongs must
+    // not crash startup on .trim().
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        provider: 42 as never,
+        animeProvider: { id: "allanime" } as never,
+        youtubeProvider: ["youtube"] as never,
+        providerPriority: "vidking,vidlink" as never,
+        animeProviderPriority: [42, " allanime ", null] as never,
+      }),
+    );
+
+    expect(service.getRaw().provider).toBe(DEFAULT_CONFIG.provider);
+    expect(service.getRaw().animeProvider).toBe(DEFAULT_CONFIG.animeProvider);
+    expect(service.getRaw().youtubeProvider).toBe(DEFAULT_CONFIG.youtubeProvider);
+    expect(service.getRaw().animeProviderPriority).toEqual(["allanime"]);
+  });
+
+  test("wrong-typed language profiles and lists fall back without throwing", async () => {
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        animeLanguageProfile: "sub" as never,
+        seriesLanguageProfile: [1, 2] as never,
+        protectedDownloadJobIds: { a: true } as never,
+        favoriteSources: "vidlink" as never,
+        sync: null as never,
+        titleProviderPreferences: [["tmdb:1", "vidking"]] as never,
+      }),
+    );
+
+    expect(service.getRaw().animeLanguageProfile).toEqual({
+      audio: "original",
+      subtitle: "none",
+      quality: "best",
+    });
+    expect(service.getRaw().protectedDownloadJobIds).toEqual([]);
+    expect(service.getRaw().favoriteSources).toEqual([]);
+    expect(service.getRaw().sync).toEqual(DEFAULT_CONFIG.sync);
+    expect(service.getRaw().titleProviderPreferences).toEqual({});
+  });
+
+  test("an unreadable series priority cannot pin the dead videasy default", async () => {
+    // `provider: "videasy"` + a malformed priority used to shield the dead
+    // provider pick from migration — the user stayed on an upstream-dead
+    // provider forever.
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        provider: "videasy",
+        providerPriority: "vidlink" as never,
+      }),
+    );
+
+    expect(service.getRaw().provider).toBe(DEFAULT_CONFIG.provider);
+  });
+});
