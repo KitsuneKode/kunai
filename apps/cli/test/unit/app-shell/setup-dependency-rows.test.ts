@@ -183,10 +183,25 @@ describe("buildDependencyRows", () => {
     const impersonating = await probeCapabilities({
       which: (command) => `/usr/bin/${command}`,
       listPathEntries: () => ["curl", "curl_chrome150"],
+      canExecuteCurlInvocation: () => true,
     });
     const ok = buildDependencyRows(impersonating).find((r) => r.id === "curl-impersonate");
     expect(ok?.state).toBe("ok");
     expect(ok?.detail).toBe("matching chrome150");
+  });
+
+  test("a resolved-but-unexecutable impersonate build is not an ok row", async () => {
+    // Resolution says what exists, not what runs — a backend that fails to
+    // spawn must show as degraded with a fix, never a green "matching" row.
+    const broken = await probeCapabilities({
+      which: (command) => `/usr/bin/${command}`,
+      listPathEntries: () => ["curl", "curl_chrome150"],
+      canExecuteCurlInvocation: () => false,
+    });
+    const row = buildDependencyRows(broken).find((r) => r.id === "curl-impersonate");
+    expect(row?.state).toBe("degraded");
+    expect(row?.detail).toContain("cannot execute");
+    expect(row?.fix).not.toBeNull();
   });
 
   test("mpv degrades rather than blocks", async () => {
