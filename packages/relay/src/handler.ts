@@ -120,7 +120,7 @@ async function dispatchRpcRequest(
   if (isUnsafeHostname(upstreamUrl.hostname)) {
     return relayError("host-not-allowed", options.providerId, "Unsafe host rejected", 403);
   }
-  if (!options.registry.isHostAllowed(options.providerId, upstreamUrl)) {
+  if (!options.registry.isHostAllowed(options.providerId, upstreamUrl, "metadata")) {
     return relayError(
       "host-not-allowed",
       options.providerId,
@@ -288,7 +288,7 @@ async function fetchWithValidatedRedirects(input: {
       }
       if (
         isUnsafeHostname(redirectUrl.hostname) ||
-        !input.registry.isHostAllowed(input.providerId, redirectUrl)
+        !input.registry.isHostAllowed(input.providerId, redirectUrl, "metadata")
       ) {
         throw new RelayValidationError(
           "redirect-not-allowed",

@@ -24,7 +24,7 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
     if (!entry) return false;
     if (relay.providers?.[entry.providerId]?.enabled === false) return false;
     if (entry.manifest.relaySafe !== true) return false;
-    return options.registry.isHostAllowed(entry.providerId, upstreamUrl);
+    return options.registry.isHostAllowed(entry.providerId, upstreamUrl, "metadata");
   };
 
   return {
@@ -43,7 +43,7 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
       const providerConfig = relay.providers?.[entry.providerId];
       if (providerConfig?.enabled === false) return fetchImpl(input, init);
       if (entry.manifest.relaySafe !== true) return fetchImpl(input, init);
-      if (!options.registry.isHostAllowed(entry.providerId, requestInfo.upstreamUrl)) {
+      if (!options.registry.isHostAllowed(entry.providerId, requestInfo.upstreamUrl, "metadata")) {
         return fetchImpl(input, init);
       }
 
