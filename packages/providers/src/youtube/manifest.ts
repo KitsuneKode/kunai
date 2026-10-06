@@ -34,7 +34,10 @@ export const youtubeManifest = defineProviderManifest({
     keyParts: [
       "provider",
       YOUTUBE_PROVIDER_ID,
+      "media-kind",
       "title",
+      "season",
+      "episode",
       "audio",
       "subtitle",
       "quality",

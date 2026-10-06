@@ -385,6 +385,7 @@ export async function resolveVideasyDirect(
     qualityPreference: input.qualityPreference,
     startupPriority: input.startupPriority,
     videasyAppId,
+    apiRoute: resolvedOptions?.serverEndpoint,
   });
   const events: ProviderTraceEvent[] = [];
   const sources: ProviderSourceCandidate[] = [];

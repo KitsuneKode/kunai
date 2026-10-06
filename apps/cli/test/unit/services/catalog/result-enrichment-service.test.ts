@@ -5,6 +5,7 @@ import {
   MAX_ENRICHMENT_CACHE_ENTRIES,
   ResultEnrichmentService,
   buildResultEnrichment,
+  resultEnrichmentKey,
 } from "@/services/catalog/ResultEnrichmentService";
 import type { ContinuationViewDecision } from "@/services/continuation/ContinueWatchingService";
 import type { RecordedOfflineStatus } from "@/services/offline/OfflineAssetService";
@@ -442,5 +443,16 @@ describe("ResultEnrichmentService cancellation", () => {
     }
     expect((error as { name?: string } | undefined)?.name).toBe("AbortError");
     expect(peekCalls).toBe(0);
+  });
+
+  test("resultEnrichmentKey separates anime from general lane for identical ids", () => {
+    const generalMovie = result({ id: "123", type: "movie", isAnime: false });
+    const animeMovie = result({ id: "123", type: "movie", isAnime: true });
+    const explicitLane = result({ id: "123", type: "movie", resolvedLane: "youtube" });
+
+    expect(resultEnrichmentKey(generalMovie)).toBe("movie:123");
+    expect(resultEnrichmentKey(animeMovie)).toBe("anime:movie:123");
+    expect(resultEnrichmentKey(explicitLane)).toBe("youtube:movie:123");
+    expect(resultEnrichmentKey(generalMovie)).not.toBe(resultEnrichmentKey(animeMovie));
   });
 });

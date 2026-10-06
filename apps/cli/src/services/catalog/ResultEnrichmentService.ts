@@ -166,7 +166,18 @@ export class ResultEnrichmentService {
   }
 }
 
-export function resultEnrichmentKey(result: Pick<SearchResult, "type" | "id">): string {
+export function resultEnrichmentKey(
+  result: Pick<SearchResult, "type" | "id"> & {
+    readonly resolvedLane?: SearchResult["resolvedLane"];
+    readonly isAnime?: boolean;
+  },
+): string {
+  if (result.resolvedLane) {
+    return `${result.resolvedLane}:${result.type}:${result.id}`;
+  }
+  if (result.isAnime) {
+    return `anime:${result.type}:${result.id}`;
+  }
   return `${result.type}:${result.id}`;
 }
 
