@@ -56,6 +56,63 @@ test("cache maintenance prunes disposable expired rows without touching durable 
   expect(count(cacheDb, "diagnostic_events")).toBe(1);
 });
 
+test("data maintenance sweeps resolved notifications, tombstones keys, and caps growth", () => {
+  const dataDb = migratedDb("data");
+  const now = new Date("2026-05-17T00:00:00.000Z");
+
+  const ins = (dedupKey: string, updatedAt: string, readAt: string | null) =>
+    dataDb
+      .query(
+        `INSERT INTO notifications (id, dedup_key, kind, title, body, created_at, updated_at, read_at)
+         VALUES (?, ?, 'episode', 't', 'b', ?, ?, ?)`,
+      )
+      .run(`id-${dedupKey}`, dedupKey, updatedAt, updatedAt, readAt);
+
+  // Resolved months ago — age-pruned and tombstoned.
+  ins("key:stale-read", "2026-01-02T00:00:00.000Z", "2026-01-02T00:00:00.000Z");
+  // Resolved recently — inside retention; kept by age, then kept by ceiling order.
+  ins("key:fresh-read", "2026-05-16T00:00:00.000Z", "2026-05-16T00:00:00.000Z");
+  // Active and unread but ancient — survives the age cut, loses the ceiling.
+  ins("key:stale-active", "2026-01-03T00:00:00.000Z", null);
+
+  for (let i = 0; i < 5; i += 1) {
+    dataDb
+      .query(`INSERT INTO notification_suppressions (dedup_key, suppressed_at) VALUES (?, ?)`)
+      .run(`old:${i}`, `2026-02-0${i + 1}T00:00:00.000Z`);
+  }
+
+  const result = runDatabaseMaintenance(dataDb, {
+    database: "data",
+    now,
+    notificationRetentionDays: 30,
+    maxNotifications: 1,
+    maxNotificationSuppressions: 3,
+  });
+
+  // n1 stale-read pruned by age; n3 stale-active pruned by the ceiling.
+  expect(result.dataPruned.notifications).toBe(2);
+  expect(count(dataDb, "notifications")).toBe(1);
+  const survivors = dataDb
+    .query<{ dedup_key: string }, []>("SELECT dedup_key FROM notifications")
+    .all()
+    .map((r) => r.dedup_key);
+  expect(survivors).toEqual(["key:fresh-read"]);
+
+  // Every pruned key is tombstoned so recordSignals cannot resurrect it;
+  // the suppression table itself is then capped at the newest rows —
+  // two fresh tombstones + the newest pre-seeded one.
+  const suppressed = dataDb
+    .query<{ dedup_key: string }, []>(
+      "SELECT dedup_key FROM notification_suppressions ORDER BY dedup_key",
+    )
+    .all()
+    .map((r) => r.dedup_key);
+  expect(suppressed).toContain("key:stale-read");
+  expect(suppressed).toContain("key:stale-active");
+  expect(result.dataPruned.notificationSuppressions).toBe(4);
+  expect(count(dataDb, "notification_suppressions")).toBe(3);
+});
+
 const TEMP_NAME = "storage-maintenance";
 
 function migratedDb(database: "data" | "cache"): KunaiDatabase {

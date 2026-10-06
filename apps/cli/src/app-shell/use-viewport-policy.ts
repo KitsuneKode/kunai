@@ -43,25 +43,75 @@ export function shouldSettleViewportImmediately(
   return next.cols < settled.cols || next.rows < settled.rows;
 }
 
-export function useShellDimensions(): ViewportDimensions {
-  const { stdout } = useStdout();
-  const [size, setSize] = useState<ViewportDimensions>(() => ({
+/**
+ * Structural subset of Ink's stdout — anything emitting "resize" with
+ * columns/rows. Tests drive it with a bare EventEmitter.
+ */
+export type ResizeSource = {
+  readonly columns?: number;
+  readonly rows?: number;
+  on(event: "resize", listener: () => void): unknown;
+  off(event: "resize", listener: () => void): unknown;
+};
+
+type ResizeSubscriber = (next: ViewportDimensions) => void;
+
+type ResizeHub = {
+  readonly subs: Set<ResizeSubscriber>;
+  readonly listener: () => void;
+  last: ViewportDimensions;
+};
+
+export function readStdoutDimensions(stdout: ResizeSource): ViewportDimensions {
+  return {
     cols: sanitizeDimension(stdout.columns, 80),
     rows: sanitizeDimension(stdout.rows, 24),
-  }));
+  };
+}
 
-  useEffect(() => {
-    const onResize = () => {
-      setSize({
-        cols: sanitizeDimension(stdout.columns, 80),
-        rows: sanitizeDimension(stdout.rows, 24),
-      });
+/**
+ * One "resize" listener per stdout object, shared by every component asking
+ * for dimensions. Each mounted `useShellDimensions` used to attach its own
+ * listener, and routine overlay stacking (browse + library + palette + a
+ * couple of InputFields) crossed EventEmitter's 10-listener threshold — Bun
+ * writes `MaxListenersExceededWarning` to stderr, straight into the alternate
+ * screen. The hub also dedupes: a SIGWINCH that leaves columns/rows unchanged
+ * no longer re-renders N subtrees.
+ */
+const resizeHubs = new WeakMap<ResizeSource, ResizeHub>();
+
+export function subscribeStdoutResize(stdout: ResizeSource, onNext: ResizeSubscriber): () => void {
+  let hub = resizeHubs.get(stdout);
+  if (!hub) {
+    const created: ResizeHub = {
+      subs: new Set(),
+      last: readStdoutDimensions(stdout),
+      listener() {
+        const next = readStdoutDimensions(stdout);
+        if (next.cols === created.last.cols && next.rows === created.last.rows) return;
+        created.last = next;
+        for (const sub of created.subs) sub(next);
+      },
     };
-    stdout.on("resize", onResize);
-    return () => {
-      stdout.off("resize", onResize);
-    };
-  }, [stdout]);
+    stdout.on("resize", created.listener);
+    resizeHubs.set(stdout, created);
+    hub = created;
+  }
+  hub.subs.add(onNext);
+  return () => {
+    hub.subs.delete(onNext);
+    if (hub.subs.size === 0) {
+      stdout.off("resize", hub.listener);
+      resizeHubs.delete(stdout);
+    }
+  };
+}
+
+export function useShellDimensions(): ViewportDimensions {
+  const { stdout } = useStdout();
+  const [size, setSize] = useState<ViewportDimensions>(() => readStdoutDimensions(stdout));
+
+  useEffect(() => subscribeStdoutResize(stdout, setSize), [stdout]);
 
   return size;
 }

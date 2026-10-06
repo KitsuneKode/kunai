@@ -24,8 +24,41 @@ export type ProbeStreamReachabilityInput = {
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
 const SEGMENT_RANGE_HEADER = `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`;
+// A body read past this after the prefix is already gathered is a server
+// ignoring Range and dumping the whole segment on us — cap the bleed.
+const MAX_PROBE_BODY_BYTES = 256 * 1024;
 const MAX_PROBE_REDIRECT_HOPS = 3;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+/**
+ * Counts body bytes until `minBytes` are seen, then cancels the reader so the
+ * socket stops draining. Returns the number of bytes observed, capped at
+ * `MAX_PROBE_BODY_BYTES` — a body that never reaches `minBytes` within that
+ * ceiling is treated as short anyway.
+ */
+async function readPrefixBytes(
+  body: ReadableStream<Uint8Array> | null,
+  minBytes: number,
+): Promise<number> {
+  if (!body) return 0;
+  const reader = body.getReader();
+  let seen = 0;
+  try {
+    while (seen < minBytes && seen < MAX_PROBE_BODY_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      seen += value?.byteLength ?? 0;
+    }
+    // Once the threshold is crossed the rest of the body is unread on purpose —
+    // cancelling is what actually closes the transfer.
+    await reader.cancel("probe-satisfied").catch(() => {});
+    return Math.min(seen, MAX_PROBE_BODY_BYTES);
+  } catch {
+    return seen;
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 /**
  * Provider-supplied URLs are untrusted input: a page or playlist can name a
@@ -539,11 +572,15 @@ async function probeHlsMediaSegment(
       };
     }
 
-    const buffer = new Uint8Array(await response.arrayBuffer());
-    if (buffer.byteLength < HLS_SEGMENT_PROBE_MIN_BYTES) {
+    // The Range header is only a request — a server free to ignore it would
+    // otherwise have arrayBuffer() pull the whole segment into memory for a
+    // check that only needs the first bytes. Read what we need and cut the
+    // socket loose.
+    const firstBytes = await readPrefixBytes(response.body, HLS_SEGMENT_PROBE_MIN_BYTES);
+    if (firstBytes < HLS_SEGMENT_PROBE_MIN_BYTES) {
       return {
         status: "unreachable",
-        reason: `HLS segment unreachable: body too small (${buffer.byteLength}B)`,
+        reason: `HLS segment unreachable: body too small (${firstBytes}B)`,
         definitive: true,
       };
     }

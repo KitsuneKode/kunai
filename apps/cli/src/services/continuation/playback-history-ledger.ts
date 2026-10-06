@@ -98,33 +98,39 @@ export class PlaybackHistoryLedger {
     }
     const now = new Date().toISOString();
     const bumpLastWatched = input.bumpLastWatched ?? true;
-    const existing = this.historyRepository.getProgress(this.context.title, this.context.episode);
-    const isDnsFinalize = input.positionSeconds <= 0 && input.durationSeconds > 0;
-    const existingResumeSeconds = existing?.positionSeconds ?? 0;
-    const positionSeconds =
-      bumpLastWatched === false && isDnsFinalize && existingResumeSeconds > 0
-        ? existingResumeSeconds
-        : input.positionSeconds;
-    const lastWatchedAt = bumpLastWatched
-      ? now
-      : (existing?.lastWatchedAt ?? existing?.updatedAt ?? null);
-    this.recordEvent("complete", {
-      positionSeconds,
-      durationSeconds: input.durationSeconds,
-    });
-    this.historyRepository.upsertProgress({
-      title: this.context.title,
-      episode: this.context.episode,
-      positionSeconds,
-      durationSeconds: input.durationSeconds,
-      completed: input.completed,
-      watchedSeconds: this.engagedSeconds,
-      lastWatchedAt,
-      completedAt: input.completed ? now : null,
-      providerId: input.providerId ?? this.context.providerId,
-      posterUrl: input.posterUrl ?? this.context.posterUrl,
-      updatedAt: now,
-    });
+    try {
+      const existing = this.historyRepository.getProgress(this.context.title, this.context.episode);
+      const isDnsFinalize = input.positionSeconds <= 0 && input.durationSeconds > 0;
+      const existingResumeSeconds = existing?.positionSeconds ?? 0;
+      const positionSeconds =
+        bumpLastWatched === false && isDnsFinalize && existingResumeSeconds > 0
+          ? existingResumeSeconds
+          : input.positionSeconds;
+      const lastWatchedAt = bumpLastWatched
+        ? now
+        : (existing?.lastWatchedAt ?? existing?.updatedAt ?? null);
+      this.recordEvent("complete", {
+        positionSeconds,
+        durationSeconds: input.durationSeconds,
+      });
+      this.historyRepository.upsertProgress({
+        title: this.context.title,
+        episode: this.context.episode,
+        positionSeconds,
+        durationSeconds: input.durationSeconds,
+        completed: input.completed,
+        watchedSeconds: this.engagedSeconds,
+        lastWatchedAt,
+        completedAt: input.completed ? now : null,
+        providerId: input.providerId ?? this.context.providerId,
+        posterUrl: input.posterUrl ?? this.context.posterUrl,
+        updatedAt: now,
+      });
+    } catch {
+      // A contended write (SQLITE_BUSY / snapshot conflict under a second
+      // instance) must not crash the teardown path — the resume row loses one
+      // finalize, not the session.
+    }
     this.context = null;
   }
 
@@ -149,33 +155,40 @@ export class PlaybackHistoryLedger {
 
   checkpoint(): void {
     if (!this.context) return;
-    const existing = this.historyRepository.getProgress(this.context.title, this.context.episode);
-    const isDnsCheckpoint = isDidNotStartProgress({
-      trustedProgressSeconds: this.lastPositionSeconds,
-      durationSeconds: this.durationSeconds,
-    });
-    if (isDnsCheckpoint) {
-      if ((existing?.positionSeconds ?? 0) > 0) {
-        return;
+    try {
+      const existing = this.historyRepository.getProgress(this.context.title, this.context.episode);
+      const isDnsCheckpoint = isDidNotStartProgress({
+        trustedProgressSeconds: this.lastPositionSeconds,
+        durationSeconds: this.durationSeconds,
+      });
+      if (isDnsCheckpoint) {
+        if ((existing?.positionSeconds ?? 0) > 0) {
+          return;
+        }
+        if (!existing) {
+          return;
+        }
       }
-      if (!existing) {
-        return;
-      }
+      const now = new Date().toISOString();
+      const shouldBumpLastWatched = this.lastPositionSeconds > ENGAGE_SECONDS;
+      const lastWatchedAt = shouldBumpLastWatched ? now : (existing?.lastWatchedAt ?? null);
+      this.historyRepository.checkpointProgress({
+        title: this.context.title,
+        episode: this.context.episode,
+        positionSeconds: this.lastPositionSeconds,
+        durationSeconds: this.durationSeconds > 0 ? this.durationSeconds : undefined,
+        watchedSeconds: this.engagedSeconds,
+        lastWatchedAt,
+        providerId: this.context.providerId,
+        posterUrl: this.context.posterUrl,
+        updatedAt: now,
+      });
+    } catch {
+      // Same contract as recordEvent below: persistence contention (a second
+      // instance's writer holding the DB, a SQLITE_BUSY_SNAPSHOT mid-tick)
+      // drops this checkpoint — the next interval retries — instead of
+      // propagating through the mpv event callback into a fatal shutdown.
     }
-    const now = new Date().toISOString();
-    const shouldBumpLastWatched = this.lastPositionSeconds > ENGAGE_SECONDS;
-    const lastWatchedAt = shouldBumpLastWatched ? now : (existing?.lastWatchedAt ?? null);
-    this.historyRepository.checkpointProgress({
-      title: this.context.title,
-      episode: this.context.episode,
-      positionSeconds: this.lastPositionSeconds,
-      durationSeconds: this.durationSeconds > 0 ? this.durationSeconds : undefined,
-      watchedSeconds: this.engagedSeconds,
-      lastWatchedAt,
-      providerId: this.context.providerId,
-      posterUrl: this.context.posterUrl,
-      updatedAt: now,
-    });
   }
 
   private readExistingWatchedSeconds(context: PlaybackHistoryLedgerContext): number {

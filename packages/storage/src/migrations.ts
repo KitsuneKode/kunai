@@ -797,6 +797,17 @@ export const dataMigrations: readonly Migration[] = [
         ON offline_assets(origin_job_id);
     `,
   },
+  {
+    id: "042_data_queue_session_owner_pid",
+    database: "data",
+    // Queue sessions were anonymous: any second instance's startup marked every
+    // 'active' session 'recoverable' — including one owned by a healthy live
+    // process — and a restore then moved its rows out from under it. Recording
+    // the owning pid lets recovery distinguish "crashed" from "live but idle".
+    sql: `
+      ALTER TABLE playback_queue_sessions ADD COLUMN owner_pid INTEGER;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [
@@ -1152,7 +1163,35 @@ export function runMigrations(
       continue;
     }
 
-    applyMigration(migration, new Date().toISOString());
+    // Two instances launched against the same pre-migration DB both see an
+    // empty applied set and run the loop together: the loser's marker INSERT
+    // conflicts on the twin's committed row, or its ALTER finds the column
+    // already there. Post-conflict the marker is committed, so re-reading the
+    // applied set distinguishes "twin already did it" from a real failure.
+    // Plain writer contention (SQLITE_BUSY past busy_timeout) gets a bounded
+    // retry rather than a fatal startup.
+    let lastError: unknown;
+    let appliedByTwin = false;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        applyMigration(migration, new Date().toISOString());
+        lastError = undefined;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (isDataMigrationApplied(db, migration.id)) {
+          appliedByTwin = true;
+          lastError = undefined;
+          break;
+        }
+        Bun.sleepSync(50 * (attempt + 1));
+      }
+    }
+    if (appliedByTwin) {
+      applied.add(migration.id);
+      continue;
+    }
+    if (lastError) throw lastError;
   }
 }
 
