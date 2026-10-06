@@ -50,7 +50,7 @@ import {
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
-import { combineAbortSignals, createTimeoutSignal } from "../shared/timeout-signal";
+import { combineAbortSignals, createTimeoutSignal, sleepAbortable } from "../shared/timeout-signal";
 // Embedded so `bun build --compile` single-file binaries carry the WASM (resolves
 // to a real path in dev/npm-bundle, a `/$bunfs/` path in a compiled binary —
 // `Bun.file()` reads both). See .archive/superpowers/archive/plans/2026-06-13-*.
@@ -1730,6 +1730,10 @@ async function tryVidkingServer(opts: {
             if (!isRetryableFailure(context, f)) {
               break;
             }
+            // Same transient grace the cycle engine applies between attempts —
+            // an immediate re-hit hammers the same host inside the candidate
+            // timeout and turns one throttle response into several.
+            await sleepAbortable(750, candidateSignal);
             continue;
           }
 
