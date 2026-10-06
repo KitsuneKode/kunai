@@ -56,6 +56,52 @@ test("cache maintenance prunes disposable expired rows without touching durable 
   expect(count(cacheDb, "diagnostic_events")).toBe(1);
 });
 
+test("overflow tombstones and deletes agree when equal updated_at values straddle the cap", () => {
+  const dataDb = migratedDb("data");
+  const now = new Date("2026-05-17T00:00:00.000Z");
+
+  // Three rows sharing one timestamp: the ceiling cuts through the tie, and
+  // without a deterministic tie-breaker the tombstone and delete SELECTs can
+  // pick different rows — tombstoning a live row while a deleted one goes
+  // unrecorded.
+  for (const key of ["tie:a", "tie:b", "tie:c"]) {
+    dataDb
+      .query(
+        `INSERT INTO notifications (id, dedup_key, kind, title, body, created_at, updated_at, read_at)
+         VALUES (?, ?, 'episode', 't', 'b', '2026-05-10T00:00:00.000Z', '2026-05-10T00:00:00.000Z', NULL)`,
+      )
+      .run(`id-${key}`, key);
+  }
+
+  const result = runDatabaseMaintenance(dataDb, {
+    database: "data",
+    now,
+    notificationRetentionDays: 30,
+    maxNotifications: 1,
+    maxNotificationSuppressions: 10,
+  });
+
+  const survivors = new Set(
+    dataDb
+      .query<{ dedup_key: string }, []>("SELECT dedup_key FROM notifications")
+      .all()
+      .map((r) => r.dedup_key),
+  );
+  const tombstoned = new Set(
+    dataDb
+      .query<{ dedup_key: string }, []>("SELECT dedup_key FROM notification_suppressions")
+      .all()
+      .map((r) => r.dedup_key),
+  );
+
+  expect(survivors.size).toBe(1);
+  expect(result.dataPruned.notifications).toBe(2);
+  for (const key of ["tie:a", "tie:b", "tie:c"]) {
+    // Deleted ⟺ tombstoned — never one without the other.
+    expect(survivors.has(key)).toBe(!tombstoned.has(key));
+  }
+});
+
 test("data maintenance sweeps resolved notifications, tombstones keys, and caps growth", () => {
   const dataDb = migratedDb("data");
   const now = new Date("2026-05-17T00:00:00.000Z");
@@ -111,6 +157,45 @@ test("data maintenance sweeps resolved notifications, tombstones keys, and caps 
   expect(suppressed).toContain("key:stale-active");
   expect(result.dataPruned.notificationSuppressions).toBe(4);
   expect(count(dataDb, "notification_suppressions")).toBe(3);
+});
+
+test("notification overflow tombstones exactly the rows the ceiling deletes", () => {
+  // Rows sharing one updated_at straddle the ceiling boundary — without a
+  // unique ORDER BY tie-breaker the tombstone INSERT and the DELETE could
+  // resolve the tie differently and split which keys each one touched.
+  const dataDb = migratedDb("data");
+  const tied = "2026-05-10T00:00:00.000Z";
+  for (const key of ["key:a", "key:b", "key:c", "key:d"]) {
+    dataDb
+      .query(
+        `INSERT INTO notifications (id, dedup_key, kind, title, body, created_at, updated_at, read_at)
+         VALUES (?, ?, 'episode', 't', 'b', ?, ?, ?)`,
+      )
+      .run(`id-${key}`, key, tied, tied, tied);
+  }
+
+  runDatabaseMaintenance(dataDb, {
+    database: "data",
+    now: new Date("2026-05-17T00:00:00.000Z"),
+    notificationRetentionDays: 30,
+    maxNotifications: 2,
+    maxNotificationSuppressions: 10,
+  });
+
+  const survivors = dataDb
+    .query<{ dedup_key: string }, []>("SELECT dedup_key FROM notifications ORDER BY dedup_key")
+    .all()
+    .map((r) => r.dedup_key);
+  const tombstoned = dataDb
+    .query<{ dedup_key: string }, []>(
+      "SELECT dedup_key FROM notification_suppressions ORDER BY dedup_key",
+    )
+    .all()
+    .map((r) => r.dedup_key);
+  // dedup_key DESC breaks the tie identically in both subqueries: the two
+  // lowest keys overflow, and each is tombstoned rather than resurrectable.
+  expect(survivors).toEqual(["key:c", "key:d"]);
+  expect(tombstoned).toEqual(["key:a", "key:b"]);
 });
 
 const TEMP_NAME = "storage-maintenance";

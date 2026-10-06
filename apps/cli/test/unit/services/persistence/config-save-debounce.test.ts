@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG, type KitsuneConfig } from "@/services/persistence/ConfigStore";
+import { CREDENTIAL_KEYS, type CredentialVaultPort } from "@/services/persistence/credential-vault";
 
 function createCountingStore() {
   let saves = 0;
@@ -215,6 +216,182 @@ describe("ConfigService.save debounce", () => {
     await service.save();
     expect(saves).toBe(1);
     await service.flushPending();
+  });
+
+  test("a key re-dirtied while its save was in flight still reaches disk on the next save", async () => {
+    // The merge write snapshots each dirty value at persist start. If update()
+    // lands while store.load() is parked, clearing the flag unconditionally
+    // would drop the newer value — the next save must still carry it.
+    let nextLoadGate: Promise<void> | null = null;
+    let onDisk: KitsuneConfig = { ...DEFAULT_CONFIG };
+    const store = {
+      load: () => {
+        const read = { ...onDisk };
+        const gate = nextLoadGate ?? Promise.resolve();
+        nextLoadGate = null;
+        return gate.then(() => read);
+      },
+      save: (doc: KitsuneConfig) => {
+        onDisk = { ...doc };
+        return Promise.resolve();
+      },
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+
+    await service.update({ provider: "first-value" });
+    const pending = service.save();
+    let release!: () => void;
+    nextLoadGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const flushed = service.flushPending();
+    await drainMicrotasks();
+
+    await service.update({ provider: "second-value" });
+    release();
+    await Promise.all([pending, flushed]);
+    expect(onDisk.provider).toBe("first-value");
+
+    const second = service.save();
+    await service.flushPending();
+    await second;
+    expect(onDisk.provider).toBe("second-value");
+  });
+
+  test("a save with nothing session-dirty refreshes the live file instead of reverting it", async () => {
+    // Boot snapshot values are stale the moment another instance writes. A
+    // no-dirty save must merge over the live file, not write them back whole.
+    let disk: KitsuneConfig = { ...DEFAULT_CONFIG };
+    const store = {
+      load: async () => ({ ...disk }),
+      save: (doc: KitsuneConfig) => {
+        disk = { ...doc };
+        return Promise.resolve();
+      },
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+
+    disk.youtubeProvider = "written-by-other-instance";
+    const pending = service.save();
+    await service.flushPending();
+    await pending;
+
+    expect(disk.youtubeProvider).toBe("written-by-other-instance");
+  });
+
+  test("the persist cycle runs inside store.withLock when the store provides one", async () => {
+    // persistChain serializes this instance only — cross-process exclusion is
+    // the store's job. Two service objects on one real store is the
+    // cross-instance shape; the lock must wrap the whole read→merge→write.
+    let lockCycles = 0;
+    let held = false;
+    let wroteUnderLock = false;
+    let onDisk: KitsuneConfig = { ...DEFAULT_CONFIG };
+    const store = {
+      load: async () => ({ ...onDisk }),
+      save: (doc: KitsuneConfig) => {
+        onDisk = { ...doc };
+        wroteUnderLock = held;
+        return Promise.resolve();
+      },
+      reset: async () => {},
+      async withLock<T>(fn: () => Promise<T>): Promise<T> {
+        lockCycles += 1;
+        held = true;
+        try {
+          return await fn();
+        } finally {
+          held = false;
+        }
+      },
+    };
+    const service = await ConfigServiceImpl.load(store);
+
+    await service.update({ provider: "vidking" });
+    const pending = service.save();
+    await service.flushPending();
+    await pending;
+
+    expect(lockCycles).toBe(1);
+    expect(wroteUnderLock).toBe(true);
+    expect(onDisk.provider).toBe("vidking");
+  });
+
+  test("an unrelated dirty key does not read the on-disk token scrub as an intentional clear", async () => {
+    // The vaulted token lives in-memory; config.json carries "". When a
+    // different key is dirty, the merged document's empty token is not an
+    // update — vault ops must follow the in-memory value.
+    const vaultStore = new Map<string, string>([
+      [CREDENTIAL_KEYS.videasySessionToken, "tok-persisted"],
+    ]);
+    const vault: CredentialVaultPort = {
+      backend: "secret-service",
+      get: async (key) => vaultStore.get(key),
+      set: async (key, value) => {
+        vaultStore.set(key, value);
+      },
+      delete: async (key) => {
+        vaultStore.delete(key);
+      },
+    };
+    let disk: Partial<KitsuneConfig> = { videasySessionToken: "" };
+    const store = {
+      load: async () => ({ ...disk }),
+      save: (doc: KitsuneConfig) => {
+        disk = { ...doc };
+        return Promise.resolve();
+      },
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store, vault);
+
+    await service.update({ provider: "vidking" });
+    const pending = service.save();
+    await service.flushPending();
+    await pending;
+
+    expect(vaultStore.get(CREDENTIAL_KEYS.videasySessionToken)).toBe("tok-persisted");
+    expect(disk.videasySessionToken).toBe("");
+  });
+
+  test("sibling instances sharing a store cannot revert each other's keys", async () => {
+    // Two services on one backing document stand in for two `kunai` processes
+    // writing config.json. The store's withLock serializes each
+    // read→merge→write cycle — without it, the second save can merge over a
+    // snapshot predating the first write and revert its key.
+    let onDisk: KitsuneConfig = { ...DEFAULT_CONFIG };
+    let chain: Promise<unknown> = Promise.resolve();
+    const store = {
+      load: async () => ({ ...onDisk }),
+      save: (doc: KitsuneConfig) => {
+        onDisk = { ...doc };
+        return Promise.resolve();
+      },
+      reset: async () => {},
+      withLock: <T>(fn: () => Promise<T>): Promise<T> => {
+        const run = chain.then(fn);
+        chain = run.then(
+          () => undefined,
+          () => undefined,
+        );
+        return run;
+      },
+    };
+    const first = await ConfigServiceImpl.load(store);
+    const second = await ConfigServiceImpl.load(store);
+
+    await first.update({ provider: "allanime" });
+    await second.update({ downloadsEnabled: true });
+    const firstSave = first.save();
+    const secondSave = second.save();
+    await first.flushPending();
+    await second.flushPending();
+    await Promise.all([firstSave, secondSave]);
+
+    expect(onDisk.provider).toBe("allanime");
+    expect(onDisk.downloadsEnabled).toBe(true);
   });
 });
 

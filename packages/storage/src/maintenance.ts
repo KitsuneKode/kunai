@@ -291,17 +291,20 @@ function pruneDataTables(
        SELECT dedup_key, ? FROM notifications
        WHERE dedup_key IN (
          SELECT dedup_key FROM notifications
-         ORDER BY updated_at DESC
+         ORDER BY updated_at DESC, dedup_key DESC
          LIMIT -1 OFFSET ?
        )
        ON CONFLICT(dedup_key) DO NOTHING`,
     ).run(nowIso, options.maxNotifications);
+    // The tombstone and delete SELECTs must agree on which rows are overflow:
+    // equal updated_at ties are ordered nondeterministically without the
+    // unique dedup_key tie-breaker, so both order by it identically.
     const overflowNotifications = db
       .query(
         `DELETE FROM notifications
          WHERE dedup_key IN (
            SELECT dedup_key FROM notifications
-           ORDER BY updated_at DESC
+           ORDER BY updated_at DESC, dedup_key DESC
            LIMIT -1 OFFSET ?
          )`,
       )
@@ -312,7 +315,7 @@ function pruneDataTables(
         `DELETE FROM notification_suppressions
          WHERE dedup_key IN (
            SELECT dedup_key FROM notification_suppressions
-           ORDER BY suppressed_at DESC
+           ORDER BY suppressed_at DESC, dedup_key DESC
            LIMIT -1 OFFSET ?
          )`,
       )

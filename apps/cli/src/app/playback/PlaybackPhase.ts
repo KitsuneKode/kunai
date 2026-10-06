@@ -4140,7 +4140,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const persistedKind = classifyPersistedKind(title, stateManager.getState().mode, {
       providerId: ledgerProviderId,
     });
-    this.playbackLedger = new PlaybackHistoryLedger(historyRepository, playbackEventRepository);
+    this.playbackLedger = new PlaybackHistoryLedger(
+      historyRepository,
+      playbackEventRepository,
+      (error) =>
+        context.container.diagnosticsService.record({
+          category: "playback",
+          operation: "playback.history.persist",
+          level: "warn",
+          message: "Playback history write dropped after a persistence failure",
+          context: { error: error instanceof Error ? error.message : String(error) },
+        }),
+    );
     // Shutdown flushes this before releasing mpv, so the latest resume
     // position survives a Ctrl+C mid-playback. Null-safe once finalized.
     this.unregisterActiveCheckpoint = context.container.activePlaybackCheckpoint.register(() => {

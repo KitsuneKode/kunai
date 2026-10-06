@@ -90,7 +90,14 @@ export function subscribeStdoutResize(stdout: ResizeSource, onNext: ResizeSubscr
         const next = readStdoutDimensions(stdout);
         if (next.cols === created.last.cols && next.rows === created.last.rows) return;
         created.last = next;
-        for (const sub of created.subs) sub(next);
+        for (const sub of created.subs) {
+          try {
+            sub(next);
+          } catch {
+            // `last` is already updated, so a skipped callback is never
+            // retried — one throwing subscriber must not starve the rest.
+          }
+        }
       },
     };
     stdout.on("resize", created.listener);

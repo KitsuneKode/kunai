@@ -326,6 +326,17 @@ export class ConfigServiceImpl implements ConfigService {
         // Vault write/read failed — keep the plaintext and retry next launch.
       }
     }
+    // Normalization heals on disk: a key whose stored value parsed but
+    // normalized differently (legacy enums, clamps, trims) stays dirty so the
+    // next merge save rewrites just that key — the heal the old whole-document
+    // write used to provide, without reverting keys another instance changed.
+    // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
+    for (const key of Object.keys(loaded) as (keyof KitsuneConfig)[]) {
+      if (loaded[key] === undefined) continue;
+      if (JSON.stringify(loaded[key]) !== JSON.stringify(service.config[key])) {
+        service.dirtyKeys.add(key);
+      }
+    }
     if (
       requiresExplicitAnalyticsConsent ||
       repairedAnalyticsIdentity ||
@@ -334,6 +345,9 @@ export class ConfigServiceImpl implements ConfigService {
       migratedAnimeDefaults ||
       migratedSeriesDefaults
     ) {
+      // Migrations changed keys nothing marked dirty — without the flag the
+      // persist would merge over the live file and drop them.
+      service.needsFullConfigWrite = true;
       await service.persistConfig();
       service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
     }
@@ -355,8 +369,18 @@ export class ConfigServiceImpl implements ConfigService {
    * previous write left behind.
    */
   private persistChain: Promise<void> = Promise.resolve();
+  /**
+   * Set by `load()` when migrated/repaired config must persist verbatim —
+   * the only path allowed to write the in-memory snapshot whole. A save
+   * with no dirty keys and no flag merges over the live file instead, so a
+   * stale boot snapshot can never revert keys another instance wrote.
+   */
+  private needsFullConfigWrite = false;
 
   private persistConfig(): Promise<void> {
+    // persistChain only orders this instance — the cross-process lock lives
+    // inside persistConfigNow, wrapped around just the read→merge→write so
+    // vault latency stays outside the critical section.
     const run = this.persistChain.then(() => this.persistConfigNow());
     this.persistChain = run.then(
       () => undefined,
@@ -370,37 +394,25 @@ export class ConfigServiceImpl implements ConfigService {
     // executes after any updates queued behind it, and a stale snapshot here
     // would write old values for keys it then clears from dirtyKeys.
     const config = this.config;
-    // When this process has updated keys, write per-key over the CURRENT file
-    // rather than our loaded-at-boot snapshot. The merge window shrinks a
-    // lost-update race from the session's lifetime to one read→write pair; a
-    // store.load() failure falls back to the whole-document write.
-    let toWrite = config;
-    let writtenKeys: ReadonlySet<keyof KitsuneConfig> | null = null;
-    if (this.dirtyKeys.size > 0) {
-      writtenKeys = new Set(this.dirtyKeys);
-      try {
-        const onDisk = await this.store.load();
-        const dirtySubset: Partial<KitsuneConfig> = {};
-        for (const key of writtenKeys) {
-          Object.assign(dirtySubset, { [key]: config[key] });
-        }
-        toWrite = { ...DEFAULT_CONFIG, ...onDisk, ...dirtySubset };
-      } catch {
-        toWrite = config;
-        writtenKeys = null;
-      }
-    }
+    // Read once, cleared only after a successful write — a failed full-write
+    // keeps the flag so the next persist still writes the migrated snapshot.
+    const forceFullWrite = this.needsFullConfigWrite;
+
+    // Vault side-effects stay outside the file lock: keyring latency should
+    // not stretch the cross-instance critical section. The in-memory token
+    // drives the decision — the merged document carries the on-disk "" scrub
+    // whenever the token itself wasn't dirtied, and reading that as an
+    // intentional clear would wipe the vaulted secret.
+    let scrubToken = false;
     if (this.vault && this.vault.backend !== "file") {
       const key = CREDENTIAL_KEYS.videasySessionToken;
-      const token = toWrite.videasySessionToken;
+      const token = config.videasySessionToken;
       try {
         if (token) {
           await this.vault.set(key, token);
           if ((await this.vault.get(key)) === token) {
             this.videasyTokenVaulted = true;
-            await this.store.save({ ...toWrite, videasySessionToken: "" });
-            if (writtenKeys) for (const k of writtenKeys) this.dirtyKeys.delete(k);
-            return;
+            scrubToken = true;
           }
         } else if (this.videasyTokenVaulted) {
           await this.vault.delete(key);
@@ -410,8 +422,69 @@ export class ConfigServiceImpl implements ConfigService {
         // Vault unreachable — persist plaintext rather than drop the value.
       }
     }
-    await this.store.save(toWrite);
-    if (writtenKeys) for (const k of writtenKeys) this.dirtyKeys.delete(k);
+
+    const writeOnce = async (): Promise<void> => {
+      // When this process has updated keys, write per-key over the CURRENT
+      // file rather than our loaded-at-boot snapshot. The merge window shrinks
+      // a lost-update race from the session's lifetime to one read→write pair
+      // — and the lockfile closes that pair against sibling instances; a
+      // store.load() failure falls back to the whole-document write.
+      let toWrite = config;
+      let mergedKeys: ReadonlySet<keyof KitsuneConfig> | null = null;
+      let mergedValues: Partial<KitsuneConfig> | null = null;
+      if (forceFullWrite) {
+        toWrite = config;
+      } else if (this.dirtyKeys.size > 0) {
+        mergedKeys = new Set(this.dirtyKeys);
+        try {
+          const onDisk = await this.store.load();
+          const dirtySubset: Partial<KitsuneConfig> = {};
+          for (const key of mergedKeys) {
+            Object.assign(dirtySubset, { [key]: config[key] });
+          }
+          toWrite = { ...DEFAULT_CONFIG, ...onDisk, ...dirtySubset };
+          mergedValues = dirtySubset;
+        } catch {
+          toWrite = config;
+          mergedKeys = null;
+        }
+      } else {
+        // Nothing session-dirty: writing the boot snapshot whole would revert
+        // keys another instance persisted after our last read. Refreshing over
+        // the live file is a no-op content-wise that still self-heals a
+        // deleted or truncated config.json.
+        try {
+          const onDisk = await this.store.load();
+          toWrite = { ...DEFAULT_CONFIG, ...onDisk };
+        } catch {
+          toWrite = config;
+        }
+      }
+      await this.store.save(scrubToken ? { ...toWrite, videasySessionToken: "" } : toWrite);
+      if (forceFullWrite) this.needsFullConfigWrite = false;
+      this.clearPersistedDirtyKeys(mergedKeys, mergedValues ?? toWrite);
+    };
+
+    const withLock = this.store.withLock?.bind(this.store);
+    if (withLock) {
+      await withLock(writeOnce);
+    } else {
+      await writeOnce();
+    }
+  }
+
+  private clearPersistedDirtyKeys(
+    mergedKeys: ReadonlySet<keyof KitsuneConfig> | null,
+    written: Partial<KitsuneConfig>,
+  ): void {
+    // A key re-dirtied while the write was in flight keeps its flag — the
+    // next persist carries the newer value instead of reverting to what was
+    // saved. On a whole-document write every dirty key was persisted, so the
+    // current dirty set is the comparison set.
+    const keys = mergedKeys ?? [...this.dirtyKeys];
+    for (const key of keys) {
+      if (this.config[key] === written[key]) this.dirtyKeys.delete(key);
+    }
   }
 
   // Accessors

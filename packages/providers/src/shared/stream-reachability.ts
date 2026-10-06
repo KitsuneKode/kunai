@@ -53,8 +53,12 @@ async function readPrefixBytes(
     // cancelling is what actually closes the transfer.
     await reader.cancel("probe-satisfied").catch(() => {});
     return Math.min(seen, MAX_PROBE_BODY_BYTES);
-  } catch {
-    return seen;
+  } catch (error) {
+    // A mid-body abort or socket error is not "body too small" — rethrow so
+    // the caller's classifier maps abort → timeout and transient network
+    // failures to non-definitive instead of a definitive unreachable.
+    await reader.cancel("probe-failed").catch(() => {});
+    throw error;
   } finally {
     reader.releaseLock();
   }

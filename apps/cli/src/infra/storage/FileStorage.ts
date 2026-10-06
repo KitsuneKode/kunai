@@ -6,6 +6,7 @@
 // drifted from packages/storage once already).
 // =============================================================================
 
+import { closeSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { chmod, mkdir, unlink } from "node:fs/promises";
 import { join, dirname } from "node:path";
 
@@ -30,6 +31,12 @@ function defaultPaths(): Record<string, string> {
     config: join(getKunaiPaths().configDir, "config.json"),
   };
 }
+
+/**
+ * A config read→merge→write cycle takes milliseconds — a lock file older than
+ * this is a crashed holder's leftover, not contention.
+ */
+const STALE_LOCK_MS = 10_000;
 
 export class FileStorage implements StorageService {
   // Simple mutex to prevent concurrent writes from interleaving and corrupting files
@@ -118,6 +125,68 @@ export class FileStorage implements StorageService {
 
     this.writeLock = task.catch(() => {});
     await task;
+  }
+
+  /**
+   * Cross-process mutex on the backing file, claimed via O_EXCL on
+   * `<file>.lock`. A holder that dies mid-cycle leaves the lock behind —
+   * past `STALE_LOCK_MS` it is reclaimed rather than deadlocking the next
+   * save forever. If a pathological holdout never releases, we run unlocked
+   * after ~1s: a save that waits forever is worse than one that races.
+   */
+  async withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const lockPath = `${this.pathFor(key)}.lock`;
+    const token = `${process.pid}:${Math.random().toString(36).slice(2)}`;
+    let acquired = false;
+    for (let wait = 0; wait < 40 && !acquired; wait += 1) {
+      try {
+        const fd = openSync(lockPath, "wx");
+        writeSync(fd, `${token}\n`);
+        closeSync(fd);
+        acquired = true;
+      } catch (error) {
+        const code = errorCode(error);
+        if (code === "ENOENT") {
+          await mkdir(dirname(lockPath), { recursive: true }).catch(() => {});
+          continue;
+        }
+        if (code !== "EEXIST") throw error;
+        let age = Number.POSITIVE_INFINITY;
+        try {
+          age = Date.now() - statSync(lockPath).mtimeMs;
+        } catch {
+          // The holder released between our claim attempt and the stat.
+          continue;
+        }
+        if (age > STALE_LOCK_MS) {
+          try {
+            unlinkSync(lockPath);
+          } catch {
+            // Another contender already reclaimed it — retry the claim.
+          }
+          continue;
+        }
+        await Bun.sleep(25);
+      }
+    }
+    if (!acquired) {
+      dbgErr("storage.file", `Lock ${lockPath} never released; running without it`, undefined);
+      return fn();
+    }
+    try {
+      return await fn();
+    } finally {
+      // Unlink only if the file still carries our token — after a stale
+      // reclaim the path can belong to a newer holder whose lock we must
+      // not delete out from under them.
+      try {
+        if (readFileSync(lockPath, "utf8").trim() === token) {
+          unlinkSync(lockPath);
+        }
+      } catch {
+        // Already reclaimed as stale by a contender, or never created.
+      }
+    }
   }
 
   private lookupPath(key: string): string | undefined {

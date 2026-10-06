@@ -27,6 +27,7 @@ export class PlaybackHistoryLedger {
   constructor(
     private readonly historyRepository: HistoryRepository,
     private readonly playbackEvents: PlaybackEventRepository,
+    private readonly onWriteError?: (error: Error) => void,
   ) {}
 
   alignProvider(providerId: ProviderId): void {
@@ -126,10 +127,12 @@ export class PlaybackHistoryLedger {
         posterUrl: input.posterUrl ?? this.context.posterUrl,
         updatedAt: now,
       });
-    } catch {
+    } catch (error) {
       // A contended write (SQLITE_BUSY / snapshot conflict under a second
       // instance) must not crash the teardown path — the resume row loses one
-      // finalize, not the session.
+      // finalize, not the session. Still report it: a silent skip hides a
+      // non-contention failure that keeps eating history writes.
+      this.onWriteError?.(error instanceof Error ? error : new Error(String(error)));
     }
     this.context = null;
   }
@@ -183,11 +186,12 @@ export class PlaybackHistoryLedger {
         posterUrl: this.context.posterUrl,
         updatedAt: now,
       });
-    } catch {
+    } catch (error) {
       // Same contract as recordEvent below: persistence contention (a second
       // instance's writer holding the DB, a SQLITE_BUSY_SNAPSHOT mid-tick)
       // drops this checkpoint — the next interval retries — instead of
       // propagating through the mpv event callback into a fatal shutdown.
+      this.onWriteError?.(error instanceof Error ? error : new Error(String(error)));
     }
   }
 

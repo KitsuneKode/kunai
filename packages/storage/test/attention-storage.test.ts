@@ -195,6 +195,53 @@ test("PlaylistsRepository stores durable playlist items without progress copies"
   expect(JSON.stringify(repo.listItems("playlist-1")[0])).not.toContain("positionSeconds");
 });
 
+test("QueueRepository: observed-identity predicate keeps the recoverable flip atomic with the check", () => {
+  const db = migratedDataDb();
+  const repo = new QueueRepository(db);
+
+  repo.createQueueSession({
+    id: "owned-session",
+    status: "active",
+    createdAt: "2026-05-17T00:00:00.000Z",
+    updatedAt: "2026-05-17T00:00:00.000Z",
+    lastActivityAt: "2026-05-17T00:04:00.000Z",
+    ownerPid: 4242,
+  });
+
+  // A session re-created between liveness check and write carries a new pid —
+  // the stale observation must not flip it.
+  repo.markQueueSessionRecoverable("owned-session", "2026-05-17T00:05:00.000Z", {
+    ownerPid: 9999,
+  });
+  expect(repo.getQueueSession("owned-session")?.status).toBe("active");
+
+  // The matching observation flips it.
+  repo.markQueueSessionRecoverable("owned-session", "2026-05-17T00:05:00.000Z", {
+    ownerPid: 4242,
+  });
+  expect(repo.getQueueSession("owned-session")?.status).toBe("recoverable");
+
+  // Pre-042 rows carry no pid: the activity predicate is the guard — an owner
+  // that touched the row since the read fails it and stays active.
+  repo.createQueueSession({
+    id: "legacy-session",
+    status: "active",
+    createdAt: "2026-05-17T00:00:00.000Z",
+    updatedAt: "2026-05-17T00:02:00.000Z",
+  });
+  repo.markQueueSessionRecoverable("legacy-session", "2026-05-17T00:05:00.000Z", {
+    ownerPid: null,
+    activityAt: "2026-05-17T00:01:00.000Z", // older than the row's updatedAt
+  });
+  expect(repo.getQueueSession("legacy-session")?.status).toBe("active");
+
+  repo.markQueueSessionRecoverable("legacy-session", "2026-05-17T00:05:00.000Z", {
+    ownerPid: null,
+    activityAt: "2026-05-17T00:02:00.000Z",
+  });
+  expect(repo.getQueueSession("legacy-session")?.status).toBe("recoverable");
+});
+
 function migratedDataDb() {
   const db = stores.store("attention-storage", "data");
   return db;

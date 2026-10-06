@@ -453,12 +453,37 @@ export class QueueRepository {
     return row ? mapQueueSessionRow(row) : undefined;
   }
 
-  markQueueSessionRecoverable(id: string, updatedAt: string): void {
+  markQueueSessionRecoverable(
+    id: string,
+    updatedAt: string,
+    observed?: { ownerPid?: number | null; activityAt?: string | null },
+  ): void {
+    if (!observed) {
+      this.db
+        .query(
+          "UPDATE playback_queue_sessions SET status = 'recoverable', updated_at = ? WHERE id = ? AND status = 'active'",
+        )
+        .run(updatedAt, id);
+      return;
+    }
+    // Compare-and-swap on the row the liveness check actually read: a session
+    // re-created (new owner_pid) or refreshed (newer activity) between the
+    // observation and this write is live work, not a crashed leftover.
+    const clauses = ["id = ?", "status = 'active'"];
+    const params: (string | number | null)[] = [];
+    if (observed.ownerPid !== undefined) {
+      clauses.push("owner_pid IS ?");
+      params.push(observed.ownerPid);
+    }
+    if (observed.activityAt !== undefined) {
+      clauses.push("COALESCE(last_activity_at, updated_at) IS ?");
+      params.push(observed.activityAt);
+    }
     this.db
       .query(
-        "UPDATE playback_queue_sessions SET status = 'recoverable', updated_at = ? WHERE id = ? AND status = 'active'",
+        `UPDATE playback_queue_sessions SET status = 'recoverable', updated_at = ? WHERE ${clauses.join(" AND ")}`,
       )
-      .run(updatedAt, id);
+      .run(updatedAt, id, ...params);
   }
 
   /**

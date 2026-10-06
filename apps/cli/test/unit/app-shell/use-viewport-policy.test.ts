@@ -36,6 +36,22 @@ describe("subscribeStdoutResize", () => {
     expect(seen).toEqual(["132x24"]);
   });
 
+  test("a throwing subscriber does not starve later subscribers", () => {
+    const stdout = new FakeStdout();
+    const seen: string[] = [];
+    subscribeStdoutResize(stdout, () => {
+      throw new Error("subscriber exploded");
+    });
+    subscribeStdoutResize(stdout, (next) => seen.push(`${next.cols}x${next.rows}`));
+
+    stdout.columns = 132;
+    stdout.emit("resize");
+
+    // `last` is already updated when subscribers run — without per-callback
+    // isolation the skipped subscriber would never see this resize again.
+    expect(seen).toEqual(["132x24"]);
+  });
+
   test("a detached subscriber is not called", () => {
     const stdout = new FakeStdout();
     const seen: string[] = [];

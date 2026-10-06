@@ -295,18 +295,31 @@ export function bootstrapServices(input: {
   // later restore drained its rows mid-playback. Only sessions whose owner is
   // dead — or whose owner is unknowable AND stale — are flagged.
   for (const session of queueRepository.listActiveQueueSessionsWithPendingWork(sessionId)) {
+    const observedActivityAt = session.lastActivityAt ?? session.updatedAt;
     if (session.ownerPid !== undefined) {
       if (isProcessAlive(session.ownerPid)) continue;
       // PID reuse can fake "alive", never "dead" — a dead owner means crashed.
-      queueRepository.markQueueSessionRecoverable(session.id, startupAt);
+      // The owner_pid predicate keeps the flip atomic with what was read: a
+      // session re-created between the check and this write keeps its new
+      // owner instead of being marked recoverable behind its back.
+      queueRepository.markQueueSessionRecoverable(session.id, startupAt, {
+        ownerPid: session.ownerPid,
+      });
       continue;
     }
     // Pre-042 rows carry no pid: an old build still running is
     // indistinguishable from a crashed one, so gate on staleness — an idle
     // queue under an hour old may still belong to a live instance.
-    const activityMs = Date.parse(session.lastActivityAt ?? session.updatedAt);
+    const activityMs = Date.parse(observedActivityAt);
     const stale = !Number.isFinite(activityMs) || Date.now() - activityMs > UNKNOWN_OWNER_STALE_MS;
-    if (stale) queueRepository.markQueueSessionRecoverable(session.id, startupAt);
+    // An owner that refreshed activity (or a re-created row carrying a pid)
+    // since the staleness check fails the predicate and is left alone.
+    if (stale) {
+      queueRepository.markQueueSessionRecoverable(session.id, startupAt, {
+        ownerPid: null,
+        activityAt: observedActivityAt,
+      });
+    }
   }
   queueRepository.createQueueSession({
     id: sessionId,

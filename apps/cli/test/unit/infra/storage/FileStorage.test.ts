@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -228,5 +228,113 @@ describe("FileStorage", () => {
 
     await expect(recovered.read<{ ok: boolean }>("config")).resolves.toEqual({ ok: true });
     await expect(readFile(configPath, "utf8")).resolves.toContain('"ok": true');
+  });
+
+  test("withLock serializes overlapping cycles across storage instances", async () => {
+    // Two FileStorage objects on one path stand in for two `kunai` processes:
+    // the lock file is the only thing they share, so mutual exclusion here is
+    // the same mechanism that protects a cross-instance config merge.
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const first = new FileStorage({ config: configPath });
+    const second = new FileStorage({ config: configPath });
+    const order: string[] = [];
+
+    const held = first.withLock("config", async () => {
+      order.push("a-start");
+      await Bun.sleep(40);
+      order.push("a-end");
+    });
+    const queued = second.withLock("config", async () => {
+      order.push("b-start");
+      order.push("b-end");
+    });
+    await Promise.all([held, queued]);
+
+    // The first claim is synchronous (O_EXCL succeeds inline), so `a` always
+    // holds the lock when `b` asks — `b` must observe a completed cycle.
+    expect(order).toEqual(["a-start", "a-end", "b-start", "b-end"]);
+    expect(await Bun.file(`${configPath}.lock`).exists()).toBe(false);
+  });
+
+  test("withLock reclaims a stale lock left by a dead holder", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const lockPath = `${configPath}.lock`;
+    // A crashed process never reaches its finally — the leftover file has to
+    // age out instead of deadlocking every later save.
+    await writeFile(lockPath, "999999\n");
+    const stale = new Date(Date.now() - 60_000);
+    await utimes(lockPath, stale, stale);
+
+    const storage = new FileStorage({ config: configPath });
+    const result = await storage.withLock("config", async () => "ran");
+    expect(result).toBe("ran");
+    expect(await Bun.file(lockPath).exists()).toBe(false);
+  });
+
+  test("withLock leaves a reclaimed lock alone when the stalled holder returns", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const lockPath = `${configPath}.lock`;
+    const first = new FileStorage({ config: configPath });
+    const second = new FileStorage({ config: configPath });
+
+    let releaseFirst: () => void = () => {};
+    let releaseSecond: () => void = () => {};
+    let secondHolding: () => void = () => {};
+    const firstHold = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const secondHold = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    const secondInside = new Promise<void>((resolve) => {
+      secondHolding = resolve;
+    });
+
+    const firstCycle = first.withLock("config", () => firstHold);
+
+    // The holder stalls past the stale window — the contender reclaims the
+    // file and writes its own claim at the same path.
+    const stale = new Date(Date.now() - 60_000);
+    await utimes(lockPath, stale, stale);
+    const secondCycle = second.withLock("config", async () => {
+      secondHolding();
+      await secondHold;
+      return "b";
+    });
+    await secondInside;
+
+    // The stalled holder finishing must not unlink the lock the contender
+    // now owns — that would open the mutex to a third claimant mid-cycle.
+    releaseFirst();
+    await firstCycle;
+    expect(await Bun.file(lockPath).exists()).toBe(true);
+
+    releaseSecond();
+    await secondCycle;
+    expect(await Bun.file(lockPath).exists()).toBe(false);
+  });
+
+  test("withLock releases the claim when the guarded cycle throws", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const storage = new FileStorage({ config: configPath });
+
+    await expect(
+      storage.withLock("config", async () => {
+        throw new Error("merge exploded");
+      }),
+    ).rejects.toThrow("merge exploded");
+
+    // A leaked claim would wedge every later save behind the wait-fallback.
+    expect(await Bun.file(`${configPath}.lock`).exists()).toBe(false);
+    const again = await storage.withLock("config", async () => "ok");
+    expect(again).toBe("ok");
   });
 });

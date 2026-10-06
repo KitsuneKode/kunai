@@ -504,13 +504,29 @@ export async function bootstrapPersistence(
  * the retry, so a bounded retry is the whole fix: a twin's committed marker
  * makes the second pass a no-op.
  */
+/**
+ * bun:sqlite surfaces SQLite error names on `code` — the BUSY family (plus its
+ * extended results) means "retryable cross-instance collision", never a
+ * corrupt statement or schema. Mirrors `isSqliteCorruptionError`'s convention:
+ * callers narrow a catch-clause value to `Error` first.
+ */
+function isSqliteContention(error: Error): boolean {
+  if (!("code" in error)) return false;
+  return (
+    error.code === "SQLITE_BUSY" ||
+    error.code === "SQLITE_BUSY_SNAPSHOT" ||
+    error.code === "SQLITE_BUSY_TIMEOUT" ||
+    error.code === "SQLITE_BUSY_RECOVERY"
+  );
+}
+
 function runBootstrapUpgradeWork(name: string, work: () => void): void {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       work();
       return;
     } catch (error) {
-      if (attempt === 2) {
+      if (!(error instanceof Error) || attempt === 2 || !isSqliteContention(error)) {
         throw error instanceof Error ? error : new Error(`${name} failed: ${String(error)}`);
       }
       Bun.sleepSync(50 * (attempt + 1));
