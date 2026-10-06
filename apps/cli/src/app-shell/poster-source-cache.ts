@@ -13,6 +13,7 @@ import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster
 import { MAX_POSTER_SOURCE_BYTES } from "@/image/native-image";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
 
+import { createKeyedInflight } from "./inflight";
 import { ByteBudgetLruCache } from "./poster-byte-cache";
 
 export type PosterSource = {
@@ -29,7 +30,7 @@ const sourceCache = new ByteBudgetLruCache<string, PosterSource>({
   maxBytes: MAX_POSTER_SOURCE_CACHE_BYTES,
   weight: (source) => source.bytes.byteLength,
 });
-const sourceInflight = new Map<string, Promise<PosterSource | null>>();
+const sourceInflight = createKeyedInflight();
 
 function getTmdbSize(cols: number, variant: "preview" | "detail"): string {
   if (variant === "detail") return cols <= 28 ? "w500" : "w780";
@@ -219,35 +220,28 @@ export async function fetchPosterSource(
   const cached = sourceCache.get(resolved);
   if (cached) return cached;
 
-  // Don't join an aborted-capable leader — same rule as fetchPoster.
-  const inflight = sourceInflight.get(resolved);
-  if (inflight && !signal) return inflight;
-
-  const task = (async (): Promise<PosterSource | null> => {
-    try {
-      if (signal?.aborted) return null;
-      const source = isLocalImagePath(resolved)
-        ? await readLocalPosterSource(resolved, signal)
-        : await readRemotePosterSource(resolved, signal);
-      if (!source || signal?.aborted) return null;
-      // Only a complete, in-bounds, unaborted read is worth remembering; caching
-      // a failure would make one dropped connection permanent for the process.
-      sourceCache.set(resolved, source);
-      return source;
-    } catch {
-      return null;
-    }
-  })();
-
-  sourceInflight.set(resolved, task);
-  try {
-    return await task;
-  } finally {
-    // Preserve a newer abort-capable leader registered for the same URL. An
-    // unconditional delete here made the source layer look idle while that
-    // newer fetch was still running.
-    if (sourceInflight.get(resolved) === task) sourceInflight.delete(resolved);
-  }
+  // The leader reads without any caller's signal so a fast-scrolling abort
+  // cannot kill a fetch another surface still needs — and a completed read
+  // still warms the cache for the next caller. `signal` gates this caller's
+  // own await only.
+  return sourceInflight.join(
+    resolved,
+    async () => {
+      try {
+        const source = isLocalImagePath(resolved)
+          ? await readLocalPosterSource(resolved)
+          : await readRemotePosterSource(resolved);
+        if (!source) return null;
+        // Only a complete, in-bounds read is worth remembering; caching a
+        // failure would make one dropped connection permanent for the process.
+        sourceCache.set(resolved, source);
+        return source;
+      } catch {
+        return null;
+      }
+    },
+    signal,
+  );
 }
 
 /**
