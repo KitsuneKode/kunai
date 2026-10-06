@@ -205,7 +205,13 @@ function looksLikeStreamUrl(url: URL): boolean {
 function looksLikeHostname(value: string): boolean {
   const trimmed = value.trim();
   if (trimmed.length < 3 || trimmed.includes("/") || trimmed.includes(" ")) return false;
-  return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i.test(trimmed);
+  // Dotted names are unambiguous hosts. A single label is ambiguous — "movies"
+  // reads as a word — so it only counts when it carries a machine-naming cue
+  // (a digit or a hyphen): `nas-01`, `pi4`, `htpc-livingroom`.
+  if (/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i.test(trimmed)) {
+    return true;
+  }
+  return /^[a-z0-9][a-z0-9-]*[a-z0-9]$/i.test(trimmed) && /[\d-]/.test(trimmed);
 }
 
 function redactUsernameOccurrences(value: string, username: string): string {

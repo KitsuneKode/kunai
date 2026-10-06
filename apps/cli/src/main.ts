@@ -790,6 +790,16 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   })().catch(() => {});
 
+  // The terminal graphics probe round-trips a query through the TTY (100 ms,
+  // 400 ms on Windows conhost) — start it now so it overlaps the version-lock,
+  // manifest, and config work instead of serializing in front of checkDeps.
+  // It is still awaited below before anything writes to stdout, so the escape
+  // query can never interleave into the dependency report.
+  const graphicsProbeReady = (async () => {
+    const { initTerminalGraphicsProbe } = await import("./image/probe");
+    await initTerminalGraphicsProbe();
+  })().catch(() => {});
+
   // Guard: verify required system dependencies before touching the shell.
   // Silence pre-TUI console output when onboarding will run — the system
   // check slide shows the same information visually inside the TUI.
@@ -823,8 +833,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // Must precede checkDeps: that snapshot records the chosen image protocol, and
   // it is what diagnostics and `/report-issue` carry into a bug report. Probing
   // afterwards would have every report claim the pre-probe fallback.
-  const { initTerminalGraphicsProbe } = await import("./image/probe");
-  await initTerminalGraphicsProbe();
+  await graphicsProbeReady;
 
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,

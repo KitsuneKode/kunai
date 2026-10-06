@@ -154,7 +154,9 @@ export async function fetchHlsRelayUpstream(
       throw new Error("upstream response reported an invalid byte count");
     }
     if (receivedBytes > remainingResponseBytes) {
-      throw new Error(`upstream body exceeded ${bodyLimitBytes} bytes`);
+      throw new Error(
+        `upstream body exceeded the ${bodyLimitBytes} byte budget (${receivedBytes} bytes received, ${remainingResponseBytes} remaining)`,
+      );
     }
     remainingResponseBytes -= receivedBytes;
     assertWithinDeadline();
