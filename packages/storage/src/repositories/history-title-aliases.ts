@@ -80,6 +80,54 @@ export class HistoryTitleAliasRepository {
     return row?.title_id ?? undefined;
   }
 
+  /**
+   * Bulk form of `lookupTitleId` for identity resolution: one round-trip for
+   * N (ns, id) pairs instead of one query per alias on the resume path.
+   * Returns the title_id per pair that has a row, keyed by pair index.
+   */
+  lookupTitleIds(
+    pairs: readonly (readonly [ns: HistoryTitleAliasNs, id: string])[],
+  ): ReadonlyMap<number, string> {
+    const found = new Map<number, string>();
+    if (pairs.length === 0) return found;
+    const values = pairs.map(() => "(?, ?)").join(", ");
+    const params: string[] = [];
+    for (const [ns, id] of pairs) params.push(ns, id);
+    const rows = this.db
+      .query<HistoryTitleAliasRow, string[]>(
+        `SELECT alias_ns, alias_id, title_id FROM history_title_aliases WHERE (alias_ns, alias_id) IN (VALUES ${values})`,
+      )
+      .all(...params);
+    const byPair = new Map(
+      rows.map((row) => [`${row.alias_ns}\u0000${row.alias_id}`, row.title_id]),
+    );
+    pairs.forEach(([ns, id], index) => {
+      const titleId = byPair.get(`${ns}\u0000${id}`);
+      if (titleId !== undefined) found.set(index, titleId);
+    });
+    return found;
+  }
+
+  /**
+   * Bulk form of `lookupTitleIdByAliasId`: one round-trip for N raw ids.
+   * First row wins per id, matching the single-lookup `LIMIT 1` shape.
+   */
+  lookupTitleIdsByAliasId(ids: readonly string[]): ReadonlyMap<string, string> {
+    const found = new Map<string, string>();
+    const trimmed = [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))];
+    if (trimmed.length === 0) return found;
+    const placeholders = trimmed.map(() => "?").join(", ");
+    const rows = this.db
+      .query<HistoryTitleAliasRow, string[]>(
+        `SELECT alias_ns, alias_id, title_id FROM history_title_aliases WHERE alias_id IN (${placeholders})`,
+      )
+      .all(...trimmed);
+    for (const row of rows) {
+      if (!found.has(row.alias_id)) found.set(row.alias_id, row.title_id);
+    }
+    return found;
+  }
+
   listByTitleId(titleId: string): readonly HistoryTitleAlias[] {
     return this.db
       .query<HistoryTitleAliasRow, [string]>(

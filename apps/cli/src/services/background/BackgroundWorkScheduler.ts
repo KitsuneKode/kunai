@@ -43,18 +43,36 @@ export class BackgroundWorkScheduler {
   private drainInFlight?: Promise<BackgroundWorkDrainResult>;
   private readonly activeControllers = new Set<AbortController>();
   private shuttingDown = false;
+  /**
+   * Lazily sorted view of `queue`. Rebuilt only after a mutation (enqueue or
+   * batch take), so a drain pays one sort — not one per batch — while items
+   * enqueued mid-drain are still picked up by later batches.
+   */
+  private sortedSnapshot: BackgroundWorkItem[] | undefined;
 
   constructor(
     private readonly options: {
       readonly maxConcurrent?: number;
       readonly diagnostics?: Pick<DiagnosticsService, "record">;
+      /**
+       * Queue admission bound. Prefetch/warm/runway bursts otherwise grow the
+       * map without backpressure for the life of the process. Past the bound
+       * the lowest-priority oldest item gives way (same-id re-enqueue still
+       * coalesces, so refresh bursts collapse instead of shedding).
+       */
+      readonly maxQueued?: number;
     } = {},
   ) {}
 
   /** Returns false (and drops the item) once shutdown has begun. */
   enqueue(item: BackgroundWorkItem): boolean {
     if (this.shuttingDown) return false;
+    const maxQueued = Math.max(1, Math.trunc(this.options.maxQueued ?? 500));
+    if (!this.queue.has(item.id) && this.queue.size >= maxQueued) {
+      this.evictLowestPriority(item);
+    }
     this.queue.set(item.id, item);
+    this.sortedSnapshot = undefined;
     return true;
   }
 
@@ -207,14 +225,46 @@ export class BackgroundWorkScheduler {
   }
 
   private takeNextBatch(count: number): BackgroundWorkItem[] {
-    const items = [...this.queue.values()].sort(
+    this.sortedSnapshot ??= [...this.queue.values()].sort(
       (a, b) => LANE_PRIORITY[b.lane] - LANE_PRIORITY[a.lane] || a.id.localeCompare(b.id),
     );
-    const batch = items.slice(0, count);
+    const batch = this.sortedSnapshot.slice(0, count);
     for (const item of batch) {
       this.queue.delete(item.id);
     }
+    this.sortedSnapshot = this.sortedSnapshot.slice(count);
     return batch;
+  }
+
+  /**
+   * Shed load on overflow: the lowest-priority oldest item is dropped so a
+   * burst of low-value work (recommendation warm, attention refresh) can
+   * never starve playback-critical or user-requested items. The drop is
+   * recorded — silent shedding would be the house silent-no-op failure.
+   */
+  private evictLowestPriority(incoming: BackgroundWorkItem): void {
+    let victim: BackgroundWorkItem | undefined;
+    for (const item of this.queue.values()) {
+      // Strictly-lower wins, so ties keep the earliest-inserted victim:
+      // Map iterates in insertion order.
+      if (!victim || LANE_PRIORITY[item.lane] < LANE_PRIORITY[victim.lane]) {
+        victim = item;
+      }
+    }
+    if (!victim) return;
+    this.queue.delete(victim.id);
+    this.options.diagnostics?.record({
+      level: "debug",
+      category: "runtime",
+      operation: "background.work.shed",
+      message: "Background work queue full; shed lowest-priority item",
+      context: {
+        shedId: victim.id,
+        shedLane: victim.lane,
+        admittedId: incoming.id,
+        admittedLane: incoming.lane,
+      },
+    });
   }
 }
 

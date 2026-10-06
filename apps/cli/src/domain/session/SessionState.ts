@@ -124,7 +124,7 @@ export type OverlayState =
   | { type: "settings"; initialSectionId?: string }
   | { type: "provider_picker"; currentProvider: string; lane: import("../types").ProviderLane }
   | ({ type: "subtitle_picker" } & PickerOverlayState)
-  | ({ type: "season_picker"; currentSeason: number } & PickerOverlayState)
+  | ({ type: "season_picker"; currentSeason: number; initialIndex?: number } & PickerOverlayState)
   | ({ type: "episode_picker"; season: number; initialIndex?: number } & PickerOverlayState)
   | ({ type: "recommendation_picker" } & PickerOverlayState)
   | {
@@ -651,7 +651,8 @@ export function reduceState(state: SessionState, transition: StateTransition): S
             ...transition.picker,
             selectedIndex: normalizePickerIndex(
               transition.picker.selectedIndex ??
-                (transition.picker.type === "episode_picker"
+                (transition.picker.type === "episode_picker" ||
+                transition.picker.type === "season_picker"
                   ? transition.picker.initialIndex
                   : 0) ??
                 0,
@@ -876,6 +877,9 @@ function shouldReplaceOpenOverlay(current: OverlayState | undefined, next: Overl
 
 function normalizePickerIndex(index: number, length: number): number {
   if (length <= 0) return 0;
+  // A miss stays unhighlighted: -1 (or non-finite) renders no highlight and
+  // Enter on it is a no-op, instead of inviting playback of row 0.
+  if (!Number.isFinite(index) || index < 0) return -1;
   return clamp(index, 0, length - 1);
 }
 

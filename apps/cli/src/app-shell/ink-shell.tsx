@@ -270,6 +270,31 @@ async function openPlaybackStreamSelectionPicker(
 
   if (!selection) return;
 
+  // Validate quality/source/audio picks against the cached inventory before
+  // applying: the panel rows were rendered from a snapshot, and a re-resolve
+  // in between leaves ids that no longer exist. Applying blindly keeps the
+  // old stream while reporting success. A stale pick returns here with the
+  // miss recorded in diagnostics; a live pick falls through to apply below.
+  if (
+    title &&
+    episode &&
+    (picked.section === "quality" ||
+      picked.section === "source" ||
+      picked.section === "audio" ||
+      picked.section === "hardsub")
+  ) {
+    const { resolveTracksPanelPick } = await import("@/app/playback/tracks-panel-pick");
+    const resolved = await resolveTracksPanelPick(picked, selection, {
+      container,
+      title,
+      episode,
+      currentProviderId: sessionState.provider,
+      resumeSeconds: 0,
+      reason,
+    });
+    if (resolved.kind === "stale-pick") return;
+  }
+
   // Source switches restart the episode; quality/audio/hardsub swap the active
   // stream in place. Subtitles attach in mpv, so they never resolve here.
   const controlAction = picked.section === "source" ? "pick-source" : "pick-quality";

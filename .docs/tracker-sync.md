@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-17"
+lastReviewed: "2026-10-06"
 ---
 
 # Tracker Sync
@@ -215,7 +215,10 @@ observe it.
 To remove Kunai's access entirely: disconnect in Kunai, then revoke the
 application from your AniList account settings and delete the session from your
 TMDB account settings. Deleting `configDir/sync-tokens.json` removes the local
-credentials but does not revoke anything remotely.
+credentials but does not revoke anything remotely. If that file is ever
+unparseable, Kunai quarantines it aside as `sync-tokens.json.corrupt-<ts>.json`
+instead of merging over it, so one corrupt write cannot erase the other
+tracker's credential — re-authenticate the affected tracker afterwards.
 
 ## Not implemented
 

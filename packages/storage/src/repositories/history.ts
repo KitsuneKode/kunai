@@ -13,7 +13,11 @@ import type {
 } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
-import { externalIdsToAliases, HistoryTitleAliasRepository } from "./history-title-aliases";
+import {
+  externalIdsToAliases,
+  HistoryTitleAliasRepository,
+  type HistoryTitleAliasNs,
+} from "./history-title-aliases";
 import { SyncReconciliationRepository } from "./sync-reconciliation";
 
 export interface HistoryProgressInput {
@@ -342,17 +346,37 @@ export class HistoryRepository {
   }
 
   /**
-   * Resolve the latest history row for a title identity. Tries the canonical catalog
-   * id first, then alias-mapped ids, then the raw session id for legacy opaque rows.
+   * Resolve the latest history row for a title identity. Candidate ids keep
+   * their preference order (canonical → aliases → legacy), and the latest row
+   * under the first matching id wins — the same decision the old per-id loop
+   * made, in one round-trip instead of one query per candidate.
    */
   getLatestForTitleIdentity(
     title: Pick<TitleIdentity, "id" | "kind" | "externalIds">,
   ): HistoryProgress | undefined {
-    for (const titleId of this.collectLookupTitleIds(title)) {
-      const latest = this.getLatestForTitle(titleId);
-      if (latest) return latest;
+    const titleIds = this.collectLookupTitleIds(title);
+    if (titleIds.length === 0) return undefined;
+    const placeholders = titleIds.map(() => "?").join(", ");
+    const rows = this.db
+      .query<HistoryProgressRow, string[]>(
+        `SELECT * FROM history_progress WHERE title_id IN (${placeholders})`,
+      )
+      .all(...titleIds)
+      .map(mapHistoryRow);
+    const rank = new Map(titleIds.map((id, index) => [id, index]));
+    let best: HistoryProgress | undefined;
+    for (const row of rows) {
+      if (best === undefined) {
+        best = row;
+        continue;
+      }
+      const rowRank = rank.get(row.titleId) ?? Number.MAX_SAFE_INTEGER;
+      const bestRank = rank.get(best.titleId) ?? Number.MAX_SAFE_INTEGER;
+      if (rowRank < bestRank || (rowRank === bestRank && row.updatedAt > best.updatedAt)) {
+        best = row;
+      }
     }
-    return undefined;
+    return best;
   }
 
   /**
@@ -375,8 +399,21 @@ export class HistoryRepository {
       return this.getLatestForTitleIdentity(lookup);
     }
 
-    for (const titleId of this.collectLookupTitleIds(lookup)) {
-      const progress = this.getProgress({ ...lookup, id: titleId }, episode);
+    // Exact-episode keys for every candidate id, resolved in one round-trip.
+    // First candidate id with a row wins — the old per-id key loop's decision.
+    const titleIds = this.collectLookupTitleIds(lookup);
+    if (titleIds.length === 0) return undefined;
+    const keys = titleIds.map((id) => createHistoryKey({ ...lookup, id }, episode));
+    const placeholders = keys.map(() => "?").join(", ");
+    const rows = this.db
+      .query<HistoryProgressRow, string[]>(
+        `SELECT * FROM history_progress WHERE key IN (${placeholders})`,
+      )
+      .all(...keys)
+      .map(mapHistoryRow);
+    const byKey = new Map(rows.map((row) => [row.key, row]));
+    for (const key of keys) {
+      const progress = byKey.get(key);
       if (progress) return progress;
     }
     return undefined;
@@ -508,6 +545,29 @@ export class HistoryRepository {
   }
 
   /**
+   * Episode rows for one season of a title. The episode picker opened this on
+   * every render with a full-title scan plus an in-memory filter; pushing the
+   * season predicate into SQLite keeps picker-open latency flat as series
+   * histories grow. `COALESCE(season, 1)` mirrors the picker's
+   * `(season ?? 1)` matching so absolute-numbered rows behave identically.
+   */
+  listByTitleSeason(titleId: string, season: number, limit = 500): readonly HistoryProgress[] {
+    return this.db
+      .query<HistoryProgressRow, [string, number, number]>(
+        `
+          SELECT * FROM history_progress
+          WHERE title_id = ? AND COALESCE(season, 1) = ?
+          ORDER BY
+            COALESCE(episode, 0) ASC,
+            updated_at DESC
+          LIMIT ?
+        `,
+      )
+      .all(titleId, season, limit)
+      .map(mapHistoryRow);
+  }
+
+  /**
    * List every episode row for a title after resolving canonical id, aliases, and
    * legacy raw id forms (bare TMDB ↔ `tmdb:` prefix, provider opaque ids, etc.).
    */
@@ -540,10 +600,67 @@ export class HistoryRepository {
   /**
    * Candidate title_ids for a lookup, in preference order:
    * canonical catalog id → alias-mapped ids → bare/prefixed TMDB variants → legacy raw id.
+   *
+   * Alias reads run in two bulk queries (pairs, then raw ids) instead of one
+   * query per alias: the old shape issued ~6 sequential alias reads plus one
+   * history read per candidate on the resume path. Planning (which aliases to
+   * ask about) stays a pure function of the title, so bulk-resolving first
+   * and assembling after returns the identical order.
    */
   private collectLookupTitleIds(
     title: Pick<TitleIdentity, "id" | "kind" | "externalIds">,
   ): readonly string[] {
+    type Step =
+      | { readonly kind: "literal"; readonly id: string }
+      | { readonly kind: "pair"; readonly ns: HistoryTitleAliasNs; readonly id: string }
+      | { readonly kind: "aliasId"; readonly id: string };
+    const steps: Step[] = [];
+    const pairIndex = new Map<number, number>();
+    const pairs: (readonly [HistoryTitleAliasNs, string])[] = [];
+    const aliasIds: string[] = [];
+    const planPair = (ns: HistoryTitleAliasNs, id: string) => {
+      pairIndex.set(steps.length, pairs.length);
+      pairs.push([ns, id] as const);
+      steps.push({ kind: "pair", ns, id });
+    };
+    const planAliasId = (id: string) => {
+      steps.push({ kind: "aliasId", id });
+      aliasIds.push(id);
+    };
+
+    steps.push({ kind: "literal", id: resolveHistoryLookupTitleId(title) });
+
+    for (const alias of externalIdsToAliases(title.externalIds)) {
+      planPair(alias.ns, alias.id);
+    }
+
+    if (title.id.startsWith("tmdb:")) {
+      const bare = title.id.slice("tmdb:".length);
+      planPair("tmdb", bare);
+      steps.push({ kind: "literal", id: bare });
+    } else if ((title.kind === "movie" || title.kind === "series") && /^\d+$/.test(title.id)) {
+      planPair("tmdb", title.id);
+      steps.push({ kind: "literal", id: `tmdb:${title.id}` });
+    }
+
+    if (title.kind === "anime" && /^\d+$/.test(title.id)) {
+      planPair("anilist", title.id);
+      planPair("mal", title.id);
+    }
+
+    const tmdbId = title.externalIds?.tmdbId?.trim();
+    if (tmdbId) {
+      planPair("tmdb", tmdbId);
+      steps.push({ kind: "literal", id: tmdbId });
+      steps.push({ kind: "literal", id: `tmdb:${tmdbId}` });
+    }
+
+    planAliasId(title.id);
+    steps.push({ kind: "literal", id: title.id });
+
+    const pairResults = this.titleAliases.lookupTitleIds(pairs);
+    const aliasIdResults = this.titleAliases.lookupTitleIdsByAliasId(aliasIds);
+
     const ordered: string[] = [];
     const seen = new Set<string>();
     const add = (id: string | undefined) => {
@@ -553,35 +670,11 @@ export class HistoryRepository {
       ordered.push(trimmed);
     };
 
-    add(resolveHistoryLookupTitleId(title));
-
-    for (const alias of externalIdsToAliases(title.externalIds)) {
-      add(this.titleAliases.lookupTitleId(alias.ns, alias.id));
-    }
-
-    if (title.id.startsWith("tmdb:")) {
-      const bare = title.id.slice("tmdb:".length);
-      add(this.titleAliases.lookupTitleId("tmdb", bare));
-      add(bare);
-    } else if ((title.kind === "movie" || title.kind === "series") && /^\d+$/.test(title.id)) {
-      add(this.titleAliases.lookupTitleId("tmdb", title.id));
-      add(`tmdb:${title.id}`);
-    }
-
-    if (title.kind === "anime" && /^\d+$/.test(title.id)) {
-      add(this.titleAliases.lookupTitleId("anilist", title.id));
-      add(this.titleAliases.lookupTitleId("mal", title.id));
-    }
-
-    const tmdbId = title.externalIds?.tmdbId?.trim();
-    if (tmdbId) {
-      add(this.titleAliases.lookupTitleId("tmdb", tmdbId));
-      add(tmdbId);
-      add(`tmdb:${tmdbId}`);
-    }
-
-    add(this.titleAliases.lookupTitleIdByAliasId(title.id));
-    add(title.id);
+    steps.forEach((step, stepIndex) => {
+      if (step.kind === "literal") add(step.id);
+      else if (step.kind === "pair") add(pairResults.get(pairIndex.get(stepIndex) ?? -1));
+      else add(aliasIdResults.get(step.id.trim()));
+    });
 
     return ordered;
   }

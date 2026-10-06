@@ -1,18 +1,37 @@
 import { describe, expect, test } from "bun:test";
-import { readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 
 describe("createPrivateTempDir", () => {
-  test("creates a fresh directory under the OS temp dir", async () => {
+  test("creates a fresh directory under the isolated temp root", async () => {
+    // Default (no TMPDIR override): the storage-root temp dir under OS tmp.
     const dir = await createPrivateTempDir("hls");
     try {
-      expect(dir.startsWith(join(tmpdir(), "kunai-hls-"))).toBe(true);
+      expect(dir.startsWith(join(tmpdir(), "kunai", "kunai-hls-"))).toBe(true);
       expect((await stat(dir)).isDirectory()).toBe(true);
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("follows TMPDIR into a sandbox instead of the shared OS tmp", async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), "kunai-tmpdir-override-"));
+    const previous = process.env.TMPDIR;
+    process.env.TMPDIR = sandbox;
+    try {
+      const dir = await createPrivateTempDir("hls");
+      try {
+        expect(dir.startsWith(join(sandbox, "kunai", "kunai-hls-"))).toBe(true);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    } finally {
+      if (previous === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = previous;
+      await rm(sandbox, { recursive: true, force: true });
     }
   });
 

@@ -1175,6 +1175,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               run.pendingSourceRefreshAction = "recover";
               run.pendingRecomputeSources = false;
             }
+            if (restart.notice) {
+              this.updatePlaybackFeedback(context, { note: restart.notice });
+            }
             return restart.startIntent;
           };
           const applyConfirmedPlaybackTrackSelection = async (
@@ -2596,24 +2599,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stateManager.getState().videoMeta,
               ),
             };
+            // One read serves both the did-not-start resume check and the
+            // last-watched bump below: this teardown used to issue the same
+            // identity lookup twice (~8 sequential queries each) per episode end.
+            const existingProgress = container.historyRepository.getProgressForTitleIdentity(
+              titleIdentity,
+              episodeIdentity,
+            );
             if (decision.isDidNotStart) {
-              const existingProgress = container.historyRepository.getProgressForTitleIdentity(
-                titleIdentity,
-                episodeIdentity,
-              );
               if (existingProgress && existingProgress.positionSeconds > 0) {
                 historyTimestamp = existingProgress.positionSeconds;
               }
             }
-            const existingProgressForBump = container.historyRepository.getProgressForTitleIdentity(
-              titleIdentity,
-              episodeIdentity,
-            );
             const lastWatchedAt = decision.shouldBumpLastWatched
               ? new Date().toISOString()
-              : (existingProgressForBump?.lastWatchedAt ??
-                existingProgressForBump?.updatedAt ??
-                null);
+              : (existingProgress?.lastWatchedAt ?? existingProgress?.updatedAt ?? null);
             if (this.playbackLedger) {
               this.playbackLedger.finalize({
                 positionSeconds: historyTimestamp,
@@ -3205,7 +3205,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 new Set(
                   streams
                     .map((s) => s.sourceId)
-                    .filter((id): id is string => id != null && id.length > 0),
+                    .filter((id): id is string => id !== null && id !== undefined && id.length > 0),
                 ),
               );
 

@@ -172,4 +172,29 @@ describe("renderSixelFromImage", () => {
       ),
     ).toBeNull();
   });
+
+  test("degrades quality to fit maxBytes instead of emitting an unbounded stream", () => {
+    // Photographic noise defeats run-length encoding: every column differs.
+    const noisy = Array.from({ length: 64 * 48 * 3 }, (_, i) => (i * 37 + (i >> 2)) % 256);
+    const decoded = decodePng(makeRgbPng(64, 48, noisy));
+    const unbounded = renderSixelFromImage(decoded, { maxWidth: 64, maxHeight: 48 });
+    expect(unbounded).not.toBeNull();
+
+    const cap = Math.floor((unbounded as string).length / 2);
+    const degraded = renderSixelFromImage(decoded, {
+      maxWidth: 64,
+      maxHeight: 48,
+      maxBytes: cap,
+    });
+    expect(degraded).not.toBeNull();
+    expect((degraded as string).length).toBeLessThanOrEqual(cap);
+    expect(dataBytesAreInRange(degraded as string)).toBe(true);
+  });
+
+  test("fails closed to null when even the smallest render exceeds maxBytes", () => {
+    const png = makeRgbPng(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]);
+    expect(
+      renderSixelFromImage(decodePng(png), { maxWidth: 100, maxHeight: 100, maxBytes: 1 }),
+    ).toBeNull();
+  });
 });

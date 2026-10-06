@@ -105,7 +105,11 @@ export function usePlaybackPosterSurfaceCleanup(
   useEffect(() => {
     if (phase === "bootstrap") {
       sawBootstrapRef.current = true;
-      clearRenderedPosterImages();
+      // Placements only: a full cache wipe here blanks browse/post-play art
+      // and drops in-flight fetches, whose late uploads then ghost back after
+      // the wipe. Byte caches stay warm across the hop; shutdown owns the
+      // full clear.
+      undisplayPlacementsKeepCache();
       return;
     }
     if (phase === "playing") {
@@ -114,7 +118,7 @@ export function usePlaybackPosterSurfaceCleanup(
         sawBootstrapRef.current = false;
         return;
       }
-      clearRenderedPosterImages();
+      undisplayPlacementsKeepCache();
     }
   }, [phase]);
 }

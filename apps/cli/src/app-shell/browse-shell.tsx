@@ -98,7 +98,7 @@ import {
 import { buildDetailsSheet } from "./details-sheet.model";
 import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
-import { deleteAllKittyImages } from "./image-pane";
+import { undisplayPlacementsKeepCache } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
 import { buildFooterActionsFromBindings } from "./keybindings";
 import {
@@ -150,7 +150,10 @@ import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 function clearShellScreen() {
   if (process.stdout.isTTY) {
-    deleteAllKittyImages();
+    // Placements must go (the frame is cleared), but source bytes stay warm:
+    // wiping the 48MB+32MB byte caches here refetches + redecodes every poster
+    // the moment the user returns. Full wipe is for session shutdown only.
+    undisplayPlacementsKeepCache();
   }
 }
 

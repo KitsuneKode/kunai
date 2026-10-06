@@ -33,7 +33,7 @@ function tempDir(): string {
  */
 function streamingResponse(
   chunks: readonly Uint8Array[],
-  options: { contentLength?: number | null; failAfter?: number } = {},
+  options: { contentLength?: number | null; failAfter?: number; contentType?: string } = {},
 ): Response {
   let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
@@ -63,6 +63,7 @@ function streamingResponse(
       ? chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
       : options.contentLength;
   if (declared !== null) headers.set("content-length", String(declared));
+  if (options.contentType !== undefined) headers.set("content-type", options.contentType);
 
   const response = new Response(stream, { status: 200, headers });
   Object.defineProperty(response, "__cancelled", { get: () => cancelled });
@@ -218,6 +219,23 @@ describe("fetchPosterSource — remote bounds", () => {
     // Identity has to be the resolved asset, not the caller's raw path: the
     // prepared cache keys off it, and w342 and w780 are different images.
     expect(source?.identity).toBe("https://image.tmdb.org/t/p/w342/poster.jpg");
+  });
+
+  test("rejects a declared HTML error page by cancelling, not decoding", async () => {
+    const html = streamingResponse([new TextEncoder().encode("<html>error</html>")], {
+      contentLength: null,
+      contentType: "text/html; charset=utf-8",
+    });
+    globalThis.fetch = (async () => html) as unknown as typeof fetch;
+
+    expect(await fetchPosterSource("https://cdn.example.test/broken.jpg")).toBeNull();
+    expect((html as unknown as { __cancelled: boolean }).__cancelled).toBe(true);
+    // And the rejection is not cached: a fixed server is retried, not pinned.
+    globalThis.fetch = (async () =>
+      streamingResponse([bytesOf(16)], { contentLength: null })) as unknown as typeof fetch;
+    expect((await fetchPosterSource("https://cdn.example.test/broken.jpg"))?.bytes.byteLength).toBe(
+      16,
+    );
   });
 });
 

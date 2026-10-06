@@ -464,6 +464,25 @@ export function applyPreferredStreamSelection(
         .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0))[0] ?? null;
   }
 
+  if (selected && !selected.url) {
+    // The pinned stream is dead (re-resolve dropped its URL, or the group row
+    // pointed at the first of several same-label streams and that one died).
+    // Fail over to a same-group sibling with a URL before giving up: same
+    // source, same quality label, best rank first. Only then is the pick
+    // genuinely unplayable.
+    const label = selected.qualityLabel ?? null;
+    selected =
+      [...result.streams]
+        .filter(
+          (candidate) =>
+            candidate.id !== selected?.id &&
+            candidate.sourceId === selected?.sourceId &&
+            (candidate.qualityLabel ?? null) === label &&
+            candidate.url,
+        )
+        .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0))[0] ?? selected;
+  }
+
   if (!selected?.url) return stream;
   if (selected.id === result.selectedStreamId && selected.url === stream.url) return stream;
 

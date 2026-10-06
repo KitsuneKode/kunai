@@ -586,7 +586,11 @@ export function RootOverlayShell({
     ? (overlay.filterQuery ?? "")
     : filterQuery;
   const pickerSelectedIndex = isRootMediaPickerOverlay(overlay)
-    ? (overlay.selectedIndex ?? (overlay.type === "episode_picker" ? overlay.initialIndex : 0) ?? 0)
+    ? (overlay.selectedIndex ??
+      (overlay.type === "episode_picker" || overlay.type === "season_picker"
+        ? overlay.initialIndex
+        : 0) ??
+      0)
     : selectedIndex;
   const filterEditor = useLineEditor({
     value: pickerFilterQuery,

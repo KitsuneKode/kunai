@@ -19,7 +19,12 @@ import { scheduleVideasyLazySourceProbesFromContainer } from "@/services/playbac
 import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
 import type { ProviderHealth, ProviderId } from "@kunai/types";
 
-import { createSessionPickerId, openSessionPicker, waitForSessionPicker } from "../session-picker";
+import {
+  createSessionPickerId,
+  openSessionPicker,
+  parsePickerValue,
+  waitForSessionPicker,
+} from "../session-picker";
 
 export async function openProviderPicker({
   currentProvider,
@@ -203,7 +208,7 @@ export async function openAnimeEpisodePicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: Math.max(0, currentEpisode - 1),
+      initialIndex: currentEpisode >= 1 && currentEpisode <= count ? currentEpisode - 1 : -1,
       options: episodes.map((episode) => ({
         value: String(episode),
         label: `Episode ${episode}`,
@@ -211,7 +216,7 @@ export async function openAnimeEpisodePicker(
         badge: episode === currentEpisode ? "current" : undefined,
       })),
     });
-    return picked ? Number.parseInt(picked, 10) : null;
+    return parsePickerValue(picked);
   }
   return chooseFromListShell({
     title: "Choose episode",
@@ -236,10 +241,7 @@ export async function openAnimeEpisodeListPicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: Math.max(
-        0,
-        episodes.findIndex((episode) => episode.index === currentEpisode),
-      ),
+      initialIndex: episodes.findIndex((episode) => episode.index === currentEpisode),
       options: episodes.map((episode) => ({
         value: String(episode.index),
         label: episode.label,
@@ -249,7 +251,7 @@ export async function openAnimeEpisodeListPicker(
         badge: episode.index === currentEpisode ? "current" : undefined,
       })),
     });
-    return picked ? Number.parseInt(picked, 10) : null;
+    return parsePickerValue(picked);
   }
 
   return chooseFromListShell({

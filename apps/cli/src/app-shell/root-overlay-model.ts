@@ -47,13 +47,21 @@ export function isRootMediaPickerOverlay(
 }
 
 export function getRootOverlayResetKey(overlay: RootOwnedOverlay): string {
-  return overlay.type === "episode_picker"
-    ? `${overlay.type}:${overlay.season}:${overlay.options.map((option) => option.value).join(",")}`
-    : overlay.type;
+  if (overlay.type === "episode_picker") {
+    return `${overlay.type}:${overlay.season}:${overlay.options.map((option) => option.value).join(",")}`;
+  }
+  if (overlay.type === "season_picker") {
+    return `${overlay.type}:${overlay.options.map((option) => option.value).join(",")}`;
+  }
+  return overlay.type;
 }
 
 export function getRootOverlayInitialIndex(overlay: RootOwnedOverlay): number {
-  return overlay.type === "episode_picker" ? Math.max(0, overlay.initialIndex ?? 0) : 0;
+  if (overlay.type === "episode_picker" || overlay.type === "season_picker") {
+    const initial = overlay.initialIndex ?? 0;
+    return Number.isFinite(initial) && initial >= 0 ? initial : -1;
+  }
+  return 0;
 }
 
 export function buildRootGenericPickerOptions(

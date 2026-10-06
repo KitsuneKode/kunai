@@ -59,6 +59,37 @@ const VIDLINK_API_ENDPOINT = "vidlink.pro";
 const ENC_DEC_ENDPOINT = "enc-dec.app";
 
 /**
+ * Abortable retry sleep (mirrors the miruro/allmanga helpers): the raw
+ * `setTimeout` promise it replaces kept burning the full backoff after the
+ * caller walked away, delaying fallback and shutdown. Resolves early on
+ * abort; every call site re-checks the signal before the next fetch.
+ */
+function vidlinkAbortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal || signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+let vidlinkRetrySleepImpl: (ms: number, signal?: AbortSignal) => Promise<void> =
+  vidlinkAbortableSleep;
+const vidlinkRetrySleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+  vidlinkRetrySleepImpl(ms, signal);
+
+/** Test seam: replace the retry sleep (restore with the default afterwards). */
+export function setVidlinkRetrySleepForTest(sleep: typeof vidlinkRetrySleepImpl | null): void {
+  vidlinkRetrySleepImpl = sleep ?? vidlinkAbortableSleep;
+}
+
+/**
  * Endpoint-health adapter for VidLink's two hard dependencies. Unlike Videasy
  * there is no pre-existing in-memory tracker to fall back on, so a missing
  * port simply means no quarantine — matching the pre-port behavior.
@@ -346,7 +377,8 @@ async function fetchVidlinkApi(
       }
       if (attempt < maxAttempts && response.status >= 500 && !signal?.aborted) {
         lastError = error;
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await vidlinkRetrySleep(500, signal);
+        signal?.throwIfAborted();
         continue;
       }
       throw error;
@@ -356,7 +388,8 @@ async function fetchVidlinkApi(
       }
       if (attempt >= maxAttempts || signal?.aborted) throw error;
       lastError = error instanceof Error ? error : new Error(String(error));
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await vidlinkRetrySleep(500, signal);
+      signal?.throwIfAborted();
     }
   }
   throw lastError ?? new Error("VidLink API fetch failed");
@@ -426,7 +459,8 @@ async function encryptTmdbId(
       }
       lastError = error instanceof Error ? error : new Error(String(error));
       if (attempt < maxAttempts && !signal?.aborted) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await vidlinkRetrySleep(500, signal);
+        signal?.throwIfAborted();
       }
     }
   }

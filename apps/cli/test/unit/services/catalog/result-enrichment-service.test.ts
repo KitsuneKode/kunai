@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { SearchResult } from "@/domain/types";
 import {
+  MAX_ENRICHMENT_CACHE_ENTRIES,
   ResultEnrichmentService,
   buildResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
@@ -304,6 +305,61 @@ describe("ResultEnrichmentService", () => {
         offlineStatuses: ["ready"],
       }).badges,
     ).toContainEqual({ label: "downloaded", tone: "success" });
+  });
+
+  test("evicts oldest entries past the cache bound instead of growing forever", async () => {
+    let offlineCalls = 0;
+    const service = new ResultEnrichmentService({
+      historyRepository: historyRepository([]),
+      offlineLibraryService: {
+        peekRecordedArtifactStatuses: async () => {
+          offlineCalls += 1;
+          return [];
+        },
+      },
+      now: () => 1,
+      ttlMs: 60_000,
+    });
+
+    const total = MAX_ENRICHMENT_CACHE_ENTRIES + 5;
+    const batch = Array.from({ length: total }, (_, index) =>
+      result({ id: `title-${index}`, title: `Title ${index}` }),
+    );
+    await service.enrichResults(batch);
+    expect(offlineCalls).toBe(1);
+
+    // The first entries were evicted by the later ones: re-enriching one
+    // refetches instead of serving an evicted row from cache…
+    await service.enrichResults([result({ id: "title-0", title: "Title 0" })]);
+    expect(offlineCalls).toBe(2);
+    // …while a recently cached row still serves without refetching.
+    await service.enrichResults([result({ id: `title-${total - 1}`, title: "Last" })]);
+    expect(offlineCalls).toBe(2);
+  });
+
+  test("expired entries are swept on read and refetched, not served", async () => {
+    let now = 1;
+    let offlineCalls = 0;
+    const service = new ResultEnrichmentService({
+      historyRepository: historyRepository([]),
+      offlineLibraryService: {
+        peekRecordedArtifactStatuses: async () => {
+          offlineCalls += 1;
+          return [];
+        },
+      },
+      now: () => now,
+      ttlMs: 100,
+    });
+
+    await service.enrichResults([result()]);
+    expect(offlineCalls).toBe(1);
+    await service.enrichResults([result()]);
+    expect(offlineCalls).toBe(1);
+
+    now = 10_000;
+    await service.enrichResults([result()]);
+    expect(offlineCalls).toBe(2);
   });
 });
 

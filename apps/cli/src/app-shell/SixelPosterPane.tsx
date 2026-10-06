@@ -18,10 +18,14 @@ export function SixelPosterPane({
   readonly repaintAfterInkRender?: boolean;
 }) {
   const ref = useRef<DOMElement>(null);
+  // Owner token for this mount: slotted overlay ids are shared across
+  // surfaces, so unmount cleanup must only release its own registration.
+  const owner = useRef(Math.random().toString(36).slice(2));
+  const ownerId = owner.current;
 
   useEffect(() => {
-    return () => sixelOverlayManager.unregister(poster.overlayId);
-  }, [poster.overlayId]);
+    return () => sixelOverlayManager.unregister(poster.overlayId, ownerId);
+  }, [poster.overlayId, ownerId]);
 
   useEffect(() => {
     const node = ref.current;
@@ -32,6 +36,7 @@ export function SixelPosterPane({
       rect,
       sixel: poster.sixel,
       repaintAfterInkRender,
+      owner: ownerId,
     });
     // No dependency list: a sibling's line wrap can move this pane without
     // changing poster props, and a measured overlay must follow that movement.

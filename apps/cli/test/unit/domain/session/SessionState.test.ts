@@ -271,6 +271,61 @@ describe("SessionState overlays", () => {
     expect(state.pickerResult).toEqual({ type: "cancelled", id: "season:1" });
   });
 
+  test("season picker opens on the current season instead of row zero", () => {
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+
+    state = reduceState(state, {
+      type: "OPEN_PICKER",
+      picker: {
+        id: "season:2",
+        type: "season_picker",
+        currentSeason: 2,
+        initialIndex: 1,
+        options: [
+          { value: "1", label: "Season 1" },
+          { value: "2", label: "Season 2" },
+        ],
+      },
+    });
+
+    const picker = state.activeModals.at(-1);
+    expect(picker?.type).toBe("season_picker");
+    if (picker?.type === "season_picker") {
+      expect(picker.selectedIndex).toBe(1);
+    }
+  });
+
+  test("a picker miss stays unhighlighted instead of inviting row zero", () => {
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+
+    state = reduceState(state, {
+      type: "OPEN_PICKER",
+      picker: {
+        id: "episode:miss",
+        type: "episode_picker",
+        season: 1,
+        initialIndex: -1,
+        options: [{ value: "1", label: "Episode 1" }],
+      },
+    });
+
+    const picker = state.activeModals.at(-1);
+    expect(picker?.type).toBe("episode_picker");
+    if (picker?.type === "episode_picker") {
+      // -1 renders no highlight and Enter on it is a no-op; the old clamp
+      // highlighted row zero and invited playback of the wrong episode.
+      expect(picker.selectedIndex).toBe(-1);
+    }
+  });
+
   test("cancelling an episode picker opened from history returns to history", () => {
     let state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },

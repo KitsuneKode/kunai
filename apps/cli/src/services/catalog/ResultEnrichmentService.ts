@@ -45,6 +45,13 @@ type CacheEntry = {
   readonly value: ResultEnrichment;
 };
 
+/**
+ * Session-long badge cache bound. Trays re-enrich on every open/scroll, and
+ * without a cap the map grows for the life of the process — one entry per
+ * distinct result ever seen. Exported for the eviction test below.
+ */
+export const MAX_ENRICHMENT_CACHE_ENTRIES = 1000;
+
 export class ResultEnrichmentService {
   private readonly cache = new Map<string, CacheEntry>();
   private readonly now: () => number;
@@ -77,11 +84,15 @@ export class ResultEnrichmentService {
     const missing = results.filter((result) => {
       const key = resultEnrichmentKey(result);
       const cached = this.cache.get(key);
-      if (cached && cached.expiresAt > this.now()) {
-        output.set(key, cached.value);
-        return false;
+      if (!cached) return true;
+      if (cached.expiresAt <= this.now()) {
+        // Sweep on read: expired entries are dead weight, and without this
+        // the map only grows — nothing else evicts.
+        this.cache.delete(key);
+        return true;
       }
-      return true;
+      output.set(key, cached.value);
+      return false;
     });
 
     if (missing.length === 0) return output;
@@ -130,11 +141,28 @@ export class ResultEnrichmentService {
       // Checked immediately before every mutation, not once per batch: a long
       // `missing` list must stop writing the moment the caller walks away.
       options?.signal?.throwIfAborted();
-      this.cache.set(key, { expiresAt: this.now() + this.ttlMs, value: enrichment });
+      this.storeCached(key, enrichment);
       output.set(key, enrichment);
     }
 
     return output;
+  }
+
+  /**
+   * Bounded insert: expired entries are already swept on read, so here only
+   * oldest-inserted gives way. Map preserves insertion order, and re-setting
+   * an existing key refreshes its position — delete + set keeps the LRU shape
+   * without a second structure.
+   */
+  private storeCached(key: string, value: ResultEnrichment): void {
+    const now = this.now();
+    if (this.cache.has(key)) this.cache.delete(key);
+    while (this.cache.size >= MAX_ENRICHMENT_CACHE_ENTRIES) {
+      const oldest = this.cache.keys().next();
+      if (oldest.done) break;
+      this.cache.delete(oldest.value);
+    }
+    this.cache.set(key, { expiresAt: now + this.ttlMs, value });
   }
 }
 
