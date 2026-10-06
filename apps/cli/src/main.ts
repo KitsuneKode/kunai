@@ -1319,6 +1319,9 @@ function setupSignalHandlers(): void {
   process.on("SIGINT", () => requestSignalShutdown("SIGINT", 130));
   process.on("SIGTERM", () => requestSignalShutdown("SIGTERM", 143));
   process.on("SIGHUP", () => requestSignalShutdown("SIGHUP", 129));
+  // SIGBREAK (Ctrl+Break) is the only console event Windows delivers beyond
+  // SIGINT — TerminateProcess and window-close get no catchable signal there.
+  process.on("SIGBREAK", () => requestSignalShutdown("SIGBREAK", 128 + 21));
 
   // Hard backstop: the async shutdown can lose its race with the 4s force-exit,
   // orphaning yt-dlp/ffmpeg children that then keep buffering GBs of RAM after

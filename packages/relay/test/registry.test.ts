@@ -21,14 +21,12 @@ test("registry finds providers by exact and subdomain upstream hosts", () => {
 });
 
 test("registry allows only provider metadata hosts", () => {
-  expect(registry.isHostAllowed("allanime", "https://allanime.day/path", "metadata")).toBe(true);
-  expect(registry.isHostAllowed("allanime", "https://fast4speed.rsvp/video.mp4", "metadata")).toBe(
-    false,
-  );
+  expect(registry.isHostAllowed("allanime", "https://allanime.day/path")).toBe(true);
+  expect(registry.isHostAllowed("allanime", "https://fast4speed.rsvp/video.mp4")).toBe(false);
 });
 
 test("registry rejects hosts owned by another provider", () => {
-  expect(registry.isHostAllowed("allanime", "https://miruro.bz/api", "metadata")).toBe(false);
+  expect(registry.isHostAllowed("allanime", "https://miruro.bz/api")).toBe(false);
 });
 
 test("registry fails closed on any non-metadata kind", () => {

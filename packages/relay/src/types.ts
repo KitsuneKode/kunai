@@ -30,7 +30,7 @@ export interface ProviderRelayRegistry {
   readonly providers: readonly RelayProviderEntry[];
   get(providerId: string): RelayProviderEntry | undefined;
   findByUpstreamUrl(url: string | URL): RelayProviderEntry | undefined;
-  isHostAllowed(providerId: string, url: string | URL, kind: "metadata"): boolean;
+  isHostAllowed(providerId: string, url: string | URL): boolean;
 }
 
 export type RelayFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -90,6 +90,12 @@ export interface RelayHandlerOptions {
   readonly diagnostics?: RelayDiagnosticSink;
   readonly timeoutMs?: number;
   readonly maxRedirects?: number;
+  /**
+   * Origins allowed to read responses cross-origin. Unset means no CORS
+   * headers at all: the CLI client is not a browser, and a wildcard on the
+   * `local-loopback` dev relay lets any webpage the user visits drive it.
+   */
+  readonly corsAllowedOrigins?: readonly string[];
 }
 
 export interface RelayFetchPortOptions {

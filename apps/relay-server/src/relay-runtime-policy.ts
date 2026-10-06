@@ -9,12 +9,14 @@ export interface RelayDevelopmentEnvironment {
   readonly PORT?: string;
   readonly RELAY_HOST?: string;
   readonly RELAY_TOKEN?: string;
+  readonly RELAY_CORS_ORIGINS?: string;
 }
 
 export interface RelayDevelopmentPolicy {
   readonly hostname: string;
   readonly port: number;
   readonly authorization: RelayAuthorizationPolicy;
+  readonly corsAllowedOrigins: readonly string[];
 }
 
 export function resolveRelayDevelopmentPolicy(
@@ -31,7 +33,16 @@ export function resolveRelayDevelopmentPolicy(
     hostname,
     port: resolvePort(env.PORT),
     authorization: token ? { mode: "bearer", token } : { mode: "local-loopback" },
+    corsAllowedOrigins: resolveCorsOrigins(env.RELAY_CORS_ORIGINS),
   };
+}
+
+/** Comma-separated origin allowlist; absent/empty means CORS is off entirely. */
+function resolveCorsOrigins(value: string | undefined): readonly string[] {
+  return (value ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
 }
 
 export function createRelayDevServerOptions(policy: RelayDevelopmentPolicy) {
@@ -39,7 +50,10 @@ export function createRelayDevServerOptions(policy: RelayDevelopmentPolicy) {
     hostname: policy.hostname,
     port: policy.port,
     fetch(request: Request) {
-      return handleRelayRequest(request, { authorization: policy.authorization });
+      return handleRelayRequest(request, {
+        authorization: policy.authorization,
+        corsAllowedOrigins: policy.corsAllowedOrigins,
+      });
     },
   };
 }

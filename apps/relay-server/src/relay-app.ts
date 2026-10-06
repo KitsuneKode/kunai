@@ -10,6 +10,7 @@ import { relayRegistry } from "./provider-registry";
 export interface RelayAppEnv {
   readonly authorization: RelayAuthorizationPolicy;
   readonly transport?: RelayTransport;
+  readonly corsAllowedOrigins?: readonly string[];
 }
 
 export async function handleRelayRequest(request: Request, env: RelayAppEnv): Promise<Response> {
@@ -30,6 +31,7 @@ export async function handleRelayRequest(request: Request, env: RelayAppEnv): Pr
       registry: relayRegistry,
       authorization: env.authorization,
       transport: env.transport,
+      corsAllowedOrigins: env.corsAllowedOrigins,
     });
   }
 
