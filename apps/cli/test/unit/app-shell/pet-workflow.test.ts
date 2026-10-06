@@ -21,13 +21,17 @@ function withRealTty<T>(run: () => T): T {
   try {
     return run();
   } finally {
-    if (descriptor) Object.defineProperty(process.stdout, "isTTY", descriptor);
-    else delete (process.stdout as { isTTY?: boolean }).isTTY;
+    if (descriptor) {
+      Object.defineProperty(process.stdout, "isTTY", descriptor);
+    } else {
+      // SAFETY: deleting the patched key restores whatever the runner had.
+      delete (process.stdout as { isTTY?: boolean }).isTTY;
+    }
   }
 }
 
 function containerWithPet(initial: "auto" | "off") {
-  const stored = { companionPet: initial as "auto" | "off" };
+  const stored = { companionPet: initial };
   const saves: Array<"auto" | "off"> = [];
   const config = {
     get companionPet() {
@@ -40,6 +44,8 @@ function containerWithPet(initial: "auto" | "off") {
       saves.push(stored.companionPet);
     },
   };
+  // SAFETY: the fixture accepts a partial container; the stub only needs the
+  // three members the pet workflow touches.
   const fixture = createContainerFixture({ config: config as never });
   return { ...fixture, stored, saves };
 }
