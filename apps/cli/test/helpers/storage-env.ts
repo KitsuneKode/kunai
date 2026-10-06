@@ -11,6 +11,12 @@
  *
  * Setting the full set keeps one call correct everywhere: the variables that do
  * not apply to the host are simply ignored.
+ *
+ * TMPDIR/TMP/TEMP are deliberately absent: `os.tmpdir()` follows them, so a
+ * caller that disposes its root while the env is still applied leaves every
+ * later `mkdtemp(join(tmpdir(), …))` in the worker pointing at a deleted
+ * directory. Temp scratch under the real tmpdir is also intentional — mpv IPC
+ * sockets and playlists live there by design (sun_path length).
  */
 export function storageRootEnv(dir: string): Record<string, string> {
   return {
@@ -26,12 +32,6 @@ export function storageRootEnv(dir: string): Record<string, string> {
     // `homedir()` itself does not honour HOME on macOS.
     HOME: dir,
     USERPROFILE: dir,
-    // Temp scratch. `getKunaiPaths().tempDir` resolves through these, and so
-    // does `os.tmpdir()` — without them a sandboxed run still writes playlists
-    // and IPC sockets into the developer's real temp.
-    TMPDIR: dir,
-    TMP: dir,
-    TEMP: dir,
   };
 }
 
