@@ -22,7 +22,7 @@ import type { MediaKind } from "@kunai/types";
 export function correctedHistoryMediaKind(
   progress: Pick<HistoryProgress, "mediaKind" | "externalIds" | "providerId">,
 ): MediaKind {
-  // 1. An anime-only provider (AllAnime/Miruro) is definitive — anime even if stored
+  // 1. An anime-only provider (see ANIME_ONLY_PROVIDER_IDS) is definitive — anime even if stored
   //    "series" with no external id (the common AllAnime mislabel).
   if (isAnimeOnlyProviderId(progress.providerId)) return "anime";
   // 2. An AniList/MAL id is definitive too (those catalogs are anime-only) — so an

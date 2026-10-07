@@ -56,10 +56,7 @@ export function shouldAutoLaunchPlayback(ctx: PlaybackEpisodeEntryContext): bool
   if (ctx.flags.season || ctx.flags.episode) return true;
   if (ctx.failedProvider) return false;
   if (!ctx.preselectedEpisode) return false;
-  if (!ctx.history || !historyMatchesSelectedEpisode(ctx)) {
-    if (!ctx.isAnime && (ctx.seasonCount ?? 0) > 1) return false;
-    return false;
-  }
+  if (!ctx.history || !historyMatchesSelectedEpisode(ctx)) return false;
 
   const finished = isPlaybackFinished(ctx.history);
   const hasSavedPosition = ctx.history.positionSeconds > 0 && !finished;
