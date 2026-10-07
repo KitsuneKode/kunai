@@ -6,7 +6,7 @@ import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
 import { NavCompact } from "@/components/layout/nav-compact";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { MotionProvider } from "@/components/providers/motion-provider";
-import { KunaiSearchDialog } from "@/components/search/kunai-search-dialog";
+import { LazySearchDialog } from "@/components/search/lazy-search-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { fontClassNames } from "@/lib/fonts";
 /* eslint-enable import/no-unassigned-import */
@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
       <body className="bg-fd-background text-fd-foreground flex min-h-screen flex-col antialiased">
         <RootProvider
           search={{
-            SearchDialog: KunaiSearchDialog,
+            SearchDialog: LazySearchDialog,
             links: [
               ["Getting started", "/docs/users/getting-started"],
               ["Troubleshooting", "/docs/users/troubleshooting"],
