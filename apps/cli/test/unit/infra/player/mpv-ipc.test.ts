@@ -44,14 +44,18 @@ type FakeSocketHarness = {
   readonly terminate: () => number;
   readonly emitData: (chunk: Buffer) => void;
   readonly written: () => readonly string[];
+  readonly drain: () => void;
+  readonly setWriteLimit: (limit: number) => void;
 };
 
 async function withFakeMpvSocket(
   closeOnEnd: boolean,
   run: (harness: FakeSocketHarness) => Promise<void>,
+  initialWriteLimit = Infinity,
 ): Promise<void> {
   const bun = Bun as unknown as { connect: typeof Bun.connect };
   const originalConnect = bun.connect;
+  let writeLimit = initialWriteLimit;
   let endCount = 0;
   let terminateCount = 0;
   const writtenPayloads: string[] = [];
@@ -59,6 +63,7 @@ async function withFakeMpvSocket(
   let currentSocketHandler: {
     data?(socket: FakeSocket, data: Buffer): void;
     close?(socket: FakeSocket): void;
+    drain?(socket: FakeSocket): void;
   } | null = null;
 
   bun.connect = (async (rawOptions: unknown) => {
@@ -67,14 +72,19 @@ async function withFakeMpvSocket(
       socket: {
         data?(socket: FakeSocket, data: Buffer): void;
         close(socket: FakeSocket): void;
+        drain?(socket: FakeSocket): void;
       };
     };
     currentSocketHandler = options.socket;
     const socket: FakeSocket = {
       data: options.data,
       readyState: 1,
-      write(payload: string) {
-        writtenPayloads.push(payload);
+      write(payload: string | Uint8Array) {
+        const bytes = Buffer.from(payload);
+        const accepted = Math.min(writeLimit, bytes.length);
+        if (accepted < 0) return accepted;
+        writtenPayloads.push(bytes.subarray(0, accepted).toString("latin1"));
+        return accepted;
       },
       end() {
         endCount++;
@@ -97,6 +107,13 @@ async function withFakeMpvSocket(
         currentSocketHandler.data(currentSocket, chunk);
       },
       written: () => writtenPayloads,
+      setWriteLimit: (limit) => {
+        writeLimit = limit;
+      },
+      drain: () => {
+        if (!currentSocket) throw new Error("Socket not connected");
+        currentSocketHandler?.drain?.(currentSocket);
+      },
     });
   } finally {
     bun.connect = originalConnect;
@@ -106,7 +123,7 @@ async function withFakeMpvSocket(
 type FakeSocket = {
   data: FakeSocketState;
   readyState: number;
-  write(data: string): void;
+  write(data: string | Uint8Array): number;
   end(): void;
   terminate(): void;
 };
@@ -293,3 +310,193 @@ describe("mpv-ipc", () => {
     });
   });
 });
+
+test("partial UTF-8 writes preserve command framing and FIFO order through drain", async () => {
+  await withFakeMpvSocket(true, async ({ written, setWriteLimit, drain }) => {
+    const session = await openMpvIpcSession({
+      endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+      onPropertyUpdate() {},
+      onEndFile() {},
+    });
+    const prefix = written().join("");
+    const command = ["loadfile", "/tmp/🦊.mp4", "replace"];
+    // Stop in the middle of the emoji's UTF-8 encoding.
+    setWriteLimit(Buffer.from(buildMpvIpcCommand(command)).indexOf(Buffer.from("🦊")) + 1);
+    session.sendUnchecked(command);
+    setWriteLimit(0);
+    session.sendUnchecked(["set_property", "pause", false]);
+    setWriteLimit(Infinity);
+    drain();
+    const delivered = Buffer.from(written().join("").slice(prefix.length), "latin1").toString(
+      "utf8",
+    );
+    expect(delivered).toBe(
+      buildMpvIpcCommand(command) + buildMpvIpcCommand(["set_property", "pause", false]),
+    );
+    await session.close();
+  });
+});
+
+test("close discards queued commands so a later drain cannot revive playback", async () => {
+  await withFakeMpvSocket(true, async ({ written, setWriteLimit, drain }) => {
+    const session = await openMpvIpcSession({
+      endpoint: { kind: "windows_pipe", path: "fixture-pipe" },
+      onPropertyUpdate() {},
+      onEndFile() {},
+    });
+    setWriteLimit(0);
+    const command = session.send(["loadfile", "fixture.mp4", "replace"]);
+    await session.close();
+    const prefix = written().join("");
+    setWriteLimit(Infinity);
+    drain();
+    expect((await command).ok).toBe(false);
+    expect(written().join("")).toBe(prefix);
+  });
+});
+
+test("subscriptions finish before commands even when the initial write stalls", async () => {
+  await withFakeMpvSocket(
+    true,
+    async ({ written, setWriteLimit, drain }) => {
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "fixture" },
+        onPropertyUpdate() {},
+        onEndFile() {},
+      });
+      session.sendUnchecked(["quit"]);
+      expect(written().join("")).toHaveLength(1);
+      setWriteLimit(Infinity);
+      drain();
+      const commands = written()
+        .join("")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line).command);
+      expect(commands).toHaveLength(
+        MPV_OBSERVED_PROPERTIES.length + MPV_INITIAL_PROPERTIES.length + 1,
+      );
+      expect(commands.at(-1)).toEqual(["quit"]);
+      await session.close();
+    },
+    1,
+  );
+});
+
+test.each([false, true])("deadline cancels stalled writes safely (partial=%s)", async (partial) => {
+  const clock = createCloseTimerHarness();
+  await withFakeMpvSocket(true, async ({ setWriteLimit, written, drain, terminate }) => {
+    const session = await openMpvIpcSession({
+      endpoint: { kind: "unix_socket", path: "fixture" },
+      onPropertyUpdate() {},
+      onEndFile() {},
+      commandTimers: clock.timers,
+    });
+    const prefix = written().join("");
+    setWriteLimit(partial ? 7 : 0);
+    const command = session.send(["loadfile", "expired.mp4", "replace"]);
+    const following = session.send(["set_property", "pause", true]);
+    clock.scheduled[0]!.callback();
+    expect(await command).toMatchObject({ ok: false, error: "timeout" });
+    setWriteLimit(Infinity);
+    drain();
+    if (partial) {
+      expect(terminate()).toBe(1);
+      expect(await following).toMatchObject({ ok: false, error: "partial IPC write timed out" });
+      expect(written().join("").slice(prefix.length)).toHaveLength(7);
+    } else {
+      expect(terminate()).toBe(0);
+      expect(written().join("").slice(prefix.length)).not.toContain("expired.mp4");
+    }
+    await session.close();
+    if (!partial) expect(await following).toMatchObject({ ok: false, error: "session closed" });
+    expect(clock.cleared).toEqual([1, 2]);
+  });
+});
+
+test("a stalled peer cannot retain an unbounded command backlog", async () => {
+  await withFakeMpvSocket(true, async ({ setWriteLimit, written, drain }) => {
+    const session = await openMpvIpcSession({
+      endpoint: { kind: "windows_pipe", path: "fixture" },
+      onPropertyUpdate() {},
+      onEndFile() {},
+    });
+    const prefix = written().join("");
+    setWriteLimit(0);
+    session.sendUnchecked(["loadfile", "x".repeat(200_000)]);
+    const rejected = await session.send(["loadfile", "y".repeat(100_000)]);
+    expect(rejected).toMatchObject({ ok: false, error: "mpv IPC write queue is full" });
+    setWriteLimit(Infinity);
+    drain();
+    expect(written().join("").slice(prefix.length)).not.toContain("yyyy");
+    await session.close();
+  });
+});
+
+test("a closed writer settles commands once and rejects later admission", async () => {
+  await withFakeMpvSocket(true, async ({ setWriteLimit, terminate }) => {
+    let completions = 0;
+    const session = await openMpvIpcSession({
+      endpoint: { kind: "unix_socket", path: "fixture" },
+      onPropertyUpdate() {},
+      onEndFile() {},
+      onCommandResult() {
+        completions += 1;
+      },
+    });
+    setWriteLimit(-1);
+    expect(await session.send(["seek", 10])).toMatchObject({
+      ok: false,
+      error: "mpv IPC socket is closed",
+    });
+    expect(completions).toBe(1);
+    expect(terminate()).toBe(1);
+    expect(await session.send(["quit"])).toMatchObject({ ok: false, error: "session closed" });
+    expect(completions).toBe(2);
+    await session.close();
+  });
+});
+
+test("initial write failure rejects session opening", async () => {
+  await withFakeMpvSocket(
+    true,
+    async () => {
+      await expect(
+        openMpvIpcSession({
+          endpoint: { kind: "unix_socket", path: "fixture" },
+          onPropertyUpdate() {},
+          onEndFile() {},
+        }),
+      ).rejects.toThrow("mpv IPC session is closed");
+    },
+    -1,
+  );
+});
+
+test.each([false, true])(
+  "expiry fences a reentrant result callback before it can drain (partial=%s)",
+  async (partial) => {
+    const clock = createCloseTimerHarness();
+    await withFakeMpvSocket(true, async ({ setWriteLimit, written, drain }) => {
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "fixture" },
+        onPropertyUpdate() {},
+        onEndFile() {},
+        commandTimers: clock.timers,
+        onCommandResult(result) {
+          if (!result.ok && result.error === "timeout") {
+            setWriteLimit(Infinity);
+            drain();
+          }
+        },
+      });
+      const prefix = written().join("");
+      setWriteLimit(partial ? 7 : 0);
+      const command = session.send(["loadfile", "expired.mp4", "replace"]);
+      clock.scheduled[0]!.callback();
+      expect(await command).toMatchObject({ ok: false, error: "timeout" });
+      expect(written().join("").slice(prefix.length)).toHaveLength(partial ? 7 : 0);
+      await session.close();
+    });
+  },
+);

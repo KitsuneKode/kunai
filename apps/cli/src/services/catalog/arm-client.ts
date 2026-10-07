@@ -1,5 +1,4 @@
-// =============================================================================
-// arm-client.ts — shared ARM (arm.haglund.dev) client for the AniList/MAL ↔
+// Shared ARM (arm.haglund.dev) client for the AniList/MAL ↔
 // TMDB/IMDB crosswalk. Extracted from aniskip.ts so AniSkip, IntroDB, and
 // CatalogIdentityService all use one fetch/parse path.
 //
@@ -8,7 +7,6 @@
 //   GET /api/v2/themoviedb?id=…                              → array of rows
 //     (multi-cour anime list several MAL/AniList entries per TMDB show; we take
 //      the first row, matching the pre-existing AniSkip behavior)
-// =============================================================================
 
 export const ARM_IDS_API = "https://arm.haglund.dev/api/v2/ids";
 export const ARM_TMDB_API = "https://arm.haglund.dev/api/v2/themoviedb";

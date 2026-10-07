@@ -28,20 +28,21 @@ runs:
       id: bun-store
       with:
         path: ~/.bun/install/cache
-        # v2: the v1 windows store captured a truncated oxfmt@0.59.0 link entry
-        # (missing tinypool) and the loose restore-key kept re-serving it.
-        key: ${{ runner.os }}-bun-store-v2-${{ hashFiles('bun.lock') }}
+        # v3 includes maintained patches. Older stores also captured a truncated
+        # Windows oxfmt link entry; never restore their loose cache prefix.
+        key: ${{ runner.os }}-bun-store-v3-${{ hashFiles('bun.lock', 'patches/*.patch') }}
         restore-keys: |
-          ${{ runner.os }}-bun-store-v2-
+          ${{ runner.os }}-bun-store-v3-
 
     - name: Cache Turbo local
       if: inputs.skip-turbo-cache != 'true'
       uses: actions/cache@v5
       with:
-        path: .turbo
-        key: ${{ runner.os }}-turbo-${{ inputs.turbo-cache-prefix }}-${{ github.sha }}
+        # Run summaries are evidence for this attempt, never cache artifacts.
+        path: .turbo/cache
+        key: ${{ runner.os }}-turbo-cache-v2-${{ inputs.turbo-cache-prefix }}-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-turbo-${{ inputs.turbo-cache-prefix }}-
+          ${{ runner.os }}-turbo-cache-v2-${{ inputs.turbo-cache-prefix }}-
 
     - name: Install dependencies
       shell: bash
@@ -62,9 +63,13 @@ runs:
           bun x oxfmt --version
         fi
 
+    - name: Verify installed dependency patches
+      shell: bash
+      run: bun run verify:dependency-patches
+
     - name: Save Bun install store
       if: steps.bun-store.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
         path: ~/.bun/install/cache
-        key: ${{ runner.os }}-bun-store-v2-${{ hashFiles('bun.lock') }}
+        key: ${{ runner.os }}-bun-store-v3-${{ hashFiles('bun.lock', 'patches/*.patch') }}

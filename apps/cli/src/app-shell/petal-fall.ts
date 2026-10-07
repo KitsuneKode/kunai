@@ -1,5 +1,4 @@
-// =============================================================================
-// petal-fall.ts — the failure-state petal fall, as a pure function of frame
+// The failure-state petal fall, as a pure function of frame
 //
 // Placement is deliberately data, not drawing: `petalsForFrame` answers "which
 // cells hold a petal on frame N" and nothing else. The renderer writes those
@@ -9,7 +8,6 @@
 //
 // Lanes are a fixed schedule, not random: golden captures and the no-collision
 // test both need the same petals on the same frame every run.
-// =============================================================================
 
 import { BLOOM_FRAMES, STATIC_PETAL } from "./primitives/SakuraPetal";
 import { palette } from "./shell-theme";

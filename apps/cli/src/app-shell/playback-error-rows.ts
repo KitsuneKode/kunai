@@ -1,17 +1,15 @@
-// =============================================================================
-// playback-error-rows.ts — the failure panel's content, as rows of segments
+// The failure panel's content, as rows of segments
 //
 // ErrorShell used to build its layout inline as nested Boxes. The petal fall
 // needs to know which cells each row's text occupies, and Ink exposes no cell
 // buffer, so the content becomes data first and is rendered second. Row content
 // and ordering match what the panel rendered before this module existed.
-// =============================================================================
 
 import type { ErrorScenario } from "@/domain/playback/playback-problem";
-import { wrapText } from "@/domain/text-display";
 
 import type { ErrorDebugExcerpt } from "./error-debug-excerpt";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
+import { sanitizeTerminalText, wrapText } from "./shell-text";
 
 export type ErrorRowTone = "danger-strong" | "danger" | "accent" | "text" | "ok" | "muted" | "dim";
 
@@ -20,7 +18,11 @@ export type ErrorRow = { readonly segments: readonly ErrorRowSegment[] };
 
 const BLANK: ErrorRow = { segments: [] };
 
-const row = (text: string, tone: ErrorRowTone): ErrorRow => ({ segments: [{ text, tone }] });
+// Segment text is provider/mpv-controlled (failure details, scenario titles) —
+// sanitize at row construction so the per-cell renderer never sees raw escapes.
+const row = (text: string, tone: ErrorRowTone): ErrorRow => ({
+  segments: [{ text: sanitizeTerminalText(text), tone }],
+});
 
 /** The plain text of a row — what the renderer measures and tests assert on. */
 export function rowText(input: ErrorRow): string {
@@ -65,8 +67,11 @@ function waterfallRows(model: PlaybackFailureWaterfallModel): readonly ErrorRow[
     const marker = entry.status === "succeeded" ? "✓" : entry.status === "failed" ? "x" : "·";
     const tone: ErrorRowTone =
       entry.status === "succeeded" ? "ok" : entry.status === "failed" ? "danger" : "dim";
-    const segments: ErrorRowSegment[] = [{ text: `${marker} ${entry.label}`, tone }];
-    if (entry.detail) segments.push({ text: `  ·  ${entry.detail}`, tone: "dim" });
+    const segments: ErrorRowSegment[] = [
+      { text: `${marker} ${sanitizeTerminalText(entry.label)}`, tone },
+    ];
+    if (entry.detail)
+      segments.push({ text: `  ·  ${sanitizeTerminalText(entry.detail)}`, tone: "dim" });
     rows.push({ segments });
   }
 

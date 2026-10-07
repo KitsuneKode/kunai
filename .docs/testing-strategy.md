@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-07"
 ---
 
 # Kunai — Testing Strategy
@@ -26,7 +26,7 @@ The published npm launcher package excludes the entire `test/` tree: its file al
 
 ## Turborepo Test Execution
 
-`bun run test` is `turbo run test`. Test tasks currently set `cache: false`; selected suites execute on every invocation. Typecheck and build tasks can still replay from cache. Use `--force` when reporting fresh execution of those gates.
+`bun run test` is `turbo run test`. Test tasks currently set `cache: false`; selected suites execute on every invocation. Typecheck also disables caching; build tasks can still replay from cache. Use `--force` when reporting fresh execution of those gates.
 
 CLI suites are separate Turbo tasks for scheduling and focused invocation. Because test caching is disabled, a unit-only change selecting the CLI package still runs both suites:
 
@@ -42,9 +42,25 @@ Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integratio
 
 ## Verification loop for contributors and agents
 
+Use `storageRootEnv()` from `apps/cli/test/helpers/storage-env.ts` for every
+throwaway profile. It redirects HOME/XDG/APPDATA and forces
+`KUNAI_CREDENTIAL_BACKEND=file`: native credential vault entries belong to the
+OS account and are not isolated by a different HOME. `createCredentialVault()`
+consumes that existing override before probing an OS backend. The common
+compiled/agent profile harness inherits it, and `applyStorageRootEnv()` restores
+the prior override with the other environment values. Backend-specific tests
+must use explicit injected environment and spawn ports; they must never probe
+the developer's credential store.
+
 1. Start with the feature map and the owning test file. Use
    `bun run --cwd apps/cli test:file test/unit/<area>/<file>.test.ts` for a focused
    reproduction; the package script supplies the timeout budget and preload.
+   `bun test` runs with the developer's real home, so a test that mounts a shell
+   or boots a service writes the real profile unless it isolates itself
+   (`BrowseShell` saves a submitted query to search history, for one). Isolate
+   with `applyStorageRootEnv` from `test/helpers/storage-env.ts`. To check a
+   suspect test, compare the real profile's mtime and hash around a multi-file
+   run; a lone file can exit before the async write lands and look clean.
 2. Change the failure trigger deliberately: deferred resolve/reject, cancellation,
    injected clock, or fake timer. A sleep is not an acknowledgement. A generous
    test timeout bounds a hang; it does not prove synchronization.
@@ -54,9 +70,27 @@ Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integratio
 4. Run the owning suite, then `bun run ci:affected` with a verified
    `TURBO_SCM_BASE`. Missing or stale comparison history is not evidence of a
    small change; inspect Turbo's dry run before relying on selection.
-5. Before handoff, run the required full gates and report the exact revision,
+5. `bun run ci:preflight` runs the repository lint baseline, document paths
+   and review-date checks before the long tasks in both `ci` and `ci:affected`.
+   Plain `bun run lint` does not include this hosted baseline gate. The freshness
+   check compares committed HEAD with its base; run it after committing a content
+   review date, rather than using a skip flag for meaningful edits.
+6. Before handoff, run the required full gates and report the exact revision,
    command, exit status, failures, skips, and cache status. Separate local Linux,
    hosted Windows/macOS, opt-in database/native, and live-provider evidence.
+
+For live CLI behavior use the repo's `verify-kunai` skill and the held-session
+`doctor` command. It checks liveness, interactive chrome, contained profile
+paths, file credentials and no analytics opt-in; it does not verify source
+revision, provider availability or player progress. The launcher shell-quotes
+literal environment/path values and refuses storage/vault overrides. `--command`
+remains a developer-controlled shell fragment of extra main.ts arguments.
+Reports belong outside the temporary profile. Failed interactive startup saves
+a diagnostic report outside the profile and stops only its created session;
+`--keep-profile` preserves the shadow directory. Existing sidecars are decoded through a schema and checked
+before any inspector read or cleanup; deletion additionally requires the
+profile directory to belong to the requested session name. Tests for these commands live in the
+separate `bun run test:agent` tier, not the default unit/integration suites.
 
 The debounce contract in
 `apps/cli/test/unit/app-shell/settle-value.test.tsx` advances Bun fake timers inside
@@ -262,7 +296,6 @@ added the following tests and removed the following dead tests.
 | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/cli/test/unit/app-shell/render-capture.test.tsx` (extended)       | `render()` + `simulateTicks()` + `act()` wiring; the previous real-time `countCommits(Flickering)` test was timing-dependent, replaced with a deterministic 6-commit assertion.                                   |
 | `apps/cli/test/unit/app-shell/input-router.useinput.test.tsx`           | First test to drive `useInput` through the harness. Asserts the router wires through correctly: Ctrl+C → hard-global, `/` in command-palette context → palette, `/` in text-input context → open-command-palette. |
-| `apps/cli/test/unit/app-shell/dot-matrix-loader.test.tsx` (rewritten)   | Loader animation is interval-driven; replaced the real-time assertion with `simulateTicks` so the commit count is exact.                                                                                          |
 | `apps/cli/test/unit/main-args.test.ts` (extended)                       | `--jump` / `--quick` / `-q` / `--continue` / `--history` / `--offline` parsing and invalid-input fallthrough.                                                                                                     |
 | `apps/cli/test/unit/app-shell/help-overlay.test.tsx`                    | The "no-drift" contract from `keybindings.ts:7-9`: every live binding label is rendered in some tab, no hard-coded copy can reappear, and `HELP_TABS` matches the registry order.                                 |
 | `apps/cli/test/unit/app-shell/post-play-h.useinput.test.tsx`            | P0-2 regression: `h` from the post-play surface routes to `onResolve("history")`; Ctrl+H does not; overlay-blocked `h` is dropped.                                                                                |
@@ -749,3 +782,17 @@ For CLI UX:
 
 - prefer VHS tapes over brittle pseudo-interactive assertions when the real need is visual review
 - prefer deterministic state tests over VHS when the real need is behavior confidence
+
+## Automated PR review
+
+CodeRabbit configuration belongs in `.coderabbit.yaml` and must validate against
+[its published schema](https://coderabbit.ai/integrations/schema.v2.json). Tool settings
+are nested under `reviews.tools`; a root-level `tools` object is ignored by the bot.
+`reviews.auto_review.base_branches` includes `.*` so stacked PRs targeting feature
+branches are eligible alongside default-branch PRs. `reviews.fail_commit_status`
+reports review errors as failures instead of successful checks.
+
+A successful bot status is not evidence of a completed review: inspect the review
+or walkthrough for skipped-review and configuration warnings. Draft and explicitly
+excluded-title rules still apply. This configuration enables reviews; it does not
+make them required by branch protection or prove that a hosted review ran.

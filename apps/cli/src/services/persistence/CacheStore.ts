@@ -1,4 +1,3 @@
-// =============================================================================
 // Cache Store
 //
 // Resolved-stream cache: maps an opaque resolve key -> the playable StreamInfo.
@@ -13,7 +12,6 @@
 // + `@kunai/storage` ttl.ts), which caches *which sources exist* for a title;
 // this one caches *the resolved playable stream* for a chosen source. They are
 // intentionally separate — do not merge them.
-// =============================================================================
 
 import { getDefaultTtlMs } from "@kunai/storage";
 

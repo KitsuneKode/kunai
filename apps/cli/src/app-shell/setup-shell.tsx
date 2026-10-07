@@ -1,5 +1,4 @@
-// =============================================================================
-// setup-shell.tsx — first run, in seven framed screens
+// First run, in seven framed screens
 //
 // Every screen asks something or pays something off, and every one of them
 // wears the Sakura shell frame. Setup used to be the only surface in Kunai
@@ -13,7 +12,6 @@
 // Every control hydrates from the current config (`SetupInitialState`), so a
 // rerun shows what is really set and completing writes back exactly what the
 // screens showed — rerunning can never silently sever a linked account.
-// =============================================================================
 
 import {
   AUDIO_PREFERENCE_OPTIONS,
@@ -26,6 +24,7 @@ import { Box, Text, useInput } from "ink";
 import React, { useState } from "react";
 
 import packageJson from "../../package.json" with { type: "json" };
+import { ROOT_HORIZONTAL_PADDING } from "./layout-policy";
 import { useFrameTick } from "./primitives/SakuraPetal";
 import { mountRootContent } from "./root-content-state";
 import { AnalyticsScreen, ANALYTICS_ON_INDEX, ANALYTICS_OFF_INDEX } from "./setup/AnalyticsScreen";
@@ -242,6 +241,8 @@ export function SetupShell({
   // sizing to `stdout.rows` is what pushed the footer off the bottom of the
   // screen, because setup mounts inside the app shell's box, not the terminal.
   const { cols } = useShellDimensions();
+  // Setup is inside AppRoot, whose side padding also consumes columns.
+  const frameWidth = Math.max(0, cols - ROOT_HORIZONTAL_PADDING * 2);
   // Same policy the gate below renders against. While it is too small the
   // screens are not visible, so keystrokes must not steer screens the user
   // cannot see.
@@ -651,7 +652,7 @@ export function SetupShell({
   return (
     <ViewportResizeGate kind="picker" message="Resize terminal to run setup">
       <SetupFrame
-        width={cols}
+        width={frameWidth}
         context={SCREEN_CONTEXT[screen]}
         step={screenIdx}
         totalSteps={SCREEN_ORDER.length}
@@ -667,7 +668,7 @@ export function SetupShell({
             rechecking={rechecking}
             tick={tick}
             showFix={showFix}
-            contentWidth={setupContentWidth(cols)}
+            contentWidth={setupContentWidth(frameWidth)}
           />
         ) : null}
         {screen === "mode" ? <ModeScreen selected={modeIdx} /> : null}
@@ -711,7 +712,7 @@ export function SetupShell({
 
         {confirmingAbort ? (
           <Box marginTop={1}>
-            <Text color={palette.danger} bold>
+            <Text color={palette.dangerText} bold>
               Press esc again to quit without saving
             </Text>
             <Text color={palette.muted}> — any other key stays.</Text>

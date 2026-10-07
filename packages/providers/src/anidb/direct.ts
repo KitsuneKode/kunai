@@ -391,21 +391,19 @@ export const anidbProviderModule: CoreProviderModule = {
       mergeExternalEpisodeMetadataInto(metadata, externalMetadata);
     }
 
-    const baseEpisodes = episodes.map(
-      (episode): ProviderEpisodeOption => ({
-        index: episode.number,
-        label: `Episode ${episode.number}`,
-        detail: episode.filler ? "Filler" : undefined,
-        totalEpisodeCount: episodes.length,
-        // Series poster as the still fallback: an empty art slot reads as a
-        // broken row, and AniDB has no per-episode image of its own.
-        artwork: pageIds?.posterUrl ? { thumbnailUrl: pageIds.posterUrl } : undefined,
-        externalIds: {
-          anilistId,
-          malId: malId ? String(malId) : undefined,
-        },
-      }),
-    );
+    const baseEpisodes = episodes.map((episode): ProviderEpisodeOption => ({
+      index: episode.number,
+      label: `Episode ${episode.number}`,
+      detail: episode.filler ? "Filler" : undefined,
+      totalEpisodeCount: episodes.length,
+      // Series poster as the still fallback: an empty art slot reads as a
+      // broken row, and AniDB has no per-episode image of its own.
+      artwork: pageIds?.posterUrl ? { thumbnailUrl: pageIds.posterUrl } : undefined,
+      externalIds: {
+        anilistId,
+        malId: malId ? String(malId) : undefined,
+      },
+    }));
     return metadata.size > 0
       ? enrichEpisodeOptionsWithAnimeMetadata(baseEpisodes, metadata)
       : baseEpisodes;

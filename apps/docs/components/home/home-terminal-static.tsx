@@ -35,7 +35,7 @@ export function HomeTerminalStatic({ cliVersion, runtimeBaseline }: HomeTerminal
           </span>
         </div>
 
-        <div className="kunai-terminal-body scrollbar block max-h-[360px] min-h-[260px] w-full text-left">
+        <div className="kunai-terminal-body scrollbar block h-[19rem] w-full text-left">
           <span className="kunai-log-line kunai-log-line--brand">▌ Kunai Shell v{cliVersion}</span>
           <span className="kunai-log-line kunai-log-line--muted">
             Requires mpv {runtimeBaseline.mpv}. The binary install embeds bun {runtimeBaseline.bun}.
@@ -55,7 +55,7 @@ export function HomeTerminalStatic({ cliVersion, runtimeBaseline }: HomeTerminal
           <span className="kunai-log-line kunai-log-line--play">[PLAY] handing stream to mpv</span>
 
           <span className="kunai-terminal-input-row">
-            <span className="kunai-text-accent mr-2 text-xs font-bold">kunai &gt;</span>
+            <span className="kunai-text-accent mr-2 text-xs font-semibold">kunai &gt;</span>
             <span className="text-fd-muted-foreground font-mono text-xs">
               Type &apos;/&apos; for commands…
             </span>

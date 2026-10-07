@@ -13,6 +13,7 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
+import { errorCode } from "@/infra/fs/errno";
 import {
   reserveFile,
   copyToReservedFile,
@@ -24,6 +25,7 @@ import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import { redactDiagnosticValue } from "@/services/diagnostics/redaction";
+import { readBoundedBody } from "@/services/network/bounded-body";
 import {
   cacheOfflinePosterArtwork,
   resolveOfflinePosterArtifactPath,
@@ -48,7 +50,7 @@ import {
   type HistoryTitleAliasInput,
   type HistoryTitleAliasRepository,
 } from "@kunai/storage";
-import { isJsonObject, isJsonString, type MediaKind, type ProviderExternalIds } from "@kunai/types";
+import type { MediaKind, ProviderExternalIds } from "@kunai/types";
 
 import { whichLive } from "../../infra/os/which";
 import { downloadJobShellMode } from "./download-job-mode";
@@ -78,6 +80,9 @@ const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
+// A subtitle is a text sidecar — a few hundred KB at most. Anything beyond this
+// is a mis-labelled or hostile body, not a subtitle.
+const MAX_SUBTITLE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
 /**
@@ -266,16 +271,14 @@ type DownloadSidecarResult = {
   readonly repairMetadataJson?: string;
 };
 
-function publishErrorCode(cause: unknown): string | undefined {
-  return isJsonObject(cause) && isJsonString(cause.code) ? cause.code : undefined;
-}
-
 function existingDestinationError(cause: unknown): Error {
   return new Error(
     "Download destination already exists; existing file preserved. Choose a different download directory.",
     { cause },
   );
 }
+
+class DownloadOwnershipError extends Error {}
 
 class StaleDownloadClaimError extends Error {
   constructor() {
@@ -339,6 +342,13 @@ export class DownloadService {
       // Volume stats go through deps so unit tests don't read host disk — the
       // suite's verdict must not depend on how full the test volume happens to be.
       readonly statfs?: (path: string) => Promise<{ bavail: number; bsize: number }>;
+      /**
+       * Default download directory override. Without it the fallback derives
+       * from `getKunaiPaths().dataDbPath`, so a test that resolves the default
+       * without an isolated storage root computes a path under the developer's
+       * real profile. The user's configured `downloadPath` still wins over this.
+       */
+      readonly defaultDownloadDir?: string;
     },
   ) {}
 
@@ -1061,12 +1071,13 @@ export class DownloadService {
   }
 
   async abort(jobId: string): Promise<void> {
-    this.copyControllers.get(jobId)?.abort();
+    const copy = this.copyControllers.get(jobId);
     const job = this.deps.repo.get(jobId);
     if (!job) {
+      copy?.abort();
       return;
     }
-    if (job.publicationPending && !this.jobClaims.has(jobId))
+    if (job.publicationPending && !this.ownsRunningJob(jobId))
       throw new Error(
         "Another instance owns this copy or it needs recovery. Cancel it in its owning instance.",
       );
@@ -1075,6 +1086,12 @@ export class DownloadService {
       mode: "abort",
       reason: "download aborted by user",
     });
+    if (copy) {
+      // The worker clears the reserved destination and publication state before
+      // releasing its claim. An early abort write would fence that cleanup out.
+      copy.abort();
+      return;
+    }
     if (active) {
       active.cancelRequested = true;
       active.cancelMode = "abort";
@@ -1083,9 +1100,40 @@ export class DownloadService {
       await this.terminateProcess(active.process, active.cancel);
       return;
     }
+    if (this.isForeignLiveJob(job)) {
+      // Keep the cancellation marker: if this instance later recovers the job
+      // because the owner died, the pending cancel still applies. But the row
+      // and its temp file belong to a sibling that is writing right now.
+      this.deps.logger.warn("Refusing to abort a download owned by a live Kunai instance", {
+        jobId,
+      });
+      return;
+    }
     const claim = this.jobClaims.get(jobId);
     if (claim) await this.removeAttempt(claim);
     this.deps.repo.abort(jobId, new Date().toISOString(), claim);
+  }
+
+  /**
+   * `running` is a lease, not ownership. When the row is running but this
+   * process holds no child for it and the heartbeat is still fresh, a sibling
+   * Kunai instance is actively working the job — mutating it from here would
+   * unlink the owner's temp file mid-write and flip its status out from under
+   * it. A stale heartbeat means the owner is likely gone and recovery
+   * (`reconcileInterruptedJobs`) is the correct path.
+   */
+  private ownsRunningJob(jobId: string): boolean {
+    const claim = this.jobClaims.get(jobId);
+    return claim !== undefined && this.deps.repo.withRunningClaim(claim, () => {}).owned;
+  }
+
+  private isForeignLiveJob(job: DownloadJobRecord | undefined): boolean {
+    if (!job || job.status !== "running" || this.ownsRunningJob(job.id)) {
+      return false;
+    }
+    const heartbeatAt = job.lastHeartbeatAt ?? job.startedAt;
+    const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : Number.NaN;
+    return Number.isFinite(heartbeatMs) && Date.now() - heartbeatMs < STALLED_HEARTBEAT_MS;
   }
 
   /**
@@ -1160,6 +1208,14 @@ export class DownloadService {
       throw new Error(
         "Download copy is still active or awaiting recovery. Cancel or recover it before deleting this job.",
       );
+    if (this.isForeignLiveJob(job)) {
+      // The row, temp file, and (possibly) partial output belong to a sibling
+      // that is heartbeating right now — deleting any of them corrupts its run.
+      this.deps.logger.warn("Refusing to delete a download owned by a live Kunai instance", {
+        jobId,
+      });
+      return;
+    }
     if (job.status === "running" || this.activeProcesses.has(jobId)) {
       await this.abort(jobId);
     }
@@ -1202,7 +1258,9 @@ export class DownloadService {
         String(info.dev) !== job.publicationDevice ||
         String(info.ino) !== job.publicationInode
       )
-        throw new Error("Download destination changed; existing file and job record preserved");
+        throw new DownloadOwnershipError(
+          "Download destination changed; existing file and job record preserved",
+        );
     }
   }
 
@@ -1226,7 +1284,7 @@ export class DownloadService {
       const acquired = this.deps.repo.withRunningClaim(claim, () => {
         if (this.cancellationRequests.has(job.id)) throw new Error("download aborted");
         if (this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath))
-          throw new Error(
+          throw new DownloadOwnershipError(
             "Download destination is shared with another job; choose a different directory",
           );
         try {
@@ -1235,7 +1293,7 @@ export class DownloadService {
           const staged = statSync(job.tempPath, { bigint: true });
           const published = statSync(job.outputPath, { bigint: true });
           if (staged.dev !== published.dev || staged.ino !== published.ino)
-            throw new Error(
+            throw new DownloadOwnershipError(
               "Download destination changed during publication; existing file preserved",
             );
           if (
@@ -1249,7 +1307,7 @@ export class DownloadService {
             throw new StaleDownloadClaimError();
           return undefined;
         } catch (cause) {
-          const code = publishErrorCode(cause);
+          const code = errorCode(cause);
           if (code === "EEXIST") throw existingDestinationError(cause);
           if (code !== "EXDEV" && code !== "EPERM" && code !== "ENOTSUP" && code !== "EOPNOTSUPP")
             throw cause;
@@ -1288,7 +1346,9 @@ export class DownloadService {
             String(currentOutput.dev) !== reserved.device ||
             String(currentOutput.ino) !== reserved.inode
           )
-            throw new Error("Download destination changed during copy; existing file preserved");
+            throw new DownloadOwnershipError(
+              "Download destination changed during copy; existing file preserved",
+            );
           if (
             !this.deps.repo.setPublication(
               job.id,
@@ -1310,9 +1370,12 @@ export class DownloadService {
       this.deps.repo.withRunningClaim(claim, () => {
         const info = statSync(job.outputPath, { bigint: true, throwIfNoEntry: false });
         if (info && (String(info.dev) !== identity.device || String(info.ino) !== identity.inode))
-          throw new Error("Download destination changed during copy; existing file preserved", {
-            cause,
-          });
+          throw new DownloadOwnershipError(
+            "Download destination changed during copy; existing file preserved",
+            {
+              cause,
+            },
+          );
         if (info) unlinkSync(job.outputPath);
         this.deps.repo.setPublication(job.id, null, new Date().toISOString(), claim);
       });
@@ -1854,9 +1917,23 @@ export class DownloadService {
         subtitleUrl: job.subtitleUrl,
         contentType: res.headers.get("content-type"),
       });
-      const data = await res.arrayBuffer();
-      if (data.byteLength <= 0) {
-        return buildRepairableSidecarResult(job, "subtitle", "subtitle response was empty");
+      // Content-Length is sender-declared and only an early reject — the body
+      // itself is bounded below, so a lying or absent header cannot pull a
+      // giant payload into memory.
+      const declared = Number(res.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > MAX_SUBTITLE_BYTES) {
+        await res.body?.cancel("too-large").catch(() => {});
+        return buildRepairableSidecarResult(job, "subtitle", "subtitle response too large");
+      }
+      const data = res.body ? await readBoundedBody(res.body, MAX_SUBTITLE_BYTES) : null;
+      if (!data || data.byteLength <= 0) {
+        // readBoundedBody returns null on overflow, abort, and mid-body drops —
+        // all are retryable sidecar failures rather than a poisoned artifact.
+        return buildRepairableSidecarResult(
+          job,
+          "subtitle",
+          "subtitle response was empty, too large, or interrupted",
+        );
       }
       if (claim) {
         const stagedPath = join(claim.stagingDir, "subtitle" + extname(targetPath));
@@ -2023,13 +2100,17 @@ export class DownloadService {
   }
 
   private selectEligibleQueuedJob(nowIso: string): DownloadJobRecord | null {
-    const now = Date.parse(nowIso);
-    const queued = this.deps.repo.listQueued(50);
-    for (const job of queued) {
-      if (this.claimedJobIds.has(job.id) || job.publicationPending) continue;
-      if (!job.nextRetryAt) return job;
-      const retryAt = Date.parse(job.nextRetryAt);
-      if (Number.isFinite(retryAt) && retryAt <= now) return job;
+    const pageSize = 50;
+    let after: { readonly createdAt: string; readonly id: string } | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const queued = this.deps.repo.listDueQueued(nowIso, pageSize, after);
+      if (queued.length === 0) return null;
+      for (const job of queued) {
+        if (!this.claimedJobIds.has(job.id) && !job.publicationPending) return job;
+      }
+      const last = queued.at(-1);
+      if (!last || queued.length < pageSize) return null;
+      after = { createdAt: last.createdAt, id: last.id };
     }
     return null;
   }
@@ -2037,15 +2118,14 @@ export class DownloadService {
   /**
    * Repair for an unparseable `next_retry_at`, not the ordinary resume path.
    *
-   * The ordinary case needs nothing from here: `selectEligibleQueuedJob` scans
-   * `listQueued`, which is unfiltered by retry time, and takes any job whose
-   * `next_retry_at` has elapsed. A shutdown pause (`next_retry_at = now`) is
+   * The ordinary case needs nothing from here: `listDueQueued` filters retry time before limiting the page,
+   * so deferred work cannot hide a later eligible job. A shutdown pause (`next_retry_at = now`) is
    * therefore already eligible on the next pass.
    *
    * What it does do is narrow and load-bearing. `listPaused` compares
    * `next_retry_at` as a *string* in SQL, so a corrupt value like `not-a-date`
    * sorts greater than any timestamp and is returned here, while
-   * `selectEligibleQueuedJob` requires `Number.isFinite` and skips it forever.
+   * the due query excludes it forever because it sorts after the current ISO timestamp.
    * Without this pass such a row is stranded for the life of the install.
    *
    * Verified against a real database rather than by reading: a future-dated
@@ -2097,7 +2177,7 @@ export class DownloadService {
                 String(info.dev) !== runningJob.publicationDevice ||
                 String(info.ino) !== runningJob.publicationInode
               ) {
-                throw new Error(
+                throw new DownloadOwnershipError(
                   "Interrupted copy destination ownership changed; existing file preserved",
                 );
               }
@@ -2125,18 +2205,28 @@ export class DownloadService {
               String(publishedOutput.dev) !== runningJob.publicationDevice ||
               String(publishedOutput.ino) !== runningJob.publicationInode
             )
-              throw new Error(
+              throw new DownloadOwnershipError(
                 "Download destination changed after publication; existing file preserved",
               );
-          } else if (runningJob.stagingDir) {
-            // A link can outlive its SQL commit. The retained attempt supplies inode proof.
-            const staged = await stat(join(runningJob.stagingDir, "media.mp4"), {
+          } else {
+            // A link can outlive its SQL commit. Legacy rows must supply the
+            // same proof through their recorded temporary path, never just a
+            // nonempty file found at the destination.
+            const proofPath = runningJob.stagingDir
+              ? join(runningJob.stagingDir, "media.mp4")
+              : runningJob.tempPath;
+            const staged = await stat(proofPath, {
               bigint: true,
             }).catch(() => null);
-            if (!staged || staged.dev !== publishedOutput.dev || staged.ino !== publishedOutput.ino)
-              throw new Error(
-                "Download destination ownership cannot be proved; existing file preserved",
+            if (
+              !staged ||
+              staged.dev !== publishedOutput.dev ||
+              staged.ino !== publishedOutput.ino
+            ) {
+              throw new DownloadOwnershipError(
+                "Download destination ownership cannot be proved; existing file preserved. Choose another directory or remove this job record.",
               );
+            }
           }
           if (this.deps.repo.hasConflictingOutputOwner(runningJob.id, runningJob.outputPath)) {
             const message =
@@ -2193,7 +2283,7 @@ export class DownloadService {
                 if (
                   this.deps.repo.hasConflictingOutputOwner(runningJob.id, runningJob.outputPath)
                 ) {
-                  throw new Error(
+                  throw new DownloadOwnershipError(
                     "Download destination ownership changed; existing artifact preserved",
                     { cause: error },
                   );
@@ -2207,14 +2297,14 @@ export class DownloadService {
                   (currentOutput.dev !== publishedOutput.dev ||
                     currentOutput.ino !== publishedOutput.ino)
                 )
-                  throw new Error(
+                  throw new DownloadOwnershipError(
                     "Download destination changed during validation; existing file preserved",
                     { cause: error },
                   );
                 try {
                   unlinkSync(runningJob.outputPath);
                 } catch (removeError) {
-                  if (publishErrorCode(removeError) !== "ENOENT") throw removeError;
+                  if (errorCode(removeError) !== "ENOENT") throw removeError;
                 }
               });
               if (!removed.owned) continue;
@@ -2264,7 +2354,7 @@ export class DownloadService {
               currentOutput.dev !== publishedOutput.dev ||
               currentOutput.ino !== publishedOutput.ino
             )
-              throw new Error(
+              throw new DownloadOwnershipError(
                 "Download destination changed during validation; existing file preserved",
               );
             if (
@@ -2304,7 +2394,24 @@ export class DownloadService {
           "download interrupted by previous session shutdown",
         );
       } catch (error) {
-        if (!(error instanceof StaleDownloadClaimError)) throw error;
+        if (error instanceof StaleDownloadClaimError) continue;
+        if (error instanceof DownloadOwnershipError) {
+          const failed = this.deps.repo.withRunningClaim(recovery, () => {
+            this.deps.repo.setPublication(runningJob.id, null, now, recovery);
+            return this.deps.repo.fail(
+              runningJob.id,
+              error.message,
+              false,
+              now,
+              "artifact-invalid",
+              recovery,
+            );
+          });
+          if (failed.owned && failed.value)
+            this.emit({ type: "failed", jobId: runningJob.id, error: error.message });
+          continue;
+        }
+        throw error;
       } finally {
         this.jobClaims.delete(runningJob.id);
       }
@@ -2384,9 +2491,8 @@ export class DownloadService {
 
   private resolveDefaultDownloadDirectory(): string {
     const configuredBase = this.deps.config.downloadPath.trim();
-    return configuredBase.length > 0
-      ? configuredBase
-      : join(dirname(getKunaiPaths().dataDbPath), "downloads");
+    if (configuredBase.length > 0) return configuredBase;
+    return this.deps.defaultDownloadDir ?? join(dirname(getKunaiPaths().dataDbPath), "downloads");
   }
 
   private statfs(path: string): Promise<{ bavail: number; bsize: number }> {

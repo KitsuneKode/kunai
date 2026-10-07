@@ -10,6 +10,7 @@ test("relay development defaults to numeric IPv4 loopback on port 8787", () => {
     hostname: "127.0.0.1",
     port: 8787,
     authorization: { mode: "local-loopback" },
+    corsAllowedOrigins: [],
   });
 });
 
@@ -18,6 +19,7 @@ test.each(["127.0.0.1", "::1"])("relay development permits tokenless bind to %s"
     hostname,
     port: 8787,
     authorization: { mode: "local-loopback" },
+    corsAllowedOrigins: [],
   });
 });
 
@@ -26,6 +28,7 @@ test.each(["", "   "])("relay development treats a blank host as the safe defaul
     hostname: "127.0.0.1",
     port: 8787,
     authorization: { mode: "local-loopback" },
+    corsAllowedOrigins: [],
   });
 });
 
@@ -54,6 +57,7 @@ test.each(["0.0.0.0", "::", "localhost", "192.168.1.20"])(
       hostname,
       port: 8787,
       authorization: { mode: "bearer", token: "secret" },
+      corsAllowedOrigins: [],
     });
   },
 );
@@ -63,6 +67,7 @@ test("relay development uses bearer authorization when loopback has a token", ()
     hostname: "127.0.0.1",
     port: 8787,
     authorization: { mode: "bearer", token: "secret" },
+    corsAllowedOrigins: [],
   });
 });
 
@@ -95,3 +100,28 @@ test("relay development carries resolved host, port, and auth into server behavi
   );
   expect(response.status).toBe(401);
 });
+
+test("relay development parses RELAY_CORS_ORIGINS into an origin allowlist", () => {
+  const policy = resolveRelayDevelopmentPolicy({
+    RELAY_CORS_ORIGINS: " https://app.example , http://localhost:5173 ,, ",
+  });
+  expect(policy.corsAllowedOrigins).toEqual(["https://app.example", "http://localhost:5173"]);
+});
+
+test.each([undefined, "", "   ", " , ,"])(
+  "relay development keeps CORS off for unusable input %s",
+  (origins) => {
+    expect(
+      resolveRelayDevelopmentPolicy({ RELAY_CORS_ORIGINS: origins }).corsAllowedOrigins,
+    ).toEqual([]);
+  },
+);
+
+test.each(["not a url", "https://app.example/path", "https://app.example?q=1"])(
+  "relay development rejects non-origin entry %s",
+  (origin) => {
+    expect(() => resolveRelayDevelopmentPolicy({ RELAY_CORS_ORIGINS: origin })).toThrow(
+      "RELAY_CORS_ORIGINS",
+    );
+  },
+);

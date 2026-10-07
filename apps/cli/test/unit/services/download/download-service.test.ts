@@ -354,9 +354,80 @@ describe("DownloadService", () => {
       expect(repo.get(job.id)?.status).toBe("running");
       expect(repo.get(job.id)?.publicationPending).toBe(true);
       expect(events).not.toContain("complete");
+      const following = await service.enqueue({
+        title: { id: "tmdb:785", type: "movie", name: "Following recovery" },
+        providerId: "vidking",
+        stream: { url: "https://example.com/next.mp4", headers: {}, timestamp: 0 },
+      });
+      db.query("UPDATE download_jobs SET last_heartbeat_at = ? WHERE id = ?").run(
+        new Date(Date.now() - 120_000).toISOString(),
+        job.id,
+      );
+      await service.processQueue();
+      expect(repo.get(job.id)?.status).toBe("failed");
+      expect(repo.get(job.id)?.publicationPending).toBe(false);
+      expect(repo.get(following.id)?.status).toBe("completed");
+      expect(await Bun.file(job.outputPath).text()).toBe("user-owned replacement");
     } finally {
       resume.resolve();
       await Promise.allSettled([work]);
+      copy.mockRestore();
+      link.mockRestore();
+    }
+  });
+
+  test("abort lets the copying worker clear publication before releasing its claim", async () => {
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const originalCopy = reservedCopy.copyToReservedFile;
+    const link = spyOn(nativeFs, "linkSync").mockImplementation(() => {
+      throw Object.assign(new Error("links unavailable"), { code: "EXDEV" });
+    });
+    const copy = spyOn(reservedCopy, "copyToReservedFile").mockImplementation(async (...args) => {
+      entered.resolve();
+      await resume.promise;
+      return originalCopy(...args);
+    });
+    whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/stub/ffprobe" : null));
+    spawnSpy.mockImplementation((command: string[]) => {
+      if (command[0] !== "ffprobe")
+        writeFileSync(command[command.indexOf("-o") + 1]!, "download bytes");
+      // SAFETY: controlled children supply the consumed subprocess surface.
+      return {
+        stdout: streamOf(command[0] === "ffprobe" ? "60" : ""),
+        stderr: streamOf(""),
+        exited: Promise.resolve(0),
+        kill() {},
+      } as never;
+    });
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      ffprobeAvailable: true,
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:786", type: "movie", name: "Cancel copy" },
+      providerId: "vidking",
+      stream: { url: "https://example.com/copy.mp4", headers: {}, timestamp: 0 },
+    });
+    const work = service.processNextQueued();
+    const settled = Promise.allSettled([work]);
+    try {
+      await entered.promise;
+      await service.abort(job.id);
+      expect(repo.get(job.id)?.status).toBe("running");
+      resume.resolve();
+      await work;
+      expect(repo.get(job.id)?.status).toBe("aborted");
+      expect(repo.get(job.id)?.publicationPending).toBe(false);
+      expect(existsSync(job.outputPath)).toBe(false);
+      await service.deleteJob(job.id);
+      expect(repo.get(job.id)).toBeUndefined();
+    } finally {
+      resume.resolve();
+      await settled;
       copy.mockRestore();
       link.mockRestore();
     }
@@ -718,6 +789,8 @@ describe("DownloadService", () => {
         );
       const [first, second] = jobs;
       writeFileSync(first!.outputPath, "first owner's bytes");
+      // complete() is fenced to claimed work — enqueue alone is 'queued'.
+      repo.markRunning(first!.id, new Date().toISOString());
       repo.complete(first!.id, new Date().toISOString());
       markLegacyRunning(repo, db, second!.id, new Date(Date.now() - 120_000).toISOString());
       const recovery = buildService({
@@ -2282,6 +2355,39 @@ describe("DownloadService", () => {
     expect(reloaded?.retryCount).toBe(1);
   });
 
+  test.each([false, true])(
+    "legacy recovery preserves an unproved destination (ffprobe=%s)",
+    async (ffprobeAvailable) => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      const job = await service.enqueue({
+        title: { id: "tmdb:784", type: "movie", name: "Unproved legacy destination" },
+        providerId: "vidking",
+        stream: { url: "https://example.com/video.mp4", headers: {}, timestamp: 0 },
+      });
+      markLegacyRunning(repo, db, job.id, new Date(Date.now() - 120_000).toISOString());
+      writeFileSync(job.outputPath, "user-owned bytes");
+      const recovery = buildService({
+        repo,
+        downloadsEnabled: false,
+        ytDlpAvailable: false,
+        downloadPath: tempDir,
+        ffprobeAvailable,
+      });
+      const events: string[] = [];
+      recovery.onEvent((event) => events.push(event.type));
+      await recovery.processQueue();
+      expect(await Bun.file(job.outputPath).text()).toBe("user-owned bytes");
+      expect(repo.get(job.id)?.status).toBe("failed");
+      expect(events).not.toContain("complete");
+      expect(spawnSpy).not.toHaveBeenCalled();
+    },
+  );
+
   test("adopts a valid output published before a crash instead of downloading it again", async () => {
     const enqueueService = buildService({
       repo,
@@ -2296,8 +2402,8 @@ describe("DownloadService", () => {
       mode: "series",
     });
     expect(markLegacyRunning(repo, db, job.id, "2026-04-29T00:01:00.000Z")).toBeTruthy();
-    writeFileSync(job.outputPath, "valid-media-bytes");
-    writeFileSync(job.tempPath, "orphaned-temp-bytes");
+    writeFileSync(job.tempPath, "valid-media-bytes");
+    nativeFs.linkSync(job.tempPath, job.outputPath);
 
     const recoveryService = buildService({
       repo,
@@ -2329,8 +2435,8 @@ describe("DownloadService", () => {
       mode: "series",
     });
     expect(markLegacyRunning(repo, db, job.id, "2026-04-29T00:01:00.000Z")).toBeTruthy();
-    writeFileSync(job.outputPath, "");
-    writeFileSync(job.tempPath, "orphaned-temp-bytes");
+    writeFileSync(job.tempPath, "");
+    nativeFs.linkSync(job.tempPath, job.outputPath);
 
     const recoveryService = buildService({
       repo,
@@ -2364,7 +2470,8 @@ describe("DownloadService", () => {
       mode: "series",
     });
     expect(markLegacyRunning(repo, db, job.id, "2026-04-29T00:01:00.000Z")).toBeTruthy();
-    writeFileSync(job.outputPath, "valid-media-that-must-survive");
+    writeFileSync(job.tempPath, "valid-media-that-must-survive");
+    nativeFs.linkSync(job.tempPath, job.outputPath);
     const updateFileSizeSpy = spyOn(repo, "updateFileSize").mockImplementation(() => {
       throw new Error("simulated SQLite write failure");
     });
@@ -2396,7 +2503,8 @@ describe("DownloadService", () => {
       mode: "series",
     });
     expect(markLegacyRunning(repo, db, job.id, "2026-04-29T00:01:00.000Z")).toBeTruthy();
-    writeFileSync(job.outputPath, "published-media-that-must-survive");
+    writeFileSync(job.tempPath, "published-media-that-must-survive");
+    nativeFs.linkSync(job.tempPath, job.outputPath);
 
     const probe = createHangingProbe("SIGKILL");
     whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/usr/bin/ffprobe" : null));
@@ -2439,7 +2547,8 @@ describe("DownloadService", () => {
       mode: "series",
     });
     expect(markLegacyRunning(repo, db, job.id, "2026-04-29T00:01:00.000Z")).toBeTruthy();
-    writeFileSync(job.outputPath, "published-media-that-must-survive-shutdown");
+    writeFileSync(job.tempPath, "published-media-that-must-survive-shutdown");
+    nativeFs.linkSync(job.tempPath, job.outputPath);
 
     let expireProbe!: () => void;
     let deadlineCount = 0;
@@ -2697,6 +2806,12 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
+    // This test covers competing claims, not equal-timestamp UUID ordering.
+    // Anchor A before the records we just wrote without sleeping for a tick.
+    const earlier = new Date(
+      Math.min(Date.parse(firstJob.createdAt), Date.parse(secondJob.createdAt)) - 1,
+    ).toISOString();
+    db.run("UPDATE download_jobs SET created_at = ? WHERE id = ?", [earlier, firstJob.id]);
     const originalMarkRunning = repo.markRunning.bind(repo);
     const claimedJobIds: string[] = [];
     const markRunningSpy = spyOn(repo, "markRunning").mockImplementation((jobId, updatedAt) => {
@@ -2954,8 +3069,8 @@ describe("DownloadService", () => {
     });
     expect(markLegacyRunning(repo, db, stale.id, "2026-04-29T00:01:00.000Z")).toBeTruthy();
     expect(markLegacyRunning(repo, db, fresh.id, new Date().toISOString())).toBeTruthy();
-    writeFileSync(stale.outputPath, "valid-stale-output");
-    writeFileSync(stale.tempPath, "stale-temp");
+    writeFileSync(stale.tempPath, "valid-stale-output");
+    nativeFs.linkSync(stale.tempPath, stale.outputPath);
     writeFileSync(fresh.tempPath, "fresh-temp");
 
     const recoveryService = buildService({

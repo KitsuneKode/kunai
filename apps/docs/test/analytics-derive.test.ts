@@ -5,10 +5,18 @@ import {
   dayToEpoch,
   delta,
   formatDayTick,
+  namedBucketCount,
   namedVersionCount,
+  clockSeamIn,
+  CLOCK_SEAM_DAY,
+  median,
+  niceCeil,
   platformColumns,
+  robustAxisCap,
   platformLabel,
+  releaseMarkers,
   residualShare,
+  rollingMean,
   sliceRange,
 } from "../lib/analytics-derive";
 import type { SeriesPoint } from "../lib/analytics-series";
@@ -182,8 +190,128 @@ describe("platformColumns", () => {
     expect(platformColumns([day(0, 3, {})])).toEqual([]);
   });
 
+  test("the residual alone is not a breakdown: it is the Active column renamed", () => {
+    expect(platformColumns([day(0, 4, { other: 4 }), day(1, 5, { other: 5 })])).toEqual([]);
+  });
+
   test("an unexpected bucket sorts between the named platforms and the residual", () => {
     const points = [day(0, 9, { linux: 4, freebsd: 2, other: 3 })];
     expect(platformColumns(points)).toEqual(["linux", "freebsd", "other"]);
+  });
+});
+
+describe("namedBucketCount", () => {
+  test("counts only real, non-empty buckets from one breakdown", () => {
+    expect(namedBucketCount({ "0.3.0": 5, other: 9, "0.2.0": 0 })).toBe(1);
+  });
+
+  test("a breakdown that is all residual names nothing", () => {
+    expect(namedBucketCount({ other: 3 })).toBe(0);
+    expect(namedBucketCount({})).toBe(0);
+  });
+
+  test("agrees with residualShare: a tile cannot say 0% suppressed and name nothing", () => {
+    const counts = { "0.3.0": 5 };
+    expect(residualShare(counts)).toBe(0);
+    expect(namedBucketCount(counts)).toBeGreaterThan(0);
+  });
+});
+
+describe("rollingMean", () => {
+  test("shortens at the start instead of padding with zeros", () => {
+    expect(rollingMean([4, 6, 8], 3)).toEqual([4, 5, 6]);
+  });
+
+  test("slides once the window is full", () => {
+    expect(rollingMean([1, 2, 3, 4], 2)).toEqual([1, 1.5, 2.5, 3.5]);
+  });
+
+  test("skips nulls and keeps a gap where a window has no real value", () => {
+    expect(rollingMean([null, null, 6], 2)).toEqual([null, null, 6]);
+    expect(rollingMean([2, null, 4], 2)).toEqual([2, 2, 4]);
+  });
+});
+
+describe("releaseMarkers", () => {
+  const points = [day(0), day(1), day(2), day(3)];
+
+  test("keeps only releases inside the plotted window, oldest first", () => {
+    const markers = releaseMarkers(points, [
+      { date: "2026-01-03", tag: "v2" },
+      { date: "2025-12-30", tag: "v0" },
+      { date: "2026-01-02", tag: "v1" },
+      { date: "2026-02-01", tag: "v9" },
+    ]);
+    expect(markers.map((m) => m.tag)).toEqual(["v1", "v2"]);
+  });
+
+  test("includes both edges of the window", () => {
+    const markers = releaseMarkers(points, [
+      { date: "2026-01-01", tag: "first" },
+      { date: "2026-01-04", tag: "last" },
+    ]);
+    expect(markers).toHaveLength(2);
+  });
+
+  test("reads the day from a timestamp and ignores unparseable dates", () => {
+    const markers = releaseMarkers(points, [
+      { date: "2026-01-02T10:00:00Z", tag: "iso" },
+      { date: null, tag: "undated" },
+      { date: "soon", tag: "bad" },
+    ]);
+    expect(markers).toEqual([{ day: "2026-01-02", tag: "iso" }]);
+  });
+
+  test("an empty window has no markers", () => {
+    expect(releaseMarkers([], [{ date: "2026-01-02", tag: "v1" }])).toEqual([]);
+  });
+});
+
+describe("robustAxisCap", () => {
+  test("fits the axis to the data when no day dwarfs the rest", () => {
+    expect(robustAxisCap([3, 5, 9, 12])).toEqual({ cap: 15, clipped: false });
+  });
+
+  test("cuts the axis for a launch-day spike so ordinary days stay readable", () => {
+    // 157 against a next-highest of 10: fitting to 157 would draw every other bar under 7% tall.
+    expect(robustAxisCap([157, 10, 4, 3, 0, 2])).toEqual({ cap: 15, clipped: true });
+  });
+
+  test("a big number is not an outlier unless it is also far above the next one", () => {
+    expect(robustAxisCap([40, 30, 25])).toEqual({ cap: 40, clipped: false });
+  });
+
+  test("a small spike under the floor of 20 is just data", () => {
+    expect(robustAxisCap([15, 2, 1]).clipped).toBe(false);
+  });
+
+  test("an empty or all-zero series still has a usable axis", () => {
+    expect(robustAxisCap([])).toEqual({ cap: 1, clipped: false });
+    expect(robustAxisCap([0, 0])).toEqual({ cap: 1, clipped: false });
+  });
+});
+
+describe("niceCeil", () => {
+  test("rounds up to a readable axis number", () => {
+    expect(niceCeil(7)).toBe(8);
+    expect(niceCeil(12.5)).toBe(15);
+    expect(niceCeil(157)).toBe(200);
+    expect(niceCeil(1)).toBe(1);
+    expect(niceCeil(0)).toBe(1);
+  });
+});
+
+describe("median", () => {
+  test("is the middle value, or the mean of the two middle ones", () => {
+    expect(median([1, 9, 3])).toBe(3);
+    expect(median([1, 2, 3, 10])).toBe(2.5);
+    expect(median([])).toBe(0);
+  });
+});
+
+describe("clockSeamIn", () => {
+  test("finds the IST cutover day only when the window contains it", () => {
+    expect(clockSeamIn(["2026-09-13", CLOCK_SEAM_DAY, "2026-09-15"])).toBe(CLOCK_SEAM_DAY);
+    expect(clockSeamIn(["2026-09-15", "2026-09-16"])).toBeNull();
   });
 });

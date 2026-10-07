@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 
+import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { getKunaiPaths } from "@kunai/storage";
 
@@ -29,8 +30,11 @@ export function userKunaiMpvBridgePath(): string {
 
 /**
  * Materialize the bridge at a writable path mpv can load via `--script=`.
- * Uses `Bun.write` (not Node `copyFile`) so it works when `bundledPath` is a
- * `/$bunfs/` embedded path inside a compiled binary. `dest` is injectable for tests.
+ * The write is atomic (`writeAtomicBytes` — temp + rename): two instances
+ * refreshing the bridge at once, or a crash mid-copy, used to be able to leave
+ * a torn lua file that mpv would then fail to load. `Bun.file().arrayBuffer()`
+ * reads a `/$bunfs/` embedded path inside a compiled binary just fine.
+ * `dest` is injectable for tests.
  */
 export async function ensureUserKunaiMpvBridge(
   bundledPath: string,
@@ -38,8 +42,10 @@ export async function ensureUserKunaiMpvBridge(
 ): Promise<void> {
   await mkdir(dirname(dest), { recursive: true });
   if (!existsSync(bundledPath)) return;
+  const writeFresh = async () =>
+    writeAtomicBytes(dest, new Uint8Array(await Bun.file(bundledPath).arrayBuffer()));
   if (!existsSync(dest)) {
-    await Bun.write(dest, Bun.file(bundledPath));
+    await writeFresh();
     return;
   }
   // Refresh when the source is newer. stat on a `/$bunfs/` path can throw; treat
@@ -47,7 +53,7 @@ export async function ensureUserKunaiMpvBridge(
   const { statSync } = await import("node:fs");
   try {
     if (statSync(bundledPath).mtimeMs > statSync(dest).mtimeMs) {
-      await Bun.write(dest, Bun.file(bundledPath));
+      await writeFresh();
     }
   } catch {
     // best-effort

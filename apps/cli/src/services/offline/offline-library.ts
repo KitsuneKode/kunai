@@ -172,10 +172,12 @@ export function formatOfflineSecondaryLine(
   const subtitleLabel = job.subtitlePath ? "subtitles cached" : "no subtitles cached";
   const sidecarNote = formatDownloadSidecarNote(job);
   const timingLabel = job.introSkipJson ? "timing cached" : null;
+  // "Linked", not "cached": a bare posterUrl is a remote image ref, not bytes
+  // on disk — the shelf detail already says "poster linked" for the same case.
   const artworkLabel = job.thumbnailPath
     ? "thumbnail ready"
     : job.posterUrl
-      ? "poster cached"
+      ? "poster linked"
       : null;
   const parts = [
     `${offlineStatusLabel(status)}`,

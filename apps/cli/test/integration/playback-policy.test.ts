@@ -579,7 +579,7 @@ describe("completion thresholds", () => {
     ).toBe(false);
   });
 
-  test("never marks a voluntary quit past the threshold as completed", () => {
+  test("marks a voluntary quit in the credits as completed", () => {
     expect(
       shouldMarkEpisodeCompleted({
         watchedSeconds: 1499,
@@ -588,6 +588,19 @@ describe("completion thresholds", () => {
         playerExitCode: 0,
         playerExitSignal: null,
         lastTrustedProgressSeconds: 1499,
+      }),
+    ).toBe(true);
+  });
+
+  test("keeps an early voluntary quit resumable", () => {
+    expect(
+      shouldMarkEpisodeCompleted({
+        watchedSeconds: 811,
+        duration: 1440,
+        endReason: "quit",
+        playerExitCode: 0,
+        playerExitSignal: null,
+        lastTrustedProgressSeconds: 811,
       }),
     ).toBe(false);
   });

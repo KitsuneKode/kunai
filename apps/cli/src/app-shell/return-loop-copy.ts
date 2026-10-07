@@ -1,6 +1,4 @@
-// =============================================================================
-// return-loop-copy.ts — shared habit-loop strings (browse · calendar · history · post-play)
-// =============================================================================
+// Shared habit-loop strings (browse · calendar · history · post-play)
 
 export const RETURN_LOOP_READY_HEADING = "Ready for you now";
 export const RETURN_LOOP_FOR_YOU_NOW_HEADING = "For you now";

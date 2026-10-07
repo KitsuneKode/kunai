@@ -548,7 +548,11 @@ export class DownloadJobsRepository {
               updated_at = ?,
               completed_at = ?,
               last_validated_at = ?
-          WHERE id = ?
+          -- Completion is only reachable from a live run or the sidecar-repair
+          -- path (repairable / completed-with-notes). Writing 'completed' over
+          -- an aborted, failed, or still-queued row is a stale writer
+          -- resurrecting work another instance cancelled.
+          WHERE id = ? AND status IN ('running', 'repairable', 'completed-with-notes')
         `,
         [updatedAt, updatedAt, updatedAt],
         id,
@@ -583,7 +587,10 @@ export class DownloadJobsRepository {
               updated_at = ?,
               completed_at = COALESCE(completed_at, ?),
               last_validated_at = ?
+          -- Same fence as complete(), plus 'completed': the artwork-missing
+          -- downgrade path moves completed → completed-with-notes.
           WHERE id = ?
+            AND status IN ('running', 'repairable', 'completed-with-notes', 'completed')
         `,
         [
           input.message,
@@ -625,7 +632,9 @@ export class DownloadJobsRepository {
               updated_at = ?,
               completed_at = COALESCE(completed_at, ?),
               last_validated_at = ?
-          WHERE id = ?
+          -- Live run or a re-failed repair pass; never resurrect aborted,
+          -- failed, or queued rows.
+          WHERE id = ? AND status IN ('running', 'repairable', 'completed-with-notes')
         `,
         [
           input.message,
@@ -676,7 +685,12 @@ export class DownloadJobsRepository {
               retry_count = retry_count + ?,
               owner_token = NULL,
               updated_at = ?
+          -- 'completed' is final and 'aborted' is user intent: a stale failing
+          -- writer must not resurrect either. 'repairable' and
+          -- 'completed-with-notes' may still fail when the repair sweep finds
+          -- the artifact file missing.
           WHERE id = ?
+            AND status NOT IN ('completed', 'aborted')
         `,
         [message, failureKind, failureKind, incrementRetry ? 1 : 0, updatedAt],
         id,
@@ -705,6 +719,7 @@ export class DownloadJobsRepository {
               owner_token = NULL,
               updated_at = ?
           WHERE id = ?
+            AND status NOT IN ('completed', 'completed-with-notes', 'repairable', 'aborted')
         `,
         [message, retryAt, updatedAt],
         id,
@@ -747,7 +762,7 @@ export class DownloadJobsRepository {
               next_retry_at = ?,
               owner_token = NULL,
               updated_at = ?
-          WHERE id = ? AND status = 'running'
+          WHERE id = ? AND status IN ('running', 'queued')
         `,
         [message, retryAt, updatedAt],
         id,
@@ -798,6 +813,7 @@ export class DownloadJobsRepository {
               owner_token = NULL,
               updated_at = ?
           WHERE id = ?
+            AND status NOT IN ('completed', 'completed-with-notes', 'repairable', 'aborted')
         `,
         [updatedAt],
         id,
@@ -853,6 +869,36 @@ export class DownloadJobsRepository {
         "SELECT * FROM download_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT ?",
       )
       .all(limit)
+      .map(mapRow);
+  }
+
+  /**
+   * Due work only, ordered before the page limit. A page of deferred pauses
+   * must not hide a job whose retry time has already passed.
+   */
+  listDueQueued(
+    nowIso: string,
+    limit: number,
+    after?: { readonly createdAt: string; readonly id: string },
+  ): readonly DownloadJobRecord[] {
+    const due = `status = 'queued' AND (next_retry_at IS NULL OR next_retry_at <= ?)`;
+    if (!after) {
+      return this.db
+        .query<DownloadJobRow, [string, number]>(
+          `SELECT * FROM download_jobs WHERE ${due} ORDER BY created_at ASC, id ASC LIMIT ?`,
+        )
+        .all(nowIso, limit)
+        .map(mapRow);
+    }
+    return this.db
+      .query<DownloadJobRow, [string, string, string, string, number]>(
+        `SELECT * FROM download_jobs
+         WHERE ${due}
+           AND (created_at > ? OR (created_at = ? AND id > ?))
+         ORDER BY created_at ASC, id ASC
+         LIMIT ?`,
+      )
+      .all(nowIso, after.createdAt, after.createdAt, after.id, limit)
       .map(mapRow);
   }
 

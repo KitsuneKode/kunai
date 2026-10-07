@@ -9,6 +9,25 @@ import type { SessionState } from "@/domain/session/SessionState";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 describe("root overlay picker model", () => {
+  test("Tracks subtitle uses the current source label instead of a retired provider", () => {
+    // SAFETY: The subtitle branch reads only provider and overlay; settings config is unused.
+    expect(
+      getRootOverlaySubtitle({
+        overlay: {
+          type: "tracks_panel",
+          id: "local-tracks",
+          favorites: [],
+          providerLabel: "Local file",
+          groups: [],
+        },
+        state: { provider: "retired-provider" } as SessionState,
+        settingsDraft: null,
+        config: {} as KitsuneConfig,
+        settingsError: null,
+      }),
+    ).toBe("Local file");
+  });
+
   test("preserves preview image URLs for root-owned media pickers", () => {
     const options = buildRootGenericPickerOptions({
       type: "episode_picker",

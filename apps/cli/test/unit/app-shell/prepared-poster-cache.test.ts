@@ -118,7 +118,7 @@ describe("getPreparedPoster", () => {
     expect(await getPreparedPoster(source("broken"), bounds)).not.toBeNull();
   });
 
-  test("does not cache an aborted preparation", async () => {
+  test("a caller abort resolves null for that caller while the shared decode still caches", async () => {
     const controller = new AbortController();
     const bounds = { maxWidthPx: 20, maxHeightPx: 20 };
     preparedTesting.runtime.preparePoster = async (bytes, targetBounds, signal) => {
@@ -126,8 +126,11 @@ describe("getPreparedPoster", () => {
       return preparedTesting.realPreparePoster(bytes, targetBounds, signal);
     };
 
+    // The caller's own await resolves null on abort — but the leader's decode
+    // is shared work, so it completes once and caches for later callers.
     expect(await getPreparedPoster(source("aborted"), bounds, controller.signal)).toBeNull();
-    expect(preparedTesting.cacheSize()).toBe(0);
+    expect(await getPreparedPoster(source("aborted"), bounds)).not.toBeNull();
+    expect(preparedTesting.cacheSize()).toBe(1);
   });
 
   test("evicts by byte budget, not just entry count", async () => {

@@ -1,5 +1,4 @@
-// =============================================================================
-// render-trace.ts — debug-gated render / keystroke / poster instrumentation.
+// Debug-gated render / keystroke / poster instrumentation.
 //
 // Purpose: answer "where does the per-keystroke latency go?" with real numbers
 // on the user's terminal, since the chafa/Kitty poster cost cannot be reproduced
@@ -17,7 +16,6 @@
 //
 // Read the numbers with:  bun run dev -- --debug 2> debug.log
 // then grep debug.log for `"module":"render-trace"`.
-// =============================================================================
 
 import { dbg } from "@/logger";
 

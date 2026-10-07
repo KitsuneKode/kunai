@@ -3,6 +3,7 @@ export {
   openAnimeEpisodeListPicker,
   openAnimeEpisodePicker,
   openEpisodePicker,
+  openPlaybackEpisodePicker,
   openProviderPicker,
   openSeasonPicker,
   openSubtitlePicker,

@@ -252,7 +252,9 @@ describe("hls-relay gating", () => {
         },
         { maxResponseBytes: 100 },
       ),
-    ).rejects.toThrow("upstream body exceeded 100 bytes");
+    ).rejects.toThrow(
+      "upstream body exceeded the 100 byte budget (60 bytes received, 40 remaining)",
+    );
 
     expect(requests).toBe(2);
   });

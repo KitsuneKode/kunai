@@ -1,10 +1,10 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "b9e4ea632828c022833fff6db3fe7b5a2642f28a58708f9be4432fedc9d3d27e",
-  "docsContentFingerprint": "e6621e73e6c3a9fd2239fada1d2440c4b85fcb01b6549be9cb58896d2cf690a4",
+  "cliSourceFingerprint": "6e756fd10b4a653dfd5da7cde53275be58c44fd6e939315d447777c231f5097a",
+  "docsContentFingerprint": "5efd47180e6d55321ca83ecf9d97a355389fb7d75a6979fd30813f8dac621f88",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
-  "commandCount": 82,
+  "commandCount": 84,
   "providerIds": [
     "videasy",
     "vidlink",
@@ -100,7 +100,7 @@
     {
       "id": "anidb",
       "displayName": "AniDB",
-      "description": "anidb.app catalog and streams — ani-cli v5's source; second in the default anime order",
+      "description": "anidb.app catalog and streams — ani-cli v5's source",
       "domain": "anidb.app",
       "recommended": true,
       "mediaKinds": ["anime"],
@@ -117,7 +117,7 @@
     {
       "id": "allanime",
       "displayName": "AllManga",
-      "description": "Anime episodes in sub and dub — the ani-cli parity source, third in the default order",
+      "description": "Anime episodes in sub and dub — the ani-cli parity source",
       "domain": "mkissa.to",
       "recommended": false,
       "mediaKinds": ["anime"],
@@ -145,7 +145,7 @@
         "quality-ranked"
       ],
       "notes": [
-        "Parity with ani-cli v5.1.4: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
+        "Parity with ani-cli v5.1.5: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
         "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
         "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
         "Each season is a separate provider-native slug; there is no in-provider season routing.",
@@ -414,7 +414,7 @@
     {
       "id": "docs",
       "label": "Docs",
-      "aliases": ["docs", "documentation", "guide", "manual"],
+      "aliases": ["docs", "documentation", "manual"],
       "description": "Open Kunai documentation"
     },
     {
@@ -422,6 +422,12 @@
       "label": "Help",
       "aliases": ["help", "shortcuts", "?"],
       "description": "Show shortcuts and command help"
+    },
+    {
+      "id": "guide",
+      "label": "Guide",
+      "aliases": ["guide", "tour", "learn", "start-here", "features"],
+      "description": "Browse what Kunai can do, grouped by task — Enter runs it"
     },
     {
       "id": "menu",
@@ -446,6 +452,12 @@
       "label": "Image Pane",
       "aliases": ["image", "preview", "poster"],
       "description": "Toggle the image and details companion pane"
+    },
+    {
+      "id": "pet",
+      "label": "Companion",
+      "aliases": ["pet", "kanna", "companion", "mascot", "fox"],
+      "description": "Show or hide Kanna, the fox on empty and error screens"
     },
     {
       "id": "toggle-autoplay",

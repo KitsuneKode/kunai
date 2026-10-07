@@ -1,5 +1,4 @@
-// =============================================================================
-// poster-byte-cache.ts — LRU with an explicit byte budget.
+// LRU with an explicit byte budget.
 //
 // Poster caches bound by entry count alone are only accidentally bounded: forty
 // half-block thumbnails and forty full-width Kitty PNGs differ by orders of
@@ -9,7 +8,6 @@
 // Deliberately knows nothing about images, terminals, paths, or React. It holds
 // values and hands evicted ones back, which is what lets the poster caches layer
 // renderer-specific cleanup on top without this file growing terminal knowledge.
-// =============================================================================
 
 export type ByteBudgetCacheOptions<K, V> = {
   readonly maxEntries: number;

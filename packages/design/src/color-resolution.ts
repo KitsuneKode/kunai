@@ -26,6 +26,7 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
   line: { ansi256: "#5f5f5f", ansi16: "gray" },
   lineSoft: { ansi256: "#303030", ansi16: "gray" },
   lineStrong: { ansi256: "#875f87", ansi16: "white" },
+  lineControl: { ansi256: "#767676", ansi16: "gray" },
 
   accent: { ansi256: "#ff87af", ansi16: "magenta" },
   accentSoft: { ansi256: "#ffd7df", ansi16: "white" },
@@ -45,25 +46,33 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
   danger: { ansi256: "#ff5f5f", ansi16: "red" },
   dangerDim: { ansi256: "#af0000", ansi16: "red" },
   dangerFill: { ansi256: "#3a1c1c", ansi16: "black" },
+  dangerText: { ansi256: "#ffafaf", ansi16: "red" },
 
   info: { ansi256: "#5fafff", ansi16: "blue" },
   infoDim: { ansi256: "#5f87d7", ansi16: "blue" },
   infoFill: { ansi256: "#1c2633", ansi16: "black" },
 
-  milestone: { ansi256: "#875fff", ansi16: "magenta" },
-  milestoneDim: { ansi256: "#5f5fd7", ansi16: "magenta" },
+  // On 16 colours the periwinkle takes bright blue, so it stays apart from the
+  // brand magenta and from `info` (plain blue).
+  milestone: { ansi256: "#5f87ff", ansi16: "blueBright" },
+  milestoneDim: { ansi256: "#5f5fd7", ansi16: "blue" },
   milestoneFill: { ansi256: "#1c1a30", ansi16: "black" },
+  milestoneText: { ansi256: "#d7d7ff", ansi16: "blueBright" },
 
   text: { ansi256: "#eeeeee", ansi16: "white" },
-  textDim: { ansi256: "#c6c6c6", ansi16: "white" },
-  muted: { ansi256: "#afafaf", ansi16: "gray" },
-  dim: { ansi256: "#808080", ansi16: "gray" },
+  // Gray-ramp steps chosen to meet the same APCA targets as the truecolor tiers (75 / 60 / 45)
+  // on both #121212 and #1c1c1c. The old values were Lc 72 / 58 / 34.
+  textDim: { ansi256: "#d7d7d7", ansi16: "white" },
+  muted: { ansi256: "#bcbcbc", ansi16: "gray" },
+  dim: { ansi256: "#a8a8a8", ansi16: "gray" },
   faint: { ansi256: "#5f5f5f", ansi16: "gray" },
 
-  typeAnime: { ansi256: "#af87ff", ansi16: "magenta" },
+  // Bright magenta, not the accent's plain magenta: anime is a content kind and the
+  // accent marks where you are, and on 16 colours they used to be the same colour.
+  typeAnime: { ansi256: "#d787ff", ansi16: "magentaBright" },
   typeSeries: { ansi256: "#5fd7d7", ansi16: "cyan" },
-  typeMovie: { ansi256: "#ffd75f", ansi16: "yellow" },
-  typeMixed: { ansi256: "#af87d7", ansi16: "magenta" },
+  typeMovie: { ansi256: "#ffd75f", ansi16: "yellowBright" },
+  typeMixed: { ansi256: "#af87d7", ansi16: "gray" },
 };
 
 const HEAT_RAMP_FALLBACKS: Record<"ansi256" | "ansi16", ResolvedHeatRamp> = {

@@ -30,7 +30,9 @@ export function requireAShellJsc<T>(value?: T): AShellJsc {
   // SAFETY: candidate is the injected host global; each method is probed
   // before the AShellJsc view is returned.
   const candidate = host as Partial<AShellJsc>;
-  if (REQUIRED_METHODS.some((method) => !(candidate[method] instanceof Function))) {
+  // `typeof`, not `instanceof Function`: host functions can come from another
+  // realm, where `instanceof` reports a complete host as incomplete.
+  if (REQUIRED_METHODS.some((method) => typeof candidate[method] !== "function")) {
     throw new Error("a-Shell jsc host is incomplete");
   }
   // SAFETY: every method on AShellJsc was probed above; the shape assertion

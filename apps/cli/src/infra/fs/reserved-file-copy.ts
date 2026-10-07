@@ -1,12 +1,4 @@
-import {
-  closeSync,
-  createReadStream,
-  createWriteStream,
-  fstatSync,
-  fsync,
-  openSync,
-} from "node:fs";
-import { pipeline } from "node:stream/promises";
+import { closeSync, createReadStream, fstatSync, fsync, openSync, write } from "node:fs";
 import { promisify } from "node:util";
 
 export interface FileReservation {
@@ -35,10 +27,25 @@ export async function copyToReservedFile(
   destination: FileReservation,
   signal?: AbortSignal,
 ): Promise<void> {
-  await pipeline(
-    createReadStream(source),
-    createWriteStream("", { fd: destination.fd, autoClose: false }),
-    { signal },
-  );
+  signal?.throwIfAborted();
+  // Stream destruction on abort can close a supplied fd even with autoClose
+  // disabled. Keep descriptor ownership outside streams, and join each bounded
+  // write before cancellation returns so the caller can close it exactly once.
+  for await (const chunk of createReadStream(source, { signal })) {
+    signal?.throwIfAborted();
+    let offset = 0;
+    while (offset < chunk.byteLength) {
+      const written = await new Promise<number>((resolve, reject) => {
+        write(destination.fd, chunk, offset, chunk.byteLength - offset, null, (cause, count) => {
+          if (cause) reject(cause);
+          else resolve(count);
+        });
+      });
+      if (written <= 0) throw new Error("Download copy could not make progress");
+      offset += written;
+      signal?.throwIfAborted();
+    }
+  }
+  signal?.throwIfAborted();
   await promisify(fsync)(destination.fd);
 }

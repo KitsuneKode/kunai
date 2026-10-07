@@ -23,6 +23,11 @@ export class ConfigStoreImpl implements ConfigStore {
     await this.storage.write(STORAGE_KEY, config);
   }
 
+  async withLock<T>(fn: () => Promise<T>): Promise<T> {
+    const withLock = this.storage.withLock?.bind(this.storage);
+    return withLock ? withLock(STORAGE_KEY, fn) : fn();
+  }
+
   async reset(): Promise<void> {
     await this.storage.write(STORAGE_KEY, DEFAULT_CONFIG);
   }

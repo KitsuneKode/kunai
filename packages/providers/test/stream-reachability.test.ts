@@ -120,6 +120,36 @@ describe("stream reachability", () => {
     expect(isStreamReachableForResolve(probe)).toBe(false);
   });
 
+  test("a mid-body segment read error is not misclassified as a definitive small body", async () => {
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/stream.m3u8",
+      fetchImpl: async (url: string) => {
+        if (url.endsWith("stream.m3u8")) {
+          return response(200, "#EXTM3U\n#EXTINF:3,\n/seg-1.ts\n");
+        }
+        // Fewer bytes than the probe needs, then the socket dies — a transient
+        // failure, not a server truthfully answering with a tiny body.
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array(8).fill(0xab));
+              controller.error(new Error("socket hang up"));
+            },
+          }),
+          { status: 200, headers: { "content-type": "video/mp2t" } },
+        );
+      },
+      timeoutMs: 500,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    if (probe.status === "unreachable") {
+      expect(probe.reason).toContain("socket hang up");
+      expect(probe.reason).not.toContain("body too small");
+      expect(probe.definitive).toBe(false);
+    }
+  });
+
   test("junk tiny segment body is unreachable", async () => {
     const probe = await probeStreamReachability({
       url: "https://cdn.example/stream.m3u8",
@@ -154,6 +184,37 @@ describe("stream reachability", () => {
     expect(probe.status).toBe("unreachable");
     if (probe.status === "unreachable") {
       expect(probe.reason).toContain("text/html");
+    }
+  });
+
+  test("a segment body that errors mid-read is not reported as a small body", async () => {
+    // readPrefixBytes used to catch the read failure and return the partial
+    // count, so a dying socket masqueraded as a definitive "body too small".
+    const failingBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(8).fill(0xab));
+      },
+      pull() {
+        throw new Error("socket reset mid-body");
+      },
+    });
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/stream.m3u8",
+      fetchImpl: async (url: string) => {
+        if (url.endsWith("stream.m3u8")) {
+          return response(200, "#EXTM3U\n#EXTINF:3,\n/seg-1.jpg\n");
+        }
+        return new Response(failingBody, { status: 200 });
+      },
+      timeoutMs: 500,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    if (probe.status === "unreachable") {
+      expect(probe.reason).toContain("socket reset mid-body");
+      expect(probe.reason).not.toContain("body too small");
+      // A transient network failure is retryable — not a definitive refusal.
+      expect(probe.definitive).toBe(false);
     }
   });
 
@@ -281,8 +342,12 @@ describe("stream reachability", () => {
       "http://169.254.169.254/latest/meta-data",
       "http://127.0.0.1:8080/internal",
       "http://10.0.0.4/lan",
+      "http://172.16.5.4/lan",
+      "http://172.31.255.250/lan",
       "http://192.168.1.10/jellyfin",
+      "http://0.0.0.0/internal",
       "http://[::1]/loopback",
+      "http://[::ffff:7f00:1]/mapped-loopback",
       "http://[fd00::5]/ula",
       "https://localhost/private",
       "http://nas/intranet",
@@ -304,6 +369,21 @@ describe("stream reachability", () => {
       }
       expect(called).toBe(false);
     }
+  });
+
+  test("a normal public CDN host is fetched, not blocked", async () => {
+    let called = false;
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/movie.mp4",
+      fetchImpl: async () => {
+        called = true;
+        return response(200);
+      },
+      timeoutMs: 50,
+    });
+
+    expect(called).toBe(true);
+    expect(probe).toEqual({ status: "reachable" });
   });
 
   test("follows a public redirect but refuses a redirect into a private target", async () => {

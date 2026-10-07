@@ -89,6 +89,8 @@ function createHarness(input: {
     createdAt: now,
     updatedAt: now,
   });
+  // complete() is fenced to claimed work — the job must be 'running' first.
+  jobs.markRunning(jobId, now);
   jobs.complete(jobId, now);
   jobs.markArtifactValidated(jobId, "ready", now);
 

@@ -32,9 +32,11 @@ export type AppCommandId =
   | "diagnostics"
   | "docs"
   | "help"
+  | "guide"
   | "about"
   | "update"
   | "image-pane"
+  | "pet"
   | "toggle-autoplay"
   | "toggle-autoskip"
   | "stop-after-current"
@@ -121,6 +123,7 @@ export const COMMAND_CONTEXTS = {
     "setup",
     "settings",
     "image-pane",
+    "pet",
     "sync",
     "providers",
     "presence",
@@ -131,6 +134,7 @@ export const COMMAND_CONTEXTS = {
     "report-issue",
     "docs",
     "help",
+    "guide",
     "about",
     "update",
   ],
@@ -188,6 +192,7 @@ export const COMMAND_CONTEXTS = {
     "analytics-show",
     "setup",
     "help",
+    "guide",
     "menu",
     "about",
     "update",
@@ -258,6 +263,7 @@ export const COMMAND_CONTEXTS = {
     "analytics-show",
     "setup",
     "help",
+    "guide",
     "menu",
     "about",
     "update",
@@ -292,6 +298,7 @@ export const COMMAND_CONTEXTS = {
     "report-issue",
     "docs",
     "help",
+    "guide",
     "about",
     "quit",
   ],
@@ -480,7 +487,7 @@ export const COMMANDS: readonly AppCommand[] = [
   {
     id: "docs",
     label: "Docs",
-    aliases: ["docs", "documentation", "guide", "manual"],
+    aliases: ["docs", "documentation", "manual"],
     description: "Open Kunai documentation",
   },
   {
@@ -488,6 +495,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Help",
     aliases: ["help", "shortcuts", "?"],
     description: "Show shortcuts and command help",
+  },
+  {
+    id: "guide",
+    label: "Guide",
+    aliases: ["guide", "tour", "learn", "start-here", "features"],
+    description: "Browse what Kunai can do, grouped by task — Enter runs it",
   },
   {
     id: "menu",
@@ -512,6 +525,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Image Pane",
     aliases: ["image", "preview", "poster"],
     description: "Toggle the image and details companion pane",
+  },
+  {
+    id: "pet",
+    label: "Companion",
+    aliases: ["pet", "kanna", "companion", "mascot", "fox"],
+    description: "Show or hide Kanna, the fox on empty and error screens",
   },
   {
     id: "toggle-autoplay",
@@ -1078,6 +1097,7 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
     case "diagnostics":
     case "docs":
     case "help":
+    case "guide":
     case "about":
     case "update":
     case "clear-cache":
@@ -1085,6 +1105,9 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
     case "clear-history":
     case "export-diagnostics":
     case "report-issue":
+    // /pet stays available even when an env pin makes it a no-op — the handler
+    // says why, which teaches more than a disabled row.
+    case "pet":
       return { enabled: true };
 
     case "details":

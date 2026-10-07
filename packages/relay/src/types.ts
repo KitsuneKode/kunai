@@ -90,6 +90,12 @@ export interface RelayHandlerOptions {
   readonly diagnostics?: RelayDiagnosticSink;
   readonly timeoutMs?: number;
   readonly maxRedirects?: number;
+  /**
+   * Origins allowed to read responses cross-origin. Unset means no CORS
+   * headers at all: the CLI client is not a browser, and a wildcard on the
+   * `local-loopback` dev relay lets any webpage the user visits drive it.
+   */
+  readonly corsAllowedOrigins?: readonly string[];
 }
 
 export interface RelayFetchPortOptions {

@@ -13,6 +13,7 @@ import { ResumeCard } from "./primitives/ResumeCard";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import { RETURN_LOOP_HISTORY_NEW_EMPTY, RETURN_LOOP_HISTORY_SUBTITLE } from "./return-loop-copy";
+import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { HistoryDeletePending } from "./use-history-overlay-input";
 
@@ -171,8 +172,8 @@ export function HistoryShell({
               <Text color={palette.accentDeep}>
                 {"⚠ "}
                 {pendingDelete.kind === "episode"
-                  ? `Delete episode progress for ${pendingDelete.label}? y confirm · Esc cancel`
-                  : `Delete all history for ${pendingDelete.label}? y confirm · Esc cancel`}
+                  ? `Delete episode progress for ${sanitizeTerminalText(pendingDelete.label)}? y confirm · Esc cancel`
+                  : `Delete all history for ${sanitizeTerminalText(pendingDelete.label)}? y confirm · Esc cancel`}
               </Text>
             </Box>
           ) : (

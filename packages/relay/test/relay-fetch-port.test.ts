@@ -227,3 +227,23 @@ test("normalizeRelayBaseUrl accepts HTTPS and local HTTP only", () => {
   expect(normalizeRelayBaseUrl("http://127.0.0.1:8787/")).toBe("http://127.0.0.1:8787");
   expect(normalizeRelayBaseUrl("http://relay.example")).toBeUndefined();
 });
+
+test("resolvesLocally tracks which side of the port answers a URL", () => {
+  const relayed = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", token: "t" },
+    registry,
+    fetch: async () => Response.json({}),
+  });
+  // Relayed upstreams resolve on the relay — local DNS answers mean nothing.
+  expect(relayed.resolvesLocally?.("https://api.allanime.day/api")).toBe(false);
+  // Everything else falls through to a local fetch — DNS validation applies.
+  expect(relayed.resolvesLocally?.("https://unregistered.example/x")).toBe(true);
+  expect(relayed.resolvesLocally?.("https://api.videasy.to/x")).toBe(true);
+
+  const directOnly = createRelayFetchPort({
+    relayConfig: { baseUrl: "" },
+    registry,
+    fetch: async () => Response.json({}),
+  });
+  expect(directOnly.resolvesLocally?.("https://api.allanime.day/api")).toBe(true);
+});
