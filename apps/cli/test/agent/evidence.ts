@@ -59,20 +59,8 @@ export function writeEvidenceBundle(input: {
     }
   }
 
-  const config = input.inspect.config();
   transcript.push("## Final backend state", "", "```json");
-  transcript.push(
-    JSON.stringify(
-      {
-        config,
-        tables: input.inspect.tables(),
-        history: input.inspect.history(),
-        queue: input.inspect.queue(),
-      },
-      null,
-      2,
-    ),
-  );
+  transcript.push(finalBackendStateJson(input.inspect));
   transcript.push("```", "");
 
   for (const note of input.notes ?? []) transcript.push(`> ${note}`, "");
@@ -81,6 +69,25 @@ export function writeEvidenceBundle(input: {
   writeFileSync(transcriptPath, `${transcript.join("\n")}\n`, "utf8");
 
   return { dir: input.dir, transcriptPath, framePaths, dbPath: dbDir };
+}
+
+/**
+ * The committed backend after a drive — config, table counts, history, queue —
+ * rendered once so a bundle's transcript and a bundle-less citation check
+ * quote the same text. Without it, a backend claim (`"footerHints":
+ * "minimal"`) could only be cited when `--evidence` was also passed.
+ */
+export function finalBackendStateJson(inspect: ProfileInspector): string {
+  return JSON.stringify(
+    {
+      config: inspect.config(),
+      tables: inspect.tables(),
+      history: inspect.history(),
+      queue: inspect.queue(),
+    },
+    null,
+    2,
+  );
 }
 
 /**

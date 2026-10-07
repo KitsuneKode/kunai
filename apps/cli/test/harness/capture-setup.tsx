@@ -10,6 +10,7 @@ import path from "node:path";
 
 import { SetupShell } from "@/app-shell/setup-shell";
 import type { CapabilitySnapshot } from "@/ui";
+import { Box } from "ink";
 import React from "react";
 
 import { CAPTURE_WIDTHS, render, stripAnsi, type CaptureWidth } from "./render-capture";
@@ -53,7 +54,9 @@ export function setupFrameAt(step: number, columns: number): string {
   Object.defineProperty(process, "arch", { value: "x64" });
   try {
     const handle = render(
-      <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />,
+      <Box width={columns} paddingX={1} flexDirection="column">
+        <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />
+      </Box>,
       { columns, rows: SETUP_ROWS },
     );
     for (let i = 0; i < step; i += 1) handle.stdin.enqueue("\r");

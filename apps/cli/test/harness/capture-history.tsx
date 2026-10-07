@@ -44,7 +44,9 @@ const view = buildHistoryView({
   selectedIndex: 0,
   maxVisible: 12,
   narrow: false,
-  context: {},
+  // Pinned past the seeded dates: a real clock ages every "ago" label and
+  // turns the committed capture red on a calendar boundary.
+  context: { now: Date.parse("2026-09-27T10:00:00.000Z") },
 });
 
 export function historyContinueNode() {
