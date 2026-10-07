@@ -7,7 +7,7 @@ export const kunaiBrand = {
   lineSoft: "#281f2e",
   text: "#f6eff4",
   textDim: "#cabfca",
-  muted: "#a195a3",
+  muted: "#beb1c0",
   accent: "#ff8fb0",
   accentDeep: "#d85f86",
   accentSoft: "#ffc6d8",
