@@ -8,7 +8,7 @@
 ## Status
 
 - **Status:** PARTIAL — the 2026-10-07 integration (`integrate/backlog-20261007`)
-  landed 31 PRs as merge commits: #530–#538, #553–#569, #573–#576 and #560.
+  landed 30 PRs as merge commits: #530–#538, #553–#569 and #573–#576.
   This plan now owns only the residue of the stacks that were **not** merged.
 - **Priority:** P1 for the security and playback rows, P3 for the rest
 - **Effort:** M overall; each row is S–M on its own
