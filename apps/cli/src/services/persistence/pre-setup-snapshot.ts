@@ -1,5 +1,4 @@
-// =============================================================================
-// pre-setup-snapshot.ts — one restore point, taken before setup rewrites config
+// One restore point, taken before setup rewrites config
 //
 // A setup rerun rewrites preferences, sync toggles, and all four language lanes
 // in a single commit. #228 was exactly that going wrong: a rerun severed linked
@@ -10,7 +9,6 @@
 // The only backup that existed before this was `FileStorage`'s `.corrupt.bak`,
 // which fires on unparseable JSON. A valid-but-unwanted rewrite had no recovery
 // at all — the file was perfectly well-formed, and perfectly wrong.
-// =============================================================================
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -47,6 +45,28 @@ export const RESTORABLE_SETUP_FIELDS = [
   "skipIntro",
   "skipCredits",
 ] as const satisfies readonly (keyof KitsuneConfig)[];
+
+/**
+ * Keys owned by the analytics consent contract. They are stripped from the
+ * snapshot at write time — a backup that can resurrect a revoked consent or
+ * resurrect a cleared `installId` is a consent bypass wearing an undo hat —
+ * and stripped again at read time so a `.bak` written by an older build is
+ * just as safe to restore.
+ */
+const CONSENT_OWNED_CONFIG_KEYS = [
+  "analytics",
+  "analyticsNoticeShown",
+  "installId",
+  "lastAnalyticsPingAt",
+  "analyticsRetryAfter",
+  "analyticsEndpoint",
+] as const satisfies readonly (keyof KitsuneConfig)[];
+
+function stripConsentOwnedKeys(config: Partial<KitsuneConfig>): Partial<KitsuneConfig> {
+  const stripped = { ...config };
+  for (const key of CONSENT_OWNED_CONFIG_KEYS) delete stripped[key];
+  return stripped;
+}
 
 /**
  * Sibling of `config.json`, and exactly one of them.
@@ -89,7 +109,7 @@ export function setupPatchIsRestorable(
  */
 export async function writePreSetupSnapshot(config: KitsuneConfig): Promise<boolean> {
   try {
-    await writeAtomicSecretJson(preSetupSnapshotPath(), config);
+    await writeAtomicSecretJson(preSetupSnapshotPath(), stripConsentOwnedKeys(config));
     return true;
   } catch {
     return false;
@@ -102,7 +122,7 @@ export async function readPreSetupSnapshot(): Promise<Partial<KitsuneConfig> | n
     const raw = await readFile(preSetupSnapshotPath(), "utf8");
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    return parsed as Partial<KitsuneConfig>;
+    return stripConsentOwnedKeys(parsed as Partial<KitsuneConfig>);
   } catch {
     return null;
   }

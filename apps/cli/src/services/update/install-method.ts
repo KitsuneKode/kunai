@@ -57,8 +57,16 @@ export function detectInstallMethod(input: DetectInstallMethodInput = {}): Insta
     return { kind: "npm-global", label: "npm global" };
   }
 
+  // A `bun build --compile` binary presents its virtual entrypoint as
+  // `/$bunfs/root/…main.js` (POSIX) or `B:\~BUN\root\main.js` (Windows) — the
+  // `.js` suffix below would otherwise misclassify a flat release binary as
+  // "unknown" and degrade `kunai upgrade` to manual guidance.
+  const bunfsEntrypoint =
+    comparableEntrypoint.startsWith("/$bunfs/") || comparableEntrypoint.includes("/~bun/");
+
   if (
     input.packagedBinary ||
+    bunfsEntrypoint ||
     (!comparableEntrypoint.endsWith(".js") && !comparableEntrypoint.endsWith(".ts"))
   ) {
     return { kind: "binary", label: "Packaged binary" };

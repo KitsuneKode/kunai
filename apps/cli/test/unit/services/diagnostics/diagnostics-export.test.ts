@@ -1,4 +1,7 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { DiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
 import {
@@ -6,7 +9,9 @@ import {
   formatDiagnosticEventsAsMarkdown,
   formatDiagnosticEventsAsPretty,
   parseDiagnosticsRecentArgs,
+  runDiagnosticsRecentCommand,
 } from "@/services/diagnostics/diagnostics-export";
+import { openKunaiDatabase, runMigrations } from "@kunai/storage";
 
 const event: DiagnosticEvent = {
   timestamp: Date.parse("2026-06-24T12:00:00.000Z"),
@@ -163,4 +168,36 @@ test("pretty format samples oversized values and says what it elided", () => {
 
   // The lossless formats keep every entry.
   expect(formatDiagnosticEventsAsJsonl([bulky])).toContain(JSON.stringify(bulky.context));
+});
+
+const tempDirs: string[] = [];
+afterEach(async () => {
+  while (tempDirs.length) {
+    const dir = tempDirs.pop();
+    if (dir) await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("recent reads an injected cache db, never the live profile", async () => {
+  // `runDiagnosticsRecentCommand` runs migrations on open, which write — so
+  // without the `cacheDbPath` seam this command could only be tested against
+  // the developer's live cache database.
+  const dir = await mkdtemp(join(tmpdir(), "kunai-diag-recent-"));
+  tempDirs.push(dir);
+  const cacheDbPath = join(dir, "kunai-cache.sqlite");
+  const seed = openKunaiDatabase(cacheDbPath);
+  try {
+    runMigrations(seed, "cache");
+  } finally {
+    seed.close();
+  }
+
+  let out = "";
+  const exit = await runDiagnosticsRecentCommand(["recent"], {
+    cacheDbPath,
+    stdout: { write: (chunk: string): boolean => ((out += String(chunk)), true) },
+  });
+
+  expect(exit).toBe(0);
+  expect(out).toBe("");
 });

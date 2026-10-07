@@ -45,6 +45,16 @@ export const CONFIG_METADATA = [
     options: ["detailed", "minimal"],
   },
   {
+    key: "companionPet",
+    label: "Kanna the companion",
+    section: "general",
+    effect: "immediate",
+    privacy: "local",
+    editable: true,
+    options: ["auto", "off"],
+    envOverride: "KUNAI_PET",
+  },
+  {
     key: "discoverShowOnStartup",
     label: "Recommendations on startup",
     section: "recommendations",
