@@ -122,6 +122,9 @@ async function main() {
         },
         now,
       );
+      // A real download completes from a live run; the repository refuses a
+      // queued -> completed jump as a stale writer.
+      jobs.markRunning(`job-${episode}`, now);
       jobs.complete(`job-${episode}`, now);
       jobs.markArtifactValidated(`job-${episode}`, "ready", now);
       const completed = jobs.get(`job-${episode}`);
@@ -143,6 +146,7 @@ async function main() {
         providerEpisodeIdentity: { providerId: sourceProvider, value: "old-catalog-row" },
         updatedAt,
       });
+      jobs.markRunning("wrong-job", updatedAt);
       jobs.complete("wrong-job", updatedAt);
       jobs.markArtifactValidated("wrong-job", "ready", updatedAt);
       const wrong = jobs.get("wrong-job");
