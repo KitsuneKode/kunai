@@ -7,7 +7,7 @@
  * the same roles for the dark surface. Every value is measured against the
  * surface it actually renders on, not flipped:
  *
- *   dark  — series #ff8fb0 on #1c1620 = 8.3:1 · residual #968a98 = 5.4:1
+ *   dark  — series #ff8fb0 on #1c1620 = 8.3:1 · residual #a195a3 = 6.2:1
  *   light — series #c14a71 on #fcfcfb = 4.6:1 · residual #8b8391 = 3.6:1
  *
  * One hue per chart: these breakdowns are single-series nominal magnitude, so
@@ -70,6 +70,14 @@
    */
   --kunai-chart-new: #5f0a27;
   /*
+   * The 7-day average and the release markers are annotations on the install
+   * series, not series of their own, so both take the neutral ramp rather than
+   * a hue: a dashed neutral line reads as "a guide to the data", where a third
+   * rose step would read as a third kind of install.
+   */
+  --kunai-chart-avg: #3d3540;
+  --kunai-chart-marker: #8b8391;
+  /*
    * npm registry downloads — deliberately outside the rose family. It is a
    * third-party counter on a different day grid, so it takes a muted
    * slate-indigo: enough hue to read as its own series, not a faded rose,
@@ -93,6 +101,8 @@
   --kunai-chart-lifetime: #b84a6e;
   --kunai-chart-active: var(--kunai-accent);
   --kunai-chart-new: #ffc9d9;
+  --kunai-chart-avg: #f6eff4;
+  --kunai-chart-marker: #a195a3;
   --kunai-chart-npm: #8d96c6;
   --kunai-chart-os-windows: #7ba8d1;
   --kunai-chart-os-macos: #b0a8bc;
@@ -106,6 +116,8 @@
     --kunai-chart-lifetime: #b84a6e;
     --kunai-chart-active: var(--kunai-accent);
     --kunai-chart-new: #ffc9d9;
+    --kunai-chart-avg: #f6eff4;
+    --kunai-chart-marker: #a195a3;
     --kunai-chart-npm: #8d96c6;
     --kunai-chart-os-windows: #7ba8d1;
     --kunai-chart-os-macos: #b0a8bc;

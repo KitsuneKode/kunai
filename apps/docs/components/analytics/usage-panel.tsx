@@ -79,7 +79,7 @@ function BreakdownCards({ metrics }: { readonly metrics: DocsAnalyticsMetrics })
           </Card>
         ))}
       </div>
-      <p className="text-muted-foreground m-0 text-xs text-pretty">
+      <p className="text-muted-foreground m-0 text-xs leading-5 text-pretty">
         Each breakdown counts the same installs a different way, so the three add up to the same day
         total; they are not parts of one whole. Small-cell suppression is applied per breakdown; it
         is not a joint anonymity guarantee.
@@ -283,10 +283,10 @@ export function UsagePanel({
     <div className="flex flex-col gap-6">
       <Alert className="border-border/80 bg-card/60">
         <IconShieldCheck />
-        <AlertTitle>Optional · aggregates only · enable or disable in Settings</AlertTitle>
+        <AlertTitle>Opt-in, aggregates only</AlertTitle>
         <AlertDescription>
           Public day and lifetime counts, plus version, OS and architecture breakdowns. Never who is
-          running Kunai, what they watched, or any install UUID.
+          running Kunai, what they watched, or any install UUID. Turn it on or off in Settings.
         </AlertDescription>
       </Alert>
 
@@ -301,14 +301,21 @@ export function UsagePanel({
               updated{" "}
               <LocalTime iso={metrics.updatedAt} utcLabel={formatUpdatedAt(metrics.updatedAt)} />
             </p>
-            <p className="text-muted-foreground m-0 basis-full text-xs">
-              Days end at midnight IST (18:30 UTC) from 15 September 2026. 14 September 2026 is an
-              18.5-hour changeover day ending at 18:30 UTC; earlier days end at midnight UTC.
-            </p>
+            {/* A native disclosure: the changeover detail is reference material for
+                the few who read the day-by-day table closely, so it stays one
+                line until asked for instead of occupying the top of the page. */}
+            <details className="text-muted-foreground basis-full text-xs">
+              <summary className="hover:text-foreground w-fit cursor-pointer underline decoration-dotted underline-offset-4">
+                Days end at midnight IST
+              </summary>
+              <p className="m-0 mt-1.5 max-w-prose leading-5 text-pretty">
+                Days end at midnight IST (18:30 UTC) from 15 September 2026. 14 September 2026 is an
+                18.5-hour changeover day ending at 18:30 UTC; earlier days end at midnight UTC.
+              </p>
+            </details>
             <div className="flex flex-wrap items-center gap-2">
               {stale ? <Badge variant="outline">data may be stale</Badge> : null}
               <Badge variant="outline">schema v{metrics.schemaVersion}</Badge>
-              <Badge variant="secondary">opt out with /analytics</Badge>
             </div>
           </div>
 

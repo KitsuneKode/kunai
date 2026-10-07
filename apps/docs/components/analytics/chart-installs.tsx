@@ -32,12 +32,14 @@ import {
   isRangeKey,
   platformColumns,
   platformLabel,
+  type ReleaseMarker,
+  rollingMean,
   sliceRange,
   type RangeKey,
 } from "@/lib/analytics-derive";
 import type { SeriesPoint } from "@/lib/analytics-series";
 import * as React from "react";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "recharts";
 
 /**
  * Installs over time — the page's one interactive chart.
@@ -106,17 +108,38 @@ const chartConfig = {
     label: "First seen that day",
     color: "var(--kunai-chart-new)",
   },
+  activeAverage: {
+    label: "7-day average",
+    color: "var(--kunai-chart-avg)",
+  },
 } satisfies ChartConfig;
+
+/** A stable empty default: a fresh `[]` per render would defeat memoisation downstream. */
+const NO_RELEASES: readonly ReleaseMarker[] = [];
+
+/** Trailing days the smoothed active line averages over. */
+const AVERAGE_WINDOW_DAYS = 7;
+
+function roundTenth(value: number | null): number | null {
+  return value === null ? null : Math.round(value * 10) / 10;
+}
 
 export function ChartInstalls({
   points,
   from,
   to,
+  releases = NO_RELEASES,
   onDayHover,
 }: {
   readonly points: readonly SeriesPoint[];
   readonly from: string;
   readonly to: string;
+  /**
+   * Release days inside the series window, drawn as labelled guides so a step
+   * in the line can be read against what shipped. Filtered again to the drawn
+   * range here, because the range toggle moves the left edge.
+   */
+  readonly releases?: readonly ReleaseMarker[];
   /**
    * Optional chart → table sync. Called with the hovered rollup day, or null
    * when the pointer leaves. Only the *drawn* range is reported — days the
@@ -135,6 +158,25 @@ export function ChartInstalls({
     osKeys.length === 0 ? METRICS.filter((m) => m.key !== "platforms") : METRICS;
 
   const visible = sliceRange(points, range);
+  // The average is computed over the FULL series and then sliced, so a "last 7
+  // days" view still averages across the days before its left edge instead of
+  // restarting from a one-point mean.
+  const averageByDay = React.useMemo(() => {
+    const averages = rollingMean(
+      points.map((point) => point.activeInstalls),
+      AVERAGE_WINDOW_DAYS,
+    );
+    return new Map(points.map((point, index) => [point.day, averages[index] ?? null]));
+  }, [points]);
+  const firstVisible = visible[0]?.day;
+  const lastVisible = visible.at(-1)?.day;
+  const markers = releases.filter(
+    (marker) =>
+      firstVisible !== undefined &&
+      lastVisible !== undefined &&
+      marker.day >= firstVisible &&
+      marker.day <= lastVisible,
+  );
   // `null`, not 0, where the wire did not publish the field — recharts treats
   // null as a gap, while 0 would draw a false floor under every old point.
   const hasNew = visible.some((point) => point.newInstalls !== null);
@@ -143,6 +185,9 @@ export function ChartInstalls({
     activeInstalls: point.activeInstalls,
     newInstalls: point.newInstalls,
     lifetimeInstalls: point.lifetimeInstalls,
+    // One decimal: the tooltip prints this raw, and 5.428571 is false precision
+    // for a count of installs.
+    activeAverage: roundTenth(averageByDay.get(point.day) ?? null),
     // A missing platform key means "below the naming floor or zero" — the
     // suppressed mass lives in `other`, so zero here keeps the stack summing
     // to the day's true total instead of tearing it open.
@@ -330,7 +375,7 @@ export function ChartInstalls({
           */}
           <AreaChart
             data={data}
-            margin={{ left: 4, right: 20, top: 4 }}
+            margin={{ left: 4, right: 20, top: markers.length > 0 ? 20 : 4 }}
             onMouseMove={(state) => reportHover(state?.activeLabel)}
             onMouseLeave={() => onDayHover?.(null)}
             onClick={(state) => reportHover(state?.activeLabel)}
@@ -408,6 +453,21 @@ export function ChartInstalls({
               of 2 → 0 → 0 dips the curve BELOW zero and draws a negative
               install count. Monotone cannot overshoot.
             */}
+            {markers.map((marker) => (
+              <ReferenceLine
+                key={marker.day}
+                x={dayToEpoch(marker.day)}
+                stroke="var(--kunai-chart-marker)"
+                strokeDasharray="2 4"
+                ifOverflow="visible"
+                label={{
+                  value: marker.tag,
+                  position: "top",
+                  fill: "var(--kunai-chart-marker)",
+                  fontSize: 12,
+                }}
+              />
+            ))}
             {effectiveMetric === "total" ? (
               <Area
                 dataKey="lifetimeInstalls"
@@ -453,6 +513,18 @@ export function ChartInstalls({
                   strokeWidth={2}
                   isAnimationActive={false}
                 />
+                {visible.length >= AVERAGE_WINDOW_DAYS ? (
+                  <Area
+                    dataKey="activeAverage"
+                    type="monotone"
+                    fill="none"
+                    stroke="var(--color-activeAverage)"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
+                    isAnimationActive={false}
+                    activeDot={false}
+                  />
+                ) : null}
                 {hasNew ? (
                   <Area
                     dataKey="newInstalls"
