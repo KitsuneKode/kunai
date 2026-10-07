@@ -65,20 +65,39 @@ export class OfflineLibraryService {
       this.deps.downloadService.listCompleted(Math.max(limit * 2, 1)),
     ).slice(0, limit);
 
+    // Resolve every stale status first — sequential access+stat per job made
+    // the library open block on filesystem latency one row at a time. Batched
+    // in bounded groups so a large library doesn't burst 200 parallel stats.
+    const stale = completed.filter(
+      (job) => !(isArtifactCacheFresh(job) && isOfflineArtifactStatus(job.artifactStatus)),
+    );
+    const statusById = new Map<string, OfflineArtifactStatus>();
+    const ARTIFACT_STAT_CONCURRENCY = 16;
+    for (let i = 0; i < stale.length; i += ARTIFACT_STAT_CONCURRENCY) {
+      const batch = await Promise.all(
+        stale.slice(i, i + ARTIFACT_STAT_CONCURRENCY).map(async (job) => ({
+          id: job.id,
+          status: await resolveOfflineArtifactStatus(job),
+        })),
+      );
+      for (const { id, status } of batch) statusById.set(id, status);
+    }
+
     const entries: OfflineLibraryEntry[] = [];
     for (const job of completed) {
+      const resolvedStatus = statusById.get(job.id);
+      if (resolvedStatus !== undefined) {
+        this.deps.downloadService.markArtifactValidated(job.id, resolvedStatus);
+      }
+      // Fresh jobs kept a recorded status (the filter above guarantees it is a
+      // valid OfflineArtifactStatus); everything else just resolved.
+      const status =
+        resolvedStatus ??
+        (isOfflineArtifactStatus(job.artifactStatus) ? job.artifactStatus : "missing");
       // Re-adopt on every library read so jobs created before offline_assets (or
       // after an interrupted completion callback) remain locally discoverable.
-      this.deps.offlineAssetService?.adoptCompletedJob(job);
-      if (isArtifactCacheFresh(job) && isOfflineArtifactStatus(job.artifactStatus)) {
-        entries.push({
-          job,
-          status: job.artifactStatus,
-        });
-        continue;
-      }
-      const status = await resolveOfflineArtifactStatus(job);
-      this.deps.downloadService.markArtifactValidated(job.id, status);
+      // One adopt with the final status — previously this ran twice per stale
+      // job, and identical rows no longer write at all.
       this.deps.offlineAssetService?.adoptCompletedJob({ ...job, artifactStatus: status });
       entries.push({ job, status });
     }

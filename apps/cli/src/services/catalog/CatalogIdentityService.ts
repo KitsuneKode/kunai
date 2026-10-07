@@ -1,4 +1,3 @@
-// =============================================================================
 // CatalogIdentityService — one enrichment path for the cross-catalog id bag.
 //
 // Given a title with partial external ids, fill the rest of the
@@ -7,7 +6,6 @@
 // maps; low-confidence results never rewrite history (callers must check
 // graph.confidence before rekeying). Rationale: the archived
 // `.archive/plans/catalog-identity-parity.md` (history, not current spec).
-// =============================================================================
 
 import { mergeBackfillExternalIds } from "@kunai/core";
 import type { CatalogIdGraph, MediaKind, ProviderExternalIds } from "@kunai/types";

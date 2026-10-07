@@ -1,12 +1,10 @@
-// =============================================================================
-// select-heal-targets.ts — pure selection of history titles needing metadata heal
+// Pure selection of history titles needing metadata heal
 //
 // History rows written during playback often lack a poster (provider gave none)
 // and external IDs (provider-opaque title id, e.g. AllManga). That leaves posters
 // blank and — with no external id — keeps reconciliation from ever learning the
 // title's episode total, so finished series get mis-bucketed as "continue". This
 // picks the titles worth re-resolving, most-recent first, capped to throttle work.
-// =============================================================================
 
 import { isCatalogAddressableTitleId } from "@/domain/catalog/title-detail";
 import { isPlaceholderTitleName, looksLikeOpaqueProviderNativeId } from "@kunai/core";
