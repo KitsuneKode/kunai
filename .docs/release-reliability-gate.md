@@ -113,7 +113,9 @@ blocked until this complete stack passes protected native release gates.
 
 Activation-lock name contention is retried within its deadline. `EACCES` and
 `EPERM` require evidence of a live holder or a changed lock name before they are
-treated as contention; a denied create or unchanged stale-owner reclaim reports
+treated as contention. Readable nonempty partial records receive the corrupt-write
+grace period; missing, empty, or unreadable data alone does not establish contention.
+A denied create or unchanged stale-owner reclaim reports
 the filesystem error instead of claiming another updater is busy. Quarantine
 restoration retries transient link failures without replacing a canonical owner.
 The focused tests inject these failures and their retry scheduler; they do not

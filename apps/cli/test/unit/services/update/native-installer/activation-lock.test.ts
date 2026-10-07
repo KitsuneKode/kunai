@@ -759,6 +759,67 @@ describe("activation lock quarantine restore", () => {
   }
 
   for (const code of ["EACCES", "EPERM"]) {
+    test(`a ${code} create reaches corrupt grace for a readable partial record`, async () => {
+      const layout = await makeLayout();
+      const path = activationLockPath(layout);
+      await writeFile(path, "{partial-record");
+      const original = fsPromises.writeFile;
+      let canonicalAttempts = 0;
+      const create = spyOn(fsPromises, "writeFile").mockImplementation(
+        async (target, data, options) => {
+          if (target === path && ++canonicalAttempts === 1)
+            throw Object.assign(new Error("name transition"), { code });
+          return original(target, data, options);
+        },
+      );
+      try {
+        const acquired = await tryAcquireActivationLock(layout, "4.2.0", {
+          timeoutMs: RECLAIM_TEST_TIMEOUT_MS,
+          pollMs: 1,
+          corruptGraceMs: 0,
+        });
+        expect(acquired.acquired).toBe(true);
+        expect(JSON.parse(await readFile(path, "utf8")).version).toBe("4.2.0");
+        if (acquired.acquired) await acquired.release();
+      } finally {
+        create.mockRestore();
+      }
+    });
+
+    for (const condition of ["empty", "unreadable"] as const) {
+      test(`a ${code} create with ${condition} data is not treated as contention`, async () => {
+        const layout = await makeLayout();
+        const path = activationLockPath(layout);
+        await writeFile(path, condition === "empty" ? "" : "{partial-record");
+        const originalWrite = fsPromises.writeFile;
+        const originalRead = fsPromises.readFile;
+        const create = spyOn(fsPromises, "writeFile").mockImplementation(
+          async (target, data, options) => {
+            if (target === path) throw Object.assign(new Error("permission denied"), { code });
+            return originalWrite(target, data, options);
+          },
+        );
+        const reads =
+          condition === "unreadable"
+            ? spyOn(fsPromises, "readFile").mockRejectedValue(
+                Object.assign(new Error("unreadable"), { code: "EACCES" }),
+              )
+            : undefined;
+        try {
+          await expect(
+            tryAcquireActivationLock(layout, "4.2.0", { timeoutMs: 40, pollMs: 1 }),
+          ).rejects.toThrow("Could not create activation lock");
+          expect(create).toHaveBeenCalledTimes(1);
+          expect(await originalRead(path, "utf8")).toBe(
+            condition === "empty" ? "" : "{partial-record",
+          );
+        } finally {
+          reads?.mockRestore();
+          create.mockRestore();
+        }
+      });
+    }
+
     test(`a denied create with no owner propagates ${code} immediately`, async () => {
       const layout = await makeLayout();
       const path = activationLockPath(layout);

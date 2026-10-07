@@ -194,6 +194,9 @@ async function isCreationContention(
   if (isContentionCode(code)) return true;
   if (!isPermissionCode(code)) return false;
   const observed = await readActivationLock(path);
+  // Readable partial bytes establish an existing name. Let the acquisition
+  // loop grant corrupt-write grace; missing/unreadable records prove nothing.
+  if (observed.content === null) return observed.raw !== null && observed.raw.length > 0;
   return (
     observed.content !== null &&
     ownerState(observed.content, Math.max(0, deadlineAt - Date.now()), lookup) !== "stale"

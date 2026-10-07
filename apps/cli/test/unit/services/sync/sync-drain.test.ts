@@ -24,6 +24,13 @@ import type { HistoryProgress } from "@kunai/storage";
 
 import { waitUntil } from "../../../support/wait-until";
 
+const services: SyncService[] = [];
+function createSyncService(deps: ConstructorParameters<typeof SyncService>[0]): SyncService {
+  const service = new SyncService(deps);
+  services.push(service);
+  return service;
+}
+
 const dirs: string[] = [];
 const openDatabases: { close(): void }[] = [];
 
@@ -32,7 +39,10 @@ const openDatabases: { close(): void }[] = [];
  * database opened here is closed before its directory is removed. Leaving them
  * open passes on POSIX and fails the whole suite with EBUSY on Windows.
  */
-afterEach(() => {
+afterEach(async () => {
+  // Match production disposal: cancel retry wakes and settle active work before
+  // closing SQLite. A direct drain can park a wake even when the test awaits it.
+  await Promise.all(services.splice(0).map((service) => service.shutdown()));
   for (const db of openDatabases.splice(0)) {
     try {
       db.close();
@@ -149,7 +159,7 @@ describe("SyncService drain", () => {
     const anilist = adapter("anilist");
     const scheduled: Array<() => void> = [];
     const continuations: Array<() => void> = [];
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -209,7 +219,7 @@ describe("SyncService drain", () => {
       const anilist = adapter("anilist");
       const continuations: Array<() => void> = [];
       const wakes: Array<() => void> = [];
-      const service = new SyncService({
+      const service = createSyncService({
         adapters: [anilist.adapter],
         outbox: repo,
         config: configPort(),
@@ -259,7 +269,7 @@ describe("SyncService drain", () => {
     const repo = outbox();
     const anilist = adapter("anilist");
     // No `maxOperationsPerPass`: this is the wiring the app actually gets.
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -286,7 +296,7 @@ describe("SyncService drain", () => {
     const repo = outbox();
     const anilist = adapter("anilist");
     const continuations: Array<() => void> = [];
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -340,7 +350,7 @@ describe("SyncService drain", () => {
     });
     const continuations: Array<() => void> = [];
     const wakes: Array<() => void> = [];
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -392,7 +402,7 @@ describe("SyncService drain", () => {
     const repo = outbox();
     const anilist = adapter("anilist");
     const tmdb = adapter("tmdb");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter, tmdb.adapter],
       outbox: repo,
       config: {
@@ -430,7 +440,7 @@ describe("SyncService drain", () => {
 
   test("does not persist automatic progress before watch tracking is opted in", async () => {
     const repo = outbox();
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [adapter("anilist").adapter],
       outbox: repo,
       config: configPort({ ...enabled, trackWatched: false }),
@@ -444,7 +454,7 @@ describe("SyncService drain", () => {
 
   test("does not persist favourite intent before list sync is opted in", async () => {
     const repo = outbox();
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [adapter("anilist").adapter],
       outbox: repo,
       config: configPort({ ...enabled, syncList: false }),
@@ -462,7 +472,7 @@ describe("SyncService drain", () => {
   test("syncNow sends the highest proven episode regardless of history order", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -526,7 +536,7 @@ describe("SyncService drain", () => {
     const repo = outbox();
     const config = configPort();
     const anilist = adapter("anilist");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config,
@@ -547,7 +557,7 @@ describe("SyncService drain", () => {
   test("a disabled tracker leaves attempts unchanged", async () => {
     const repo = outbox();
     const config = configPort(disabled);
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [adapter("anilist").adapter],
       outbox: repo,
       config,
@@ -577,7 +587,7 @@ describe("SyncService drain", () => {
       calls += 1;
       return calls === 1 ? syncFailed("temporary", "network") : syncOk();
     });
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -616,7 +626,7 @@ describe("SyncService drain", () => {
   test("delivers a claimed row and removes it on success", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -637,7 +647,7 @@ describe("SyncService drain", () => {
   test("dead-letters a corrupt payload without calling the adapter", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -660,7 +670,7 @@ describe("SyncService drain", () => {
 
     for (const { outcome, field } of cases) {
       const repo = outbox();
-      const service = new SyncService({
+      const service = createSyncService({
         adapters: [adapter("anilist", () => outcome).adapter],
         outbox: repo,
         config: configPort(),
@@ -681,7 +691,7 @@ describe("SyncService drain", () => {
    */
   test("records an adapter that throws as a retryable failure", async () => {
     const repo = outbox();
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [
         adapter("anilist", () => {
           throw new Error("network unavailable");
@@ -714,7 +724,7 @@ describe("SyncService drain", () => {
       await held;
       return syncOk();
     });
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -736,7 +746,7 @@ describe("SyncService drain", () => {
   /** Reconnecting must unpark exactly the rows that were waiting on it. */
   test("resumeAfterReauth resets only the named tracker", async () => {
     const repo = outbox();
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [adapter("anilist", () => syncNeedsReauth("token-rejected")).adapter],
       outbox: repo,
       config: configPort(),
@@ -754,7 +764,7 @@ describe("SyncService drain", () => {
   /** Shutdown is retryable lifetime cancellation, not a disabled user choice. */
   test("reports admission and gated enqueue as aborted after shutdown", async () => {
     const repo = outbox();
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [adapter("anilist").adapter],
       outbox: repo,
       config: configPort(),
@@ -782,7 +792,7 @@ describe("SyncService drain", () => {
   test("dead-letters an operation the adapter does not support", async () => {
     const repo = outbox();
     const tmdb = adapter("tmdb");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [tmdb.adapter],
       outbox: repo,
       config: configPort(),
@@ -816,7 +826,7 @@ describe("SyncService rate limiting", () => {
   test("stops asking a rate-limited tracker for the rest of the drain", async () => {
     const repo = outbox();
     const anilist = adapter("anilist", () => syncRateLimited(30_000));
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -848,7 +858,7 @@ describe("SyncService rate limiting", () => {
   test("does not spend an attempt on a deferral", async () => {
     const repo = outbox();
     const anilist = adapter("anilist", () => syncRateLimited(30_000));
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -865,7 +875,7 @@ describe("SyncService rate limiting", () => {
   test("honours the tracker's wait rather than the local backoff schedule", async () => {
     const repo = outbox();
     const anilist = adapter("anilist", () => syncRateLimited(10 * 60_000));
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
@@ -895,7 +905,7 @@ describe("SyncService pause", () => {
   test("delivers nothing while paused, and loses nothing either", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: pausedConfig(new Date(Date.now() + 60 * 60 * 1000).toISOString()),
@@ -919,7 +929,7 @@ describe("SyncService pause", () => {
   test("delivers normally once the pause has elapsed", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: pausedConfig(new Date(Date.now() - 1_000).toISOString()),
@@ -935,7 +945,7 @@ describe("SyncService pause", () => {
   test("treats an unparseable pause as not paused", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: pausedConfig("whenever"),
@@ -963,7 +973,7 @@ describe("SyncService per-kind config gates", () => {
   test("holds progress when the tracker is not tracking watched episodes", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: gated({ trackWatched: false }),
@@ -986,7 +996,7 @@ describe("SyncService per-kind config gates", () => {
   test("holds list and favourite writes when list sync is off", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: gated({ syncList: false }),
@@ -1003,7 +1013,7 @@ describe("SyncService per-kind config gates", () => {
   test("still delivers progress when only list sync is off", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
-    const service = new SyncService({
+    const service = createSyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: gated({ syncList: false }),

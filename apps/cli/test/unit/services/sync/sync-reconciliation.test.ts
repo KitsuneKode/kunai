@@ -14,9 +14,19 @@ import {
 } from "@kunai/storage";
 import { createTempStoreRegistry } from "@kunai/storage/testing";
 
+const services: SyncService[] = [];
+function createSyncService(deps: ConstructorParameters<typeof SyncService>[0]): SyncService {
+  const service = new SyncService(deps);
+  services.push(service);
+  return service;
+}
+
 const stores = createTempStoreRegistry();
 
-afterEach(() => stores.cleanup());
+afterEach(async () => {
+  await Promise.all(services.splice(0).map((service) => service.shutdown()));
+  stores.cleanup();
+});
 
 const adapter: SyncAdapter = {
   id: "anilist",
@@ -43,7 +53,7 @@ function fixture(enabled = true) {
   const reconciliation = new SyncReconciliationRepository(db);
   const lists = new ListRepository(db);
   const gate = { enabled, trackWatched: enabled, syncList: enabled };
-  const sync = new SyncService({
+  const sync = createSyncService({
     adapters: [adapter],
     outbox,
     config: { read: async () => ({ sync: { anilist: gate, tmdb: gate } }) },
@@ -224,7 +234,7 @@ test("abort during delayed post-identity admission retains without enqueueing", 
   const secondReadReleased = new Promise<void>((resolve) => {
     releaseSecondRead = resolve;
   });
-  const sync = new SyncService({
+  const sync = createSyncService({
     adapters: [adapter],
     outbox,
     config: {
@@ -291,7 +301,7 @@ test("service shutdown during post-identity admission retains for a fresh servic
   const secondReadReleased = new Promise<void>((resolve) => {
     releaseSecondRead = resolve;
   });
-  const sync = new SyncService({
+  const sync = createSyncService({
     adapters: [adapter],
     outbox,
     config: {
@@ -327,7 +337,7 @@ test("service shutdown during post-identity admission retains for a fresh servic
   const retained = reconciliation.listPending()[0];
   expect(retained).toMatchObject({ attempts: 0 });
 
-  const freshSync = new SyncService({
+  const freshSync = createSyncService({
     adapters: [adapter],
     outbox,
     config: { read: async () => ({ sync: { anilist: gate, tmdb: gate } }) },
@@ -466,7 +476,7 @@ test("a hard-kill fact is replayed into the outbox after the database reopens", 
   const history = new HistoryRepository(reopened);
   const outbox = new SyncOutboxRepository(reopened);
   const gate = { enabled: true, trackWatched: true, syncList: true };
-  const sync = new SyncService({
+  const sync = createSyncService({
     adapters: [adapter],
     outbox,
     config: { read: async () => ({ sync: { anilist: gate, tmdb: gate } }) },
@@ -786,7 +796,7 @@ test("a delayed config read cannot let stale history settle a newer completion",
   });
   let configReads = 0;
   const gate = { enabled: true, trackWatched: true, syncList: true };
-  const sync = new SyncService({
+  const sync = createSyncService({
     adapters: [adapter],
     outbox,
     config: {
