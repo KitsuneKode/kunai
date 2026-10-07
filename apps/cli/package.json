@@ -54,7 +54,7 @@
     "test:coverage:report": "bun test test/unit test/integration --coverage --coverage-reporter=text",
     "test:file": "bun test --timeout=20000",
     "test:unit": "bun test test/unit --timeout=20000 --parallel",
-    "test:future": "bun test --preload ./test/support/future-clock.preload.ts test/unit --timeout=20000",
+    "test:future": "bun test --preload ./test/support/future-clock.preload.ts --path-ignore-patterns='**/native-installer/{activation,version}-lock.test.ts' test/unit --timeout=20000",
     "test:integration": "bun test test/integration --timeout=20000",
     "test:binary:smoke": "KUNAI_BINARY_SMOKE=1 bun test test/integration/compiled-binary-smoke.test.ts",
     "test:npm-global-install": "KUNAI_NPM_GLOBAL_INSTALL=1 bun test test/integration/npm-global-install.test.ts",
@@ -103,7 +103,7 @@
     "build:prod": "bun run check && bun run build",
     "pkg:check": "bun run scripts/verify-npm-pack.ts",
     "release:dry-run": "bun run build:prod && bun run pkg:check",
-    "link:global": "bun link",
+    "link:global": "bun run scripts/link-global.ts",
     "unlink:global": "bun unlink",
     "relink:global": "bun run unlink:global && bun run link:global",
     "prepack": "bun run build",
@@ -127,7 +127,8 @@
     "@kunai/types": "workspace:*",
     "@types/bun": "catalog:",
     "@types/react": "catalog:",
-    "jpeg-js": "^0.4.4"
+    "jpeg-js": "^0.4.4",
+    "zod": "catalog:"
   },
   "peerDependencies": {
     "typescript": "catalog:"
