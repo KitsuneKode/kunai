@@ -62,6 +62,7 @@ import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
+import { registerMpvProcess, type MpvChildProcess } from "@/infra/player/mpv-process-registry";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import {
   resultEnrichmentKey,
@@ -91,6 +92,33 @@ const SEEDED_CALENDAR_TYPE_TABS: Partial<Record<ShellAction, CalendarTypeTab>> =
   "series-calendar": "TV",
   "tracked-calendar": "Tracked",
 };
+
+/**
+ * The trailer window is detached mpv — no IPC socket, no session — so it lives
+ * in the process registry instead: quit-time teardown kills it like the main
+ * player, and a re-press replaces the running one rather than stacking
+ * windows on a key mash.
+ */
+let liveTrailerProcess: MpvChildProcess | null = null;
+
+function spawnTrailerMpv(argv: readonly string[], target: string): boolean {
+  if (liveTrailerProcess && liveTrailerProcess.exitCode === null) {
+    try {
+      liveTrailerProcess.kill("SIGTERM");
+    } catch {
+      // Already gone between the liveness check and the kill.
+    }
+  }
+  const proc = Bun.spawn([...argv, target], {
+    stdout: "ignore",
+    stderr: "ignore",
+    stdin: "ignore",
+  });
+  liveTrailerProcess = proc;
+  const unregister = registerMpvProcess(proc);
+  void proc.exited.then(unregister, unregister);
+  return true;
+}
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -740,12 +768,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   // Same scheme gate as every other mpv playback path; a
                   // non-URL target falls back to the browser opener below.
                   if (!isAllowedMpvUrl(target, "remote")) return false;
-                  Bun.spawn([...mpvInvocation.argv, target], {
-                    stdout: "ignore",
-                    stderr: "ignore",
-                    stdin: "ignore",
-                  });
-                  return true;
+                  return spawnTrailerMpv(mpvInvocation.argv, target);
                 },
                 openInBrowser: async (target) => {
                   const opened = await openExternalUrl(target);

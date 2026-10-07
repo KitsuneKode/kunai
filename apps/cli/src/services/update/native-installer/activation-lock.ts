@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import { link, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { errorCode } from "@/infra/fs/errno";
+
 import { parseCanonicalVersion } from "../version";
 import { activationLockPath, type InstallLayoutPaths } from "./install-layout";
 import {
@@ -167,10 +169,6 @@ async function reclaimClaimOwnerState(
     if (currentStartId && currentStartId !== content.processStartId) return "stale";
   }
   return "active";
-}
-
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException).code;
 }
 
 /**

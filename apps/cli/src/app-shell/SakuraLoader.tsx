@@ -20,6 +20,7 @@ import {
   STATIC_PETAL,
   useFrameTick,
 } from "./primitives/SakuraPetal";
+import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 
 const SHIMMER_INTERVAL_MS = 110;
@@ -122,8 +123,8 @@ export function SakuraLoader({
         <SakuraBloom active={active} stalled={stalled} />
       </Box>
       <Box flexDirection="column">
-        <GlimmerLabel label={label} active={active} stalled={stalled} />
-        {sublabel ? <Text color={palette.muted}>{sublabel}</Text> : null}
+        <GlimmerLabel label={sanitizeTerminalText(label)} active={active} stalled={stalled} />
+        {sublabel ? <Text color={palette.muted}>{sanitizeTerminalText(sublabel)}</Text> : null}
       </Box>
     </Box>
   );
@@ -149,7 +150,7 @@ export function InlineSakuraLoader({
       <Text color={color} bold>
         {glyph}
       </Text>
-      {label ? <Text color={palette.muted}> {label}</Text> : null}
+      {label ? <Text color={palette.muted}> {sanitizeTerminalText(label)}</Text> : null}
     </Box>
   );
 }

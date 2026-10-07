@@ -3,6 +3,7 @@ import {
   RETURN_LOOP_FOR_YOU_NOW_HEADING,
   RETURN_LOOP_NAV_HINT,
 } from "./return-loop-copy";
+import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { BrowseIdleContext, ShellAction } from "./types";
 
@@ -81,13 +82,16 @@ export function buildBrowseIdleReturnLoopModel(
 
   if (idleContext.continueWatching) {
     const cw = idleContext.continueWatching;
-    const meta = [cw.ep, cw.remainingLabel].filter(Boolean).join(" · ");
+    const meta = [cw.ep, cw.remainingLabel]
+      .filter((part): part is string => Boolean(part))
+      .map(sanitizeTerminalText)
+      .join(" · ");
     const rowIndex = rows.length;
     rows.push({
       id: "continue",
       glyph: "⏸",
       glyphColor: palette.accent,
-      title: cw.title,
+      title: sanitizeTerminalText(cw.title),
       meta: meta.length > 0 ? meta : undefined,
       hint: idleRowHint("continue", options.idleFocused && selectedIndex === rowIndex),
       focused: options.idleFocused && selectedIndex === rowIndex,
@@ -102,8 +106,8 @@ export function buildBrowseIdleReturnLoopModel(
       id: "offline-ready",
       glyph: "⬇",
       glyphColor: palette.ok,
-      title: offline.title,
-      meta: offline.ep ? `${offline.ep} · ready offline` : "ready offline",
+      title: sanitizeTerminalText(offline.title),
+      meta: offline.ep ? `${sanitizeTerminalText(offline.ep)} · ready offline` : "ready offline",
       hint: idleRowHint("offline-ready", options.idleFocused && selectedIndex === rowIndex),
       focused: options.idleFocused && selectedIndex === rowIndex,
       actionable: Boolean(offline.offlineJobId),
@@ -117,8 +121,8 @@ export function buildBrowseIdleReturnLoopModel(
       id: "playlist-next",
       glyph: "▶",
       glyphColor: palette.ok,
-      title: next.title,
-      meta: next.ep,
+      title: sanitizeTerminalText(next.title),
+      meta: next.ep !== undefined ? sanitizeTerminalText(next.ep) : undefined,
       hint: idleRowHint("playlist-next", options.idleFocused && selectedIndex === rowIndex),
       focused: options.idleFocused && selectedIndex === rowIndex,
       actionable: Boolean(next.titleId),

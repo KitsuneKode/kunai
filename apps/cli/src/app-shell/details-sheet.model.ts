@@ -104,7 +104,7 @@ export function buildDetailsSheet(input: {
   const typeLabel = seed.type === "movie" ? "Movie" : "Series";
   const metaLine = [
     typeLabel,
-    seed.year,
+    seed.year !== undefined ? sanitizeTerminalText(seed.year) : undefined,
     typeof score === "number" ? `★${score.toFixed(1)}` : undefined,
     status,
   ]
@@ -160,6 +160,8 @@ export function buildDetailsSheet(input: {
     links: {
       items: (detail?.externalLinks ?? []).map((link) => ({
         ...link,
+        // The renderer displays only the label; the opener validates the raw
+        // target. Sanitizing a target can silently open a different URL.
         label: sanitizeTerminalText(link.label),
       })),
     },

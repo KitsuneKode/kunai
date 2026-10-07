@@ -7,7 +7,7 @@ import { StateBlock } from "./primitives/StateBlock";
 import type { StateBlockModel } from "./primitives/StateBlock.model";
 import { InputField } from "./shell-frame";
 import { ResizeBlocker, ShellFooter } from "./shell-primitives";
-import { getWindowStart, truncateLine } from "./shell-text";
+import { getWindowStart, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { FooterAction } from "./types";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
@@ -87,13 +87,13 @@ export function PickerOverlay({
       <Box flexDirection="column" paddingX={1}>
         <Box justifyContent="space-between">
           <Text bold color={palette.text}>
-            {state.title}
+            {sanitizeTerminalText(state.title)}
           </Text>
           <Text color={palette.dim} dimColor>
             {filteredOptions.length}/{state.options.length}
           </Text>
         </Box>
-        <Text color={palette.muted}>{state.subtitle}</Text>
+        <Text color={palette.muted}>{sanitizeTerminalText(state.subtitle)}</Text>
 
         <Box marginTop={1}>
           <InputField

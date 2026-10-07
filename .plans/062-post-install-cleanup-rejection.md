@@ -13,6 +13,10 @@ Found during the audit-2 S6 distribution sweep (which the ledger never closed).
 - **Depends on:** none
 - **Category:** correctness
 - **Planned at:** `51f19b633`, 2026-09-19
+- **Landed (partial):** Steps 1–2 + the ENOTDIR test — the lock probe treats
+  probe failure as protected and the post-install call site carries `.catch`.
+  Remaining: Step 3's `void`-callsite classification sweep and Step 4's
+  convention paragraph in `.docs/engineering-guide.md`.
 
 ## Why this matters
 

@@ -15,6 +15,7 @@ import { SakuraPetal } from "./primitives/SakuraPetal";
 import {
   getWindowStart,
   padColumnsEnd,
+  sanitizeTerminalText,
   truncateAtWord,
   truncateLine,
   wrapText,
@@ -202,9 +203,9 @@ export function OverlayPanel({
       {insideOverlay ? null : (
         <>
           <Text color={palette.text} bold>
-            {overlay.title}
+            {sanitizeTerminalText(overlay.title)}
           </Text>
-          <Text color={palette.dim}>{overlay.subtitle}</Text>
+          <Text color={palette.dim}>{sanitizeTerminalText(overlay.subtitle)}</Text>
         </>
       )}
       {isPickerOverlay ? (

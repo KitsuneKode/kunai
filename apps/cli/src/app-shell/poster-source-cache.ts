@@ -11,6 +11,7 @@
 
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import { MAX_POSTER_SOURCE_BYTES } from "@/image/native-image";
+import { readBoundedBody } from "@/services/network/bounded-body";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
 
 import { createKeyedInflight } from "./inflight";
@@ -61,55 +62,6 @@ export function clearPosterSourceCache(): void {
   sourceInflight.clear();
 }
 
-/**
- * Read a stream into one buffer, refusing to exceed the source ceiling.
- *
- * The cumulative check happens before each chunk is kept, so an undeclared or
- * understated body is cut off at the limit rather than after it. Cancelling the
- * reader is what actually stops the transfer; simply returning would leave the
- * socket draining in the background.
- */
-async function readPosterStream(
-  stream: ReadableStream<Uint8Array>,
-  signal?: AbortSignal,
-): Promise<Uint8Array | null> {
-  const reader = stream.getReader();
-  const onAbort = () => void reader.cancel("aborted").catch(() => {});
-  signal?.addEventListener("abort", onAbort, { once: true });
-
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      if (signal?.aborted) return null;
-      total += value.byteLength;
-      if (total > MAX_POSTER_SOURCE_BYTES) {
-        await reader.cancel("too-large").catch(() => {});
-        return null;
-      }
-      chunks.push(value);
-    }
-  } catch {
-    // A dropped connection mid-body is not a cacheable outcome.
-    return null;
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
-  }
-
-  if (signal?.aborted) return null;
-
-  const out = new Uint8Array(total);
-  let cursor = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, cursor);
-    cursor += chunk.byteLength;
-  }
-  return out;
-}
-
 async function readLocalPosterSource(
   path: string,
   signal?: AbortSignal,
@@ -118,7 +70,7 @@ async function readLocalPosterSource(
   if (!(await file.exists())) return null;
   // Stat first: a sidecar larger than the ceiling must never be read at all.
   if (file.size > MAX_POSTER_SOURCE_BYTES || file.size === 0) return null;
-  const bytes = await readPosterStream(file.stream(), signal);
+  const bytes = await readBoundedBody(file.stream(), MAX_POSTER_SOURCE_BYTES, signal);
   if (!bytes || bytes.byteLength === 0) return null;
   return { identity: path, bytes };
 }
@@ -200,7 +152,7 @@ async function readRemotePosterSource(
     return null;
   }
 
-  const bytes = await readPosterStream(response.body, signal);
+  const bytes = await readBoundedBody(response.body, MAX_POSTER_SOURCE_BYTES, signal);
   if (!bytes || bytes.byteLength === 0 || !hasImageSignature(bytes)) return null;
   return { identity: url, bytes };
 }

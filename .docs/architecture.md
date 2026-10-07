@@ -192,6 +192,18 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 | Stream cache  | OS cache dir `kunai-cache.sqlite`                                         | `@kunai/storage` + CLI cache store   |
 | Debug logs    | `./logs.txt`                                                              | `apps/cli/src/logger.ts`             |
 
+Config startup holds the shared file lock from its initial read through any
+migration write. Later saves merge only changed keys under the same lock.
+A lock timeout rejects before the write callback runs.
+
+Native credential hydration is a read; unrelated config saves never rewrite a
+hydrated token. Explicit replacements and clears share the config lock with their
+file updates. A failed replacement retains plaintext for the next launch's
+migration; a clear rejects until native deletion is verified, rather than reporting
+success and restoring the secret next launch. Native credential latency therefore
+extends this critical section; sibling operations can report bounded lock contention
+while a slow keychain operation is running.
+
 **Watch ledger (2026-06):** `history_progress` is the single source of truth for resume position, completion, and engaged watch time. Columns `watched_seconds`, `last_watched_at`, and `completed_at` (migration `024`) back Stats and continuation. All mark-watched/unwatched surfaces write through `HistoryRepository.markWatched` / `markUnwatched` (preserve resume on unmark). `playback_events` receives fire-and-forget instrumentation from the mpv position tick via `PlaybackEventRepository`. Stats aggregation lives in `WatchStatsRepository` (`packages/storage`).
 
 **Title writes are additive on identity (2026-08):** a write carries whatever metadata its launching lane happened to have, and a lane that knows less than the stored row must never subtract from it. `HistoryRepository.upsertProgress` takes progress fields (position, duration, completion, provider) from the newest write, but protects identity: `poster_url` is `COALESCE`d, `external_ids_json` is merged (stored ids win per key), and a title that is a placeholder for its own id — `TMDB <id>` from `-i/--id`, or a share ref that named a title after itself — never replaces a real stored name. `ListRepository.addItem` and `FollowedTitleRepository.upsert` follow the same rule, so re-adding a title to a Watchlist or muting it cannot rename it. Placeholder names are minted and recognised in one place, `@kunai/core` `directIdTitleName` / `isPlaceholderTitleName`, because both the CLI and storage have to agree on the shape.

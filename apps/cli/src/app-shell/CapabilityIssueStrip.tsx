@@ -25,6 +25,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { buildDependencyRows, selectStartupIssueRows } from "./setup/dependency-rows";
+import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 
 /** At most this many rows, so the strip can never push the shell off screen. */
@@ -62,11 +63,13 @@ export function CapabilityIssueStrip({
             <Text color={palette.warn} bold>
               {"△ "}
             </Text>
-            <Text color={palette.text}>{row.consequence ?? `${row.name} not found`}</Text>
+            <Text color={palette.text}>
+              {sanitizeTerminalText(row.consequence ?? `${row.name} not found`)}
+            </Text>
           </Box>
           {row.fix ? (
             <Box paddingLeft={2}>
-              <Text color={palette.accent}>{row.fix}</Text>
+              <Text color={palette.accent}>{sanitizeTerminalText(row.fix)}</Text>
             </Box>
           ) : null}
         </Box>

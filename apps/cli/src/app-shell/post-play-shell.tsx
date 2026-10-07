@@ -31,7 +31,7 @@ import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { ProgressBar } from "./primitives/ProgressBar";
 import { SakuraPetal } from "./primitives/SakuraPetal";
 import { ViewportResizeGate } from "./shell-primitives";
-import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
+import { measureColumns, padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import { PosterOutput } from "./SixelPosterPane";
 import type { PlaybackRecommendationRailItem } from "./types";
@@ -306,7 +306,7 @@ function DiscoveryCards({
 
 function initialsOf(title: string): string {
   return (
-    title
+    sanitizeTerminalText(title)
       .split(/\s+/)
       .filter(Boolean)
       .map((w) => w[0]?.toUpperCase() ?? "")

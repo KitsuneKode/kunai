@@ -14,6 +14,7 @@ import {
 } from "../playback/playback-generation";
 import type { PlaybackProblem } from "../playback/playback-problem";
 import type { TrackCapabilityGroup, TrackCapabilitySection } from "../playback/track-capabilities";
+import { sanitizeTerminalText } from "../text-display";
 import type {
   EpisodeInfo,
   EpisodePickerOption,
@@ -564,10 +565,20 @@ export function reduceState(state: SessionState, transition: StateTransition): S
     case "SET_PLAYBACK_FEEDBACK":
       return {
         ...state,
+        // Feedback strings embed provider titles and error text — sanitize at
+        // the state boundary so every producer stays terminal-safe.
         playbackDetail:
-          transition.detail === undefined ? state.playbackDetail : (transition.detail ?? null),
+          transition.detail === undefined
+            ? state.playbackDetail
+            : transition.detail === null
+              ? null
+              : sanitizeTerminalText(transition.detail),
         playbackNote:
-          transition.note === undefined ? state.playbackNote : (transition.note ?? null),
+          transition.note === undefined
+            ? state.playbackNote
+            : transition.note === null
+              ? null
+              : sanitizeTerminalText(transition.note),
       };
 
     case "SET_WATCH_TIME_SUMMARY":

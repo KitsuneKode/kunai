@@ -259,6 +259,8 @@ describe("DownloadService", () => {
         );
       const [first, second] = jobs;
       writeFileSync(first!.outputPath, "first owner's bytes");
+      // complete() is fenced to claimed work — enqueue alone is 'queued'.
+      repo.markRunning(first!.id, new Date().toISOString());
       repo.complete(first!.id, new Date().toISOString());
       repo.markRunning(second!.id, new Date(Date.now() - 120_000).toISOString());
       const recovery = buildService({

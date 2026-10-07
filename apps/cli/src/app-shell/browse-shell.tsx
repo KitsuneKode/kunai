@@ -134,7 +134,7 @@ import {
 import { CommandPalette } from "./shell-command-ui";
 import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
-import { getWindowStart, measureColumns } from "./shell-text";
+import { getWindowStart, measureColumns, sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 import {
   toShellAction,
@@ -288,7 +288,7 @@ export function BrowseShell<T>({
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const actionFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashActionFeedback = useCallback((message: string) => {
-    setActionFeedback(message);
+    setActionFeedback(sanitizeTerminalText(message));
     if (actionFeedbackTimer.current) clearTimeout(actionFeedbackTimer.current);
     actionFeedbackTimer.current = setTimeout(() => setActionFeedback(null), 2500);
   }, []);
@@ -1817,7 +1817,7 @@ export function BrowseShell<T>({
                   <Box key={`${chip.key}-${chip.label}`} marginRight={2}>
                     <Text color={palette.accentSoft}>
                       {index < 9 ? `${index + 1} ` : ""}
-                      {chip.label}
+                      {sanitizeTerminalText(chip.label)}
                       <Text color={palette.muted}> ×</Text>
                     </Text>
                   </Box>

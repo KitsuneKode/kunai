@@ -161,6 +161,8 @@ mpvTest("real mpv reuses one process across two local loadfile transitions", asy
       ),
       "second local playback",
     );
+    // Keep the IPC failure and playback samples in a native assertion failure:
+    // "error instead of eof" alone cannot distinguish transport from load failure.
     expect({ result: second, events: secondEvents }).toMatchObject({
       result: { endReason: "eof" },
     });

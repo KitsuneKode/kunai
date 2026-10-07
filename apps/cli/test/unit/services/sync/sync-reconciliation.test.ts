@@ -1136,3 +1136,38 @@ test("a captured continuation is inert after service shutdown and database dispo
   state.db.close();
   await expect(continuation!()).resolves.toBeUndefined();
 });
+
+test("a poisoned next_attempt_at reschedules on a bounded cadence, never NaN", async () => {
+  const state = fixture();
+  // A garbage timestamp sorts into nextAttemptAt() but Date.parse() is NaN —
+  // Math.max(1, NaN) used to reach setTimeout as NaN and spin a tight loop.
+  state.db
+    .query(
+      `INSERT INTO sync_reconciliation
+       (id, mutation_kind, entity_key, payload_json, generation, attempt_count,
+        next_attempt_at, created_at, updated_at)
+     VALUES ('poison-ts', 'history', 'ek-poison', '{"kind":"history","historyKey":"h1","localMutationId":"m1"}', 1, 0, 'not-a-date', '2999-01-01T00:00:00.000Z', '2999-01-01T00:00:00.000Z')`,
+    )
+    .run();
+  let observedDelay = -1;
+  await reconcileSyncMutations(
+    {
+      syncReconciliationRepository: state.reconciliation,
+      historyRepository: state.history,
+      syncService: state.sync,
+      catalogIdentityService: {
+        enrich: async () => {
+          throw new Error("no due records — enrich must not run");
+        },
+      },
+    },
+    {
+      scheduleContinuation: (_task, delayMs = 0) => {
+        observedDelay = delayMs;
+      },
+    },
+  );
+  expect(Number.isFinite(observedDelay)).toBe(true);
+  expect(observedDelay).toBeGreaterThan(0);
+  state.db.close();
+});
