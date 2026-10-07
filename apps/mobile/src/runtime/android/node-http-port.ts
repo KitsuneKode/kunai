@@ -53,11 +53,14 @@ export function createNodeHttpPort(overrides: Partial<NodeHttpRuntime> = {}): Mo
   return {
     async request(request: MobileHttpRequest) {
       const controller = new AbortController();
+      const abortRequest = () => controller.abort(request.signal?.reason);
+      request.signal?.addEventListener("abort", abortRequest, { once: true });
       const timeout = runtime.scheduleTimeout(
         () => controller.abort("mobile-http-timeout"),
         request.timeoutMs,
       );
       try {
+        request.signal?.throwIfAborted();
         let url = requireHttpUrl(request.url);
         for (let redirects = 0; ; redirects += 1) {
           const response = await runtime.fetch(url, {
@@ -79,6 +82,7 @@ export function createNodeHttpPort(overrides: Partial<NodeHttpRuntime> = {}): Mo
         }
       } finally {
         runtime.cancelTimeout(timeout);
+        request.signal?.removeEventListener("abort", abortRequest);
       }
     },
   };
