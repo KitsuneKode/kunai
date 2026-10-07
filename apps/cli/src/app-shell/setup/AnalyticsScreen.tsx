@@ -1,5 +1,4 @@
-// =============================================================================
-// analytics-screen.tsx — the one screen that has to be exactly true
+// The one screen that has to be exactly true
 //
 // Recommended and pre-selected, per `.docs/analytics-privacy-contract.md`, with
 // one guardrail the input handler enforces: no skip path may enable it. `s`
@@ -9,7 +8,6 @@
 // It carries no motion. The petal used to bloom here, under text a person is
 // reading to make a privacy decision, while the screen that actually probes the
 // machine had none. `design-system.md` warns against exactly that.
-// =============================================================================
 
 import { Box, Text } from "ink";
 import React from "react";

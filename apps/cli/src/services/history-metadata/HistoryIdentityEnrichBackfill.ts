@@ -1,4 +1,3 @@
-// =============================================================================
 // HistoryIdentityEnrichBackfill — one-shot/background crosswalk backfill.
 //
 // Scans latest-per-title history rows whose external id bag is missing a lane
@@ -6,7 +5,6 @@
 // merges the learned ids into every row of the title, then re-runs the
 // identity consolidator so split anime/series units collapse. Only
 // high-confidence graphs may rewrite anything; low confidence is a no-op.
-// =============================================================================
 
 import type { CatalogIdentityService } from "@/services/catalog/CatalogIdentityService";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";

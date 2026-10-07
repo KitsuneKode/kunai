@@ -1,5 +1,4 @@
-// =============================================================================
-// apply-title-detail.ts — adopt resolved catalog facts into the session title
+// Adopt resolved catalog facts into the session title
 //
 // A `-i/--id` launch (and a share ref that carries no title) has an id and
 // nothing else, so the session runs on a placeholder `TitleInfo` until the
@@ -14,7 +13,6 @@
 // Adoption is additive and never destructive: a name the user actually searched
 // for, a poster the provider supplied, and ids the title already carries all
 // win over the catalog. Only gaps are filled.
-// =============================================================================
 
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { TitleDetail } from "@/domain/catalog/title-detail";

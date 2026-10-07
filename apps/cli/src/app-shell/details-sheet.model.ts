@@ -1,11 +1,9 @@
-// =============================================================================
-// details-sheet.model.ts — pure view-model for the rich details sheet
+// Pure view-model for the rich details sheet
 //
 // Merges an instant SEED (already-loaded SearchResult fields — header + synopsis
 // with no network) with the optional fetched TitleDetail (gap-fill: studio, cast,
 // seasons, trailer, links), plus history + availability, into typed sections each
 // carrying a `loading` flag so the renderer can skeleton only the unresolved parts.
-// =============================================================================
 
 import type { TitleDetail, TitleLink } from "@/domain/catalog/title-detail";
 import { sanitizeTerminalText } from "@/domain/text-display";

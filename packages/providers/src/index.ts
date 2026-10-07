@@ -21,8 +21,6 @@ export * from "./rivestream/direct";
 export * from "./rivestream/manifest";
 export * from "./catalogs";
 export * from "./shared";
-export * from "./utils/m3u8-parser";
-export * from "./utils/variant-tree";
 export * from "./videasy";
 export * from "./vidlink/direct";
 export * from "./vidlink/manifest";

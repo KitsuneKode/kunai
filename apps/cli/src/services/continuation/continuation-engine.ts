@@ -1,9 +1,7 @@
-// =============================================================================
-// continuation-engine.ts — pure continuation decision (Netflix anchor rule)
+// Pure continuation decision (Netflix anchor rule)
 //
 // Anchors on the MOST-RECENT episode for a title: resume it if unfinished,
 // otherwise advance. Never scans back to an older abandoned episode.
-// =============================================================================
 
 import type { HistoryProgress } from "@kunai/storage";
 

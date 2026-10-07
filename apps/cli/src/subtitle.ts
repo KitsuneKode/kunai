@@ -501,7 +501,6 @@ function mergeTrackObjects<T extends { url: string }>(
   return result as T;
 }
 
-// =============================================================================
 // ACTIVE WYZIE RESOLUTION
 //
 // Bypasses the passive browser-sniffing approach entirely: call the search
@@ -515,7 +514,6 @@ function mergeTrackObjects<T extends { url: string }>(
 // a key this resolver makes no request and reports `no-key`.
 //
 // Ref: .archive/docs/subtitle-resolver-analysis.md
-// =============================================================================
 
 const WYZIE_SEARCH = "https://sub.wyzie.io/search";
 

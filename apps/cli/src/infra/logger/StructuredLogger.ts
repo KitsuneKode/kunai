@@ -1,8 +1,6 @@
-// =============================================================================
 // Structured Logger Implementation
 //
 // Structured logging to console and file.
-// =============================================================================
 
 import {
   appendFileSync,

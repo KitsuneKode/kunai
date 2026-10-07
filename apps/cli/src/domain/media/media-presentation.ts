@@ -1,5 +1,4 @@
-// =============================================================================
-// media-presentation.ts — the single authority for how a piece of media names
+// The single authority for how a piece of media names
 // itself in product surfaces.
 //
 // Queue rows, the offline library, download filenames, notifications, the mpv
@@ -12,7 +11,6 @@
 // answers what the user should see. Filesystem naming consumes
 // `CanonicalMediaPosition` and only adds path-safe encoding — it never
 // reinterprets content kind.
-// =============================================================================
 
 import type { MediaKind } from "@kunai/types";
 

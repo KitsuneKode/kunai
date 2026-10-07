@@ -1,5 +1,4 @@
-// =============================================================================
-// pre-setup-snapshot.ts — one restore point, taken before setup rewrites config
+// One restore point, taken before setup rewrites config
 //
 // A setup rerun rewrites preferences, sync toggles, and all four language lanes
 // in a single commit. #228 was exactly that going wrong: a rerun severed linked
@@ -10,7 +9,6 @@
 // The only backup that existed before this was `FileStorage`'s `.corrupt.bak`,
 // which fires on unparseable JSON. A valid-but-unwanted rewrite had no recovery
 // at all — the file was perfectly well-formed, and perfectly wrong.
-// =============================================================================
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";

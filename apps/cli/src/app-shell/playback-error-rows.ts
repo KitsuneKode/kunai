@@ -1,11 +1,9 @@
-// =============================================================================
-// playback-error-rows.ts — the failure panel's content, as rows of segments
+// The failure panel's content, as rows of segments
 //
 // ErrorShell used to build its layout inline as nested Boxes. The petal fall
 // needs to know which cells each row's text occupies, and Ink exposes no cell
 // buffer, so the content becomes data first and is rendered second. Row content
 // and ordering match what the panel rendered before this module existed.
-// =============================================================================
 
 import type { ErrorScenario } from "@/domain/playback/playback-problem";
 
