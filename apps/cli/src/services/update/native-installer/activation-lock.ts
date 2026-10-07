@@ -174,22 +174,42 @@ function errorCode(error: unknown): string | undefined {
 }
 
 /**
- * Codes that mean "another process currently owns or is mutating the name"
- * rather than a real filesystem failure. Windows reports pending-delete and
- * antivirus-held files as EPERM/EACCES/EBUSY where POSIX reports EEXIST —
- * a lock acquire treats all of them as contention to retry inside its
- * deadline, not as fatal.
+ * Name contention is retryable. Permission errors need independent evidence
+ * of a holder or a name transition; a denied directory is not contention.
  */
 function isContentionCode(code: string | undefined): boolean {
-  return code === "EEXIST" || code === "EPERM" || code === "EACCES" || code === "EBUSY";
+  return code === "EEXIST" || code === "EBUSY";
 }
 
-async function restoreQuarantinedLock(quarantinePath: string, lockPath: string): Promise<void> {
+function isPermissionCode(code: string | undefined): boolean {
+  return code === "EPERM" || code === "EACCES";
+}
+
+async function isCreationContention(
+  code: string | undefined,
+  path: string,
+  deadlineAt: number,
+  lookup: ProcessStartIdLookup,
+): Promise<boolean> {
+  if (isContentionCode(code)) return true;
+  if (!isPermissionCode(code)) return false;
+  const observed = await readActivationLock(path);
+  return (
+    observed.content !== null &&
+    ownerState(observed.content, Math.max(0, deadlineAt - Date.now()), lookup) !== "stale"
+  );
+}
+
+async function restoreQuarantinedLock(
+  quarantinePath: string,
+  lockPath: string,
+  io: { readonly link?: typeof link; readonly pause?: (ms: number) => Promise<void> } = {},
+): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
       // A hard link restores only when the canonical path is still absent. It
       // cannot overwrite an owner that acquired after the quarantine rename.
-      await link(quarantinePath, lockPath);
+      await (io.link ?? link)(quarantinePath, lockPath);
       await rm(quarantinePath, { force: true });
       return;
     } catch (error) {
@@ -199,7 +219,7 @@ async function restoreQuarantinedLock(quarantinePath: string, lockPath: string):
         // than ever replacing or deleting that owner.
         return;
       }
-      if (code !== "ENOENT" && !isContentionCode(code)) throw error;
+      if (code !== "ENOENT" && !isContentionCode(code) && !isPermissionCode(code)) throw error;
       // These codes are lost-race signals, not defects worth crashing an
       // acquire over: a just-renamed quarantine can be momentarily invisible
       // or held by Windows rename metadata lagging under real-time AV
@@ -211,7 +231,7 @@ async function restoreQuarantinedLock(quarantinePath: string, lockPath: string):
         if (code === "ENOENT" && !existsSync(quarantinePath)) return;
         throw error;
       }
-      await Bun.sleep(5);
+      await (io.pause ?? Bun.sleep)(5);
     }
   }
 }
@@ -228,9 +248,14 @@ async function quarantineForReclaim(
   try {
     await rename(path, quarantinePath);
   } catch (error) {
-    // The name vanished or is held mid-transition — either way someone else
-    // is racing this reclaim, so lose politely and let the outer loop retry.
-    if (errorCode(error) === "ENOENT" || isContentionCode(errorCode(error))) return false;
+    const code = errorCode(error);
+    if (code === "ENOENT" || isContentionCode(code)) return false;
+    if (isPermissionCode(code)) {
+      // Windows may deny a name that changed during reclamation. An unchanged
+      // stale file supplies no such evidence: surface its permission failure.
+      const current = await readActivationLock(path);
+      if (current.raw !== observed.raw) return false;
+    }
     throw error;
   }
 
@@ -256,7 +281,8 @@ async function quarantineForReclaim(
         await writeFile(path, successorRaw, { flag: "wx", mode: 0o600 });
         return true;
       } catch (error) {
-        if (!isContentionCode(errorCode(error))) throw error;
+        if (!(await isCreationContention(errorCode(error), path, deadlineAt, processStartIdLookup)))
+          throw error;
         await Bun.sleep(Math.min(1, Math.max(0, deadlineAt - Date.now())));
       }
     }
@@ -505,7 +531,7 @@ async function tryAcquireActivationLockFromFilesystem(
         await mkdir(dirname(path), { recursive: true });
         continue;
       }
-      if (!isContentionCode(errorCode(error))) {
+      if (!(await isCreationContention(errorCode(error), path, deadlineAt, processStartIdLookup))) {
         throw new Error(`Could not create activation lock at ${path}`, { cause: error });
       }
       // Another owner won exclusive creation (or Windows holds the name

@@ -250,8 +250,8 @@ describe("SyncService drain", () => {
         wakes.shift()?.();
         await service.drain();
       }
-      expect(anilist.calls).toHaveLength(3);
       expect(repo.counts().pending).toBe(0);
+      expect(anilist.calls).toHaveLength(3);
     }
   });
 
@@ -384,8 +384,8 @@ describe("SyncService drain", () => {
       wakes.shift()?.();
       await service.drain();
     }
-    expect(anilist.calls).toHaveLength(2);
     expect(repo.counts().pending).toBe(0);
+    expect(anilist.calls).toHaveLength(2);
   });
 
   test("continues past a disabled first batch to deliver an eligible tracker", async () => {

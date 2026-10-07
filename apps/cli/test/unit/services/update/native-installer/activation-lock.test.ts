@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
+import * as fsPromises from "node:fs/promises";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -731,6 +732,120 @@ describe("activation lock quarantine restore", () => {
     expect(JSON.parse(await readFile(lockPath, "utf8"))).toMatchObject({ schemaVersion: 1 });
     expect(existsSync(quarantinePath)).toBe(false);
   });
+
+  for (const code of ["ENOENT", "EPERM", "EACCES", "EBUSY"]) {
+    test(`restores after one transient ${code} link failure`, async () => {
+      const root = await makeRoot();
+      const lockPath = join(root, "lock");
+      const quarantinePath = join(root, "quarantine");
+      await writeFile(quarantinePath, "original-owner", "utf8");
+      let attempts = 0;
+      const pauses: number[] = [];
+      await __testing.restoreQuarantinedLock(quarantinePath, lockPath, {
+        link: async (source, destination) => {
+          attempts += 1;
+          if (attempts === 1) throw Object.assign(new Error("transient"), { code });
+          await fsPromises.link(source, destination);
+        },
+        pause: async (ms) => {
+          pauses.push(ms);
+        },
+      });
+      expect(attempts).toBe(2);
+      expect(pauses).toEqual([5]);
+      expect(await readFile(lockPath, "utf8")).toBe("original-owner");
+      expect(existsSync(quarantinePath)).toBe(false);
+    });
+  }
+
+  for (const code of ["EACCES", "EPERM"]) {
+    test(`a denied create with no owner propagates ${code} immediately`, async () => {
+      const layout = await makeLayout();
+      const path = activationLockPath(layout);
+      const original = fsPromises.writeFile;
+      const denied = Object.assign(new Error("permission denied"), { code });
+      const create = spyOn(fsPromises, "writeFile").mockImplementation(
+        async (target, data, options) => {
+          if (target === path) throw denied;
+          return original(target, data, options);
+        },
+      );
+      try {
+        await expect(
+          tryAcquireActivationLock(layout, "4.1.0", {
+            timeoutMs: 40,
+            pollMs: 1,
+          }),
+        ).rejects.toThrow("Could not create activation lock");
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(existsSync(path)).toBe(false);
+      } finally {
+        create.mockRestore();
+      }
+    });
+
+    test(`denied stale-owner reclamation propagates ${code} without deleting ownership`, async () => {
+      const layout = await makeLayout();
+      const path = activationLockPath(layout);
+      const holder = await tryAcquireActivationLock(layout, "4.1.0");
+      expect(holder.acquired).toBe(true);
+      if (!holder.acquired) throw new Error("fixture holder missing");
+      const raw = await readFile(path, "utf8");
+      const stale = JSON.stringify({ ...JSON.parse(raw), pid: 999999999 });
+      await writeFile(path, stale);
+      const original = fsPromises.rename;
+      let deniedAttempts = 0;
+      const renames = spyOn(fsPromises, "rename").mockImplementation(
+        async (source, destination) => {
+          if (source === path) {
+            deniedAttempts += 1;
+            throw Object.assign(new Error("permission denied"), { code });
+          }
+          return original(source, destination);
+        },
+      );
+      try {
+        await expect(
+          tryAcquireActivationLock(layout, "4.2.0", {
+            timeoutMs: 40,
+            pollMs: 1,
+          }),
+        ).rejects.toThrow("permission denied");
+        expect(deniedAttempts).toBe(1);
+        expect(await readFile(path, "utf8")).toBe(stale);
+      } finally {
+        renames.mockRestore();
+      }
+    });
+
+    test(`a ${code} create still retains a verified live holder`, async () => {
+      const layout = await makeLayout();
+      const path = activationLockPath(layout);
+      const holder = await tryAcquireActivationLock(layout, "4.1.0");
+      expect(holder.acquired).toBe(true);
+      if (!holder.acquired) throw new Error("fixture holder missing");
+      const raw = await readFile(path, "utf8");
+      const original = fsPromises.writeFile;
+      const create = spyOn(fsPromises, "writeFile").mockImplementation(
+        async (target, data, options) => {
+          if (target === path) throw Object.assign(new Error("name held"), { code });
+          return original(target, data, options);
+        },
+      );
+      try {
+        expect(
+          await tryAcquireActivationLock(layout, "4.2.0", {
+            timeoutMs: 5,
+            pollMs: 1,
+          }),
+        ).toEqual({ acquired: false, holderPid: process.pid });
+        expect(await readFile(path, "utf8")).toBe(raw);
+      } finally {
+        create.mockRestore();
+        await holder.release();
+      }
+    });
+  }
 
   test("a quarantine deleted upstream resolves instead of crashing the reclaimer", async () => {
     const root = await makeRoot();

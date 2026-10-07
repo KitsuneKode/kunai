@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-10-07"
 ---
 
 # Kunai Release Reliability Gate
@@ -110,6 +110,14 @@ and a removed manifest is not recreated. Issue #132 and 0.3.0 dispatch remain
 blocked until this complete stack passes protected native release gates.
 
 ## Native Installer Activation Gate
+
+Activation-lock name contention is retried within its deadline. `EACCES` and
+`EPERM` require evidence of a live holder or a changed lock name before they are
+treated as contention; a denied create or unchanged stale-owner reclaim reports
+the filesystem error instead of claiming another updater is busy. Quarantine
+restoration retries transient link failures without replacing a canonical owner.
+The focused tests inject these failures and their retry scheduler; they do not
+depend on antivirus timing or a sleep to establish ordering.
 
 Native install, in-process update, rollback, and uninstall share one short
 cross-language activation lock at `{dataDir}/locks/activation.lock`. The Bash,
