@@ -7,7 +7,10 @@ import { resolveAndroidIntentPlan } from "./android-intent-plan";
 
 export interface AndroidPlayerRuntime {
   readonly which: (command: string) => string | undefined;
-  readonly spawn: (argv: readonly string[]) => Promise<{ readonly exitCode: number }>;
+  readonly spawn: (
+    argv: readonly string[],
+    signal?: AbortSignal,
+  ) => Promise<{ readonly exitCode: number }>;
 }
 
 function findExecutable(command: string): string | undefined {
@@ -29,7 +32,7 @@ function findExecutable(command: string): string | undefined {
 
 export const defaultAndroidPlayerRuntime: AndroidPlayerRuntime = {
   which: findExecutable,
-  spawn: async (argv) =>
+  spawn: async (argv, signal) =>
     await new Promise((resolve, reject) => {
       const [command, ...args] = argv;
       if (!command) {
@@ -40,6 +43,7 @@ export const defaultAndroidPlayerRuntime: AndroidPlayerRuntime = {
         shell: false,
         stdio: "ignore",
         windowsHide: true,
+        ...(signal !== undefined && { signal }),
       });
       child.once("error", reject);
       child.once("close", (code) => resolve({ exitCode: code ?? 1 }));
@@ -64,7 +68,8 @@ export function createAndroidPlayerPort(
       });
       if (!plan.ok) return { kind: "rejected", reason: plan.reason };
       try {
-        const result = await runtime.spawn(plan.argv);
+        request.signal?.throwIfAborted();
+        const result = await runtime.spawn(plan.argv, request.signal);
         return result.exitCode === 0
           ? { kind: "accepted", launcher: plan.launcher }
           : { kind: "rejected", reason: "launch-rejected" };

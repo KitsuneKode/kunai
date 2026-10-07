@@ -80,6 +80,15 @@ export function createNodeStateStore(input: {
     },
     async commit(next) {
       await runtime.ensureDirectory(input.root);
+      // A failed activation and restoration can leave the only committed copy
+      // in the backup. Recover it before failure recording retries the write.
+      if ((await runtime.readText(currentPath)) === undefined) {
+        const previous = await runtime.readText(previousPath);
+        if (previous !== undefined) {
+          parseStateJson(previous);
+          await runtime.move(previousPath, currentPath);
+        }
+      }
       await runtime.remove(temporaryPath);
       await runtime.writeText(temporaryPath, JSON.stringify(next));
       const staged = await runtime.readText(temporaryPath);
@@ -94,10 +103,11 @@ export function createNodeStateStore(input: {
       try {
         await runtime.move(temporaryPath, currentPath);
       } catch (error) {
-        await runtime.remove(temporaryPath);
+        // Restore first: temporary cleanup may itself fail.
         if ((await runtime.readText(previousPath)) !== undefined) {
           await runtime.move(previousPath, currentPath);
         }
+        await runtime.remove(temporaryPath);
         throw error;
       }
       await runtime.remove(previousPath);
