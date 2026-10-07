@@ -148,6 +148,7 @@ describe("SyncService drain", () => {
     const repo = outbox();
     const anilist = adapter("anilist");
     const scheduled: Array<() => void> = [];
+    const continuations: Array<() => void> = [];
     const service = new SyncService({
       adapters: [anilist.adapter],
       outbox: repo,
@@ -161,6 +162,12 @@ describe("SyncService drain", () => {
       scheduleWake: (task) => {
         scheduled.push(task);
         return () => {};
+      },
+      // Captured too: an uninjected deliverSoon continuation rides a real
+      // setTimeout, which is exactly the timer a starved runner cannot be
+      // trusted to fire inside the test timeout.
+      scheduleContinuation: (task) => {
+        continuations.push(task);
       },
     });
 
@@ -185,6 +192,8 @@ describe("SyncService drain", () => {
 
     expect(anilist.calls).toHaveLength(OVER_BUDGET);
     expect(repo.counts().pending).toBe(0);
+    // The wake-driven pass finished the queue: no budget continuation left.
+    expect(continuations).toHaveLength(0);
   });
 
   test("a zero or negative drain limit cannot wedge the queue", async () => {
@@ -198,10 +207,23 @@ describe("SyncService drain", () => {
     ]) {
       const repo = outbox();
       const anilist = adapter("anilist");
+      const continuations: Array<() => void> = [];
+      const wakes: Array<() => void> = [];
       const service = new SyncService({
         adapters: [anilist.adapter],
         outbox: repo,
         config: configPort(),
+        // The shed past the clamped budget rides the continuation scheduler
+        // and every pass re-parks pending rows on the retry wake — capture both
+        // so the loop below drives real passes instead of polling a wall clock
+        // for real timers.
+        scheduleContinuation: (task) => {
+          continuations.push(task);
+        },
+        scheduleWake: (task) => {
+          wakes.push(task);
+          return () => {};
+        },
         ...limits,
       });
 
@@ -218,8 +240,18 @@ describe("SyncService drain", () => {
       const summary = await service.drain();
       expect(summary.claimed).toBe(1);
       service.deliverSoon();
-      await waitUntil(() => repo.counts().pending === 0, { label: "clamped drain drained" });
+      await service.drain();
+      // Each clamped pass sheds after one row and parks the next pass on the
+      // continuation scheduler — if nothing was captured the clamp already
+      // failed before the loop ever ran.
+      expect(continuations.length + wakes.length).toBeGreaterThan(0);
+      for (let guard = 0; guard < 8 && repo.counts().pending > 0; guard += 1) {
+        continuations.shift()?.();
+        wakes.shift()?.();
+        await service.drain();
+      }
       expect(anilist.calls).toHaveLength(3);
+      expect(repo.counts().pending).toBe(0);
     }
   });
 
@@ -306,10 +338,22 @@ describe("SyncService drain", () => {
       }
       return syncOk();
     });
+    const continuations: Array<() => void> = [];
+    const wakes: Array<() => void> = [];
     const service = new SyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
+      // Both schedulers are captured so the trailing asserts observe driven
+      // passes, never a real timer — the wake parked by a still-pending row
+      // is a real setTimeout otherwise.
+      scheduleContinuation: (task) => {
+        continuations.push(task);
+      },
+      scheduleWake: (task) => {
+        wakes.push(task);
+        return () => {};
+      },
     });
 
     seedOperation(repo, {
@@ -330,7 +374,16 @@ describe("SyncService drain", () => {
     service.deliverSoon();
     release();
 
-    await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
+    // The second drain was requested while the first was active, so it parks
+    // on the injected schedulers rather than running inline. Firing them by
+    // hand proves the queued row was actually delivered — polling a clock
+    // would only prove a timer eventually fired.
+    await service.drain();
+    for (let guard = 0; guard < 8 && repo.counts().pending > 0; guard += 1) {
+      continuations.shift()?.();
+      wakes.shift()?.();
+      await service.drain();
+    }
     expect(anilist.calls).toHaveLength(2);
     expect(repo.counts().pending).toBe(0);
   });
@@ -546,7 +599,9 @@ describe("SyncService drain", () => {
     expect(scheduled[0]?.delayMs).toBeGreaterThan(0);
     now = new Date(now.getTime() + 60_000);
     scheduled[0]?.task();
-    await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
+    // The wake task calls deliverSoon() synchronously; awaiting drain() joins
+    // that same pass rather than polling real time for it to finish.
+    await service.drain();
     expect(anilist.calls).toHaveLength(2);
     expect(repo.counts().pending).toBe(0);
 

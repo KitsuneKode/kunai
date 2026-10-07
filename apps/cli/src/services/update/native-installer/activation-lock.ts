@@ -16,6 +16,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_POLL_MS = 50;
 const DEFAULT_CORRUPT_GRACE_MS = 250;
 const PROCESS_START_ID_GRACE_MS = 1_000;
+const RESTORE_TRANSIENT_ATTEMPTS = 10;
 
 export type ActivationLockContent = {
   readonly schemaVersion: 1;
@@ -172,16 +173,46 @@ function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException).code;
 }
 
+/**
+ * Codes that mean "another process currently owns or is mutating the name"
+ * rather than a real filesystem failure. Windows reports pending-delete and
+ * antivirus-held files as EPERM/EACCES/EBUSY where POSIX reports EEXIST —
+ * a lock acquire treats all of them as contention to retry inside its
+ * deadline, not as fatal.
+ */
+function isContentionCode(code: string | undefined): boolean {
+  return code === "EEXIST" || code === "EPERM" || code === "EACCES" || code === "EBUSY";
+}
+
 async function restoreQuarantinedLock(quarantinePath: string, lockPath: string): Promise<void> {
-  try {
-    // A hard link restores only when the canonical path is still absent. It
-    // cannot overwrite an owner that acquired after the quarantine rename.
-    await link(quarantinePath, lockPath);
-    await rm(quarantinePath, { force: true });
-  } catch (error) {
-    if (errorCode(error) !== "EEXIST") throw error;
-    // A new canonical owner won. Keep the quarantine for diagnostics rather
-    // than ever replacing or deleting that owner.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      // A hard link restores only when the canonical path is still absent. It
+      // cannot overwrite an owner that acquired after the quarantine rename.
+      await link(quarantinePath, lockPath);
+      await rm(quarantinePath, { force: true });
+      return;
+    } catch (error) {
+      const code = errorCode(error);
+      if (code === "EEXIST") {
+        // A new canonical owner won. Keep the quarantine for diagnostics rather
+        // than ever replacing or deleting that owner.
+        return;
+      }
+      if (code !== "ENOENT" && !isContentionCode(code)) throw error;
+      // These codes are lost-race signals, not defects worth crashing an
+      // acquire over: a just-renamed quarantine can be momentarily invisible
+      // or held by Windows rename metadata lagging under real-time AV
+      // scanning, and a quarantine deleted upstream has nothing left to
+      // restore. Give visibility a short retry window; a quarantine that stays
+      // absent is accepted, while one that exists but still cannot link is a
+      // real filesystem error and keeps propagating.
+      if (attempt + 1 >= RESTORE_TRANSIENT_ATTEMPTS) {
+        if (code === "ENOENT" && !existsSync(quarantinePath)) return;
+        throw error;
+      }
+      await Bun.sleep(5);
+    }
   }
 }
 
@@ -197,7 +228,9 @@ async function quarantineForReclaim(
   try {
     await rename(path, quarantinePath);
   } catch (error) {
-    if (errorCode(error) === "ENOENT") return false;
+    // The name vanished or is held mid-transition — either way someone else
+    // is racing this reclaim, so lose politely and let the outer loop retry.
+    if (errorCode(error) === "ENOENT" || isContentionCode(errorCode(error))) return false;
     throw error;
   }
 
@@ -223,7 +256,7 @@ async function quarantineForReclaim(
         await writeFile(path, successorRaw, { flag: "wx", mode: 0o600 });
         return true;
       } catch (error) {
-        if (errorCode(error) !== "EEXIST") throw error;
+        if (!isContentionCode(errorCode(error))) throw error;
         await Bun.sleep(Math.min(1, Math.max(0, deadlineAt - Date.now())));
       }
     }
@@ -472,11 +505,12 @@ async function tryAcquireActivationLockFromFilesystem(
         await mkdir(dirname(path), { recursive: true });
         continue;
       }
-      if (errorCode(error) !== "EEXIST") {
+      if (!isContentionCode(errorCode(error))) {
         throw new Error(`Could not create activation lock at ${path}`, { cause: error });
       }
-      // Another owner won exclusive creation. Inspect before deciding whether
-      // it is live, dead, or a partially-written/corrupt record.
+      // Another owner won exclusive creation (or Windows holds the name
+      // mid-transition). Inspect before deciding whether it is live, dead,
+      // or a partially-written/corrupt record.
     }
 
     const observed = await readActivationLock(path);
@@ -541,3 +575,5 @@ export async function withActivationLock<T>(
     await lock.release();
   }
 }
+
+export const __testing = { restoreQuarantinedLock };

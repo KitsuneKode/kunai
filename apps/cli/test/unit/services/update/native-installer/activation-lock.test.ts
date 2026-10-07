@@ -5,6 +5,7 @@ import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
+  __testing,
   tryAcquireActivationLock,
   withActivationLock,
 } from "@/services/update/native-installer/activation-lock";
@@ -703,4 +704,68 @@ describe("activation lock", () => {
       }
     },
   );
+});
+
+/**
+ * The restore path is where a lost reclaim race used to become a process
+ * crash: `link(quarantine, lock)` reports ENOENT when the quarantine was
+ * deleted upstream or is momentarily invisible after a Windows rename, and
+ * the only tolerated code was EEXIST. These cases pin the race outcomes
+ * without multi-process luck.
+ */
+describe("activation lock quarantine restore", () => {
+  async function makeRoot(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "kunai-activation-restore-"));
+    made.push(root);
+    return root;
+  }
+
+  test("restores the quarantine onto an absent canonical path", async () => {
+    const root = await makeRoot();
+    const lockPath = join(root, "lock");
+    const quarantinePath = join(root, "lock.quarantine.test");
+    await writeFile(quarantinePath, '{"schemaVersion":1}', "utf8");
+
+    await __testing.restoreQuarantinedLock(quarantinePath, lockPath);
+
+    expect(JSON.parse(await readFile(lockPath, "utf8"))).toMatchObject({ schemaVersion: 1 });
+    expect(existsSync(quarantinePath)).toBe(false);
+  });
+
+  test("a quarantine deleted upstream resolves instead of crashing the reclaimer", async () => {
+    const root = await makeRoot();
+    const lockPath = join(root, "lock");
+    const quarantinePath = join(root, "lock.quarantine.gone");
+
+    await expect(
+      __testing.restoreQuarantinedLock(quarantinePath, lockPath),
+    ).resolves.toBeUndefined();
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test("keeps a canonical owner that won the race and the quarantine for diagnostics", async () => {
+    const root = await makeRoot();
+    const lockPath = join(root, "lock");
+    const quarantinePath = join(root, "lock.quarantine.owner");
+    await writeFile(lockPath, '{"schemaVersion":1,"winner":true}', "utf8");
+    await writeFile(quarantinePath, '{"schemaVersion":1,"winner":false}', "utf8");
+
+    await __testing.restoreQuarantinedLock(quarantinePath, lockPath);
+
+    expect(await readFile(lockPath, "utf8")).toContain('"winner":true');
+    expect(existsSync(quarantinePath)).toBe(true);
+  });
+
+  test("a quarantine that exists but cannot link still fails", async () => {
+    const root = await makeRoot();
+    // The destination parent is absent, so link() fails ENOENT while the
+    // quarantine itself exists — the retry budget expires and the error
+    // propagates rather than being swallowed as a lost race.
+    const lockPath = join(root, "missing-parent", "lock");
+    const quarantinePath = join(root, "lock.quarantine.stuck");
+    await writeFile(quarantinePath, '{"schemaVersion":1}', "utf8");
+
+    await expect(__testing.restoreQuarantinedLock(quarantinePath, lockPath)).rejects.toThrow();
+    expect(existsSync(quarantinePath)).toBe(true);
+  });
 });
