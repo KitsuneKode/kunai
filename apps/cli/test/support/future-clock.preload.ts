@@ -22,6 +22,10 @@
  * `setSystemTime` itself still wins: its clock then diverges from the
  * monotonic wall clock, and the offset steps aside instead of fighting it.
  *
+ * `test:future` skips the activation- and version-lock suites: they age lock
+ * files by `Date.now() - stat.mtimeMs`, and no process-local clock can move
+ * the kernel's mtimes, so every lock reads as 180 days stale by construction.
+ *
  * Failures are not necessarily product bugs. They mark tests whose result
  * depends on the wall clock, which is worth knowing either way.
  */
