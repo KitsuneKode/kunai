@@ -17,7 +17,13 @@ import { dbgErr } from "@/logger";
 import { getKunaiPaths } from "@kunai/storage";
 import { isJsonObject, isJsonNumber, isJsonString } from "@kunai/types";
 
-import { pidAlive, withConfigLockTransition, type ConfigLockOptions } from "./config-lock";
+import {
+  CONFIG_LOCK_ACQUIRE_TIMEOUT_MS,
+  CONFIG_LOCK_RELEASE_TIMEOUT_MS,
+  pidAlive,
+  withConfigLockTransition,
+  type ConfigLockOptions,
+} from "./config-lock";
 import type { StorageService } from "./StorageService";
 
 /**
@@ -194,7 +200,7 @@ export class FileStorage implements StorageService {
     const lockPath = `${this.pathFor(key)}.lock`;
     const now = this.lockOptions.now ?? Date.now;
     const wait = this.lockOptions.wait ?? Bun.sleep;
-    const deadline = now() + (this.lockOptions.timeoutMs ?? 1_000);
+    const deadline = now() + (this.lockOptions.timeoutMs ?? CONFIG_LOCK_ACQUIRE_TIMEOUT_MS);
     const token = JSON.stringify({ pid: process.pid, hostname: hostname(), ownerId: randomUUID() });
     await mkdir(dirname(lockPath), { recursive: true });
     for (;;) {
@@ -230,9 +236,14 @@ export class FileStorage implements StorageService {
         } finally {
           await this.lockOptions.onBeforeRelease?.();
           // Release gets a fresh budget; the critical section may outlive acquisition.
-          await withConfigLockTransition(lockPath, now() + 1_000, this.lockOptions, async () => {
-            if ((await readLock(lockPath)) === token) await unlink(lockPath);
-          });
+          await withConfigLockTransition(
+            lockPath,
+            now() + (this.lockOptions.timeoutMs ?? CONFIG_LOCK_RELEASE_TIMEOUT_MS),
+            this.lockOptions,
+            async () => {
+              if ((await readLock(lockPath)) === token) await unlink(lockPath);
+            },
+          );
         }
       }
       const remaining = deadline - now();
