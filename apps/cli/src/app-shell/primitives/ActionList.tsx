@@ -12,7 +12,7 @@ import {
 function toneColor(tone: ActionRowTone | undefined): string {
   if (tone === "success") return palette.ok;
   if (tone === "warning") return palette.accentDeep;
-  if (tone === "danger") return palette.danger;
+  if (tone === "danger") return palette.dangerText;
   if (tone === "muted") return palette.dim;
   return palette.text;
 }

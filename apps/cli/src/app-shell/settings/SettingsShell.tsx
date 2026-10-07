@@ -141,6 +141,23 @@ export function SettingsShell({
     return () => clearTimeout(timer);
   }, [state.draft, container]);
 
+  // The debounce above clears its timer on unmount, which used to discard a
+  // reorder made within 300ms of Esc — the UI showed a change that never
+  // reached disk. Flush whatever is pending instead. Runs after the debounce
+  // effect's cleanup (declaration order), so a fired timer is not re-written.
+  const draftRef = useRef(state.draft);
+  useEffect(() => {
+    draftRef.current = state.draft;
+  }, [state.draft]);
+  useEffect(
+    () => () => {
+      if (!settingsEqual(draftRef.current, container.config.getRaw())) {
+        void persistSettingsDraft(container, draftRef.current);
+      }
+    },
+    [container],
+  );
+
   useEffect(() => () => actionAbortRef.current?.abort(), []);
 
   useInput(
@@ -177,7 +194,13 @@ export function SettingsShell({
     { isActive: !commandMode },
   );
 
-  const footerMode = state.inputMode.active ? "input" : state.submenuId ? "submenu" : "main";
+  const footerMode = state.inputMode.active
+    ? "input"
+    : state.submenuId
+      ? "submenu"
+      : state.searchFocused
+        ? "search"
+        : "main";
 
   return (
     <>
