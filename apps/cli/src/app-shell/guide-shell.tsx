@@ -1,8 +1,10 @@
+import { truncateLine } from "@/domain/text-display";
 import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 
 import type { ResolvedAppCommand } from "./commands";
 import { GUIDE_SURFACE_TAGS, type GuideRow, type GuideSectionRows } from "./guide-model";
+import { useOverlayLayout } from "./overlay-layout-context";
 import { CommandPalette } from "./shell-command-ui";
 import { ShellFooter } from "./shell-primitives";
 import { palette } from "./shell-theme";
@@ -32,7 +34,7 @@ function flattenGuideLines(sections: readonly GuideSectionRows[]): readonly Guid
  */
 export function GuideShell({
   sections,
-  maxVisible,
+  maxRows,
   commandMode,
   commandInput,
   commandCursor,
@@ -43,7 +45,8 @@ export function GuideShell({
   onActivate,
 }: {
   readonly sections: readonly GuideSectionRows[];
-  readonly maxVisible: number;
+  /** Terminal-row budget for the scrollable list — not a count of items. */
+  readonly maxRows: number;
   readonly commandMode: boolean;
   readonly commandInput: string;
   readonly commandCursor: number;
@@ -83,14 +86,29 @@ export function GuideShell({
   const selectedLineIndex = lines.findIndex(
     (line) => line.kind === "entry" && line.entryIndex === safeIndex,
   );
-  const windowStart = Math.max(
-    0,
-    Math.min(
-      selectedLineIndex - Math.floor(maxVisible / 2),
-      Math.max(0, lines.length - maxVisible),
-    ),
-  );
-  const visibleLines = lines.slice(windowStart, windowStart + maxVisible);
+
+  // Budget rendered rows, not logical lines: a section header draws two rows
+  // (title + blurb, plus its margin row when it lands mid-window), an entry
+  // draws exactly one because its text is truncated to the panel width.
+  const lineCost = (line: GuideLine, atWindowStart: boolean) =>
+    line.kind === "header" ? (atWindowStart ? 2 : 3) : 1;
+  let windowStart = Math.max(0, selectedLineIndex);
+  let backfill = 0;
+  while (windowStart > 0) {
+    const cost = lineCost(lines[windowStart]!, false);
+    if (backfill + cost > Math.floor(maxRows / 2)) break;
+    backfill += cost;
+    windowStart -= 1;
+  }
+  let usedRows = 0;
+  let windowEnd = windowStart;
+  while (windowEnd < lines.length) {
+    const cost = lineCost(lines[windowEnd]!, windowEnd === windowStart);
+    if (usedRows + cost > maxRows) break;
+    usedRows += cost;
+    windowEnd += 1;
+  }
+  const visibleLines = lines.slice(windowStart, windowEnd);
 
   return (
     <Box flexDirection="column" flexGrow={1}>
@@ -144,20 +162,28 @@ export function GuideShell({
 }
 
 function GuideRowLine({ row, selected }: { readonly row: GuideRow; readonly selected: boolean }) {
+  const { contentColumns } = useOverlayLayout();
   const tag = GUIDE_SURFACE_TAGS[row.surface];
   const inactive = !row.enabled;
+  // Everything on the row is truncated to the panel's inner width so an entry
+  // can never wrap to a second terminal line — the window math above assumes
+  // exactly one row per entry. The full disabled reason still reaches the user
+  // through Enter, which shows it on the status line.
+  const tagText = row.surface === "run" ? "" : `  ${tag}`;
+  const detail = `${row.description}${row.note ? ` · ${row.note}` : ""}${
+    inactive && row.reason ? ` — ${row.reason}` : ""
+  }`;
+  const detailWidth = Math.max(8, contentColumns - 2 - 2 - 24 - tagText.length);
   return (
     <Box flexDirection="row" flexWrap="nowrap">
       <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
       <Text color={selected ? palette.accent : inactive ? palette.dim : palette.text}>
-        {row.invocation.padEnd(24)}
+        {truncateLine(row.invocation.padEnd(24), 24)}
       </Text>
       <Text color={inactive ? palette.dim : palette.textDim}>
-        {row.description}
-        {row.note ? ` · ${row.note}` : ""}
-        {inactive && row.reason ? ` — ${row.reason}` : ""}
+        {truncateLine(detail, detailWidth)}
       </Text>
-      {row.surface !== "run" ? <Text color={palette.dim}>{`  ${tag}`}</Text> : null}
+      {tagText ? <Text color={palette.dim}>{tagText}</Text> : null}
     </Box>
   );
 }

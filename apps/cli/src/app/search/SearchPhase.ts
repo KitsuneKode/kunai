@@ -574,12 +574,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         // into the shell, so run them through the same local-filter pipeline that
         // interactive Enter uses — otherwise `-S "mob downloaded:true"` would show
         // an unfiltered list while Enter honestly narrows it.
+        const consumedSearchEvidence = pendingSearchEvidence;
         const initialBrowse = buildBrowseInitialResults({
           options: browseState.searchResults.map((r) =>
             mapBrowseResultOption(container, browseContext, r),
           ),
           query: browseState.searchQuery,
-          evidence: pendingSearchEvidence,
+          evidence: consumedSearchEvidence,
         });
         const initialWarnings = pendingSearchWarnings;
         const initialEmptyMessage = pendingSearchEmptyMessage;
@@ -984,6 +985,20 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           // launder it into a real Esc. Park until the slot frees, then
           // remount rather than reporting a cancel the user never made.
           if (outcome.displaced) {
+            // The evicted mount consumed the one-shot inputs. A calendar route
+            // that never reached onCalendarAccepted committed nothing — hand
+            // the request back so the remount still opens it; the pending
+            // search evidence belongs to this mount and goes back with it.
+            if (
+              openedCalendarRoute !== undefined &&
+              acceptedCalendarRequestKey !== openedCalendarRoute.requestKey
+            ) {
+              pendingCalendarRoute = openedCalendarRoute;
+              pendingCalendarType = initialCalendarTypeTab;
+            }
+            pendingSearchEvidence = consumedSearchEvidence;
+            pendingSearchWarnings = initialWarnings;
+            pendingSearchEmptyMessage = initialEmptyMessage;
             await waitForRootContentSlot(context.signal);
             if (context.signal.aborted) {
               return { status: "cancelled" };
