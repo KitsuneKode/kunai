@@ -1,7 +1,13 @@
 import { KunaiFox } from "@/components/brand/kunai-fox";
+import { KunaiFoxPatrol } from "@/components/brand/kunai-fox-patrol";
 import { codeMetadata } from "@/lib/code-metadata";
 import { docsGithubIssuesUrl, docsGithubRepoUrl } from "@/lib/docs-github";
+import { SUPPORT_PATH } from "@/lib/support";
+import { workshop } from "@/lib/workshop";
 import Link from "next/link";
+
+// Copyright follows the deployed server's year, never the viewer's clock.
+const COPYRIGHT_YEAR = new Date().getUTCFullYear();
 
 /**
  * The site footer — every surface's last read.
@@ -21,6 +27,8 @@ type FooterLink = {
   readonly href: string;
   readonly label: string;
   readonly external?: boolean;
+  /** A short descriptor printed under the label. */
+  readonly note?: string;
 };
 
 const DOCS_LINKS: readonly FooterLink[] = [
@@ -36,6 +44,7 @@ const PROJECT_LINKS: readonly FooterLink[] = [
   { href: "/analytics", label: "Usage analytics" },
   { href: "/feedback", label: "Feedback" },
   { href: "/docs/users/kanna", label: "Kanna, the fox" },
+  { href: SUPPORT_PATH, label: "Support Kunai" },
 ];
 
 const TRUST_LINKS: readonly FooterLink[] = [
@@ -51,34 +60,19 @@ const TRUST_LINKS: readonly FooterLink[] = [
   },
 ];
 
-/** Sibling tools from the same workshop — each is its own project, not a Kunai feature. */
-const ECOSYSTEM_LINKS: readonly FooterLink[] = [
-  {
-    href: "https://github.com/KitsuneKode/kittymux",
-    label: "kittymux",
-    external: true,
-  },
-  {
-    href: "https://github.com/KitsuneKode/sweep",
-    label: "sweep",
-    external: true,
-  },
-  {
-    href: "https://github.com/KitsuneKode/portless",
-    label: "portless",
-    external: true,
-  },
-  {
-    href: "https://github.com/KitsuneKode/run-cli",
-    label: "run-cli",
-    external: true,
-  },
-  {
-    href: "https://github.com/KitsuneKode/arche",
-    label: "arche",
-    external: true,
-  },
-];
+/**
+ * Sibling projects from the same workshop, from the shared curated list.
+ *
+ * The list lives in `lib/workshop.ts` (also used by the home page) and contains
+ * only the maintainer's own original work: forks are excluded on purpose, so a
+ * fork is never presented here as something KitsuneKode made.
+ */
+const ECOSYSTEM_LINKS: readonly FooterLink[] = workshop.map((project) => ({
+  href: project.repoUrl,
+  label: project.name,
+  note: project.kind,
+  external: true,
+}));
 
 function FooterLinkItem({ link }: { readonly link: FooterLink }) {
   const className =
@@ -88,6 +82,9 @@ function FooterLinkItem({ link }: { readonly link: FooterLink }) {
       <a href={link.href} rel="noreferrer" target="_blank" className={className}>
         {link.label}
         <span className="sr-only"> (opens in a new tab)</span>
+        {link.note ? (
+          <span className="text-fd-muted-foreground/80 block text-xs leading-5">{link.note}</span>
+        ) : null}
       </a>
     );
   }
@@ -107,7 +104,7 @@ function FooterColumn({
 }) {
   return (
     <nav aria-label={title} className="flex flex-col gap-2.5">
-      <h2 className="text-fd-foreground text-xs font-medium tracking-[0.14em] uppercase">
+      <h2 className="text-fd-foreground font-sans text-xs font-medium tracking-[0.14em] uppercase">
         {title}
       </h2>
       <ul className="m-0 flex list-none flex-col gap-2 p-0">
@@ -123,7 +120,8 @@ function FooterColumn({
 
 export function SiteFooter() {
   return (
-    <footer className="border-fd-border mt-auto border-t">
+    <footer className="border-fd-border relative mt-auto border-t">
+      <KunaiFoxPatrol />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 py-12 md:px-10">
         <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-5">
           <div className="col-span-2 flex max-w-xs flex-col gap-3 sm:col-span-3 lg:col-span-1">
@@ -147,7 +145,7 @@ export function SiteFooter() {
         </div>
         <div className="border-fd-border text-fd-muted-foreground flex flex-col gap-2 border-t pt-6 text-xs sm:flex-row sm:items-center sm:justify-between">
           <p className="m-0">
-            © {new Date().getFullYear()} KitsuneKode. Docs for Kunai v{codeMetadata.cliVersion}.
+            © {COPYRIGHT_YEAR} KitsuneKode. Docs for Kunai v{codeMetadata.cliVersion}.
           </p>
           <p className="m-0">Kanna, the fox, wanders these pages.</p>
         </div>
