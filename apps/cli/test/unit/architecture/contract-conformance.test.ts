@@ -96,9 +96,7 @@ describe("contract conformance", () => {
    */
   test("every registered command is offered by at least one palette context", () => {
     // Nested `/sync-connect-*` stay under `/sync`. `/favorites` is ADR-retired.
-    // `/clear-history` is deliberately buried.
     const KNOWN_UNREACHABLE_COMMANDS = new Set([
-      "clear-history",
       "favorites",
       "sync-connect-anilist",
       "sync-connect-tmdb",
@@ -260,11 +258,11 @@ describe("contract conformance", () => {
       },
     ];
 
-    // DEBT (2026-07-21): declared, wired to nothing.
-    // - detectGeoBlockedProviderResponse: geo-blocking is the failure the relay
-    //   exists for and nothing detects it; its allow-list also names "allmanga",
-    //   which is the module name, not the provider id ("allanime").
-    const KNOWN_ORPHANED_CONTRACTS = new Set(["detectGeoBlockedProviderResponse"]);
+    // Ratchet: entries are deleted as they gain a reader, never extended.
+    // `detectGeoBlockedProviderResponse` is read by
+    // `apps/cli/src/domain/playback/playback-problem.ts` (geoBlockedRelayHint),
+    // so the baseline is now empty.
+    const KNOWN_ORPHANED_CONTRACTS = new Set<string>([]);
 
     const orphaned: string[] = [];
     const revived: string[] = [];

@@ -1,8 +1,6 @@
-// =============================================================================
 // Session State Manager
 //
 // Centralized state management with transition logging.
-// =============================================================================
 
 import type { Logger } from "@/infra/logger/Logger";
 

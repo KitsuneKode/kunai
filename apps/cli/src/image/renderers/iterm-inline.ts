@@ -1,5 +1,4 @@
-// =============================================================================
-// iterm-inline.ts — iTerm2's inline-image protocol (OSC 1337).
+// ITerm2's inline-image protocol (OSC 1337).
 //
 // The highest-fidelity option on terminals that are not kitty: the prepared PNG
 // is transmitted verbatim, so unlike sixel there is no 256-colour quantisation
@@ -8,7 +7,6 @@
 // Geometry is declared in *cells* (`width=Nch`), which is what keeps the image
 // inside the rectangle the shell reserved for it. Without an explicit size
 // iTerm2 scales to the image's own pixel dimensions and pushes the layout.
-// =============================================================================
 
 /**
  * Build the escape sequence that draws `png` in a `cols` x `rows` cell box.
@@ -38,5 +36,12 @@ export function buildItermInlineImage(
   ].join(";");
 
   // OSC 1337 ; File = <args> : <base64> BEL
-  return `]1337;File=${args}:${payload}`;
+  //
+  // iTerm2 silently drops a single OSC at ~1MiB, so an oversized payload
+  // paints nothing either way - return null and let the caller fall back
+  // to text. The escape bytes are written as \x escapes, not literals:
+  // a formatter or scrub pass would otherwise corrupt this file invisibly.
+  const MAX_ITERM_OSC_BYTES = 1_048_576;
+  if (args.length + payload.length + 16 > MAX_ITERM_OSC_BYTES) return null;
+  return `\x1b]1337;File=${args}:${payload}\x07`;
 }
