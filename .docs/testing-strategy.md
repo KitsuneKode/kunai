@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-03"
+lastReviewed: "2026-10-07"
 ---
 
 # Kunai — Testing Strategy
@@ -41,6 +41,16 @@ CLI suites are separate Turbo tasks for scheduling and focused invocation. Becau
 Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integration cache inputs. Test/typecheck tasks depend on a local `transit` node (`dependsOn: ["transit"]`, with `transit` → `^transit`) so dependency-package changes invalidate caches without serializing suites behind each other or behind `typecheck`. Typecheck remains its own CI job. CLI integration depends on `build`, which in turn requires typecheck; this orders shared `dist/` writers. CLI unit tests have no build prerequisite. Formatting has no typecheck prerequisite.
 
 ## Verification loop for contributors and agents
+
+Use `storageRootEnv()` from `apps/cli/test/helpers/storage-env.ts` for every
+throwaway profile. It redirects HOME/XDG/APPDATA and forces
+`KUNAI_CREDENTIAL_BACKEND=file`: native credential vault entries belong to the
+OS account and are not isolated by a different HOME. `createCredentialVault()`
+consumes that existing override before probing an OS backend. The common
+compiled/agent profile harness inherits it, and `applyStorageRootEnv()` restores
+the prior override with the other environment values. Backend-specific tests
+must use explicit injected environment and spawn ports; they must never probe
+the developer's credential store.
 
 1. Start with the feature map and the owning test file. Use
    `bun run --cwd apps/cli test:file test/unit/<area>/<file>.test.ts` for a focused
@@ -755,3 +765,17 @@ For CLI UX:
 
 - prefer VHS tapes over brittle pseudo-interactive assertions when the real need is visual review
 - prefer deterministic state tests over VHS when the real need is behavior confidence
+
+## Automated PR review
+
+CodeRabbit configuration belongs in `.coderabbit.yaml` and must validate against
+[its published schema](https://coderabbit.ai/integrations/schema.v2.json). Tool settings
+are nested under `reviews.tools`; a root-level `tools` object is ignored by the bot.
+`reviews.auto_review.base_branches` includes `.*` so stacked PRs targeting feature
+branches are eligible alongside default-branch PRs. `reviews.fail_commit_status`
+reports review errors as failures instead of successful checks.
+
+A successful bot status is not evidence of a completed review: inspect the review
+or walkthrough for skipped-review and configuration warnings. Draft and explicitly
+excluded-title rules still apply. This configuration enables reviews; it does not
+make them required by branch protection or prove that a hosted review ran.
