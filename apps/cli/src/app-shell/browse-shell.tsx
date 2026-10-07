@@ -578,7 +578,7 @@ export function BrowseShell<T>({
 
       try {
         const response = await onSearch(rawQuery);
-        if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+        if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
         const processed = processBrowseSearchResults(response, parsedQuery);
         const activeBadges = [
           ...processed.upstreamFilterBadges.map((badge) => `upstream ${badge}`),
@@ -604,7 +604,7 @@ export function BrowseShell<T>({
         setSearchState("ready");
         setFocusZone(processed.options.length > 0 ? "list" : "query");
       } catch (error) {
-        if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+        if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
         setSearchState("error");
         setOptions([]);
@@ -653,7 +653,7 @@ export function BrowseShell<T>({
 
     try {
       const response = await onLoadDiscovery();
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setOptions(response.options);
       setSelectedIndex(0);
@@ -663,7 +663,7 @@ export function BrowseShell<T>({
       setSearchState("ready");
       setFocusZone(response.options.length > 0 ? "list" : "query");
     } catch (error) {
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setSearchState("error");
       setOptions([]);
@@ -692,7 +692,7 @@ export function BrowseShell<T>({
 
     try {
       const response = await onLoadRecommendations();
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       // Cold cache: stay on the loading surface until the network refresh lands.
       // Warm cache: paint immediately, then soft-refresh in the background.
@@ -739,7 +739,7 @@ export function BrowseShell<T>({
           });
       }
     } catch (error) {
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setSearchState("error");
       setOptions([]);
@@ -1574,11 +1574,20 @@ export function BrowseShell<T>({
       }
 
       const escLayer = nextBrowseEscFilterLayer({
+        searchLoading: searchState === "loading",
         narrowOpenOrFocused: resultFilterFocused || filterModeOpen,
         resultFilterNonEmpty: resultFilter.length > 0,
         structuredChipCount: structuredFilterChips.length,
         queryNonEmpty: query.trim().length > 0,
       });
+
+      if (escLayer === "loading") {
+        // Invalidate the request gate so the late resolve lands stale and is
+        // dropped, then return to the idle surface rather than closing out.
+        searchRequestGateRef.current.invalidate();
+        clearResults();
+        return;
+      }
 
       if (escLayer === "narrow") {
         if (resultFilter.length > 0) {

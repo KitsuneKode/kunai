@@ -65,6 +65,7 @@ export type HlsMasterInventory = {
 
 export type ExpandHlsMasterPlaylistOptions = {
   readonly fetch: ProviderFetchPort["fetch"] | typeof fetch;
+  readonly resolvesLocally?: (url: string) => boolean;
   readonly masterUrl: string;
   readonly headers?: Record<string, string>;
   readonly signal?: AbortSignal;
@@ -104,6 +105,7 @@ export async function expandHlsMasterInventory(
     // could aim the expansion at a link-local or LAN address.
     const outcome = await fetchGuardedStreamTarget({
       fetchImpl: options.fetch,
+      resolvesLocally: options.resolvesLocally,
       url: masterUrl,
       init: {
         headers: headers ?? {},

@@ -6,8 +6,7 @@ export const anidbManifest = defineProviderManifest({
   id: ANIDB_PROVIDER_ID,
   displayName: "AniDB",
   aliases: ["anidb.app"],
-  description:
-    "anidb.app catalog and streams — ani-cli v5's source; second in the default anime order",
+  description: "anidb.app catalog and streams — ani-cli v5's source",
   domain: "anidb.app",
   recommended: true,
   mediaKinds: ["anime"],

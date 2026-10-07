@@ -449,8 +449,12 @@ export const rivestreamProviderModule: CoreProviderModule = {
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs,
         // Every service is fetched through the same www.rivestream.app front
-        // door — a block there repeats identically for the rest, so stop early.
-        shouldStopAfterFailure: (failure) => failure.failureClass === "candidate-blocked",
+        // door — a block there repeats identically for the rest, so stop
+        // early. Endpoint-scoped refusals name one service's own stream CDN,
+        // not the shared front door: stopping on them forfeits every untried
+        // service to a single dead mirror.
+        shouldStopAfterFailure: (failure) =>
+          failure.failureClass === "candidate-blocked" && failure.endpointScoped !== true,
         resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           if (!provider) {
@@ -1011,6 +1015,7 @@ async function resolveRivestreamProviderCandidate({
         return { source, variants: null as readonly HlsLadderVariant[] | null };
       }
       const inventory = await expandHlsMasterInventory({
+        resolvesLocally: context.fetch?.resolvesLocally,
         fetch: context.fetch?.fetch.bind(context.fetch) ?? fetch,
         masterUrl: source.url,
         headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
@@ -1212,9 +1217,13 @@ function rivestreamFailureClassFromProviderError(
   | "candidate-empty"
   | "candidate-timeout"
   | "candidate-blocked"
+  | "candidate-rate-limited"
+  | "candidate-server-error"
   | "candidate-parse" {
   if (error.code === "timeout") return "candidate-timeout";
   if (error.code === "blocked") return "candidate-blocked";
+  if (error.code === "rate-limited") return "candidate-rate-limited";
+  if (error.code === "provider-unavailable") return "candidate-server-error";
   if (error.code === "parse-failed") return "candidate-parse";
   if (error.code === "not-found") return "candidate-empty";
   return "candidate-network";

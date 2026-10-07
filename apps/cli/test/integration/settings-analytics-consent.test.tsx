@@ -163,6 +163,49 @@ test("Settings enable and an unrelated save preserve one install id on disk", as
   }
 });
 
+test("closing Settings inside the save debounce still persists the pending change", async () => {
+  // The draft save is debounced 300 ms, and unmount used to clear the timer
+  // without flushing — Esc within the window silently discarded a change the
+  // UI had already shown.
+  const profile = await createTemporaryProfile();
+  const config = await profile.loadConfig();
+  const container = createSettingsContainer(config);
+  const handle = render(
+    <SettingsShell
+      container={container}
+      width={100}
+      maxRows={20}
+      commandMode={false}
+      onClose={() => undefined}
+      onStatus={() => undefined}
+      onRedraw={() => undefined}
+    />,
+    { columns: 100, rows: 30 },
+  );
+
+  try {
+    expect(config.getRaw().defaultMode).toBe("series");
+    // Open the first row's submenu (Default startup mode), pick "anime".
+    handle.stdin.enqueue("\r");
+    handle.stdin.enqueue("\x1b[B");
+    handle.stdin.enqueue("\r");
+    // Unmount immediately — inside the debounce window.
+    handle.unmount();
+
+    await waitUntil(
+      () => config.getRaw().defaultMode === "anime",
+      "unmount discarded the pending settings draft",
+    );
+
+    await config.flushPending();
+    const reloaded = await profile.loadConfig();
+    expect(reloaded.getRaw().defaultMode).toBe("anime");
+  } finally {
+    await config.flushPending();
+    await rm(profile.directory, { recursive: true, force: true });
+  }
+});
+
 for (const analytics of ["unset", "disabled"] as const) {
   test(`a ${analytics} Settings draft cannot preserve an injected install id on disk`, async () => {
     const profile = await createTemporaryProfile();

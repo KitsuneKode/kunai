@@ -8,6 +8,7 @@ import {
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
+import { isJsonNumber, isJsonString } from "@kunai/types";
 import type {
   CachePolicy,
   ProviderCycleCandidate,
@@ -148,13 +149,11 @@ async function fetchMovySeed(
   // positive number (a string concatenates onto Date.now() into an immortal
   // entry). Either surprise fails closed and never reaches the cache.
   const body = (await response.json()) as { seed?: unknown; ttlMs?: unknown } | null;
-  if (!body || typeof body.seed !== "string" || !body.seed) {
+  if (!body || !isJsonString(body.seed) || !body.seed) {
     throw new MovyDecryptError("seed response carried no usable seed");
   }
   const ttlMs =
-    typeof body.ttlMs === "number" && Number.isFinite(body.ttlMs) && body.ttlMs > 0
-      ? body.ttlMs
-      : 30_000;
+    isJsonNumber(body.ttlMs) && Number.isFinite(body.ttlMs) && body.ttlMs > 0 ? body.ttlMs : 30_000;
 
   seedCache.delete(cacheKey);
   seedCache.set(cacheKey, {

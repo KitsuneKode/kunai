@@ -6,6 +6,7 @@ import {
   type TrackCapabilityRisk,
   type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
+import { sanitizeTerminalText } from "@/domain/text-display";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -295,7 +296,7 @@ function OptionsPane({
                     wrap="truncate"
                   >
                     {capability.selected ? "✓ " : highlighted ? "▌ " : "  "}
-                    {labels[flatIndex] ?? capability.label}
+                    {sanitizeTerminalText(labels[flatIndex] ?? capability.label)}
                   </Text>
                 </Box>
               );
@@ -351,7 +352,7 @@ function OptionsPane({
               bold={highlighted || capability.selected}
               wrap="truncate"
             >
-              {capability.label}
+              {sanitizeTerminalText(capability.label)}
             </Text>
             {capability.detail || tag ? (
               <Text color={highlighted ? palette.accentSoft : palette.dim}>

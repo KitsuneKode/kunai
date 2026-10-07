@@ -22,6 +22,7 @@ import type {
   StreamCandidate,
   TitleIdentity,
 } from "@kunai/types";
+import { ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
@@ -82,7 +83,17 @@ async function fetchText(
     headers: requestHeaders(),
     signal: directStreamFetchSignal(signal ?? context.signal, ANIMEGG_FETCH_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`AnimeGG returned HTTP ${response.status}`);
+  if (!response.ok) {
+    // Carry the status: a 404 on a catalog miss must read as definitive
+    // (not-found, non-retryable), not a retryable network-error that degrades
+    // provider health and re-runs the whole resolve.
+    throw providerHttpErrorForStatus({
+      status: response.status,
+      message: `AnimeGG returned HTTP ${response.status}`,
+      providerId: "animegg",
+      stage: "fetch",
+    });
+  }
   return response.text();
 }
 
@@ -226,6 +237,16 @@ export const animeggProviderModule: CoreProviderModule = {
         { cachePolicy, events, startedAt },
       );
 
+    // An HTTP status is evidence, not a transport fault: surface the
+    // classified code/retryability instead of a blanket retryable
+    // network-error, so a catalog-miss 404 does not re-run the resolve or
+    // degrade provider health.
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- catch-clause values arrive as unknown; instanceof narrows below.
+    const failFetch = (label: string, error: unknown) =>
+      error instanceof ProviderHttpError
+        ? fail(error.code, `AnimeGG ${label} failed: ${describe(error)}`, error.retryable)
+        : fail("network-error", `AnimeGG ${label} failed: ${describe(error)}`, true);
+
     if (input.mediaKind !== "anime") {
       return fail("unsupported-title", "AnimeGG only supports anime");
     }
@@ -233,7 +254,7 @@ export const animeggProviderModule: CoreProviderModule = {
     try {
       slug = await locateAnimeggShow(input.title, context, events);
     } catch (error) {
-      return fail("network-error", `AnimeGG search failed: ${describe(error)}`, true);
+      return failFetch("search", error);
     }
     if (!slug) {
       return fail("not-found", `AnimeGG has no show that is clearly "${input.title.title}"`);
@@ -247,7 +268,7 @@ export const animeggProviderModule: CoreProviderModule = {
     try {
       tabs = parseAnimeggEpisodeTabs(await fetchText(episodeUrl, context));
     } catch (error) {
-      return fail("network-error", `AnimeGG episode page failed: ${describe(error)}`, true);
+      return failFetch("episode page", error);
     }
     const picked = selectAnimeggTab(tabs, audio.catalogMode);
     if (!picked) {
@@ -268,7 +289,7 @@ export const animeggProviderModule: CoreProviderModule = {
         await fetchText(animeggEmbedPath(picked.tab.embedId), context),
       );
     } catch (error) {
-      return fail("network-error", `AnimeGG embed failed: ${describe(error)}`, true);
+      return failFetch("embed", error);
     }
 
     const sourceId = `source:${ANIMEGG_PROVIDER_ID}:${picked.tab.mirror.toLowerCase()}:${presentation}`;

@@ -13,6 +13,7 @@ import type {
   SubtitleTrack,
   TitleInfo,
 } from "@/domain/types";
+import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { registerMpvProcess, terminateMpvProcess } from "@/infra/player/mpv-process-registry";
 import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
 import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
@@ -699,7 +700,7 @@ export class PersistentMpvSession {
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",
-      env: process.env as Record<string, string>,
+      env: scrubbedChildEnv(),
     });
     this.mpv = proc;
     this.mpvUnregister = registerMpvProcess(proc);

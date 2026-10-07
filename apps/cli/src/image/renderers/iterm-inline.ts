@@ -38,5 +38,12 @@ export function buildItermInlineImage(
   ].join(";");
 
   // OSC 1337 ; File = <args> : <base64> BEL
-  return `]1337;File=${args}:${payload}`;
+  //
+  // iTerm2 silently drops a single OSC at ~1MiB, so an oversized payload
+  // paints nothing either way - return null and let the caller fall back
+  // to text. The escape bytes are written as \x escapes, not literals:
+  // a formatter or scrub pass would otherwise corrupt this file invisibly.
+  const MAX_ITERM_OSC_BYTES = 1_048_576;
+  if (args.length + payload.length + 16 > MAX_ITERM_OSC_BYTES) return null;
+  return `\x1b]1337;File=${args}:${payload}\x07`;
 }

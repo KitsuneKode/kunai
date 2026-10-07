@@ -6,7 +6,7 @@ import {
   isProviderFallbackEligible,
   resolveEffectiveProviderHealth,
 } from "@/services/playback/provider-health-policy";
-import type { ProviderHealth, ProviderId } from "@kunai/types";
+import type { ProviderHealth } from "@kunai/types";
 
 const NOW = new Date("2026-06-23T12:00:00.000Z");
 

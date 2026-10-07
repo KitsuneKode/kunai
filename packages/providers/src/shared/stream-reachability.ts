@@ -18,6 +18,14 @@ export type ProbeStreamReachabilityInput = {
   readonly url: string;
   readonly headers?: Record<string, string>;
   readonly fetchImpl?: StreamReachabilityFetch;
+  /**
+   * Per-target answer to "does this fetch resolve the hostname here?" — a
+   * relay port resolves on the relay's side for upstreams it forwards, so
+   * local DNS validation is meaningless for those URLs but still required
+   * for everything it serves directly. Absent, injected fetches are treated
+   * as remote-resolving and the real `fetch` as local.
+   */
+  readonly resolvesLocally?: (url: string) => boolean;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
 };
@@ -38,7 +46,7 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * and literal ranges, no DNS — so an injected fetch sees no extra microtask.
  * `resolvedAddressBlockReason` adds DNS answer validation for the real path.
  */
-function blockedLiteralTargetReason(url: string): string | null {
+export function blockedLiteralTargetReason(url: string): string | null {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -179,7 +187,7 @@ async function fetchProbeTarget(options: {
   readonly init: RequestInit;
   readonly remaining: () => number;
   readonly parentSignal?: AbortSignal;
-  readonly resolveNames: boolean;
+  readonly resolveNamesFor: (url: string) => boolean;
 }): Promise<ProbeFetchOutcome> {
   let target = options.url;
   let init = options.init;
@@ -190,7 +198,7 @@ async function fetchProbeTarget(options: {
     }
     // DNS once the literals pass — skipped when the caller already aborted so
     // a cancelled probe does not sit on a resolver round-trip.
-    if (options.resolveNames && !options.parentSignal?.aborted) {
+    if (options.resolveNamesFor(target) && !options.parentSignal?.aborted) {
       const resolvedBlocked = await resolvedAddressBlockReason(target);
       if (resolvedBlocked) {
         return { kind: "blocked", reason: `${target} -> ${resolvedBlocked}` };
@@ -248,6 +256,7 @@ export function fetchGuardedStreamTarget(options: {
   readonly url: string;
   readonly init: RequestInit;
   readonly signal?: AbortSignal;
+  readonly resolvesLocally?: (url: string) => boolean;
 }): Promise<ProbeFetchOutcome> {
   return fetchProbeTarget({
     fetchImpl: options.fetchImpl,
@@ -255,7 +264,7 @@ export function fetchGuardedStreamTarget(options: {
     init: { ...options.init, signal: options.signal },
     remaining: () => 1, // the caller's signal owns the deadline
     parentSignal: options.signal,
-    resolveNames: options.fetchImpl === fetch,
+    resolveNamesFor: options.resolvesLocally ?? (() => options.fetchImpl === fetch),
   });
 }
 
@@ -270,10 +279,17 @@ export async function probeStreamReachability(
   const headers = input.headers ?? {};
   // Injected fetches own their destinations; real fetches get DNS answers
   // re-validated so a public name cannot resolve to a private address.
-  const resolveNames = input.fetchImpl === undefined;
+  const resolveNamesFor = input.resolvesLocally ?? (() => input.fetchImpl === undefined);
 
   if (isHlsPlaylistUrl(input.url)) {
-    return probeHlsManifest(fetchImpl, input.url, headers, remaining, input.signal, resolveNames);
+    return probeHlsManifest(
+      fetchImpl,
+      input.url,
+      headers,
+      remaining,
+      input.signal,
+      resolveNamesFor,
+    );
   }
 
   try {
@@ -282,7 +298,7 @@ export async function probeStreamReachability(
       headers,
       remainingMs: remaining,
       parentSignal: input.signal,
-      resolveNames,
+      resolveNamesFor,
     });
     if (head.status === "reachable") return head;
     if (head.status === "timeout") return head;
@@ -298,7 +314,7 @@ export async function probeStreamReachability(
     headers: { ...headers, Range: "bytes=0-0" },
     remainingMs: remaining,
     parentSignal: input.signal,
-    resolveNames,
+    resolveNamesFor,
     healthyStatus: (status) => (status >= 200 && status < 300) || status === 206,
   });
 }
@@ -339,7 +355,7 @@ async function probeHlsManifest(
   headers: Record<string, string>,
   remaining: () => number,
   parentSignal: AbortSignal | undefined,
-  resolveNames: boolean,
+  resolveNamesFor: (url: string) => boolean,
 ): Promise<StreamReachabilityProbeResult> {
   if (parentSignal?.aborted || remaining() <= 0) {
     return { status: "timeout" };
@@ -351,7 +367,7 @@ async function probeHlsManifest(
     headers,
     remaining,
     parentSignal,
-    resolveNames,
+    resolveNamesFor,
   );
   if (master.status !== "ok") {
     return master.result;
@@ -381,7 +397,7 @@ async function probeHlsManifest(
       headers,
       remaining,
       parentSignal,
-      resolveNames,
+      resolveNamesFor,
     );
     if (variant.status !== "ok") {
       return variant.result;
@@ -406,7 +422,7 @@ async function probeHlsManifest(
     headers,
     remaining,
     parentSignal,
-    resolveNames,
+    resolveNamesFor,
   );
 }
 
@@ -416,7 +432,7 @@ async function fetchPlaylistText(
   headers: Record<string, string>,
   remaining: () => number,
   parentSignal: AbortSignal | undefined,
-  resolveNames: boolean,
+  resolveNamesFor: (url: string) => boolean,
 ): Promise<
   | { readonly status: "ok"; readonly text: string }
   | { readonly status: "fail"; readonly result: StreamReachabilityProbeResult }
@@ -437,7 +453,7 @@ async function fetchPlaylistText(
       init: { method: "GET", headers, signal: controller.signal },
       remaining,
       parentSignal,
-      resolveNames,
+      resolveNamesFor,
     });
     if (outcome.kind === "timeout") {
       return { status: "fail", result: { status: "timeout" } };
@@ -487,7 +503,7 @@ async function probeHlsMediaSegment(
   headers: Record<string, string>,
   remaining: () => number,
   parentSignal: AbortSignal | undefined,
-  resolveNames: boolean,
+  resolveNamesFor: (url: string) => boolean,
 ): Promise<StreamReachabilityProbeResult> {
   if (parentSignal?.aborted || remaining() <= 0) {
     return { status: "timeout" };
@@ -509,7 +525,7 @@ async function probeHlsMediaSegment(
       },
       remaining,
       parentSignal,
-      resolveNames,
+      resolveNamesFor,
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {
@@ -574,7 +590,7 @@ async function probeHttpStatus(
     readonly remainingMs: () => number;
     readonly parentSignal?: AbortSignal;
     readonly healthyStatus?: (status: number) => boolean;
-    readonly resolveNames: boolean;
+    readonly resolveNamesFor: (url: string) => boolean;
   },
 ): Promise<StreamReachabilityProbeResult> {
   if (options.parentSignal?.aborted) {
@@ -601,7 +617,7 @@ async function probeHttpStatus(
       },
       remaining: options.remainingMs,
       parentSignal: options.parentSignal,
-      resolveNames: options.resolveNames,
+      resolveNamesFor: options.resolveNamesFor,
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {

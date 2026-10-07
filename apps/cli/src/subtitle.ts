@@ -5,7 +5,7 @@
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { dbg, dbgErr } from "@/logger";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
-import { looksLikeHiSubtitle } from "@kunai/providers";
+import { looksLikeHiSubtitle, subtitleLanguageDisplayName } from "@kunai/providers";
 
 export type SubtitleEntry = {
   id?: string;
@@ -42,38 +42,13 @@ export function langMatches(entryLang: string, preferred: string): boolean {
   if (!el || !pl) return false;
   if (el === pl || el.startsWith(pl + "-") || pl.startsWith(el + "-")) return true;
 
-  // Map ISO 639-1 codes ↔ common English full-name representations.
-  // Wyzie often returns "English" when the player auto-picks; we request "en".
-  const CODE_TO_NAME: Record<string, string> = {
-    en: "english",
-    es: "spanish",
-    fr: "french",
-    de: "german",
-    it: "italian",
-    pt: "portuguese",
-    ru: "russian",
-    ja: "japanese",
-    ar: "arabic",
-    ko: "korean",
-    zh: "chinese",
-    hi: "hindi",
-    nl: "dutch",
-    pl: "polish",
-    tr: "turkish",
-    sv: "swedish",
-    da: "danish",
-    fi: "finnish",
-    no: "norwegian",
-    cs: "czech",
-    hu: "hungarian",
-    ro: "romanian",
-    th: "thai",
-    vi: "vietnamese",
-    id: "indonesian",
-  };
-
-  const plFull = CODE_TO_NAME[pl];
-  const elFull = CODE_TO_NAME[el];
+  // ISO 639-1 codes ↔ English full names live in @kunai/providers'
+  // subtitleLanguageDisplayName (ISO_2_LANGUAGE_NAME) — a second, smaller
+  // private table here drifted (it lacked he/uk/el/bg/ca/sk/sl/hr/sr/ms/tl).
+  // The shared lookup falls back to the code itself, which is safe: the
+  // `el === pl` check above already covers code-matches-code.
+  const plFull = subtitleLanguageDisplayName(pl)?.toLowerCase();
+  const elFull = subtitleLanguageDisplayName(el)?.toLowerCase();
 
   if (plFull && (el === plFull || el.startsWith(plFull))) return true;
   if (elFull && (pl === elFull || pl.startsWith(elFull))) return true;

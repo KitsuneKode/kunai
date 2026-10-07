@@ -3,6 +3,7 @@ import { unlink } from "node:fs/promises";
 
 import type { PlaybackResult } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
+import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "@/infra/player/mpv-ipc";
@@ -139,7 +140,7 @@ export async function launchMpv(opts: {
       stdin: stdio,
       stdout: stdio,
       stderr: stdio,
-      env: process.env as Record<string, string>,
+      env: scrubbedChildEnv(),
     });
     const unregisterMpv = registerMpvProcess(mpv);
     try {

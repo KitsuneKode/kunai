@@ -39,4 +39,18 @@ describe("matchTrackSelectionAgainstInventory", () => {
       matchTrackSelectionAgainstInventory({ sourceId: null, streamId: "s1" }, null),
     ).toBeNull();
   });
+
+  test("a shape-valid row without a streams array fails open, not TypeError", () => {
+    // The repository validator only checks streams when present — a poisoned
+    // row like {} or {sources:[]} reaches here with streams undefined.
+    expect(matchTrackSelectionAgainstInventory({ sourceId: null, streamId: "s1" }, {})).toBeNull();
+    expect(
+      matchTrackSelectionAgainstInventory(
+        { sourceId: "a", streamId: null },
+        // SAFETY: {sources:[]} is the poisoned-row shape the repository
+        // validator accepts — the cast manufactures exactly that payload.
+        { sources: [] } as never,
+      ),
+    ).toBeNull();
+  });
 });

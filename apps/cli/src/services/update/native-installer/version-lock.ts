@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -68,6 +68,14 @@ export async function readLockContent(path: string): Promise<VersionLockContent 
     return null;
   }
 }
+
+const statOrNull = (p: string) => {
+  try {
+    return statSync(p);
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Alive holders are never stale. Dead-PID and unreadable/invalid lock files
@@ -181,15 +189,6 @@ export async function tryAcquireVersionLock(
     }
   }
 
-  if (existsSync(path) && !(await isLockStale(path))) {
-    const existing = await readLockContent(path);
-    return { acquired: false, holderPid: existing?.pid };
-  }
-
-  if (existsSync(path)) {
-    await rm(path, { force: true }).catch(() => {});
-  }
-
   const content: VersionLockContent = {
     pid: process.pid,
     version,
@@ -197,11 +196,68 @@ export async function tryAcquireVersionLock(
     acquiredAt: new Date().toISOString(),
   };
 
-  try {
-    await writeFile(path, `${JSON.stringify(content)}\n`, { flag: "wx" });
-  } catch {
-    const existing = await readLockContent(path);
-    return { acquired: false, holderPid: existing?.pid };
+  if (existsSync(path)) {
+    const judgedStat = statOrNull(path);
+    const judgedContent = await readLockContent(path);
+    if (!(await isLockStale(path))) {
+      return { acquired: false, holderPid: judgedContent?.pid };
+    }
+
+    // Reclaim is serialized through a `<lock>.claim` file: only one reaper at
+    // a time may rewrite the lock, and the rewrite happens IN PLACE so the
+    // lock name never leaves the namespace. rm + wx-create would leave a gap
+    // where a contender can create a fresh live lock that the racing reaper
+    // then deletes — both processes would believe they hold it.
+    const claimPath = `${path}.claim`;
+    let claimHeld = false;
+    for (let attempt = 0; attempt < 2 && !claimHeld; attempt++) {
+      try {
+        await writeFile(claimPath, `${process.pid}\n`, { flag: "wx" });
+        claimHeld = true;
+      } catch {
+        const claimRaw = (await readFile(claimPath, "utf8").catch(() => "")).trim();
+        const claimPid = Number.parseInt(claimRaw, 10);
+        if (Number.isSafeInteger(claimPid) && isProcessAlive(claimPid)) {
+          // A live reaper owns the claim — let it finish.
+          return { acquired: false, holderPid: claimPid };
+        }
+        // A dead reaper left its claim behind. Re-read before deleting: a live
+        // reaper may have recycled the name in between — removing a live claim
+        // would let two reapers rewrite the lock at once.
+        const confirmRaw = (await readFile(claimPath, "utf8").catch(() => "")).trim();
+        if (confirmRaw !== claimRaw) continue;
+        await rm(claimPath, { force: true }).catch(() => {});
+      }
+    }
+    if (!claimHeld) return { acquired: false, holderPid: judgedContent?.pid };
+
+    try {
+      // The stale verdict covered the file that was read, not whatever sits
+      // at the name now. Re-verify identity and content — a change means a
+      // real contender arrived first, so decline rather than rewrite it.
+      const recheckStat = statOrNull(path);
+      const recheckContent = await readLockContent(path);
+      const sameFile =
+        recheckStat !== null &&
+        judgedStat !== null &&
+        recheckStat.ino === judgedStat.ino &&
+        recheckStat.mtimeMs === judgedStat.mtimeMs;
+      const sameContent = JSON.stringify(recheckContent) === JSON.stringify(judgedContent);
+      if (!sameFile || !sameContent) {
+        return { acquired: false, holderPid: recheckContent?.pid };
+      }
+      // Truncate+rewrite in place — no absent-window, nothing to steal.
+      await writeFile(path, `${JSON.stringify(content)}\n`);
+    } finally {
+      await rm(claimPath, { force: true }).catch(() => {});
+    }
+  } else {
+    try {
+      await writeFile(path, `${JSON.stringify(content)}\n`, { flag: "wx" });
+    } catch {
+      const existing = await readLockContent(path);
+      return { acquired: false, holderPid: existing?.pid };
+    }
   }
 
   // Close the check/create race with lifecycle acquisition: if uninstall won
@@ -309,11 +365,50 @@ export async function cleanupStaleLocks(layout: InstallLayoutPaths): Promise<voi
       }
       continue;
     }
+    // Reclaim claims left by a reaper that died mid-rewrite — a live pid owns
+    // the claim, anything else is abandoned and would wedge future reclaims.
+    if (entry.endsWith(".claim")) {
+      const claimPath = join(layout.locksDir, entry);
+      const claimRaw = (await readFile(claimPath, "utf8").catch(() => "")).trim();
+      const claimPid = Number.parseInt(claimRaw, 10);
+      if (!Number.isSafeInteger(claimPid) || !isProcessAlive(claimPid)) {
+        // Re-read before deleting — a live reaper may have recycled the name.
+        const confirmRaw = (await readFile(claimPath, "utf8").catch(() => "")).trim();
+        if (confirmRaw === claimRaw) {
+          await rm(claimPath, { force: true }).catch(() => {});
+        }
+      }
+      continue;
+    }
     const version = parseCanonicalVersion(entry.replace(/\.lock$/, ""));
     if (!version) continue;
     const path = lockFilePath(layout, version);
-    if (await isLockStale(path)) {
-      await rm(path, { force: true }).catch(() => {});
+    const judgedStat = statOrNull(path);
+    const judgedContent = await readLockContent(path);
+    if (!(await isLockStale(path))) continue;
+    // Sweep goes through the same claim serialization as the acquire path's
+    // reclaim — deleting without it can remove a live lock a reaper just
+    // rewrote in place.
+    const claimPath = `${path}.claim`;
+    try {
+      await writeFile(claimPath, `${process.pid}\n`, { flag: "wx" });
+    } catch {
+      continue; // a reaper (live or soon-swept) owns this lock's claim
+    }
+    try {
+      const recheckStat = statOrNull(path);
+      const recheckContent = await readLockContent(path);
+      const sameFile =
+        recheckStat !== null &&
+        judgedStat !== null &&
+        recheckStat.ino === judgedStat.ino &&
+        recheckStat.mtimeMs === judgedStat.mtimeMs;
+      const sameContent = JSON.stringify(recheckContent) === JSON.stringify(judgedContent);
+      if (sameFile && sameContent) {
+        await rm(path, { force: true }).catch(() => {});
+      }
+    } finally {
+      await rm(claimPath, { force: true }).catch(() => {});
     }
   }
 }

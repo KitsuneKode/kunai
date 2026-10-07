@@ -239,6 +239,7 @@ export function resolveVidlinkDirect(
         };
         if (looksLikeHlsMasterUrl(stream.playlist) || /\.m3u8(?:[?#]|$)/i.test(stream.playlist)) {
           const inventory = await expandHlsMasterInventory({
+            resolvesLocally: ctx.fetch?.resolvesLocally,
             fetch: (url: string, init?: RequestInit) =>
               providerFetch(ctx, url, {
                 ...init,
@@ -445,7 +446,16 @@ async function encryptTmdbId(
       // SAFETY: response.json() resolves to the parsed document; result is checked optional.
       const data = (await response.json()) as { result?: string };
       if (!data?.result) {
-        throw new Error("enc-dec.app did not return an encrypted id");
+        // A 200 without `result` is response-shape drift, not a network blip —
+        // classify parse so the cycle records it honestly instead of retrying.
+        throw new ProviderHttpError({
+          providerId: VIDLINK_PROVIDER_ID,
+          stage: "enc-dec",
+          status: response.status,
+          message: "enc-dec.app did not return an encrypted id",
+          code: "parse-failed",
+          retryable: false,
+        });
       }
       // TTL runs from when the value was received, not from when the request
       // started — a slow request must not shorten its own cache lifetime.
