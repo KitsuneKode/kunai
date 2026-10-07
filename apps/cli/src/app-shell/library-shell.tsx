@@ -137,6 +137,7 @@ export function LibraryShell({
             viewport.columns,
           )}
           terminalWidth={viewport.columns}
+          companionHint
         />
         {tab === "library" ? (
           <Text color={palette.dim} dimColor>

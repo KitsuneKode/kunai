@@ -1,8 +1,9 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { companionMode, companionToggleable } from "./companion-policy";
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
-import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
+import { measureColumns, padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
 import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
@@ -38,6 +39,14 @@ export function TransientRowSlot({
 /** Optional footer glyphs — off by default for calmer Claude Code–style footers. */
 const FOOTER_GLYPHS: Record<string, string> = {};
 
+/**
+ * The way back after `/pet` — rendered as an action hint, not a control.
+ * `action` names the real command so the footer selector can pin it: appended
+ * last, it would lose every slot race, and it is the only in-shell route back
+ * once she is hidden.
+ */
+const PET_RESTORE_ACTION = { key: "/pet", label: "kanna", action: "pet" } as const;
+
 export type ContextStripItem = {
   label: string;
   tone?: InlineBadgeTone;
@@ -53,41 +62,54 @@ export function selectFooterActions(
 
   const hardLimit = maxVisible ?? DETAILED_FOOTER_ACTION_LIMIT;
 
+  // The pet-restore hint is pinned: it is the only in-shell route back once
+  // the fox is hidden, so letting it lose the slot race — which appended-last
+  // guaranteed at any sane width — would remove the feature it advertises.
+  // It is pinned *inside* the budget: each cap below reserves a slot for it so
+  // the row stays within the same width the limit was tuned for.
+  const pinnedRestore = enabledActions.filter((action) => action.action === "pet");
+  const pool = enabledActions.filter((action) => action.action !== "pet");
+  const pinnedCount = pinnedRestore.length;
+  const withPinned = (list: readonly FooterAction[]) => [...list, ...pinnedRestore];
+
   if (mode === "minimal") {
     const limit = Math.min(MINIMAL_FOOTER_ACTION_LIMIT, hardLimit);
-    const commandAction = enabledActions.find((action) => action.action === "command-mode");
+    const poolLimit = Math.max(1, limit - pinnedCount);
+    const commandAction = pool.find((action) => action.action === "command-mode");
     if (commandAction?.primary) {
-      return [
-        commandAction,
-        ...enabledActions.filter((action) => action.action !== "command-mode"),
-      ].slice(0, limit);
+      return withPinned(
+        [commandAction, ...pool.filter((action) => action.action !== "command-mode")].slice(
+          0,
+          poolLimit,
+        ),
+      );
     }
-    const primaryActions = enabledActions
+    const primaryActions = pool
       .filter((action) => action.action !== "command-mode")
-      .slice(0, commandAction ? limit - 1 : limit);
-    return commandAction ? [...primaryActions, commandAction] : primaryActions;
+      .slice(0, commandAction ? Math.max(0, poolLimit - 1) : poolLimit);
+    return withPinned(commandAction ? [...primaryActions, commandAction] : primaryActions);
   }
 
   // Detailed mode: keep the persistent footer glanceable. Deeper actions belong
   // behind / commands so the footer never turns into a wrapped command paragraph.
-  const commandAction = enabledActions.find((action) => action.action === "command-mode");
-  const nonCommandActions = enabledActions.filter((action) => action.action !== "command-mode");
+  const commandAction = pool.find((action) => action.action === "command-mode");
+  const nonCommandActions = pool.filter((action) => action.action !== "command-mode");
 
   if (terminalWidth && terminalWidth > 0) {
     const widthLimit =
       terminalWidth < 92 ? 2 : terminalWidth < 132 ? 3 : DETAILED_FOOTER_VISIBLE_LIMIT;
-    const primaryLimit = Math.min(hardLimit, Math.max(1, widthLimit));
+    const primaryLimit = Math.min(hardLimit, Math.max(1, widthLimit - pinnedCount));
 
     const capped = nonCommandActions.slice(0, primaryLimit);
-    return commandAction ? [...capped, commandAction] : capped;
+    return withPinned(commandAction ? [...capped, commandAction] : capped);
   }
 
   // Fallback: fixed limit
   const primaryActions = nonCommandActions.slice(
     0,
-    commandAction ? DETAILED_FOOTER_VISIBLE_LIMIT : hardLimit,
+    Math.max(1, (commandAction ? DETAILED_FOOTER_VISIBLE_LIMIT : hardLimit) - pinnedCount),
   );
-  return commandAction ? [...primaryActions, commandAction] : primaryActions;
+  return withPinned(commandAction ? [...primaryActions, commandAction] : primaryActions);
 }
 
 export const InlineBadge = React.memo(function InlineBadge({
@@ -123,6 +145,7 @@ export function Footer({
   commandMode = false,
   maxVisible,
   terminalWidth: terminalWidthProp,
+  companionHint = false,
 }: {
   taskLabel: string;
   actions: readonly FooterAction[];
@@ -130,19 +153,31 @@ export function Footer({
   commandMode?: boolean;
   maxVisible?: number;
   terminalWidth?: number;
+  /**
+   * Surfaces whose command context offers /pet opt in here. Playback,
+   * post-play, and picker footers do not list the command, so advertising it
+   * there would promise a control the palette cannot deliver.
+   */
+  companionHint?: boolean;
 }) {
   const { cols } = useShellDimensions();
   const terminalWidth = terminalWidthProp ?? cols;
   const taskWidth = Math.max(20, terminalWidth - 4);
+  // Kanna removed via /pet or settings leaves a way back on surfaces that offer
+  // the command: a display-only hint naming it. selectFooterActions keeps it
+  // inside the width budget — it is the only restore affordance, so it cannot
+  // lose the slot race — and it hides entirely when an env pin makes the
+  // toggle a dead control.
+  const kannaHidden = companionHint && companionMode() === "off" && companionToggleable();
   const visibleActions = React.useMemo(
     () =>
       selectFooterActions(
-        actions,
+        kannaHidden ? [...actions, PET_RESTORE_ACTION] : actions,
         mode,
         mode === "detailed" ? terminalWidth : undefined,
         maxVisible,
       ),
-    [actions, mode, terminalWidth, maxVisible],
+    [actions, kannaHidden, mode, terminalWidth, maxVisible],
   );
 
   if (commandMode) {
@@ -182,7 +217,7 @@ export function Footer({
               role === "primary"
                 ? palette.accent
                 : role === "destructive"
-                  ? palette.danger
+                  ? palette.dangerText
                   : role === "meta"
                     ? palette.muted
                     : palette.info;
@@ -220,6 +255,7 @@ export function ShellFooter({
   commandMode = false,
   maxVisible,
   terminalWidth,
+  companionHint = false,
 }: {
   taskLabel: string;
   actions: readonly FooterAction[];
@@ -227,6 +263,7 @@ export function ShellFooter({
   commandMode?: boolean;
   maxVisible?: number;
   terminalWidth?: number;
+  companionHint?: boolean;
 }) {
   return (
     <Footer
@@ -236,6 +273,7 @@ export function ShellFooter({
       commandMode={commandMode}
       maxVisible={maxVisible}
       terminalWidth={terminalWidth}
+      companionHint={companionHint}
     />
   );
 }
@@ -315,7 +353,7 @@ export const LocalSection = React.memo(function LocalSection({
 }) {
   return (
     <Box marginTop={marginTop} flexDirection="column">
-      <Text color={semanticToneColor(tone)}>{title}</Text>
+      <Text color={semanticToneColor(tone)}>{sanitizeTerminalText(title)}</Text>
       <Box marginTop={1} flexDirection="column">
         {children}
       </Box>
@@ -359,7 +397,7 @@ export const Badge = React.memo(function Badge({
         : tone === "accent"
           ? palette.accentSoft
           : tone === "error"
-            ? palette.danger
+            ? palette.dangerText
             : tone === "warning"
               ? palette.accentDeep
               : palette.dim;
@@ -440,7 +478,7 @@ export const DetailRow = React.memo(function DetailRow({
         : tone === "accent"
           ? palette.accentSoft
           : tone === "error"
-            ? palette.danger
+            ? palette.dangerText
             : tone === "warning"
               ? palette.accentDeep
               : palette.text;
@@ -486,9 +524,9 @@ export const DetailLine = React.memo(function DetailLine({
 
   return (
     <Box>
-      <Text color={palette.dim}>{label}</Text>
+      <Text color={palette.dim}>{sanitizeTerminalText(label)}</Text>
       <Text color={palette.dim}> · </Text>
-      <Text color={valueColor}>{value}</Text>
+      <Text color={valueColor}>{sanitizeTerminalText(value)}</Text>
     </Box>
   );
 });
@@ -508,7 +546,7 @@ export const BrowseTitle = React.memo(function BrowseTitle({ mode }: { mode: "se
 export function TerminalSizeChip({ columns, rows }: { columns: number; rows: number }) {
   const isBlocked = columns < 60 || rows < 20;
   const isSuboptimal = !isBlocked && columns < 80;
-  const color = isBlocked ? palette.danger : isSuboptimal ? palette.accentDeep : palette.dim;
+  const color = isBlocked ? palette.dangerText : isSuboptimal ? palette.accentDeep : palette.dim;
   return (
     <Text color={color} dimColor={!isBlocked && !isSuboptimal}>
       {columns}×{rows}
@@ -530,13 +568,13 @@ export const EmptyState = React.memo(function EmptyState({
   return (
     <Box flexDirection="column" paddingY={1}>
       <Text color={palette.dim}>
-        {icon} {title}
+        {icon} {sanitizeTerminalText(title)}
       </Text>
-      {subtitle ? <Text color={palette.muted}>{subtitle}</Text> : null}
+      {subtitle ? <Text color={palette.muted}>{sanitizeTerminalText(subtitle)}</Text> : null}
       {hint ? (
         <Box marginTop={1}>
           <Text color={palette.dim} dimColor>
-            {hint}
+            {sanitizeTerminalText(hint)}
           </Text>
         </Box>
       ) : null}

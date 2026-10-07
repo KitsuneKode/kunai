@@ -11,8 +11,10 @@
 
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import { MAX_POSTER_SOURCE_BYTES } from "@/image/native-image";
+import { readBoundedBody } from "@/services/network/bounded-body";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
 
+import { createKeyedInflight } from "./inflight";
 import { ByteBudgetLruCache } from "./poster-byte-cache";
 
 export type PosterSource = {
@@ -29,7 +31,7 @@ const sourceCache = new ByteBudgetLruCache<string, PosterSource>({
   maxBytes: MAX_POSTER_SOURCE_CACHE_BYTES,
   weight: (source) => source.bytes.byteLength,
 });
-const sourceInflight = new Map<string, Promise<PosterSource | null>>();
+const sourceInflight = createKeyedInflight();
 
 function getTmdbSize(cols: number, variant: "preview" | "detail"): string {
   if (variant === "detail") return cols <= 28 ? "w500" : "w780";
@@ -41,67 +43,23 @@ function getTmdbSize(cols: number, variant: "preview" | "detail"): string {
   return "w780";
 }
 
+/**
+ * Resolve a catalog poster reference to something fetchable, or null when the
+ * URL contract rejects it. The old `?? url` fallback fetched exactly the
+ * candidates the validator refuses — `http:`, `data:`, malformed — so the
+ * "safe public HTTPS" guarantee was decorative on this path.
+ */
 export function resolvePosterUrl(
   url: string,
   { cols = 18, variant = "preview" }: { cols?: number; variant?: "preview" | "detail" } = {},
-): string {
+): string | null {
   if (isLocalImagePath(url)) return localPathFromImageRef(url);
-  const resolved = resolveCatalogPosterUrl(url, { tmdbSize: getTmdbSize(cols, variant) });
-  return resolved ?? url;
+  return resolveCatalogPosterUrl(url, { tmdbSize: getTmdbSize(cols, variant) });
 }
 
 export function clearPosterSourceCache(): void {
   sourceCache.clear();
   sourceInflight.clear();
-}
-
-/**
- * Read a stream into one buffer, refusing to exceed the source ceiling.
- *
- * The cumulative check happens before each chunk is kept, so an undeclared or
- * understated body is cut off at the limit rather than after it. Cancelling the
- * reader is what actually stops the transfer; simply returning would leave the
- * socket draining in the background.
- */
-async function readPosterStream(
-  stream: ReadableStream<Uint8Array>,
-  signal?: AbortSignal,
-): Promise<Uint8Array | null> {
-  const reader = stream.getReader();
-  const onAbort = () => void reader.cancel("aborted").catch(() => {});
-  signal?.addEventListener("abort", onAbort, { once: true });
-
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      if (signal?.aborted) return null;
-      total += value.byteLength;
-      if (total > MAX_POSTER_SOURCE_BYTES) {
-        await reader.cancel("too-large").catch(() => {});
-        return null;
-      }
-      chunks.push(value);
-    }
-  } catch {
-    // A dropped connection mid-body is not a cacheable outcome.
-    return null;
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
-  }
-
-  if (signal?.aborted) return null;
-
-  const out = new Uint8Array(total);
-  let cursor = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, cursor);
-    cursor += chunk.byteLength;
-  }
-  return out;
 }
 
 async function readLocalPosterSource(
@@ -112,9 +70,41 @@ async function readLocalPosterSource(
   if (!(await file.exists())) return null;
   // Stat first: a sidecar larger than the ceiling must never be read at all.
   if (file.size > MAX_POSTER_SOURCE_BYTES || file.size === 0) return null;
-  const bytes = await readPosterStream(file.stream(), signal);
+  const bytes = await readBoundedBody(file.stream(), MAX_POSTER_SOURCE_BYTES, signal);
   if (!bytes || bytes.byteLength === 0) return null;
   return { identity: path, bytes };
+}
+
+/**
+ * Byte-level image sniff for the decodable set — PNG, JPEG, GIF, WebP (RIFF),
+ * AVIF/HEIC (`ftyp` box), BMP, ICO. A 200 response can still be an HTML error
+ * page, and without this gate those bytes land in the source cache and fail
+ * decode on every subsequent render instead of once.
+ */
+function hasImageSignature(bytes: Uint8Array): boolean {
+  if (bytes.byteLength < 4) return false;
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return true; // JPEG
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return true; // PNG
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return true; // GIF
+  if (bytes[0] === 0x42 && bytes[1] === 0x4d) return true; // BMP
+  if (bytes[0] === 0x00 && bytes[1] === 0x00 && bytes[2] === 0x01 && bytes[3] === 0x00) return true; // ICO
+  if (bytes.byteLength >= 12) {
+    const tag = String.fromCharCode(...bytes.subarray(4, 8));
+    if (tag === "ftyp") return true; // ISO BMFF — AVIF/HEIC
+    if (
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    ) {
+      return true; // RIFF....WEBP
+    }
+  }
+  return false;
 }
 
 async function readRemotePosterSource(
@@ -140,11 +130,18 @@ async function readRemotePosterSource(
   // Posters must be image bytes. An HTML error page (or anything else a
   // provider/CDN URL serves with a declared non-image type) is never worth
   // caching, decoding, or handing to the terminal — the offline artwork cache
-  // already enforces this, and the preview path matches it. An absent type is
-  // still read (bounded below, decode fails closed downstream) because some
-  // CDNs omit it on genuine images.
+  // already enforces this, and the preview path matches it. Absent and
+  // generic binary types are still read (bounded below, magic-byte sniffing
+  // fails closed downstream) because CDNs omit or mislabel types on genuine
+  // images.
   const contentType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
-  if (contentType !== undefined && contentType !== "" && !contentType.startsWith("image/")) {
+  if (
+    contentType !== undefined &&
+    contentType !== "" &&
+    !contentType.startsWith("image/") &&
+    contentType !== "application/octet-stream" &&
+    contentType !== "binary/octet-stream"
+  ) {
     await response.body.cancel("non-image").catch(() => {});
     return null;
   }
@@ -155,8 +152,8 @@ async function readRemotePosterSource(
     return null;
   }
 
-  const bytes = await readPosterStream(response.body, signal);
-  if (!bytes || bytes.byteLength === 0) return null;
+  const bytes = await readBoundedBody(response.body, MAX_POSTER_SOURCE_BYTES, signal);
+  if (!bytes || bytes.byteLength === 0 || !hasImageSignature(bytes)) return null;
   return { identity: url, bytes };
 }
 
@@ -171,38 +168,32 @@ export async function fetchPosterSource(
   if (!url) return null;
   if (signal?.aborted) return null;
   const resolved = resolvePosterUrl(url, { cols, variant });
+  if (!resolved) return null;
   const cached = sourceCache.get(resolved);
   if (cached) return cached;
 
-  // Don't join an aborted-capable leader — same rule as fetchPoster.
-  const inflight = sourceInflight.get(resolved);
-  if (inflight && !signal) return inflight;
-
-  const task = (async (): Promise<PosterSource | null> => {
-    try {
-      if (signal?.aborted) return null;
-      const source = isLocalImagePath(resolved)
-        ? await readLocalPosterSource(resolved, signal)
-        : await readRemotePosterSource(resolved, signal);
-      if (!source || signal?.aborted) return null;
-      // Only a complete, in-bounds, unaborted read is worth remembering; caching
-      // a failure would make one dropped connection permanent for the process.
-      sourceCache.set(resolved, source);
-      return source;
-    } catch {
-      return null;
-    }
-  })();
-
-  sourceInflight.set(resolved, task);
-  try {
-    return await task;
-  } finally {
-    // Preserve a newer abort-capable leader registered for the same URL. An
-    // unconditional delete here made the source layer look idle while that
-    // newer fetch was still running.
-    if (sourceInflight.get(resolved) === task) sourceInflight.delete(resolved);
-  }
+  // The leader reads without any caller's signal so a fast-scrolling abort
+  // cannot kill a fetch another surface still needs — and a completed read
+  // still warms the cache for the next caller. `signal` gates this caller's
+  // own await only.
+  return sourceInflight.join(
+    resolved,
+    async () => {
+      try {
+        const source = isLocalImagePath(resolved)
+          ? await readLocalPosterSource(resolved)
+          : await readRemotePosterSource(resolved);
+        if (!source) return null;
+        // Only a complete, in-bounds read is worth remembering; caching a
+        // failure would make one dropped connection permanent for the process.
+        sourceCache.set(resolved, source);
+        return source;
+      } catch {
+        return null;
+      }
+    },
+    signal,
+  );
 }
 
 /**

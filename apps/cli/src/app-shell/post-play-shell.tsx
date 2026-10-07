@@ -31,7 +31,7 @@ import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { ProgressBar } from "./primitives/ProgressBar";
 import { SakuraPetal } from "./primitives/SakuraPetal";
 import { ViewportResizeGate } from "./shell-primitives";
-import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
+import { measureColumns, padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import { PosterOutput } from "./SixelPosterPane";
 import type { PlaybackRecommendationRailItem } from "./types";
@@ -94,7 +94,7 @@ export type PostPlayShellProps = {
 function heroColor(color: PostPlayView["heroColor"]): string {
   if (color === "accent") return palette.accent;
   if (color === "ok") return palette.ok;
-  if (color === "milestone") return palette.milestone;
+  if (color === "milestone") return palette.milestoneText;
   return palette.dim;
 }
 
@@ -306,7 +306,7 @@ function DiscoveryCards({
 
 function initialsOf(title: string): string {
   return (
-    title
+    sanitizeTerminalText(title)
       .split(/\s+/)
       .filter(Boolean)
       .map((w) => w[0]?.toUpperCase() ?? "")
@@ -545,7 +545,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
             milestone banner + catalog stats + optional personal watch-time. */}
           {view.celebration ? (
             <Box flexDirection="column" marginTop={1}>
-              <Text color={palette.milestone} bold>
+              <Text color={palette.milestoneText} bold>
                 {view.heroLabel}
               </Text>
               <Text color={palette.muted}>
@@ -626,7 +626,9 @@ export const PostPlayShell = React.memo(function PostPlayShell({
             </Box>
           ) : null}
 
-          {/* Live-keys footer — discoverable, premium affordance */}
+          {/* Row-level keys only. Shell actions (`s` search, `/` commands) live in
+              the shell footer; repeating them here once labelled `/` "search"
+              directly above a footer calling it "commands". */}
           <Box marginTop={1}>
             <Text color={palette.dim}>
               {truncateLine(
@@ -635,7 +637,6 @@ export const PostPlayShell = React.memo(function PostPlayShell({
                   "↵ select",
                   recommendations.length > 0 ? "1·2·3 picks" : null,
                   view.nextUpHero ? "x cancel" : null,
-                  "/ search",
                 ]
                   .filter(Boolean)
                   .join("   ·   "),

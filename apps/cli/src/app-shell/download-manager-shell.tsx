@@ -51,7 +51,7 @@ function queueStatePresentation(job: DownloadJobRecord): { label: string; color:
     return { label: "◇ repairable", color: palette.accent };
   }
   if (job.status === "failed") {
-    return { label: "✗ failed", color: palette.danger };
+    return { label: "✗ failed", color: palette.dangerText };
   }
   return { label: "— aborted", color: palette.dim };
 }
@@ -141,7 +141,7 @@ function QueueSummaryHeader({
       ) : null}
       {failedCount > 0 ? (
         <Text>
-          <Text color={palette.danger} bold>
+          <Text color={palette.dangerText} bold>
             {failedCount}
           </Text>
           <Text color={palette.muted}> failed</Text>
