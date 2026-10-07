@@ -139,6 +139,17 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
         return "Restored the settings saved before your last setup run.";
       },
     },
+    {
+      // Kept last: the consent rows above hold their positions because the
+      // consent-flow tests navigate them by keystroke count, and adding a row
+      // in the middle silently retargets those presses.
+      kind: "boolean",
+      id: "companionPet",
+      label: "Kanna the companion",
+      detail: "The fox on empty and error screens — off hides her until /pet or this setting",
+      read: (config) => config.companionPet !== "off",
+      write: (config, value) => ({ ...config, companionPet: value ? "auto" : "off" }),
+    },
   ];
 }
 

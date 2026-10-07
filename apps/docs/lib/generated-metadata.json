@@ -1,10 +1,10 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "89f903c2a415aa32f9027e5058c348d3036b593e91a2118f628ef4f28ee1264e",
-  "docsContentFingerprint": "e6621e73e6c3a9fd2239fada1d2440c4b85fcb01b6549be9cb58896d2cf690a4",
+  "cliSourceFingerprint": "e0b9178afda568786818dc67f08cb41a5ddf7ad85e4ee1f1b630e379af402fec",
+  "docsContentFingerprint": "e38e4f16a3daf81c400969a4b8280092d2f275a12b9e99ee5f451da4391b8aff",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
-  "commandCount": 82,
+  "commandCount": 84,
   "providerIds": [
     "videasy",
     "vidlink",
@@ -414,7 +414,7 @@
     {
       "id": "docs",
       "label": "Docs",
-      "aliases": ["docs", "documentation", "guide", "manual"],
+      "aliases": ["docs", "documentation", "manual"],
       "description": "Open Kunai documentation"
     },
     {
@@ -422,6 +422,12 @@
       "label": "Help",
       "aliases": ["help", "shortcuts", "?"],
       "description": "Show shortcuts and command help"
+    },
+    {
+      "id": "guide",
+      "label": "Guide",
+      "aliases": ["guide", "tour", "learn", "start-here", "features"],
+      "description": "Browse what Kunai can do, grouped by task — Enter runs it"
     },
     {
       "id": "menu",
@@ -446,6 +452,12 @@
       "label": "Image Pane",
       "aliases": ["image", "preview", "poster"],
       "description": "Toggle the image and details companion pane"
+    },
+    {
+      "id": "pet",
+      "label": "Companion",
+      "aliases": ["pet", "kanna", "companion", "mascot", "fox"],
+      "description": "Show or hide Kanna, the fox on empty and error screens"
     },
     {
       "id": "toggle-autoplay",

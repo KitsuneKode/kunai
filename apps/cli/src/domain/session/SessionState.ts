@@ -143,6 +143,7 @@ export type OverlayState =
   | { type: "library"; view?: "library" | "queue" }
   | { type: "diagnostics" }
   | { type: "help" }
+  | { type: "guide" }
   | { type: "about" }
   | { type: "setup"; missing: readonly string[] }
   | { type: "confirm"; message: string; confirmLabel?: string };
