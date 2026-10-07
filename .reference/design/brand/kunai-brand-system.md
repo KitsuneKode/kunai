@@ -59,12 +59,18 @@ Rationale: the current Sakura ramp is all one rose-brown hue with tiny steps (no
 
 ### Text
 
-| token   | hex       |
-| ------- | --------- |
-| text    | `#f6eff4` |
-| textDim | `#cabfca` |
-| muted   | `#a195a3` |
-| dim     | `#665b69` |
+| token   | hex       | APCA \|Lc\| on canvas | role                                |
+| ------- | --------- | --------------------- | ----------------------------------- |
+| text    | `#f6eff4` | 98                    | primary text                        |
+| textDim | `#d5cad5` | 76                    | body-weight secondary text          |
+| muted   | `#bcafbe` | 61                    | labels and metadata                 |
+| dim     | `#a292a5` | 46                    | hints and pending steps             |
+| faint   | `#3a3340` | decorative            | rules and disabled glyphs, not text |
+
+The tiers were set by lightness only (hue and chroma held) to meet APCA targets of 75, 60
+and 45 on the canvas and panel. On the selected row they land at 71, 56 and 41. The previous
+values (`#cabfca`, `#968a98`, `#665b69`) were 70, 41 and 20, and the old `dim` fell to 15 on the
+selected row. Terminal 256-colour fallbacks live in `packages/design/src/color-resolution.ts`.
 
 `text`, `textDim` and `muted` are body-readable (4.5:1) on every surface, including the selected-row band. `dim` is **disabled or decorative only** (2.8:1 on `surface`); never put a sentence in it.
 

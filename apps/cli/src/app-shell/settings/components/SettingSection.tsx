@@ -37,11 +37,7 @@ export const SettingRowStatus = React.memo(function SettingRowStatus({
   return (
     <Box flexDirection="column" marginLeft={2}>
       <Text color={tone}>{row.def.label}</Text>
-      {row.detail ? (
-        <Text color={palette.dim} dimColor>
-          {row.detail}
-        </Text>
-      ) : null}
+      {row.detail ? <Text color={palette.dim}>{row.detail}</Text> : null}
     </Box>
   );
 });

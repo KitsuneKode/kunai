@@ -1,4 +1,3 @@
-// =============================================================================
 // SakuraLoader.tsx — the signature ❀ bloom loader + label shimmer
 //
 // The brand motif (❀ in rose, per .reference/design/cli/kunai-sakura.html .petal/.empty)
@@ -9,17 +8,12 @@
 // Honors reduced-motion (static ❀, steady label) and a viewport-pause `active`
 // prop, both delegated to the shared SakuraPetal frame primitives so there is
 // one motion policy across the app.
-// =============================================================================
 
 import { Box, Text } from "ink";
 import React from "react";
 
-import {
-  BLOOM_FRAMES,
-  reducedMotionEnabled,
-  STATIC_PETAL,
-  useFrameTick,
-} from "./primitives/SakuraPetal";
+import { reducedMotionEnabled } from "./motion-policy";
+import { BLOOM_FRAMES, STATIC_PETAL, useFrameTick } from "./primitives/SakuraPetal";
 import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 

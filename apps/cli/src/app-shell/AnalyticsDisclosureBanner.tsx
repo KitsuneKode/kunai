@@ -39,9 +39,7 @@ export function AnalyticsDisclosureBanner({ width }: { readonly width: number })
       <Text color={palette.muted}>
         Once a day Kunai sends installId, version, os, arch, ts — nothing else.
       </Text>
-      <Text color={palette.dim} dimColor>
-        Never: titles · queries · providers · URLs · paths
-      </Text>
+      <Text color={palette.dim}>Never: titles · queries · providers · URLs · paths</Text>
       <Text color={palette.muted}>This is opt-in. Enable or disable it later in Settings.</Text>
     </Box>
   );
