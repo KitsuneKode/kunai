@@ -2,6 +2,7 @@
 // Config Service Implementation
 // =============================================================================
 
+import { dbg } from "@/logger";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
@@ -293,6 +294,26 @@ export class ConfigServiceImpl implements ConfigService {
       analyticsEndpoint:
         typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
+    // One debug line, not per-field: enough to see what normalization did on a
+    // bug report without spamming --debug. Secrets never land here — tokens are
+    // presence booleans, and the relay URL is host-only.
+    dbg("config", "normalized config on load", {
+      provider: service.config.provider,
+      providerPriority: service.config.providerPriority,
+      animeProvider: service.config.animeProvider,
+      animeProviderPriority: service.config.animeProviderPriority,
+      analytics: service.config.analytics,
+      analyticsNoticeShown: service.config.analyticsNoticeShown,
+      hasInstallId: service.config.installId.length > 0,
+      recoveryMode: service.config.recoveryMode,
+      startupPriority: service.config.startupPriority,
+      relayEnabled: service.config.providerRelay.enabled !== false,
+      relayHost: relayHostForDebug(service.config.providerRelay.baseUrl),
+      hasRelayToken: (service.config.providerRelay.token ?? "").length > 0,
+      hasVideasySession: service.config.videasySessionToken.length > 0,
+      migratedAnimeDefaults,
+      migratedSeriesDefaults,
+    });
     const migratedVideasyAppId = shouldPersistVideasyAppIdMigration(loaded, service.config);
     // Vault lane: hydrate the in-memory token from the vault when config.json
     // no longer carries it, or migrate plaintext that predates the vault. The
@@ -1091,4 +1112,14 @@ function normalizeMpvReconnectAttempts<T>(value: T): number {
 function normalizeMaxConcurrentDownloads<T>(value: T): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 3;
   return Math.max(1, Math.min(5, Math.trunc(value)));
+}
+
+/** Host-only relay URL for debug logs: the full URL can carry path/query. */
+function relayHostForDebug(baseUrl: string | undefined): string {
+  if (!baseUrl) return "";
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return "unparseable";
+  }
 }

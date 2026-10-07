@@ -117,6 +117,28 @@ describe("verifyCandidateStream", () => {
 
     expect(verdict).toMatchObject({ accepted: false });
   });
+
+  test("denies a private-target stream before any fetch (SSRF guard)", async () => {
+    // A provider-supplied URL can name loopback, LAN, or cloud metadata. The
+    // deny lives inside the probe path, so the gate must surface it as a
+    // refusal without the injected fetch ever firing.
+    const { context, seen } = contextRecording(() => new Response("", { status: 200 }));
+
+    for (const url of [
+      "http://169.254.169.254/latest/meta-data",
+      "http://127.0.0.1:8080/internal",
+      "http://10.0.0.4/lan",
+      "http://172.16.0.9/lan",
+      "http://192.168.1.10/media",
+      "http://0.0.0.0/internal",
+      "http://[::1]/loopback",
+    ]) {
+      const verdict = await verifyCandidateStream({ stream: { url, headers: {} }, context });
+      expect(verdict.accepted).toBe(false);
+      if (verdict.accepted === false) expect(verdict.reason).toContain("blocked stream target");
+    }
+    expect(seen).toEqual([]);
+  });
 });
 
 /**
