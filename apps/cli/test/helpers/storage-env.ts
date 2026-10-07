@@ -11,9 +11,18 @@
  *
  * Setting the full set keeps one call correct everywhere: the variables that do
  * not apply to the host are simply ignored.
+ *
+ * TMPDIR/TMP/TEMP are deliberately absent: `os.tmpdir()` follows them, so a
+ * caller that disposes its root while the env is still applied leaves every
+ * later `mkdtemp(join(tmpdir(), …))` in the worker pointing at a deleted
+ * directory. Temp scratch under the real tmpdir is also intentional — mpv IPC
+ * sockets and playlists live there by design (sun_path length).
  */
 export function storageRootEnv(dir: string): Record<string, string> {
   return {
+    // OS vault entries are global to the account, even under a shadow HOME.
+    // Keep test credentials in the file vault under the redirected config dir.
+    KUNAI_CREDENTIAL_BACKEND: "file",
     // Linux (freedesktop).
     XDG_CACHE_HOME: dir,
     XDG_DATA_HOME: dir,
