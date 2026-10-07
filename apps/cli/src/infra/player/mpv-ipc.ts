@@ -102,12 +102,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Encode one newline-delimited mpv command, optionally correlated with a response. */
 export function buildMpvIpcCommand(command: readonly unknown[], requestId?: number): string {
   const payload =
     requestId === undefined ? { command } : { command, request_id: Math.trunc(requestId) };
   return `${JSON.stringify(payload)}\n`;
 }
 
+/** Parse one complete IPC line; malformed and non-object payloads are ignored. */
 export function parseMpvIpcLine(raw: string): MpvIpcMessage | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -166,6 +168,10 @@ export interface MpvIpcSession {
   close(): Promise<void>;
 }
 
+/**
+ * Open a bounded, byte-ordered IPC session. Commands settle once on response,
+ * deadline, or close; expiry during a partial write closes the damaged stream.
+ */
 export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<MpvIpcSession> {
   const closeTimers = options.closeTimers ?? defaultCloseTimers;
   const commandTimers = options.commandTimers ?? defaultCloseTimers;
@@ -182,18 +188,23 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
   const maxQueuedBytes = 256 * 1024;
   const decoder = new StringDecoder("utf8");
 
-  const drainPending = (error: string) => {
+  const drainPending = (error: string, timedOutRequestId?: number) => {
     for (const [requestId, pending] of Array.from(pendingCommands)) {
-      pending.resolve({ ok: false, command: pending.command, requestId, error });
+      pending.resolve({
+        ok: false,
+        command: pending.command,
+        requestId,
+        error: requestId === timedOutRequestId ? "timeout" : error,
+      });
     }
   };
 
-  const markClosed = (error = "session closed") => {
+  const markClosed = (error = "session closed", timedOutRequestId?: number) => {
     if (closed) return;
     closed = true;
     writes.length = 0;
     queuedBytes = 0;
-    drainPending(error);
+    drainPending(error, timedOutRequestId);
   };
 
   const flushWrites = (sock: Bun.Socket<SocketState>) => {
@@ -322,16 +333,18 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
         const timeout = commandTimers.setTimeout(() => {
           const index = writes.findIndex((entry) => entry.requestId === requestId);
           const entry = writes[index];
-          finish({ ok: false, command, requestId, error: "timeout" });
           if (entry && entry.offset > 0) {
             // Dropping half a JSON line corrupts the next command; completing it
             // after its deadline could launch playback the user already cancelled.
-            markClosed("partial IPC write timed out");
+            markClosed("partial IPC write timed out", requestId);
             socket.terminate();
+            return;
           } else if (entry) {
             queuedBytes -= entry.bytes.length;
             writes.splice(index, 1);
           }
+          // Fence queued bytes before notifying code that can re-enter this session.
+          finish({ ok: false, command, requestId, error: "timeout" });
         }, timeoutMs);
         pendingCommands.set(requestId, { command, resolve: finish, timeout });
         try {
