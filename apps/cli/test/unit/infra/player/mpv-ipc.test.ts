@@ -472,3 +472,31 @@ test("initial write failure rejects session opening", async () => {
     -1,
   );
 });
+
+test.each([false, true])(
+  "expiry fences a reentrant result callback before it can drain (partial=%s)",
+  async (partial) => {
+    const clock = createCloseTimerHarness();
+    await withFakeMpvSocket(true, async ({ setWriteLimit, written, drain }) => {
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "fixture" },
+        onPropertyUpdate() {},
+        onEndFile() {},
+        commandTimers: clock.timers,
+        onCommandResult(result) {
+          if (!result.ok && result.error === "timeout") {
+            setWriteLimit(Infinity);
+            drain();
+          }
+        },
+      });
+      const prefix = written().join("");
+      setWriteLimit(partial ? 7 : 0);
+      const command = session.send(["loadfile", "expired.mp4", "replace"]);
+      clock.scheduled[0]!.callback();
+      expect(await command).toMatchObject({ ok: false, error: "timeout" });
+      expect(written().join("").slice(prefix.length)).toHaveLength(partial ? 7 : 0);
+      await session.close();
+    });
+  },
+);

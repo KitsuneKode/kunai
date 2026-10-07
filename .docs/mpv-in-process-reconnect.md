@@ -121,5 +121,6 @@ A command deadline drops an entirely unsent command. If part of that command has
 already been written, the session closes instead: discarding half a JSON line
 corrupts framing, and sending its remainder after expiry could start retired
 playback. Close discards the queue, settles pending commands, and prevents a late
-drain from sending them. This fixes a reproduced partial-write defect; it does not
+drain from sending them. Expiry removes queued bytes or closes the session before
+notifying result callbacks, so reentrant callbacks cannot send an expired command. This fixes a reproduced partial-write defect; it does not
 by itself establish the cause of intermittent native transition failures.
