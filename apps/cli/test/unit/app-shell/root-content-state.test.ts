@@ -74,7 +74,9 @@ test("waitForRootContentSlot parks while a foreign session owns the slot", async
     await waitForRootContentSlot();
     released = true;
   })();
-  await Bun.sleep(0);
+  // One microtask turn is enough: if the wait resolved immediately the
+  // continuation above would already have run by the time we check.
+  await Promise.resolve();
   expect(released).toBe(false);
 
   picker.close("dismissed");

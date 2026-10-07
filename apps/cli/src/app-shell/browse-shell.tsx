@@ -2311,6 +2311,7 @@ export function BrowseShell<T>({
             commandMode={commandMode}
             actions={visibleBrowseFooterActions}
             terminalWidth={viewport.columns}
+            companionHint
           />
         );
       })()}
@@ -2433,6 +2434,10 @@ export function openBrowseShell<T>({
       />
     ),
     fallbackValue: { type: "cancelled" },
+    // A picker a detached overlay workflow mounts over browse resolves the
+    // mount as displaced, so SearchPhase remounts instead of reporting a
+    // cancel the user never made.
+    displacedValue: { type: "cancelled", displaced: true },
   });
 
   return session.result;

@@ -409,7 +409,11 @@ export type BrowseShellResult<T> =
       type: "launch-playback";
       launch: { readonly title: TitleInfo; readonly episode?: EpisodeInfo };
     }
-  | { type: "cancelled" };
+  | {
+      type: "cancelled";
+      /** Set when another root-content session displaced browse — not a user Esc. */
+      displaced?: true;
+    };
 
 export type PlaybackShellResult =
   | ShellAction

@@ -28,6 +28,12 @@ type PendingRootContentMount = {
   readonly sessionId: number;
   readonly settle: (value: unknown) => void;
   readonly fallbackValue: unknown;
+  /**
+   * Resolves the mount when another session displaces it. Distinct from
+   * `fallbackValue` so the caller can tell "evicted" from "cancelled" —
+   * browse uses it to remount rather than report a user cancel.
+   */
+  readonly displacedValue: unknown;
 };
 
 const pendingRootContentMounts = new Set<PendingRootContentMount>();
@@ -98,7 +104,9 @@ export function waitForRootContentSlot(signal?: AbortSignal): Promise<void> {
     const session = rootContentSession;
     return session === null || session.kind === "browse";
   };
-  if (slotFree()) return Promise.resolve();
+  // An already-aborted signal never fires "abort" again — check before
+  // subscribing or the wait parks until the slot frees on its own.
+  if (slotFree() || signal?.aborted) return Promise.resolve();
   return new Promise<void>((resolve) => {
     const finish = () => {
       unsubscribe();
@@ -174,11 +182,14 @@ export function mountRootContent<TResult>({
   kind,
   renderContent,
   fallbackValue,
+  displacedValue,
   headerLabel,
 }: {
   kind: RootContentKind;
   renderContent: (finish: (value: TResult) => void) => ReactElement;
   fallbackValue: TResult;
+  /** Resolves the session if another mount displaces it; defaults to fallbackValue. */
+  displacedValue?: TResult;
   headerLabel?: string;
 }): MountedRootContent<TResult> {
   const sessionId = rootContentNextId++;
@@ -194,6 +205,7 @@ export function mountRootContent<TResult>({
     sessionId,
     settle: (value) => settle(value as TResult),
     fallbackValue,
+    displacedValue: displacedValue ?? fallbackValue,
   };
 
   settle = (value: TResult) => {
@@ -236,7 +248,7 @@ export function mountRootContent<TResult>({
     for (const mount of pendingRootContentMounts) {
       if (mount.sessionId !== sessionId) {
         // Settle deletes only the mount being iterated — safe during for…of.
-        mount.settle(mount.fallbackValue);
+        mount.settle(mount.displacedValue);
       }
     }
   }

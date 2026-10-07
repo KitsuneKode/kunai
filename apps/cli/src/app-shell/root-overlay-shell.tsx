@@ -165,7 +165,13 @@ import {
   isRootChoiceOverlay,
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
-import { resolveQueueRowPlaySelection, resolveRootQueueSelection } from "./root-queue-bridge";
+import {
+  episodeInfoFromQueuePlaybackLaunch,
+  hasPendingRootQueueSelection,
+  resolveQueueRowPlaySelection,
+  resolveRootQueueSelection,
+  titleInfoFromQueuePlaybackLaunch,
+} from "./root-queue-bridge";
 import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
 import { runRootWorkflowSafely } from "./root-workflow-dispatch";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
@@ -409,6 +415,7 @@ function HelpShell({
         actions={footerActions}
         mode="detailed"
         commandMode={commandMode}
+        companionHint
       />
     </Box>
   );
@@ -1639,12 +1646,26 @@ export function RootOverlayShell({
       const row = sel >= 0 ? queueRows[sel] : undefined;
       if (key.return && row) {
         // Claim exact row before handoff; failed CAS keeps the overlay open.
-        resolveQueueRowPlaySelection(
+        const awaited = hasPendingRootQueueSelection();
+        const played = resolveQueueRowPlaySelection(
           container.queueService,
           row.id,
           resolveRootQueueSelection,
           () => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" }),
         );
+        // The palette route awaits this through openRootQueueSelection. Opened
+        // directly from another overlay there is no resolver — the claim above
+        // would close the overlay and drop a launch nothing consumed. Fall back
+        // to the same finish channel the history path uses.
+        if (played.status === "claimed" && !awaited) {
+          const episode = episodeInfoFromQueuePlaybackLaunch(played.launch);
+          const title = titleInfoFromQueuePlaybackLaunch(played.launch);
+          forceCloseRootContent<BrowseShellResult<SearchResult>>(
+            episode
+              ? { type: "launch-playback", launch: { title, episode } }
+              : { type: "launch-playback", launch: { title } },
+          );
+        }
         return;
       }
       if (input === "J" && row) {
@@ -2031,6 +2052,7 @@ export function RootOverlayShell({
           actions={footerActions}
           mode="detailed"
           commandMode={commandMode}
+          companionHint
         />
       </Box>,
     );
@@ -2116,6 +2138,7 @@ export function RootOverlayShell({
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
+          companionHint
         />
       </Box>,
     );
@@ -2175,6 +2198,7 @@ export function RootOverlayShell({
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
+          companionHint
         />
       </Box>,
     );
@@ -2230,6 +2254,7 @@ export function RootOverlayShell({
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
+          companionHint
         />
       </Box>,
     );
@@ -2303,6 +2328,7 @@ export function RootOverlayShell({
           ]}
           mode="detailed"
           commandMode={commandMode}
+          companionHint
         />
       </Box>,
     );
@@ -2372,6 +2398,7 @@ export function RootOverlayShell({
         actions={footerActions}
         mode="detailed"
         commandMode={commandMode}
+        companionHint
       />
     </Box>,
   );

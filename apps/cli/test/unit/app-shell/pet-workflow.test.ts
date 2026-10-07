@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { companionMode, setCompanionPreferenceSource } from "@/app-shell/companion-policy";
 import { handleShellAction } from "@/app-shell/workflows";
@@ -50,9 +50,22 @@ function containerWithPet(initial: "auto" | "off") {
   return { ...fixture, stored, saves };
 }
 
+// A KUNAI_PET in the ambient env pins the toggle to a refusal, so every /pet
+// test needs it cleared up front — and restored, not deleted, afterwards.
+let savedKunaiPet: string | undefined;
+
+beforeEach(() => {
+  savedKunaiPet = process.env.KUNAI_PET;
+  delete process.env.KUNAI_PET;
+});
+
 afterEach(() => {
   setCompanionPreferenceSource(() => "auto");
-  delete process.env.KUNAI_PET;
+  if (savedKunaiPet === undefined) {
+    delete process.env.KUNAI_PET;
+  } else {
+    process.env.KUNAI_PET = savedKunaiPet;
+  }
 });
 
 describe("pet workflow action", () => {
