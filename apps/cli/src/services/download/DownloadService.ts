@@ -1,4 +1,5 @@
-import { link, mkdir, rm, stat, statfs } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { copyFile, link, mkdir, open, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
@@ -41,7 +42,7 @@ import {
   type HistoryTitleAliasInput,
   type HistoryTitleAliasRepository,
 } from "@kunai/storage";
-import type { MediaKind, ProviderExternalIds } from "@kunai/types";
+import { isJsonObject, isJsonString, type MediaKind, type ProviderExternalIds } from "@kunai/types";
 
 import { whichLive } from "../../infra/os/which";
 import { downloadJobShellMode } from "./download-job-mode";
@@ -258,6 +259,80 @@ type DownloadSidecarResult = {
   readonly message?: string;
   readonly repairMetadataJson?: string;
 };
+
+export type StagedDownloadPublishFs = {
+  readonly link: (tempPath: string, outputPath: string) => Promise<void>;
+  readonly copyFile: (src: string, dest: string, flags?: number) => Promise<void>;
+  /** Durable flush of a freshly copied artifact (fsync). */
+  readonly fsyncFile: (path: string) => Promise<void>;
+  readonly removeFile: (path: string) => Promise<void>;
+};
+
+const defaultStagedDownloadPublishFs: StagedDownloadPublishFs = {
+  link: (tempPath, outputPath) => link(tempPath, outputPath),
+  copyFile: (src, dest, flags) => copyFile(src, dest, flags),
+  fsyncFile: async (path) => {
+    const handle = await open(path, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  },
+  removeFile: (path) => rm(path, { force: true }),
+};
+
+function publishErrorCode(cause: unknown): string | undefined {
+  return isJsonObject(cause) && isJsonString(cause.code) ? cause.code : undefined;
+}
+
+function existingDestinationError(cause: unknown): Error {
+  return new Error(
+    "Download destination already exists; existing file preserved. Choose a different download directory.",
+    { cause },
+  );
+}
+
+/**
+ * Exclusive publication of a staged download.
+ *
+ * Hard-link first: atomic and fails if ANY destination exists. Volumes that
+ * cannot hard-link (cross-device EXDEV, exFAT EPERM/ENOTSUP/EOPNOTSUPP) fall
+ * back to an exclusive copy (COPYFILE_EXCL, so an existing destination still
+ * fails instead of being overwritten) plus fsync, then staging cleanup.
+ * EEXIST always throws with the destination preserved — neither lane ever
+ * silently overwrites.
+ */
+export async function publishStagedDownloadArtifact(
+  tempPath: string,
+  outputPath: string,
+  fs: StagedDownloadPublishFs = defaultStagedDownloadPublishFs,
+): Promise<"hard-linked" | "copied"> {
+  try {
+    await fs.link(tempPath, outputPath);
+    return "hard-linked";
+  } catch (error) {
+    const code = publishErrorCode(error);
+    if (code === "EEXIST") throw existingDestinationError(error);
+    if (code !== "EXDEV" && code !== "EPERM" && code !== "ENOTSUP" && code !== "EOPNOTSUPP") {
+      throw error;
+    }
+  }
+  try {
+    await fs.copyFile(tempPath, outputPath, fsConstants.COPYFILE_EXCL);
+  } catch (error) {
+    if (publishErrorCode(error) === "EEXIST") throw existingDestinationError(error);
+    throw error;
+  }
+  try {
+    await fs.fsyncFile(outputPath);
+  } catch (error) {
+    await fs.removeFile(outputPath).catch(() => {});
+    throw error;
+  }
+  await fs.removeFile(tempPath).catch(() => {});
+  return "copied";
+}
 
 export class DownloadService {
   private queueWorkerRunning = false;
@@ -836,6 +911,11 @@ export class DownloadService {
    * The only non-awaited queue entry point. Production callers that merely
    * nudge background work use this seam so an unexpected repository or worker
    * rejection remains diagnosable without reaching the CLI-wide fatal policy.
+   *
+   * Fire-and-forget is bounded here, not retried inline: the rejection is
+   * reported once via reportQueuePassFailure (diagnostics + logger), and every
+   * pass starts with reconcileInterruptedJobs(), so a lost pass is recovered —
+   * re-queued or adopted — on the next kick instead of stranding the job.
    */
   kickQueue(source: DownloadQueueKickSource): void {
     void this.processQueue().catch((error: unknown) => {
@@ -1270,28 +1350,11 @@ export class DownloadService {
         "Download destination is shared with another job; choose a different directory",
       );
     }
-    // Hard-link publication is atomic and fails if ANY destination exists.
-    // Never fall back to overwriting rename on filesystems without hard links.
-    try {
-      await link(job.tempPath, job.outputPath);
-      this.publishedJobIds.add(job.id);
-    } catch (error) {
-      const code =
-        typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-      if (code === "EEXIST") {
-        throw new Error(
-          "Download destination already exists; existing file preserved. Choose a different download directory.",
-          { cause: error },
-        );
-      }
-      if (code === "EPERM" || code === "ENOTSUP" || code === "EOPNOTSUPP" || code === "EXDEV") {
-        throw new Error(
-          "Download directory does not support safe publication. Choose a writable directory on a filesystem with hard-link support.",
-          { cause: error },
-        );
-      }
-      throw error;
-    }
+    // Exclusive publication in both lanes: hard-link first (atomic, fails if
+    // ANY destination exists), exclusive copy+fsync on volumes without
+    // hard-link support (cross-device/exFAT). Neither lane silently overwrites.
+    await publishStagedDownloadArtifact(job.tempPath, job.outputPath);
+    this.publishedJobIds.add(job.id);
     await rm(job.tempPath).catch(() => {
       // Publication succeeded. A locked staging name must not turn a valid
       // artifact into a retry that collides with its own published output.

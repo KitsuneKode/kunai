@@ -2,6 +2,7 @@
 // Config Service Implementation
 // =============================================================================
 
+import { dbg } from "@/logger";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
@@ -291,6 +292,26 @@ export class ConfigServiceImpl implements ConfigService {
       analyticsEndpoint:
         typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
+    // Normalization silently rewrites unknown/missing values to defaults, which
+    // reads as "my config reset itself". Summarize what changed — sampled to the
+    // first few keys so a heavily-drifted file logs one line, not dozens.
+    try {
+      const loadedValues = new Map(Object.entries(loaded));
+      const repaired = Object.entries(service.config)
+        .filter(([key, currentValue]) => {
+          const before = loadedValues.get(key);
+          return before !== undefined && JSON.stringify(before) !== JSON.stringify(currentValue);
+        })
+        .map(([key]) => key);
+      if (repaired.length > 0) {
+        dbg("config", `normalized ${repaired.length} key(s) to defaults`, {
+          keys: repaired.slice(0, 8).join(","),
+          truncated: repaired.length > 8,
+        });
+      }
+    } catch {
+      // Diagnostics must never break config load.
+    }
     const migratedVideasyAppId = shouldPersistVideasyAppIdMigration(loaded, service.config);
     // Vault lane: hydrate the in-memory token from the vault when config.json
     // no longer carries it, or migrate plaintext that predates the vault. The

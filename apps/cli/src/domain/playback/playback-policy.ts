@@ -104,6 +104,37 @@ export function didPlaybackReachCompletionThreshold(
   );
 }
 
+/**
+ * The durability gate for writing `completed:true` to history.
+ *
+ * `didPlaybackReachCompletionThreshold` deliberately counts a voluntary quit
+ * near the end (resume UX, interrupted-vs-complete session policy), but a
+ * history row marked completed is forever: it clears the resume point and
+ * feeds "episode complete" copy plus offline-runway evaluation. Only a clean
+ * natural EOF may set it — never a quit, kill (exit signal), crash (non-zero
+ * exit), timeout/unknown, or a demoted (suspected-dead) stream. The 95%
+ * percent-pos half of the rule is enforced upstream in mpv-stats'
+ * premature-EOF guard, which demotes thin eof claims to unknown before they
+ * reach this layer.
+ */
+export function shouldMarkEpisodeCompleted(
+  result: PlaybackResult,
+  timing?: PlaybackTimingMetadata | null,
+  thresholdMode: QuitNearEndThresholdMode = "credits-or-90-percent",
+): boolean {
+  if (result.endReason !== "eof") return false;
+  if (result.suspectedDeadStream) return false;
+  if (result.playerExitSignal) return false;
+  if (
+    result.playerExitCode !== null &&
+    result.playerExitCode !== undefined &&
+    result.playerExitCode !== 0
+  ) {
+    return false;
+  }
+  return didPlaybackReachCompletionThreshold(result, timing, thresholdMode);
+}
+
 export function didPlaybackEndNearNaturalEnd(
   result: PlaybackResult,
   timing?: PlaybackTimingMetadata | null,

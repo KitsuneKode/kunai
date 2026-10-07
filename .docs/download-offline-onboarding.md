@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-10-07"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -129,8 +129,9 @@ accounts, usage ping, done. Implementation is
 - New temporary files use a short `.tmp.<job-id>.mp4` sibling name so a long final filename
   does not overflow the filesystem component limit. Existing jobs retain their recorded paths.
   Candidates validate after a clean exit, then publish using an exclusive hard link before the
-  temporary name is removed. An existing destination is never overwritten; filesystems without
-  hard-link support fail safely. Choose another directory or resolve the existing file explicitly.
+  temporary name is removed. A cross-device or unsupported-link failure uses an exclusive copy
+  followed by file fsync. An existing destination is never overwritten in either path.
+  Choose another directory or resolve an existing file explicitly.
   Legacy destinations claimed by another job or offline asset are refused during publication
   and recovery. Artifact deletion requires a completed/repairable job with no conflicting owner;
   deleting a failed job preserves an unknown existing file.

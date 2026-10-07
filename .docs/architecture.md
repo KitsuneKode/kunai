@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-10-07"
 ---
 
 # Kunai — Runtime Architecture
@@ -187,12 +187,20 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 
 | Data          | Path                                | Owner                                |
 | ------------- | ----------------------------------- | ------------------------------------ |
-| Config        | `~/.config/kunai/config.json`       | `ConfigService` + `ConfigStoreImpl`  |
+| Config        | OS app config dir `config.json`     | `ConfigService` + `ConfigStoreImpl`  |
 | Watch history | OS app data dir `kunai-data.sqlite` | `@kunai/storage` + CLI history store |
 | Stream cache  | OS cache dir `kunai-cache.sqlite`   | `@kunai/storage` + CLI cache store   |
 | Debug logs    | `./logs.txt`                        | `apps/cli/src/logger.ts`             |
 
 **Watch ledger (2026-06):** `history_progress` is the single source of truth for resume position, completion, and engaged watch time. Columns `watched_seconds`, `last_watched_at`, and `completed_at` (migration `024`) back Stats and continuation. All mark-watched/unwatched surfaces write through `HistoryRepository.markWatched` / `markUnwatched` (preserve resume on unmark). `playback_events` receives fire-and-forget instrumentation from the mpv position tick via `PlaybackEventRepository`. Stats aggregation lives in `WatchStatsRepository` (`packages/storage`).
+
+Automatic local completion requires a natural `end-file` EOF and trusted progress
+past the completion threshold. A quit near the end can count as engaged viewing
+for session policy while keeping its resume position; a kill, crash, timeout, or
+process exit without `end-file` must never clear that position. The last IPC
+`eof-reached` sample alone is insufficient. `shouldMarkEpisodeCompleted` owns
+this rule for both anime and TMDB playback, and explicit mark-watched remains a
+user override.
 
 **Title writes are additive on identity (2026-08):** a write carries whatever metadata its launching lane happened to have, and a lane that knows less than the stored row must never subtract from it. `HistoryRepository.upsertProgress` takes progress fields (position, duration, completion, provider) from the newest write, but protects identity: `poster_url` is `COALESCE`d, `external_ids_json` is merged (stored ids win per key), and a title that is a placeholder for its own id — `TMDB <id>` from `-i/--id`, or a share ref that named a title after itself — never replaces a real stored name. `ListRepository.addItem` and `FollowedTitleRepository.upsert` follow the same rule, so re-adding a title to a Watchlist or muting it cannot rename it. Placeholder names are minted and recognised in one place, `@kunai/core` `directIdTitleName` / `isPlaceholderTitleName`, because both the CLI and storage have to agree on the shape.
 
