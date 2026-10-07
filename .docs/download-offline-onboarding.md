@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-07"
+lastReviewed: "2026-10-08"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -126,11 +126,18 @@ accounts, usage ping, done. Implementation is
   but do not schedule offline runway work unless `Keep watching offline` was selected and do not
   revoke an existing title enrollment.
 - HLS size is reported honestly as unknown when content length cannot be known.
-- New temporary files use a short `.tmp.<job-id>.mp4` sibling name so a long final filename
-  does not overflow the filesystem component limit. Existing jobs retain their recorded paths.
+- The recorded temporary base is a short `.tmp.<job-id>.mp4` sibling name so a long final
+  filename does not overflow the filesystem component limit. Each claimed attempt writes
+  `media.mp4` inside its own `.claim-<generation>` directory. Metadata refresh cannot replace
+  that attempt path. Existing jobs retain their recorded base paths.
   Candidates validate after a clean exit, then publish using an exclusive hard link before the
-  temporary name is removed. A cross-device or unsupported-link failure uses an exclusive copy
-  followed by file fsync. An existing destination is never overwritten in either path.
+  temporary name is removed. Child launch, hard-link publication, and exclusive copy reservation
+  hold a short SQLite writer lock after checking the claim token and generation. A cross-device
+  or unsupported-link failure reserves the destination with `wx`, records its device/inode as
+  an incomplete copy, and copies asynchronously through that descriptor before file fsync.
+  Recovery never advertises an incomplete copy as playable, even without ffprobe. It removes
+  such a copy only when its recorded identity still matches. Filesystems without stable file
+  identity fail safely. An existing destination is never overwritten in either path.
   Choose another directory or resolve an existing file explicitly.
   Legacy destinations claimed by another job or offline asset are refused during publication
   and recovery. Artifact deletion requires a completed/repairable job with no conflicting owner;
@@ -141,8 +148,26 @@ accounts, usage ping, done. Implementation is
   publishes successfully, metadata/completion write failures surface and leave the running
   lease recoverable. After that lease expires, recovery validates and adopts the artifact
   without downloading again; persistent database failures remain visible, not successful completion.
-- Queue ownership is a SQLite compare-and-set from `queued` to `running`. Heartbeats form a
-  bounded lease across Kunai processes; recovery never touches a freshly heartbeating owner.
+- Queue ownership is a SQLite compare-and-set from `queued` to `running`, with a unique owner
+  token and monotonic generation for each download or recovery claim. Recovery compares both
+  the observed heartbeat and generation. Every worker metadata/progress/heartbeat/completion
+  mutation presents its claim; a displaced worker cannot finish, fail, abort, or emit completion
+  for its successor. Heartbeat refusal stops that worker's child/copy. Async work never runs
+  under the SQLite writer lock, and the fence rejects async callbacks at typecheck time.
+  Retry also checks eligibility in SQLite, so a stale UI read cannot requeue a newly running
+  owner or an incomplete publication; the caller reports that changed state.
+- Expiry does not prove an old worker is dead. Recovery preserves its private attempt and any
+  legacy shared temporary name. A replacement writes a fresh namespace; a retry may restart
+  transfer bytes. Playback resume is independent of this transfer policy. Successful workers
+  remove only their own attempt. Failed publication bookkeeping retains hard-link inode proof
+  across repeated recovery failures. A recovery claim retains the original staging path until
+  adoption or retry; only a new transfer assigns a fresh directory. Shutdown retains claim
+  tokens for its final pause and leaves incomplete copies with failed cleanup recoverable.
+  Large-library paging and cleanup of abandoned attempt directories remain
+  separate work; unqualified files are retained rather than removed speculatively.
+- Publication identity is checked again before local completion and artifact deletion. A file
+  replaced during copy, validation, or after completion is preserved with a visible failure;
+  deleting its job record without artifact deletion remains available.
 - Blocking download intent is unique in SQLite by canonical title and exact nullable
   season/episode coordinates plus exact provider-native episode identity. Concurrent surfaces or
   Kunai processes therefore admit one matching job; the loser receives the ordinary
