@@ -183,6 +183,14 @@ export class ConfigServiceImpl implements ConfigService {
   private videasyTokenVaulted = false;
 
   static async load(store: ConfigStore, vault?: CredentialVaultPort): Promise<ConfigServiceImpl> {
+    const load = () => ConfigServiceImpl.loadWithinLock(store, vault);
+    return store.withLock ? store.withLock(load) : load();
+  }
+
+  private static async loadWithinLock(
+    store: ConfigStore,
+    vault?: CredentialVaultPort,
+  ): Promise<ConfigServiceImpl> {
     const service = new ConfigServiceImpl(store, vault);
     const loaded = await store.load();
     // Configs written before explicit consent had no notice marker. Their
@@ -333,6 +341,9 @@ export class ConfigServiceImpl implements ConfigService {
     // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(loaded) as (keyof KitsuneConfig)[]) {
       if (loaded[key] === undefined) continue;
+      // Hydration is not permission to overwrite a rotated native token.
+      if (key === "videasySessionToken" && loaded[key] === "" && service.videasyTokenVaulted)
+        continue;
       if (JSON.stringify(loaded[key]) !== JSON.stringify(service.config[key])) {
         service.dirtyKeys.add(key);
       }
@@ -348,7 +359,7 @@ export class ConfigServiceImpl implements ConfigService {
       // Migrations changed keys nothing marked dirty — without the flag the
       // persist would merge over the live file and drop them.
       service.needsFullConfigWrite = true;
-      await service.persistConfig();
+      await service.persistConfigNow(true);
       service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
     }
     return service;
@@ -358,8 +369,8 @@ export class ConfigServiceImpl implements ConfigService {
    * Persist config.json with vaulted secrets stripped from the on-disk shape.
    * The value lives in the vault; `videasySessionToken` in the file is "".
    * write → read-back → compare before the plaintext is ever omitted, and on
-   * any vault failure we fall through to the unscrubbed write so the value is
-   * never lost to a failed migration.
+   * replacement failure retains plaintext; an unverified clear rejects the
+   * save and keeps its dirty key retryable.
    */
   /**
    * Serializes config.json writes. A persist's `await store.load()` yields the
@@ -379,8 +390,8 @@ export class ConfigServiceImpl implements ConfigService {
 
   private persistConfig(): Promise<void> {
     // persistChain only orders this instance — the cross-process lock lives
-    // inside persistConfigNow, wrapped around just the read→merge→write so
-    // vault latency stays outside the critical section.
+    // inside persistConfigNow. Startup owns its initial read and migration,
+    // and explicit native credential changes share that critical section.
     const run = this.persistChain.then(() => this.persistConfigNow());
     this.persistChain = run.then(
       () => undefined,
@@ -389,7 +400,7 @@ export class ConfigServiceImpl implements ConfigService {
     return run;
   }
 
-  private async persistConfigNow(): Promise<void> {
+  private async persistConfigNow(alreadyLocked = false): Promise<void> {
     // Read the live config when the write actually runs — a chained persist
     // executes after any updates queued behind it, and a stale snapshot here
     // would write old values for keys it then clears from dirtyKeys.
@@ -398,32 +409,38 @@ export class ConfigServiceImpl implements ConfigService {
     // keeps the flag so the next persist still writes the migrated snapshot.
     const forceFullWrite = this.needsFullConfigWrite;
 
-    // Vault side-effects stay outside the file lock: keyring latency should
-    // not stretch the cross-instance critical section. The in-memory token
-    // drives the decision — the merged document carries the on-disk "" scrub
-    // whenever the token itself wasn't dirtied, and reading that as an
-    // intentional clear would wipe the vaulted secret.
-    let scrubToken = false;
-    if (this.vault && this.vault.backend !== "file") {
-      const key = CREDENTIAL_KEYS.videasySessionToken;
-      const token = config.videasySessionToken;
-      try {
+    const writeOnce = async (): Promise<void> => {
+      // Only explicit token changes write the vault. Keep its transition inside
+      // the config lock so sibling rotations and the file scrub share an owner.
+      let scrubToken = this.videasyTokenVaulted;
+      if (
+        this.vault &&
+        this.vault.backend !== "file" &&
+        this.dirtyKeys.has("videasySessionToken")
+      ) {
+        const key = CREDENTIAL_KEYS.videasySessionToken;
+        const token = config.videasySessionToken;
+        scrubToken = false;
         if (token) {
-          await this.vault.set(key, token);
-          if ((await this.vault.get(key)) === token) {
-            this.videasyTokenVaulted = true;
-            scrubToken = true;
+          this.videasyTokenVaulted = false;
+          try {
+            await this.vault.set(key, token);
+            if ((await this.vault.get(key)) === token) {
+              this.videasyTokenVaulted = true;
+              scrubToken = true;
+            }
+          } catch {
+            // A failed replacement retains its plaintext for a later migration.
           }
-        } else if (this.videasyTokenVaulted) {
+        } else {
+          // A sibling may have added a token since hydration. A clear must
+          // remove it too, and must not claim success if native deletion failed.
           await this.vault.delete(key);
+          if ((await this.vault.get(key)) !== undefined)
+            throw new Error("Native credential clear could not be verified");
           this.videasyTokenVaulted = false;
         }
-      } catch {
-        // Vault unreachable — persist plaintext rather than drop the value.
       }
-    }
-
-    const writeOnce = async (): Promise<void> => {
       // When this process has updated keys, write per-key over the CURRENT
       // file rather than our loaded-at-boot snapshot. The merge window shrinks
       // a lost-update race from the session's lifetime to one read→write pair
@@ -466,7 +483,7 @@ export class ConfigServiceImpl implements ConfigService {
     };
 
     const withLock = this.store.withLock?.bind(this.store);
-    if (withLock) {
+    if (withLock && !alreadyLocked) {
       await withLock(writeOnce);
     } else {
       await writeOnce();

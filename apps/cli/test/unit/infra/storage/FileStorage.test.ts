@@ -231,30 +231,89 @@ describe("FileStorage", () => {
   });
 
   test("withLock serializes overlapping cycles across storage instances", async () => {
-    // Two FileStorage objects on one path stand in for two `kunai` processes:
-    // the lock file is the only thing they share, so mutual exclusion here is
-    // the same mechanism that protects a cross-instance config merge.
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const entered = Promise.withResolvers<void>();
+    const ownerGate = Promise.withResolvers<void>();
+    const waiting = Promise.withResolvers<void>();
+    const retryGate = Promise.withResolvers<void>();
+    const first = new FileStorage({ config: configPath });
+    const second = new FileStorage({ config: configPath }, undefined, {
+      wait: async () => {
+        waiting.resolve();
+        await retryGate.promise;
+      },
+    });
+    const order: string[] = [];
+    const held = first.withLock("config", async () => {
+      order.push("a-start");
+      entered.resolve();
+      await ownerGate.promise;
+      order.push("a-end");
+    });
+    await entered.promise;
+    const queued = second.withLock("config", async () => {
+      order.push("b-start", "b-end");
+    });
+    try {
+      await waiting.promise;
+      expect(order).toEqual(["a-start"]);
+      ownerGate.resolve();
+      await held;
+      retryGate.resolve();
+      await queued;
+      expect(order).toEqual(["a-start", "a-end", "b-start", "b-end"]);
+      expect(await Bun.file(`${configPath}.lock`).exists()).toBe(false);
+    } finally {
+      ownerGate.resolve();
+      retryGate.resolve();
+      await Promise.all([held, queued]);
+    }
+  });
+
+  test("lock timeout rejects without entering an owner's critical section, then permits retry", async () => {
     const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
     tempDirs.push(dir);
     const configPath = join(dir, "config.json");
     const first = new FileStorage({ config: configPath });
-    const second = new FileStorage({ config: configPath });
-    const order: string[] = [];
-
-    const held = first.withLock("config", async () => {
-      order.push("a-start");
-      await Bun.sleep(40);
-      order.push("a-end");
+    const warnings: string[] = [];
+    let waits = 0;
+    let clock = Date.now();
+    const second = new FileStorage({ config: configPath }, (message) => warnings.push(message), {
+      now: () => clock,
+      wait: async (milliseconds) => {
+        waits += 1;
+        clock += milliseconds;
+      },
     });
-    const queued = second.withLock("config", async () => {
-      order.push("b-start");
-      order.push("b-end");
+    let releaseOwner: () => void = () => {};
+    const ownerGate = new Promise<void>((resolve) => {
+      releaseOwner = resolve;
     });
-    await Promise.all([held, queued]);
-
-    // The first claim is synchronous (O_EXCL succeeds inline), so `a` always
-    // holds the lock when `b` asks — `b` must observe a completed cycle.
-    expect(order).toEqual(["a-start", "a-end", "b-start", "b-end"]);
+    const ownerEntered = Promise.withResolvers<void>();
+    const owner = first.withLock("config", async () => {
+      ownerEntered.resolve();
+      await ownerGate;
+    });
+    await ownerEntered.promise;
+    const ownerBytes = await readFile(`${configPath}.lock`, "utf8");
+    let entered = false;
+    try {
+      await expect(
+        second.withLock("config", async () => {
+          entered = true;
+        }),
+      ).rejects.toThrow("settings were not saved");
+      expect(entered).toBe(false);
+      expect(waits).toBe(40);
+      expect(warnings).toEqual(["Config file is busy; settings were not saved"]);
+      expect(await readFile(`${configPath}.lock`, "utf8")).toBe(ownerBytes);
+    } finally {
+      releaseOwner();
+      await owner;
+    }
+    await expect(second.withLock("config", async () => "retried")).resolves.toBe("retried");
     expect(await Bun.file(`${configPath}.lock`).exists()).toBe(false);
   });
 
@@ -275,49 +334,104 @@ describe("FileStorage", () => {
     expect(await Bun.file(lockPath).exists()).toBe(false);
   });
 
-  test("withLock leaves a reclaimed lock alone when the stalled holder returns", async () => {
+  test("an aged live owner keeps its lock and another writer times out", async () => {
     const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
     tempDirs.push(dir);
     const configPath = join(dir, "config.json");
     const lockPath = `${configPath}.lock`;
+    const entered = Promise.withResolvers<void>();
+    const hold = Promise.withResolvers<void>();
     const first = new FileStorage({ config: configPath });
-    const second = new FileStorage({ config: configPath });
-
-    let releaseFirst: () => void = () => {};
-    let releaseSecond: () => void = () => {};
-    let secondHolding: () => void = () => {};
-    const firstHold = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
+    const owner = first.withLock("config", async () => {
+      entered.resolve();
+      await hold.promise;
     });
-    const secondHold = new Promise<void>((resolve) => {
-      releaseSecond = resolve;
+    await entered.promise;
+    const bytes = await readFile(lockPath, "utf8");
+    await utimes(lockPath, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+    let clock = Date.now();
+    const second = new FileStorage({ config: configPath }, undefined, {
+      now: () => clock,
+      timeoutMs: 50,
+      wait: async (milliseconds) => {
+        clock += milliseconds;
+      },
     });
-    const secondInside = new Promise<void>((resolve) => {
-      secondHolding = resolve;
+    let ran = false;
+    try {
+      await expect(
+        second.withLock("config", async () => {
+          ran = true;
+        }),
+      ).rejects.toThrow();
+      expect(ran).toBe(false);
+      expect(await readFile(lockPath, "utf8")).toBe(bytes);
+    } finally {
+      hold.resolve();
+      await owner;
+    }
+  });
+
+  test("late release preserves a successor's owner record", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const lockPath = `${configPath}.lock`;
+    const successor = JSON.stringify({ pid: process.pid, ownerId: "successor" });
+    const storage = new FileStorage({ config: configPath }, undefined, {
+      onBeforeRelease: async () => {
+        await writeFile(lockPath, successor);
+      },
     });
+    await storage.withLock("config", async () => "done");
+    expect(await readFile(lockPath, "utf8")).toBe(successor);
+  });
 
-    const firstCycle = first.withLock("config", () => firstHold);
+  test("concurrent dead-owner reclaim keeps critical sections exclusive", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    await writeFile(`${configPath}.lock`, "999999999");
+    let active = 0;
+    let maximum = 0;
+    const run = async (storage: FileStorage) =>
+      storage.withLock("config", async () => {
+        active += 1;
+        maximum = Math.max(maximum, active);
+        try {
+          await storage.write("config", { complete: true });
+        } finally {
+          active -= 1;
+        }
+      });
+    await Promise.all([
+      run(new FileStorage({ config: configPath })),
+      run(new FileStorage({ config: configPath })),
+    ]);
+    expect(maximum).toBe(1);
+    expect(await readdir(dir)).toEqual(["config.json"]);
+  });
 
-    // The holder stalls past the stale window — the contender reclaims the
-    // file and writes its own claim at the same path.
-    const stale = new Date(Date.now() - 60_000);
-    await utimes(lockPath, stale, stale);
-    const secondCycle = second.withLock("config", async () => {
-      secondHolding();
-      await secondHold;
-      return "b";
+  test("a foreign-host owner cannot be reclaimed by a local PID probe", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const foreign = JSON.stringify({
+      pid: 999999999,
+      hostname: "foreign-host",
+      ownerId: "foreign",
     });
-    await secondInside;
-
-    // The stalled holder finishing must not unlink the lock the contender
-    // now owns — that would open the mutex to a third claimant mid-cycle.
-    releaseFirst();
-    await firstCycle;
-    expect(await Bun.file(lockPath).exists()).toBe(true);
-
-    releaseSecond();
-    await secondCycle;
-    expect(await Bun.file(lockPath).exists()).toBe(false);
+    await writeFile(`${configPath}.lock`, foreign);
+    let clock = Date.now();
+    const storage = new FileStorage({ config: configPath }, undefined, {
+      now: () => clock,
+      timeoutMs: 50,
+      wait: async (milliseconds) => {
+        clock += milliseconds;
+      },
+    });
+    await expect(storage.withLock("config", async () => {})).rejects.toThrow();
+    expect(await readFile(`${configPath}.lock`, "utf8")).toBe(foreign);
   });
 
   test("withLock releases the claim when the guarded cycle throws", async () => {

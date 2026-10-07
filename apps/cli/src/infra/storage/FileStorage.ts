@@ -6,14 +6,17 @@
 // drifted from packages/storage once already).
 // =============================================================================
 
-import { closeSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from "node:fs";
-import { chmod, mkdir, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { chmod, mkdir, open, stat, unlink } from "node:fs/promises";
+import { hostname } from "node:os";
 import { join, dirname } from "node:path";
 
 import { writeAtomicSecretJson, writeAtomicSecretText } from "@/infra/fs/atomic-write";
 import { dbgErr } from "@/logger";
 import { getKunaiPaths } from "@kunai/storage";
+import { isJsonObject, isJsonNumber, isJsonString } from "@kunai/types";
 
+import { pidAlive, withConfigLockTransition, type ConfigLockOptions } from "./config-lock";
 import type { StorageService } from "./StorageService";
 
 /**
@@ -33,8 +36,8 @@ function defaultPaths(): Record<string, string> {
 }
 
 /**
- * A config read→merge→write cycle takes milliseconds — a lock file older than
- * this is a crashed holder's leftover, not contention.
+ * Grace for incomplete legacy owner records. Valid live owners never expire
+ * by age; a slow callback must not lose ownership.
  */
 const STALE_LOCK_MS = 10_000;
 
@@ -48,6 +51,8 @@ export class FileStorage implements StorageService {
     private readonly paths?: Record<string, string>,
     /** Warn channel for user-relevant events; debug-only detail goes through dbg(). */
     private readonly warn?: (message: string, context?: Record<string, unknown>) => void,
+    /** Controlled clocks and event gates for lock regressions. */
+    private readonly lockOptions: ConfigLockOptions = {},
   ) {}
 
   async read<T>(key: string): Promise<T | null> {
@@ -127,65 +132,60 @@ export class FileStorage implements StorageService {
     await task;
   }
 
-  /**
-   * Cross-process mutex on the backing file, claimed via O_EXCL on
-   * `<file>.lock`. A holder that dies mid-cycle leaves the lock behind —
-   * past `STALE_LOCK_MS` it is reclaimed rather than deadlocking the next
-   * save forever. If a pathological holdout never releases, we run unlocked
-   * after ~1s: a save that waits forever is worse than one that races.
-   */
+  /** Guard every acquire, stale reclaim and release; timeout never writes unlocked. */
   async withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const lockPath = `${this.pathFor(key)}.lock`;
-    const token = `${process.pid}:${Math.random().toString(36).slice(2)}`;
-    let acquired = false;
-    for (let wait = 0; wait < 40 && !acquired; wait += 1) {
-      try {
-        const fd = openSync(lockPath, "wx");
-        writeSync(fd, `${token}\n`);
-        closeSync(fd);
-        acquired = true;
-      } catch (error) {
-        const code = errorCode(error);
-        if (code === "ENOENT") {
-          await mkdir(dirname(lockPath), { recursive: true }).catch(() => {});
-          continue;
-        }
-        if (code !== "EEXIST") throw error;
-        let age = Number.POSITIVE_INFINITY;
-        try {
-          age = Date.now() - statSync(lockPath).mtimeMs;
-        } catch {
-          // The holder released between our claim attempt and the stat.
-          continue;
-        }
-        if (age > STALE_LOCK_MS) {
-          try {
-            unlinkSync(lockPath);
-          } catch {
-            // Another contender already reclaimed it — retry the claim.
+    const now = this.lockOptions.now ?? Date.now;
+    const wait = this.lockOptions.wait ?? Bun.sleep;
+    const deadline = now() + (this.lockOptions.timeoutMs ?? 1_000);
+    const token = JSON.stringify({ pid: process.pid, hostname: hostname(), ownerId: randomUUID() });
+    await mkdir(dirname(lockPath), { recursive: true });
+    for (;;) {
+      const acquired = await withConfigLockTransition(
+        lockPath,
+        deadline,
+        this.lockOptions,
+        async () => {
+          const current = await readLock(lockPath);
+          if (current !== null && !(await staleOwner(lockPath, current, now()))) return false;
+          if (current !== null) {
+            await unlink(lockPath);
+            await this.lockOptions.onReclaimMoved?.();
           }
-          continue;
+          const handle = await open(lockPath, "wx", 0o600);
+          try {
+            try {
+              await handle.writeFile(token);
+            } finally {
+              await handle.close();
+            }
+          } catch (error) {
+            await unlink(lockPath).catch(() => {});
+            throw error;
+          }
+          return true;
+        },
+      );
+      if (acquired) {
+        try {
+          await this.lockOptions.onAcquired?.();
+          return await fn();
+        } finally {
+          await this.lockOptions.onBeforeRelease?.();
+          // Release gets a fresh budget; the critical section may outlive acquisition.
+          await withConfigLockTransition(lockPath, now() + 1_000, this.lockOptions, async () => {
+            if ((await readLock(lockPath)) === token) await unlink(lockPath);
+          });
         }
-        await Bun.sleep(25);
       }
-    }
-    if (!acquired) {
-      dbgErr("storage.file", `Lock ${lockPath} never released; running without it`, undefined);
-      return fn();
-    }
-    try {
-      return await fn();
-    } finally {
-      // Unlink only if the file still carries our token — after a stale
-      // reclaim the path can belong to a newer holder whose lock we must
-      // not delete out from under them.
-      try {
-        if (readFileSync(lockPath, "utf8").trim() === token) {
-          unlinkSync(lockPath);
-        }
-      } catch {
-        // Already reclaimed as stale by a contender, or never created.
+      const remaining = deadline - now();
+      if (remaining <= 0) {
+        this.warn?.("Config file is busy; settings were not saved");
+        throw new Error(
+          "Config is busy; settings were not saved. Close the other session and retry.",
+        );
       }
+      await wait(Math.min(25, remaining));
     }
   }
 
@@ -230,4 +230,35 @@ function corruptBackupStamp(): string {
 
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | null)?.code;
+}
+
+async function readLock(path: string): Promise<string | null> {
+  try {
+    return await Bun.file(path).text();
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function staleOwner(path: string, text: string, now: number): Promise<boolean> {
+  // Older FileStorage versions published either a numeric PID or pid:token.
+  const legacyPid = Number(text.trim().split(":")[0]);
+  if (Number.isSafeInteger(legacyPid) && legacyPid > 0) return !pidAlive(legacyPid);
+  try {
+    const owner: unknown = JSON.parse(text);
+    if (
+      isJsonObject(owner) &&
+      isJsonNumber(owner.pid) &&
+      Number.isSafeInteger(owner.pid) &&
+      owner.pid > 0
+    ) {
+      if (isJsonString(owner.hostname) && owner.hostname !== hostname()) return false;
+      return !pidAlive(owner.pid);
+    }
+  } catch {
+    /* Incomplete legacy records receive a bounded publication grace. */
+  }
+  // Participating initializers hold the transition guard through the owner write.
+  return now - (await stat(path)).mtimeMs > STALE_LOCK_MS;
 }

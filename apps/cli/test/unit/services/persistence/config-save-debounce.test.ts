@@ -285,12 +285,15 @@ describe("ConfigService.save debounce", () => {
     // persistChain serializes this instance only — cross-process exclusion is
     // the store's job. Two service objects on one real store is the
     // cross-instance shape; the lock must wrap the whole read→merge→write.
-    let lockCycles = 0;
+    let allReadsUnderLock = true;
     let held = false;
     let wroteUnderLock = false;
     let onDisk: KitsuneConfig = { ...DEFAULT_CONFIG };
     const store = {
-      load: async () => ({ ...onDisk }),
+      load: async () => {
+        allReadsUnderLock &&= held;
+        return { ...onDisk };
+      },
       save: (doc: KitsuneConfig) => {
         onDisk = { ...doc };
         wroteUnderLock = held;
@@ -298,7 +301,6 @@ describe("ConfigService.save debounce", () => {
       },
       reset: async () => {},
       async withLock<T>(fn: () => Promise<T>): Promise<T> {
-        lockCycles += 1;
         held = true;
         try {
           return await fn();
@@ -314,7 +316,7 @@ describe("ConfigService.save debounce", () => {
     await service.flushPending();
     await pending;
 
-    expect(lockCycles).toBe(1);
+    expect(allReadsUnderLock).toBe(true);
     expect(wroteUnderLock).toBe(true);
     expect(onDisk.provider).toBe("vidking");
   });
