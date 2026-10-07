@@ -110,6 +110,17 @@ const SUB_ONLY_PLAYLIST = `#EXTM3U
 v-360/playlist.m3u8
 `;
 
+/**
+ * The resolve gate walks master → variant → first segment, so the mock host
+ * needs all three: variants get a media playlist, segments get bytes.
+ */
+const MEDIA_PLAYLIST = `#EXTM3U
+#EXT-X-TARGETDURATION:6
+#EXTINF:6.0,
+seg-0.ts
+#EXT-X-ENDLIST
+`;
+
 /** The player page's island, trimmed to two of its subtitle tracks. */
 function playerHtml(
   manifest = "https://hls.krussdomi.com/manifest/67d0c079169c31976b8d7970/master.m3u8",
@@ -469,6 +480,12 @@ function catalogRoute(
     if (parsed.hostname === "krussdomi.com") return new Response(playerHtml());
     if (parsed.hostname === "hls.krussdomi.com") {
       if (options.master === null) return new Response("gone", { status: 404 });
+      if (parsed.pathname.endsWith("seg-0.ts")) {
+        return new Response("x".repeat(1_024), { status: 206 });
+      }
+      if (/(^|\/)(v|a)-[^/]+\/playlist\.m3u8$/.test(parsed.pathname)) {
+        return new Response(MEDIA_PLAYLIST);
+      }
       return new Response(options.master ?? MASTER_PLAYLIST);
     }
     return new Response("not found", { status: 404 });
@@ -491,6 +508,28 @@ function resolveInput(overrides: Partial<ProviderResolveInput> = {}): ProviderRe
 }
 
 describe("kickassanimeProviderModule", () => {
+  test.each(["refused", "cancelled"])(
+    "a %s selected media playlist never reports provider success",
+    async (outcome) => {
+      const route = catalogRoute();
+      const controller = new AbortController();
+      const result = await kickassanimeProviderModule.resolve(resolveInput(), {
+        ...contextWith((url, init) => {
+          if (new URL(url).hostname === "hls.krussdomi.com" && init?.redirect === "manual") {
+            if (outcome === "cancelled") controller.abort();
+            return new Response("fixture refusal", { status: 403 });
+          }
+          return route(url, init);
+        }),
+        signal: controller.signal,
+      });
+      expect(result.status).toBe("exhausted");
+      if (outcome === "cancelled")
+        expect(result.failures.some((failure) => failure.code === "cancelled")).toBe(true);
+      expect(result.trace.events?.some((event) => event.type === "provider:success")).toBe(false);
+    },
+  );
+
   afterEach(() => __testing.reset());
 
   test("search keeps the slug as the provider-native id and reports its audio", async () => {
@@ -543,7 +582,6 @@ describe("kickassanimeProviderModule", () => {
       resolveInput(),
       contextWith(catalogRoute()),
     );
-
     expect(result.status).toBe("resolved");
     const [stream] = result.streams;
     expect(stream).toMatchObject({

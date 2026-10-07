@@ -33,6 +33,7 @@ import {
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
 import { matchProviderCatalogTitle } from "../shared/provider-title-match";
+import { dropRefusedStreams, selectVerifiedStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   createSourceCandidateFromStream,
@@ -346,14 +347,37 @@ export const animeggProviderModule: CoreProviderModule = {
       startupPriority: input.startupPriority,
       qualityPreference: input.qualityPreference,
       preferredStreamId: input.preferredStreamId,
-      preferredSourceId: input.preferredSourceId,
+      // All rows share the already selected mirror/audio lane. Its source pin
+      // must not promote the first quality rung above the requested quality.
+      preferredSourceId: input.preferredSourceId === sourceId ? undefined : input.preferredSourceId,
       favoriteSourceNames: input.favoriteSourceNames,
     });
+
+    // Resolve gate: probe the selected stream with its own headers before
+    // reporting success. Keep the chosen rung first (including fast/explicit
+    // picks), then walk the remaining ladder by quality rather than page order.
+    const gated = await selectVerifiedStream({
+      streams: [
+        selection.selected,
+        ...streams
+          .filter((stream) => stream.id !== selection.selected.id)
+          .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0)),
+      ].slice(0, 3),
+      context,
+      signal: context.signal,
+    });
+    if (context.signal?.aborted) {
+      return fail("cancelled", "AnimeGG resolve-gate probe was cancelled");
+    }
+    if (!gated.accepted) {
+      return fail("not-found", `AnimeGG selected stream is unreachable (${gated.reason})`, true);
+    }
+    const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
 
     const inventory: ProviderSourceCandidate[] = [
       createSourceCandidateFromStream({
         providerId: ANIMEGG_PROVIDER_ID,
-        stream: selection.selected,
+        stream: gated.stream,
         label: `${picked.tab.mirror} · ${formatAnimeSourceDetail({
           audio: presentation,
           subtitleMode: presentation === "sub" ? "hard" : "unknown",
@@ -362,17 +386,17 @@ export const animeggProviderModule: CoreProviderModule = {
         cachePolicy,
       }),
     ];
-    const variants: ProviderVariantCandidate[] = streams.map((stream) =>
+    const variants: ProviderVariantCandidate[] = shippedStreams.map((stream) =>
       createVariantCandidateFromStream({ providerId: ANIMEGG_PROVIDER_ID, stream }),
     );
 
     const resolved: ProviderResolveResult = {
       status: "resolved",
       providerId: ANIMEGG_PROVIDER_ID,
-      selectedStreamId: selection.selected.id,
-      selectionDecision: selection.decision,
+      selectedStreamId: gated.stream.id,
+      selectionDecision: { ...selection.decision, selectedQualityRank: gated.stream.qualityRank },
       sources: inventory,
-      streams,
+      streams: shippedStreams,
       variants,
       subtitles: [],
       failures: [],
@@ -387,7 +411,7 @@ export const animeggProviderModule: CoreProviderModule = {
         title: input.title,
         episode: input.episode,
         providerId: ANIMEGG_PROVIDER_ID,
-        streamId: selection.selected.id,
+        streamId: gated.stream.id,
         cacheHit: false,
         runtime: "direct-http",
         startedAt,
