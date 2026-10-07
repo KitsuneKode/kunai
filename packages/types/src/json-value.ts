@@ -22,7 +22,9 @@ export function isJsonObject<T>(value: T): value is T & JsonObject {
 }
 
 export function isJsonString<T>(value: T): value is T & string {
-  return String(value) === value;
+  // This primitive boundary check must never invoke untrusted conversion hooks.
+  // eslint-disable-next-line anti-slop/no-runtime-typeof
+  return typeof value === "string";
 }
 
 export function isJsonNumber<T>(value: T): value is T & number {
