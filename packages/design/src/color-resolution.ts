@@ -26,6 +26,7 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
   line: { ansi256: "#5f5f5f", ansi16: "gray" },
   lineSoft: { ansi256: "#303030", ansi16: "gray" },
   lineStrong: { ansi256: "#875f87", ansi16: "white" },
+  lineControl: { ansi256: "#767676", ansi16: "gray" },
 
   accent: { ansi256: "#ff87af", ansi16: "magenta" },
   accentSoft: { ansi256: "#ffd7df", ansi16: "white" },
@@ -50,8 +51,10 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
   infoDim: { ansi256: "#5f87d7", ansi16: "blue" },
   infoFill: { ansi256: "#1c2633", ansi16: "black" },
 
-  milestone: { ansi256: "#875fff", ansi16: "magenta" },
-  milestoneDim: { ansi256: "#5f5fd7", ansi16: "magenta" },
+  // On 16 colours the periwinkle takes bright blue, so it stays apart from the
+  // brand magenta and from `info` (plain blue).
+  milestone: { ansi256: "#5f87ff", ansi16: "blueBright" },
+  milestoneDim: { ansi256: "#5f5fd7", ansi16: "blue" },
   milestoneFill: { ansi256: "#1c1a30", ansi16: "black" },
 
   text: { ansi256: "#eeeeee", ansi16: "white" },
@@ -60,10 +63,12 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
   dim: { ansi256: "#808080", ansi16: "gray" },
   faint: { ansi256: "#5f5f5f", ansi16: "gray" },
 
-  typeAnime: { ansi256: "#af87ff", ansi16: "magenta" },
+  // Bright magenta, not the accent's plain magenta: anime is a content kind and the
+  // accent marks where you are, and on 16 colours they used to be the same colour.
+  typeAnime: { ansi256: "#d787ff", ansi16: "magentaBright" },
   typeSeries: { ansi256: "#5fd7d7", ansi16: "cyan" },
-  typeMovie: { ansi256: "#ffd75f", ansi16: "yellow" },
-  typeMixed: { ansi256: "#af87d7", ansi16: "magenta" },
+  typeMovie: { ansi256: "#ffd75f", ansi16: "yellowBright" },
+  typeMixed: { ansi256: "#af87d7", ansi16: "gray" },
 };
 
 const HEAT_RAMP_FALLBACKS: Record<"ansi256" | "ansi16", ResolvedHeatRamp> = {
