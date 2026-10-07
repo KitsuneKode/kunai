@@ -50,7 +50,16 @@ test("three processes recover one dead config owner and preserve every merged wr
     }
     await Promise.all(ready.map((barrier) => barrier.promise));
     for (const child of children) child.send("begin");
-    expect(await Promise.all(children.map((child) => child.exited))).toEqual([0, 0, 0]);
+    const outcomes = await Promise.all(
+      children.map(async (child) => {
+        const [code, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stderr as ReadableStream).text(),
+        ]);
+        return code === 0 ? 0 : `exit ${code}: ${stderr.trim()}`;
+      }),
+    );
+    expect(outcomes).toEqual([0, 0, 0]);
     expect(await Bun.file(path).json()).toEqual({ count: 15 });
     expect(await readdir(root)).toEqual(["config.json"]);
   } finally {
