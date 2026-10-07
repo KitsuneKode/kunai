@@ -1,7 +1,7 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "71ec9668ea2f0ccd2c75bdb997469dc408c9a3dc991c235b1ff7225b50732de2",
+  "cliSourceFingerprint": "6e756fd10b4a653dfd5da7cde53275be58c44fd6e939315d447777c231f5097a",
   "docsContentFingerprint": "5efd47180e6d55321ca83ecf9d97a355389fb7d75a6979fd30813f8dac621f88",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 84,
@@ -145,7 +145,7 @@
         "quality-ranked"
       ],
       "notes": [
-        "Parity with ani-cli v5.1.4: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
+        "Parity with ani-cli v5.1.5: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
         "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
         "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
         "Each season is a separate provider-native slug; there is no in-provider season routing.",

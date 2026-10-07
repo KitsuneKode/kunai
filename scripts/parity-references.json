@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/package.json",
   "references": {
     "ani-cli": {
-      "version": "5.1.4",
-      "commit": "dc43f32",
+      "version": "5.1.5",
+      "commit": "21ed4a0",
       "upstream": "https://github.com/pystardust/ani-cli",
       "localCheckout": "~/Projects/osc/ani-cli",
       "notes": [
