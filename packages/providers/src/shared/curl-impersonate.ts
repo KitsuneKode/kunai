@@ -45,7 +45,15 @@ export type CurlEnvironment = {
   readonly readTextFile: (path: string) => string | null;
   /** Platform probe seam for Windows wrapper behavior tests. */
   readonly platform: NodeJS.Platform;
+  /**
+   * Directories holding a Kunai-managed build — install.ps1's portable
+   * helper — each with its `curl_*` entries. Consulted on Windows only, and
+   * only after PATH.
+   */
+  readonly managedWrapperDirs: () => readonly ManagedWrapperDir[];
 };
+
+export type ManagedWrapperDir = { readonly dir: string; readonly entries: readonly string[] };
 
 /**
  * Desktop families only, most-camouflaged first.
@@ -151,6 +159,39 @@ function defaultListPathEntries(): readonly string[] {
 }
 
 /**
+ * Where install.ps1 provisions curl-impersonate on Windows
+ * (`<data dir>/deps/curl-impersonate`, the archive possibly nesting its files
+ * one level down). It also registers that dir on the user PATH, but a terminal
+ * opened before the install never sees the new PATH, and an npm or bun install
+ * never ran the helper step at all — so the managed location is searched
+ * directly instead of trusting PATH to carry it.
+ */
+function defaultManagedWrapperDirs(): readonly ManagedWrapperDir[] {
+  const dataRoot =
+    process.env.KUNAI_DATA_DIR ??
+    (process.env.LOCALAPPDATA ? win32Path.join(process.env.LOCALAPPDATA, "kunai") : null);
+  if (!dataRoot) return [];
+  const root = win32Path.join(dataRoot, "deps", "curl-impersonate");
+  const dirs: ManagedWrapperDir[] = [];
+  const scan = (dir: string, depth: number) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return;
+    }
+    const entries = names.filter((name) => name.toLowerCase().startsWith("curl_"));
+    if (entries.length > 0) dirs.push({ dir, entries });
+    if (depth === 0) return;
+    for (const name of names) {
+      if (!name.includes(".")) scan(win32Path.join(dir, name), depth - 1);
+    }
+  };
+  scan(root, 1);
+  return dirs;
+}
+
+/**
  * ani-cli sets cipher flags only on Darwin, and that restriction is
  * load-bearing: Windows `curl.exe` links Schannel, which rejects
  * `--tls13-ciphers` and does not understand OpenSSL cipher names, so passing
@@ -222,9 +263,9 @@ export function resolveCurlCandidate(
   }
   wrappers.sort((a, b) => (betterThan(a, b) ? -1 : betterThan(b, a) ? 1 : 0));
 
-  for (const wrapper of wrappers) {
-    const resolved = which(wrapper.name);
-    if (!resolved) continue;
+  // One decision per located wrapper, shared by the PATH scan and the managed
+  // fallback so the two can never disagree about what a wrapper provides.
+  const candidateFor = (wrapper: ParsedWrapper, resolved: string): CurlCandidate | null => {
     const profile = `${wrapper.family}${wrapper.version}${wrapper.revision}`;
     const extension = pathApi.extname(resolved).toLowerCase();
     const isCmdWrapper = extension === ".bat" || extension === ".cmd";
@@ -232,7 +273,7 @@ export function resolveCurlCandidate(
     // MSYS-style dir, but execve cannot run it — treating it as "found" would
     // claim impersonation over a guaranteed ENOEXEC. The honest read on this
     // host is plain curl (or no curl).
-    if (isCmdWrapper && platform !== "win32") continue;
+    if (isCmdWrapper && platform !== "win32") return null;
     if (!isCmdWrapper) {
       return { path: resolved, prefixArgs: [], impersonates: true, profile };
     }
@@ -242,9 +283,9 @@ export function resolveCurlCandidate(
     // legacy inline-flag wrapper means this entry cannot provide that
     // profile; keep walking the ranked list before settling for plain curl.
     const forward = parseModernWrapperArgs(readTextFile(resolved));
-    if (!forward) continue;
+    if (!forward) return null;
     const backend = pathApi.join(pathApi.dirname(resolved), "curl-impersonate.exe");
-    if (!fileExists(backend)) continue;
+    if (!fileExists(backend)) return null;
     return {
       path: backend,
       prefixArgs: [
@@ -255,6 +296,27 @@ export function resolveCurlCandidate(
       impersonates: true,
       profile: forward.target,
     };
+  };
+
+  for (const wrapper of wrappers) {
+    const resolved = which(wrapper.name);
+    if (!resolved) continue;
+    const candidate = candidateFor(wrapper, resolved);
+    if (candidate) return candidate;
+  }
+
+  if (platform === "win32") {
+    const managedWrapperDirs = environment.managedWrapperDirs ?? defaultManagedWrapperDirs;
+    for (const { dir, entries } of managedWrapperDirs()) {
+      const managed = entries
+        .map(parseWrapper)
+        .filter((wrapper): wrapper is ParsedWrapper => wrapper !== null)
+        .sort((a, b) => (betterThan(a, b) ? -1 : betterThan(b, a) ? 1 : 0));
+      for (const wrapper of managed) {
+        const candidate = candidateFor(wrapper, pathApi.join(dir, wrapper.name));
+        if (candidate) return candidate;
+      }
+    }
   }
 
   let plain = which("curl");

@@ -222,6 +222,9 @@ instead of trusting a matching filename.
   no winget/scoop/choco package; the installer uses the same Windows archive CI
   pins. Windows ARM64 has no upstream build, so that host is pointed at the
   [releases page](https://github.com/lexiforest/curl-impersonate/releases).
+  Kunai looks in `%LOCALAPPDATA%\kunai\deps\curl-impersonate` even when that
+  folder is not on PATH, so extracting a release there by hand works too —
+  no PATH edit, no new terminal.
 
 The Windows `curl` prompt is still offered alongside these. curl-impersonate
 clears Cloudflare for anime search; it does not give you an HTTP/2 `curl.exe`,

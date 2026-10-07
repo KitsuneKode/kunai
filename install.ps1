@@ -2430,9 +2430,10 @@ switch ($Method) {
   }
 }
 
-if ($Method -eq 'binary') {
-  Install-OptionalDeps
-}
+# Every method, like install.sh: the portable helpers live in Kunai's data dir,
+# which an npm, bun or source install uses just the same — gating them on
+# -Method binary left those users without mpv guidance or curl-impersonate.
+Install-OptionalDeps
 
 Write-Host 'Done.' -ForegroundColor Green
 Write-Host 'Try:  kunai -S "Frieren" -a'
