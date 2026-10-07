@@ -89,4 +89,44 @@ describe("browse idle actions", () => {
       null,
     );
   });
+
+  test("provider-controlled titles cannot inject terminal control sequences", () => {
+    const model = buildBrowseIdleReturnLoopModel(
+      {
+        continueWatching: {
+          title: "Evil\x1b[2J\x1b[H title\x07",
+          ep: "S01\x1b[31mE02",
+          titleId: "tmdb:1",
+          mediaKind: "series",
+        },
+        playlistNext: {
+          title: "Queued\x1b]52;c;Y2xpcA==\x07 Title",
+          ep: "S02E01\x07",
+          titleId: "tmdb:3",
+          mediaKind: "series",
+        },
+        offlineReadyNext: {
+          title: "Off\x1b[8mline",
+          ep: "S01\x07E06",
+          titleId: "tmdb:2",
+          offlineJobId: "job-offline-1",
+        },
+      },
+      { idleFocused: false, selectedIndex: 0 },
+    );
+    const hasControlChars = (value: string) =>
+      [...value].some((ch) => {
+        const code = ch.charCodeAt(0);
+        return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+      });
+    for (const row of model?.rows ?? []) {
+      expect(hasControlChars(row.title)).toBe(false);
+      if (row.meta !== undefined) {
+        expect(hasControlChars(row.meta)).toBe(false);
+      }
+    }
+    expect(model?.rows[0]?.title).toBe("Evil title");
+    expect(model?.rows[1]?.title).toBe("Offline");
+    expect(model?.rows[2]?.title).toBe("Queued Title");
+  });
 });

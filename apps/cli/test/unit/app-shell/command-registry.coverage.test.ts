@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import { COMMANDS, resolveCommandContext } from "@/app-shell/commands";
+import { PALETTE_WORKFLOW_ACTIONS } from "@/app-shell/dispatch-palette-command";
+import { ROOT_OVERLAY_NAV_COMMANDS } from "@/app-shell/root-overlay-shell";
+import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
+import { toShellAction } from "@/app-shell/types";
+import { SHELL_WORKFLOW_COMMAND_IDS } from "@/app-shell/workflows/shell-workflows";
+import { COMMAND_CONTEXTS } from "@/domain/session/command-registry";
 import { createInitialState, type SessionState } from "@/domain/session/SessionState";
 
 /**
@@ -210,5 +216,36 @@ describe("command registry — full surface coverage", () => {
   test("aliases are globally unique (no two commands share a typing shortcut)", () => {
     const all = COMMANDS.flatMap((c) => c.aliases);
     expect(new Set(all).size).toBe(all.length);
+  });
+});
+
+describe("palette routing — listed commands must not be dead on Enter", () => {
+  test("every advertised rootOverlay command resolves to a nav overlay or a workflow", () => {
+    // The overlay's Enter handler is an allowlist gate: ids outside
+    // ROOT_OVERLAY_NAV_COMMANDS ∪ PALETTE_WORKFLOW_ACTIONS render, filter,
+    // highlight — and silently drop. `pet`, `image-pane`, `watch`, `up-next`,
+    // and `providers` were all listed-and-dead this way.
+    const unrouted = COMMAND_CONTEXTS.rootOverlay.filter(
+      (id) =>
+        !ROOT_OVERLAY_NAV_COMMANDS.has(toShellAction(id)) &&
+        !PALETTE_WORKFLOW_ACTIONS.has(toShellAction(id)),
+    );
+    expect(unrouted).toEqual([]);
+  });
+
+  test("every modalPicker command has a workflow-map handler", () => {
+    // Picker action contexts call handleShellAction directly — no dispatcher,
+    // no fallback — so a listed id without a map entry is a dead row.
+    const unrouted = COMMAND_CONTEXTS.modalPicker.filter(
+      (id) => !SHELL_WORKFLOW_COMMAND_IDS.has(id),
+    );
+    expect(unrouted).toEqual([]);
+  });
+
+  test("browse palette lists the toggles the footer hint advertises", () => {
+    // The `[/pet] kanna` restore hint renders in the shared footer on browse —
+    // the command it names has to be listed there or the way back is a lie.
+    expect(SEARCH_BROWSE_COMMAND_IDS).toContain("pet");
+    expect(SEARCH_BROWSE_COMMAND_IDS).toContain("image-pane");
   });
 });

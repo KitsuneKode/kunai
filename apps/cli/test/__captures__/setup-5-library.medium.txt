@@ -1,6 +1,6 @@
 # setup-5-library · medium (100×34)
-  🦊 Kunai · downloads & accounts                                                        setup 5⁄7
-────────────────────────────────────────────────────────────────────────────────────────────────────
+   🦊 Kunai · downloads & accounts                                                      setup 5⁄7
+ ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 
           Downloads & accounts
@@ -18,7 +18,7 @@
                 Track shows and films
             ○ Discord presence
                 Show friends what you're watching
-────────────────────────────────────────────────────────────────────────────────────────────────────
-  [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]  recommended  ·  [S]            Setup
+ ──────────────────────────────────────────────────────────────────────────────────────────────────
+   [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]  recommended  ·  [S]          Setup
 
-   remaining defaults  ·  [b]  back
+    remaining defaults  ·  [b]  back
