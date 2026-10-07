@@ -16,8 +16,9 @@ export type ConfigLockOptions = {
   timeoutMs?: number;
 };
 
-export function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException | null)?.code;
+/** Decode a caught filesystem cause before treating its code as ownership evidence. */
+export function errorCode(cause: unknown): string | undefined {
+  return isJsonObject(cause) && isJsonString(cause.code) ? cause.code : undefined;
 }
 
 export function pidAlive(pid: number): boolean {
@@ -106,8 +107,8 @@ export async function withConfigLockTransition<T>(
       if (!value) continue;
       if (value.hostname === own.hostname && !pidAlive(value.pid)) {
         await unlink(`${candidate}.number`).catch(() => {});
-        await unlink(candidate).catch((error: unknown) => {
-          if (errorCode(error) !== "ENOENT") throw error;
+        await unlink(candidate).catch((cause: unknown) => {
+          if (errorCode(cause) !== "ENOENT") throw cause;
         });
       } else {
         tickets.push({ path: candidate, value });
@@ -139,11 +140,11 @@ export async function withConfigLockTransition<T>(
     }
   } finally {
     // Only this immutable path belongs to us; never delete another generation.
-    await unlink(path).catch((error: unknown) => {
-      if (errorCode(error) !== "ENOENT") throw error;
+    await unlink(path).catch((cause: unknown) => {
+      if (errorCode(cause) !== "ENOENT") throw cause;
     });
-    await unlink(`${path}.number`).catch((error: unknown) => {
-      if (errorCode(error) !== "ENOENT") throw error;
+    await unlink(`${path}.number`).catch((cause: unknown) => {
+      if (errorCode(cause) !== "ENOENT") throw cause;
     });
   }
 }

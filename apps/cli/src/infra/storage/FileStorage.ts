@@ -16,7 +16,12 @@ import { dbgErr } from "@/logger";
 import { getKunaiPaths } from "@kunai/storage";
 import { isJsonObject, isJsonNumber, isJsonString } from "@kunai/types";
 
-import { pidAlive, withConfigLockTransition, type ConfigLockOptions } from "./config-lock";
+import {
+  errorCode,
+  pidAlive,
+  withConfigLockTransition,
+  type ConfigLockOptions,
+} from "./config-lock";
 import type { StorageService } from "./StorageService";
 
 /**
@@ -226,10 +231,6 @@ function corruptBackupStamp(): string {
   // same backup path and clobbering each other's copy.
   const nonce = Math.random().toString(36).slice(2, 8);
   return `${new Date().toISOString().replace(/[:.]/g, "-")}-${corruptBackupCounter}-${nonce}`;
-}
-
-function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException | null)?.code;
 }
 
 async function readLock(path: string): Promise<string | null> {

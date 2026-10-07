@@ -627,12 +627,11 @@ export function RootOverlayShell({
   const [asyncLines, setAsyncLines] = useState<readonly ShellPanelLine[] | null>(null);
   const [loadingAsyncLines, setLoadingAsyncLines] = useState(overlay.type === "history");
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [overlayStatusRaw, setOverlayStatusRaw] = useState<string | null>(null);
-  const overlayStatus = overlayStatusRaw;
+  const [overlayStatus, setOverlayStatusState] = useState<string | null>(null);
   // Status lines can embed provider/history titles — sanitize at entry so every
   // producer stays escape-safe without each call site remembering to.
   const setOverlayStatus = useCallback((message: string | null) => {
-    setOverlayStatusRaw(message === null ? null : sanitizeTerminalText(message));
+    setOverlayStatusState(message === null ? null : sanitizeTerminalText(message));
   }, []);
   const [overlayClosePending, setOverlayClosePending] = useState(false);
   const [notificationActionDedupKey, setNotificationActionDedupKey] = useState<string | null>(null);
