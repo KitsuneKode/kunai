@@ -354,6 +354,7 @@ describe("ephemeral publish", () => {
           try {
             text = await readFile(join(root, name), "utf8");
           } catch (error) {
+            // SAFETY: readFile rejects with a Node errno error; a missing .code just reads undefined.
             if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
             throw error;
           }

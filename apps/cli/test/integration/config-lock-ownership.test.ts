@@ -56,6 +56,7 @@ test("three processes recover one dead config owner and preserve every merged wr
       children.map(async (child) => {
         const [code, stderr] = await Promise.all([
           child.exited,
+          // SAFETY: the child is spawned with stderr: "pipe", so stderr is a ReadableStream.
           new Response(child.stderr as ReadableStream).text(),
         ]);
         return code === 0 ? 0 : `exit ${code}: ${stderr.trim()}`;
