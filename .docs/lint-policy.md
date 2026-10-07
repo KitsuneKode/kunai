@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-12"
+lastReviewed: "2026-10-07"
 ---
 
 # Lint policy (beta)
@@ -37,26 +37,28 @@ rules are set to **error** in that config — the severity is not weakened.
 
 ### The ratcheted rules
 
-Four rules are clean in `src/` and are therefore **blocking** in
-`.oxlintrc.json`, so `bun run lint` and the pre-commit hook enforce them:
+No `anti-slop/*` rule lives in `.oxlintrc.json` — `bun run lint`, the
+lint-staged pre-commit hook, and CI's Lint job cannot even resolve those rule
+names. Every rule is enforced **only** through the count baseline below; the
+four nearest zero are the promotion candidates:
 
 - `anti-slop/no-chained-type-assertions`
 - `anti-slop/no-object-parameters`
 - `anti-slop/no-reflect-apply`
 - `anti-slop/no-reflect-get`
 
-They are turned **off** for test paths (`**/*.test.*`, `**/test/**`,
-`**/__mocks__/**`), which still carry a legacy baseline — roughly 300 chained
-assertions in tests alone. Production code holds the line; tests are not held to
-it yet.
+There is no test-path exemption — findings in `test/` and `*.test.*` count
+against the same baseline like everything else.
 
-**Ratcheting a fifth rule means driving its `src/` count to zero first**, then
-moving it into `.oxlintrc.json` alongside these. Do not add a rule to the
-blocking gate with a non-zero baseline; that is how a gate gets disabled.
+**Ratcheting a rule into a hard gate means driving its baseline count to zero
+first**, then adding it to `.oxlintrc.json` where `bun run lint` becomes
+blocking. Do not wire a rule into the blocking gate with a non-zero baseline;
+that is how a gate gets disabled.
 
 ### The advisory
 
-The remaining eleven rules stay a **separate** command on purpose. The rules still report thousands of
+All fifteen rules run as a **separate** command on purpose. The rules still
+report thousands of
 historical findings, so wiring them into `.oxlintrc.json` would turn
 `bun run lint` and the lint-staged pre-commit hook red on the first run and
 block every unrelated commit. Severity is not the thing to compromise there;
