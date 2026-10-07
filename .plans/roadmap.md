@@ -240,7 +240,7 @@ state on 2026-10-02.
 
 | Plan                                                                                       | Remaining work                                                                                          | Status   |
 | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------- |
-| [2026-10-02-pr-stack-consolidation.md](./2026-10-02-pr-stack-consolidation.md)             | Unblock the two conflicting stack bases, re-stack refactors away from fixes, close or park old PRs      | PROPOSED |
+| [2026-10-02-pr-stack-consolidation.md](./2026-10-02-pr-stack-consolidation.md)             | 31 PRs landed 2026-10-07; re-implement the unmerged stacks' security, playback and UX residue           | PARTIAL  |
 | [2026-10-02-signed-provider-profile-feed.md](./2026-10-02-signed-provider-profile-feed.md) | Design spike: a signed, data-only feed so rotating provider constants ship without a release            | PROPOSED |
 | [2026-10-02-share-moment-discoverability.md](./2026-10-02-share-moment-discoverability.md) | Surface the existing `Ctrl+Shift+S` share-at-timestamp key in the playing legend, README and docs       | PROPOSED |
 | [2026-10-02-color-followups.md](./2026-10-02-color-followups.md)                           | After the APCA text-tier retune: remove the remaining `dimColor` double-dimming once the PR stacks land | PROPOSED |

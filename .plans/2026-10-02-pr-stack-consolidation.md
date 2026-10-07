@@ -1,49 +1,85 @@
-# Plan: Unblock the PR stacks so reliability fixes ship
+# Plan: Re-land what the abandoned PR stacks still carry
 
-> **Drift check (run first):** `gh pr list --state open --json number,baseRefName,mergeable,reviewDecision` — the table below is a snapshot and goes stale within days. Re-derive it before acting.
+> **Drift check (run first):** for each row below, grep the tree for the named
+> behaviour before porting it — some residue may land through other work. The
+> source commits stay reachable on their `origin/*` branches until those
+> branches are deleted; cherry-pick them for reference, never for the merge.
 
 ## Status
 
-- **Status:** PROPOSED — nothing executed. Planning only.
-- **Priority:** P1 (everything the audits fixed is stuck behind this)
-- **Effort:** M (mostly rebasing and review, little new code)
-- **Risk:** MED — re-stacking can drop a change; verify each replacement PR against its original patch, and the composed replacement stack against the old tip (step 4)
-- **Depends on:** none
-- **Category:** delivery / process
-- **Snapshot:** 2026-10-02, 29 open PRs, `origin/main` unchanged since #338
+- **Status:** PARTIAL — the 2026-10-07 integration (`integrate/backlog-20261007`)
+  landed 31 PRs as merge commits: #530–#538, #553–#569, #573–#576 and #560.
+  This plan now owns only the residue of the stacks that were **not** merged.
+- **Priority:** P1 for the security and playback rows, P3 for the rest
+- **Effort:** M overall; each row is S–M on its own
+- **Risk:** MED — re-implement against the current tree, do not merge the old
+  heads: they conflict in 18–73 files because #565, #572 and #573 re-did much
+  of the same audit work differently.
 
-## Why this matters
+## Why the stacks were not merged
 
-The audit fixes (A01–A22) and the PR review's repairs live in open PRs, not in `main`. A user installing today gets none of them. The queue has grown to 29 PRs in two stacks, and the base of each stack is blocked, so nothing above it can merge.
+Stack A (#501→#506), stack B (#508→#545) and #507 were written against
+`main@e509732` or older. Their commits depend on each other (a #528 watchdog
+fix assumes #528's slow-open commit, which assumes #508's transport), so
+cherry-picking one fix drags in a chain of prerequisites. Porting player
+watchdog behaviour without them in the most important code path is how
+regressions ship. Each row below is a behaviour to re-implement, with the
+commit that first wrote it.
 
-| Stack | Base PR                | State                                    | Depth | Rough size (changed files)                                 |
-| ----- | ---------------------- | ---------------------------------------- | ----- | ---------------------------------------------------------- |
-| A     | #501                   | CONFLICTING, changes requested           | 6     | #501–#506: about 205 files                                 |
-| A'    | #500/#507              | #500 changes requested; #507 CONFLICTING | 2     | #507 alone: 263 files                                      |
-| B     | #508                   | CONFLICTING, changes requested           | 17    | #508–#528: about 316 (sum of per-PR counts; files overlap) |
-| —     | #499                   | APPROVED but CONFLICTING (3 files)       | 1     | docs only                                                  |
-| —     | #255, #287, #306, #327 | old, conflicting or release PR           | 4     | parked / last                                              |
+## Residue
 
-Stack B is 17 deep, and its newest PR (#528) is still being added to the top. A deep stack is a queue with one lane: the fix at the bottom blocks every fix above it, and each rebase re-runs review on everything beneath the change.
+### Security and trust (P1)
 
-## The plan
+| Behaviour                                                                                                                      | Source                    | Note                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------ | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| mpv refuses private literal hosts (`169.254.169.254`, RFC1918, loopback) for every `http(s)` target, remote **and** local kind | `35a661186` (#543) + #525 | Needs a decision for the real-mpv tier, which serves media from `127.0.0.1`; an env bypass on a security check is not acceptable |
+| Vet manifest-embedded and deferred-media targets mpv fetches                                                                   | `9f03f01c7` (#543)        | Same boundary as the row above — land together                                                                                   |
+| yt-dlp option list terminated with `--` before the watch URL                                                                   | `35a661186` (#543)        | Small; matches the curl convention                                                                                               |
+| Walk miruro curl redirects in-process so each hop is vetted                                                                    | `b88bc3655` (#543)        | The `-q` half landed (`curlArgvHead`); the redirect walk needs #508's transport or a local equivalent                            |
+| Pin every CI action to a SHA; add dependency monitoring                                                                        | #523                      | `release.yml` still uses tags                                                                                                    |
+| Typed 403 for Cloudflare-gated fetches; dead deferred streams keyed by content, not locator                                    | `#541`                    |                                                                                                                                  |
 
-1. **Stop adding to the tops.** No new PR is based on #528 or #506. New work branches from `main`.
-2. **Clear the two blocked bases.** Rebase #508 and #501 onto current `main`, resolve conflicts by reading behaviour (not by picking a side), and answer their changes-requested comments. #499 is approved and 3 files: rebase and merge it first, it is a free win.
-3. **Choose one backbone for stack A** exactly as `.plans/2026-10-01-pr-review.md` recommends: #501 → #502 → #503 → #505 → #504 → #506, with #500's gate repairs first. Land bottom-up, one PR per merge, each green standing alone.
-4. **Split stack B by risk, not by order.** The reliability and security PRs (#508, #509, #510, #511, #516, #520, #522, #523, #525, #526, #527, #528) are what users need. The refactors (#513, #515, #517, #519: `useCommandPalette`, `useIdleSurface`, `useResultNarrow`, `useBrowseOverlay`) and the mouse-input feature (#521, +1262 lines) sit in the middle of the chain and block the fixes above them. Re-stack them onto `main` as a separate, later stack. Method: partition the changed files by theme and check the partition is complete and disjoint, rebuild each branch with `git checkout <old-tip> -- <paths>` from the final state of its paths, then compare each replacement PR with its original patch. A single replacement branch is not expected to equal the old tip, because the refactors and #521 are deliberately left out of the reliability and security stack. The empty-diff proof applies to the composed result: the replacement branches applied in order must reproduce the old tip, so `git diff <composed-tip> <old-tip>` is empty. Keep the old branches until every re-stacked PR merges.
-5. **Then #507's unique residue**, per the review: only the hunks #501–#506 do not already carry.
-6. **Close or park deliberately:** #255 (anti-slop wiring), #287 (Android runtime), #306 (Cast) get a written decision, not silence. #327 (version packages) lands last.
+### Playback reliability (P1)
+
+| Behaviour                                                                     | Source             |
+| ----------------------------------------------------------------------------- | ------------------ |
+| Narrate slow opens instead of labelling them stalls                           | `04bc4ecd4` (#528) |
+| Keep watchdog-triggered reconnects alive through the replaced file's end-file | `c48f6465f` (#528) |
+| Reconnect on no-progress stalls, not only cache verdicts                      | `3e1006584` (#528) |
+| Stop ipc-stalled stalls and late init replies polluting stats                 | `05016b78b` (#528) |
+| Cap decode and bandwidth ceilings on low-spec hosts                           | `4d36ee292` (#528) |
+| Sweep stale mpv IPC sockets and orphan confs on startup                       | #544               |
+| Bound wedged downloads by output liveness                                     | #544               |
+| Settle picker and bridge waiters when workflows dismiss overlays              | `fed7882d8` (#528) |
+
+### UX (P2)
+
+| Behaviour                                                                     | Source |
+| ----------------------------------------------------------------------------- | ------ |
+| Press-again confirmation for destructive actions; focus-aware input ownership | #505   |
+| Watched-download cleanup review and OS notifications                          | #504   |
+| Overlay and palette actions act on the item the user chose                    | #528   |
+| Doctor writability probe; details-card overlap; honest catalog failures       | #503   |
+
+### Structure and features (P3, separate stack)
+
+- Browse-shell hook extractions — `useCommandPalette`, `useIdleSurface`,
+  `useResultNarrow`, `useBrowseOverlay` (#513, #515, #517, #519). Redo against
+  today's `browse-shell.tsx`; it changed too much to rebase onto.
+- Provider transport overhaul, endpoint resilience with Retry-After,
+  `ProviderQueryCache`, relay envelope validation (#508–#511).
+- SGR mouse input foundation (#521) — a feature, not a fix.
+
+### Closed without residue
+
+- #500 — resolve-gate coverage is now derived from `PROBES` (#565/#566).
+- #306 — no diff against `main`.
+- #520, #522 — #569 refuses `completed:true` for crashes and kills.
+- #501 — config save serialization and cross-instance locking landed in #573;
+  `--offline` is honoured.
 
 ## Acceptance
 
-- Open PRs: 8 or fewer, none CONFLICTING, no stack deeper than 3.
-- `main` moves at least weekly.
-- After each landing: forced per-package typecheck/lint/format and the CLI + providers test suites on the merge commit (not a turbo cache replay).
-- Before the release PR: the cumulative gate from `.plans/2026-10-01-execution-runbook.md`.
-
-## Stop conditions
-
-- A rebase changes behaviour of a PR the review marked "no blocking defect": stop and re-review that PR.
-- Once the replacement branches are composed, a non-empty `git diff old-tip composed-tip`: stop, the split lost something.
-- CI red on a merged base: stop landing, fix forward on `main` first.
+- Each row lands as its own PR from `main`, with a test that fails before it.
+- The security rows land before the next release that ships new providers.
+- Delete this plan when the tables are empty; move it to `.archive/plans/`.
