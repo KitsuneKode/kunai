@@ -80,6 +80,16 @@ describe("decryptMovyPayload", () => {
   test("rejects a wrong mediaId via the mvm1 magic check", () => {
     expect(() => decryptMovyPayload(FIXTURE.body, FIXTURE.seed, 999)).toThrow(MovyDecryptError);
   });
+
+  test("decrypt is deterministic for the pinned seed vector", () => {
+    // Rotation canary: the same (ciphertext, seed, mediaId) must always decode
+    // to the same bytes — a drifting keystream fails here in CI, not in mpv.
+    // Wire protocol: `.docs/provider-dossiers/movy.md` ("STREAMCRYPTO wire protocol").
+    const first = decryptMovyPayload(FIXTURE.body, FIXTURE.seed, FIXTURE.mediaId);
+    expect(decryptMovyPayload(FIXTURE.body, FIXTURE.seed, FIXTURE.mediaId)).toBe(first);
+    // The `mvm1` magic prefix is stripped: the plaintext is bare JSON.
+    expect(first.startsWith("{")).toBe(true);
+  });
 });
 
 afterEach(() => {
