@@ -7,7 +7,12 @@ import {
   formatDayTick,
   namedBucketCount,
   namedVersionCount,
+  clockSeamIn,
+  CLOCK_SEAM_DAY,
+  median,
+  niceCeil,
   platformColumns,
+  robustAxisCap,
   platformLabel,
   releaseMarkers,
   residualShare,
@@ -185,6 +190,10 @@ describe("platformColumns", () => {
     expect(platformColumns([day(0, 3, {})])).toEqual([]);
   });
 
+  test("the residual alone is not a breakdown: it is the Active column renamed", () => {
+    expect(platformColumns([day(0, 4, { other: 4 }), day(1, 5, { other: 5 })])).toEqual([]);
+  });
+
   test("an unexpected bucket sorts between the named platforms and the residual", () => {
     const points = [day(0, 9, { linux: 4, freebsd: 2, other: 3 })];
     expect(platformColumns(points)).toEqual(["linux", "freebsd", "other"]);
@@ -255,5 +264,54 @@ describe("releaseMarkers", () => {
 
   test("an empty window has no markers", () => {
     expect(releaseMarkers([], [{ date: "2026-01-02", tag: "v1" }])).toEqual([]);
+  });
+});
+
+describe("robustAxisCap", () => {
+  test("fits the axis to the data when no day dwarfs the rest", () => {
+    expect(robustAxisCap([3, 5, 9, 12])).toEqual({ cap: 15, clipped: false });
+  });
+
+  test("cuts the axis for a launch-day spike so ordinary days stay readable", () => {
+    // 157 against a next-highest of 10: fitting to 157 would draw every other bar under 7% tall.
+    expect(robustAxisCap([157, 10, 4, 3, 0, 2])).toEqual({ cap: 15, clipped: true });
+  });
+
+  test("a big number is not an outlier unless it is also far above the next one", () => {
+    expect(robustAxisCap([40, 30, 25])).toEqual({ cap: 40, clipped: false });
+  });
+
+  test("a small spike under the floor of 20 is just data", () => {
+    expect(robustAxisCap([15, 2, 1]).clipped).toBe(false);
+  });
+
+  test("an empty or all-zero series still has a usable axis", () => {
+    expect(robustAxisCap([])).toEqual({ cap: 1, clipped: false });
+    expect(robustAxisCap([0, 0])).toEqual({ cap: 1, clipped: false });
+  });
+});
+
+describe("niceCeil", () => {
+  test("rounds up to a readable axis number", () => {
+    expect(niceCeil(7)).toBe(8);
+    expect(niceCeil(12.5)).toBe(15);
+    expect(niceCeil(157)).toBe(200);
+    expect(niceCeil(1)).toBe(1);
+    expect(niceCeil(0)).toBe(1);
+  });
+});
+
+describe("median", () => {
+  test("is the middle value, or the mean of the two middle ones", () => {
+    expect(median([1, 9, 3])).toBe(3);
+    expect(median([1, 2, 3, 10])).toBe(2.5);
+    expect(median([])).toBe(0);
+  });
+});
+
+describe("clockSeamIn", () => {
+  test("finds the IST cutover day only when the window contains it", () => {
+    expect(clockSeamIn(["2026-09-13", CLOCK_SEAM_DAY, "2026-09-15"])).toBe(CLOCK_SEAM_DAY);
+    expect(clockSeamIn(["2026-09-15", "2026-09-16"])).toBeNull();
   });
 });
