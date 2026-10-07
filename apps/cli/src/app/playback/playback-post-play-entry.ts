@@ -24,11 +24,9 @@ import {
   runPostPlaybackMenu,
   type PostPlaybackMenuDeps,
 } from "@/app/playback/run-post-playback-menu";
-import type { StreamSelectionIntent } from "@/app/playback/source-quality";
 import type { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
 import type { Container } from "@/container";
 import type { QuitNearEndThresholdMode } from "@/domain/playback/playback-policy";
-import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import type { EpisodeInfo, ShellMode } from "@/domain/types";
 
 export type CreatePostPlaybackMenuDepsInput = {
@@ -72,13 +70,7 @@ export type CreatePostPlaybackMenuDepsInput = {
       cancelPrefetchReason?: string;
     },
   ) => Promise<PlaybackStartIntent>;
-  readonly completeSourceTrackPick: (
-    episode: EpisodeInfo,
-    picked: DecodedTrackSelection,
-    selection: StreamSelectionIntent | null,
-    resumeSeconds: number,
-    reason: string,
-  ) => Promise<PlaybackStartIntent>;
+  readonly completeSourceTrackPick: PostPlaybackMenuDeps["completeSourceTrackPick"];
   readonly handoffNextEpisodePrefetch: (
     target: EpisodePrefetchTarget,
     reason: "playback.prefetch-wait" | "post-playback.autonext.prefetch-wait",

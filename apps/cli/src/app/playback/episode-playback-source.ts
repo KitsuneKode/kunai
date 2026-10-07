@@ -83,6 +83,7 @@ function buildLocalEpisodeResolution(
     source: playable.source,
     timing: playable.source.timing ?? parseIntroSkipTiming(playable.job.introSkipJson),
     stream: {
+      playbackSourceKind: "local",
       url: playable.source.filePath,
       headers: {},
       subtitle: playable.source.subtitlePath,
