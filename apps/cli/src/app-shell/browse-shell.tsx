@@ -1834,7 +1834,7 @@ export function BrowseShell<T>({
                   : displayOptions.length === 0
                     ? canFocusIdleRows
                       ? "Type a title · ↓ for you now · / commands"
-                      : "Type a title · / commands · /filters for guided search"
+                      : "Type a title · / commands · /guide tour · /filters guided search"
                     : listFocused
                       ? undefined
                       : "↓ results · / commands"

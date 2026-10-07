@@ -2,7 +2,7 @@ import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import { resolveHistorySelectionLaunch } from "@/app-shell/history-selection-launch";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { buildQueueRestoreDeps, buildQueueRestoreStatus } from "@/app-shell/queue-restore";
-import { forceCloseRootContent } from "@/app-shell/root-content-state";
+import { forceCloseRootContent, getRootContentSession } from "@/app-shell/root-content-state";
 import {
   applyMediaItemSessionRouting,
   playbackIntentFromMediaItem,
@@ -55,8 +55,8 @@ import {
 } from "react";
 
 import { requestBrowseIdleContextRefresh } from "./browse-idle-context";
-import { cancelRootOverlay } from "./cancel-root-overlay";
-import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
+import { cancelAllRootOverlays, cancelRootOverlay } from "./cancel-root-overlay";
+import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
 import { diagnosticsVisibleRows } from "./diagnostics-dashboard-model";
 
 /** The ContextStrip line drawn above the panel, inside the content area. */
@@ -72,6 +72,7 @@ export const ROOT_OVERLAY_NAV_COMMANDS: ReadonlySet<ShellAction> = new Set([
   "settings",
   "presence",
   "help",
+  "guide",
   "about",
   "diagnostics",
   "downloads",
@@ -83,6 +84,20 @@ export const ROOT_OVERLAY_NAV_COMMANDS: ReadonlySet<ShellAction> = new Set([
   "up-next",
 ]);
 
+/**
+ * The actions this surface actually routes — palette Enter resolves nav
+ * commands inline and runs workflow actions through `runRootWorkflowSafely`.
+ * The guide derives its "runs here" tag from this exact set, so a row can
+ * never advertise Enter on a command the surface would drop.
+ */
+const GUIDE_RUNNABLE_HERE: ReadonlySet<string> = new Set<string>([
+  ...ROOT_OVERLAY_NAV_COMMANDS,
+  ...PALETTE_WORKFLOW_ACTIONS,
+]);
+
+/** Commands the search/browse surface lists — the guide's "→ search" tag. */
+const GUIDE_SEARCH_SURFACE: ReadonlySet<string> = new Set<string>(SEARCH_BROWSE_COMMAND_IDS);
+
 import { buildDiagnosticsPanelInput, buildDiagnosticsSpanModel } from "./diagnostics-panel-source";
 import {
   resolveDiagnosticsExpandedSpanIds,
@@ -90,6 +105,13 @@ import {
 } from "./diagnostics-panel.model";
 import { PALETTE_WORKFLOW_ACTIONS } from "./dispatch-palette-command";
 import { DownloadManagerContent } from "./download-manager-shell";
+import {
+  buildGuideRows,
+  GUIDE_COMMAND_IDS,
+  GUIDE_SURFACE_NOTE,
+  type GuideRow,
+} from "./guide-model";
+import { GuideShell } from "./guide-shell";
 import { HistoryShell } from "./history-shell";
 import {
   buildHistoryView,
@@ -174,6 +196,7 @@ import {
 } from "./root-queue-bridge";
 import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
 import { runRootWorkflowSafely } from "./root-workflow-dispatch";
+import { SEARCH_BROWSE_COMMAND_IDS } from "./search-browse-command-ids";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
 import { SettingsShell } from "./settings/SettingsShell";
 import { useShellInput } from "./shell-command-input";
@@ -188,6 +211,7 @@ import {
 } from "./tracks-panel-nav";
 import { TracksPanelShell } from "./tracks-panel-shell";
 import type { BrowseShellResult, FooterAction, ShellAction, ShellPanelLine } from "./types";
+import { toShellAction } from "./types";
 import { handleHistoryOverlayInput, type HistoryDeletePending } from "./use-history-overlay-input";
 import {
   createNotificationsOverlayState,
@@ -872,68 +896,74 @@ export function RootOverlayShell({
     { key: "/", label: "commands", action: "command-mode" },
     { key: "esc", label: "close", action: "quit" },
   ];
+  /**
+   * The overlay surface's command router: nav commands swap the top overlay,
+   * workflow actions run detached. Palette Enter and guide-row Enter share
+   * this so a command can never be advertised in one place and dead in the
+   * other.
+   */
+  const resolveOverlayPaletteAction = (action: ShellAction) => {
+    if (ROOT_OVERLAY_NAV_COMMANDS.has(action)) {
+      if (action === "notifications" && !container.featureFlags.attentionInbox) {
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: "Attention inbox is disabled.",
+        });
+        return;
+      }
+      if (action === "diagnostics") {
+        if ((isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") && overlay.id) {
+          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+        }
+        void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
+        return;
+      }
+      const nextOverlay =
+        action === "provider"
+          ? {
+              type: "provider_picker" as const,
+              currentProvider: state.provider,
+              lane: shellModeToProviderLane(state.mode),
+            }
+          : action === "history" || action === "continue"
+            ? { type: "history" as const, initialFilterMode: "watching" as const }
+            : action === "up-next"
+              ? { type: "queue" as const }
+              : action === "library"
+                ? { type: "library" as const, view: "library" as const }
+                : action === "notifications"
+                  ? { type: "notifications" as const }
+                  : action === "downloads"
+                    ? { type: "downloads" as const }
+                    : action === "settings" || action === "presence"
+                      ? { type: "settings" as const }
+                      : action === "about"
+                        ? { type: "about" as const }
+                        : action === "guide"
+                          ? { type: "guide" as const }
+                          : { type: "help" as const };
+      if ((isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") && overlay.id) {
+        container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+      }
+      container.stateManager.dispatch({
+        type: "OPEN_OVERLAY",
+        overlay: nextOverlay,
+      });
+      return;
+    }
+    if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
+      void runRootWorkflowSafely({
+        container,
+        action,
+        cancelPickerId: isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
+      });
+    }
+  };
   const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
     footerActions,
     commands,
     escapeAction: null,
-    onResolve: (action) => {
-      if (ROOT_OVERLAY_NAV_COMMANDS.has(action)) {
-        if (action === "notifications" && !container.featureFlags.attentionInbox) {
-          container.stateManager.dispatch({
-            type: "SET_PLAYBACK_FEEDBACK",
-            note: "Attention inbox is disabled.",
-          });
-          return;
-        }
-        if (action === "diagnostics") {
-          if (
-            (isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") &&
-            overlay.id
-          ) {
-            container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
-          }
-          void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
-          return;
-        }
-        const nextOverlay =
-          action === "provider"
-            ? {
-                type: "provider_picker" as const,
-                currentProvider: state.provider,
-                lane: shellModeToProviderLane(state.mode),
-              }
-            : action === "history" || action === "continue"
-              ? { type: "history" as const, initialFilterMode: "watching" as const }
-              : action === "up-next"
-                ? { type: "queue" as const }
-                : action === "library"
-                  ? { type: "library" as const, view: "library" as const }
-                  : action === "notifications"
-                    ? { type: "notifications" as const }
-                    : action === "downloads"
-                      ? { type: "downloads" as const }
-                      : action === "settings" || action === "presence"
-                        ? { type: "settings" as const }
-                        : action === "about"
-                          ? { type: "about" as const }
-                          : { type: "help" as const };
-        if ((isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") && overlay.id) {
-          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
-        }
-        container.stateManager.dispatch({
-          type: "OPEN_OVERLAY",
-          overlay: nextOverlay,
-        });
-        return;
-      }
-      if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
-        void runRootWorkflowSafely({
-          container,
-          action,
-          cancelPickerId: isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
-        });
-      }
-    },
+    onResolve: resolveOverlayPaletteAction,
   });
 
   const overlayPanelKind = resolveOverlayPanelKind(overlay.type);
@@ -1659,11 +1689,11 @@ export function RootOverlayShell({
         // to the same finish channel the history path uses.
         if (played.status === "claimed" && !awaited) {
           const episode = episodeInfoFromQueuePlaybackLaunch(played.launch);
-          const title = titleInfoFromQueuePlaybackLaunch(played.launch);
+          const launchTitle = titleInfoFromQueuePlaybackLaunch(played.launch);
           forceCloseRootContent<BrowseShellResult<SearchResult>>(
             episode
-              ? { type: "launch-playback", launch: { title, episode } }
-              : { type: "launch-playback", launch: { title } },
+              ? { type: "launch-playback", launch: { title: launchTitle, episode } }
+              : { type: "launch-playback", launch: { title: launchTitle } },
           );
         }
         return;
@@ -1805,7 +1835,7 @@ export function RootOverlayShell({
         });
         return;
       }
-      if (overlay.type === "downloads" || overlay.type === "library") {
+      if (overlay.type === "downloads" || overlay.type === "library" || overlay.type === "guide") {
         return;
       }
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
@@ -2287,6 +2317,47 @@ export function RootOverlayShell({
         highlightedIndex={highlightedIndex}
         footerActions={footerActions}
         onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+      />,
+    );
+  }
+
+  if (overlay.type === "guide") {
+    const guideSections = buildGuideRows({
+      commands: resolveCommands(state, GUIDE_COMMAND_IDS),
+      runnableHere: GUIDE_RUNNABLE_HERE,
+      searchSurface: GUIDE_SEARCH_SURFACE,
+    });
+    const activateGuideRow = (row: GuideRow) => {
+      const action = toShellAction(row.command);
+      if (row.surface === "run") {
+        resolveOverlayPaletteAction(action);
+        return;
+      }
+      // A search-surface command rides the same {type:"action"} result a
+      // browse-palette Enter produces — deliver it only while a browse
+      // session is actually mounted underneath the overlay stack.
+      if (row.surface === "search" && getRootContentSession()?.kind === "browse") {
+        cancelAllRootOverlays(state.activeModals, container.stateManager);
+        forceCloseRootContent<BrowseShellResult<SearchResult>>({ type: "action", action });
+        return;
+      }
+      // The note rides the guide's own subtitle line — playbackNote only
+      // renders on playback surfaces, so it would be invisible here.
+      setOverlayStatus(`${row.invocation} ${GUIDE_SURFACE_NOTE[row.surface]}`);
+    };
+    return wrapOverlayLayout(
+      overlayLayout,
+      <GuideShell
+        sections={guideSections}
+        maxVisible={Math.max(4, overlayLayout.contentRows - 7)}
+        commandMode={commandMode}
+        commandInput={commandInput}
+        commandCursor={commandCursor}
+        commands={commands}
+        highlightedIndex={highlightedIndex}
+        footerActions={footerActions}
+        statusNote={overlayStatus}
+        onActivate={activateGuideRow}
       />,
     );
   }

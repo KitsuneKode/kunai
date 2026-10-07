@@ -40,6 +40,7 @@ export type ShellAction =
   | "diagnostics"
   | "docs"
   | "help"
+  | "guide"
   | "about"
   | "update"
   | "image-pane"
@@ -466,6 +467,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "diagnostics":
     case "docs":
     case "help":
+    case "guide":
     case "about":
     case "update":
     case "image-pane":

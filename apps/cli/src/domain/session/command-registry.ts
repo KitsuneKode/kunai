@@ -32,6 +32,7 @@ export type AppCommandId =
   | "diagnostics"
   | "docs"
   | "help"
+  | "guide"
   | "about"
   | "update"
   | "image-pane"
@@ -132,6 +133,7 @@ export const COMMAND_CONTEXTS = {
     "report-issue",
     "docs",
     "help",
+    "guide",
     "about",
     "update",
   ],
@@ -189,6 +191,7 @@ export const COMMAND_CONTEXTS = {
     "analytics-show",
     "setup",
     "help",
+    "guide",
     "menu",
     "about",
     "update",
@@ -259,6 +262,7 @@ export const COMMAND_CONTEXTS = {
     "analytics-show",
     "setup",
     "help",
+    "guide",
     "menu",
     "about",
     "update",
@@ -293,6 +297,7 @@ export const COMMAND_CONTEXTS = {
     "report-issue",
     "docs",
     "help",
+    "guide",
     "about",
     "quit",
   ],
@@ -481,7 +486,7 @@ export const COMMANDS: readonly AppCommand[] = [
   {
     id: "docs",
     label: "Docs",
-    aliases: ["docs", "documentation", "guide", "manual"],
+    aliases: ["docs", "documentation", "manual"],
     description: "Open Kunai documentation",
   },
   {
@@ -489,6 +494,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Help",
     aliases: ["help", "shortcuts", "?"],
     description: "Show shortcuts and command help",
+  },
+  {
+    id: "guide",
+    label: "Guide",
+    aliases: ["guide", "tour", "learn", "start-here", "features"],
+    description: "Browse what Kunai can do, grouped by task — Enter runs it",
   },
   {
     id: "menu",
@@ -1085,6 +1096,7 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
     case "diagnostics":
     case "docs":
     case "help":
+    case "guide":
     case "about":
     case "update":
     case "clear-cache":

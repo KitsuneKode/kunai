@@ -1,10 +1,10 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "802a914dec8b5d678b905f551e48ffb956b6caf5b36d0a894d49c9e6ec350043",
+  "cliSourceFingerprint": "e0b9178afda568786818dc67f08cb41a5ddf7ad85e4ee1f1b630e379af402fec",
   "docsContentFingerprint": "e38e4f16a3daf81c400969a4b8280092d2f275a12b9e99ee5f451da4391b8aff",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
-  "commandCount": 83,
+  "commandCount": 84,
   "providerIds": [
     "videasy",
     "vidlink",
@@ -414,7 +414,7 @@
     {
       "id": "docs",
       "label": "Docs",
-      "aliases": ["docs", "documentation", "guide", "manual"],
+      "aliases": ["docs", "documentation", "manual"],
       "description": "Open Kunai documentation"
     },
     {
@@ -422,6 +422,12 @@
       "label": "Help",
       "aliases": ["help", "shortcuts", "?"],
       "description": "Show shortcuts and command help"
+    },
+    {
+      "id": "guide",
+      "label": "Guide",
+      "aliases": ["guide", "tour", "learn", "start-here", "features"],
+      "description": "Browse what Kunai can do, grouped by task — Enter runs it"
     },
     {
       "id": "menu",

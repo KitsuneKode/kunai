@@ -866,6 +866,12 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
     return Promise.resolve("handled" as const);
   },
   help: (c) => handleStaticOverlay(c, "help"),
+  // The interactive GuideShell lives on the root-overlay channel, so the
+  // command resolves identically from pickers and post-play palettes too.
+  guide: async (c) => {
+    c.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "guide" } });
+    return "handled";
+  },
   docs: async (c) => {
     await openDocsUrl(c);
     return "handled";
