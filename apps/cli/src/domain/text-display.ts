@@ -5,7 +5,10 @@ const ELLIPSIS = "…";
 // Provider-supplied strings (failureReason, pickerHint) flow through the
 // truncation helpers, so the strip lives at the display boundary.
 /* eslint-disable no-control-regex */
-const ANSI_SEQUENCE = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*\u0007|[@-Z\\-_])/g;
+// The OSC body excludes ESC so a run of unterminated `ESC ]` introducers cannot
+// make every match attempt rescan to the end of the string.
+const ANSI_SEQUENCE =
+  /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)|[@-Z\\-_])/g;
 const UNSAFE_CHAR = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
 /* eslint-enable no-control-regex */
 
