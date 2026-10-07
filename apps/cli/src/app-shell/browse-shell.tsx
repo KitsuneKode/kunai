@@ -2320,6 +2320,7 @@ export function BrowseShell<T>({
             commandMode={commandMode}
             actions={visibleBrowseFooterActions}
             terminalWidth={viewport.columns}
+            maxVisible={viewport.breakpoint === "narrow" ? 3 : 5}
             companionHint
           />
         );
