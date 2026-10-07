@@ -131,13 +131,24 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
       run: async (actionCtx) => {
         const snapshot = await readPreSetupSnapshot();
         if (!snapshot) return "No saved configuration to restore.";
-        // Restored whole and exactly, onboarding gate included: "undo the setup
-        // run" means the run, not a curated subset of it that leaves the user
-        // guessing which parts came back.
+        // Restored whole and exactly — onboarding gate included — except the
+        // consent-owned keys readPreSetupSnapshot strips: "undo the setup run"
+        // means the run, not a way to resurrect a revoked analytics opt-in.
         await actionCtx.container.config.update(snapshot);
         await actionCtx.container.config.save();
         return "Restored the settings saved before your last setup run.";
       },
+    },
+    {
+      // Kept last: the consent rows above hold their positions because the
+      // consent-flow tests navigate them by keystroke count, and adding a row
+      // in the middle silently retargets those presses.
+      kind: "boolean",
+      id: "companionPet",
+      label: "Kanna the companion",
+      detail: "The fox on empty and error screens — off hides her until /pet or this setting",
+      read: (config) => config.companionPet !== "off",
+      write: (config, value) => ({ ...config, companionPet: value ? "auto" : "off" }),
     },
   ];
 }
