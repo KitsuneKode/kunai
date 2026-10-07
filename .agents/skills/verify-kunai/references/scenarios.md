@@ -29,18 +29,3 @@ input sequence, captured frame path, committed-state witness, expected literal
 result, reverse case, and unresolved prerequisites. Never retain provider URL,
 header/cookie, token, or live-profile content in public evidence. Fixture evidence
 is reproducible; live-provider and device observations are dated qualifications.
-
-## Principles adapted from pstack
-
-Use existing Kunai drivers rather than installing a second runtime. The useful
-loops are health before drive, source plus live coverage, direct behavioral
-witnesses, a bounded retry after diagnosis, and cleanup that preserves evidence.
-This is a single-agent workflow; pstack's per-feature delegation is not required.
-
-Primary references:
-
-- [Maintain verification skill](https://github.com/cursor/plugins/blob/main/pstack/skills/maintain-verification-skill/SKILL.md)
-- [Create verification skill](https://github.com/cursor/plugins/blob/main/pstack/skills/create-verification-skill/SKILL.md)
-- [Prove it works](https://github.com/cursor/plugins/blob/main/pstack/skills/principle-prove-it-works/SKILL.md)
-- [Test behavior](https://github.com/cursor/plugins/blob/main/pstack/skills/principle-test-behavior-not-implementation/SKILL.md)
-- [Blast radius](https://github.com/cursor/plugins/blob/main/pstack/skills/blast-radius/SKILL.md)
