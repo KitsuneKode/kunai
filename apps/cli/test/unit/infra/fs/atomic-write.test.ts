@@ -4,6 +4,7 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rename,
   rm,
@@ -17,6 +18,7 @@ import { dirname, join } from "node:path";
 import {
   __testing,
   writeAtomicBytes,
+  writeAtomicEphemeralJson,
   writeAtomicJson,
   writeAtomicSecretJson,
 } from "@/infra/fs/atomic-write";
@@ -308,5 +310,153 @@ describe("secret and durable writes", () => {
     } finally {
       if (previousUser !== undefined) process.env.USERNAME = previousUser;
     }
+  });
+});
+
+describe("ephemeral publish", () => {
+  async function makeRoot(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "kunai-atomic-ephemeral-"));
+    roots.push(root);
+    return root;
+  }
+
+  function errno(code: string): NodeJS.ErrnoException {
+    return Object.assign(new Error(code), { code });
+  }
+
+  test("the target name only appears once the record is complete", async () => {
+    const root = await makeRoot();
+    const target = join(root, "ticket-a");
+    const record = { pid: 1, padding: "x".repeat(64 * 1024) };
+    let seenAtRename: unknown;
+    await writeAtomicEphemeralJson(target, record, {
+      rename: async (from, to) => {
+        expect(existsSync(to)).toBe(false);
+        seenAtRename = JSON.parse(await readFile(from, "utf8"));
+        await rename(from, to);
+      },
+    });
+    expect(seenAtRename).toEqual(record);
+    expect(JSON.parse(await readFile(target, "utf8"))).toEqual(record);
+    expect(await readdir(root)).toEqual(["ticket-a"]);
+  });
+
+  test("a concurrent reader never parses a partial record", async () => {
+    const root = await makeRoot();
+    const padding = "y".repeat(256 * 1024);
+    const state = { writing: true };
+    const observed = new Set<string>();
+    const reader = (async () => {
+      while (state.writing) {
+        for (const name of await readdir(root)) {
+          if (!name.startsWith("ticket-")) continue;
+          let text: string;
+          try {
+            text = await readFile(join(root, name), "utf8");
+          } catch (error) {
+            // SAFETY: readFile rejects with a Node errno error; a missing .code just reads undefined.
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+            throw error;
+          }
+          expect(JSON.parse(text)).toEqual({ name, padding });
+          observed.add(name);
+        }
+      }
+    })();
+    try {
+      for (let index = 0; index < 25; index++) {
+        const name = `ticket-${index}`;
+        await writeAtomicEphemeralJson(join(root, name), { name, padding });
+      }
+    } finally {
+      state.writing = false;
+      await reader;
+    }
+    expect((await readdir(root)).sort()).toHaveLength(25);
+  });
+
+  testPosixMode("the record is owner-only even under a permissive umask", async () => {
+    const root = await makeRoot();
+    const target = join(root, "ticket-mode");
+    const previous = process.umask(0);
+    try {
+      await writeAtomicEphemeralJson(target, { ok: true });
+    } finally {
+      process.umask(previous);
+    }
+    expect((await lstat(target)).mode & 0o777).toBe(0o600);
+  });
+
+  test("a Windows scanner holding the temp file only delays the rename", async () => {
+    const root = await makeRoot();
+    const target = join(root, "ticket-win");
+    const sleeps: number[] = [];
+    let attempts = 0;
+    await writeAtomicEphemeralJson(
+      target,
+      { ok: true },
+      {
+        platform: "win32",
+        sleep: async (milliseconds) => {
+          sleeps.push(milliseconds);
+        },
+        rename: async (from, to) => {
+          attempts += 1;
+          if (attempts < 3) throw errno(attempts === 1 ? "EPERM" : "EBUSY");
+          await rename(from, to);
+        },
+      },
+    );
+    expect(attempts).toBe(3);
+    expect(sleeps).toEqual([10, 20]);
+    expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ ok: true });
+    expect(await readdir(root)).toEqual(["ticket-win"]);
+  });
+
+  test("a persistent refusal is surfaced and leaves no temp file behind", async () => {
+    const root = await makeRoot();
+    let attempts = 0;
+    await expect(
+      writeAtomicEphemeralJson(
+        join(root, "ticket-stuck"),
+        { ok: true },
+        {
+          platform: "win32",
+          sleep: async () => {},
+          rename: async () => {
+            attempts += 1;
+            throw errno("EACCES");
+          },
+        },
+      ),
+    ).rejects.toThrow("EACCES");
+    expect(attempts).toBe(4);
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  test("POSIX and non-transient errors are never retried", async () => {
+    const root = await makeRoot();
+    for (const [platform, code] of [
+      ["linux", "EPERM"],
+      ["win32", "ENOSPC"],
+    ] as const) {
+      let attempts = 0;
+      await expect(
+        writeAtomicEphemeralJson(
+          join(root, `ticket-${platform}`),
+          { ok: true },
+          {
+            platform,
+            sleep: async () => {},
+            rename: async () => {
+              attempts += 1;
+              throw errno(code);
+            },
+          },
+        ),
+      ).rejects.toThrow(code);
+      expect(attempts).toBe(1);
+    }
+    expect(await readdir(root)).toEqual([]);
   });
 });

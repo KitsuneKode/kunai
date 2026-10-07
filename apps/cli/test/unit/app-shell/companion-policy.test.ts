@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { companionFallbackGlyph, companionMode } from "@/app-shell/companion-policy";
+import {
+  companionFallbackGlyph,
+  companionMode,
+  companionToggleable,
+  setCompanionPreferenceSource,
+  type CompanionPreference,
+} from "@/app-shell/companion-policy";
 
 const TTY = { isTTY: true } as const;
 const PIPE = { isTTY: false } as const;
@@ -84,5 +90,53 @@ describe("companion mode", () => {
 
   test("fallback glyph stays the portable fox", () => {
     expect(companionFallbackGlyph()).toBe("🦊");
+  });
+});
+
+describe("companion preference", () => {
+  function withPreference<T>(preference: CompanionPreference, run: () => T): T {
+    setCompanionPreferenceSource(() => preference);
+    try {
+      return run();
+    } finally {
+      setCompanionPreferenceSource(() => "auto");
+    }
+  }
+
+  test("preference off retires her even where graphics could render", () => {
+    withPreference("off", () =>
+      withRealTty(() => {
+        expect(companionMode(KITTY, TTY)).toBe("off");
+      }),
+    );
+  });
+
+  test("preference auto leaves the resolution untouched", () => {
+    withPreference("auto", () => {
+      withRealTty(() => expect(companionMode(KITTY, TTY)).toBe("graphics"));
+      expect(companionMode({ TERM: "xterm" }, TTY)).toBe("glyph");
+    });
+  });
+
+  test("an explicit KUNAI_PET pin outranks the stored preference", () => {
+    // Env is the per-run signal: KUNAI_PET=off must stay off even when the
+    // stored preference says auto, and KUNAI_PET=glyph keeps her visible as a
+    // glyph even when the preference says off.
+    withPreference("off", () =>
+      expect(companionMode({ ...KITTY, KUNAI_PET: "glyph" }, TTY)).toBe("glyph"),
+    );
+    withPreference("auto", () => expect(companionMode({ KUNAI_PET: "off" }, TTY)).toBe("off"));
+  });
+
+  test("a stored off cannot reach into a pipe", () => {
+    withPreference("off", () => expect(companionMode(KITTY, PIPE)).toBe("off"));
+  });
+
+  test("toggle is offered only when a preference write can change something", () => {
+    expect(companionToggleable({}, TTY)).toBe(true);
+    // Any explicit pin — off or glyph — owns the mode for the run.
+    expect(companionToggleable({ KUNAI_PET: "off" }, TTY)).toBe(false);
+    expect(companionToggleable({ KUNAI_PET: "glyph" }, TTY)).toBe(false);
+    expect(companionToggleable({}, PIPE)).toBe(false);
   });
 });

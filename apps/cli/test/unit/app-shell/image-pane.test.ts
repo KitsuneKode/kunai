@@ -223,7 +223,9 @@ describe("app-shell image pane cache", () => {
       placementSlot: "browse-preview",
       signal: new AbortController().signal,
     });
-    expect(fetchCalls).toBe(2);
+    // Two render tasks race, but the source fetch underneath coalesces into
+    // one network call — the leader read is shared work.
+    expect(fetchCalls).toBe(1);
 
     firstAbort.abort();
     responders[0]?.(new Response(png, { status: 200 }));
@@ -237,11 +239,11 @@ describe("app-shell image pane cache", () => {
       cols: 8,
       placementSlot: "browse-preview",
     });
-    expect(fetchCalls).toBe(2);
+    expect(fetchCalls).toBe(1);
 
-    responders[1]?.(new Response(png, { status: 200 }));
     const [secondResult, joinedResult] = await Promise.all([second, joined]);
     expect(joinedResult).toBe(secondResult);
+    expect(fetchCalls).toBe(1);
   });
 });
 

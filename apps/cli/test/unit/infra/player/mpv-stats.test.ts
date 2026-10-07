@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { shouldPersistHistory } from "@/domain/playback/playback-history";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -11,6 +12,47 @@ import {
 } from "@/infra/player/mpv-stats";
 
 describe("mpv-stats", () => {
+  for (const resetBeforeEof of [false, true]) {
+    test(`preserves short completed duration when mpv clears it ${resetBeforeEof ? "before" : "after"} EOF`, () => {
+      const stats = createPlayerStatsState();
+      applyObservedPropertySample(stats, { name: "duration", value: 8, observedAt: 100 });
+      applyObservedPropertySample(stats, { name: "time-pos", value: 7.833333, observedAt: 101 });
+      if (resetBeforeEof)
+        applyObservedPropertySample(stats, { name: "duration", value: null, observedAt: 102 });
+      applyEndFileEvent(stats, "eof", 103);
+      if (!resetBeforeEof)
+        applyObservedPropertySample(stats, { name: "duration", value: null, observedAt: 104 });
+      const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+      expect(result.duration).toBe(8);
+      expect(result.watchedSeconds).toBe(8);
+      expect(result.endReason).toBe("eof");
+      expect(shouldPersistHistory(result)).toBe(true);
+    });
+  }
+
+  test("cleared duration cannot bypass the premature network EOF guard", () => {
+    const stats = createPlayerStatsState();
+    applyObservedPropertySample(stats, { name: "duration", value: 2000, observedAt: 100 });
+    applyObservedPropertySample(stats, {
+      name: "demuxer-via-network",
+      value: true,
+      observedAt: 101,
+    });
+    for (let pos = 0; pos <= 400; pos += 50) {
+      applyObservedPropertySample(stats, { name: "time-pos", value: pos, observedAt: 102 + pos });
+    }
+    applyObservedPropertySample(stats, { name: "duration", value: null, observedAt: 503 });
+    applyObservedPropertySample(stats, { name: "time-pos", value: 401, observedAt: 504 });
+    applyEndFileEvent(stats, "eof", 505);
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result).toMatchObject({
+      duration: 2000,
+      watchedSeconds: 401,
+      endReason: "unknown",
+      suspectedDeadStream: true,
+    });
+  });
+
   test("maps mpv end-file reasons into domain end reasons", () => {
     expect(mapMpvEndReason("eof")).toBe("eof");
     expect(mapMpvEndReason("quit")).toBe("quit");
@@ -486,5 +528,54 @@ describe("mpv-stats", () => {
     expect(stats.latestIpcSample?.demuxerCacheDurationSeconds).toBe(5.25);
     expect(stats.latestIpcSample?.cacheSpeedBytesPerSecond).toBe(1_000_000);
     expect(stats.latestIpcSample?.seeking).toBe(true);
+  });
+
+  test("a killed process is never promoted to eof on eof-reached residue alone", () => {
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    applyObservedPropertySample(stats, {
+      name: "playback-time",
+      value: 1400,
+      observedAt: 100,
+    });
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 1440,
+      observedAt: 110,
+    });
+    applyObservedPropertySample(stats, {
+      name: "eof-reached",
+      value: true,
+      observedAt: 120,
+    });
+    // No end-file event: mpv was SIGTERM'd before it could emit one.
+    recordPlayerExit(stats, { code: null, signal: "SIGTERM" });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("quit");
+    expect(result.endReason).not.toBe("eof");
+  });
+
+  test("a keep-open timeout without an end-file event never reads back as eof", () => {
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    applyObservedPropertySample(stats, {
+      name: "playback-time",
+      value: 1437,
+      observedAt: 100,
+    });
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 1440,
+      observedAt: 110,
+    });
+    applyObservedPropertySample(stats, {
+      name: "eof-reached",
+      value: true,
+      observedAt: 120,
+    });
+    // Clean exit but no end-file event (keep-open idles instead of emitting).
+    recordPlayerExit(stats, { code: 0, signal: null });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.endReason).not.toBe("eof");
   });
 });

@@ -12,8 +12,24 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
   const baseUrl = relay.baseUrl;
   const fallbackToDirect = relay.fallbackToDirect ?? true;
 
+  // The synchronous half of the relay decision — everything except the
+  // request-body decode. A URL that would not relay resolves its name on this
+  // machine, so probes re-validate its DNS answers; a URL that would relay
+  // resolves on the relay's side, where local answers mean nothing.
+  const wouldRelay = (upstreamUrl: string): boolean => {
+    if (!baseUrl) return false;
+    const entry = options.providerId
+      ? options.registry.get(options.providerId)
+      : options.registry.findByUpstreamUrl(upstreamUrl);
+    if (!entry) return false;
+    if (relay.providers?.[entry.providerId]?.enabled === false) return false;
+    if (entry.manifest.relaySafe !== true) return false;
+    return options.registry.isHostAllowed(entry.providerId, upstreamUrl, "metadata");
+  };
+
   return {
     runtime: "direct-http",
+    resolvesLocally: (url) => !wouldRelay(url),
     async fetch(input, init) {
       if (!baseUrl) return fetchImpl(input, init);
 

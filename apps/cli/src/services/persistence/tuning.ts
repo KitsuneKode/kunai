@@ -1,11 +1,9 @@
-// =============================================================================
 // Runtime tuning namespace
 //
 // Single source of truth for the runtime durations/budgets that used to live as
 // scattered module constants. Each knob has a default and a [min,max] bound.
 // Resolution order (last wins): DEFAULT_TUNING -> config-file override -> env.
 // Env keys are `KUNAI_TUNING_<SCREAMING_SNAKE(field)>`.
-// =============================================================================
 
 export interface TuningConfig {
   // playback / mpv

@@ -43,6 +43,7 @@ export class StorageMaintenanceService {
       message: "Storage maintenance completed",
       context: {
         cachePruned: cache.pruned,
+        dataPruned: data.dataPruned,
         dataOptimized: data.optimized,
         cacheOptimized: cache.optimized,
       },

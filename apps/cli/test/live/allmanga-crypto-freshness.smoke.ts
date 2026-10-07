@@ -81,7 +81,6 @@ const verdict = selectAllMangaBootstrapVerdict(attempts);
 const diagnosis = verdict.diagnosis;
 const status = verdict.status;
 const body = verdict.body;
-const epoch = verdict.epoch;
 
 /**
  * The bundled fallback carries its own expiry: the epoch is a 7-day bucket, so

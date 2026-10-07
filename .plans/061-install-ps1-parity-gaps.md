@@ -53,7 +53,11 @@ Concrete failure: a self-hoster sets `KUNAI_RELEASES_API`/`KUNAI_DL_BASE` to a
 fork's releases, then runs `-Method source` on Windows — the release path
 honors the fork, the source path silently clones upstream.
 
-### 061.2 — Optional deps offered only for `-Method binary`
+### 061.2 — Optional deps offered only for `-Method binary` (landed 2026-10-07)
+
+`Install-OptionalDeps` now runs for every method, matching install.sh, and the
+provider resolver also searches the managed helper dir directly. Kept below for
+context; 061.1 and 061.3 remain open.
 
 ```powershell
 # install.ps1:2410-2412

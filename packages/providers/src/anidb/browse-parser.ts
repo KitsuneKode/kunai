@@ -1,4 +1,5 @@
 import { decodeMarkupEntities, markupToPlainText, stripScriptBlocks } from "../shared/markup-text";
+import { chooseProviderSearchMatch, normalizeTitleKey } from "../shared/provider-title-match";
 
 /**
  * Pure AniDB browse-markup parsing.
@@ -115,22 +116,7 @@ export function chooseAnidbSearchMatch(
     readonly requireTitleEvidence?: boolean;
   } = {},
 ): AnidbSearchResult | null {
-  const strict = options.requireTitleEvidence === true;
-  const fallback = strict ? null : (results[0] ?? null);
-  const normalizedQuery = normalizeTitle(query);
-  if (results.length === 0 || !normalizedQuery) return fallback;
-
-  const exact = results.find((result) => normalizeTitle(result.title) === normalizedQuery);
-  if (exact) return exact;
-
-  const prefixed = results.find((result) => {
-    const normalizedTitle = normalizeTitle(result.title);
-    return (
-      normalizedTitle.startsWith(`${normalizedQuery} `) ||
-      normalizedQuery.startsWith(`${normalizedTitle} `)
-    );
-  });
-  return prefixed ?? fallback;
+  return chooseProviderSearchMatch(query, results, options);
 }
 
 /**
@@ -243,8 +229,8 @@ function extractAttribute(
 }
 
 function normalizeTitle(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+  // Shared normalizer: NFKD + Unicode letter/number classes + format-qualifier
+  // stripping ("(TV)"), so it agrees with the catalog matcher in
+  // shared/provider-title-match.ts.
+  return normalizeTitleKey(value);
 }

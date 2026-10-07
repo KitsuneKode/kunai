@@ -10,7 +10,8 @@ Kunai is terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `
 **You will learn:** recommended installers per platform, optional dependencies, and platform-specific handoff behavior.
 
 <Callout type="info" title="Optional tools stay optional">
-Missing `yt-dlp` or `ffprobe` should degrade gracefully; setup and diagnostics explain the gap instead of breaking unrelated playback paths. Posters have no external dependency at all.
+  Missing `yt-dlp` or `ffprobe` should degrade gracefully; setup and diagnostics explain the gap
+  instead of breaking unrelated playback paths. Posters have no external dependency at all.
 </Callout>
 
 ## Support posture (0.3.0)
@@ -23,7 +24,7 @@ Missing `yt-dlp` or `ffprobe` should degrade gracefully; setup and diagnostics e
 | Windows `windows-x64`                                    | **Beta**                                                 |
 | Windows `windows-arm64`                                  | **Experimental**                                         |
 | WSL                                                      | Linux install + Linux mpv/PATH/data (not Windows-native) |
-| FreeBSD / other BSD                                      | **Unsupported** binary; npm/bun/source only             |
+| FreeBSD / other BSD                                      | **Unsupported** binary; npm/bun/source only              |
 
 `kunai://` protocol registration is **Linux-only** in 0.3.0 (including WSL). macOS/Windows can still use `kunai --open` without OS handler registration.
 
@@ -167,9 +168,9 @@ shows up on VPNs, corporate networks, cloud shells, and CI runners.
 
 Run `kunai doctor` to see which of the three states you are in:
 
-| `doctor` reports            | Meaning                                              |
-| --------------------------- | ---------------------------------------------------- |
-| `curl=ok (chrome150)`       | An impersonating build is on `PATH`. Nothing to do   |
+| `doctor` reports            | Meaning                                             |
+| --------------------------- | --------------------------------------------------- |
+| `curl=ok (chrome150)`       | An impersonating build is on `PATH`. Nothing to do  |
 | `curl=plain (no CF bypass)` | Plain `curl` only; anime search may come back empty |
 | `curl=missing`              | No `curl` at all; install one first                 |
 

@@ -1,8 +1,6 @@
-// =============================================================================
 // Tracer Interface
 //
 // Distributed tracing for operation tracking.
-// =============================================================================
 
 export interface Span {
   readonly id: string;

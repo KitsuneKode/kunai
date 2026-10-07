@@ -28,13 +28,17 @@ import { MediaPanel } from "./MediaPanel";
 import { OffscreenFreeze } from "./offscreen-freeze";
 import { buildPlaybackKeysPanel, type PlaybackKeysPanelModel } from "./playback-keys-panel";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
-import { applyPlaybackShellInputEffect, resolvePlaybackShellInput } from "./playback-shell-input";
+import {
+  applyPlaybackShellInputEffect,
+  resolvePlaybackShellInput,
+  type PlaybackShellInputContext,
+} from "./playback-shell-input";
 import { ProgressBar } from "./primitives/ProgressBar";
 import { GlimmerLabel, SakuraBloom } from "./SakuraLoader";
 import { useShellCommandModeOpen } from "./shell-command-mode";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine } from "./shell-primitives";
-import { truncateLine } from "./shell-text";
+import { sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { LoadingShellState, ShellPanelLine } from "./types";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
@@ -132,6 +136,44 @@ function useRuntimeHealthLine(
 // Vertical "Mission" checklist (.prototypes/playback-postplay 'Mission card'):
 // one stage per line with its status glyph, so bootstrap reads as a checklist
 // being ticked off rather than a horizontal breadcrumb.
+/**
+ * Playback keys live in a child of the frame because `ShellFrame` is what knows
+ * whether the `/` palette is open, and it shares that through context to its
+ * children only. A hook called from `LoadingShell` itself sits above that
+ * provider, always reads "closed", and lets every letter typed into the palette
+ * fire its playback key (`q` stops, `n` skips) behind it.
+ */
+function PlaybackShellInput({
+  input,
+  onCancel,
+  onToggleMemory,
+}: {
+  readonly input: PlaybackShellInputContext;
+  readonly onCancel?: () => void;
+  readonly onToggleMemory: () => void;
+}) {
+  const commandModeOpen = useShellCommandModeOpen();
+
+  useInput((key, modifiers) => {
+    if (commandModeOpen) return;
+    if ((key === "c" && modifiers.ctrl) || key === "\x03") {
+      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
+      return;
+    }
+    if (modifiers.escape && input.cancellable && onCancel) {
+      onCancel();
+      return;
+    }
+
+    const effect = resolvePlaybackShellInput(key, modifiers, input);
+    if (!effect) return;
+
+    applyPlaybackShellInputEffect(effect, input.handlers, onToggleMemory);
+  });
+
+  return null;
+}
+
 function StageRail({ items }: { items: readonly StageRailItem[] }) {
   return (
     <Box flexDirection="column">
@@ -177,7 +219,7 @@ const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
 }) {
   const { state: block } = model;
   const isLiveFault = block.kind === "error";
-  const titleColor = isLiveFault ? palette.danger : palette.accentDeep;
+  const titleColor = isLiveFault ? palette.dangerText : palette.accentDeep;
   const glyph = isLiveFault ? "×" : "◐";
 
   // Preserved-progress fact: show saved timestamp if we have it, else % if
@@ -315,7 +357,7 @@ const BufferHealthBadge = React.memo(function BufferHealthBadge({
       ? palette.ok
       : health === "buffering"
         ? palette.accentDeep
-        : palette.danger;
+        : palette.dangerText;
   const label =
     health === "healthy"
       ? "● buffer healthy"
@@ -478,34 +520,15 @@ export const LoadingShell = React.memo(function LoadingShell({
     ],
   );
 
-  const commandModeOpen = useShellCommandModeOpen();
-
-  useInput((input, key) => {
-    if (commandModeOpen) return;
-    if ((input === "c" && key.ctrl) || input === "\x03") {
-      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
-      return;
-    }
-    if (key.escape && state.cancellable && onCancel) {
-      onCancel();
-      return;
-    }
-
-    const effect = resolvePlaybackShellInput(input, key, {
-      operation: state.operation,
-      cancellable: Boolean(state.cancellable),
-      fallbackAvailable: Boolean(state.fallbackAvailable),
-      canOpenSourcePicker,
-      recoveryViewActive: Boolean(recoveryView),
-      playbackTroubleActive,
-      handlers: playbackInputHandlers,
-    });
-    if (!effect) return;
-
-    applyPlaybackShellInputEffect(effect, playbackInputHandlers, () => {
-      setMemoryPanelVisible((visible) => !visible);
-    });
-  });
+  const playbackInput: PlaybackShellInputContext = {
+    operation: state.operation,
+    cancellable: Boolean(state.cancellable),
+    fallbackAvailable: Boolean(state.fallbackAvailable),
+    canOpenSourcePicker,
+    recoveryViewActive: Boolean(recoveryView),
+    playbackTroubleActive,
+    handlers: playbackInputHandlers,
+  };
   const isWide = loadingViewport.breakpoint === "wide";
   const isWidePlaying = isPlaying && isWide;
   // Show the metadata panel during bootstrap too — not only once mpv starts — so
@@ -657,6 +680,11 @@ export const LoadingShell = React.memo(function LoadingShell({
         state.onCommandAction?.(action);
       }}
     >
+      <PlaybackShellInput
+        input={playbackInput}
+        onCancel={onCancel}
+        onToggleMemory={() => setMemoryPanelVisible((visible) => !visible)}
+      />
       <Box flexDirection="column" justifyContent="space-between" flexGrow={1}>
         <Box flexDirection="column" flexGrow={1} width="100%">
           {/* ── Resolving / Loading ───────────────────────────────────────── */}
@@ -754,7 +782,9 @@ export const LoadingShell = React.memo(function LoadingShell({
                             : statusColor(runtimeHealthLine.tone)
                         }
                       >
-                        {runtimeHealthLine.label}: {runtimeHealthLine.detail}
+                        {sanitizeTerminalText(
+                          `${runtimeHealthLine.label}: ${runtimeHealthLine.detail ?? ""}`,
+                        )}
                       </Text>
                     )}
                   </Box>
@@ -935,7 +965,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {/* Health/trouble only surfaces when there is something to act on. */}
                 {playbackTrouble ? (
                   <Box marginTop={1} flexDirection="column">
-                    <Text color={palette.danger} bold>
+                    <Text color={palette.dangerText} bold>
                       {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
                     </Text>
                     <Text color={palette.dim}>

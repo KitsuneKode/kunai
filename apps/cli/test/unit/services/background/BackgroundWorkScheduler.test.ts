@@ -253,6 +253,39 @@ describe("BackgroundWorkScheduler", () => {
     ).toBe(true);
   });
 
+  test("a full queue of higher-priority work sheds the incoming low-priority item", async () => {
+    const shedIds: unknown[] = [];
+    const scheduler = new BackgroundWorkScheduler({
+      maxConcurrent: 1,
+      maxQueued: 2,
+      diagnostics: {
+        record: (event) => {
+          if (event.operation === "background.work.shed") {
+            shedIds.push(event.context?.shedId);
+          }
+        },
+      },
+    });
+    const ran: string[] = [];
+    const work = (id: string, lane: BackgroundWorkLane) => ({
+      id,
+      lane,
+      run: async () => {
+        ran.push(id);
+      },
+    });
+
+    expect(scheduler.enqueue(work("critical-1", "playback-critical"))).toBe(true);
+    expect(scheduler.enqueue(work("critical-2", "playback-critical"))).toBe(true);
+    // Full: maintenance must not displace playback-critical work.
+    expect(scheduler.enqueue(work("cleanup", "maintenance-cleanup"))).toBe(false);
+    expect(scheduler.pendingCount()).toBe(2);
+
+    await scheduler.drain();
+    expect(ran).toEqual(["critical-1", "critical-2"]);
+    expect(shedIds).toContain("cleanup");
+  });
+
   test("same-id re-enqueue coalesces instead of counting toward the bound", async () => {
     const scheduler = new BackgroundWorkScheduler({ maxConcurrent: 1, maxQueued: 1 });
     const ran: string[] = [];

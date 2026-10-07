@@ -4,7 +4,7 @@
   font-family: var(--font-serif), Georgia, serif;
   font-size: var(--kunai-text-display);
   line-height: var(--kunai-leading-tight);
-  font-weight: 300;
+  font-weight: var(--kunai-weight-display);
   letter-spacing: -0.03em;
   text-wrap: balance;
   color: var(--color-fd-foreground);
@@ -14,7 +14,7 @@
   font-family: var(--font-serif), Georgia, serif;
   font-size: var(--kunai-text-title);
   line-height: 1.12;
-  font-weight: 400;
+  font-weight: var(--kunai-weight-regular);
   letter-spacing: -0.02em;
   text-wrap: balance;
   color: var(--color-fd-foreground);
@@ -39,13 +39,13 @@
   font-size: var(--kunai-text-caption);
   letter-spacing: var(--kunai-tracking-eyebrow);
   text-transform: uppercase;
-  font-weight: 600;
+  font-weight: var(--kunai-weight-semibold);
   color: color-mix(in oklab, var(--kunai-accent) 88%, var(--color-fd-foreground));
 }
 
 .kunai-type-mono {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.8125rem;
+  font-size: var(--kunai-text-code);
   font-variant-numeric: tabular-nums;
 }
 
@@ -55,7 +55,7 @@
   font-family: var(--font-serif), Georgia, serif;
   font-size: var(--kunai-text-display);
   line-height: var(--kunai-leading-tight);
-  font-weight: 300;
+  font-weight: var(--kunai-weight-display);
   letter-spacing: -0.03em;
   text-wrap: balance;
   color: var(--color-fd-foreground);
@@ -64,7 +64,7 @@
 .kunai-eyebrow {
   margin: 0;
   font-size: var(--kunai-text-caption);
-  font-weight: 700;
+  font-weight: var(--kunai-weight-semibold);
   letter-spacing: var(--kunai-tracking-eyebrow);
   text-transform: uppercase;
   color: var(--kunai-accent);
@@ -78,8 +78,8 @@
   border: 1px solid var(--kunai-line);
   background: color-mix(in oklab, var(--kunai-surface) 72%, transparent);
   padding: 0.35rem 0.75rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
+  font-size: var(--kunai-text-caption);
+  font-weight: var(--kunai-weight-semibold);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: color-mix(in oklab, var(--kunai-accent) 80%, var(--color-fd-foreground));

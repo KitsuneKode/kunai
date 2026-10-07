@@ -195,16 +195,15 @@ async function fetchMasterPlaylist(
     });
     if (!response.ok) return null;
     const body = await response.text();
-    // A 204 or an HTML error page is not a readable manifest — returning null
-    // hands the ship decision to the gate probe instead of skipping it.
+    // A 204 or an HTML error page is not a readable manifest.
     return body.includes("#EXTM3U") ? body : null;
   } catch (error) {
     // An abort is not an unreadable manifest — swallowing it lets the gate
     // probe an already-dead signal and ship a stream on a cancelled resolve.
     if (context.signal?.aborted) throw error;
-    // A master this adapter cannot read is not yet a dead stream: the caller
-    // gates the shipped URL on `null`, and only the audio naming is lost when
-    // that probe passes. Returning null — not throwing — keeps those distinct.
+    // A master this adapter cannot read is not yet a dead stream: the resolve
+    // gate decides that, and only the audio naming is lost when it passes.
+    // Returning null — not throwing — keeps those distinct.
     return null;
   }
 }
@@ -467,23 +466,6 @@ export const kickassanimeProviderModule: CoreProviderModule = {
 
     const headers = kaaStreamHeaders(server.src);
     const master = await fetchMasterPlaylist(context, player.manifest, headers);
-    if (master === null) {
-      // The adapter could not read the manifest but would still ship that URL —
-      // mpv retries the identical request. A definitive gate refusal is proof
-      // the manifest host is dead; a timeout or non-definitive answer is not,
-      // which keeps the old "mpv fetches it again" leniency.
-      const verdict = await verifyCandidateStream({
-        stream: { url: player.manifest, headers },
-        context,
-        signal: context.signal,
-      });
-      if (!verdict.accepted) {
-        // Retryable on purpose, unlike the sibling not-founds above: a re-resolve
-        // re-fetches the player page and mints a fresh signed manifest URL, so a
-        // refusal caused by a stale signature genuinely can succeed next try.
-        return fail("not-found", `KickAssAnime manifest is unreachable (${verdict.reason})`, true);
-      }
-    }
     const selected = selectKaaAudio(
       master ? parseHlsMasterAudioRenditions(master) : [],
       audio.catalogMode,
@@ -505,9 +487,8 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       protocol: "hls",
       container: "m3u8",
       headers,
-      // The master is a ladder (360p/540p/720p); mpv picks the rendition.
-      // The master is a ladder mpv picks from, and its variant playlists are
-      // video-only — the audio lives in the rendition group, so splitting the
+      // The master is a ladder (360p/540p/720p) mpv picks from, and its variant
+      // playlists are video-only — the audio lives in the rendition group, so splitting the
       // ladder into per-quality URLs would hand mpv silent video.
       qualityLabel: "auto",
       qualityRank: 0,
@@ -553,6 +534,28 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       preferredSourceId: input.preferredSourceId,
       favoriteSourceNames: input.favoriteSourceNames,
     });
+
+    // Resolve gate: KickAssAnime ships exactly one stream — the master URL —
+    // and a master that downloads still proves nothing about its media
+    // playlists, so the shipped stream is probed with its own headers either
+    // way. A definitive refusal is retryable: a re-resolve re-fetches the
+    // player page and mints a fresh signed manifest URL. A non-definitive
+    // answer (timeout, 5xx) passes, since mpv retries the identical request.
+    const verdict = await verifyCandidateStream({
+      stream: selection.selected,
+      context,
+      signal: context.signal,
+    });
+    if (context.signal?.aborted) {
+      return fail("cancelled", "KickassAnime resolve-gate probe was cancelled");
+    }
+    if (!verdict.accepted) {
+      return fail(
+        "not-found",
+        `KickassAnime selected stream is unreachable (${verdict.reason})`,
+        true,
+      );
+    }
     const sources: ProviderSourceCandidate[] = [
       createSourceCandidateFromStream({
         providerId: KICKASSANIME_PROVIDER_ID,

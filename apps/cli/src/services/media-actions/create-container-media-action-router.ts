@@ -86,8 +86,22 @@ export async function mirrorListMembershipChange(
   change: { readonly list: "watchlist" | "favorite"; readonly present: boolean },
 ): Promise<void> {
   if (container.syncReconciliationRepository) {
-    const result = await reconcileSyncMutations(container);
-    if (result.queued > 0) container.syncService.deliverSoon();
+    try {
+      const result = await reconcileSyncMutations(container);
+      if (result.queued > 0) container.syncService.deliverSoon();
+    } catch (error) {
+      // Same policy as mirrorToTrackers: the local list change already landed,
+      // so a reconcile failure must not reach the keypress that made it.
+      container.diagnosticsService?.record({
+        category: "sync",
+        message: "List change was saved locally but could not be reconciled for tracker sync",
+        context: {
+          titleId: item.titleId,
+          mediaKind: item.mediaKind,
+          error: error instanceof Error ? error.name : "unknown",
+        },
+      });
+    }
     return;
   }
   await mirrorToTrackers(container, item, (identities) =>

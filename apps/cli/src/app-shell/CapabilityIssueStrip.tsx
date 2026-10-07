@@ -1,5 +1,4 @@
-// =============================================================================
-// CapabilityIssueStrip.tsx — what's missing, said once, at the top of the shell
+// What's missing, said once, at the top of the shell
 //
 // Before this, a missing dependency was announced by a single `console.error`
 // in `checkDeps` that the Ink shell painted over milliseconds later, plus a
@@ -18,13 +17,13 @@
 // It takes no keyboard input, for the same reason `AnalyticsDisclosureBanner`
 // does not: `ink-shell` owns a global `useInput`, and a second handler would
 // make one key mean two things. The full list lives behind `kunai doctor`.
-// =============================================================================
 
 import type { CapabilitySnapshot } from "@/ui";
 import { Box, Text } from "ink";
 import React from "react";
 
 import { buildDependencyRows, selectStartupIssueRows } from "./setup/dependency-rows";
+import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 
 /** At most this many rows, so the strip can never push the shell off screen. */
@@ -62,16 +61,18 @@ export function CapabilityIssueStrip({
             <Text color={palette.warn} bold>
               {"△ "}
             </Text>
-            <Text color={palette.text}>{row.consequence ?? `${row.name} not found`}</Text>
+            <Text color={palette.text}>
+              {sanitizeTerminalText(row.consequence ?? `${row.name} not found`)}
+            </Text>
           </Box>
           {row.fix ? (
             <Box paddingLeft={2}>
-              <Text color={palette.accent}>{row.fix}</Text>
+              <Text color={palette.accent}>{sanitizeTerminalText(row.fix)}</Text>
             </Box>
           ) : null}
         </Box>
       ))}
-      <Text color={palette.dim} dimColor>
+      <Text color={palette.dim}>
         Everything else still works. `kunai doctor` has the full report.
       </Text>
     </Box>

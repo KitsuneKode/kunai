@@ -40,7 +40,7 @@ Outcome: the whole shell already renders in Sakura via aliases. Remaining work i
 Replace deprecated color-name call sites with semantic names, fixing meaning while doing so (e.g. a `teal` cursor → `accent`; a `teal` info label → `muted`). 28 files reference `palette`. Split by surface family so two agents don't touch the same file.
 
 - **Agent A — playback family**: `post-play-shell.tsx`, `loading-shell.tsx`, `ink-shell.tsx`, now-playing, tracks. Map `amber→accent`, `green→ok`, `teal` per meaning.
-- **Agent B — discovery/pickers**: `root-overlay-*`, `picker-overlay.tsx`, `pickers/*`, search results, recommendations, calendar.
+- **Agent B — discovery/pickers**: `root-overlay-*`, `pickers/*`, search results, recommendations, calendar.
 - **Agent C — memory surfaces**: history, `Heatmap.tsx`, stats (keep `contentTintColor` for type hue), library/downloads, `download-manager-shell.tsx`.
 
 Done when no `palette.{amber,pink,teal,cyan,info,lavender,green,red,yellow,gray,*Fill,border*}` remains outside the deprecation block; then delete the aliases from `tokens.ts` + `shell-theme.ts`.

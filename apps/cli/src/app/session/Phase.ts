@@ -1,8 +1,6 @@
-// =============================================================================
 // Phase Interface
 //
 // Base contract for all application phases.
-// =============================================================================
 
 import type { Container } from "../../container";
 import type { KitsuneError } from "../../domain/errors";

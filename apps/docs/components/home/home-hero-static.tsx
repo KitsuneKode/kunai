@@ -1,4 +1,3 @@
-import { KunaiFoxLive } from "@/components/brand/kunai-fox-live";
 import { HeroKindsRow } from "@/components/home/hero-kinds-row";
 import { HeroProofRow } from "@/components/home/hero-proof-row";
 import { HomeStarCta } from "@/components/home/home-star-cta";
@@ -18,10 +17,6 @@ export function HomeHeroStatic({ cliVersion, providerCount }: HomeHeroStaticProp
 
   return (
     <section className="kunai-hero-static kunai-reveal flex flex-col justify-center">
-      <div className="kunai-hero-fox">
-        <KunaiFoxLive pose="idle" alertPose="watch" size={120} />
-      </div>
-
       {/* The heading carries its own weight. The eyebrow that used to sit here
           read "Terminal-first playback" — a label restating the h1 in smaller
           type, above a page that never once said what Kunai actually plays. */}

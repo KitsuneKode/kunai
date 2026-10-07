@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-04"
+lastReviewed: "2026-10-07"
 ---
 
 # Provider: KickAssAnime
@@ -102,6 +102,13 @@ the master. Its `manifest` now arrives protocol-relative
 slash (`https:////bl.krussdomi.com`) form is still repaired the same way.
 BirdStream's DASH is parsed but never chosen — its manifest 404'd for the title
 tested.
+
+**Single-server SPOF:** a VidStreaming outage has no second server today (also
+recorded in `research.ts`, which is why this stays a dossier note rather than
+a code change). Next lane candidate is BirdStream: enabling it is
+`PLAYABLE_SERVERS` in `direct.ts` plus DASH handling, but only against a live
+title whose BirdStream manifest answers 200 — enabling it blind would trade a
+diagnosable `not-found` for mpv failures.
 
 ## Subtitle Inventory
 

@@ -1,5 +1,4 @@
-// =============================================================================
-// decode.ts — pixel access without an external binary.
+// Pixel access without an external binary.
 //
 // Every renderer except kitty-native used to shell out to `chafa`, which is
 // effectively never installed on Windows. That left Windows users with no
@@ -7,7 +6,6 @@
 // JPEG through jpeg-js (TMDB serves `t/p/w342` as JPEG) and PNG inline, since
 // PNG is only DEFLATE plus five scanline filters and pulling a second decoder
 // dependency for that is not worth it.
-// =============================================================================
 
 import { inflateSync } from "node:zlib";
 

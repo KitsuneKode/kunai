@@ -28,3 +28,8 @@ export function isYoutubeWatchUrl(url: string): boolean {
     url.trim(),
   );
 }
+
+/** Files admitted by the explicit local authority are validated before handoff, not by HTTP. */
+export function needsMpvNetworkPreflight(url: string, kind: MpvUrlKind = "remote"): boolean {
+  return !(kind === "local" && isAllowedMpvUrl(url, "local") && !isAllowedMpvUrl(url, "remote"));
+}
