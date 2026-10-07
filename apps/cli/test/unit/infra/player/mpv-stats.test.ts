@@ -529,4 +529,53 @@ describe("mpv-stats", () => {
     expect(stats.latestIpcSample?.cacheSpeedBytesPerSecond).toBe(1_000_000);
     expect(stats.latestIpcSample?.seeking).toBe(true);
   });
+
+  test("a killed process is never promoted to eof on eof-reached residue alone", () => {
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    applyObservedPropertySample(stats, {
+      name: "playback-time",
+      value: 1400,
+      observedAt: 100,
+    });
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 1440,
+      observedAt: 110,
+    });
+    applyObservedPropertySample(stats, {
+      name: "eof-reached",
+      value: true,
+      observedAt: 120,
+    });
+    // No end-file event: mpv was SIGTERM'd before it could emit one.
+    recordPlayerExit(stats, { code: null, signal: "SIGTERM" });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("quit");
+    expect(result.endReason).not.toBe("eof");
+  });
+
+  test("a keep-open timeout without an end-file event never reads back as eof", () => {
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    applyObservedPropertySample(stats, {
+      name: "playback-time",
+      value: 1437,
+      observedAt: 100,
+    });
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 1440,
+      observedAt: 110,
+    });
+    applyObservedPropertySample(stats, {
+      name: "eof-reached",
+      value: true,
+      observedAt: 120,
+    });
+    // Clean exit but no end-file event (keep-open idles instead of emitting).
+    recordPlayerExit(stats, { code: 0, signal: null });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.endReason).not.toBe("eof");
+  });
 });

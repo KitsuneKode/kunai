@@ -541,13 +541,12 @@ export function recordPlayerExit(
   state.playerExitSignal = exit.signal;
   state.playerExitedCleanly = exit.code === 0 && exit.signal === null;
 
-  if (
-    state.endReason === "unknown" &&
-    state.latestIpcSample?.eofReached &&
-    !state.eofDemotedByPrematureGuard
-  ) {
-    state.endReason = "eof";
-  } else if (state.endReason === "unknown") {
+  // An end-file IPC event is the only thing that may set "eof" from
+  // eof-reached residue (see applyEndFileEvent, guarded by the premature-EOF
+  // 95% checks). A process exit without one — the keep-open no-end-file case,
+  // a kill, or a crash — maps to error/quit and must never read back as a
+  // natural finish, or a killed mpv still writes completed:true downstream.
+  if (state.endReason === "unknown") {
     if (exit.code !== null && exit.code !== 0) {
       state.endReason = "error";
     } else if (exit.signal) {
