@@ -2,9 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { decodePlaybackTargetWebCode, encodePlaybackTargetShortCode } from "@kunai/types";
 
-import { splitHeadline } from "../app/w/[code]/opengraph-image";
 import { isKindCrewActive } from "../lib/brand/social-card";
+import { clipLine, splitHeadline as splitHeadlineWith } from "../lib/brand/split-headline";
 import { catalogFor, initialFor, positionFor, titleFor } from "../lib/share-presentation";
+
+/** The share card's empty-title fallback, which these cases were written against. */
+const splitHeadline = (title: string) => splitHeadlineWith(title, "Shared with Kunai");
 
 describe("splitHeadline", () => {
   test("a short title stays on one line", () => {
@@ -59,6 +62,35 @@ describe("splitHeadline", () => {
     const lines = splitHeadline(`${"alpha ".repeat(12)}omega`);
     expect(lines).toHaveLength(2);
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(22);
+  });
+});
+
+describe("clipLine", () => {
+  test("a sentence that fits is returned as written", () => {
+    expect(clipLine("Install Kunai and mpv.", 96)).toBe("Install Kunai and mpv.");
+  });
+
+  test("an over-long sentence ends on a word and is marked", () => {
+    const clipped = clipLine(
+      "Install Kunai, put it on your PATH, install mpv, run setup, and finish",
+      40,
+    );
+    expect(clipped.endsWith("…")).toBe(true);
+    expect(clipped.length).toBeLessThanOrEqual(40);
+    // Never a half word: whatever precedes the ellipsis is a whole word of the input.
+    const lastWord = clipped.slice(0, -1).split(" ").at(-1) ?? "";
+    expect("Install Kunai, put it on your PATH, install mpv, run setup, and finish").toContain(
+      lastWord,
+    );
+  });
+
+  test("the ellipsis never follows a comma", () => {
+    const clipped = clipLine("alpha beta, gamma delta epsilon", 14);
+    expect(clipped).not.toContain(",…");
+  });
+
+  test("collapses whitespace before measuring", () => {
+    expect(clipLine("a\n\n b\t c", 20)).toBe("a b c");
   });
 });
 
