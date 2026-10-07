@@ -26,7 +26,7 @@ The published npm launcher package excludes the entire `test/` tree: its file al
 
 ## Turborepo Test Execution
 
-`bun run test` is `turbo run test`. Test tasks currently set `cache: false`; selected suites execute on every invocation. Typecheck and build tasks can still replay from cache. Use `--force` when reporting fresh execution of those gates.
+`bun run test` is `turbo run test`. Test tasks currently set `cache: false`; selected suites execute on every invocation. Typecheck also disables caching; build tasks can still replay from cache. Use `--force` when reporting fresh execution of those gates.
 
 CLI suites are separate Turbo tasks for scheduling and focused invocation. Because test caching is disabled, a unit-only change selecting the CLI package still runs both suites:
 
@@ -70,9 +70,27 @@ the developer's credential store.
 4. Run the owning suite, then `bun run ci:affected` with a verified
    `TURBO_SCM_BASE`. Missing or stale comparison history is not evidence of a
    small change; inspect Turbo's dry run before relying on selection.
-5. Before handoff, run the required full gates and report the exact revision,
+5. `bun run ci:preflight` runs the repository lint baseline, document paths
+   and review-date checks before the long tasks in both `ci` and `ci:affected`.
+   Plain `bun run lint` does not include this hosted baseline gate. The freshness
+   check compares committed HEAD with its base; run it after committing a content
+   review date, rather than using a skip flag for meaningful edits.
+6. Before handoff, run the required full gates and report the exact revision,
    command, exit status, failures, skips, and cache status. Separate local Linux,
    hosted Windows/macOS, opt-in database/native, and live-provider evidence.
+
+For live CLI behavior use the repo's `verify-kunai` skill and the held-session
+`doctor` command. It checks liveness, interactive chrome, contained profile
+paths, file credentials and no analytics opt-in; it does not verify source
+revision, provider availability or player progress. The launcher shell-quotes
+literal environment/path values and refuses storage/vault overrides. `--command`
+remains a developer-controlled shell fragment of extra main.ts arguments.
+Reports belong outside the temporary profile. Failed interactive startup saves
+a diagnostic report outside the profile and stops only its created session;
+`--keep-profile` preserves the shadow directory. Existing sidecars are decoded through a schema and checked
+before any inspector read or cleanup; deletion additionally requires the
+profile directory to belong to the requested session name. Tests for these commands live in the
+separate `bun run test:agent` tier, not the default unit/integration suites.
 
 The debounce contract in
 `apps/cli/test/unit/app-shell/settle-value.test.tsx` advances Bun fake timers inside

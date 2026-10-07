@@ -53,7 +53,12 @@ import {
   markInteractiveShellMounted,
 } from "./interactive-shell-state";
 import { helpSectionsForScope } from "./keybindings";
-import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
+import {
+  getPickerChromeRows,
+  getPickerLayout,
+  getPickerListMaxVisible,
+  ROOT_HORIZONTAL_PADDING,
+} from "./layout-policy";
 import {
   createNotificationQueueState,
   NOTIFICATION_TOAST_TTL_MS,
@@ -1230,7 +1235,7 @@ export function AppRoot({ container }: { container: Container }) {
       width={shellWidth}
       height={shellHeight}
       backgroundColor={palette.bg}
-      paddingX={1}
+      paddingX={ROOT_HORIZONTAL_PADDING}
       paddingY={0}
     >
       {/* Single canonical header: brand · destination pill · crumb · status · size */}
