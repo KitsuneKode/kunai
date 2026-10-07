@@ -626,7 +626,9 @@ export const PostPlayShell = React.memo(function PostPlayShell({
             </Box>
           ) : null}
 
-          {/* Live-keys footer — discoverable, premium affordance */}
+          {/* Row-level keys only. Shell actions (`s` search, `/` commands) live in
+              the shell footer; repeating them here once labelled `/` "search"
+              directly above a footer calling it "commands". */}
           <Box marginTop={1}>
             <Text color={palette.dim}>
               {truncateLine(
@@ -635,7 +637,6 @@ export const PostPlayShell = React.memo(function PostPlayShell({
                   "↵ select",
                   recommendations.length > 0 ? "1·2·3 picks" : null,
                   view.nextUpHero ? "x cancel" : null,
-                  "/ search",
                 ]
                   .filter(Boolean)
                   .join("   ·   "),
