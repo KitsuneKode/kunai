@@ -1,4 +1,6 @@
-/** The Node errno code (`ENOENT`, `EEXIST`, …) of a caught filesystem error. */
-export function errorCode(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException | null)?.code;
+import { isJsonObject, isJsonString } from "@kunai/types";
+
+/** Decode a caught filesystem cause's errno code (`ENOENT`, `EEXIST`, …) before treating it as evidence. */
+export function errorCode(cause: unknown): string | undefined {
+  return isJsonObject(cause) && isJsonString(cause.code) ? cause.code : undefined;
 }

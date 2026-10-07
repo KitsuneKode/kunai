@@ -103,8 +103,8 @@ export async function withConfigLockTransition<T>(
       if (!value) continue;
       if (value.hostname === own.hostname && !pidAlive(value.pid)) {
         await unlink(`${candidate}.number`).catch(() => {});
-        await unlink(candidate).catch((error: unknown) => {
-          if (errorCode(error) !== "ENOENT") throw error;
+        await unlink(candidate).catch((cause: unknown) => {
+          if (errorCode(cause) !== "ENOENT") throw cause;
         });
       } else {
         tickets.push({ path: candidate, value });
@@ -136,11 +136,11 @@ export async function withConfigLockTransition<T>(
     }
   } finally {
     // Only this immutable path belongs to us; never delete another generation.
-    await unlink(path).catch((error: unknown) => {
-      if (errorCode(error) !== "ENOENT") throw error;
+    await unlink(path).catch((cause: unknown) => {
+      if (errorCode(cause) !== "ENOENT") throw cause;
     });
-    await unlink(`${path}.number`).catch((error: unknown) => {
-      if (errorCode(error) !== "ENOENT") throw error;
+    await unlink(`${path}.number`).catch((cause: unknown) => {
+      if (errorCode(cause) !== "ENOENT") throw cause;
     });
   }
 }
