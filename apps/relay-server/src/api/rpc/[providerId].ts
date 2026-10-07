@@ -36,6 +36,7 @@ type SharedRelayHandler = (request: Request, options: RelayHandlerOptions) => Pr
 
 export interface RelayRpcHandlerDependencies {
   readonly readToken: () => string | undefined;
+  readonly readCorsOrigins?: () => readonly string[];
   readonly registry?: ProviderRelayRegistry;
   readonly readBody?: RelayBodyReader;
   readonly createWebRequest?: RelayRequestAdapter;
@@ -101,6 +102,7 @@ export function createRelayRpcHandler(dependencies: RelayRpcHandlerDependencies)
       registry,
       authorization: { mode: "bearer", token },
       transport: dependencies.transport,
+      corsAllowedOrigins: dependencies.readCorsOrigins?.(),
     });
     await writeResponse(res, response);
   };
@@ -108,6 +110,11 @@ export function createRelayRpcHandler(dependencies: RelayRpcHandlerDependencies)
 
 export default createRelayRpcHandler({
   readToken: () => process.env.RELAY_TOKEN,
+  readCorsOrigins: () =>
+    (process.env.RELAY_CORS_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0),
 });
 
 function firstQueryValue(value: string | readonly string[] | undefined): string | undefined {

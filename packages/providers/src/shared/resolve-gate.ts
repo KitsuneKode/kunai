@@ -81,6 +81,7 @@ export async function verifyCandidateStream({
     // The candidate's own headers, verbatim — never a re-derived set.
     headers: stream.headers,
     fetchImpl: context.fetch?.fetch.bind(context.fetch),
+    resolvesLocally: context.fetch?.resolvesLocally,
     timeoutMs,
     signal: signal ?? context.signal,
   });
