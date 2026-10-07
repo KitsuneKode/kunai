@@ -131,9 +131,9 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
       run: async (actionCtx) => {
         const snapshot = await readPreSetupSnapshot();
         if (!snapshot) return "No saved configuration to restore.";
-        // Restored whole and exactly, onboarding gate included: "undo the setup
-        // run" means the run, not a curated subset of it that leaves the user
-        // guessing which parts came back.
+        // Restored whole and exactly — onboarding gate included — except the
+        // consent-owned keys readPreSetupSnapshot strips: "undo the setup run"
+        // means the run, not a way to resurrect a revoked analytics opt-in.
         await actionCtx.container.config.update(snapshot);
         await actionCtx.container.config.save();
         return "Restored the settings saved before your last setup run.";

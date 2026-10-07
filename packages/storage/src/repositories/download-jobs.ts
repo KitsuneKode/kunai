@@ -379,6 +379,8 @@ export class DownloadJobsRepository {
   }
 
   complete(id: string, updatedAt: string): void {
+    // Only a live run can complete — a stale writer must not resurrect a row
+    // another instance aborted or deleted mid-publish.
     this.db
       .query(
         `
@@ -391,7 +393,11 @@ export class DownloadJobsRepository {
               updated_at = ?,
               completed_at = ?,
               last_validated_at = ?
-          WHERE id = ?
+          -- Completion is only reachable from a live run or the sidecar-repair
+          -- path (repairable / completed-with-notes). Writing 'completed' over
+          -- an aborted, failed, or still-queued row is a stale writer
+          -- resurrecting work another instance cancelled.
+          WHERE id = ? AND status IN ('running', 'repairable', 'completed-with-notes')
         `,
       )
       .run(updatedAt, updatedAt, updatedAt, id);
@@ -420,7 +426,10 @@ export class DownloadJobsRepository {
               updated_at = ?,
               completed_at = COALESCE(completed_at, ?),
               last_validated_at = ?
+          -- Same fence as complete(), plus 'completed': the artwork-missing
+          -- downgrade path moves completed → completed-with-notes.
           WHERE id = ?
+            AND status IN ('running', 'repairable', 'completed-with-notes', 'completed')
         `,
       )
       .run(
@@ -457,7 +466,9 @@ export class DownloadJobsRepository {
               updated_at = ?,
               completed_at = COALESCE(completed_at, ?),
               last_validated_at = ?
-          WHERE id = ?
+          -- Live run or a re-failed repair pass; never resurrect aborted,
+          -- failed, or queued rows.
+          WHERE id = ? AND status IN ('running', 'repairable', 'completed-with-notes')
         `,
       )
       .run(
@@ -503,7 +514,12 @@ export class DownloadJobsRepository {
               artifact_status = CASE WHEN ? = 'artifact-invalid' THEN 'invalid-file' ELSE artifact_status END,
               retry_count = retry_count + ?,
               updated_at = ?
+          -- 'completed' is final and 'aborted' is user intent: a stale failing
+          -- writer must not resurrect either. 'repairable' and
+          -- 'completed-with-notes' may still fail when the repair sweep finds
+          -- the artifact file missing.
           WHERE id = ?
+            AND status NOT IN ('completed', 'aborted')
         `,
       )
       .run(message, failureKind, failureKind, incrementRetry ? 1 : 0, updatedAt, id);
@@ -521,6 +537,7 @@ export class DownloadJobsRepository {
               next_retry_at = ?,
               updated_at = ?
           WHERE id = ?
+            AND status NOT IN ('completed', 'completed-with-notes', 'repairable', 'aborted')
         `,
       )
       .run(message, retryAt, updatedAt, id);
@@ -536,7 +553,7 @@ export class DownloadJobsRepository {
               failure_kind = 'interrupted',
               next_retry_at = ?,
               updated_at = ?
-          WHERE id = ?
+          WHERE id = ? AND status IN ('running', 'queued')
         `,
       )
       .run(message, retryAt, updatedAt, id);
@@ -554,7 +571,10 @@ export class DownloadJobsRepository {
               repair_metadata_json = NULL,
               next_retry_at = NULL,
               updated_at = ?
-          WHERE id = ?
+          -- A 'running' row belongs to a live worker (possibly another
+          -- instance); flipping it to queued is how two yt-dlp processes end up
+          -- writing the same temp file.
+          WHERE id = ? AND status != 'running'
         `,
         )
         .run(updatedAt, id);
@@ -581,6 +601,7 @@ export class DownloadJobsRepository {
               next_retry_at = NULL,
               updated_at = ?
           WHERE id = ?
+            AND status NOT IN ('completed', 'completed-with-notes', 'repairable', 'aborted')
         `,
       )
       .run(updatedAt, id);

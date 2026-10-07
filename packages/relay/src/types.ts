@@ -90,6 +90,14 @@ export interface RelayHandlerOptions {
   readonly diagnostics?: RelayDiagnosticSink;
   readonly timeoutMs?: number;
   readonly maxRedirects?: number;
+  /**
+   * Optional Origin allowlist. Unset keeps the historical `Access-Control-
+   * Allow-Origin: *`; when set, the header echoes the request Origin only when
+   * it is listed — the loopback dev server stops answering to arbitrary web
+   * pages, which cannot supply the bearer token but can read responses
+   * otherwise.
+   */
+  readonly corsOrigins?: readonly string[];
 }
 
 export interface RelayFetchPortOptions {

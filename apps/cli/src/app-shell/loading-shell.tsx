@@ -34,7 +34,7 @@ import { GlimmerLabel, SakuraBloom } from "./SakuraLoader";
 import { useShellCommandModeOpen } from "./shell-command-mode";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine } from "./shell-primitives";
-import { truncateLine } from "./shell-text";
+import { sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { LoadingShellState, ShellPanelLine } from "./types";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
@@ -754,7 +754,9 @@ export const LoadingShell = React.memo(function LoadingShell({
                             : statusColor(runtimeHealthLine.tone)
                         }
                       >
-                        {runtimeHealthLine.label}: {runtimeHealthLine.detail}
+                        {sanitizeTerminalText(
+                          `${runtimeHealthLine.label}: ${runtimeHealthLine.detail ?? ""}`,
+                        )}
                       </Text>
                     )}
                   </Box>

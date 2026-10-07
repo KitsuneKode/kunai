@@ -106,7 +106,21 @@ function managedPackageManager(packageRoot) {
 function findBinary(targetId) {
   const packageName = `@kitsunekode/kunai-${targetId}`;
 
-  // Preferred: the optional dependency npm installed for this platform.
+  // Source checkouts first: `bun run build:binary:host` drops the host binary
+  // in dist/bin/, and that build must beat a published optional dependency —
+  // otherwise `bun run link:global` silently executes registry bytes instead of
+  // the tree it was linked from. The published npm package only ships this
+  // file (`files` excludes dist/bin), so on real installs this lookup is a
+  // single existsSync that misses and falls through.
+  const checkoutBinary = path.join(
+    __dirname,
+    "bin",
+    `kunai-${targetId}${process.platform === "win32" ? ".exe" : ""}`,
+  );
+  if (existsSync(checkoutBinary)) return checkoutBinary;
+
+  // Preferred for installs: the optional dependency npm installed for this
+  // platform.
   try {
     const manifest = require.resolve(`${packageName}/package.json`);
     const candidate = path.join(path.dirname(manifest), "bin", binaryFileName());

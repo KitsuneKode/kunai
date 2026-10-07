@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-10-07"
 ---
 
 # Kunai — UX Architecture
@@ -135,6 +135,11 @@ Title details should be honest about data quality:
 - show explicit unavailable placeholders when a provider-native result does not expose those fields
 - keep actual Kitty/Ghostty image rendering outside the Ink render tree until the image-pane service owns layout, clearing, and flicker control
 - never require image support for selection, playback, or episode navigation
+
+External link labels are sanitized for terminal rendering. Their targets stay
+opaque through the details model and `l` shortcut: display sanitization must not
+rewrite the URL being opened. The shared desktop opener rejects raw control
+characters and permits only its explicit URL schemes on every platform.
 
 Post-playback should use the same rule for lightweight panels so provider changes, history, diagnostics, help, and about do not break the user out of the current title context.
 Settings should follow that same in-shell rule for browse and post-playback shells, even while deeper season, episode, and subtitle flows still finish their overlay migration.

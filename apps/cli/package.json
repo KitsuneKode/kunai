@@ -103,7 +103,7 @@
     "build:prod": "bun run check && bun run build",
     "pkg:check": "bun run scripts/verify-npm-pack.ts",
     "release:dry-run": "bun run build:prod && bun run pkg:check",
-    "link:global": "bun link",
+    "link:global": "bun run scripts/link-global.ts",
     "unlink:global": "bun unlink",
     "relink:global": "bun run unlink:global && bun run link:global",
     "prepack": "bun run build",

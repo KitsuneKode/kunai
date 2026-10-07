@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 
 export function PosterInitialBlock({
@@ -13,7 +14,7 @@ export function PosterInitialBlock({
   height?: number;
 }) {
   const color = palette.muted;
-  const initial = title.trim().charAt(0).toUpperCase() || "?";
+  const initial = sanitizeTerminalText(title).trim().charAt(0).toUpperCase() || "?";
   const pad = Math.max(0, Math.floor((height - 1) / 2));
   const topPadding = "\n".repeat(pad);
   const bottomPadding = "\n".repeat(Math.max(0, height - pad - 2));

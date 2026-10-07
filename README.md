@@ -185,7 +185,7 @@ see [Uninstall](#uninstall) for paths and what is preserved).
 > npm install -g @kitsunekode/kunai      # or: bun install -g @kitsunekode/kunai
 > # the installer can do this too: install.sh ... | bash -s -- --method npm
 >
-> # From source (contributors)
+> # From source (contributors; needs Bun for the build and Node for the launcher)
 > git clone https://github.com/kitsunekode/kunai.git
 > cd kunai && bun install && bun run link:global
 > ```

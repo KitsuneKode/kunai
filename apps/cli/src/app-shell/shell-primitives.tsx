@@ -2,7 +2,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
-import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
+import { measureColumns, padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
 import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
@@ -315,7 +315,7 @@ export const LocalSection = React.memo(function LocalSection({
 }) {
   return (
     <Box marginTop={marginTop} flexDirection="column">
-      <Text color={semanticToneColor(tone)}>{title}</Text>
+      <Text color={semanticToneColor(tone)}>{sanitizeTerminalText(title)}</Text>
       <Box marginTop={1} flexDirection="column">
         {children}
       </Box>
@@ -486,9 +486,9 @@ export const DetailLine = React.memo(function DetailLine({
 
   return (
     <Box>
-      <Text color={palette.dim}>{label}</Text>
+      <Text color={palette.dim}>{sanitizeTerminalText(label)}</Text>
       <Text color={palette.dim}> · </Text>
-      <Text color={valueColor}>{value}</Text>
+      <Text color={valueColor}>{sanitizeTerminalText(value)}</Text>
     </Box>
   );
 });
@@ -530,13 +530,13 @@ export const EmptyState = React.memo(function EmptyState({
   return (
     <Box flexDirection="column" paddingY={1}>
       <Text color={palette.dim}>
-        {icon} {title}
+        {icon} {sanitizeTerminalText(title)}
       </Text>
-      {subtitle ? <Text color={palette.muted}>{subtitle}</Text> : null}
+      {subtitle ? <Text color={palette.muted}>{sanitizeTerminalText(subtitle)}</Text> : null}
       {hint ? (
         <Box marginTop={1}>
           <Text color={palette.dim} dimColor>
-            {hint}
+            {sanitizeTerminalText(hint)}
           </Text>
         </Box>
       ) : null}

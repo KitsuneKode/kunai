@@ -18,6 +18,7 @@ import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import { redactDiagnosticValue } from "@/services/diagnostics/redaction";
+import { readBoundedBody } from "@/services/network/bounded-body";
 import {
   cacheOfflinePosterArtwork,
   resolveOfflinePosterArtifactPath,
@@ -71,6 +72,9 @@ const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
+// A subtitle is a text sidecar — a few hundred KB at most. Anything beyond this
+// is a mis-labelled or hostile body, not a subtitle.
+const MAX_SUBTITLE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
 /**
@@ -568,6 +572,12 @@ export class DownloadService {
       await this.repairSidecars(job);
       return;
     }
+    if (this.isForeignLiveJob(job)) {
+      this.deps.logger.warn("Refusing to retry a download owned by a live Kunai instance", {
+        jobId,
+      });
+      return;
+    }
     try {
       this.deps.repo.requeue(jobId, new Date().toISOString());
     } catch (error) {
@@ -993,8 +1003,34 @@ export class DownloadService {
       await this.terminateProcess(active.process, active.cancel);
       return;
     }
+    if (this.isForeignLiveJob(job)) {
+      // Keep the cancellation marker: if this instance later recovers the job
+      // because the owner died, the pending cancel still applies. But the row
+      // and its temp file belong to a sibling that is writing right now.
+      this.deps.logger.warn("Refusing to abort a download owned by a live Kunai instance", {
+        jobId,
+      });
+      return;
+    }
     await rm(job.tempPath, { force: true }).catch(() => {});
     this.deps.repo.abort(jobId, new Date().toISOString());
+  }
+
+  /**
+   * `running` is a lease, not ownership. When the row is running but this
+   * process holds no child for it and the heartbeat is still fresh, a sibling
+   * Kunai instance is actively working the job — mutating it from here would
+   * unlink the owner's temp file mid-write and flip its status out from under
+   * it. A stale heartbeat means the owner is likely gone and recovery
+   * (`reconcileInterruptedJobs`) is the correct path.
+   */
+  private isForeignLiveJob(job: DownloadJobRecord | undefined): boolean {
+    if (!job || job.status !== "running" || this.activeProcesses.has(job.id)) {
+      return false;
+    }
+    const heartbeatAt = job.lastHeartbeatAt ?? job.startedAt;
+    const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : Number.NaN;
+    return Number.isFinite(heartbeatMs) && Date.now() - heartbeatMs < STALLED_HEARTBEAT_MS;
   }
 
   /**
@@ -1059,6 +1095,14 @@ export class DownloadService {
   async deleteJob(jobId: string, opts: { deleteArtifact?: boolean } = {}): Promise<void> {
     const job = this.deps.repo.get(jobId);
     if (!job) return;
+    if (this.isForeignLiveJob(job)) {
+      // The row, temp file, and (possibly) partial output belong to a sibling
+      // that is heartbeating right now — deleting any of them corrupts its run.
+      this.deps.logger.warn("Refusing to delete a download owned by a live Kunai instance", {
+        jobId,
+      });
+      return;
+    }
     if (job.status === "running" || this.activeProcesses.has(jobId)) {
       await this.abort(jobId);
     }
@@ -1609,9 +1653,23 @@ export class DownloadService {
         subtitleUrl: job.subtitleUrl,
         contentType: res.headers.get("content-type"),
       });
-      const data = await res.arrayBuffer();
-      if (data.byteLength <= 0) {
-        return buildRepairableSidecarResult(job, "subtitle", "subtitle response was empty");
+      // Content-Length is sender-declared and only an early reject — the body
+      // itself is bounded below, so a lying or absent header cannot pull a
+      // giant payload into memory.
+      const declared = Number(res.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > MAX_SUBTITLE_BYTES) {
+        await res.body?.cancel("too-large").catch(() => {});
+        return buildRepairableSidecarResult(job, "subtitle", "subtitle response too large");
+      }
+      const data = res.body ? await readBoundedBody(res.body, MAX_SUBTITLE_BYTES) : null;
+      if (!data || data.byteLength <= 0) {
+        // readBoundedBody returns null on overflow, abort, and mid-body drops —
+        // all are retryable sidecar failures rather than a poisoned artifact.
+        return buildRepairableSidecarResult(
+          job,
+          "subtitle",
+          "subtitle response was empty, too large, or interrupted",
+        );
       }
       await writeAtomicBytes(targetPath, data);
       this.deps.repo.updateOfflineMetadata(

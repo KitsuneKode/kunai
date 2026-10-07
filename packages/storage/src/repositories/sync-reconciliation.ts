@@ -101,6 +101,7 @@ export class SyncReconciliationRepository {
     return this.db
       .query<SyncReconciliationRow, [number]>(
         `SELECT * FROM sync_reconciliation
+         WHERE json_valid(payload_json) AND json_type(payload_json) = 'object'
          ORDER BY created_at ASC, id ASC
          LIMIT ?`,
       )
@@ -113,11 +114,27 @@ export class SyncReconciliationRepository {
       .query<SyncReconciliationRow, [string, number]>(
         `SELECT * FROM sync_reconciliation
          WHERE next_attempt_at <= ?
+           AND json_valid(payload_json) AND json_type(payload_json) = 'object'
          ORDER BY next_attempt_at ASC, created_at ASC, id ASC
          LIMIT ?`,
       )
       .all(now.toISOString(), Math.max(0, Math.trunc(limit)))
       .map(mapRow);
+  }
+
+  /**
+   * Drop rows whose payload can never map. A row that fails `json_valid` (or
+   * is not an object) has no path to projection — `record`'s upsert rewrites
+   * payload on the same entity key, so only a fact that is never touched again
+   * stays poisoned, and this clears those. Returns the count removed.
+   */
+  purgeUnprojectable(): number {
+    return this.db
+      .query(
+        `DELETE FROM sync_reconciliation
+         WHERE NOT (json_valid(payload_json) AND json_type(payload_json) = 'object')`,
+      )
+      .run().changes;
   }
 
   nextAttemptAt(): string | undefined {
