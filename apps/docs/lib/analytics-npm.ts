@@ -92,7 +92,7 @@ export function parseNpmDownloads(raw: JsonValue): NpmDownloadSeries | null {
 
   const points = [...byDay.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([day, downloads]) => ({ day, downloads }));
+    .map(([day, count]) => ({ day, downloads: count }));
   return { package: pkg, from, to, points };
 }
 

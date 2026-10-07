@@ -33,7 +33,7 @@ export const homeKinds = ["Anime", "Series", "Movies", "YouTube"] as const;
 export const homeHero = {
   title: "Watch anime, series and movies from your terminal.",
   description:
-    "Kunai searches a title, resolves a stream a direct provider already serves, and hands playback to mpv — with YouTube, downloads, resume, and recovery in the same keyboard-driven session.",
+    "Search anime, series, movies and YouTube, resolve a direct stream on your machine, and play it in mpv, with downloads, resume and recovery built in.",
   kinds: homeKinds,
   /** Earns its place by teaching a real hotkey rather than labelling the row. */
   kindsHint: { key: "Tab", label: "cycles modes" },
@@ -76,12 +76,12 @@ export const homeFlow: readonly HomeFlowStep[] = [
   {
     title: "Search or continue",
     description:
-      "Find an episode, a film, or a YouTube video — or resume history, open the release calendar, and browse your offline library from the shell.",
+      "Find an episode, a film or a YouTube video, or pick up where you left off from history, the release calendar or your offline library.",
   },
   {
     title: "Resolve locally",
     description:
-      "Kunai asks registered adapters for a stream URL they already serve, then hands that URL to mpv.",
+      "Kunai asks a provider for a stream it already serves, checks that it plays, then hands the URL to mpv.",
   },
   {
     title: "Play in mpv",
