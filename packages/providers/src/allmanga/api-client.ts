@@ -17,7 +17,7 @@ import {
 } from "../shared/anime-metadata";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
-import { createTimeoutSignal } from "../shared/timeout-signal";
+import { createTimeoutSignal, sleepAbortable } from "../shared/timeout-signal";
 import {
   ALLMANGA_BUILD_ID,
   ALLMANGA_CRYPTO_MATERIAL_TTL_MS,
@@ -352,20 +352,6 @@ let cachedCryptoMaterial: { readonly material: AllMangaCryptoMaterial; expiresAt
   null;
 let inFlightCryptoMaterial: Promise<AllMangaCryptoMaterial | null> | null = null;
 let cryptoMaterialOverrideForTest: AllMangaCryptoMaterial | null = null;
-function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal) return Bun.sleep(ms);
-  if (signal.aborted) return Promise.resolve();
-  return Promise.race([
-    Bun.sleep(ms),
-    new Promise<void>((resolve) => {
-      const onAbort = () => {
-        signal.removeEventListener("abort", onAbort);
-        resolve();
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-    }),
-  ]);
-}
 
 let retrySleep: (ms: number, signal?: AbortSignal) => Promise<void> = (ms, signal) =>
   sleepAbortable(ms, signal);

@@ -45,6 +45,7 @@ test("three processes recover one dead config owner and preserve every merged wr
       // Startup failure rejects the barrier rather than hanging the parent.
       void child.exited.then((code) => {
         if (code !== 0) barrier.reject(new Error("Lock worker failed"));
+        return code;
       });
     }
     await Promise.all(ready.map((barrier) => barrier.promise));

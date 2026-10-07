@@ -71,6 +71,7 @@ import {
   type StreamReachabilityProbeResult,
 } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { sleepAbortable } from "../shared/timeout-signal";
 import { miruroManifest, MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER } from "./manifest";
 import {
   MIRURO_KNOWN_PIPE_BASE_URLS,
@@ -111,21 +112,6 @@ const USER_AGENT =
  */
 const MIRURO_CANDIDATE_TIMEOUT_MS = 5_000;
 const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
-
-function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal) return Bun.sleep(ms);
-  if (signal.aborted) return Promise.resolve();
-  return Promise.race([
-    Bun.sleep(ms),
-    new Promise<void>((resolve) => {
-      const onAbort = () => {
-        signal.removeEventListener("abort", onAbort);
-        resolve();
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-    }),
-  ]);
-}
 
 let miruroPipeRetrySleepImpl: (ms: number, signal?: AbortSignal) => Promise<void> = sleepAbortable;
 

@@ -199,8 +199,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
   const flushWrites = (sock: Bun.Socket<SocketState>) => {
     if (closed || waitingForDrain) return;
     try {
-      while (writes.length > 0) {
-        const entry = writes[0]!;
+      for (let entry = writes[0]; entry !== undefined; entry = writes[0]) {
         const remaining = entry.bytes.subarray(entry.offset);
         const accepted = sock.write(remaining);
         if (accepted < 0) throw new Error("mpv IPC socket is closed");

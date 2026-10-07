@@ -25,6 +25,7 @@ import {
   looksLikeHlsMasterUrl,
 } from "../shared/hls-ladder";
 import { readJsonObjectBody } from "../shared/json-body";
+import { sleepAbortable } from "../shared/timeout-signal";
 import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
 
 export { VIDLINK_PROVIDER_ID };
@@ -69,35 +70,13 @@ const encDecCache = new Map<number, { result: string; expiresAt: number }>();
 const VIDLINK_API_ENDPOINT = "vidlink.pro";
 const ENC_DEC_ENDPOINT = "enc-dec.app";
 
-/**
- * Abortable retry sleep (mirrors the miruro/allmanga helpers): the raw
- * `setTimeout` promise it replaces kept burning the full backoff after the
- * caller walked away, delaying fallback and shutdown. Resolves early on
- * abort; every call site re-checks the signal before the next fetch.
- */
-function vidlinkAbortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal || signal.aborted) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-let vidlinkRetrySleepImpl: (ms: number, signal?: AbortSignal) => Promise<void> =
-  vidlinkAbortableSleep;
+let vidlinkRetrySleepImpl: (ms: number, signal?: AbortSignal) => Promise<void> = sleepAbortable;
 const vidlinkRetrySleep = (ms: number, signal?: AbortSignal): Promise<void> =>
   vidlinkRetrySleepImpl(ms, signal);
 
 /** Test seam: replace the retry sleep (restore with the default afterwards). */
 export function setVidlinkRetrySleepForTest(sleep: typeof vidlinkRetrySleepImpl | null): void {
-  vidlinkRetrySleepImpl = sleep ?? vidlinkAbortableSleep;
+  vidlinkRetrySleepImpl = sleep ?? sleepAbortable;
 }
 
 /**

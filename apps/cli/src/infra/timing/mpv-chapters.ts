@@ -20,6 +20,14 @@ export interface ChapterSegment {
   readonly title: string;
 }
 
+/** Timed segment kinds, in push order, with the length assumed when a range has no end. */
+const MARKER_KINDS = [
+  { key: "recap", title: "Recap", fallbackMs: 60_000 },
+  { key: "intro", title: "Intro", fallbackMs: 90_000 },
+  { key: "credits", title: "Credits", fallbackMs: 90_000 },
+  { key: "preview", title: "Preview", fallbackMs: 30_000 },
+] as const;
+
 /**
  * Builds non-overlapping, continuous chapter segments from timing metadata.
  */
@@ -30,55 +38,16 @@ export function buildChapterSegmentsFromTiming(
   if (!timing) return [];
 
   const markers: Array<{ startMs: number; endMs: number; title: string }> = [];
-
-  for (const recap of timing.recap ?? []) {
-    if (recap?.startMs != null && recap.startMs >= 0) {
-      const endMs =
-        recap.endMs != null && recap.endMs > recap.startMs ? recap.endMs : recap.startMs + 60_000;
+  for (const { key, title, fallbackMs } of MARKER_KINDS) {
+    for (const range of timing[key] ?? []) {
+      const startMs = range?.startMs;
+      if (startMs === undefined || startMs === null || startMs < 0) continue;
+      const endMs = range.endMs;
+      const hasEnd = endMs !== undefined && endMs !== null && endMs > startMs;
       markers.push({
-        startMs: Math.round(recap.startMs),
-        endMs: Math.round(endMs),
-        title: "Recap",
-      });
-    }
-  }
-
-  for (const intro of timing.intro ?? []) {
-    if (intro?.startMs != null && intro.startMs >= 0) {
-      const endMs =
-        intro.endMs != null && intro.endMs > intro.startMs ? intro.endMs : intro.startMs + 90_000;
-      markers.push({
-        startMs: Math.round(intro.startMs),
-        endMs: Math.round(endMs),
-        title: "Intro",
-      });
-    }
-  }
-
-  for (const credits of timing.credits ?? []) {
-    if (credits?.startMs != null && credits.startMs >= 0) {
-      const endMs =
-        credits.endMs != null && credits.endMs > credits.startMs
-          ? credits.endMs
-          : credits.startMs + 90_000;
-      markers.push({
-        startMs: Math.round(credits.startMs),
-        endMs: Math.round(endMs),
-        title: "Credits",
-      });
-    }
-  }
-
-  for (const preview of timing.preview ?? []) {
-    if (preview?.startMs != null && preview.startMs >= 0) {
-      const endMs =
-        preview.endMs != null && preview.endMs > preview.startMs
-          ? preview.endMs
-          : preview.startMs + 30_000;
-      markers.push({
-        startMs: Math.round(preview.startMs),
-        endMs: Math.round(endMs),
-        title: "Preview",
+        startMs: Math.round(startMs),
+        endMs: Math.round(hasEnd ? endMs : startMs + fallbackMs),
+        title,
       });
     }
   }
