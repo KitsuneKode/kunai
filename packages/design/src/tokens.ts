@@ -50,10 +50,12 @@ const warn = "#f59a3c";
 const warnDim = "#b06f28";
 const warnFill = "#2e2012";
 
-// Real, actionable error — a vivid alarm red.
+// Real, actionable error — a vivid alarm red. It is Lc 46 on the canvas, too dark to read as text,
+// so borders and art keep it and text uses `dangerText`: the same hue (24°) lifted to Lc 60.
 const danger = "#ff5d5d";
 const dangerDim = "#a02b2b";
 const dangerFill = "#341515";
+const dangerText = "#ff9791"; // Lc 62
 
 // Information / neutral-positive signal — the cool counterweight blue.
 const info = "#5fb6ff";
@@ -65,19 +67,22 @@ const infoFill = "#112230";
 const milestone = "#6d85f6";
 const milestoneDim = "#39467f";
 const milestoneFill = "#151a32";
+// Lc 41 on the canvas, so text uses `milestoneText`: the same 272° hue lifted to Lc 62.
+const milestoneText = "#9db2ff";
 
 // Text ramp — warm white → faint. Carries ~80% of hierarchy.
 //
-// Each tier is set by APCA lightness contrast (|Lc|) on the canvas and panel, because on a dark
-// ground WCAG ratios flatter it: the old `muted` was 5.9:1 but only Lc 41, and the old `dim` was
-// Lc 20 on the canvas and Lc 15 on the selected row, the floor for being discernible at all.
+// Each tier is set by APCA lightness contrast (|Lc|) on the canvas, the panel and `accentFill`
+// (the ground every selected row, tab and picker option is painted on), because on a dark ground
+// WCAG ratios flatter it: the old `muted` was 5.9:1 but only Lc 41, and the old `dim` was Lc 20 on
+// the canvas and Lc 18 on the selection fill, barely above the Lc 15 floor for being discernible.
 // Targets: textDim Lc 75 (body floor), muted Lc 60 (labels), dim Lc 45 (hints, pending steps).
 // Hue and chroma are unchanged from the previous values; only OKLCH lightness moved.
 // `color-resolution.ts` holds the 256-colour fallback for each tier and meets the same targets.
 const text = "#f6eff4"; // Lc 98
-const textDim = "#d5cad5"; // Lc 76
-const muted = "#bcafbe"; // Lc 61
-const dim = "#a292a5"; // Lc 46
+const textDim = "#d6cbd6"; // Lc 77
+const muted = "#beb1c0"; // Lc 62
+const dim = "#a494a7"; // Lc 47
 // Decorative only (1.6:1 on bg): rules and disabled glyphs, never text a user has to read.
 const faint = "#3a3340";
 
@@ -120,12 +125,14 @@ export const tokens = {
   danger,
   dangerDim,
   dangerFill,
+  dangerText,
   info,
   infoDim,
   infoFill,
   milestone,
   milestoneDim,
   milestoneFill,
+  milestoneText,
 
   // ---- text ----
   text,

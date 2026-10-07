@@ -23,7 +23,7 @@ type SeriesStateKey = NonNullable<DetailsPanelSecondary["seriesState"]>;
 const SERIES_STATE_COLORS: Record<SeriesStateKey, string> = {
   airing: palette.muted,
   ended: palette.ok,
-  complete: palette.milestone,
+  complete: palette.milestoneText,
   upcoming: palette.muted,
 };
 

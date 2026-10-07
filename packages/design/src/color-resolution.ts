@@ -46,6 +46,7 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
   danger: { ansi256: "#ff5f5f", ansi16: "red" },
   dangerDim: { ansi256: "#af0000", ansi16: "red" },
   dangerFill: { ansi256: "#3a1c1c", ansi16: "black" },
+  dangerText: { ansi256: "#ffafaf", ansi16: "red" },
 
   info: { ansi256: "#5fafff", ansi16: "blue" },
   infoDim: { ansi256: "#5f87d7", ansi16: "blue" },
@@ -56,13 +57,14 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
   milestone: { ansi256: "#5f87ff", ansi16: "blueBright" },
   milestoneDim: { ansi256: "#5f5fd7", ansi16: "blue" },
   milestoneFill: { ansi256: "#1c1a30", ansi16: "black" },
+  milestoneText: { ansi256: "#d7d7ff", ansi16: "blueBright" },
 
   text: { ansi256: "#eeeeee", ansi16: "white" },
   // Gray-ramp steps chosen to meet the same APCA targets as the truecolor tiers (75 / 60 / 45)
   // on both #121212 and #1c1c1c. The old values were Lc 72 / 58 / 34.
-  textDim: { ansi256: "#d0d0d0", ansi16: "white" },
+  textDim: { ansi256: "#d7d7d7", ansi16: "white" },
   muted: { ansi256: "#bcbcbc", ansi16: "gray" },
-  dim: { ansi256: "#9e9e9e", ansi16: "gray" },
+  dim: { ansi256: "#a8a8a8", ansi16: "gray" },
   faint: { ansi256: "#5f5f5f", ansi16: "gray" },
 
   // Bright magenta, not the accent's plain magenta: anime is a content kind and the

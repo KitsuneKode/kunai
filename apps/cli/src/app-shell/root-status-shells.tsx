@@ -118,7 +118,7 @@ function toneColor(tone: ErrorRowTone): string {
   switch (tone) {
     case "danger-strong":
     case "danger":
-      return palette.danger;
+      return palette.dangerText;
     case "accent":
       return palette.accent;
     case "text":

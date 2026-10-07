@@ -2106,7 +2106,7 @@ function StatsShell({
         <Text color={palette.dim}>{"─".repeat(Math.max(0, Math.min(innerWidth, cols - 4)))}</Text>
         {copiedFlash ? (
           <Box marginTop={1}>
-            <Text color={copiedFlash.startsWith("Copied") ? palette.ok : palette.danger}>
+            <Text color={copiedFlash.startsWith("Copied") ? palette.ok : palette.dangerText}>
               {copiedFlash}
             </Text>
           </Box>

@@ -217,7 +217,7 @@ export function Footer({
               role === "primary"
                 ? palette.accent
                 : role === "destructive"
-                  ? palette.danger
+                  ? palette.dangerText
                   : role === "meta"
                     ? palette.muted
                     : palette.info;
@@ -397,7 +397,7 @@ export const Badge = React.memo(function Badge({
         : tone === "accent"
           ? palette.accentSoft
           : tone === "error"
-            ? palette.danger
+            ? palette.dangerText
             : tone === "warning"
               ? palette.accentDeep
               : palette.dim;
@@ -478,7 +478,7 @@ export const DetailRow = React.memo(function DetailRow({
         : tone === "accent"
           ? palette.accentSoft
           : tone === "error"
-            ? palette.danger
+            ? palette.dangerText
             : tone === "warning"
               ? palette.accentDeep
               : palette.text;
@@ -546,7 +546,7 @@ export const BrowseTitle = React.memo(function BrowseTitle({ mode }: { mode: "se
 export function TerminalSizeChip({ columns, rows }: { columns: number; rows: number }) {
   const isBlocked = columns < 60 || rows < 20;
   const isSuboptimal = !isBlocked && columns < 80;
-  const color = isBlocked ? palette.danger : isSuboptimal ? palette.accentDeep : palette.dim;
+  const color = isBlocked ? palette.dangerText : isSuboptimal ? palette.accentDeep : palette.dim;
   return (
     <Text color={color} dimColor={!isBlocked && !isSuboptimal}>
       {columns}×{rows}

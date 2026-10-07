@@ -219,7 +219,7 @@ const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
 }) {
   const { state: block } = model;
   const isLiveFault = block.kind === "error";
-  const titleColor = isLiveFault ? palette.danger : palette.accentDeep;
+  const titleColor = isLiveFault ? palette.dangerText : palette.accentDeep;
   const glyph = isLiveFault ? "×" : "◐";
 
   // Preserved-progress fact: show saved timestamp if we have it, else % if
@@ -357,7 +357,7 @@ const BufferHealthBadge = React.memo(function BufferHealthBadge({
       ? palette.ok
       : health === "buffering"
         ? palette.accentDeep
-        : palette.danger;
+        : palette.dangerText;
   const label =
     health === "healthy"
       ? "● buffer healthy"
@@ -965,7 +965,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {/* Health/trouble only surfaces when there is something to act on. */}
                 {playbackTrouble ? (
                   <Box marginTop={1} flexDirection="column">
-                    <Text color={palette.danger} bold>
+                    <Text color={palette.dangerText} bold>
                       {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
                     </Text>
                     <Text color={palette.dim}>

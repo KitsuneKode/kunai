@@ -94,7 +94,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           buffer={state.inputMode.buffer}
           seed={state.inputMode.seed}
         />
-        {error ? <Text color={palette.danger}>{error}</Text> : null}
+        {error ? <Text color={palette.dangerText}>{error}</Text> : null}
       </Box>
     );
   }
@@ -135,7 +135,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             <Text color={palette.dim}> ▼ ...</Text>
           ) : null}
         </Box>
-        {error ? <Text color={palette.danger}>{error}</Text> : null}
+        {error ? <Text color={palette.dangerText}>{error}</Text> : null}
       </Box>
     );
   }
@@ -161,7 +161,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             width={rowWidth}
           />
         </Box>
-        {error ? <Text color={palette.danger}>{error}</Text> : null}
+        {error ? <Text color={palette.dangerText}>{error}</Text> : null}
       </Box>
     );
   }
@@ -211,7 +211,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         })}
         {start + maxRows < page.rows.length ? <Text color={palette.dim}> ▼ ...</Text> : null}
       </Box>
-      {error ? <Text color={palette.danger}>{error}</Text> : null}
+      {error ? <Text color={palette.dangerText}>{error}</Text> : null}
     </Box>
   );
 });

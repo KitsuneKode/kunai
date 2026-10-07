@@ -62,15 +62,16 @@ Rationale: the current Sakura ramp is all one rose-brown hue with tiny steps (no
 | token   | hex       | APCA \|Lc\| on canvas | role                                |
 | ------- | --------- | --------------------- | ----------------------------------- |
 | text    | `#f6eff4` | 98                    | primary text                        |
-| textDim | `#d5cad5` | 76                    | body-weight secondary text          |
-| muted   | `#bcafbe` | 61                    | labels and metadata                 |
-| dim     | `#a292a5` | 46                    | hints and pending steps             |
+| textDim | `#d6cbd6` | 77                    | body-weight secondary text          |
+| muted   | `#beb1c0` | 62                    | labels and metadata                 |
+| dim     | `#a494a7` | 47                    | hints and pending steps             |
 | faint   | `#3a3340` | decorative            | rules and disabled glyphs, not text |
 
 The tiers were set by lightness only (hue and chroma held) to meet APCA targets of 75, 60
-and 45 on the canvas and panel. On the selected row they land at 71, 56 and 41. The previous
-values (`#cabfca`, `#968a98`, `#665b69`) were 70, 41 and 20, and the old `dim` fell to 15 on the
-selected row. Terminal 256-colour fallbacks live in `packages/design/src/color-resolution.ts`.
+and 45 on the canvas, the panel and `accentFill`, the ground every selected row is painted on.
+The previous values (`#cabfca`, `#968a98`, `#665b69`) were 70, 41 and 20 on the canvas, and the
+old `dim` was 18 on the selection fill. Terminal 256-colour fallbacks live in
+`packages/design/src/color-resolution.ts`.
 
 `text`, `textDim` and `muted` are body-readable (4.5:1) on every surface, including the selected-row band. `dim` is **disabled or decorative only** (2.8:1 on `surface`); never put a sentence in it.
 
@@ -96,6 +97,11 @@ selected row. Terminal 256-colour fallbacks live in `packages/design/src/color-r
 | milestone | `#6d85f6` | milestoneFill | `#151a32` |
 
 (`okDim #3a9a78`, `warnDim #b06f28`, `dangerDim #a02b2b`, `infoDim #3c7fbf`, `milestoneDim #39467f`. The `*Dim` steps are fills, bars and borders; they are not text colours.)
+
+`danger` and `milestone` are Lc 46 and 41 on the canvas, below the Lc 60 that `accent`, `warn` and
+`info` reach, so they are not used for text. Text uses `dangerText` `#ff9791` and `milestoneText`
+`#9db2ff`: the same hues (24° and 272°) with lightness lifted until they reach Lc 60 on the
+canvas, the panel and the selection fill. `danger` stays for borders and art.
 
 ### Content kinds (tags / dots — distinct from brand & semantics)
 
@@ -125,11 +131,7 @@ Docs UI follows the same rules: primary buttons carry dark ink on rose (white me
 
 ### ANSI-256 fallbacks (low-color terminals)
 
-bg `#121212` · surface `#1c1c1c` · elevated `#262626` · active `#303030` · accent `#ff87af` · accentDeep `#d75f87` · ok `#5fd7af` · warn `#ffaf5f` · danger `#ff5f5f` · info `#5fafff` · milestone `#5f87ff` · anime `#d787ff` · series `#5fd7d7` · movie `#ffd75f` · lineControl `#767676`.
-
-### 16-colour terminals
-
-Six hues plus their bright twins. Every signal that carries meaning gets its own entry, because collapsing them makes one colour mean several things (the accent, anime, milestone and the mixed-day blend were all literal `magenta`, and `warn` and the movie kind were both `yellow`): accent `magenta` · anime `magentaBright` · milestone `blueBright` · info `blue` · ok `green` · warn `yellow` · movie `yellowBright` · danger `red` · series `cyan` · mixed `gray`. `apps/cli/test/unit/app-shell/color-resolution.test.ts` fails if two of them collapse again.
+bg `#121212` · surface `#1c1c1c` · elevated `#262626` · active `#303030` · accent `#ff87af` · accentDeep `#d75f87` · ok `#5fd7af` · warn `#ffaf5f` · danger `#ff5f5f` (dangerText `#ffafaf`) · info `#5fafff` · milestone `#875fff` (milestoneText `#d7afff`) · anime `#af87ff` · series `#5fd7d7` · movie `#ffd75f`.
 
 ### Hierarchy rule
 
