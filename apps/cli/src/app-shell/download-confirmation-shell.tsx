@@ -1,5 +1,4 @@
-// =============================================================================
-// download-confirmation-shell.tsx — one mounted download confirmation.
+// One mounted download confirmation.
 //
 // The previous implementation re-opened a fresh picker on every edit through a
 // `while (true)` loop. Each pass mounted a new component, so the title poster
@@ -7,7 +6,6 @@
 // image visibly flickered every time you cycled quality. Mounting once and
 // keeping the draft in local state removes that entirely: the poster request
 // key depends on the title and fixed geometry, never on profile state.
-// =============================================================================
 
 import type { Container } from "@/container";
 import { isTitleLevelContent } from "@/domain/media/content-kind";
@@ -314,9 +312,7 @@ export function DownloadConfirmationContent({
         <Text color={palette.text} bold>
           {truncateLine(`Download ${presentation.title}?`, layout.listWidth)}
         </Text>
-        <Text color={palette.muted} dimColor>
-          {truncateLine(subtitle, layout.listWidth)}
-        </Text>
+        <Text color={palette.muted}>{truncateLine(subtitle, layout.listWidth)}</Text>
         <Box flexDirection="column" marginTop={1}>
           {actions.map((action, index) => {
             const selected = index === cursor;
@@ -326,7 +322,7 @@ export function DownloadConfirmationContent({
                   {truncateLine(`${selected ? "\u258c " : "  "}${action.label}`, layout.listWidth)}
                 </Text>
                 {selected ? (
-                  <Text color={palette.muted} dimColor wrap="truncate">
+                  <Text color={palette.muted} wrap="truncate">
                     {truncateLine(`    ${action.detail}`, layout.listWidth)}
                   </Text>
                 ) : null}

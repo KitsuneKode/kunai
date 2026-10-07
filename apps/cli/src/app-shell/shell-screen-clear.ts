@@ -1,6 +1,10 @@
 import { undisplayPlacementsKeepCache } from "@/app-shell/image-pane";
 
-/** Kitty/Ghostty image cleanup without full-frame ANSI clear (hot paths). */
+/**
+ * Kitty/Ghostty image cleanup without full-frame ANSI clear (hot paths).
+ * Placements only — the source/prepared byte caches stay warm so a surface
+ * transition does not cold-start the whole poster pipeline.
+ */
 export function clearShellScreenArtifacts(): void {
   if (process.stdout.isTTY) {
     undisplayPlacementsKeepCache();

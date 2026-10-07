@@ -444,7 +444,7 @@ export function calendarReleaseRowPresentation<T>(
     return { glyph: "· ", color: palette.dangerDim, dim: true, label };
   }
   if (state === "failed") {
-    return { glyph: "× ", color: palette.danger, dim: false, label };
+    return { glyph: "× ", color: palette.dangerText, dim: false, label };
   }
   return { glyph: "· ", color: palette.muted, dim: true, label };
 }

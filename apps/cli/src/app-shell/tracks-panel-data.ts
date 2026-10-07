@@ -122,6 +122,46 @@ export async function buildTracksPanelData(
     currentPresentation: currentPresentationFromStream(stream),
   });
 
+  if (stream?.playbackSourceKind === "local") {
+    return {
+      providerLabel: "Local file",
+      groups: [
+        {
+          section: "source",
+          title: "Source",
+          selectable: false,
+          emptyReason:
+            "Use player controls for downloaded audio and subtitles. Open the title online to change providers or sources.",
+          rows: [
+            {
+              section: "source",
+              label: "Downloaded file",
+              value: "local-file",
+              selected: true,
+              enabled: false,
+              reason: "Validated local file",
+              detail: "Tracks: player controls",
+              risk: "normal",
+            },
+          ],
+        },
+        ...inventoryGroups
+          .filter((group) => group.section !== "source")
+          .map((group) => ({
+            ...group,
+            selectable: false,
+            emptyReason:
+              "Use player controls for downloaded audio and subtitles. Open the title online to change providers or sources.",
+            rows: group.rows.map((row) => ({
+              ...row,
+              enabled: false,
+              reason: "Downloaded file; use player controls",
+            })),
+          })),
+      ],
+    };
+  }
+
   const providers = container.providerRegistry.getAll().map((provider) => provider.metadata);
   // Same eligibility as the provider picker: a linked title can switch into
   // the other lane's providers, and the playing provider is always listed.

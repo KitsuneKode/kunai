@@ -24,13 +24,14 @@ import {
 import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
+import { decodeEpisodeSelectionValue } from "@/domain/playback/episode-selection";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
-import type { EpisodeInfo } from "@/domain/types";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
+import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
 import { presenceStatusDetail } from "@/services/presence/presence-status-line";
-import { decodeProviderEpisodeIdentity, providerEpisodeIdentitiesEqual } from "@kunai/types";
+import { providerEpisodeIdentitiesEqual } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -52,7 +53,12 @@ import {
   markInteractiveShellMounted,
 } from "./interactive-shell-state";
 import { helpSectionsForScope } from "./keybindings";
-import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
+import {
+  getPickerChromeRows,
+  getPickerLayout,
+  getPickerListMaxVisible,
+  ROOT_HORIZONTAL_PADDING,
+} from "./layout-policy";
 import {
   createNotificationQueueState,
   NOTIFICATION_TOAST_TTL_MS,
@@ -273,8 +279,8 @@ async function openPlaybackStreamSelectionPicker(
   // Validate quality/source/audio picks against the cached inventory before
   // applying: the panel rows were rendered from a snapshot, and a re-resolve
   // in between leaves ids that no longer exist. Applying blindly keeps the
-  // old stream while reporting success. A stale pick returns here with the
-  // miss recorded in diagnostics; a live pick falls through to apply below.
+  // old stream while reporting success. A stale pick drops here with the
+  // reason surfaced and recorded; a live pick falls through to apply below.
   if (
     title &&
     episode &&
@@ -292,7 +298,20 @@ async function openPlaybackStreamSelectionPicker(
       resumeSeconds: 0,
       reason,
     });
-    if (resolved.kind === "stale-pick") return;
+    if (resolved.kind === "stale-pick") {
+      container.diagnosticsService.record({
+        level: "warn",
+        category: "playback",
+        operation: "playback.track-pick-stale",
+        message: "Track panel pick dropped — selection no longer matches inventory",
+        context: { section: picked.section, reason: resolved.reason },
+      });
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: resolved.reason,
+      });
+      return;
+    }
   }
 
   // Source switches restart the episode; quality/audio/hardsub swap the active
@@ -350,6 +369,14 @@ export async function openActivePlaybackEpisodePicker(
   const watchedEntries = container.historyRepository.listByTitle(title.id);
   const isAnime = state.mode === "anime";
   const animeEpisodes = state.currentAnimeEpisodes ?? undefined;
+  const local =
+    state.stream?.playbackSourceKind === "local" || title.launchSource === "offline-library";
+  const localEpisodes = local
+    ? listReadyEpisodes(
+        container.offlineAssetService,
+        container.offlineTitleIdentity.resolveForTitle(title, state.mode),
+      )
+    : undefined;
   let pickerEpisode = currentEpisode;
 
   while (true) {
@@ -360,6 +387,8 @@ export async function openActivePlaybackEpisodePicker(
       animeEpisodeCount: title.episodeCount,
       animeEpisodes,
       watchedEntries,
+      networkAllowed: !local,
+      localEpisodes,
     });
     if (picker.options.length === 0) return;
 
@@ -373,7 +402,7 @@ export async function openActivePlaybackEpisodePicker(
 
     if (picked === EPISODE_PICKER_SWITCH_SEASON) {
       // `s` mid-playback: hop seasons without leaving the episode picker flow.
-      if (isAnime) continue;
+      if (isAnime || local) continue;
       const { fetchSeasonSummaries } = await import("@/tmdb");
       const { chooseSeasonFromOptions } = await import("./pickers");
       const seasons = (await fetchSeasonSummaries(title.id)) ?? [];
@@ -602,29 +631,25 @@ export function AppRoot({ container }: { container: Container }) {
     const shouldShow = !lastShown || Date.now() - new Date(lastShown).getTime() > sevenDaysMs;
     if (!shouldShow) return;
 
-    let cancelled = false;
-    void (async () => {
-      try {
-        const stats = container.statsService.getStats(7);
-        if (stats.totalEpisodes === 0) return;
-        const text = container.statsFormatter.formatWeeklyDigest(stats);
-        if (!cancelled) {
-          setWeeklyDigestLine(text);
-          // Must persist, or the "weekly" digest shows on every launch.
+    try {
+      const stats = container.statsService.getStats(7);
+      if (stats.totalEpisodes === 0) return;
+      setWeeklyDigestLine(container.statsFormatter.formatWeeklyDigest(stats));
+      const dismissTimer = setTimeout(() => setWeeklyDigestLine(null), 8_000);
+      // Persist separately from timer ownership so an unmount can always
+      // dismiss the timer, even while the configuration write is pending.
+      void (async () => {
+        try {
           await container.config.update({ lastWeeklyDigestShownAt: new Date().toISOString() });
           await container.config.save().catch(() => undefined);
-          setTimeout(() => {
-            if (!cancelled) setWeeklyDigestLine(null);
-          }, 8_000);
+        } catch {
+          // Digest persistence is best-effort.
         }
-      } catch {
-        // digest is best-effort
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+      })();
+      return () => clearTimeout(dismissTimer);
+    } catch {
+      // Digest calculation is best-effort.
+    }
   }, [container.statsService, container.statsFormatter, container.config]);
 
   // Resize repaint is owned by Ink's reconciler in alternate-screen mode (its
@@ -1210,7 +1235,7 @@ export function AppRoot({ container }: { container: Container }) {
       width={shellWidth}
       height={shellHeight}
       backgroundColor={palette.bg}
-      paddingX={1}
+      paddingX={ROOT_HORIZONTAL_PADDING}
       paddingY={0}
     >
       {/* Single canonical header: brand · destination pill · crumb · status · size */}
@@ -1353,24 +1378,6 @@ function normalizeReservedCommandInput(nextValue: string): {
     value: nextValue.replaceAll("/", ""),
     openCommandPalette: true,
   };
-}
-
-function decodeEpisodeSelectionValue(value: string): EpisodeInfo | null {
-  const firstSeparator = value.indexOf(":");
-  const secondSeparator = value.indexOf(":", firstSeparator + 1);
-  const seasonText = firstSeparator >= 0 ? value.slice(0, firstSeparator) : "";
-  const episodeText =
-    firstSeparator >= 0
-      ? value.slice(firstSeparator + 1, secondSeparator >= 0 ? secondSeparator : undefined)
-      : "";
-  const season = Number.parseInt(seasonText ?? "", 10);
-  const episode = Number.parseInt(episodeText ?? "", 10);
-  if (!Number.isFinite(season) || !Number.isFinite(episode)) {
-    return null;
-  }
-  if (secondSeparator < 0) return { season, episode };
-  const providerEpisodeIdentity = decodeProviderEpisodeIdentity(value.slice(secondSeparator + 1));
-  return providerEpisodeIdentity ? { season, episode, providerEpisodeIdentity } : null;
 }
 
 function ListShell<T>({
@@ -2099,7 +2106,7 @@ function StatsShell({
         <Text color={palette.dim}>{"─".repeat(Math.max(0, Math.min(innerWidth, cols - 4)))}</Text>
         {copiedFlash ? (
           <Box marginTop={1}>
-            <Text color={copiedFlash.startsWith("Copied") ? palette.ok : palette.danger}>
+            <Text color={copiedFlash.startsWith("Copied") ? palette.ok : palette.dangerText}>
               {copiedFlash}
             </Text>
           </Box>
