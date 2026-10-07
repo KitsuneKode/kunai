@@ -32,6 +32,50 @@ async function runScenario(scenario: string) {
 }
 
 describe("retired-provider playback through the real container and phase", () => {
+  test("selected anime identity wins over a newer artifact at the same numeric episode", async () => {
+    const report = await runScenario("anime-selected-identity");
+    expect(report.played).toHaveLength(1);
+    expect(report.played[0].filePath).toBe(join(report.dir, "owned-1.mp4"));
+    expect(report.currentEpisode.providerEpisodeIdentity).toEqual({
+      providerId: "retired-provider",
+      value: "0",
+    });
+  });
+  test("initial offline selection never inherits another episode's resume position", async () => {
+    const report = await runScenario("series-initial-other-history");
+    expect(report.played).toHaveLength(1);
+    expect(report.played[0].filePath).toBe(join(report.dir, "owned-2.mp4"));
+    expect(report.played[0].startAt).toBe(0);
+    expect(report.played[0].resumePromptAt).toBe(0);
+  });
+  test("initial offline selection resumes history for that exact episode", async () => {
+    const report = await runScenario("series-initial-matching-history");
+    expect(report.played).toHaveLength(1);
+    expect(report.played[0].filePath).toBe(join(report.dir, "owned-2.mp4"));
+    expect(report.played[0].startAt).toBe(90);
+  });
+  test("Continue honors an explicit online preference even when a local file exists", async () => {
+    const report = await runScenario("continue-local-stream-preference");
+    expect(report.played).toEqual([]);
+    expect(report.calls.registry).toBeGreaterThan(0);
+    expect(report.result).toMatchObject({
+      status: "error",
+      error: { code: "PROVIDER_UNAVAILABLE" },
+    });
+  });
+  for (const scenario of ["continue-local", "series-continue-local", "anime-continue-local"])
+    test(`${scenario}: Continue resolves a valid local choice before provider or remote metadata work`, async () => {
+      const report = await runScenario(scenario);
+      expect(report.played[0].filePath).toBe(join(report.dir, "owned-1.mp4"));
+      expect(report.calls).toEqual({
+        registry: 0,
+        health: 0,
+        cache: 0,
+        selection: 0,
+        trace: 0,
+        network: 0,
+      });
+    });
   for (const scenario of ["movie", "series", "anime", "series-autoplay", "anime-autoplay"]) {
     test(`${scenario}: verified file and sidecar reach the shared player without provider work`, async () => {
       const report = await runScenario(scenario);

@@ -751,16 +751,33 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         run.playbackSession = result.session;
         return result.startIntent;
       };
-      const provider = isOfflineLaunch
+      const bootstrapEpisode =
+        stateManager.getState().currentTitle?.id === title.id
+          ? stateManager.getState().currentEpisode
+          : undefined;
+      const bootstrapLocalEpisode =
+        bootstrapEpisode ?? (title.type === "movie" ? { season: 1, episode: 1 } : undefined);
+      // Continue with a validated local choice needs no provider or remote enrichment.
+      // The source policy still honors an explicit preference for online playback.
+      const skipRemotePreparation =
+        isOfflineLaunch ||
+        (title.launchSource === "continue" &&
+          bootstrapLocalEpisode !== undefined &&
+          Boolean(
+            await resolveLocalEpisodePlayback(container, title, bootstrapLocalEpisode, {
+              entrypoint: "continue",
+            }),
+          ));
+      const provider = skipRemotePreparation
         ? undefined
         : providerRegistry.get(stateManager.getState().provider);
-      const catalogDetailPromise = isOfflineLaunch
+      const catalogDetailPromise = skipRemotePreparation
         ? Promise.resolve(undefined)
         : fetchTitleDetail(title.id, title.type, undefined, {
             externalIds: title.externalIds,
             isAnime: stateManager.getState().mode === "anime" || title.isAnime === true,
           }).catch(() => undefined);
-      const initialAnimeEpisodes = isOfflineLaunch
+      const initialAnimeEpisodes = skipRemotePreparation
         ? undefined
         : await this.getAnimeEpisodeOptions({
             title,
@@ -833,7 +850,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         const { applyTitleProviderPreferenceToSession } =
           await import("@/app/playback/playback-provider-switch");
-        if (!isOfflineLaunch) {
+        if (!skipRemotePreparation) {
           applyTitleProviderPreferenceToSession(
             container,
             title.id,
@@ -852,12 +869,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         const { resolvePlaybackEpisodeEntry } =
           await import("@/app-shell/title-control/smart-auto-launch");
-        const providerHealth = isOfflineLaunch
+        const providerHealth = skipRemotePreparation
           ? undefined
           : container.providerHealth.get(stateManager.getState().provider);
         const failedProvider =
           providerHealth?.status === "degraded" || providerHealth?.status === "down";
-        const seasonCount = isOfflineLaunch
+        const seasonCount = skipRemotePreparation
           ? undefined
           : usesNativeEpisodes
             ? (title.episodeCount ?? initialAnimeEpisodes?.length)
@@ -881,6 +898,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             isAnime: usesNativeEpisodes,
             titleId: title.id,
             animeEpisodes: initialAnimeEpisodes,
+            providerEpisodeIdentity: preselectedEpisode?.providerEpisodeIdentity,
           });
           run.pendingStart =
             episodeEntry.selection.startAt !== undefined ||

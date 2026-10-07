@@ -2,6 +2,7 @@ import { mock } from "bun:test";
 import { join } from "node:path";
 
 import { buildTracksPanelData } from "@/app-shell/tracks-panel-data";
+import { prepareOfflinePlaybackLaunch } from "@/app/offline/offline-playback-launch";
 import { createContainer, disposeContainer } from "@/container";
 import type { PlaybackResult, StreamInfo, TitleInfo } from "@/domain/types";
 import type { PlayerOptions } from "@/infra/player/PlayerService";
@@ -61,7 +62,10 @@ async function main() {
   const series = anime || scenario.startsWith("series");
   const autoplay = scenario.endsWith("autoplay");
   const playerFailure = scenario === "movie-error";
-  const offline = scenario !== "online" && scenario !== "continue-local";
+  const selectedIdentity = scenario === "anime-selected-identity";
+  const initialOtherHistory = scenario === "series-initial-other-history";
+  const initialMatchingHistory = scenario === "series-initial-matching-history";
+  const offline = scenario !== "online" && !scenario.includes("continue-local");
   const title: TitleInfo = {
     id: anime ? "anilist:1" : "tmdb:1",
     name: "Owned local fixture",
@@ -72,6 +76,9 @@ async function main() {
 
   try {
     await container.config.update({ autoNext: autoplay, recommendationRailEnabled: false });
+    if (scenario === "continue-local-stream-preference") {
+      await container.config.update({ continueSourcePreference: "stream" });
+    }
     container.stateManager.dispatch({
       type: "SET_MODE",
       mode: anime ? "anime" : "series",
@@ -122,6 +129,53 @@ async function main() {
       container.offlineAssetService.adoptCompletedJob(completed);
     }
 
+    if (selectedIdentity) {
+      const selected = jobs.get("job-1");
+      if (!selected) throw new Error("selected fixture missing");
+      const outputPath = join(fixtureRoot, "wrong-artifact.mp4");
+      await Bun.write(outputPath, "owned wrong catalog identity");
+      const updatedAt = new Date(Date.parse(selected.updatedAt) + 1).toISOString();
+      jobs.enqueue({
+        ...selected,
+        id: "wrong-job",
+        outputPath,
+        tempPath: `${outputPath}.tmp`,
+        providerEpisodeIdentity: { providerId: sourceProvider, value: "old-catalog-row" },
+        updatedAt,
+      });
+      jobs.complete("wrong-job", updatedAt);
+      jobs.markArtifactValidated("wrong-job", "ready", updatedAt);
+      const wrong = jobs.get("wrong-job");
+      if (!wrong) throw new Error("other identity fixture missing");
+      container.offlineAssetService.adoptCompletedJob(wrong);
+      await prepareOfflinePlaybackLaunch(container, "job-1");
+    }
+    if (series && scenario.includes("continue-local")) {
+      container.historyRepository.upsertProgress({
+        title: { id: title.id, kind: anime ? "anime" : "series", title: title.name },
+        episode: { season: 1, episode: 1 },
+        positionSeconds: 15,
+        durationSeconds: 120,
+        completed: false,
+        providerId: sourceProvider,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    if (initialOtherHistory || initialMatchingHistory) {
+      container.stateManager.dispatch({
+        type: "SELECT_EPISODE",
+        episode: { season: 1, episode: 2 },
+      });
+      container.historyRepository.upsertProgress({
+        title: { id: title.id, kind: "series", title: title.name },
+        episode: { season: 1, episode: initialMatchingHistory ? 2 : 1 },
+        positionSeconds: 90,
+        durationSeconds: 300,
+        completed: false,
+        providerId: sourceProvider,
+        updatedAt: new Date().toISOString(),
+      });
+    }
     if (scenario === "series-resume") {
       container.historyRepository.upsertProgress({
         title: { id: title.id, kind: "series", title: title.name },
@@ -197,7 +251,15 @@ async function main() {
           event: { type: "playback-progress", positionSeconds: 20, durationSeconds: 120 },
         });
         options.onNearEof?.();
-        if (series && played.length === 1 && !autoplay && !postplay)
+        if (
+          series &&
+          played.length === 1 &&
+          !autoplay &&
+          !postplay &&
+          !selectedIdentity &&
+          !initialOtherHistory &&
+          !initialMatchingHistory
+        )
           container.playerControl.signalPlaybackAction("next");
         else if (
           !playerFailure &&

@@ -200,8 +200,8 @@ video. Phone background downloads and browser storage need separate gates.
 
 The [existing offline plan](offline-provider-independent-playback.md) owns
 retired-provider durability. This review does not duplicate or close that plan.
-The [production review](2026-10-03-production-review.md) retains the wider
-network trust, process teardown, publishing, and release-platform blockers.
+Network trust, process teardown, publishing and release-platform blockers are
+tracked on the [roadmap](roadmap.md).
 
 ## Device preparation and useful evidence
 
