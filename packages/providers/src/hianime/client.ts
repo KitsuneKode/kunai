@@ -13,6 +13,7 @@ import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types"
 import { ProviderHttpError } from "../runtime/fetch";
 import { scrubbedChildEnv } from "../shared/child-env";
 import {
+  curlArgvHead,
   curlCipherArgs,
   isCloudflareChallengeText,
   resolveCurlCandidate,
@@ -323,8 +324,7 @@ export async function hianimeFetchText(
   }
 
   const args = [
-    curl.path,
-    ...curl.prefixArgs,
+    ...curlArgvHead(curl),
     "-sL",
     "-A",
     HIANIME_USER_AGENT,

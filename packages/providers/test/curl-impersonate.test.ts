@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { __testing, resolveCurlCandidate } from "../src/shared/curl-impersonate";
+import { __testing, curlArgvHead, resolveCurlCandidate } from "../src/shared/curl-impersonate";
 
 /** A PATH dir with nothing but a fake curl_ff wrapper. */
 function makeWrapperDir(version: string): string {
@@ -290,5 +290,19 @@ describe("resolveCurlCandidate Kunai-managed helpers", () => {
       },
     });
     expect(consulted).toBe(false);
+  });
+});
+
+describe("curlArgvHead", () => {
+  test("puts -q first, ahead of an impersonate build's own prefix args", () => {
+    // curl only honours -q (skip ~/.curlrc) as the very first argument.
+    expect(
+      curlArgvHead({
+        path: "C:\\k\\curl-impersonate.exe",
+        prefixArgs: ["--compressed", "--impersonate", "chrome150"],
+        impersonates: true,
+        profile: "chrome150",
+      }),
+    ).toEqual(["C:\\k\\curl-impersonate.exe", "-q", "--compressed", "--impersonate", "chrome150"]);
   });
 });

@@ -47,6 +47,7 @@ import {
 } from "../shared/anime-source-presentation";
 import { scrubbedChildEnv } from "../shared/child-env";
 import {
+  curlArgvHead,
   curlCipherArgs,
   type CurlCandidate,
   isCloudflareBlockBody,
@@ -1773,8 +1774,7 @@ export async function fetchMiruroPipeBody(
 
   const hasCurlHttp2 = await detectCurlHttp2Support(curl.path);
   const args = [
-    curl.path,
-    ...curl.prefixArgs,
+    ...curlArgvHead(curl),
     ...curlCipherArgs(curl.impersonates),
     "-sS",
     ...(hasCurlHttp2 ? ["--http2"] : []),

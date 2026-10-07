@@ -8,6 +8,7 @@ import {
 
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
 import {
+  curlArgvHead,
   curlCipherArgs,
   isCloudflareChallengeText,
   resolveCurlCandidate,
@@ -273,8 +274,7 @@ async function anidbFetchRedirectAware(
     });
   }
   const args = [
-    curl.path,
-    ...curl.prefixArgs,
+    ...curlArgvHead(curl),
     "-s",
     "-A",
     ANIDB_USER_AGENT,
@@ -422,8 +422,7 @@ export async function anidbFetchText(
 
   const maxTime = String(options.maxTimeSec ?? 12);
   const args = [
-    curl.path,
-    ...curl.prefixArgs,
+    ...curlArgvHead(curl),
     "-sL",
     "-A",
     ANIDB_USER_AGENT,

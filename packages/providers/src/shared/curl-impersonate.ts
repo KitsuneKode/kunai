@@ -192,6 +192,17 @@ function defaultManagedWrapperDirs(): readonly ManagedWrapperDir[] {
 }
 
 /**
+ * The start of every provider curl argv: the binary, `-q`, then the build's
+ * own prefix args. `-q` stops curl reading `~/.curlrc`, so a user's proxy,
+ * `-L` or output flags cannot silently change what a provider request does —
+ * and it only works as the very first argument (curl ignores it anywhere
+ * else), which is why it sits ahead of the prefix args.
+ */
+export function curlArgvHead(curl: CurlCandidate): readonly string[] {
+  return [curl.path, "-q", ...curl.prefixArgs];
+}
+
+/**
  * ani-cli sets cipher flags only on Darwin, and that restriction is
  * load-bearing: Windows `curl.exe` links Schannel, which rejects
  * `--tls13-ciphers` and does not understand OpenSSL cipher names, so passing
