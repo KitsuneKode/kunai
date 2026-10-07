@@ -61,6 +61,50 @@ test("mountRootContent settles a displaced session with its fallback", async () 
   expect(getRootContentSession()).toBeNull();
 });
 
+test("mountRootContent keeps a session mounted during its own subscriber notification", async () => {
+  const first = mountRootContent({
+    kind: "playback",
+    fallbackValue: "quit" as const,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    renderContent: () => null as never,
+  });
+
+  // Mounting B notifies subscribers synchronously; this subscriber mounts C in
+  // response, which displaces B before B's own displacement-settle loop runs.
+  // When B resumes, its loop must not evict C — it only owns the mount it
+  // actually displaced (A).
+  let nested: ReturnType<typeof mountRootContent<"dismissed">> | undefined;
+  const unsubscribe = subscribeRootContentSession(() => {
+    if (!nested && getRootContentSession()?.kind === "browse") {
+      nested = mountRootContent({
+        kind: "picker",
+        fallbackValue: "dismissed" as const,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        renderContent: () => null as never,
+      });
+    }
+  });
+
+  const second = mountRootContent<string>({
+    kind: "browse",
+    fallbackValue: "cancelled" as const,
+    displacedValue: "displaced" as const,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    renderContent: () => null as never,
+  });
+  unsubscribe();
+
+  // C displaced B, so B resolves with its displaced marker — but C keeps the
+  // slot it won instead of being swept by B's leftover settle pass.
+  await expect(second.result).resolves.toBe("displaced");
+  await expect(first.result).resolves.toBe("quit");
+  expect(getRootContentSession()?.kind).toBe("picker");
+
+  nested?.close("dismissed");
+  await expect(nested?.result).resolves.toBe("dismissed");
+  expect(getRootContentSession()).toBeNull();
+});
+
 test("waitForRootContentSlot parks while a foreign session owns the slot", async () => {
   const picker = mountRootContent({
     kind: "picker",

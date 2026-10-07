@@ -58,12 +58,9 @@ export async function extractYtDlpVideoInfo(
     "--no-warnings",
     "--no-playlist",
     ...buildYoutubeYtdlCliArgs(options),
-    // The watch URL is provider/catalog-influenced. Without `--` a URL
-    // beginning with `-` is parsed as yt-dlp options (option injection).
-    "--",
   ];
-  // `--` before the positional URL: a watchUrl starting with `-` must be a
-  // target, not an injected yt-dlp option.
+  // The watch URL is provider/catalog-influenced. `--` before it makes a
+  // watchUrl beginning with `-` a target, not an injected yt-dlp option.
   args.push("--", watchUrl);
 
   const proc = await spawnYtDlpWithTimeout({ args, signal: options.signal, spawn: options.spawn });

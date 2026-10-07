@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-07"
+lastReviewed: "2026-10-08"
 ---
 
 # Provider Research Dossier — HiAnime (`hianime`)
@@ -8,7 +8,7 @@ lastReviewed: "2026-10-07"
 > Agent-facing (L3). Live material: responses recorded 2026-09-13 against
 > `hianime.at` with plain curl + Chrome 124 UA. No browser, no auth, no account.
 
-Parity reference: ani-cli `5.1.4` (`/home/kitsunekode/Projects/osc/ani-cli`,
+Parity reference: ani-cli `5.1.5` (`/home/kitsunekode/Projects/osc/ani-cli`,
 single `ani-cli` shell script; pinned in `scripts/parity-references.json`).
 Kunai previously used `anidb.app` for the
 ani-cli-shaped lane; ani-cli has since moved its primary to HiAnime, so this
@@ -18,7 +18,10 @@ response` vs `HTTP NNN` — instead of a bare curl exit), ported into
 `splitCurlHttpTrailer` / `hianimeCurlFailureMessage` plus the curl-path HTTP
 status check. 5.1.3 → 5.1.4 carried no hianime-lane changes (#1908 filename
 sanitization, #1912 sed label fix, #1927 docs — all already covered or
-not-applicable here).
+not-applicable here). 5.1.4 → 5.1.5 adds only `--exact` (#1938), a
+CLI-side filter that keeps search rows whose normalized title equals the
+query; Kunai ranks results in its own picker instead, so it is deliberately
+not ported. The rest of that delta is README and contributing docs.
 
 ## Request Summary
 

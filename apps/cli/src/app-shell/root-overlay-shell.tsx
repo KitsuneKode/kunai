@@ -212,7 +212,13 @@ import {
   type TracksNavState,
 } from "./tracks-panel-nav";
 import { TracksPanelShell } from "./tracks-panel-shell";
-import type { BrowseShellResult, FooterAction, ShellAction, ShellPanelLine } from "./types";
+import type {
+  BrowseShellResult,
+  FooterAction,
+  PlaybackShellResult,
+  ShellAction,
+  ShellPanelLine,
+} from "./types";
 import { toShellAction } from "./types";
 import { handleHistoryOverlayInput, type HistoryDeletePending } from "./use-history-overlay-input";
 import {
@@ -680,12 +686,11 @@ export function RootOverlayShell({
   const [asyncLines, setAsyncLines] = useState<readonly ShellPanelLine[] | null>(null);
   const [loadingAsyncLines, setLoadingAsyncLines] = useState(overlay.type === "history");
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [overlayStatusRaw, setOverlayStatusRaw] = useState<string | null>(null);
-  const overlayStatus = overlayStatusRaw;
+  const [overlayStatus, setOverlayStatusState] = useState<string | null>(null);
   // Status lines can embed provider/history titles — sanitize at entry so every
   // producer stays escape-safe without each call site remembering to.
   const setOverlayStatus = useCallback((message: string | null) => {
-    setOverlayStatusRaw(message === null ? null : sanitizeTerminalText(message));
+    setOverlayStatusState(message === null ? null : sanitizeTerminalText(message));
   }, []);
   const [overlayClosePending, setOverlayClosePending] = useState(false);
   const [notificationActionDedupKey, setNotificationActionDedupKey] = useState<string | null>(null);
@@ -883,7 +888,6 @@ export function RootOverlayShell({
   });
   const effectiveSubtitle =
     (overlay.type === "notifications" ||
-      overlay.type === "history" ||
       overlay.type === "tracks_panel" ||
       overlay.type === "diagnostics") &&
     overlayStatus
@@ -1653,6 +1657,13 @@ export function RootOverlayShell({
             const awaited = hasPendingRootHistorySelection();
             resolveRootHistorySelection(selection);
             if (selection) {
+              // launch-playback resolves only on browse — delivered to a
+              // playback or picker session it would be a foreign result the
+              // phase loop cannot read, silently dropping the pick.
+              if (!awaited && getRootContentSession()?.kind !== "browse") {
+                setOverlayStatus("Play it from the search screen");
+                return;
+              }
               container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
               if (!awaited) {
                 void resolveHistorySelectionLaunch(container, selection, "history").then(
@@ -1685,6 +1696,25 @@ export function RootOverlayShell({
       if (key.return && row) {
         // Claim exact row before handoff; failed CAS keeps the overlay open.
         const awaited = hasPendingRootQueueSelection();
+        const mountedKind = getRootContentSession()?.kind;
+        if (!awaited && mountedKind === "post-playback") {
+          // Post-play owns this handoff natively — its own queue rail resolves
+          // the same result, and the phase loop claims the row itself. Claiming
+          // here first would make that CAS fail and drop the launch.
+          container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+          forceCloseRootContent<PlaybackShellResult>({
+            type: "play-queue-entry",
+            queueEntryId: row.id,
+          });
+          return;
+        }
+        if (!awaited && mountedKind !== "browse") {
+          // launch-playback only resolves on browse — on active playback, a
+          // picker, or an idle slot nobody consumes it, so claiming would leave
+          // the row in-flight forever. Keep it pending and say where it plays.
+          setOverlayStatus("Queue play from the search screen or the post-play menu");
+          return;
+        }
         const played = resolveQueueRowPlaySelection(
           container.queueService,
           row.id,
@@ -2214,6 +2244,7 @@ export function RootOverlayShell({
               label: `${queueView.counts.unplayed} up next · ${queueView.counts.total} total`,
               tone: "info",
             },
+            ...(overlayStatus ? [{ label: overlayStatus, tone: "warning" as const }] : []),
           ]}
         />
         <QueueShell
@@ -2261,6 +2292,7 @@ export function RootOverlayShell({
                 : `${historyView.flatRows.length} titles · ${historyView.tabLabels[historyView.tabIndex] ?? "All"}`,
               tone: "info",
             },
+            ...(overlayStatus ? [{ label: overlayStatus, tone: "warning" as const }] : []),
           ]}
         />
         <HistoryShell
@@ -2336,6 +2368,12 @@ export function RootOverlayShell({
       searchSurface: GUIDE_SEARCH_SURFACE,
     });
     const activateGuideRow = (row: GuideRow) => {
+      // Disabled rows carry the palette's own refusal reason — say why instead
+      // of running a command the palette would have blocked.
+      if (!row.enabled) {
+        setOverlayStatus(row.reason ?? `${row.invocation} is unavailable right now`);
+        return;
+      }
       const action = toShellAction(row.command);
       if (row.surface === "run") {
         resolveOverlayPaletteAction(action);
@@ -2357,7 +2395,9 @@ export function RootOverlayShell({
       overlayLayout,
       <GuideShell
         sections={guideSections}
-        maxVisible={Math.max(4, overlayLayout.contentRows - 7)}
+        // Row budget for the scrollable list: the panel chrome (title, hint,
+        // footer) plus an optional status note line all draw above it.
+        maxRows={Math.max(4, overlayLayout.contentRows - (overlayStatus ? 8 : 7))}
         commandMode={commandMode}
         commandInput={commandInput}
         commandCursor={commandCursor}

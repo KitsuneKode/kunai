@@ -245,8 +245,13 @@ export function mountRootContent<TResult>({
     // mounts with their fallbackValue; replacement gets the same treatment.
     // Runs after the new session installs so the displaced mount's own
     // session-clear is a no-op and subscribers never see a null frame.
+    //
+    // Scoped to the mount this call displaced: subscriber notification above
+    // is synchronous, so a subscriber may itself mount a session that already
+    // displaced this one — settling every foreign mount here would evict that
+    // newer session right after it won the slot.
     for (const mount of pendingRootContentMounts) {
-      if (mount.sessionId !== sessionId) {
+      if (mount.sessionId === displacedSessionId) {
         // Settle deletes only the mount being iterated — safe during for…of.
         mount.settle(mount.displacedValue);
       }

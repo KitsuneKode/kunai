@@ -141,7 +141,7 @@ const CURL_TIMEOUT_EXIT_CODE = 28;
 /**
  * Split curl's `-w '\n%{http_code}'` trailer into `{ body, httpCode }`.
  * `httpCode` is null when curl never received an HTTP response (DNS, TCP, or
- * TLS failure) — the ani-cli 5.1.4 distinction between "no HTTP response"
+ * TLS failure) — the upstream #1902 distinction between "no HTTP response"
  * and "HTTP NNN", so a dead route is never misread as an HTTP error. curl
  * prints `000` for that case, which is a missing status, not status zero.
  * Only one trailing line is ever cut, so a body that naturally ends in
