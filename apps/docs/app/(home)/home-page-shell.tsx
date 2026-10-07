@@ -1,14 +1,16 @@
 import { KunaiFox } from "@/components/brand/kunai-fox";
 import { KunaiFoxLive } from "@/components/brand/kunai-fox-live";
+import { HomeBento } from "@/components/home/home-bento";
 import { HomeFlowTimeline } from "@/components/home/home-flow-timeline";
 import { HomeHeroStatic } from "@/components/home/home-hero-static";
+import { HomeOpenSource } from "@/components/home/home-open-source";
 import { HomeStarCta } from "@/components/home/home-star-cta";
-import { HomeSupportStrip } from "@/components/home/home-support-strip";
 import { HomeTerminalIsland } from "@/components/home/home-terminal-island";
 import { HomeTerminalStatic } from "@/components/home/home-terminal-static";
 import { ProviderSummaryCard } from "@/components/home/provider-summary-card";
 import { StartHereCards } from "@/components/home/start-here-cards";
 import type { HomeCommandMetadata, HomeProviderMetadata } from "@/components/home/types";
+import { WorkshopShowcase } from "@/components/home/workshop-showcase";
 import { CopyButton } from "@/components/ui/copy-button";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { homeFlow, homeHero, homeHighlights, homeStartCards } from "@/lib/home-content";
@@ -40,8 +42,10 @@ type HomePageShellProps = {
  * for anyone who arrived already convinced, and `#install` still resolves for
  * every link that points at it.
  *
- * The one ask for money comes after the guides and before the last install
- * prompt, so it is never the first thing a visitor is asked for.
+ * The one ask for money comes after the guides and next to the free ways to
+ * help, so it is never the first thing a visitor is asked for. The maintainer's
+ * other projects follow it, just before the last install prompt: someone who
+ * has read this far trusts one tool and is the likeliest to want the next.
  */
 export default function HomePageShell({
   providers,
@@ -98,19 +102,12 @@ export default function HomePageShell({
         <HomeFlowTimeline steps={homeFlow} />
       </section>
 
-      <section className="kunai-home-highlights kunai-band">
-        <div>
-          <h2 className="kunai-display-title">Everything stays one keystroke away.</h2>
-          {usageLine}
+      <section className="kunai-home-highlights kunai-flow-section">
+        <SectionHeading title="Everything stays one keystroke away." />
+        {usageLine}
+        <div className="mt-10">
+          <HomeBento highlights={homeHighlights} providers={providers} />
         </div>
-        <ul className="kunai-highlight-list">
-          {homeHighlights.map((item) => (
-            <li className="kunai-highlight-row" key={item.label}>
-              <span className="kunai-step-label">{item.label}</span>
-              <p className="kunai-type-body m-0 text-sm">{item.detail}</p>
-            </li>
-          ))}
-        </ul>
       </section>
 
       <section className="kunai-home-providers">
@@ -128,7 +125,21 @@ export default function HomePageShell({
         <StartHereCards items={homeStartCards} />
       </section>
 
-      <HomeSupportStrip />
+      <section className="kunai-home-open kunai-flow-section">
+        <SectionHeading
+          title="Free, open, and kept alive in the open."
+          description="Who makes it, how to help for free, and what sponsorship pays for."
+        />
+        <HomeOpenSource />
+      </section>
+
+      <section className="kunai-home-workshop kunai-flow-section">
+        <SectionHeading
+          title="More from the same workshop."
+          description="Other tools KitsuneKode makes and maintains. Originals only, no forks."
+        />
+        <WorkshopShowcase />
+      </section>
 
       <section className="kunai-home-final kunai-final kunai-surface-shell p-2">
         <div className="kunai-surface-shell__inner flex flex-col gap-6 p-8 md:flex-row md:items-center md:justify-between">
