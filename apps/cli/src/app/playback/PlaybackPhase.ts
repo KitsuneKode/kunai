@@ -1,16 +1,16 @@
+import { capturePlaybackShellError } from "@/app-shell/playback-shell-error-capture";
+import {
+  openTracksPanel,
+  openPlaybackEpisodePicker,
+  buildPickerActionContext,
+  openSubtitlePicker,
+} from "@/app-shell/workflows";
 // =============================================================================
 // Playback Phase
 //
 // Handles episode selection → stream resolve → MPV playback → post-playback.
 // Returns when user wants to go back to search or switch mode.
 // =============================================================================
-
-import { capturePlaybackShellError } from "@/app-shell/playback-shell-error-capture";
-import {
-  openTracksPanel,
-  buildPickerActionContext,
-  openSubtitlePicker,
-} from "@/app-shell/workflows";
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { consumeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
@@ -96,6 +96,7 @@ import {
   type PlaybackSessionPhaseEvent,
   type PlaybackSessionState,
 } from "@/app/playback/playback-session-controller";
+import { resolvePlaybackSourceAuthority } from "@/app/playback/playback-source-authority";
 import { invalidateEpisodePlaybackCaches } from "@/app/playback/playback-source-cache-invalidation";
 import {
   listOrderedPlaybackSourceIds,
@@ -170,6 +171,7 @@ import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import { usesProviderNativeEpisodeCatalog } from "@/domain/media/provider-native-episodes";
 import { enrichExternalIdsWithVideoMeta } from "@/domain/media/video-meta";
+import { decodeEpisodeSelectionValue } from "@/domain/playback/episode-selection";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/domain/playback/playback-history";
 import {
   didPlaybackReachCompletionThreshold,
@@ -236,6 +238,7 @@ import {
 import { queueHistoryMirror } from "@/services/media-actions/create-container-media-action-router";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
+import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
 import { findNextReadyEpisode } from "@/services/offline/offline-episode-index";
 import {
   createPlaybackStartupTimeline,
@@ -748,7 +751,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         run.playbackSession = result.session;
         return result.startIntent;
       };
-      const provider = providerRegistry.get(stateManager.getState().provider);
+      const provider = isOfflineLaunch
+        ? undefined
+        : providerRegistry.get(stateManager.getState().provider);
       const catalogDetailPromise = isOfflineLaunch
         ? Promise.resolve(undefined)
         : fetchTitleDetail(title.id, title.type, undefined, {
@@ -828,12 +833,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         const { applyTitleProviderPreferenceToSession } =
           await import("@/app/playback/playback-provider-switch");
-        applyTitleProviderPreferenceToSession(
-          container,
-          title.id,
-          title,
-          stateManager.getState().mode,
-        );
+        if (!isOfflineLaunch) {
+          applyTitleProviderPreferenceToSession(
+            container,
+            title.id,
+            title,
+            stateManager.getState().mode,
+          );
+        }
         providerSwitchSeqBeforeEpisodePicker = stateManager.getState().providerSwitchSeq;
 
         // Session-flow owns the current season/episode selection rules until the
@@ -845,7 +852,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         const { resolvePlaybackEpisodeEntry } =
           await import("@/app-shell/title-control/smart-auto-launch");
-        const providerHealth = container.providerHealth.get(stateManager.getState().provider);
+        const providerHealth = isOfflineLaunch
+          ? undefined
+          : container.providerHealth.get(stateManager.getState().provider);
         const failedProvider =
           providerHealth?.status === "degraded" || providerHealth?.status === "down";
         const seasonCount = isOfflineLaunch
@@ -1106,27 +1115,64 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (run.sessionSoftProviderId && run.sessionSoftProviderId !== configuredProviderId) {
             run.sessionSoftProviderId = null;
           }
-          const currentProvider = providerRegistry.get(
-            run.sessionSoftProviderId ?? configuredProviderId,
-          );
-
-          if (!currentProvider) {
+          const sourceAuthority = await resolvePlaybackSourceAuthority({
+            configuredProviderId: run.sessionSoftProviderId ?? configuredProviderId,
+            offlineOnly: isOfflineLaunch,
+            resolveLocal: () =>
+              resolveLocalEpisodePlayback(container, title, currentEpisode, {
+                entrypoint: isOfflineLaunch
+                  ? "offline-library"
+                  : title.launchSource === "continue"
+                    ? "continue"
+                    : "online-search",
+                forceOnline:
+                  !isOfflineLaunch &&
+                  (run.episodePlaybackSourceOverride === "online" ||
+                    run.pendingSourceRefreshAction !== null),
+                forceLocal: isOfflineLaunch || run.episodePlaybackSourceOverride === "local",
+              }),
+            getProvider: (id) => providerRegistry.get(id),
+          });
+          run.episodePlaybackSourceOverride = null;
+          if (sourceAuthority.kind === "provider-unavailable") {
             return {
               status: "error",
               error: {
                 code: "PROVIDER_UNAVAILABLE",
-                message: `Provider ${stateManager.getState().provider} not found`,
+                message: `Provider ${sourceAuthority.providerId} not found`,
                 retryable: false,
               },
             };
           }
+          if (sourceAuthority.kind === "offline-unavailable") {
+            stateManager.dispatch({ type: "SET_STREAM", stream: null });
+            const problem = buildOfflineFileUnavailableProblem();
+            stateManager.dispatch({ type: "SET_PLAYBACK_PROBLEM", problem });
+            diagnosticsService.record({
+              category: "playback",
+              operation: "playback.source.local.unavailable",
+              message: problem.userMessage,
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              context: { cause: problem.cause, recommendedAction: problem.recommendedAction },
+            });
+            return { status: "success", value: "back_to_results" };
+          }
+          // Stored provider identity remains provenance for history/share; only
+          // the provider arm below owns a registered runtime adapter.
+          const sourceProviderId =
+            sourceAuthority.kind === "local"
+              ? sourceAuthority.resolution.source.providerId
+              : sourceAuthority.provider.metadata.id;
+          const localPlayback = sourceAuthority.kind === "local";
 
           const deadStreamScope = playbackDeadStreamScopeKey({
             titleId: title.id,
             season: currentEpisode.season,
             episode: currentEpisode.episode,
             providerEpisodeIdentity: currentEpisode.providerEpisodeIdentity,
-            providerId: currentProvider.metadata.id,
+            providerId: sourceProviderId,
           });
           const providerAttemptId = createCorrelationId("provider");
           const playbackCorrelation: DiagnosticCorrelation = {
@@ -1136,25 +1182,28 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             traceId: providerAttemptId,
           };
           const startupTimeline = createPlaybackStartupTimeline({
-            source: { providerId: currentProvider.metadata.id },
+            source: { providerId: localPlayback ? "local" : sourceProviderId },
           });
-          let resolvedProviderId = currentProvider.metadata.id;
+          let resolvedProviderId = sourceProviderId;
           const completeSourceTrackPick = async (
             pickedEpisode: EpisodeInfo,
             picked: DecodedTrackSelection,
             selection: StreamSelectionIntent | null,
             resumeSeconds: number,
             reason: string,
-          ): Promise<ReturnType<typeof startEpisodeNavigation>> => {
+          ): Promise<ReturnType<typeof startEpisodeNavigation> | null> => {
             const { resolveTracksPanelPick } = await import("@/app/playback/tracks-panel-pick");
             const resolved = await resolveTracksPanelPick(picked, selection, {
               container,
               title,
               episode: pickedEpisode,
               currentProviderId: resolvedProviderId,
+              playbackSourceKind: sourceAuthority.kind,
               resumeSeconds,
               reason,
             });
+
+            if (resolved.kind === "noop" && sourceAuthority.kind === "local") return null;
 
             const restart = await applyTrackPickRestart({
               resolved,
@@ -1281,13 +1330,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           };
           recordStartupMark("episode-bootstrap-started");
-          const playbackNetworkAllowed = !isOfflineLaunch && container.connectivity.isOnline();
+          const playbackNetworkAllowed = !localPlayback && container.connectivity.isOnline();
 
           // Warm the catalog-detail cache early so the playback/post-play panels
           // can read it. On resolve we dispatch SET_TITLE_DETAIL so the UI reacts
           // (the rail reads SessionState.titleDetail). Errors are swallowed; the
           // panels fall back to honest placeholders if it never resolves.
-          if (!isOfflineLaunch) {
+          if (!localPlayback) {
             void fetchTitleDetail(title.id, title.type, undefined, {
               externalIds: title.externalIds,
               isAnime: stateManager.getState().mode === "anime" || title.isAnime === true,
@@ -1309,7 +1358,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Uses the configured provider for the warm path; after resolve we re-key
           // on the successful provider when they differ.
           recordStartupMark("timing-fetch-started");
-          const configuredTimingProviderId = currentProvider?.metadata.id;
+          const configuredTimingProviderId = localPlayback ? undefined : sourceProviderId;
           const timingFetch = shouldFetchPlaybackTiming({
             networkAllowed: playbackNetworkAllowed,
             hasTiming: false,
@@ -1347,20 +1396,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
           stateManager.dispatch({ type: "SET_RESOLVE_RETRY_COUNT", count: 0 });
           this.updatePlaybackFeedback(context, {
-            detail: "Preparing episode metadata",
-            note: "Warming episode names, navigation, and artwork",
+            detail: localPlayback ? "Preparing downloaded episode" : "Preparing episode metadata",
+            note: localPlayback
+              ? "Reading local files and episode navigation"
+              : "Warming episode names, navigation, and artwork",
           });
 
-          const currentAnimeEpisodesPromise = isOfflineLaunch
-            ? Promise.resolve(undefined)
-            : this.getAnimeEpisodeOptions({
-                title,
-                mode: playbackMode,
-                provider: currentProvider,
-                cache: animeEpisodeCatalogByProvider,
-                languages: playbackEpisodeCatalogLanguages({ mode: playbackMode, title, config }),
-                signal: resolveController.signal,
-              });
+          const currentAnimeEpisodesPromise =
+            sourceAuthority.kind === "local"
+              ? Promise.resolve(undefined)
+              : this.getAnimeEpisodeOptions({
+                  title,
+                  mode: playbackMode,
+                  provider: sourceAuthority.provider,
+                  cache: animeEpisodeCatalogByProvider,
+                  languages: playbackEpisodeCatalogLanguages({ mode: playbackMode, title, config }),
+                  signal: resolveController.signal,
+                });
           // The picker's downloaded marks and the autoplay cursor below must ask
           // for the same id an asset is filed under; canonicalising here on its
           // own left an enriched title looking up an id no asset row holds.
@@ -1390,10 +1442,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 animeEpisodes: currentAnimeEpisodes,
                 watchedEntries,
                 downloadedEpisodes,
+                localEpisodes: localPlayback
+                  ? listReadyEpisodes(container.offlineAssetService, offlineTitleId)
+                  : undefined,
                 loadEpisodes: loadEpisodesOnce,
               }),
           );
-          const episodeAvailabilityPromise = isOfflineLaunch
+          const episodeAvailabilityPromise = localPlayback
             ? // Availability comes from the offline library, not the catalog. An
               // all-null answer here reads as "series finished" to
               // playback-result-policy, so downloaded E1 would never advance to
@@ -1454,79 +1509,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
-          this.updatePlaybackFeedback(context, {
-            detail: "Resolving provider stream",
-            note: "Esc cancel · returns to results",
-          });
-
-          const sourceRefreshAction = run.pendingSourceRefreshAction;
-          run.pendingSourceRefreshAction = null;
-          const recomputeSources = run.pendingRecomputeSources;
-          run.pendingRecomputeSources = false;
-          await selectionCoordinator.hydrate(currentProvider.metadata.id, currentEpisode);
+          let stream: StreamInfo | null =
+            sourceAuthority.kind === "local" ? sourceAuthority.resolution.stream : null;
+          let streamProvenance: RecentPlaybackStreamProvenance = localPlayback ? "local" : "fresh";
+          let consumedBundle: ReturnType<EpisodePrefetchHandle["takeReadyFor"]> = null;
+          let prefetchWasPrepared = false;
           const profileContext = {
             mode: stateManager.getState().mode,
             title,
             config,
           };
-          const currentPreferredStreamSelection = getPreferredStreamSelection(
-            currentProvider.metadata.id,
-            currentEpisode,
-          );
-          const sourceRefreshDecision = sourceRefreshAction
-            ? resolveSourceRefreshDecision(sourceRefreshCooldown, {
-                action: sourceRefreshAction,
-                scope: {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  providerId: currentProvider.metadata.id,
-                  sourceId: currentPreferredStreamSelection.sourceId,
-                  streamId: currentPreferredStreamSelection.streamId,
-                },
-                now: new Date(),
-                cooldownMs: 30_000,
-              })
-            : null;
 
-          if (sourceRefreshDecision?.kind === "cooldown") {
-            this.updatePlaybackFeedback(context, {
-              detail: sourceRefreshDecision.message,
-              note: "The current stream can be reused without another provider lookup.",
-            });
-            diagnosticsService.record({
-              ...playbackCorrelation,
-              category: "playback",
-              operation: "playback.refresh.cooldown",
-              message: sourceRefreshDecision.message,
-              providerId: currentProvider.metadata.id,
-              titleId: title.id,
-              season: currentEpisode.season,
-              episode: currentEpisode.episode,
-              context: { remainingMs: sourceRefreshDecision.remainingMs },
-            });
-          } else if (sourceRefreshDecision) {
-            diagnosticsService.record({
-              ...playbackCorrelation,
-              category: "playback",
-              operation:
-                sourceRefreshDecision.kind === "recover"
-                  ? "playback.recover.requested"
-                  : "playback.refresh.requested",
-              message:
-                sourceRefreshDecision.kind === "recover"
-                  ? "Recovering current provider source"
-                  : "Refreshing current provider source",
-              providerId: currentProvider.metadata.id,
-              titleId: title.id,
-              season: currentEpisode.season,
-              episode: currentEpisode.episode,
-            });
-          }
-
-          // Use a prefetched bundle (resolve + optional subtitle prep during near-EOF)
-          // or fall back to a full provider resolve. Explicit refresh/recover bypasses
-          // prefetch so it can ask the provider for a fresh source.
           const buildPrefetchTarget = (
             nextEpisodeIntent: EpisodeInfo,
             providerId: string,
@@ -1544,699 +1537,730 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               subtitlePreference: playbackSubtitlePreference(profileContext),
             };
           };
-          const providerSwitchSeq = stateManager.getState().providerSwitchSeq;
-          const pendingUserProviderSwitch = providerSwitchSeq !== consumedProviderSwitchSeq;
-          if (pendingUserProviderSwitch) {
-            consumedProviderSwitchSeq = providerSwitchSeq;
-            run.sessionSoftProviderId = null;
-          }
-
-          const prefetchTarget = buildPrefetchTarget(currentEpisode, currentProvider.metadata.id);
-          const consumedBundle =
-            sourceRefreshDecision || pendingUserProviderSwitch
-              ? null
-              : episodePrefetch.takeReadyFor(prefetchTarget);
-          const prefetchWasPrepared = consumedBundle?.prepared === true;
-
-          let stream: StreamInfo | null = consumedBundle?.stream ?? null;
-          let streamProvenance: RecentPlaybackStreamProvenance = consumedBundle
-            ? "prefetch"
-            : "fresh";
-          let resolveAttempts: readonly ResolveAttempt<StreamInfo>[] = [];
-          if (stream) recordStartupMark("resolve-complete", stream);
-
-          const resolveTrace = createResolveTraceStub({
-            title,
-            episode: currentEpisode,
-            providerId: currentProvider.metadata.id,
-            mode: stateManager.getState().mode,
-          });
-          diagnosticsService.record({
-            ...playbackCorrelation,
-            category: "provider",
-            message: "Resolve trace started",
-            context: { trace: resolveTrace },
-          });
-
-          if (consumedBundle) {
-            resolvedProviderId = consumedBundle.resolvedProviderId;
-            logger.info("Using prefetched stream for episode", {
+          if (sourceAuthority.kind === "local") {
+            const local = sourceAuthority.resolution;
+            run.localEpisodeTiming = local.timing;
+            run.localPlaybackJobId = local.jobId;
+            run.localPlaybackSource = local.source;
+            run.pendingSourceRefreshAction = null;
+            run.pendingRecomputeSources = false;
+            diagnosticsService.record({
+              ...playbackCorrelation,
+              category: "playback",
+              operation: "playback.source.local",
+              message: "Using verified local file for episode playback",
               titleId: title.id,
               season: currentEpisode.season,
               episode: currentEpisode.episode,
-              prepared: prefetchWasPrepared,
-              resolvedProviderId,
+              context: { jobId: local.jobId },
+            });
+          }
+          if (sourceAuthority.kind === "provider") {
+            this.updatePlaybackFeedback(context, {
+              detail: "Resolving provider stream",
+              note: "Esc cancel · returns to results",
+            });
+
+            const sourceRefreshAction = run.pendingSourceRefreshAction;
+            run.pendingSourceRefreshAction = null;
+            const recomputeSources = run.pendingRecomputeSources;
+            run.pendingRecomputeSources = false;
+            await selectionCoordinator.hydrate(sourceProviderId, currentEpisode);
+            const currentPreferredStreamSelection = getPreferredStreamSelection(
+              sourceProviderId,
+              currentEpisode,
+            );
+            const sourceRefreshDecision = sourceRefreshAction
+              ? resolveSourceRefreshDecision(sourceRefreshCooldown, {
+                  action: sourceRefreshAction,
+                  scope: {
+                    titleId: title.id,
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
+                    providerId: sourceProviderId,
+                    sourceId: currentPreferredStreamSelection.sourceId,
+                    streamId: currentPreferredStreamSelection.streamId,
+                  },
+                  now: new Date(),
+                  cooldownMs: 30_000,
+                })
+              : null;
+
+            if (sourceRefreshDecision?.kind === "cooldown") {
+              this.updatePlaybackFeedback(context, {
+                detail: sourceRefreshDecision.message,
+                note: "The current stream can be reused without another provider lookup.",
+              });
+              diagnosticsService.record({
+                ...playbackCorrelation,
+                category: "playback",
+                operation: "playback.refresh.cooldown",
+                message: sourceRefreshDecision.message,
+                providerId: sourceProviderId,
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+                context: { remainingMs: sourceRefreshDecision.remainingMs },
+              });
+            } else if (sourceRefreshDecision) {
+              diagnosticsService.record({
+                ...playbackCorrelation,
+                category: "playback",
+                operation:
+                  sourceRefreshDecision.kind === "recover"
+                    ? "playback.recover.requested"
+                    : "playback.refresh.requested",
+                message:
+                  sourceRefreshDecision.kind === "recover"
+                    ? "Recovering current provider source"
+                    : "Refreshing current provider source",
+                providerId: sourceProviderId,
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+              });
+            }
+
+            // A user provider switch must not be answered by a bundle prefetched
+            // for the provider they just left.
+            const providerSwitchSeq = stateManager.getState().providerSwitchSeq;
+            const pendingUserProviderSwitch = providerSwitchSeq !== consumedProviderSwitchSeq;
+            if (pendingUserProviderSwitch) {
+              consumedProviderSwitchSeq = providerSwitchSeq;
+              run.sessionSoftProviderId = null;
+            }
+
+            // Use a prefetched bundle (resolve + optional subtitle prep during near-EOF)
+            // or fall back to a full provider resolve. Explicit refresh/recover bypasses
+            // prefetch so it can ask the provider for a fresh source.
+            consumedBundle =
+              sourceRefreshDecision || pendingUserProviderSwitch
+                ? null
+                : episodePrefetch.takeReadyFor(
+                    buildPrefetchTarget(currentEpisode, sourceProviderId),
+                  );
+            prefetchWasPrepared = consumedBundle?.prepared === true;
+
+            stream = consumedBundle?.stream ?? null;
+            streamProvenance = consumedBundle ? "prefetch" : "fresh";
+            let resolveAttempts: readonly ResolveAttempt<StreamInfo>[] = [];
+            if (stream) recordStartupMark("resolve-complete", stream);
+
+            const resolveTrace = createResolveTraceStub({
+              title,
+              episode: currentEpisode,
+              providerId: sourceProviderId,
+              mode: stateManager.getState().mode,
             });
             diagnosticsService.record({
               ...playbackCorrelation,
               category: "provider",
-              message: prefetchWasPrepared
-                ? "Using prefetched prepared stream"
-                : "Using prefetched stream",
-              context: {
+              message: "Resolve trace started",
+              context: { trace: resolveTrace },
+            });
+
+            if (consumedBundle) {
+              resolvedProviderId = consumedBundle.resolvedProviderId;
+              logger.info("Using prefetched stream for episode", {
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
                 prepared: prefetchWasPrepared,
                 resolvedProviderId,
-              },
-            });
-          }
-
-          // Check in-memory cache for recently played episodes (backward navigation).
-          // This lets P-navigation reuse the exact same StreamInfo without any
-          // provider resolve, cache lookup, or health check.
-          if (!stream && !sourceRefreshDecision) {
-            const recentKey = recentPlaybackStreamKey(title.id, currentEpisode);
-            const recent = recentEpisodeStreams.get(recentKey);
-            if (
-              recentPlaybackStreamMatchesProvider(
-                recent,
-                currentProvider.metadata.id,
-                currentEpisode,
-              ) &&
-              recentStreamMatchesPreferred(recent, currentProvider.metadata.id, currentEpisode) &&
-              isRecentPlaybackStreamFresh(recent)
-            ) {
-              const restored = restoreRecentPlaybackStream(recent);
-              stream = restored.stream;
-              resolvedProviderId = restored.resolvedProviderId;
-              streamProvenance = restored.provenance;
-              run.localPlaybackSource = restored.localPlaybackSource;
-              diagnosticsService.record({
-                ...playbackCorrelation,
-                category: "cache",
-                operation: "playback.stream.reused",
-                message: "Using in-memory recent episode stream (backward navigation)",
-                providerId: recent.resolvedProviderId,
-                titleId: title.id,
-                season: currentEpisode.season,
-                episode: currentEpisode.episode,
-                context: {
-                  provenance: "recent-memory",
-                  originalProvenance: recent.provenance,
-                  selectedProviderId: recent.selectedProviderId,
-                  resolvedProviderId: recent.resolvedProviderId,
-                },
               });
-            }
-          }
-
-          if (!stream && !sourceRefreshDecision) {
-            const localResolution = await resolveLocalEpisodePlayback(
-              container,
-              title,
-              currentEpisode,
-              {
-                entrypoint: isOfflineLaunch
-                  ? "offline-library"
-                  : title.launchSource === "continue"
-                    ? "continue"
-                    : "online-search",
-                forceOnline: run.episodePlaybackSourceOverride === "online",
-                forceLocal: isOfflineLaunch || run.episodePlaybackSourceOverride === "local",
-              },
-            );
-            run.episodePlaybackSourceOverride = null;
-            if (localResolution) {
-              stream = localResolution.stream;
-              streamProvenance = "local";
-              run.localEpisodeTiming = localResolution.timing;
-              run.localPlaybackJobId = localResolution.jobId;
-              run.localPlaybackSource = localResolution.source;
-              diagnosticsService.record({
-                ...playbackCorrelation,
-                category: "playback",
-                operation: "playback.source.local",
-                message: "Using verified local file for episode playback",
-                titleId: title.id,
-                season: currentEpisode.season,
-                episode: currentEpisode.episode,
-                context: { jobId: localResolution.jobId },
-              });
-              recordStartupMark("resolve-complete", stream);
-            }
-          }
-
-          if (!stream && isOfflineLaunch) {
-            workControl.setActive(null);
-            stateManager.dispatch({ type: "SET_STREAM", stream: null });
-            // Not updatePlaybackFeedback: this method's `finally` clears detail
-            // and note, so the explanation was erased before it ever rendered
-            // and the user just landed back on results with no reason given.
-            // playbackProblem survives that teardown.
-            const offlineProblem = buildOfflineFileUnavailableProblem();
-            stateManager.dispatch({
-              type: "SET_PLAYBACK_PROBLEM",
-              problem: offlineProblem,
-            });
-            diagnosticsService.record({
-              ...playbackCorrelation,
-              category: "playback",
-              operation: "playback.source.local.unavailable",
-              message: offlineProblem.userMessage,
-              titleId: title.id,
-              season: currentEpisode.season,
-              episode: currentEpisode.episode,
-              context: {
-                stage: offlineProblem.stage,
-                severity: offlineProblem.severity,
-                cause: offlineProblem.cause,
-                recommendedAction: offlineProblem.recommendedAction,
-              },
-            });
-            return { status: "success", value: "back_to_results" };
-          }
-
-          if (!stream) {
-            recordStartupMark("resolve-started");
-            const resolvePolicy = resolvePlaybackResolvePolicy({
-              recomputeSources,
-              pendingUserProviderSwitch,
-              sourceRefreshDecision,
-              configuredRecoveryMode: config.recoveryMode,
-            });
-            if (resolvePolicy.shouldInvalidateSuspectResolveState) {
-              await invalidateEpisodePlaybackCaches({
-                cacheStore,
-                sourceInventory: container.sourceInventory,
-                providerId: currentProvider.metadata.id,
-                title,
-                episode: currentEpisode,
-                mode: stateManager.getState().mode,
-                config,
-                selectedSourceId: currentPreferredStreamSelection.sourceId,
-                selectedStreamId: currentPreferredStreamSelection.streamId,
-              });
-            }
-            const titlePreferredProviderId = resolveTitleProviderPreference(
-              config.getRaw(),
-              title.id,
-            );
-            const resolveResult = await container.playbackResolveWork.resolve(
-              {
-                title,
-                episode: currentEpisode,
-                mode: stateManager.getState().mode,
-                providerId: currentProvider.metadata.id,
-                audioPreference: playbackAudioPreference(profileContext),
-                subtitlePreference: playbackSubtitlePreference(profileContext),
-                qualityPreference: playbackQualityPreference(profileContext),
-                startupPriority: config.startupPriority,
-                favoriteSourceNames: config.favoriteSources,
-                selectedSourceId: currentPreferredStreamSelection.sourceId ?? undefined,
-                selectedStreamId: currentPreferredStreamSelection.streamId ?? undefined,
-                recoveryMode: resolvePolicy.recoveryMode,
-                preferFreshStream: resolvePolicy.preferFreshStream,
-                forceHealthCheck: resolvePolicy.forceHealthCheck,
-                preserveCachedStreamOnFreshFailure:
-                  resolvePolicy.preserveCachedStreamOnFreshFailure,
-                ignoreTitleHealthSuggestion: resolvePolicy.ignoreTitleHealthSuggestion,
-                ignoreProviderHealth: resolvePolicy.ignoreProviderHealth,
-                resolveIntent: resolvePolicy.resolveIntent,
-                blockedStreamUrls: deadStreamUrls.list(deadStreamScope),
-                signal: resolveController.signal,
-                correlation: playbackCorrelation,
-                onFeedback: (feedback) => {
-                  if (resolveController.signal.aborted) return;
-                  this.updatePlaybackFeedback(context, feedback);
-                },
-                onEvent: (event) => {
-                  if (event.type === "cache-hit" || event.type === "cache-miss") {
-                    const hit = event.type === "cache-hit";
-                    if (hit) {
-                      logger.info("Provider resolve cache hit", {
-                        provider: event.providerId,
-                        titleId: title.id,
-                        season: currentEpisode.season,
-                        episode: currentEpisode.episode,
-                      });
-                    }
-                    diagnosticsService.record({
-                      ...playbackCorrelation,
-                      category: "cache",
-                      message: hit ? "Provider resolve cache hit" : "Provider resolve cache miss",
-                      context: {
-                        provider: event.providerId,
-                        titleId: title.id,
-                        season: currentEpisode.season,
-                        episode: currentEpisode.episode,
-                      },
-                    });
-                    return;
-                  }
-
-                  if (event.type === "fresh-source-failed-using-cache") {
-                    this.updatePlaybackFeedback(context, {
-                      detail: "No fresher source found. Continuing current stream.",
-                      note: "The cached stream stayed available, so playback can resume.",
-                    });
-                    return;
-                  }
-
-                  if (event.type === "title-provider-suggestion") {
-                    const suggestedName =
-                      providerRegistry.get(event.suggestedProviderId)?.metadata.name ??
-                      event.suggestedProviderId;
-                    const strugglingName =
-                      providerRegistry.get(event.providerId)?.metadata.name ?? event.providerId;
-                    this.updatePlaybackFeedback(context, {
-                      note: `${strugglingName} struggled on this title before. ${suggestedName} worked — switch providers or retry ${strugglingName}.`,
-                    });
-                    return;
-                  }
-
-                  if (event.type === "provider-engine-event") {
-                    // Live fallback progress — the post-hoc attempt/failure
-                    // replay below narrates history; this is what the screen
-                    // should say while the chain is still running.
-                    const engineEvent = event.event;
-                    const engineProviderName = (id: string) =>
-                      providerRegistry.get(id)?.metadata.name ?? id;
-                    if (engineEvent.type === "provider-fallback-started") {
-                      this.updatePlaybackFeedback(context, {
-                        detail: describeProviderFallbackDetail({
-                          fromProviderName: engineProviderName(engineEvent.fromProviderId),
-                          toProviderName: engineProviderName(engineEvent.toProviderId),
-                        }),
-                        note: "⇧F skips ahead if this provider stalls too.",
-                      });
-                    } else if (engineEvent.type === "provider-hedge-started") {
-                      this.updatePlaybackFeedback(context, {
-                        note: describeProviderHedgeNote({
-                          toProviderName: engineProviderName(engineEvent.toProviderId),
-                        }),
-                      });
-                    } else if (engineEvent.type === "provider-fallback-halted") {
-                      this.updatePlaybackFeedback(context, {
-                        detail: describeProviderFallbackHaltedDetail(),
-                        note: describeProviderFallbackHaltedNote(),
-                      });
-                    }
-                    return;
-                  }
-
-                  if (event.type === "cache-health-check") {
-                    diagnosticsService.record({
-                      ...playbackCorrelation,
-                      category: "cache",
-                      message: event.healthy
-                        ? "Cached stream health check passed"
-                        : "Cached stream health check failed",
-                      context: {
-                        provider: event.providerId,
-                        titleId: title.id,
-                        season: currentEpisode.season,
-                        episode: currentEpisode.episode,
-                        strategy: event.strategy,
-                        ageMs: event.ageMs,
-                      },
-                    });
-                    return;
-                  }
-
-                  if (event.type === "attempt") {
-                    stateManager.dispatch({
-                      type: "SET_RESOLVE_RETRY_COUNT",
-                      count: Math.max(0, event.attempt - 1),
-                    });
-                    this.updatePlaybackFeedback(context, {
-                      detail: describeProviderResolveAttemptDetail(event),
-                      note: describeProviderResolveAttemptNote(event),
-                    });
-                    return;
-                  }
-
-                  if (event.type === "failure") {
-                    this.updatePlaybackFeedback(context, {
-                      detail: event.retryable
-                        ? `Recoverable provider issue (${event.attempt}/${event.maxAttempts})`
-                        : "Provider returned a non-recoverable issue",
-                      note: event.issue,
-                    });
-                  } else if (event.type === "cache-stale") {
-                    this.updatePlaybackFeedback(context, {
-                      detail: "Cached stream expired, refetching…",
-                      note: null,
-                    });
-                  }
-                },
-              },
-              {
-                intentKind: sourceRefreshDecision?.kind === "recover" ? "recovery" : "playback",
-                budgetLane: "user-blocking",
-              },
-            );
-
-            stream = resolveResult.stream;
-            resolvedProviderId = resolveResult.providerId;
-            observeResolveNetworkOutcome(container, resolveResult);
-            // The per-title preference guards the resolve only when the engine
-            // landed somewhere the user did NOT ask for. A session-scoped
-            // provider (⇧F fallback, per-session /provider) is itself the
-            // current intent — resolving exactly it must not be rejected just
-            // because an older durable preference still names another provider.
-            if (
-              stream &&
-              pendingUserProviderSwitch &&
-              titlePreferredProviderId &&
-              resolvedProviderId !== titlePreferredProviderId &&
-              resolvedProviderId !== stateManager.getState().provider
-            ) {
-              const preferredName =
-                providerRegistry.get(titlePreferredProviderId)?.metadata.name ??
-                titlePreferredProviderId;
-              const actualName =
-                providerRegistry.get(resolvedProviderId)?.metadata.name ?? resolvedProviderId;
               diagnosticsService.record({
                 ...playbackCorrelation,
                 category: "provider",
-                level: "warn",
-                message: "Rejected provider fallback because a per-title preference is set",
+                message: prefetchWasPrepared
+                  ? "Using prefetched prepared stream"
+                  : "Using prefetched stream",
                 context: {
                   titleId: title.id,
-                  preferredProviderId: titlePreferredProviderId,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  prepared: prefetchWasPrepared,
                   resolvedProviderId,
                 },
               });
-              this.updatePlaybackFeedback(context, {
-                detail: `${preferredName} did not resolve for this episode`,
-                note: `Got ${actualName} instead. Use /recompute or switch provider.`,
-              });
-              stream = null;
-            }
-            streamProvenance =
-              resolveResult.provenance === "prefetched"
-                ? "prefetch"
-                : resolveResult.provenance.startsWith("cache")
-                  ? "cache"
-                  : resolveResult.providerId !== currentProvider.metadata.id
-                    ? "fallback"
-                    : "fresh";
-            resolveAttempts = resolveResult.attempts;
-            if (resolveAttempts.length > 0) {
-              // Every provider the chain touched this cycle — successes,
-              // failures, and aborted in-flight candidates — is marked tried
-              // so a later ⇧F walks forward instead of looping back.
-              stateManager.dispatch({
-                type: "RECORD_FALLBACK_TRIED_PROVIDERS",
-                providerIds: resolveAttempts.map((attempt) => attempt.providerId),
-              });
-            }
-            if (stream) recordStartupMark("resolve-complete", stream);
-
-            for (const [attemptIndex, attempt] of resolveAttempts.entries()) {
-              diagnosticsService.record({
-                ...playbackCorrelation,
-                category: "provider",
-                message: attempt.aborted
-                  ? "Provider resolve attempt aborted"
-                  : attempt.stream
-                    ? "Provider resolve attempt succeeded"
-                    : "Provider resolve attempt failed",
-                context: {
-                  stage: "provider-resolve",
-                  attempt: attemptIndex + 1,
-                  provider: attempt.providerId,
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  hasTrace: Boolean(attempt.result?.trace),
-                  failure: attempt.failure ?? null,
-                },
-              });
             }
 
-            const hop = decideSoftFallbackOnResolve({
-              configuredProviderId: currentProvider.metadata.id,
-              resolvedProviderId,
-            });
-            if (hop.kind === "session-soft-hop") {
-              logger.info("Resolved stream with fallback provider", {
-                from: currentProvider.metadata.id,
-                fallback: hop.providerId,
-              });
-              run.sessionSoftProviderId = hop.providerId;
-              this.playbackLedger?.alignProvider(hop.providerId);
-              const fallbackName =
-                providerRegistry.get(hop.providerId)?.metadata.name ?? hop.providerId;
-              this.updatePlaybackFeedback(context, {
-                note: `Using ${fallbackName} for this session. /provider to switch back, then /recompute.`,
-              });
-            } else if (pendingUserProviderSwitch) {
-              const streamProviderId = resolveStreamProviderId(stream);
-              if (streamProviderId && streamProviderId === configuredProviderId) {
-                this.updatePlaybackFeedback(context, {
-                  note: `Resolving via ${providerRegistry.get(configuredProviderId)?.metadata.name ?? configuredProviderId}.`,
-                });
-              }
-            }
-
-            if (stream?.providerResolveResult) {
-              // Surface a silent audio downgrade (e.g. dub requested, only sub
-              // available) so the user is told why the language changed rather
-              // than just hearing the wrong one.
-              const audioFallbackNote = audioFallbackNoticeFromTrace(
-                stream.providerResolveResult.trace.events,
-              );
-              if (audioFallbackNote) {
-                this.updatePlaybackFeedback(context, { note: audioFallbackNote });
-              }
-              diagnosticsService.record({
-                ...playbackCorrelation,
-                category: "provider",
-                message: "Provider resolve trace completed",
-                context: {
-                  trace: stream.providerResolveResult.trace,
-                  streamCandidates: stream.providerResolveResult.streams.length,
-                  subtitleCandidates: stream.providerResolveResult.subtitles.length,
-                  cachePolicy: stream.providerResolveResult.cachePolicy,
-                },
-              });
-            }
-          }
-
-          if (stream) recordStartupMark("resolve-complete", stream);
-
-          // Esc/cancel during resolve must not hand off a late-arriving stream to mpv.
-          if (stream && resolveController.signal.aborted && !context.signal.aborted) {
-            stream = null;
-          }
-
-          // Every resolve path — prefetch, recent-stream reuse, and fresh or
-          // fallback resolve — converges here, so each is recorded exactly
-          // once. Recorded after the cancel guard above so an abandoned
-          // resolve is not filed as a success. An empty `resolveAttempts` is
-          // itself the signal that nothing was resolved live.
-          container.resolveTraceSink.record(
-            finalizeResolveTrace(resolveTrace, {
-              endedAt: new Date().toISOString(),
-              selectedProviderId: resolvedProviderId ?? currentProvider.metadata.id,
-              selectedStreamId: stream?.providerResolveResult?.streams?.[0]?.id,
-              cacheHit: streamProvenance === "cache",
-              failures: resolveAttempts
-                .map((attempt) => attempt.failure)
-                .filter((failure): failure is ProviderFailure => failure !== undefined),
-            }),
-          );
-
-          // TypeScript cannot narrow `stream` across the conditional mutation above.
-          if (!stream) {
-            workControl.setActive(null);
-            const resolveAborted = resolveController.signal.aborted && !context.signal.aborted;
-            const streamSwitchAction = resolveAborted ? playerControl.consumeLastAction() : null;
-            const streamSwitchSelection =
-              streamSwitchAction === "pick-source" ||
-              streamSwitchAction === "pick-stream" ||
-              streamSwitchAction === "pick-quality"
-                ? playerControl.consumePendingStreamSelection()
-                : null;
-            // Health-aware and tried-aware: a provider marked down or already
-            // attempted in this cycle is not a viable fallback target even
-            // though it stays selectable explicitly.
-            const triedProviderIds = new Set(stateManager.getState().fallbackTriedProviderIds);
-            const eligibleFallbackExists = providerRegistry
-              .getCompatible(title, stateManager.getState().mode)
-              .some(
-                (candidate) =>
-                  candidate.metadata.id !== currentProvider.metadata.id &&
-                  !triedProviderIds.has(candidate.metadata.id) &&
-                  isProviderFallbackEligible(
-                    resolveEffectiveProviderHealth(
-                      // SAFETY: candidate.metadata.id comes from a registered provider module — it is a ProviderId by contract.
-                      container.providerHealth?.get(candidate.metadata.id as ProviderId),
-                    ),
-                  ),
-              );
-            const hasCompatibleFallbackProvider =
-              resolveAborted && resolveAbortIntent === "fallback" ? eligibleFallbackExists : false;
-
-            let problemAction: "dismiss" | "retry" | null = null;
-            if (!resolveAborted) {
-              const problem = buildProviderResolveProblem({
-                attempts: resolveAttempts,
-                capabilitySnapshot: container.capabilitySnapshot,
-                fallbackAvailable: eligibleFallbackExists,
-                hasStreamCandidates: resolveAttempts.some(
-                  (attempt) =>
-                    (attempt.result?.streams.length ?? 0) > 0 ||
-                    (attempt.result?.sources?.length ?? 0) > 0,
-                ),
-              });
-              run.playbackSession = this.transitionPlaybackSession(
-                context,
-                run.playbackSession,
-                "failure-shown",
-                {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  cause: problem.cause,
-                },
-              );
-              problemAction = await this.showPlaybackProblem(context, problem);
-            }
-
-            const iterationDirective = planEpisodeIterationDirective({
-              streamResolved: false,
-              resolveAborted,
-              sessionAborted: context.signal.aborted,
-              streamSwitchSelection,
-              resolveAbortIntent,
-              hasCompatibleFallbackProvider,
-              problemAction,
-            });
-
-            if (iterationDirective.kind === "continue") {
-              continue;
-            }
-
-            if (iterationDirective.kind === "restart") {
+            // Check in-memory cache for recently played episodes (backward navigation).
+            // This lets P-navigation reuse the exact same StreamInfo without any
+            // provider resolve, cache lookup, or health check.
+            if (!stream && !sourceRefreshDecision) {
+              const recentKey = recentPlaybackStreamKey(title.id, currentEpisode);
+              const recent = recentEpisodeStreams.get(recentKey);
               if (
-                iterationDirective.reason === "stream-switch-during-resolve" &&
-                streamSwitchSelection
+                recent?.provenance !== "local" &&
+                recentPlaybackStreamMatchesProvider(recent, sourceProviderId, currentEpisode) &&
+                recentStreamMatchesPreferred(recent, sourceProviderId, currentEpisode) &&
+                isRecentPlaybackStreamFresh(recent)
               ) {
-                await setPreferredStreamSelection(
-                  currentProvider.metadata.id,
-                  currentEpisode,
-                  streamSwitchSelection,
-                );
-                await prepareStreamSwitchRestart(currentEpisode);
+                const restored = restoreRecentPlaybackStream(recent);
+                stream = restored.stream;
+                resolvedProviderId = restored.resolvedProviderId;
+                streamProvenance = restored.provenance;
+                run.localPlaybackSource = restored.localPlaybackSource;
                 diagnosticsService.record({
                   ...playbackCorrelation,
-                  category: "playback",
-                  message: "Stream selection applied during bootstrap resolve",
-                  providerId: currentProvider.metadata.id,
+                  category: "cache",
+                  operation: "playback.stream.reused",
+                  message: "Using in-memory recent episode stream (backward navigation)",
+                  providerId: recent.resolvedProviderId,
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
                   context: {
-                    action: streamSwitchAction,
-                    sourceId: streamSwitchSelection.sourceId,
-                    streamId: streamSwitchSelection.streamId,
+                    provenance: "recent-memory",
+                    originalProvenance: recent.provenance,
+                    selectedProviderId: recent.selectedProviderId,
+                    resolvedProviderId: recent.resolvedProviderId,
                   },
                 });
+              }
+            }
+
+            if (!stream) {
+              recordStartupMark("resolve-started");
+              const resolvePolicy = resolvePlaybackResolvePolicy({
+                recomputeSources,
+                pendingUserProviderSwitch,
+                sourceRefreshDecision,
+                configuredRecoveryMode: config.recoveryMode,
+              });
+              if (resolvePolicy.shouldInvalidateSuspectResolveState) {
+                await invalidateEpisodePlaybackCaches({
+                  cacheStore,
+                  sourceInventory: container.sourceInventory,
+                  providerId: sourceProviderId,
+                  title,
+                  episode: currentEpisode,
+                  mode: stateManager.getState().mode,
+                  config,
+                  selectedSourceId: currentPreferredStreamSelection.sourceId,
+                  selectedStreamId: currentPreferredStreamSelection.streamId,
+                });
+              }
+              const titlePreferredProviderId = resolveTitleProviderPreference(
+                config.getRaw(),
+                title.id,
+              );
+              const resolveResult = await container.playbackResolveWork.resolve(
+                {
+                  title,
+                  episode: currentEpisode,
+                  mode: stateManager.getState().mode,
+                  providerId: sourceProviderId,
+                  audioPreference: playbackAudioPreference(profileContext),
+                  subtitlePreference: playbackSubtitlePreference(profileContext),
+                  qualityPreference: playbackQualityPreference(profileContext),
+                  startupPriority: config.startupPriority,
+                  favoriteSourceNames: config.favoriteSources,
+                  selectedSourceId: currentPreferredStreamSelection.sourceId ?? undefined,
+                  selectedStreamId: currentPreferredStreamSelection.streamId ?? undefined,
+                  recoveryMode: resolvePolicy.recoveryMode,
+                  preferFreshStream: resolvePolicy.preferFreshStream,
+                  forceHealthCheck: resolvePolicy.forceHealthCheck,
+                  preserveCachedStreamOnFreshFailure:
+                    resolvePolicy.preserveCachedStreamOnFreshFailure,
+                  ignoreTitleHealthSuggestion: resolvePolicy.ignoreTitleHealthSuggestion,
+                  ignoreProviderHealth: resolvePolicy.ignoreProviderHealth,
+                  resolveIntent: resolvePolicy.resolveIntent,
+                  blockedStreamUrls: deadStreamUrls.list(deadStreamScope),
+                  signal: resolveController.signal,
+                  correlation: playbackCorrelation,
+                  onFeedback: (feedback) => {
+                    if (resolveController.signal.aborted) return;
+                    this.updatePlaybackFeedback(context, feedback);
+                  },
+                  onEvent: (event) => {
+                    if (event.type === "cache-hit" || event.type === "cache-miss") {
+                      const hit = event.type === "cache-hit";
+                      if (hit) {
+                        logger.info("Provider resolve cache hit", {
+                          provider: event.providerId,
+                          titleId: title.id,
+                          season: currentEpisode.season,
+                          episode: currentEpisode.episode,
+                        });
+                      }
+                      diagnosticsService.record({
+                        ...playbackCorrelation,
+                        category: "cache",
+                        message: hit ? "Provider resolve cache hit" : "Provider resolve cache miss",
+                        context: {
+                          provider: event.providerId,
+                          titleId: title.id,
+                          season: currentEpisode.season,
+                          episode: currentEpisode.episode,
+                        },
+                      });
+                      return;
+                    }
+
+                    if (event.type === "fresh-source-failed-using-cache") {
+                      this.updatePlaybackFeedback(context, {
+                        detail: "No fresher source found. Continuing current stream.",
+                        note: "The cached stream stayed available, so playback can resume.",
+                      });
+                      return;
+                    }
+
+                    if (event.type === "title-provider-suggestion") {
+                      const suggestedName =
+                        providerRegistry.get(event.suggestedProviderId)?.metadata.name ??
+                        event.suggestedProviderId;
+                      const strugglingName =
+                        providerRegistry.get(event.providerId)?.metadata.name ?? event.providerId;
+                      this.updatePlaybackFeedback(context, {
+                        note: `${strugglingName} struggled on this title before. ${suggestedName} worked — switch providers or retry ${strugglingName}.`,
+                      });
+                      return;
+                    }
+
+                    if (event.type === "provider-engine-event") {
+                      // Live fallback progress — the post-hoc attempt/failure
+                      // replay below narrates history; this is what the screen
+                      // should say while the chain is still running.
+                      const engineEvent = event.event;
+                      const engineProviderName = (id: string) =>
+                        providerRegistry.get(id)?.metadata.name ?? id;
+                      if (engineEvent.type === "provider-fallback-started") {
+                        this.updatePlaybackFeedback(context, {
+                          detail: describeProviderFallbackDetail({
+                            fromProviderName: engineProviderName(engineEvent.fromProviderId),
+                            toProviderName: engineProviderName(engineEvent.toProviderId),
+                          }),
+                          note: "⇧F skips ahead if this provider stalls too.",
+                        });
+                      } else if (engineEvent.type === "provider-hedge-started") {
+                        this.updatePlaybackFeedback(context, {
+                          note: describeProviderHedgeNote({
+                            toProviderName: engineProviderName(engineEvent.toProviderId),
+                          }),
+                        });
+                      } else if (engineEvent.type === "provider-fallback-halted") {
+                        this.updatePlaybackFeedback(context, {
+                          detail: describeProviderFallbackHaltedDetail(),
+                          note: describeProviderFallbackHaltedNote(),
+                        });
+                      }
+                      return;
+                    }
+
+                    if (event.type === "cache-health-check") {
+                      diagnosticsService.record({
+                        ...playbackCorrelation,
+                        category: "cache",
+                        message: event.healthy
+                          ? "Cached stream health check passed"
+                          : "Cached stream health check failed",
+                        context: {
+                          provider: event.providerId,
+                          titleId: title.id,
+                          season: currentEpisode.season,
+                          episode: currentEpisode.episode,
+                          strategy: event.strategy,
+                          ageMs: event.ageMs,
+                        },
+                      });
+                      return;
+                    }
+
+                    if (event.type === "attempt") {
+                      stateManager.dispatch({
+                        type: "SET_RESOLVE_RETRY_COUNT",
+                        count: Math.max(0, event.attempt - 1),
+                      });
+                      this.updatePlaybackFeedback(context, {
+                        detail: describeProviderResolveAttemptDetail(event),
+                        note: describeProviderResolveAttemptNote(event),
+                      });
+                      return;
+                    }
+
+                    if (event.type === "failure") {
+                      this.updatePlaybackFeedback(context, {
+                        detail: event.retryable
+                          ? `Recoverable provider issue (${event.attempt}/${event.maxAttempts})`
+                          : "Provider returned a non-recoverable issue",
+                        note: event.issue,
+                      });
+                    } else if (event.type === "cache-stale") {
+                      this.updatePlaybackFeedback(context, {
+                        detail: "Cached stream expired, refetching…",
+                        note: null,
+                      });
+                    }
+                  },
+                },
+                {
+                  intentKind: sourceRefreshDecision?.kind === "recover" ? "recovery" : "playback",
+                  budgetLane: "user-blocking",
+                },
+              );
+
+              stream = resolveResult.stream;
+              resolvedProviderId = resolveResult.providerId;
+              observeResolveNetworkOutcome(container, resolveResult);
+              // The per-title preference guards the resolve only when the engine
+              // landed somewhere the user did NOT ask for. A session-scoped
+              // provider (⇧F fallback, per-session /provider) is itself the
+              // current intent — resolving exactly it must not be rejected just
+              // because an older durable preference still names another provider.
+              if (
+                stream &&
+                pendingUserProviderSwitch &&
+                titlePreferredProviderId &&
+                resolvedProviderId !== titlePreferredProviderId &&
+                resolvedProviderId !== stateManager.getState().provider
+              ) {
+                const preferredName =
+                  providerRegistry.get(titlePreferredProviderId)?.metadata.name ??
+                  titlePreferredProviderId;
+                const actualName =
+                  providerRegistry.get(resolvedProviderId)?.metadata.name ?? resolvedProviderId;
+                diagnosticsService.record({
+                  ...playbackCorrelation,
+                  category: "provider",
+                  level: "warn",
+                  message: "Rejected provider fallback because a per-title preference is set",
+                  context: {
+                    titleId: title.id,
+                    preferredProviderId: titlePreferredProviderId,
+                    resolvedProviderId,
+                  },
+                });
+                this.updatePlaybackFeedback(context, {
+                  detail: `${preferredName} did not resolve for this episode`,
+                  note: `Got ${actualName} instead. Use /recompute or switch provider.`,
+                });
+                stream = null;
+              }
+              streamProvenance =
+                resolveResult.provenance === "prefetched"
+                  ? "prefetch"
+                  : resolveResult.provenance.startsWith("cache")
+                    ? "cache"
+                    : resolveResult.providerId !== sourceProviderId
+                      ? "fallback"
+                      : "fresh";
+              resolveAttempts = resolveResult.attempts;
+              if (resolveAttempts.length > 0) {
+                // Every provider the chain touched this cycle — successes,
+                // failures, and aborted in-flight candidates — is marked tried
+                // so a later ⇧F walks forward instead of looping back.
+                stateManager.dispatch({
+                  type: "RECORD_FALLBACK_TRIED_PROVIDERS",
+                  providerIds: resolveAttempts.map((attempt) => attempt.providerId),
+                });
+              }
+              if (stream) recordStartupMark("resolve-complete", stream);
+
+              for (const [attemptIndex, attempt] of resolveAttempts.entries()) {
+                diagnosticsService.record({
+                  ...playbackCorrelation,
+                  category: "provider",
+                  message: attempt.aborted
+                    ? "Provider resolve attempt aborted"
+                    : attempt.stream
+                      ? "Provider resolve attempt succeeded"
+                      : "Provider resolve attempt failed",
+                  context: {
+                    stage: "provider-resolve",
+                    attempt: attemptIndex + 1,
+                    provider: attempt.providerId,
+                    titleId: title.id,
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
+                    hasTrace: Boolean(attempt.result?.trace),
+                    failure: attempt.failure ?? null,
+                  },
+                });
+              }
+
+              const hop = decideSoftFallbackOnResolve({
+                configuredProviderId: sourceProviderId,
+                resolvedProviderId,
+              });
+              if (hop.kind === "session-soft-hop") {
+                logger.info("Resolved stream with fallback provider", {
+                  from: sourceProviderId,
+                  fallback: hop.providerId,
+                });
+                run.sessionSoftProviderId = hop.providerId;
+                this.playbackLedger?.alignProvider(hop.providerId);
+                const fallbackName =
+                  providerRegistry.get(hop.providerId)?.metadata.name ?? hop.providerId;
+                this.updatePlaybackFeedback(context, {
+                  note: `Using ${fallbackName} for this session. /provider to switch back, then /recompute.`,
+                });
+              } else if (pendingUserProviderSwitch) {
+                const streamProviderId = resolveStreamProviderId(stream);
+                if (streamProviderId && streamProviderId === configuredProviderId) {
+                  this.updatePlaybackFeedback(context, {
+                    note: `Resolving via ${providerRegistry.get(configuredProviderId)?.metadata.name ?? configuredProviderId}.`,
+                  });
+                }
+              }
+
+              if (stream?.providerResolveResult) {
+                // Surface a silent audio downgrade (e.g. dub requested, only sub
+                // available) so the user is told why the language changed rather
+                // than just hearing the wrong one.
+                const audioFallbackNote = audioFallbackNoticeFromTrace(
+                  stream.providerResolveResult.trace.events,
+                );
+                if (audioFallbackNote) {
+                  this.updatePlaybackFeedback(context, { note: audioFallbackNote });
+                }
+                diagnosticsService.record({
+                  ...playbackCorrelation,
+                  category: "provider",
+                  message: "Provider resolve trace completed",
+                  context: {
+                    trace: stream.providerResolveResult.trace,
+                    streamCandidates: stream.providerResolveResult.streams.length,
+                    subtitleCandidates: stream.providerResolveResult.subtitles.length,
+                    cachePolicy: stream.providerResolveResult.cachePolicy,
+                  },
+                });
+              }
+            }
+
+            if (stream) recordStartupMark("resolve-complete", stream);
+
+            // Esc/cancel during resolve must not hand off a late-arriving stream to mpv.
+            if (stream && resolveController.signal.aborted && !context.signal.aborted) {
+              stream = null;
+            }
+
+            // Every resolve path — prefetch, recent-stream reuse, and fresh or
+            // fallback resolve — converges here, so each is recorded exactly
+            // once. Recorded after the cancel guard above so an abandoned
+            // resolve is not filed as a success. An empty `resolveAttempts` is
+            // itself the signal that nothing was resolved live.
+            container.resolveTraceSink.record(
+              finalizeResolveTrace(resolveTrace, {
+                endedAt: new Date().toISOString(),
+                selectedProviderId: resolvedProviderId ?? sourceProviderId,
+                selectedStreamId: stream?.providerResolveResult?.streams?.[0]?.id,
+                cacheHit: streamProvenance === "cache",
+                failures: resolveAttempts
+                  .map((attempt) => attempt.failure)
+                  .filter((failure): failure is ProviderFailure => failure !== undefined),
+              }),
+            );
+
+            // TypeScript cannot narrow `stream` across the conditional mutation above.
+            if (!stream) {
+              workControl.setActive(null);
+              const resolveAborted = resolveController.signal.aborted && !context.signal.aborted;
+              const streamSwitchAction = resolveAborted ? playerControl.consumeLastAction() : null;
+              const streamSwitchSelection =
+                streamSwitchAction === "pick-source" ||
+                streamSwitchAction === "pick-stream" ||
+                streamSwitchAction === "pick-quality"
+                  ? playerControl.consumePendingStreamSelection()
+                  : null;
+              // Health-aware and tried-aware: a provider marked down or already
+              // attempted in this cycle is not a viable fallback target even
+              // though it stays selectable explicitly.
+              const triedProviderIds = new Set(stateManager.getState().fallbackTriedProviderIds);
+              const eligibleFallbackExists = providerRegistry
+                .getCompatible(title, stateManager.getState().mode)
+                .some(
+                  (candidate) =>
+                    candidate.metadata.id !== sourceProviderId &&
+                    !triedProviderIds.has(candidate.metadata.id) &&
+                    isProviderFallbackEligible(
+                      resolveEffectiveProviderHealth(
+                        // SAFETY: candidate.metadata.id comes from a registered provider module — it is a ProviderId by contract.
+                        container.providerHealth?.get(candidate.metadata.id as ProviderId),
+                      ),
+                    ),
+                );
+              const hasCompatibleFallbackProvider =
+                resolveAborted && resolveAbortIntent === "fallback"
+                  ? eligibleFallbackExists
+                  : false;
+
+              let problemAction: "dismiss" | "retry" | null = null;
+              if (!resolveAborted) {
+                const problem = buildProviderResolveProblem({
+                  attempts: resolveAttempts,
+                  capabilitySnapshot: container.capabilitySnapshot,
+                  fallbackAvailable: eligibleFallbackExists,
+                  hasStreamCandidates: resolveAttempts.some(
+                    (attempt) =>
+                      (attempt.result?.streams.length ?? 0) > 0 ||
+                      (attempt.result?.sources?.length ?? 0) > 0,
+                  ),
+                });
+                run.playbackSession = this.transitionPlaybackSession(
+                  context,
+                  run.playbackSession,
+                  "failure-shown",
+                  {
+                    titleId: title.id,
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
+                    cause: problem.cause,
+                  },
+                );
+                problemAction = await this.showPlaybackProblem(context, problem);
+              }
+
+              const iterationDirective = planEpisodeIterationDirective({
+                streamResolved: false,
+                resolveAborted,
+                sessionAborted: context.signal.aborted,
+                streamSwitchSelection,
+                resolveAbortIntent,
+                hasCompatibleFallbackProvider,
+                problemAction,
+              });
+
+              if (iterationDirective.kind === "continue") {
                 continue;
               }
 
-              if (iterationDirective.reason === "provider-fallback-skip") {
-                // An explicit provider choice made while the resolve was in
-                // flight (the picker dispatches SET_PROVIDER then cancels the
-                // work) outranks the automatic "next untried" walk — the user
-                // told us exactly where to go.
-                const configuredProviderNow = stateManager.getState().provider;
-                const explicitPick =
-                  configuredProviderNow !== currentProvider.metadata.id
-                    ? providerRegistry.get(configuredProviderNow)
-                    : undefined;
-                const fallback =
-                  explicitPick ??
-                  pickCompatibleFallbackProvider({
-                    providers: providerRegistry.getCompatible(title, stateManager.getState().mode),
-                    currentProviderId: currentProvider.metadata.id,
-                    excludedProviderIds: triedProviderIds,
-                    isFallbackEligible: (providerId) =>
-                      isProviderIdFallbackEligible(container, providerId),
-                  });
-                if (fallback) {
-                  run.sessionSoftProviderId = null;
-                  stateManager.dispatch({
-                    type: "SET_PROVIDER",
-                    provider: fallback.metadata.id,
-                    forceFreshResolve: !explicitPick,
-                  });
-                  this.updatePlaybackFeedback(context, {
-                    detail: `Trying ${fallback.metadata.name ?? fallback.metadata.id}…`,
-                    note: "Fallback provider selected for the rest of this session",
-                  });
+              if (iterationDirective.kind === "restart") {
+                if (
+                  iterationDirective.reason === "stream-switch-during-resolve" &&
+                  streamSwitchSelection
+                ) {
+                  await setPreferredStreamSelection(
+                    sourceProviderId,
+                    currentEpisode,
+                    streamSwitchSelection,
+                  );
+                  await prepareStreamSwitchRestart(currentEpisode);
                   diagnosticsService.record({
-                    category: "provider",
-                    message: "Skipping current provider during playback bootstrap",
+                    ...playbackCorrelation,
+                    category: "playback",
+                    message: "Stream selection applied during bootstrap resolve",
+                    providerId: sourceProviderId,
+                    titleId: title.id,
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
                     context: {
-                      from: currentProvider.metadata.id,
-                      fallback: fallback.metadata.id,
-                      titleId: title.id,
-                      season: currentEpisode.season,
-                      episode: currentEpisode.episode,
+                      action: streamSwitchAction,
+                      sourceId: streamSwitchSelection.sourceId,
+                      streamId: streamSwitchSelection.streamId,
                     },
+                  });
+                  continue;
+                }
+
+                if (iterationDirective.reason === "provider-fallback-skip") {
+                  // An explicit provider choice made while the resolve was in
+                  // flight (the picker dispatches SET_PROVIDER then cancels the
+                  // work) outranks the automatic "next untried" walk — the user
+                  // told us exactly where to go.
+                  const configuredProviderNow = stateManager.getState().provider;
+                  const explicitPick =
+                    configuredProviderNow !== sourceProviderId
+                      ? providerRegistry.get(configuredProviderNow)
+                      : undefined;
+                  const fallback =
+                    explicitPick ??
+                    pickCompatibleFallbackProvider({
+                      providers: providerRegistry.getCompatible(
+                        title,
+                        stateManager.getState().mode,
+                      ),
+                      currentProviderId: sourceProviderId,
+                      excludedProviderIds: triedProviderIds,
+                      isFallbackEligible: (providerId) =>
+                        isProviderIdFallbackEligible(container, providerId),
+                    });
+                  if (fallback) {
+                    run.sessionSoftProviderId = null;
+                    stateManager.dispatch({
+                      type: "SET_PROVIDER",
+                      provider: fallback.metadata.id,
+                      forceFreshResolve: !explicitPick,
+                    });
+                    this.updatePlaybackFeedback(context, {
+                      detail: `Trying ${fallback.metadata.name ?? fallback.metadata.id}…`,
+                      note: "Fallback provider selected for the rest of this session",
+                    });
+                    diagnosticsService.record({
+                      category: "provider",
+                      message: "Skipping current provider during playback bootstrap",
+                      context: {
+                        from: sourceProviderId,
+                        fallback: fallback.metadata.id,
+                        titleId: title.id,
+                        season: currentEpisode.season,
+                        episode: currentEpisode.episode,
+                      },
+                    });
+                    continue;
+                  }
+                }
+
+                if (iterationDirective.reason === "resolve-retry") {
+                  run.pendingSourceRefreshAction = "recover";
+                  run.pendingRecomputeSources = true;
+                  run.autoSourceRecoverAttempts = 0;
+                  invalidateRecentEpisodeStream(currentEpisode);
+                  this.updatePlaybackFeedback(context, {
+                    detail: "Retrying with fresh provider sources…",
+                    note: "Cached failures and stale source inventory are bypassed for this attempt.",
                   });
                   continue;
                 }
               }
 
-              if (iterationDirective.reason === "resolve-retry") {
-                run.pendingSourceRefreshAction = "recover";
-                run.pendingRecomputeSources = true;
-                run.autoSourceRecoverAttempts = 0;
-                invalidateRecentEpisodeStream(currentEpisode);
-                this.updatePlaybackFeedback(context, {
-                  detail: "Retrying with fresh provider sources…",
-                  note: "Cached failures and stale source inventory are bypassed for this attempt.",
+              if (resolveAborted) {
+                stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+                stateManager.dispatch({ type: "SET_STREAM", stream: null });
+                this.updatePlaybackFeedback(context, { detail: null, note: null });
+                await dismissMpvTransitionOverlay(playerControl);
+              } else {
+                stateManager.dispatch({ type: "SET_STREAM", stream: null });
+              }
+              return { status: "success", value: "back_to_results" };
+            }
+
+            if (stream && streamProvenance !== "local") {
+              const hop = decideSoftFallbackOnResolve({
+                configuredProviderId: sourceProviderId,
+                resolvedProviderId,
+              });
+              if (hop.kind === "session-soft-hop" && run.sessionSoftProviderId !== hop.providerId) {
+                logger.info("Resolved stream with fallback provider", {
+                  from: sourceProviderId,
+                  fallback: hop.providerId,
                 });
-                continue;
+                run.sessionSoftProviderId = hop.providerId;
+                this.playbackLedger?.alignProvider(hop.providerId);
+                const fallbackName =
+                  providerRegistry.get(hop.providerId)?.metadata.name ?? hop.providerId;
+                this.updatePlaybackFeedback(context, {
+                  note: `Using ${fallbackName} for this session. /provider to switch back, then /recompute.`,
+                });
               }
             }
 
-            if (resolveAborted) {
-              stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-              stateManager.dispatch({ type: "SET_STREAM", stream: null });
-              this.updatePlaybackFeedback(context, { detail: null, note: null });
-              await dismissMpvTransitionOverlay(playerControl);
-            } else {
-              stateManager.dispatch({ type: "SET_STREAM", stream: null });
-            }
+            stream = applyPreferredStreamSelection(
+              stream,
+              getPreferredStreamSelection(sourceProviderId, currentEpisode),
+            );
+          }
+          if (!stream || resolveController.signal.aborted) {
+            stateManager.dispatch({ type: "SET_STREAM", stream: null });
             return { status: "success", value: "back_to_results" };
           }
-
-          if (stream && streamProvenance !== "local") {
-            const hop = decideSoftFallbackOnResolve({
-              configuredProviderId: currentProvider.metadata.id,
-              resolvedProviderId,
-            });
-            if (hop.kind === "session-soft-hop" && run.sessionSoftProviderId !== hop.providerId) {
-              logger.info("Resolved stream with fallback provider", {
-                from: currentProvider.metadata.id,
-                fallback: hop.providerId,
-              });
-              run.sessionSoftProviderId = hop.providerId;
-              this.playbackLedger?.alignProvider(hop.providerId);
-              const fallbackName =
-                providerRegistry.get(hop.providerId)?.metadata.name ?? hop.providerId;
-              this.updatePlaybackFeedback(context, {
-                note: `Using ${fallbackName} for this session. /provider to switch back, then /recompute.`,
-              });
-            }
-          }
-
-          const providerHandoff = resolvePlaybackProviderHandoff({
-            configuredProviderId: currentProvider.metadata.id,
-            successfulProviderId: resolvedProviderId,
-          });
-
-          stream = applyPreferredStreamSelection(
-            stream,
-            getPreferredStreamSelection(currentProvider.metadata.id, currentEpisode),
-          );
+          const providerHandoff =
+            sourceAuthority.kind === "provider"
+              ? resolvePlaybackProviderHandoff({
+                  configuredProviderId: sourceProviderId,
+                  successfulProviderId: resolvedProviderId,
+                })
+              : { successfulProviderId: sourceProviderId, nextEpisodeProviderId: sourceProviderId };
 
           // Await timing — stream resolve takes much longer so this is nearly free.
           // If IntroDB timed out and returned null, schedule a background retry that
@@ -2321,7 +2345,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               recentEpisodeStreams.set(episodeKey, {
                 stream: preparedStream,
                 episode: currentEpisode,
-                selectedProviderId: currentProvider.metadata.id,
+                selectedProviderId: sourceProviderId,
                 resolvedProviderId,
                 provenance: "local",
                 localPlaybackSource: run.localPlaybackSource,
@@ -2331,7 +2355,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             recentEpisodeStreams.set(episodeKey, {
               stream: preparedStream,
               episode: currentEpisode,
-              selectedProviderId: currentProvider.metadata.id,
+              selectedProviderId: sourceProviderId,
               resolvedProviderId,
               provenance: streamProvenance,
             });
@@ -2361,6 +2385,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           let prefetchedRecommendationItems: readonly SearchResult[] | null = null;
           let nextPrefetchProgress: EpisodePrefetchProgress = {};
           const buildNextPrefetchTarget = (): EpisodePrefetchTarget | null => {
+            if (sourceAuthority.kind !== "provider") return null;
             const nextEp = episodeAvailability.nextEpisode;
             if (!nextEp) return null;
             const prefetchProviderId = providerHandoff.nextEpisodeProviderId;
@@ -2371,6 +2396,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             target: EpisodePrefetchTarget,
             operation: "playback.prefetch-wait" | "post-playback.autonext.prefetch-wait",
           ) => {
+            if (sourceAuthority.kind !== "provider") return;
             await adoptEpisodePrefetchBundle({
               handle: episodePrefetch,
               target,
@@ -2402,6 +2428,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           };
           const runNextEpisodePrefetch = (signal: AbortSignal, target: EpisodePrefetchTarget) => {
+            if (sourceAuthority.kind !== "provider") return Promise.resolve(null);
             const nextEp = target.episode;
             const prefetchMetadata = providerRegistry.get(target.providerId);
             if (!prefetchMetadata) {
@@ -2451,7 +2478,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
           };
           const maybePrefetchNext = async () => {
-            if (container.config.powerSaverMode) {
+            if (sourceAuthority.kind !== "provider" || container.config.powerSaverMode) {
               return;
             }
             if (
@@ -2461,7 +2488,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stopAfterCurrent: run.playbackSession.stopAfterCurrent,
                 sessionMode: run.playbackSession.mode,
                 autoplayPaused: run.playbackSession.autoplayPaused,
-                networkAllowed: !isOfflineLaunch && container.connectivity.isOnline(),
+                networkAllowed: playbackNetworkAllowed,
               })
             ) {
               return;
@@ -2650,13 +2677,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 updatedAt: new Date().toISOString(),
               });
             }
-            await promoteSoftFallbackAfterEngage(container, {
-              title,
-              mode: stateManager.getState().mode,
-              sessionSoftProviderId: run.sessionSoftProviderId,
-              configuredProviderId: currentProvider.metadata.id,
-              engaged: decision.isEngaged,
-            });
+            if (sourceAuthority.kind === "provider")
+              await promoteSoftFallbackAfterEngage(container, {
+                title,
+                mode: stateManager.getState().mode,
+                sessionSoftProviderId: run.sessionSoftProviderId,
+                configuredProviderId: sourceProviderId,
+                engaged: decision.isEngaged,
+              });
             const savedHistoryRow = container.historyRepository.getLatestForTitle(historyTitleId);
             if (savedHistoryRow) {
               // Enqueued from the row that was actually persisted, not from the
@@ -2669,16 +2697,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               // persistence is already complete and tracker work is optional.
               queueHistoryMirror(container, historyTitleId, savedHistoryRow);
             }
-            enqueueReleaseReconciliation(
-              container,
-              savedHistoryRow ? [savedHistoryRow] : [],
-              "post-playback",
-              context.signal,
-            );
-            const providerSuggestion = container.titleProviderHealth.getSwitchSuggestion(
-              title.id,
-              currentProvider.metadata.id,
-            );
+            if (playbackNetworkAllowed) {
+              enqueueReleaseReconciliation(
+                container,
+                savedHistoryRow ? [savedHistoryRow] : [],
+                "post-playback",
+                context.signal,
+              );
+            }
+            const providerSuggestion =
+              sourceAuthority.kind === "provider"
+                ? container.titleProviderHealth.getSwitchSuggestion(title.id, sourceProviderId)
+                : null;
             if (providerSuggestion) {
               this.updatePlaybackFeedback(context, {
                 note: `${providerSuggestion.providerId} struggled with this title. ${providerSuggestion.suggestedProviderId} worked; choose it from providers for this title.`,
@@ -2725,7 +2755,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
-          const providerRecoveryAllowed = shouldUseProviderPlaybackRecovery(streamProvenance);
+          const providerRecoveryAllowed =
+            sourceAuthority.kind === "provider" &&
+            shouldUseProviderPlaybackRecovery(streamProvenance);
           const shouldInvalidateStreamCache =
             providerRecoveryAllowed &&
             (result.endReason === "error" ||
@@ -2820,7 +2852,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // user's session preference had changed just because they closed mpv.
           // Only an explicit toggle changes the visible autoplay setting.
           let shouldAutoFallbackProvider =
-            playbackDecision.shouldFallbackProvider && !isOfflineLaunch;
+            playbackDecision.shouldFallbackProvider && sourceAuthority.kind === "provider";
           if (!providerRecoveryAllowed && playbackDecision.shouldRefreshSource) {
             const isExplicitLocalRelaunch =
               playbackControlAction === "refresh" || playbackControlAction === "recover";
@@ -3322,15 +3354,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              run.pendingStart = await completeSourceTrackPick(
+              const trackStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
                 selection,
                 restartResume,
                 "playback-control-track-override",
               );
-              recordTrackOverrideSelected(picked, selection);
-              continue;
+              if (trackStart) {
+                run.pendingStart = trackStart;
+                recordTrackOverrideSelected(picked, selection);
+                continue;
+              }
             }
           }
 
@@ -3355,15 +3390,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              run.pendingStart = await completeSourceTrackPick(
+              const trackStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
                 selection,
                 restartResume,
                 "playback-control-track-override",
               );
-              recordTrackOverrideSelected(picked, selection);
-              continue;
+              if (trackStart) {
+                run.pendingStart = trackStart;
+                recordTrackOverrideSelected(picked, selection);
+                continue;
+              }
             }
           }
 
@@ -3392,15 +3430,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              run.pendingStart = await completeSourceTrackPick(
+              const trackStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
                 selection,
                 restartResume,
                 "playback-control-track-override",
               );
-              recordTrackOverrideSelected(picked, selection);
-              continue;
+              if (trackStart) {
+                run.pendingStart = trackStart;
+                recordTrackOverrideSelected(picked, selection);
+                continue;
+              }
             }
           }
 
@@ -3765,6 +3806,24 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             invalidateRecentEpisodeStream,
             openPlaybackShell,
             chooseEpisodeFromMetadata: async (input) => {
+              if (sourceAuthority.kind === "local") {
+                const picker = await buildPlaybackEpisodePickerOptions({
+                  title,
+                  currentEpisode,
+                  isAnime: isAnimePlayback,
+                  networkAllowed: false,
+                  localEpisodes: listReadyEpisodes(container.offlineAssetService, offlineTitleId),
+                  watchedEntries: historyRepository.listByTitleIdentity(historyTitleLookup),
+                });
+                const picked = await openPlaybackEpisodePicker(
+                  container,
+                  currentEpisode.season,
+                  picker,
+                );
+                return picked && picker.options.some((row) => row.value === picked)
+                  ? decodeEpisodeSelectionValue(picked)
+                  : null;
+              }
               const { chooseEpisodeFromMetadata } = await import("@/session-flow");
               const outcome = await chooseEpisodeFromMetadata(input);
               // The post-play menu branches on success only, so report the
@@ -3781,7 +3840,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             episodeInfoFromSelection,
             readAutoAdvanceGuards,
             getCompatibleProviders: () =>
-              providerRegistry.getCompatible(title, stateManager.getState().mode),
+              sourceAuthority.kind === "provider"
+                ? providerRegistry.getCompatible(title, stateManager.getState().mode)
+                : [],
             teardownPlaybackForPostPlayExit: () =>
               teardownPlaybackForPostPlayExit(container, episodePrefetch, playbackIterationAbort),
           });
@@ -4115,13 +4176,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       }),
     );
 
-    this.startLateSubtitleResolver({
-      stream,
-      title,
-      episode,
-      context,
-      playbackIterationSignal,
-    });
+    if (!localPlaybackSource)
+      this.startLateSubtitleResolver({
+        stream,
+        title,
+        episode,
+        context,
+        playbackIterationSignal,
+      });
 
     const playbackProviderId = successfulProviderId ?? stateManager.getState().provider;
     // One cycle has one start instant. Recomputing it per update made every

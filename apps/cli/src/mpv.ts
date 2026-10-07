@@ -20,7 +20,11 @@ import {
   shouldEmitPlaybackProgress,
 } from "@/infra/player/mpv-playback-kernel";
 import { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
-import { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
+import {
+  isAllowedMpvUrl,
+  needsMpvNetworkPreflight,
+  type MpvUrlKind,
+} from "@/infra/player/mpv-playback-url";
 import {
   registerMpvProcess,
   terminateMpvProcess,
@@ -310,9 +314,11 @@ async function launchMpvInner(
     signal: mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null,
   }));
 
-  const preflight = checkStreamPreflight(opts.url, opts.headers, 3_000, {
-    requiresYtdl: opts.requiresYtdl,
-  }).then((result) => {
+  const preflight = (
+    needsMpvNetworkPreflight(opts.url, opts.urlKind)
+      ? checkStreamPreflight(opts.url, opts.headers, 3_000, { requiresYtdl: opts.requiresYtdl })
+      : Promise.resolve<StreamPreflightResult>({ status: "reachable" })
+  ).then((result) => {
     if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
       dbg("mpv", "preflight-definitive-failure", {
         reason: result.reason,

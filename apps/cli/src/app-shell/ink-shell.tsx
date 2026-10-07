@@ -24,13 +24,14 @@ import {
 import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
+import { decodeEpisodeSelectionValue } from "@/domain/playback/episode-selection";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
-import type { EpisodeInfo } from "@/domain/types";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
+import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
 import { presenceStatusDetail } from "@/services/presence/presence-status-line";
-import { decodeProviderEpisodeIdentity, providerEpisodeIdentitiesEqual } from "@kunai/types";
+import { providerEpisodeIdentitiesEqual } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -363,6 +364,14 @@ export async function openActivePlaybackEpisodePicker(
   const watchedEntries = container.historyRepository.listByTitle(title.id);
   const isAnime = state.mode === "anime";
   const animeEpisodes = state.currentAnimeEpisodes ?? undefined;
+  const local =
+    state.stream?.playbackSourceKind === "local" || title.launchSource === "offline-library";
+  const localEpisodes = local
+    ? listReadyEpisodes(
+        container.offlineAssetService,
+        container.offlineTitleIdentity.resolveForTitle(title, state.mode),
+      )
+    : undefined;
   let pickerEpisode = currentEpisode;
 
   while (true) {
@@ -373,6 +382,8 @@ export async function openActivePlaybackEpisodePicker(
       animeEpisodeCount: title.episodeCount,
       animeEpisodes,
       watchedEntries,
+      networkAllowed: !local,
+      localEpisodes,
     });
     if (picker.options.length === 0) return;
 
@@ -386,7 +397,7 @@ export async function openActivePlaybackEpisodePicker(
 
     if (picked === EPISODE_PICKER_SWITCH_SEASON) {
       // `s` mid-playback: hop seasons without leaving the episode picker flow.
-      if (isAnime) continue;
+      if (isAnime || local) continue;
       const { fetchSeasonSummaries } = await import("@/tmdb");
       const { chooseSeasonFromOptions } = await import("./pickers");
       const seasons = (await fetchSeasonSummaries(title.id)) ?? [];
@@ -1362,24 +1373,6 @@ function normalizeReservedCommandInput(nextValue: string): {
     value: nextValue.replaceAll("/", ""),
     openCommandPalette: true,
   };
-}
-
-function decodeEpisodeSelectionValue(value: string): EpisodeInfo | null {
-  const firstSeparator = value.indexOf(":");
-  const secondSeparator = value.indexOf(":", firstSeparator + 1);
-  const seasonText = firstSeparator >= 0 ? value.slice(0, firstSeparator) : "";
-  const episodeText =
-    firstSeparator >= 0
-      ? value.slice(firstSeparator + 1, secondSeparator >= 0 ? secondSeparator : undefined)
-      : "";
-  const season = Number.parseInt(seasonText ?? "", 10);
-  const episode = Number.parseInt(episodeText ?? "", 10);
-  if (!Number.isFinite(season) || !Number.isFinite(episode)) {
-    return null;
-  }
-  if (secondSeparator < 0) return { season, episode };
-  const providerEpisodeIdentity = decodeProviderEpisodeIdentity(value.slice(secondSeparator + 1));
-  return providerEpisodeIdentity ? { season, episode, providerEpisodeIdentity } : null;
 }
 
 function ListShell<T>({

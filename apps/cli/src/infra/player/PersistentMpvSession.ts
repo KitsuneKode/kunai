@@ -44,6 +44,7 @@ import {
   shouldUnlinkUnixSocket,
 } from "./mpv-ipc-endpoint";
 import { shouldEmitPlaybackProgress } from "./mpv-playback-kernel";
+import { needsMpvNetworkPreflight } from "./mpv-playback-url";
 import type { MpvUrlKind } from "./mpv-playback-url";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import {
@@ -436,11 +437,13 @@ export class PersistentMpvSession {
 
     this.loadStartAt = shouldApplyStartAtSeek(options.startAt) ? (options.startAt ?? 0) : 0;
 
-    const preflightPromise = checkStreamPreflight(stream.url, stream.headers, undefined, {
-      cachedAt: stream.timestamp,
-      streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
-      requiresYtdl: stream.requiresYtdl,
-    });
+    const preflightPromise = needsMpvNetworkPreflight(stream.url, options.urlKind)
+      ? checkStreamPreflight(stream.url, stream.headers, undefined, {
+          cachedAt: stream.timestamp,
+          streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
+          requiresYtdl: stream.requiresYtdl,
+        })
+      : Promise.resolve({ status: "reachable" as const });
 
     if (options.timing) {
       try {
