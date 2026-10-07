@@ -159,7 +159,9 @@ export function buildDetailsSheet(input: {
     links: {
       items: (detail?.externalLinks ?? []).map((link) => ({
         label: sanitizeTerminalText(link.label),
-        url: sanitizeTerminalText(link.url),
+        // The renderer displays only the label; the opener validates the raw
+        // target. Sanitizing a target can silently open a different URL.
+        url: link.url,
       })),
     },
     trailerUrl: detail?.trailerUrl,

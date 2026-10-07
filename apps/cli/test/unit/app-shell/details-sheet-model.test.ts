@@ -12,6 +12,18 @@ const seed = {
 };
 
 describe("buildDetailsSheet", () => {
+  it("keeps link targets opaque while sanitizing their displayed labels", () => {
+    const url = "https://catalog.example/original\x1b[31m/path?q=a%20b";
+    const detail: TitleDetail = {
+      id: "1",
+      type: "series",
+      title: "Frieren",
+      externalLinks: [{ label: "MAL\x1b[8m", url }],
+    };
+    const sheet = buildDetailsSheet({ seed, detail, history: null, availability: null });
+    expect(sheet.links.items).toEqual([{ label: "MAL", url }]);
+  });
+
   it("renders the header from the seed with no detail (gap sections load)", () => {
     const sheet = buildDetailsSheet({ seed, detail: null, history: null, availability: null });
     expect(sheet.header.title).toBe("Frieren");
