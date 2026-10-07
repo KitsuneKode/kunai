@@ -23,6 +23,7 @@ import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
 import { restoreQueueSessionWithResume } from "@/domain/queue/restore-queue-session";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import { isPlaybackSessionActive, type SessionState } from "@/domain/session/SessionState";
+import { countLabel } from "@/domain/text-display";
 import type { SearchResult } from "@/domain/types";
 import { openExternalUrlAndWait } from "@/infra/shell/open-external-url";
 import { projectionFromViewDecision } from "@/services/continuation/continuation-policy";
@@ -2430,13 +2431,13 @@ export function RootOverlayShell({
                 {
                   label:
                     overlay.type === "provider_picker"
-                      ? `${filteredProviderOptions.length} options`
+                      ? countLabel(filteredProviderOptions.length, "option")
                       : overlay.type === "notifications"
                         ? notificationActionDedupKey
-                          ? `${filteredNotificationActionOptions.length} actions`
-                          : `${filteredNotificationOptions.length} options`
+                          ? countLabel(filteredNotificationActionOptions.length, "action")
+                          : countLabel(filteredNotificationOptions.length, "option")
                         : isRootMediaPickerOverlay(overlay)
-                          ? `${filteredGenericPickerOptions.length} options`
+                          ? countLabel(filteredGenericPickerOptions.length, "option")
                           : `${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`,
                   tone: "info" as const,
                 },

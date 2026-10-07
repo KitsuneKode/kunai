@@ -60,6 +60,7 @@ import {
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import { ensureSessionProviderMatchesLane } from "@/domain/session/session-display";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
+import { countLabel } from "@/domain/text-display";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
@@ -696,7 +697,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               ? browseState.searchQuery.trim().length === 0
                 ? (routeSubtitle ??
                   `${browseState.searchResults.length} recommendation picks · loaded`)
-                : `${initialBrowse.options.length} results · previous search${initialBrowse.subtitleSuffix}`
+                : `${countLabel(initialBrowse.options.length, "result")} · previous search${initialBrowse.subtitleSuffix}`
               : undefined,
           initialWarnings,
           initialSelectedIndex: browseState.selectedResultIndex,
@@ -876,7 +877,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
               options: results.map((r) => mapBrowseResultOption(container, freshBrowseContext, r)),
-              subtitle: `${results.length} results · ${search.sourceName}`,
+              subtitle: `${countLabel(results.length, "result")} · ${search.sourceName}`,
               upstreamFilterBadges: search.evidence.upstream,
               localFilterBadges: search.evidence.local,
               unsupportedFilterBadges: search.evidence.unsupported,

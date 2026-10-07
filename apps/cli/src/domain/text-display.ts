@@ -173,3 +173,8 @@ export function getWindowStart(selectedIndex: number, total: number, windowSize:
   if (start + windowSize > total) start = total - windowSize;
   return start;
 }
+
+/** "1 result", "3 results" — a count with the noun it agrees with. */
+export function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
