@@ -13,17 +13,20 @@ const copy: Record<
 > = {
   beta: {
     type: "info",
-    title: "Beta scope (read this first)",
+    title: "Beta: what to know first",
     body: (
       <>
-        Kunai is a terminal-first CLI during beta. Preferred install is <code>install.sh</code> /{" "}
-        <code>install.ps1</code> (self-contained binary, Bun runtime embedded; you do not need Bun).
-        Bun/npm globals are secondary; npm needs Node on <code>PATH</code>, not Bun. You still need{" "}
-        <strong>mpv</strong> for playback; setup and browsing work without it. Kunai is a
-        client-side playback tool. It does not host, upload, mirror, seed, or distribute video
-        content. Streams and related assets are served by non-affiliated third-party providers. Use
-        responsibly and in accordance with applicable laws and service terms. Provider availability
-        changes; recovery commands exist because drift is expected.
+        <strong>Install.</strong> Use <code>install.sh</code> or <code>install.ps1</code>. They
+        install a self-contained binary, so you need neither Bun nor Node. The Bun and npm installs
+        also work; npm needs Node on <code>PATH</code>.
+        <br />
+        <strong>Playback.</strong> You need <strong>mpv</strong> to play anything. Setup and
+        browsing work without it.
+        <br />
+        <strong>Providers.</strong> Kunai is a client-side tool. It does not host, mirror or
+        distribute video. Streams come from third-party providers it is not affiliated with, so use
+        it in line with the law and each provider&apos;s terms. Providers change, which is what the
+        recovery commands are for.
       </>
     ),
   },

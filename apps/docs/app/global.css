@@ -15,6 +15,7 @@
 @import "./styles/docs-chrome.css";
 @import "./styles/home.css";
 @import "./styles/fox.css";
+@import "./styles/timeline.css";
 @import "./styles/charts.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -40,14 +41,19 @@ body {
   color: var(--color-fd-foreground);
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-.font-serif {
-  font-family: var(--font-serif), Georgia, serif;
+/* The display serif is for headings big enough to carry it. h3 and below are
+   sub-24px, where Cormorant's small x-height and hairlines stop being legible,
+   so they inherit the sans body face. A heading that should be serif at a small
+   size is a design question, not a default. */
+@layer base {
+  /* In the base layer so a utility on the element (`font-sans` on a small h2) can
+     override it. Unlayered, this rule outranked every Tailwind utility, and a
+     12px footer heading marked `font-sans` was still rendering in Cormorant. */
+  h1,
+  h2,
+  .font-serif {
+    font-family: var(--font-serif), Georgia, serif;
+  }
 }
 
 code,
@@ -105,16 +111,19 @@ pre,
   transform: scale(0.96);
 }
 
+/* Dark ink on rose, not white on it. White measured 3.6:1 at the light end of the
+   old gradient and 2.1:1 on hover; the ink passes at every point (5.5:1 on the
+   deep end, 9.1:1 on the accent), so the label is readable wherever the gradient is. */
 .kunai-button-primary {
   border-color: var(--kunai-accent-deep);
-  background: linear-gradient(135deg, var(--kunai-accent-deep), #8c2a44);
-  color: #fff;
-  box-shadow: 0 8px 24px color-mix(in oklab, var(--kunai-accent-deep) 20%, transparent);
+  background: linear-gradient(135deg in oklab, var(--kunai-accent), var(--kunai-accent-deep));
+  color: var(--kunai-bg);
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--kunai-accent-deep) 24%, transparent);
 }
 
 .kunai-button-primary:hover {
-  border-color: var(--kunai-accent);
-  background: linear-gradient(135deg, var(--kunai-accent), var(--kunai-accent-deep));
+  border-color: var(--kunai-accent-soft);
+  background: linear-gradient(135deg in oklab, var(--kunai-accent-soft), var(--kunai-accent));
   box-shadow: 0 12px 28px color-mix(in oklab, var(--kunai-accent) 30%, transparent);
 }
 
@@ -154,14 +163,17 @@ pre,
 }
 
 @theme inline {
-  --font-heading: var(--font-serif), Georgia, serif;
+  /* `font-heading` is a UI heading (card and empty-state titles) at 14-16px: sans. */
+  --font-heading: var(--font-sans), system-ui, sans-serif;
   --radius-sm: calc(var(--kunai-radius-inner) * 0.6);
   --radius-md: calc(var(--kunai-radius-inner) * 0.8);
   --radius-lg: var(--kunai-radius-inner);
   --radius-xl: var(--kunai-radius-outer);
   --radius-2xl: var(--kunai-radius-shell);
   --color-ring: var(--ring);
-  --color-input: var(--border);
+  /* Controls are drawn by their edge, so `border-input` is the 3:1 control border
+     and not the decorative divider (`--border`, 1.5-1.9:1). */
+  --color-input: var(--kunai-line-control);
   --color-border: var(--border);
   --color-destructive: var(--kunai-danger);
   --color-accent-foreground: var(--accent-foreground);
