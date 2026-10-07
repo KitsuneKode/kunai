@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
 import { FileStorage } from "@/infra/storage/FileStorage";
@@ -357,7 +357,8 @@ describe("FileStorage", () => {
         }),
       ).rejects.toThrow("settings were not saved");
       expect(entered).toBe(false);
-      expect(waits).toBe(40);
+      // The default 5s acquire budget, polled every 25ms on the injected clock.
+      expect(waits).toBe(200);
       expect(warnings).toEqual(["Config file is busy; settings were not saved"]);
       expect(await readFile(`${configPath}.lock`, "utf8")).toBe(ownerBytes);
     } finally {
@@ -455,12 +456,41 @@ describe("FileStorage", () => {
           active -= 1;
         }
       });
+    // Exclusivity, not speed, is under test: real filesystem contention must
+    // not depend on the production acquire budget (slow CI disks, Windows AV).
+    const generous = { timeoutMs: 30_000 };
     await Promise.all([
-      run(new FileStorage({ config: configPath })),
-      run(new FileStorage({ config: configPath })),
+      run(new FileStorage({ config: configPath }, undefined, generous)),
+      run(new FileStorage({ config: configPath }, undefined, generous)),
     ]);
     expect(maximum).toBe(1);
     expect(await readdir(dir)).toEqual(["config.json"]);
+  });
+
+  test("release has its own 5s budget and reports a stuck guard instead of hanging", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    let clock = Date.now();
+    let waits = 0;
+    const storage = new FileStorage({ config: configPath }, undefined, {
+      now: () => clock,
+      wait: async (milliseconds) => {
+        waits += 1;
+        clock += milliseconds;
+      },
+      onBeforeRelease: async () => {
+        // A live local contender mid-choosing: its ticket number never lands.
+        await writeFile(
+          `${configPath}.lock.ticket-stuck`,
+          JSON.stringify({ pid: process.pid, hostname: hostname(), ownerId: "stuck", ticket: 0 }),
+        );
+      },
+    });
+    await expect(storage.withLock("config", async () => "done")).rejects.toThrow(
+      "config lock timed out",
+    );
+    expect(waits).toBe(200);
   });
 
   test("a foreign-host owner cannot be reclaimed by a local PID probe", async () => {
