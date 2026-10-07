@@ -57,6 +57,7 @@ export type StreamHealthCheckInput = {
   readonly streamReachabilityVerified?: boolean;
   readonly force?: boolean;
   readonly fetchImpl?: StreamReachabilityFetch;
+  readonly resolvesLocally?: (url: string) => boolean;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
   readonly now?: number;
@@ -132,6 +133,7 @@ export async function runStreamHealthCheck(
     url: input.url,
     headers: input.headers,
     fetchImpl: input.fetchImpl,
+    resolvesLocally: input.resolvesLocally,
     timeoutMs: plan.timeoutMs,
     signal: input.signal,
   });
@@ -141,6 +143,7 @@ export async function runStreamHealthCheck(
       url: input.url,
       headers: input.headers,
       fetchImpl: input.fetchImpl,
+      resolvesLocally: input.resolvesLocally,
       timeoutMs: Math.max(plan.timeoutMs, 1_500),
       signal: input.signal,
     });

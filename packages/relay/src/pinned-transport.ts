@@ -188,12 +188,10 @@ export function isPublicRelayAddress(address: string): boolean {
   const firstByte = bytes[0];
   if (firstByte === undefined || (firstByte & 0xe0) !== 0x20) return false; // 2000::/3
   return !(
-    (
-      hasPrefix(bytes, [0x20, 0x01, 0x00], 23) || // IETF special-purpose space
-      hasPrefix(bytes, [0x20, 0x01, 0x0d, 0xb8], 32) || // documentation
-      hasPrefix(bytes, [0x20, 0x02], 16) || // 6to4
-      hasPrefix(bytes, [0x3f, 0xff, 0x00], 20)
-    ) // documentation
+    hasPrefix(bytes, [0x20, 0x01, 0x00], 23) || // IETF special-purpose space
+    hasPrefix(bytes, [0x20, 0x01, 0x0d, 0xb8], 32) || // documentation
+    hasPrefix(bytes, [0x20, 0x02], 16) || // 6to4
+    hasPrefix(bytes, [0x3f, 0xff, 0x00], 20) // documentation
   );
 }
 

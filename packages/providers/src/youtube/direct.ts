@@ -208,6 +208,8 @@ async function searchYoutubeViaYtsearch(
     "--no-warnings",
     "--playlist-end",
     String(YTSEARCH_RESULT_LIMIT),
+    // Operand boundary, matching every other yt-dlp invocation.
+    "--",
     youtubeSearchTarget(query, requestedKind),
   ];
   try {
