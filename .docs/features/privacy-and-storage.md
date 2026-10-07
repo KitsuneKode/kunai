@@ -37,7 +37,7 @@ Cleanup must be best-effort and non-blocking. It should not block playback or sh
 ## Configuration contention
 
 A file-backed config read/merge/write requires its cross-process lock. When the
-bounded acquisition wait expires, persistence rejects before running the
+bounded acquisition wait (5 seconds by default) expires, persistence rejects before running the
 callback and warns that settings were not saved. The lock owner's file remains
 unchanged. Retry after the other session finishes; an unlocked write is not an
 acceptable fallback for settings, especially consent.
@@ -48,6 +48,13 @@ and ticket number before inspecting canonical ownership. Dead local ticket
 owners can be removed without deleting a successor's reusable path. A live
 canonical owner never expires by age, a foreign-host owner is retained, and
 release compares the unique generation while holding the guard.
+
+Choosing records and ticket numbers are ephemeral: they are published atomically
+(unique temp file, then rename) but never fsynced, since crash recovery is by pid
+liveness, not by their bytes surviving. `config.json` itself keeps the durable
+write. On Windows a ticket file that is delete-pending or briefly held by a scanner
+(EPERM/EACCES/EBUSY) is treated as still present, never as gone, so a contender
+cannot be skipped while it is choosing; its owner retries removal of its own files.
 
 Legacy numeric and pid:token records remain readable. Incomplete legacy records
 receive a publication grace. Close older Kunai processes before upgrading:
