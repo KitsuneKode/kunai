@@ -808,6 +808,14 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE playback_queue_sessions ADD COLUMN owner_pid INTEGER;
     `,
   },
+  {
+    id: "043_data_queue_session_owner_identity",
+    database: "data",
+    sql: `
+      ALTER TABLE playback_queue_sessions ADD COLUMN owner_hostname TEXT;
+      ALTER TABLE playback_queue_sessions ADD COLUMN owner_process_start_id TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

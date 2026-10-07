@@ -3,7 +3,13 @@ import { existsSync } from "node:fs";
 import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playback-checkpoint";
 
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
+import { shouldRecoverQueueOwner } from "../domain/queue/queue-owner-recovery";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
+import {
+  isProcessAlive,
+  normalizedHostname,
+  processStartId,
+} from "../infra/os/process-owner-identity";
 import { whichLive } from "../infra/os/which";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
@@ -55,7 +61,6 @@ import { searchTitles } from "../services/search/SearchRoutingService";
 import { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
 import { readInstallManifest } from "../services/update/install-manifest";
 import { detectInstallMethod } from "../services/update/install-method";
-import { isProcessAlive } from "../services/update/native-installer/lock-owner-identity";
 import { resolveLatestVersion } from "../services/update/resolve-latest-version";
 import { UpdateService } from "../services/update/UpdateService";
 import type { PersistenceBootstrap } from "./bootstrap-persistence";
@@ -73,14 +78,6 @@ export type ServicesBootstrap = Omit<
   | "providerRegistry"
   | "playbackResolveWork"
 >;
-
-/**
- * A queue session written before the owner_pid column exists can't prove its
- * owner is alive or dead. Only its activity clock is usable: treat an
- * unowned session as recoverable only after this much silence, so an old
- * build's live-but-idle queue isn't flagged out from under it at first upgrade.
- */
-const UNKNOWN_OWNER_STALE_MS = 60 * 60 * 1000;
 
 export function bootstrapServices(input: {
   readonly options?: ContainerOptions;
@@ -290,36 +287,34 @@ export function bootstrapServices(input: {
     diagnostics: diagnosticsService,
   });
   const startupAt = new Date().toISOString();
-  // Crash recovery must not hijack a *live* sibling instance's queue: a second
-  // `kunai` used to mark every active session recoverable on startup, and a
-  // later restore drained its rows mid-playback. Only sessions whose owner is
-  // dead — or whose owner is unknowable AND stale — are flagged.
+  const ownerHostname = normalizedHostname();
+  const ownStartId = processStartId(process.pid);
+  // Probe each distinct owner once, within one shared native-probe budget.
+  const ownerProbeDeadline = Date.now() + 2_000;
+  const ownerStarts = new Map<number, string | null>();
+  const readOwnerStart = (pid: number): string | null => {
+    if (!ownerStarts.has(pid)) {
+      ownerStarts.set(pid, processStartId(pid, Math.max(0, ownerProbeDeadline - Date.now())));
+    }
+    return ownerStarts.get(pid) ?? null;
+  };
   for (const session of queueRepository.listActiveQueueSessionsWithPendingWork(sessionId)) {
-    const observedActivityAt = session.lastActivityAt ?? session.updatedAt;
-    if (session.ownerPid !== undefined) {
-      if (isProcessAlive(session.ownerPid)) continue;
-      // PID reuse can fake "alive", never "dead" — a dead owner means crashed.
-      // The owner_pid predicate keeps the flip atomic with what was read: a
-      // session re-created between the check and this write keeps its new
-      // owner instead of being marked recoverable behind its back.
-      queueRepository.markQueueSessionRecoverable(session.id, startupAt, {
-        ownerPid: session.ownerPid,
-      });
+    if (
+      !shouldRecoverQueueOwner({
+        session,
+        hostname: ownerHostname,
+        now: Date.parse(startupAt),
+        isAlive: isProcessAlive,
+        processStartId: readOwnerStart,
+      })
+    )
       continue;
-    }
-    // Pre-042 rows carry no pid: an old build still running is
-    // indistinguishable from a crashed one, so gate on staleness — an idle
-    // queue under an hour old may still belong to a live instance.
-    const activityMs = Date.parse(observedActivityAt);
-    const stale = !Number.isFinite(activityMs) || Date.now() - activityMs > UNKNOWN_OWNER_STALE_MS;
-    // An owner that refreshed activity (or a re-created row carrying a pid)
-    // since the staleness check fails the predicate and is left alone.
-    if (stale) {
-      queueRepository.markQueueSessionRecoverable(session.id, startupAt, {
-        ownerPid: null,
-        activityAt: observedActivityAt,
-      });
-    }
+    queueRepository.markQueueSessionRecoverable(session.id, startupAt, {
+      ownerPid: session.ownerPid ?? null,
+      ownerHostname: session.ownerHostname ?? null,
+      ownerProcessStartId: session.ownerProcessStartId ?? null,
+      activityAt: session.lastActivityAt ?? session.updatedAt,
+    });
   }
   queueRepository.createQueueSession({
     id: sessionId,
@@ -328,6 +323,8 @@ export function bootstrapServices(input: {
     updatedAt: startupAt,
     lastActivityAt: startupAt,
     ownerPid: process.pid,
+    ownerHostname,
+    ownerProcessStartId: ownStartId ?? undefined,
   });
   notificationService.deleteByKind("queue-recovery");
   const latestRecoverableSession = queueRepository.listRecoverableQueueSessions()[0];

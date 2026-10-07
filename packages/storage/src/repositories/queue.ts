@@ -50,6 +50,8 @@ export interface QueueSessionInput {
   readonly lastActivityAt?: string;
   /** PID of the kunai process that owns this session; absent on pre-042 rows. */
   readonly ownerPid?: number;
+  readonly ownerHostname?: string;
+  readonly ownerProcessStartId?: string;
 }
 
 export interface QueueSessionRecord extends QueueSessionInput {
@@ -101,6 +103,8 @@ interface QueueSessionRow {
   readonly closed_at: string | null;
   readonly last_activity_at?: string | null;
   readonly owner_pid?: number | null;
+  readonly owner_hostname?: string | null;
+  readonly owner_process_start_id?: string | null;
   readonly item_count: number;
 }
 
@@ -186,6 +190,8 @@ function mapQueueSessionRow(row: QueueSessionRow): QueueSessionRecord {
     closedAt: row.closed_at ?? undefined,
     lastActivityAt: row.last_activity_at ?? undefined,
     ownerPid: row.owner_pid ?? undefined,
+    ownerHostname: row.owner_hostname ?? undefined,
+    ownerProcessStartId: row.owner_process_start_id ?? undefined,
     itemCount: row.item_count,
   };
 }
@@ -423,8 +429,8 @@ export class QueueRepository {
     this.db
       .query(
         `INSERT OR REPLACE INTO playback_queue_sessions
-           (id, status, created_at, updated_at, closed_at, last_activity_at, owner_pid)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           (id, status, created_at, updated_at, closed_at, last_activity_at, owner_pid, owner_hostname, owner_process_start_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -434,6 +440,8 @@ export class QueueRepository {
         input.closedAt ?? null,
         lastActivityAt,
         input.ownerPid ?? null,
+        input.ownerHostname ?? null,
+        input.ownerProcessStartId ?? null,
       );
     const record = this.getQueueSession(input.id);
     if (!record) throw new Error(`Queue session not found after insert: ${input.id}`);
@@ -456,7 +464,12 @@ export class QueueRepository {
   markQueueSessionRecoverable(
     id: string,
     updatedAt: string,
-    observed?: { ownerPid?: number | null; activityAt?: string | null },
+    observed?: {
+      ownerPid?: number | null;
+      ownerHostname?: string | null;
+      ownerProcessStartId?: string | null;
+      activityAt?: string | null;
+    },
   ): void {
     if (!observed) {
       this.db
@@ -478,6 +491,14 @@ export class QueueRepository {
     if (observed.activityAt !== undefined) {
       clauses.push("COALESCE(last_activity_at, updated_at) IS ?");
       params.push(observed.activityAt);
+    }
+    if (observed.ownerHostname !== undefined) {
+      clauses.push("owner_hostname IS ?");
+      params.push(observed.ownerHostname);
+    }
+    if (observed.ownerProcessStartId !== undefined) {
+      clauses.push("owner_process_start_id IS ?");
+      params.push(observed.ownerProcessStartId);
     }
     this.db
       .query(

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-06-25"
+lastReviewed: "2026-10-07"
 ---
 
 # Up Next
@@ -49,3 +49,19 @@ The current shell exposes:
 Recoverable Up Next sessions can be restored into the current session through the queue service. This operation moves only pending items, closes the old queue session, and leaves playback untouched until the user chooses a play action.
 
 The restore path is intentionally explicit so crash recovery is durable without creating surprise autoplay after restart.
+
+Startup records the owner PID, hostname and process-start identity. The recovery
+policy in `apps/cli/src/domain/queue/queue-owner-recovery.ts` retains verified live
+siblings and foreign-host owners. A dead local process or a mismatched start
+identity can make its pending queue recoverable. An unavailable identity probe
+does not prove abandonment; legacy live PIDs remain conservative, while anonymous
+or dead legacy owners need an hour of inactivity. The native probe budget is shared
+across candidates, and each distinct PID is probed at most once per startup.
+
+Every automatic recovery UPDATE compares the owner fields and last activity that
+were observed. A concurrent owner replacement or activity refresh defeats that
+write. Restoring also claims a recoverable session inside the transaction, so a
+second restore cannot move its rows again. Neither startup nor restore starts a
+player. Deterministic policy and SQLite tests cover these decisions; the Linux
+integration check additionally uses the real process-start lookup. Windows and
+macOS native ownership behavior still requires their platform qualification.
