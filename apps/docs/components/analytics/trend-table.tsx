@@ -60,13 +60,12 @@ export function TrendTable({
   // Chart hover names a day that may sit below the rendered chunk; expand
   // until it exists. Revealed rows stay revealed on mouseleave — collapsing
   // them would shift the layout under the cursor.
-  React.useEffect(() => {
-    setVisibleCount((current) => visibleCountForDay(rows, hoveredDay, current));
-  }, [rows, hoveredDay]);
+  const requiredCount = visibleCountForDay(rows, hoveredDay, visibleCount);
+  if (requiredCount !== visibleCount) setVisibleCount(requiredCount);
 
   React.useEffect(() => {
     if (hoveredDay) hoveredRowRef.current?.scrollIntoView({ block: "nearest" });
-  }, [hoveredDay, visibleCount]);
+  }, [hoveredDay]);
 
   const visible = rows.slice(0, visibleCount);
   const exhausted = visibleCount >= rows.length;

@@ -266,18 +266,18 @@ export function AnalyticsZeroDayEmpty({ day }: { readonly day: string }) {
 export function UsagePanel({
   metrics,
   series,
+  nowMs,
 }: {
   readonly metrics: DocsAnalyticsMetrics | null;
   readonly series: DocsAnalyticsSeries | null;
+  readonly nowMs: number;
 }) {
   /*
     ISR keeps serving the last good snapshot even if the ingest cron dies,
     so "updated" can drift quietly forever. Stale is judged from the
     snapshot's own updatedAt, rendered at revalidate time.
   */
-  const stale = metrics
-    ? Date.now() - Date.parse(metrics.updatedAt) > SNAPSHOT_STALE_AFTER_MS
-    : false;
+  const stale = metrics ? nowMs - Date.parse(metrics.updatedAt) > SNAPSHOT_STALE_AFTER_MS : false;
 
   return (
     <div className="flex flex-col gap-6">

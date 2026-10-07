@@ -44,6 +44,19 @@ The current shell exposes:
   behaviour against the unshifted keys.
 - post-playback recommendation actions: `i` opens details/download actions; download requires confirmation before provider resolution
 
+## Ordering and claims
+
+Explicit reordering does not disable placement actions. Queue next precedes
+lower-priority pending rows; after-current-series precedes end placement. Equal
+priorities retain insertion order, and existing rows retain their relative order.
+An insertion and its position normalization share one SQLite transaction, so a
+failed reorder leaves neither a new row nor partially changed positions.
+
+Only pending rows can be selected by `peekNext()`. An in-flight row still counts
+as outstanding watch intent for badges, shutdown, and crash recovery; it becomes
+pending again on rollback. These rules apply to both anime and TMDB targets and
+to every caller of the shared queue service.
+
 ## Restore API
 
 Recoverable Up Next sessions can be restored into the current session through the queue service. This operation moves only pending items, closes the old queue session, and leaves playback untouched until the user chooses a play action.

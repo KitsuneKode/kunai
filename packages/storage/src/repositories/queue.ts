@@ -219,6 +219,26 @@ export class QueueRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
   enqueue(input: QueueEntryInput): QueueEntry {
+    return this.db.transaction(() => {
+      const entry = this.insertEntry(input);
+      if (input.queuePosition !== undefined || entry.priority <= 0) return entry;
+
+      const ordered = this.getAll(input.sessionId);
+      // An explicit reorder takes precedence over the SQL priority tie-breaker.
+      // Insert new priority intent into that order without undoing the user's
+      // relative ordering, or allowing a new NULL position to strand "next".
+      if (!ordered.some((row) => row.queuePosition !== undefined)) return entry;
+      const remaining = ordered.filter((row) => row.id !== entry.id);
+      const before = remaining.findIndex(
+        (row) => row.status === "pending" && row.priority < entry.priority,
+      );
+      remaining.splice(before < 0 ? remaining.length : before, 0, entry);
+      this.setQueuePositions(remaining.map((row) => row.id));
+      return this.getById(entry.id) ?? entry;
+    })();
+  }
+
+  private insertEntry(input: QueueEntryInput): QueueEntry {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -289,7 +309,7 @@ export class QueueRepository {
   peekNext(sessionId: string): QueueEntry | undefined {
     const row = this.db
       .query<QueueEntryRow, [string]>(
-        `SELECT * FROM playlist_queue WHERE session_id = ? AND played_at IS NULL
+        `SELECT * FROM playlist_queue WHERE session_id = ? AND status = 'pending'
          ORDER BY ${QUEUE_ORDER_BY} LIMIT 1`,
       )
       .get(sessionId);

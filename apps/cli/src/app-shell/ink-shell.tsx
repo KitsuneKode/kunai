@@ -615,29 +615,25 @@ export function AppRoot({ container }: { container: Container }) {
     const shouldShow = !lastShown || Date.now() - new Date(lastShown).getTime() > sevenDaysMs;
     if (!shouldShow) return;
 
-    let cancelled = false;
-    void (async () => {
-      try {
-        const stats = container.statsService.getStats(7);
-        if (stats.totalEpisodes === 0) return;
-        const text = container.statsFormatter.formatWeeklyDigest(stats);
-        if (!cancelled) {
-          setWeeklyDigestLine(text);
-          // Must persist, or the "weekly" digest shows on every launch.
+    try {
+      const stats = container.statsService.getStats(7);
+      if (stats.totalEpisodes === 0) return;
+      setWeeklyDigestLine(container.statsFormatter.formatWeeklyDigest(stats));
+      const dismissTimer = setTimeout(() => setWeeklyDigestLine(null), 8_000);
+      // Persist separately from timer ownership so an unmount can always
+      // dismiss the timer, even while the configuration write is pending.
+      void (async () => {
+        try {
           await container.config.update({ lastWeeklyDigestShownAt: new Date().toISOString() });
           await container.config.save().catch(() => undefined);
-          setTimeout(() => {
-            if (!cancelled) setWeeklyDigestLine(null);
-          }, 8_000);
+        } catch {
+          // Digest persistence is best-effort.
         }
-      } catch {
-        // digest is best-effort
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+      })();
+      return () => clearTimeout(dismissTimer);
+    } catch {
+      // Digest calculation is best-effort.
+    }
   }, [container.statsService, container.statsFormatter, container.config]);
 
   // Resize repaint is owned by Ink's reconciler in alternate-screen mode (its

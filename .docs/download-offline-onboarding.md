@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-10-03"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -334,3 +334,13 @@ Keep config flat unless the config model is deliberately refactored:
 
 Current offline follow-up is indexed in [the roadmap](../.plans/roadmap.md). Do
 not reopen the archived onboarding plan to infer current behavior.
+
+## Due work and queue paging
+
+Download dispatch filters retry eligibility in SQLite before applying the page
+limit, using `DownloadJobsRepository.listDueQueued`. Fifty deferred jobs must
+not hide due work behind them. Pages use stable `(created_at, id)` ordering;
+equal timestamps use the job ID as the tie-breaker, process-local claims are skipped, and the scheduler continues with a bounded
+keyset page budget. The regression seeds 51 durable intents and requires the
+last one to be attempted without changing the earlier retry windows. Up Next
+placement is a separate policy in the [queue feature](features/queue.md).

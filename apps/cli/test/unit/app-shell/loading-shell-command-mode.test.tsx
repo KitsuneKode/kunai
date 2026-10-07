@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 
 import { COMMAND_CONTEXTS } from "@/app-shell/commands";
 import { LoadingShell } from "@/app-shell/loading-shell";
@@ -7,7 +7,7 @@ import React, { act } from "react";
 
 import { render, stripAnsi } from "../../harness/render-capture";
 
-function mountPlayback() {
+function mountPlayback(operation: "playing" | "resolving" = "playing") {
   const calls: string[] = [];
   const record = (name: string) => () => {
     calls.push(name);
@@ -16,7 +16,8 @@ function mountPlayback() {
     <LoadingShell
       state={{
         title: "Sintel",
-        operation: "playing",
+        operation,
+        cancellable: operation === "resolving",
         commands: fallbackCommandState(COMMAND_CONTEXTS.activePlayback),
         onCommandAction: () => undefined,
       }}
@@ -25,6 +26,7 @@ function mountPlayback() {
       onPrevious={record("previous")}
       onToggleAutoplay={record("autoplay")}
       onToggleAutoskip={record("autoskip")}
+      onCancel={record("cancel")}
     />,
     { columns: 100, rows: 40 },
   );
@@ -33,6 +35,32 @@ function mountPlayback() {
     for (const key of text) handle.stdin.enqueue(key);
   };
   return { calls, handle, type };
+}
+
+function pressEscape(handle: ReturnType<typeof render>): void {
+  // Ink schedules a lone Escape to disambiguate terminal sequences. Deliver
+  // that callback explicitly: this regression must not depend on wall time.
+  const schedule = globalThis.setTimeout;
+  let flush: (() => void) | undefined;
+  const timerSpy = spyOn(globalThis, "setTimeout").mockImplementationOnce(
+    Object.assign(
+      (...args: Parameters<typeof schedule>) => {
+        const timer = schedule(...args);
+        clearTimeout(timer);
+        const [callback, , ...callbackArgs] = args;
+        flush = () => callback(...callbackArgs);
+        return timer;
+      },
+      { __promisify__: schedule.__promisify__ },
+    ),
+  );
+  try {
+    handle.stdin.enqueue("\u001b");
+    expect(flush).toBeDefined();
+    act(() => flush?.());
+  } finally {
+    timerSpy.mockRestore();
+  }
 }
 
 describe("playback command palette", () => {
@@ -56,19 +84,30 @@ describe("playback command palette", () => {
     handle.unmount();
   });
 
-  test("closing the palette hands the keys back", async () => {
+  test("closing the palette hands the keys back", () => {
     const { calls, type, handle } = mountPlayback();
-    type("/");
-    type("q");
-    // Ink defers a lone ESC briefly to tell it apart from an escape sequence.
-    await act(async () => {
-      handle.stdin.enqueue("\u001b");
-      await new Promise((resolve) => setTimeout(resolve, 60));
-    });
-    expect(calls).toEqual([]);
+    try {
+      type("/");
+      type("q");
+      pressEscape(handle);
+      expect(calls).toEqual([]);
+      type("q");
+      expect(calls).toEqual(["stop"]);
+    } finally {
+      handle.unmount();
+    }
+  });
 
-    type("q");
-    expect(calls).toEqual(["stop"]);
-    handle.unmount();
+  test("Escape closes a resolving palette before cancelling the resolve", () => {
+    const { calls, type, handle } = mountPlayback("resolving");
+    try {
+      type("/");
+      pressEscape(handle);
+      expect(calls).toEqual([]);
+      pressEscape(handle);
+      expect(calls).toEqual(["cancel"]);
+    } finally {
+      handle.unmount();
+    }
   });
 });

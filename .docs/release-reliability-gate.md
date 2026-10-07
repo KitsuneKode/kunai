@@ -594,3 +594,13 @@ Before tagging, confirm on the candidate that:
 - the native installer Docker lifecycle passes (`bun run test:installer:docker`)
 - `set-release-status.ts <version> withdrawn` renders the withdrawal on
   `/releases` and on the release's own page
+
+## Cleanup ownership
+
+Startup self-replace cleanup requires an embedded compiled entrypoint and removes
+only `<running Kunai binary>.old`. Source and npm-bundle starts leave the Bun
+runtime and its backups untouched. Native uninstall recognizes transaction
+residue by schema and matching record/file identity, preserves foreign JSON,
+text, and directories, and removes the transaction directory only with `rmdir`.
+A default uninstall continues to preserve configuration, history, cache, and
+offline downloads; an explicit purge retains its separate user-root contract.
