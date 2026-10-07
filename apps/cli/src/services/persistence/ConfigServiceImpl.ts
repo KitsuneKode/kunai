@@ -624,6 +624,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.footerHints;
   }
 
+  get companionPet(): "auto" | "off" {
+    return this.config.companionPet;
+  }
+
   get quitNearEndBehavior(): QuitNearEndBehavior {
     return this.config.quitNearEndBehavior;
   }

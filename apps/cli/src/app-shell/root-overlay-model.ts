@@ -1,4 +1,4 @@
-import type { SessionState } from "@/domain/session/SessionState";
+import type { OverlayState, SessionState } from "@/domain/session/SessionState";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import type { RootOwnedOverlay } from "./root-shell-state";
@@ -30,9 +30,9 @@ export function isRootChoiceOverlay(
 }
 
 export function isRootMediaPickerOverlay(
-  overlay: RootOwnedOverlay,
+  overlay: OverlayState,
 ): overlay is Extract<
-  RootOwnedOverlay,
+  OverlayState,
   | { type: "season_picker" }
   | { type: "episode_picker" }
   | { type: "subtitle_picker" }
@@ -86,6 +86,7 @@ export function buildRootGenericPickerOptions(
 
 export function getRootOverlayTitle(overlay: RootOwnedOverlay, _state: SessionState): string {
   if (overlay.type === "help") return "Help";
+  if (overlay.type === "guide") return "Guide";
   if (overlay.type === "about") return "About";
   if (overlay.type === "diagnostics") return "Diagnostics";
   if (overlay.type === "downloads") return "Downloads";
@@ -118,6 +119,7 @@ export function getRootOverlaySubtitle({
   readonly settingsError: string | null;
 }): string {
   if (overlay.type === "help") return "Global commands, editing, filtering, and shell behavior";
+  if (overlay.type === "guide") return "What Kunai can do, grouped by task · Enter runs it";
   if (overlay.type === "about") return "Kunai";
   if (overlay.type === "diagnostics") return "Current runtime snapshot and recent spans";
   if (overlay.type === "downloads")

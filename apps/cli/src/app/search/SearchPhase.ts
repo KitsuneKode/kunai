@@ -16,6 +16,7 @@ import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import type { CalendarRouteRequest } from "@/app-shell/hooks/use-calendar-route";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { chooseFromListShell } from "@/app-shell/pickers";
+import { getRootContentSession, waitForRootContentSlot } from "@/app-shell/root-content-state";
 import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
 import {
   applyHistorySelectionProvider,
@@ -614,6 +615,22 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         pendingSearchWarnings = [];
         pendingSearchEmptyMessage = undefined;
 
+        // A picker mounted by a detached overlay workflow (e.g. /providers run
+        // from Up Next) owns the content slot until the user dismisses it.
+        // Mounting browse now would evict and cancel it; wait for the slot
+        // instead. The wait resolves inside the foreign session's settle, so
+        // another workflow's mount can land before this continuation — the
+        // recheck loops until the slot is free at mount time, keeping the
+        // check and the mount in one synchronous turn.
+        for (;;) {
+          const holding = getRootContentSession();
+          if (holding === null || holding.kind === "browse") break;
+          await waitForRootContentSlot(context.signal);
+          if (context.signal.aborted) {
+            return { status: "cancelled" };
+          }
+        }
+
         const outcomePromise = this.dependencies.openBrowseShell({
           mode: syncedState.mode,
           provider: syncedState.provider,
@@ -984,6 +1001,18 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         if (outcome.type === "cancelled") {
+          // A foreign session that displaced this browse resolves it with the
+          // displaced marker, not the plain cancelled fallback — the eviction
+          // reason rides the outcome, so awaits between settle and here cannot
+          // launder it into a real Esc. Park until the slot frees, then
+          // remount rather than reporting a cancel the user never made.
+          if (outcome.displaced) {
+            await waitForRootContentSlot(context.signal);
+            if (context.signal.aborted) {
+              return { status: "cancelled" };
+            }
+            continue;
+          }
           return { status: "cancelled" };
         }
 

@@ -63,9 +63,16 @@ Kanna has a picture tier and a text tier, and **the text tier is the one that ma
 
 Half-block rendering is deliberately skipped. This art turns to noise at two pixels per cell, and a smear is worse than a glyph.
 
-## Turning her off
+## Turning her off, and back on
 
-Three states, and the way out is a real way out.
+Inside the app, `/pet` toggles her and remembers it: hide her once and she stays hidden on the next launch, bring her back once and she stays. The same switch lives in **Settings → General → Kanna the companion** (config key `companionPet`, `auto` or `off`). While she is hidden, the footer keeps a `/pet kanna` hint so the way back is never a secret.
+
+```text
+/ pet  →  Kanna is resting. /pet brings her back.
+/ pet  →  Kanna is back.
+```
+
+The environment variable still exists and still wins for the run it is set on. It is the per-invocation pin, not the stored preference:
 
 | Setting           | Effect                                                                 |
 | ----------------- | ---------------------------------------------------------------------- |
@@ -77,7 +84,7 @@ Three states, and the way out is a real way out.
 KUNAI_PET=off kunai
 ```
 
-`KUNAI_PET=off` silences the text too, not just the artwork. Redirected output (a pipe, a redirect, a captured log) never gets either, so nothing decorative can end up in a file or break a parser.
+An explicit `KUNAI_PET` outranks the stored preference: `/pet` will say so rather than pretend it changed anything, and the footer hint stays hidden because the toggle genuinely cannot work under a pin. `KUNAI_PET=off` silences the text too, not just the artwork. Redirected output (a pipe, a redirect, a captured log) never gets either, so nothing decorative can end up in a file or break a parser.
 
 `KUNAI_POSTER=0` turns off images without retiring her, since the glyph is not an image. Both variables sit alongside the rest of the environment overrides in [Customization](/docs/users/customization).
 

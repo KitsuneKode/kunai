@@ -95,7 +95,9 @@ export function RootIdleShell({ state }: { state: SessionState }) {
           </Text>
           <Box marginTop={1}>
             <Text color={palette.dim}>
-              {"search for a title to begin  ·  /discover for recommendations"}
+              {
+                "search for a title to begin  ·  /guide for the tour  ·  /discover for recommendations"
+              }
             </Text>
           </Box>
         </Box>

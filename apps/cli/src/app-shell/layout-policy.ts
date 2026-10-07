@@ -237,6 +237,7 @@ export function resolveOverlayPanelKind(overlayType: string): OverlayPanelKind {
   }
   if (
     overlayType === "help" ||
+    overlayType === "guide" ||
     overlayType === "about" ||
     overlayType === "diagnostics" ||
     overlayType === "details"
