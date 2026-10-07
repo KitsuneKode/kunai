@@ -57,7 +57,9 @@ export class RecommendationCacheRepository {
       .get(cacheKey);
     if (row === null) return undefined;
     if (isExpired(row.expires_at, now)) {
-      this.delete(cacheKey);
+      this.db
+        .query("DELETE FROM recommendation_cache WHERE cache_key = ? AND expires_at = ?")
+        .run(cacheKey, row.expires_at);
       return undefined;
     }
 

@@ -1,3 +1,5 @@
+import { stripCurrentLabel } from "@/domain/current-label";
+
 import {
   applyAnimeProviderOrder,
   applySeriesProviderOrder,
@@ -19,7 +21,7 @@ function providerEnumOptions(ctx: SettingsRegistryContext, kind: "series" | "ani
         : ctx.youtubeProviderOptions;
   return options.map((option) => ({
     value: option.value,
-    label: option.label.replace(/  ·  current$/, ""),
+    label: stripCurrentLabel(option.label),
     detail: option.detail,
   }));
 }

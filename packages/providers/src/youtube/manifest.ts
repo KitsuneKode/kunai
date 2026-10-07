@@ -34,7 +34,10 @@ export const youtubeManifest = defineProviderManifest({
     keyParts: [
       "provider",
       YOUTUBE_PROVIDER_ID,
+      "media-kind",
       "title",
+      "season",
+      "episode",
       "audio",
       "subtitle",
       "quality",
@@ -46,6 +49,5 @@ export const youtubeManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: false,
-  status: "production",
   notes: ["Metadata via Invidious/Piped; playback via youtube.com watch URLs and mpv ytdl."],
 });

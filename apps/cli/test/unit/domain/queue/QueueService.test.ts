@@ -33,7 +33,7 @@ test("QueueService durably preserves anime movie structure through playback inte
     contentType: "movie",
     externalIds: { anilistId: "181053", malId: "40456" },
   });
-  expect(service.beginPlayback(entry.id, "queue")).toMatchObject({
+  expect(service.beginPlayback(entry.id)).toMatchObject({
     mediaKind: "anime",
     contentType: "movie",
     externalIds: { anilistId: "181053", malId: "40456" },
@@ -100,7 +100,7 @@ test("beginPlayback claims requested row, not head", () => {
   const selected = enqueue("selected");
   const service = new QueueService(repo, "s");
 
-  expect(service.beginPlayback(selected.id, "queue")?.queueEntryId).toBe(selected.id);
+  expect(service.beginPlayback(selected.id)?.queueEntryId).toBe(selected.id);
   expect(repo.getById(first.id)?.status).toBe("pending");
   expect(repo.getById(selected.id)?.status).toBe("in-flight");
 
@@ -127,7 +127,7 @@ test("acknowledgePlaybackStarted and rollbackBeforeStart use exact intent id", (
     sessionId: "s",
   });
   const service = new QueueService(repo, "s");
-  const intent = service.beginPlayback(entry.id, "post-play", "2026-07-20T10:00:00.000Z");
+  const intent = service.beginPlayback(entry.id, "2026-07-20T10:00:00.000Z");
   expect(intent?.absoluteEpisode).toBe(7);
 
   expect(
@@ -140,7 +140,7 @@ test("acknowledgePlaybackStarted and rollbackBeforeStart use exact intent id", (
   expect(repo.getById(entry.id)?.status).toBe("pending");
   expect(repo.getById(entry.id)?.queuePosition).toBe(0);
 
-  const claimed = service.beginPlayback(entry.id, "queue", "2026-07-20T10:02:00.000Z");
+  const claimed = service.beginPlayback(entry.id, "2026-07-20T10:02:00.000Z");
   expect(service.acknowledgePlaybackStarted(claimed!, "2026-07-20T10:03:00.000Z")).toBe(true);
   expect(repo.getById(entry.id)?.status).toBe("played");
 

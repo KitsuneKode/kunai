@@ -215,23 +215,25 @@ export class OfflineAssetsRepository {
     const update = this.db.query(
       "UPDATE OR REPLACE offline_assets SET title_id = ?, identity_key = ?, updated_at = ? WHERE id = ?",
     );
-    for (const row of rows) {
-      const identityKey = createOfflineAssetIdentityKey({
-        titleId: newTitleId,
-        mediaKind: row.media_kind,
-        season: row.season ?? undefined,
-        episode: row.episode ?? undefined,
-        providerEpisodeIdentity:
-          row.provider_episode_provider_id !== null && row.provider_episode_value !== null
-            ? {
-                providerId: row.provider_episode_provider_id,
-                value: row.provider_episode_value,
-              }
-            : undefined,
-        profileKey: row.profile_key,
-      });
-      update.run(newTitleId, identityKey, now, row.id);
-    }
+    this.db.transaction(() => {
+      for (const row of rows) {
+        const identityKey = createOfflineAssetIdentityKey({
+          titleId: newTitleId,
+          mediaKind: row.media_kind,
+          season: row.season ?? undefined,
+          episode: row.episode ?? undefined,
+          providerEpisodeIdentity:
+            row.provider_episode_provider_id !== null && row.provider_episode_value !== null
+              ? {
+                  providerId: row.provider_episode_provider_id,
+                  value: row.provider_episode_value,
+                }
+              : undefined,
+          profileKey: row.profile_key,
+        });
+        update.run(newTitleId, identityKey, now, row.id);
+      }
+    })();
     return rows.length;
   }
 

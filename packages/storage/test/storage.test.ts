@@ -305,6 +305,28 @@ test("history repository round trips latest progress", () => {
   expect(repo.listLatestByTitle()).toMatchObject([{ titleId: "tmdb:1", episode: 2 }]);
 });
 
+test("history repository scopes season reads without a full-title scan", () => {
+  const db = migratedDataDb();
+  const repo = new HistoryRepository(db);
+  const seed = (season: number, episode: number) =>
+    repo.upsertProgress({
+      title: { id: "tmdb:9", kind: "series", title: "Seasons" },
+      episode: { season, episode },
+      positionSeconds: 10,
+      durationSeconds: 1200,
+      completed: false,
+      providerId: "videasy",
+      updatedAt: "2026-04-29T00:00:00.000Z",
+    });
+  seed(1, 1);
+  seed(1, 2);
+  seed(2, 1);
+
+  expect(repo.listByTitleSeason("tmdb:9", 1).map((row) => row.episode)).toEqual([1, 2]);
+  expect(repo.listByTitleSeason("tmdb:9", 2).map((row) => row.episode)).toEqual([1]);
+  expect(repo.listByTitleSeason("tmdb:9", 3)).toEqual([]);
+});
+
 test("history repository lists one latest row per title", () => {
   const db = migratedDataDb();
   const repo = new HistoryRepository(db);

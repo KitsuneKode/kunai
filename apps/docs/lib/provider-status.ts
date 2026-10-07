@@ -2,6 +2,15 @@ import generated from "./generated-provider-status.json";
 
 export type ProviderSweepStatus = "healthy" | "degraded" | "blocked" | "down" | "dead";
 
+/** What the status board shows. The raw sweep status stays on the row as detail. */
+export type ProviderDisplayStatus = "working" | "limited" | "down";
+
+export function displayStatus(status: ProviderSweepStatus): ProviderDisplayStatus {
+  if (status === "healthy") return "working";
+  if (status === "degraded" || status === "blocked") return "limited";
+  return "down";
+}
+
 export type ProviderStatusRow = {
   readonly id: string;
   readonly upstreamHttp: number | null;

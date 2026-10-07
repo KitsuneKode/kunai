@@ -12,7 +12,7 @@ import { SetupShell } from "@/app-shell/setup-shell";
 import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
-import { CAPTURE_WIDTHS, render, type CaptureWidth } from "./render-capture";
+import { CAPTURE_WIDTHS, render, stripAnsi, type CaptureWidth } from "./render-capture";
 
 const CAPTURE_DIR = path.join(import.meta.dir, "..", "__captures__");
 export const SETUP_ROWS = 34;
@@ -57,7 +57,7 @@ export function setupFrameAt(step: number, columns: number): string {
       { columns, rows: SETUP_ROWS },
     );
     for (let i = 0; i < step; i += 1) handle.stdin.enqueue("\r");
-    const frame = handle.lastFrame();
+    const frame = stripAnsi(handle.lastFrame()).replace(/\s+$/, "");
     handle.unmount();
     return frame;
   } finally {

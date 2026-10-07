@@ -10,14 +10,58 @@ import { YoutubeMetadataCacheRepository, type KunaiDatabase } from "@kunai/stora
 
 export const YOUTUBE_METADATA_TTL_MS = 15 * 60 * 1000;
 
+function computeYoutubeConfigFingerprint(meta: KitsuneConfig["youtubeMetadata"]): string {
+  return JSON.stringify({
+    instanceUrl: meta?.instanceUrl ?? "",
+    pipedApiUrl: meta?.pipedApiUrl ?? "",
+    cookiesFromBrowser: meta?.cookiesFromBrowser ?? "",
+    cookiesFile: meta?.cookiesFile ?? "",
+    extractorArgs: meta?.extractorArgs ?? "",
+    poToken: meta?.poToken ?? "",
+    sponsorblockRemove: meta?.sponsorblockRemove ?? "",
+  });
+}
+
 export function applyYoutubeProviderConfig(
   config: Pick<KitsuneConfig, "youtubeMetadata">,
   cacheDb: KunaiDatabase,
   options: { readonly purgeCache?: boolean } = {},
 ): void {
   const youtubeMetadataCache = new YoutubeMetadataCacheRepository(cacheDb);
-  if (options.purgeCache) {
+  const currentFingerprint = computeYoutubeConfigFingerprint(config.youtubeMetadata);
+
+  let drifted = false;
+  try {
+    const row = cacheDb
+      .query<{ payload_json: string }, [string, string]>(
+        "SELECT payload_json FROM provider_cache WHERE namespace = ? AND cache_key = ?",
+      )
+      .get("youtube_config", "fingerprint");
+    if (row && row.payload_json !== currentFingerprint) {
+      drifted = true;
+    }
+  } catch {
+    // Best-effort in unmigrated or mock databases
+  }
+
+  if (options.purgeCache || drifted) {
     youtubeMetadataCache.purgeAll();
+  }
+
+  try {
+    const nowIso = new Date().toISOString();
+    const farFuture = new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString();
+    cacheDb
+      .query(
+        `INSERT INTO provider_cache (namespace, cache_key, payload_json, expires_at, created_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(namespace, cache_key) DO UPDATE SET
+           payload_json = excluded.payload_json,
+           created_at = excluded.created_at`,
+      )
+      .run("youtube_config", "fingerprint", currentFingerprint, farFuture, nowIso);
+  } catch {
+    // Best-effort tracking
   }
 
   const cachePort = {

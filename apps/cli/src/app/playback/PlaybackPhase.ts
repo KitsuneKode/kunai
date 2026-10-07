@@ -930,6 +930,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               ? startFromEpisodeSelection(selection)
               : await startNavigationToEpisode(episode);
         }
+        if (bootstrapStartSeconds !== undefined && bootstrapStartSeconds > 0) {
+          run.pendingStart = startAtResumePoint(bootstrapStartSeconds, {
+            suppressResumePrompt: true,
+          });
+        }
       } else {
         // Movies have no season/episode axis but still carry saved progress.
         // Offer Resume/Restart when there is a resumable position; otherwise play
@@ -1175,6 +1180,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             if (restart.requiresFreshResolve) {
               run.pendingSourceRefreshAction = "recover";
               run.pendingRecomputeSources = false;
+            }
+            if (restart.notice) {
+              this.updatePlaybackFeedback(context, { note: restart.notice });
             }
             return restart.startIntent;
           };
@@ -1537,11 +1545,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               subtitlePreference: playbackSubtitlePreference(profileContext),
             };
           };
-          const consumedBundle = sourceRefreshDecision
-            ? null
-            : episodePrefetch.takeReadyFor(
-                buildPrefetchTarget(currentEpisode, currentProvider.metadata.id),
-              );
+          const providerSwitchSeq = stateManager.getState().providerSwitchSeq;
+          const pendingUserProviderSwitch = providerSwitchSeq !== consumedProviderSwitchSeq;
+          if (pendingUserProviderSwitch) {
+            consumedProviderSwitchSeq = providerSwitchSeq;
+            run.sessionSoftProviderId = null;
+          }
+
+          const prefetchTarget = buildPrefetchTarget(currentEpisode, currentProvider.metadata.id);
+          const consumedBundle =
+            sourceRefreshDecision || pendingUserProviderSwitch
+              ? null
+              : episodePrefetch.takeReadyFor(prefetchTarget);
           const prefetchWasPrepared = consumedBundle?.prepared === true;
 
           let stream: StreamInfo | null = consumedBundle?.stream ?? null;
@@ -1587,14 +1602,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 resolvedProviderId,
               },
             });
-          }
-
-          const providerSwitchSeq = stateManager.getState().providerSwitchSeq;
-          const pendingUserProviderSwitch = providerSwitchSeq !== consumedProviderSwitchSeq;
-          if (pendingUserProviderSwitch) {
-            consumedProviderSwitchSeq = providerSwitchSeq;
-            run.sessionSoftProviderId = null;
-            stream = null;
           }
 
           // Check in-memory cache for recently played episodes (backward navigation).
@@ -2536,6 +2543,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               run.localPlaybackSource ?? undefined,
             );
           } catch (error) {
+            run.pendingStart = startIntent;
             if (error instanceof PlaybackAbortedError || context.signal.aborted) {
               stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
               this.releasePlaybackLedgerWithoutPersist();
@@ -2543,6 +2551,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               return { status: "cancelled" };
             }
             throw error;
+          }
+
+          if (didPlaybackFailToStart(result) || result.watchedSeconds === 0) {
+            run.pendingStart = startIntent;
           }
 
           if (context.signal.aborted) {
@@ -2607,24 +2619,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stateManager.getState().videoMeta,
               ),
             };
+            // One read serves both the did-not-start resume check and the
+            // last-watched bump below: this teardown used to issue the same
+            // identity lookup twice (~8 sequential queries each) per episode end.
+            const existingProgress = container.historyRepository.getProgressForTitleIdentity(
+              titleIdentity,
+              episodeIdentity,
+            );
             if (decision.isDidNotStart) {
-              const existingProgress = container.historyRepository.getProgressForTitleIdentity(
-                titleIdentity,
-                episodeIdentity,
-              );
               if (existingProgress && existingProgress.positionSeconds > 0) {
                 historyTimestamp = existingProgress.positionSeconds;
               }
             }
-            const existingProgressForBump = container.historyRepository.getProgressForTitleIdentity(
-              titleIdentity,
-              episodeIdentity,
-            );
             const lastWatchedAt = decision.shouldBumpLastWatched
               ? new Date().toISOString()
-              : (existingProgressForBump?.lastWatchedAt ??
-                existingProgressForBump?.updatedAt ??
-                null);
+              : (existingProgress?.lastWatchedAt ?? existingProgress?.updatedAt ?? null);
             if (this.playbackLedger) {
               this.playbackLedger.finalize({
                 positionSeconds: historyTimestamp,
@@ -3168,9 +3177,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 resetStopAfterCurrent: true,
                 resumeInterruptedAutoplay: true,
               });
-              const prefetchTarget = buildNextPrefetchTarget();
-              if (prefetchTarget) {
-                await handoffNextEpisodePrefetch(prefetchTarget, "playback.prefetch-wait");
+              const nextPrefetchTarget = buildNextPrefetchTarget();
+              if (nextPrefetchTarget) {
+                await handoffNextEpisodePrefetch(nextPrefetchTarget, "playback.prefetch-wait");
               }
               continue;
             }
@@ -3216,7 +3225,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 new Set(
                   streams
                     .map((s) => s.sourceId)
-                    .filter((id): id is string => id != null && id.length > 0),
+                    .filter((id): id is string => id !== null && id !== undefined && id.length > 0),
                 ),
               );
 
@@ -3616,10 +3625,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (playlistAutoNext?.kind === "queue") {
             const nextPlaylistItem = playlistAutoNext.entry;
             const selectedQueueId = nextPlaylistItem.id;
-            const autoNextIntent = container.queueService.beginPlayback(
-              selectedQueueId,
-              "auto-next",
-            );
+            const autoNextIntent = container.queueService.beginPlayback(selectedQueueId);
             if (autoNextIntent) {
               const nextPlaylistLabel =
                 formatQueueEntryLabel(nextPlaylistItem) ?? nextPlaylistItem.title;

@@ -336,19 +336,47 @@ export type SixelRenderOptions = {
   readonly maxHeight: number;
   /** Palette size including the transparent register. Sixel allows at most 256. */
   readonly maxColors?: number;
+  /**
+   * PTY-flood guard: fail closed to null past this many encoded bytes. The
+   * output is ASCII, so string length is the byte count. Callers that replay
+   * the stream after Ink frames (every repaint re-sends every byte) must set
+   * this; unbounded replays on ConPTY-class terminals are visible flicker.
+   */
+  readonly maxBytes?: number;
 };
+
+/** Degrade steps before giving up: halve colours, then shrink dimensions. */
+const SIXEL_DEGRADE_ATTEMPTS = 4;
 
 export function renderSixelFromImage(
   decoded: DecodedImage,
   options: SixelRenderOptions,
+  signal?: AbortSignal,
 ): string | null {
   if (decoded.width === 0 || decoded.height === 0) return null;
+  if (signal?.aborted) return null;
 
-  const fitted = fitDimensions(decoded, options.maxWidth, options.maxHeight);
-  const resampled = resampleRgba(decoded, fitted.width, fitted.height);
-  const maxColors = Math.min(256, Math.max(2, options.maxColors ?? 256));
-
-  return encodeSixel(quantize(resampled, fitted.width, fitted.height, maxColors));
+  let width = options.maxWidth;
+  let height = options.maxHeight;
+  let colors = Math.min(256, Math.max(2, options.maxColors ?? 256));
+  for (let attempt = 0; attempt < SIXEL_DEGRADE_ATTEMPTS; attempt += 1) {
+    if (signal?.aborted) return null;
+    const fitted = fitDimensions(decoded, width, height);
+    const resampled = resampleRgba(decoded, fitted.width, fitted.height);
+    const sixel = encodeSixel(quantize(resampled, fitted.width, fitted.height, colors));
+    if (options.maxBytes === undefined || sixel.length <= options.maxBytes) return sixel;
+    if (signal?.aborted) return null;
+    // Over budget: colours first (halving the palette roughly halves the
+    // per-band passes), then dimensions. Either step alone may suffice, and
+    // the loop bounds the extra encode work on the failure path.
+    if (colors > 2) {
+      colors = Math.max(2, Math.floor(colors / 2));
+    } else {
+      width = Math.max(1, Math.floor(width * 0.75));
+      height = Math.max(1, Math.floor(height * 0.75));
+    }
+  }
+  return null;
 }
 
 export const __testing = {

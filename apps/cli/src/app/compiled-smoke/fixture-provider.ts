@@ -173,7 +173,6 @@ const videasyManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: true,
-  status: "candidate",
 });
 
 const allanimeManifest = defineProviderManifest({
@@ -200,7 +199,6 @@ const allanimeManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: true,
-  status: "candidate",
 });
 
 export const videasySmokeProviderModule: CoreProviderModule = {

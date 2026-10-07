@@ -34,11 +34,7 @@ import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import { readJsonObjectBody } from "../shared/json-body";
 import { decryptOpensslSalted, sha256Hex } from "../shared/openssl-evp";
 import { HealthTracker, TTLCache } from "../shared/provider-cache";
-import {
-  appendCycleEventsToResult,
-  findLastCycleFailure,
-  providerFailureCodeFromCycleFailure,
-} from "../shared/provider-cycle";
+import { appendCycleEventsToResult, cycleExhaustionFailure } from "../shared/provider-cycle";
 import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
@@ -389,6 +385,7 @@ export async function resolveVideasyDirect(
     qualityPreference: input.qualityPreference,
     startupPriority: input.startupPriority,
     videasyAppId,
+    apiRoute: resolvedOptions?.serverEndpoint,
   });
   const events: ProviderTraceEvent[] = [];
   const sources: ProviderSourceCandidate[] = [];
@@ -762,18 +759,11 @@ export async function resolveVideasyDirect(
   }
 
   events.push(...cycleResult.events);
-  const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-  const failure = cycleFailure
-    ? {
-        code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-        message: cycleFailure.message,
-        retryable: cycleFailure.retryable,
-      }
-    : {
-        code: "not-found" as const,
-        message: "VidKing direct resolver did not find a playable source",
-        retryable: false,
-      };
+  const failure = cycleExhaustionFailure(
+    cycleResult,
+    "VidKing direct resolver did not find a playable source",
+    false,
+  );
 
   return createExhaustedResult(input, context, VIDEOSY_PROVIDER_ID, failure, {
     cachePolicy,
@@ -2537,10 +2527,8 @@ function emitRetryIfNeeded(
   });
 }
 
-function isRetryableFailure(context: ProviderRuntimeContext, failure: ProviderFailure): boolean {
-  if (!failure.retryable) return false;
-  const retryableCodes = context.retryPolicy?.retryableCodes;
-  return !retryableCodes || retryableCodes.includes(failure.code);
+function isRetryableFailure(_context: ProviderRuntimeContext, failure: ProviderFailure): boolean {
+  return failure.retryable === true;
 }
 
 function normalizeVidkingAudioLanguage(

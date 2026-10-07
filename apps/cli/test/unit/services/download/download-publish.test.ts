@@ -14,16 +14,14 @@ type StubCalls = {
 };
 
 function errno(code: string): NodeJS.ErrnoException {
-  const error = new Error(code) as NodeJS.ErrnoException;
-  error.code = code;
-  return error;
+  return Object.assign(new Error(code), { code });
 }
 
 function buildStub(behavior: {
   readonly linkError?: NodeJS.ErrnoException;
   readonly copyError?: NodeJS.ErrnoException;
   readonly fsyncError?: Error;
-}): { readonly fs: StagedDownloadPublishFs; readonly calls: StubCalls } {
+}) {
   const calls: StubCalls = { link: 0, copyFlags: [], fsynced: [], removed: [] };
   const fs: StagedDownloadPublishFs = {
     link: async () => {

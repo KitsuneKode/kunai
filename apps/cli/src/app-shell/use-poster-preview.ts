@@ -190,10 +190,13 @@ export function usePosterPreview(
 ): { poster: PosterResult; posterState: PosterState; spinner: boolean } {
   const [state, dispatch] = useReducer(posterPreviewReducer, initialPosterPreviewState);
   const previousGeometry = useRef<{ readonly rows: number; readonly cols: number } | null>(null);
-  // One delayed retry per URL: a transient fetch failure (busy machine right
-  // after mpv teardown, slow TMDB edge) otherwise leaves the initials fallback
-  // on screen forever because nothing re-arms the effect. Failed fetches are
-  // never cached, so the retry genuinely refetches.
+  // One delayed retry per request (URL + geometry + protocol): a transient
+  // fetch failure (busy machine right after mpv teardown, slow TMDB edge)
+  // otherwise leaves the initials fallback on screen forever because nothing
+  // re-arms the effect. A new requestKey (revisit, resize, protocol change)
+  // re-arms automatically since the stored key no longer matches, and a
+  // success clears the marker so a later transient failure retries again.
+  // Failed fetches are never cached, so the retry genuinely refetches.
   const retryAttempted = useRef<string | null>(null);
   const [retryToken, bumpRetryToken] = useReducer((token: number) => token + 1, 0);
   const requestKey = posterRequestKey(url, {
@@ -241,8 +244,8 @@ export function usePosterPreview(
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let spinnerTimer: ReturnType<typeof setTimeout> | undefined;
     const scheduleRetryIfFirstFailure = () => {
-      if (retryAttempted.current === url) return;
-      retryAttempted.current = url;
+      if (requestKey === null || retryAttempted.current === requestKey) return;
+      retryAttempted.current = requestKey;
       retryTimer = setTimeout(() => {
         if (!cancelled) bumpRetryToken();
       }, 1_500);
@@ -276,7 +279,13 @@ export function usePosterPreview(
       fetchPoster(url, { ...fetchOptions, signal: abort.signal })
         .then((result) => {
           if (cancelled || abort.signal.aborted) return undefined;
-          if (result.kind === "none") scheduleRetryIfFirstFailure();
+          if (result.kind === "none") {
+            scheduleRetryIfFirstFailure();
+          } else if (requestKey !== null && retryAttempted.current === requestKey) {
+            // Success re-arms: a later transient failure for this same
+            // request retries again instead of pinning the fallback.
+            retryAttempted.current = null;
+          }
           startTransition(() =>
             dispatch({ type: "resolved", result, sourceKey: requestKey ?? undefined }),
           );

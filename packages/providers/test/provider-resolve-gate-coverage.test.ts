@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { PROBES } from "../scripts/provider-status-sweep";
+
 /**
  * Every production provider must prove a stream is playable before reporting
  * success, and must do it through the shared gate.
@@ -18,17 +20,15 @@ import { join } from "node:path";
  */
 const PROVIDER_SRC = join(import.meta.dir, "../src");
 
-/** Providers registered by `loadProductionProviderModules()`. */
-const PRODUCTION_PROVIDERS = [
-  "videasy",
-  "vidlink",
-  "vidrock",
-  "rivestream",
-  "allmanga",
-  "anidb",
-  "miruro",
-  "youtube",
-] as const;
+/**
+ * Provider source directories keyed to the production roster. The sweep's
+ * PROBES list is pinned to `loadProductionProviderModules()` by the bootstrap
+ * test, so deriving this from it means a new module cannot ship without being
+ * scanned here — the previous hand-maintained list silently missed four.
+ */
+const PRODUCTION_PROVIDERS = PROBES.map((probe) =>
+  probe.id === "allanime" ? "allmanga" : probe.id,
+);
 
 /**
  * A provider may only appear here with a reason that is about the *runtime*,
@@ -47,6 +47,15 @@ const EXEMPT: Partial<Record<(typeof PRODUCTION_PROVIDERS)[number], string>> = {
   // needs a live provider to measure against, and Miruro is WAF-blocked; tracked
   // in .plans/provider-playback-resilience.md.
   miruro: "per-candidate budget cannot contain a probe; needs a budget rework measured live",
+  // AnimeGG's CDN returns 500 to anything that is not its player — a plain or
+  // ranged GET included — while mpv plays the same URL. A probe cannot reach a
+  // verdict; worse, it would refuse streams that play fine.
+  animegg: "upstream CDN 500s every non-player request; a probe is a false positive by design",
+  // HiAnime's ladder expansion fetches the master playlist with the candidate's
+  // own headers and fails closed on definitive dead-host statuses (5xx/404/410
+  // empties the variant list and fails the resolve). Variant rungs ship from
+  // the same probed host, so a per-variant gate would re-probe one host N times.
+  hianime: "master probe is fused into ladder expansion; shipped variants share the probed host",
 };
 
 /**
@@ -77,7 +86,7 @@ describe("resolve gate coverage", () => {
   test("every exemption states a runtime reason", () => {
     for (const [provider, reason] of Object.entries(EXEMPT)) {
       expect(PRODUCTION_PROVIDERS).toContain(provider as (typeof PRODUCTION_PROVIDERS)[number]);
-      expect(reason.length).toBeGreaterThan(20);
+      expect(reason?.length ?? 0).toBeGreaterThan(20);
     }
   });
 

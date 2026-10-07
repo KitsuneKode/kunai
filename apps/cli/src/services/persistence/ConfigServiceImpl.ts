@@ -4,7 +4,6 @@
 
 import { dbg } from "@/logger";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
-import { normalizeAutoDownloadNextCount } from "@/services/download/download-scope-policy";
 import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
   DEFAULT_OFFLINE_RUNWAY_TARGET,
@@ -18,7 +17,6 @@ import { isJsonString, type ProviderRelayConfig, type StartupPriority } from "@k
 import type {
   ConfigService,
   KitsuneConfig,
-  AutoDownloadMode,
   QuitNearEndBehavior,
   QuitNearEndThresholdMode,
   PresencePrivacy,
@@ -31,54 +29,57 @@ import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
-function normalizeSeriesProvider(value: string | undefined): string {
-  const normalized = value?.trim();
-  if (!normalized) return DEFAULT_CONFIG.provider;
+function normalizeSeriesProvider(value: unknown, fallback = DEFAULT_CONFIG.provider): string {
+  // Config JSON is untrusted at load: a number or object here must degrade to
+  // the default, not crash startup on .trim().
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized) return fallback;
   return migrateLegacyProviderId(normalized);
 }
 
 function normalizeProviderIdList(
-  values: readonly string[] | undefined,
+  values: unknown,
   fallback: readonly string[] = [],
 ): readonly string[] {
   if (!Array.isArray(values)) return fallback.map(migrateLegacyProviderId);
-  return [...new Set(values.map((value) => migrateLegacyProviderId(value.trim())).filter(Boolean))];
+  return [
+    ...new Set(
+      values
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => migrateLegacyProviderId(value.trim()))
+        .filter(Boolean),
+    ),
+  ];
 }
 
-function normalizeDefaultSubtitleLanguage(subLang: string | undefined): string {
-  if (!subLang || subLang === "none" || subLang === "fzf" || subLang === "interactive") {
-    return DEFAULT_CONFIG.subLang;
-  }
-  return subLang;
-}
-
-function normalizeSubtitlePreference(value: string | undefined): string {
-  if (!value) return "none";
+function normalizeSubtitlePreference(value: unknown): string {
+  if (typeof value !== "string" || !value) return "none";
   if (value === "fzf") return "interactive";
   return value;
 }
 
-function normalizeQualityPreference(value: string | undefined): string {
-  const normalized = value?.trim().toLowerCase();
+function normalizeQualityPreference(value: unknown): string {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (!normalized || normalized === "auto") return "best";
   return normalized;
 }
 
-function normalizeLanguageProfile(
-  profile: KitsuneConfig["animeLanguageProfile"] | undefined,
-): KitsuneConfig["animeLanguageProfile"] {
-  if (!profile) return { audio: "original", subtitle: "none", quality: "best" };
+function normalizeLanguageProfile(profile: unknown): KitsuneConfig["animeLanguageProfile"] {
+  if (typeof profile !== "object" || profile === null || Array.isArray(profile)) {
+    return { audio: "original", subtitle: "none", quality: "best" };
+  }
+  const raw = profile as { audio?: unknown; subtitle?: unknown; quality?: unknown };
   return {
-    audio: profile.audio,
-    subtitle: normalizeSubtitlePreference(profile.subtitle),
-    quality: normalizeQualityPreference(profile.quality),
+    audio: typeof raw.audio === "string" && raw.audio ? raw.audio : "original",
+    subtitle: normalizeSubtitlePreference(raw.subtitle),
+    quality: normalizeQualityPreference(raw.quality),
   };
 }
 
 function normalizeTitleProviderPreferences(
   value: Record<string, string> | undefined,
 ): Record<string, string> {
-  if (!value || typeof value !== "object") return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const normalized: Record<string, string> = {};
   for (const [titleId, providerId] of Object.entries(value)) {
     if (typeof titleId !== "string" || typeof providerId !== "string") continue;
@@ -132,7 +133,9 @@ function trimmedConfigString<T>(value: T): string | undefined {
 function normalizeYoutubeMetadata(
   value: KitsuneConfig["youtubeMetadata"] | undefined,
 ): KitsuneConfig["youtubeMetadata"] {
-  if (!value || typeof value !== "object") return { ...DEFAULT_CONFIG.youtubeMetadata };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ...DEFAULT_CONFIG.youtubeMetadata };
+  }
   const entries = {
     instanceUrl: trimmedConfigString(value.instanceUrl),
     pipedApiUrl: trimmedConfigString(value.pipedApiUrl),
@@ -211,6 +214,10 @@ export class ConfigServiceImpl implements ConfigService {
             animeProviderPriority: [...DEFAULT_CONFIG.animeProviderPriority],
           }
         : {
+            animeProvider: normalizeSeriesProvider(
+              loaded.animeProvider,
+              DEFAULT_CONFIG.animeProvider,
+            ),
             animeProviderPriority: normalizeProviderIdList(
               loaded.animeProviderPriority,
               DEFAULT_CONFIG.animeProviderPriority,
@@ -220,8 +227,10 @@ export class ConfigServiceImpl implements ConfigService {
         readProviderDefaultsRevision(loaded),
         CURRENT_PROVIDER_DEFAULTS_REVISION,
       ),
-      youtubeProvider:
-        normalizeSeriesProvider(loaded.youtubeProvider) || DEFAULT_CONFIG.youtubeProvider,
+      youtubeProvider: normalizeSeriesProvider(
+        loaded.youtubeProvider,
+        DEFAULT_CONFIG.youtubeProvider,
+      ),
       youtubeProviderPriority: normalizeProviderIdList(
         loaded.youtubeProviderPriority,
         DEFAULT_CONFIG.youtubeProviderPriority,
@@ -230,12 +239,9 @@ export class ConfigServiceImpl implements ConfigService {
         loaded.youtubeLanguageProfile ?? DEFAULT_CONFIG.youtubeLanguageProfile,
       ),
       youtubeMetadata: normalizeYoutubeMetadata(loaded.youtubeMetadata),
-      subLang: normalizeDefaultSubtitleLanguage(loaded.subLang),
       animeLanguageProfile: normalizeLanguageProfile(loaded.animeLanguageProfile),
       seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
       movieLanguageProfile: normalizeLanguageProfile(loaded.movieLanguageProfile),
-      autoDownload: "off",
-      autoDownloadNextCount: normalizeAutoDownloadNextCount(loaded.autoDownloadNextCount),
       offlineFreeSpaceReserveBytes: normalizeBytes(
         loaded.offlineFreeSpaceReserveBytes,
         DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
@@ -246,6 +252,13 @@ export class ConfigServiceImpl implements ConfigService {
       ),
       offlineDefaultRunwayTarget: normalizeRunwayTarget(loaded.offlineDefaultRunwayTarget),
       protectedDownloadJobIds: normalizeStringList(loaded.protectedDownloadJobIds),
+      favoriteSources: normalizeStringList(loaded.favoriteSources),
+      // `sync: null` (or any non-object) must not reach SyncService — its
+      // readers dereference pausedUntil/anilist without guards.
+      sync:
+        typeof loaded.sync === "object" && loaded.sync !== null && !Array.isArray(loaded.sync)
+          ? { ...DEFAULT_CONFIG.sync, ...loaded.sync }
+          : DEFAULT_CONFIG.sync,
       recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
@@ -283,14 +296,13 @@ export class ConfigServiceImpl implements ConfigService {
     // reads as "my config reset itself". Summarize what changed — sampled to the
     // first few keys so a heavily-drifted file logs one line, not dozens.
     try {
-      const repaired = Object.keys(service.config).filter((key) => {
-        const before = (loaded as unknown as Record<string, unknown>)[key];
-        return (
-          before !== undefined &&
-          JSON.stringify(before) !==
-            JSON.stringify((service.config as unknown as Record<string, unknown>)[key])
-        );
-      });
+      const loadedValues = new Map(Object.entries(loaded));
+      const repaired = Object.entries(service.config)
+        .filter(([key, currentValue]) => {
+          const before = loadedValues.get(key);
+          return before !== undefined && JSON.stringify(before) !== JSON.stringify(currentValue);
+        })
+        .map(([key]) => key);
       if (repaired.length > 0) {
         dbg("config", `normalized ${repaired.length} key(s) to defaults`, {
           keys: repaired.slice(0, 8).join(","),
@@ -406,16 +418,8 @@ export class ConfigServiceImpl implements ConfigService {
     return [...this.config.animeProviderPriority];
   }
 
-  get subLang(): string {
-    return this.config.subLang;
-  }
-
   get wyzieApiKey(): string {
     return this.config.wyzieApiKey;
-  }
-
-  get animeLang(): "sub" | "dub" {
-    return this.config.animeLang;
   }
 
   get animeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
@@ -432,10 +436,6 @@ export class ConfigServiceImpl implements ConfigService {
 
   get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
     return this.config.animeTitlePreference;
-  }
-
-  get headless(): boolean {
-    return this.config.headless;
   }
 
   get showMemory(): boolean {
@@ -546,14 +546,6 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.offlineMode;
   }
 
-  get autoDownload(): AutoDownloadMode {
-    return this.config.autoDownload;
-  }
-
-  get autoDownloadNextCount(): number {
-    return this.config.autoDownloadNextCount;
-  }
-
   get maxConcurrentDownloads(): number {
     return normalizeMaxConcurrentDownloads(this.config.maxConcurrentDownloads);
   }
@@ -576,10 +568,6 @@ export class ConfigServiceImpl implements ConfigService {
 
   get startupPriority(): StartupPriority {
     return this.config.startupPriority;
-  }
-
-  get artworkPreviewsEnabled(): boolean {
-    return this.config.artworkPreviewsEnabled;
   }
 
   get offlineArtworkCacheEnabled(): boolean {
@@ -714,10 +702,6 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.powerSaverMode;
   }
 
-  get powerSaverAllowManualArtwork(): boolean {
-    return this.config.powerSaverAllowManualArtwork;
-  }
-
   get tuning(): TuningConfig {
     return resolveTuning(this.config.tuningOverrides);
   }
@@ -752,9 +736,6 @@ export class ConfigServiceImpl implements ConfigService {
     this.config = {
       ...this.config,
       ...partial,
-      ...(partial.subLang !== undefined
-        ? { subLang: normalizeDefaultSubtitleLanguage(partial.subLang) }
-        : null),
       ...(partial.providerPriority !== undefined
         ? { providerPriority: normalizeProviderIdList(partial.providerPriority) }
         : null),
@@ -770,10 +751,6 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.movieLanguageProfile
         ? { movieLanguageProfile: normalizeLanguageProfile(partial.movieLanguageProfile) }
         : null),
-      ...(partial.autoDownloadNextCount !== undefined
-        ? { autoDownloadNextCount: normalizeAutoDownloadNextCount(partial.autoDownloadNextCount) }
-        : null),
-      ...(partial.autoDownload !== undefined ? { autoDownload: "off" as const } : null),
       ...(partial.offlineFreeSpaceReserveBytes !== undefined
         ? {
             offlineFreeSpaceReserveBytes: normalizeBytes(
@@ -929,9 +906,16 @@ export class ConfigServiceImpl implements ConfigService {
   }
 }
 
-function normalizeStringList(values: readonly string[] | undefined): readonly string[] {
+function normalizeStringList(values: unknown): readonly string[] {
   if (!Array.isArray(values)) return [];
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      values
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function normalizeOptionalSecret<T>(value: T): string {
@@ -1044,17 +1028,20 @@ const SHIPPED_VIDEASY_DEFAULT_PRIORITIES: ReadonlyArray<readonly string[]> = [
 /**
  * Configs stamped before `CURRENT_PROVIDER_DEFAULTS_REVISION` whose series pair
  * is exactly a pair a release once shipped are moved to `DEFAULT_CONFIG`'s
- * series defaults. Anything else — a reordered list, a non-Videasy pick, a
- * hand-edited file — is left alone. A user who re-picks Videasy after the
- * migration writes `provider` alone, which this check no longer matches.
+ * series defaults. Anything else — a reordered custom list or a non-Videasy
+ * pick — is left alone. A user who re-picks Videasy after the migration writes
+ * `provider` alone (or with a missing/unreadable priority), which this check
+ * no longer matches.
  */
 function shouldMigrateInheritedSeriesDefaults(loaded: Partial<KitsuneConfig>): boolean {
   if (readProviderDefaultsRevision(loaded) >= CURRENT_PROVIDER_DEFAULTS_REVISION) return false;
   const provider = typeof loaded.provider === "string" ? loaded.provider.trim() : "";
   if (migrateLegacyProviderId(provider) !== "videasy") return false;
   const priority = loaded.providerPriority;
-  if (priority === undefined) return true;
-  if (!Array.isArray(priority)) return false;
+  // A missing or unreadable priority cannot carry a deliberate ordering —
+  // it normalizes to the shipped list below, so it must not shield the dead
+  // provider pick from migration either.
+  if (!Array.isArray(priority)) return true;
   return SHIPPED_VIDEASY_DEFAULT_PRIORITIES.some(
     (shipped) =>
       shipped.length === priority.length && shipped.every((id, index) => id === priority[index]),

@@ -304,7 +304,7 @@ export class QueueRepository {
       .query(
         `UPDATE playlist_queue
          SET status = 'in-flight', in_flight_at = ?, last_failure_json = NULL
-         WHERE id = ? AND session_id = ? AND status = 'pending'`,
+         WHERE id = ? AND session_id = ? AND status = 'pending' AND played_at IS NULL`,
       )
       .run(at, id, sessionId);
     if (result.changes === 0) return false;
@@ -371,9 +371,24 @@ export class QueueRepository {
    * bun:sqlite nests via SAVEPOINT, so an outer rollback still undoes this.
    */
   setQueuePositions(orderedIds: readonly string[]): void {
-    const stmt = this.db.query("UPDATE playlist_queue SET queue_position = ? WHERE id = ?");
+    if (orderedIds.length === 0) return;
+    // One statement, not one per row: the previous per-id loop paid N
+    // round-trips per reorder and widened the write-transaction window for no
+    // reason. A single CASE keeps the same all-or-nothing shape with one
+    // fsync-adjacent step instead of N.
+    const cases = orderedIds.map(() => "WHEN ? THEN ?").join(" ");
+    const targets = orderedIds.map(() => "?").join(", ");
+    const params: (string | number)[] = [];
+    for (const [index, id] of orderedIds.entries()) {
+      params.push(id, index);
+    }
+    for (const id of orderedIds) params.push(id);
     this.db.transaction(() => {
-      orderedIds.forEach((id, index) => stmt.run(index, id));
+      this.db
+        .query<unknown, (string | number)[]>(
+          `UPDATE playlist_queue SET queue_position = CASE id ${cases} END WHERE id IN (${targets})`,
+        )
+        .run(...params);
     })();
   }
 
@@ -487,7 +502,7 @@ export class QueueRepository {
         .run(sourceSessionId);
 
       const restoredEntries = this.getAll(sourceSessionId).filter(
-        (entry) => entry.status === "pending",
+        (entry) => entry.status === "pending" && entry.playedAt === undefined,
       );
       const restoredIds = restoredEntries.map((entry) => entry.id);
       if (restoredIds.length === 0) {
@@ -500,7 +515,8 @@ export class QueueRepository {
           `UPDATE playlist_queue
            SET session_id = ?
            WHERE session_id = ?
-             AND status = 'pending'`,
+             AND status = 'pending'
+             AND played_at IS NULL`,
         )
         .run(targetSessionId, sourceSessionId);
 
@@ -549,7 +565,11 @@ function serializeExternalIds(externalIds: ProviderExternalIds | undefined): str
 function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
   if (!value) return undefined;
   try {
-    return JSON.parse(value) as ProviderExternalIds;
+    const parsed: unknown = JSON.parse(value);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+    // SAFETY: the object/array/null check above leaves a plain JSON object —
+    // the externalIds contract shape.
+    return parsed as ProviderExternalIds;
   } catch {
     return undefined;
   }

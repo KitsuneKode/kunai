@@ -7,7 +7,9 @@ import {
   formatOfflineLibraryGroupDetail,
   formatOfflineShelfBadge,
   formatOfflineShelfDetail,
+  canUseRemoteArtwork,
   groupOfflineLibraryEntries,
+  type OfflineArtworkPolicy,
   type OfflineLibraryEntry,
 } from "@/services/offline/offline-library";
 
@@ -47,17 +49,19 @@ export type OfflineLibraryShelfGroup = {
 export type OfflineLibraryShelf = {
   readonly summary: string;
   readonly groups: readonly OfflineLibraryShelfGroup[];
-  readonly emptyActions: readonly string[];
 };
 
 export type OfflineLibraryEngine = {
-  buildShelf(entries: readonly OfflineLibraryEntry[]): OfflineLibraryShelf;
+  buildShelf(
+    entries: readonly OfflineLibraryEntry[],
+    artworkPolicy?: OfflineArtworkPolicy,
+  ): OfflineLibraryShelf;
 };
 
 export function createOfflineLibraryEngine(): OfflineLibraryEngine {
   return {
-    buildShelf(entries) {
-      const groups = groupOfflineLibraryEntries(entries).map((group) => {
+    buildShelf(entries, artworkPolicy) {
+      const groups = groupOfflineLibraryEntries(entries, artworkPolicy).map((group) => {
         const shelfEntries = group.entries.map((entry) => ({
           jobId: entry.job.id,
           presentation: presentMedia({
@@ -69,7 +73,9 @@ export function createOfflineLibraryEngine(): OfflineLibraryEngine {
           }),
           badge: formatOfflineShelfBadge(entry.job, entry.status),
           detail: formatOfflineShelfDetail(entry.job, entry.status, group.contentType),
-          previewImageUrl: entry.job.thumbnailPath ?? entry.job.posterUrl,
+          previewImageUrl:
+            entry.job.thumbnailPath ??
+            (canUseRemoteArtwork(artworkPolicy ?? {}) ? entry.job.posterUrl : undefined),
           playable: entry.status === "ready",
         }));
         const nextPlayable = shelfEntries.find((entry) => entry.playable)?.presentation;
@@ -93,7 +99,7 @@ export function createOfflineLibraryEngine(): OfflineLibraryEngine {
             mediaKind: group.mediaKind,
             contentType: group.contentType,
           }),
-          artifactSummary: formatArtifactSummary(group.entries),
+          artifactSummary: formatArtifactSummary(group.entries, artworkPolicy),
           readyCount: group.readyCount,
           issueCount: group.issueCount,
           previewImageUrl: group.previewImageUrl,
@@ -109,7 +115,6 @@ export function createOfflineLibraryEngine(): OfflineLibraryEngine {
               } local ${entries.length === 1 ? "item" : "items"} · local-only`
             : "No completed local videos yet",
         groups,
-        emptyActions: ["Open downloads queue", "Search online"],
       };
     },
   };
@@ -136,13 +141,27 @@ function formatActionSummary(input: {
   return parts.join(" · ");
 }
 
-function formatArtifactSummary(entries: readonly OfflineLibraryEntry[]): string {
-  const hasArtwork = entries.some((entry) => entry.job.thumbnailPath || entry.job.posterUrl);
+function formatArtifactSummary(
+  entries: readonly OfflineLibraryEntry[],
+  artworkPolicy: OfflineArtworkPolicy | undefined,
+): string {
+  // "artwork ready" must mean displayable here: a remote posterUrl cannot
+  // render under an offline policy, and a bare URL is never "cached".
+  const remoteAllowed = canUseRemoteArtwork(artworkPolicy ?? {});
+  const hasLocalArtwork = entries.some((entry) => entry.job.thumbnailPath);
+  const hasRemoteArtwork = entries.some((entry) => entry.job.posterUrl);
+  const artworkLabel = hasLocalArtwork
+    ? "artwork ready"
+    : hasRemoteArtwork
+      ? remoteAllowed
+        ? "artwork linked"
+        : "artwork not cached"
+      : "artwork missing";
   const hasSubtitles = entries.some((entry) => entry.job.subtitlePath);
   const hasTiming = entries.some((entry) => entry.job.introSkipJson);
 
   return [
-    hasArtwork ? "artwork ready" : "artwork missing",
+    artworkLabel,
     hasSubtitles ? "subtitles cached" : "subtitles missing",
     hasTiming ? "timing cached" : "timing missing",
   ].join(" · ");

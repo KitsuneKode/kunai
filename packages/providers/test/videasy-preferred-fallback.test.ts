@@ -47,7 +47,7 @@ describe("videasy preferred source fallback", () => {
     const context = {
       now: () => "2026-07-16T00:00:00.000Z",
       signal: AbortSignal.timeout(30_000),
-      retryPolicy: { maxAttempts: 1, backoff: "none" as const },
+      retryPolicy: { maxAttempts: 1 as const },
       endpointHealth: passthroughEndpointHealth,
       fetch: {
         runtime: "direct-http" as const,
@@ -97,7 +97,7 @@ describe("videasy preferred source fallback", () => {
     const context = {
       now: () => "2026-07-11T00:00:00.000Z",
       signal: AbortSignal.timeout(30_000),
-      retryPolicy: { maxAttempts: 1, backoff: "none" as const },
+      retryPolicy: { maxAttempts: 1 as const },
       // Isolate from module-level HealthTracker pollution left by other Videasy tests.
       endpointHealth: passthroughEndpointHealth,
       fetch: createFetchWithSeedMock(async (input) => {

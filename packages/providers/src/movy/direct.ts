@@ -25,9 +25,14 @@ import type {
 import { ProviderHttpError, providerFetch } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import {
-  findLastCycleFailure,
+  cycleExhaustionFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
+import {
+  dropRefusedStreams,
+  resolveGateBudgetMs,
+  selectVerifiedStream,
+} from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
@@ -138,15 +143,23 @@ async function fetchMovySeed(
       retryable: response.status >= 500 || response.status === 429,
     });
   }
-  // SAFETY: seed response is a two-field JSON envelope; a missing `seed` is
-  // rejected on the next line, so a shape surprise fails closed.
-  const body = (await response.json()) as { seed?: string; ttlMs?: number };
-  if (!body.seed) throw new MovyDecryptError("seed response carried no seed");
+  // SAFETY: the seed envelope is untrusted — `seed` must be a non-empty string
+  // (a number/boolean decrypts to a TypeError), and `ttlMs` must be a finite
+  // positive number (a string concatenates onto Date.now() into an immortal
+  // entry). Either surprise fails closed and never reaches the cache.
+  const body = (await response.json()) as { seed?: unknown; ttlMs?: unknown } | null;
+  if (!body || typeof body.seed !== "string" || !body.seed) {
+    throw new MovyDecryptError("seed response carried no usable seed");
+  }
+  const ttlMs =
+    typeof body.ttlMs === "number" && Number.isFinite(body.ttlMs) && body.ttlMs > 0
+      ? body.ttlMs
+      : 30_000;
 
   seedCache.delete(cacheKey);
   seedCache.set(cacheKey, {
     seed: body.seed,
-    expiresAt: Date.now() + (body.ttlMs ?? 30_000),
+    expiresAt: Date.now() + ttlMs,
   });
   while (seedCache.size > SEED_CACHE_MAX) {
     const oldest = seedCache.keys().next();
@@ -203,12 +216,20 @@ async function fetchMovyLaneSources(
       });
     }
     const ciphertext = await response.text();
-    const plaintext = decryptMovyPayload(ciphertext, seed, mediaId);
     try {
+      const plaintext = decryptMovyPayload(ciphertext, seed, mediaId);
       // SAFETY: decrypted payload is the lane's sources envelope; every
       // consumer reads optional fields and empty sources fail closed below.
       return JSON.parse(plaintext) as MovySourcesPayload;
     } catch (error) {
+      // A seed that cannot decrypt this lane's ciphertext does not fit it —
+      // treat it like the 401 the site uses: drop the cached seed, refetch,
+      // retry once. Otherwise one bad draw poisons the seed cache for its
+      // whole TTL and every later resolve of the title fails.
+      if (attempt === 0) {
+        invalidateMovySeed(mediaId);
+        continue;
+      }
       throw new MovyDecryptError(`${lane}: decrypted payload was not JSON`, { cause: error });
     }
   }
@@ -260,6 +281,7 @@ async function resolveMovyLaneCandidate({
   laneParams,
   tmdbId,
   signal,
+  gateTimeoutMs,
 }: {
   readonly candidate: ProviderCycleCandidate;
   readonly lane: MovyLane;
@@ -268,6 +290,7 @@ async function resolveMovyLaneCandidate({
   readonly laneParams: Record<string, string>;
   readonly tmdbId: number;
   readonly signal?: AbortSignal;
+  readonly gateTimeoutMs: number;
 }): Promise<MovyResolvedCandidate> {
   const sourceId = candidate.sourceId ?? providerInventorySourceId(MOVY_PROVIDER_ID, lane);
   const displayLabel = `Movy ${lane}`;
@@ -372,7 +395,35 @@ async function resolveMovyLaneCandidate({
     });
   }
 
-  return { provider: lane, streams, variants, subtitles };
+  // Probe before accepting the lane: a lane payload can carry dead mirrors
+  // (the status sweep caught a Denver source answering 404), and reporting it
+  // unprobed is the videasy failure shape — success claimed for a stream that
+  // cannot play. The gate only rejects on a definitive refusal; a slow or
+  // non-committal host still ships.
+  const selection = await selectVerifiedStream({
+    streams,
+    context,
+    signal,
+    timeoutMs: gateTimeoutMs,
+  });
+  if (!selection.accepted) {
+    throw createProviderCycleFailureError(candidate, {
+      failureClass: "candidate-blocked",
+      message: `${displayLabel}: ${selection.reason}`,
+      retryable: false,
+      at: context.now(),
+      // Every rung of this lane was refused by probing its own URLs, so it is
+      // durable evidence about that lane's endpoints rather than our network.
+      endpointScoped: true,
+    });
+  }
+  // Keep the alternatives, drop the rungs the gate proved dead.
+  const gatedStreams = dropRefusedStreams(streams, selection.refusedHosts);
+  const gatedVariants = variants.filter((variant) =>
+    gatedStreams.some((stream) => stream.variantId === variant.id),
+  );
+
+  return { provider: lane, streams: gatedStreams, variants: gatedVariants, subtitles };
 }
 
 export function buildMovyCycleCandidates(
@@ -503,17 +554,27 @@ export async function resolveMovyDirect(
     message: `Movy resolving TMDB ${tmdbId} across ${cycleCandidates.length} lanes`,
   });
 
+  // The attempt budget caps this, so the gate has to be sized against what the
+  // candidate actually gets rather than the number chosen here.
+  const candidateTimeoutMs = providerCycleCandidateTimeoutMs(
+    input.startupPriority ?? "balanced",
+    MOVY_CANDIDATE_TIMEOUT_MS,
+  );
+  const gateTimeoutMs = resolveGateBudgetMs(candidateTimeoutMs);
+
   const cycleResult = await runProviderCycle({
     providerId: MOVY_PROVIDER_ID,
     candidates: cycleCandidates,
     signal: context.signal,
     now: context.now,
     emit: context.emit,
+    // Each lane is a different upstream scraper, so a lane's health evidence
+    // belongs to that lane alone — wiring the port is what makes
+    // `endpointScoped` on the gate refusal below mean anything.
+    endpointHealth: context.endpointHealth,
+    titleId: input.title.id,
     maxAttemptsPerCandidate: 1,
-    candidateTimeoutMs: providerCycleCandidateTimeoutMs(
-      input.startupPriority ?? "balanced",
-      MOVY_CANDIDATE_TIMEOUT_MS,
-    ),
+    candidateTimeoutMs,
     resolveCandidate: async (candidate, candidateContext) => {
       // SAFETY: serverId/lane were minted by this module's own lane roster
       // when the candidates were declared; a stray value resolves as a lane
@@ -531,13 +592,25 @@ export async function resolveMovyDirect(
           // it the fetch is never cancelled and a stalled lane leaks its
           // socket until TCP timeout.
           signal: candidateContext.signal,
+          gateTimeoutMs,
         });
       } catch (error) {
         // resolveMovyLaneCandidate already classifies its own failures (e.g.
         // candidate-empty) — rewrapping them would flatten every lane error
         // into not-found and hide transient/server evidence from provider
         // health and offline detection.
-        if (error instanceof ProviderCycleFailureError) throw error;
+        if (error instanceof ProviderCycleFailureError) {
+          // The gate's own verdict carries `endpointScoped`; keep it visible in
+          // the resolve's failure list instead of only in the cycle attempts.
+          failures.push({
+            providerId: MOVY_PROVIDER_ID,
+            code: providerFailureCodeFromCycleFailure(error.failure.failureClass),
+            message: error.failure.message,
+            retryable: error.failure.retryable,
+            at: context.now(),
+          });
+          throw error;
+        }
         // A caller abort is not lane evidence — record nothing, spend nothing.
         if (context.signal?.aborted) throw error;
         const message = error instanceof Error ? error.message : `Movy lane ${lane} failed`;
@@ -604,18 +677,7 @@ export async function resolveMovyDirect(
   }
 
   if (!cycleResult.selected) {
-    const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-    const failure = cycleFailure
-      ? {
-          code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-          message: cycleFailure.message,
-          retryable: cycleFailure.retryable,
-        }
-      : {
-          code: "not-found" as const,
-          message: "All Movy lanes exhausted without streams",
-          retryable: true,
-        };
+    const failure = cycleExhaustionFailure(cycleResult, "All Movy lanes exhausted without streams");
     return createExhaustedResult(input, context, MOVY_PROVIDER_ID, failure, {
       cachePolicy,
       events,

@@ -42,8 +42,10 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // has rotted — api.videasy.to (the provider's TMDB-mirror DB and legacy
   // endpoint host) no longer resolves at DNS, so title-metadata enrichment
   // depends on the mirror chain. The wings stream endpoints on
-  // api.speedracelight.com still answer, so Videasy stays registered and last
-  // in the order — a working fallback, not a removal.
+  // api.speedracelight.com answered CF 502 from 2026-09-21 and every player
+  // host (player.videasy.to, cineby.at, cineplay.to) is unreachable — Videasy
+  // stays registered and last in the order so an upstream revival needs no
+  // code change.
   provider: "vidlink",
   // HiAnime leads the anime lane. AniDB stays registered and in the priority
   // tail because it still carries the only verified AID cross-link and XML
@@ -75,14 +77,11 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },
-  subLang: "en",
   wyzieApiKey: "",
-  animeLang: "sub",
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
   seriesLanguageProfile: { audio: "original", subtitle: "none", quality: "best" },
   movieLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
   animeTitlePreference: "english",
-  headless: true,
   showMemory: false,
   autoNext: true,
   autoplayRecommendations: true,
@@ -109,7 +108,6 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   minimalMode: false,
   zenMode: false,
   powerSaverMode: false,
-  powerSaverAllowManualArtwork: true,
   presenceProvider: "off",
   presencePrivacy: "full",
   presenceDiscordClientId: "",
@@ -126,14 +124,11 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   videasyAppId: "bc-frontend",
   downloadsEnabled: false,
   offlineMode: false,
-  autoDownload: "off",
-  autoDownloadNextCount: 1,
   maxConcurrentDownloads: 3,
   defaultDownloadQuality: "best",
   autoCleanupWatched: false,
   recoveryMode: "guided",
   startupPriority: "balanced",
-  artworkPreviewsEnabled: true,
   offlineArtworkCacheEnabled: true,
   offlineFreeSpaceReserveBytes: DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
   offlineUnknownEpisodeEstimateBytes: DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,

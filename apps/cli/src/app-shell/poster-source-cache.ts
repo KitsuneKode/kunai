@@ -124,11 +124,28 @@ async function readRemotePosterSource(
   const timeout = AbortSignal.timeout(5000);
   const fetchSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
   const response = await observeOnlineIfBound("poster-error", () =>
-    fetch(url, { signal: fetchSignal }),
+    fetch(url, {
+      signal: fetchSignal,
+      // Ask for images: negotiating servers then serve bytes we can use (or
+      // 406) instead of an HTML error page we would only discard below.
+      headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8" },
+    }),
   );
   if (!response.ok || !response.body) {
     // Drain nothing; just let the body go.
     await response.body?.cancel("unused").catch(() => {});
+    return null;
+  }
+
+  // Posters must be image bytes. An HTML error page (or anything else a
+  // provider/CDN URL serves with a declared non-image type) is never worth
+  // caching, decoding, or handing to the terminal — the offline artwork cache
+  // already enforces this, and the preview path matches it. An absent type is
+  // still read (bounded below, decode fails closed downstream) because some
+  // CDNs omit it on genuine images.
+  const contentType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+  if (contentType !== undefined && contentType !== "" && !contentType.startsWith("image/")) {
+    await response.body.cancel("non-image").catch(() => {});
     return null;
   }
 

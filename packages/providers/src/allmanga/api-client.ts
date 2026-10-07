@@ -882,6 +882,9 @@ export async function resolveEpisodeSources(opts: {
       }
       rawText = null;
       await retrySleep(3_200, signal);
+      // retrySleep resolves (not rejects) on abort — without this check an
+      // aborted resolve burns another network round instead of cancelling.
+      signal?.throwIfAborted();
       continue;
     }
 
@@ -899,6 +902,7 @@ export async function resolveEpisodeSources(opts: {
       rawText = null;
       material = await refreshAllMangaCryptoMaterial(context, ua, signal);
       await retrySleep(400, signal);
+      signal?.throwIfAborted();
       continue;
     }
 

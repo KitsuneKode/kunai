@@ -22,7 +22,6 @@ type ProviderMetadata = {
   readonly recommended: boolean;
   readonly mediaKinds: readonly string[];
   readonly capabilities: readonly string[];
-  readonly status: string;
   readonly notes: readonly string[];
 };
 
@@ -118,7 +117,6 @@ function parseManifest(manifestPath: string, fallbackDir: string): ProviderMetad
     recommended: extractBoolean(normalizedContent, "recommended"),
     mediaKinds: extractArray(normalizedContent, "mediaKinds"),
     capabilities: extractArray(normalizedContent, "capabilities"),
-    status: extractString(normalizedContent, "status") || "active",
     notes: extractArray(normalizedContent, "notes"),
   };
 }

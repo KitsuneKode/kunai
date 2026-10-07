@@ -1,5 +1,6 @@
 import type {
   ProviderCycleFailure,
+  ProviderCycleResult,
   ProviderResolveResult,
   ProviderTraceEvent,
   ResolveErrorCode,
@@ -27,6 +28,36 @@ export function findLastCycleFailure(
     if (failure) return failure;
   }
   return undefined;
+}
+
+/**
+ * `runProviderCycle` can end with zero attempts: every candidate was skipped
+ * by endpoint quarantine. `findLastCycleFailure` then returns undefined and a
+ * call site's generic "exhausted" message would lie — nothing was attempted.
+ * Name the quarantine so the failure reads as the transient state it is.
+ */
+export function cycleExhaustionFailure(
+  cycleResult: Pick<ProviderCycleResult<unknown>, "attempts" | "stopReason">,
+  exhaustedMessage: string,
+  exhaustedRetryable = true,
+): { code: ResolveErrorCode; message: string; retryable: boolean } {
+  const cycleFailure = findLastCycleFailure(cycleResult.attempts);
+  if (cycleFailure) {
+    return {
+      code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
+      message: cycleFailure.message,
+      retryable: cycleFailure.retryable,
+    };
+  }
+  if (cycleResult.stopReason === "all-quarantined") {
+    return {
+      code: "provider-unavailable",
+      message:
+        "Every source is quarantined by recent failures; they rejoin automatically as health recovers",
+      retryable: true,
+    };
+  }
+  return { code: "not-found", message: exhaustedMessage, retryable: exhaustedRetryable };
 }
 
 export function providerFailureCodeFromCycleFailure(

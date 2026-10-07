@@ -103,6 +103,7 @@ let globalContainer: Awaited<ReturnType<typeof createContainer>> | null = null;
 let processHandlersInitialized = false;
 /** Resolves once startup lifetime-lock acquisition settled (versioned binary). */
 let lifetimeLockReady: Promise<void> = Promise.resolve();
+let fatalExitError: Error | string | null = null;
 
 async function shutdownShell(): Promise<void> {
   const { shutdownSessionApp } = await import("./app-shell/ink-shell");
@@ -135,7 +136,12 @@ function liveMainShutdownDeps(): MainShutdownDeps {
       await releaseCurrentVersionLock();
     },
     disposeContainer: () => disposeContainer(globalContainer),
-    exit: (code) => process.exit(code),
+    exit: (code) => {
+      if (fatalExitError) {
+        console.error("Fatal error:", fatalExitError);
+      }
+      process.exit(code);
+    },
   };
 }
 
@@ -1289,7 +1295,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     await getShutdownCoordinator().request({ reason: "normal exit", exitCode: 0 });
   } catch (e) {
     logger.error("Kunai crashed", { error: String(e) });
-    console.error("Fatal error:", e);
+    fatalExitError = e instanceof Error ? e : String(e);
     await getShutdownCoordinator().request({ reason: "fatal error", exitCode: 1, fatal: true });
   }
 }
@@ -1327,7 +1333,7 @@ function setupSignalHandlers(): void {
   });
 
   process.on("uncaughtException", (e) => {
-    console.error("Uncaught exception:", e);
+    fatalExitError = e instanceof Error ? e : String(e);
     void getShutdownCoordinator().request({
       reason: "uncaught exception",
       exitCode: 1,
@@ -1336,7 +1342,7 @@ function setupSignalHandlers(): void {
   });
 
   process.on("unhandledRejection", (e) => {
-    console.error("Unhandled rejection:", e);
+    fatalExitError = e instanceof Error ? e : String(e);
     void getShutdownCoordinator().request({
       reason: "unhandled rejection",
       exitCode: 1,

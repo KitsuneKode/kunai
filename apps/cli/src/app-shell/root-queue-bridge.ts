@@ -50,11 +50,10 @@ type QueueClaimPort = Pick<QueueService, "beginPlayback" | "getAll">;
 export function claimQueuePlaybackLaunch(
   queueService: QueueClaimPort,
   queueEntryId: string,
-  source: QueuePlaybackIntent["source"] = "queue",
 ): QueuePlaybackLaunch | undefined {
   const entry = queueService.getAll().find((candidate) => candidate.id === queueEntryId);
   if (!entry) return undefined;
-  const intent = queueService.beginPlayback(queueEntryId, source);
+  const intent = queueService.beginPlayback(queueEntryId);
   if (!intent) return undefined;
   return { intent, title: entry.title };
 }
@@ -68,9 +67,8 @@ export function resolveQueueRowPlaySelection(
   queueEntryId: string,
   resolve: (value: QueuePlaybackLaunch) => void,
   closeOverlay: () => void,
-  source: QueuePlaybackIntent["source"] = "queue",
 ): "claimed" | "failed" {
-  const launch = claimQueuePlaybackLaunch(queueService, queueEntryId, source);
+  const launch = claimQueuePlaybackLaunch(queueService, queueEntryId);
   if (!launch) return "failed";
   resolve(launch);
   closeOverlay();

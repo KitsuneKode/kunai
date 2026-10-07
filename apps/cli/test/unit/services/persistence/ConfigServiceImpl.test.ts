@@ -64,11 +64,10 @@ describe("ConfigServiceImpl", () => {
     const store = new MemoryConfigStore();
     const service = await ConfigServiceImpl.load(store);
 
-    await service.update({ defaultMode: "anime", subLang: "interactive", footerHints: "minimal" });
+    await service.update({ defaultMode: "anime", footerHints: "minimal" });
     await service.save();
 
     expect((await store.load()).defaultMode).toBe("anime");
-    expect((await store.load()).subLang).toBe("en");
     expect((await store.load()).footerHints).toBe("minimal");
   });
 
@@ -148,17 +147,13 @@ describe("ConfigServiceImpl", () => {
     expect(service.downloadsEnabled).toBe(false);
     expect(service.downloadPath).toBe("");
     expect(service.downloadOnboardingDismissed).toBe(false);
-    expect(service.autoDownload).toBe("off");
-    expect(service.autoDownloadNextCount).toBe(1);
     expect(service.autoCleanupWatched).toBe(false);
     expect(service.recoveryMode).toBe("guided");
-    expect(service.artworkPreviewsEnabled).toBe(true);
     expect(service.offlineArtworkCacheEnabled).toBe(true);
     expect(service.offlineFreeSpaceReserveBytes).toBe(2 * 1024 * 1024 * 1024);
     expect(service.offlineUnknownEpisodeEstimateBytes).toBe(768 * 1024 * 1024);
     expect(service.offlineDefaultRunwayTarget).toBe(2);
     expect(service.powerSaverMode).toBe(false);
-    expect(service.powerSaverAllowManualArtwork).toBe(true);
     expect(service.autoCleanupGraceDays).toBe(7);
     expect(service.protectedDownloadJobIds).toEqual([]);
     expect(service.updateChecksEnabled).toBe(true);
@@ -169,17 +164,13 @@ describe("ConfigServiceImpl", () => {
       downloadsEnabled: true,
       downloadPath: "~/Videos/Kunai",
       downloadOnboardingDismissed: true,
-      autoDownload: "next",
-      autoDownloadNextCount: 3,
       autoCleanupWatched: true,
       recoveryMode: "fallback-first",
-      artworkPreviewsEnabled: false,
       offlineArtworkCacheEnabled: false,
       offlineFreeSpaceReserveBytes: 100,
       offlineUnknownEpisodeEstimateBytes: 200,
       offlineDefaultRunwayTarget: 5,
       powerSaverMode: true,
-      powerSaverAllowManualArtwork: false,
       autoCleanupGraceDays: 3,
       protectedDownloadJobIds: ["job-a", "job-a", " job-b "],
       updateChecksEnabled: false,
@@ -190,17 +181,13 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).downloadsEnabled).toBe(true);
     expect((await store.load()).downloadPath).toBe("~/Videos/Kunai");
     expect((await store.load()).downloadOnboardingDismissed).toBe(true);
-    expect((await store.load()).autoDownload).toBe("off");
-    expect((await store.load()).autoDownloadNextCount).toBe(3);
     expect((await store.load()).autoCleanupWatched).toBe(true);
     expect((await store.load()).recoveryMode).toBe("fallback-first");
-    expect((await store.load()).artworkPreviewsEnabled).toBe(false);
     expect((await store.load()).offlineArtworkCacheEnabled).toBe(false);
     expect((await store.load()).offlineFreeSpaceReserveBytes).toBe(100);
     expect((await store.load()).offlineUnknownEpisodeEstimateBytes).toBe(200);
     expect((await store.load()).offlineDefaultRunwayTarget).toBe(5);
     expect((await store.load()).powerSaverMode).toBe(true);
-    expect((await store.load()).powerSaverAllowManualArtwork).toBe(false);
     expect((await store.load()).autoCleanupGraceDays).toBe(3);
     expect((await store.load()).protectedDownloadJobIds).toEqual(["job-a", "job-b"]);
     expect((await store.load()).updateChecksEnabled).toBe(false);
@@ -216,46 +203,6 @@ describe("ConfigServiceImpl", () => {
     );
 
     expect(service.recoveryMode).toBe("guided");
-  });
-
-  test("clamps auto-download next count on load and update", async () => {
-    const store = new MemoryConfigStore({ autoDownloadNextCount: 99 });
-    const service = await ConfigServiceImpl.load(store);
-
-    expect(service.autoDownloadNextCount).toBe(24);
-
-    await service.update({ autoDownloadNextCount: 0 });
-    await service.save();
-
-    expect((await store.load()).autoDownloadNextCount).toBe(1);
-  });
-
-  test("disables legacy streaming auto-download authority on load and update", async () => {
-    const store = new MemoryConfigStore({ autoDownload: "season" });
-    const service = await ConfigServiceImpl.load(store);
-
-    expect(service.autoDownload).toBe("off");
-
-    await service.update({ autoDownload: "next" });
-    await service.save();
-
-    expect((await store.load()).autoDownload).toBe("off");
-  });
-
-  test("normalizes legacy subtitle defaults back to english on load", async () => {
-    const noneService = await ConfigServiceImpl.load(
-      new MemoryConfigStore({
-        subLang: "none",
-      }),
-    );
-    const fzfService = await ConfigServiceImpl.load(
-      new MemoryConfigStore({
-        subLang: "fzf",
-      }),
-    );
-
-    expect(noneService.subLang).toBe("en");
-    expect(fzfService.subLang).toBe("en");
   });
 
   test("migrates legacy profile subtitle preference fzf to interactive", async () => {
@@ -755,5 +702,63 @@ describe("session overrides", () => {
 
     expect(service.zenMode).toBe(false);
     expect((await store.load()).zenMode).toBe(false);
+  });
+});
+
+describe("ConfigServiceImpl untrusted-shape hardening", () => {
+  test("wrong-typed provider and priority fields degrade to defaults, not a crash", async () => {
+    // config.json is user-editable — a number where a provider id belongs must
+    // not crash startup on .trim().
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        provider: 42 as never,
+        animeProvider: { id: "allanime" } as never,
+        youtubeProvider: ["youtube"] as never,
+        providerPriority: "vidking,vidlink" as never,
+        animeProviderPriority: [42, " allanime ", null] as never,
+      }),
+    );
+
+    expect(service.getRaw().provider).toBe(DEFAULT_CONFIG.provider);
+    expect(service.getRaw().animeProvider).toBe(DEFAULT_CONFIG.animeProvider);
+    expect(service.getRaw().youtubeProvider).toBe(DEFAULT_CONFIG.youtubeProvider);
+    expect(service.getRaw().animeProviderPriority).toEqual(["allanime"]);
+  });
+
+  test("wrong-typed language profiles and lists fall back without throwing", async () => {
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        animeLanguageProfile: "sub" as never,
+        seriesLanguageProfile: [1, 2] as never,
+        protectedDownloadJobIds: { a: true } as never,
+        favoriteSources: "vidlink" as never,
+        sync: null as never,
+        titleProviderPreferences: [["tmdb:1", "vidking"]] as never,
+      }),
+    );
+
+    expect(service.getRaw().animeLanguageProfile).toEqual({
+      audio: "original",
+      subtitle: "none",
+      quality: "best",
+    });
+    expect(service.getRaw().protectedDownloadJobIds).toEqual([]);
+    expect(service.getRaw().favoriteSources).toEqual([]);
+    expect(service.getRaw().sync).toEqual(DEFAULT_CONFIG.sync);
+    expect(service.getRaw().titleProviderPreferences).toEqual({});
+  });
+
+  test("an unreadable series priority cannot pin the dead videasy default", async () => {
+    // `provider: "videasy"` + a malformed priority used to shield the dead
+    // provider pick from migration — the user stayed on an upstream-dead
+    // provider forever.
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        provider: "videasy",
+        providerPriority: "vidlink" as never,
+      }),
+    );
+
+    expect(service.getRaw().provider).toBe(DEFAULT_CONFIG.provider);
   });
 });

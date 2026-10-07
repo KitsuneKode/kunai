@@ -1,8 +1,13 @@
 import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell";
 import type { ListShellActionContext } from "@/app-shell/pickers/list-shell-types";
-import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "@/app-shell/session-picker";
+import {
+  EPISODE_PICKER_SWITCH_SEASON,
+  openSessionPicker,
+  parsePickerValue,
+} from "@/app-shell/session-picker";
 import { describeEpisodeWatchPresentation } from "@/app/playback/playback-episode-picker";
 import type { Container } from "@/container";
+import { markCurrentLabel } from "@/domain/current-label";
 import type { OverlayPickerOption } from "@/domain/session/SessionState";
 import {
   formatEpisodePickerDetail,
@@ -24,8 +29,7 @@ async function buildEpisodeStatusMap(
   const map = new Map<number, EpisodeStatusEntry>();
   if (!container || !titleId) return map;
 
-  const allEntries = container.historyRepository.listByTitle(titleId);
-  const seasonEntries = allEntries.filter((e) => (e.season ?? 1) === season);
+  const seasonEntries = container.historyRepository.listByTitleSeason(titleId, season);
   if (seasonEntries.length === 0) return map;
 
   for (const entry of seasonEntries) {
@@ -76,7 +80,7 @@ export function buildSeasonPickerOptions(
     const entry = normalizeSeasonEntry(season);
     return {
       value: String(entry.number),
-      label: entry.number === currentSeason ? `${entry.name}  ·  current` : entry.name,
+      label: markCurrentLabel(entry.name, entry.number === currentSeason),
       previewImageUrl: entry.posterPath,
     };
   });
@@ -97,9 +101,12 @@ export async function chooseSeasonFromOptions(
     const picked = await openSessionPicker(container.stateManager, {
       type: "season_picker",
       currentSeason,
+      initialIndex: seasons.findIndex(
+        (season) => normalizeSeasonEntry(season).number === currentSeason,
+      ),
       options,
     });
-    return picked ? Number.parseInt(picked, 10) : null;
+    return parsePickerValue(picked);
   }
 
   return chooseFromListShell({
@@ -195,15 +202,16 @@ export async function chooseEpisodeFromOptions(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season,
-      initialIndex: Math.max(
-        0,
-        episodes.findIndex((episode) => episode.number === currentEpisode),
-      ),
+      initialIndex: episodes.findIndex((episode) => episode.number === currentEpisode),
       options,
     });
     if (!picked) return null;
     if (picked === EPISODE_PICKER_SWITCH_SEASON) return "switch-season";
-    return episodes.find((episode) => String(episode.number) === picked) ?? null;
+    const episodeNumber = parsePickerValue(picked);
+    // No silent episode-1 substitution: an unmatched or non-numeric value
+    // cancels so the caller never opens the wrong episode.
+    if (episodeNumber === null) return null;
+    return episodes.find((episode) => episode.number === episodeNumber) ?? null;
   }
 
   const fallbackEpisode = episodes[0];

@@ -13,7 +13,7 @@ describe("scheduleVideasyLazySourceProbes", () => {
       engine: {
         createRuntimeContext: () => ({
           now: () => "2026-07-19T00:00:00.000Z",
-          retryPolicy: { maxAttempts: 1, backoff: "none", delayMs: 0 },
+          retryPolicy: { maxAttempts: 1 },
         }),
       },
       videasyLazySourceProbe: {

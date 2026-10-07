@@ -20,8 +20,7 @@ import type {
 import {
   decodeProviderEpisodeIdentity,
   encodeProviderEpisodeIdentity,
-  getProviderResolveStatus,
-  getProviderSourceInventory,
+  isProviderResolveResultResolved,
 } from "../src/index";
 
 test("provider episode identity encoding is delimiter-safe and exact", () => {
@@ -58,7 +57,7 @@ test("provider resolve result requires trace and immutable candidate arrays", ()
 
   expect(result.trace.id).toBe("trace-1");
   expect(result.streams.length).toBe(0);
-  expect(getProviderResolveStatus(result)).toBe("exhausted");
+  expect(result.status).toBe("exhausted");
 });
 
 test("provider resolve result status is the source of truth for playable output", () => {
@@ -107,8 +106,8 @@ test("provider resolve result status is the source of truth for playable output"
     failures: [],
   };
 
-  expect(getProviderResolveStatus(resolved)).toBe("resolved");
-  expect(getProviderResolveStatus(exhausted)).toBe("exhausted");
+  expect(resolved.status).toBe("resolved");
+  expect(exhausted.status).toBe("exhausted");
 });
 
 test("provider sdk contract models selected output plus discovered source inventory", async () => {
@@ -389,7 +388,7 @@ test("provider metadata v2 contract carries native ids release artwork and langu
   expect(result.artwork?.seekBarVttUrl).toContain("thumbs.vtt");
 });
 
-test("provider source inventory facade preserves playable facts without resolve bookkeeping", () => {
+test("provider source inventory projection preserves playable facts without resolve bookkeeping", () => {
   const result: ProviderResolveResult = {
     status: "resolved",
     providerId: "miruro",
@@ -434,7 +433,17 @@ test("provider source inventory facade preserves playable facts without resolve 
     ],
   };
 
-  const inventory: ProviderSourceInventory = getProviderSourceInventory(result);
+  const inventory: ProviderSourceInventory = {
+    providerId: result.providerId,
+    selectedStreamId: result.selectedStreamId,
+    sources: result.sources,
+    variants: result.variants,
+    streams: result.streams,
+    subtitles: result.subtitles,
+    externalIds: result.externalIds,
+    release: result.release,
+    artwork: result.artwork,
+  };
 
   expect(inventory.providerId).toBe("miruro");
   expect(inventory.selectedStreamId).toBe("stream-1");
@@ -442,4 +451,59 @@ test("provider source inventory facade preserves playable facts without resolve 
   expect(inventory.artwork?.seekBarVttUrl).toContain("seek.vtt");
   expect("failures" in inventory).toBe(false);
   expect("trace" in inventory).toBe(false);
+});
+
+test("resolved status with only unusable streams does not pass the resolved gate", () => {
+  const trace: ResolveTrace = {
+    id: "trace-1",
+    startedAt: "2026-04-29T00:00:00.000Z",
+    title: { id: "tmdb:1", kind: "movie", title: "Example" },
+    cacheHit: false,
+    steps: [],
+    failures: [],
+  };
+  const ghostStream = {
+    id: "stream-ghost",
+    providerId: "vidking",
+    protocol: "hls" as const,
+    confidence: 0.9,
+    cachePolicy: {
+      ttlClass: "stream-manifest" as const,
+      scope: "local" as const,
+      keyParts: ["provider", "vidking", "1"],
+    },
+  };
+  const base = {
+    providerId: "vidking",
+    subtitles: [] as const,
+    trace,
+    failures: [] as const,
+  };
+
+  // Every stream lacking both url and deferredLocator is a ghost — the result
+  // is exhausted wearing a resolved status, and the fallback chain must move on.
+  expect(
+    isProviderResolveResultResolved({
+      ...base,
+      status: "resolved",
+      streams: [ghostStream],
+    }),
+  ).toBe(false);
+  expect(
+    isProviderResolveResultResolved({
+      ...base,
+      status: "resolved",
+      streams: [
+        ghostStream,
+        { ...ghostStream, id: "stream-real", url: "https://cdn.example/m.m3u8" },
+      ],
+    }),
+  ).toBe(true);
+  expect(
+    isProviderResolveResultResolved({
+      ...base,
+      status: "resolved",
+      streams: [{ ...ghostStream, deferredLocator: "provider:vidking:stream-ghost" }],
+    }),
+  ).toBe(true);
 });

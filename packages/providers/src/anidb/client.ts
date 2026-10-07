@@ -315,6 +315,7 @@ export async function anidbFetchText(
   const maxTime = String(options.maxTimeSec ?? 12);
   const args = [
     curl.path,
+    ...curl.prefixArgs,
     "-sL",
     "-A",
     ANIDB_USER_AGENT,

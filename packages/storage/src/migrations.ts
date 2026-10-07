@@ -776,6 +776,27 @@ export const dataMigrations: readonly Migration[] = [
         WHERE status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable');
     `,
   },
+  {
+    id: "040_data_queue_played_status_backfill",
+    database: "data",
+    sql: `
+      -- Rows written before migration 010 carry played_at but defaulted to
+      -- status='pending'. Reads hid them (played_at IS NULL predicates) while
+      -- the claim/restore CAS checked status alone, leaving them claimable
+      -- zombies. Make the two columns agree.
+      UPDATE playlist_queue
+      SET status = 'played'
+      WHERE played_at IS NOT NULL AND status != 'played';
+    `,
+  },
+  {
+    id: "041_data_offline_assets_origin_job_index",
+    database: "data",
+    sql: `
+      CREATE INDEX IF NOT EXISTS idx_offline_assets_origin_job_id
+        ON offline_assets(origin_job_id);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

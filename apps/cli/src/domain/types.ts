@@ -253,13 +253,10 @@ export interface ProviderMetadata {
   readonly name: string;
   readonly aliases?: readonly string[];
   readonly description: string;
-  readonly recommended: boolean;
   readonly isAnimeProvider: boolean;
   readonly isYoutubeProvider: boolean;
   readonly providerLane: ProviderLane;
   readonly catalogIdentity?: "provider-native" | "anilist" | "tmdb";
-  /** Display-only; mirrors `ProviderManifestStatus` in `@kunai/core`. */
-  readonly status?: "production" | "candidate";
   readonly domain?: string;
 }
 
@@ -267,9 +264,4 @@ export interface SearchMetadata {
   readonly id: string;
   readonly name: string;
   readonly description: string;
-}
-
-// Capabilities
-export interface ProviderCapabilities {
-  readonly contentTypes: ContentType[];
 }

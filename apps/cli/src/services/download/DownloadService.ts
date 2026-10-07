@@ -42,7 +42,7 @@ import {
   type HistoryTitleAliasInput,
   type HistoryTitleAliasRepository,
 } from "@kunai/storage";
-import type { MediaKind, ProviderExternalIds } from "@kunai/types";
+import { isJsonObject, isJsonString, type MediaKind, type ProviderExternalIds } from "@kunai/types";
 
 import { whichLive } from "../../infra/os/which";
 import { downloadJobShellMode } from "./download-job-mode";
@@ -282,10 +282,8 @@ const defaultStagedDownloadPublishFs: StagedDownloadPublishFs = {
   removeFile: (path) => rm(path, { force: true }),
 };
 
-function publishErrorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
-  const code = (error as { readonly code?: unknown }).code;
-  return typeof code === "string" ? code : undefined;
+function publishErrorCode(cause: unknown): string | undefined {
+  return isJsonObject(cause) && isJsonString(cause.code) ? cause.code : undefined;
 }
 
 function existingDestinationError(cause: unknown): Error {
@@ -1049,9 +1047,9 @@ export class DownloadService {
 
   async drainQueue(maxWaitMs = 60_000): Promise<void> {
     const deadline = Date.now() + maxWaitMs;
-    while (this.hasActiveJobs() && Date.now() < deadline) {
+    while (!this.shutdownRequested && this.hasActiveJobs() && Date.now() < deadline) {
       await this.processQueue();
-      if (this.hasActiveJobs()) {
+      if (!this.shutdownRequested && this.hasActiveJobs()) {
         await Bun.sleep(250);
       }
     }

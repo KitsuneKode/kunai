@@ -23,7 +23,6 @@ const manifest = defineProviderManifest({
   cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: ["provider"] },
   browserSafe: true,
   relaySafe: true,
-  status: "candidate",
 });
 
 function createManifestFor(id: string, mediaKinds: readonly ("anime" | "movie" | "series")[]) {
@@ -39,7 +38,6 @@ function createManifestFor(id: string, mediaKinds: readonly ("anime" | "movie" |
     cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: ["provider"] },
     browserSafe: true,
     relaySafe: true,
-    status: "candidate",
   });
 }
 

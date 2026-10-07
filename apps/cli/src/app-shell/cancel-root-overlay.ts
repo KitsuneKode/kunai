@@ -16,7 +16,6 @@ export function cancelRootOverlay(
   }
 
   if (overlay.type === "tracks_panel") {
-    stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
     stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
     return;
   }

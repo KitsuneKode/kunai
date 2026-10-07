@@ -91,7 +91,8 @@ export function buildChapterSegmentsFromTiming(
   let cursor = 0;
 
   for (let i = 0; i < markers.length; i++) {
-    const marker = markers[i]!;
+    const marker = markers[i];
+    if (!marker) continue;
     if (marker.startMs > cursor + 1000) {
       const prevMarker = i > 0 ? markers[i - 1] : undefined;
       const gapTitle =
@@ -121,14 +122,14 @@ export function buildChapterSegmentsFromTiming(
   }
 
   // After the last marker (typically credits or preview), add Epilogue or Episode tail if open-ended
-  const lastMarker = markers[markers.length - 1]!;
-  if (lastMarker.title === "Credits") {
+  const lastMarker = markers[markers.length - 1];
+  if (lastMarker?.title === "Credits") {
     chapters.push({
       startMs: cursor,
       endMs: Math.max(cursor + 1000, fallbackDurationMs),
       title: "Epilogue",
     });
-  } else if (lastMarker.title === "Intro" || lastMarker.title === "Recap") {
+  } else if (lastMarker?.title === "Intro" || lastMarker?.title === "Recap") {
     chapters.push({
       startMs: cursor,
       endMs: Math.max(cursor + 1000, fallbackDurationMs),

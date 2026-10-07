@@ -143,7 +143,9 @@ export async function openCompletedDownloadsPicker(
 ): Promise<void> {
   while (true) {
     const completed = await container.offlineLibraryService.listCompletedEntries(60);
-    const shelf = createOfflineLibraryEngine().buildShelf(completed);
+    const shelf = createOfflineLibraryEngine().buildShelf(completed, {
+      networkAvailable: container.connectivity.isOnline(),
+    });
     const options: ShellOption<OfflineLibraryGroupAction>[] = [
       ...shelf.groups.map((group) => ({
         value: { type: "group" as const, key: group.key },
@@ -243,7 +245,9 @@ export async function openOfflineLibraryGroupPicker(
         ]
           .filter(Boolean)
           .join("  ·  "),
-        previewImageUrl: resolveOfflineJobPreviewImage(entry.job),
+        previewImageUrl: resolveOfflineJobPreviewImage(entry.job, {
+          networkAvailable: container.connectivity.isOnline(),
+        }),
       })),
       ...buildOfflineGroupActions(
         entries,
@@ -490,13 +494,17 @@ export async function openOfflineLibraryGroupPicker(
           value: "play",
           label: artifactStatus === "ready" ? "Play downloaded file" : "Play unavailable",
           detail: artifactStatus === "ready" ? "Open local artifact in mpv" : artifactStatus,
-          previewImageUrl: resolveOfflineJobPreviewImage(job),
+          previewImageUrl: resolveOfflineJobPreviewImage(job, {
+            networkAvailable: container.connectivity.isOnline(),
+          }),
         },
         {
           value: "check-integrity",
           label: "Check integrity",
           detail: "Verify the local media artifact is readable before playback",
-          previewImageUrl: resolveOfflineJobPreviewImage(job),
+          previewImageUrl: resolveOfflineJobPreviewImage(job, {
+            networkAvailable: container.connectivity.isOnline(),
+          }),
         },
         { value: "reveal", label: "Reveal folder", detail: dirname(job.outputPath) },
         {

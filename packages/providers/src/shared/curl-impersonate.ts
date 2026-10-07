@@ -14,11 +14,13 @@
  * `curl_<browser><version>[_os]`, so the shape is stable even though the
  * versions turn over every few weeks; discovery tracks it without edits.
  */
-import { readdirSync } from "node:fs";
-import { delimiter as PATH_DELIMITER, join } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { delimiter as PATH_DELIMITER, posix as posixPath, win32 as win32Path } from "node:path";
 
 export type CurlCandidate = {
   readonly path: string;
+  /** Prefix args required before request-specific flags/URL. */
+  readonly prefixArgs: readonly string[];
   readonly impersonates: boolean;
   /**
    * Browser profile of the selected impersonate build (`chrome150`), or `null`
@@ -37,6 +39,12 @@ export type CurlEnvironment = {
   readonly which: (command: string) => string | null;
   /** Executable basenames visible on PATH, in PATH order. */
   readonly listPathEntries: () => readonly string[];
+  /** Filesystem existence probe seam. */
+  readonly fileExists: (path: string) => boolean;
+  /** Wrapper contents probe — used to tell modern `--impersonate` forwarders from legacy inline-flag wrappers. */
+  readonly readTextFile: (path: string) => string | null;
+  /** Platform probe seam for Windows wrapper behavior tests. */
+  readonly platform: NodeJS.Platform;
 };
 
 /**
@@ -160,33 +168,91 @@ export function curlCipherArgs(
   return ["--ciphers", CURL_CIPHERS, "--tls13-ciphers", CURL_TLS13_CIPHERS];
 }
 
+/**
+ * A modern Windows wrapper is a one-line forward to
+ * `curl-impersonate.exe --compressed --impersonate <target> %*`. Older
+ * wrappers (`curl_edge101`, `curl_safari170`, `curl_chrome99`…) instead embed
+ * the entire handshake as explicit cipher/header flags — their profile name
+ * is not a target the exe understands, so `--impersonate <profile>` would die
+ * on an unrecognized-target error. The bat's own text is the version-proof
+ * discriminator; extract the real target from it rather than trusting the
+ * filename.
+ */
+function parseModernWrapperArgs(
+  wrapperText: string | null,
+): { readonly target: string; readonly compressed: boolean } | null {
+  if (wrapperText === null) return null;
+  const impersonate = /--impersonate[=\s]+"?([a-z0-9]+)"?/i.exec(wrapperText);
+  if (!impersonate?.[1]) return null;
+  return { target: impersonate[1], compressed: /--compressed\b/.test(wrapperText) };
+}
+
 export function resolveCurlCandidate(
   environment: Partial<CurlEnvironment> = {},
 ): CurlCandidate | null {
   const which =
     environment.which ?? ((command: string) => Bun.which(command, { PATH: process.env.PATH }));
   const listPathEntries = environment.listPathEntries ?? defaultListPathEntries;
+  const fileExists = environment.fileExists ?? existsSync;
+  const readTextFile =
+    environment.readTextFile ??
+    ((path: string) => {
+      try {
+        return readFileSync(path, "utf8");
+      } catch {
+        return null;
+      }
+    });
+  const platform = environment.platform ?? process.platform;
+  // Path semantics follow the *reported* platform, not the host's — a test
+  // injecting `platform: "win32"` hands `which()` back Windows-style paths,
+  // and POSIX dirname() cannot parse `C:\tools\…`.
+  const pathApi = platform === "win32" ? win32Path : posixPath;
 
-  let best: ParsedWrapper | null = null;
+  const wrappers: ParsedWrapper[] = [];
   for (const entry of listPathEntries()) {
     const parsed = parseWrapper(entry);
-    if (!parsed) continue;
-    if (!best || betterThan(parsed, best)) best = parsed;
+    if (parsed) wrappers.push(parsed);
   }
+  wrappers.sort((a, b) => (betterThan(a, b) ? -1 : betterThan(b, a) ? 1 : 0));
 
-  if (best) {
-    const resolved = which(best.name);
-    if (resolved) {
-      return {
-        path: resolved,
-        impersonates: true,
-        profile: `${best.family}${best.version}${best.revision}`,
-      };
+  for (const wrapper of wrappers) {
+    const resolved = which(wrapper.name);
+    if (!resolved) continue;
+    const profile = `${wrapper.family}${wrapper.version}${wrapper.revision}`;
+    const extension = pathApi.extname(resolved).toLowerCase();
+    const isCmdWrapper = extension === ".bat" || extension === ".cmd";
+    // On POSIX a cmd wrapper can surface through WSL's interop PATH or an
+    // MSYS-style dir, but execve cannot run it — treating it as "found" would
+    // claim impersonation over a guaranteed ENOEXEC. The honest read on this
+    // host is plain curl (or no curl).
+    if (isCmdWrapper && platform !== "win32") continue;
+    if (!isCmdWrapper) {
+      return { path: resolved, prefixArgs: [], impersonates: true, profile };
     }
+    // Bun.spawn refuses .bat/.cmd argv carrying cmd metacharacters
+    // (BatBadBut), so invoke the sibling backend directly — but only when the
+    // wrapper really is a `--impersonate` forwarder. A missing backend or a
+    // legacy inline-flag wrapper means this entry cannot provide that
+    // profile; keep walking the ranked list before settling for plain curl.
+    const forward = parseModernWrapperArgs(readTextFile(resolved));
+    if (!forward) continue;
+    const backend = pathApi.join(pathApi.dirname(resolved), "curl-impersonate.exe");
+    if (!fileExists(backend)) continue;
+    return {
+      path: backend,
+      prefixArgs: [
+        ...(forward.compressed ? ["--compressed"] : []),
+        "--impersonate",
+        forward.target,
+      ],
+      impersonates: true,
+      profile: forward.target,
+    };
   }
 
   const plain = which("curl");
-  return plain ? { path: plain, impersonates: false, profile: null } : null;
+  return plain ? { path: plain, prefixArgs: [], impersonates: false, profile: null } : null;
 }
 
 /**
@@ -250,6 +316,4 @@ export const __testing = {
   },
   parseWrapper,
   readPathEntries,
-  /** Absolute path a discovered wrapper would resolve to, for probe seams. */
-  joinPathEntry: join,
 };

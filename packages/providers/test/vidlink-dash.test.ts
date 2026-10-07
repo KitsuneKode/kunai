@@ -6,7 +6,11 @@ import type {
   ProviderRuntimeContext,
 } from "@kunai/types";
 
-import { clearVidlinkEncDecCacheForTest, resolveVidlinkDirect } from "../src/vidlink/direct";
+import {
+  clearVidlinkEncDecCacheForTest,
+  resolveVidlinkDirect,
+  setVidlinkRetrySleepForTest,
+} from "../src/vidlink/direct";
 
 const COOKIE = "CloudFront-Policy=abc;CloudFront-Signature=def;CloudFront-Key-Pair-Id=ghi";
 

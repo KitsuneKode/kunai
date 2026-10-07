@@ -59,11 +59,7 @@ import {
 } from "../shared/hls-ladder";
 import { isJsonNumber, isJsonObject, isJsonString, type JsonObject } from "../shared/json-value";
 import { TTLCache } from "../shared/provider-cache";
-import {
-  appendCycleEventsToResult,
-  findLastCycleFailure,
-  providerFailureCodeFromCycleFailure,
-} from "../shared/provider-cycle";
+import { appendCycleEventsToResult, cycleExhaustionFailure } from "../shared/provider-cycle";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
@@ -1770,6 +1766,7 @@ export async function fetchMiruroPipeBody(
   const hasCurlHttp2 = await detectCurlHttp2Support(curl.path);
   const args = [
     curl.path,
+    ...curl.prefixArgs,
     ...curlCipherArgs(curl.impersonates),
     "-sS",
     ...(hasCurlHttp2 ? ["--http2"] : []),
@@ -2553,18 +2550,10 @@ export const miruroProviderModule: CoreProviderModule = {
 
       if (!cycleResult.selected) {
         events.push(...cycleResult.events);
-        const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-        const failure = cycleFailure
-          ? {
-              code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-              message: cycleFailure.message,
-              retryable: cycleFailure.retryable,
-            }
-          : {
-              code: "not-found" as const,
-              message: "No HLS streams from miruro sources pipe",
-              retryable: true,
-            };
+        const failure = cycleExhaustionFailure(
+          cycleResult,
+          "No HLS streams from miruro sources pipe",
+        );
         return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, failure, {
           cachePolicy,
           events,

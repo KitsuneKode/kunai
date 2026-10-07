@@ -1,9 +1,9 @@
-import { deleteAllKittyImages } from "@/app-shell/image-pane";
+import { undisplayPlacementsKeepCache } from "@/app-shell/image-pane";
 
 /** Kitty/Ghostty image cleanup without full-frame ANSI clear (hot paths). */
 export function clearShellScreenArtifacts(): void {
   if (process.stdout.isTTY) {
-    deleteAllKittyImages();
+    undisplayPlacementsKeepCache();
   }
 }
 
@@ -13,7 +13,7 @@ export function clearShellScreenArtifacts(): void {
  */
 export function clearRootContentTransitionFrame(): void {
   if (process.stdout.isTTY) {
-    deleteAllKittyImages();
+    undisplayPlacementsKeepCache();
     process.stdout.write("\x1b[2J\x1b[H");
   }
 }

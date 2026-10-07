@@ -758,7 +758,6 @@ describe("panel-data", () => {
           id: "allanime",
           name: "AllAnime",
           description: "Anime provider",
-          recommended: false,
           isAnimeProvider: true,
           isYoutubeProvider: false,
           providerLane: "anime",
@@ -767,7 +766,6 @@ describe("panel-data", () => {
           id: "cineby-anime",
           name: "Cineby Anime",
           description: "Fallback anime provider",
-          recommended: false,
           isAnimeProvider: true,
           isYoutubeProvider: false,
           providerLane: "anime",
@@ -791,25 +789,38 @@ describe("panel-data", () => {
           id: "miruro",
           name: "Miruro",
           description: "Anime provider",
-          recommended: false,
+          isAnimeProvider: true,
+          isYoutubeProvider: false,
+          providerLane: "anime",
+        },
+        {
+          id: "allanime",
+          name: "AllAnime",
+          description: "Anime provider",
           isAnimeProvider: true,
           isYoutubeProvider: false,
           providerLane: "anime",
         },
       ],
-      getProviderHealth: () => ({
-        providerId: "miruro",
+      getProviderHealth: (providerId) => ({
+        providerId,
         status: "down",
         checkedAt: new Date().toISOString(),
         consecutiveFailures: 7,
       }),
     });
 
-    expect(options[0]?.detail).toContain("Health:");
-    expect(options[0]?.detail).toContain("down");
-    expect(options[0]?.detail).toContain("skipped in auto-fallback");
-    expect(options[0]?.label).toContain("down");
-    expect(options[0]?.label).toContain("skipped in auto-fallback");
+    const miruro = options.find((option) => option.value === "miruro");
+    const allanime = options.find((option) => option.value === "allanime");
+    expect(miruro?.detail).toContain("Health:");
+    expect(miruro?.detail).toContain("down");
+    // The playing provider is running, not skipped — the auto-fallback suffix
+    // would be a false statement next to "current".
+    expect(miruro?.label).toContain("down");
+    expect(miruro?.label).not.toContain("skipped in auto-fallback");
+    // A non-current provider keeps the honest auto-fallback explanation.
+    expect(allanime?.detail).toContain("skipped in auto-fallback");
+    expect(allanime?.label).toContain("skipped in auto-fallback");
   });
 
   test("buildDiagnosticsPanelLines includes provider memory section", () => {
@@ -826,7 +837,6 @@ describe("panel-data", () => {
           id: "miruro",
           name: "Miruro",
           description: "Anime provider",
-          recommended: false,
           isAnimeProvider: true,
           isYoutubeProvider: false,
           providerLane: "anime",

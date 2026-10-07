@@ -1,5 +1,5 @@
 import { youtubeQualityHeight } from "./quality-selection";
-import { spawnYtDlpWithTimeout } from "./spawn-ytdlp";
+import { spawnYtDlpWithTimeout, type YtDlpSpawn } from "./spawn-ytdlp";
 import { buildYoutubeYtdlCliArgs } from "./ytdl-options";
 
 export type YtDlpFormatInfo = {
@@ -44,6 +44,8 @@ export type YtDlpExtractOptions = {
   readonly sponsorblockRemove?: string;
   readonly isLive?: boolean;
   readonly signal?: AbortSignal;
+  /** Seam for tests: observe/replace the yt-dlp spawn. Production omits it. */
+  readonly spawn?: YtDlpSpawn;
 };
 
 export async function extractYtDlpVideoInfo(
@@ -56,10 +58,13 @@ export async function extractYtDlpVideoInfo(
     "--no-warnings",
     "--no-playlist",
     ...buildYoutubeYtdlCliArgs(options),
+    // The watch URL is provider/catalog-influenced. Without `--` a URL
+    // beginning with `-` is parsed as yt-dlp options (option injection).
+    "--",
   ];
   args.push(watchUrl);
 
-  const proc = await spawnYtDlpWithTimeout({ args, signal: options.signal });
+  const proc = await spawnYtDlpWithTimeout({ args, signal: options.signal, spawn: options.spawn });
 
   if (proc.exitCode !== 0) {
     throw new Error(proc.stderr.trim() || `yt-dlp exited with code ${proc.exitCode}`);

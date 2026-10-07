@@ -94,3 +94,35 @@ describe("@kunai/config parse boundary", () => {
     expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(3);
   });
 });
+
+test("a malformed providerRelay drops only that key, not the whole config", () => {
+  // The whole-file safeParse poison pill: one bad relay value previously
+  // discarded every key, silently resetting the user to defaults.
+  const parsed = parseKitsuneConfigPartial({
+    provider: "vidking",
+    animeProvider: "allanime",
+    footerHints: "minimal",
+    providerRelay: "definitely-not-an-object",
+  });
+  expect(parsed.provider).toBe("vidking");
+  expect(parsed.animeProvider).toBe("allanime");
+  expect(parsed.footerHints).toBe("minimal");
+  expect(parsed.providerRelay).toBeUndefined();
+});
+
+test("a valid providerRelay still parses inside a partial config", () => {
+  const parsed = parseKitsuneConfigPartial({
+    provider: "vidking",
+    providerRelay: {
+      baseUrl: "https://relay.example.com",
+      providers: { allanime: { enabled: true } },
+    },
+  });
+  expect(parsed.providerRelay?.baseUrl).toBe("https://relay.example.com");
+});
+
+test("non-object input still degrades to an empty partial", () => {
+  expect(parseKitsuneConfigPartial(null)).toEqual({});
+  expect(parseKitsuneConfigPartial("config")).toEqual({});
+  expect(parseKitsuneConfigPartial([1, 2])).toEqual({});
+});
