@@ -245,6 +245,15 @@ state on 2026-10-02.
 | [2026-10-02-share-moment-discoverability.md](./2026-10-02-share-moment-discoverability.md) | Surface the existing `Ctrl+Shift+S` share-at-timestamp key in the playing legend, README and docs       | PROPOSED |
 | [2026-10-02-color-followups.md](./2026-10-02-color-followups.md)                           | After the APCA text-tier retune: remove the remaining `dimColor` double-dimming once the PR stacks land | PROPOSED |
 
+### Release readiness — 2026-10-08
+
+Verified against `integrate/backlog-20261007@f840fe511` after three external
+audits. Gate 0 lands the integration on `main`; Phase 1 is release-blocking.
+
+| Plan                                                                 | Remaining work                                                                               | Status |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------ |
+| [2026-10-08-release-readiness.md](./2026-10-08-release-readiness.md) | Land the integration, then downloads, playback, consent, sanitizer, shell and relay blockers | TODO   |
+
 ## Rules
 
 1. `.plans/` holds unfinished work only, and is the **only** plan directory.
