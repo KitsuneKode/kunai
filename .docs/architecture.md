@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-10-07"
 ---
 
 # Kunai — Runtime Architecture
@@ -185,12 +185,25 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 
 ## Persistence and Data Ownership
 
-| Data          | Path                                | Owner                                |
-| ------------- | ----------------------------------- | ------------------------------------ |
-| Config        | `~/.config/kunai/config.json`       | `ConfigService` + `ConfigStoreImpl`  |
-| Watch history | OS app data dir `kunai-data.sqlite` | `@kunai/storage` + CLI history store |
-| Stream cache  | OS cache dir `kunai-cache.sqlite`   | `@kunai/storage` + CLI cache store   |
-| Debug logs    | `./logs.txt`                        | `apps/cli/src/logger.ts`             |
+| Data          | Path                                                                      | Owner                                |
+| ------------- | ------------------------------------------------------------------------- | ------------------------------------ |
+| Config        | OS config dir `kunai/config.json` (resolved by `@kunai/storage/paths.ts`) | `ConfigService` + `ConfigStoreImpl`  |
+| Watch history | OS app data dir `kunai-data.sqlite`                                       | `@kunai/storage` + CLI history store |
+| Stream cache  | OS cache dir `kunai-cache.sqlite`                                         | `@kunai/storage` + CLI cache store   |
+| Debug logs    | `./logs.txt`                                                              | `apps/cli/src/logger.ts`             |
+
+Config startup holds the shared file lock from its initial read through any
+migration write. Later saves merge only changed keys under the same lock.
+A lock timeout (5 seconds to acquire, a separate 5 seconds to release) rejects
+before the write callback runs.
+
+Native credential hydration is a read; unrelated config saves never rewrite a
+hydrated token. Explicit replacements and clears share the config lock with their
+file updates. A failed replacement retains plaintext for the next launch's
+migration; a clear rejects until native deletion is verified, rather than reporting
+success and restoring the secret next launch. Native credential latency therefore
+extends this critical section; sibling operations can report bounded lock contention
+while a slow keychain operation is running.
 
 **Watch ledger (2026-06):** `history_progress` is the single source of truth for resume position, completion, and engaged watch time. Columns `watched_seconds`, `last_watched_at`, and `completed_at` (migration `024`) back Stats and continuation. All mark-watched/unwatched surfaces write through `HistoryRepository.markWatched` / `markUnwatched` (preserve resume on unmark). `playback_events` receives fire-and-forget instrumentation from the mpv position tick via `PlaybackEventRepository`. Stats aggregation lives in `WatchStatsRepository` (`packages/storage`).
 
