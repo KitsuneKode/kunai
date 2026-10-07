@@ -1,6 +1,7 @@
 import type { ShellPickerOption } from "@/app-shell/types";
 import type { ShellStatusTone } from "@/app-shell/types";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
+import { formatRelativeAge } from "@/domain/relative-age";
 import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types";
 import {
   formatEpisodePickerDetail,
@@ -230,7 +231,7 @@ export function describeEpisodeWatchPresentation(
 ): EpisodeWatchPresentation {
   if (!entry) return { watched: false, inProgress: false };
   if (isFinished(entry)) {
-    const dateLabel = relativeDate(entry.updatedAt);
+    const dateLabel = formatRelativeAge(entry.updatedAt);
     return {
       detail: dateLabel ? `watched  ·  ${dateLabel}` : "watched",
       tone: "success",
@@ -256,20 +257,6 @@ export function describeEpisodeWatchPresentation(
     watched: false,
     inProgress: true,
   };
-}
-
-function relativeDate(isoDate: string): string | undefined {
-  const ms = Date.now() - Date.parse(isoDate);
-  if (!Number.isFinite(ms) || ms < 0) return undefined;
-  const days = Math.floor(ms / 86_400_000);
-  if (days === 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks}w ago`;
-  const months = Math.floor(days / 30);
-  if (months < 13) return `${months}mo ago`;
-  return `${Math.floor(days / 365)}y ago`;
 }
 
 export function buildEpisodePickerOption({
