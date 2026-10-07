@@ -5,6 +5,79 @@ import { titleInfoFromQueueEntry } from "@/domain/media/media-item-adapters";
 import { QueueService } from "@/domain/queue/QueueService";
 import { ListRepository, openKunaiDatabase, QueueRepository, runMigrations } from "@kunai/storage";
 
+test("explicit queue placement survives a manual reorder and preserves equal-priority FIFO", () => {
+  const db = openKunaiDatabase(":memory:");
+  try {
+    runMigrations(db, "data");
+    const service = new QueueService(new QueueRepository(db), "placement");
+    const add = (titleId: string, placement: "next" | "after-current-chain" | "end") =>
+      service.enqueueMediaItem(
+        { titleId, title: titleId, mediaKind: "series", season: 1, episode: 1 },
+        { placement, source: "manual" },
+      );
+    add("a", "end");
+    const b = add("b", "end");
+    expect(service.moveToTop(b.id)).toBe(true);
+    add("next-1", "next");
+    add("after-chain", "after-current-chain");
+    add("next-2", "next");
+    add("end", "end");
+
+    expect(service.getUnplayed().map((entry) => entry.titleId)).toEqual([
+      "next-1",
+      "next-2",
+      "after-chain",
+      "b",
+      "a",
+      "end",
+    ]);
+    expect(service.peekNext()?.titleId).toBe("next-1");
+  } finally {
+    db.close();
+  }
+});
+
+test("a claimed handoff stays recoverable and badged while the next action skips it", () => {
+  const db = openKunaiDatabase(":memory:");
+  try {
+    runMigrations(db, "data");
+    const repo = new QueueRepository(db);
+    repo.createQueueSession({
+      id: "claims",
+      status: "active",
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    });
+    const service = new QueueService(repo, "claims");
+    const first = service.enqueueMediaItem(
+      { titleId: "anilist:1", title: "first", mediaKind: "anime", absoluteEpisode: 1 },
+      { placement: "end", source: "manual" },
+    );
+    const second = service.enqueueMediaItem(
+      { titleId: "tmdb:2", title: "second", mediaKind: "movie" },
+      { placement: "end", source: "manual" },
+    );
+    const intent = service.beginPlayback(first.id, "queue");
+    expect(intent).toBeDefined();
+    expect(service.peekNext()?.id).toBe(second.id);
+    expect(service.getQueuedEpisodeKeys().size).toBe(2);
+    service.remove(second.id);
+    expect(service.peekNext()).toBeUndefined();
+    expect(service.prepareForShutdown()).toBe("recoverable");
+    expect(repo.getQueueSession("claims")?.status).toBe("recoverable");
+    expect(
+      service.rollbackBeforeStart(intent!, {
+        code: "handoff-failed",
+        stage: "handoff",
+        at: "2026-09-01T01:00:00.000Z",
+      }),
+    ).toBe(true);
+    expect(service.peekNext()?.id).toBe(first.id);
+  } finally {
+    db.close();
+  }
+});
+
 test("QueueService durably preserves anime movie structure through playback intent", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");

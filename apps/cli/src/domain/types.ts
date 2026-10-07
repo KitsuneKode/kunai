@@ -114,6 +114,8 @@ export interface EpisodePickerOption {
 }
 
 export interface StreamInfo {
+  /** Presentation authority only; local player access still requires a validated LocalPlaybackSource. */
+  readonly playbackSourceKind?: "local";
   readonly url: string;
   readonly deferredLocator?: string;
   readonly headers: Record<string, string>;

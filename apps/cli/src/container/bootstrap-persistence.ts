@@ -249,28 +249,35 @@ export async function bootstrapPersistence(
 
   // v2 adds anime content-class units (series rows with AniList/MAL ids move to
   // their AniList unit) and maintains the history_title_aliases index.
+  // A second instance launched during this pass can collide with it
+  // mid-transaction (SQLITE_BUSY_SNAPSHOT is not covered by busy_timeout) —
+  // the consolidator is idempotent, so a bounded retry is the safe answer.
   const HISTORY_IDENTITY_CONSOLIDATOR_V2_ID = "history_identity_consolidator_v2";
-  if (
-    !isHistoryIdentityConsolidatorApplied(dataDb) ||
-    !isDataMigrationApplied(dataDb, HISTORY_IDENTITY_CONSOLIDATOR_V2_ID)
-  ) {
-    runHistoryIdentityConsolidator(dataDb, {
-      dryRun: process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN === "1",
-      log: debug ? (message) => logger.info(message) : undefined,
-    });
-    if (process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN !== "1") {
-      markHistoryIdentityConsolidatorApplied(dataDb);
-      markDataMigrationApplied(dataDb, HISTORY_IDENTITY_CONSOLIDATOR_V2_ID);
+  runBootstrapUpgradeWork("history-identity-consolidator", () => {
+    if (
+      !isHistoryIdentityConsolidatorApplied(dataDb) ||
+      !isDataMigrationApplied(dataDb, HISTORY_IDENTITY_CONSOLIDATOR_V2_ID)
+    ) {
+      runHistoryIdentityConsolidator(dataDb, {
+        dryRun: process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN === "1",
+        log: debug ? (message) => logger.info(message) : undefined,
+      });
+      if (process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN !== "1") {
+        markHistoryIdentityConsolidatorApplied(dataDb);
+        markDataMigrationApplied(dataDb, HISTORY_IDENTITY_CONSOLIDATOR_V2_ID);
+      }
     }
-  }
+  });
 
-  if (!isWatchLedgerBackfillApplied(dataDb)) {
-    const stats = runHistoryWatchLedgerBackfill(dataDb);
-    if (debug) {
-      logger.info(`Watch ledger backfill updated ${stats.rowsUpdated} history rows`);
+  runBootstrapUpgradeWork("watch-ledger-backfill", () => {
+    if (!isWatchLedgerBackfillApplied(dataDb)) {
+      const stats = runHistoryWatchLedgerBackfill(dataDb);
+      if (debug) {
+        logger.info(`Watch ledger backfill updated ${stats.rowsUpdated} history rows`);
+      }
+      markWatchLedgerBackfillApplied(dataDb);
     }
-    markWatchLedgerBackfillApplied(dataDb);
-  }
+  });
 
   const configStore = new ConfigStoreImpl(storage);
   const historyRepository = new HistoryRepository(dataDb);
@@ -487,4 +494,42 @@ export async function bootstrapPersistence(
     debugTracePath,
     debugSessionInstructions,
   };
+}
+
+/**
+ * One-shot whole-table upgrade work (consolidators, backfills) runs outside
+ * `runMigrations`, so two instances launching against the same upgraded profile
+ * can collide inside the deferred transaction — SQLITE_BUSY_SNAPSHOT is not
+ * covered by busy_timeout. Each unit is idempotent and re-checks its marker on
+ * the retry, so a bounded retry is the whole fix: a twin's committed marker
+ * makes the second pass a no-op.
+ */
+/**
+ * bun:sqlite surfaces SQLite error names on `code` — the BUSY family (plus its
+ * extended results) means "retryable cross-instance collision", never a
+ * corrupt statement or schema. Mirrors `isSqliteCorruptionError`'s convention:
+ * callers narrow a catch-clause value to `Error` first.
+ */
+function isSqliteContention(error: Error): boolean {
+  if (!("code" in error)) return false;
+  return (
+    error.code === "SQLITE_BUSY" ||
+    error.code === "SQLITE_BUSY_SNAPSHOT" ||
+    error.code === "SQLITE_BUSY_TIMEOUT" ||
+    error.code === "SQLITE_BUSY_RECOVERY"
+  );
+}
+
+function runBootstrapUpgradeWork(name: string, work: () => void): void {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      work();
+      return;
+    } catch (error) {
+      if (!(error instanceof Error) || attempt === 2 || !isSqliteContention(error)) {
+        throw error instanceof Error ? error : new Error(`${name} failed: ${String(error)}`);
+      }
+      Bun.sleepSync(50 * (attempt + 1));
+    }
+  }
 }
