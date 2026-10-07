@@ -15,7 +15,9 @@ test("three processes recover one dead config owner and preserve every merged wr
   ];
   const script = `
     import { FileStorage } from ${JSON.stringify(source)};
-    const storage = new FileStorage({ config: ${JSON.stringify(path)} });
+    // This verifies exclusivity across processes, not latency: a slow CI disk
+    // (Windows scanners) must not fail it on the production acquire budget.
+    const storage = new FileStorage({ config: ${JSON.stringify(path)} }, undefined, { timeoutMs: 30_000 });
     const begin = Promise.withResolvers();
     process.on("message", (message) => { if (message === "begin") begin.resolve(); });
     process.send("ready");
