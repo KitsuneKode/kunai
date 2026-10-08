@@ -271,10 +271,7 @@ export function bootstrapServices(input: {
     historyRepository,
     offlineAssetService,
   });
-  downloadService.onEvent((event) => {
-    if (event.type === "deleted") offlineAssetService.removeForJob(event.jobId);
-  });
-  // Repairs libraries damaged before deleteJob emitted ahead of the row delete.
+  // Repairs libraries damaged before job and asset deletion shared a transaction.
   // Ownerless assets still read `ready`, so the library advertises titles it
   // cannot play, and nothing job-driven can reach them. No-op once healthy.
   const purgedOrphanCount = offlineAssetService.purgeOrphanedAssets();

@@ -31,12 +31,15 @@ function queuedJob(overrides: Partial<DownloadJobRecord> = {}): DownloadJobRecor
 }
 
 function createContainerFixture() {
+  const removed: string[] = [];
+  const removalOptions: Array<{ deleteArtifact: boolean }> = [];
   let listener: ((event: DownloadEvent) => void) | null = null;
   let activeJobs: DownloadJobRecord[] = [];
   let completedJobs: DownloadJobRecord[] = [];
   let failedJobs: DownloadJobRecord[] = [];
 
   const container = {
+    stateManager: { dispatch: () => undefined },
     config: {
       zenMode: false,
     },
@@ -57,7 +60,12 @@ function createContainerFixture() {
         failed: 0,
       }),
       abort: async () => undefined,
-      deleteJob: async () => undefined,
+      deleteJob: async (jobId: string, options: { deleteArtifact: boolean }) => {
+        removalOptions.push(options);
+        removed.push(jobId);
+        return { status: "deleted", jobId };
+      },
+
       retry: async () => undefined,
       kickQueue: () => undefined,
     },
@@ -65,6 +73,8 @@ function createContainerFixture() {
 
   return {
     container,
+    removed,
+    removalOptions,
     setActiveJobs(nextJobs: DownloadJobRecord[]) {
       activeJobs = nextJobs;
     },
@@ -293,6 +303,54 @@ test("a truncated title keeps a gutter before the state column", () => {
     expect(row).toBeDefined();
     expect(row).toContain("…");
     expect(row).not.toMatch(/…\S/);
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("delete confirmation cannot transfer to a replacement row after refresh", async () => {
+  const fixture = createContainerFixture();
+  fixture.setActiveJobs([queuedJob({ id: "old", titleName: "Old selection" })]);
+  const handle = render(
+    <DownloadManagerContent container={fixture.container} onClose={() => undefined} />,
+    { columns: 120, rows: 35 },
+  );
+  try {
+    await act(async () => {
+      handle.stdin.enqueue("x");
+    });
+    expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Press x or X again");
+    fixture.setActiveJobs([queuedJob({ id: "replacement", titleName: "Replacement selection" })]);
+    fixture.emit({ type: "enqueued" });
+    await act(async () => {
+      handle.stdin.enqueue("x");
+    });
+    expect(fixture.removed).toEqual([]);
+    await act(async () => {
+      handle.stdin.enqueue("x");
+    });
+    expect(fixture.removed).toEqual(["replacement"]);
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("Downloads provides an explicit record-only removal that keeps local files", async () => {
+  const fixture = createContainerFixture();
+  fixture.setCompletedJobs([queuedJob({ status: "completed" })]);
+  const handle = render(
+    <DownloadManagerContent container={fixture.container} onClose={() => undefined} />,
+    { columns: 120, rows: 35 },
+  );
+  try {
+    await act(async () => {
+      handle.stdin.enqueue("X");
+    });
+    expect(stripAnsi(handle.lastFrame() ?? "")).toContain("local files kept");
+    await act(async () => {
+      handle.stdin.enqueue("X");
+    });
+    expect(fixture.removalOptions).toEqual([{ deleteArtifact: false }]);
   } finally {
     handle.unmount();
   }

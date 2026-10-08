@@ -1,4 +1,4 @@
-import { linkSync, unlinkSync, statSync, closeSync } from "node:fs";
+import { linkSync, unlinkSync, statSync, closeSync, rmSync } from "node:fs";
 import { mkdir, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
@@ -61,6 +61,7 @@ import {
   streamMeetsDownloadQualityFloor,
   ytDlpFormatSelectorForQuality,
 } from "./download-quality-policy";
+import type { DownloadDeleteResult } from "./download-removal";
 import { resolveDownloadFeatureState } from "./DownloadFeature";
 import {
   formatPlaybackDownloadStripe,
@@ -277,6 +278,8 @@ function existingDestinationError(cause: unknown): Error {
     { cause },
   );
 }
+
+class DownloadRemovalError extends Error {}
 
 class DownloadOwnershipError extends Error {}
 
@@ -1201,49 +1204,72 @@ export class DownloadService {
     }
   }
 
-  async deleteJob(jobId: string, opts: { deleteArtifact?: boolean } = {}): Promise<void> {
+  async deleteJob(
+    jobId: string,
+    opts: { deleteArtifact?: boolean } = {},
+  ): Promise<DownloadDeleteResult> {
     const job = this.deps.repo.get(jobId);
-    if (!job) return;
-    if (job.publicationPending)
-      throw new Error(
-        "Download copy is still active or awaiting recovery. Cancel or recover it before deleting this job.",
-      );
-    if (this.isForeignLiveJob(job)) {
-      // The row, temp file, and (possibly) partial output belong to a sibling
-      // that is heartbeating right now — deleting any of them corrupts its run.
-      this.deps.logger.warn("Refusing to delete a download owned by a live Kunai instance", {
+    if (!job) return { status: "missing", jobId };
+    if (job.status === "running" || job.publicationPending || this.activeProcesses.has(jobId))
+      return {
+        status: "retained",
         jobId,
+        reason: "Download is active or needs recovery. Cancel or recover it before removing it.",
+      };
+    try {
+      const deleted = this.deps.repo.deleteInactive(job, () => {
+        if (!opts.deleteArtifact) return;
+        if (
+          !["completed", "completed-with-notes", "repairable"].includes(job.status) ||
+          this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath)
+        )
+          throw new DownloadRemovalError(
+            "File ownership cannot be proved. Remove the record only to preserve the file.",
+          );
+        try {
+          const info = statSync(job.outputPath, { bigint: true, throwIfNoEntry: false });
+          if (
+            info &&
+            job.publicationDevice !== undefined &&
+            job.publicationInode !== undefined &&
+            (String(info.dev) !== job.publicationDevice ||
+              String(info.ino) !== job.publicationInode)
+          )
+            throw new DownloadRemovalError(
+              "Download destination changed; existing file and job record preserved",
+            );
+          const paths = new Set([
+            job.outputPath,
+            job.subtitlePath,
+            job.thumbnailPath,
+            resolveThumbnailArtifactPath(job.outputPath),
+            resolveOfflinePosterArtifactPath(job),
+          ]);
+          for (const path of paths) if (path) rmSync(path, { force: true });
+        } catch (cause) {
+          if (cause instanceof DownloadRemovalError) throw cause;
+          throw new DownloadRemovalError(
+            "Could not remove all download files. The record is kept so you can retry.",
+            { cause },
+          );
+        }
       });
-      return;
+      if (!deleted)
+        return {
+          status: "retained",
+          jobId,
+          reason: "Download changed in another instance. Refresh and try again.",
+        };
+      this.emit({ type: "deleted", jobId });
+      return { status: "deleted", jobId };
+    } catch (cause) {
+      if (!(cause instanceof DownloadRemovalError)) throw cause;
+      this.deps.logger.warn("Download removal retained its record", {
+        jobId,
+        reason: cause.message,
+      });
+      return { status: "retained", jobId, reason: cause.message };
     }
-    if (job.status === "running" || this.activeProcesses.has(jobId)) {
-      await this.abort(jobId);
-    }
-    await rm(job.tempPath, { force: true }).catch(() => {});
-    const ownsArtifact =
-      ["completed", "completed-with-notes", "repairable"].includes(job.status) &&
-      !this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath);
-    if (opts.deleteArtifact && ownsArtifact) {
-      this.assertPublishedIdentity(jobId);
-      await rm(job.outputPath, { force: true }).catch(() => {});
-      if (job.subtitlePath) await rm(job.subtitlePath, { force: true }).catch(() => {});
-      if (job.thumbnailPath) await rm(job.thumbnailPath, { force: true }).catch(() => {});
-      const derivedThumbnailPath = resolveThumbnailArtifactPath(job.outputPath);
-      if (derivedThumbnailPath !== job.thumbnailPath) {
-        await rm(derivedThumbnailPath, { force: true }).catch(() => {});
-      }
-      const posterPath = resolveOfflinePosterArtifactPath(job);
-      if (posterPath !== job.thumbnailPath && posterPath !== derivedThumbnailPath) {
-        await rm(posterPath, { force: true }).catch(() => {});
-      }
-    }
-    // Emit before deleting the row, not after. `offline_assets.origin_job_id` is
-    // `ON DELETE SET NULL` with foreign keys enabled, so once the job row is
-    // gone the listener's `deleteByOriginJobId(jobId)` matches nothing and the
-    // asset is orphaned: still `state='ready'`, still advertised as downloaded,
-    // but unplayable because its originJobId is now null.
-    this.emit({ type: "deleted", jobId });
-    this.deps.repo.delete(jobId);
   }
 
   private assertPublishedIdentity(jobId: string): void {

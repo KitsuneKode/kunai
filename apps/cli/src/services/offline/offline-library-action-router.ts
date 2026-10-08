@@ -6,6 +6,10 @@ import {
   type OfflineTitleCleanupPreference,
 } from "@/services/download/download-cleanup-policy";
 import {
+  deleteDownloads,
+  formatDownloadRemovalFeedback,
+} from "@/services/download/download-removal";
+import {
   resolveOfflineArtifactStatus,
   type OfflineLibraryEntry,
 } from "@/services/offline/offline-library";
@@ -263,16 +267,16 @@ export async function routeOfflineLibraryGroupAction(
       ],
     });
     if (!confirmed) return "continue";
-    await Promise.all(
-      entries.map((entry) =>
-        container.downloadService.deleteJob(entry.job.id, { deleteArtifact: true }),
-      ),
+    const summary = await deleteDownloads(
+      container.downloadService,
+      entries.map((entry) => entry.job.id),
+      true,
     );
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: `Deleted offline title: ${first.titleName}`,
+      note: formatDownloadRemovalFeedback(summary),
     });
-    return "exit";
+    return summary.retained.length > 0 ? "continue" : "exit";
   }
 
   return "continue";
