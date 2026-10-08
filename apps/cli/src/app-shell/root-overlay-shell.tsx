@@ -793,6 +793,12 @@ export function RootOverlayShell({
   // Up Next queue: bumping the tick after a mutation (reorder/remove/clear/restore)
   // recomputes the view from the service's fresh getAll().
   const [queueTick, setQueueTick] = useState(0);
+  // Armed destructive queue action. First press arms and the prompt stays
+  // visible in the footer until the second press mutates (or something
+  // disarms it) — unlike overlayStatus, which self-clears after 2.5s while an
+  // arm would silently survive. Keyed by row id for removes so a resort
+  // between presses cannot retarget the confirm (library-shell convention).
+  const [queueConfirm, setQueueConfirm] = useState<{ key: string; prompt: string } | null>(null);
   const queuePosterResolver = useMemo(() => {
     const map = new Map<string, string>();
     for (const { titleId, entry } of historySelections) {
@@ -1092,6 +1098,12 @@ export function RootOverlayShell({
     setSelectedIndex(0);
     setHistoryPendingDelete(null);
   }, [historyTab, overlay.type]);
+
+  // An armed queue destroy must not survive leaving the queue: without this,
+  // returning later and pressing the same key once would mutate.
+  useEffect(() => {
+    setQueueConfirm(null);
+  }, [overlay.type]);
 
   // Discard any play-now intent left staged by an earlier inbox session.
   // Only the palette route consumes the intent (it reads after close), so an
@@ -1631,6 +1643,7 @@ export function RootOverlayShell({
       const row = sel >= 0 ? queueRows[sel] : undefined;
       if (key.return && row) {
         // Claim exact row before handoff; failed CAS keeps the overlay open.
+        setQueueConfirm(null);
         resolveQueueRowPlaySelection(
           container.queueService,
           row.id,
@@ -1640,45 +1653,91 @@ export function RootOverlayShell({
         return;
       }
       if (input === "J" && row) {
+        setQueueConfirm(null);
         if (container.queueService.moveDown(row.id))
           setSelectedIndex((c) => Math.min(c + 1, queueRows.length - 1));
         refresh();
         return;
       }
       if (input === "K" && row) {
+        setQueueConfirm(null);
         if (container.queueService.moveUp(row.id)) setSelectedIndex((c) => Math.max(c - 1, 0));
         refresh();
         return;
       }
       if (input === "g" && row) {
+        setQueueConfirm(null);
         container.queueService.moveToTop(row.id);
         refresh();
         return;
       }
       if (input === "G" && row) {
+        setQueueConfirm(null);
         container.queueService.moveToBottom(row.id);
         refresh();
         return;
       }
       if (input.toLowerCase() === "x" && row) {
-        container.queueService.remove(row.id);
-        setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
-        refresh();
+        // Destructive, adjacent to Ctrl+C, and one press away from an
+        // accident: arm on first press, remove on the second. Keyed by row id
+        // so a resort between presses cannot retarget the confirm —
+        // same convention as library-shell.
+        const confirmKey = `remove:${row.id}`;
+        if (queueConfirm?.key === confirmKey) {
+          setQueueConfirm(null);
+          container.queueService.remove(row.id);
+          setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
+          setOverlayStatus(`Removed ${row.title} from Up Next`);
+          refresh();
+        } else {
+          setQueueConfirm({ key: confirmKey, prompt: `Press x again to remove ${row.title}` });
+        }
         return;
       }
       if (input === "C") {
-        container.queueService.clearPlayed();
-        setSelectedIndex(0);
-        refresh();
+        const playedCount = queueRows.filter((candidate) => candidate.state === "played").length;
+        if (playedCount === 0) {
+          setQueueConfirm(null);
+          setOverlayStatus("No played items to clear");
+          return;
+        }
+        if (queueConfirm?.key === "clear-played") {
+          setQueueConfirm(null);
+          container.queueService.clearPlayed();
+          setSelectedIndex(0);
+          setOverlayStatus(`Cleared ${playedCount} played ${playedCount === 1 ? "item" : "items"}`);
+          refresh();
+        } else {
+          setQueueConfirm({
+            key: "clear-played",
+            prompt: `Press C again to clear ${playedCount} played ${playedCount === 1 ? "item" : "items"}`,
+          });
+        }
         return;
       }
       if (input === "c" && !key.ctrl) {
-        container.queueService.clear();
-        setSelectedIndex(0);
-        refresh();
+        if (queueRows.length === 0) {
+          setQueueConfirm(null);
+          setOverlayStatus("Up Next is already empty");
+          return;
+        }
+        if (queueConfirm?.key === "clear-all") {
+          const cleared = queueRows.length;
+          setQueueConfirm(null);
+          container.queueService.clear();
+          setSelectedIndex(0);
+          setOverlayStatus(`Cleared ${cleared} ${cleared === 1 ? "item" : "items"} from Up Next`);
+          refresh();
+        } else {
+          setQueueConfirm({
+            key: "clear-all",
+            prompt: `Press c again to clear all ${queueRows.length} ${queueRows.length === 1 ? "item" : "items"}`,
+          });
+        }
         return;
       }
       if (input.toLowerCase() === "r") {
+        setQueueConfirm(null);
         const sessions = container.queueService.listRecoverableSessions();
         // Sessions come back most-recent-first; naming the target in the status
         // line is what makes this restore explicit rather than a silent guess.
@@ -1695,6 +1754,11 @@ export function RootOverlayShell({
         refresh();
         return;
       }
+      // Arrows + filtering fall through to the generic handlers below. An
+      // armed confirm names one row: moving the selection must disarm it, or
+      // a later press on the original row would delete with no prompt visible
+      // (the status line self-clears after 2.5s while the arm would survive).
+      if ((key.upArrow || key.downArrow) && queueConfirm) setQueueConfirm(null);
       // No early return — arrows + filtering fall through.
     }
     if (
@@ -2162,7 +2226,10 @@ export function RootOverlayShell({
           />
         ) : null}
         <ShellFooter
-          taskLabel="Up Next"
+          // An armed confirm prompt lives here (not only in overlayStatus,
+          // which self-clears after 2.5s) so it stays visible until the second
+          // press or a disarm — notifications-footer pattern.
+          taskLabel={queueConfirm?.prompt ?? overlayStatus ?? "Up Next"}
           actions={queueFooterActions()}
           mode="detailed"
           commandMode={commandMode}

@@ -155,4 +155,52 @@ describe("buildErrorRows", () => {
     }).length;
     expect(long).toBeGreaterThan(short);
   });
+
+  test("strips terminal escapes from provider-controlled rows", () => {
+    // Provider names, titles, and failure details reach these rows verbatim;
+    // an OSC hyperlink or CSI sequence must not survive to the terminal.
+    const evil = "vid\x1b]8;;https://evil.example\x07easy\x1b[2J";
+    const lines = linesOf({
+      ...base,
+      scenario: { kind: "provider-timeout", providerName: evil, elapsedSec: 12 },
+    });
+    for (const line of lines) {
+      expect(line).not.toContain("\x1b");
+      expect(line).not.toContain("\x07");
+    }
+    expect(lines).toContain("videasy");
+
+    const titleLines = linesOf({
+      ...base,
+      scenario: { kind: "title-unavailable", title: `Dune\x1b]0;pwned\x07` },
+    });
+    // The whole OSC sequence (introducer, payload, terminator) is removed.
+    expect(titleLines).toContain("◌  Dune not found");
+  });
+
+  test("strips terminal escapes from waterfall labels and details", () => {
+    // Waterfall segments bypass row() by construction, so they need their own
+    // coverage: labels name providers/sources/URLs, details carry timings and
+    // failure text.
+    const rows = buildErrorRows({
+      ...base,
+      waterfall: {
+        title: "Source attempts",
+        truncated: false,
+        rows: [
+          {
+            label: "vid\x1b]8;;https://evil.example\x07easy",
+            detail: "tok\x1b[2Jen",
+            status: "failed",
+          },
+        ],
+      },
+    });
+    const lines = rows.map(rowText);
+    for (const line of lines) {
+      expect(line).not.toContain("\x1b");
+      expect(line).not.toContain("\x07");
+    }
+    expect(lines).toContain("x videasy  ·  token");
+  });
 });

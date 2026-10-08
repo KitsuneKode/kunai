@@ -1,3 +1,4 @@
+import { sanitizeTerminalText } from "@/domain/text-display";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -202,9 +203,9 @@ export function OverlayPanel({
       {insideOverlay ? null : (
         <>
           <Text color={palette.text} bold>
-            {overlay.title}
+            {sanitizeTerminalText(overlay.title)}
           </Text>
-          <Text color={palette.dim}>{overlay.subtitle}</Text>
+          <Text color={palette.dim}>{sanitizeTerminalText(overlay.subtitle)}</Text>
         </>
       )}
       {isPickerOverlay ? (
