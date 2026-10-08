@@ -220,6 +220,11 @@ accounts, usage ping, done. Implementation is
 - Download-only mode resolves a playable stream without launching mpv.
 - Selected poster URL and IntroDB/AniSkip timing are persisted at enqueue time when available.
 - Completed downloads persist local file size and, when `ffprobe` is available, playable duration after artifact validation. The optional probe has a 30-second deadline, then graceful termination and bounded force-kill cleanup; a probe timeout fails validation without publishing its temporary artifact or deleting a previously published file as corrupt.
+- A completion write releases the running owner token while retaining its claim
+  generation. A subsequent offline-registration error is surfaced through the
+  queue pass and diagnostics; it must not be mistaken for a successor claim or
+  silently swallowed. The valid completed artifact remains intact, and a later
+  queue kick can continue other queued jobs.
 - Offline artwork caching is best-effort and post-completion; artwork failure must never fail or delay a completed download.
 - Thumbnail sidecars are written through a temporary file and renamed only after a non-empty image exists.
 - External subtitle/artwork sidecars are repairable metadata, not proof the video failed. If the video artifact validates but an expected sidecar is missing, the job becomes `repairable` and `/downloads` can retry just the sidecar path without re-running `yt-dlp`.
