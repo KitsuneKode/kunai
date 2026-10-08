@@ -23,6 +23,10 @@ import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import type { Container } from "@/container";
 import { presentMedia } from "@/domain/media/media-presentation";
+import {
+  deleteDownloads,
+  formatDownloadRemovalFeedback,
+} from "@/services/download/download-removal";
 import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -180,7 +184,10 @@ export function DownloadManagerContent({
   const [completedJobs, setCompletedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [failedJobs, setFailedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [confirmingDeleteIndex, setConfirmingDeleteIndex] = useState<number | null>(null);
+  const [confirmingDeletion, setConfirmingDeletion] = useState<{
+    jobId: string;
+    deleteArtifact: boolean;
+  } | null>(null);
   const [repairSweepStatus, setRepairSweepStatus] = useState<string | null>(null);
   const [repairSweepRunning, setRepairSweepRunning] = useState(false);
 
@@ -220,6 +227,17 @@ export function DownloadManagerContent({
   // selection to settle, so holding an arrow key never spawns a poster render
   // per row.
   const selectedJob = allJobs[selectedIndex];
+  const confirmingSelectedJob = Boolean(
+    selectedJob && confirmingDeletion?.jobId === selectedJob.id,
+  );
+  const confirmationPrompt = confirmingDeletion?.deleteArtifact
+    ? "Press x again to delete files · any other key cancels"
+    : selectedJob &&
+        (selectedJob.status === "completed" ||
+          selectedJob.status === "completed-with-notes" ||
+          selectedJob.status === "repairable")
+      ? "Press X again to remove record · local files kept"
+      : "Press x or X again to remove record · local files kept";
   const settledPosterUrl = useSettledValue(selectedJob?.posterUrl);
   const railPoster = useRailPoster(settledPosterUrl, {
     rows: 12,
@@ -299,38 +317,49 @@ export function DownloadManagerContent({
       }
       if (key.upArrow) {
         if (allJobs.length === 0) return;
-        setConfirmingDeleteIndex(null);
+        setConfirmingDeletion(null);
         setSelectedIndex((current) => (current - 1 + allJobs.length) % allJobs.length);
         return;
       }
       if (key.downArrow) {
         if (allJobs.length === 0) return;
-        setConfirmingDeleteIndex(null);
+        setConfirmingDeletion(null);
         setSelectedIndex((current) => (current + 1) % allJobs.length);
         return;
       }
-      if (input === "x" || key.delete) {
+      if (input === "x" || input === "X" || key.delete) {
         const job = allJobs[selectedIndex];
         if (!job) return;
         if (job.status === "running") {
           void container.downloadService.abort(job.id);
           return;
         }
-        if (confirmingDeleteIndex === selectedIndex) {
-          setConfirmingDeleteIndex(null);
-          const deleteArtifact =
-            job.status === "failed" ||
-            job.status === "repairable" ||
+        const deleteArtifact =
+          input !== "X" &&
+          (job.status === "repairable" ||
             job.status === "completed" ||
-            job.status === "completed-with-notes";
-          void container.downloadService.deleteJob(job.id, { deleteArtifact });
+            job.status === "completed-with-notes");
+        if (
+          confirmingDeletion?.jobId === job.id &&
+          confirmingDeletion.deleteArtifact === deleteArtifact
+        ) {
+          setConfirmingDeletion(null);
+          void deleteDownloads(container.downloadService, [job.id], deleteArtifact).then(
+            (summary) => {
+              refresh();
+              return container.stateManager.dispatch({
+                type: "SET_PLAYBACK_FEEDBACK",
+                note: formatDownloadRemovalFeedback(summary),
+              });
+            },
+          );
           return;
         }
-        setConfirmingDeleteIndex(selectedIndex);
+        setConfirmingDeletion({ jobId: job.id, deleteArtifact });
         return;
       }
-      if (confirmingDeleteIndex !== null) {
-        setConfirmingDeleteIndex(null);
+      if (confirmingDeletion !== null) {
+        setConfirmingDeletion(null);
       }
       if (input === "r" || key.return) {
         const job = allJobs[selectedIndex];
@@ -393,7 +422,7 @@ export function DownloadManagerContent({
     shellWidth - 2 - queueLayout.stateWidth - queueLayout.progressWidth - queueLayout.metaWidth - 4,
   );
   const isConfirming = (index: number) =>
-    confirmingDeleteIndex === index && selectedIndex === index;
+    confirmingDeletion?.jobId === allJobs[index]?.id && selectedIndex === index;
 
   const renderJob = (job: DownloadJobRecord, index: number) => {
     const isSelected = index === selectedIndex;
@@ -471,7 +500,7 @@ export function DownloadManagerContent({
         {isConfirming(index) ? (
           <Box marginLeft={2}>
             <Text color={palette.accentDeep} bold>
-              Press x again to remove this download
+              {confirmationPrompt}
             </Text>
           </Box>
         ) : null}
@@ -486,9 +515,7 @@ export function DownloadManagerContent({
   const hasSummaryHeader =
     activeJobs.length > 0 || queuedJobs.length > 0 || failedAttentionCount > 0;
   const hintRows =
-    (confirmingDeleteIndex !== null ? 1 : 0) +
-    (repairSweepStatus ? 1 : 0) +
-    (allJobs.length > 0 ? 1 : 0);
+    (confirmingSelectedJob ? 1 : 0) + (repairSweepStatus ? 1 : 0) + (allJobs.length > 0 ? 1 : 0);
   const chromeRows = getPickerChromeRows({
     hasSubtitle: false,
     commandMode: false,
@@ -542,10 +569,11 @@ export function DownloadManagerContent({
           ) : null}
         </Box>
       )}
-      {confirmingDeleteIndex !== null ? (
+      {confirmingSelectedJob ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
-            {"⚠ "}Press x again to confirm delete · any other key cancels
+            {"⚠ "}
+            {confirmationPrompt}
           </Text>
         </Box>
       ) : showSelectionHints ? (
@@ -556,11 +584,11 @@ export function DownloadManagerContent({
             selected.status === "running"
               ? "x to abort"
               : selected.status === "repairable"
-                ? "r to repair subtitle/artwork sidecars  ·  x to delete"
+                ? "r repair sidecars  ·  x delete files  ·  X remove record"
                 : selected.status === "failed" || selected.status === "aborted"
-                  ? "r to retry  ·  x to delete"
+                  ? "r to retry  ·  x remove record"
                   : selected.status === "completed" || selected.status === "completed-with-notes"
-                    ? "enter to play local file  ·  x to delete"
+                    ? "enter play local file  ·  x delete files  ·  X remove record"
                     : selected.status === "queued"
                       ? "x to remove from queue"
                       : null;

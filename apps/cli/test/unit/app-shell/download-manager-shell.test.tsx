@@ -31,12 +31,15 @@ function queuedJob(overrides: Partial<DownloadJobRecord> = {}): DownloadJobRecor
 }
 
 function createContainerFixture() {
+  const removed: string[] = [];
+  const removalOptions: Array<{ deleteArtifact: boolean }> = [];
   let listener: ((event: DownloadEvent) => void) | null = null;
   let activeJobs: DownloadJobRecord[] = [];
   let completedJobs: DownloadJobRecord[] = [];
   let failedJobs: DownloadJobRecord[] = [];
 
   const container = {
+    stateManager: { dispatch: () => undefined },
     config: {
       zenMode: false,
     },
@@ -57,7 +60,12 @@ function createContainerFixture() {
         failed: 0,
       }),
       abort: async () => undefined,
-      deleteJob: async () => undefined,
+      deleteJob: async (jobId: string, options: { deleteArtifact: boolean }) => {
+        removalOptions.push(options);
+        removed.push(jobId);
+        return { status: "deleted", jobId };
+      },
+
       retry: async () => undefined,
       kickQueue: () => undefined,
     },
@@ -65,6 +73,8 @@ function createContainerFixture() {
 
   return {
     container,
+    removed,
+    removalOptions,
     setActiveJobs(nextJobs: DownloadJobRecord[]) {
       activeJobs = nextJobs;
     },
@@ -297,3 +307,72 @@ test("a truncated title keeps a gutter before the state column", () => {
     handle.unmount();
   }
 });
+
+test("delete confirmation cannot transfer to a replacement row after refresh", async () => {
+  const fixture = createContainerFixture();
+  fixture.setActiveJobs([queuedJob({ id: "old", titleName: "Old selection" })]);
+  const handle = render(
+    <DownloadManagerContent container={fixture.container} onClose={() => undefined} />,
+    { columns: 120, rows: 35 },
+  );
+  try {
+    await act(async () => {
+      handle.stdin.enqueue("x");
+    });
+    expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Press x or X again");
+    fixture.setActiveJobs([queuedJob({ id: "replacement", titleName: "Replacement selection" })]);
+    fixture.emit({ type: "enqueued" });
+    await act(async () => {
+      handle.stdin.enqueue("x");
+    });
+    expect(fixture.removed).toEqual([]);
+    await act(async () => {
+      handle.stdin.enqueue("x");
+    });
+    expect(fixture.removed).toEqual(["replacement"]);
+  } finally {
+    handle.unmount();
+  }
+});
+
+test.each([
+  "completed",
+  "completed-with-notes",
+  "repairable",
+] satisfies DownloadJobRecord["status"][])(
+  "Downloads advertises the exact record-only confirmation key for %s",
+  async (status) => {
+    const fixture = createContainerFixture();
+    const job = queuedJob({ status });
+    if (status === "repairable") fixture.setFailedJobs([job]);
+    else fixture.setCompletedJobs([job]);
+    const handle = render(
+      <DownloadManagerContent container={fixture.container} onClose={() => undefined} />,
+      { columns: 120, rows: 35 },
+    );
+    try {
+      await act(async () => {
+        handle.stdin.enqueue("X");
+      });
+      const frame = stripAnsi(handle.lastFrame() ?? "");
+      expect(frame.match(/Press X again to remove record/g)).toHaveLength(2);
+      expect(frame).not.toContain("Press x or X again");
+      expect(frame).not.toContain("Press x again to remove this download");
+      await act(async () => {
+        handle.stdin.enqueue("x");
+      });
+      expect(fixture.removed).toEqual([]);
+      expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Press x again to delete files");
+      await act(async () => {
+        handle.stdin.enqueue("X");
+      });
+      expect(fixture.removed).toEqual([]);
+      await act(async () => {
+        handle.stdin.enqueue("X");
+      });
+      expect(fixture.removalOptions).toEqual([{ deleteArtifact: false }]);
+    } finally {
+      handle.unmount();
+    }
+  },
+);

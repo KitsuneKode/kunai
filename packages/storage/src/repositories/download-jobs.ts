@@ -822,6 +822,40 @@ export class DownloadJobsRepository {
     );
   }
 
+  /** Delete an unchanged inactive job and its assets as one committed aggregate. */
+  deleteInactive<T>(
+    job: DownloadJobRecord,
+    cleanup: () => T & (T extends PromiseLike<unknown> ? never : unknown),
+  ): boolean {
+    return this.db
+      .transaction(() => {
+        const current = this.db
+          .query<
+            { id: string },
+            [string, string, number, string, string, string | null, string | null]
+          >(
+            "SELECT id FROM download_jobs WHERE id = ? AND updated_at = ? AND claim_generation = ? AND status = ? AND status != 'running' AND publication_pending = 0 AND output_path = ? AND subtitle_path IS ? AND thumbnail_path IS ?",
+          )
+          .get(
+            job.id,
+            job.updatedAt,
+            job.claimGeneration ?? 0,
+            job.status,
+            job.outputPath,
+            job.subtitlePath ?? null,
+            job.thumbnailPath ?? null,
+          );
+        if (!current) return false;
+        cleanup();
+        // Track/artwork references cascade with the asset. Removing the job first
+        // would SET NULL on origin_job_id and make those assets unreachable.
+        this.db.query("DELETE FROM offline_assets WHERE origin_job_id = ?").run(job.id);
+        this.db.query("DELETE FROM download_jobs WHERE id = ?").run(job.id);
+        return true;
+      })
+      .immediate();
+  }
+
   delete(id: string): void {
     this.db.query("DELETE FROM download_jobs WHERE id = ?").run(id);
   }

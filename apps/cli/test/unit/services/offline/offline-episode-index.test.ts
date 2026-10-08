@@ -53,7 +53,6 @@ function repositoryStub(
     listByTitleIds: () => [],
     listNextReadyByTitleCursors: () => [],
     markValidation: () => {},
-    deleteByOriginJobId: () => {},
     deleteOrphaned: () => 0,
     upsertPlayable: () => asset({ titleId: "test-title" }),
     ...overrides,

@@ -12,6 +12,7 @@ import {
   DownloadService,
   type DownloadResolveResult,
 } from "@/services/download/DownloadService";
+import * as artworkCache from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import {
   DownloadJobsRepository,
@@ -50,6 +51,130 @@ describe("DownloadService", () => {
     db.close();
     rmSync(tempDir, { recursive: true, force: true });
     mock.restore();
+  });
+
+  async function completedRemovalFixture() {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:cleanup", type: "movie", name: "Cleanup fixture" },
+      providerId: "vidking",
+    });
+    const at = new Date().toISOString();
+    const claim = repo.markRunning(job.id, at)!;
+    writeFileSync(job.outputPath, "owned download bytes");
+    repo.complete(job.id, at, claim);
+    const assets = new OfflineAssetsRepository(db);
+    assets.upsertPlayable({
+      titleId: job.titleId,
+      titleName: job.titleName,
+      mediaKind: "movie",
+      profileKey: "test",
+      originJobId: job.id,
+      filePath: job.outputPath,
+      state: "ready",
+      updatedAt: at,
+    });
+    return { service, job, assets };
+  }
+
+  test("failed artifact removal retains the job and asset without a deleted event", async () => {
+    const { service, job, assets } = await completedRemovalFixture();
+    const events: string[] = [];
+    service.onEvent((event) => events.push(event.type));
+    const denied = Object.assign(new Error("permission denied"), { code: "EACCES" });
+    const asyncRemove = fsPromises.rm;
+    const syncRemove = nativeFs.rmSync;
+    const a = spyOn(fsPromises, "rm").mockImplementation((path, options) =>
+      path === job.outputPath ? Promise.reject(denied) : asyncRemove(path, options),
+    );
+    const b = spyOn(nativeFs, "rmSync").mockImplementation((path, options) => {
+      if (path === job.outputPath) throw denied;
+      syncRemove(path, options);
+    });
+    try {
+      const result = await service.deleteJob(job.id, { deleteArtifact: true });
+      expect(repo.get(job.id)?.status).toBe("completed");
+      expect(assets.listTitleAssets(job.titleId)).toHaveLength(1);
+      expect(nativeFs.readFileSync(job.outputPath, "utf8")).toBe("owned download bytes");
+      expect(events).not.toContain("deleted");
+      expect(result).toMatchObject({ status: "retained", jobId: job.id });
+    } finally {
+      a.mockRestore();
+      b.mockRestore();
+    }
+  });
+
+  test("deleted is emitted only after the job and asset deletion commits", async () => {
+    const { service, job, assets } = await completedRemovalFixture();
+    const observed: Array<{ jobExists: boolean; assetCount: number }> = [];
+    service.onEvent((event) => {
+      if (event.type === "deleted")
+        observed.push({
+          jobExists: Boolean(repo.get(job.id)),
+          assetCount: assets.listTitleAssets(job.titleId).length,
+        });
+    });
+    const result = await service.deleteJob(job.id, { deleteArtifact: true });
+    expect(observed).toEqual([{ jobExists: false, assetCount: 0 }]);
+    expect(existsSync(job.outputPath)).toBe(false);
+    expect(result).toEqual({ status: "deleted", jobId: job.id });
+  });
+
+  test("a failed job deletion rolls asset removal back and emits no deleted event", async () => {
+    const { service, job, assets } = await completedRemovalFixture();
+    db.exec(
+      "CREATE TRIGGER refuse_job_removal BEFORE DELETE ON download_jobs BEGIN SELECT RAISE(ABORT, 'fixture storage failure'); END",
+    );
+    const events: string[] = [];
+    service.onEvent((event) => events.push(event.type));
+    await expect(service.deleteJob(job.id)).rejects.toThrow("fixture storage failure");
+    expect(repo.get(job.id)).toBeDefined();
+    expect(assets.listTitleAssets(job.titleId)).toHaveLength(1);
+    expect(events).not.toContain("deleted");
+    expect(existsSync(job.outputPath)).toBe(true);
+  });
+
+  test("a same-timestamp retry invalidates a completed delete snapshot", async () => {
+    const { service, job } = await completedRemovalFixture();
+    const get = repo.get.bind(repo);
+    const read = spyOn(repo, "get").mockImplementationOnce((id) => {
+      const snapshot = get(id)!;
+      repo.requeue(id, snapshot.updatedAt);
+      return snapshot;
+    });
+    try {
+      const result = await service.deleteJob(job.id, { deleteArtifact: true });
+      expect(get(job.id)?.status).toBe("queued");
+      expect(nativeFs.readFileSync(job.outputPath, "utf8")).toBe("owned download bytes");
+      expect(result).toMatchObject({ status: "retained", jobId: job.id });
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  test("a stale delete snapshot cannot remove a newly claimed job or its files", async () => {
+    const { service, job } = await completedRemovalFixture();
+    const get = repo.get.bind(repo);
+    const read = spyOn(repo, "get").mockImplementationOnce((id) => {
+      const snapshot = get(id);
+      const at = new Date().toISOString();
+      repo.requeue(id, at);
+      repo.markRunning(id, at);
+      return snapshot;
+    });
+    try {
+      const result = await service.deleteJob(job.id, { deleteArtifact: true });
+      expect(get(job.id)?.status).toBe("running");
+      expect(nativeFs.readFileSync(job.outputPath, "utf8")).toBe("owned download bytes");
+      expect(result).toMatchObject({ status: "retained", jobId: job.id });
+    } finally {
+      read.mockRestore();
+    }
   });
 
   test("a recovered worker cannot launch or publish into its successor's attempt", async () => {
@@ -514,9 +639,11 @@ describe("DownloadService", () => {
     await service.processQueue();
     nativeFs.renameSync(job.outputPath, join(tempDir, "completed-original"));
     writeFileSync(job.outputPath, "user-owned replacement");
-    await expect(service.deleteJob(job.id, { deleteArtifact: true })).rejects.toThrow(
-      "destination changed",
-    );
+    expect(await service.deleteJob(job.id, { deleteArtifact: true })).toMatchObject({
+      status: "retained",
+      jobId: job.id,
+      reason: expect.stringContaining("destination changed"),
+    });
     expect(repo.get(job.id)).toBeDefined();
     expect(await Bun.file(job.outputPath).text()).toBe("user-owned replacement");
     await service.deleteJob(job.id);
@@ -1557,6 +1684,14 @@ describe("DownloadService", () => {
           headers: { "content-type": "image/jpeg" },
         }),
     ) as never;
+
+    // This service fixture owns its destination and fetch response. Exercise
+    // real artwork writes without resolving a synthetic hostname through the
+    // host DNS; guarded-fetch behavior has its own artwork-cache coverage.
+    const cachePoster = artworkCache.cacheOfflinePosterArtwork;
+    spyOn(artworkCache, "cacheOfflinePosterArtwork").mockImplementation((input) =>
+      cachePoster({ ...input, fetchImpl: globalThis.fetch }),
+    );
 
     const job = await service.enqueue({
       title: {
