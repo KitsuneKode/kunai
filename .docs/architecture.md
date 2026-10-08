@@ -194,8 +194,7 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 
 Config startup holds the shared file lock from its initial read through any
 migration write. Later saves merge only changed keys under the same lock.
-A lock timeout (5 seconds to acquire, a separate 5 seconds to release) rejects
-before the write callback runs.
+A lock timeout rejects before the write callback runs.
 
 Native credential hydration is a read; unrelated config saves never rewrite a
 hydrated token. Explicit replacements and clears share the config lock with their
