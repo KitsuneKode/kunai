@@ -14,9 +14,7 @@ function makeRepo(): HistoryRepository {
 }
 
 test("resumeSecondsFromHistoryForEpisode returns 0 when no row", () => {
-  expect(resumeSecondsFromHistoryForEpisode(makeRepo(), title, ep, "credits-or-90-percent")).toBe(
-    0,
-  );
+  expect(resumeSecondsFromHistoryForEpisode(makeRepo(), title, ep)).toBe(0);
 });
 
 test("resumeSecondsFromHistoryForEpisode returns position when partial", () => {
@@ -28,7 +26,7 @@ test("resumeSecondsFromHistoryForEpisode returns position when partial", () => {
     durationSeconds: 800,
     completed: false,
   });
-  expect(resumeSecondsFromHistoryForEpisode(repo, title, ep, "credits-or-90-percent")).toBe(222);
+  expect(resumeSecondsFromHistoryForEpisode(repo, title, ep)).toBe(222);
 });
 
 test("resumeSecondsFromHistoryForEpisode returns 0 when completed", () => {
@@ -40,7 +38,7 @@ test("resumeSecondsFromHistoryForEpisode returns 0 when completed", () => {
     durationSeconds: 800,
     completed: true,
   });
-  expect(resumeSecondsFromHistoryForEpisode(repo, title, ep, "credits-or-90-percent")).toBe(0);
+  expect(resumeSecondsFromHistoryForEpisode(repo, title, ep)).toBe(0);
 });
 
 test("resumeSecondsFromHistoryForEpisode does not inherit S1E3 progress onto S1E4", () => {
@@ -59,22 +57,8 @@ test("resumeSecondsFromHistoryForEpisode does not inherit S1E3 progress onto S1E
     completed: false,
   });
 
-  expect(
-    resumeSecondsFromHistoryForEpisode(
-      repo,
-      series,
-      { season: 1, episode: 4 },
-      "credits-or-90-percent",
-    ),
-  ).toBe(0);
-  expect(
-    resumeSecondsFromHistoryForEpisode(
-      repo,
-      series,
-      { season: 1, episode: 3 },
-      "credits-or-90-percent",
-    ),
-  ).toBe(333);
+  expect(resumeSecondsFromHistoryForEpisode(repo, series, { season: 1, episode: 4 })).toBe(0);
+  expect(resumeSecondsFromHistoryForEpisode(repo, series, { season: 1, episode: 3 })).toBe(333);
 });
 
 test("resumeSecondsFromHistoryForEpisode does not treat absolute E13 as S2E1", () => {
@@ -94,14 +78,7 @@ test("resumeSecondsFromHistoryForEpisode does not treat absolute E13 as S2E1", (
   });
 
   // S2E1 without absolute identity must not inherit abs E13 progress.
-  expect(
-    resumeSecondsFromHistoryForEpisode(
-      repo,
-      anime,
-      { season: 2, episode: 1 },
-      "credits-or-90-percent",
-    ),
-  ).toBe(0);
+  expect(resumeSecondsFromHistoryForEpisode(repo, anime, { season: 2, episode: 1 })).toBe(0);
 });
 
 test("resumeSecondsFromHistoryForEpisode resumes absolute-only row via absolute identity", () => {
@@ -122,12 +99,11 @@ test("resumeSecondsFromHistoryForEpisode resumes absolute-only row via absolute 
 
   // Abs-only queue/UI shape is synthetic S1E{abs} plus absoluteEpisode.
   expect(
-    resumeSecondsFromHistoryForEpisode(
-      repo,
-      anime,
-      { season: 1, episode: 13, absoluteEpisode: 13 },
-      "credits-or-90-percent",
-    ),
+    resumeSecondsFromHistoryForEpisode(repo, anime, {
+      season: 1,
+      episode: 13,
+      absoluteEpisode: 13,
+    }),
   ).toBe(640);
 });
 
@@ -156,7 +132,22 @@ test("resumeSecondsFromHistoryForEpisode resolves bare TMDB lookup to tmdb: hist
         externalIds: { tmdbId: "99" },
       },
       { season: 1, episode: 2 },
-      "credits-or-90-percent",
     ),
   ).toBe(111);
 });
+
+test.each(["anime", "series"] as const)(
+  "unfinished %s credits position survives the history resume reader",
+  (kind) => {
+    const repo = makeRepo();
+    const lookup = { id: `credits:${kind}`, kind, title: "Credits resume" };
+    repo.upsertProgress({
+      title: lookup,
+      episode: ep,
+      positionSeconds: 1499,
+      durationSeconds: 1500,
+      completed: false,
+    });
+    expect(resumeSecondsFromHistoryForEpisode(repo, lookup, ep)).toBe(1499);
+  },
+);

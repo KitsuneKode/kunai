@@ -21,13 +21,13 @@ function row(partial: Partial<HistoryProgress>): HistoryProgress {
   };
 }
 
-test("episode picker treats 96% without completed flag as watched for m toggle", () => {
+test("episode picker preserves unfinished credits progress for explicit m toggle", () => {
   const progress = row({
     completed: false,
     positionSeconds: 1_152,
     durationSeconds: 1_200,
   });
-  expect(episodePickerAlreadyWatched(progress)).toBe(true);
+  expect(episodePickerAlreadyWatched(progress)).toBe(false);
 });
 
 test("episode picker treats partial progress as unwatched for m toggle", () => {

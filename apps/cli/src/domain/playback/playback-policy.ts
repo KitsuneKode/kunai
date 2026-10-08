@@ -108,21 +108,18 @@ export function didPlaybackReachCompletionThreshold(
  * The durability gate for writing `completed:true` to history.
  *
  * A history row marked completed is forever: it clears the resume point and
- * feeds "episode complete" copy plus offline-runway evaluation. A clean
- * natural EOF sets it, and so does the user quitting in the credits — the
- * everyday way an episode ends, and what Netflix and Crunchyroll count as
- * watched; resuming someone into the end credits is the worse failure. Never
- * a kill (exit signal), crash (non-zero exit), timeout/unknown end, or a
- * demoted (suspected-dead) stream. The 95% percent-pos half of the eof rule
- * is enforced upstream in mpv-stats' premature-EOF guard, which demotes thin
- * eof claims to unknown before they reach this layer.
+ * feeds "episode complete" copy plus offline-runway evaluation. Only a clean
+ * natural EOF past the trusted completion threshold sets it. Voluntary quit,
+ * including in the credits, preserves resume; explicit mark-watched is the
+ * user's override. Kills, crashes, timeouts, and suspected-dead streams cannot
+ * clear resume either. mpv-stats demotes premature EOF evidence to unknown.
  */
 export function shouldMarkEpisodeCompleted(
   result: PlaybackResult,
   timing?: PlaybackTimingMetadata | null,
   thresholdMode: QuitNearEndThresholdMode = "credits-or-90-percent",
 ): boolean {
-  if (result.endReason !== "eof" && result.endReason !== "quit") return false;
+  if (result.endReason !== "eof") return false;
   if (result.suspectedDeadStream) return false;
   if (result.playerExitSignal) return false;
   if (
