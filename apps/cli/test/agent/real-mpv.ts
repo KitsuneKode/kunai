@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -24,7 +24,6 @@ import type { Socket } from "bun";
 import {
   createIsolatedCliProfile,
   disposeIsolatedCliProfile,
-  type IsolatedCliProfile,
 } from "../integration/helpers/isolated-container";
 import { startTmuxSession, type TmuxSession, type TmuxSessionOptions } from "./tmux-session";
 
@@ -97,17 +96,23 @@ export async function startRealMpvSession(
 
   const mediaDir = join(profile.rootDir, "media");
   const binDir = join(profile.rootDir, "real-mpv-bin");
-  const runDir = join(profile.rootDir, "run");
-  const tmpDir = join(profile.rootDir, "tmp");
-  mkdirSync(mediaDir, { recursive: true });
-  mkdirSync(binDir, { recursive: true });
-  mkdirSync(runDir, { recursive: true, mode: 0o700 });
-  mkdirSync(tmpDir, { recursive: true });
+  // Unix sockets have a ~100-byte path budget. A profile nested under CI's
+  // TMPDIR (or macOS's /var/folders/...) cannot reliably fit even a short name.
+  // This POSIX-only tmux tier owns a separate, short 0700 IPC sandbox; it never
+  // puts a socket directly in the shared temp directory.
+  let ipcRoot = "";
 
   const mediaPath = join(mediaDir, "fixture.mp4");
   let server: ReturnType<typeof Bun.serve> | null = null;
   let session: TmuxSession;
   try {
+    mkdirSync(mediaDir, { recursive: true });
+    mkdirSync(binDir, { recursive: true });
+    ipcRoot = mkdtempSync("/tmp/kunai-mpv-");
+    const runDir = join(ipcRoot, "run");
+    const tmpDir = join(ipcRoot, "tmp");
+    mkdirSync(runDir, { mode: 0o700 });
+    mkdirSync(tmpDir, { mode: 0o700 });
     await generateMedia(mediaPath);
 
     server = Bun.serve({
@@ -145,30 +150,35 @@ export async function startRealMpvSession(
     // Any failure before the session owns the profile must not leak either
     // the server or the sandbox.
     server?.stop(true);
-    disposeIsolatedCliProfile(profile);
+    try {
+      disposeIsolatedCliProfile(profile);
+    } finally {
+      if (ipcRoot) rmSync(ipcRoot, { recursive: true, force: true });
+    }
     throw error;
   }
 
   return {
     session,
     mediaDir,
-    mpvTimePos: () => readMpvTimePos(profile),
+    mpvTimePos: () => readMpvTimePos(ipcRoot),
     async stop() {
       try {
         await session.stop();
       } finally {
-        server.stop(true);
+        try {
+          server.stop(true);
+        } finally {
+          rmSync(ipcRoot, { recursive: true, force: true });
+        }
       }
     },
   };
 }
 
 /** Discover the Kunai mpv IPC socket inside the sandbox and ask for time-pos. */
-export async function readMpvTimePos(profile: IsolatedCliProfile): Promise<number | null> {
-  const candidates = [
-    join(profile.rootDir, "run", "kunai"),
-    join(profile.rootDir, "tmp", "kunai-ipc"),
-  ];
+async function readMpvTimePos(ipcRoot: string): Promise<number | null> {
+  const candidates = [join(ipcRoot, "run", "kunai"), join(ipcRoot, "tmp", "kunai-ipc")];
   for (const dir of candidates) {
     if (!existsSync(dir)) continue;
     const socks = readdirSync(dir).filter((f) => f.startsWith("kunai-mpv-") && f.endsWith(".sock"));

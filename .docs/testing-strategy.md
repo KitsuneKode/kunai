@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-07"
+lastReviewed: "2026-10-08"
 ---
 
 # Kunai — Testing Strategy
@@ -699,6 +699,13 @@ Opt-in release-candidate smoke, run only when provider traffic is acceptable:
 - Source refresh tests must prove that voluntary refresh cooldown does not block broken-stream recovery, and that a failed fresh lookup can keep the current cached stream instead of stalling playback.
 - Storage maintenance tests must seed durable user tables and disposable cache tables together, then prove automatic maintenance only prunes cache-class rows.
 - Fake mpv IPC lifecycle tests cover app-side orchestration only; keep one manual real-mpv smoke for release candidates that touch playback.
+- The opt-in real-player tier (`KUNAI_REAL_MPV=1 bun run test:cli:file real-mpv.test.ts`)
+  drives the real CLI in tmux, observes advancing mpv IPC time, and checks the
+  same profile's history row. The media/profile remains under the isolated
+  storage roots; IPC uses a separate, uniquely created 0700 sandbox under
+  `/tmp` on Linux/macOS so nested CI or macOS temp paths cannot exceed the Unix
+  socket path limit. Both normal shutdown and failed startup remove only that
+  owned IPC sandbox. This fixture proof does not qualify live providers or devices.
 - Live provider and Discord smokes are opt-in and must not be added to `bun run test`, CI, or Husky.
 
 ## Manual Smoke Matrix

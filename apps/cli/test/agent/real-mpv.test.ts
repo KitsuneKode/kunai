@@ -27,7 +27,11 @@ describe("agent driver · real mpv tier", () => {
   itReal(
     "plays generated media through the real CLI (mpv IPC + history row)",
     async () => {
-      const rm = await startRealMpvSession({ name: "real-mpv-proof" });
+      // A long, unique profile name deliberately exceeds the Unix socket path
+      // budget if IPC is nested under the profile. CI's TMPDIR may be deep too.
+      const rm = await startRealMpvSession({
+        name: `real-mpv-proof-${process.pid}-${crypto.randomUUID()}`,
+      });
       try {
         const s = rm.session;
         await s.waitFor((f) => f.includes("Search title"), "browse shell");
