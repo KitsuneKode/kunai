@@ -34,23 +34,48 @@ describe("matchTrackSelectionAgainstInventory", () => {
     ).toContain("no longer available");
   });
 
+  test("a known deferred source can be selected before it owns a stream", () => {
+    expect(
+      matchTrackSelectionAgainstInventory(
+        { sourceId: "source:miruro:next-mirror", streamId: null },
+        {
+          streams: [{ id: "winner", sourceId: "source:miruro:winner" }],
+          sources: [{ id: "source:miruro:next-mirror" }],
+        },
+      ),
+    ).toBeNull();
+  });
+
+  test("a source-only inventory can contradict a removed source pick", () => {
+    expect(
+      matchTrackSelectionAgainstInventory(
+        { sourceId: "removed", streamId: null },
+        { sources: [{ id: "known" }] },
+      ),
+    ).toContain("no longer available");
+  });
+
+  test("a declared source does not make an absent exact stream selectable", () => {
+    expect(
+      matchTrackSelectionAgainstInventory(
+        { sourceId: "known", streamId: "removed-stream" },
+        { streams: [], sources: [{ id: "known" }] },
+      ),
+    ).toContain("stream is no longer available");
+  });
+
   test("a missing cache row is not staleness", () => {
     expect(
       matchTrackSelectionAgainstInventory({ sourceId: null, streamId: "s1" }, null),
     ).toBeNull();
   });
 
-  test("a shape-valid row without a streams array fails open, not TypeError", () => {
+  test("an unknown inventory shape fails open, but an empty source list rejects source picks", () => {
     // The repository validator only checks streams when present — a poisoned
     // row like {} or {sources:[]} reaches here with streams undefined.
     expect(matchTrackSelectionAgainstInventory({ sourceId: null, streamId: "s1" }, {})).toBeNull();
     expect(
-      matchTrackSelectionAgainstInventory(
-        { sourceId: "a", streamId: null },
-        // SAFETY: {sources:[]} is the poisoned-row shape the repository
-        // validator accepts — the cast manufactures exactly that payload.
-        { sources: [] } as never,
-      ),
-    ).toBeNull();
+      matchTrackSelectionAgainstInventory({ sourceId: "a", streamId: null }, { sources: [] }),
+    ).toContain("no longer available");
   });
 });
