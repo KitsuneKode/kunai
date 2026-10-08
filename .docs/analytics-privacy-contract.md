@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: 2026-10-02
+lastReviewed: 2026-10-08
 ---
 
 # Analytics Privacy Contract
@@ -34,7 +34,13 @@ Read this before touching `apps/cli/src/services/analytics/`,
   The id exists on disk only while analytics is enabled. A ping already in flight
   may finish, but its result must not restore an id cleared by disable, undo a
   rotation, or apply the old identity's cadence/retry bookkeeping. The completion
-  checks current consent and the pre-send stored identity before updating config.
+  compares both local and persisted consent and the pre-send stored identity
+  under the same cross-process lock and save chain as settings writes. It updates
+  cadence/retry fields only, never the identity. A rejected completion refreshes
+  non-dirty local analytics fields from disk so a stale session stops sending.
+- A missing or invalid persisted identity suppresses sends and payload previews.
+  Only an explicit consent choice creates or repairs an identity; passive ping
+  completion cannot silently mint one.
 - No analytics request is made before consent, in a non-TTY session, or while
   `DO_NOT_TRACK` or `CI` is truthy (`1`, `true`, or `yes`).
 - A default endpoint ships: `analytics.kunai.kitsunekode.in`. It is where a ping

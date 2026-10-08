@@ -27,6 +27,7 @@ function createConfig(partial: Partial<KitsuneConfig>): ConfigService {
     update: async () => undefined,
     applySessionOverrides: () => undefined,
     save: async () => undefined,
+    recordAnalyticsPing: async () => false,
     flushPending: async () => undefined,
     reset: async () => undefined,
   };
