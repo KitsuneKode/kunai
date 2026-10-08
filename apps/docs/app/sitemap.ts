@@ -12,8 +12,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const releases = indexableReleaseNotesArtifacts();
 
   // lastModified only carries dates with a real source of truth: release
-  // pages get their publishedAt, hand-listed statics get the newest known
-  // content date (a docs-page edit or a release) rather than a build stamp.
+  // pages get their publishedAt, doc pages their git-modified date, and pages
+  // that render live site content (home, analytics) get the newest known
+  // content date — a docs-page edit or a release, never a build stamp.
+  // Pages whose content is fixed (privacy, feedback) omit lastmod rather
+  // than claim a date that isn't theirs. No priority/changefreq: crawlers
+  // ignore both.
   const releaseDates = releases
     .map((release) => release.publishedAt ?? release.date)
     .filter((date): date is string => Boolean(date))
@@ -31,44 +35,28 @@ export default function sitemap(): MetadataRoute.Sitemap {
     {
       url: docsSiteUrl,
       lastModified: contentLastModified,
-      changeFrequency: "weekly",
-      priority: 1,
     },
     {
       url: `${docsSiteUrl}/releases`,
       lastModified: latestRelease ? new Date(latestRelease) : undefined,
-      changeFrequency: "weekly",
-      priority: 0.8,
     },
     {
       url: `${docsSiteUrl}/feedback`,
-      lastModified: contentLastModified,
-      changeFrequency: "monthly",
-      priority: 0.6,
     },
     {
       url: `${docsSiteUrl}/analytics`,
       lastModified: contentLastModified,
-      changeFrequency: "daily",
-      priority: 0.55,
     },
     {
       url: `${docsSiteUrl}/privacy`,
-      lastModified: contentLastModified,
-      changeFrequency: "monthly",
-      priority: 0.5,
     },
     ...releases.map((release) => ({
       url: `${docsSiteUrl}${releasePath(release.tag)}`,
       lastModified: release.publishedAt ?? release.date ?? undefined,
-      changeFrequency: "monthly" as const,
-      priority: 0.65,
     })),
     ...pages.map((page) => ({
       url: `${docsSiteUrl}${page.url}`,
       lastModified: page.data.lastModified,
-      changeFrequency: "weekly" as const,
-      priority: page.url === "/docs" ? 0.9 : 0.7,
     })),
   ];
 }
