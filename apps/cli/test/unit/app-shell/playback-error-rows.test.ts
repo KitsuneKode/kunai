@@ -155,4 +155,26 @@ describe("buildErrorRows", () => {
     }).length;
     expect(long).toBeGreaterThan(short);
   });
+
+  test("strips terminal escapes from provider-controlled rows", () => {
+    // Provider names, titles, and failure details reach these rows verbatim;
+    // an OSC hyperlink or CSI sequence must not survive to the terminal.
+    const evil = "vid\x1b]8;;https://evil.example\x07easy\x1b[2J";
+    const lines = linesOf({
+      ...base,
+      scenario: { kind: "provider-timeout", providerName: evil, elapsedSec: 12 },
+    });
+    for (const line of lines) {
+      expect(line).not.toContain("\x1b");
+      expect(line).not.toContain("\x07");
+    }
+    expect(lines).toContain("videasy");
+
+    const titleLines = linesOf({
+      ...base,
+      scenario: { kind: "title-unavailable", title: `Dune\x1b]0;pwned\x07` },
+    });
+    // The whole OSC sequence (introducer, payload, terminator) is removed.
+    expect(titleLines).toContain("◌  Dune not found");
+  });
 });

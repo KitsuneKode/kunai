@@ -740,7 +740,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   // Same scheme gate as every other mpv playback path; a
                   // non-URL target falls back to the browser opener below.
                   if (!isAllowedMpvUrl(target, "remote")) return false;
-                  Bun.spawn([...mpvInvocation.argv, target], {
+                  // Terminate option parsing like every other mpv spawn path
+                  // (mpv.ts appends "--"); the scheme gate above already
+                  // rejects bare "-flags", this is defense in depth.
+                  Bun.spawn([...mpvInvocation.argv, "--", target], {
                     stdout: "ignore",
                     stderr: "ignore",
                     stdin: "ignore",

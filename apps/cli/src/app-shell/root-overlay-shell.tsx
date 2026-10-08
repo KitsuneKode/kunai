@@ -793,6 +793,11 @@ export function RootOverlayShell({
   // Up Next queue: bumping the tick after a mutation (reorder/remove/clear/restore)
   // recomputes the view from the service's fresh getAll().
   const [queueTick, setQueueTick] = useState(0);
+  // Armed destructive queue action ("remove:<id>", "clear-all", "clear-played").
+  // First press arms and names the target in the status line; only the second
+  // press mutates. Disarmed by overlay switches (effect below) and by any
+  // other queue mutation in the input handler.
+  const [queueConfirmKey, setQueueConfirmKey] = useState<string | null>(null);
   const queuePosterResolver = useMemo(() => {
     const map = new Map<string, string>();
     for (const { titleId, entry } of historySelections) {
@@ -1092,6 +1097,12 @@ export function RootOverlayShell({
     setSelectedIndex(0);
     setHistoryPendingDelete(null);
   }, [historyTab, overlay.type]);
+
+  // An armed queue destroy must not survive leaving the queue: without this,
+  // returning later and pressing the same key once would mutate.
+  useEffect(() => {
+    setQueueConfirmKey(null);
+  }, [overlay.type]);
 
   // Discard any play-now intent left staged by an earlier inbox session.
   // Only the palette route consumes the intent (it reads after close), so an
@@ -1631,6 +1642,7 @@ export function RootOverlayShell({
       const row = sel >= 0 ? queueRows[sel] : undefined;
       if (key.return && row) {
         // Claim exact row before handoff; failed CAS keeps the overlay open.
+        setQueueConfirmKey(null);
         resolveQueueRowPlaySelection(
           container.queueService,
           row.id,
@@ -1640,45 +1652,92 @@ export function RootOverlayShell({
         return;
       }
       if (input === "J" && row) {
+        setQueueConfirmKey(null);
         if (container.queueService.moveDown(row.id))
           setSelectedIndex((c) => Math.min(c + 1, queueRows.length - 1));
         refresh();
         return;
       }
       if (input === "K" && row) {
+        setQueueConfirmKey(null);
         if (container.queueService.moveUp(row.id)) setSelectedIndex((c) => Math.max(c - 1, 0));
         refresh();
         return;
       }
       if (input === "g" && row) {
+        setQueueConfirmKey(null);
         container.queueService.moveToTop(row.id);
         refresh();
         return;
       }
       if (input === "G" && row) {
+        setQueueConfirmKey(null);
         container.queueService.moveToBottom(row.id);
         refresh();
         return;
       }
       if (input.toLowerCase() === "x" && row) {
-        container.queueService.remove(row.id);
-        setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
-        refresh();
+        // Destructive, adjacent to Ctrl+C, and one press away from an
+        // accident: arm on first press (named in the status line), remove on
+        // the second. Keyed by row id so a resort between presses cannot
+        // retarget the confirm — same convention as library-shell.
+        const confirmKey = `remove:${row.id}`;
+        if (queueConfirmKey === confirmKey) {
+          setQueueConfirmKey(null);
+          container.queueService.remove(row.id);
+          setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
+          setOverlayStatus(`Removed ${row.title} from Up Next`);
+          refresh();
+        } else {
+          setQueueConfirmKey(confirmKey);
+          setOverlayStatus(`Press x again to remove ${row.title} · Esc cancels`);
+        }
         return;
       }
       if (input === "C") {
-        container.queueService.clearPlayed();
-        setSelectedIndex(0);
-        refresh();
+        const playedCount = queueRows.filter((candidate) => candidate.state === "played").length;
+        if (playedCount === 0) {
+          setQueueConfirmKey(null);
+          setOverlayStatus("No played items to clear");
+          return;
+        }
+        if (queueConfirmKey === "clear-played") {
+          setQueueConfirmKey(null);
+          container.queueService.clearPlayed();
+          setSelectedIndex(0);
+          setOverlayStatus(`Cleared ${playedCount} played ${playedCount === 1 ? "item" : "items"}`);
+          refresh();
+        } else {
+          setQueueConfirmKey("clear-played");
+          setOverlayStatus(
+            `Press C again to clear ${playedCount} played ${playedCount === 1 ? "item" : "items"} · Esc cancels`,
+          );
+        }
         return;
       }
       if (input === "c" && !key.ctrl) {
-        container.queueService.clear();
-        setSelectedIndex(0);
-        refresh();
+        if (queueRows.length === 0) {
+          setQueueConfirmKey(null);
+          setOverlayStatus("Up Next is already empty");
+          return;
+        }
+        if (queueConfirmKey === "clear-all") {
+          const cleared = queueRows.length;
+          setQueueConfirmKey(null);
+          container.queueService.clear();
+          setSelectedIndex(0);
+          setOverlayStatus(`Cleared ${cleared} ${cleared === 1 ? "item" : "items"} from Up Next`);
+          refresh();
+        } else {
+          setQueueConfirmKey("clear-all");
+          setOverlayStatus(
+            `Press c again to clear all ${queueRows.length} ${queueRows.length === 1 ? "item" : "items"} · Esc cancels`,
+          );
+        }
         return;
       }
       if (input.toLowerCase() === "r") {
+        setQueueConfirmKey(null);
         const sessions = container.queueService.listRecoverableSessions();
         // Sessions come back most-recent-first; naming the target in the status
         // line is what makes this restore explicit rather than a silent guess.

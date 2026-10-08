@@ -560,11 +560,13 @@ export type ShowCatalogInfo = {
 
 /** Cache extended show metadata per showId. TTL same 45s as episode detail. */
 const showCatalogCache = new TTLCache<string, ShowCatalogInfo>(AVAILABLE_EPISODES_DETAIL_TTL_MS, {
+  maxEntries: 256,
   now: readProviderCacheClock,
 });
 
 /** Cache source resolve results per show+episode+mode. TTL 5 minutes. */
 const sourceCache = new TTLCache<string, StreamLink[]>(300_000, {
+  maxEntries: 256,
   now: readProviderCacheClock,
 });
 
