@@ -38,6 +38,25 @@
     overflow: hidden;
   }
 
+  /* The bar shrinks once the page has scrolled (see `NavCompact`). It is a scale of
+     the whole pill, not a change of its width or padding: a transform stays on the
+     compositor, where animating the bar's size would reflow it every frame. It
+     scales about its top centre so it tucks toward the top of the page rather than
+     drifting, and it gains a little depth because it is now over content. */
+  #nd-home-layout #nd-nav > div {
+    transform-origin: 50% 0;
+    transition:
+      transform 240ms var(--ease-out),
+      box-shadow 240ms var(--ease-out),
+      background-color 240ms var(--ease-out);
+  }
+
+  html[data-nav-compact="true"] #nd-home-layout #nd-nav > div {
+    transform: scale(0.92);
+    box-shadow: var(--kunai-shadow-md);
+    background: color-mix(in oklab, var(--kunai-surface) 90%, transparent) !important;
+  }
+
   #nd-sidebar,
   #nd-toc {
     backdrop-filter: blur(16px);
@@ -79,7 +98,7 @@
 
 #nd-toc [data-toc-title] {
   font-size: var(--kunai-text-caption);
-  font-weight: 700;
+  font-weight: var(--kunai-weight-semibold);
   letter-spacing: var(--kunai-tracking-eyebrow);
   text-transform: uppercase;
   color: color-mix(in oklab, var(--color-fd-muted-foreground) 80%, transparent);
@@ -93,14 +112,14 @@
 
 #nd-toc a[data-active="true"] {
   color: var(--kunai-accent);
-  font-weight: 600;
+  font-weight: var(--kunai-weight-semibold);
 }
 
 #nd-sidebar a[data-active="true"] {
   color: var(--kunai-accent);
   background: color-mix(in oklab, var(--kunai-accent) 11%, transparent);
   border-inline-start: 2px solid var(--kunai-accent);
-  font-weight: 600;
+  font-weight: var(--kunai-weight-semibold);
 }
 
 /* Home product hops: color-only active (no thick inset rail competing with page tree) */
@@ -112,7 +131,7 @@
 #nd-docs-layout h1 {
   font-family: var(--font-serif), Georgia, serif;
   font-size: var(--kunai-text-display);
-  font-weight: 300;
+  font-weight: var(--kunai-weight-display);
   line-height: var(--kunai-leading-tight);
   letter-spacing: -0.03em;
   text-wrap: balance;
@@ -175,15 +194,18 @@
 #nd-docs-layout .prose :where(h2):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
   font-family: var(--font-serif), Georgia, serif;
   font-size: var(--kunai-text-title);
-  font-weight: 400;
+  font-weight: var(--kunai-weight-regular);
   letter-spacing: -0.02em;
   margin-top: 2.5rem;
   text-wrap: balance;
 }
 
 #nd-docs-layout .prose :where(h3, h4):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-  font-family: var(--font-serif), Georgia, serif;
-  letter-spacing: -0.015em;
+  /* Sans, not the display serif: Cormorant has a small x-height and hairline
+     strokes that fall apart at 18px. h1 and h2 are large enough to carry it. */
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: var(--kunai-weight-semibold);
+  letter-spacing: -0.01em;
   text-wrap: balance;
 }
 
@@ -264,12 +286,27 @@
   box-shadow: var(--kunai-shadow-sm);
 }
 
+/* The highlighter's comment colour is #6a737d, 3.7:1 on the code surface. Comments are
+   content here (the install notes live in them), so they take the muted token (6.2:1)
+   instead. The selector matches the inline custom properties the highlighter writes, so
+   it follows the theme: if the theme ever changes its comment colour this stops matching,
+   so recheck the rendered contrast then (`test/palette.test.ts` pins the numbers).
+
+   It matches on the colour alone, not on `--shiki-dark: #6A737D`. The server writes the
+   attribute without the space after the colon (`--shiki-dark:#6A737D`) while the
+   browser's CSSOM serialises it with one, so a selector spelled either way silently
+   matched nothing on the other. The `i` flag covers the hex's case for the same reason. */
+#nd-docs-layout pre span[style*="#6A737D" i] {
+  --shiki-dark: var(--color-fd-muted-foreground) !important;
+  --shiki-light: var(--color-fd-muted-foreground) !important;
+}
+
 #nd-docs-layout th {
   background: color-mix(in oklab, var(--kunai-surface-strong) 85%, transparent);
   color: var(--color-fd-foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
-  font-weight: 600;
-  font-size: 0.72rem;
+  font-weight: var(--kunai-weight-semibold);
+  font-size: var(--kunai-text-caption);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 0.9rem 1.1rem;

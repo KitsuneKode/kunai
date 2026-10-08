@@ -1,8 +1,6 @@
-// =============================================================================
-// history-view.ts — pure view-model builder for history / continue UI
+// Pure view-model builder for history / continue UI
 //
 // Design authority: .reference/design/cli/surfaces/stats-history-library.md
-// =============================================================================
 
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
@@ -301,6 +299,7 @@ function buildHistorySections(
   flatRows: readonly HistoryViewRow[],
   filteredEntries: ReadonlyArray<[string, HistoryProgress]>,
   tab: HistoryTab,
+  now?: number,
 ): { label: string; rows: HistoryViewRow[] }[] {
   if (tab === "continue" && flatRows.length > 0) {
     return [{ label: "Continue watching", rows: [...flatRows] }];
@@ -310,7 +309,7 @@ function buildHistorySections(
   }
 
   const rowById = new Map(flatRows.map((row) => [row.titleId, row]));
-  const groups = groupHistoryByRecency(filteredEntries);
+  const groups = groupHistoryByRecency(filteredEntries, now);
   if (groups.length <= 1) {
     return flatRows.length > 0 ? [{ label: "", rows: [...flatRows] }] : [];
   }
@@ -492,7 +491,7 @@ export function buildHistoryView(input: {
   // the `selected` highlight, the scroll window, and Enter selection — is flattened
   // from those same sections so the displayed order and the navigated order can never
   // disagree (otherwise the highlight juggles across rows as you move up/down).
-  const sections = buildHistorySections(builtRows, filtered, input.tab);
+  const sections = buildHistorySections(builtRows, filtered, input.tab, input.context.now);
   const flatRows = sections.flatMap((section) => section.rows);
 
   const safeSelectedIndex = Math.min(

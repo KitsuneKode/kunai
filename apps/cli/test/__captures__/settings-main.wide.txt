@@ -9,3 +9,4 @@
    ▸ Default startup mode ·  Series mode
    ▸ Footer hints ·  Detailed
    ○ off   Usage analytics
+   ● on    Kanna the companion

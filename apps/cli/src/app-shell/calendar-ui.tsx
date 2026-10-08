@@ -62,9 +62,7 @@ export function CalendarDayStrip({
       width={maxWidth}
       overflow="hidden"
     >
-      <Text color={palette.dim} dimColor>
-        {hasPrev ? "‹ " : "  "}
-      </Text>
+      <Text color={palette.dim}>{hasPrev ? "‹ " : "  "}</Text>
       {windowDays.map((day) => {
         const isSelected = selectedDayKey === day.key;
         const isToday = day.isToday;
@@ -81,14 +79,10 @@ export function CalendarDayStrip({
           </Box>
         );
       })}
-      <Text color={palette.dim} dimColor>
-        {hasNext ? " ›" : "  "}
-      </Text>
+      <Text color={palette.dim}>{hasNext ? " ›" : "  "}</Text>
       {showHint ? (
         <Box marginLeft={1}>
-          <Text color={palette.dim} dimColor>
-            {"← → date · Esc close"}
-          </Text>
+          <Text color={palette.dim}>{"← → date · Esc close"}</Text>
         </Box>
       ) : null}
     </Box>

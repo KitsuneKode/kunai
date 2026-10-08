@@ -320,7 +320,10 @@ resolve_published_version() {
 		return
 	fi
 	local tag canonical
-	tag="$(curl -fsSL -H "user-agent: kunai-installer" "$KUNAI_RELEASES_API" |
+	tag="$(curl -fsSL \
+		--connect-timeout "$DOWNLOAD_CONNECT_TIMEOUT" \
+		--max-time 30 \
+		-H "user-agent: kunai-installer" "$KUNAI_RELEASES_API" |
 		sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
 		head -1)"
 	canonical="$(normalize_requested_version "$tag" 2>/dev/null)" || {
@@ -1640,6 +1643,11 @@ install_binary() {
 	fi
 
 	require curl
+	# These run unconditionally below: awk shapes the checksum and progress
+	# output, sed parses the release tag, and `install` lands the binary.
+	require awk
+	require sed
+	require install
 
 	previous="$(read_previous_active_version || true)"
 	if [[ -n "$previous" && "$previous" != "$resolved_version" ]]; then

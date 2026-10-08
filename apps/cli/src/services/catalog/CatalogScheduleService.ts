@@ -1,3 +1,4 @@
+import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   summarizeTmdbSeasonEpisodes as summarizeTmdbSeasonEpisodesImpl,
@@ -12,6 +13,9 @@ const NEXT_RELEASE_TTL_MS = 2 * 60 * 60 * 1000;
 const RELEASING_TODAY_TTL_MS = 30 * 60 * 1000;
 const HISTORICAL_RELEASE_TTL_MS = 24 * 60 * 60 * 1000;
 const RELEASE_SAFETY_WINDOW_MS = 15 * 60 * 1000;
+// Entries are keyed by title id, so a long session or a scripted walk grows the
+// map without bound — TTLs only reap on a hit for that key. Cap it.
+const MAX_SCHEDULE_CACHE_ENTRIES = 512;
 
 export type CatalogScheduleSource = "tmdb" | "anilist";
 export type CatalogScheduleType = "anime" | "series" | "movie";
@@ -141,6 +145,11 @@ export class CatalogScheduleService {
     this.inflight.clear();
   }
 
+  private store(key: string, entry: ScheduleCacheEntry<unknown>): void {
+    this.cache.set(key, entry);
+    evictOverflowedEntries(this.cache, MAX_SCHEDULE_CACHE_ENTRIES, this.now());
+  }
+
   /**
    * Read the cached next-release for a title without triggering a network fetch.
    * Returns null if not cached. titleId may be prefixed ("anilist:12345") or raw ("12345").
@@ -206,7 +215,7 @@ export class CatalogScheduleService {
         const key = `progress:anilist:anime:${titleId}`;
         const progress = progressById.get(titleId) ?? null;
         const expiresAt = nowMs + NEXT_RELEASE_TTL_MS;
-        this.cache.set(key, { expiresAt, value: progress });
+        this.store(key, { expiresAt, value: progress });
         this.persistentCache?.set(key, JSON.stringify(progress), {
           expiresAt: new Date(expiresAt).toISOString(),
           now: new Date(nowMs).toISOString(),
@@ -311,7 +320,7 @@ export class CatalogScheduleService {
         ? ttlForScheduleValue(item, NEXT_RELEASE_TTL_MS, nowMs)
         : NEXT_RELEASE_TTL_MS;
       const expiresAt = nowMs + ttl;
-      this.cache.set(key, { expiresAt, value: item });
+      this.store(key, { expiresAt, value: item });
       this.persistentCache?.set(key, JSON.stringify(item), {
         expiresAt: new Date(expiresAt).toISOString(),
         now: new Date(nowMs).toISOString(),
@@ -399,7 +408,7 @@ export class CatalogScheduleService {
     const task = load().then((value) => {
       const ttl = ttlForScheduleValue(value, ttlMs, this.now());
       const expiresAt = this.now() + ttl;
-      this.cache.set(key, {
+      this.store(key, {
         expiresAt,
         value,
       });
@@ -427,7 +436,7 @@ export class CatalogScheduleService {
       const expiresAt = persisted.expiresAt
         ? Date.parse(persisted.expiresAt)
         : this.now() + NEXT_RELEASE_TTL_MS;
-      this.cache.set(key, {
+      this.store(key, {
         expiresAt: Number.isFinite(expiresAt) ? expiresAt : this.now() + NEXT_RELEASE_TTL_MS,
         value,
       });

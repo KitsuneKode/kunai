@@ -809,6 +809,48 @@ describe("anidb search delegation", () => {
       Bun.which = originalWhich;
     }
   });
+
+  test("a relayed fingerprint-retryable status is final — never re-asked direct", async () => {
+    // Without the marker check, a relayed 403 fell through to the local
+    // curl/fetch fallback — silently bypassing the relay the user deployed.
+    // Only a relayed 404 keeps its curl settle (stale-relay `unknown-provider`).
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      let transportFallbackUsed = false;
+      // SAFETY: stub records the probe and supplies no binary.
+      Bun.which = ((_cmd: string) => {
+        transportFallbackUsed = true;
+        return null;
+      }) as typeof Bun.which;
+      // SAFETY: stub only ever throws the sentinel; the full fetch surface is unused.
+      globalThis.fetch = (async () => {
+        transportFallbackUsed = true;
+        throw new Error("SENTINEL: direct upstream request happened");
+      }) as never;
+      const context: ProviderRuntimeContext = {
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () =>
+            new Response("upstream says no", {
+              status: 403,
+              headers: { "X-Kunai-Relayed": "1" },
+            }),
+        },
+        now: () => new Date().toISOString(),
+      };
+
+      await expect(searchAnidb("solo leveling", undefined, context)).rejects.toMatchObject({
+        name: "AnidbHttpStatusError",
+        status: 403,
+      });
+      expect(transportFallbackUsed).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
 });
 
 describe("anidb episode stream inventory", () => {

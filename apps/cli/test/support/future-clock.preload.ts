@@ -15,21 +15,47 @@
  *
  *   bun run --cwd apps/cli test:future
  *
- * This moves the clock through `setSystemTime` rather than by patching the
- * `Date` global, so a test that takes control of its own clock simply wins —
- * patching `Date` directly fought those tests and reported seven false
- * positives that were only ever the harness arguing with itself.
+ * The shifted clock must keep ticking. Bun's `setSystemTime` freezes
+ * `Date.now()`, which hung every deadline loop (locks, download budgets, mpv
+ * reconnects) until the test timeout and buried the real time-rot under a
+ * dozen false positives. So `Date` is offset instead — but a test that calls
+ * `setSystemTime` itself still wins: its clock then diverges from the
+ * monotonic wall clock, and the offset steps aside instead of fighting it.
+ *
+ * `test:future` skips the activation- and version-lock suites: they age lock
+ * files by `Date.now() - stat.mtimeMs`, and no process-local clock can move
+ * the kernel's mtimes, so every lock reads as 180 days stale by construction.
  *
  * Failures are not necessarily product bugs. They mark tests whose result
  * depends on the wall clock, which is worth knowing either way.
  */
 
-import { setSystemTime } from "bun:test";
-
 const OFFSET_DAYS = Number(process.env.KUNAI_CLOCK_OFFSET_DAYS ?? "180");
 
 if (Number.isFinite(OFFSET_DAYS) && OFFSET_DAYS !== 0) {
-  setSystemTime(new Date(Date.now() + OFFSET_DAYS * 24 * 60 * 60 * 1000));
+  const offsetMs = OFFSET_DAYS * 24 * 60 * 60 * 1000;
+  const RealDate = Date;
+  const realNow = RealDate.now.bind(RealDate);
+  const wallNow = () => performance.timeOrigin + performance.now();
+  // A test-owned clock sits far from wall time; a second of slack absorbs
+  // drift between the two real clocks.
+  const shiftedNow = () => {
+    const now = realNow();
+    return Math.abs(now - wallNow()) > 1_000 ? now : now + offsetMs;
+  };
+
+  class FutureDate extends RealDate {
+    constructor(...args: ConstructorParameters<typeof Date> | []) {
+      if (args.length === 0) super(shiftedNow());
+      else super(...(args as ConstructorParameters<typeof Date>));
+    }
+
+    static override now(): number {
+      return shiftedNow();
+    }
+  }
+
+  globalThis.Date = FutureDate as DateConstructor;
 
   if (!process.env.KUNAI_CLOCK_OFFSET_QUIET) {
     console.error(

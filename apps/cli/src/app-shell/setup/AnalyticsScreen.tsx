@@ -1,5 +1,4 @@
-// =============================================================================
-// analytics-screen.tsx — the one screen that has to be exactly true
+// The one screen that has to be exactly true
 //
 // Recommended and pre-selected, per `.docs/analytics-privacy-contract.md`, with
 // one guardrail the input handler enforces: no skip path may enable it. `s`
@@ -9,7 +8,6 @@
 // It carries no motion. The petal used to bloom here, under text a person is
 // reading to make a privacy decision, while the screen that actually probes the
 // machine had none. `design-system.md` warns against exactly that.
-// =============================================================================
 
 import { Box, Text } from "ink";
 import React from "react";
@@ -62,10 +60,10 @@ export function AnalyticsScreen({ selectedIndex }: { readonly selectedIndex: num
           <Text color={palette.text}>
             {`  "os": "${process.platform}", "arch": "${process.arch}", "ts": 0 }`}
           </Text>
-          <Text color={palette.dim} dimColor>
+          <Text color={palette.dim}>
             Never: titles · queries · providers · URLs · paths · your IP
           </Text>
-          <Text color={palette.dim} dimColor>
+          <Text color={palette.dim}>
             The raw id never leaves this machine. Off in /settings deletes it.
           </Text>
         </Box>

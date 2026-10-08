@@ -1,11 +1,9 @@
-// =============================================================================
-// restore-queue-session.ts — the single path for bringing a recoverable queue
+// The single path for bringing a recoverable queue
 // session back into the current one.
 //
 // Prefer queue-owned in-flight identity. Legacy history inference is only a
 // fallback when no in-flight row exists, and then only to promote an entry that
 // already belongs to the restored session — never to invent a new queue row.
-// =============================================================================
 
 import { sameEpisodeNumbering } from "@/domain/media/episode-numbering";
 import type { QueueEntry } from "@kunai/storage";

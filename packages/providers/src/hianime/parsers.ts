@@ -6,6 +6,7 @@
  */
 
 import { decodeMarkupEntities, markupToPlainText } from "../shared/markup-text";
+import { chooseProviderSearchMatch } from "../shared/provider-title-match";
 
 export const HIANIME_BASE = "https://hianime.at";
 export const HIANIME_REFERER = "https://hianime.at/";
@@ -86,26 +87,7 @@ export function chooseHianimeSearchMatch(
   query: string,
   results: readonly HianimeSearchResult[],
 ): HianimeSearchResult | null {
-  const fallback = results[0] ?? null;
-  const normalizedQuery = normalizeTitle(query);
-  if (results.length === 0 || !normalizedQuery) return fallback;
-  const exact = results.find((result) => normalizeTitle(result.title) === normalizedQuery);
-  if (exact) return exact;
-  const prefixed = results.find((result) => {
-    const normalizedTitle = normalizeTitle(result.title);
-    return (
-      normalizedTitle.startsWith(`${normalizedQuery} `) ||
-      normalizedQuery.startsWith(`${normalizedTitle} `)
-    );
-  });
-  return prefixed ?? fallback;
-}
-
-function normalizeTitle(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+  return chooseProviderSearchMatch(query, results);
 }
 
 function extractAttribute(tag: string, name: string): string | undefined {

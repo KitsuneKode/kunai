@@ -5,6 +5,7 @@ import {
   getCompletionThresholdSeconds,
   getAutoAdvanceEpisode,
   resolveEpisodeAvailability,
+  shouldMarkEpisodeCompleted,
   toEpisodeNavigationState,
 } from "@/domain/playback/playback-policy";
 import type { EpisodeInfo, PlaybackResult, TitleInfo } from "@/domain/types";
@@ -537,6 +538,84 @@ describe("completion thresholds", () => {
         endReason: "quit",
       }),
     ).toBe(true);
+  });
+
+  test("marks a clean natural eof past the threshold as completed", () => {
+    expect(
+      shouldMarkEpisodeCompleted({
+        watchedSeconds: 1440,
+        duration: 1440,
+        endReason: "eof",
+        playerExitCode: 0,
+        playerExitSignal: null,
+        lastTrustedProgressSeconds: 1437,
+      }),
+    ).toBe(true);
+  });
+
+  test("never marks a killed eof as completed", () => {
+    expect(
+      shouldMarkEpisodeCompleted({
+        watchedSeconds: 1440,
+        duration: 1440,
+        endReason: "eof",
+        playerExitCode: null,
+        playerExitSignal: "SIGTERM",
+        lastTrustedProgressSeconds: 1437,
+      }),
+    ).toBe(false);
+  });
+
+  test("never marks a crashed eof as completed", () => {
+    expect(
+      shouldMarkEpisodeCompleted({
+        watchedSeconds: 1440,
+        duration: 1440,
+        endReason: "eof",
+        playerExitCode: 2,
+        playerExitSignal: null,
+        lastTrustedProgressSeconds: 1437,
+      }),
+    ).toBe(false);
+  });
+
+  test("marks a voluntary quit in the credits as completed", () => {
+    expect(
+      shouldMarkEpisodeCompleted({
+        watchedSeconds: 1499,
+        duration: 1500,
+        endReason: "quit",
+        playerExitCode: 0,
+        playerExitSignal: null,
+        lastTrustedProgressSeconds: 1499,
+      }),
+    ).toBe(true);
+  });
+
+  test("keeps an early voluntary quit resumable", () => {
+    expect(
+      shouldMarkEpisodeCompleted({
+        watchedSeconds: 811,
+        duration: 1440,
+        endReason: "quit",
+        playerExitCode: 0,
+        playerExitSignal: null,
+        lastTrustedProgressSeconds: 811,
+      }),
+    ).toBe(false);
+  });
+
+  test("never marks a keep-open timeout without eof as completed", () => {
+    expect(
+      shouldMarkEpisodeCompleted({
+        watchedSeconds: 1437,
+        duration: 1440,
+        endReason: "unknown",
+        playerExitCode: 0,
+        playerExitSignal: null,
+        lastTrustedProgressSeconds: 1437,
+      }),
+    ).toBe(false);
   });
 });
 

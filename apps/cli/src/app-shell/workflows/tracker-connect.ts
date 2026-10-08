@@ -1,11 +1,9 @@
-// =============================================================================
-// tracker-connect.ts — one implementation of "link this tracker"
+// One implementation of "link this tracker"
 //
 // Its own module because both callers need it and neither can own it: the
 // shell runs it from `/sync`, and setup runs it after the wizard commits
 // config. Leaving it in `shell-workflows` made those two files import each
 // other, which oxlint's `import(no-cycle)` correctly refused.
-// =============================================================================
 
 import type { Container } from "@/container";
 

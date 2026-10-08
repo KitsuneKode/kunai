@@ -23,7 +23,7 @@ type SeriesStateKey = NonNullable<DetailsPanelSecondary["seriesState"]>;
 const SERIES_STATE_COLORS: Record<SeriesStateKey, string> = {
   airing: palette.muted,
   ended: palette.ok,
-  complete: palette.milestone,
+  complete: palette.milestoneText,
   upcoming: palette.muted,
 };
 
@@ -89,53 +89,61 @@ export function DetailsSheetUI({
   const visible = scrollable.slice(clampedScroll, clampedScroll + maxVisibleLines);
 
   return (
+    // The bordered card may shrink to the rows its slot leaves; the content
+    // column never does. Shrinking each row instead let Ink paint text over
+    // text whenever the card was taller than its slot (medium-width browse).
     <Box
       flexDirection="column"
       width={width}
       borderStyle="single"
       borderColor={palette.line}
       paddingX={1}
+      overflow="hidden"
     >
-      <Text color={palette.text} bold>
-        {truncateLine(primary.title, width - 2)}
-      </Text>
-      <Text color={palette.muted}>
-        {[primary.type, primary.year, ...(primary.genres?.slice(0, 3) ?? [])]
-          .filter(Boolean)
-          .join(" · ")}
-      </Text>
-      {primary.synopsis ? (
-        <Box marginTop={1}>
-          <Text color={palette.dim}>{truncateAtWord(primary.synopsis, width * 2)}</Text>
-        </Box>
-      ) : null}
-      <Box marginTop={1} flexDirection="column">
-        {visible.map((line) =>
-          line.detail === "" && line.label.startsWith("───") ? (
-            <Text key={line.label} color={palette.muted}>
-              {line.label}
-            </Text>
-          ) : (
-            <Box key={`${line.label}:${line.detail ?? ""}`}>
-              <Text color={palette.dim}>
-                {padColumnsEnd(
-                  truncateLine(line.label, DETAIL_FACT_LABEL_WIDTH),
-                  DETAIL_FACT_LABEL_WIDTH,
-                )}{" "}
-              </Text>
-              <Text color={sheetLineColor(line.tone)}>
-                {truncateLine(line.detail ?? "", width - DETAIL_FACT_LABEL_WIDTH - 3)}
-              </Text>
-            </Box>
-          ),
-        )}
-      </Box>
-      {scrollable.length > maxVisibleLines ? (
-        <Text color={palette.dim} dimColor>
-          {clampedScroll > 0 ? "▲ " : ""}
-          {clampedScroll < maxScroll ? "▼ scroll" : ""}
+      <Box flexDirection="column" flexShrink={0}>
+        <Text color={palette.text} bold>
+          {truncateLine(primary.title, width - 2)}
         </Text>
-      ) : null}
+        <Text color={palette.muted}>
+          {[primary.type, primary.year, ...(primary.genres?.slice(0, 3) ?? [])]
+            .filter(Boolean)
+            .join(" · ")}
+        </Text>
+        {primary.synopsis ? (
+          <Box marginTop={1}>
+            <Text color={palette.dim}>{truncateAtWord(primary.synopsis, width * 2)}</Text>
+          </Box>
+        ) : null}
+        <Box marginTop={1} flexDirection="column">
+          {visible.map((line) =>
+            line.detail === "" && line.label.startsWith("───") ? (
+              <Text key={line.label} color={palette.muted}>
+                {line.label}
+              </Text>
+            ) : (
+              <Box key={`${line.label}:${line.detail ?? ""}`}>
+                <Text color={palette.dim}>
+                  {padColumnsEnd(
+                    truncateLine(line.label, DETAIL_FACT_LABEL_WIDTH),
+                    DETAIL_FACT_LABEL_WIDTH,
+                  )}{" "}
+                </Text>
+                <Text color={sheetLineColor(line.tone)}>
+                  {/* Border (2) + padding (2) + the gap after the label (1). At -3
+                      the value overran the row by two columns and wrapped. */}
+                  {truncateLine(line.detail ?? "", width - DETAIL_FACT_LABEL_WIDTH - 5)}
+                </Text>
+              </Box>
+            ),
+          )}
+        </Box>
+        {scrollable.length > maxVisibleLines ? (
+          <Text color={palette.dim} dimColor>
+            {clampedScroll > 0 ? "▲ " : ""}
+            {clampedScroll < maxScroll ? "▼ scroll" : ""}
+          </Text>
+        ) : null}
+      </Box>
     </Box>
   );
 }

@@ -9,6 +9,7 @@ export type RootOwnedOverlay = Extract<
   {
     type:
       | "help"
+      | "guide"
       | "about"
       | "diagnostics"
       | "downloads"
@@ -37,6 +38,7 @@ export type RootShellSurface =
 function isRootOwnedOverlay(overlay: OverlayState | null | undefined): overlay is RootOwnedOverlay {
   return (
     overlay?.type === "help" ||
+    overlay?.type === "guide" ||
     overlay?.type === "about" ||
     overlay?.type === "diagnostics" ||
     overlay?.type === "downloads" ||

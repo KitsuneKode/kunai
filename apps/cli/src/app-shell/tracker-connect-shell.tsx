@@ -106,7 +106,7 @@ export function TrackerConnectShell({
       <Box flexDirection="column" flexGrow={1} paddingX={2}>
         <Box flexDirection="column" flexGrow={1} justifyContent="center" alignItems="center">
           <Box flexDirection="column" width={Math.min(68, Math.max(36, cols - 8))}>
-            <Text color={failed ? palette.danger : palette.accent} bold>
+            <Text color={failed ? palette.dangerText : palette.accent} bold>
               {failed ? `Could not connect ${trackerName}` : `Connecting ${trackerName}`}
             </Text>
             <Box marginTop={1}>

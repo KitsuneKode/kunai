@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readdir, rm } from "node:fs/promises";
+import { readdir, rm, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -18,6 +18,7 @@ import {
 import {
   beginInstallTransaction,
   finishInstallTransaction,
+  inspectInstallTransaction,
   listInstallTransactions,
 } from "./transaction";
 import { cleanupStaleLocks, hasActiveVersionLocks, tryAcquireLifecycleLock } from "./version-lock";
@@ -206,12 +207,36 @@ export async function nativeUninstall(
     const versionsOk = await tryRemove(layout.versionsDir, removed, failed, rmImpl);
     const stagingOk = await tryRemove(layout.stagingRoot, removed, failed, rmImpl);
 
+    let transactionsOk = true;
     if (existsSync(layout.transactionsDir)) {
       for (const entry of await readdir(layout.transactionsDir).catch(() => [] as string[])) {
-        await tryRemove(join(layout.transactionsDir, entry), removed, failed, rmImpl, false);
+        const path = join(layout.transactionsDir, entry);
+        const id = entry.endsWith(".json") ? entry.slice(0, -5) : undefined;
+        const inspection =
+          id === undefined ? undefined : await inspectInstallTransaction(layout, id);
+        if (inspection?.status !== "present" || inspection.record.id !== id) {
+          preserved.push(path);
+          continue;
+        }
+        await tryRemove(path, removed, failed, rmImpl, false);
+      }
+      try {
+        // rmdir cannot sweep foreign content, including a file arriving after
+        // the listing. Only an empty installer transaction directory is ours.
+        await rmdir(layout.transactionsDir);
+        removed.push(layout.transactionsDir);
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOTEMPTY") {
+          preserved.push(layout.transactionsDir);
+        } else if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+          transactionsOk = false;
+          failed.push({
+            path: layout.transactionsDir,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
-    const transactionsOk = await tryRemove(layout.transactionsDir, removed, failed, rmImpl);
 
     const lifecyclePartial = failed.length > 0 || !versionsOk || !stagingOk || !transactionsOk;
 

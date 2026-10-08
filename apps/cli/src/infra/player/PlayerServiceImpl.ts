@@ -236,7 +236,9 @@ export class PlayerServiceImpl implements PlayerService {
           },
         }),
       );
-      await materialized.cleanup();
+      // Best-effort temp cleanup — a Windows indexer holding the playlist must
+      // not turn a reported manifest rejection into a thrown play().
+      await materialized.cleanup().catch(() => {});
       return {
         watchedSeconds: 0,
         duration: 0,
@@ -410,7 +412,9 @@ export class PlayerServiceImpl implements PlayerService {
         // Keep activeHlsRelay for the next cycle; play() stops/replaces it at the top.
       } else {
         this.stopActiveHlsRelay("playback-end");
-        await materialized.cleanup();
+        // Best-effort temp cleanup, same contract as the deferred path — an
+        // fs fault here must not mask a completed playback as a failure.
+        await materialized.cleanup().catch(() => {});
       }
     }
   }

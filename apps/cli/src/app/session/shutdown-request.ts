@@ -1,10 +1,8 @@
-// =============================================================================
 // Shutdown request bridge — how Ink surfaces ask the app to exit.
 //
 // Shell components must never call process.exit() or own cleanup sequencing;
 // they request shutdown here and main.ts binds the coordinator as the single
 // handler. The bridge is process-local so the shell never imports main.ts.
-// =============================================================================
 
 import type { ShutdownIntent } from "./shutdown-coordinator";
 

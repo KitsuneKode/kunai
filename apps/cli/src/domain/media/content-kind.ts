@@ -1,12 +1,10 @@
-// =============================================================================
-// content-kind.ts — identity (anime vs series vs movie vs video) is separate
+// Identity (anime vs series vs movie vs video) is separate
 // from structure (does this title have an episode axis?).
 //
 // ContentKind is the badge, history stamp, and language profile. ContentType
 // (`title.type`) is whether season/episode chrome is product-visible. An anime
 // theatrical film is kind "anime" and type "movie": `@ anime`, runtime, no S/E.
 // ShellMode is provider routing only and must never decide either axis.
-// =============================================================================
 
 import type { ContentType, ShellMode, TitleInfo } from "@/domain/types";
 import type { MediaLanguageProfile } from "@/services/persistence/ConfigService";
@@ -32,8 +30,18 @@ const TMDB_ANIMATION_GENRE_ID = 16;
  * the common case for AllAnime, and the reason most anime were mis-stamped "series".
  * (AllAnime occasionally hosts a live-action drama; the user can reclassify that rare
  * case — defaulting the majority to anime is far more accurate than the reverse.)
+ *
+ * Domain code cannot load provider manifests, so this mirrors them;
+ * `bootstrap-providers.test.ts` fails when a production manifest disagrees.
  */
-const ANIME_ONLY_PROVIDER_IDS: ReadonlySet<string> = new Set(["allanime", "miruro"]);
+const ANIME_ONLY_PROVIDER_IDS: ReadonlySet<string> = new Set([
+  "allanime",
+  "anidb",
+  "animegg",
+  "hianime",
+  "kickassanime",
+  "miruro",
+]);
 
 export function isAnimeOnlyProviderId(providerId: string | undefined | null): boolean {
   if (providerId === undefined || providerId === null) return false;
