@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-03"
+lastReviewed: "2026-10-08"
 ---
 
 # Kunai — Repo Infrastructure
@@ -53,6 +53,30 @@ CI setup checks the installed Changesets/shadcn paths after frozen install with
 records provenance, compatibility, and removal criteria. The registry audit
 still flags 3.0.3 because upstream has no patched release; behavioral verification
 does not turn that audit green.
+
+The October 8 advisory refresh updates the existing transitive ranges for
+[`sharp`](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) to 0.35.5
+(including libvips 1.3.4 / librsvg 2.63.2),
+[`@modelcontextprotocol/sdk`](https://github.com/advisories/GHSA-6qxp-vccf-f47h)
+to 1.32.1, and
+[`source-map-js`](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) to 1.2.2.
+These paths belong to the docs application and developer tools; they are not
+new CLI dependencies. Verify the native image loader through Next's installed
+dependency path, build the docs site, and keep the frozen-install patch checks.
+
+The audit still reports `sprintf-js` 1.0.3 through Changesets →
+`@manypkg/get-packages` → `read-yaml-file` → `js-yaml` 3 → `argparse` 1.
+The [advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) lists no patched
+release. The installed `read-yaml-file` uses the
+YAML library, while `argparse` is imported by that legacy YAML package's separate
+CLI; this does not establish an exposed format-string path in Kunai. Keep the
+finding visible rather than suppressing it or treating the audit as clean.
+
+Dependency fixes should use an upstream compatible release when available.
+Local patches need a reproduced defect, documented upstream provenance and
+removal criteria, and behavioral verification through their real consumers.
+Keep framework major upgrades separate from playback correctness changes;
+an available version alone is not evidence that migrating improves reliability.
 
 `.reference/experiments` is **outside** the default workspace, so it cannot use
 `catalog:` protocols. Main installs stay lean; research deps install only via
@@ -343,6 +367,12 @@ store in the Turbopack and tracing roots. Turbo strict mode otherwise drops a
 custom cache path, making an isolated installation build fail with dependency
 symlinks outside the filesystem root. The cache path participates in the build
 hash because changing it changes generated absolute paths.
+
+If a verification profile changes `HOME` after dependencies were installed,
+explicitly set `BUN_INSTALL_CACHE_DIR` to the cache used by that installation.
+The isolated home cannot discover the original global store by default. This
+preserves profile isolation while letting the docs builder follow its installed
+dependency links.
 
 The root `test:live:allmanga-crypto` command forwards to the CLI's existing
 metadata-only freshness probe; it does not resolve or play a video. It is an
