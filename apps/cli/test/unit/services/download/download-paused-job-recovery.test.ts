@@ -113,7 +113,7 @@ test("a genuinely deferred job keeps its retry window", async () => {
   });
 
   const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-  repo.pause(job.id, "deferred", retryAt, new Date().toISOString());
+  expect(repo.deferQueued(job.id, "deferred", retryAt, new Date().toISOString())).toBe(true);
 
   await service.processQueue();
 

@@ -1,5 +1,5 @@
-import { constants as fsConstants } from "node:fs";
-import { copyFile, link, mkdir, open, rm, stat, statfs } from "node:fs/promises";
+import { linkSync, unlinkSync, statSync, closeSync } from "node:fs";
+import { mkdir, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
@@ -13,6 +13,12 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
+import { errorCode } from "@/infra/fs/errno";
+import {
+  reserveFile,
+  copyToReservedFile,
+  type FileReservation,
+} from "@/infra/fs/reserved-file-copy";
 import type { Logger } from "@/infra/logger/Logger";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
@@ -39,6 +45,7 @@ import {
   getKunaiPaths,
   type DownloadArtifactStatus,
   type DownloadJobRecord,
+  type DownloadClaimRef,
   type DownloadJobsRepository,
   type HistoryTitleAliasInput,
   type HistoryTitleAliasRepository,
@@ -264,34 +271,6 @@ type DownloadSidecarResult = {
   readonly repairMetadataJson?: string;
 };
 
-export type StagedDownloadPublishFs = {
-  readonly link: (tempPath: string, outputPath: string) => Promise<void>;
-  readonly copyFile: (src: string, dest: string, flags?: number) => Promise<void>;
-  /** Durable flush of a freshly copied artifact (fsync). */
-  readonly fsyncFile: (path: string) => Promise<void>;
-  readonly removeFile: (path: string) => Promise<void>;
-};
-
-const defaultStagedDownloadPublishFs: StagedDownloadPublishFs = {
-  link: (tempPath, outputPath) => link(tempPath, outputPath),
-  copyFile: (src, dest, flags) => copyFile(src, dest, flags),
-  fsyncFile: async (path) => {
-    const handle = await open(path, "r");
-    try {
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  },
-  removeFile: (path) => rm(path, { force: true }),
-};
-
-function publishErrorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
-  const code = (error as { readonly code?: unknown }).code;
-  return typeof code === "string" ? code : undefined;
-}
-
 function existingDestinationError(cause: unknown): Error {
   return new Error(
     "Download destination already exists; existing file preserved. Choose a different download directory.",
@@ -299,48 +278,18 @@ function existingDestinationError(cause: unknown): Error {
   );
 }
 
-/**
- * Exclusive publication of a staged download.
- *
- * Hard-link first: atomic and fails if ANY destination exists. Volumes that
- * cannot hard-link (cross-device EXDEV, exFAT EPERM/ENOTSUP/EOPNOTSUPP) fall
- * back to an exclusive copy (COPYFILE_EXCL, so an existing destination still
- * fails instead of being overwritten) plus fsync, then staging cleanup.
- * EEXIST always throws with the destination preserved — neither lane ever
- * silently overwrites.
- */
-export async function publishStagedDownloadArtifact(
-  tempPath: string,
-  outputPath: string,
-  fs: StagedDownloadPublishFs = defaultStagedDownloadPublishFs,
-): Promise<"hard-linked" | "copied"> {
-  try {
-    await fs.link(tempPath, outputPath);
-    return "hard-linked";
-  } catch (error) {
-    const code = publishErrorCode(error);
-    if (code === "EEXIST") throw existingDestinationError(error);
-    if (code !== "EXDEV" && code !== "EPERM" && code !== "ENOTSUP" && code !== "EOPNOTSUPP") {
-      throw error;
-    }
+class DownloadOwnershipError extends Error {}
+
+class StaleDownloadClaimError extends Error {
+  constructor() {
+    super("download ownership changed");
+    this.name = "StaleDownloadClaimError";
   }
-  try {
-    await fs.copyFile(tempPath, outputPath, fsConstants.COPYFILE_EXCL);
-  } catch (error) {
-    if (publishErrorCode(error) === "EEXIST") throw existingDestinationError(error);
-    throw error;
-  }
-  try {
-    await fs.fsyncFile(outputPath);
-  } catch (error) {
-    await fs.removeFile(outputPath).catch(() => {});
-    throw error;
-  }
-  await fs.removeFile(tempPath).catch(() => {});
-  return "copied";
 }
 
 export class DownloadService {
+  private readonly copyControllers = new Map<string, AbortController>();
+  private readonly jobClaims = new Map<string, DownloadClaimRef>();
   private queueWorkerRunning = false;
   private lastQueuePassFailureContext: DownloadQueueFailureContext | undefined;
   private reconciledStartupJobs = false;
@@ -652,18 +601,17 @@ export class DownloadService {
 
   async retry(jobId: string): Promise<void> {
     const job = this.deps.repo.get(jobId);
+    if (job?.publicationPending || job?.status === "running")
+      throw new Error(
+        "Download is still running or awaiting publication recovery. Cancel or recover it before retrying.",
+      );
     if (job?.status === "repairable" || job?.status === "completed-with-notes") {
       await this.repairSidecars(job);
       return;
     }
-    if (this.isForeignLiveJob(job)) {
-      this.deps.logger.warn("Refusing to retry a download owned by a live Kunai instance", {
-        jobId,
-      });
-      return;
-    }
     try {
-      this.deps.repo.requeue(jobId, new Date().toISOString());
+      if (!this.deps.repo.requeue(jobId, new Date().toISOString()) && job)
+        throw new Error("Download state changed before retry. Refresh Downloads and try again.");
     } catch (error) {
       if (error instanceof DownloadJobAdmissionConflictError) {
         throw new DownloadEnqueueRejectedError(
@@ -766,7 +714,7 @@ export class DownloadService {
       this.claimedJobIds.delete(next.id);
       const detail = error instanceof Error ? error.message : String(error);
       const retryAt = new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString();
-      this.deps.repo.pause(
+      this.deps.repo.deferQueued(
         next.id,
         `Download paused because the download folder is unavailable: ${detail}`,
         retryAt,
@@ -785,7 +733,7 @@ export class DownloadService {
     if (!storage.allowed) {
       this.claimedJobIds.delete(next.id);
       const retryAt = new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString();
-      this.deps.repo.pause(
+      this.deps.repo.deferQueued(
         next.id,
         this.formatInsufficientDiskMessage(storage.requiredBytes),
         retryAt,
@@ -806,27 +754,43 @@ export class DownloadService {
     // Anything between the claim and the try/finally below must release the
     // claim on the way out, or the job is stranded exactly as above.
     let stopHeartbeat: () => void;
+    let owned: DownloadJobRecord = next;
+    let claim: DownloadClaimRef;
     try {
-      if (!this.deps.repo.markRunning(next.id, now)) {
+      const acquired = this.deps.repo.markRunning(next.id, now);
+      if (!acquired) {
         this.claimedJobIds.delete(next.id);
         // Another process won the durable claim after our read. Its update makes
         // this row ineligible, so continue with the next queued candidate.
         return await this.processNextQueued(queueContext);
       }
-      stopHeartbeat = this.startHeartbeat(next.id);
+      claim = acquired;
+      this.jobClaims.set(next.id, claim);
+      owned = { ...next, tempPath: join(claim.stagingDir, "media.mp4") };
+      stopHeartbeat = this.startHeartbeat(next.id, claim);
     } catch (error) {
       this.claimedJobIds.delete(next.id);
+      this.jobClaims.delete(next.id);
       throw error;
     }
 
     try {
-      const downloaded = await this.executeYtDlpDownload(next);
+      await mkdir(dirname(claim.stagingDir), { recursive: true });
+      await mkdir(claim.stagingDir);
+      const downloaded = await this.executeYtDlpDownload(owned, claim);
       const subtitleResult = await this.downloadSubtitleIfAvailable(downloaded);
       await this.persistOutputFileSize(downloaded);
       const completedAt = new Date().toISOString();
-      this.persistCompletedDownloadWithSidecarResult(next.id, subtitleResult, completedAt);
+      const finalized = this.deps.repo.withRunningClaim(claim, () => {
+        if (this.cancellationRequests.has(next.id)) throw new Error("download aborted");
+        this.assertPublishedIdentity(next.id);
+        if (!this.persistCompletedDownloadWithSidecarResult(next.id, subtitleResult, completedAt))
+          return null;
+        return this.deps.repo.get(next.id) ?? null;
+      });
+      if (!finalized.owned || !finalized.value) return null;
+      const completed = finalized.value;
       this.emit({ type: "complete", jobId: next.id });
-      const completed = this.deps.repo.get(next.id) ?? null;
       if (completed) {
         await this.deps.onCompletedArtifact?.(completed);
         if (!this.deps.config.powerSaverMode) {
@@ -841,11 +805,24 @@ export class DownloadService {
       }
       return completed;
     } catch (error) {
+      if (
+        error instanceof StaleDownloadClaimError ||
+        this.deps.repo.get(next.id)?.claimGeneration !== claim.generation
+      ) {
+        // Terminal writes release ownership without changing generation. A
+        // failing post-completion hook still belongs to this worker and must
+        // surface; only a successor generation (or stale-claim error) displaces it.
+        // A displaced worker may clean only its immutable attempt, never the
+        // shared legacy name or a successor's staging artifacts.
+        await this.removeAttempt(claim);
+        return null;
+      }
       // Only successful no-clobber publication proves this worker owns the
       // output. Keep its running lease recoverable if metadata/completion
       // persistence fails; queueing a download retry would collide with itself.
       // Surface the error, including persistent database failures on recovery.
-      if (this.publishedJobIds.has(next.id)) throw error;
+      if (this.publishedJobIds.has(next.id) || this.deps.repo.get(next.id)?.publicationPending)
+        throw error;
       const active = this.activeProcesses.get(next.id);
       const cancellation = this.cancellationRequests.get(next.id);
       const cancelled = active?.cancelRequested === true || cancellation !== undefined;
@@ -858,10 +835,12 @@ export class DownloadService {
             active?.cancelReason ?? cancellation?.reason ?? "download paused by shutdown",
             failedAt,
             failedAt,
+            this.jobClaims.get(next.id),
           );
         } else {
-          this.deps.repo.abort(next.id, failedAt);
-          this.emit({ type: "aborted", jobId: next.id });
+          if (this.deps.repo.abort(next.id, failedAt, claim)) {
+            this.emit({ type: "aborted", jobId: next.id });
+          }
         }
       } else {
         const analysis = analyzeDownloadFailure(message);
@@ -880,6 +859,7 @@ export class DownloadService {
             this.formatDiskExhaustedMessage(),
             new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString(),
             failedAt,
+            this.jobClaims.get(next.id),
           );
           this.deps.diagnostics?.record({
             category: "download",
@@ -890,23 +870,41 @@ export class DownloadService {
           });
         } else if (analysis.retryable && retriesLeft) {
           const retryAt = new Date(Date.now() + retryDelayMs(next.retryCount)).toISOString();
-          this.deps.repo.scheduleRetry(next.id, message, retryAt, failedAt);
+          this.deps.repo.scheduleRetry(
+            next.id,
+            message,
+            retryAt,
+            failedAt,
+            this.jobClaims.get(next.id),
+          );
         } else {
-          this.deps.repo.fail(next.id, message, true, failedAt, analysis.failureKind);
+          if (!this.deps.repo.fail(next.id, message, true, failedAt, analysis.failureKind, claim))
+            return null;
           this.emit({ type: "failed", jobId: next.id, error: message });
           const failedJob = this.deps.repo.get(next.id);
           if (failedJob) await this.deps.onTerminalFailure?.(failedJob, message);
         }
       }
-      await rm(next.tempPath, { force: true }).catch(() => {});
+      await this.removeAttempt(claim);
       this.deps.logger.warn("Download failed", { jobId: next.id, error: message });
       return this.deps.repo.get(next.id) ?? null;
     } finally {
       stopHeartbeat();
+      const persisted = this.deps.repo.get(next.id);
+      if (
+        this.publishedJobIds.has(next.id) &&
+        persisted?.claimGeneration === claim.generation &&
+        (persisted.status === "completed" ||
+          persisted.status === "completed-with-notes" ||
+          persisted.status === "repairable")
+      ) {
+        await this.removeAttempt(claim);
+      }
       this.publishedJobIds.delete(next.id);
       this.activeProcesses.delete(next.id);
       this.cancellationRequests.delete(next.id);
       this.claimedJobIds.delete(next.id);
+      this.jobClaims.delete(next.id);
     }
   }
 
@@ -924,6 +922,7 @@ export class DownloadService {
         this.cancellationRequests.set(job.id, { mode: "pause", reason });
       }
     }
+    for (const controller of this.copyControllers.values()) controller.abort();
   }
 
   /**
@@ -1075,15 +1074,27 @@ export class DownloadService {
   }
 
   async abort(jobId: string): Promise<void> {
+    const copy = this.copyControllers.get(jobId);
     const job = this.deps.repo.get(jobId);
     if (!job) {
+      copy?.abort();
       return;
     }
+    if (job.publicationPending && !this.ownsRunningJob(jobId))
+      throw new Error(
+        "Another instance owns this copy or it needs recovery. Cancel it in its owning instance.",
+      );
     const active = this.activeProcesses.get(jobId);
     this.cancellationRequests.set(jobId, {
       mode: "abort",
       reason: "download aborted by user",
     });
+    if (copy) {
+      // The worker clears the reserved destination and publication state before
+      // releasing its claim. An early abort write would fence that cleanup out.
+      copy.abort();
+      return;
+    }
     if (active) {
       active.cancelRequested = true;
       active.cancelMode = "abort";
@@ -1101,8 +1112,9 @@ export class DownloadService {
       });
       return;
     }
-    await rm(job.tempPath, { force: true }).catch(() => {});
-    this.deps.repo.abort(jobId, new Date().toISOString());
+    const claim = this.jobClaims.get(jobId);
+    if (claim) await this.removeAttempt(claim);
+    this.deps.repo.abort(jobId, new Date().toISOString(), claim);
   }
 
   /**
@@ -1113,8 +1125,13 @@ export class DownloadService {
    * it. A stale heartbeat means the owner is likely gone and recovery
    * (`reconcileInterruptedJobs`) is the correct path.
    */
+  private ownsRunningJob(jobId: string): boolean {
+    const claim = this.jobClaims.get(jobId);
+    return claim !== undefined && this.deps.repo.withRunningClaim(claim, () => {}).owned;
+  }
+
   private isForeignLiveJob(job: DownloadJobRecord | undefined): boolean {
-    if (!job || job.status !== "running" || this.activeProcesses.has(job.id)) {
+    if (!job || job.status !== "running" || this.ownsRunningJob(job.id)) {
       return false;
     }
     const heartbeatAt = job.lastHeartbeatAt ?? job.startedAt;
@@ -1157,6 +1174,11 @@ export class DownloadService {
     }
     const activeEntries = await this.collectActiveProcesses(runningJobIds, 250);
     if (activeEntries.length === 0) return;
+    // Workers release their in-memory claims when they settle. Retain the
+    // snapshot so a late shutdown write cannot become an unfenced update.
+    const shutdownClaims = new Map(
+      activeEntries.map(([jobId]) => [jobId, this.jobClaims.get(jobId)]),
+    );
     for (const [, active] of activeEntries) {
       active.cancelRequested = true;
       active.cancelMode = "pause";
@@ -1175,8 +1197,9 @@ export class DownloadService {
     const pausedAt = new Date().toISOString();
     for (const [jobId] of activeEntries) {
       const job = this.deps.repo.get(jobId);
-      if (job && job.status !== "completed" && job.status !== "aborted") {
-        this.deps.repo.pause(jobId, reason, pausedAt, pausedAt);
+      const claim = shutdownClaims.get(jobId);
+      if (claim && job?.status === "running" && !job.publicationPending) {
+        this.deps.repo.pause(jobId, reason, pausedAt, pausedAt, claim);
       }
     }
   }
@@ -1184,6 +1207,10 @@ export class DownloadService {
   async deleteJob(jobId: string, opts: { deleteArtifact?: boolean } = {}): Promise<void> {
     const job = this.deps.repo.get(jobId);
     if (!job) return;
+    if (job.publicationPending)
+      throw new Error(
+        "Download copy is still active or awaiting recovery. Cancel or recover it before deleting this job.",
+      );
     if (this.isForeignLiveJob(job)) {
       // The row, temp file, and (possibly) partial output belong to a sibling
       // that is heartbeating right now — deleting any of them corrupts its run.
@@ -1200,6 +1227,7 @@ export class DownloadService {
       ["completed", "completed-with-notes", "repairable"].includes(job.status) &&
       !this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath);
     if (opts.deleteArtifact && ownsArtifact) {
+      this.assertPublishedIdentity(jobId);
       await rm(job.outputPath, { force: true }).catch(() => {});
       if (job.subtitlePath) await rm(job.subtitlePath, { force: true }).catch(() => {});
       if (job.thumbnailPath) await rm(job.thumbnailPath, { force: true }).catch(() => {});
@@ -1221,8 +1249,154 @@ export class DownloadService {
     this.deps.repo.delete(jobId);
   }
 
-  private async executeYtDlpDownload(job: DownloadJobRecord): Promise<DownloadJobRecord> {
+  private assertPublishedIdentity(jobId: string): void {
+    const job = this.deps.repo.get(jobId);
+    if (!job) throw new StaleDownloadClaimError();
+    if (job.publicationPending)
+      throw new Error("Download copy has not reached durable publication");
+    if (job.publicationDevice !== undefined && job.publicationInode !== undefined) {
+      const info = statSync(job.outputPath, { bigint: true, throwIfNoEntry: false });
+      if (
+        !info ||
+        String(info.dev) !== job.publicationDevice ||
+        String(info.ino) !== job.publicationInode
+      )
+        throw new DownloadOwnershipError(
+          "Download destination changed; existing file and job record preserved",
+        );
+    }
+  }
+
+  private async removeAttempt(claim: DownloadClaimRef): Promise<void> {
+    try {
+      await rm(claim.stagingDir, { recursive: true, force: true });
+    } catch (cause) {
+      this.deps.logger.warn("Download attempt cleanup needs retry", {
+        jobId: claim.jobId,
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+
+  private async publishClaimedArtifact(
+    job: DownloadJobRecord,
+    claim: DownloadClaimRef,
+  ): Promise<void> {
+    let reservation: FileReservation | undefined;
+    try {
+      const acquired = this.deps.repo.withRunningClaim(claim, () => {
+        if (this.cancellationRequests.has(job.id)) throw new Error("download aborted");
+        if (this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath))
+          throw new DownloadOwnershipError(
+            "Download destination is shared with another job; choose a different directory",
+          );
+        try {
+          linkSync(job.tempPath, job.outputPath);
+          this.publishedJobIds.add(job.id);
+          const staged = statSync(job.tempPath, { bigint: true });
+          const published = statSync(job.outputPath, { bigint: true });
+          if (staged.dev !== published.dev || staged.ino !== published.ino)
+            throw new DownloadOwnershipError(
+              "Download destination changed during publication; existing file preserved",
+            );
+          if (
+            !this.deps.repo.setPublication(
+              job.id,
+              { device: String(published.dev), inode: String(published.ino), phase: "published" },
+              new Date().toISOString(),
+              claim,
+            )
+          )
+            throw new StaleDownloadClaimError();
+          return undefined;
+        } catch (cause) {
+          const code = errorCode(cause);
+          if (code === "EEXIST") throw existingDestinationError(cause);
+          if (code !== "EXDEV" && code !== "EPERM" && code !== "ENOTSUP" && code !== "EOPNOTSUPP")
+            throw cause;
+          // Reserve the name under the writer lock; copy asynchronously through its descriptor.
+          reservation = reserveFile(job.outputPath);
+          if (
+            !this.deps.repo.setPublication(
+              job.id,
+              { ...reservation, phase: "copying" },
+              new Date().toISOString(),
+              claim,
+            )
+          )
+            throw new StaleDownloadClaimError();
+          return reservation;
+        }
+      });
+      if (!acquired.owned) throw new StaleDownloadClaimError();
+    } catch (cause) {
+      if (reservation) closeSync(reservation.fd);
+      throw cause;
+    }
+    if (!reservation) return;
+    const reserved = reservation;
+    const controller = new AbortController();
+    let reservationClosed = false;
+    this.copyControllers.set(job.id, controller);
+    try {
+      await copyToReservedFile(job.tempPath, reservation, controller.signal);
+      if (
+        !this.deps.repo.withRunningClaim(claim, () => {
+          if (this.cancellationRequests.has(job.id)) throw new Error("download aborted");
+          const currentOutput = statSync(job.outputPath, { bigint: true, throwIfNoEntry: false });
+          if (
+            !currentOutput ||
+            String(currentOutput.dev) !== reserved.device ||
+            String(currentOutput.ino) !== reserved.inode
+          )
+            throw new DownloadOwnershipError(
+              "Download destination changed during copy; existing file preserved",
+            );
+          if (
+            !this.deps.repo.setPublication(
+              job.id,
+              { device: reserved.device, inode: reserved.inode, phase: "published" },
+              new Date().toISOString(),
+              claim,
+            )
+          )
+            throw new StaleDownloadClaimError();
+          this.publishedJobIds.add(job.id);
+        }).owned
+      )
+        throw new StaleDownloadClaimError();
+    } catch (cause) {
+      closeSync(reservation.fd);
+      reservationClosed = true;
+      // A displaced copy owns its descriptor, never a successor's pathname.
+      const identity = reservation;
+      this.deps.repo.withRunningClaim(claim, () => {
+        const info = statSync(job.outputPath, { bigint: true, throwIfNoEntry: false });
+        if (info && (String(info.dev) !== identity.device || String(info.ino) !== identity.inode))
+          throw new DownloadOwnershipError(
+            "Download destination changed during copy; existing file preserved",
+            {
+              cause,
+            },
+          );
+        if (info) unlinkSync(job.outputPath);
+        this.deps.repo.setPublication(job.id, null, new Date().toISOString(), claim);
+      });
+      throw cause;
+    } finally {
+      this.copyControllers.delete(job.id);
+      if (!reservationClosed) closeSync(reservation.fd);
+    }
+  }
+
+  private async executeYtDlpDownload(
+    job: DownloadJobRecord,
+    claim: DownloadClaimRef,
+  ): Promise<DownloadJobRecord> {
+    const attemptPath = job.tempPath;
     const resolved = await this.resolveStreamForJob(job);
+    if (!this.deps.repo.withRunningClaim(claim, () => {}).owned)
+      throw new StaleDownloadClaimError();
     // Resolution can outlive abort/shutdown. Let the queue's cancellation
     // handler retain that decision before persisting metadata or starting a child.
     if (this.cancellationRequests.has(job.id))
@@ -1247,6 +1421,7 @@ export class DownloadService {
         providerId: resolved.providerId,
       },
       updatedAt,
+      claim,
     );
     this.deps.repo.updateOfflineMetadata(
       job.id,
@@ -1256,6 +1431,7 @@ export class DownloadService {
         subtitleLanguage: subtitleLanguage ?? (job.subtitleUrl ? null : job.subtitleLanguage),
       },
       updatedAt,
+      claim,
     );
     job = this.deps.repo.get(job.id) ?? {
       ...job,
@@ -1267,6 +1443,9 @@ export class DownloadService {
       // stream; the job record stores that identity verbatim.
       lastResolvedProviderId: resolved.providerId as never,
     };
+
+    // Re-reading durable metadata must not replace this attempt namespace.
+    job = { ...job, tempPath: attemptPath };
 
     // Bound TOTAL in-flight HLS fragments across all parallel downloads. 16/job
     // buffered ~GBs of fragments in RAM; ×N parallel workers blew memory to
@@ -1345,28 +1524,33 @@ export class DownloadService {
       const clamped = Math.round(Math.max(0, Math.min(99, percent)));
       if (clamped === lastPersistedPercent) return;
       if (now - lastProgressPersistAt < 1000) return;
-      this.deps.repo.updateProgress(job.id, clamped, new Date().toISOString());
+      if (!this.deps.repo.updateProgress(job.id, clamped, new Date().toISOString(), claim)) return;
       this.emit({ type: "progress", jobId: job.id, percent: clamped });
       lastProgressPersistAt = now;
       lastPersistedPercent = clamped;
     };
 
-    const handle = runYtDlpProcess({
-      args,
-      maxStderrBytes: STDERR_MAX_BYTES,
-      onStdoutLine: (line) => {
-        const match = line.match(/\[download\]\s+([\d.]+)%/);
-        if (match && match[1]) {
-          const percent = Number.parseFloat(match[1]);
-          if (Number.isFinite(percent)) {
-            persistProgress(percent);
+    let handle!: ReturnType<typeof runYtDlpProcess>;
+    const started = this.deps.repo.withRunningClaim(claim, () => {
+      if (this.cancellationRequests.has(job.id)) throw new Error("download aborted");
+      handle = runYtDlpProcess({
+        args,
+        maxStderrBytes: STDERR_MAX_BYTES,
+        onStdoutLine: (line) => {
+          const match = line.match(/\[download\]\s+([\d.]+)%/);
+          if (match && match[1]) {
+            const percent = Number.parseFloat(match[1]);
+            if (Number.isFinite(percent)) {
+              persistProgress(percent);
+            }
           }
-        }
-        if (line.includes("100%") || line.includes("has already been downloaded")) {
-          persistProgress(99);
-        }
-      },
+          if (line.includes("100%") || line.includes("has already been downloaded")) {
+            persistProgress(99);
+          }
+        },
+      });
     });
+    if (!started.owned) throw new StaleDownloadClaimError();
 
     const cancellation = this.cancellationRequests.get(job.id);
     this.activeProcesses.set(job.id, {
@@ -1378,6 +1562,8 @@ export class DownloadService {
     });
 
     const { exitCode, stderr } = await handle.completed;
+    if (!this.deps.repo.withRunningClaim(claim, () => {}).owned)
+      throw new StaleDownloadClaimError();
 
     if (
       exitCode !== 0 &&
@@ -1398,19 +1584,8 @@ export class DownloadService {
     // publication so an empty/invalid result can never replace a playable
     // last-known-good output at the stable path.
     const validation = await this.validateCompletedArtifact(job.tempPath, job.id);
-    if (this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath)) {
-      throw new Error(
-        "Download destination is shared with another job; choose a different directory",
-      );
-    }
-    // Exclusive publication in both lanes: hard-link first (atomic, fails if
-    // ANY destination exists), exclusive copy+fsync on volumes without
-    // hard-link support (cross-device/exFAT). Neither lane silently overwrites.
-    await publishStagedDownloadArtifact(job.tempPath, job.outputPath);
-    this.publishedJobIds.add(job.id);
+    await this.publishClaimedArtifact(job, claim);
     await rm(job.tempPath).catch(() => {
-      // Publication succeeded. A locked staging name must not turn a valid
-      // artifact into a retry that collides with its own published output.
       this.deps.logger.warn("Published download retained a temporary name", { jobId: job.id });
     });
     this.persistValidatedArtifactMetadata(job.id, validation);
@@ -1655,9 +1830,21 @@ export class DownloadService {
     validation: ArtifactValidationResult,
   ): void {
     const updatedAt = new Date().toISOString();
-    this.deps.repo.updateFileSize(jobId, validation.fileSize, updatedAt);
+    const claim = this.jobClaims.get(jobId);
+    if (!this.deps.repo.updateFileSize(jobId, validation.fileSize, updatedAt, claim)) {
+      throw new StaleDownloadClaimError();
+    }
     if (typeof validation.durationMs === "number") {
-      this.deps.repo.updateOfflineMetadata(jobId, { durationMs: validation.durationMs }, updatedAt);
+      if (
+        !this.deps.repo.updateOfflineMetadata(
+          jobId,
+          { durationMs: validation.durationMs },
+          updatedAt,
+          claim,
+        )
+      ) {
+        throw new StaleDownloadClaimError();
+      }
     }
     this.deps.diagnostics?.record({
       category: "download",
@@ -1676,7 +1863,12 @@ export class DownloadService {
     try {
       const fileStat = await stat(job.outputPath);
       if (fileStat.isFile()) {
-        this.deps.repo.updateFileSize(job.id, fileStat.size, new Date().toISOString());
+        this.deps.repo.updateFileSize(
+          job.id,
+          fileStat.size,
+          new Date().toISOString(),
+          this.jobClaims.get(job.id),
+        );
         return fileStat.size;
       }
     } catch {
@@ -1688,6 +1880,9 @@ export class DownloadService {
   private async downloadSubtitleIfAvailable(
     job: DownloadJobRecord,
   ): Promise<DownloadSidecarResult> {
+    const claim = this.jobClaims.get(job.id);
+    if (claim && !this.deps.repo.withRunningClaim(claim, () => {}).owned)
+      throw new StaleDownloadClaimError();
     if (!job.subtitleUrl) {
       return {
         artifact: "subtitle",
@@ -1743,17 +1938,36 @@ export class DownloadService {
           "subtitle response was empty, too large, or interrupted",
         );
       }
-      await writeAtomicBytes(targetPath, data);
-      this.deps.repo.updateOfflineMetadata(
-        job.id,
-        { subtitlePath: targetPath },
-        new Date().toISOString(),
-      );
+      if (claim) {
+        const stagedPath = join(claim.stagingDir, "subtitle" + extname(targetPath));
+        await writeAtomicBytes(stagedPath, data);
+        if (
+          !this.deps.repo.withRunningClaim(claim, () => {
+            if (this.cancellationRequests.has(job.id)) throw new Error("download aborted");
+            linkSync(stagedPath, targetPath);
+            this.deps.repo.updateOfflineMetadata(
+              job.id,
+              { subtitlePath: targetPath },
+              new Date().toISOString(),
+              claim,
+            );
+          }).owned
+        )
+          throw new StaleDownloadClaimError();
+      } else {
+        await writeAtomicBytes(targetPath, data);
+        this.deps.repo.updateOfflineMetadata(
+          job.id,
+          { subtitlePath: targetPath },
+          new Date().toISOString(),
+        );
+      }
       return {
         artifact: "subtitle",
         status: "ready",
       };
     } catch (error) {
+      if (error instanceof StaleDownloadClaimError) throw error;
       return buildRepairableSidecarResult(
         job,
         "subtitle",
@@ -1766,9 +1980,9 @@ export class DownloadService {
     jobId: string,
     result: DownloadSidecarResult,
     updatedAt: string,
-  ): void {
+  ): boolean {
     if (result.status === "expected-missing" || result.status === "failed") {
-      this.deps.repo.markRepairable(
+      const accepted = this.deps.repo.markRepairable(
         jobId,
         {
           artifactStatus: result.status,
@@ -1778,7 +1992,9 @@ export class DownloadService {
             JSON.stringify({ artifact: result.artifact, message: result.message }),
         },
         updatedAt,
+        this.jobClaims.get(jobId),
       );
+      if (!accepted) return false;
       this.deps.diagnostics?.record({
         category: "download",
         level: result.status === "failed" ? "warn" : "info",
@@ -1791,10 +2007,10 @@ export class DownloadService {
           message: result.message ?? null,
         },
       });
-      return;
+      return true;
     }
     if (result.status === "optional-missing") {
-      this.deps.repo.completeWithNotes(
+      return this.deps.repo.completeWithNotes(
         jobId,
         {
           artifactStatus: "optional-missing",
@@ -1802,10 +2018,10 @@ export class DownloadService {
           repairMetadataJson: result.repairMetadataJson,
         },
         updatedAt,
+        this.jobClaims.get(jobId),
       );
-      return;
     }
-    this.deps.repo.complete(jobId, updatedAt);
+    return this.deps.repo.complete(jobId, updatedAt, this.jobClaims.get(jobId));
   }
 
   private async repairSidecars(job: DownloadJobRecord): Promise<void> {
@@ -1893,7 +2109,7 @@ export class DownloadService {
       const queued = this.deps.repo.listDueQueued(nowIso, pageSize, after);
       if (queued.length === 0) return null;
       for (const job of queued) {
-        if (!this.claimedJobIds.has(job.id)) return job;
+        if (!this.claimedJobIds.has(job.id) && !job.publicationPending) return job;
       }
       const last = queued.at(-1);
       if (!last || queued.length < pageSize) return null;
@@ -1941,96 +2157,267 @@ export class DownloadService {
       const heartbeatAt = runningJob.lastHeartbeatAt ?? runningJob.startedAt;
       const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : Number.NaN;
       if (Number.isFinite(heartbeatMs) && nowMs - heartbeatMs < STALLED_HEARTBEAT_MS) continue;
-      if (!this.deps.repo.claimRunningForRecovery(runningJob.id, runningJob.lastHeartbeatAt, now)) {
+      const recovery = this.deps.repo.claimRunningForRecovery(
+        runningJob.id,
+        runningJob.lastHeartbeatAt,
+        now,
+        runningJob.claimGeneration ?? 0,
+      );
+      if (!recovery) {
         continue;
       }
+      this.jobClaims.set(runningJob.id, recovery);
+      try {
+        // Expiry does not prove the old child is dead. Never reuse or remove
+        // its staging namespace here; a replacement writes a new generation.
 
-      // Clean up orphaned temp files from crashed processes
-      if (runningJob.tempPath) {
-        await rm(runningJob.tempPath, { force: true }).catch(() => {});
-      }
-
-      const publishedOutput = await stat(runningJob.outputPath).catch(() => null);
-      if (publishedOutput) {
-        if (this.deps.repo.hasConflictingOutputOwner(runningJob.id, runningJob.outputPath)) {
-          const message =
-            "Download destination ownership is ambiguous; existing artifact preserved";
-          this.deps.repo.fail(runningJob.id, message, false, now, "artifact-invalid");
-          this.emit({ type: "failed", jobId: runningJob.id, error: message });
-          continue;
-        }
-        let validation: ArtifactValidationResult;
-        try {
-          validation = await this.validateCompletedArtifact(runningJob.outputPath, runningJob.id);
-        } catch (error) {
-          const cancellation = this.cancellationRequests.get(runningJob.id);
-          if (cancellation) {
-            if (cancellation.mode === "pause") {
-              this.deps.repo.pause(runningJob.id, cancellation.reason, now, now);
-            } else {
-              this.deps.repo.abort(runningJob.id, now);
-              this.emit({ type: "aborted", jobId: runningJob.id });
+        if (runningJob.publicationPending) {
+          const removed = this.deps.repo.withRunningClaim(recovery, () => {
+            const info = statSync(runningJob.outputPath, { bigint: true, throwIfNoEntry: false });
+            if (info) {
+              if (
+                this.deps.repo.hasConflictingOutputOwner(runningJob.id, runningJob.outputPath) ||
+                String(info.dev) !== runningJob.publicationDevice ||
+                String(info.ino) !== runningJob.publicationInode
+              ) {
+                throw new DownloadOwnershipError(
+                  "Interrupted copy destination ownership changed; existing file preserved",
+                );
+              }
+              unlinkSync(runningJob.outputPath);
             }
-            this.cancellationRequests.delete(runningJob.id);
-            continue;
-          }
-          if (error instanceof ArtifactValidationTimeoutError) {
-            this.deps.repo.fail(runningJob.id, error.message, false, now, "artifact-timeout");
-            this.emit({ type: "failed", jobId: runningJob.id, error: error.message });
-            this.deps.logger.warn("Interrupted download artifact validation timed out", {
-              jobId: runningJob.id,
-              error: error.message,
-            });
-            continue;
-          }
-          if (publishedOutput.isFile()) {
-            await rm(runningJob.outputPath, { force: true }).catch(() => {});
-          } else {
-            const message = "download output path is not a regular file";
-            this.deps.repo.fail(runningJob.id, message, false, now, "artifact-invalid");
-            this.emit({ type: "failed", jobId: runningJob.id, error: message });
-            continue;
-          }
-          this.deps.logger.warn("Discarded invalid interrupted download artifact", {
-            jobId: runningJob.id,
-            error: error instanceof Error ? error.message : String(error),
+            this.deps.repo.setPublication(runningJob.id, null, now, recovery);
           });
+          if (!removed.owned) continue;
           this.rescheduleInterruptedJob(
             runningJob,
             now,
-            "download interrupted after publishing an invalid artifact",
+            "download interrupted during artifact copy",
           );
           continue;
         }
-        // From this point forward the artifact is known-good. Persistence and
-        // notification failures must surface for retry without ever entering
-        // the invalid-artifact cleanup path above.
-        this.persistValidatedArtifactMetadata(runningJob.id, validation);
-        const subtitleResult: DownloadSidecarResult = runningJob.subtitleUrl
-          ? buildRepairableSidecarResult(
-              runningJob,
-              "subtitle",
-              "download was recovered after publication; subtitle needs repair",
+        const publishedOutput = await stat(runningJob.outputPath, { bigint: true }).catch(
+          () => null,
+        );
+        if (publishedOutput) {
+          if (
+            runningJob.publicationDevice !== undefined &&
+            runningJob.publicationInode !== undefined
+          ) {
+            if (
+              String(publishedOutput.dev) !== runningJob.publicationDevice ||
+              String(publishedOutput.ino) !== runningJob.publicationInode
             )
-          : { artifact: "subtitle", status: "not-applicable" };
-        this.persistCompletedDownloadWithSidecarResult(runningJob.id, subtitleResult, now);
-        this.emit({ type: "complete", jobId: runningJob.id });
-        const completed = this.deps.repo.get(runningJob.id);
-        if (completed) await this.deps.onCompletedArtifact?.(completed);
-        this.deps.diagnostics?.record({
-          category: "download",
-          level: "info",
-          operation: "download.recovery.adopted",
-          message: "Recovered a validated download published before shutdown",
-          context: { jobId: runningJob.id, fileSize: validation.fileSize },
-        });
-        continue;
+              throw new DownloadOwnershipError(
+                "Download destination changed after publication; existing file preserved",
+              );
+          } else {
+            // A link can outlive its SQL commit. Legacy rows must supply the
+            // same proof through their recorded temporary path, never just a
+            // nonempty file found at the destination.
+            const proofPath = runningJob.stagingDir
+              ? join(runningJob.stagingDir, "media.mp4")
+              : runningJob.tempPath;
+            const staged = await stat(proofPath, {
+              bigint: true,
+            }).catch(() => null);
+            if (
+              !staged ||
+              staged.dev !== publishedOutput.dev ||
+              staged.ino !== publishedOutput.ino
+            ) {
+              throw new DownloadOwnershipError(
+                "Download destination ownership cannot be proved; existing file preserved. Choose another directory or remove this job record.",
+              );
+            }
+          }
+          if (this.deps.repo.hasConflictingOutputOwner(runningJob.id, runningJob.outputPath)) {
+            const message =
+              "Download destination ownership is ambiguous; existing artifact preserved";
+            if (
+              this.deps.repo.fail(runningJob.id, message, false, now, "artifact-invalid", recovery)
+            )
+              this.emit({ type: "failed", jobId: runningJob.id, error: message });
+            continue;
+          }
+          let validation: ArtifactValidationResult;
+          try {
+            validation = await this.validateCompletedArtifact(runningJob.outputPath, runningJob.id);
+          } catch (error) {
+            const cancellation = this.cancellationRequests.get(runningJob.id);
+            if (cancellation) {
+              if (cancellation.mode === "pause") {
+                this.deps.repo.pause(
+                  runningJob.id,
+                  cancellation.reason,
+                  now,
+                  now,
+                  this.jobClaims.get(runningJob.id),
+                );
+              } else {
+                if (this.deps.repo.abort(runningJob.id, now, recovery)) {
+                  this.emit({ type: "aborted", jobId: runningJob.id });
+                }
+              }
+              this.cancellationRequests.delete(runningJob.id);
+              continue;
+            }
+            if (error instanceof ArtifactValidationTimeoutError) {
+              if (
+                !this.deps.repo.fail(
+                  runningJob.id,
+                  error.message,
+                  false,
+                  now,
+                  "artifact-timeout",
+                  recovery,
+                )
+              )
+                continue;
+              this.emit({ type: "failed", jobId: runningJob.id, error: error.message });
+              this.deps.logger.warn("Interrupted download artifact validation timed out", {
+                jobId: runningJob.id,
+                error: error.message,
+              });
+              continue;
+            }
+            if (publishedOutput.isFile()) {
+              const removed = this.deps.repo.withRunningClaim(recovery, () => {
+                if (
+                  this.deps.repo.hasConflictingOutputOwner(runningJob.id, runningJob.outputPath)
+                ) {
+                  throw new DownloadOwnershipError(
+                    "Download destination ownership changed; existing artifact preserved",
+                    { cause: error },
+                  );
+                }
+                const currentOutput = statSync(runningJob.outputPath, {
+                  bigint: true,
+                  throwIfNoEntry: false,
+                });
+                if (
+                  currentOutput &&
+                  (currentOutput.dev !== publishedOutput.dev ||
+                    currentOutput.ino !== publishedOutput.ino)
+                )
+                  throw new DownloadOwnershipError(
+                    "Download destination changed during validation; existing file preserved",
+                    { cause: error },
+                  );
+                try {
+                  unlinkSync(runningJob.outputPath);
+                } catch (removeError) {
+                  if (errorCode(removeError) !== "ENOENT") throw removeError;
+                }
+              });
+              if (!removed.owned) continue;
+            } else {
+              const message = "download output path is not a regular file";
+              if (
+                this.deps.repo.fail(
+                  runningJob.id,
+                  message,
+                  false,
+                  now,
+                  "artifact-invalid",
+                  recovery,
+                )
+              )
+                this.emit({ type: "failed", jobId: runningJob.id, error: message });
+              continue;
+            }
+            this.deps.logger.warn("Discarded invalid interrupted download artifact", {
+              jobId: runningJob.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            this.rescheduleInterruptedJob(
+              runningJob,
+              now,
+              "download interrupted after publishing an invalid artifact",
+            );
+            continue;
+          }
+          // From this point forward the artifact is known-good. Persistence and
+          // notification failures must surface for retry without ever entering
+          // the invalid-artifact cleanup path above.
+          const subtitleResult: DownloadSidecarResult = runningJob.subtitleUrl
+            ? buildRepairableSidecarResult(
+                runningJob,
+                "subtitle",
+                "download was recovered after publication; subtitle needs repair",
+              )
+            : { artifact: "subtitle", status: "not-applicable" };
+          const finalized = this.deps.repo.withRunningClaim(recovery, () => {
+            const currentOutput = statSync(runningJob.outputPath, {
+              bigint: true,
+              throwIfNoEntry: false,
+            });
+            if (
+              !currentOutput ||
+              currentOutput.dev !== publishedOutput.dev ||
+              currentOutput.ino !== publishedOutput.ino
+            )
+              throw new DownloadOwnershipError(
+                "Download destination changed during validation; existing file preserved",
+              );
+            if (
+              !this.deps.repo.setPublication(
+                runningJob.id,
+                {
+                  device: String(currentOutput.dev),
+                  inode: String(currentOutput.ino),
+                  phase: "published",
+                },
+                now,
+                recovery,
+              )
+            )
+              throw new StaleDownloadClaimError();
+            this.persistValidatedArtifactMetadata(runningJob.id, validation);
+            if (!this.persistCompletedDownloadWithSidecarResult(runningJob.id, subtitleResult, now))
+              return undefined;
+            return this.deps.repo.get(runningJob.id);
+          });
+          if (!finalized.owned || !finalized.value) continue;
+          const completed = finalized.value;
+          this.emit({ type: "complete", jobId: runningJob.id });
+          await this.deps.onCompletedArtifact?.(completed);
+          this.deps.diagnostics?.record({
+            category: "download",
+            level: "info",
+            operation: "download.recovery.adopted",
+            message: "Recovered a validated download published before shutdown",
+            context: { jobId: runningJob.id, fileSize: validation.fileSize },
+          });
+          continue;
+        }
+        this.rescheduleInterruptedJob(
+          runningJob,
+          now,
+          "download interrupted by previous session shutdown",
+        );
+      } catch (error) {
+        if (error instanceof StaleDownloadClaimError) continue;
+        if (error instanceof DownloadOwnershipError) {
+          const failed = this.deps.repo.withRunningClaim(recovery, () => {
+            this.deps.repo.setPublication(runningJob.id, null, now, recovery);
+            return this.deps.repo.fail(
+              runningJob.id,
+              error.message,
+              false,
+              now,
+              "artifact-invalid",
+              recovery,
+            );
+          });
+          if (failed.owned && failed.value)
+            this.emit({ type: "failed", jobId: runningJob.id, error: error.message });
+          continue;
+        }
+        throw error;
+      } finally {
+        this.jobClaims.delete(runningJob.id);
       }
-      this.rescheduleInterruptedJob(
-        runningJob,
-        now,
-        "download interrupted by previous session shutdown",
-      );
     }
   }
 
@@ -2040,7 +2427,13 @@ export class DownloadService {
     message: string,
   ): void {
     if (job.retryCount < job.maxAttempts) {
-      this.deps.repo.scheduleRetry(job.id, message, updatedAt, updatedAt);
+      this.deps.repo.scheduleRetry(
+        job.id,
+        message,
+        updatedAt,
+        updatedAt,
+        this.jobClaims.get(job.id),
+      );
       return;
     }
     this.deps.repo.fail(
@@ -2049,15 +2442,21 @@ export class DownloadService {
       false,
       updatedAt,
       "interrupted",
+      this.jobClaims.get(job.id),
     );
   }
 
-  private startHeartbeat(jobId: string): () => void {
+  private startHeartbeat(jobId: string, claim: DownloadClaimRef): () => void {
     let active = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = () => {
       if (!active) return;
-      this.deps.repo.markHeartbeat(jobId, new Date().toISOString());
+      if (!this.deps.repo.markHeartbeat(jobId, new Date().toISOString(), claim)) {
+        active = false;
+        this.activeProcesses.get(jobId)?.cancel?.("download ownership changed");
+        this.copyControllers.get(jobId)?.abort();
+        return;
+      }
       timer = setTimeout(tick, HEARTBEAT_INTERVAL_MS);
       timer.unref?.();
     };

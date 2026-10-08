@@ -828,6 +828,18 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE playback_queue_sessions ADD COLUMN owner_process_start_id TEXT;
     `,
   },
+  {
+    id: "046_data_download_attempt_ownership",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN owner_token TEXT;
+      ALTER TABLE download_jobs ADD COLUMN claim_generation INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE download_jobs ADD COLUMN staging_dir TEXT;
+      ALTER TABLE download_jobs ADD COLUMN publication_pending INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE download_jobs ADD COLUMN publication_dev TEXT;
+      ALTER TABLE download_jobs ADD COLUMN publication_ino TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

@@ -70,6 +70,7 @@ export {
 export type {
   DownloadArtifactStatus,
   DownloadJobRecord,
+  DownloadClaimRef,
   DownloadJobStatus,
 } from "./repositories/download-jobs";
 export {
