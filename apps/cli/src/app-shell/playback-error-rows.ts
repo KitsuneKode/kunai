@@ -70,8 +70,13 @@ function waterfallRows(model: PlaybackFailureWaterfallModel): readonly ErrorRow[
     const marker = entry.status === "succeeded" ? "✓" : entry.status === "failed" ? "x" : "·";
     const tone: ErrorRowTone =
       entry.status === "succeeded" ? "ok" : entry.status === "failed" ? "danger" : "dim";
-    const segments: ErrorRowSegment[] = [{ text: `${marker} ${entry.label}`, tone }];
-    if (entry.detail) segments.push({ text: `  ·  ${entry.detail}`, tone: "dim" });
+    // Labels and details name providers, sources, and URLs — sanitize here:
+    // unlike every other row builder, these segments bypass row().
+    const segments: ErrorRowSegment[] = [
+      { text: sanitizeTerminalText(`${marker} ${entry.label}`), tone },
+    ];
+    if (entry.detail)
+      segments.push({ text: sanitizeTerminalText(`  ·  ${entry.detail}`), tone: "dim" });
     rows.push({ segments });
   }
 

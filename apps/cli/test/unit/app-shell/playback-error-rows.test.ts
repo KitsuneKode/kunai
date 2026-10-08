@@ -177,4 +177,30 @@ describe("buildErrorRows", () => {
     // The whole OSC sequence (introducer, payload, terminator) is removed.
     expect(titleLines).toContain("◌  Dune not found");
   });
+
+  test("strips terminal escapes from waterfall labels and details", () => {
+    // Waterfall segments bypass row() by construction, so they need their own
+    // coverage: labels name providers/sources/URLs, details carry timings and
+    // failure text.
+    const rows = buildErrorRows({
+      ...base,
+      waterfall: {
+        title: "Source attempts",
+        truncated: false,
+        rows: [
+          {
+            label: "vid\x1b]8;;https://evil.example\x07easy",
+            detail: "tok\x1b[2Jen",
+            status: "failed",
+          },
+        ],
+      },
+    });
+    const lines = rows.map(rowText);
+    for (const line of lines) {
+      expect(line).not.toContain("\x1b");
+      expect(line).not.toContain("\x07");
+    }
+    expect(lines).toContain("x videasy  ·  token");
+  });
 });
