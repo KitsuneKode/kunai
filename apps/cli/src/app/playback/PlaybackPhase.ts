@@ -169,6 +169,7 @@ import { applyCatalogDetailToTitle } from "@/domain/catalog/apply-title-detail";
 import { resolveProvenNumericTmdbId } from "@/domain/catalog/tmdb-identity";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
+import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import { usesProviderNativeEpisodeCatalog } from "@/domain/media/provider-native-episodes";
 import { enrichExternalIdsWithVideoMeta } from "@/domain/media/video-meta";
 import { decodeEpisodeSelectionValue } from "@/domain/playback/episode-selection";
@@ -261,7 +262,6 @@ import {
 } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import type { ResolveAttempt } from "@kunai/core";
-import type { MediaKind } from "@kunai/types";
 import type { ProviderFailure, ProviderId } from "@kunai/types";
 
 // Re-exported for tests that import it from this module's public surface.
@@ -3663,9 +3663,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             autoContinueIntoRecommendationPossible,
           });
           const topRec = recommendationRailItems[0];
-          const topRecommendation = topRec
+          const topRecommendation: MediaItemIdentity | null = topRec
             ? {
-                mediaKind: (topRec.type === "movie" ? "movie" : "series") as MediaKind,
+                mediaKind: topRec.type === "movie" ? "movie" : "series",
                 titleId: topRec.id,
                 title: topRec.title,
                 sourceId: topRec.sourceId,
