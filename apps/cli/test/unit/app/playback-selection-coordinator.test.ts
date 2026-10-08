@@ -72,6 +72,62 @@ describe("PlaybackSelectionCoordinator", () => {
     });
   });
 
+  test("automatic failover is runtime evidence — never written to the durable store", async () => {
+    dir = await mkdtemp(join(tmpdir(), "kunai-selection-"));
+    const path = join(dir, "episode-playback-selections.json");
+    const writer = new PlaybackSelectionCoordinator({
+      titleId: "tmdb:99",
+      episodePlaybackSelection: new EpisodePlaybackSelectionService(path),
+      titlePlaybackSource: new TitlePlaybackSourceService(join(dir, "title-sources.json")),
+    });
+    await writer.applyAutomaticSourceFailover("videasy", ep, "source:neon");
+
+    // A fresh coordinator on the same files must see nothing: a failover that
+    // persisted would resurrect a transient outage as a pin after restart.
+    const reader = new PlaybackSelectionCoordinator({
+      titleId: "tmdb:99",
+      episodePlaybackSelection: new EpisodePlaybackSelectionService(path),
+      titlePlaybackSource: new TitlePlaybackSourceService(join(dir, "title-sources.json")),
+    });
+    await reader.hydrate("videasy", ep);
+
+    expect(reader.getEffective("videasy", ep)).toEqual({
+      sourceId: null,
+      streamId: null,
+    });
+  });
+
+  test("a quarantined title pin is not served even while the in-memory map still holds it", async () => {
+    dir = await mkdtemp(join(tmpdir(), "kunai-selection-"));
+    const coordinator = new PlaybackSelectionCoordinator({
+      titleId: "tmdb:99",
+      episodePlaybackSelection: new EpisodePlaybackSelectionService(
+        join(dir, "episode-playback-selections.json"),
+      ),
+      titlePlaybackSource: new TitlePlaybackSourceService(join(dir, "title-sources.json")),
+      isSourceQuarantined: (_providerId, sourceId) => sourceId === "source:sick",
+    });
+    await coordinator.applyManualSourcePick("videasy", ep, "source:sick");
+    // Hydration has already run — this is the state after a source quarantines
+    // mid-session: the durable row is deleted elsewhere, but this coordinator's
+    // map still feeds selectedSourceId without the read-time guard.
+    expect(coordinator.getEffective("videasy", ep)).toEqual({
+      sourceId: null,
+      streamId: null,
+    });
+    // Later episodes inherit the title pin — also quarantined, also not served.
+    expect(coordinator.getEffective("videasy", ep2)).toEqual({
+      sourceId: null,
+      streamId: null,
+    });
+    // A non-quarantined pin still flows through normally.
+    await coordinator.applyManualSourcePick("vidlink", ep, "source:well");
+    expect(coordinator.getEffective("vidlink", ep)).toEqual({
+      sourceId: "source:well",
+      streamId: null,
+    });
+  });
+
   test("persisted episode overrides do not alias different provider-native episodes", async () => {
     dir = await mkdtemp(join(tmpdir(), "kunai-selection-"));
     const path = join(dir, "episode-playback-selections.json");

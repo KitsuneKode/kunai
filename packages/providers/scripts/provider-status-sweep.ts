@@ -37,7 +37,7 @@ const OUTPUT_PATH = path.resolve(
 const RESOLVE_TIMEOUT_MS = 30_000;
 const FRONT_DOOR_TIMEOUT_MS = 12_000;
 
-type SweepStatus = "healthy" | "degraded" | "blocked" | "down" | "dead";
+export type SweepStatus = "healthy" | "degraded" | "blocked" | "down" | "dead";
 
 interface ProviderRow {
   readonly id: string;
@@ -228,7 +228,7 @@ interface Classification {
   note: string;
 }
 
-function classify(
+export function classify(
   upstreamHttp: number | null,
   resolveStatus: string,
   streams: number,

@@ -7,7 +7,7 @@
  * curl/curl-impersonate — the same shape as the AniDB client.
  */
 
-import { isRelayedResponse, providerHttpErrorForStatus } from "@kunai/types";
+import { isRelayedResponse, providerHttpErrorForStatus, relayLocalErrorCode } from "@kunai/types";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { ProviderHttpError } from "../runtime/fetch";
@@ -279,7 +279,22 @@ export async function hianimeFetchText(
       if (isRelayedResponse(response)) {
         /* The relay answered for this request — re-asking the same URL direct
          * would silently bypass the relay the user deployed (#460). Treat the
-         * response as final, including a definitive upstream status. */
+         * response as final, including a definitive upstream status.
+         *
+         * A relay-local refusal carries the relay error code — in the header on
+         * current relays, in the refusal body on deployments older than the
+         * header — so a stale deployment's `unknown-provider` reports as a
+         * relay problem, not an upstream "HTTP 404" verdict. */
+        const relayCode = await relayLocalErrorCode(response);
+        if (relayCode) {
+          throw new ProviderHttpError({
+            message: `hianime fetch refused by relay (${relayCode}) for ${hianimeUrlLabel(url)}`,
+            providerId: HIANIME_PROVIDER_ID,
+            stage: "fetch-page",
+            code: "provider-unavailable",
+            retryable: false,
+          });
+        }
         const text = response.ok ? await response.text() : "";
         if (response.ok && !isCloudflareChallengeText(text)) return text;
         throw new HianimeRelayedUpstreamError(
@@ -294,7 +309,8 @@ export async function hianimeFetchText(
       }
     } catch (error) {
       if (options.signal?.aborted === true) throw error;
-      if (error instanceof HianimeRelayedUpstreamError) throw error;
+      if (error instanceof HianimeRelayedUpstreamError || error instanceof ProviderHttpError)
+        throw error;
       // Fall through to local curl/impersonate.
     }
   }

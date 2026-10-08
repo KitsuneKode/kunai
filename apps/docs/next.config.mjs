@@ -68,6 +68,18 @@ const config = {
   // tracer gave up and pulled the whole workspace into every function. With the
   // probe gone the tracer follows real imports and the excludes have nothing
   // left to exclude — keeping them would only hide the next regression.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "X-Frame-Options", value: "DENY" },
+        ],
+      },
+    ];
+  },
   async redirects() {
     return [
       // `/telemetry` was the old name for this page. In Kunai, "telemetry" means

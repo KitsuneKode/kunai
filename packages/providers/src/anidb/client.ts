@@ -4,6 +4,7 @@ import {
   httpStatusToResolveErrorCode,
   isRelayedResponse,
   ProviderHttpError,
+  relayLocalErrorCode,
 } from "@kunai/types";
 
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
@@ -24,6 +25,7 @@ import {
 import { blockedLiteralTargetReason } from "../shared/stream-reachability";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { anidbNumericId, parseAnidbBrowseHtml, type AnidbSearchResult } from "./browse-parser";
+import { ANIDB_PROVIDER_ID } from "./manifest";
 
 export {
   anidbNumericId,
@@ -329,26 +331,34 @@ export async function anidbFetchText(
          * response as final, including a 403/429 the old code used to retry
          * with a better TLS fingerprint.
          *
-         * One documented exception: a 404 can be the relay's own
-         * `unknown-provider` miss rather than anidb.app's verdict — a relay
-         * deployed before this provider existed answers that way. Reading it
-         * as the catalogue's verdict marks the title permanently missing, so
-         * that one case still falls through to let curl settle it. */
-        if (response.status === 404) {
-          // Falls through to curl below.
-        } else {
-          const text = await response.text();
-          if (response.ok) {
-            if (isAnidbMaintenanceText(text)) {
-              throw new AnidbHttpStatusError(503);
-            }
-            if (!isCloudflareChallengeText(text)) {
-              return text;
-            }
-            throw new AnidbBlockedError("anidb blocked by Cloudflare via relay");
-          }
-          throw new AnidbHttpStatusError(response.status);
+         * The discriminator between "the relay refused" and "upstream
+         * answered" is the relay error-code header: a marked response carrying
+         * one is a relay-local refusal (stale deployments answering
+         * `unknown-provider` 404 used to be read as "title missing" — or worse,
+         * fallen through to curl, bypassing a relay the user mandated with
+         * `fallbackToDirect: false`). A marked response without a code is a
+         * genuine upstream verdict — final, including a real 404. */
+        const relayCode = await relayLocalErrorCode(response);
+        if (relayCode) {
+          throw new ProviderHttpError({
+            message: `anidb fetch refused by relay (${relayCode})`,
+            providerId: ANIDB_PROVIDER_ID,
+            stage: "fetch-page",
+            code: "provider-unavailable",
+            retryable: false,
+          });
         }
+        const text = await response.text();
+        if (response.ok) {
+          if (isAnidbMaintenanceText(text)) {
+            throw new AnidbHttpStatusError(503);
+          }
+          if (!isCloudflareChallengeText(text)) {
+            return text;
+          }
+          throw new AnidbBlockedError("anidb blocked by Cloudflare via relay");
+        }
+        throw new AnidbHttpStatusError(response.status);
       } else if (response.ok) {
         const text = await response.text();
         if (isAnidbMaintenanceText(text)) {
@@ -367,7 +377,11 @@ export async function anidbFetchText(
       // Relayed-final outcomes above throw inside this try — without the
       // rethrow a relayed verdict would fall to curl and silently bypass the
       // user's relay, which is exactly the bypass the check exists to stop.
-      if (error instanceof AnidbHttpStatusError || error instanceof AnidbBlockedError) {
+      if (
+        error instanceof AnidbHttpStatusError ||
+        error instanceof AnidbBlockedError ||
+        error instanceof ProviderHttpError
+      ) {
         throw error;
       }
       // A cancelled caller is not a fingerprint problem either. Without this

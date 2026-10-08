@@ -10,7 +10,7 @@ lastReviewed: "2026-10-04"
 ## Production status (2026-05-27)
 
 - **Module:** `packages/providers/src/cineby/index.ts` — **research wrapper** over the Videasy direct resolver (not the default beta provider order).
-- **Flavor table:** shared with Videasy; Cineby **alias** names (Neon, Yoru, …) are diagnostics-only; playback inventory uses **One Piece** themed labels when the wrapper is used (same stable `source:videasy:videasy:{endpoint}` ids).
+- **Flavor table:** shared with Videasy; Cineby **alias** names (Neon, Yoru, …) are diagnostics-only; playback inventory uses the current **Valorant**-themed labels (Yoru, Neon, Sage, …) — the One Piece names (Luffy, Brook, …) survive only as deprecated ids for pin migration (same stable `source:videasy:videasy:{endpoint}` ids).
 - **Selection:** one flavor per resolve from `preferredAudioLanguage` (movies-only flavors skipped on series).
 - **Inherit:** Videasy timeouts, Phase A mirrors, and presentation contract from Videasy — do not maintain a separate decrypt stack.
 
@@ -21,7 +21,7 @@ lastReviewed: "2026-10-04"
 - **Episode catalog support:** Yes, TMDB proxy.
 - **Stream resolve support:** Yes — delegates to Videasy (`packages/providers/src/videasy/direct.ts`).
 - **Language/audio/subtitle model:** Flavor registry maps agent/endpoint + optional `languageQuery` / `filterQuality` (see `flavors.ts`).
-- **Server/source model:** Cineby “agents” are **display aliases** for Videasy endpoints; Kunai **sources** use themed names (Luffy, Brook, …) when resolved through this wrapper.
+- **Server/source model:** Cineby “agents” are **display aliases** for Videasy endpoints; Kunai **sources** use the Valorant-themed names (Yoru, Neon, …) when resolved through this wrapper — One Piece names remain only as deprecated pin-migration ids.
 - **Quality model:** Derived from the final `.m3u8` manifest.
 - **Thumbnail/poster support:** Yes. TMDB proxies for episodes.
 - **Known failure modes:** Upstream WAF changes to the "Agent" routes. If Cineby changes "killjoy" to another agent, the language routing breaks.

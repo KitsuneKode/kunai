@@ -7,7 +7,7 @@ lastReviewed: "2026-10-04"
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
-This document provides visual, deterministic state machines for how `@kunai/scraper-core` extracts streams from each of our supported providers. It serves as a visual companion to the textual dossiers.
+This document provides visual, deterministic state machines for how `@kunai/providers` extracts streams from each of our supported providers. It serves as a visual companion to the textual dossiers.
 
 ---
 

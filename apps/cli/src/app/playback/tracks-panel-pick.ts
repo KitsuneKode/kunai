@@ -1,7 +1,12 @@
 import { applyUserProviderSwitch } from "@/app/playback/playback-provider-switch";
 import { buildSourceInventoryCacheInput } from "@/app/playback/playback-source-cache-invalidation";
 import { invalidateTitlePlaybackCaches } from "@/app/playback/playback-title-cache-invalidation";
-import type { StreamSelectionIntent } from "@/app/playback/source-quality";
+import {
+  buildStreamInventoryView,
+  collectSubtitleTracks,
+  streamSelectionFromStream,
+  type StreamSelectionIntent,
+} from "@/app/playback/source-quality";
 import type { Container } from "@/container";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
@@ -33,6 +38,11 @@ export type TracksPanelPickResult =
       readonly kind: "stale-pick";
       readonly section: DecodedTrackSelection["section"];
       readonly reason: string;
+    }
+  | {
+      readonly kind: "subtitle-switch";
+      readonly applied: boolean;
+      readonly label: string;
     };
 
 export type TrackPickTransitionContext = {
@@ -133,6 +143,7 @@ export async function resolveTracksPanelPick(
       cacheStore: container.cacheStore,
       sourceInventory: container.sourceInventory,
       providerId: currentProviderId,
+      providerManifest: container.providerRegistry.getManifest(currentProviderId),
       title,
       mode: state.mode,
       config: container.config.getRaw(),
@@ -154,6 +165,10 @@ export async function resolveTracksPanelPick(
       },
     });
     return { kind: "audio-mode-switch", audioMode: selection.audioMode };
+  }
+
+  if (picked.section === "subtitle") {
+    return resolveSubtitleTrackPick(picked, context);
   }
 
   if (selection?.crossProviderSource) {
@@ -232,6 +247,74 @@ async function staleTrackSelectionReason(
 }
 
 /**
+ * Subtitle rows don't map to a stream-selection intent: external tracks and
+ * "off" switch live in the running player, while stream-embedded tracks are
+ * really a stream switch wearing a subtitle label. Resolve the picked value
+ * against the current inventory view — a pick rendered from a snapshot that has
+ * since been replaced reports stale rather than touching the player.
+ */
+async function resolveSubtitleTrackPick(
+  picked: DecodedTrackSelection,
+  context: TracksPanelPickContext,
+): Promise<TracksPanelPickResult> {
+  const { container } = context;
+  const stream = container.stateManager.getState().stream;
+  const view = buildStreamInventoryView(stream);
+  const option = view?.subtitleOptions.find(
+    (candidate) => (candidate.subtitleUrl ?? candidate.id) === picked.value,
+  );
+  if (!option) {
+    return {
+      kind: "stale-pick",
+      section: "subtitle",
+      reason:
+        "That subtitle is no longer available — the subtitle list changed. Pick again from the refreshed list.",
+    };
+  }
+
+  if (option.restartRequired) {
+    const streamId = option.streamIds[0];
+    if (!streamId) {
+      return {
+        kind: "stale-pick",
+        section: "subtitle",
+        reason:
+          "That subtitle is no longer available — the subtitle list changed. Pick again from the refreshed list.",
+      };
+    }
+    return {
+      kind: "stream-selection",
+      section: "subtitle",
+      selection: streamSelectionFromStream(streamId),
+    };
+  }
+
+  const applied = await container.playerControl.selectCurrentSubtitle(
+    {
+      subtitleUrl: option.subtitleUrl ?? null,
+      subtitleTracks: stream ? collectSubtitleTracks(stream) : undefined,
+    },
+    context.reason,
+  );
+  container.diagnosticsService.record({
+    category: "playback",
+    operation: "playback.track-switch",
+    message: "Subtitle switch from Tracks panel",
+    providerId: context.currentProviderId,
+    titleId: context.title.id,
+    season: context.episode.season,
+    episode: context.episode.episode,
+    context: {
+      section: picked.section,
+      optionId: option.id,
+      applied,
+      reason: context.reason,
+    },
+  });
+  return { kind: "subtitle-switch", applied, label: option.label };
+}
+
+/**
  * Pure half of stale-pick detection, exported for tests: the fetch above is
  * the only impure step, and the decision must be unit-coverable without a
  * container stub.
@@ -240,6 +323,7 @@ export function matchTrackSelectionAgainstInventory(
   selection: StreamSelectionIntent,
   inventory: {
     readonly streams?: readonly { readonly id: string; readonly sourceId?: string }[];
+    readonly sources?: readonly { readonly id: string }[];
   } | null,
 ): string | null {
   if (!inventory || !Array.isArray(inventory.streams)) return null;
@@ -249,11 +333,16 @@ export function matchTrackSelectionAgainstInventory(
   ) {
     return "That stream is no longer available — the source list changed. Pick again from the refreshed list.";
   }
-  if (
-    selection.sourceId &&
-    !inventory.streams.some((candidate) => candidate.sourceId === selection.sourceId)
-  ) {
-    return "That source is no longer available — the source list changed. Pick again from the refreshed list.";
+  if (selection.sourceId) {
+    // A source row can be known without owning a stream yet — cycle providers
+    // list skipped/deferred sources that only resolve on demand. Checking only
+    // `streams` would brand those picks stale and drop them silently.
+    const known =
+      inventory.streams.some((candidate) => candidate.sourceId === selection.sourceId) ||
+      (inventory.sources?.some((source) => source.id === selection.sourceId) ?? false);
+    if (!known) {
+      return "That source is no longer available — the source list changed. Pick again from the refreshed list.";
+    }
   }
   return null;
 }

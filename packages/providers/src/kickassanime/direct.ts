@@ -484,10 +484,21 @@ export const kickassanimeProviderModule: CoreProviderModule = {
         return fail("not-found", `KickAssAnime manifest is unreachable (${verdict.reason})`, true);
       }
     }
-    const selected = selectKaaAudio(
-      master ? parseHlsMasterAudioRenditions(master) : [],
-      audio.catalogMode,
-    );
+    const renditions = master ? parseHlsMasterAudioRenditions(master) : [];
+    const selected = selectKaaAudio(renditions, audio.catalogMode);
+    // The rendition group is the whole audio story: sub is the DEFAULT track,
+    // dub exists only when an English rendition does. Emitting the modes is
+    // what makes the panel's Sub/Dub rows selectable for this provider.
+    const availableModes: ("sub" | "dub")[] = ["sub"];
+    if (renditions.some((track) => /^en/i.test(track.language ?? ""))) {
+      availableModes.push("dub");
+    }
+    emitTraceEvent(events, context, {
+      type: "inventory:audio-modes",
+      providerId: KICKASSANIME_PROVIDER_ID,
+      message: `KickAssAnime episode exposes ${availableModes.join(" and ")} audio modes`,
+      attributes: { modes: availableModes.join(",") },
+    });
     const presentation = selected.presentation;
     if (presentation !== audio.catalogMode) {
       emitTraceEvent(events, context, {

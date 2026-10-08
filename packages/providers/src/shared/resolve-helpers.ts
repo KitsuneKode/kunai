@@ -90,7 +90,12 @@ export function createExhaustedResult(
 
 /** Failure codes that describe the request, not the provider's health. */
 function isProviderHealthNeutral(code: ProviderFailure["code"]): boolean {
-  return code === "cancelled" || code === "unsupported-title";
+  // `not-found` means the provider answered and the title is not in its
+  // catalogue — the same shape as `unsupported-title`. Per-title health already
+  // records it as `no-streams` via `provider-empty`, so counting it again at
+  // provider level would mark a healthy provider down for merely lacking
+  // titles (#267).
+  return code === "cancelled" || code === "unsupported-title" || code === "not-found";
 }
 
 export function emitTraceEvent(

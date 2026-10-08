@@ -58,6 +58,18 @@ export async function applyTrackPickRestart(input: {
     };
   }
 
+  if (resolved.kind === "subtitle-switch") {
+    // The player switched tracks live — playback resumes in place either way.
+    return {
+      startIntent: startAtResumePoint(resumeSeconds, { suppressResumePrompt: true }),
+      resolvedProviderId: currentProviderId,
+      requiresFreshResolve: false,
+      notice: resolved.applied
+        ? `Subtitles: ${resolved.label}`
+        : "Couldn't switch subtitles — the player rejected the track.",
+    };
+  }
+
   if (resolved.kind === "provider-switch") {
     effects.invalidateRecentEpisodeStream(episode);
     return {
