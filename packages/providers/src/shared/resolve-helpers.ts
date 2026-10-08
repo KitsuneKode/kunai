@@ -75,7 +75,9 @@ export function createExhaustedResult(
     // away, the upstream was never asked. Reporting it as a failure quietly
     // accumulated negative health for providers that lose hedge races or get
     // aborted when the user backs out. `unsupported-title` is the same: it says
-    // this title is out of scope, not that the provider is unhealthy.
+    // this title is out of scope, not that the provider is unhealthy. A
+    // `not-found` response is also title-shaped: lacking one episode must not
+    // quarantine a provider that still serves other titles.
     ...(isProviderHealthNeutral(providerFailure.code)
       ? null
       : {
@@ -90,7 +92,7 @@ export function createExhaustedResult(
 
 /** Failure codes that describe the request, not the provider's health. */
 function isProviderHealthNeutral(code: ProviderFailure["code"]): boolean {
-  return code === "cancelled" || code === "unsupported-title";
+  return code === "cancelled" || code === "unsupported-title" || code === "not-found";
 }
 
 export function emitTraceEvent(
