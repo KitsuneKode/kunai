@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-07"
+lastReviewed: "2026-10-08"
 ---
 
 # Provider: KickAssAnime
@@ -24,6 +24,19 @@ are hard-subbed; KickAssAnime closes both gaps.
   name plus a four-hex discriminator.
 
 ## Known
+
+### Failure classification
+
+Catalog and player-page HTTP failures retain the shared provider error class:
+404 is non-retryable `not-found`, 401/403 are `blocked`, 429 is retryable
+`rate-limited`, and retryable 5xx remain `provider-unavailable` (504 is
+`timeout`). Invalid catalog JSON is non-retryable `parse-failed` and a transport
+deadline is retryable `timeout`. Resolve cancellation remains `cancelled`; an
+HTTP response does not trigger domain discovery. This applies to cross-catalog
+title lookup, episode listing, and player-page resolution. Master readability
+and the resolve gate still make separate decisions, as described below.
+
+### Upstream observations
 
 Observed directly on 2026-09-12 unless noted.
 

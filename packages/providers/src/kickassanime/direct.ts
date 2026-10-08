@@ -8,6 +8,7 @@
  * Parsing lives in `site.ts`; this file is the runtime contract around it.
  */
 import { createResolveTrace, type CoreProviderModule } from "@kunai/core";
+import { ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
 import type {
   CachePolicy,
   ProviderEpisodeOption,
@@ -142,7 +143,13 @@ async function fetchJson(
   init: { readonly method?: "GET" | "POST"; readonly body?: unknown } = {},
 ): Promise<unknown> {
   const response = await kaaFetch(context, path, init);
-  if (!response.ok) throw new Error(`KickAssAnime returned HTTP ${response.status}`);
+  if (!response.ok)
+    throw providerHttpErrorForStatus({
+      providerId: KICKASSANIME_PROVIDER_ID,
+      stage: "catalog",
+      status: response.status,
+      message: `KickAssAnime returned HTTP ${response.status}`,
+    });
   return response.json();
 }
 
@@ -216,7 +223,13 @@ async function fetchPlayerPage(
     headers: { referer: `${currentBase}/`, "user-agent": USER_AGENT },
     signal: directStreamFetchSignal(context.signal, KAA_FETCH_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`KickAssAnime player returned HTTP ${response.status}`);
+  if (!response.ok)
+    throw providerHttpErrorForStatus({
+      providerId: KICKASSANIME_PROVIDER_ID,
+      stage: "player",
+      status: response.status,
+      message: `KickAssAnime player returned HTTP ${response.status}`,
+    });
   return response.text();
 }
 
@@ -395,6 +408,22 @@ export const kickassanimeProviderModule: CoreProviderModule = {
         { cachePolicy, events, startedAt },
       );
 
+    const failRequest = (error: unknown, stage: string) => {
+      if (context.signal?.aborted || (error instanceof Error && error.name === "AbortError"))
+        return fail("cancelled", "KickAssAnime resolve cancelled");
+      if (error instanceof ProviderHttpError)
+        return fail(
+          error.code,
+          `KickAssAnime ${stage} failed: ${describe(error)}`,
+          error.retryable,
+        );
+      if (error instanceof SyntaxError)
+        return fail("parse-failed", `KickAssAnime ${stage} returned invalid JSON`, false);
+      if (error instanceof Error && error.name === "TimeoutError")
+        return fail("timeout", `KickAssAnime ${stage} timed out`, true);
+      return fail("network-error", `KickAssAnime ${stage} failed: ${describe(error)}`, true);
+    };
+
     if (context.signal?.aborted) return fail("cancelled", "resolve cancelled");
     if (input.mediaKind !== "anime")
       return fail("unsupported-title", "KickAssAnime only supports anime");
@@ -402,7 +431,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
     try {
       slug = await locateKaaShow(input.title, context, events);
     } catch (error) {
-      return fail("network-error", `KickAssAnime search failed: ${describe(error)}`, true);
+      return failRequest(error, "search");
     }
     if (!slug) {
       const year = input.title.year ? ` (${input.title.year})` : "";
@@ -445,7 +474,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
         }
       }
     } catch (error) {
-      return fail("network-error", `KickAssAnime episode list failed: ${describe(error)}`, true);
+      return failRequest(error, "episode list");
     }
     if (!located) return fail("not-found", `KickAssAnime has no episode ${episode} for ${slug}`);
 
@@ -458,7 +487,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       server = servers.find((candidate) => PLAYABLE_SERVERS.has(candidate.name));
       if (server) player = parseKaaPlayerPage(await fetchPlayerPage(context, server));
     } catch (error) {
-      return fail("network-error", `KickAssAnime player failed: ${describe(error)}`, true);
+      return failRequest(error, "player");
     }
     if (!server || !player) {
       return fail("not-found", `KickAssAnime offered no playable server for ${slug} ${episode}`);

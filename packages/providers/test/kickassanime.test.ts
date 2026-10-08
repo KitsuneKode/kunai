@@ -822,14 +822,80 @@ describe("kickassanimeProviderModule", () => {
     expect(result.failures[0]?.message).toContain('"Frieren"');
   });
 
-  test("an HTTP error is retryable and does not go looking for a new domain", async () => {
-    const requests: string[] = [];
+  test.each([
+    [404, "not-found", false],
+    [403, "blocked", false],
+    [429, "rate-limited", true],
+    [503, "provider-unavailable", true],
+    [504, "timeout", true],
+  ] as const)(
+    "HTTP %s retains its failure class without rotating the domain",
+    async (status, code, retryable) => {
+      const requests: string[] = [];
+      const result = await kickassanimeProviderModule.resolve(
+        resolveInput(),
+        contextWith(() => json({ message: "unavailable" }, status), requests),
+      );
+      expect(result.failures[0]).toMatchObject({ code, retryable });
+      expect(requests.some((request) => request.includes("kickass-anime.ro"))).toBe(false);
+    },
+  );
+
+  test.each(["search", "player"] as const)(
+    "a missing %s endpoint is not a retryable network error",
+    async (stage) => {
+      const route = catalogRoute();
+      const input =
+        stage === "search"
+          ? resolveInput({ title: { id: "1", kind: "anime", title: "Sousou no Frieren" } })
+          : resolveInput();
+      const result = await kickassanimeProviderModule.resolve(
+        input,
+        contextWith((url, init) => {
+          const parsed = new URL(url);
+          if (
+            (stage === "search" && parsed.pathname === "/api/fsearch") ||
+            (stage === "player" && parsed.hostname === "krussdomi.com")
+          ) {
+            return json({ message: "gone" }, 404);
+          }
+          return route(url, init);
+        }),
+      );
+      expect(result.failures[0]).toMatchObject({ code: "not-found", retryable: false });
+    },
+  );
+
+  test("cancellation during catalog fetch stays cancellation", async () => {
+    const controller = new AbortController();
+    const result = await kickassanimeProviderModule.resolve(resolveInput(), {
+      ...contextWith(() => {
+        controller.abort();
+        throw new DOMException("cancelled by caller", "AbortError");
+      }),
+      signal: controller.signal,
+    });
+    expect(result.failures[0]).toMatchObject({ code: "cancelled", retryable: false });
+  });
+
+  test("malformed catalog JSON is non-retryable parse failure", async () => {
     const result = await kickassanimeProviderModule.resolve(
       resolveInput(),
-      contextWith(() => json({ message: "down" }, 503), requests),
+      contextWith(() => new Response("{broken json")),
     );
-    expect(result.failures[0]).toMatchObject({ code: "network-error", retryable: true });
-    expect(requests.some((request) => request.includes("kickass-anime.ro"))).toBe(false);
+    expect(result.failures[0]).toMatchObject({ code: "parse-failed", retryable: false });
+  });
+
+  test("a transport deadline is retryable timeout, not caller cancellation", async () => {
+    const result = await kickassanimeProviderModule.resolve(
+      resolveInput(),
+      contextWith((url) => {
+        if (url === "https://kickass-anime.ro/")
+          return new Response("no rotation", { status: 503 });
+        throw new DOMException("request timed out", "TimeoutError");
+      }),
+    );
+    expect(result.failures[0]).toMatchObject({ code: "timeout", retryable: true });
   });
 
   test("a dead domain is replaced by where the old alias redirects", async () => {
