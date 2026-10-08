@@ -6,9 +6,9 @@ import {
   type ConsentEnv,
 } from "@/domain/analytics/consent-policy";
 import { dbgErr } from "@/logger";
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import type { AnalyticsPingCompletion, KitsuneConfig } from "@/services/persistence/ConfigService";
 
-import { ensureInstallId, installIdDigest } from "./install-id";
+import { ensureInstallId, installIdDigest, isValidInstallId } from "./install-id";
 
 /**
  * Where an opted-in install sends its daily ping.
@@ -82,6 +82,7 @@ type AnalyticsConfig = {
   getRaw(): KitsuneConfig;
   update(partial: Partial<KitsuneConfig>): Promise<void>;
   save(): Promise<void>;
+  recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean>;
 };
 
 export type UsageAnalyticsServiceDeps = {
@@ -154,7 +155,7 @@ export class UsageAnalyticsService {
    */
   describePayload(): AnalyticsPayload {
     const config = this.deps.config.getRaw();
-    const enabled = config.analytics === "enabled" && config.installId.trim().length > 0;
+    const enabled = config.analytics === "enabled" && isValidInstallId(config.installId);
     return {
       installId: enabled ? installIdDigest(config.installId) : UNSET_INSTALL_ID_PLACEHOLDER,
       version: this.deps.currentVersion,
@@ -244,7 +245,9 @@ export class UsageAnalyticsService {
     // A pending retry from an earlier failed send is still cooling down.
     if (config.analyticsRetryAfter > now) return;
 
-    const installId = ensureInstallId(config);
+    // Identity creation and repair require an explicit consent choice.
+    if (!isValidInstallId(config.installId)) return;
+    const installId = config.installId;
     const payload: AnalyticsPayload = {
       // The digest, never the stored id. `installId` below is persisted locally
       // so the identity survives restarts; only this hash is transmitted.
@@ -257,23 +260,12 @@ export class UsageAnalyticsService {
 
     const outcome = await this.send(endpoint, payload);
 
-    // Consent and rotation can change while the request is in flight, including
-    // through Settings/setup writers outside this service. Compare the original
-    // stored id (which ensureInstallId may have repaired), not the payload id.
-    const current = this.deps.config.getRaw();
-    if (current.analytics !== "enabled" || current.installId !== config.installId) return;
-
-    // ConfigServiceImpl.update mutates synchronously before its promise resolves:
-    // there is no yield between this guard and the mutation. save reads the latest
-    // config at flush, so a later disable/rotation also wins across the await below.
-    // Success and permanent rejection both consume the 24h cadence; only a
-    // transient failure schedules a near-term retry.
-    await this.deps.config.update(
-      outcome === "retry"
-        ? { installId, analyticsRetryAfter: now + ANALYTICS_RETRY_BACKOFF_MS }
-        : { installId, lastAnalyticsPingAt: now, analyticsRetryAfter: 0 },
-    );
-    await this.deps.config.save();
+    await this.deps.config.recordAnalyticsPing({
+      installId,
+      ...(outcome === "retry"
+        ? { analyticsRetryAfter: now + ANALYTICS_RETRY_BACKOFF_MS }
+        : { lastAnalyticsPingAt: now, analyticsRetryAfter: 0 }),
+    });
   }
 
   /**

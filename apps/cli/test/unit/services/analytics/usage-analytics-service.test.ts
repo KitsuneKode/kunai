@@ -15,7 +15,7 @@ import {
   UsageAnalyticsService,
   type AnalyticsFetch,
 } from "@/services/analytics/usage-analytics-service";
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import type { AnalyticsPingCompletion, KitsuneConfig } from "@/services/persistence/ConfigService";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
@@ -35,6 +35,18 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
       saves += 1;
       persisted = { ...raw };
     },
+    async recordAnalyticsPing(completion: AnalyticsPingCompletion) {
+      if (raw.analytics !== "enabled" || raw.installId !== completion.installId) return false;
+      raw = {
+        ...raw,
+        analyticsRetryAfter: completion.analyticsRetryAfter,
+      };
+      if (completion.lastAnalyticsPingAt !== undefined)
+        raw = { ...raw, lastAnalyticsPingAt: completion.lastAnalyticsPingAt };
+      saves += 1;
+      persisted = { ...raw };
+      return true;
+    },
     get persisted() {
       return persisted;
     },
@@ -48,7 +60,7 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
 }
 
 function makeService(
-  config: Pick<ConfigServiceImpl, "getRaw" | "update" | "save">,
+  config: Pick<ConfigServiceImpl, "getRaw" | "update" | "save" | "recordAnalyticsPing">,
   options: {
     fetchImpl?: AnalyticsFetch;
     env?: { DO_NOT_TRACK?: string; CI?: string };
@@ -163,38 +175,37 @@ describe("pending ping identity", () => {
   }
 
   for (const change of ["disable", "rotate"] as const) {
-    test(`${change} between real config update and save wins at flush`, async () => {
-      let persisted = { ...DEFAULT_CONFIG };
+    test(`${change} in this process before locked completion prevents bookkeeping`, async () => {
+      let persisted: KitsuneConfig = {
+        ...DEFAULT_CONFIG,
+        analytics: "enabled",
+        installId: UUID,
+      };
       const config = new ConfigServiceImpl({
-        load: async () => ({}),
+        load: async () => ({ ...persisted }),
         save: async (value) => {
           persisted = { ...value };
         },
         reset: async () => {},
       });
       await config.update({ analytics: "enabled", installId: UUID });
-      const updated = Promise.withResolvers<void>();
+      const started = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
       const service = makeService(
         {
           getRaw: () => config.getRaw(),
-          update: async (patch) => {
-            // The production mutation is synchronous; defer only its resolution.
-            const update = config.update(patch);
-            updated.resolve();
+          update: (patch) => config.update(patch),
+          save: () => config.save(),
+          recordAnalyticsPing: async (completion) => {
+            started.resolve();
             await release.promise;
-            await update;
-          },
-          save: async () => {
-            const save = config.save();
-            await config.flushPending();
-            await save;
+            return config.recordAnalyticsPing(completion);
           },
         },
         { fetchImpl: async () => new Response(null, { status: 204 }) },
       );
       const ping = service.maybePing({ isInteractive: true });
-      await updated.promise;
+      await started.promise;
       await config.update({
         analytics: change === "disable" ? "disabled" : "enabled",
         installId: change === "disable" ? "" : rotatedId,
@@ -203,7 +214,9 @@ describe("pending ping identity", () => {
       });
       release.resolve();
       await ping;
-
+      const saved = config.save();
+      await config.flushPending();
+      await saved;
       expect(persisted.installId === (change === "disable" ? "" : rotatedId)).toBe(true);
       expect(persisted.analytics).toBe(change === "disable" ? "disabled" : "enabled");
       expect(persisted.lastAnalyticsPingAt).toBe(0);

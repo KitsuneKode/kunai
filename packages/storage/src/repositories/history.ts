@@ -918,6 +918,7 @@ function parseProviderNativeIds(
 function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
   if (!value) return undefined;
   try {
+    // SAFETY: each returned ID is checked below; invalid shapes throw into this catch.
     const parsed = JSON.parse(value) as Partial<ProviderExternalIds>;
     const providerNativeIds = parseProviderNativeIds(parsed.providerNativeIds);
     const externalIds: ProviderExternalIds = {

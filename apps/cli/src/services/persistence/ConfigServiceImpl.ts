@@ -20,6 +20,7 @@ import {
 } from "@kunai/types";
 
 import type {
+  AnalyticsPingCompletion,
   ConfigService,
   KitsuneConfig,
   QuitNearEndBehavior,
@@ -416,6 +417,50 @@ export class ConfigServiceImpl implements ConfigService {
     // inside persistConfigNow. Startup owns its initial read and migration,
     // and explicit native credential changes share that critical section.
     const run = this.persistChain.then(() => this.persistConfigNow());
+    this.persistChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean> {
+    const write = async (): Promise<boolean> => {
+      const complete = async (): Promise<boolean> => {
+        // Consent changes in this process can still be awaiting their save.
+        const matchesLocal = () =>
+          this.config.analytics === "enabled" && this.config.installId === completion.installId;
+        if (!matchesLocal()) return false;
+        const onDisk = await this.store.load();
+        if (!matchesLocal()) return false;
+        const matchesDisk =
+          onDisk.analytics === "enabled" && onDisk.installId === completion.installId;
+        const current = { ...DEFAULT_CONFIG, ...onDisk };
+        if (matchesDisk) {
+          current.analyticsRetryAfter = completion.analyticsRetryAfter;
+          if (completion.lastAnalyticsPingAt !== undefined)
+            current.lastAnalyticsPingAt = completion.lastAnalyticsPingAt;
+          // Never persist the pre-send identity: this write owns cadence only.
+          await this.store.save(current);
+        }
+        // A local consent/identity change may arrive during the async write.
+        // Its queued save wins next; do not refresh it with the old cadence.
+        if (!matchesLocal()) return false;
+        const analyticsKeys: readonly (keyof KitsuneConfig)[] = [
+          "analytics",
+          "installId",
+          "lastAnalyticsPingAt",
+          "analyticsRetryAfter",
+        ];
+        for (const key of analyticsKeys) {
+          if (!this.dirtyKeys.has(key)) Object.assign(this.config, { [key]: current[key] });
+        }
+        return matchesDisk;
+      };
+      return this.store.withLock ? this.store.withLock(complete) : complete();
+    };
+    // Share the save chain so completion cannot interleave its read/merge/write.
+    const run = this.persistChain.then(write);
     this.persistChain = run.then(
       () => undefined,
       () => undefined,
