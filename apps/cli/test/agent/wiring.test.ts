@@ -140,6 +140,34 @@ describe("agent wiring · post-play history", () => {
   }, 45_000);
 });
 
+describe("agent wiring · anime episode picker", () => {
+  it("opens with the cursor on an episode, so one Enter plays it", async () => {
+    // The picker used to open on nothing when the current episode was not in
+    // the list (here: episode 1 of a title offering only 7), so Enter was a
+    // silent no-op until the user pressed ↓.
+    await withSession("wiring-anime-episode", { mpv: "fake" }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      s.press(K.tab);
+      await s.waitForFrame((f) => f.includes("anime"), "anime mode");
+      s.press("smoke", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Anime"), "anime fixture results");
+      s.press(K.enter);
+      await s.waitForFrame((f) => f.includes("▌ Episode 7"), "episode picker with a cursor");
+      await s.waitSettled();
+      s.press(K.enter);
+      await s.waitForFrame((f) => f.includes("Post-play"), "post-play surface", 30_000);
+
+      await s.waitForBackend(
+        (i) =>
+          i
+            .history()
+            .some((row) => row.title_id === "anilist:smoke-anime-1" && row.media_kind === "anime"),
+        "history_progress records the anime episode",
+      );
+    });
+  }, 45_000);
+});
+
 describe("agent wiring · offline mode", () => {
   it("offline mode parks on the library instead of starving the session loop", async () => {
     // Regression for the livelock: offlineMode + empty query used to return a

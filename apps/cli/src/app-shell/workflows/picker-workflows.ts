@@ -15,6 +15,7 @@ import {
   type DecodedTrackSelection,
   type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
+import { nearestOptionIndex } from "@/domain/session/picker-model";
 import type { EpisodePickerOption, StreamInfo } from "@/domain/types";
 import { scheduleVideasyLazySourceProbesFromContainer } from "@/services/playback/schedule-videasy-lazy-probes";
 import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
@@ -209,7 +210,7 @@ export async function openAnimeEpisodePicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: currentEpisode >= 1 && currentEpisode <= count ? currentEpisode - 1 : -1,
+      initialIndex: nearestOptionIndex(episodes, currentEpisode),
       options: episodes.map((episode) => ({
         value: String(episode),
         label: `Episode ${episode}`,
@@ -242,7 +243,10 @@ export async function openAnimeEpisodeListPicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: episodes.findIndex((episode) => episode.index === currentEpisode),
+      initialIndex: nearestOptionIndex(
+        episodes.map((episode) => episode.index),
+        currentEpisode,
+      ),
       options: episodes.map((episode) => ({
         value: String(episode.index),
         label: episode.label,

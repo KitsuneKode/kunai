@@ -2,6 +2,7 @@ import type {
   PreviewPosterState,
   PreviewRailModel,
 } from "@/app-shell/primitives/PreviewRail.model";
+import { countLabel } from "@/domain/text-display";
 
 import { buildPreviewMetaLine } from "./details-panel";
 import type { PosterResult, PosterState } from "./poster-types";
@@ -120,7 +121,7 @@ export function browseResultStatusLine(input: {
   const hasSubtitle = input.resultSubtitle.trim().length > 0;
 
   if (!hasSubtitle) {
-    return input.displayCount > 0 ? { primary: `${input.displayCount} results` } : {};
+    return input.displayCount > 0 ? { primary: countLabel(input.displayCount, "result") } : {};
   }
 
   if (trimmedFilter && input.displayCount !== input.totalCount) {
