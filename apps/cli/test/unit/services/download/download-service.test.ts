@@ -1378,6 +1378,49 @@ describe("DownloadService", () => {
     expect(stored?.selectedQualityLabel).toBe("1080p");
   });
 
+  test("surfaces post-completion registration errors without treating its released lease as displacement", async () => {
+    const registrationError = new Error("offline asset registration failed");
+    let rejectRegistration = true;
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      onCompletedArtifact: () => {
+        if (rejectRegistration) throw registrationError;
+      },
+    });
+    spawnSpy.mockImplementation((command: string[]) => {
+      const outputPath = command[command.indexOf("-o") + 1]!;
+      writeFileSync(outputPath, "published video bytes");
+      // SAFETY: controlled download child implements every process member read by the service.
+      return {
+        stdout: streamOf(""),
+        stderr: streamOf(""),
+        exited: Promise.resolve(0),
+        kill() {},
+      } as never;
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:registration-1", type: "movie", name: "Registration failure" },
+      stream: { url: "https://example.com/one.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    const next = await service.enqueue({
+      title: { id: "tmdb:registration-2", type: "movie", name: "Following job" },
+      stream: { url: "https://example.com/two.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    await expect(service.processQueue()).rejects.toBe(registrationError);
+    expect(repo.get(job.id)?.status).toBe("completed");
+    expect(repo.get(job.id)?.claimGeneration).toBe(1);
+    expect(nativeFs.readFileSync(job.outputPath, "utf8")).toBe("published video bytes");
+    expect(repo.get(next.id)?.status).toBe("queued");
+    rejectRegistration = false;
+    await service.processQueue();
+    expect(repo.get(next.id)?.status).toBe("completed");
+  });
+
   test("persists artifact duration when ffprobe validation succeeds", async () => {
     const diagnostics: unknown[] = [];
     const service = buildService({
@@ -3327,6 +3370,7 @@ function buildService({
   logger,
   configService,
   titleAliases = { upsertAliases() {} },
+  onCompletedArtifact,
   statfs,
 }: {
   repo: DownloadJobsRepository;
@@ -3342,6 +3386,7 @@ function buildService({
   configService?: ConfigService;
   titleAliases?: ConstructorParameters<typeof DownloadService>[0]["titleAliases"];
   statfs?: ConstructorParameters<typeof DownloadService>[0]["statfs"];
+  onCompletedArtifact?: ConstructorParameters<typeof DownloadService>[0]["onCompletedArtifact"];
 }): DownloadService {
   // SAFETY: test stub — supplies only the surface this test exercises.
   const defaultConfig = {
@@ -3369,6 +3414,7 @@ function buildService({
       },
     },
     resolveDownloadStream,
+    onCompletedArtifact,
     abortGraceMs,
     ffprobeDeadline,
     // Default to a volume with 1 TiB free so admission checks are deterministic

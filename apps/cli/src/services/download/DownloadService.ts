@@ -810,8 +810,11 @@ export class DownloadService {
     } catch (error) {
       if (
         error instanceof StaleDownloadClaimError ||
-        !this.deps.repo.withRunningClaim(claim, () => {}).owned
+        this.deps.repo.get(next.id)?.claimGeneration !== claim.generation
       ) {
+        // Terminal writes release ownership without changing generation. A
+        // failing post-completion hook still belongs to this worker and must
+        // surface; only a successor generation (or stale-claim error) displaces it.
         // A displaced worker may clean only its immutable attempt, never the
         // shared legacy name or a successor's staging artifacts.
         await this.removeAttempt(claim);
