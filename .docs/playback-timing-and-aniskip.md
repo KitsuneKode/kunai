@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-18"
+lastReviewed: "2026-10-08"
 ---
 
 # Playback timing, IntroDB, and AniSkip
@@ -33,6 +33,14 @@ PlaybackPhase
 - **Autoplay prefetch:** persistent playback uses credible credits timing as the earliest safe trigger for the next episode. Without credits evidence it uses an adaptive near-end window, beginning around 90 percent watched while remaining in the final few minutes, so fallback has time without warming fragile URLs too early.
 - **Auto-next handoff:** after **natural EOF**, Kunai shows the short inline auto-next countdown and uses a prefetched prepared stream only when episode/provider/source/audio/quality intent still matches. It waits about three seconds by default, extending toward eight seconds only after concrete readiness evidence such as a validated cache/inventory hit or provider candidates. Manual **N** means next episode and follows the same exact-match rule; recover/refresh resolves fresh. **P** / episode picker cancel in-flight prefetch.
 - **Voluntary mpv quit (`q`):** always opens the post-play menu first — no silent inline resolve. When `quitNearEndBehavior` is `continue` and autoplay is on, a cancelable post-play countdown may advance to the next episode before the menu paints (same spine as playlist/recommendation tails). Prefetch work is **suspended** (not cancelled) when post-play opens so in-flight next-episode resolve can finish and land in cache.
+- **Durable completion:** `shouldMarkEpisodeCompleted` requires a clean natural
+  EOF and trusted progress past the threshold before marking local history
+  completed. Quitting in the credits preserves resume for anime and TMDB lanes;
+  an explicit mark-watched action remains the override. History timestamps retain
+  the actual position on quit, and resume/continuation readers use persisted
+  completion rather than inferring it from a duration ratio. Near-end engagement,
+  tracker policy, and post-play continuation remain separate decisions.
+
 - **Post-playback recommendations:** recommendations are non-critical enrichment. The post-playback screen renders from prefetched items or an empty rail first, then warms recommendation data in the background. Last-episode/caught-up flows should not wait for recommendation network calls before controls appear.
 
 Official product/docs: [theintrodb.org/docs](https://theintrodb.org/docs).

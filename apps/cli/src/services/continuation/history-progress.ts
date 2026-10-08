@@ -114,8 +114,8 @@ export function readLatestHistoryByTitle(
 
 /**
  * Single authority for "is this episode finished".
- * The persisted `completed` flag (written richly from credits/threshold/EOF) wins.
- * The 95% ratio is only a fallback when a positive duration is known.
+ * Only the persisted `completed` flag (natural EOF or explicit mark-watched) wins.
+ * Progress ratio and credits timing cannot override an unfinished row.
  */
 // Re-exported from @kunai/storage, which owns HistoryProgress. Lower layers
 // (domain/queue) need this predicate too and must not import upward.
