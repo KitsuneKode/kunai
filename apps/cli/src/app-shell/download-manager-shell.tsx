@@ -230,6 +230,14 @@ export function DownloadManagerContent({
   const confirmingSelectedJob = Boolean(
     selectedJob && confirmingDeletion?.jobId === selectedJob.id,
   );
+  const confirmationPrompt = confirmingDeletion?.deleteArtifact
+    ? "Press x again to delete files · any other key cancels"
+    : selectedJob &&
+        (selectedJob.status === "completed" ||
+          selectedJob.status === "completed-with-notes" ||
+          selectedJob.status === "repairable")
+      ? "Press X again to remove record · local files kept"
+      : "Press x or X again to remove record · local files kept";
   const settledPosterUrl = useSettledValue(selectedJob?.posterUrl);
   const railPoster = useRailPoster(settledPosterUrl, {
     rows: 12,
@@ -492,7 +500,7 @@ export function DownloadManagerContent({
         {isConfirming(index) ? (
           <Box marginLeft={2}>
             <Text color={palette.accentDeep} bold>
-              Press x again to remove this download
+              {confirmationPrompt}
             </Text>
           </Box>
         ) : null}
@@ -565,9 +573,7 @@ export function DownloadManagerContent({
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
             {"⚠ "}
-            {confirmingDeletion?.deleteArtifact
-              ? "Press x again to delete files · any other key cancels"
-              : "Press x or X again to remove record · local files kept"}
+            {confirmationPrompt}
           </Text>
         </Box>
       ) : showSelectionHints ? (

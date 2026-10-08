@@ -335,23 +335,44 @@ test("delete confirmation cannot transfer to a replacement row after refresh", a
   }
 });
 
-test("Downloads provides an explicit record-only removal that keeps local files", async () => {
-  const fixture = createContainerFixture();
-  fixture.setCompletedJobs([queuedJob({ status: "completed" })]);
-  const handle = render(
-    <DownloadManagerContent container={fixture.container} onClose={() => undefined} />,
-    { columns: 120, rows: 35 },
-  );
-  try {
-    await act(async () => {
-      handle.stdin.enqueue("X");
-    });
-    expect(stripAnsi(handle.lastFrame() ?? "")).toContain("local files kept");
-    await act(async () => {
-      handle.stdin.enqueue("X");
-    });
-    expect(fixture.removalOptions).toEqual([{ deleteArtifact: false }]);
-  } finally {
-    handle.unmount();
-  }
-});
+test.each([
+  "completed",
+  "completed-with-notes",
+  "repairable",
+] satisfies DownloadJobRecord["status"][])(
+  "Downloads advertises the exact record-only confirmation key for %s",
+  async (status) => {
+    const fixture = createContainerFixture();
+    const job = queuedJob({ status });
+    if (status === "repairable") fixture.setFailedJobs([job]);
+    else fixture.setCompletedJobs([job]);
+    const handle = render(
+      <DownloadManagerContent container={fixture.container} onClose={() => undefined} />,
+      { columns: 120, rows: 35 },
+    );
+    try {
+      await act(async () => {
+        handle.stdin.enqueue("X");
+      });
+      const frame = stripAnsi(handle.lastFrame() ?? "");
+      expect(frame.match(/Press X again to remove record/g)).toHaveLength(2);
+      expect(frame).not.toContain("Press x or X again");
+      expect(frame).not.toContain("Press x again to remove this download");
+      await act(async () => {
+        handle.stdin.enqueue("x");
+      });
+      expect(fixture.removed).toEqual([]);
+      expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Press x again to delete files");
+      await act(async () => {
+        handle.stdin.enqueue("X");
+      });
+      expect(fixture.removed).toEqual([]);
+      await act(async () => {
+        handle.stdin.enqueue("X");
+      });
+      expect(fixture.removalOptions).toEqual([{ deleteArtifact: false }]);
+    } finally {
+      handle.unmount();
+    }
+  },
+);
