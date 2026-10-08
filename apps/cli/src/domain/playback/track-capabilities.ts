@@ -202,9 +202,9 @@ export function serverAudioBadge(
  * - A row is selectable when it is a real alternative the user can force (`available`,
  *   or auto-skipped/failed sources the user may retry manually).
  * - The current row and informational rows render as facts (`enabled: false`).
- * - Subtitles are informational by default — Kunai attaches tracks to mpv — and
- *   are only selectable when the backend exposes a pre-play choice that changes
- *   stream resolution (`restartRequired`).
+ * - Subtitles attach in mpv: external tracks and "off" switch live via the
+ *   player (`sub-add`/`sid`); stream-embedded tracks stay selectable only as a
+ *   pre-play choice that changes stream resolution (`restartRequired`).
  */
 export function buildTrackCapabilities(
   view: PlaybackSourceInventoryView | null | undefined,
@@ -308,16 +308,21 @@ export function buildTrackCapabilities(
   }
 
   for (const option of view.subtitleOptions) {
-    // Informational unless the backend exposes a true pre-play choice that
-    // changes resolution; otherwise switching belongs to mpv.
+    // External tracks and "off" switch live through mpv (`sub-add`/`sid`) — no
+    // restart. Stream-embedded tracks (restartRequired) ride the stream switch.
     const preplayChoice = option.restartRequired && option.state === "available";
+    const liveSwitchable =
+      !option.restartRequired &&
+      option.state === "available" &&
+      (option.delivery === "external" || option.delivery === "off");
+    const pickable = preplayChoice || liveSwitchable;
     push({
       section: "subtitle",
       label: option.label,
       value: option.subtitleUrl ?? option.id,
       selected: option.state === "selected",
-      enabled: preplayChoice,
-      reason: preplayChoice
+      enabled: pickable,
+      reason: pickable
         ? option.disabledReason
         : (option.disabledReason ?? "attached in mpv · switch in the player"),
       detail: detailFromNativeLabels(option.nativeLabels, option.label),

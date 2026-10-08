@@ -183,6 +183,7 @@ export async function resolveDirectStreamSource(
     }
 
     let streamReachabilityVerified: boolean | undefined;
+    const refusedStreamIds = new Set<string>();
     if (resolveGateProbe) {
       let gateFailure: ProviderFailure | undefined;
 
@@ -226,6 +227,12 @@ export async function resolveDirectStreamSource(
 
         const probe = verdict.probe;
         const reason = verdict.reason;
+        // The gate refused this candidate definitively — drop it from the
+        // shipped inventory below so selection cannot hand mpv the exact
+        // stream the probe just rejected. Same-host siblings stay: a per-object
+        // refusal (expired transcode, missing file) is not evidence the host
+        // itself is down, and unprobed rungs were always shipped unprobed.
+        refusedStreamIds.add(candidate.id);
         // Keep the first rejection: it is the highest-ranked candidate, so it
         // describes the failure the user would otherwise have seen.
         gateFailure ??= {
@@ -284,13 +291,17 @@ export async function resolveDirectStreamSource(
       attributes: { streams: streams.length },
     });
 
+    // Ship the inventory without the rungs the gate refused — leaving them in
+    // lets a later quality/source pick select the exact stream the probe
+    // rejected.
+    const liveStreams = streams.filter((stream) => !refusedStreamIds.has(stream.id));
     const subtitles = normalizeSubtitles(
       payload?.subtitles ?? [],
       providerId,
       sourceId,
       cachePolicy,
     );
-    const variants = streams.map<ProviderVariantCandidate>((stream) => ({
+    const variants = liveStreams.map<ProviderVariantCandidate>((stream) => ({
       id: stream.variantId ?? stream.id,
       providerId,
       sourceId,
@@ -335,7 +346,7 @@ export async function resolveDirectStreamSource(
           cachePolicy,
         },
       ],
-      streams,
+      streams: liveStreams,
       variants,
       subtitles,
       cachePolicy,

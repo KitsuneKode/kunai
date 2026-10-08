@@ -262,6 +262,34 @@ describe("shouldAttemptLateSubtitleLookup", () => {
     ).toBe(false);
   });
 
+  test("an attached fallback that does not match the request still looks up", () => {
+    // Provider attached its English default while "fr" was asked — the bare
+    // `stream.subtitle` check used to report "attached" and skip Wyzie.
+    const decision = shouldAttemptLateSubtitleLookup({
+      stream: {
+        ...BASE_STREAM,
+        subtitle: "https://cdn.example/en.vtt",
+      },
+      requestedSubLang: "fr",
+      hasTmdbId: true,
+    });
+    expect(decision.attempt).toBe(true);
+    expect(decision.reason).toBe("needs-lookup");
+  });
+
+  test("an attached track whose provenance is unknown still settles the request", () => {
+    const decision = shouldAttemptLateSubtitleLookup({
+      stream: {
+        ...BASE_STREAM,
+        subtitle: "https://cdn.example/from-elsewhere.vtt",
+      },
+      requestedSubLang: "fr",
+      hasTmdbId: true,
+    });
+    expect(decision.attempt).toBe(false);
+    expect(decision.reason).toBe("attached");
+  });
+
   test("skips late lookup without a proven TMDB id", () => {
     const decision = shouldAttemptLateSubtitleLookup({
       stream: {

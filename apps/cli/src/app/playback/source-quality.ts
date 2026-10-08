@@ -651,7 +651,7 @@ function describeProjectedSourceLabel(
   return source?.label ?? source?.host ?? candidate.sourceId ?? result.providerId;
 }
 
-function collectSubtitleTracks(stream: StreamInfo): readonly SubtitleTrack[] {
+export function collectSubtitleTracks(stream: StreamInfo): readonly SubtitleTrack[] {
   const fromStream = stream.subtitleList ?? [];
   const fromProvider =
     stream.providerResolveResult?.subtitles.map((subtitle) => ({

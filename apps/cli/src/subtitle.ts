@@ -5,7 +5,11 @@
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { dbg, dbgErr } from "@/logger";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
-import { looksLikeHiSubtitle, subtitleLanguageDisplayName } from "@kunai/providers";
+import {
+  looksLikeHiSubtitle,
+  normalizeIsoLanguageCode,
+  subtitleLanguageDisplayName,
+} from "@kunai/providers";
 
 export type SubtitleEntry = {
   id?: string;
@@ -41,6 +45,13 @@ export function langMatches(entryLang: string, preferred: string): boolean {
   const pl = preferred.toLowerCase().trim();
   if (!el || !pl) return false;
   if (el === pl || el.startsWith(pl + "-") || pl.startsWith(el + "-")) return true;
+
+  // Downloaded sidecars and some provider tracks arrive as ISO-2 ("eng",
+  // "fra") while the request is ISO-1 ("en", "fr") — normalize before the
+  // remaining checks so those tracks aren't silently lost.
+  const elCode = normalizeIsoLanguageCode(el);
+  const plCode = normalizeIsoLanguageCode(pl);
+  if (elCode && plCode && elCode === plCode) return true;
 
   // ISO 639-1 codes ↔ English full names live in @kunai/providers'
   // subtitleLanguageDisplayName (ISO_2_LANGUAGE_NAME) — a second, smaller

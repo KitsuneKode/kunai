@@ -17,6 +17,12 @@ export class PlaybackSelectionCoordinator {
       readonly titleId: string;
       readonly episodePlaybackSelection: EpisodePlaybackSelectionService;
       readonly titlePlaybackSource: TitlePlaybackSourceService;
+      /**
+       * Endpoint-health quarantine check for a pinned source. A quarantined pin
+       * is never served — hydrating and persisting can both leave a stale pin
+       * behind, and the resolve service already deletes the durable row.
+       */
+      readonly isSourceQuarantined?: (providerId: string, sourceId: string) => boolean;
     },
   ) {}
 
@@ -84,6 +90,10 @@ export class PlaybackSelectionCoordinator {
         : null,
       titleSourceId: titleSourceId && titleSourceId.length > 0 ? titleSourceId : null,
     });
+    const pinnedId = resolved.sourceId ?? resolved.streamId;
+    if (pinnedId && this.deps.isSourceQuarantined?.(providerId, pinnedId)) {
+      return { sourceId: null, streamId: null };
+    }
     return {
       sourceId: resolved.sourceId,
       streamId: resolved.streamId,
@@ -125,16 +135,20 @@ export class PlaybackSelectionCoordinator {
   }
 
   /**
-   * Pin an automatic recovery choice to this episode only. A failover is runtime
-   * evidence that the previous source failed for one playback intent, not a user
-   * preference that should silently replace the title-wide default.
+   * Pin an automatic recovery choice to this episode, in memory only. A failover
+   * is runtime evidence that the previous source failed for one playback intent,
+   * not a user preference — persisting it would turn a transient outage into a
+   * durable per-episode pin that survives restarts.
    */
   async applyAutomaticSourceFailover(
     providerId: string,
     episode: EpisodeInfo,
     sourceId: string,
   ): Promise<void> {
-    await this.applyEpisodeSelection(providerId, episode, { sourceId, streamId: null });
+    this.episodeByKey.set(this.episodeKey(providerId, episode), {
+      sourceId,
+      streamId: null,
+    });
   }
 
   clearEpisode(providerId: string, episode: EpisodeInfo): void {

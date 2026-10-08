@@ -287,7 +287,7 @@ export async function runPostPlaybackMenu(
         container,
       );
       const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-      if (picked && selection) {
+      if (picked && (selection || picked.section === "subtitle")) {
         run.pendingStart = await deps.completeSourceTrackPick(
           currentEpisode,
           picked,
@@ -535,7 +535,7 @@ export async function runPostPlaybackMenu(
       if (postAction.type === "track-selection") {
         const picked = postAction.pick;
         const selection = streamSelectionFromTrackPick(picked);
-        if (!selection) {
+        if (!selection && picked.section !== "subtitle") {
           continue postPlayback;
         }
         const fromProviderId = resolvedProviderId;
@@ -549,12 +549,18 @@ export async function runPostPlaybackMenu(
         run.playbackSession = deps.transitionPlaybackSession(
           run.playbackSession,
           "episode-navigation",
-          buildTrackPickTransitionContext({
-            titleId: title.id,
-            episode: currentEpisode,
-            selection,
-            fromProviderId,
-          }),
+          selection
+            ? buildTrackPickTransitionContext({
+                titleId: title.id,
+                episode: currentEpisode,
+                selection,
+                fromProviderId,
+              })
+            : {
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+              },
         );
         break postPlayback;
       }

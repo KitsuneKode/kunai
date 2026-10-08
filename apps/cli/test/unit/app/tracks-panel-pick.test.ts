@@ -34,6 +34,21 @@ describe("matchTrackSelectionAgainstInventory", () => {
     ).toContain("no longer available");
   });
 
+  test("a source listed without a stream yet is not stale", () => {
+    // Cycle providers list skipped/deferred sources that resolve on demand —
+    // the source exists in `sources` but owns no row in `streams`, and a
+    // streams-only check would drop the pick as stale.
+    expect(
+      matchTrackSelectionAgainstInventory(
+        { sourceId: "deferred", streamId: null },
+        {
+          streams: [{ id: "s1", sourceId: "a" }],
+          sources: [{ id: "a" }, { id: "deferred" }],
+        },
+      ),
+    ).toBeNull();
+  });
+
   test("a missing cache row is not staleness", () => {
     expect(
       matchTrackSelectionAgainstInventory({ sourceId: null, streamId: "s1" }, null),

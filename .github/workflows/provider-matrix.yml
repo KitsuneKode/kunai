@@ -84,6 +84,15 @@ jobs:
           KUNAI_LIVE_PROVIDER_TESTS: "1"
         run: bun test test/integration/anime-discovery-resolve-handoff.test.ts
 
+      # AllManga's upstream rotates every crypto constant at once, roughly
+      # monthly. This smoke checks the pinned set against the live mkissa
+      # chunk; without a scheduled leg, rotation rots silently between manual
+      # runs. A red run is the alert — the fix is a code update, not a retry.
+      - name: AllManga crypto freshness (live)
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.mode != 'release-signoff' }}
+        working-directory: apps/cli
+        run: bun run test:live:allmanga-crypto
+
       - name: Run default-route release signoff
         id: release_signoff
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'release-signoff' }}

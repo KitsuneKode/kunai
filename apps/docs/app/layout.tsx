@@ -13,6 +13,11 @@ import { RootProvider } from "fumadocs-ui/provider/next";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
+// Vercel preview deployments resolve their canonical to the production alias,
+// but the preview URL itself is still reachable and indexable if linked — a
+// linked preview would index duplicate content under a Vercel domain.
+const isPreviewDeployment = process.env.VERCEL_ENV === "preview";
+
 export const metadata: Metadata = {
   metadataBase: new URL(docsSiteUrl),
   title: {
@@ -30,6 +35,7 @@ export const metadata: Metadata = {
     "media cli",
     "command line streaming",
   ],
+  ...(isPreviewDeployment ? { robots: { index: false, follow: false } } : {}),
 };
 
 export const viewport: Viewport = {

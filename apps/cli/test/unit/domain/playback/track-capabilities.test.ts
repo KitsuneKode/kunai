@@ -187,9 +187,21 @@ describe("buildTrackCapabilities", () => {
     expect(source?.selectable).toBe(true);
   });
 
-  test("subtitles are informational unless the backend exposes a pre-play choice", () => {
-    const informational = buildTrackCapabilities(
+  test("external subtitles switch live; embedded ones need a restartable choice", () => {
+    // External tracks and "off" are applied to the running player via
+    // sub-add/sid — no restart — so they are real rows.
+    const live = buildTrackCapabilities(
       view({ subtitleOptions: [subtitle({ restartRequired: false })] }),
+    )[0];
+    expect(live?.selectable).toBe(true);
+    expect(live?.rows[0]?.enabled).toBe(true);
+
+    // An embedded track that is not a pre-play stream choice stays a fact —
+    // picking it could not change anything.
+    const informational = buildTrackCapabilities(
+      view({
+        subtitleOptions: [subtitle({ restartRequired: false, delivery: "embedded" })],
+      }),
     )[0];
     expect(informational?.selectable).toBe(false);
     expect(informational?.rows[0]?.enabled).toBe(false);

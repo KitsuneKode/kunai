@@ -1,7 +1,7 @@
-import { RELAYED_RESPONSE_HEADER } from "@kunai/types";
+import { RELAYED_RESPONSE_HEADER, relayErrorCodeFromResponse } from "@kunai/types";
 
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
-import { RELAY_ERROR_CODE_HEADER, type RelayRpcRequest } from "./types";
+import type { RelayRpcRequest } from "./types";
 import type { RelayFetchPort, RelayFetchPortOptions } from "./types";
 
 type RelayHeadersInit = ConstructorParameters<typeof Headers>[0];
@@ -67,7 +67,7 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
           body: JSON.stringify(requestInfo),
           signal: init?.signal,
         });
-        if (fallbackToDirect && isRelayAuthorizationFailure(response)) {
+        if (fallbackToDirect && isRelayLocalRefusal(response)) {
           return fetchImpl(input, init);
         }
         return markRelayedResponse(response);
@@ -97,12 +97,37 @@ function markRelayedResponse(response: Response): Response {
   });
 }
 
-function isRelayAuthorizationFailure(response: Response): boolean {
-  const code = response.headers.get(RELAY_ERROR_CODE_HEADER);
-  return (
-    (response.status === 503 && code === "relay-not-configured") ||
-    (response.status === 401 && code === "unauthorized")
-  );
+/**
+ * Codes the relay emits for requests it refused itself, as opposed to
+ * `upstream-error`/`upstream-timeout`, which report that the relay proxied the
+ * request and upstream failed — that is a real upstream verdict and stays
+ * marked-final. A local refusal reaching a provider as a bare status is how a
+ * stale deployment's `unknown-provider` 404 got misread as "title missing"
+ * upstream, so under `fallbackToDirect` these fall back instead.
+ */
+const RELAY_LOCAL_REFUSAL_CODES: ReadonlySet<string> = new Set([
+  "unknown-provider",
+  "provider-not-relayable",
+  "host-not-allowed",
+  "protocol-not-allowed",
+  "method-not-allowed",
+  "headers-rejected",
+  "body-too-large",
+  "response-too-large",
+  "redirect-not-allowed",
+  "relay-not-configured",
+  "unauthorized",
+  "bad-request",
+]);
+
+function isRelayLocalRefusal(response: Response): boolean {
+  // Header only — never the body. At this boundary an untrusted upstream body
+  // must not control the fallback decision: a payload spoofing the refusal
+  // shape would otherwise force a direct bypass the user did not ask for.
+  // Body-level compat for stale relays lives in `relayLocalErrorCode` on the
+  // provider side, where it only reclassifies — it cannot trigger a bypass.
+  const code = relayErrorCodeFromResponse(response);
+  return code !== null && RELAY_LOCAL_REFUSAL_CODES.has(code);
 }
 
 async function toRelayRequest(

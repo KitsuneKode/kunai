@@ -914,9 +914,12 @@ export class PlaybackResolveService {
     cacheKey: string,
   ): Promise<StreamInfo | null> {
     try {
-      const cached = await this.deps.cacheStore.get(cacheKey);
-      if (cached || input.providerId !== "videasy") return cached;
-      return await this.deps.cacheStore.get(this.buildCacheKey(input, "vidking"));
+      // The old vidking fallback here was dead weight that turned harmful:
+      // `buildCacheKey(input, "vidking")` resolves the vidking→videasy alias
+      // and drops the selection scope, so it read the unscoped canonical key —
+      // the same key a pinned resolve just missed, resurrecting the unpinned
+      // stream and silently ignoring the user's source pin.
+      return await this.deps.cacheStore.get(cacheKey);
     } catch {
       return null;
     }
@@ -1173,7 +1176,7 @@ function buildProviderTimeline(
   return timeline.snapshot();
 }
 
-function endpointCandidatesForPinnedSource(
+export function endpointCandidatesForPinnedSource(
   providerId: string,
   sourceId: string,
 ): readonly string[] {

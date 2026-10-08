@@ -274,6 +274,22 @@ export const animeggProviderModule: CoreProviderModule = {
     if (!picked) {
       return fail("not-found", `AnimeGG has no player for ${slug} episode ${episode}`);
     }
+    // The tab list declares every version the episode actually has — subbed,
+    // dubbed, or both — so the panel can offer the other lane instead of a
+    // silent same-mode re-resolve.
+    const availableModes = [
+      ...new Set(
+        tabs.map((tab) => (tab.version === "dubbed" ? ("dub" as const) : ("sub" as const))),
+      ),
+    ];
+    if (availableModes.length > 0) {
+      emitTraceEvent(events, context, {
+        type: "inventory:audio-modes",
+        providerId: ANIMEGG_PROVIDER_ID,
+        message: `AnimeGG episode exposes ${availableModes.join(" and ")} audio modes`,
+        attributes: { modes: availableModes.join(",") },
+      });
+    }
     if (picked.fellBack) {
       emitTraceEvent(events, context, {
         type: "audio:fallback",
