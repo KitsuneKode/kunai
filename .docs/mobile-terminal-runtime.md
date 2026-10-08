@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-03"
+lastReviewed: "2026-10-08"
 ---
 
 # Mobile terminal runtime
@@ -129,8 +129,14 @@ decision for the Node package actually used on-device.
 One session owns the state transaction from load through final commit. Android
 acquires an exclusive `session.lock` directory lazily; help/version do not lock.
 The iOS launcher locks before staging arguments or cleaning transport files.
-Normal exit releases ownership. An uncatchable termination can leave a lock;
-recovery is explicit rather than guessing whether another session is alive.
+Android acquisition, dead-owner recovery, and release share a fail-fast ticket
+transition protocol. Release compares a unique owner generation, so a retired
+session cannot erase its successor. PID liveness plus Linux process start ticks
+qualify dead-owner recovery; ownerless directories, permission uncertainty, corrupt records, and live
+choosing tickets fail closed. A busy transition can be retried after the competing
+launch finishes. Normal exit releases ownership; a killed Android session can be
+recovered on relaunch. Close older processes before upgrading. iOS recovery
+remains explicit. Device qualification is separate from local Node-worker proof.
 
 Both state adapters restore a valid sole backup before retrying a failed write.
 They restore committed state before cleaning an unsuccessful temporary
