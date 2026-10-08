@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { TTLCache } from "../src/shared/provider-cache";
+import { HealthTracker, TTLCache } from "../src/shared/provider-cache";
 
 describe("TTLCache expiry", () => {
   test("deletes an expired entry on access rather than returning it", () => {
@@ -98,5 +98,35 @@ describe("TTLCache size bound", () => {
 
     expect(cache.size).toBe(0);
     expect(cache.get("a")).toBeUndefined();
+  });
+});
+
+describe("HealthTracker cooldown", () => {
+  test("cools down after max failures and recovers past the deadline", () => {
+    let now = 1_000;
+    const tracker = new HealthTracker(60_000, 2, { now: () => now });
+
+    expect(tracker.recordFailure("srv")).toBe(true);
+    expect(tracker.shouldTry("srv")).toBe(true);
+    expect(tracker.recordFailure("srv")).toBe(false);
+    expect(tracker.shouldTry("srv")).toBe(false);
+    expect(tracker.failureCount("srv")).toBe(2);
+
+    now = 61_001;
+    expect(tracker.shouldTry("srv")).toBe(true);
+    // Expiry resets the count, so the next failure starts over.
+    expect(tracker.failureCount("srv")).toBe(0);
+    expect(tracker.recordFailure("srv")).toBe(true);
+  });
+
+  test("success clears failures and cooldowns", () => {
+    let now = 0;
+    const tracker = new HealthTracker(60_000, 1, { now: () => now });
+
+    expect(tracker.recordFailure("srv")).toBe(false);
+    expect(tracker.shouldTry("srv")).toBe(false);
+    tracker.recordSuccess("srv");
+    expect(tracker.shouldTry("srv")).toBe(true);
+    expect(tracker.failureCount("srv")).toBe(0);
   });
 });

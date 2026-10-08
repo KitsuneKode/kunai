@@ -20,4 +20,10 @@ other mpv invocation.
 
 Provider cache bounds: the five AniDB TTL caches and the two AllManga
 show/source caches now carry entry ceilings (256/512), so a long session
-browsing many titles cannot grow them without bound.
+browsing many titles cannot grow them without bound. The shared
+`HealthTracker` also takes an injectable clock like `TTLCache`, so cooldown
+expiry is unit-testable without real time.
+
+Settings saves are no longer silent: a failed persist surfaces in the settings
+error row and the diagnostics bundle, and exiting settings within the 300ms
+debounce window flushes the pending draft on unmount instead of dropping it.

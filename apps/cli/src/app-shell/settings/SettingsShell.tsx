@@ -132,14 +132,47 @@ export function SettingsShell({
     [container, onStatus, page.defById, registryCtx],
   );
 
+  // A failed save must reach the user and the support bundle, not vanish into
+  // a void promise: settings silently not sticking is otherwise undiagnosable.
+  const reportSaveFailure = useCallback(
+    (error: unknown) => {
+      const detail = error instanceof Error ? error.message : String(error);
+      container.diagnosticsService.record({
+        category: "session",
+        message: "Settings persist failed",
+        context: { error: detail },
+      });
+      setState((current) => ({ ...current, error: `Couldn't save settings: ${detail}` }));
+    },
+    [container],
+  );
+
+  // The debounced save above dies with the shell: exiting settings within
+  // 300ms of the last edit silently dropped the draft. Flush best-effort on
+  // unmount; persistSettingsDraft no-ops when nothing changed.
+  const draftRef = useRef(state.draft);
+  draftRef.current = state.draft;
+  useEffect(
+    () => () => {
+      void persistSettingsDraft(container, draftRef.current).catch((error: unknown) => {
+        container.diagnosticsService.record({
+          category: "session",
+          message: "Settings draft lost on close: final persist failed",
+          context: { error: error instanceof Error ? error.message : String(error) },
+        });
+      });
+    },
+    [container],
+  );
+
   useEffect(() => {
     if (settingsEqual(state.draft, container.config.getRaw())) return;
     const next = state.draft;
     const timer = setTimeout(() => {
-      void persistSettingsDraft(container, next);
+      void persistSettingsDraft(container, next).catch(reportSaveFailure);
     }, 300);
     return () => clearTimeout(timer);
-  }, [state.draft, container]);
+  }, [state.draft, container, reportSaveFailure]);
 
   useEffect(() => () => actionAbortRef.current?.abort(), []);
 
@@ -167,7 +200,7 @@ export function SettingsShell({
         return;
       }
       if (result.persist === "immediate") {
-        void persistSettingsDraft(container, result.state.draft);
+        void persistSettingsDraft(container, result.state.draft).catch(reportSaveFailure);
       }
       if (result.runActionId) {
         void runAction(result.runActionId);

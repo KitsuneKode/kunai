@@ -84,14 +84,23 @@ export class TTLCache<K, V> {
  * Tracks server/endpoint health with failure cooldown.
  * Skips servers that have failed recently to avoid hammering known-bad endpoints.
  */
+export type HealthTrackerOptions = {
+  /** Injectable clock so cooldown expiry is testable without real time. */
+  readonly now?: () => number;
+};
+
 export class HealthTracker {
   private readonly cooldowns = new Map<string, number>();
   private readonly failureCounts = new Map<string, number>();
+  private readonly now: () => number;
 
   constructor(
     private readonly cooldownMs: number,
     private readonly maxFailures: number,
-  ) {}
+    options: HealthTrackerOptions = {},
+  ) {
+    this.now = options.now ?? Date.now;
+  }
 
   /** Mark a server as failed. Returns true if it should still be tried (within failure limit). */
   recordFailure(id: string): boolean {
@@ -99,7 +108,7 @@ export class HealthTracker {
     this.failureCounts.set(id, count);
 
     if (count >= this.maxFailures) {
-      this.cooldowns.set(id, Date.now() + this.cooldownMs);
+      this.cooldowns.set(id, this.now() + this.cooldownMs);
       return false;
     }
     return true;
@@ -115,7 +124,7 @@ export class HealthTracker {
   shouldTry(id: string): boolean {
     const cooldown = this.cooldowns.get(id);
     if (!cooldown) return true;
-    if (Date.now() >= cooldown) {
+    if (this.now() >= cooldown) {
       this.cooldowns.delete(id);
       this.failureCounts.delete(id);
       return true;
