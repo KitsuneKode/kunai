@@ -1,6 +1,11 @@
 import {
   allmangaProviderModule,
   anidbProviderModule,
+  animeggProviderModule,
+  hianimeProviderModule,
+  kickassanimeProviderModule,
+  movyProviderModule,
+  vidrockProviderModule,
   miruroProviderModule,
   rivestreamProviderModule,
   videasyProviderModule,
@@ -15,6 +20,11 @@ export const relayProviderModules = [
   allmangaProviderModule,
   anidbProviderModule,
   miruroProviderModule,
+  hianimeProviderModule,
+  animeggProviderModule,
+  kickassanimeProviderModule,
+  vidrockProviderModule,
+  movyProviderModule,
 ] as const;
 
 export const relayRegistry = buildProviderRelayRegistry(relayProviderModules);
