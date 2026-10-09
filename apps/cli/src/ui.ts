@@ -325,10 +325,6 @@ export async function checkDeps(
   const silent = options.silent ?? false;
   const snapshot = await probeCapabilities({ requireYtDlp: options.requireYtDlp });
 
-  if (!snapshot.mpv && !silent) {
-    console.error("mpv not found — required for playback (shell still available).");
-  }
-
   const fingerprint = capabilityFingerprint(snapshot);
   const previous = await loadCapabilityNoticeState();
   const shouldShowRemediation =

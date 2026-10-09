@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import * as mpvDiscovery from "@/infra/player/mpv-discovery";
 import { checkDeps } from "@/ui";
 import { getKunaiPaths } from "@kunai/storage";
 
@@ -64,5 +65,25 @@ describe("capability notice state", () => {
     expect(notice).toBeDefined();
     // The path in the warning is home-redacted, matching every other surface.
     expect(notice).not.toContain(configDir);
+  });
+
+  test("missing mpv is announced once on first launch", async () => {
+    await isolatedRoot();
+    const discovery = spyOn(mpvDiscovery, "discoverMpvInvocation").mockReturnValue(null);
+    const lines: string[] = [];
+    const originalError = console.error;
+    const originalLog = console.log;
+    console.error = (line: string) => lines.push(String(line));
+    console.log = (line: string) => lines.push(String(line));
+    try {
+      await checkDeps("0.0.0-test", { silent: false });
+    } finally {
+      console.error = originalError;
+      console.log = originalLog;
+      discovery.mockRestore();
+    }
+
+    const mpv = lines.filter((line) => line.includes("mpv not found"));
+    expect(mpv).toHaveLength(1);
   });
 });

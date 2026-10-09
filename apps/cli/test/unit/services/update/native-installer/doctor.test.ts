@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
+import { buildRemediationLines, MPV_INSTALL } from "@/infra/os/install-commands";
 import {
   buildDoctorReport,
   formatDoctorReportText,
@@ -235,6 +236,41 @@ describe("buildDoctorReport", () => {
     expect(text).toContain("Manifest");
     expect(text).toContain("1.0.0");
     expect(text).toContain("Remediation");
+  });
+
+  test("missing-mpv text names the gap once and keeps remediation labels unglued", async () => {
+    // KIT-82: a dedicated console.error plus the finding used to print
+    // "mpv not found" twice, and padEnd(8) glued "openSUSE" onto "sudo zypper".
+    // Doctor's text path is this formatter; the labels must come from the same
+    // helper the shell and setup screen use so a pad regression cannot hide in
+    // a hand-written remediation string.
+    const { root, layout } = await makeRoot();
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      probeCapabilities: async () =>
+        emptyCapabilities({
+          mpv: false,
+          issues: [
+            {
+              id: "mpv-missing",
+              severity: "degraded",
+              message: "mpv not found — required for playback (shell still available).",
+              install: MPV_INSTALL,
+              remediation: [...buildRemediationLines(MPV_INSTALL)],
+            },
+          ],
+        }),
+    });
+
+    const text = formatDoctorReportText(report);
+    expect(text.match(/mpv not found/g)).toEqual(["mpv not found"]);
+    expect(text).not.toContain("openSUSEsudo");
+    expect(text).toMatch(/openSUSE\s+sudo zypper install mpv/);
   });
 
   test("treats curl helper execution failure as an error finding", async () => {
