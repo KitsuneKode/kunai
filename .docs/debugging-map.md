@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-02"
+lastReviewed: "2026-10-09"
 ---
 
 # Kunai Debugging Map
@@ -219,6 +219,14 @@ connecting — so the relay asks
 [`infra/os/curl-features`](../apps/cli/src/infra/os/curl-features.ts) first and
 drops the flag rather than failing the stream. The installer still offers the
 `cURL.cURL` upgrade even when it just installed curl-impersonate.
+
+**`kunai doctor` prints `mpv not found` twice, or glues `openSUSEsudo`.** First
+launch used to `console.error` the mpv line and then print the same
+`CapabilityIssue` from `checkDeps`. Doctor itself prints the message once in
+Findings; remediation labels are `padEnd` of the longest platform name plus one
+space (`buildRemediationLines` in `infra/os/install-commands.ts`). PATH
+candidates list PATH, not HOME: the winner is the first `kunai` on `PATH`, even
+when `HOME` points at a shadow install.
 
 **Tests fail in teardown after passing.** `rmSync` on a directory holding an open
 SQLite handle raises EBUSY on Windows — POSIX unlinks open files, Windows does

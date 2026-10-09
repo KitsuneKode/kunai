@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-04"
+lastReviewed: "2026-10-09"
 ---
 
 # Feature Map
@@ -124,6 +124,7 @@ Do not reuse these nouns for anything else.
 | Feature                               | Owned by                                                                                        | Docs                                                                                                             |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `/diagnostics`, `/export-diagnostics` | `apps/cli/src/services/diagnostics/*`, `app-shell/diagnostics/*`                                | [diagnostics-guide.md](./diagnostics-guide.md)                                                                   |
+| `kunai doctor`                        | `apps/cli/src/services/update/run-doctor.ts`, `native-installer/doctor.ts`                      | [debugging-map.md](./debugging-map.md)                                                                           |
 | Debug logging, tracing                | `apps/cli/src/logger.ts`, `infra/tracer/*`, `infra/diagnostics/*`                               | [diagnostics-guide.md](./diagnostics-guide.md)                                                                   |
 | Usage analytics (opt-in)              | `apps/cli/src/services/analytics/*`, `apps/cli/src/domain/analytics/*`, `apps/analytics-ingest` | [analytics-privacy-contract.md](./analytics-privacy-contract.md)                                                 |
 | Discord Rich Presence                 | `apps/cli/src/services/presence/*`                                                              | [presence-integrations.md](./presence-integrations.md)                                                           |

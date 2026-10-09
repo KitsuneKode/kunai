@@ -1,10 +1,11 @@
 // =============================================================================
 // CapabilityIssueStrip.tsx — what's missing, said once, at the top of the shell
 //
-// Before this, a missing dependency was announced by a single `console.error`
-// in `checkDeps` that the Ink shell painted over milliseconds later, plus a
-// diagnostics entry nobody reads. A user with no mpv got a shell that silently
-// could not play anything until they tried.
+// Before this, a missing dependency was announced by `checkDeps` printing the
+// same `mpv not found` line twice (a dedicated console.error plus the issues
+// loop) that the Ink shell painted over milliseconds later, plus a diagnostics
+// entry nobody reads. A user with no mpv got a shell that silently could not
+// play anything until they tried.
 //
 // Three rules keep it from becoming the warning banner people learn to ignore:
 //
