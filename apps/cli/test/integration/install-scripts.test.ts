@@ -2425,6 +2425,10 @@ describe("install.sh optional dependency consent", () => {
       // must still show the planned command — same branch as install.ps1.
       expect(output).not.toContain("[RAN]");
       expect(output).toContain("sudo pacman -S --needed mpv yt-dlp");
+      // The verb has to match the next step: this process will not run apt/pacman.
+      expect(output).not.toContain("This will run");
+      expect(output).toContain("Run this to install them:");
+      expect(output.split("sudo pacman -S --needed mpv yt-dlp").length - 1).toBe(1);
     }
   });
 });

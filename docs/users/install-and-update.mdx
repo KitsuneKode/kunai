@@ -177,9 +177,11 @@ skipped. Before 0.3.0 a missing terminal defaulted to yes and could run
 ### Optional dependencies
 
 Kunai needs `mpv` to play anything, and `yt-dlp` for YouTube. **Package-manager
-installs are never run for you.** The installer checks whether they are already
-present, and if they are not it prints the exact command for your package
-manager:
+installs are never run unless you confirm on a real terminal.** The installer
+checks whether they are already present, and if they are not it prints the exact
+command for your package manager.
+
+On a TTY it offers to run that command:
 
 ```
 ! mpv is not installed — Kunai needs it to play anything.
@@ -190,10 +192,18 @@ manager:
 Run it now? [y/N]
 ```
 
+Without a terminal (`curl … | bash`, `--yes`, `--dry-run`) it does not claim it
+will run anything — it prints the same command as something you should run:
+
+```
+Run this to install them:
+    sudo pacman -S --needed mpv yt-dlp
+```
+
 Three rules hold for every package-manager prompt:
 
-- **The command is always shown**, before it is offered and again if you decline,
-  so nothing is hidden either way.
+- **The command is always shown**, with a verb that matches the next step, and
+  printed again if you decline, so nothing is hidden either way.
 - **The prompt defaults to no.** Pressing Enter never escalates.
 - **`--yes` does not answer this one.** It is consent to install Kunai, not
   consent to become root or to accept a third party's licence agreements. A run

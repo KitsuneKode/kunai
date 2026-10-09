@@ -2137,8 +2137,9 @@ missing_dependencies() {
 # installed packages without the user, or the package manager, confirming
 # anything. Three rules now hold:
 #
-#   - the exact command is shown before it is offered, and printed again if
-#     declined, so nothing is hidden either way;
+#   - the exact command is shown with a verb that matches the next step
+#     ("This will run" on a TTY prompt; "Run this to install them" otherwise),
+#     and printed again if declined, so nothing is hidden either way;
 #   - the prompt defaults to no, because Enter must never escalate;
 #   - `--yes` covers this installer, not a system package manager, and a run
 #     with no terminal prints instead of installing.
@@ -2178,17 +2179,21 @@ install_optional_deps() {
 		return 0
 	fi
 
-	printf '\n  This will run:\n    %s\n\n' "$command"
-
 	# `--yes` is consent to install Kunai, not consent to become root. A
 	# non-interactive run takes the same path, so `curl … | bash` in a container
 	# reports what is missing instead of quietly acquiring system packages.
 	# `--dry-run` prints the same way, matching install.ps1's -DryRun path.
+	#
+	# Print the command once, with a verb that matches whether this process will
+	# run it. "This will run" before the TTY check made piped installs look like
+	# they were about to escalate, then print the same command again as homework.
 	if [[ "$YES" == 1 || "$DRY" == 1 ]] || ! : 2>/dev/null </dev/tty; then
-		info "Install them with:"
+		info "Run this to install them:"
 		printf '    %s\n' "$command"
 		return 0
 	fi
+
+	printf '\n  This will run:\n    %s\n\n' "$command"
 
 	local reply=""
 	if ! read -r -p "Run it now? [y/N] " reply </dev/tty; then
