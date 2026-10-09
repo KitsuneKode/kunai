@@ -112,6 +112,48 @@ describe("install method detection", () => {
     expect(updateGuidanceForInstallMethod(method)).toContain("git pull");
   });
 
+  test("detects a source checkout when cwd is a package directory under the repo", () => {
+    const root = "/repo/kunai";
+    const files = new Set([`${root}/package.json`, `${root}/apps/cli/src/main.ts`, `${root}/.git`]);
+
+    expect(
+      detectInstallMethod({
+        cwd: `${root}/apps/cli`,
+        entrypoint: `${root}/apps/cli/src/main.ts`,
+        platform: "linux",
+        fileExists: (candidate) => files.has(candidate),
+      }).kind,
+    ).toBe("source");
+  });
+
+  test("detects a source checkout from a script entrypoint when cwd is outside the repo", () => {
+    const root = "/repo/kunai";
+    const files = new Set([`${root}/package.json`, `${root}/apps/cli/src/main.ts`, `${root}/.git`]);
+
+    expect(
+      detectInstallMethod({
+        cwd: "/tmp",
+        entrypoint: `${root}/apps/cli/src/main.ts`,
+        platform: "linux",
+        fileExists: (candidate) => files.has(candidate),
+      }).kind,
+    ).toBe("source");
+  });
+
+  test("does not treat a compiled binary inside the tree as a source checkout via entrypoint walk", () => {
+    const root = "/repo/kunai";
+    const files = new Set([`${root}/package.json`, `${root}/apps/cli/src/main.ts`, `${root}/.git`]);
+
+    expect(
+      detectInstallMethod({
+        cwd: "/tmp",
+        entrypoint: `${root}/apps/cli/dist/bin/kunai-linux-x64`,
+        platform: "linux",
+        fileExists: (candidate) => files.has(candidate),
+      }).kind,
+    ).toBe("binary");
+  });
+
   test("detects bun and npm global installs without running package managers", () => {
     expect(
       detectInstallMethod({
@@ -180,6 +222,23 @@ describe("install method detection", () => {
     expect(
       detectInstallMethod({
         cwd,
+        entrypoint: "C:\\Users\\k\\src\\kunai\\apps\\cli\\src\\main.ts",
+        platform: "win32",
+        fileExists: (candidate) => sourceFiles.has(candidate),
+      }).kind,
+    ).toBe("source");
+  });
+
+  test("detects a Windows source checkout when cwd is a package directory under the repo", () => {
+    const sourceFiles = new Set([
+      "C:\\Users\\k\\src\\kunai\\package.json",
+      "C:\\Users\\k\\src\\kunai\\apps\\cli\\src\\main.ts",
+      "C:\\Users\\k\\src\\kunai\\.git",
+    ]);
+
+    expect(
+      detectInstallMethod({
+        cwd: "C:\\Users\\k\\src\\kunai\\apps\\cli",
         entrypoint: "C:\\Users\\k\\src\\kunai\\apps\\cli\\src\\main.ts",
         platform: "win32",
         fileExists: (candidate) => sourceFiles.has(candidate),

@@ -270,7 +270,10 @@ Kunai's config, data, and cache directories are preserved.
 
 Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade or uninstall; lifecycle logic stays inside the binary.
 
-`kunai --version` shows the active install channel when `install.json` is present.
+`kunai --version` prints `kunai <version> (<channel>)`. `install.json` is
+authoritative when present; otherwise Kunai detects the channel from the
+checkout or launcher (`source`, `binary`, `npm-global`, `bun-global`, or `dev`
+when it cannot tell).
 
 ## Update checks
 

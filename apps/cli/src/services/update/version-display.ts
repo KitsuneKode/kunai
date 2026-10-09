@@ -1,7 +1,11 @@
 import { existsSync } from "node:fs";
 
 import { inspectInstallManifest } from "./install-manifest";
-import { detectInstallMethod, type DetectInstallMethodInput } from "./install-method";
+import {
+  detectInstallMethod,
+  type DetectInstallMethodInput,
+  type InstallMethodKind,
+} from "./install-method";
 
 export type FormatVersionLineOptions = {
   readonly configDir?: string;
@@ -21,6 +25,10 @@ export async function formatVersionLine(
       fileExists: existsSync,
       ...options.detectInstallMethodInput,
     }).kind;
-  const label = manifest?.method ? channel : `${channel} (detected)`;
-  return `kunai ${version} (${label})`;
+  return `kunai ${version} (${versionChannelLabel(channel)})`;
+}
+
+/** `--version` channel: no nested parens, `dev` instead of `unknown`. */
+export function versionChannelLabel(channel: InstallMethodKind): string {
+  return channel === "unknown" ? "dev" : channel;
 }
