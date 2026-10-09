@@ -73,8 +73,8 @@ describe("capability notice state", () => {
     const lines: string[] = [];
     const originalError = console.error;
     const originalLog = console.log;
-    console.error = (line?: unknown) => lines.push(String(line ?? ""));
-    console.log = (line?: unknown) => lines.push(String(line ?? ""));
+    console.error = (line: string) => lines.push(String(line));
+    console.log = (line: string) => lines.push(String(line));
     try {
       await checkDeps("0.0.0-test", { silent: false });
     } finally {
