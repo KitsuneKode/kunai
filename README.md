@@ -5,7 +5,8 @@
 **Search a title · pick a third-party source · watch in `mpv` · download for offline.**
 One fullscreen, keyboard-driven terminal session.
 
-[![npm](https://img.shields.io/npm/v/@kitsunekode/kunai?color=ff8fb0&label=kunai&logo=npm)](https://www.npmjs.com/package/@kitsunekode/kunai)
+[![CI](https://github.com/KitsuneKode/kunai/actions/workflows/ci.yml/badge.svg)](https://github.com/KitsuneKode/kunai/actions/workflows/ci.yml)
+&nbsp;[![npm](https://img.shields.io/npm/v/@kitsunekode/kunai?color=ff8fb0&label=kunai&logo=npm)](https://www.npmjs.com/package/@kitsunekode/kunai)
 &nbsp;![runtime](https://img.shields.io/badge/runtime-Bun%20%E2%89%A51.4.0-ff8fb0)
 &nbsp;![player](https://img.shields.io/badge/player-mpv-4fd1c5)
 &nbsp;![kinds](https://img.shields.io/badge/anime%20%C2%B7%20series%20%C2%B7%20movies-c98bff)

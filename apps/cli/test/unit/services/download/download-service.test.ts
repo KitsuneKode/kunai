@@ -32,6 +32,14 @@ describe("DownloadService", () => {
     runMigrations(db, "data");
     repo = new DownloadJobsRepository(db);
     spawnSpy = spyOn(Bun, "spawn");
+    // Default: never call through to a real binary. Unit tests that exercise
+    // the download worker stub spawn themselves; a missing stub used to
+    // spawn host yt-dlp (ENOENT on a fresh machine, a real download in CI).
+    spawnSpy.mockImplementation((command: string[]) => {
+      throw new Error(
+        `DownloadService unit tests must stub Bun.spawn; refusing ${String(command[0] ?? "unknown")}`,
+      );
+    });
     whichSpy = spyOn(Bun, "which");
   });
 

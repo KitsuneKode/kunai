@@ -169,6 +169,24 @@ export type ProbeFetchOutcome =
   | { readonly kind: "timeout" };
 
 /**
+ * The platform `fetch` as it existed when this module loaded.
+ *
+ * `fetchGuardedStreamTarget` treats `fetchImpl === platformFetch` as "this is
+ * the real network path, so DNS-check the answers". Tests stub
+ * `globalThis.fetch` and then pass that same binding, which made a live
+ * `=== fetch` identity true and turned every documentation host
+ * (`example.com` → 192.0.2.1) or DNS sinkhole into `blocked-target`.
+ * Comparing against the captured platform function keeps DNS on the real
+ * path and off the stubbed one.
+ */
+const platformFetch: typeof fetch = fetch;
+
+/** True only for the platform `fetch` captured at module load — not a stub of `globalThis.fetch`. */
+export function isGuardedPlatformFetch(fetchImpl: StreamReachabilityFetch): boolean {
+  return fetchImpl === platformFetch;
+}
+
+/**
  * One probe request, following redirects by hand so each hop is re-validated.
  * `redirect: "manual"` keeps a trusted Location header from steering the probe
  * somewhere the initial URL was already checked not to go.
@@ -240,8 +258,9 @@ function stripCredentialHeaders(headers: RequestInit["headers"]): RequestInit["h
  * The same target guard for fetches that are not reachability probes — the
  * HLS ladder expands a provider-supplied master URL before the resolve gate
  * sees its variants, so it borrows the blocklist and per-hop redirect checks.
- * DNS answers are validated only when the impl is the real `fetch`; a relay
- * port resolves on the relay's side, where local answers mean nothing.
+ * DNS answers are validated only when the impl is the platform `fetch`
+ * captured at module load; a stubbed or injected impl owns its destinations.
+ * A relay port resolves on the relay's side, where local answers mean nothing.
  */
 export function fetchGuardedStreamTarget(options: {
   readonly fetchImpl: StreamReachabilityFetch;
@@ -255,7 +274,7 @@ export function fetchGuardedStreamTarget(options: {
     init: { ...options.init, signal: options.signal },
     remaining: () => 1, // the caller's signal owns the deadline
     parentSignal: options.signal,
-    resolveNames: options.fetchImpl === fetch,
+    resolveNames: isGuardedPlatformFetch(options.fetchImpl),
   });
 }
 
@@ -270,7 +289,10 @@ export async function probeStreamReachability(
   const headers = input.headers ?? {};
   // Injected fetches own their destinations; real fetches get DNS answers
   // re-validated so a public name cannot resolve to a private address.
-  const resolveNames = input.fetchImpl === undefined;
+  // Compare against the captured platform fetch, not `input.fetchImpl ===
+  // undefined`: defaulting to a stubbed `globalThis.fetch` used to keep DNS
+  // on and treat documentation hosts as blocked-target.
+  const resolveNames = isGuardedPlatformFetch(fetchImpl);
 
   if (isHlsPlaylistUrl(input.url)) {
     return probeHlsManifest(fetchImpl, input.url, headers, remaining, input.signal, resolveNames);
