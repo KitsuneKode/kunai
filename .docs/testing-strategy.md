@@ -746,6 +746,10 @@ via harness scripts such as `bun run --cwd apps/cli capture:settings`.
   DNS-checks only the platform `fetch` captured at module load. Pass a distinct
   `fetchImpl`, or expect the stubbed global to skip DNS. Do not let unit tests
   depend on how `example.com` or a CDN name resolves on the host.
+- `npm-launcher.test.ts` needs a real Node on PATH. `bun run` / turbo expose a
+  `node` symlink to Bun; under that shim `require.resolve` finds the optional
+  `@kitsunekode/kunai-<target>` package and the tests spawn the compiled app
+  instead of the vendor stand-in. Skip when `node` is Bun; CI installs Node.
 - Use `simulateTicks` from the render harness instead of real timers in unit tests.
 - TDD on rewrite: write the new behavior test first, then delete brittle guards.
 
