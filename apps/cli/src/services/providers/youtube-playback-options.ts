@@ -8,20 +8,23 @@ import type { StreamCandidate } from "@kunai/types";
  * select it. Falling back to the global config would collapse every lane onto the
  * same client and silently defeat failover.
  */
-function extractorArgsFor(selected: StreamCandidate): string | undefined {
+function extractorArgsFor(
+  selected: StreamCandidate,
+  config: ReturnType<typeof getYoutubeProviderConfig>,
+): string | undefined {
   const metadata = selected.metadata as { readonly extractorArgs?: string } | undefined;
   if (typeof metadata?.extractorArgs === "string" && metadata.extractorArgs.trim()) {
     return metadata.extractorArgs;
   }
-  return getYoutubeProviderConfig().extractorArgs;
+  return config.extractorArgs;
 }
 
 export function resolveYoutubeYtdlRawOptions(
   selected: StreamCandidate,
   subtitleLanguage?: string,
+  config: ReturnType<typeof getYoutubeProviderConfig> = getYoutubeProviderConfig(),
 ): string | undefined {
   if (selected.protocol !== "youtube" && !selected.requiresYtdl) return undefined;
-  const config = getYoutubeProviderConfig();
   const metadata = selected.metadata as
     | { readonly isLive?: boolean; readonly liveStatus?: string }
     | undefined;
@@ -29,7 +32,7 @@ export function resolveYoutubeYtdlRawOptions(
   return buildYoutubeYtdlProfile({
     cookiesFromBrowser: config.cookiesFromBrowser,
     cookiesFile: config.cookiesFile,
-    extractorArgs: extractorArgsFor(selected),
+    extractorArgs: extractorArgsFor(selected, config),
     poToken: config.poToken,
     sponsorblockRemove: config.sponsorblockRemove,
     isLive,
@@ -51,7 +54,7 @@ export function resolveYtdlFormatFromCandidate(selected: StreamCandidate): strin
   return buildYoutubeYtdlProfile({
     cookiesFromBrowser: config.cookiesFromBrowser,
     cookiesFile: config.cookiesFile,
-    extractorArgs: extractorArgsFor(selected),
+    extractorArgs: extractorArgsFor(selected, config),
     poToken: config.poToken,
     sponsorblockRemove: config.sponsorblockRemove,
     isLive,

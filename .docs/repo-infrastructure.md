@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-09"
 ---
 
 # Kunai — Repo Infrastructure
@@ -79,7 +79,9 @@ bun run test
 Pull requests and pushes to `main` use the composite setup action
 [`.github/actions/setup-bun-monorepo`](../.github/actions/setup-bun-monorepo/action.yml):
 Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
-`TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache.
+`TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache. The README CI badge points
+at `.github/workflows/ci.yml`, which runs the Linux test job plus blocking
+Windows (`windows-cli`) and macOS (`macos-cli`) legs.
 
 ### Checkout is caller-owned
 

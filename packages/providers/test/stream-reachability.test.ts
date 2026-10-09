@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import { HLS_SEGMENT_PROBE_MIN_BYTES } from "../src/shared/hls-manifest";
 import {
+  fetchGuardedStreamTarget,
+  isGuardedPlatformFetch,
   isStreamReachableForPlaybackPreflight,
   isStreamReachableForResolve,
   probeStreamReachability,
@@ -373,6 +375,46 @@ describe("stream reachability", () => {
     if (probe.status === "unreachable") {
       expect(probe.reason).toContain("blocked stream target");
       expect(probe.definitive).toBe(true);
+    }
+  });
+});
+
+describe("isGuardedPlatformFetch", () => {
+  test("a distinct stub is not the platform fetch, even when assigned to globalThis.fetch", () => {
+    const originalFetch = globalThis.fetch;
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    const stub: typeof fetch = (async () => new Response("ok")) as unknown as typeof fetch;
+    try {
+      expect(isGuardedPlatformFetch(stub)).toBe(false);
+      globalThis.fetch = stub;
+      expect(isGuardedPlatformFetch(fetch)).toBe(false);
+      expect(isGuardedPlatformFetch(originalFetch)).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("fetchGuardedStreamTarget uses a stubbed global fetch without DNS-checking the host", async () => {
+    // Regression for KIT-76: `fetchImpl === fetch` was true after tests stubbed
+    // globalThis.fetch, so documentation hosts (example.com → 192.0.2.1) and
+    // DNS sinkholes reported blocked-target and never called the stub.
+    const originalFetch = globalThis.fetch;
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    const stub: typeof fetch = (async () =>
+      new Response("ok", { status: 200 })) as unknown as typeof fetch;
+    globalThis.fetch = stub;
+    try {
+      const outcome = await fetchGuardedStreamTarget({
+        fetchImpl: fetch,
+        url: "https://example.com/master.m3u8",
+        init: {},
+      });
+      expect(outcome.kind).toBe("response");
+      if (outcome.kind === "response") {
+        expect(outcome.response.status).toBe(200);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
     }
   });
 });

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-04"
+lastReviewed: "2026-10-09"
 ---
 
 # Kunai — Provider Guide
@@ -137,6 +137,10 @@ Providers share a persisted endpoint-health gate on `ProviderRuntimeContext.endp
 - **transient** (timeout/network): in-memory cooldown only; never persisted.
 
 `runProviderCycle` skips quarantined candidates (`source:skipped`, reason `quarantined`) and records failures/successes by class. Videasy seeds deprecated routes (`1movies`, Sanji) into the gate; runtime quarantine can still learn new dead endpoints. VidLink participates per-endpoint across its two hard dependencies (`vidlink.pro` API and `enc-dec.app`): classified non-OK statuses feed the gate (429/403/timeout/network → transient, persistent 5xx → server-error), while 404 stays title-shaped and never records health evidence. AllManga keys its cycle candidates on the stream's own source host (`metadata.sourceHost`), so a mirror host that refuses the resolve-gate probe (`endpointScoped`) is quarantined once instead of being re-probed on every resolve; a host that merely lacks the title stays in the pool. A pinned title source is cleared when its endpoint is quarantined. Resolve-gate stream probes allow slow CDN timeouts (unverified) but fail on definitive 4xx/5xx; playback preflight re-resolves the same provider once with `intent: "refresh"` before cross-provider fallback.
+
+The same module DNS-checks probe answers only on the platform `fetch` captured
+at load. A stubbed or injected `fetchImpl` owns its destinations, so unit tests
+that replace `globalThis.fetch` do not depend on how `example.com` resolves.
 
 **Every 4xx is definitive at the resolve gate.** `isDefinitiveHttpStatus` in
 `packages/providers/src/shared/stream-reachability.ts` treats the whole 4xx range
