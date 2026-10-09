@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-09"
 ---
 
 # Kunai — Testing Strategy
@@ -426,6 +426,9 @@ Local equivalent: `KUNAI_INSTALLER_DOCKER=1 bun run test:installer:docker`
 
 - `--dry-run` must not create `KUNAI_BIN_DIR` / data / config directories
 - Incomplete release assets fail with empty-asset / missing-checksum messages and npm|bun|source|pinned-version recovery copy
+- Optional-dep consent: a run with no TTY / `--yes` / `--dry-run` prints
+  `Run this to install them:` once and never `This will run` — that verb is
+  reserved for the TTY prompt that actually offers to spawn the package manager
 
 **Full cross-compile (all 8 targets)** — not on every PR (too slow). Use:
 
