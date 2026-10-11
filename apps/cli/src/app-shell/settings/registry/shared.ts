@@ -1,5 +1,6 @@
 import {
   AUDIO_PREFERENCE_OPTIONS,
+  PROVIDER_QUALITY_PREFERENCE_OPTIONS,
   SUBTITLE_PREFERENCE_OPTIONS,
 } from "@/domain/media/media-preferences";
 import { getConfigMetadata } from "@/services/persistence/config-metadata";
@@ -28,6 +29,28 @@ export const YOUTUBE_QUALITY_SETTINGS_OPTIONS: readonly EnumOption[] = [
 ];
 
 export const AUDIO_SETTINGS_OPTIONS: readonly EnumOption[] = AUDIO_PREFERENCE_OPTIONS;
+
+/** Provider-stream quality ceiling; shared by the per-lane profile rows and downloads. */
+export const PROVIDER_QUALITY_SETTINGS_OPTIONS: readonly EnumOption[] =
+  PROVIDER_QUALITY_PREFERENCE_OPTIONS;
+
+export const PRE_PLAY_CONFIRM_SETTINGS_OPTIONS: readonly EnumOption[] = [
+  {
+    value: "off",
+    label: "Off",
+    detail: "Auto-play the resolved pick — no prompt before launch",
+  },
+  {
+    value: "when-choices",
+    label: "When choices exist",
+    detail: "Show the Tracks sheet only when sources, quality, or tracks can be picked",
+  },
+  {
+    value: "always",
+    label: "Always",
+    detail: "Show the Tracks sheet on every play that resolves a stream inventory",
+  },
+];
 
 export const ANIME_TITLE_SETTINGS_OPTIONS: readonly EnumOption[] = [
   { value: "english", label: "English", detail: "Prefer localized English titles when known" },

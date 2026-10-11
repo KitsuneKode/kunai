@@ -9,7 +9,11 @@ import {
   DEFAULT_OFFLINE_RUNWAY_TARGET,
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
-import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS, mergeKitsuneConfig } from "@kunai/config";
+import {
+  MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
+  mergeKitsuneConfig,
+  type PrePlayConfirmMode,
+} from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
 import {
@@ -280,6 +284,7 @@ export class ConfigServiceImpl implements ConfigService {
       favoriteSources: normalizeStringList(loaded.favoriteSources),
       recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
+      prePlayConfirm: normalizePrePlayConfirm(loaded.prePlayConfirm),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
@@ -628,6 +633,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.companionPet;
   }
 
+  get theme(): string {
+    return this.config.theme;
+  }
+
   get quitNearEndBehavior(): QuitNearEndBehavior {
     return this.config.quitNearEndBehavior;
   }
@@ -714,6 +723,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get continueSourcePreference(): KitsuneConfig["continueSourcePreference"] {
     return this.config.continueSourcePreference;
+  }
+
+  get prePlayConfirm(): KitsuneConfig["prePlayConfirm"] {
+    return this.config.prePlayConfirm;
   }
 
   get startupPriority(): StartupPriority {
@@ -933,6 +946,9 @@ export class ConfigServiceImpl implements ConfigService {
               partial.continueSourcePreference,
             ),
           }
+        : null),
+      ...(partial.prePlayConfirm !== undefined
+        ? { prePlayConfirm: normalizePrePlayConfirm(partial.prePlayConfirm) }
         : null),
       ...(partial.startupPriority !== undefined
         ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
@@ -1236,6 +1252,10 @@ function normalizeContinueSourcePreference<T>(value: T): ContinueSourcePreferenc
       : value === "ask"
         ? "ask"
         : "auto";
+}
+
+function normalizePrePlayConfirm<T>(value: T): PrePlayConfirmMode {
+  return value === "when-choices" ? "when-choices" : value === "always" ? "always" : "off";
 }
 
 function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {

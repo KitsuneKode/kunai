@@ -1,4 +1,4 @@
-// The seven setup screens, each inside the Sakura frame.
+// The six setup screens, each inside the Sakura frame.
 //
 // Every screen asks something or pays something off. The old flow spent three
 // of seven slides asking nothing, which is why it read as a slideshow.
@@ -304,65 +304,14 @@ export function LanguageScreen({
   );
 }
 
-// ─── 4 · Playback ─────────────────────────────────────────────────────────────
-
-export type PlaybackToggles = {
-  readonly autoNext: boolean;
-  readonly skipIntro: boolean;
-  readonly skipCredits: boolean;
-};
-
-export function PlaybackScreen({
-  toggles,
-  selected,
-}: {
-  readonly toggles: PlaybackToggles;
-  readonly selected: number;
-}) {
-  const rows = [
-    {
-      key: "autoNext",
-      label: "Play the next episode automatically",
-      detail: "Keeps a binge going without a keystroke",
-      on: toggles.autoNext,
-    },
-    {
-      key: "skipIntro",
-      label: "Skip intros",
-      detail: "Uses AniSkip and IntroDB timings when they exist",
-      on: toggles.skipIntro,
-    },
-    {
-      key: "skipCredits",
-      label: "Skip credits",
-      detail: "Jumps the end card and rolls on",
-      on: toggles.skipCredits,
-    },
-  ];
-
-  return (
-    <Box flexDirection="column">
-      <ScreenTitle text="How playback should feel" sub="All three are easy to change later." />
-      <Box flexDirection="column">
-        {rows.map((row, i) => (
-          <ToggleRow
-            key={row.key}
-            label={row.label}
-            detail={row.detail}
-            on={row.on}
-            selected={i === selected}
-          />
-        ))}
-      </Box>
-    </Box>
-  );
-}
-
-// ─── 5 · Library & accounts ───────────────────────────────────────────────────
+// ─── 4 · Playback, downloads & accounts ──────────────────────────────────────
 
 export type LibraryToggles = {
   readonly downloadsEnabled: boolean;
   readonly downloadQuality: string;
+  readonly autoNext: boolean;
+  readonly skipIntro: boolean;
+  readonly skipCredits: boolean;
   readonly connectAniList: boolean;
   readonly connectTmdb: boolean;
   readonly presenceDiscord: boolean;
@@ -382,8 +331,8 @@ export function LibraryScreen({
   return (
     <Box flexDirection="column">
       <ScreenTitle
-        text="Downloads & accounts"
-        sub="Accounts are linked after setup, so a browser hiccup never traps you here."
+        text="Playback, downloads & accounts"
+        sub="Toggles here and in Settings — accounts are linked after setup, so a browser hiccup never traps you."
       />
       <Box flexDirection="column">
         <ToggleRow
@@ -410,6 +359,30 @@ export function LibraryScreen({
       </Box>
 
       <Box marginTop={1} marginBottom={0}>
+        <Text color={palette.muted}>Playback feel</Text>
+      </Box>
+      <Box flexDirection="column">
+        <ToggleRow
+          label="Play the next episode automatically"
+          detail="Keeps a binge going without a keystroke"
+          on={toggles.autoNext}
+          selected={selected === 2}
+        />
+        <ToggleRow
+          label="Skip intros"
+          detail="Uses AniSkip and IntroDB timings when they exist"
+          on={toggles.skipIntro}
+          selected={selected === 3}
+        />
+        <ToggleRow
+          label="Skip credits"
+          detail="Jumps the end card and rolls on"
+          on={toggles.skipCredits}
+          selected={selected === 4}
+        />
+      </Box>
+
+      <Box marginTop={1} marginBottom={0}>
         <Text color={palette.muted}>While we're here</Text>
       </Box>
       <Box flexDirection="column">
@@ -417,19 +390,19 @@ export function LibraryScreen({
           label="AniList"
           detail="Track watch progress on your list"
           on={toggles.connectAniList}
-          selected={selected === 2}
+          selected={selected === 5}
         />
         <ToggleRow
           label="TMDB"
           detail="Track shows and films"
           on={toggles.connectTmdb}
-          selected={selected === 3}
+          selected={selected === 6}
         />
         <ToggleRow
           label="Discord presence"
           detail="Show friends what you're watching"
           on={toggles.presenceDiscord}
-          selected={selected === 4}
+          selected={selected === 7}
         />
       </Box>
     </Box>
