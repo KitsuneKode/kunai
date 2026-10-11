@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-07-19"
+lastReviewed: "2026-10-11"
 ---
 
 # Playback Source Inventory Contract
@@ -124,6 +124,11 @@ Source and quality pickers must read from cached inventory.
 - Source change: select the best stream from the chosen `sourceId`.
 - Quality change: select the chosen stream or variant without recomputing inventory.
 - Subtitle change: select from `subtitles` or a separately cached subtitle list; do not refetch unrelated streams.
+- During live playback, the Tracks subtitle section (including `/subtitle` and
+  the player picker request) applies external tracks and Off through
+  `selectCurrentSubtitle`. Update the selected row only after the player accepts
+  the choice, and never overwrite a stream replaced during that acknowledgement.
+  Embedded tracks that require a restart follow the stream-selection path.
 - Audio/sub-dub change: reuse cached inventory only if that audio mode was included in the inventory. Otherwise resolve a separate inventory key for the requested mode.
 
 Never let one selected source overwrite another source's inventory. Store the full normalized result, then store user selection as separate playback intent.

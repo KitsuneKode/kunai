@@ -196,7 +196,7 @@ export function clearShellScreen() {
   clearShellScreenArtifacts();
 }
 
-async function openPlaybackStreamSelectionPicker(
+export async function openPlaybackStreamSelectionPicker(
   container: Container,
   action: "source" | "quality" | "audio" | "subtitle" | "provider",
   reason: string,
@@ -219,7 +219,7 @@ async function openPlaybackStreamSelectionPicker(
   const { openTracksPanel } = await import("./workflows");
   const picked = await openTracksPanel(stream, { initialSection }, container);
   if (!picked) return;
-  const selection = streamSelectionFromTrackPick(picked);
+  let selection = streamSelectionFromTrackPick(picked);
   if (!selection && picked.section !== "subtitle") return;
   if (selection && isCurrentStreamSelection(container.stateManager.getState().stream, selection)) {
     return;
@@ -228,6 +228,32 @@ async function openPlaybackStreamSelectionPicker(
   const sessionState = container.stateManager.getState();
   const title = sessionState.currentTitle;
   const episode = sessionState.currentEpisode;
+  if (picked.section === "subtitle") {
+    if (!title || !episode) return;
+    const { resolveTracksPanelPick } = await import("@/app/playback/tracks-panel-pick");
+    const resolved = await resolveTracksPanelPick(picked, selection, {
+      container,
+      title,
+      episode,
+      currentProviderId: sessionState.provider,
+      resumeSeconds: 0,
+      reason,
+    });
+    if (resolved.kind === "subtitle-switch" || resolved.kind === "stale-pick") {
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note:
+          resolved.kind === "stale-pick"
+            ? resolved.reason
+            : resolved.applied
+              ? `Subtitles: ${resolved.label}`
+              : "Subtitles could not be changed. Try again while the player is running.",
+      });
+      return;
+    }
+    if (resolved.kind !== "stream-selection") return;
+    selection = resolved.selection;
+  }
   if (
     title &&
     episode &&

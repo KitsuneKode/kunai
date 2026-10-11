@@ -296,6 +296,14 @@ async function resolveSubtitleTrackPick(
     },
     context.reason,
   );
+  // The player acknowledgement can arrive after navigation replaces the
+  // stream. Reflect the accepted choice only on the stream we controlled.
+  if (applied && stream && container.stateManager.getState().stream === stream) {
+    container.stateManager.dispatch({
+      type: "SET_STREAM",
+      stream: { ...stream, subtitle: option.subtitleUrl ?? undefined },
+    });
+  }
   container.diagnosticsService.record({
     category: "playback",
     operation: "playback.track-switch",
