@@ -107,6 +107,7 @@ describe("withConfigLockTransition ticket read errors", () => {
         const own = (await readdir(root)).find(
           (name) => name.endsWith(".number") && !name.includes("contender"),
         );
+        // SAFETY: the lock writes its .number record as a bare JSON integer.
         ownTicket = JSON.parse(await readFile(join(root, own!), "utf8")) as number;
       },
     );
