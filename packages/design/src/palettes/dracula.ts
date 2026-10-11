@@ -12,6 +12,7 @@ export const draculaPalette: ThemePalette = {
   line: "#44475a",
   lineSoft: "#343746",
   lineStrong: "#6272a4", // comment
+  lineControl: "#8291c2",
 
   accent: "#ff79c6", // pink
   accentSoft: "#ffadd9",
@@ -29,12 +30,14 @@ export const draculaPalette: ThemePalette = {
   danger: "#ff5555", // red
   dangerDim: "#b83f3f",
   dangerFill: "#3a2226",
+  dangerText: "#ff8f8a", // danger hue lifted for readable text
   info: "#8be9fd", // cyan
   infoDim: "#5fafc2",
   infoFill: "#23323f",
   milestone: "#bd93f9", // purple
   milestoneDim: "#8569b0",
   milestoneFill: "#30294a",
+  milestoneText: "#d3b8ff", // milestone hue lifted for readable text
 
   text: "#f8f8f2",
   textDim: "#d9d9ce",

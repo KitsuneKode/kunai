@@ -12,6 +12,7 @@ export const catppuccinMochaPalette: ThemePalette = {
   line: "#45475a",
   lineSoft: "#313244",
   lineStrong: "#6c7086", // overlay0
+  lineControl: "#9399b2", // overlay2 — 3:1 control edge
 
   accent: "#cba6f7", // mauve
   accentSoft: "#e3cbf9",
@@ -29,12 +30,14 @@ export const catppuccinMochaPalette: ThemePalette = {
   danger: "#f38ba8", // red
   dangerDim: "#b0657a",
   dangerFill: "#3b2330",
+  dangerText: "#f8b4c6", // danger hue lifted for readable text
   info: "#89b4fa", // blue
   infoDim: "#5f83c2",
   infoFill: "#232d45",
   milestone: "#b4befe", // lavender
   milestoneDim: "#7f86b8",
   milestoneFill: "#2a2c42",
+  milestoneText: "#ccd2ff", // milestone hue lifted for readable text
 
   text: "#cdd6f4",
   textDim: "#bac2de", // subtext1

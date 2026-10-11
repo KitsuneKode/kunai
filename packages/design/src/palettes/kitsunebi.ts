@@ -14,6 +14,7 @@ export const kitsunebiPalette: ThemePalette = {
   line: "#4b3c37",
   lineSoft: "#352823",
   lineStrong: "#66534e",
+  lineControl: "#7a625b",
 
   // Brand, focus, selection: foxfire.
   accent: "#3ed6d9", // Lc 70
@@ -33,12 +34,14 @@ export const kitsunebiPalette: ThemePalette = {
   danger: "#f76d5a", // Lc 47
   dangerDim: "#a93628",
   dangerFill: "#351612",
+  dangerText: "#ff9d8f", // danger hue lifted for readable text
   info: "#8db1f4", // Lc 60
   infoDim: "#4075db",
   infoFill: "#162034",
   milestone: "#bb89f2", // Lc 51
   milestoneDim: "#6c329e",
   milestoneFill: "#251b32",
+  milestoneText: "#d3b0f7", // milestone hue lifted for readable text
 
   // Text ramp.
   text: "#f5f0e3", // Lc 98

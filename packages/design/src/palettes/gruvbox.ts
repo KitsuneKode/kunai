@@ -12,6 +12,7 @@ export const gruvboxPalette: ThemePalette = {
   line: "#504945",
   lineSoft: "#3c3836",
   lineStrong: "#665c54", // bg3
+  lineControl: "#7c6f64", // bg4 — 3:1 control edge
 
   accent: "#fe8019", // bright orange
   accentSoft: "#ffbd8a",
@@ -29,12 +30,14 @@ export const gruvboxPalette: ThemePalette = {
   danger: "#fb4934", // red
   dangerDim: "#b83526",
   dangerFill: "#3c1c16",
+  dangerText: "#ff8a76", // danger hue lifted for readable text
   info: "#83a598", // blue
   infoDim: "#5b7a70",
   infoFill: "#1f2b28",
   milestone: "#d3869b", // purple
   milestoneDim: "#94596e",
   milestoneFill: "#332027",
+  milestoneText: "#e6b3c4", // milestone hue lifted for readable text
 
   text: "#ebdbb2", // fg1
   textDim: "#d5c4a1", // fg2

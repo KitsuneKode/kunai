@@ -12,6 +12,7 @@ export const rosePinePalette: ThemePalette = {
   line: "#403d52",
   lineSoft: "#26233a",
   lineStrong: "#524f67", // highlightHigh
+  lineControl: "#6e6a86", // muted — 3:1 control edge
 
   accent: "#ebbcba", // rose
   accentSoft: "#f5d6cf",
@@ -29,12 +30,14 @@ export const rosePinePalette: ThemePalette = {
   danger: "#eb6f92", // love
   dangerDim: "#a8526c",
   dangerFill: "#3a2028",
+  dangerText: "#f0a2b6", // danger hue lifted for readable text
   info: "#6fa3bd", // lightened pine
   infoDim: "#48738a",
   infoFill: "#1c2830",
   milestone: "#c4a7e7", // iris
   milestoneDim: "#8a74a6",
   milestoneFill: "#2a2436",
+  milestoneText: "#d9c4f2", // milestone hue lifted for readable text
 
   text: "#e0def4",
   textDim: "#c5c2dd",

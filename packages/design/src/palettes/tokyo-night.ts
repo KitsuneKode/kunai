@@ -12,6 +12,7 @@ export const tokyoNightPalette: ThemePalette = {
   line: "#3b4261",
   lineSoft: "#292e42",
   lineStrong: "#545c7e",
+  lineControl: "#737aa2", // dark5 — 3:1 control edge
 
   accent: "#7aa2f7",
   accentSoft: "#b4c6fa",
@@ -29,12 +30,14 @@ export const tokyoNightPalette: ThemePalette = {
   danger: "#f7768e",
   dangerDim: "#b05668",
   dangerFill: "#3a2028",
+  dangerText: "#ffa1ae", // danger hue lifted for readable text
   info: "#7dcfff",
   infoDim: "#4fa3d4",
   infoFill: "#1c2c3d",
   milestone: "#bb9af7",
   milestoneDim: "#836bb0",
   milestoneFill: "#2b2340",
+  milestoneText: "#d1bcfb", // milestone hue lifted for readable text
 
   text: "#c0caf5",
   textDim: "#a9b1d6",

@@ -878,11 +878,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               episode: String(episodeRequest.episode),
             }
           : {};
-        const preselectedEpisode =
-          episodeRequest ??
-          (stateManager.getState().currentTitle?.id === title.id
+        const preselectedCurrentEpisode =
+          stateManager.getState().currentTitle?.id === title.id
             ? stateManager.getState().currentEpisode
-            : undefined);
+            : undefined;
+        const preselectedEpisode = episodeRequest ?? preselectedCurrentEpisode;
 
         const { resolvePlaybackEpisodeEntry } =
           await import("@/app-shell/title-control/smart-auto-launch");
@@ -915,7 +915,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             isAnime: usesNativeEpisodes,
             titleId: title.id,
             animeEpisodes: initialAnimeEpisodes,
-            providerEpisodeIdentity: preselectedEpisode?.providerEpisodeIdentity,
+            providerEpisodeIdentity: episodeRequest
+              ? undefined
+              : preselectedCurrentEpisode?.providerEpisodeIdentity,
           });
           run.pendingStart =
             episodeEntry.selection.startAt !== undefined ||
@@ -2433,14 +2435,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
             if (picked && (selection || picked.section === "subtitle")) {
               const resumeSeconds = run.pendingStart.startAt || run.pendingStart.resumePromptAt;
-              run.pendingStart = await completeSourceTrackPick(
+              const trackStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
                 selection,
                 resumeSeconds,
                 "pre-play-confirm",
               );
-              continue;
+              if (trackStart) {
+                run.pendingStart = trackStart;
+                continue;
+              }
             }
           }
 

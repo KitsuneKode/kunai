@@ -12,6 +12,7 @@ export const nordPalette: ThemePalette = {
   line: "#4c566a",
   lineSoft: "#3b4252",
   lineStrong: "#616e88",
+  lineControl: "#7a88a5",
 
   accent: "#88c0d0", // nord8 frost
   accentSoft: "#a5d2de",
@@ -29,12 +30,14 @@ export const nordPalette: ThemePalette = {
   danger: "#bf616a", // nord11 aurora
   dangerDim: "#8f4a52",
   dangerFill: "#382a2e",
+  dangerText: "#d98c94", // danger hue lifted for readable text
   info: "#81a1c1", // nord9 frost
   infoDim: "#5e81ac", // nord10
   infoFill: "#2a3240",
   milestone: "#b48ead", // nord15 aurora
   milestoneDim: "#846a80",
   milestoneFill: "#332e3a",
+  milestoneText: "#d2b7cc", // milestone hue lifted for readable text
 
   text: "#eceff4", // nord6
   textDim: "#d8dee9", // nord4
