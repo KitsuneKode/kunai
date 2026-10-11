@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-04"
+lastReviewed: "2026-10-11"
 ---
 
 # Kunai — Terminal Design System (Sakura)
@@ -62,8 +62,8 @@ tokens.accentFill   // pre-blended onto bg for selection / badge depth
 
 // state
 tokens.ok      tokens.okDim      // ready · complete · available (mint)
-tokens.danger  tokens.dangerDim  // real, actionable error (crimson)
-tokens.milestone                 // series-complete only (plum)
+tokens.danger  tokens.dangerDim  // borders and art only; error text uses tokens.dangerText
+tokens.milestone                 // series-complete glyph and fill; text uses tokens.milestoneText
 
 // text ramp — carries ~80% of hierarchy
 tokens.text  tokens.textDim  tokens.muted  tokens.dim  tokens.faint
