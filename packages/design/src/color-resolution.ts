@@ -1,4 +1,5 @@
-import { tokens as rawTokens, type TokenName, type TokenValue } from "./tokens";
+import type { ThemePalette } from "./theme-types";
+import { tokens as rawTokens, type TokenName } from "./tokens";
 
 export type TerminalColorLevel = "truecolor" | "256" | "16";
 export type TerminalColorEnv = Record<string, string | undefined>;
@@ -80,6 +81,146 @@ const HEAT_RAMP_FALLBACKS: Record<"ansi256" | "ansi16", ResolvedHeatRamp> = {
   ansi16: ["black", "gray", "magenta", "magenta", "magenta"],
 };
 
+// ---- generic palette degradation (non-default themes) -----------------------
+//
+// The tables above are hand-tuned for the brand palette (Ember Dusk): surfaces
+// keep their warm tint, fills stay in family. For user-selected palettes there
+// is no curated table, so we degrade mechanically instead — nearest xterm-256
+// colour for the 256 level, nearest ANSI name for 16. `rgba()` tokens are
+// pre-blended over the palette's own `bg` before quantizing.
+
+type Rgb = readonly [number, number, number];
+
+const RGBA_LITERAL = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/i;
+
+function parseHexTriplet(hex: string): Rgb | null {
+  const normalized = hex.replace("#", "");
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return null;
+  const n = Number.parseInt(normalized, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function toHexTriplet([r, g, b]: Rgb): string {
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  return `#${[clamp(r), clamp(g), clamp(b)].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function rgbDistanceSquared(a: Rgb, b: Rgb): number {
+  return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+}
+
+function blendRgbaOverHex(value: string, bgHex: string): string | null {
+  const rgba = RGBA_LITERAL.exec(value);
+  const bg = parseHexTriplet(bgHex);
+  if (!rgba || !bg) return null;
+  const alpha = Math.max(0, Math.min(1, Number.parseFloat(rgba[4] ?? "0")));
+  const fg: Rgb = [
+    Number.parseInt(rgba[1] ?? "0", 10),
+    Number.parseInt(rgba[2] ?? "0", 10),
+    Number.parseInt(rgba[3] ?? "0", 10),
+  ];
+  return toHexTriplet([
+    fg[0] * alpha + bg[0] * (1 - alpha),
+    fg[1] * alpha + bg[1] * (1 - alpha),
+    fg[2] * alpha + bg[2] * (1 - alpha),
+  ]);
+}
+
+const XTERM_CUBE_STEPS = [0, 95, 135, 175, 215, 255] as const;
+
+function xtermCubeCandidates(): { index: number; rgb: Rgb }[] {
+  const out: { index: number; rgb: Rgb }[] = [];
+  for (const [ri, r] of XTERM_CUBE_STEPS.entries()) {
+    for (const [gi, g] of XTERM_CUBE_STEPS.entries()) {
+      for (const [bi, b] of XTERM_CUBE_STEPS.entries()) {
+        out.push({
+          index: 16 + 36 * ri + 6 * gi + bi,
+          rgb: [r, g, b],
+        });
+      }
+    }
+  }
+  for (let i = 0; i < 24; i += 1) {
+    const v = 8 + 10 * i;
+    out.push({ index: 232 + i, rgb: [v, v, v] });
+  }
+  return out;
+}
+
+const XTERM_256_CANDIDATES = xtermCubeCandidates();
+const XTERM_256_HEX: ReadonlyMap<number, string> = new Map(
+  XTERM_256_CANDIDATES.map(({ index, rgb }) => [index, toHexTriplet(rgb)]),
+);
+
+/**
+ * Nearest xterm-256 colour by RGB distance over the 6x6x6 cube and the
+ * 24-step grayscale (indices 16-255; the 0-15 system colours are left to the
+ * terminal's own theme). Returns the canonical hex of the chosen index so the
+ * answer is still a colour value downstream code can mix and measure.
+ */
+function quantizeToXterm256(rgb: Rgb): string {
+  let bestIndex = 16;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of XTERM_256_CANDIDATES) {
+    const d = rgbDistanceSquared(rgb, candidate.rgb);
+    if (d < bestDistance) {
+      bestDistance = d;
+      bestIndex = candidate.index;
+    }
+  }
+  return XTERM_256_HEX.get(bestIndex) ?? "#ffffff";
+}
+
+const ANSI_16_TARGETS: readonly { name: string; rgb: Rgb }[] = [
+  { name: "black", rgb: [0, 0, 0] },
+  { name: "red", rgb: [194, 54, 33] },
+  { name: "green", rgb: [37, 188, 36] },
+  { name: "yellow", rgb: [200, 165, 33] },
+  { name: "blue", rgb: [73, 46, 225] },
+  { name: "magenta", rgb: [211, 56, 211] },
+  { name: "cyan", rgb: [26, 168, 198] },
+  { name: "gray", rgb: [128, 128, 128] },
+  { name: "white", rgb: [229, 229, 229] },
+];
+
+/** Nearest basic ANSI name — 16-colour terminals only render these words. */
+function quantizeToAnsi16(rgb: Rgb): string {
+  let best = "white";
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const target of ANSI_16_TARGETS) {
+    const d = rgbDistanceSquared(rgb, target.rgb);
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = target.name;
+    }
+  }
+  return best;
+}
+
+function degradePalette(palette: ThemePalette, level: "256" | "16"): ResolvedDesignTokens {
+  const quantize = (value: string): string => {
+    const blended =
+      parseHexTriplet(value) ?? parseHexTriplet(blendRgbaOverHex(value, palette.bg) ?? "");
+    if (!blended) return level === "256" ? value : "white";
+    return level === "256" ? quantizeToXterm256(blended) : quantizeToAnsi16(blended);
+  };
+  const { heatRamp, ...scalars } = palette;
+  const out: Record<string, string | ResolvedHeatRamp> = {};
+  for (const [name, value] of Object.entries(scalars)) {
+    out[name] = quantize(value);
+  }
+  out.heatRamp = [
+    quantize(heatRamp[0]),
+    quantize(heatRamp[1]),
+    quantize(heatRamp[2]),
+    quantize(heatRamp[3]),
+    quantize(heatRamp[4]),
+  ];
+  // SAFETY: `scalars` iterated every non-ramp token key of the palette shape,
+  // so `out` carries the full ResolvedDesignTokens key set.
+  return out as ResolvedDesignTokens;
+}
+
 function currentEnv(): TerminalColorEnv {
   return ((globalThis as { process?: { env?: TerminalColorEnv } }).process?.env ??
     {}) as TerminalColorEnv;
@@ -127,25 +268,45 @@ export function detectTerminalColorLevel(env: TerminalColorEnv = currentEnv()): 
 
 function resolveColorToken(
   name: TokenName,
-  value: TokenValue,
+  value: string | readonly string[],
   level: TerminalColorLevel,
 ): ResolvedTokenValue {
-  if (level === "truecolor") return value;
+  if (level === "truecolor") {
+    // SAFETY: TokenValue and ResolvedTokenValue share the same shape, so
+    // passing the raw value through at truecolor is honest.
+    return value as ResolvedTokenValue;
+  }
   if (name === "heatRamp") {
     return level === "256" ? HEAT_RAMP_FALLBACKS.ansi256 : HEAT_RAMP_FALLBACKS.ansi16;
   }
   const fallback = ANSI_FALLBACKS[name];
-  if (!fallback) return value;
+  if (!fallback) {
+    // SAFETY: no curated fallback for this token — the raw palette value
+    // carries the same ResolvedTokenValue shape.
+    return value as ResolvedTokenValue;
+  }
   return level === "256" ? fallback.ansi256 : fallback.ansi16;
 }
 
 export function resolveDesignTokens(
   level: TerminalColorLevel = detectTerminalColorLevel(),
+  palette: ThemePalette = rawTokens,
 ): ResolvedDesignTokens {
-  return Object.fromEntries(
-    Object.entries(rawTokens).map(([name, value]) => [
+  // The curated fallback tables describe the brand palette only. Other themes
+  // degrade mechanically so a themed accent never leaks the brand rose onto a
+  // 256- or 16-colour terminal.
+  if (level !== "truecolor" && palette !== rawTokens) {
+    return degradePalette(palette, level);
+  }
+  const resolved = Object.fromEntries(
+    Object.entries(palette).map(([name, value]) => [
       name,
+      // SAFETY: Object.entries loses the literal key union; every palette key
+      // is a TokenName by the ThemePalette contract.
       resolveColorToken(name as TokenName, value, level),
     ]),
-  ) as ResolvedDesignTokens;
+  );
+  // SAFETY: the map above writes every ThemePalette key, which is the full
+  // ResolvedDesignTokens key set.
+  return resolved as ResolvedDesignTokens;
 }

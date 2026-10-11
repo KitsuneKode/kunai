@@ -59,7 +59,7 @@ export function createKeyedInflight(): Inflight {
         },
         () => {
           signal.removeEventListener("abort", onAbort);
-          resolve(null);
+          return resolve(null);
         },
       );
     });

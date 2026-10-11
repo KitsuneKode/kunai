@@ -56,6 +56,7 @@ export const PALETTE_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
   // without these the palette lists them, highlights them, and drops the Enter.
   "image-pane",
   "pet",
+  "theme",
   "watch",
   "providers",
   "playlists",
@@ -219,6 +220,11 @@ export async function dispatchPaletteCommand(
   if (action === "history") return openRootHistorySelection(container, "history", workflows);
   if (action === "settings" || action === "presence") {
     await workflows.openOverlay(container, { type: "settings" });
+    return "handled";
+  }
+  if (action === "theme") {
+    const { openThemePicker } = await import("./workflows/picker-workflows");
+    await openThemePicker(container);
     return "handled";
   }
   if (action === "setup") {
