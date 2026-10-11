@@ -1,9 +1,7 @@
-// =============================================================================
-// ContinueWatchingService.ts — repository-backed continuation reads
+// Repository-backed continuation reads
 //
 // IO + orchestration only; all decisions delegate to the pure projectContinuation
 // engine. Reads local data only and never triggers a network fetch.
-// =============================================================================
 
 import type { HistoryProgress, HistoryRepository, HistoryTitleLookup } from "@kunai/storage";
 

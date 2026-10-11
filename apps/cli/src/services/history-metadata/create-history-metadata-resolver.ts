@@ -1,12 +1,10 @@
-// =============================================================================
-// create-history-metadata-resolver.ts — title-search backed metadata resolver
+// Title-search backed metadata resolver
 //
 // History titles often carry a provider-opaque id (e.g. AllManga) with no catalog
 // key, so the only way to recover a poster + external ids is a catalog title
 // search. Matching is conservative — a wrong match would backfill the wrong ids and
 // poison reconciliation — so we only accept a result whose normalised title equals
 // or contains (a sequel-suffix tolerance) the history title.
-// =============================================================================
 
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { TitleDetail } from "@/domain/catalog/title-detail";

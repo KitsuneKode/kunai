@@ -117,7 +117,7 @@
   margin: 0.2rem 0 0;
   color: var(--kunai-text);
   font-size: 1.05rem;
-  font-weight: 600;
+  font-weight: var(--kunai-weight-semibold);
   letter-spacing: -0.02em;
   text-wrap: balance;
 }
@@ -127,20 +127,6 @@
   color: var(--color-fd-muted-foreground);
   font-size: 0.875rem;
   line-height: 1.5;
-}
-
-.kunai-hero-fox {
-  display: flex;
-  justify-content: flex-start;
-  margin-bottom: 0.75rem;
-}
-
-.kunai-flow-card {
-  position: relative;
-}
-
-.kunai-flow-card .kunai-fox {
-  margin-left: auto;
 }
 
 .kunai-final-fox {
@@ -153,37 +139,45 @@
    JavaScript. `transform-origin` sits low so she pivots on her feet rather than
    swinging around her middle. */
 
+/* The nav mark is hovered many times a day, so it gets a small, quick answer on a plain
+   ease-out. It used to overshoot (scale 1.16 on a bounce curve, 320ms), which is fine for
+   a one-off perk and tiring on something you pass over constantly. Hover is gated to
+   devices that can hover; keyboard focus is not, because focus is not a stuck hover. */
 .kunai-nav-title .kunai-fox,
 .kunai-sidebar-banner .kunai-fox {
-  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 160ms var(--ease-out);
   transform-origin: 50% 88%;
 }
 
-.kunai-nav-title:hover .kunai-fox,
-a:hover .kunai-nav-title .kunai-fox,
 a:focus-visible .kunai-nav-title .kunai-fox {
-  transform: scale(1.16) rotate(-6deg);
+  transform: scale(1.06) rotate(-3deg);
 }
 
-.kunai-sidebar-banner:hover .kunai-fox {
-  transform: scale(1.14) rotate(-5deg);
+@media (hover: hover) and (pointer: fine) {
+  .kunai-nav-title:hover .kunai-fox,
+  a:hover .kunai-nav-title .kunai-fox,
+  .kunai-sidebar-banner:hover .kunai-fox {
+    transform: scale(1.06) rotate(-3deg);
+  }
 }
 
 /* The larger marks already breathe. One element cannot hold two animations of
    `transform`, so hovering swaps the loop for a one-shot perk that settles and
    holds — rather than the two fighting and neither reading. */
-.kunai-flow-card:hover .kunai-fox--animated,
-.kunai-fox-banner:hover .kunai-fox--animated {
-  animation: kunai-fox-perk 340ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+@media (hover: hover) and (pointer: fine) {
+  .kunai-fox-banner:hover .kunai-fox--animated {
+    animation: kunai-fox-perk 340ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
 }
 
 /* Same trap as the breathe loop: the perk keyframes drive `transform`, so a
    mirrored pose that hovers would drop its `scaleX(-1)` and flip to face the
    wrong way mid-animation. The flip has to live inside every keyframe set that
    touches transform, not alongside them. */
-.kunai-flow-card:hover .kunai-fox--mirrored.kunai-fox--animated,
-.kunai-fox-banner:hover .kunai-fox--mirrored.kunai-fox--animated {
-  animation-name: kunai-fox-perk-mirrored;
+@media (hover: hover) and (pointer: fine) {
+  .kunai-fox-banner:hover .kunai-fox--mirrored.kunai-fox--animated {
+    animation-name: kunai-fox-perk-mirrored;
+  }
 }
 
 @keyframes kunai-fox-perk {
@@ -225,7 +219,6 @@ a:focus-visible .kunai-nav-title .kunai-fox {
 @media (prefers-reduced-motion: reduce) {
   .kunai-fox--animated,
   .kunai-fox--rewarded,
-  .kunai-flow-card:hover .kunai-fox--animated,
   .kunai-fox-banner:hover .kunai-fox--animated {
     animation: none;
   }
@@ -251,6 +244,61 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   .kunai-fox-live__rest {
     transition: none;
   }
+}
+
+/* ── Hero perch ─────────────────────────────────────────────────────────────
+   She sits on the top edge of the terminal window. The plane is the positioning
+   context; her feet are drawn near the bottom of the still, so `bottom: 100%`
+   with a small sink puts them on the frame instead of above it. Pointer events
+   pass through: the live fox reads the pointer from `window`, and a mascot that
+   eats clicks over the window chrome is in the way. */
+
+.kunai-hero-terminal-wrap {
+  position: relative;
+  /* Headroom for the fox, so she is never clipped by the page chrome above. */
+  padding-top: 5.25rem;
+}
+
+.kunai-hero-perch {
+  position: absolute;
+  right: clamp(1rem, 4%, 2.25rem);
+  /* Her feet are drawn a little above the bottom of the still, so a small
+     sink puts them on the ledge rather than hovering over it. */
+  top: calc(5.25rem - 104px + 0.55rem);
+  z-index: 2;
+  pointer-events: none;
+}
+
+@media (max-width: 639.98px) {
+  /* A smaller fox on a phone, where the window is narrow and she would
+     otherwise cover the title bar. */
+  .kunai-hero-perch {
+    right: 0.75rem;
+    scale: 0.78;
+    transform-origin: 100% 100%;
+  }
+}
+
+/* ── Footer patrol ──────────────────────────────────────────────────────────
+   A zero-height lane along the top border of the footer. The fox's feet sit on
+   the border line. She is positioned from JavaScript each frame, so nothing
+   here may transition `transform`. */
+
+.kunai-footer-patrol {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.kunai-footer-patrol__fox {
+  position: absolute;
+  bottom: -3px;
+  left: 0;
+  /* `will-change` is set from the component only while she is walking and on screen:
+     declared here it would hold a compositor layer on every page forever. */
 }
 
 /* ── Roamer ─────────────────────────────────────────────────────────────────
@@ -291,20 +339,46 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   transform: scale(1.08);
 }
 
-/* The walk bob is driven by the step flag the movement clock flips, not by a
-   free-running loop — so her footfalls land exactly when she actually moves,
-   and she is perfectly still the moment she stops. A loop here would keep
-   bouncing a stationary fox. */
+/* While she walks, the legs are the animation: `KunaiFoxWalker` is posed every
+   frame from the distance she has covered, so her footfalls land exactly when
+   she actually moves and she is perfectly still the moment she stops. Nothing
+   here may add motion of its own, and the hover lift is off so the pose is the
+   only thing moving the drawing. */
 .kunai-roamer__fox.is-walking {
-  transition: transform 90ms linear;
+  transition: none;
 }
 
-.kunai-roamer[data-step="a"] .kunai-roamer__fox.is-walking {
-  transform: translateY(-3px) rotate(-1.5deg);
+.kunai-roamer__fox.is-walking:hover {
+  transform: none;
 }
 
-.kunai-roamer[data-step="b"] .kunai-roamer__fox.is-walking {
-  transform: translateY(0) rotate(1.5deg);
+/* Walking and resting are different drawings. A short fade from the one that
+   was just mounted hides the hand-off, which would otherwise show as a single
+   frame where the art style changes. */
+.kunai-roamer__fox > img,
+.kunai-roamer__fox > .kunai-fox-walker {
+  animation: kunai-fox-handoff 140ms var(--ease-out) both;
+}
+
+@keyframes kunai-fox-handoff {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Facing left is a flip of the one drawing, and it is instant. Easing it would sweep
+   her through zero width (a paper-thin fox for a few frames); the roaming fox already
+   slows on a change of heading, which is what makes a turn read as a turn. */
+.kunai-fox-walker {
+  display: block;
+  overflow: visible;
+}
+
+.kunai-fox-walker[data-facing="left"] {
+  transform: scaleX(-1);
 }
 
 .kunai-roamer__fox.is-sitting {

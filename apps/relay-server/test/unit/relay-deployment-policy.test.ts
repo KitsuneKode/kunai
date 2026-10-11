@@ -254,6 +254,7 @@ test("deployment OPTIONS remains a body-free CORS preflight", async () => {
   let written: Response | undefined;
   const rpcHandler = createRelayRpcHandler({
     readToken: () => "secret",
+    readCorsOrigins: () => ["https://app.example"],
     registry,
     async readBody() {
       bodyReads++;
@@ -265,7 +266,7 @@ test("deployment OPTIONS remains a body-free CORS preflight", async () => {
   });
   const request = {
     method: "OPTIONS",
-    headers: {},
+    headers: { origin: "https://app.example" },
     query: { providerId: "allanime" },
   } as unknown as Parameters<typeof rpcHandler>[0];
 

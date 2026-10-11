@@ -47,6 +47,7 @@ export class ResolveTraceSink {
     }
   }
 
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- catch-clause values arrive as unknown; the sink stringifies.
   private reportOnce(operation: string, error: unknown): void {
     // A broken schema reports once per operation, not on every resolve — the
     // swallow keeps playback safe but the drift stays visible in the log.

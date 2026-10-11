@@ -1,8 +1,6 @@
-// =============================================================================
 // Shell Service Interface
 //
 // Manages the terminal UI (Ink-based).
-// =============================================================================
 
 import type { SearchResult, TitleInfo, EpisodeInfo, StreamInfo } from "../../domain/types";
 

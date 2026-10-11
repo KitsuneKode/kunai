@@ -346,10 +346,12 @@ function mergeArchivedPastWindow(
   for (const item of pastItems) merged.set(`${item.titleId}|${item.releaseAt ?? ""}`, item);
   for (const item of forwardItems) merged.set(`${item.titleId}|${item.releaseAt ?? ""}`, item);
 
-  // Clamp the visible window to [now-7d, now+7d]. The forward sources can return
+  // Clamp the visible window to [now-7d, now+8d]. The forward sources can return
   // stray recently-aired items a little outside the upcoming window (e.g. one that
-  // aired 8 days ago), which otherwise show as a lone, gappy past-day chip. Items
-  // with no concrete releaseAt (TBD) are always kept.
+  // aired 8 days ago), which otherwise show as a lone, gappy past-day chip, and
+  // the forward edge carries one extra day so an item dated "tomorrow" in the
+  // provider's timezone does not fall off the far side. Items with no concrete
+  // releaseAt (TBD) are always kept.
   const windowStartMs = nowMs - CALENDAR_PAST_WINDOW_DAYS * 24 * 60 * 60 * 1000;
   const windowEndMs = nowMs + (CALENDAR_PAST_WINDOW_DAYS + 1) * 24 * 60 * 60 * 1000;
   return [...merged.values()].filter((item) => {

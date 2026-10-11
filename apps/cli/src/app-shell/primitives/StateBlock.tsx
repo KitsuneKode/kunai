@@ -1,3 +1,4 @@
+import { sanitizeTerminalText } from "@/domain/text-display";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -13,7 +14,7 @@ import {
 } from "./StateBlock.model";
 
 function colorForTone(tone: StateBlockTone): string {
-  if (tone === "danger") return palette.danger;
+  if (tone === "danger") return palette.dangerText;
   if (tone === "success") return palette.ok;
   if (tone === "info") return semanticToneColor("info");
   return palette.dim;
@@ -45,9 +46,11 @@ export function StateBlock({
   return (
     <Box flexDirection="column">
       <Text color={color} bold>
-        {getStateBlockGlyph(model.kind)} {model.title}
+        {getStateBlockGlyph(model.kind)} {sanitizeTerminalText(model.title)}
       </Text>
-      {model.detail ? <Text color={palette.muted}>{model.detail}</Text> : null}
+      {model.detail ? (
+        <Text color={palette.muted}>{sanitizeTerminalText(model.detail)}</Text>
+      ) : null}
       {companion ? (
         <Text color={palette.dim}>
           {companionFallbackGlyph()} {companion}

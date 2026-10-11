@@ -72,3 +72,39 @@ export function matchProviderCatalogTitle<TRow extends ProviderCatalogRow>(
 
   return hits.length === 1 ? (hits[0] ?? null) : null;
 }
+
+/**
+ * Pick the search result a typed query actually asked for, instead of trusting
+ * the provider's document order.
+ *
+ * Three tiers: exact normalized match, then a boundary prefix in either
+ * direction ("dandadan" picks "Dandadan 2nd Season" but never "Dandadan
+ * Adventures"), then the first row as the provider's own best guess.
+ *
+ * `requireTitleEvidence` drops that last tier: a user reading results is well
+ * served by the top card on a weak match, but code repairing a *persisted* id
+ * has no reader — substituting the first result swaps a chosen show for an
+ * unrelated one, silently.
+ */
+export function chooseProviderSearchMatch<TRow extends { readonly title: string }>(
+  query: string,
+  results: readonly TRow[],
+  options: { readonly requireTitleEvidence?: boolean } = {},
+): TRow | null {
+  const strict = options.requireTitleEvidence === true;
+  const fallback = strict ? null : (results[0] ?? null);
+  const normalizedQuery = normalizeTitleKey(query);
+  if (results.length === 0 || !normalizedQuery) return fallback;
+
+  const exact = results.find((result) => normalizeTitleKey(result.title) === normalizedQuery);
+  if (exact) return exact;
+
+  const prefixed = results.find((result) => {
+    const normalizedTitle = normalizeTitleKey(result.title);
+    return (
+      normalizedTitle.startsWith(`${normalizedQuery} `) ||
+      normalizedQuery.startsWith(`${normalizedTitle} `)
+    );
+  });
+  return prefixed ?? fallback;
+}

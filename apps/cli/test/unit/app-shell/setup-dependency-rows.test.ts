@@ -56,9 +56,12 @@ describe("resolveInstallCommand", () => {
       which: (command) => (command === "apt" ? "/usr/bin/apt" : null),
     });
     expect(debian).toBe("https://github.com/lexiforest/curl-impersonate/releases");
-    expect(resolveInstallCommand(CURL_IMPERSONATE_INSTALL, { platform: "win32" })).toBe(
-      "https://github.com/lexiforest/curl-impersonate/releases",
-    );
+    // Windows has no package either; the hint names the managed dir the
+    // resolver searches, so no PATH edit is needed.
+    const windows = resolveInstallCommand(CURL_IMPERSONATE_INSTALL, { platform: "win32" }) ?? "";
+    expect(windows).toContain("https://github.com/lexiforest/curl-impersonate/releases");
+    expect(windows).toContain("%LOCALAPPDATA%\\kunai\\deps\\curl-impersonate");
+    expect(windows).not.toMatch(/winget|choco|scoop/);
     expect(YT_DLP_INSTALL.win32).toBe("winget install --id yt-dlp.yt-dlp -e");
     expect(buildRemediationLines(CURL_IMPERSONATE_INSTALL).join("\n")).not.toContain("apt install");
   });

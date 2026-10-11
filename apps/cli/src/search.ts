@@ -1,4 +1,3 @@
-// =============================================================================
 import { isAnimeLikely } from "@/services/anime-classifier";
 // Search service registry
 //
@@ -9,7 +8,6 @@ import { isAnimeLikely } from "@/services/anime-classifier";
 // API providers own their own search() — they don't
 // appear here. This layer is for providers that delegate search to a shared
 // HTTP endpoint (TMDB proxy today; HiAnime as a future SearchService).
-// =============================================================================
 import {
   fetchTmdbJsonCached,
   formatTmdbSearchError,

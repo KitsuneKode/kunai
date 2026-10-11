@@ -18,14 +18,105 @@ export type ProbeStreamReachabilityInput = {
   readonly url: string;
   readonly headers?: Record<string, string>;
   readonly fetchImpl?: StreamReachabilityFetch;
+  /**
+   * Per-target answer to "does this fetch resolve the hostname here?" — a
+   * relay port resolves on the relay's side for upstreams it forwards, so
+   * local DNS validation is meaningless for those URLs but still required
+   * for everything it serves directly. Absent, injected fetches are treated
+   * as remote-resolving and the real `fetch` as local.
+   */
+  readonly resolvesLocally?: (url: string) => boolean;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
 };
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
 const SEGMENT_RANGE_HEADER = `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`;
+// A body read past this after the prefix is already gathered is a server
+// ignoring Range and dumping the whole segment on us — cap the bleed.
+const MAX_PROBE_BODY_BYTES = 256 * 1024;
 const MAX_PROBE_REDIRECT_HOPS = 3;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+/**
+ * Counts body bytes until `minBytes` are seen, then cancels the reader so the
+ * socket stops draining. Returns the number of bytes observed, capped at
+ * `MAX_PROBE_BODY_BYTES` — a body that never reaches `minBytes` within that
+ * ceiling is treated as short anyway.
+ */
+async function readPrefixBytes(
+  body: ReadableStream<Uint8Array> | null,
+  minBytes: number,
+): Promise<number> {
+  if (!body) return 0;
+  const reader = body.getReader();
+  let seen = 0;
+  try {
+    while (seen < minBytes && seen < MAX_PROBE_BODY_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      seen += value?.byteLength ?? 0;
+    }
+    // Once the threshold is crossed the rest of the body is unread on purpose —
+    // cancelling is what actually closes the transfer.
+    await reader.cancel("probe-satisfied").catch(() => {});
+    return Math.min(seen, MAX_PROBE_BODY_BYTES);
+  } catch (error) {
+    // A mid-body abort or socket error is not "body too small" — rethrow so
+    // the caller's classifier maps abort → timeout and transient network
+    // failures to non-definitive instead of a definitive unreachable.
+    await reader.cancel("probe-failed").catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/**
+ * Read a full body as text only when it fits `maxBytes`; returns `null` on
+ * overflow — a truncated M3U can still parse as valid markup, so the caller
+ * must see "too large" rather than half a playlist. Mid-body errors rethrow
+ * into the caller's classifier, matching `readPrefixBytes`.
+ */
+export async function readBoundedTextBody(
+  body: ReadableStream<Uint8Array> | null,
+  maxBytes: number = MAX_PROBE_BODY_BYTES,
+): Promise<string | null> {
+  if (!body) return null;
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let seen = 0;
+  try {
+    while (seen <= maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        seen += value.byteLength;
+      }
+    }
+    if (seen > maxBytes) {
+      await reader.cancel("too-large").catch(() => {});
+      return null;
+    }
+    return new TextDecoder().decode(concatBytes(chunks, seen));
+  } catch (error) {
+    await reader.cancel("probe-failed").catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function concatBytes(chunks: readonly Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
 
 /**
  * Provider-supplied URLs are untrusted input: a page or playlist can name a
@@ -38,7 +129,7 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * and literal ranges, no DNS — so an injected fetch sees no extra microtask.
  * `resolvedAddressBlockReason` adds DNS answer validation for the real path.
  */
-function blockedLiteralTargetReason(url: string): string | null {
+export function blockedLiteralTargetReason(url: string): string | null {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -179,7 +270,7 @@ async function fetchProbeTarget(options: {
   readonly init: RequestInit;
   readonly remaining: () => number;
   readonly parentSignal?: AbortSignal;
-  readonly resolveNames: boolean;
+  readonly resolveNamesFor: (url: string) => boolean;
 }): Promise<ProbeFetchOutcome> {
   let target = options.url;
   let init = options.init;
@@ -190,7 +281,7 @@ async function fetchProbeTarget(options: {
     }
     // DNS once the literals pass — skipped when the caller already aborted so
     // a cancelled probe does not sit on a resolver round-trip.
-    if (options.resolveNames && !options.parentSignal?.aborted) {
+    if (options.resolveNamesFor(target) && !options.parentSignal?.aborted) {
       const resolvedBlocked = await resolvedAddressBlockReason(target);
       if (resolvedBlocked) {
         return { kind: "blocked", reason: `${target} -> ${resolvedBlocked}` };
@@ -248,6 +339,7 @@ export function fetchGuardedStreamTarget(options: {
   readonly url: string;
   readonly init: RequestInit;
   readonly signal?: AbortSignal;
+  readonly resolvesLocally?: (url: string) => boolean;
 }): Promise<ProbeFetchOutcome> {
   return fetchProbeTarget({
     fetchImpl: options.fetchImpl,
@@ -255,7 +347,7 @@ export function fetchGuardedStreamTarget(options: {
     init: { ...options.init, signal: options.signal },
     remaining: () => 1, // the caller's signal owns the deadline
     parentSignal: options.signal,
-    resolveNames: options.fetchImpl === fetch,
+    resolveNamesFor: options.resolvesLocally ?? (() => options.fetchImpl === fetch),
   });
 }
 
@@ -270,10 +362,17 @@ export async function probeStreamReachability(
   const headers = input.headers ?? {};
   // Injected fetches own their destinations; real fetches get DNS answers
   // re-validated so a public name cannot resolve to a private address.
-  const resolveNames = input.fetchImpl === undefined;
+  const resolveNamesFor = input.resolvesLocally ?? (() => input.fetchImpl === undefined);
 
   if (isHlsPlaylistUrl(input.url)) {
-    return probeHlsManifest(fetchImpl, input.url, headers, remaining, input.signal, resolveNames);
+    return probeHlsManifest(
+      fetchImpl,
+      input.url,
+      headers,
+      remaining,
+      input.signal,
+      resolveNamesFor,
+    );
   }
 
   try {
@@ -282,7 +381,7 @@ export async function probeStreamReachability(
       headers,
       remainingMs: remaining,
       parentSignal: input.signal,
-      resolveNames,
+      resolveNamesFor,
     });
     if (head.status === "reachable") return head;
     if (head.status === "timeout") return head;
@@ -298,7 +397,7 @@ export async function probeStreamReachability(
     headers: { ...headers, Range: "bytes=0-0" },
     remainingMs: remaining,
     parentSignal: input.signal,
-    resolveNames,
+    resolveNamesFor,
     healthyStatus: (status) => (status >= 200 && status < 300) || status === 206,
   });
 }
@@ -339,7 +438,7 @@ async function probeHlsManifest(
   headers: Record<string, string>,
   remaining: () => number,
   parentSignal: AbortSignal | undefined,
-  resolveNames: boolean,
+  resolveNamesFor: (url: string) => boolean,
 ): Promise<StreamReachabilityProbeResult> {
   if (parentSignal?.aborted || remaining() <= 0) {
     return { status: "timeout" };
@@ -351,7 +450,7 @@ async function probeHlsManifest(
     headers,
     remaining,
     parentSignal,
-    resolveNames,
+    resolveNamesFor,
   );
   if (master.status !== "ok") {
     return master.result;
@@ -381,7 +480,7 @@ async function probeHlsManifest(
       headers,
       remaining,
       parentSignal,
-      resolveNames,
+      resolveNamesFor,
     );
     if (variant.status !== "ok") {
       return variant.result;
@@ -406,7 +505,7 @@ async function probeHlsManifest(
     headers,
     remaining,
     parentSignal,
-    resolveNames,
+    resolveNamesFor,
   );
 }
 
@@ -416,7 +515,7 @@ async function fetchPlaylistText(
   headers: Record<string, string>,
   remaining: () => number,
   parentSignal: AbortSignal | undefined,
-  resolveNames: boolean,
+  resolveNamesFor: (url: string) => boolean,
 ): Promise<
   | { readonly status: "ok"; readonly text: string }
   | { readonly status: "fail"; readonly result: StreamReachabilityProbeResult }
@@ -437,7 +536,7 @@ async function fetchPlaylistText(
       init: { method: "GET", headers, signal: controller.signal },
       remaining,
       parentSignal,
-      resolveNames,
+      resolveNamesFor,
     });
     if (outcome.kind === "timeout") {
       return { status: "fail", result: { status: "timeout" } };
@@ -460,7 +559,17 @@ async function fetchPlaylistText(
         result: { status: "unreachable", reason: `HTTP ${response.status}`, definitive },
       };
     }
-    const text = await response.text();
+    const text = await readBoundedTextBody(response.body);
+    if (text === null) {
+      return {
+        status: "fail",
+        result: {
+          status: "unreachable",
+          reason: "playlist body empty or above probe cap",
+          definitive: true,
+        },
+      };
+    }
     return { status: "ok", text };
   } catch (error) {
     if (controller.signal.aborted || parentSignal?.aborted) {
@@ -487,7 +596,7 @@ async function probeHlsMediaSegment(
   headers: Record<string, string>,
   remaining: () => number,
   parentSignal: AbortSignal | undefined,
-  resolveNames: boolean,
+  resolveNamesFor: (url: string) => boolean,
 ): Promise<StreamReachabilityProbeResult> {
   if (parentSignal?.aborted || remaining() <= 0) {
     return { status: "timeout" };
@@ -509,7 +618,7 @@ async function probeHlsMediaSegment(
       },
       remaining,
       parentSignal,
-      resolveNames,
+      resolveNamesFor,
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {
@@ -539,11 +648,15 @@ async function probeHlsMediaSegment(
       };
     }
 
-    const buffer = new Uint8Array(await response.arrayBuffer());
-    if (buffer.byteLength < HLS_SEGMENT_PROBE_MIN_BYTES) {
+    // The Range header is only a request — a server free to ignore it would
+    // otherwise have arrayBuffer() pull the whole segment into memory for a
+    // check that only needs the first bytes. Read what we need and cut the
+    // socket loose.
+    const firstBytes = await readPrefixBytes(response.body, HLS_SEGMENT_PROBE_MIN_BYTES);
+    if (firstBytes < HLS_SEGMENT_PROBE_MIN_BYTES) {
       return {
         status: "unreachable",
-        reason: `HLS segment unreachable: body too small (${buffer.byteLength}B)`,
+        reason: `HLS segment unreachable: body too small (${firstBytes}B)`,
         definitive: true,
       };
     }
@@ -574,7 +687,7 @@ async function probeHttpStatus(
     readonly remainingMs: () => number;
     readonly parentSignal?: AbortSignal;
     readonly healthyStatus?: (status: number) => boolean;
-    readonly resolveNames: boolean;
+    readonly resolveNamesFor: (url: string) => boolean;
   },
 ): Promise<StreamReachabilityProbeResult> {
   if (options.parentSignal?.aborted) {
@@ -601,7 +714,7 @@ async function probeHttpStatus(
       },
       remaining: options.remainingMs,
       parentSignal: options.parentSignal,
-      resolveNames: options.resolveNames,
+      resolveNamesFor: options.resolveNamesFor,
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {

@@ -10,7 +10,7 @@ export const SettingsFooter = React.memo(function SettingsFooter({
   mode,
 }: {
   readonly state: SettingsUiState;
-  readonly mode: "main" | "submenu" | "input";
+  readonly mode: "main" | "submenu" | "input" | "search";
 }) {
   const dirty = !settingsEqual(state.draft, state.snapshot);
   const hints = state.busy
@@ -19,7 +19,9 @@ export const SettingsFooter = React.memo(function SettingsFooter({
       ? "Enter save · Esc cancel · Ctrl+U clear"
       : mode === "submenu"
         ? "Enter pick · [ ] reorder · Esc back"
-        : "Tab/Shift+Tab sections · Space toggle · Enter open · / search · Esc close";
+        : mode === "search"
+          ? "type to filter · Enter done · Esc clear"
+          : "Tab/Shift+Tab sections · Space toggle · Enter open · / search · Esc close";
 
   return (
     <Text color={palette.dim}>{`${hints}${dirty ? "  ·  changes apply automatically" : ""}`}</Text>

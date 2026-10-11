@@ -16,6 +16,7 @@ import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import type { CalendarRouteRequest } from "@/app-shell/hooks/use-calendar-route";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { chooseFromListShell } from "@/app-shell/pickers";
+import { getRootContentSession, waitForRootContentSlot } from "@/app-shell/root-content-state";
 import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
 import {
   applyHistorySelectionProvider,
@@ -59,9 +60,11 @@ import {
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import { ensureSessionProviderMatchesLane } from "@/domain/session/session-display";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
+import { countLabel } from "@/domain/text-display";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
+import { registerMpvProcess, type MpvChildProcess } from "@/infra/player/mpv-process-registry";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import {
   resultEnrichmentKey,
@@ -91,6 +94,33 @@ const SEEDED_CALENDAR_TYPE_TABS: Partial<Record<ShellAction, CalendarTypeTab>> =
   "series-calendar": "TV",
   "tracked-calendar": "Tracked",
 };
+
+/**
+ * The trailer window is detached mpv — no IPC socket, no session — so it lives
+ * in the process registry instead: quit-time teardown kills it like the main
+ * player, and a re-press replaces the running one rather than stacking
+ * windows on a key mash.
+ */
+let liveTrailerProcess: MpvChildProcess | null = null;
+
+function spawnTrailerMpv(argv: readonly string[], target: string): boolean {
+  if (liveTrailerProcess && liveTrailerProcess.exitCode === null) {
+    try {
+      liveTrailerProcess.kill("SIGTERM");
+    } catch {
+      // Already gone between the liveness check and the kill.
+    }
+  }
+  const proc = Bun.spawn([...argv, target], {
+    stdout: "ignore",
+    stderr: "ignore",
+    stdin: "ignore",
+  });
+  liveTrailerProcess = proc;
+  const unregister = registerMpvProcess(proc);
+  void proc.exited.then(unregister, unregister);
+  return true;
+}
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -573,18 +603,35 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         // into the shell, so run them through the same local-filter pipeline that
         // interactive Enter uses — otherwise `-S "mob downloaded:true"` would show
         // an unfiltered list while Enter honestly narrows it.
+        const consumedSearchEvidence = pendingSearchEvidence;
         const initialBrowse = buildBrowseInitialResults({
           options: browseState.searchResults.map((r) =>
             mapBrowseResultOption(container, browseContext, r),
           ),
           query: browseState.searchQuery,
-          evidence: pendingSearchEvidence,
+          evidence: consumedSearchEvidence,
         });
         const initialWarnings = pendingSearchWarnings;
         const initialEmptyMessage = pendingSearchEmptyMessage;
         pendingSearchEvidence = undefined;
         pendingSearchWarnings = [];
         pendingSearchEmptyMessage = undefined;
+
+        // A picker mounted by a detached overlay workflow (e.g. /providers run
+        // from Up Next) owns the content slot until the user dismisses it.
+        // Mounting browse now would evict and cancel it; wait for the slot
+        // instead. The wait resolves inside the foreign session's settle, so
+        // another workflow's mount can land before this continuation — the
+        // recheck loops until the slot is free at mount time, keeping the
+        // check and the mount in one synchronous turn.
+        for (;;) {
+          const holding = getRootContentSession();
+          if (holding === null || holding.kind === "browse") break;
+          await waitForRootContentSlot(context.signal);
+          if (context.signal.aborted) {
+            return { status: "cancelled" };
+          }
+        }
 
         const outcomePromise = this.dependencies.openBrowseShell({
           mode: syncedState.mode,
@@ -651,7 +698,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               ? browseState.searchQuery.trim().length === 0
                 ? (routeSubtitle ??
                   `${browseState.searchResults.length} recommendation picks · loaded`)
-                : `${initialBrowse.options.length} results · previous search${initialBrowse.subtitleSuffix}`
+                : `${countLabel(initialBrowse.options.length, "result")} · previous search${initialBrowse.subtitleSuffix}`
               : undefined,
           initialWarnings,
           initialSelectedIndex: browseState.selectedResultIndex,
@@ -740,12 +787,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   // Same scheme gate as every other mpv playback path; a
                   // non-URL target falls back to the browser opener below.
                   if (!isAllowedMpvUrl(target, "remote")) return false;
-                  Bun.spawn([...mpvInvocation.argv, target], {
-                    stdout: "ignore",
-                    stderr: "ignore",
-                    stdin: "ignore",
-                  });
-                  return true;
+                  return spawnTrailerMpv(mpvInvocation.argv, target);
                 },
                 openInBrowser: async (target) => {
                   const opened = await openExternalUrl(target);
@@ -836,7 +878,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
               options: results.map((r) => mapBrowseResultOption(container, freshBrowseContext, r)),
-              subtitle: `${results.length} results · ${search.sourceName}`,
+              subtitle: `${countLabel(results.length, "result")} · ${search.sourceName}`,
               upstreamFilterBadges: search.evidence.upstream,
               localFilterBadges: search.evidence.local,
               unsupportedFilterBadges: search.evidence.unsupported,
@@ -961,6 +1003,32 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         if (outcome.type === "cancelled") {
+          // A foreign session that displaced this browse resolves it with the
+          // displaced marker, not the plain cancelled fallback — the eviction
+          // reason rides the outcome, so awaits between settle and here cannot
+          // launder it into a real Esc. Park until the slot frees, then
+          // remount rather than reporting a cancel the user never made.
+          if (outcome.displaced) {
+            // The evicted mount consumed the one-shot inputs. A calendar route
+            // that never reached onCalendarAccepted committed nothing — hand
+            // the request back so the remount still opens it; the pending
+            // search evidence belongs to this mount and goes back with it.
+            if (
+              openedCalendarRoute !== undefined &&
+              acceptedCalendarRequestKey !== openedCalendarRoute.requestKey
+            ) {
+              pendingCalendarRoute = openedCalendarRoute;
+              pendingCalendarType = initialCalendarTypeTab;
+            }
+            pendingSearchEvidence = consumedSearchEvidence;
+            pendingSearchWarnings = initialWarnings;
+            pendingSearchEmptyMessage = initialEmptyMessage;
+            await waitForRootContentSlot(context.signal);
+            if (context.signal.aborted) {
+              return { status: "cancelled" };
+            }
+            continue;
+          }
           return { status: "cancelled" };
         }
 

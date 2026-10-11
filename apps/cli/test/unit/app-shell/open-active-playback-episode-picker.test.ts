@@ -64,6 +64,60 @@ function createContainer(
 }
 
 describe("openActivePlaybackEpisodePicker", () => {
+  for (const launchSource of ["offline-library", "continue"] as const) {
+    test(`${launchSource}: local active picker keeps native identities across downloaded seasons without a catalog fetch`, async () => {
+      const selected: EpisodeInfo[] = [];
+      const stateManager = createStateManager();
+      stateManager.dispatch({
+        type: "SELECT_TITLE",
+        title: { ...seriesTitle, isAnime: false, launchSource },
+      });
+      stateManager.dispatch({ type: "SELECT_EPISODE", episode: { season: 1, episode: 1 } });
+      stateManager.dispatch({
+        type: "SET_STREAM",
+        stream: { playbackSourceKind: "local", url: "/owned.mp4", headers: {}, timestamp: 0 },
+      });
+      const container = createContainer(stateManager, async (episode) => {
+        selected.push(episode);
+      });
+      Object.assign(container, {
+        offlineTitleIdentity: { resolveForTitle: () => seriesTitle.id },
+        offlineAssetService: {
+          listTitleAssets: () => [
+            { state: "ready", season: 1, episode: 1 },
+            {
+              state: "ready",
+              season: 2,
+              episode: 1,
+              providerEpisodeIdentity: { providerId: "retired-provider", value: "OVA" },
+            },
+            { state: "missing", season: 2, episode: 2 },
+          ],
+        },
+      });
+      await openActivePlaybackEpisodePicker(container, "local-picker", {
+        buildOptions: (input) =>
+          buildPlaybackEpisodePickerOptions({
+            ...input,
+            loadEpisodes: async () => {
+              throw new Error("local picker fetched remote catalog");
+            },
+          }),
+        openPicker: async (_manager, picker) => {
+          expect(picker.options).toHaveLength(2);
+          return picker.options[1]?.value ?? null;
+        },
+      });
+      expect(selected).toEqual([
+        {
+          season: 2,
+          episode: 1,
+          providerEpisodeIdentity: { providerId: "retired-provider", value: "OVA" },
+        },
+      ]);
+    });
+  }
+
   test("passes session currentAnimeEpisodes into buildPlaybackEpisodePickerOptions", async () => {
     buildPlaybackEpisodePickerOptionsMock.mockClear();
 

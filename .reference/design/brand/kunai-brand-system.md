@@ -54,16 +54,26 @@ Rationale: the current Sakura ramp is all one rose-brown hue with tiny steps (no
 | line            | `#473b51`          | borders               |
 | lineSoft        | `#281f2e`          | hairline dividers     |
 | lineStrong      | `#62526c`          | strong dividers       |
+| lineControl     | `#786782`          | **control edge** (inputs, outlined buttons, toggles): 3:1 on every surface |
 | scrim           | `rgba(8,5,9,0.66)` | overlay dim           |
 
 ### Text
 
-| token   | hex       |
-| ------- | --------- |
-| text    | `#f6eff4` |
-| textDim | `#cabfca` |
-| muted   | `#968a98` |
-| dim     | `#665b69` |
+| token   | hex       | APCA \|Lc\| on canvas | role                                |
+| ------- | --------- | --------------------- | ----------------------------------- |
+| text    | `#f6eff4` | 98                    | primary text                        |
+| textDim | `#d6cbd6` | 77                    | body-weight secondary text          |
+| muted   | `#beb1c0` | 62                    | labels and metadata                 |
+| dim     | `#a494a7` | 47                    | hints and pending steps             |
+| faint   | `#3a3340` | decorative            | rules and disabled glyphs, not text |
+
+The tiers were set by lightness only (hue and chroma held) to meet APCA targets of 75, 60
+and 45 on the canvas, the panel and `accentFill`, the ground every selected row is painted on.
+The previous values (`#cabfca`, `#968a98`, `#665b69`) were 70, 41 and 20 on the canvas, and the
+old `dim` was 18 on the selection fill. Terminal 256-colour fallbacks live in
+`packages/design/src/color-resolution.ts`.
+
+`text`, `textDim` and `muted` are body-readable (4.5:1) on every surface, including the selected-row band. `dim` is **disabled or decorative only** (2.8:1 on `surface`); never put a sentence in it.
 
 ### Brand accent — rose (focus · selection · brand · primary action ONLY)
 
@@ -84,22 +94,44 @@ Rationale: the current Sakura ramp is all one rose-brown hue with tiny steps (no
 | warn      | `#f59a3c` | warnFill      | `#2e2012` |
 | danger    | `#ff5d5d` | dangerFill    | `#341515` |
 | info      | `#5fb6ff` | infoFill      | `#112230` |
-| milestone | `#8b7bf0` | milestoneFill | `#1c1830` |
+| milestone | `#6d85f6` | milestoneFill | `#151a32` |
 
-(`okDim #3a9a78`, `warnDim #b06f28`, `dangerDim #a02b2b`, `infoDim #3c7fbf`, `milestoneDim #4a417c`.)
+(`okDim #3a9a78`, `warnDim #b06f28`, `dangerDim #a02b2b`, `infoDim #3c7fbf`, `milestoneDim #39467f`. The `*Dim` steps are fills, bars and borders; they are not text colours.)
+
+`danger` and `milestone` are Lc 46 and 41 on the canvas, below the Lc 60 that `accent`, `warn` and
+`info` reach, so they are not used for text. Text uses `dangerText` `#ff9791` and `milestoneText`
+`#9db2ff`: the same hues (24° and 272°) with lightness lifted until they reach Lc 60 on the
+canvas, the panel and the selection fill. `danger` stays for borders and art.
 
 ### Content kinds (tags / dots — distinct from brand & semantics)
 
 | token      | hex       | hue     |
 | ---------- | --------- | ------- |
-| typeAnime  | `#c98bff` | orchid  |
-| typeSeries | `#4fd1c5` | teal    |
-| typeMovie  | `#f4c45c` | gold    |
+| typeAnime  | `#d885f1` | orchid  |
+| typeSeries | `#4ad0cf` | teal    |
+| typeMovie  | `#ebc95c` | gold    |
 | typeMixed  | `#968a98` | neutral |
+
+### 1.1 refinements (measured, not restyled)
+
+The brand, the surface ramp and the rose accent are unchanged. Every change below fixes a number that was measured, in OKLCH, against the surfaces the colour actually renders on:
+
+| change | before | after | why |
+| --- | --- | --- | --- |
+| `muted` | `#968a98` | `#a195a3` | 3.99:1 on the selected-row band (`surfaceActive`), under the 4.5:1 body floor. Now 4.57:1 there and 5.4-6.8:1 elsewhere. |
+| `lineControl` (new) | n/a | `#786782` | `line` is a 1.5-1.9:1 divider. A control marked only by its edge needs 3:1 (WCAG 1.4.11). `border-input` in the docs now points here. |
+| `milestone` family | hue 287 | hue 272 | 20° from the anime orchid, which read as one purple. Now 46° from it. |
+| `typeAnime` | hue 307 | hue 318 | Moves away from milestone; still orchid, still 44° from the brand rose. |
+| `typeMovie` | hue 84 | hue 92 | 22° from `warn`. Now 30°. |
+| `typeSeries` | hue 187 | hue 194 | 24° from `ok`. Now 31°. |
+
+Lightness and chroma are unchanged on every hue nudge, so contrast on `bg` and `surface` stays 5.3-12:1. `accent`, `ok`, `warn`, `danger`, `bg` and `surface` are pinned by `apps/docs/test/token-drift.test.ts` and did not move; `danger` stays 22° from the accent, which is acceptable because they never share a row (error vs selection).
+
+Docs UI follows the same rules: primary buttons carry dark ink on rose (white measured 3.6:1, and 2.1:1 on hover); a selected tab is accent text on the accent fill, not a second filled gradient competing with the one primary action.
 
 ### ANSI-256 fallbacks (low-color terminals)
 
-bg `#121212` · surface `#1c1c1c` · elevated `#262626` · active `#303030` · accent `#ff87af` · accentDeep `#d75f87` · ok `#5fd7af` · warn `#ffaf5f` · danger `#ff5f5f` · info `#5fafff` · milestone `#875fff` · anime `#af87ff` · series `#5fd7d7` · movie `#ffd75f`.
+bg `#121212` · surface `#1c1c1c` · elevated `#262626` · active `#303030` · accent `#ff87af` · accentDeep `#d75f87` · ok `#5fd7af` · warn `#ffaf5f` · danger `#ff5f5f` (dangerText `#ffafaf`) · info `#5fafff` · milestone `#875fff` (milestoneText `#d7afff`) · anime `#af87ff` · series `#5fd7d7` · movie `#ffd75f`.
 
 ### Hierarchy rule
 

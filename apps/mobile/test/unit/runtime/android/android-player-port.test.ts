@@ -26,6 +26,22 @@ function runtime(input: {
 }
 
 describe("Android mobile player port", () => {
+  test("never launches VLC for an already cancelled session", async () => {
+    const cancellation = new AbortController();
+    cancellation.abort();
+    const spawned: string[][] = [];
+    const player = createAndroidPlayerPort({
+      runtime: runtime({
+        commands: { "termux-am": "/usr/bin/termux-am" },
+        onSpawn: (argv) => spawned.push([...argv]),
+      }),
+    });
+    await expect(
+      player.handoff({ player: "vlc", url: MEDIA_URL, signal: cancellation.signal }),
+    ).resolves.toEqual({ kind: "rejected", reason: "launch-rejected" });
+    expect(spawned).toEqual([]);
+  });
+
   test("hands VLC one opaque URL argument through the local intent plan", async () => {
     const spawned: string[][] = [];
     const player = createAndroidPlayerPort({

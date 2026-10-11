@@ -471,6 +471,26 @@ test("handleRpcRequest handles CORS preflight without upstream fetch", async () 
   const response = await handleRpcRequest(
     new Request("https://relay.test/rpc/allanime", {
       method: "OPTIONS",
+      headers: { Origin: "https://app.example" },
+    }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      corsAllowedOrigins: ["https://app.example"],
+    },
+  );
+
+  expect(response.status).toBe(204);
+  expect(response.headers.get("access-control-allow-methods")).toContain("POST");
+  expect(response.headers.get("access-control-allow-origin")).toBe("https://app.example");
+});
+
+test("handleRpcRequest emits no CORS headers by default — the loopback relay is not a public API", async () => {
+  const preflight = await handleRpcRequest(
+    new Request("https://relay.test/rpc/allanime", {
+      method: "OPTIONS",
+      headers: { Origin: "https://evil.example" },
     }),
     {
       providerId: "allanime",
@@ -478,9 +498,8 @@ test("handleRpcRequest handles CORS preflight without upstream fetch", async () 
       authorization: localLoopbackAuthorization,
     },
   );
-
-  expect(response.status).toBe(204);
-  expect(response.headers.get("access-control-allow-methods")).toContain("POST");
+  expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+  expect(preflight.headers.get("access-control-allow-methods")).toBeNull();
 });
 
 test("handleRpcRequest authenticates before pinned transport resolves DNS", async () => {

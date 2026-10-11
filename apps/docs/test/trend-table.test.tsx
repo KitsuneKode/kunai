@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+const NOW_MS = Date.parse("2026-10-03T12:00:00.000Z");
+
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { SectionCards } from "../components/analytics/section-cards";
@@ -137,12 +139,10 @@ describe("trend section wiring", () => {
 });
 
 describe("platform columns", () => {
-  const withOs = makePoints(3).map(
-    (point, i): SeriesPoint => ({
-      ...point,
-      byOs: i === 2 ? { linux: 6, darwin: 5, other: 2 } : { other: point.activeInstalls },
-    }),
-  );
+  const withOs = makePoints(3).map((point, i): SeriesPoint => ({
+    ...point,
+    byOs: i === 2 ? { linux: 6, darwin: 5, other: 2 } : { other: point.activeInstalls },
+  }));
 
   test("a named OS bucket earns its column; an under-floor day reads a dash", () => {
     const html = renderToStaticMarkup(<TrendTable points={withOs} />);
@@ -199,17 +199,17 @@ describe("reporting window anchor", () => {
 
 describe("staleness badge", () => {
   test("a snapshot older than the threshold is marked stale", () => {
-    const old = new Date(Date.now() - SNAPSHOT_STALE_AFTER_MS - 3_600_000).toISOString();
+    const old = new Date(NOW_MS - SNAPSHOT_STALE_AFTER_MS - 3_600_000).toISOString();
     const html = renderToStaticMarkup(
-      <UsagePanel metrics={{ ...metrics, updatedAt: old }} series={series} />,
+      <UsagePanel nowMs={NOW_MS} metrics={{ ...metrics, updatedAt: old }} series={series} />,
     );
     expect(html).toContain("data may be stale");
   });
 
   test("a fresh snapshot renders no stale marker", () => {
-    const fresh = new Date(Date.now() - 3_600_000).toISOString();
+    const fresh = new Date(NOW_MS - 3_600_000).toISOString();
     const html = renderToStaticMarkup(
-      <UsagePanel metrics={{ ...metrics, updatedAt: fresh }} series={series} />,
+      <UsagePanel nowMs={NOW_MS} metrics={{ ...metrics, updatedAt: fresh }} series={series} />,
     );
     expect(html).not.toContain("data may be stale");
   });

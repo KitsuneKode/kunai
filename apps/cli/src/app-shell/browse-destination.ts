@@ -1,10 +1,8 @@
-// =============================================================================
-// browse-destination.ts — header/footer destination pill for browse surfaces
+// Header/footer destination pill for browse surfaces
 //
 // BrowseShell owns the live query/subtitle; AppHeader lives in ink-shell.
 // This tiny store lets browse publish the destination label without stuffing
 // route enums into SessionState.
-// =============================================================================
 
 import { useSyncExternalStore } from "react";
 

@@ -6,6 +6,8 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import type { SourceInventoryCacheInput } from "@/services/playback/SourceInventoryService";
 import type { ProviderResolveResult } from "@kunai/types";
 
+import { createTestStateManager } from "../../helpers/session-state";
+
 const config = {
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
   seriesLanguageProfile: { audio: "original", subtitle: "none", quality: "720p" },
@@ -14,6 +16,43 @@ const config = {
 } as KitsuneConfig;
 
 describe("buildTracksPanelData", () => {
+  test("local playback exposes file facts without provider inventory or registry access", async () => {
+    // SAFETY: This test double supplies the exact members read by the exercised workflow.
+    const container = {
+      stateManager: createTestStateManager("retired-provider"),
+      providerRegistry: {
+        getAll: (): ReturnType<Container["providerRegistry"]["getAll"]> => {
+          throw new Error("local playback read providers");
+        },
+      },
+    } as Container;
+    const data = await buildTracksPanelData(
+      {
+        url: "/owned/file.mp4",
+        playbackSourceKind: "local",
+        headers: {},
+        title: "Owned file",
+        timestamp: 1,
+      },
+      container,
+    );
+    expect(data.providerLabel).toBe("Local file");
+    expect(data.groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          section: "source",
+          selectable: false,
+          rows: [
+            expect.objectContaining({ label: "Downloaded file", selected: true, enabled: false }),
+          ],
+        }),
+      ]),
+    );
+    expect(
+      data.groups.every((group) => !group.selectable && group.rows.every((row) => !row.enabled)),
+    ).toBe(true);
+  });
+
   test("cross-provider inventory hints use quality-partitioned cache identity", async () => {
     const inventoryReads: SourceInventoryCacheInput[] = [];
     const cached: ProviderResolveResult = {

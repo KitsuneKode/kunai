@@ -205,4 +205,26 @@ describe("install method detection", () => {
     expect(unknown.kind).toBe("unknown");
     expect(updateGuidanceForInstallMethod(unknown)).toContain("install method");
   });
+
+  test("treats compiled-binary bunfs entrypoints as packaged binaries", () => {
+    // `bun build --compile` reports argv[1] from the embedded filesystem, and
+    // both path forms end in .js — the suffix heuristic alone classified a
+    // flat release binary as "unknown" and broke `kunai upgrade`.
+    const posix = detectInstallMethod({
+      cwd: "/tmp",
+      entrypoint: "/$bunfs/root/kunai/apps/cli/src/main.js",
+      fileExists: () => false,
+      platform: "linux",
+    });
+    const windows = detectInstallMethod({
+      cwd: "C:\\Users\\x",
+      entrypoint: "B:\\~BUN\\root\\main.js",
+      fileExists: () => false,
+      platform: "win32",
+    });
+
+    expect(posix.kind).toBe("binary");
+    expect(windows.kind).toBe("binary");
+    expect(updateGuidanceForInstallMethod(posix)).toContain("kunai upgrade");
+  });
 });

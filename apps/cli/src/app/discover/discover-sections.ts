@@ -1,9 +1,7 @@
-// =============================================================================
 // Discover Sections Builder
 //
 // Single source of truth for the 3-section discover list composition.
 // Used by both main.ts and PlaybackPhase.ts.
-// =============================================================================
 
 import { loadDiscoveryList } from "@/app/discover/discovery-lists";
 import type { Container } from "@/container";

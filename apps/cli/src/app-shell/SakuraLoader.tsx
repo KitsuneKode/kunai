@@ -1,4 +1,3 @@
-// =============================================================================
 // SakuraLoader.tsx — the signature ❀ bloom loader + label shimmer
 //
 // The brand motif (❀ in rose, per .reference/design/cli/kunai-sakura.html .petal/.empty)
@@ -9,17 +8,13 @@
 // Honors reduced-motion (static ❀, steady label) and a viewport-pause `active`
 // prop, both delegated to the shared SakuraPetal frame primitives so there is
 // one motion policy across the app.
-// =============================================================================
 
 import { Box, Text } from "ink";
 import React from "react";
 
-import {
-  BLOOM_FRAMES,
-  reducedMotionEnabled,
-  STATIC_PETAL,
-  useFrameTick,
-} from "./primitives/SakuraPetal";
+import { reducedMotionEnabled } from "./motion-policy";
+import { BLOOM_FRAMES, STATIC_PETAL, useFrameTick } from "./primitives/SakuraPetal";
+import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 
 const SHIMMER_INTERVAL_MS = 110;
@@ -122,8 +117,8 @@ export function SakuraLoader({
         <SakuraBloom active={active} stalled={stalled} />
       </Box>
       <Box flexDirection="column">
-        <GlimmerLabel label={label} active={active} stalled={stalled} />
-        {sublabel ? <Text color={palette.muted}>{sublabel}</Text> : null}
+        <GlimmerLabel label={sanitizeTerminalText(label)} active={active} stalled={stalled} />
+        {sublabel ? <Text color={palette.muted}>{sanitizeTerminalText(sublabel)}</Text> : null}
       </Box>
     </Box>
   );
@@ -149,7 +144,7 @@ export function InlineSakuraLoader({
       <Text color={color} bold>
         {glyph}
       </Text>
-      {label ? <Text color={palette.muted}> {label}</Text> : null}
+      {label ? <Text color={palette.muted}> {sanitizeTerminalText(label)}</Text> : null}
     </Box>
   );
 }

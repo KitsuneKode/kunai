@@ -1,13 +1,12 @@
-// =============================================================================
-// details-sheet.model.ts — pure view-model for the rich details sheet
+// Pure view-model for the rich details sheet
 //
 // Merges an instant SEED (already-loaded SearchResult fields — header + synopsis
 // with no network) with the optional fetched TitleDetail (gap-fill: studio, cast,
 // seasons, trailer, links), plus history + availability, into typed sections each
 // carrying a `loading` flag so the renderer can skeleton only the unresolved parts.
-// =============================================================================
 
 import type { TitleDetail, TitleLink } from "@/domain/catalog/title-detail";
+import { sanitizeTerminalText } from "@/domain/text-display";
 import { isFinished } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
 
@@ -103,7 +102,7 @@ export function buildDetailsSheet(input: {
   const typeLabel = seed.type === "movie" ? "Movie" : "Series";
   const metaLine = [
     typeLabel,
-    seed.year,
+    seed.year !== undefined ? sanitizeTerminalText(seed.year) : undefined,
     typeof score === "number" ? `★${score.toFixed(1)}` : undefined,
     status,
   ]
@@ -117,41 +116,53 @@ export function buildDetailsSheet(input: {
       : undefined;
   const synopsisText = detail?.synopsis ?? seed.synopsis ?? "";
 
+  // Every string below came from TMDB or a provider — sanitize at the model
+  // boundary so no render site can emit CSI/OSC/C0 bytes verbatim.
   return {
     header: {
-      title: seed.title,
+      title: sanitizeTerminalText(seed.title),
       posterUrl: detail?.artwork?.poster ?? seed.posterUrl,
-      metaLine,
+      metaLine: sanitizeTerminalText(metaLine),
       score,
-      genres: genres.slice(0, 4),
+      genres: genres.slice(0, 4).map(sanitizeTerminalText),
       statusLabel: status,
     },
-    synopsis: { loading: detail === null && !seed.synopsis, text: synopsisText },
+    synopsis: {
+      loading: detail === null && !seed.synopsis,
+      text: sanitizeTerminalText(synopsisText),
+    },
     facts: {
       loading: detail === null,
-      studio: detail?.studios?.slice(0, 2).join(" · ") || undefined,
+      studio: detail?.studios?.slice(0, 2).map(sanitizeTerminalText).join(" · ") || undefined,
       episodes,
       runtime: detail?.runtimeMinutes ? `${detail.runtimeMinutes} min` : undefined,
-      contentRating: detail?.contentRating || undefined,
+      contentRating: detail?.contentRating ? sanitizeTerminalText(detail.contentRating) : undefined,
     },
     your: {
       progressLabel: progressLabel(history),
-      providers: availability?.providers ?? [],
+      providers: (availability?.providers ?? []).map(sanitizeTerminalText),
       offline: availability?.offline ?? false,
-      subs: availability?.subs ?? [],
+      subs: (availability?.subs ?? []).map(sanitizeTerminalText),
     },
     cast: {
       loading: detail === null,
-      names: (detail?.cast ?? []).slice(0, 8).map((member) => member.name),
+      names: (detail?.cast ?? []).slice(0, 8).map((member) => sanitizeTerminalText(member.name)),
     },
     seasons: {
       loading: detail === null,
       items: (detail?.seasons ?? []).map((season) => ({
         season: season.season,
-        label: season.name ?? `Season ${season.season}`,
+        label: sanitizeTerminalText(season.name ?? `Season ${season.season}`),
       })),
     },
-    links: { items: detail?.externalLinks ? [...detail.externalLinks] : [] },
+    links: {
+      items: (detail?.externalLinks ?? []).map((link) => ({
+        ...link,
+        // The renderer displays only the label; the opener validates the raw
+        // target. Sanitizing a target can silently open a different URL.
+        label: sanitizeTerminalText(link.label),
+      })),
+    },
     trailerUrl: detail?.trailerUrl,
   };
 }

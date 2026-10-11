@@ -1,9 +1,15 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { acquireNodeSession } from "../../../../src/runtime/android/node-session";
+
+/** A pid that is guaranteed dead — the child exited before spawnSync returned. */
+function deadPid(): number {
+  return spawnSync("true").pid ?? -1;
+}
 
 test("a competing session cannot release or enter the owner's state transaction", () => {
   const root = mkdtempSync(join(tmpdir(), "kunai-mobile-session-"));
@@ -17,6 +23,55 @@ test("a competing session cannot release or enter the owner's state transaction"
     releaseNext();
     acquireNodeSession(root)();
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a crash remnant — lock dir with a dead owner — is reclaimed, not wedged", () => {
+  const root = mkdtempSync(join(tmpdir(), "kunai-mobile-session-"));
+  try {
+    // Simulate a SIGKILLed/ANR'd session: lock dir + owner record, pid dead.
+    const lock = join(root, "session.lock");
+    mkdirSync(lock);
+    writeFileSync(join(lock, "owner.json"), JSON.stringify({ pid: deadPid(), startedAt: null }));
+
+    const release = acquireNodeSession(root);
+    // The reclaimed lock is a real lock: a competitor still cannot enter.
+    expect(() => acquireNodeSession(root)).toThrow("session");
+    release();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a live owner is never reclaimed even when the record says otherwise", () => {
+  const root = mkdtempSync(join(tmpdir(), "kunai-mobile-session-"));
+  try {
+    const first = acquireNodeSession(root);
+    // Overwrite our own owner record with a stale lookalike — the recorded
+    // pid is this process, which is alive, so reclaim must refuse.
+    expect(() => acquireNodeSession(root)).toThrow("session");
+    first();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session interrupt handling lasts until release and never steals a competing lock", () => {
+  const root = mkdtempSync(join(tmpdir(), "kunai-mobile-session-interrupt-"));
+  const controller = new AbortController();
+  const initialHandlers = process.listenerCount("SIGINT");
+  let release: (() => void) | undefined;
+  try {
+    release = acquireNodeSession(root, () => controller.abort());
+    expect(process.emit("SIGINT")).toBe(true);
+    expect(controller.signal.aborted).toBe(true);
+    expect(() => acquireNodeSession(root)).toThrow("session");
+    release();
+    expect(process.listenerCount("SIGINT")).toBe(initialHandlers);
+    acquireNodeSession(root)();
+  } finally {
+    release?.();
     rmSync(root, { recursive: true, force: true });
   }
 });

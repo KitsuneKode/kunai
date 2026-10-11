@@ -77,6 +77,36 @@ describe("TracksPanelShell two-pane", () => {
     const frame = captureFrame(<TracksPanelShell groups={[]} width={80} />, { columns: 80 });
     expect(frame).toContain("No stream details");
   });
+
+  test("a provider-supplied label cannot inject terminal escapes", () => {
+    // Labels come from upstream HTML/JSON — an escape-bearing label must never
+    // reach the tty or it can move the cursor or redraw over the shell.
+    const hostile: TrackCapabilityGroup[] = [
+      {
+        section: "source",
+        title: "Source",
+        selectable: true,
+        rows: [
+          {
+            section: "source",
+            label: "Evil[2J[0;0H Label",
+            value: "evil",
+            selected: true,
+            enabled: true,
+            risk: "normal",
+          },
+        ],
+      },
+    ];
+    const frame = captureFrame(
+      <TracksPanelShell groups={hostile} width={80} nav={createInitialTracksNav({})} />,
+      { columns: 80 },
+    );
+    expect(frame).toContain("Evil");
+    expect(frame).toContain("Label");
+    expect(frame).not.toContain("[2J");
+    expect(frame).not.toContain("[0;0H");
+  });
 });
 
 describe("TracksPanelShell subtitle grid", () => {
