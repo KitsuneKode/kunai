@@ -90,6 +90,12 @@ export interface RelayHandlerOptions {
   readonly diagnostics?: RelayDiagnosticSink;
   readonly timeoutMs?: number;
   readonly maxRedirects?: number;
+  /**
+   * Origins allowed to read responses cross-origin. Unset means no CORS
+   * headers at all: the CLI client is not a browser, and a wildcard on the
+   * `local-loopback` dev relay lets any webpage the user visits drive it.
+   */
+  readonly corsAllowedOrigins?: readonly string[];
 }
 
 export interface RelayFetchPortOptions {
@@ -112,15 +118,3 @@ export const DEFAULT_RELAY_TIMEOUT_MS = 20_000;
 export { RELAY_HOP_HEADER } from "@kunai/types";
 
 export const RELAY_ERROR_CODE_HEADER = "X-Kunai-Relay-Error-Code";
-
-/**
- * Stamped by the relay handler on responses that carry a real upstream answer
- * (`relayUpstreamResponse`). Relay-generated errors carry
- * {@link RELAY_ERROR_CODE_HEADER} instead, so a response bearing neither marker
- * never reached the relay function (platform crash, wrong route, SSO wall) —
- * the client may then honour `fallbackToDirect` without mistaking the failure
- * for upstream truth.
- */
-export const RELAY_RESULT_HEADER = "X-Kunai-Relay-Result";
-
-export const RELAY_RESULT_UPSTREAM = "upstream";

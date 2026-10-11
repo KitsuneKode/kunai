@@ -23,7 +23,7 @@ import type { ShellStatusTone } from "./types";
 const RAIL_WIDTH = 32;
 
 function toneColor(tone: ShellStatusTone): string {
-  if (tone === "error") return palette.danger;
+  if (tone === "error") return palette.dangerText;
   if (tone === "warning") return palette.warn;
   if (tone === "success") return palette.ok;
   if (tone === "info") return palette.info;

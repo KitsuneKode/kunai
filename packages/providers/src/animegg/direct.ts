@@ -22,7 +22,7 @@ import type {
   StreamCandidate,
   TitleIdentity,
 } from "@kunai/types";
-import { providerHttpErrorForStatus } from "@kunai/types";
+import { ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
@@ -30,11 +30,11 @@ import {
   formatAnimeSourceArchetype,
   formatAnimeSourceDetail,
 } from "../shared/anime-source-presentation";
+import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
-import { providerFetchText } from "../shared/provider-http-transport";
 import { matchProviderCatalogTitle } from "../shared/provider-title-match";
+import { dropRefusedStreams, selectVerifiedStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
-import { searchWithPhraseFallback } from "../shared/search-fallback";
 import {
   createSourceCandidateFromStream,
   createStreamId,
@@ -63,43 +63,39 @@ const USER_AGENT =
 
 /**
  * The site needs no referer and no cookie, on any of its four documents or on
- * the stream itself (verified 2026-09-11) — so the policy sends none. The
- * shared transport still earns this provider relay-honest marking, a curl
- * fingerprint fallback, and typed status/transport errors.
+ * the stream itself (verified 2026-09-11). Sending only what is required keeps
+ * the mpv handoff identical to what was tested.
  */
+function requestHeaders(): Record<string, string> {
+  return {
+    accept: "text/html,application/xhtml+xml",
+    "accept-language": "en-US,en;q=0.9",
+    "user-agent": USER_AGENT,
+  };
+}
+
 async function fetchText(
   url: string,
   context: ProviderRuntimeContext,
   signal?: AbortSignal,
 ): Promise<string> {
-  return providerFetchText(url, {
-    context,
-    signal,
-    providerId: ANIMEGG_PROVIDER_ID,
-    label: "animegg fetch",
-    userAgent: USER_AGENT,
-    extraHeaders: {
-      accept: "text/html,application/xhtml+xml",
-      "accept-language": "en-US,en;q=0.9",
-    },
-    fetchTimeoutMs: ANIMEGG_FETCH_TIMEOUT_MS,
-    statusError: (status) =>
-      providerHttpErrorForStatus({
-        status,
-        message: `AnimeGG returned HTTP ${status}`,
-        providerId: ANIMEGG_PROVIDER_ID,
-        stage: "fetch-page",
-      }),
+  const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
+  const response = await requester(url, {
+    headers: requestHeaders(),
+    signal: directStreamFetchSignal(signal ?? context.signal, ANIMEGG_FETCH_TIMEOUT_MS),
   });
-}
-
-/** Search rows for a query, with the literal-phrase miss rescue applied. */
-async function searchAnimeggWithPhraseFallback(query: string, context: ProviderRuntimeContext) {
-  return searchWithPhraseFallback(
-    query,
-    async (q) => parseAnimeggSearchResults(await fetchText(animeggSearchPath(q), context)),
-    (row) => [row.title, ...row.altNames],
-  );
+  if (!response.ok) {
+    // Carry the status: a 404 on a catalog miss must read as definitive
+    // (not-found, non-retryable), not a retryable network-error that degrades
+    // provider health and re-runs the whole resolve.
+    throw providerHttpErrorForStatus({
+      status: response.status,
+      message: `AnimeGG returned HTTP ${response.status}`,
+      providerId: "animegg",
+      stage: "fetch",
+    });
+  }
+  return response.text();
 }
 
 /**
@@ -144,10 +140,7 @@ export async function locateAnimeggShow(
 
   const query = title.title.trim();
   if (!query) return null;
-  // AnimeGG matches the query as one literal phrase — rescue a miss by
-  // retrying the longest word and filtering the wider set (ani-cli's fix,
-  // shared with AnimeKai in `shared/search-fallback`).
-  const rows = await searchAnimeggWithPhraseFallback(query, context);
+  const rows = parseAnimeggSearchResults(await fetchText(animeggSearchPath(query), context));
   const match = matchProviderCatalogTitle(rows, { title: query });
   if (!match) return null;
 
@@ -187,7 +180,8 @@ export const animeggProviderModule: CoreProviderModule = {
   async search(input, context) {
     const query = input.query.trim();
     if (!query) return null;
-    const results = (await searchAnimeggWithPhraseFallback(query, context)).slice(0, 40);
+    const html = await fetchText(animeggSearchPath(query), context);
+    const results = parseAnimeggSearchResults(html).slice(0, 40);
     if (results.length === 0) return null;
 
     return results.map((result): ProviderSearchResult => {
@@ -216,14 +210,12 @@ export const animeggProviderModule: CoreProviderModule = {
     const numbers = parseAnimeggEpisodeNumbers(html, slug);
     if (numbers.length === 0) return null;
 
-    return numbers.map(
-      (episode): ProviderEpisodeOption => ({
-        index: episode,
-        label: `Episode ${episode}`,
-        totalEpisodeCount: numbers.length,
-        externalIds: { providerNativeIds: { [ANIMEGG_PROVIDER_ID]: slug } },
-      }),
-    );
+    return numbers.map((episode): ProviderEpisodeOption => ({
+      index: episode,
+      label: `Episode ${episode}`,
+      totalEpisodeCount: numbers.length,
+      externalIds: { providerNativeIds: { [ANIMEGG_PROVIDER_ID]: slug } },
+    }));
   },
 
   async resolve(input, context) {
@@ -244,6 +236,16 @@ export const animeggProviderModule: CoreProviderModule = {
         { cachePolicy, events, startedAt },
       );
 
+    // An HTTP status is evidence, not a transport fault: surface the
+    // classified code/retryability instead of a blanket retryable
+    // network-error, so a catalog-miss 404 does not re-run the resolve or
+    // degrade provider health.
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- catch-clause values arrive as unknown; instanceof narrows below.
+    const failFetch = (label: string, error: unknown) =>
+      error instanceof ProviderHttpError
+        ? fail(error.code, `AnimeGG ${label} failed: ${describe(error)}`, error.retryable)
+        : fail("network-error", `AnimeGG ${label} failed: ${describe(error)}`, true);
+
     if (input.mediaKind !== "anime") {
       return fail("unsupported-title", "AnimeGG only supports anime");
     }
@@ -251,7 +253,7 @@ export const animeggProviderModule: CoreProviderModule = {
     try {
       slug = await locateAnimeggShow(input.title, context, events);
     } catch (error) {
-      return fail("network-error", `AnimeGG search failed: ${describe(error)}`, true);
+      return failFetch("search", error);
     }
     if (!slug) {
       return fail("not-found", `AnimeGG has no show that is clearly "${input.title.title}"`);
@@ -265,7 +267,7 @@ export const animeggProviderModule: CoreProviderModule = {
     try {
       tabs = parseAnimeggEpisodeTabs(await fetchText(episodeUrl, context));
     } catch (error) {
-      return fail("network-error", `AnimeGG episode page failed: ${describe(error)}`, true);
+      return failFetch("episode page", error);
     }
     const picked = selectAnimeggTab(tabs, audio.catalogMode);
     if (!picked) {
@@ -286,7 +288,7 @@ export const animeggProviderModule: CoreProviderModule = {
         await fetchText(animeggEmbedPath(picked.tab.embedId), context),
       );
     } catch (error) {
-      return fail("network-error", `AnimeGG embed failed: ${describe(error)}`, true);
+      return failFetch("embed", error);
     }
 
     const sourceId = `source:${ANIMEGG_PROVIDER_ID}:${picked.tab.mirror.toLowerCase()}:${presentation}`;
@@ -343,14 +345,37 @@ export const animeggProviderModule: CoreProviderModule = {
       startupPriority: input.startupPriority,
       qualityPreference: input.qualityPreference,
       preferredStreamId: input.preferredStreamId,
-      preferredSourceId: input.preferredSourceId,
+      // All rows share the already selected mirror/audio lane. Its source pin
+      // must not promote the first quality rung above the requested quality.
+      preferredSourceId: input.preferredSourceId === sourceId ? undefined : input.preferredSourceId,
       favoriteSourceNames: input.favoriteSourceNames,
     });
+
+    // Resolve gate: probe the selected stream with its own headers before
+    // reporting success. Keep the chosen rung first (including fast/explicit
+    // picks), then walk the remaining ladder by quality rather than page order.
+    const gated = await selectVerifiedStream({
+      streams: [
+        selection.selected,
+        ...streams
+          .filter((stream) => stream.id !== selection.selected.id)
+          .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0)),
+      ].slice(0, 3),
+      context,
+      signal: context.signal,
+    });
+    if (context.signal?.aborted) {
+      return fail("cancelled", "AnimeGG resolve-gate probe was cancelled");
+    }
+    if (!gated.accepted) {
+      return fail("not-found", `AnimeGG selected stream is unreachable (${gated.reason})`, true);
+    }
+    const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
 
     const inventory: ProviderSourceCandidate[] = [
       createSourceCandidateFromStream({
         providerId: ANIMEGG_PROVIDER_ID,
-        stream: selection.selected,
+        stream: gated.stream,
         label: `${picked.tab.mirror} · ${formatAnimeSourceDetail({
           audio: presentation,
           subtitleMode: presentation === "sub" ? "hard" : "unknown",
@@ -359,17 +384,17 @@ export const animeggProviderModule: CoreProviderModule = {
         cachePolicy,
       }),
     ];
-    const variants: ProviderVariantCandidate[] = streams.map((stream) =>
+    const variants: ProviderVariantCandidate[] = shippedStreams.map((stream) =>
       createVariantCandidateFromStream({ providerId: ANIMEGG_PROVIDER_ID, stream }),
     );
 
     const resolved: ProviderResolveResult = {
       status: "resolved",
       providerId: ANIMEGG_PROVIDER_ID,
-      selectedStreamId: selection.selected.id,
-      selectionDecision: selection.decision,
+      selectedStreamId: gated.stream.id,
+      selectionDecision: { ...selection.decision, selectedQualityRank: gated.stream.qualityRank },
       sources: inventory,
-      streams,
+      streams: shippedStreams,
       variants,
       subtitles: [],
       failures: [],
@@ -384,7 +409,7 @@ export const animeggProviderModule: CoreProviderModule = {
         title: input.title,
         episode: input.episode,
         providerId: ANIMEGG_PROVIDER_ID,
-        streamId: selection.selected.id,
+        streamId: gated.stream.id,
         cacheHit: false,
         runtime: "direct-http",
         startedAt,

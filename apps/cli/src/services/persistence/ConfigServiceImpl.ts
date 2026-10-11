@@ -2,22 +2,30 @@
 // Config Service Implementation
 // =============================================================================
 
+import { dbg } from "@/logger";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
-import { normalizeAutoDownloadNextCount } from "@/services/download/download-scope-policy";
 import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
   DEFAULT_OFFLINE_RUNWAY_TARGET,
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
-import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
-import { migrateLegacyProviderId, YOUTUBE_PROVIDER_ID } from "@kunai/providers";
+import {
+  MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
+  mergeKitsuneConfig,
+  type PrePlayConfirmMode,
+} from "@kunai/config";
+import { migrateLegacyProviderId } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
-import { isJsonString, type ProviderRelayConfig, type StartupPriority } from "@kunai/types";
+import {
+  isJsonObject,
+  isJsonString,
+  type ProviderRelayConfig,
+  type StartupPriority,
+} from "@kunai/types";
 
 import type {
   ConfigService,
   KitsuneConfig,
-  AutoDownloadMode,
   QuitNearEndBehavior,
   QuitNearEndThresholdMode,
   PresencePrivacy,
@@ -30,67 +38,47 @@ import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
-function normalizeSeriesProvider(value: string | undefined): string {
-  const normalized = value?.trim();
-  if (!normalized) return DEFAULT_CONFIG.provider;
+function normalizeSeriesProvider<T>(value: T, fallback = DEFAULT_CONFIG.provider): string {
+  // Config JSON is untrusted at load: a number or object here must degrade to
+  // the default, not crash startup on .trim().
+  const normalized = isJsonString(value) ? value.trim() : "";
+  if (!normalized) return fallback;
   return migrateLegacyProviderId(normalized);
 }
 
-/**
- * `provider`/`animeProvider` only need legacy-id migration: any surviving id is
- * still a member of its own lane, and lane filtering downstream keeps the
- * damage to one wasted attempt. A series id in the youtube slot is different —
- * it can never resolve a `video`-kind title, and under manual recovery mode it
- * is the only candidate tried. The youtube lane is exactly `YOUTUBE_PROVIDER_ID`
- * today; extend the membership check if a second `video`-kind provider ships.
- */
-function normalizeYoutubeProvider(value: string | undefined): string {
-  const normalized = migrateLegacyProviderId(value?.trim() ?? "");
-  return normalized === YOUTUBE_PROVIDER_ID ? normalized : DEFAULT_CONFIG.youtubeProvider;
-}
-
-function normalizeYoutubeProviderIdList(
-  values: readonly string[] | undefined,
-  fallback: readonly string[],
-): readonly string[] {
-  return normalizeProviderIdList(values, fallback).filter(
-    (providerId) => providerId === YOUTUBE_PROVIDER_ID,
-  );
-}
-
-function normalizeProviderIdList(
-  values: readonly string[] | undefined,
+function normalizeProviderIdList<T>(
+  values: T,
   fallback: readonly string[] = [],
 ): readonly string[] {
   if (!Array.isArray(values)) return fallback.map(migrateLegacyProviderId);
-  return [...new Set(values.map((value) => migrateLegacyProviderId(value.trim())).filter(Boolean))];
+  return [
+    ...new Set(
+      values
+        .filter(isJsonString)
+        .map((value) => migrateLegacyProviderId(value.trim()))
+        .filter(Boolean),
+    ),
+  ];
 }
 
-function normalizeDefaultSubtitleLanguage(subLang: string | undefined): string {
-  if (!subLang || subLang === "none" || subLang === "fzf" || subLang === "interactive") {
-    return DEFAULT_CONFIG.subLang;
-  }
-  return subLang;
-}
-
-function normalizeSubtitlePreference(value: string | undefined): string {
-  if (!value) return "none";
+function normalizeSubtitlePreference<T>(value: T): string {
+  if (!isJsonString(value) || !value) return "none";
   if (value === "fzf") return "interactive";
   return value;
 }
 
-function normalizeQualityPreference(value: string | undefined): string {
-  const normalized = value?.trim().toLowerCase();
+function normalizeQualityPreference<T>(value: T): string {
+  const normalized = isJsonString(value) ? value.trim().toLowerCase() : "";
   if (!normalized || normalized === "auto") return "best";
   return normalized;
 }
 
-function normalizeLanguageProfile(
-  profile: KitsuneConfig["animeLanguageProfile"] | undefined,
-): KitsuneConfig["animeLanguageProfile"] {
-  if (!profile) return { audio: "original", subtitle: "none", quality: "best" };
+function normalizeLanguageProfile<T>(profile: T): KitsuneConfig["animeLanguageProfile"] {
+  if (!isJsonObject(profile)) {
+    return { audio: "original", subtitle: "none", quality: "best" };
+  }
   return {
-    audio: profile.audio,
+    audio: isJsonString(profile.audio) && profile.audio ? profile.audio : "original",
     subtitle: normalizeSubtitlePreference(profile.subtitle),
     quality: normalizeQualityPreference(profile.quality),
   };
@@ -99,10 +87,10 @@ function normalizeLanguageProfile(
 function normalizeTitleProviderPreferences(
   value: Record<string, string> | undefined,
 ): Record<string, string> {
-  if (!value || typeof value !== "object") return {};
+  if (!isJsonObject(value)) return {};
   const normalized: Record<string, string> = {};
   for (const [titleId, providerId] of Object.entries(value)) {
-    if (typeof titleId !== "string" || typeof providerId !== "string") continue;
+    if (!isJsonString(providerId)) continue;
     const trimmedTitleId = titleId.trim();
     const trimmedProviderId = providerId.trim();
     if (!trimmedTitleId || !trimmedProviderId) continue;
@@ -153,7 +141,9 @@ function trimmedConfigString<T>(value: T): string | undefined {
 function normalizeYoutubeMetadata(
   value: KitsuneConfig["youtubeMetadata"] | undefined,
 ): KitsuneConfig["youtubeMetadata"] {
-  if (!value || typeof value !== "object") return { ...DEFAULT_CONFIG.youtubeMetadata };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ...DEFAULT_CONFIG.youtubeMetadata };
+  }
   const entries = {
     instanceUrl: trimmedConfigString(value.instanceUrl),
     pipedApiUrl: trimmedConfigString(value.pipedApiUrl),
@@ -177,6 +167,15 @@ export class ConfigServiceImpl implements ConfigService {
    * one-run flag into the user's config file.
    */
   private sessionOverrides: Partial<KitsuneConfig> = {};
+  /**
+   * Keys this process changed via `update()`. A second kunai instance shares
+   * config.json: without per-key tracking, our debounced whole-document write
+   * reverted whatever it changed between our `load()` and our `save()` —
+   * including an analytics opt-out, which a passive instance's bookkeeping
+   * writes (update-check stamps, analytics ping) kept silently undoing.
+   * Persist merges `{onDisk, dirtyKeys}` — per-key last-writer-wins — instead.
+   */
+  private readonly dirtyKeys = new Set<keyof KitsuneConfig>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimeoutMs = 300;
   /** Set when load() auto-migrated legacy videasyAppId to bc-frontend. */
@@ -193,6 +192,14 @@ export class ConfigServiceImpl implements ConfigService {
   private videasyTokenVaulted = false;
 
   static async load(store: ConfigStore, vault?: CredentialVaultPort): Promise<ConfigServiceImpl> {
+    const load = () => ConfigServiceImpl.loadWithinLock(store, vault);
+    return store.withLock ? store.withLock(load) : load();
+  }
+
+  private static async loadWithinLock(
+    store: ConfigStore,
+    vault?: CredentialVaultPort,
+  ): Promise<ConfigServiceImpl> {
     const service = new ConfigServiceImpl(store, vault);
     const loaded = await store.load();
     // Configs written before explicit consent had no notice marker. Their
@@ -211,9 +218,13 @@ export class ConfigServiceImpl implements ConfigService {
       loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
     const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(loaded);
     const migratedSeriesDefaults = shouldMigrateInheritedSeriesDefaults(loaded);
+    // mergeKitsuneConfig supplies the base: object-valued keys (sync and its
+    // anilist/tmdb sections, language profiles, youtubeMetadata, relay config,
+    // title-provider prefs) overlay DEFAULT_CONFIG field-by-field, so a
+    // hand-edited `{"sync":{"anilist":null}}` can never put null where
+    // unguarded readers do `config.sync.anilist.enabled`.
     service.config = {
-      ...DEFAULT_CONFIG,
-      ...loaded,
+      ...mergeKitsuneConfig(DEFAULT_CONFIG, loaded),
       ...(migratedSeriesDefaults
         ? {
             provider: DEFAULT_CONFIG.provider,
@@ -232,6 +243,10 @@ export class ConfigServiceImpl implements ConfigService {
             animeProviderPriority: [...DEFAULT_CONFIG.animeProviderPriority],
           }
         : {
+            animeProvider: normalizeSeriesProvider(
+              loaded.animeProvider,
+              DEFAULT_CONFIG.animeProvider,
+            ),
             animeProviderPriority: normalizeProviderIdList(
               loaded.animeProviderPriority,
               DEFAULT_CONFIG.animeProviderPriority,
@@ -241,8 +256,11 @@ export class ConfigServiceImpl implements ConfigService {
         readProviderDefaultsRevision(loaded),
         CURRENT_PROVIDER_DEFAULTS_REVISION,
       ),
-      youtubeProvider: normalizeYoutubeProvider(loaded.youtubeProvider),
-      youtubeProviderPriority: normalizeYoutubeProviderIdList(
+      youtubeProvider: normalizeSeriesProvider(
+        loaded.youtubeProvider,
+        DEFAULT_CONFIG.youtubeProvider,
+      ),
+      youtubeProviderPriority: normalizeProviderIdList(
         loaded.youtubeProviderPriority,
         DEFAULT_CONFIG.youtubeProviderPriority,
       ),
@@ -250,12 +268,9 @@ export class ConfigServiceImpl implements ConfigService {
         loaded.youtubeLanguageProfile ?? DEFAULT_CONFIG.youtubeLanguageProfile,
       ),
       youtubeMetadata: normalizeYoutubeMetadata(loaded.youtubeMetadata),
-      subLang: normalizeDefaultSubtitleLanguage(loaded.subLang),
       animeLanguageProfile: normalizeLanguageProfile(loaded.animeLanguageProfile),
       seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
       movieLanguageProfile: normalizeLanguageProfile(loaded.movieLanguageProfile),
-      autoDownload: "off",
-      autoDownloadNextCount: normalizeAutoDownloadNextCount(loaded.autoDownloadNextCount),
       offlineFreeSpaceReserveBytes: normalizeBytes(
         loaded.offlineFreeSpaceReserveBytes,
         DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
@@ -266,8 +281,10 @@ export class ConfigServiceImpl implements ConfigService {
       ),
       offlineDefaultRunwayTarget: normalizeRunwayTarget(loaded.offlineDefaultRunwayTarget),
       protectedDownloadJobIds: normalizeStringList(loaded.protectedDownloadJobIds),
+      favoriteSources: normalizeStringList(loaded.favoriteSources),
       recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
+      prePlayConfirm: normalizePrePlayConfirm(loaded.prePlayConfirm),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
@@ -299,6 +316,26 @@ export class ConfigServiceImpl implements ConfigService {
       analyticsEndpoint:
         typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
+    // One debug line, not per-field: enough to see what normalization did on a
+    // bug report without spamming --debug. Secrets never land here — tokens are
+    // presence booleans, and the relay URL is host-only.
+    dbg("config", "normalized config on load", {
+      provider: service.config.provider,
+      providerPriority: service.config.providerPriority,
+      animeProvider: service.config.animeProvider,
+      animeProviderPriority: service.config.animeProviderPriority,
+      analytics: service.config.analytics,
+      analyticsNoticeShown: service.config.analyticsNoticeShown,
+      hasInstallId: service.config.installId.length > 0,
+      recoveryMode: service.config.recoveryMode,
+      startupPriority: service.config.startupPriority,
+      relayEnabled: service.config.providerRelay.enabled !== false,
+      relayHost: relayHostForDebug(service.config.providerRelay.baseUrl),
+      hasRelayToken: (service.config.providerRelay.token ?? "").length > 0,
+      hasVideasySession: service.config.videasySessionToken.length > 0,
+      migratedAnimeDefaults,
+      migratedSeriesDefaults,
+    });
     const migratedVideasyAppId = shouldPersistVideasyAppIdMigration(loaded, service.config);
     // Vault lane: hydrate the in-memory token from the vault when config.json
     // no longer carries it, or migrate plaintext that predates the vault. The
@@ -325,6 +362,20 @@ export class ConfigServiceImpl implements ConfigService {
         // Vault write/read failed — keep the plaintext and retry next launch.
       }
     }
+    // Normalization heals on disk: a key whose stored value parsed but
+    // normalized differently (legacy enums, clamps, trims) stays dirty so the
+    // next merge save rewrites just that key — the heal the old whole-document
+    // write used to provide, without reverting keys another instance changed.
+    // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
+    for (const key of Object.keys(loaded) as (keyof KitsuneConfig)[]) {
+      if (loaded[key] === undefined) continue;
+      // Hydration is not permission to overwrite a rotated native token.
+      if (key === "videasySessionToken" && loaded[key] === "" && service.videasyTokenVaulted)
+        continue;
+      if (JSON.stringify(loaded[key]) !== JSON.stringify(service.config[key])) {
+        service.dirtyKeys.add(key);
+      }
+    }
     if (
       requiresExplicitAnalyticsConsent ||
       repairedAnalyticsIdentity ||
@@ -333,7 +384,10 @@ export class ConfigServiceImpl implements ConfigService {
       migratedAnimeDefaults ||
       migratedSeriesDefaults
     ) {
-      await service.persistConfig(service.config);
+      // Migrations changed keys nothing marked dirty — without the flag the
+      // persist would merge over the live file and drop them.
+      service.needsFullConfigWrite = true;
+      await service.persistConfigNow(true);
       service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
     }
     return service;
@@ -343,29 +397,139 @@ export class ConfigServiceImpl implements ConfigService {
    * Persist config.json with vaulted secrets stripped from the on-disk shape.
    * The value lives in the vault; `videasySessionToken` in the file is "".
    * write → read-back → compare before the plaintext is ever omitted, and on
-   * any vault failure we fall through to the unscrubbed write so the value is
-   * never lost to a failed migration.
+   * replacement failure retains plaintext; an unverified clear rejects the
+   * save and keeps its dirty key retryable.
    */
-  private async persistConfig(config: KitsuneConfig): Promise<void> {
-    if (this.vault && this.vault.backend !== "file") {
-      const key = CREDENTIAL_KEYS.videasySessionToken;
-      const token = config.videasySessionToken;
-      try {
+  /**
+   * Serializes config.json writes. A persist's `await store.load()` yields the
+   * loop, so two overlapping persists can each merge over a snapshot missing
+   * the other's write — the last one to land reverts it, and its dirty keys
+   * were already cleared. Chaining makes every write read the file the
+   * previous write left behind.
+   */
+  private persistChain: Promise<void> = Promise.resolve();
+  /**
+   * Set by `load()` when migrated/repaired config must persist verbatim —
+   * the only path allowed to write the in-memory snapshot whole. A save
+   * with no dirty keys and no flag merges over the live file instead, so a
+   * stale boot snapshot can never revert keys another instance wrote.
+   */
+  private needsFullConfigWrite = false;
+
+  private persistConfig(): Promise<void> {
+    // persistChain only orders this instance — the cross-process lock lives
+    // inside persistConfigNow. Startup owns its initial read and migration,
+    // and explicit native credential changes share that critical section.
+    const run = this.persistChain.then(() => this.persistConfigNow());
+    this.persistChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async persistConfigNow(alreadyLocked = false): Promise<void> {
+    // Read the live config when the write actually runs — a chained persist
+    // executes after any updates queued behind it, and a stale snapshot here
+    // would write old values for keys it then clears from dirtyKeys.
+    const config = this.config;
+    // Read once, cleared only after a successful write — a failed full-write
+    // keeps the flag so the next persist still writes the migrated snapshot.
+    const forceFullWrite = this.needsFullConfigWrite;
+
+    const writeOnce = async (): Promise<void> => {
+      // Only explicit token changes write the vault. Keep its transition inside
+      // the config lock so sibling rotations and the file scrub share an owner.
+      let scrubToken = this.videasyTokenVaulted;
+      if (
+        this.vault &&
+        this.vault.backend !== "file" &&
+        this.dirtyKeys.has("videasySessionToken")
+      ) {
+        const key = CREDENTIAL_KEYS.videasySessionToken;
+        const token = config.videasySessionToken;
+        scrubToken = false;
         if (token) {
-          await this.vault.set(key, token);
-          if ((await this.vault.get(key)) === token) {
-            this.videasyTokenVaulted = true;
-            return await this.store.save({ ...config, videasySessionToken: "" });
+          this.videasyTokenVaulted = false;
+          try {
+            await this.vault.set(key, token);
+            if ((await this.vault.get(key)) === token) {
+              this.videasyTokenVaulted = true;
+              scrubToken = true;
+            }
+          } catch {
+            // A failed replacement retains its plaintext for a later migration.
           }
-        } else if (this.videasyTokenVaulted) {
+        } else {
+          // A sibling may have added a token since hydration. A clear must
+          // remove it too, and must not claim success if native deletion failed.
           await this.vault.delete(key);
+          if ((await this.vault.get(key)) !== undefined)
+            throw new Error("Native credential clear could not be verified");
           this.videasyTokenVaulted = false;
         }
-      } catch {
-        // Vault unreachable — persist plaintext rather than drop the value.
       }
+      // When this process has updated keys, write per-key over the CURRENT
+      // file rather than our loaded-at-boot snapshot. The merge window shrinks
+      // a lost-update race from the session's lifetime to one read→write pair
+      // — and the lockfile closes that pair against sibling instances; a
+      // store.load() failure falls back to the whole-document write.
+      let toWrite = config;
+      let mergedKeys: ReadonlySet<keyof KitsuneConfig> | null = null;
+      let mergedValues: Partial<KitsuneConfig> | null = null;
+      if (forceFullWrite) {
+        toWrite = config;
+      } else if (this.dirtyKeys.size > 0) {
+        mergedKeys = new Set(this.dirtyKeys);
+        try {
+          const onDisk = await this.store.load();
+          const dirtySubset: Partial<KitsuneConfig> = {};
+          for (const key of mergedKeys) {
+            Object.assign(dirtySubset, { [key]: config[key] });
+          }
+          toWrite = { ...DEFAULT_CONFIG, ...onDisk, ...dirtySubset };
+          mergedValues = dirtySubset;
+        } catch {
+          toWrite = config;
+          mergedKeys = null;
+        }
+      } else {
+        // Nothing session-dirty: writing the boot snapshot whole would revert
+        // keys another instance persisted after our last read. Refreshing over
+        // the live file is a no-op content-wise that still self-heals a
+        // deleted or truncated config.json.
+        try {
+          const onDisk = await this.store.load();
+          toWrite = { ...DEFAULT_CONFIG, ...onDisk };
+        } catch {
+          toWrite = config;
+        }
+      }
+      await this.store.save(scrubToken ? { ...toWrite, videasySessionToken: "" } : toWrite);
+      if (forceFullWrite) this.needsFullConfigWrite = false;
+      this.clearPersistedDirtyKeys(mergedKeys, mergedValues ?? toWrite);
+    };
+
+    const withLock = this.store.withLock?.bind(this.store);
+    if (withLock && !alreadyLocked) {
+      await withLock(writeOnce);
+    } else {
+      await writeOnce();
     }
-    await this.store.save(config);
+  }
+
+  private clearPersistedDirtyKeys(
+    mergedKeys: ReadonlySet<keyof KitsuneConfig> | null,
+    written: Partial<KitsuneConfig>,
+  ): void {
+    // A key re-dirtied while the write was in flight keeps its flag — the
+    // next persist carries the newer value instead of reverting to what was
+    // saved. On a whole-document write every dirty key was persisted, so the
+    // current dirty set is the comparison set.
+    const keys = mergedKeys ?? [...this.dirtyKeys];
+    for (const key of keys) {
+      if (this.config[key] === written[key]) this.dirtyKeys.delete(key);
+    }
   }
 
   // Accessors
@@ -405,16 +569,8 @@ export class ConfigServiceImpl implements ConfigService {
     return [...this.config.animeProviderPriority];
   }
 
-  get subLang(): string {
-    return this.config.subLang;
-  }
-
   get wyzieApiKey(): string {
     return this.config.wyzieApiKey;
-  }
-
-  get animeLang(): "sub" | "dub" {
-    return this.config.animeLang;
   }
 
   get animeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
@@ -431,10 +587,6 @@ export class ConfigServiceImpl implements ConfigService {
 
   get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
     return this.config.animeTitlePreference;
-  }
-
-  get headless(): boolean {
-    return this.config.headless;
   }
 
   get showMemory(): boolean {
@@ -475,6 +627,14 @@ export class ConfigServiceImpl implements ConfigService {
 
   get footerHints(): "detailed" | "minimal" {
     return this.config.footerHints;
+  }
+
+  get companionPet(): "auto" | "off" {
+    return this.config.companionPet;
+  }
+
+  get theme(): string {
+    return this.config.theme;
   }
 
   get quitNearEndBehavior(): QuitNearEndBehavior {
@@ -545,14 +705,6 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.offlineMode;
   }
 
-  get autoDownload(): AutoDownloadMode {
-    return this.config.autoDownload;
-  }
-
-  get autoDownloadNextCount(): number {
-    return this.config.autoDownloadNextCount;
-  }
-
   get maxConcurrentDownloads(): number {
     return normalizeMaxConcurrentDownloads(this.config.maxConcurrentDownloads);
   }
@@ -573,12 +725,12 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.continueSourcePreference;
   }
 
-  get startupPriority(): StartupPriority {
-    return this.config.startupPriority;
+  get prePlayConfirm(): KitsuneConfig["prePlayConfirm"] {
+    return this.config.prePlayConfirm;
   }
 
-  get artworkPreviewsEnabled(): boolean {
-    return this.config.artworkPreviewsEnabled;
+  get startupPriority(): StartupPriority {
+    return this.config.startupPriority;
   }
 
   get offlineArtworkCacheEnabled(): boolean {
@@ -713,10 +865,6 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.powerSaverMode;
   }
 
-  get powerSaverAllowManualArtwork(): boolean {
-    return this.config.powerSaverAllowManualArtwork;
-  }
-
   get tuning(): TuningConfig {
     return resolveTuning(this.config.tuningOverrides);
   }
@@ -747,13 +895,11 @@ export class ConfigServiceImpl implements ConfigService {
     // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
       if (key in this.sessionOverrides) delete this.sessionOverrides[key];
+      this.dirtyKeys.add(key);
     }
     this.config = {
       ...this.config,
       ...partial,
-      ...(partial.subLang !== undefined
-        ? { subLang: normalizeDefaultSubtitleLanguage(partial.subLang) }
-        : null),
       ...(partial.providerPriority !== undefined
         ? { providerPriority: normalizeProviderIdList(partial.providerPriority) }
         : null),
@@ -769,10 +915,6 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.movieLanguageProfile
         ? { movieLanguageProfile: normalizeLanguageProfile(partial.movieLanguageProfile) }
         : null),
-      ...(partial.autoDownloadNextCount !== undefined
-        ? { autoDownloadNextCount: normalizeAutoDownloadNextCount(partial.autoDownloadNextCount) }
-        : null),
-      ...(partial.autoDownload !== undefined ? { autoDownload: "off" as const } : null),
       ...(partial.offlineFreeSpaceReserveBytes !== undefined
         ? {
             offlineFreeSpaceReserveBytes: normalizeBytes(
@@ -804,6 +946,9 @@ export class ConfigServiceImpl implements ConfigService {
               partial.continueSourcePreference,
             ),
           }
+        : null),
+      ...(partial.prePlayConfirm !== undefined
+        ? { prePlayConfirm: normalizePrePlayConfirm(partial.prePlayConfirm) }
         : null),
       ...(partial.startupPriority !== undefined
         ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
@@ -911,7 +1056,7 @@ export class ConfigServiceImpl implements ConfigService {
     this.saveInFlight = pending;
     void (async () => {
       try {
-        await this.persistConfig(this.config);
+        await this.persistConfig();
         resolve?.();
       } catch (error) {
         reject?.(error instanceof Error ? error : String(error));
@@ -924,13 +1069,25 @@ export class ConfigServiceImpl implements ConfigService {
 
   async reset(): Promise<void> {
     this.config = { ...DEFAULT_CONFIG };
-    await this.persistConfig(this.config);
+    // Reset must write every key, not just session-dirty ones.
+    // SAFETY: Object.keys of DEFAULT_CONFIG only yields KitsuneConfig keys.
+    for (const key of Object.keys(DEFAULT_CONFIG) as (keyof KitsuneConfig)[]) {
+      this.dirtyKeys.add(key);
+    }
+    await this.persistConfig();
   }
 }
 
-function normalizeStringList(values: readonly string[] | undefined): readonly string[] {
+function normalizeStringList<T>(values: T): readonly string[] {
   if (!Array.isArray(values)) return [];
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      values
+        .filter(isJsonString)
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function normalizeOptionalSecret<T>(value: T): string {
@@ -998,12 +1155,6 @@ const INHERITED_ANIME_DEFAULTS: readonly {
     animeProvider: "miruro",
     priorities: [["miruro", "kickassanime", "animegg", "anidb", "allanime"]],
   },
-  // Revision 3 leads with HiAnime; revision 4 inserts AnimeKai into the tail.
-  {
-    revision: 3,
-    animeProvider: "hianime",
-    priorities: [["miruro", "kickassanime", "animegg", "anidb", "allanime"]],
-  },
 ];
 
 function shouldMigrateInheritedAnimeDefaults(loaded: Partial<KitsuneConfig>): boolean {
@@ -1046,29 +1197,23 @@ const SHIPPED_VIDEASY_DEFAULT_PRIORITIES: ReadonlyArray<readonly string[]> = [
   ["rivestream", "vidlink"],
 ];
 
-/** The revision whose defaults moved the series lane off Videasy — the
- * migration above only applies to configs older than it. */
-const SERIES_DEFAULT_MOVED_AT_REVISION = 3;
-
 /**
- * Configs stamped before `SERIES_DEFAULT_MOVED_AT_REVISION` whose series pair
+ * Configs stamped before `CURRENT_PROVIDER_DEFAULTS_REVISION` whose series pair
  * is exactly a pair a release once shipped are moved to `DEFAULT_CONFIG`'s
- * series defaults. Anything else — a reordered list, a non-Videasy pick, a
- * hand-edited file — is left alone. A user who re-picks Videasy after the
- * migration writes `provider` alone, which this check no longer matches.
+ * series defaults. Anything else — a reordered custom list or a non-Videasy
+ * pick — is left alone. A user who re-picks Videasy after the migration writes
+ * `provider` alone (or with a missing/unreadable priority), which this check
+ * no longer matches.
  */
 function shouldMigrateInheritedSeriesDefaults(loaded: Partial<KitsuneConfig>): boolean {
-  /* The cutoff is keyed to the revision that moved the lane — not to
-   * CURRENT_PROVIDER_DEFAULTS_REVISION — because a later bump must not
-   * re-migrate configs stamped by the release that already ran it. A rev-3
-   * config holding `videasy` + the shipped pair is a deliberate re-pick made
-   * *after* VidLink became the default; resetting it destroys user intent. */
-  if (readProviderDefaultsRevision(loaded) >= SERIES_DEFAULT_MOVED_AT_REVISION) return false;
-  const provider = typeof loaded.provider === "string" ? loaded.provider.trim() : "";
+  if (readProviderDefaultsRevision(loaded) >= CURRENT_PROVIDER_DEFAULTS_REVISION) return false;
+  const provider = isJsonString(loaded.provider) ? loaded.provider.trim() : "";
   if (migrateLegacyProviderId(provider) !== "videasy") return false;
   const priority = loaded.providerPriority;
-  if (priority === undefined) return true;
-  if (!Array.isArray(priority)) return false;
+  // A missing or unreadable priority cannot carry a deliberate ordering —
+  // it normalizes to the shipped list below, so it must not shield the dead
+  // provider pick from migration either.
+  if (!Array.isArray(priority)) return true;
   return SHIPPED_VIDEASY_DEFAULT_PRIORITIES.some(
     (shipped) =>
       shipped.length === priority.length && shipped.every((id, index) => id === priority[index]),
@@ -1109,6 +1254,10 @@ function normalizeContinueSourcePreference<T>(value: T): ContinueSourcePreferenc
         : "auto";
 }
 
+function normalizePrePlayConfirm<T>(value: T): PrePlayConfirmMode {
+  return value === "when-choices" ? "when-choices" : value === "always" ? "always" : "off";
+}
+
 function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {
   return value === "enabled" ? "enabled" : value === "disabled" ? "disabled" : "unset";
 }
@@ -1137,4 +1286,14 @@ function normalizeMpvReconnectAttempts<T>(value: T): number {
 function normalizeMaxConcurrentDownloads<T>(value: T): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 3;
   return Math.max(1, Math.min(5, Math.trunc(value)));
+}
+
+/** Host-only relay URL for debug logs: the full URL can carry path/query. */
+function relayHostForDebug(baseUrl: string | undefined): string {
+  if (!baseUrl) return "";
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return "unparseable";
+  }
 }

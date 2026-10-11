@@ -29,16 +29,28 @@ test("a 404 from a stale relay is not treated as a missing catalogue", async () 
   // No curl fallback is reachable in the unit environment, so the call fails
   // rather than resolving — the point is that it does NOT report `missing`,
   // which is what poisoned the cache and blanked the lane.
-  const context = relayContext(
-    404,
-    JSON.stringify({ error: { code: "unknown-provider", providerId: "anidb" } }),
-  );
+  const originalPath = process.env.PATH;
+  const originalFetch = globalThis.fetch;
+  process.env.PATH = "";
+  // SAFETY: Mocking global fetch to fail immediately in unit test environment.
+  globalThis.fetch = ((_input: string | URL | Request) =>
+    Promise.reject(new Error("offline in unit test"))) as typeof fetch;
 
-  const catalog = await fetchAnidbEpisodeCatalog("onigiri-3942", undefined, context).catch(
-    () => "threw" as const,
-  );
+  try {
+    const context = relayContext(
+      404,
+      JSON.stringify({ error: { code: "unknown-provider", providerId: "anidb" } }),
+    );
 
-  expect(catalog).not.toEqual({ episodes: [], missing: true });
+    const catalog = await fetchAnidbEpisodeCatalog("onigiri-3942", undefined, context).catch(
+      () => "threw" as const,
+    );
+
+    expect(catalog).not.toEqual({ episodes: [], missing: true });
+  } finally {
+    process.env.PATH = originalPath;
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("a 404 straight from anidb.app is still a missing catalogue", async () => {

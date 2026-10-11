@@ -56,9 +56,12 @@ describe("resolveInstallCommand", () => {
       which: (command) => (command === "apt" ? "/usr/bin/apt" : null),
     });
     expect(debian).toBe("https://github.com/lexiforest/curl-impersonate/releases");
-    expect(resolveInstallCommand(CURL_IMPERSONATE_INSTALL, { platform: "win32" })).toBe(
-      "https://github.com/lexiforest/curl-impersonate/releases",
-    );
+    // Windows has no package either; the hint names the managed dir the
+    // resolver searches, so no PATH edit is needed.
+    const windows = resolveInstallCommand(CURL_IMPERSONATE_INSTALL, { platform: "win32" }) ?? "";
+    expect(windows).toContain("https://github.com/lexiforest/curl-impersonate/releases");
+    expect(windows).toContain("%LOCALAPPDATA%\\kunai\\deps\\curl-impersonate");
+    expect(windows).not.toMatch(/winget|choco|scoop/);
     expect(YT_DLP_INSTALL.win32).toBe("winget install --id yt-dlp.yt-dlp -e");
     expect(buildRemediationLines(CURL_IMPERSONATE_INSTALL).join("\n")).not.toContain("apt install");
   });
@@ -175,6 +178,7 @@ describe("buildDependencyRows", () => {
     const plain = await probeCapabilities({
       which: (command) => (command === "curl" ? "/usr/bin/curl" : null),
       listPathEntries: () => ["curl"],
+      canExecuteCurlInvocation: () => true,
     });
     const row = buildDependencyRows(plain).find((r) => r.id === "curl-impersonate");
     expect(row?.state).toBe("degraded");
@@ -183,10 +187,25 @@ describe("buildDependencyRows", () => {
     const impersonating = await probeCapabilities({
       which: (command) => `/usr/bin/${command}`,
       listPathEntries: () => ["curl", "curl_chrome150"],
+      canExecuteCurlInvocation: () => true,
     });
     const ok = buildDependencyRows(impersonating).find((r) => r.id === "curl-impersonate");
     expect(ok?.state).toBe("ok");
     expect(ok?.detail).toBe("matching chrome150");
+  });
+
+  test("a resolved-but-unexecutable impersonate build is not an ok row", async () => {
+    // Resolution says what exists, not what runs — a backend that fails to
+    // spawn must show as degraded with a fix, never a green "matching" row.
+    const broken = await probeCapabilities({
+      which: (command) => `/usr/bin/${command}`,
+      listPathEntries: () => ["curl", "curl_chrome150"],
+      canExecuteCurlInvocation: () => false,
+    });
+    const row = buildDependencyRows(broken).find((r) => r.id === "curl-impersonate");
+    expect(row?.state).toBe("degraded");
+    expect(row?.detail).toContain("cannot execute");
+    expect(row?.fix).not.toBeNull();
   });
 
   test("mpv degrades rather than blocks", async () => {
@@ -239,6 +258,7 @@ describe("selectStartupIssueRows", () => {
     const healthy = await probeCapabilities({
       which: (command) => `/usr/bin/${command}`,
       listPathEntries: () => ["curl", "curl_chrome150"],
+      canExecuteCurlInvocation: () => true,
     });
     const selected = selectStartupIssueRows(buildDependencyRows(healthy), {
       mode: "anime",

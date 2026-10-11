@@ -54,6 +54,7 @@ describe("ingest output is accepted by the docs parser", () => {
     day: "2026-08-13",
     computedAt: "2026-08-14T00:05:00.000Z",
     activeInstalls: 3,
+    newInstalls: 1,
     byVersion: { "0.3.0": 2, "0.2.5": 1 },
     byOs: { linux: 2, darwin: 1 },
     byArch: { x64: 2, arm64: 1 },

@@ -1,6 +1,5 @@
-import { providerHttpErrorForStatus, type ProviderRuntimeContext } from "@kunai/types";
+import { providerHttpErrorForStatus } from "@kunai/types";
 
-import { providerFetch } from "../runtime/fetch";
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { YOUTUBE_PROVIDER_ID } from "./manifest";
 
@@ -29,7 +28,6 @@ export type PipedSearchResponse = {
 export type PipedClientOptions = {
   readonly apiBaseUrl: string;
   readonly signal?: AbortSignal;
-  readonly context?: ProviderRuntimeContext;
 };
 
 export async function pipedSearch(
@@ -40,7 +38,7 @@ export async function pipedSearch(
   while (baseEnd > 0 && options.apiBaseUrl.charCodeAt(baseEnd - 1) === 47) baseEnd -= 1;
   const base = options.apiBaseUrl.slice(0, baseEnd);
   const params = new URLSearchParams({ q: query, filter: "videos" });
-  const response = await providerFetch(options.context, `${base}/search?${params.toString()}`, {
+  const response = await fetch(`${base}/search?${params.toString()}`, {
     signal: directStreamFetchSignal(options.signal, PIPED_FETCH_TIMEOUT_MS),
     headers: { Accept: "application/json" },
   });

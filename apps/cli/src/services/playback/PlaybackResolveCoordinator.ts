@@ -5,8 +5,7 @@ import {
   buildDiagnosticEvent,
   buildRecoveryDiagnosticEvent,
   mapFailureToRecommendedAction,
-  providerFailureClassToDiagnostic,
-  providerFailureToDiagnosticClass,
+  type DiagnosticFailureClass,
 } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { CacheStore } from "@/services/persistence/CacheStore";
@@ -301,7 +300,7 @@ export class PlaybackResolveCoordinator {
             stage: "fallback",
             status: "progress",
             severity: "recoverable",
-            failureClass: providerFailureToDiagnosticClass(engineEvent.failure),
+            failureClass: "unknown",
             recommendedAction: "fallback-provider",
             spanFamily: "provider.resolve",
             message: "Provider fallback started",
@@ -388,10 +387,7 @@ export class PlaybackResolveCoordinator {
           stage: engineEvent.type,
           status: engineEvent.type === "provider-attempt-failed" ? "failed" : "progress",
           severity: engineEvent.type === "provider-attempt-failed" ? "recoverable" : "healthy",
-          failureClass:
-            engineEvent.type === "provider-attempt-failed"
-              ? providerFailureToDiagnosticClass(engineEvent.failure)
-              : undefined,
+          failureClass: engineEvent.type === "provider-attempt-failed" ? "unknown" : undefined,
           recommendedAction:
             engineEvent.type === "provider-attempt-failed" ? "fallback-provider" : "none",
           spanFamily: "provider.resolve",
@@ -479,9 +475,9 @@ export class PlaybackResolveCoordinator {
       (attempt) => attempt.status === "failed",
     );
     const sourceTrace = summarizeResolveSourceTrace(result);
-    const failureClass = failedAttempt?.failureClass
-      ? providerFailureClassToDiagnostic(failedAttempt.failureClass)
-      : undefined;
+    const failureClassRaw = failedAttempt?.failureClass ?? "none";
+    const failureClass =
+      failureClassRaw === "none" ? undefined : (failureClassRaw as DiagnosticFailureClass);
     this.deps.diagnostics.record(
       withDiagnosticCorrelation(input.correlation, {
         ...buildDiagnosticEvent({

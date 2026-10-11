@@ -10,8 +10,7 @@ import type {
   ProviderId,
   ProviderTraceEvent,
 } from "@kunai/types";
-import { httpStatusIsRetryable, ProviderHttpError } from "@kunai/types";
-import type { ResolveErrorCode } from "@kunai/types";
+import { ProviderHttpError } from "@kunai/types";
 
 import { guardEndpointHealthAgainstCancellation } from "./provider-attempt-cancellation";
 import { isOfflineNetworkFailure } from "./provider-failure-classifier";
@@ -108,12 +107,45 @@ export function createProviderCycleFailureError(
   return new ProviderCycleFailureError(failure);
 }
 
+function failOpenEndpointHealth(port: EndpointHealthPort): EndpointHealthPort {
+  return {
+    shouldTry(providerId, endpoint) {
+      try {
+        return port.shouldTry(providerId, endpoint);
+      } catch {
+        // A broken health store must not quarantine live lanes.
+        return true;
+      }
+    },
+    recordSuccess(providerId, endpoint) {
+      try {
+        port.recordSuccess(providerId, endpoint);
+      } catch {
+        // Advisory evidence — a resolved stream is worth more than its record.
+      }
+    },
+    recordFailure(providerId, endpoint, info) {
+      try {
+        port.recordFailure(providerId, endpoint, info);
+      } catch {
+        // Advisory evidence — the cycle's own failure result stands alone.
+      }
+    },
+  };
+}
+
 export async function runProviderCycle<TResolved>(
   input: RunProviderCycleInput<TResolved>,
 ): Promise<ProviderCycleResult<TResolved>> {
   const now = input.now ?? (() => new Date().toISOString());
   const events: ProviderTraceEvent[] = [];
   const attempts: ProviderCycleAttempt[] = [];
+  // Endpoint health is advisory evidence, not a resolve dependency: a throwing
+  // port must never skip live lanes, discard a resolved stream, or crash the
+  // cycle. shouldTry fails open; record calls are best-effort.
+  const endpointHealth = input.endpointHealth
+    ? failOpenEndpointHealth(input.endpointHealth)
+    : undefined;
 
   const emit = (event: ProviderTraceEvent) => {
     events.push(event);
@@ -151,7 +183,7 @@ export async function runProviderCycle<TResolved>(
   const hedgeDelayMs = Math.max(0, input.hedgeDelayMs ?? 0);
   if (hedgeDelayMs > 0) {
     return runProviderCycleRaced({
-      input,
+      input: { ...input, endpointHealth },
       hedgeDelayMs,
       candidateTimeoutMs,
       now,
@@ -171,11 +203,7 @@ export async function runProviderCycle<TResolved>(
 
   for (const candidate of orderCycleCandidates(input.candidates)) {
     const endpoint = candidate.serverId;
-    if (
-      endpoint &&
-      input.endpointHealth &&
-      !input.endpointHealth.shouldTry(input.providerId, endpoint)
-    ) {
+    if (endpoint && endpointHealth && !endpointHealth.shouldTry(input.providerId, endpoint)) {
       skippedQuarantined += 1;
       emit(
         createCycleTraceEvent("source:skipped", candidate, now(), {
@@ -226,8 +254,8 @@ export async function runProviderCycle<TResolved>(
         emit(
           createCycleTraceEvent("source:success", candidate, endedAt, { attempt: attemptNumber }),
         );
-        if (endpoint && input.endpointHealth) {
-          input.endpointHealth.recordSuccess(input.providerId, endpoint);
+        if (endpoint && endpointHealth) {
+          endpointHealth.recordSuccess(input.providerId, endpoint);
         }
         return {
           selected,
@@ -251,14 +279,13 @@ export async function runProviderCycle<TResolved>(
           }),
         );
 
-        if (endpoint && input.endpointHealth) {
+        if (endpoint && endpointHealth) {
           const endpointFailureClass = classifyEndpointFailureFromCycleFailure(failure);
           if (endpointFailureClass) {
-            input.endpointHealth.recordFailure(input.providerId, endpoint, {
+            endpointHealth.recordFailure(input.providerId, endpoint, {
               class: endpointFailureClass,
               titleId: input.titleId,
               at: failure.at,
-              retryAfterMs: failure.retryAfterMs,
             });
           }
         }
@@ -310,11 +337,7 @@ export async function runProviderCycle<TResolved>(
                 reason: "transient-endpoint",
               }),
             );
-            const transientDelayMs = retryDelayForFailureClass(
-              retryDelayMs,
-              failure.failureClass,
-              failure.retryAfterMs,
-            );
+            const transientDelayMs = retryDelayForFailureClass(retryDelayMs, failure.failureClass);
             if (transientDelayMs > 0) {
               await sleepWithAbort(transientDelayMs, input.signal);
             }
@@ -326,11 +349,7 @@ export async function runProviderCycle<TResolved>(
         emit(
           createCycleTraceEvent("retry:scheduled", candidate, now(), { attempt: attemptNumber }),
         );
-        const nextDelayMs = retryDelayForFailureClass(
-          retryDelayMs,
-          failure.failureClass,
-          failure.retryAfterMs,
-        );
+        const nextDelayMs = retryDelayForFailureClass(retryDelayMs, failure.failureClass);
         if (nextDelayMs > 0) {
           await sleepWithAbort(nextDelayMs, input.signal);
         }
@@ -451,14 +470,14 @@ async function runProviderCycleRaced<TResolved>(args: {
       },
       (error): Settled => {
         if (endpoint && health) {
-          const failure = toCycleFailure(candidate, error, now);
-          const failureClass = classifyEndpointFailureFromCycleFailure(failure);
+          const failureClass = classifyEndpointFailureFromCycleFailure(
+            toCycleFailure(candidate, error, now),
+          );
           if (failureClass) {
             health.recordFailure(input.providerId, endpoint, {
               class: failureClass,
               titleId: input.titleId,
-              at: failure.at,
-              retryAfterMs: failure.retryAfterMs,
+              at: now(),
             });
           }
         }
@@ -616,29 +635,15 @@ async function runProviderCycleRaced<TResolved>(args: {
   }
 }
 
-/**
- * The longest an in-cycle sleep honors an upstream `Retry-After` hint. The
- * hint's real home is endpoint health — parking the endpoint for the hinted
- * window — not a same-candidate stall; sleeping minutes inside one resolve
- * would just starve healthy siblings. A short floor is still worth honoring:
- * re-asking in 750ms what was rate-limited to "30s" is a guaranteed second
- * refusal.
- */
-const RETRY_AFTER_CYCLE_DELAY_CAP_MS = 5_000;
-
 function retryDelayForFailureClass(
   explicitDelayMs: number | undefined,
   failureClass: ProviderCycleFailureClass,
-  retryAfterMs?: number,
 ): number {
-  const hinted =
-    retryAfterMs === undefined ? 0 : Math.min(retryAfterMs, RETRY_AFTER_CYCLE_DELAY_CAP_MS);
-  if (explicitDelayMs !== undefined) return Math.max(explicitDelayMs, hinted);
-  const base =
-    failureClass === "candidate-timeout" || failureClass === "candidate-network"
-      ? DEFAULT_TRANSIENT_RETRY_DELAY_MS
-      : DEFAULT_RETRY_DELAY_MS;
-  return Math.max(base, hinted);
+  if (explicitDelayMs !== undefined) return explicitDelayMs;
+  if (failureClass === "candidate-timeout" || failureClass === "candidate-network") {
+    return DEFAULT_TRANSIENT_RETRY_DELAY_MS;
+  }
+  return DEFAULT_RETRY_DELAY_MS;
 }
 
 function orderCycleCandidates(
@@ -719,7 +724,6 @@ function toCycleFailure(
     message: classified.message,
     retryable: classified.retryable,
     at: now(),
-    ...(classified.retryAfterMs !== undefined ? { retryAfterMs: classified.retryAfterMs } : null),
   };
 }
 
@@ -780,8 +784,6 @@ export type ProviderCycleErrorClassification = {
   readonly failureClass: ProviderCycleFailureClass;
   readonly message: string;
   readonly retryable: boolean;
-  /** The upstream's Retry-After hint in ms, when the error carried one. */
-  readonly retryAfterMs?: number;
 };
 
 export function classifyProviderCycleError(error: unknown): ProviderCycleErrorClassification {
@@ -794,16 +796,6 @@ export function classifyProviderCycleError(error: unknown): ProviderCycleErrorCl
       retryable: false,
     };
   }
-  /* `AbortSignal.timeout` raises a DOMException named "TimeoutError", which is
-   * not an AbortError — without this case a per-request deadline reads as a
-   * generic retryable blip instead of the timeout it is. */
-  if (error instanceof Error && error.name === "TimeoutError") {
-    return {
-      failureClass: "candidate-timeout",
-      message: error.message,
-      retryable: true,
-    };
-  }
   /* A provider that threw with its HTTP status attached gets classified on
    * that status, not on whatever the message happens to contain — otherwise a
    * 429 or 503 reads as a generic retryable blip and never reaches the
@@ -813,7 +805,6 @@ export function classifyProviderCycleError(error: unknown): ProviderCycleErrorCl
       failureClass: providerHttpCycleFailureClass(error),
       message: error.message,
       retryable: error.retryable,
-      ...(error.retryAfterMs !== undefined ? { retryAfterMs: error.retryAfterMs } : null),
     };
   }
   if (isNetworkOfflineMessage(message)) {
@@ -821,27 +812,6 @@ export function classifyProviderCycleError(error: unknown): ProviderCycleErrorCl
       failureClass: "candidate-network",
       message: error instanceof Error ? error.message : String(error),
       retryable: false,
-    };
-  }
-  /* A thrown value that carries the typed fields without being a
-   * ProviderHttpError instance — a provider error class that predates the
-   * base type, or an error reconstituted across a serialization boundary —
-   * still classifies on structure instead of prose (#458). An errno-style
-   * `code` like "ENOTFOUND" does not enter: the field must name a real
-   * ResolveErrorCode, carry an HTTP status, or name a transportKind. */
-  const structured = structuredErrorEvidence(error);
-  if (structured) {
-    return {
-      failureClass: providerCycleFailureClassFromParts(structured),
-      message: error instanceof Error ? error.message : String(error),
-      retryable:
-        structured.retryable ??
-        (structured.status !== undefined
-          ? httpStatusIsRetryable(structured.status)
-          : structured.transportKind !== undefined
-            ? structured.transportKind !== "offline"
-            : !NON_RETRYABLE_RESOLVE_CODES.has(structured.code ?? "unknown")),
-      ...(structured.retryAfterMs !== undefined ? { retryAfterMs: structured.retryAfterMs } : null),
     };
   }
   if (message.includes("network") || message.includes("fetch")) {
@@ -880,118 +850,19 @@ export function classifyProviderCycleError(error: unknown): ProviderCycleErrorCl
 }
 
 function providerHttpCycleFailureClass(error: ProviderHttpError): ProviderCycleFailureClass {
-  return providerCycleFailureClassFromParts(error);
-}
-
-/**
- * The parts-shaped classifier: every structured error this layer recognizes
- * carries a subset of `{code, status, transportKind}`, and each vocabulary
- * slot answers a different failure class. `transportKind` is the transport
- * taxonomy's word for "timeout" — folded in beside the ResolveErrorCode so a
- * reconstituted ProviderTransportError classifies the same as the live one.
- */
-function providerCycleFailureClassFromParts(parts: {
-  readonly code?: ResolveErrorCode;
-  readonly status?: number;
-  readonly transportKind?: string;
-}): ProviderCycleFailureClass {
-  const { code, status, transportKind } = parts;
+  const { code, status } = error;
   if (code === "rate-limited" || status === 429) return "candidate-rate-limited";
   if (code === "provider-unavailable" || (status !== undefined && status >= 500)) {
     return "candidate-server-error";
   }
   if (code === "blocked" || status === 401 || status === 403) return "candidate-blocked";
-  if (code === "timeout" || transportKind === "timeout" || status === 408 || status === 504) {
-    return "candidate-timeout";
-  }
+  if (code === "timeout" || status === 408 || status === 504) return "candidate-timeout";
   if (code === "not-found" || status === 404) return "candidate-empty";
   if (code === "parse-failed") return "candidate-parse";
   if (code === "expired") return "candidate-expired";
   if (code === "unsupported-title") return "candidate-unsupported";
   if (code === "cancelled") return "candidate-user-cancelled";
   return "candidate-network";
-}
-
-/** ResolveErrorCode as a runtime set — `new Set<…>` so a mistyped member is a
- * compile error at declaration, while `.has` still takes an arbitrary string. */
-const RESOLVE_ERROR_CODES: ReadonlySet<string> = new Set<ResolveErrorCode>([
-  "provider-unavailable",
-  "unsupported-title",
-  "not-found",
-  "network-error",
-  "rate-limited",
-  "blocked",
-  "expired",
-  "parse-failed",
-  "runtime-missing",
-  "yt-dlp-missing",
-  "timeout",
-  "cancelled",
-  "missing-input",
-  "unknown",
-]);
-
-/** Codes that cannot heal inside a resolve cycle, so a code-only structured
- * error defaults to non-retryable instead of falling through to the loose
- * `transportKind !== "offline"` default — the message branches below already
- * refuse `blocked`/`parse` the same way. `not-found` stays out on purpose:
- * providers disagree about whether it can heal, so the sender must say. */
-const NON_RETRYABLE_RESOLVE_CODES: ReadonlySet<string> = new Set<ResolveErrorCode>([
-  "blocked",
-  "parse-failed",
-  "unsupported-title",
-  "cancelled",
-  "missing-input",
-  "runtime-missing",
-  "yt-dlp-missing",
-]);
-
-/** Narrow carrier for the evidence fields — known keys, probed as unknown. */
-type StructuredEvidenceCarrier = {
-  readonly code?: unknown;
-  readonly status?: unknown;
-  readonly retryable?: unknown;
-  readonly transportKind?: unknown;
-  readonly retryAfterMs?: unknown;
-};
-
-const isResolveErrorCode = (value: string): value is ResolveErrorCode =>
-  RESOLVE_ERROR_CODES.has(value);
-
-/* oxlint-disable anti-slop/no-runtime-typeof anti-slop/no-unknown-parameters -- boundary evidence reader: the duck-type probes ARE the contract; prototypes are deliberately untrusted */
-
-/**
- * Read the typed fields off a thrown value without trusting its prototype.
- * Returns null unless at least one vocabulary slot is real evidence — a
- * Node errno (`code: "ECONNRESET"`) is not a ResolveErrorCode and must keep
- * falling through to message classification.
- */
-function structuredErrorEvidence(error: unknown): {
-  readonly code?: ResolveErrorCode;
-  readonly status?: number;
-  readonly retryable?: boolean;
-  readonly transportKind?: string;
-  readonly retryAfterMs?: number;
-} | null {
-  if (typeof error !== "object" || error === null) return null;
-  // SAFETY: object-guarded above; every carrier field is probed as unknown below.
-  const record = error as StructuredEvidenceCarrier;
-  const code =
-    typeof record.code === "string" && isResolveErrorCode(record.code) ? record.code : undefined;
-  const status =
-    typeof record.status === "number" && record.status >= 100 && record.status <= 599
-      ? record.status
-      : undefined;
-  const transportKind = typeof record.transportKind === "string" ? record.transportKind : undefined;
-  const retryable = typeof record.retryable === "boolean" ? record.retryable : undefined;
-  const retryAfterMs =
-    typeof record.retryAfterMs === "number" &&
-    Number.isFinite(record.retryAfterMs) &&
-    record.retryAfterMs >= 0
-      ? record.retryAfterMs
-      : undefined;
-  if (!code && status === undefined && !transportKind) return null;
-  return { code, status, retryable, transportKind, retryAfterMs };
 }
 
 export function isAbortError(error: unknown): boolean {

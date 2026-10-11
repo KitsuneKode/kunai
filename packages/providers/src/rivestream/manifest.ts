@@ -5,7 +5,7 @@ export const RIVESTREAM_PROVIDER_ID = "rivestream" as const;
 export const rivestreamManifest = defineProviderManifest({
   id: RIVESTREAM_PROVIDER_ID,
   displayName: "Rivestream",
-  description: "Candidate movies/series adapter; quality varies by title",
+  description: "Mirror-aggregator for movies/series; coverage varies by title",
   domain: "rivestream.app",
   recommended: true,
   mediaKinds: ["movie", "series"],
@@ -43,7 +43,6 @@ export const rivestreamManifest = defineProviderManifest({
   relayProfile: {
     upstreamHosts: ["www.rivestream.app"],
   },
-  status: "candidate",
   notes: [
     "Bypasses Playwright entirely by generating the 32-bit MurmurHash signature natively in Node.js.",
   ],

@@ -14,6 +14,13 @@ export interface DiagnosticsRecentCommandOptions {
   readonly limit?: number;
   readonly stdout?: Pick<typeof process.stdout, "write">;
   /**
+   * Cache database to read instead of the live profile's. `runMigrations`
+   * writes, so resolving the real path here means a test that drives this
+   * command migrates the developer's live cache database. Production passes
+   * nothing and keeps the live path.
+   */
+  readonly cacheDbPath?: string;
+  /**
    * Whether the destination is an interactive terminal. Drives both the default
    * format and whether colour is emitted, so a pipe keeps getting the machine
    * format it has always got.
@@ -35,8 +42,8 @@ export async function runDiagnosticsRecentCommand(
   }
 
   const parsed = parseDiagnosticsRecentArgs(argv.slice(1), options);
-  const paths = getKunaiPaths();
-  const db = openKunaiDatabase(paths.cacheDbPath);
+  const cacheDbPath = options.cacheDbPath ?? getKunaiPaths().cacheDbPath;
+  const db = openKunaiDatabase(cacheDbPath);
   try {
     runMigrations(db, "cache");
     const repository = new DiagnosticEventsRepository(db);
@@ -254,8 +261,9 @@ export function formatDiagnosticEventsAsMarkdown(events: readonly DiagnosticEven
 
 /**
  * Exported so the format-default rule is testable without touching the real
- * profile: `runDiagnosticsRecentCommand` resolves `getKunaiPaths()` and opens
- * the live cache database, which a unit test must never do.
+ * profile. `runDiagnosticsRecentCommand` without `cacheDbPath` resolves
+ * `getKunaiPaths()` and opens the live cache database, which a unit test must
+ * never do — pass `cacheDbPath` pointing at a sandbox instead.
  */
 export function parseDiagnosticsRecentArgs(
   argv: readonly string[],

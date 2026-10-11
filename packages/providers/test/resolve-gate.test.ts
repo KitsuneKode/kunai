@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { ProviderRuntimeContext } from "@kunai/types";
 
-import {
-  dropRefusedStreams,
-  selectVerifiedStream,
-  verifyCandidateStream,
-} from "../src/shared/resolve-gate";
+import { selectVerifiedStream, verifyCandidateStream } from "../src/shared/resolve-gate";
 
 /**
  * The gate exists to make "verified" and "shipped" the same request.
@@ -16,15 +12,12 @@ import {
  * refused. Both halves were individually reasonable; the bug was that they were
  * assembled twice.
  */
-type RecordedContext = {
+function contextRecording(handler: (url: string, init?: RequestInit) => Response): {
   readonly context: ProviderRuntimeContext;
   readonly seen: RequestInit[];
-};
-
-function contextRecording(handler: (url: string, init?: RequestInit) => Response): RecordedContext {
+} {
   const seen: RequestInit[] = [];
   const context = {
-    now: () => "2026-01-01T00:00:00.000Z",
     fetch: {
       runtime: "direct-http" as const,
       fetch: async (url: string, init?: RequestInit) => {
@@ -32,7 +25,7 @@ function contextRecording(handler: (url: string, init?: RequestInit) => Response
         return handler(String(url), init);
       },
     },
-  } satisfies ProviderRuntimeContext;
+  } as unknown as ProviderRuntimeContext;
   return { context, seen };
 }
 
@@ -124,6 +117,28 @@ describe("verifyCandidateStream", () => {
 
     expect(verdict).toMatchObject({ accepted: false });
   });
+
+  test("denies a private-target stream before any fetch (SSRF guard)", async () => {
+    // A provider-supplied URL can name loopback, LAN, or cloud metadata. The
+    // deny lives inside the probe path, so the gate must surface it as a
+    // refusal without the injected fetch ever firing.
+    const { context, seen } = contextRecording(() => new Response("", { status: 200 }));
+
+    for (const url of [
+      "http://169.254.169.254/latest/meta-data",
+      "http://127.0.0.1:8080/internal",
+      "http://10.0.0.4/lan",
+      "http://172.16.0.9/lan",
+      "http://192.168.1.10/media",
+      "http://0.0.0.0/internal",
+      "http://[::1]/loopback",
+    ]) {
+      const verdict = await verifyCandidateStream({ stream: { url, headers: {} }, context });
+      expect(verdict.accepted).toBe(false);
+      if (verdict.accepted === false) expect(verdict.reason).toContain("blocked stream target");
+    }
+    expect(seen).toEqual([]);
+  });
 });
 
 /**
@@ -167,94 +182,12 @@ describe("selectVerifiedStream", () => {
     expect(result.accepted === false && result.reason).toContain("403");
   });
 
-  test("an HTTP refusal vetoes only its own request, not sibling rungs on the host", async () => {
-    // A signed URL's 403 is evidence about that URL — CDNs sign per path, so
-    // the 720p rung can play fine after the 1080p one is refused.
-    const { context } = contextRecording((url) =>
-      url.includes("1080")
-        ? new Response("forbidden", { status: 403 })
-        : new Response(new Uint8Array(2048), { status: 206 }),
-    );
-
-    const result = await selectVerifiedStream({
-      streams: [
-        stream("a", "https://same.example/1080.mp4"),
-        stream("b", "https://same.example/720.mp4"),
-      ],
-      context,
-    });
-
-    expect(result.accepted).toBe(true);
-    expect(result.accepted === true && result.stream.id).toBe("b");
-  });
-
-  test("a refused request is reported so the caller can drop it", async () => {
-    const { context } = contextRecording((url) =>
-      url.includes("1080")
-        ? new Response("forbidden", { status: 403 })
-        : new Response(new Uint8Array(2048), { status: 206 }),
-    );
-
-    const result = await selectVerifiedStream({
-      streams: [
-        stream("a", "https://same.example/1080.mp4"),
-        stream("b", "https://same.example/720.mp4"),
-      ],
-      context,
-    });
-
-    expect(result.accepted).toBe(true);
-    if (result.accepted) {
-      expect(result.refusedRequests.size).toBe(1);
-      expect(result.refusedHosts.size).toBe(0);
-      const kept = dropRefusedStreams(
-        [stream("a", "https://same.example/1080.mp4"), stream("b", "https://same.example/720.mp4")],
-        result,
-      );
-      expect(kept.map((candidate) => candidate.id)).toEqual(["b"]);
-    }
-  });
-
-  test("a connection-level verdict still vetoes the whole host", async () => {
-    // DNS/TLS/refused-socket verdicts are host-scoped evidence: every rung on
-    // the host dies the same way, so probing siblings only burns the budget.
+  test("probes each host once, because a host answers the same for every rung", async () => {
+    // Counted by distinct URL, not by fetch: one probe of a direct stream is
+    // itself a HEAD plus a ranged GET, so raw request count measures the
+    // probe's internals rather than this walk.
     const probed: string[] = [];
     const context = {
-      now: () => "2026-01-01T00:00:00.000Z",
-      fetch: {
-        runtime: "direct-http" as const,
-        fetch: async (url: string) => {
-          probed.push(String(url));
-          if (String(url).includes("dead")) {
-            throw new Error("getaddrinfo ENOTFOUND dead.example");
-          }
-          return new Response(null, { status: 200 });
-        },
-      },
-    } satisfies ProviderRuntimeContext;
-
-    const result = await selectVerifiedStream({
-      streams: [
-        stream("a", "https://dead.example/1080.mp4"),
-        stream("b", "https://dead.example/720.mp4"),
-        stream("c", "https://live.example/480.mp4"),
-      ],
-      context,
-    });
-
-    expect(result.accepted).toBe(true);
-    expect(result.accepted === true && result.stream.id).toBe("c");
-    // Only the first dead.example rung is probed; its siblings are skipped.
-    expect(probed.filter((url) => url.includes("dead.example")).length).toBe(1);
-    if (result.accepted) {
-      expect(result.refusedHosts.has("dead.example")).toBe(true);
-    }
-  });
-
-  test("identical requests are probed once even across duplicate rungs", async () => {
-    const probed: string[] = [];
-    const context = {
-      now: () => "2026-01-01T00:00:00.000Z",
       fetch: {
         runtime: "direct-http" as const,
         fetch: async (url: string) => {
@@ -262,20 +195,19 @@ describe("selectVerifiedStream", () => {
           return new Response("forbidden", { status: 403 });
         },
       },
-    } satisfies ProviderRuntimeContext;
+    } as unknown as ProviderRuntimeContext;
 
-    const result = await selectVerifiedStream({
+    await selectVerifiedStream({
       streams: [
-        stream("a", "https://same.example/video.mp4"),
-        stream("b", "https://same.example/video.mp4"),
+        stream("a", "https://same.example/1080.mp4"),
+        stream("b", "https://same.example/720.mp4"),
+        stream("c", "https://same.example/480.mp4"),
       ],
       context,
     });
 
-    // The URL alone cannot measure dedup — both rungs share it — so count
-    // raw requests: one probe is HEAD + ranged GET, a second probe doubles it.
-    expect(result.accepted).toBe(false);
-    expect(probed.length).toBe(2);
+    expect(new Set(probed).size).toBe(1);
+    expect(probed.every((url) => url.includes("1080"))).toBe(true);
   });
 
   test("rejects an empty candidate rather than reporting success", async () => {

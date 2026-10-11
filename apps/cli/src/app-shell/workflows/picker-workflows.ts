@@ -1,3 +1,4 @@
+import { buildProviderPickerOptions } from "@/app-shell/panel-data";
 import {
   chooseEpisodeFromOptions,
   chooseFromListShell,
@@ -5,37 +6,45 @@ import {
   type ListShellActionContext,
 } from "@/app-shell/pickers";
 import { buildTracksPanelData } from "@/app-shell/tracks-panel-data";
+import type { ShellPickerOption } from "@/app-shell/types";
 import type { Container } from "@/container";
+import { markCurrentLabel } from "@/domain/current-label";
 import {
   annotateCurrentTrackFailure,
   decodeTrackSelection,
   type DecodedTrackSelection,
   type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
+import { nearestOptionIndex } from "@/domain/session/picker-model";
 import type { EpisodePickerOption, StreamInfo } from "@/domain/types";
 import { scheduleVideasyLazySourceProbesFromContainer } from "@/services/playback/schedule-videasy-lazy-probes";
 import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
+import type { ProviderHealth, ProviderId } from "@kunai/types";
 
-import { createSessionPickerId, openSessionPicker, waitForSessionPicker } from "../session-picker";
+import {
+  createSessionPickerId,
+  openSessionPicker,
+  parsePickerValue,
+  waitForSessionPicker,
+} from "../session-picker";
+import { persistSettingsDraft } from "../settings/persist";
 
 export async function openProviderPicker({
   currentProvider,
   providers,
   actionContext,
+  getProviderHealth,
 }: {
   currentProvider: string;
   providers: readonly import("@/domain/types").ProviderMetadata[];
   actionContext?: ListShellActionContext;
+  getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
 }): Promise<string | null> {
   return chooseFromListShell({
     title: "Choose provider",
     subtitle: `Current provider ${currentProvider}`,
     actionContext,
-    options: providers.map((provider) => ({
-      value: provider.id,
-      label: provider.id === currentProvider ? `${provider.name}  ·  current` : provider.name,
-      detail: provider.description,
-    })),
+    options: buildProviderPickerOptions({ providers, currentProvider, getProviderHealth }),
   });
 }
 
@@ -202,7 +211,7 @@ export async function openAnimeEpisodePicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: Math.max(0, currentEpisode - 1),
+      initialIndex: nearestOptionIndex(episodes, currentEpisode),
       options: episodes.map((episode) => ({
         value: String(episode),
         label: `Episode ${episode}`,
@@ -210,7 +219,7 @@ export async function openAnimeEpisodePicker(
         badge: episode === currentEpisode ? "current" : undefined,
       })),
     });
-    return picked ? Number.parseInt(picked, 10) : null;
+    return parsePickerValue(picked);
   }
   return chooseFromListShell({
     title: "Choose episode",
@@ -218,7 +227,7 @@ export async function openAnimeEpisodePicker(
     actionContext,
     options: episodes.map((episode) => ({
       value: episode,
-      label: episode === currentEpisode ? `Episode ${episode}  ·  current` : `Episode ${episode}`,
+      label: markCurrentLabel(`Episode ${episode}`, episode === currentEpisode),
     })),
   });
 }
@@ -235,9 +244,9 @@ export async function openAnimeEpisodeListPicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: Math.max(
-        0,
-        episodes.findIndex((episode) => episode.index === currentEpisode),
+      initialIndex: nearestOptionIndex(
+        episodes.map((episode) => episode.index),
+        currentEpisode,
       ),
       options: episodes.map((episode) => ({
         value: String(episode.index),
@@ -248,7 +257,7 @@ export async function openAnimeEpisodeListPicker(
         badge: episode.index === currentEpisode ? "current" : undefined,
       })),
     });
-    return picked ? Number.parseInt(picked, 10) : null;
+    return parsePickerValue(picked);
   }
 
   return chooseFromListShell({
@@ -257,8 +266,56 @@ export async function openAnimeEpisodeListPicker(
     actionContext,
     options: episodes.map((episode) => ({
       value: episode.index,
-      label: episode.index === currentEpisode ? `${episode.label}  ·  current` : episode.label,
+      label: markCurrentLabel(episode.label, episode.index === currentEpisode),
       detail: episode.detail,
     })),
   });
+}
+
+/** Open already prepared episode choices without performing catalog acquisition. */
+export function openPlaybackEpisodePicker(
+  container: Container,
+  season: number,
+  picker: { readonly options: readonly ShellPickerOption<string>[]; readonly initialIndex: number },
+): Promise<string | null> {
+  return openSessionPicker(container.stateManager, {
+    type: "episode_picker",
+    season,
+    options: picker.options,
+    initialIndex: picker.initialIndex,
+  });
+}
+
+/**
+ * `/theme` palette entry — the same write path as Settings › Appearance
+ * (`persistSettingsDraft` → `applySettingsToRuntime`), so a pick here repaints
+ * and persists exactly like a pick inside the settings overlay. A set
+ * `KUNAI_THEME` is surfaced rather than silently fought: the pick still
+ * applies for this run and persists, but the env wins again next launch.
+ */
+export async function openThemePicker(
+  container: Container,
+  actionContext?: ListShellActionContext,
+): Promise<void> {
+  const { isThemeName, listThemes, setDesignTheme } = await import("@kunai/design");
+  const envTheme = process.env.KUNAI_THEME;
+  const config = container.config.getRaw();
+  const active = envTheme ?? config.theme;
+  const picked = await chooseFromListShell<string>({
+    title: "Theme",
+    subtitle: envTheme
+      ? `KUNAI_THEME=${envTheme} overrides on launch — a pick still applies now`
+      : "Applies instantly — saved for next launch",
+    actionContext,
+    options: listThemes().map((theme) => ({
+      value: theme.name,
+      label: markCurrentLabel(theme.label, theme.name === active),
+      detail: theme.detail,
+    })),
+  });
+  if (!picked || !isThemeName(picked) || picked === active) return;
+  await persistSettingsDraft(container, { ...config, theme: picked });
+  // persist is a no-op when the pick already equals config.theme (env mask),
+  // so repaint explicitly — an explicit pick wins over the env for this run.
+  if (picked === config.theme) setDesignTheme(picked);
 }

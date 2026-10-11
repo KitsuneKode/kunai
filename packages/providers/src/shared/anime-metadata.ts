@@ -1,6 +1,5 @@
-import type { ProviderEpisodeOption, ProviderRuntimeContext } from "@kunai/types";
+import type { ProviderEpisodeOption } from "@kunai/types";
 
-import { providerFetch } from "../runtime/fetch";
 import { TTLCache } from "./provider-cache";
 import { createTimeoutSignal } from "./timeout-signal";
 
@@ -164,13 +163,9 @@ function mergeEpisodeMetadata(
   });
 }
 
-async function fetchJson<T>(
-  url: string,
-  context: ProviderRuntimeContext | undefined,
-  signal?: AbortSignal,
-): Promise<T | null> {
+async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T | null> {
   try {
-    const response = await providerFetch(context, url, {
+    const response = await fetch(url, {
       signal: createTimeoutSignal(signal, 20_000),
       headers: { Accept: "application/json" },
     });
@@ -198,7 +193,6 @@ const JIKAN_MAX_PAGES = 50;
 
 async function fetchJikanEpisodes(
   malId: number,
-  context: ProviderRuntimeContext | undefined,
   signal?: AbortSignal,
 ): Promise<EpisodeMetadataFetch> {
   const episodes = new Map<number, AnimeEpisodeMetadata>();
@@ -208,7 +202,7 @@ async function fetchJikanEpisodes(
     const payload = await fetchJson<{
       readonly data?: readonly JikanEpisode[];
       readonly pagination?: { readonly has_next_page?: boolean };
-    }>(`${JIKAN_BASE}/anime/${malId}/episodes?page=${page}`, context, signal);
+    }>(`${JIKAN_BASE}/anime/${malId}/episodes?page=${page}`, signal);
 
     // `fetchJson` returns null for a non-OK response *or* a thrown request, so
     // null here is a transport failure — not an empty page. It used to fall
@@ -241,12 +235,11 @@ async function fetchJikanEpisodes(
 
 async function fetchAniListStreamingEpisodes(
   anilistId: string,
-  context: ProviderRuntimeContext | undefined,
   signal?: AbortSignal,
 ): Promise<EpisodeMetadataFetch> {
   const episodes = new Map<number, AnimeEpisodeMetadata>();
   try {
-    const response = await providerFetch(context, ANILIST_GRAPHQL, {
+    const response = await fetch(ANILIST_GRAPHQL, {
       method: "POST",
       signal: createTimeoutSignal(signal, 20_000),
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -330,7 +323,6 @@ export async function fetchAnimeEpisodeMetadataByNumber(
   ids: { readonly anilistId?: string; readonly malId?: string },
   signal?: AbortSignal,
   pass: EpisodeMetadataPass = "full",
-  context?: ProviderRuntimeContext,
 ): Promise<Map<number, AnimeEpisodeMetadata>> {
   // A completed full pass already contains everything the artwork pass would
   // fetch, so it answers both; the reverse is not true.
@@ -344,7 +336,7 @@ export async function fetchAnimeEpisodeMetadataByNumber(
   let complete = true;
 
   if (ids.anilistId) {
-    const anilist = await fetchAniListStreamingEpisodes(ids.anilistId, context, signal);
+    const anilist = await fetchAniListStreamingEpisodes(ids.anilistId, signal);
     for (const [number, meta] of anilist.episodes) {
       mergeEpisodeMetadata(merged, number, meta);
     }
@@ -352,7 +344,7 @@ export async function fetchAnimeEpisodeMetadataByNumber(
   }
 
   if (pass === "full" && Number.isFinite(malId) && malId > 0) {
-    const jikan = await fetchJikanEpisodes(malId, context, signal);
+    const jikan = await fetchJikanEpisodes(malId, signal);
     for (const [number, meta] of jikan.episodes) {
       mergeEpisodeMetadata(merged, number, meta);
     }

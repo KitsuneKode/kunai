@@ -3,7 +3,10 @@ import "./global.css";
 import { PrivacyAnalytics } from "@/components/analytics/privacy-analytics";
 import { PrivacySpeedInsights } from "@/components/analytics/privacy-speed-insights";
 import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
-import { KunaiSearchDialog } from "@/components/search/kunai-search-dialog";
+import { NavCompact } from "@/components/layout/nav-compact";
+import { SiteFooter } from "@/components/layout/site-footer";
+import { MotionProvider } from "@/components/providers/motion-provider";
+import { LazySearchDialog } from "@/components/search/lazy-search-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { fontClassNames } from "@/lib/fonts";
 /* eslint-enable import/no-unassigned-import */
@@ -20,15 +23,6 @@ export const metadata: Metadata = {
   },
   description:
     "Guides for Kunai, the terminal client for anime, series, movies, and YouTube: resolve a stream, hand off to mpv, recover, and use local offline files.",
-  keywords: [
-    "kunai",
-    "terminal streaming",
-    "anime cli",
-    "movie cli",
-    "mpv",
-    "media cli",
-    "command line streaming",
-  ],
 };
 
 export const viewport: Viewport = {
@@ -44,7 +38,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
       <body className="bg-fd-background text-fd-foreground flex min-h-screen flex-col antialiased">
         <RootProvider
           search={{
-            SearchDialog: KunaiSearchDialog,
+            SearchDialog: LazySearchDialog,
             links: [
               ["Getting started", "/docs/users/getting-started"],
               ["Troubleshooting", "/docs/users/troubleshooting"],
@@ -60,20 +54,27 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
             enableSystem: false,
           }}
         >
-          <TooltipProvider>{children}</TooltipProvider>
+          <MotionProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+          </MotionProvider>
+          {/* Site-wide footer — a direct DOM child of body (the providers
+              render no element), so `mt-auto` pins it to the fold on short
+              pages and it sits after the page chrome on every route. */}
+          <SiteFooter />
         </RootProvider>
         {/* A direct child of <body>, not nested in the provider tree: `position:
             fixed` resolves against the nearest transformed ancestor, and page
             chrome is full of transforms. Here she is always viewport-relative.
 
             Safe under every rendering mode this site uses. She renders `null`
-            until a mount effect has checked pointer type, reduced motion and
+            until the browser snapshot has checked pointer type, reduced motion and
             the stored dismissal, so static and server output contain nothing of
             her and there is no hydration mismatch to reconcile. She holds no
             server data, so ISR revalidation never invalidates her.
 
             Living in the root layout also means she survives route changes
             rather than remounting — she keeps walking while you navigate. */}
+        <NavCompact />
         <KunaiFoxRoamer />
         <PrivacyAnalytics />
         <PrivacySpeedInsights />

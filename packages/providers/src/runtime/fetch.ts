@@ -18,14 +18,11 @@ export interface ProviderHttpRequestContext {
 }
 
 export function providerFetch(
-  context: ProviderRuntimeContext | undefined,
+  context: ProviderRuntimeContext,
   input: string | URL | Request,
   init?: RequestInit,
 ): Promise<Response> {
-  // The port itself decides whether a request can ride the relay — hosts
-  // outside `upstreamHosts` fall back to direct — so `context` is optional
-  // only where a shared helper genuinely has no caller context to take.
-  return context?.fetch?.fetch(input, init) ?? fetch(input, init);
+  return context.fetch?.fetch(input, init) ?? fetch(input, init);
 }
 
 export async function providerJson<T>(

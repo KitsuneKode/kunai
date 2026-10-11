@@ -42,6 +42,19 @@ export const SUBTITLE_PREFERENCE_OPTIONS: readonly MediaPreferenceOption[] = [
 ];
 
 /**
+ * Provider-stream quality ceiling — the vocabulary behind the per-lane
+ * `*.quality` profile keys. Lives here for the same reason as the language
+ * lists: settings rows, download options, and `--quality` all read one list,
+ * and a second copy is how the surfaces drift.
+ */
+export const PROVIDER_QUALITY_PREFERENCE_OPTIONS: readonly MediaPreferenceOption[] = [
+  { value: "best", label: "Best available", detail: "Highest resolution the source offers" },
+  { value: "1080p", label: "1080p", detail: "Full HD ceiling — balances quality and bandwidth" },
+  { value: "720p", label: "720p", detail: "HD ceiling for slower connections" },
+  { value: "480p", label: "480p", detail: "SD ceiling for tight bandwidth" },
+];
+
+/**
  * What setup pre-selects, and what skipping a step writes.
  *
  * `original` rather than a named language on purpose: it already resolves to

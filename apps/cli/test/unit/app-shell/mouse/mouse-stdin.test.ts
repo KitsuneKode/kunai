@@ -61,6 +61,100 @@ function drain(proxy: MouseSplitStdin): string {
 }
 
 describe("MouseSplitStdin", () => {
+  function scheduledHarness() {
+    const source = new FakeSource();
+    let task: (() => void) | undefined;
+    let cancelled = 0;
+    const proxy = new MouseSplitStdin(source, null, {
+      write: () => {},
+      scheduleTailFlush: (flush) => {
+        task = flush;
+        return () => {
+          cancelled += 1;
+          task = undefined;
+        };
+      },
+    });
+    proxy.attach();
+    return { source, proxy, flush: () => task?.(), cancellations: () => cancelled };
+  }
+
+  test("an abandoned partial report releases held numeric keystrokes on idle", () => {
+    const { source, proxy, flush } = scheduledHarness();
+    source.feed("\x1b[<0;7");
+    expect(drain(proxy)).toBe("");
+    source.feed("123;");
+    expect(drain(proxy)).toBe("");
+    let readable = 0;
+    proxy.on("readable", () => {
+      readable += 1;
+    });
+    flush();
+    expect(readable).toBe(1);
+    expect(drain(proxy)).toBe("\x1b[<0;7123;");
+    source.feed("next");
+    expect(drain(proxy)).toBe("next");
+    proxy.detach();
+  });
+
+  test.each(["\x1b", "\x1b["])("ordinary %j keyboard prefixes are released on idle", (prefix) => {
+    const { source, proxy, flush } = scheduledHarness();
+    source.feed(prefix);
+    expect(drain(proxy)).toBe("");
+    flush();
+    expect(drain(proxy)).toBe(prefix);
+    proxy.detach();
+  });
+
+  test("an arrow key split after its introducer reaches Ink unchanged", () => {
+    const { source, proxy } = scheduledHarness();
+    source.feed("\x1b[");
+    expect(drain(proxy)).toBe("");
+    source.feed("A");
+    expect(drain(proxy)).toBe("\x1b[A");
+    proxy.detach();
+  });
+
+  test("completed and detached partial reports cancel their pending idle task", () => {
+    const { source, proxy, flush, cancellations } = scheduledHarness();
+    source.feed("\x1b[<0;7");
+    drain(proxy);
+    source.feed(";2M");
+    expect(drain(proxy)).toBe("");
+    expect(cancellations()).toBe(1);
+    flush();
+    expect(drain(proxy)).toBe("");
+    source.feed("\x1b[<1;");
+    drain(proxy);
+    proxy.detach();
+    expect(cancellations()).toBe(2);
+    flush();
+    expect(drain(proxy)).toBe("");
+  });
+
+  test("a mouse report split at any byte boundary never becomes a keypress", () => {
+    const report = "\x1b[<0;5;2M";
+    for (let boundary = 1; boundary < report.length; boundary += 1) {
+      const { source, proxy, dispatcher } = harness();
+      let clicks = 0;
+      dispatcher.register(
+        "row",
+        { x: 1, y: 1, width: 10, height: 3 },
+        {
+          onClick: () => {
+            clicks += 1;
+          },
+        },
+      );
+      source.feed(report.slice(0, boundary));
+      expect(drain(proxy)).toBe("");
+      source.feed(report.slice(boundary) + "\x1b[<0;5;2m");
+      expect(drain(proxy)).toBe("");
+      expect(clicks).toBe(1);
+      proxy.detach();
+    }
+  });
+
   test("mouse bytes dispatch to the dispatcher and never reach read()", () => {
     const { source, proxy, dispatcher } = harness();
     const hits: MouseEvent[] = [];

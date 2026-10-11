@@ -97,20 +97,24 @@ export function buildDependencyRows(
         }),
   });
 
-  const curlIssue = issue("curl-impersonate-missing") ?? issue("curl-missing");
+  const curlIssue =
+    issue("curl-invocation-failed") ?? issue("curl-impersonate-missing") ?? issue("curl-missing");
+  const curlBroken = Boolean(issue("curl-invocation-failed"));
   rows.push({
     id: "curl-impersonate",
     name: "curl-impersonate",
     scope: "anime",
-    state: snapshot.curl.impersonates ? "ok" : "degraded",
+    state: snapshot.curl.impersonates && !curlBroken ? "ok" : "degraded",
     role: "anime search",
-    detail: snapshot.curl.impersonates
-      ? `matching ${snapshot.curl.profile}`
-      : snapshot.curl.present
-        ? "only plain curl"
-        : "no curl at all",
+    detail: curlBroken
+      ? `${snapshot.curl.profile ?? "curl"} resolved but cannot execute`
+      : snapshot.curl.impersonates
+        ? `matching ${snapshot.curl.profile}`
+        : snapshot.curl.present
+          ? "only plain curl"
+          : "no curl at all",
     fix: curlIssue ? fixFor(curlIssue.install, which) : null,
-    ...(snapshot.curl.impersonates
+    ...(snapshot.curl.impersonates && !curlBroken
       ? null
       : {
           consequence:

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-10-07"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -129,8 +129,9 @@ accounts, usage ping, done. Implementation is
 - New temporary files use a short `.tmp.<job-id>.mp4` sibling name so a long final filename
   does not overflow the filesystem component limit. Existing jobs retain their recorded paths.
   Candidates validate after a clean exit, then publish using an exclusive hard link before the
-  temporary name is removed. An existing destination is never overwritten; filesystems without
-  hard-link support fail safely. Choose another directory or resolve the existing file explicitly.
+  temporary name is removed. A cross-device or unsupported-link failure uses an exclusive copy
+  followed by file fsync. An existing destination is never overwritten in either path.
+  Choose another directory or resolve an existing file explicitly.
   Legacy destinations claimed by another job or offline asset are refused during publication
   and recovery. Artifact deletion requires a completed/repairable job with no conflicting owner;
   deleting a failed job preserves an unknown existing file.
@@ -278,7 +279,9 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
 - Normal online search keeps provider playback online-first by default even when a downloaded
   copy exists; downloaded state is a badge/action, not a silent hijack.
 - Continue-style flows may prefer a ready local file before provider resolution, but online
-  continuation must remain an explicit action when local episodes are exhausted or broken.
+  continuation must remain an explicit action when local episodes are exhausted or broken. A known
+  selected local episode (or movie) is validated before provider lookup and remote title enrichment;
+  the explicit streaming preference retains online acquisition behavior.
 - History/Continue rows may promote a cached downloaded next episode and show cached `N new`.
   When durable local identity exists, Enter explicitly plays that downloaded episode through the
   validated offline path. Otherwise the row directs the user to `/library`; ordinary online history
@@ -295,10 +298,34 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
 - An offline-library launch keeps its explicit local-only origin through episode selection and
   playback. The validated local source is handed to the local mpv path, including local subtitle
   sidecars, rather than being represented as a remote stream URL.
+- A validated local artifact remains playable when its recorded provider is no longer registered.
+  Provider identity remains provenance for history and sharing; registration becomes mandatory
+  only for online acquisition. Source authority is resolved before adapter lookup, and local
+  playback skips provider selection, traces, health feedback, remote prefetch, and post-play
+  release reconciliation. Manual Next and autoplay use the offline episode index.
+- Initial downloaded launches retain the selected job's provider-native episode identity and season.
+  Numeric season/episode coordinates alone must not choose a different catalog artifact. A saved
+  position is used for instant entry only when its season and episode match the selected episode.
+- Active and post-play episode pickers list locally ready episodes across downloaded seasons,
+  retaining provider-native episode identity. They never fetch a catalog during local playback.
+- Local Tracks shows the downloaded source as a fact and delegates embedded audio/subtitle changes
+  to the player. Provider, source, and acquisition audio-mode switches require opening the title
+  online; stale track picks show feedback without changing preferences, invalidating caches, or
+  replaying the local file. The stream's local presentation marker never grants file access:
+  the player still requires exact path matching against a validated local source.
 - The full player-options path preserves that verified origin by exact media/sidecar path match, so
   resume, autoplay, timing, track preferences, and cancellation remain available without weakening
   mpv URL safety. A local launch failure is a local player problem: it never invalidates provider
   caches or enters source/provider failover.
+- mpv's one-shot launcher and pooled loadfile path skip HTTP preflight only for a file
+  admitted by explicit local authority. HTTP(S) targets still receive network preflight,
+  including an HTTP(S) URL accidentally tagged local. The URL and exact-path trust gates
+  remain intact; provider URLs never gain local-file permission from a display marker.
+- mpv's shutdown can clear duration while retaining position. Playback results keep
+  the duration observed in that playback cycle for both history and premature-EOF
+  checks, even when a later position event arrives after duration is cleared. This retained value
+  resets with each playback cycle, so a short completed file persists without loosening
+  interrupted-stream checks or inheriting another file's duration.
 - Offline playback does not start remote subtitle or timing-metadata lookup, provider prefetch, or
   recommendation warming. Local next-episode readiness, cached timing, and local subtitle sidecars
   remain available.
@@ -334,3 +361,13 @@ Keep config flat unless the config model is deliberately refactored:
 
 Current offline follow-up is indexed in [the roadmap](../.plans/roadmap.md). Do
 not reopen the archived onboarding plan to infer current behavior.
+
+## Due work and queue paging
+
+Download dispatch filters retry eligibility in SQLite before applying the page
+limit, using `DownloadJobsRepository.listDueQueued`. Fifty deferred jobs must
+not hide due work behind them. Pages use stable `(created_at, id)` ordering;
+equal timestamps use the job ID as the tie-breaker, process-local claims are skipped, and the scheduler continues with a bounded
+keyset page budget. The regression seeds 51 durable intents and requires the
+last one to be attempted without changing the earlier retry windows. Up Next
+placement is a separate policy in the [queue feature](features/queue.md).

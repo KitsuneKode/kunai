@@ -34,7 +34,7 @@ import {
 } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import {
-  cycleExhaustedResult,
+  cycleExhaustionFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import {
@@ -253,7 +253,13 @@ const cArray = [
   "rFRD5wlM",
 ];
 
-function generateSecretKey(e: string | number) {
+/**
+ * Exported for the rotation canary in `test/rivestream-secret-key.test.ts` —
+ * the pinned vector there fails fast in CI when the upstream `cArray` salt or
+ * hash rotates, instead of surfacing as 401 resolve failures. See
+ * `.docs/provider-dossiers/rivestream.md` (known failure modes).
+ */
+export function generateSecretKey(e: string | number) {
   if (e === undefined) return "rive";
   try {
     let t, n;
@@ -449,8 +455,12 @@ export const rivestreamProviderModule: CoreProviderModule = {
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs,
         // Every service is fetched through the same www.rivestream.app front
-        // door — a block there repeats identically for the rest, so stop early.
-        shouldStopAfterFailure: (failure) => failure.failureClass === "candidate-blocked",
+        // door — a block there repeats identically for the rest, so stop
+        // early. Endpoint-scoped refusals name one service's own stream CDN,
+        // not the shared front door: stopping on them forfeits every untried
+        // service to a single dead mirror.
+        shouldStopAfterFailure: (failure) =>
+          failure.failureClass === "candidate-blocked" && failure.endpointScoped !== true,
         resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           if (!provider) {
@@ -574,26 +584,19 @@ export const rivestreamProviderModule: CoreProviderModule = {
       }
 
       if (!cycleResult.selected) {
-        return cycleExhaustedResult({
-          input,
-          context,
-          providerId: RIVESTREAM_PROVIDER_ID,
-          attempts: cycleResult.attempts,
-          fallback: {
-            code: "not-found",
-            message: "All internal servers exhausted without returning streams.",
-            retryable: true,
-          },
-          evidence: {
-            cachePolicy,
-            events,
-            failures,
-            sources: finalizeCycleSourceInventory({
-              sources: sourceInventorySeeds,
-              attempts: cycleResult.attempts,
-            }),
-            startedAt,
-          },
+        const failure = cycleExhaustionFailure(
+          cycleResult,
+          "All internal servers exhausted without returning streams.",
+        );
+        return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, failure, {
+          cachePolicy,
+          events,
+          failures,
+          sources: finalizeCycleSourceInventory({
+            sources: sourceInventorySeeds,
+            attempts: cycleResult.attempts,
+          }),
+          startedAt,
         });
       }
 
@@ -1018,6 +1021,7 @@ async function resolveRivestreamProviderCandidate({
         return { source, variants: null as readonly HlsLadderVariant[] | null };
       }
       const inventory = await expandHlsMasterInventory({
+        resolvesLocally: context.fetch?.resolvesLocally,
         fetch: context.fetch?.fetch.bind(context.fetch) ?? fetch,
         masterUrl: source.url,
         headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
@@ -1172,7 +1176,7 @@ async function resolveRivestreamProviderCandidate({
     });
   }
   // Keep the alternatives, drop the rungs the gate proved dead.
-  streams = dropRefusedStreams(streams, selection);
+  streams = dropRefusedStreams(streams, selection.refusedHosts);
   variants = variants.filter((variant) =>
     streams.some((candidateStream) => candidateStream.variantId === variant.id),
   );
@@ -1219,9 +1223,13 @@ function rivestreamFailureClassFromProviderError(
   | "candidate-empty"
   | "candidate-timeout"
   | "candidate-blocked"
+  | "candidate-rate-limited"
+  | "candidate-server-error"
   | "candidate-parse" {
   if (error.code === "timeout") return "candidate-timeout";
   if (error.code === "blocked") return "candidate-blocked";
+  if (error.code === "rate-limited") return "candidate-rate-limited";
+  if (error.code === "provider-unavailable") return "candidate-server-error";
   if (error.code === "parse-failed") return "candidate-parse";
   if (error.code === "not-found") return "candidate-empty";
   return "candidate-network";

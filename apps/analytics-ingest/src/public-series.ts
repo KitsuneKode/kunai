@@ -28,6 +28,12 @@ export const DEFAULT_SERIES_DAYS = 90;
 export type PublicSeriesPoint = {
   readonly day: string;
   readonly activeInstalls: number;
+  /**
+   * Installs first seen on `day` — exact for every day the retention window
+   * can still reach, unlike `lifetimeInstalls`. Series-only: `daily.json` has
+   * a strict key contract, so the per-day field lives here.
+   */
+  readonly newInstalls: number;
   readonly lifetimeInstalls: number;
   readonly byVersion: Readonly<Record<string, number>>;
   readonly byOs: Readonly<Record<string, number>>;
@@ -116,6 +122,7 @@ export function buildPublicSeries(rollups: readonly DailyRollup[]): PublicAnalyt
   const points = ordered.map((rollup) => ({
     day: rollup.day,
     activeInstalls: Math.max(0, Math.floor(rollup.activeInstalls)),
+    newInstalls: Math.max(0, Math.floor(rollup.newInstalls)),
     lifetimeInstalls: Math.max(0, Math.floor(rollup.lifetimeInstalls)),
     byVersion: suppressDay(rollup.byVersion, versionKeep, DIMENSION_VALUE_SPACE.version),
     byOs: suppressDay(rollup.byOs, osKeep, DIMENSION_VALUE_SPACE.os),

@@ -1,4 +1,5 @@
 import type { ShellMode } from "@/domain/types";
+import { resolveAnimeAudioIntent } from "@kunai/providers";
 
 /** Maps session/profile language fields into columns stored on download_jobs for re-resolve. */
 export function persistLanguageHintsFromEnqueueInput(input: {
@@ -9,8 +10,10 @@ export function persistLanguageHintsFromEnqueueInput(input: {
   const subtitle = input.subtitlePreference?.trim();
   const subLang = subtitle && subtitle.length > 0 ? subtitle : "eng";
   if (input.mode === "anime") {
-    const audio = input.audioPreference?.trim().toLowerCase() ?? "";
-    return { subLang, animeLang: audio === "dub" ? "dub" : "sub" };
+    return {
+      subLang,
+      animeLang: resolveAnimeAudioIntent(input.audioPreference ?? "").catalogMode,
+    };
   }
   return { subLang };
 }

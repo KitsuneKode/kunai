@@ -54,8 +54,8 @@ describe("docs shell", () => {
           url: "/releases",
         }),
         expect.objectContaining({
-          text: "Feedback",
-          url: "/feedback",
+          text: "Support",
+          url: "/support",
         }),
         expect.objectContaining({
           text: "Analytics",
@@ -63,5 +63,19 @@ describe("docs shell", () => {
         }),
       ]),
     );
+  });
+
+  /**
+   * The docs sidebar renders every link whose `on` is not "nav" above its own
+   * page tree. Showing the whole list there repeated "Overview", "Guides" and
+   * "Debug" a screen below themselves and pushed the first real doc link under
+   * the fold. Only destinations the tree does not contain may appear there.
+   */
+  test("the docs sidebar carries only destinations outside the page tree", () => {
+    const sidebarLinks = (baseOptions().links ?? [])
+      .filter((link) => !("on" in link) || link.on !== "nav")
+      .map((link) => ("text" in link ? link.text : null));
+
+    expect(sidebarLinks).toEqual(["Releases", "Analytics"]);
   });
 });

@@ -28,17 +28,13 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
-import { errorRetryAfterMs, parseRetryAfterHeader, providerHttpErrorForStatus } from "@kunai/types";
+import { providerHttpErrorForStatus } from "@kunai/types";
 
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import { readJsonObjectBody } from "../shared/json-body";
 import { decryptOpensslSalted, sha256Hex } from "../shared/openssl-evp";
-import { EndpointResilienceTracker, TTLCache } from "../shared/provider-cache";
-import {
-  appendCycleEventsToResult,
-  cycleExhaustedResult,
-  cycleFailureClassFromProviderCode,
-} from "../shared/provider-cycle";
+import { HealthTracker, TTLCache } from "../shared/provider-cache";
+import { appendCycleEventsToResult, cycleExhaustionFailure } from "../shared/provider-cycle";
 import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
@@ -54,7 +50,7 @@ import {
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
-import { combineAbortSignals, createTimeoutSignal } from "../shared/timeout-signal";
+import { combineAbortSignals, createTimeoutSignal, sleepAbortable } from "../shared/timeout-signal";
 // Embedded so `bun build --compile` single-file binaries carry the WASM (resolves
 // to a real path in dev/npm-bundle, a `/$bunfs/` path in a compiled binary —
 // `Bun.file()` reads both). See .archive/superpowers/archive/plans/2026-06-13-*.
@@ -176,16 +172,6 @@ export type VideasyClientProfile = {
   readonly origin: string;
   readonly defaultReferer: string;
   readonly streamReferer: string;
-  /**
-   * Origin sent with the stream itself, which is not the API's. Every site in
-   * this family plays media inside the vidking.net player, so that is the origin
-   * a CDN sees from a browser. The peakstorm CDN behind the Yoru server refuses
-   * `Origin: https://www.cineby.at` with a 403 while accepting vidking.net or no
-   * Origin at all (2026-09-12); the other CDNs accept either. The resolve gate
-   * and the shipped stream both read this one field — they diverged once, and
-   * the gate spent months verifying a request mpv never made (issue #361).
-   */
-  readonly streamOrigin: string;
 };
 
 const USER_AGENT =
@@ -224,10 +210,7 @@ function normalizeLanguageCode(value: string | undefined): string | undefined {
 }
 
 /** Track server health with 60s cooldown after 2 consecutive failures. */
-const vidkingHealth = new EndpointResilienceTracker({
-  cooldownMs: 60_000,
-  strikesToCooldown: 2,
-});
+const vidkingHealth = new HealthTracker(60_000, 2);
 
 function createVideasyEndpointHealth(context: ProviderRuntimeContext) {
   const port = context.endpointHealth;
@@ -245,25 +228,17 @@ function createVideasyEndpointHealth(context: ProviderRuntimeContext) {
     },
     recordFailure(
       endpoint: string,
-      info: {
-        readonly class: EndpointFailureClass;
-        readonly titleId?: string;
-        readonly retryAfterMs?: number;
-      },
+      info: { readonly class: EndpointFailureClass; readonly titleId?: string },
     ): void {
       if (port) {
         port.recordFailure(VIDEOSY_PROVIDER_ID, endpoint, {
           class: info.class,
           titleId: info.titleId,
           at: context.now(),
-          retryAfterMs: info.retryAfterMs,
         });
         return;
       }
-      vidkingHealth.recordFailure(
-        endpoint,
-        info.retryAfterMs !== undefined ? { cooldownMs: info.retryAfterMs } : undefined,
-      );
+      vidkingHealth.recordFailure(endpoint);
     },
   };
 }
@@ -400,6 +375,7 @@ export async function resolveVideasyDirect(
     qualityPreference: input.qualityPreference,
     startupPriority: input.startupPriority,
     videasyAppId,
+    apiRoute: resolvedOptions?.serverEndpoint,
   });
   const events: ProviderTraceEvent[] = [];
   const sources: ProviderSourceCandidate[] = [];
@@ -611,18 +587,11 @@ export async function resolveVideasyDirect(
           at: sessionGuardFailure.at,
         });
       }
-      // The request-level failures carry the real cause (timeout, blocked,
-      // server error). Throw that class, not a blanket `candidate-empty`, so
-      // the terminal exhausted verdict and endpoint health see the truth.
-      const lastDetail = candidateFailures.at(-1);
       throw createProviderCycleFailureError(candidate, {
-        failureClass: lastDetail
-          ? cycleFailureClassFromProviderCode(lastDetail.code)
-          : "candidate-empty",
-        message:
-          lastDetail?.message ?? `Videasy ${metadata.server} did not produce a playable source`,
-        retryable: lastDetail?.retryable ?? false,
-        at: lastDetail?.at ?? context.now(),
+        failureClass: "candidate-empty",
+        message: `Videasy ${metadata.server} did not produce a playable source`,
+        retryable: false,
+        at: context.now(),
       });
     }
     return result;
@@ -780,26 +749,21 @@ export async function resolveVideasyDirect(
   }
 
   events.push(...cycleResult.events);
-  return cycleExhaustedResult({
-    input,
-    context,
-    providerId: VIDEOSY_PROVIDER_ID,
-    attempts: cycleResult.attempts,
-    fallback: {
-      code: "not-found",
-      message: "VidKing direct resolver did not find a playable source",
-      retryable: false,
-    },
-    evidence: {
-      cachePolicy,
-      events,
-      failures,
-      sources: finalizeVidkingSourceInventory({
-        sources,
-        attempts: cycleResult.attempts,
-      }),
-      startedAt,
-    },
+  const failure = cycleExhaustionFailure(
+    cycleResult,
+    "VidKing direct resolver did not find a playable source",
+    false,
+  );
+
+  return createExhaustedResult(input, context, VIDEOSY_PROVIDER_ID, failure, {
+    cachePolicy,
+    events,
+    failures,
+    sources: finalizeVidkingSourceInventory({
+      sources,
+      attempts: cycleResult.attempts,
+    }),
+    startedAt,
   });
 }
 
@@ -1007,7 +971,6 @@ export function createVidkingResultFromPayload({
   startedAt,
   failures = [],
   streamReferer,
-  streamOrigin,
   sourceQualityFilter,
   sourceDisplayLabel,
   flavorArchetype,
@@ -1027,7 +990,6 @@ export function createVidkingResultFromPayload({
   readonly startedAt?: string;
   readonly failures?: readonly ProviderFailure[];
   readonly streamReferer?: string;
-  readonly streamOrigin?: string;
   readonly sourceQualityFilter?: string;
   readonly sourceDisplayLabel?: string;
   readonly flavorArchetype?: string;
@@ -1080,7 +1042,6 @@ export function createVidkingResultFromPayload({
     // This helper is exported and callable with neither, so the fallbacks live
     // here; the resolve path always passes the profile's pair.
     streamReferer: streamReferer ?? VIDKING_REFERER,
-    streamOrigin: streamOrigin ?? VIDKING_ORIGIN,
     sourceQualityFilter,
     flavorLabel: themedLabel,
     serverName: themedLabel,
@@ -1341,7 +1302,6 @@ async function probeSelectedVidkingPayloadStream({
   sourceId,
   server,
   streamReferer,
-  streamOrigin,
   sourceQualityFilter,
   engineOptions,
   events,
@@ -1355,7 +1315,6 @@ async function probeSelectedVidkingPayloadStream({
   readonly server: VidkingServerEndpoint;
   readonly streamReferer?: string;
   /** Must be the shipped stream's origin: the gate verifies the request mpv will make. */
-  readonly streamOrigin: string;
   readonly sourceQualityFilter?: string;
   readonly engineOptions?: VidKingEngineOptions;
   readonly events: ProviderTraceEvent[];
@@ -1370,7 +1329,6 @@ async function probeSelectedVidkingPayloadStream({
     sourceId,
     server,
     streamReferer: streamReferer ?? VIDKING_REFERER,
-    streamOrigin,
     sourceQualityFilter,
     flavorLabel: presentation.themeLabel,
     serverName: presentation.themeLabel,
@@ -1456,16 +1414,11 @@ const wingsSeedCache = new TTLCache<string, string>(30_000, {
 const wingsPreferredHostCache = new TTLCache<number, string>(30_000, {
   maxEntries: WINGS_TRANSPORT_LIMITS.preferredHostEntries,
 });
-const WINGS_HOST_FAILURE_PENALTY_MS = 5 * 60_000;
-/**
- * Hosts that recently failed a seed request get skipped for a while
- * (host-level). One strike parks the host — a dead seed mirror is cheap to
- * skip while three alternatives exist.
- */
-const wingsHostFailureCache = new EndpointResilienceTracker({
-  cooldownMs: WINGS_HOST_FAILURE_PENALTY_MS,
+/** Hosts that recently failed a seed request get skipped for a while (host-level). */
+const wingsHostFailureCache = new TTLCache<string, true>(5 * 60_000, {
   maxEntries: WINGS_TRANSPORT_LIMITS.failureEntries,
 });
+const WINGS_HOST_FAILURE_PENALTY_MS = 5 * 60_000;
 
 /** Test seam: the seed race is deterministic only with an injected requester. */
 export function fetchWingsdatabaseSeedForTest(
@@ -1487,14 +1440,14 @@ export function fetchWingsdatabaseSeedForTest(
 export function wingsPenalizedHostsForTest(
   hosts: readonly string[] = WINGS_API_BASES,
 ): readonly string[] {
-  return hosts.filter((base) => !wingsHostFailureCache.shouldTry(base));
+  return hosts.filter((base) => Boolean(wingsHostFailureCache.get(base)));
 }
 
 /** Test seam: module-scoped transport state must not leak between test cases. */
 export function clearWingsTransportCachesForTest(): void {
   wingsSeedCache.clear();
   wingsPreferredHostCache.clear();
-  wingsHostFailureCache.reset();
+  wingsHostFailureCache.clear();
 }
 
 function wingsSeedCacheKey(apiBase: string, mediaId: number): string {
@@ -1506,8 +1459,6 @@ async function fetchWingsdatabaseSeed(
   context: ProviderRuntimeContext,
   signal?: AbortSignal,
   hosts: readonly string[] = WINGS_API_BASES,
-  /** Out-param: the representative cause when every host failed. */
-  failureOut?: { error?: unknown },
 ): Promise<WingsSeedTransport | undefined> {
   const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
   const effectiveSignal = signal ?? context.signal;
@@ -1538,7 +1489,7 @@ async function fetchWingsdatabaseSeed(
   }
 
   // Skip recently-failed hosts unless every host is in the penalty box.
-  const healthy = uncached.filter((base) => wingsHostFailureCache.shouldTry(base));
+  const healthy = uncached.filter((base) => !wingsHostFailureCache.get(base));
   const candidates = healthy.length > 0 ? healthy : uncached;
   if (candidates.length === 0) return undefined;
 
@@ -1546,7 +1497,6 @@ async function fetchWingsdatabaseSeed(
   // timeout before the fallback was even contacted.
   const controllers = candidates.map(() => new AbortController());
   let won = false;
-  let lastGenuineError: unknown;
   try {
     const winner = await Promise.any(
       candidates.map(async (apiBase, index) => {
@@ -1567,7 +1517,6 @@ async function fetchWingsdatabaseSeed(
               message: `seed HTTP ${response.status}`,
               providerId: VIDEOSY_PROVIDER_ID,
               stage: "wings-seed",
-              retryAfterMs: parseRetryAfterHeader(response.headers.get("retry-after")),
             });
           }
           const body = await readJsonObjectBody<{ seed?: string; ttlMs?: number }>(response);
@@ -1580,26 +1529,17 @@ async function fetchWingsdatabaseSeed(
           // used to poison both hosts for five minutes on every cancelled
           // playback. A genuine pre-winner failure or timeout is real evidence.
           if (!won && !effectiveSignal?.aborted) {
-            // The upstream's own Retry-After outranks the generic penalty —
-            // an explicit "come back in 30s" is better evidence than a
-            // guessed 5-minute timeout.
-            wingsHostFailureCache.recordFailure(apiBase, {
-              cooldownMs: errorRetryAfterMs(error) ?? WINGS_HOST_FAILURE_PENALTY_MS,
-            });
-            lastGenuineError = error;
+            wingsHostFailureCache.set(apiBase, true, WINGS_HOST_FAILURE_PENALTY_MS);
           }
           throw error;
         }
       }),
     ).catch(() => undefined);
-    if (!winner) {
-      if (failureOut) failureOut.error = lastGenuineError;
-      return undefined;
-    }
+    if (!winner) return undefined;
 
     wingsSeedCache.set(wingsSeedCacheKey(winner.apiBase, mediaId), winner.seed, winner.ttlMs);
     wingsPreferredHostCache.set(mediaId, winner.apiBase, winner.ttlMs);
-    wingsHostFailureCache.recordSuccess(winner.apiBase);
+    wingsHostFailureCache.delete(winner.apiBase);
     return { apiBase: winner.apiBase, seed: winner.seed };
   } finally {
     // Stop the losing seed requests; Promise.any already consumed their outcomes.
@@ -1665,7 +1605,6 @@ async function tryVidkingServer(opts: {
   const appId = clientProfile.appId;
   const requestReferer = customReferer ?? clientProfile.defaultReferer;
   const streamReferer = clientProfile.streamReferer;
-  const streamOrigin = clientProfile.streamOrigin;
   const requestServers = resolveVideasyRequestServers(server, clientProfile);
 
   emitTraceEvent(events, context, {
@@ -1686,14 +1625,7 @@ async function tryVidkingServer(opts: {
   /* For wingsdatabase, fetch a seed before proceeding. Skip server if seed fails. */
   let wingsTransport: WingsSeedTransport | undefined;
   if (isWings) {
-    const seedFailure: { error?: unknown } = {};
-    wingsTransport = await fetchWingsdatabaseSeed(
-      tmdbId,
-      context,
-      candidateSignal,
-      undefined,
-      seedFailure,
-    );
+    wingsTransport = await fetchWingsdatabaseSeed(tmdbId, context, candidateSignal);
     if (!wingsTransport) {
       emitTraceEvent(events, context, {
         type: "source:failed",
@@ -1702,10 +1634,6 @@ async function tryVidkingServer(opts: {
         message: `${presentation.themeLabel} failed to fetch wingsdatabase seed`,
         attributes: { serverId: server, stage: "seed", failureClass: "seed-unavailable" },
       });
-      // A dead or refusing seed host is upstream evidence (5xx, rate limit,
-      // timeout), not catalog absence — throw so the cycle classifies the real
-      // cause instead of reporting the lane as an empty candidate.
-      if (seedFailure.error) throw seedFailure.error;
       return null;
     }
   }
@@ -1757,7 +1685,6 @@ async function tryVidkingServer(opts: {
             endpointHealth.recordFailure(server, {
               class: classifyVideasyHttpFailure(response.status),
               titleId,
-              retryAfterMs: parseRetryAfterHeader(response.headers.get("retry-after")),
             });
             const statusCode = response.status;
             const body = await safeReadResponseText(response);
@@ -1768,19 +1695,12 @@ async function tryVidkingServer(opts: {
               emitRetryIfNeeded(events, context, guardedFailure, sourceId, attempt, maxAttempts);
               return null;
             }
-            // 5xx is the server's own answer (vidking 500 = "no streams for
-            // this title" — transient, per-title), not network evidence: it
-            // maps to provider-unavailable and stays retryable so the cycle
-            // walks on instead of reading it as offline. Gateway timeouts
-            // (408/504) keep their `timeout` code and stay non-retryable —
-            // a hung upstream does not heal inside one resolve, and
-            // candidate-timeout is not offline evidence either way.
             const nonRetryableStatus =
               statusCode === 401 ||
               statusCode === 403 ||
               statusCode === 404 ||
-              statusCode === 408 ||
-              statusCode === 504;
+              statusCode === 500 ||
+              statusCode >= 502;
             const f: ProviderFailure = {
               providerId: VIDEOSY_PROVIDER_ID,
               code: vidkingStatusToFailureCode(statusCode),
@@ -1793,6 +1713,10 @@ async function tryVidkingServer(opts: {
             if (!isRetryableFailure(context, f)) {
               break;
             }
+            // Same transient grace the cycle engine applies between attempts —
+            // an immediate re-hit hammers the same host inside the candidate
+            // timeout and turns one throttle response into several.
+            await sleepAbortable(750, candidateSignal);
             continue;
           }
 
@@ -1834,9 +1758,6 @@ async function tryVidkingServer(opts: {
             const guarded = await decodeVideasyGuardedPayload(payload, sessionToken);
             decoded = await decodeVidkingPayload(guarded, tmdbId);
           }
-          // The probe fetches the stream URL — its throws are transport
-          // evidence, not payload evidence, so it gets its own stage.
-          failureStage = "probe";
           const streamProbe = await probeSelectedVidkingPayloadStream({
             decoded,
             input,
@@ -1844,7 +1765,6 @@ async function tryVidkingServer(opts: {
             sourceId,
             server,
             streamReferer,
-            streamOrigin,
             sourceQualityFilter: engineOptions.filterQuality,
             engineOptions,
             events,
@@ -1874,7 +1794,6 @@ async function tryVidkingServer(opts: {
             startedAt,
             failures,
             streamReferer,
-            streamOrigin,
             sourceQualityFilter: engineOptions.filterQuality,
             engineOptions,
             // The probe's reachable verdict does not survive to the player on
@@ -1919,23 +1838,13 @@ async function tryVidkingServer(opts: {
           endpointHealth.recordFailure(server, {
             class: isVideasyTimeoutError(error) ? "transient" : "server-error",
             titleId,
-            retryAfterMs: errorRetryAfterMs(error),
           });
           const timedOut = isVideasyTimeoutError(error);
-          // Only a decrypt-stage throw is a parse failure — a DNS/reset thrown
-          // while fetching is transport evidence. `network-error` stays
-          // retryable so the engine reads a dead socket as transient, never as
-          // the offline verdict a non-retryable one implies.
-          const code = timedOut
-            ? ("timeout" as const)
-            : failureStage === "decrypt"
-              ? ("parse-failed" as const)
-              : ("network-error" as const);
           const f: ProviderFailure = {
             providerId: VIDEOSY_PROVIDER_ID,
-            code,
+            code: timedOut ? "timeout" : "parse-failed",
             message: error instanceof Error ? error.message : "VidKing payload decode failed",
-            retryable: code === "network-error",
+            retryable: false,
             at: context.now(),
           };
           failures.push(f);
@@ -1992,7 +1901,6 @@ export function resolveVideasyClientProfile(
       origin: VIDKING_ORIGIN,
       defaultReferer: referer,
       streamReferer: referer,
-      streamOrigin: VIDKING_ORIGIN,
     };
   }
 
@@ -2010,7 +1918,6 @@ export function resolveVideasyClientProfile(
     origin: CINEBY_ORIGIN,
     defaultReferer: referer,
     streamReferer: referer,
-    streamOrigin: VIDKING_ORIGIN,
   };
 }
 
@@ -2210,7 +2117,6 @@ function normalizeStreamCandidates({
   sourceId,
   server,
   streamReferer,
-  streamOrigin,
   sourceQualityFilter,
   flavorLabel,
   serverName,
@@ -2222,14 +2128,13 @@ function normalizeStreamCandidates({
   readonly sourceId: string;
   readonly server?: string;
   /**
-   * Both required, with no default: this is the only place stream headers are
+   * Required, with no default: this is the only place stream headers are
    * built, and the resolve gate and the shipped result both come through it.
-   * When they were optional the gate took the defaults and the result took the
-   * profile, so the gate verified a request mpv never made (#361). A missing
-   * one is now a type error at the call site rather than a silent divergence.
+   * When it was optional the gate took the default and the result took the
+   * profile, so the gate verified a request mpv never made (#361). The Origin
+   * header is not a parameter at all — it is pinned to VIDEASY_MEDIA_ORIGIN.
    */
   readonly streamReferer: string;
-  readonly streamOrigin: string;
   readonly sourceQualityFilter?: string;
   readonly flavorLabel?: string;
   readonly serverName?: string;
@@ -2603,10 +2508,8 @@ function emitRetryIfNeeded(
   });
 }
 
-function isRetryableFailure(context: ProviderRuntimeContext, failure: ProviderFailure): boolean {
-  if (!failure.retryable) return false;
-  const retryableCodes = context.retryPolicy?.retryableCodes;
-  return !retryableCodes || retryableCodes.includes(failure.code);
+function isRetryableFailure(_context: ProviderRuntimeContext, failure: ProviderFailure): boolean {
+  return failure.retryable === true;
 }
 
 function normalizeVidkingAudioLanguage(
@@ -2647,7 +2550,6 @@ function vidkingStatusToFailureCode(status: number): ProviderFailure["code"] {
   if (status === 401 || status === 403) return "blocked";
   if (status === 404) return "not-found";
   if (status === 429) return "rate-limited";
-  if (status >= 500) return "provider-unavailable";
   return "network-error";
 }
 

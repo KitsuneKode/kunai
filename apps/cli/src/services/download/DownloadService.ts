@@ -1,4 +1,5 @@
-import { link, mkdir, rm, stat, statfs } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { copyFile, link, mkdir, open, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
@@ -18,6 +19,7 @@ import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import { redactDiagnosticValue } from "@/services/diagnostics/redaction";
+import { readBoundedBody } from "@/services/network/bounded-body";
 import {
   cacheOfflinePosterArtwork,
   resolveOfflinePosterArtifactPath,
@@ -66,11 +68,15 @@ import {
 } from "./StorageBudgetPolicy";
 import { buildDownloadStreamPolicy } from "./stream-policy";
 import { resolveSubtitleArtifactPath } from "./subtitle-artifact-path";
+import { parseYtDlpProgressLine } from "./ytdlp-progress";
 
 const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
+// A subtitle is a text sidecar — a few hundred KB at most. Anything beyond this
+// is a mis-labelled or hostile body, not a subtitle.
+const MAX_SUBTITLE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
 /**
@@ -181,7 +187,15 @@ export type DownloadResolveResult = {
 
 export type DownloadEvent =
   | { type: "enqueued"; job: DownloadJobRecord }
-  | { type: "progress"; jobId: string; percent: number }
+  | {
+      type: "progress";
+      jobId: string;
+      percent: number;
+      /** Transient yt-dlp progress detail — live rows only, never persisted. */
+      sizeLabel?: string;
+      speedLabel?: string;
+      etaLabel?: string;
+    }
   | { type: "complete"; jobId: string }
   | { type: "failed"; jobId: string; error: string }
   | { type: "aborted"; jobId: string }
@@ -259,6 +273,82 @@ type DownloadSidecarResult = {
   readonly repairMetadataJson?: string;
 };
 
+export type StagedDownloadPublishFs = {
+  readonly link: (tempPath: string, outputPath: string) => Promise<void>;
+  readonly copyFile: (src: string, dest: string, flags?: number) => Promise<void>;
+  /** Durable flush of a freshly copied artifact (fsync). */
+  readonly fsyncFile: (path: string) => Promise<void>;
+  readonly removeFile: (path: string) => Promise<void>;
+};
+
+const defaultStagedDownloadPublishFs: StagedDownloadPublishFs = {
+  link: (tempPath, outputPath) => link(tempPath, outputPath),
+  copyFile: (src, dest, flags) => copyFile(src, dest, flags),
+  fsyncFile: async (path) => {
+    const handle = await open(path, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  },
+  removeFile: (path) => rm(path, { force: true }),
+};
+
+function publishErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+  const code = (error as { readonly code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function existingDestinationError(cause: unknown): Error {
+  return new Error(
+    "Download destination already exists; existing file preserved. Choose a different download directory.",
+    { cause },
+  );
+}
+
+/**
+ * Exclusive publication of a staged download.
+ *
+ * Hard-link first: atomic and fails if ANY destination exists. Volumes that
+ * cannot hard-link (cross-device EXDEV, exFAT EPERM/ENOTSUP/EOPNOTSUPP) fall
+ * back to an exclusive copy (COPYFILE_EXCL, so an existing destination still
+ * fails instead of being overwritten) plus fsync, then staging cleanup.
+ * EEXIST always throws with the destination preserved — neither lane ever
+ * silently overwrites.
+ */
+export async function publishStagedDownloadArtifact(
+  tempPath: string,
+  outputPath: string,
+  fs: StagedDownloadPublishFs = defaultStagedDownloadPublishFs,
+): Promise<"hard-linked" | "copied"> {
+  try {
+    await fs.link(tempPath, outputPath);
+    return "hard-linked";
+  } catch (error) {
+    const code = publishErrorCode(error);
+    if (code === "EEXIST") throw existingDestinationError(error);
+    if (code !== "EXDEV" && code !== "EPERM" && code !== "ENOTSUP" && code !== "EOPNOTSUPP") {
+      throw error;
+    }
+  }
+  try {
+    await fs.copyFile(tempPath, outputPath, fsConstants.COPYFILE_EXCL);
+  } catch (error) {
+    if (publishErrorCode(error) === "EEXIST") throw existingDestinationError(error);
+    throw error;
+  }
+  try {
+    await fs.fsyncFile(outputPath);
+  } catch (error) {
+    await fs.removeFile(outputPath).catch(() => {});
+    throw error;
+  }
+  await fs.removeFile(tempPath).catch(() => {});
+  return "copied";
+}
+
 export class DownloadService {
   private queueWorkerRunning = false;
   private lastQueuePassFailureContext: DownloadQueueFailureContext | undefined;
@@ -312,6 +402,13 @@ export class DownloadService {
       // Volume stats go through deps so unit tests don't read host disk — the
       // suite's verdict must not depend on how full the test volume happens to be.
       readonly statfs?: (path: string) => Promise<{ bavail: number; bsize: number }>;
+      /**
+       * Default download directory override. Without it the fallback derives
+       * from `getKunaiPaths().dataDbPath`, so a test that resolves the default
+       * without an isolated storage root computes a path under the developer's
+       * real profile. The user's configured `downloadPath` still wins over this.
+       */
+      readonly defaultDownloadDir?: string;
     },
   ) {}
 
@@ -566,6 +663,12 @@ export class DownloadService {
     const job = this.deps.repo.get(jobId);
     if (job?.status === "repairable" || job?.status === "completed-with-notes") {
       await this.repairSidecars(job);
+      return;
+    }
+    if (this.isForeignLiveJob(job)) {
+      this.deps.logger.warn("Refusing to retry a download owned by a live Kunai instance", {
+        jobId,
+      });
       return;
     }
     try {
@@ -836,6 +939,11 @@ export class DownloadService {
    * The only non-awaited queue entry point. Production callers that merely
    * nudge background work use this seam so an unexpected repository or worker
    * rejection remains diagnosable without reaching the CLI-wide fatal policy.
+   *
+   * Fire-and-forget is bounded here, not retried inline: the rejection is
+   * reported once via reportQueuePassFailure (diagnostics + logger), and every
+   * pass starts with reconcileInterruptedJobs(), so a lost pass is recovered —
+   * re-queued or adopted — on the next kick instead of stranding the job.
    */
   kickQueue(source: DownloadQueueKickSource): void {
     void this.processQueue().catch((error: unknown) => {
@@ -967,9 +1075,9 @@ export class DownloadService {
 
   async drainQueue(maxWaitMs = 60_000): Promise<void> {
     const deadline = Date.now() + maxWaitMs;
-    while (this.hasActiveJobs() && Date.now() < deadline) {
+    while (!this.shutdownRequested && this.hasActiveJobs() && Date.now() < deadline) {
       await this.processQueue();
-      if (this.hasActiveJobs()) {
+      if (!this.shutdownRequested && this.hasActiveJobs()) {
         await Bun.sleep(250);
       }
     }
@@ -993,8 +1101,34 @@ export class DownloadService {
       await this.terminateProcess(active.process, active.cancel);
       return;
     }
+    if (this.isForeignLiveJob(job)) {
+      // Keep the cancellation marker: if this instance later recovers the job
+      // because the owner died, the pending cancel still applies. But the row
+      // and its temp file belong to a sibling that is writing right now.
+      this.deps.logger.warn("Refusing to abort a download owned by a live Kunai instance", {
+        jobId,
+      });
+      return;
+    }
     await rm(job.tempPath, { force: true }).catch(() => {});
     this.deps.repo.abort(jobId, new Date().toISOString());
+  }
+
+  /**
+   * `running` is a lease, not ownership. When the row is running but this
+   * process holds no child for it and the heartbeat is still fresh, a sibling
+   * Kunai instance is actively working the job — mutating it from here would
+   * unlink the owner's temp file mid-write and flip its status out from under
+   * it. A stale heartbeat means the owner is likely gone and recovery
+   * (`reconcileInterruptedJobs`) is the correct path.
+   */
+  private isForeignLiveJob(job: DownloadJobRecord | undefined): boolean {
+    if (!job || job.status !== "running" || this.activeProcesses.has(job.id)) {
+      return false;
+    }
+    const heartbeatAt = job.lastHeartbeatAt ?? job.startedAt;
+    const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : Number.NaN;
+    return Number.isFinite(heartbeatMs) && Date.now() - heartbeatMs < STALLED_HEARTBEAT_MS;
   }
 
   /**
@@ -1059,6 +1193,14 @@ export class DownloadService {
   async deleteJob(jobId: string, opts: { deleteArtifact?: boolean } = {}): Promise<void> {
     const job = this.deps.repo.get(jobId);
     if (!job) return;
+    if (this.isForeignLiveJob(job)) {
+      // The row, temp file, and (possibly) partial output belong to a sibling
+      // that is heartbeating right now — deleting any of them corrupts its run.
+      this.deps.logger.warn("Refusing to delete a download owned by a live Kunai instance", {
+        jobId,
+      });
+      return;
+    }
     if (job.status === "running" || this.activeProcesses.has(jobId)) {
       await this.abort(jobId);
     }
@@ -1098,11 +1240,7 @@ export class DownloadService {
       (stream) => stream.id === resolved.stream.providerResolveResult?.selectedStreamId,
     );
     const streamMeta = selectedStream?.metadata as
-      | {
-          readonly isLive?: boolean;
-          readonly liveStatus?: string;
-          readonly demuxerProfile?: string;
-        }
+      | { readonly isLive?: boolean; readonly liveStatus?: string }
       | undefined;
     if (streamMeta?.isLive === true || streamMeta?.liveStatus === "live") {
       throw new Error("Live YouTube streams cannot be downloaded yet");
@@ -1148,12 +1286,7 @@ export class DownloadService {
       1,
       Math.min(5, Math.trunc(this.deps.config.maxConcurrentDownloads) || 1),
     );
-    // Burst-limited CDNs (the megaplay family kills IPs pulling ~100 uncached
-    // segments inside 10s) need serial fragment fetches — yt-dlp has no
-    // requests/sec throttle, so `--concurrent-fragments 1` is the analogue of
-    // ani-cli's `-readrate 10` cap on ffmpeg downloads.
-    const burstLimited = streamMeta?.demuxerProfile === "capped-readahead";
-    const fragmentConcurrency = burstLimited ? 1 : Math.max(2, Math.floor(8 / parallelDownloads));
+    const fragmentConcurrency = Math.max(2, Math.floor(8 / parallelDownloads));
     const args = [
       "--concurrent-fragments",
       String(fragmentConcurrency),
@@ -1216,13 +1349,25 @@ export class DownloadService {
     let lastProgressPersistAt = 0;
     let lastPersistedPercent = 0;
 
-    const persistProgress = (percent: number) => {
+    const persistProgress = (progress: {
+      readonly percent: number;
+      readonly sizeLabel?: string;
+      readonly speedLabel?: string;
+      readonly etaLabel?: string;
+    }) => {
       const now = Date.now();
-      const clamped = Math.round(Math.max(0, Math.min(99, percent)));
+      const clamped = Math.round(Math.max(0, Math.min(99, progress.percent)));
       if (clamped === lastPersistedPercent) return;
       if (now - lastProgressPersistAt < 1000) return;
       this.deps.repo.updateProgress(job.id, clamped, new Date().toISOString());
-      this.emit({ type: "progress", jobId: job.id, percent: clamped });
+      this.emit({
+        type: "progress",
+        jobId: job.id,
+        percent: clamped,
+        sizeLabel: progress.sizeLabel,
+        speedLabel: progress.speedLabel,
+        etaLabel: progress.etaLabel,
+      });
       lastProgressPersistAt = now;
       lastPersistedPercent = clamped;
     };
@@ -1231,15 +1376,12 @@ export class DownloadService {
       args,
       maxStderrBytes: STDERR_MAX_BYTES,
       onStdoutLine: (line) => {
-        const match = line.match(/\[download\]\s+([\d.]+)%/);
-        if (match && match[1]) {
-          const percent = Number.parseFloat(match[1]);
-          if (Number.isFinite(percent)) {
-            persistProgress(percent);
-          }
+        const progress = parseYtDlpProgressLine(line);
+        if (progress) {
+          persistProgress(progress);
         }
         if (line.includes("100%") || line.includes("has already been downloaded")) {
-          persistProgress(99);
+          persistProgress({ percent: 99 });
         }
       },
     });
@@ -1279,28 +1421,11 @@ export class DownloadService {
         "Download destination is shared with another job; choose a different directory",
       );
     }
-    // Hard-link publication is atomic and fails if ANY destination exists.
-    // Never fall back to overwriting rename on filesystems without hard links.
-    try {
-      await link(job.tempPath, job.outputPath);
-      this.publishedJobIds.add(job.id);
-    } catch (error) {
-      const code =
-        typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-      if (code === "EEXIST") {
-        throw new Error(
-          "Download destination already exists; existing file preserved. Choose a different download directory.",
-          { cause: error },
-        );
-      }
-      if (code === "EPERM" || code === "ENOTSUP" || code === "EOPNOTSUPP" || code === "EXDEV") {
-        throw new Error(
-          "Download directory does not support safe publication. Choose a writable directory on a filesystem with hard-link support.",
-          { cause: error },
-        );
-      }
-      throw error;
-    }
+    // Exclusive publication in both lanes: hard-link first (atomic, fails if
+    // ANY destination exists), exclusive copy+fsync on volumes without
+    // hard-link support (cross-device/exFAT). Neither lane silently overwrites.
+    await publishStagedDownloadArtifact(job.tempPath, job.outputPath);
+    this.publishedJobIds.add(job.id);
     await rm(job.tempPath).catch(() => {
       // Publication succeeded. A locked staging name must not turn a valid
       // artifact into a retry that collides with its own published output.
@@ -1618,9 +1743,23 @@ export class DownloadService {
         subtitleUrl: job.subtitleUrl,
         contentType: res.headers.get("content-type"),
       });
-      const data = await res.arrayBuffer();
-      if (data.byteLength <= 0) {
-        return buildRepairableSidecarResult(job, "subtitle", "subtitle response was empty");
+      // Content-Length is sender-declared and only an early reject — the body
+      // itself is bounded below, so a lying or absent header cannot pull a
+      // giant payload into memory.
+      const declared = Number(res.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > MAX_SUBTITLE_BYTES) {
+        await res.body?.cancel("too-large").catch(() => {});
+        return buildRepairableSidecarResult(job, "subtitle", "subtitle response too large");
+      }
+      const data = res.body ? await readBoundedBody(res.body, MAX_SUBTITLE_BYTES) : null;
+      if (!data || data.byteLength <= 0) {
+        // readBoundedBody returns null on overflow, abort, and mid-body drops —
+        // all are retryable sidecar failures rather than a poisoned artifact.
+        return buildRepairableSidecarResult(
+          job,
+          "subtitle",
+          "subtitle response was empty, too large, or interrupted",
+        );
       }
       await writeAtomicBytes(targetPath, data);
       this.deps.repo.updateOfflineMetadata(
@@ -1766,13 +1905,17 @@ export class DownloadService {
   }
 
   private selectEligibleQueuedJob(nowIso: string): DownloadJobRecord | null {
-    const now = Date.parse(nowIso);
-    const queued = this.deps.repo.listQueued(50);
-    for (const job of queued) {
-      if (this.claimedJobIds.has(job.id)) continue;
-      if (!job.nextRetryAt) return job;
-      const retryAt = Date.parse(job.nextRetryAt);
-      if (Number.isFinite(retryAt) && retryAt <= now) return job;
+    const pageSize = 50;
+    let after: { readonly createdAt: string; readonly id: string } | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const queued = this.deps.repo.listDueQueued(nowIso, pageSize, after);
+      if (queued.length === 0) return null;
+      for (const job of queued) {
+        if (!this.claimedJobIds.has(job.id)) return job;
+      }
+      const last = queued.at(-1);
+      if (!last || queued.length < pageSize) return null;
+      after = { createdAt: last.createdAt, id: last.id };
     }
     return null;
   }
@@ -1780,15 +1923,14 @@ export class DownloadService {
   /**
    * Repair for an unparseable `next_retry_at`, not the ordinary resume path.
    *
-   * The ordinary case needs nothing from here: `selectEligibleQueuedJob` scans
-   * `listQueued`, which is unfiltered by retry time, and takes any job whose
-   * `next_retry_at` has elapsed. A shutdown pause (`next_retry_at = now`) is
+   * The ordinary case needs nothing from here: `listDueQueued` filters retry time before limiting the page,
+   * so deferred work cannot hide a later eligible job. A shutdown pause (`next_retry_at = now`) is
    * therefore already eligible on the next pass.
    *
    * What it does do is narrow and load-bearing. `listPaused` compares
    * `next_retry_at` as a *string* in SQL, so a corrupt value like `not-a-date`
    * sorts greater than any timestamp and is returned here, while
-   * `selectEligibleQueuedJob` requires `Number.isFinite` and skips it forever.
+   * the due query excludes it forever because it sorts after the current ISO timestamp.
    * Without this pass such a row is stranded for the life of the install.
    *
    * Verified against a real database rather than by reading: a future-dated
@@ -1971,9 +2113,8 @@ export class DownloadService {
 
   private resolveDefaultDownloadDirectory(): string {
     const configuredBase = this.deps.config.downloadPath.trim();
-    return configuredBase.length > 0
-      ? configuredBase
-      : join(dirname(getKunaiPaths().dataDbPath), "downloads");
+    if (configuredBase.length > 0) return configuredBase;
+    return this.deps.defaultDownloadDir ?? join(dirname(getKunaiPaths().dataDbPath), "downloads");
   }
 
   private statfs(path: string): Promise<{ bavail: number; bsize: number }> {

@@ -13,6 +13,16 @@ describe("persistLanguageHintsFromEnqueueInput", () => {
     ).toEqual({ subLang: "en", animeLang: "dub" });
   });
 
+  test("maps anime english audio to the dub catalog", () => {
+    expect(
+      persistLanguageHintsFromEnqueueInput({
+        mode: "anime",
+        audioPreference: "en",
+        subtitlePreference: "en",
+      }),
+    ).toEqual({ subLang: "en", animeLang: "dub" });
+  });
+
   test("defaults anime sub stream when audio is not dub", () => {
     expect(
       persistLanguageHintsFromEnqueueInput({

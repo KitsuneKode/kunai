@@ -22,7 +22,6 @@ type ProviderMetadata = {
   readonly recommended: boolean;
   readonly mediaKinds: readonly string[];
   readonly capabilities: readonly string[];
-  readonly status: string;
   readonly notes: readonly string[];
 };
 
@@ -48,7 +47,6 @@ const PROVIDER_MODULE_DIR: Record<string, string> = {
   allmangaProviderModule: "allmanga",
   anidbProviderModule: "anidb",
   hianimeProviderModule: "hianime",
-  animekaiProviderModule: "animekai",
   animeggProviderModule: "animegg",
   kickassanimeProviderModule: "kickassanime",
   miruroProviderModule: "miruro",
@@ -59,7 +57,6 @@ const PROVIDER_ID_CONSTANTS: Record<string, string> = {
   ALLANIME_PROVIDER_ID: "allanime",
   ANIDB_PROVIDER_ID: "anidb",
   ANIMEGG_PROVIDER_ID: "animegg",
-  ANIMEKAI_PROVIDER_ID: "animekai",
   CINEBY_PROVIDER_ID: "cineby",
   HIANIME_PROVIDER_ID: "hianime",
   KICKASSANIME_PROVIDER_ID: "kickassanime",
@@ -120,7 +117,6 @@ function parseManifest(manifestPath: string, fallbackDir: string): ProviderMetad
     recommended: extractBoolean(normalizedContent, "recommended"),
     mediaKinds: extractArray(normalizedContent, "mediaKinds"),
     capabilities: extractArray(normalizedContent, "capabilities"),
-    status: extractString(normalizedContent, "status") || "active",
     notes: extractArray(normalizedContent, "notes"),
   };
 }

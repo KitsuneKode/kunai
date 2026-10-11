@@ -1,32 +1,20 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  ProviderHttpError,
-  type EndpointHealthPort,
-  type ProviderCycleCandidate,
-} from "@kunai/types";
+import type { EndpointHealthPort, ProviderCycleCandidate } from "@kunai/types";
 
 import { createProviderCycleFailureError, runProviderCycle } from "../src/index";
 
 class StubEndpointHealth implements EndpointHealthPort {
   readonly blocked = new Set<string>();
-  readonly failures: Array<{
-    endpoint: string;
-    class: string;
-    retryAfterMs?: number;
-  }> = [];
+  readonly failures: Array<{ endpoint: string; class: string }> = [];
   readonly successes: string[] = [];
 
   shouldTry(_providerId: string, endpoint: string): boolean {
     return !this.blocked.has(endpoint);
   }
 
-  recordFailure(
-    _providerId: string,
-    endpoint: string,
-    info: { class: string; retryAfterMs?: number },
-  ): void {
-    this.failures.push({ endpoint, class: info.class, retryAfterMs: info.retryAfterMs });
+  recordFailure(_providerId: string, endpoint: string, info: { class: string }): void {
+    this.failures.push({ endpoint, class: info.class });
   }
 
   recordSuccess(_providerId: string, endpoint: string): void {
@@ -136,32 +124,80 @@ describe("runProviderCycle endpoint health", () => {
 
     expect(endpointHealth.failures).toEqual([]);
   });
+});
 
-  test("carries the upstream Retry-After hint from the thrown error to health", async () => {
-    // A 429's own "come back later" is better evidence than the quarantine
-    // defaults — the engine must forward it so the service can park the
-    // endpoint for the hinted window.
-    const endpointHealth = new StubEndpointHealth();
+test("a throwing shouldTry fails open — the lane is attempted, not skipped", async () => {
+  // Endpoint health is advisory evidence: a broken health store must not
+  // quarantine live lanes or crash the resolve.
+  const endpointHealth: EndpointHealthPort = {
+    shouldTry: () => {
+      throw new Error("health store exploded");
+    },
+    recordSuccess: () => {},
+    recordFailure: () => {},
+  };
+  const candidates: ProviderCycleCandidate[] = [
+    { id: "a", providerId: "movy", serverId: "denver", priority: 0 },
+  ];
 
-    await runProviderCycle({
-      providerId: "videasy",
-      candidates: [{ id: "a", providerId: "videasy", serverId: "limited", priority: 0 }],
-      endpointHealth,
-      maxAttemptsPerCandidate: 1,
-      resolveCandidate: async () => {
-        throw new ProviderHttpError({
-          message: "HTTP 429",
-          providerId: "videasy",
-          status: 429,
-          code: "rate-limited",
-          retryable: true,
-          retryAfterMs: 42_000,
-        });
-      },
-    });
-
-    expect(endpointHealth.failures).toEqual([
-      { endpoint: "limited", class: "server-error", retryAfterMs: 42_000 },
-    ]);
+  const result = await runProviderCycle({
+    providerId: "movy",
+    candidates,
+    endpointHealth,
+    resolveCandidate: async () => ({ ok: true }),
   });
+
+  expect(result.stopReason).toBe("resolved");
+  expect(result.attempts).toHaveLength(1);
+});
+
+test("a throwing recordSuccess does not lose the resolved stream", async () => {
+  const endpointHealth: EndpointHealthPort = {
+    shouldTry: () => true,
+    recordSuccess: () => {
+      throw new Error("disk full");
+    },
+    recordFailure: () => {},
+  };
+  const candidates: ProviderCycleCandidate[] = [
+    { id: "a", providerId: "movy", serverId: "denver", priority: 0 },
+  ];
+
+  const result = await runProviderCycle({
+    providerId: "movy",
+    candidates,
+    endpointHealth,
+    resolveCandidate: async () => ({ ok: true }),
+  });
+
+  expect(result.selected).toEqual({ ok: true });
+  expect(result.stopReason).toBe("resolved");
+});
+
+test("a throwing recordFailure does not kill the cycle mid-walk", async () => {
+  const endpointHealth: EndpointHealthPort = {
+    shouldTry: () => true,
+    recordSuccess: () => {},
+    recordFailure: () => {
+      throw new Error("disk full");
+    },
+  };
+  const candidates: ProviderCycleCandidate[] = [
+    { id: "a", providerId: "movy", serverId: "denver", priority: 0 },
+    { id: "b", providerId: "movy", serverId: "atlanta", priority: 1 },
+  ];
+
+  const result = await runProviderCycle({
+    providerId: "movy",
+    candidates,
+    endpointHealth,
+    resolveCandidate: async (candidate) => {
+      if (candidate.serverId === "denver") throw new Error("lane down");
+      return { ok: true };
+    },
+  });
+
+  expect(result.stopReason).toBe("resolved");
+  // Denver failed and was retried within budget before atlanta won.
+  expect(result.attempts.at(-1)?.candidate.serverId).toBe("atlanta");
 });

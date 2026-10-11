@@ -42,8 +42,10 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // has rotted — api.videasy.to (the provider's TMDB-mirror DB and legacy
   // endpoint host) no longer resolves at DNS, so title-metadata enrichment
   // depends on the mirror chain. The wings stream endpoints on
-  // api.speedracelight.com still answer, so Videasy stays registered and last
-  // in the order — a working fallback, not a removal.
+  // api.speedracelight.com answered CF 502 from 2026-09-21 and every player
+  // host (player.videasy.to, cineby.at, cineplay.to) is unreachable — Videasy
+  // stays registered and last in the order so an upstream revival needs no
+  // code change.
   provider: "vidlink",
   // HiAnime leads the anime lane. AniDB stays registered and in the priority
   // tail because it still carries the only verified AID cross-link and XML
@@ -55,38 +57,35 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   animeProvider: "hianime",
   youtubeProvider: "youtube",
   // `createProviderPrioritySnapshot` prepends `provider` to this array, so it
-  // holds the *rest* of the order — not the lane default. Videasy is named
-  // explicitly to pin it behind Rivestream rather than float among unlisted
-  // providers.
-  providerPriority: ["rivestream", "videasy"],
+  // holds the *rest* of the order — not the lane default. Rivestream leads the
+  // rest (eleven-service local cycle behind the shared resolve gate, so one
+  // dead mirror costs a candidate, not the lane); VidRock follows (multi-lane
+  // AES-GCM payloads behind the direct-stream gate). Videasy is named
+  // explicitly to pin it last rather than float among unlisted providers: its
+  // session/turnstile path and rotted `videasy.to` domain make it the
+  // fallback, not the lead — registered, not removed.
+  providerPriority: ["rivestream", "vidrock", "videasy"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
   // holds the *rest* of the order and must not repeat the lane default. Miruro
   // is first of the rest: it aggregates roughly a dozen backends behind one
   // AniList-keyed pipe, so one upstream going dark costs a server rather than
-  // the lane. AnimeKai follows — its own catalog, own site, and a megaplay
-  // embed, sharing no infrastructure with either HiAnime or Miruro, and it is
-  // direct-HTTP (no browser), so it works where the relay-dependent lanes are
-  // geo-blocked. KickAssAnime and AnimeGG share nothing with Miruro — own
+  // the lane. KickAssAnime and AnimeGG share nothing with Miruro — own
   // catalog, own site, own CDN — and KickAssAnime can take over a title Miruro
   // found. AniDB follows for when it returns, then AllAnime for the ani-cli
   // parity path.
-  animeProviderPriority: ["miruro", "animekai", "kickassanime", "animegg", "anidb", "allanime"],
+  animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb", "allanime"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
-  // Revision 4 adds AnimeKai to the anime fallback order.
-  providerDefaultsRevision: 4,
+  providerDefaultsRevision: 3,
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },
-  subLang: "en",
   wyzieApiKey: "",
-  animeLang: "sub",
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
   seriesLanguageProfile: { audio: "original", subtitle: "none", quality: "best" },
   movieLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
   animeTitlePreference: "english",
-  headless: true,
   showMemory: false,
   autoNext: true,
   autoplayRecommendations: true,
@@ -97,8 +96,13 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   skipPreview: false,
   skipCredits: true,
   footerHints: "detailed",
+  companionPet: "auto",
+  // `DEFAULT_THEME_NAME` in `@kunai/design`, duplicated as a literal: config
+  // cannot import design (boundary allowlist). Ember Dusk stays the default.
+  theme: "ember-dusk",
   quitNearEndBehavior: "continue",
   continueSourcePreference: "auto",
+  prePlayConfirm: "off",
   quitNearEndThresholdMode: "credits-or-90-percent",
   mpvKunaiScriptPath: "",
   mpvKunaiScriptOpts: {},
@@ -113,7 +117,6 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   minimalMode: false,
   zenMode: false,
   powerSaverMode: false,
-  powerSaverAllowManualArtwork: true,
   presenceProvider: "off",
   presencePrivacy: "full",
   presenceDiscordClientId: "",
@@ -130,14 +133,11 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   videasyAppId: "bc-frontend",
   downloadsEnabled: false,
   offlineMode: false,
-  autoDownload: "off",
-  autoDownloadNextCount: 1,
   maxConcurrentDownloads: 3,
   defaultDownloadQuality: "best",
   autoCleanupWatched: false,
   recoveryMode: "guided",
   startupPriority: "balanced",
-  artworkPreviewsEnabled: true,
   offlineArtworkCacheEnabled: true,
   offlineFreeSpaceReserveBytes: DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
   offlineUnknownEpisodeEstimateBytes: DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,

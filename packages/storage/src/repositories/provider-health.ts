@@ -9,6 +9,18 @@ interface ProviderHealthRow {
   readonly checked_at: string;
 }
 
+function parseStoredHealth(healthJson: string): ProviderHealth | undefined {
+  try {
+    const parsed = providerHealthSchema.safeParse(JSON.parse(healthJson));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    // A poisoned row (downgrade, hand-edit, torn write) is a missing health
+    // record, not a crash — health reads must fail open like the policy layer
+    // documents for unparseable timestamps.
+    return undefined;
+  }
+}
+
 export class ProviderHealthRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
@@ -34,7 +46,8 @@ export class ProviderHealthRepository {
       )
       .get(providerId);
 
-    return row === null ? undefined : providerHealthSchema.parse(JSON.parse(row.health_json));
+    if (row === null) return undefined;
+    return parseStoredHealth(row.health_json);
   }
 
   list(): ProviderHealth[] {
@@ -43,7 +56,12 @@ export class ProviderHealthRepository {
         "SELECT provider_id, health_json, checked_at FROM provider_health ORDER BY checked_at DESC",
       )
       .all();
-    return rows.map((row) => providerHealthSchema.parse(JSON.parse(row.health_json)));
+    const health: ProviderHealth[] = [];
+    for (const row of rows) {
+      const parsed = parseStoredHealth(row.health_json);
+      if (parsed) health.push(parsed);
+    }
+    return health;
   }
 
   delete(providerId: ProviderId): number {

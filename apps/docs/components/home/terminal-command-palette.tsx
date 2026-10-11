@@ -40,7 +40,7 @@ export function TerminalCommandPalette({
             role="presentation"
           >
             <span className="palette-search-wrapper">
-              <span className="kunai-text-accent mr-2 font-bold">/</span>
+              <span className="kunai-text-accent mr-2 font-semibold">/</span>
               <input
                 ref={inputRef}
                 type="text"
@@ -69,7 +69,7 @@ export function TerminalCommandPalette({
                 >
                   <span>
                     <span className="text-fd-foreground font-semibold">/{cmd.id}</span>
-                    <span className="kunai-text-accent ml-1.5 text-[10px] opacity-60">
+                    <span className="kunai-text-accent ml-1.5 text-xs opacity-60">
                       ({cmd.label})
                     </span>
                     <span className="kunai-step-meta mt-0.5 block">{cmd.description}</span>

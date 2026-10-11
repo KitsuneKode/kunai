@@ -776,6 +776,58 @@ export const dataMigrations: readonly Migration[] = [
         WHERE status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable');
     `,
   },
+  {
+    id: "040_data_queue_played_status_backfill",
+    database: "data",
+    sql: `
+      -- Rows written before migration 010 carry played_at but defaulted to
+      -- status='pending'. Reads hid them (played_at IS NULL predicates) while
+      -- the claim/restore CAS checked status alone, leaving them claimable
+      -- zombies. Make the two columns agree.
+      UPDATE playlist_queue
+      SET status = 'played'
+      WHERE played_at IS NOT NULL AND status != 'played';
+    `,
+  },
+  {
+    id: "041_data_offline_assets_origin_job_index",
+    database: "data",
+    sql: `
+      CREATE INDEX IF NOT EXISTS idx_offline_assets_origin_job_id
+        ON offline_assets(origin_job_id);
+    `,
+  },
+  {
+    id: "042_data_history_title_aliases_alias_index",
+    database: "data",
+    sql: `
+      -- lookupTitleIdByAliasId probes alias_id alone for every history
+      -- identity lookup, but the PK is (alias_ns, alias_id) and the only
+      -- secondary index was on title_id — every probe was a full scan of the
+      -- alias table. A dedicated alias_id index turns those probes into seeks.
+      CREATE INDEX IF NOT EXISTS idx_history_title_aliases_alias
+        ON history_title_aliases(alias_id);
+    `,
+  },
+  {
+    id: "043_data_queue_session_owner_pid",
+    database: "data",
+    // Queue sessions were anonymous: any second instance's startup marked every
+    // 'active' session 'recoverable' — including one owned by a healthy live
+    // process — and a restore then moved its rows out from under it. Recording
+    // the owning pid lets recovery distinguish "crashed" from "live but idle".
+    sql: `
+      ALTER TABLE playback_queue_sessions ADD COLUMN owner_pid INTEGER;
+    `,
+  },
+  {
+    id: "044_data_queue_session_owner_identity",
+    database: "data",
+    sql: `
+      ALTER TABLE playback_queue_sessions ADD COLUMN owner_hostname TEXT;
+      ALTER TABLE playback_queue_sessions ADD COLUMN owner_process_start_id TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [
@@ -1131,7 +1183,35 @@ export function runMigrations(
       continue;
     }
 
-    applyMigration(migration, new Date().toISOString());
+    // Two instances launched against the same pre-migration DB both see an
+    // empty applied set and run the loop together: the loser's marker INSERT
+    // conflicts on the twin's committed row, or its ALTER finds the column
+    // already there. Post-conflict the marker is committed, so re-reading the
+    // applied set distinguishes "twin already did it" from a real failure.
+    // Plain writer contention (SQLITE_BUSY past busy_timeout) gets a bounded
+    // retry rather than a fatal startup.
+    let lastError: unknown;
+    let appliedByTwin = false;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        applyMigration(migration, new Date().toISOString());
+        lastError = undefined;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (isDataMigrationApplied(db, migration.id)) {
+          appliedByTwin = true;
+          lastError = undefined;
+          break;
+        }
+        Bun.sleepSync(50 * (attempt + 1));
+      }
+    }
+    if (appliedByTwin) {
+      applied.add(migration.id);
+      continue;
+    }
+    if (lastError) throw lastError;
   }
 }
 

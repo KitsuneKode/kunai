@@ -179,8 +179,10 @@ one roadmap row for the residue. A merged PR is the implementation record — do
 not keep a second checklist beside it. Doc rot here is almost always a directory
 move that leaves routing docs pointing at the old layout, so
 `bun run verify:doc-paths` checks every backticked path and relative link in
-`AGENTS.md` and `.docs/`. Cite a removed file only with wording that says so
-("the old `x.ts` was removed") — the verifier keys off that.
+`AGENTS.md` and `.docs/`, plus the mechanical half of the roadmap index: every
+`.plans/*.md` must be linked, and a LANDED row must point into `.archive/`. Cite
+a removed file only with wording that says so ("the old `x.ts` was removed") —
+the verifier keys off that.
 
 ## User data
 

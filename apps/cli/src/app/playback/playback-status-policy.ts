@@ -1,11 +1,9 @@
-// =============================================================================
 // Playback Status Policy
 //
 // The single player-event-to-status table. Pure: no shell, no service, no
 // service implementation imports. Every player-driven status transition goes
 // through `transitionPlaybackStatus`, so freshness (generation) and authority
 // (pause/stop/finish) are decided in exactly one place.
-// =============================================================================
 
 import {
   isPlaybackGenerationAfter,

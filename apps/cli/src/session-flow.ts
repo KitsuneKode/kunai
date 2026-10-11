@@ -220,6 +220,7 @@ async function switchProviderFromStartingPicker(
       .filter((provider) =>
         providerMetadataMatchesLane(provider, shellModeToProviderLane(state.mode)),
       ),
+    getProviderHealth: (providerId) => container.providerHealth.get(providerId),
     actionContext: buildPickerActionContext({
       container,
       taskLabel: "Choose provider",

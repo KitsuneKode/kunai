@@ -1,7 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
 
-import { relayRpcRequestSchema } from "@kunai/schemas";
-
 import { filterForwardHeaders, mergeRelayHeaders, RelayValidationError } from "./forward-headers";
 import {
   createPinnedRelayTransport,
@@ -15,8 +13,6 @@ import {
   DEFAULT_MAX_RESPONSE_BODY_BYTES,
   DEFAULT_RELAY_TIMEOUT_MS,
   RELAY_ERROR_CODE_HEADER,
-  RELAY_RESULT_HEADER,
-  RELAY_RESULT_UPSTREAM,
   type RelayErrorCode,
   type RelayHandlerOptions,
   type RelayRpcErrorBody,
@@ -51,7 +47,23 @@ export async function handleRpcRequest(
   request: Request,
   options: RelayHandlerOptions,
 ): Promise<Response> {
-  if (request.method === "OPTIONS") return corsPreflightResponse();
+  const corsOrigin = resolveAllowedCorsOrigin(
+    request.headers.get("origin"),
+    options.corsAllowedOrigins,
+  );
+  if (request.method === "OPTIONS") return corsPreflightResponse(corsOrigin);
+  const response = await dispatchRpcRequest(request, options);
+  if (corsOrigin) {
+    response.headers.set("Access-Control-Allow-Origin", corsOrigin);
+    if (corsOrigin !== "*") response.headers.append("Vary", "Origin");
+  }
+  return response;
+}
+
+async function dispatchRpcRequest(
+  request: Request,
+  options: RelayHandlerOptions,
+): Promise<Response> {
   if (request.method !== "POST") {
     return relayError("method-not-allowed", options.providerId, "RPC route requires POST", 405);
   }
@@ -204,20 +216,30 @@ async function readRpcRequest(request: Request): Promise<RelayRpcRequest> {
   } catch {
     throw new RelayValidationError("bad-request", "Relay request body must be JSON", 400);
   }
-  // The schema is the single source of truth for the wire envelope — the
-  // client-side port validates the same shape before sending, so a drifted
-  // contract fails loudly at whichever end noticed first.
-  const result = relayRpcRequestSchema.safeParse(parsed);
-  if (!result.success) {
-    const issue = result.error.issues[0];
-    const where = issue?.path.join(".") || "body";
-    throw new RelayValidationError(
-      "bad-request",
-      `Relay request body is invalid: ${where} — ${issue?.message ?? "wrong shape"}`,
-      400,
-    );
+  if (!isRelayRpcRequest(parsed)) {
+    throw new RelayValidationError("bad-request", "Relay request body is invalid", 400);
   }
-  return result.data;
+  return parsed;
+}
+
+function isRelayRpcRequest(value: unknown): value is RelayRpcRequest {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<RelayRpcRequest>;
+  return (
+    isRelayMethod(candidate.method) &&
+    typeof candidate.upstreamUrl === "string" &&
+    (candidate.headers === undefined || isStringRecord(candidate.headers)) &&
+    (candidate.body === undefined || typeof candidate.body === "string")
+  );
+}
+
+function isRelayMethod(value: unknown): value is RelayMethod {
+  return value === "GET" || value === "POST" || value === "HEAD";
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value).every((entry) => typeof entry === "string");
 }
 
 async function fetchWithValidatedRedirects(input: {
@@ -305,8 +327,6 @@ async function relayUpstreamResponse(
   method: RelayMethod,
 ): Promise<Response> {
   const headers = filteredResponseHeaders(upstream.headers);
-  headers.set("Access-Control-Allow-Origin", "*");
-  headers.set(RELAY_RESULT_HEADER, RELAY_RESULT_UPSTREAM);
 
   if (method === "HEAD" || !upstream.body) {
     return new Response(null, {
@@ -363,20 +383,35 @@ export function relayError(
   return Response.json(body, {
     status,
     headers: {
-      "Access-Control-Allow-Origin": "*",
       [RELAY_ERROR_CODE_HEADER]: code,
     },
   });
 }
 
-function corsPreflightResponse(): Response {
+/**
+ * Origins opt in through `corsAllowedOrigins`. `"*"` stays expressible for
+ * deployments that genuinely serve browsers, but an absent request Origin or
+ * an unlisted one emits nothing — browsers then refuse to expose the response.
+ */
+function resolveAllowedCorsOrigin(
+  origin: string | null,
+  allowedOrigins: readonly string[] | undefined,
+): string | undefined {
+  if (!allowedOrigins || allowedOrigins.length === 0) return undefined;
+  if (allowedOrigins.includes("*")) return "*";
+  return origin && allowedOrigins.includes(origin) ? origin : undefined;
+}
+
+function corsPreflightResponse(corsOrigin: string | undefined): Response {
+  if (!corsOrigin) return new Response(null, { status: 204 });
   return new Response(null, {
     status: 204,
     headers: {
       "Access-Control-Allow-Headers": "Authorization, Content-Type",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": corsOrigin,
       "Access-Control-Max-Age": "600",
+      ...(corsOrigin !== "*" ? { Vary: "Origin" } : null),
     },
   });
 }

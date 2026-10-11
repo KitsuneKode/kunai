@@ -1,6 +1,4 @@
-// =============================================================================
 // Shell Service Implementation
-// =============================================================================
 
 import type { SessionStateManager } from "../../domain/session/SessionStateManager";
 import type { Logger } from "../logger/Logger";

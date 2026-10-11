@@ -27,8 +27,8 @@ import { formatAnimeSourceDetail } from "../shared/anime-source-presentation";
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { parseHlsMasterAudioRenditions, type HlsAudioRendition } from "../shared/hls-ladder";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
-import { searchWithPhraseFallback } from "../shared/search-fallback";
 import {
   createSourceCandidateFromStream,
   createStreamId,
@@ -58,7 +58,7 @@ const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 /** The only server whose stream played end to end; see the manifest notes. */
-const PLAYABLE_SERVERS = new Set(["VidStreaming"]);
+const PLAYABLE_SERVERS = new Set(["VidStreaming", "CatStream"]);
 
 const SUB_LOCALE = "ja-JP";
 const DUB_LOCALE = "en-US";
@@ -193,10 +193,17 @@ async function fetchMasterPlaylist(
       headers,
       signal: directStreamFetchSignal(context.signal, KAA_FETCH_TIMEOUT_MS),
     });
-    return response.ok ? await response.text() : null;
-  } catch {
-    // A master this adapter cannot read is not a dead stream: mpv fetches it
-    // again itself. Only the audio naming is lost, so the sub label stands.
+    if (!response.ok) return null;
+    const body = await response.text();
+    // A 204 or an HTML error page is not a readable manifest.
+    return body.includes("#EXTM3U") ? body : null;
+  } catch (error) {
+    // An abort is not an unreadable manifest — swallowing it lets the gate
+    // probe an already-dead signal and ship a stream on a cancelled resolve.
+    if (context.signal?.aborted) throw error;
+    // A master this adapter cannot read is not yet a dead stream: the resolve
+    // gate decides that, and only the audio naming is lost when it passes.
+    // Returning null — not throwing — keeps those distinct.
     return null;
   }
 }
@@ -242,23 +249,6 @@ function titleKey(value: string): string {
 }
 
 /**
- * `/api/fsearch` matches the query as one literal phrase — "cyberpunk edge
- * runners" returns `[]` while "Cyberpunk: Edgerunners" is in the catalog.
- * Rescue a miss with the longest-word retry shared by the other literal-phrase
- * catalogs.
- */
-async function searchKaaWithPhraseFallback(query: string, context: ProviderRuntimeContext) {
-  return searchWithPhraseFallback(
-    query,
-    async (q) =>
-      parseKaaSearchResults(
-        await fetchJson(context, "/api/fsearch", { method: "POST", body: { query: q, page: 1 } }),
-      ),
-    (row) => [row.title, row.englishTitle],
-  );
-}
-
-/**
  * The one search row that is this title: same romaji or English name, and the
  * same year when both sides know it. The site exposes no AniList or MAL id to
  * match on, so anything short of exactly one such row is no match — a wrong
@@ -300,7 +290,9 @@ async function locateKaaShow(
 
   const query = title.title.trim();
   if (!query) return null;
-  const rows = await searchKaaWithPhraseFallback(query, context);
+  const rows = parseKaaSearchResults(
+    await fetchJson(context, "/api/fsearch", { method: "POST", body: { query, page: 1 } }),
+  );
   const slug = matchKaaShow(rows, title);
   if (!slug) return null;
   if (bridgeKey) context.titleBridge?.set({ ...bridgeKey, nativeId: slug });
@@ -331,7 +323,9 @@ export const kickassanimeProviderModule: CoreProviderModule = {
   async search(input, context) {
     const query = input.query.trim();
     if (!query) return null;
-    const results = await searchKaaWithPhraseFallback(query, context);
+    const results = parseKaaSearchResults(
+      await fetchJson(context, "/api/fsearch", { method: "POST", body: { query, page: 1 } }),
+    );
     if (results.length === 0) return null;
 
     return results.map((result): ProviderSearchResult => {
@@ -401,6 +395,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
         { cachePolicy, events, startedAt },
       );
 
+    if (context.signal?.aborted) return fail("cancelled", "resolve cancelled");
     if (input.mediaKind !== "anime")
       return fail("unsupported-title", "KickAssAnime only supports anime");
     let slug: string | null;
@@ -492,9 +487,8 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       protocol: "hls",
       container: "m3u8",
       headers,
-      // The master is a ladder (360p/540p/720p); mpv picks the rendition.
-      // The master is a ladder mpv picks from, and its variant playlists are
-      // video-only — the audio lives in the rendition group, so splitting the
+      // The master is a ladder (360p/540p/720p) mpv picks from, and its variant
+      // playlists are video-only — the audio lives in the rendition group, so splitting the
       // ladder into per-quality URLs would hand mpv silent video.
       qualityLabel: "auto",
       qualityRank: 0,
@@ -540,6 +534,28 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       preferredSourceId: input.preferredSourceId,
       favoriteSourceNames: input.favoriteSourceNames,
     });
+
+    // Resolve gate: KickAssAnime ships exactly one stream — the master URL —
+    // and a master that downloads still proves nothing about its media
+    // playlists, so the shipped stream is probed with its own headers either
+    // way. A definitive refusal is retryable: a re-resolve re-fetches the
+    // player page and mints a fresh signed manifest URL. A non-definitive
+    // answer (timeout, 5xx) passes, since mpv retries the identical request.
+    const verdict = await verifyCandidateStream({
+      stream: selection.selected,
+      context,
+      signal: context.signal,
+    });
+    if (context.signal?.aborted) {
+      return fail("cancelled", "KickassAnime resolve-gate probe was cancelled");
+    }
+    if (!verdict.accepted) {
+      return fail(
+        "not-found",
+        `KickassAnime selected stream is unreachable (${verdict.reason})`,
+        true,
+      );
+    }
     const sources: ProviderSourceCandidate[] = [
       createSourceCandidateFromStream({
         providerId: KICKASSANIME_PROVIDER_ID,

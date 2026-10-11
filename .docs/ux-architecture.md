@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-10-11"
 ---
 
 # Kunai — UX Architecture
@@ -79,6 +79,38 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 - if an action is unavailable, show why instead of silently ignoring the input
 - mode actions should be phrased by destination, like `Anime mode` or `Series mode`, instead of generic toggle wording
 
+### Optional terminal mouse input
+
+The Ink shell owns one paused-mode stdin facade in `app-shell/mouse/`.
+It separates mouse reports before Ink parses keyboard input; it never adds
+another `data` listener to the real TTY. Tracking requires both stdin and
+stdout to be TTYs, excludes `TERM=dumb`, and can be disabled with
+`KUNAI_NO_MOUSE=1`. Session disposal releases subscriptions, hit regions,
+pending parsing timers, and the process-exit hook on normal or rejected exit.
+Incomplete reports and ambiguous Escape prefixes are held for at most 50 ms of
+idle time, then released unchanged; pending input is also capped at 64 characters.
+
+Browse results use explicit selection: click a row to select and focus it;
+click the visibly selected row again to open it. Clicking the search field
+restores text focus. Wheel input over ordinary results clamps at the first
+and last row; keyboard arrows retain their existing wrapping behavior.
+The footer describes the click gesture only when mouse support is enabled.
+These high-frequency interactions repaint immediately without animation.
+
+Local overlays, the command palette, and root-content suspension remove
+covered result regions from hit-testing. Press and release must belong to the
+same stationary region and button; dragging cancels activation. Unrelated
+renders preserve a pending click. Re-measurement uses Ink layout coordinates
+plus one terminal cell; this assumes the fullscreen shell renders no `Static`
+output above the live region.
+
+Other surfaces currently receive unhandled vertical wheel reports as arrow
+keys. That is a keyboard fallback, not complete pointer support for their
+controls. Calendar rows, settings, playback controls, and destructive menus
+must add their own tested pointer ownership before claiming click parity.
+Incomplete reports expire after 50 ms idle or 64 buffered bytes; expiry
+returns held bytes rather than silently swallowing later keystrokes.
+
 ## Selection Over Freeform Input
 
 If the app already knows the valid options, the UI should present those options instead of asking the user to type raw values.
@@ -135,6 +167,11 @@ Title details should be honest about data quality:
 - show explicit unavailable placeholders when a provider-native result does not expose those fields
 - keep actual Kitty/Ghostty image rendering outside the Ink render tree until the image-pane service owns layout, clearing, and flicker control
 - never require image support for selection, playback, or episode navigation
+
+External link labels are sanitized for terminal rendering. Their targets stay
+opaque through the details model and `l` shortcut: display sanitization must not
+rewrite the URL being opened. The shared desktop opener rejects raw control
+characters and permits only its explicit URL schemes on every platform.
 
 Post-playback should use the same rule for lightweight panels so provider changes, history, diagnostics, help, and about do not break the user out of the current title context.
 Settings should follow that same in-shell rule for browse and post-playback shells, even while deeper season, episode, and subtitle flows still finish their overlay migration.
@@ -346,3 +383,12 @@ every path that can open the surface.
 - blocking setup wizards for common adjustments
 - asking for raw values when structured data already exists
 - decorative animation that delays interaction
+
+## Playback command input ownership
+
+`LoadingShell` mounts its playback input reader inside `ShellFrame`, below the
+command-mode context provider. While the palette is open, letters and Escape
+belong to it; closing the palette restores playback shortcuts. On a cancellable
+resolve, the first Escape closes the palette and a subsequent Escape cancels
+the resolve. The regression suite delivers Ink's pending-Escape callback
+explicitly instead of waiting for its timer.

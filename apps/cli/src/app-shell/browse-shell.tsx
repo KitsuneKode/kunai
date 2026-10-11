@@ -3,14 +3,15 @@ import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-
 import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-trace";
 import { useCalendarNow } from "@/app-shell/hooks/use-calendar-now";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
+import { useLineEditor } from "@/app-shell/line-editor";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
-import { useCommandPalette } from "@/app-shell/use-command-palette";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { FilterStateKey } from "@/domain/search/SearchIntent";
 import type { SearchResult, ShellMode } from "@/domain/types";
+import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, type DOMElement } from "ink";
 import React, {
   useCallback,
   useEffect,
@@ -24,8 +25,11 @@ import { resolveBrowseDestinationLabel, setBrowseDestinationLabel } from "./brow
 import { decideBrowseFilterAction } from "./browse-filter-actions";
 import {
   getLastFilterStateKey,
+  getStructuredFilterChips,
+  nextBrowseEscFilterLayer,
   removeFilterTokenFromQuery,
   shouldResearchAfterFilterChange,
+  stripStructuredFiltersFromQuery,
 } from "./browse-filter-chips";
 import {
   hasBrowseResultFilters,
@@ -45,13 +49,25 @@ import {
   type BrowseFocusZoneContext,
   type BrowseFocusZoneEvent,
 } from "./browse-focus-zone";
+import { buildBrowseIdleReturnLoopModel, resolveIdleRowAction } from "./browse-idle-actions";
+import { setBrowseIdleRefreshListener } from "./browse-idle-context";
 import {
   browseResultStatusLine,
   buildPreviewRailModelFromBrowseOption,
+  filterBrowseOptionsByResultFilter,
   mapPosterPreviewState,
 } from "./browse-preview-rail";
-import { isQueryDirty, normalizeBrowseCommandInput } from "./browse-search-state";
-import { formatBrowseShellError, PREVIEW_POSTER_ROWS } from "./browse-shell-view";
+import {
+  isQueryDirty,
+  normalizeBrowseCommandInput,
+  resolveDetailsOverlaySubmitValue,
+} from "./browse-search-state";
+import {
+  buildBrowseDetailsSheetSeed,
+  formatBrowseShellError,
+  MIN_RESULTS_FOR_LOCAL_FILTER,
+  PREVIEW_POSTER_ROWS,
+} from "./browse-shell-view";
 import {
   CalendarDayStrip,
   CalendarScheduleRow,
@@ -71,16 +87,21 @@ import {
 } from "./calendar-ui.model";
 import { sortCalendarOptions } from "./calendar-view";
 import type { ResolvedAppCommand } from "./commands";
+import { momentForBrowseEmpty } from "./companion-moment";
+import { companionMode } from "./companion-policy";
+import { CompanionHost } from "./CompanionHost";
 import { DetailsSheetUI } from "./details-pane-ui";
 import {
+  buildBrowseDetailsPanel,
   buildDetailsPanelDataFromBrowseOption,
   buildDetailsSheetLines,
   resolveBrowseDetailsSecondary,
   type DetailsPanelData,
 } from "./details-panel";
+import { buildDetailsSheet } from "./details-sheet.model";
 import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
-import { deleteAllKittyImages } from "./image-pane";
+import { undisplayPlacementsKeepCache } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
 import { buildFooterActionsFromBindings } from "./keybindings";
 import {
@@ -88,7 +109,8 @@ import {
   getBrowseCommandPaletteMaxVisible,
   getBrowseListMaxVisible,
 } from "./layout-policy";
-import { MouseTarget } from "./mouse/MouseRegions";
+import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
+import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { suppressPosterWhileNavigating } from "./poster-types";
 import { computeMediaListRowLayout } from "./primitives/list-row-layout";
@@ -108,10 +130,15 @@ import {
   takeNotificationDetailsItem,
 } from "./root-overlay-bridge";
 import { SakuraLoader } from "./SakuraLoader";
+import {
+  getCommandAutocompleteTarget,
+  getCommandMatches,
+  getHighlightedCommand,
+} from "./shell-command-model";
 import { CommandPalette } from "./shell-command-ui";
 import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
-import { getWindowStart, measureColumns } from "./shell-text";
+import { getWindowStart, measureColumns, sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 import {
   toShellAction,
@@ -122,15 +149,15 @@ import {
   type BrowseShellSearchResponse,
   type ShellAction,
 } from "./types";
-import { useBrowseOverlay } from "./use-browse-overlay";
-import { useIdleSurface } from "./use-idle-surface";
 import { usePosterPreview } from "./use-poster-preview";
-import { useResultNarrow } from "./use-result-narrow";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 function clearShellScreen() {
   if (process.stdout.isTTY) {
-    deleteAllKittyImages();
+    // Placements must go (the frame is cleared), but source bytes stay warm:
+    // wiping the 48MB+32MB byte caches here refetches + redecodes every poster
+    // the moment the user returns. Full wipe is for session shutdown only.
+    undisplayPlacementsKeepCache();
   }
 }
 
@@ -257,19 +284,15 @@ export function BrowseShell<T>({
   // list, so nothing re-renders on its own when the underlying row changes.
   // Only the setter is needed — the count itself is never read.
   const [, setFavoriteTick] = useState(0);
-  const commandPalette = useCommandPalette({ onInputRedraw: clearShellScreen });
-  // Destructure the stable callbacks so dep arrays name them, not the
-  // per-render aggregate object.
-  const { openPalette, closePalette } = commandPalette;
-  const commandMode = commandPalette.open;
-  const commandInput = commandPalette.input;
-  const highlightedCommandIndex = commandPalette.highlightedIndex;
+  const [commandMode, setCommandMode] = useState(false);
+  const [commandInput, setCommandInput] = useState("");
+  const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
   // Transient confirmation for row actions (follow / queue / download) — without it,
   // following a title looked like a no-op even though it persisted.
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const actionFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashActionFeedback = useCallback((message: string) => {
-    setActionFeedback(message);
+    setActionFeedback(sanitizeTerminalText(message));
     if (actionFeedbackTimer.current) clearTimeout(actionFeedbackTimer.current);
     actionFeedbackTimer.current = setTimeout(() => setActionFeedback(null), 2500);
   }, []);
@@ -279,8 +302,15 @@ export function BrowseShell<T>({
     },
     [],
   );
-  const commandEditor = commandPalette.editor;
-
+  const commandEditor = useLineEditor({
+    value: commandInput,
+    onChange: (nextValue) => {
+      setCommandInput(nextValue);
+      setHighlightedCommandIndex(0);
+    },
+    onRedraw: clearShellScreen,
+  });
+  const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
   const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>(initialResults ?? []);
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
   const [resultSubtitle, setResultSubtitle] = useState(initialResultSubtitle ?? "");
@@ -296,7 +326,15 @@ export function BrowseShell<T>({
   const [emptyMessage, setEmptyMessage] = useState(
     () => initialEmptyMessage ?? browseIdleHint(mode),
   );
+  const [activeIdleContext, setActiveIdleContext] = useState(idleContext);
+  const [idleContextStatus, setIdleContextStatus] = useState<"loading" | "ready" | "error">(
+    loadIdleContext ? "loading" : "ready",
+  );
+  const [showIdleLoadingHint, setShowIdleLoadingHint] = useState(false);
+  const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
   const [searchWarnings, setSearchWarnings] = useState<readonly string[]>(initialWarnings ?? []);
+  const [resultFilter, setResultFilter] = useState("");
+  const [filterModeOpen, setFilterModeOpen] = useState(false);
   // Focus zones: query (text) → list (bare hotkeys) → filter (local narrow) → idle.
   // See browse-focus-zone.ts and .docs/ux-architecture.md.
   const [focusZone, setFocusZone] = useState<BrowseFocusZone>(() => {
@@ -323,13 +361,17 @@ export function BrowseShell<T>({
       ),
     });
   });
-
+  /** Zone to restore when closing browse-local overlays (details). */
+  const focusZoneBeforeOverlayRef = useRef<BrowseFocusZone | null>(null);
+  const [idleSelectedIndex, setIdleSelectedIndex] = useState(0);
   const focusZoneContextRef = useRef<BrowseFocusZoneContext>({
     hasResults: false,
     hasFilterBar: false,
     canFocusIdle: false,
   });
   const searchRequestGateRef = useRef(createLatestRequestGate());
+  const detailRequestGateRef = useRef(createLatestRequestGate());
+  const [idleContextRequestGate] = useState(() => createLatestRequestGate());
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -369,6 +411,54 @@ export function BrowseShell<T>({
   });
   const calendarRouteKind = calendarRouteState.state.kind;
   const calendarRoutePending = calendarRouteKind === "loading" || calendarRouteKind === "retrying";
+
+  useEffect(() => {
+    if (!loadIdleContext) return;
+    const requestGate = idleContextRequestGate;
+    const request = requestGate.begin();
+    let active = true;
+    setIdleContextStatus("loading");
+    const timer = setTimeout(() => {
+      if (active) setShowIdleLoadingHint(true);
+    }, 150);
+
+    void (async () => {
+      try {
+        const next = await loadIdleContext();
+        if (!active || !requestGate.isCurrent(request)) return;
+        setIdleSelectedIndex(0);
+        setActiveIdleContext(next);
+        setIdleContextStatus("ready");
+      } catch {
+        if (!active || !requestGate.isCurrent(request)) return;
+        setIdleContextStatus("error");
+      } finally {
+        clearTimeout(timer);
+        if (active) setShowIdleLoadingHint(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      requestGate.invalidate();
+    };
+  }, [idleContextRequestGate, loadIdleContext]);
+
+  useEffect(() => {
+    if (!loadIdleContext) return undefined;
+    setBrowseIdleRefreshListener(() => {
+      void (async () => {
+        try {
+          const next = await loadIdleContext();
+          setActiveIdleContext(next);
+        } catch {
+          // best-effort refresh after history mutations
+        }
+      })();
+    });
+    return () => setBrowseIdleRefreshListener(null);
+  }, [loadIdleContext]);
 
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
@@ -415,34 +505,11 @@ export function BrowseShell<T>({
     resetCalendar();
   }, [resetCalendar]);
 
-  // Local narrowing, provider-filter badges, and the Esc-layer decision. The
-  // shell keeps only what is genuinely its own — selection reset, focus-zone
-  // dispatch, and re-running the search after a chip strip.
-  const narrow = useResultNarrow<T>({
-    options,
-    query,
-    searchState,
-    isCalendarView,
-    ultraCompact: viewport.ultraCompact,
-  });
-  const narrowedOptions = narrow.narrowedOptions;
-  const structuredFilterChips = narrow.structuredFilterChips;
-  const resultFilter = narrow.value;
-  const activeFilterBadges = narrow.badges;
-  // Stable action refs (each is useCallback-memoized in the hook) so memoized
-  // consumers can dep on them directly instead of the hook-returned object.
-  const {
-    clearAll: clearNarrowCluster,
-    clearNarrow: clearNarrowFields,
-    setBadges: setNarrowBadges,
-  } = narrow;
-
-  // Details overlay: the hook owns overlay state, the focus-zone stash, the
-  // detail-fetch gate, and overlay key choreography; the shell translates the
-  // returned intents into its own focus/callback actions.
-  const overlay = useBrowseOverlay<T>({ mode });
-  const activeOverlay = overlay.current;
-  const { openDetails } = overlay;
+  const narrowedOptions = useMemo(
+    () => filterBrowseOptionsByResultFilter(options, resultFilter),
+    [options, resultFilter],
+  );
+  const structuredFilterChips = useMemo(() => getStructuredFilterChips(query), [query]);
   const calendarOptionsForDay = useCallback(
     (dayKey: string | null): readonly BrowseShellOption<T>[] => {
       const scheduleOptions = narrowedOptions as readonly BrowseShellOption<
@@ -468,11 +535,13 @@ export function BrowseShell<T>({
     setErrorMessage(null);
     setEmptyMessage("Search for a title — or try /trending to see what's popular");
     setResultSubtitle("");
-    clearNarrowCluster();
+    setActiveFilterBadges([]);
     setSearchWarnings([]);
+    setResultFilter("");
+    setFilterModeOpen(false);
     setFocusZone("query");
     leaveCalendarSurface();
-  }, [leaveCalendarSurface, clearNarrowCluster]);
+  }, [leaveCalendarSurface]);
 
   const updateQuery = useCallback(
     (nextValue: string) => {
@@ -480,13 +549,15 @@ export function BrowseShell<T>({
       setQuery(normalized.value);
       setHistoryIndex(-1);
       if (normalized.openCommandPalette) {
-        openPalette();
+        setCommandMode(true);
+        setCommandInput("");
+        setHighlightedCommandIndex(0);
       }
       // Emptying the draft is not a gesture — backspacing to retype must not
       // fire a discovery reload or move focus. Restoring trending is deliberate
       // and lives on the Esc ladder (query → clear text, results → clearResults).
     },
-    [setQuery, openPalette],
+    [setQuery],
   );
 
   const runSearch = useCallback(
@@ -511,7 +582,7 @@ export function BrowseShell<T>({
 
       try {
         const response = await onSearch(rawQuery);
-        if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+        if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
         const processed = processBrowseSearchResults(response, parsedQuery);
         const activeBadges = [
           ...processed.upstreamFilterBadges.map((badge) => `upstream ${badge}`),
@@ -521,7 +592,8 @@ export function BrowseShell<T>({
         const filterSuffix = activeBadges.length > 0 ? `  ·  ${activeBadges.join(", ")}` : "";
 
         setLastSearchedQuery(rawQuery);
-        clearNarrowFields();
+        setResultFilter("");
+        setFilterModeOpen(false);
         addSearchQuery(rawQuery);
         setOptions(processed.options);
         setSelectedIndex(0);
@@ -531,12 +603,12 @@ export function BrowseShell<T>({
             ? "No results matched those filters."
             : (response.emptyMessage ?? "No results found."),
         );
-        setNarrowBadges(activeBadges);
+        setActiveFilterBadges(activeBadges);
         setSearchWarnings(response.warnings ?? []);
         setSearchState("ready");
         setFocusZone(processed.options.length > 0 ? "list" : "query");
       } catch (error) {
-        if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+        if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
         setSearchState("error");
         setOptions([]);
@@ -546,7 +618,7 @@ export function BrowseShell<T>({
         setEmptyMessage("Search failed.");
       }
     },
-    [query, onSearch, leaveCalendarSurface, clearNarrowFields, setNarrowBadges],
+    [query, onSearch, leaveCalendarSurface],
   );
 
   const clearStructuredFilterChip = useCallback(
@@ -578,24 +650,24 @@ export function BrowseShell<T>({
     setOptions([]);
     setSelectedIndex(0);
     setResultSubtitle("");
-    narrow.setBadges([]);
+    setActiveFilterBadges([]);
     setSearchWarnings([]);
     setFocusZone("query");
     leaveCalendarSurface();
 
     try {
       const response = await onLoadDiscovery();
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setOptions(response.options);
       setSelectedIndex(0);
       setResultSubtitle(response.subtitle);
       setEmptyMessage(response.emptyMessage ?? "Trending is unavailable right now.");
-      narrow.setBadges([]);
+      setActiveFilterBadges([]);
       setSearchState("ready");
       setFocusZone(response.options.length > 0 ? "list" : "query");
     } catch (error) {
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setSearchState("error");
       setOptions([]);
@@ -617,14 +689,14 @@ export function BrowseShell<T>({
     setOptions([]);
     setSelectedIndex(0);
     setResultSubtitle("");
-    narrow.setBadges([]);
+    setActiveFilterBadges([]);
     setSearchWarnings([]);
     setFocusZone("query");
     leaveCalendarSurface();
 
     try {
       const response = await onLoadRecommendations();
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       // Cold cache: stay on the loading surface until the network refresh lands.
       // Warm cache: paint immediately, then soft-refresh in the background.
@@ -646,7 +718,7 @@ export function BrowseShell<T>({
       setSelectedIndex(0);
       setResultSubtitle(response.subtitle);
       setEmptyMessage(response.emptyMessage ?? "Recommendations are unavailable right now.");
-      narrow.setBadges([]);
+      setActiveFilterBadges([]);
       setSearchState("ready");
       setFocusZone(response.options.length > 0 ? "list" : "query");
 
@@ -671,7 +743,7 @@ export function BrowseShell<T>({
           });
       }
     } catch (error) {
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setSearchState("error");
       setOptions([]);
@@ -679,6 +751,18 @@ export function BrowseShell<T>({
       setFocusZone("query");
       setErrorMessage(formatBrowseShellError(error));
       setEmptyMessage("Recommendations failed.");
+    }
+  };
+
+  const closeOverlay = () => {
+    detailRequestGateRef.current.invalidate();
+    setActiveOverlay(null);
+    const restore = focusZoneBeforeOverlayRef.current;
+    focusZoneBeforeOverlayRef.current = null;
+    if (restore) {
+      setFocusZone(restore);
+    } else if (options.length > 0) {
+      setFocusZone("list");
     }
   };
 
@@ -731,16 +815,65 @@ export function BrowseShell<T>({
   // navigating. Used to suppress the heavy poster block from intermediate frames.
   const navigating = selectedOption !== settledOption;
 
-  // Thin shell-side wrapper: resolve the default option, own the palette
-  // close, then hand the rest to the hook (stash → seed → open → gap-fill).
   const openDetailsOverlay = useCallback(
     (option?: BrowseShellOption<T>) => {
       const resolved = option ?? selectedOption;
       if (!resolved) return;
-      closePalette();
-      openDetails(resolved, { focusZone });
+      const detailRequestId = detailRequestGateRef.current.begin();
+      const panel = buildBrowseDetailsPanel(resolved);
+      setCommandMode(false);
+      focusZoneBeforeOverlayRef.current = focusZone;
+      // Keep list ownership under the sheet so close restores the highlighted row,
+      // not a forced dump into the search field.
+
+      const seed = buildBrowseDetailsSheetSeed(resolved);
+      const value = resolved.value as unknown as Partial<SearchResult>;
+      const titleId = typeof value?.id === "string" ? value.id : undefined;
+      const cached = titleId ? (peekTitleDetail(titleId, seed.type) ?? null) : null;
+
+      setActiveOverlay({
+        type: "details",
+        title: panel.title,
+        subtitle: panel.subtitle,
+        lines: [],
+        sheet: buildDetailsSheet({ seed, detail: cached, history: null, availability: null }),
+        seasonsExpanded: false,
+        imageUrl: panel.imageUrl,
+        loading: false,
+        scrollIndex: 0,
+      });
+
+      // Gap-fill only when cold (peek miss); the fetch rides the shared TMDB cache.
+      if (titleId && !cached) {
+        void (async () => {
+          try {
+            const detail = await fetchTitleDetail(titleId, seed.type, undefined, {
+              externalIds: value?.externalIds,
+              isAnime: mode === "anime" || value?.isAnime === true,
+            });
+            setActiveOverlay((current) =>
+              detailRequestGateRef.current.isCurrent(detailRequestId) &&
+              current &&
+              current.type === "details"
+                ? {
+                    ...current,
+                    sheet: buildDetailsSheet({
+                      seed,
+                      detail,
+                      history: null,
+                      availability: null,
+                      seasonsExpanded: current.seasonsExpanded,
+                    }),
+                  }
+                : current,
+            );
+          } catch {
+            // best-effort; the seeded header/synopsis stay, skeletons resolve to "—"
+          }
+        })();
+      }
     },
-    [selectedOption, focusZone, closePalette, openDetails],
+    [selectedOption, mode, focusZone],
   );
 
   const runMutationWithFeedback = useCallback(
@@ -788,19 +921,25 @@ export function BrowseShell<T>({
         isCalendarView,
       });
       if (decision.kind === "open-narrow") {
-        narrow.open();
-        closePalette();
+        setFilterModeOpen(true);
+        setCommandMode(false);
+        setCommandInput("");
+        setHighlightedCommandIndex(0);
         setFocusZone("filter");
       }
       return true;
     }
     if (action === "trending") {
-      closePalette();
+      setCommandMode(false);
+      setCommandInput("");
+      setHighlightedCommandIndex(0);
       void loadDiscovery();
       return true;
     }
     if (action === "recommendation") {
-      closePalette();
+      setCommandMode(false);
+      setCommandInput("");
+      setHighlightedCommandIndex(0);
       void loadRecommendations();
       return true;
     }
@@ -826,19 +965,42 @@ export function BrowseShell<T>({
     setFocusZone((current) => browseFocusZoneReducer(current, event, focusZoneContextRef.current));
   }, []);
 
-  // The idle surface owns its load lifecycle, selection index, and row intents;
-  // this shell only translates its boundary exits into focus-zone events.
-  const idle = useIdleSurface({
-    initial: idleContext,
-    load: loadIdleContext,
+  const mouseEnabled = useMouseEnabled();
+  const resultsMouseRef = useRef<DOMElement | null>(null);
+  const pointerActive = !activeOverlay && !commandMode && !viewport.tooSmall;
+  const scrollResults = (direction: "up" | "down") => {
+    dispatchFocusZone({ type: "focus-list" });
+    setSelectedIndex((current) =>
+      Math.max(0, Math.min(displayOptions.length - 1, current + (direction === "up" ? -1 : 1))),
+    );
+  };
+  useMouseRegion(
+    resultsMouseRef,
+    "browse:results",
+    {
+      onWheel: scrollResults,
+    },
+    { active: pointerActive && !isCalendarView && displayOptions.length > 0 },
+  );
+
+  const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(activeIdleContext, {
     idleFocused,
+    selectedIndex: idleSelectedIndex,
+    showDiscoveryRowWhenEmpty: idleContextStatus === "ready",
   });
   const canFocusIdleRows =
-    options.length === 0 && searchState === "idle" && Boolean(idle.model?.hasSelectableRows);
+    options.length === 0 &&
+    searchState === "idle" &&
+    Boolean(idleReturnLoopModel?.hasSelectableRows);
 
   // Local narrow mode only earns space on long result sets. Ctrl+F opens it;
   // /filters opens guided facets via SearchPhase.
-  const showResultFilterBar = narrow.showBar;
+  const showResultFilterBar =
+    searchState === "ready" &&
+    options.length >= MIN_RESULTS_FOR_LOCAL_FILTER &&
+    !isCalendarView &&
+    !viewport.ultraCompact &&
+    (filterModeOpen || resultFilter.length > 0);
 
   focusZoneContextRef.current = {
     hasResults: displayOptions.length > 0,
@@ -1039,6 +1201,13 @@ export function BrowseShell<T>({
     commandMode,
   });
   const maxVisible = getBrowseListMaxVisible(viewport.rows, browseChromeRows);
+  // The card follows the selected row at once; enriched details arrive when the
+  // selection settles. Rendering only the settled data flashed "No selection"
+  // over a row that was plainly selected.
+  const companionView =
+    settledOption === selectedOption
+      ? companionDetails
+      : buildDetailsPanelDataFromBrowseOption(selectedOption);
   const windowStart = getWindowStart(boundedSelectedIndex, displayOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
   const visibleOptions = displayOptions.slice(windowStart, windowEnd);
@@ -1091,72 +1260,138 @@ export function BrowseShell<T>({
     }
 
     if (activeOverlay) {
-      // The hook owns the overlay-side decisions (close/scroll/sheet toggles);
-      // intents that need shell props or focus come back translated here.
-      const intent = overlay.handleKey(input, key, {
-        selectedOption,
-        searchReady: searchState === "ready",
-      });
-      switch (intent.kind) {
-        case "closed": {
-          if (intent.restoreTo) {
-            setFocusZone(intent.restoreTo);
-          } else if (options.length > 0) {
-            setFocusZone("list");
-          }
+      if (input === "/") {
+        return;
+      }
+
+      if (key.escape) {
+        closeOverlay();
+        return;
+      }
+
+      if (key.return && activeOverlay.type === "details") {
+        const value = resolveDetailsOverlaySubmitValue({
+          detailsOpen: true,
+          searchReady: searchState === "ready",
+          selectedOption,
+        });
+        if (value !== null) {
+          onSubmit(value);
+        }
+        return;
+      }
+
+      if (activeOverlay.type === "details" && activeOverlay.sheet) {
+        if (input.toLowerCase() === "s") {
+          setActiveOverlay((current) =>
+            current && current.type === "details"
+              ? { ...current, seasonsExpanded: !current.seasonsExpanded }
+              : current,
+          );
           return;
         }
-        case "submit":
-          onSubmit(intent.value);
+        if (input.toLowerCase() === "t" && activeOverlay.sheet.trailerUrl) {
+          onPlayTrailer?.(activeOverlay.sheet.trailerUrl);
           return;
-        case "trailer":
-          onPlayTrailer?.(intent.url);
+        }
+        if (input.toLowerCase() === "l" && activeOverlay.sheet.links.items[0]) {
+          onOpenLink?.(activeOverlay.sheet.links.items[0].url);
           return;
-        case "link":
-          onOpenLink?.(intent.url);
+        }
+        // Actions advertised in the sheet footer, dispatched against the highlighted row.
+        if (input.toLowerCase() === "w" && selectedOption && onWatchlistSelected) {
+          runMutationWithFeedback(
+            () => onWatchlistSelected(selectedOption.value),
+            `Watchlisted ${selectedOption.label}`,
+            "Could not watchlist",
+          );
           return;
-        case "watchlist":
-          if (selectedOption && onWatchlistSelected) {
-            runMutationWithFeedback(
-              () => onWatchlistSelected(selectedOption.value),
-              `Watchlisted ${selectedOption.label}`,
-              "Could not watchlist",
-            );
-          }
+        }
+        if (input.toLowerCase() === "q" && selectedOption && onQueueSelected) {
+          runMutationWithFeedback(
+            () => onQueueSelected(selectedOption.value),
+            `Queued ${selectedOption.label}`,
+            "Could not queue",
+          );
           return;
-        case "queue":
-          if (selectedOption && onQueueSelected) {
-            runMutationWithFeedback(
-              () => onQueueSelected(selectedOption.value),
-              `Queued ${selectedOption.label}`,
-              "Could not queue",
-            );
-          }
+        }
+        if (input.toLowerCase() === "d" && selectedOption && searchState === "ready") {
+          onResolve("download", selectedOption.value);
           return;
-        case "download":
-          if (selectedOption) {
-            onResolve("download", selectedOption.value);
-          }
-          return;
-        default:
-          // "consumed" / "ignored" — the overlay owns every keypress while open.
-          return;
+        }
       }
+
+      if (activeOverlay.type === "episode-picker") {
+        return;
+      }
+
+      if ("lines" in activeOverlay && (key.upArrow || key.downArrow) && !activeOverlay.loading) {
+        if (activeOverlay.lines.length === 0) {
+          return;
+        }
+        const maxScroll = Math.max(0, activeOverlay.lines.length - 1);
+        const nextScroll = key.upArrow
+          ? Math.max(0, (activeOverlay.scrollIndex ?? 0) - 1)
+          : Math.min(maxScroll, (activeOverlay.scrollIndex ?? 0) + 1);
+        setActiveOverlay({ ...activeOverlay, scrollIndex: nextScroll });
+      }
+      return;
     }
 
     if (commandMode) {
-      const paletteResult = commandPalette.handleKey(input, key, commands);
-      if (paletteResult.kind === "resolved") {
-        const action = toShellAction(paletteResult.command.id);
-        if (!handleLocalAction(action)) {
-          onResolve(action);
+      const matches = getCommandMatches(commandInput, commands);
+
+      if (key.escape) {
+        setCommandMode(false);
+        setCommandInput("");
+        setHighlightedCommandIndex(0);
+        return;
+      }
+      if (key.return) {
+        const resolved = getHighlightedCommand(commandInput, commands, highlightedCommandIndex);
+        if (resolved?.enabled) {
+          const action = toShellAction(resolved.id);
+          if (!handleLocalAction(action)) {
+            onResolve(action);
+          }
         }
+        return;
+      }
+      if (key.tab) {
+        const target = getCommandAutocompleteTarget(
+          commandInput,
+          commands,
+          highlightedCommandIndex,
+        );
+        if (target) {
+          commandEditor.setValue(target.aliases[0] ?? target.id);
+          const nextIndex = matches.findIndex((candidate) => candidate.id === target.id);
+          setHighlightedCommandIndex(nextIndex >= 0 ? nextIndex : 0);
+        }
+        return;
+      }
+      if (key.upArrow) {
+        if (matches.length > 0) {
+          setHighlightedCommandIndex((current) => (current - 1 + matches.length) % matches.length);
+        }
+        return;
+      }
+      if (key.downArrow) {
+        if (matches.length > 0) {
+          setHighlightedCommandIndex((current) => (current + 1) % matches.length);
+        }
+        return;
+      }
+      if (commandEditor.handleInput(input, key)) {
+        return;
       }
       return;
     }
 
     if (input === "/") {
-      openPalette();
+      setCommandMode(true);
+      setCommandInput("");
+      setHighlightedCommandIndex(0);
       return;
     }
 
@@ -1175,7 +1410,7 @@ export function BrowseShell<T>({
       return;
     }
 
-    if (!commandMode && !resultFilterFocused && !narrow.modeOpen && listFocused) {
+    if (!commandMode && !resultFilterFocused && !filterModeOpen && listFocused) {
       const listBinding = resolveKeybinding(["browse"], input, key);
       if (listBinding?.id === "help") {
         onResolve("help");
@@ -1299,6 +1534,11 @@ export function BrowseShell<T>({
     // Menu only when list/idle owns focus — never from the search box.
     // Query zone must stay a clean text field (no m / Shift+M chords).
     // Never Ctrl+M — that is Enter in a TTY.
+    const idleMenuRow = idleReturnLoopModel?.rows[idleSelectedIndex];
+    const idleMenuTitleReady =
+      idleFocused &&
+      ((idleMenuRow?.id === "continue" && Boolean(activeIdleContext?.continueWatching?.titleId)) ||
+        (idleMenuRow?.id === "playlist-next" && Boolean(activeIdleContext?.playlistNext?.titleId)));
     const resultsMenuReady =
       listFocused &&
       Boolean(selectedOption) &&
@@ -1310,7 +1550,7 @@ export function BrowseShell<T>({
       input.toLowerCase() === "m" &&
       !key.ctrl &&
       !key.meta &&
-      (resultsMenuReady || idle.menuReady)
+      (resultsMenuReady || idleMenuTitleReady)
     ) {
       // Pass the highlighted result so SearchPhase can open the same starting-point
       // flow as Enter (not the sparse title-control hub with stale session title).
@@ -1324,6 +1564,12 @@ export function BrowseShell<T>({
     }
 
     const canFocusContinueInInput = canFocusIdleRows;
+
+    const resolveFocusedIdleAction = (): ShellAction | null => {
+      const row = idleReturnLoopModel?.rows[idleSelectedIndex];
+      if (!row?.actionable) return null;
+      return resolveIdleRowAction(row.id, activeIdleContext);
+    };
 
     // Calendar: Tab / Shift+Tab cycle the type tabs (All · Anime · TV · Movies ·
     // Tracked). Mode toggle is unavailable while browsing the schedule.
@@ -1357,28 +1603,38 @@ export function BrowseShell<T>({
         return;
       }
 
-      // Layer decision (narrow → chips → query → cancel) is the hook's — it
-      // reads hook state. `narrow` is consumed inside; the rest translate here.
-      const escLayer = narrow.escape({
-        filterFocused: resultFilterFocused,
+      const escLayer = nextBrowseEscFilterLayer({
+        searchLoading: searchState === "loading",
+        narrowOpenOrFocused: resultFilterFocused || filterModeOpen,
+        resultFilterNonEmpty: resultFilter.length > 0,
+        structuredChipCount: structuredFilterChips.length,
         queryNonEmpty: query.trim().length > 0,
       });
 
-      if (escLayer.layer === "narrow") {
+      if (escLayer === "loading") {
+        // Invalidate the request gate so the late resolve lands stale and is
+        // dropped, then return to the idle surface rather than closing out.
+        searchRequestGateRef.current.invalidate();
+        clearResults();
+        return;
+      }
+
+      if (escLayer === "narrow") {
+        if (resultFilter.length > 0) {
+          setResultFilter("");
+        }
+        setFilterModeOpen(false);
         dispatchFocusZone({ type: "focus-query" });
         return;
       }
 
-      if (escLayer.layer === "chips") {
-        setQuery(escLayer.plainQuery);
+      if (escLayer === "chips") {
+        const plainQuery = stripStructuredFiltersFromQuery(query);
+        setQuery(plainQuery);
         if (
-          shouldResearchAfterFilterChange({
-            searchState,
-            lastSearchedQuery,
-            nextQuery: escLayer.plainQuery,
-          })
+          shouldResearchAfterFilterChange({ searchState, lastSearchedQuery, nextQuery: plainQuery })
         ) {
-          void runSearch(escLayer.plainQuery);
+          void runSearch(plainQuery);
         }
         dispatchFocusZone({ type: "focus-query" });
         return;
@@ -1389,7 +1645,7 @@ export function BrowseShell<T>({
         return;
       }
 
-      if (escLayer.layer === "query") {
+      if (escLayer === "query") {
         updateQuery("");
         return;
       }
@@ -1399,22 +1655,31 @@ export function BrowseShell<T>({
     }
 
     if (key.return && idleFocused && canFocusContinueInInput) {
-      const action = idle.selectedRowAction();
+      const action = resolveFocusedIdleAction();
       if (action) {
         onResolve(action);
         return;
       }
     }
 
-    if (key.downArrow && idleFocused && idle.model) {
-      // Boundary exits are intents: past the last row circles back to the query.
-      if (idle.moveDown() === "exit-to-query") dispatchFocusZone({ type: "focus-query" });
+    if (key.downArrow && idleFocused && idleReturnLoopModel) {
+      const lastIndex = idleReturnLoopModel.rows.length - 1;
+      if (idleSelectedIndex >= lastIndex) {
+        // Circle back to search — same exit as ↑ on the first row / Esc.
+        setIdleSelectedIndex(0);
+        dispatchFocusZone({ type: "focus-query" });
+        return;
+      }
+      setIdleSelectedIndex((current) => Math.min(current + 1, lastIndex));
       return;
     }
 
     if (key.upArrow && idleFocused) {
-      // ↑ on the first row is the same exit as Esc.
-      if (idle.moveUp() === "escape") dispatchFocusZone({ type: "escape" });
+      if (idleSelectedIndex > 0) {
+        setIdleSelectedIndex((current) => Math.max(0, current - 1));
+        return;
+      }
+      dispatchFocusZone({ type: "escape" });
       return;
     }
 
@@ -1430,11 +1695,11 @@ export function BrowseShell<T>({
       // Closed loop: the last row wraps to the first instead of dropping back
       // into the search box. Bouncing to the query zone here made row 0
       // unreachable going down whenever the remembered row was the last one.
-      if (boundedSelectedIndex >= displayOptions.length - 1) {
-        setSelectedIndex(0);
-        return;
-      }
-      setSelectedIndex((current) => current + 1);
+      setSelectedIndex((current) => {
+        const max = displayOptions.length - 1;
+        const bounded = Math.min(Math.max(0, current), max);
+        return bounded >= max ? 0 : bounded + 1;
+      });
       return;
     }
 
@@ -1450,11 +1715,11 @@ export function BrowseShell<T>({
         dispatchFocusZone({ type: "arrow-up" });
         return;
       }
-      if (boundedSelectedIndex === 0) {
-        setSelectedIndex(displayOptions.length - 1);
-        return;
-      }
-      setSelectedIndex((current) => current - 1);
+      setSelectedIndex((current) => {
+        const max = displayOptions.length - 1;
+        const bounded = Math.min(Math.max(0, current), max);
+        return bounded <= 0 ? max : bounded - 1;
+      });
       return;
     }
 
@@ -1519,7 +1784,8 @@ export function BrowseShell<T>({
               label="Narrow results"
               value={resultFilter}
               onChange={(next) => {
-                narrow.type(next);
+                setResultFilter(next);
+                setFilterModeOpen(true);
                 setSelectedIndex(0);
                 dispatchFocusZone({ type: "focus-filter" });
               }}
@@ -1581,7 +1847,7 @@ export function BrowseShell<T>({
                   <Box key={`${chip.key}-${chip.label}`} marginRight={2}>
                     <Text color={palette.accentSoft}>
                       {index < 9 ? `${index + 1} ` : ""}
-                      {chip.label}
+                      {sanitizeTerminalText(chip.label)}
                       <Text color={palette.muted}> ×</Text>
                     </Text>
                   </Box>
@@ -1591,50 +1857,56 @@ export function BrowseShell<T>({
                 </Text>
               </Box>
             ) : null}
-            <InputField
-              label="Search title"
-              value={query}
-              onChange={updateQuery}
-              onSubmit={handleQuerySubmit}
-              placeholder={placeholder}
-              focus={!commandMode && !resultFilterFocused && !listFocused && !idleFocused}
-              hint={
-                commandMode
-                  ? undefined
-                  : displayOptions.length === 0
-                    ? canFocusIdleRows
-                      ? "Type a title · ↓ for you now · / commands"
-                      : "Type a title · / commands · /filters for guided search"
-                    : listFocused
-                      ? undefined
-                      : "↓ results · / commands"
-              }
-              maxWidth={innerWidth}
-              onRedraw={clearShellScreen}
-              ignoreInput={(input, key) => {
-                if (
-                  /^[1-9]$/.test(input) &&
-                  query.length === 0 &&
-                  structuredFilterChips.length > 0
-                ) {
-                  const chip = structuredFilterChips[Number(input) - 1];
-                  if (chip) {
-                    clearStructuredFilterChip(chip.key);
-                  }
-                  return true;
+            <MouseTarget
+              id="browse:search"
+              active={pointerActive}
+              onClick={() => dispatchFocusZone({ type: "focus-query" })}
+            >
+              <InputField
+                label="Search title"
+                value={query}
+                onChange={updateQuery}
+                onSubmit={handleQuerySubmit}
+                placeholder={placeholder}
+                focus={!commandMode && !resultFilterFocused && !listFocused && !idleFocused}
+                hint={
+                  commandMode
+                    ? undefined
+                    : displayOptions.length === 0
+                      ? canFocusIdleRows
+                        ? "Type a title · ↓ for you now · / commands"
+                        : "Type a title · / commands · /guide tour · /filters guided search"
+                      : listFocused
+                        ? undefined
+                        : "↓ results · / commands"
                 }
-                if (key.backspace && query.length === 0 && structuredFilterChips.length > 0) {
-                  const lastKey = getLastFilterStateKey(
-                    parseBrowseFilterQuery(query).filters.state,
-                  );
-                  if (lastKey) {
-                    clearStructuredFilterChip(lastKey);
+                maxWidth={innerWidth}
+                onRedraw={clearShellScreen}
+                ignoreInput={(input, key) => {
+                  if (
+                    /^[1-9]$/.test(input) &&
+                    query.length === 0 &&
+                    structuredFilterChips.length > 0
+                  ) {
+                    const chip = structuredFilterChips[Number(input) - 1];
+                    if (chip) {
+                      clearStructuredFilterChip(chip.key);
+                    }
+                    return true;
                   }
-                  return true;
-                }
-                return false;
-              }}
-            />
+                  if (key.backspace && query.length === 0 && structuredFilterChips.length > 0) {
+                    const lastKey = getLastFilterStateKey(
+                      parseBrowseFilterQuery(query).filters.state,
+                    );
+                    if (lastKey) {
+                      clearStructuredFilterChip(lastKey);
+                    }
+                    return true;
+                  }
+                  return false;
+                }}
+              />
+            </MouseTarget>
           </>
         )}
 
@@ -1717,7 +1989,11 @@ export function BrowseShell<T>({
             flexGrow={1}
           >
             {/* Result list */}
-            <Box flexDirection="column" width={companionBesideList ? listWidth : undefined}>
+            <Box
+              ref={resultsMouseRef}
+              flexDirection="column"
+              width={companionBesideList ? listWidth : undefined}
+            >
               {(isCalendarView ? calendarWindow.start : windowStart) > 0 ? (
                 <Text color={palette.dim}> ▲ ...</Text>
               ) : null}
@@ -1780,10 +2056,13 @@ export function BrowseShell<T>({
                       <MouseTarget
                         key={`${option.label}-${option.detail ?? ""}`}
                         id={`browse:row:${optionIndex}`}
-                        active={!activeOverlay}
+                        active={pointerActive}
+                        onWheel={scrollResults}
                         onClick={() => {
                           if (!listFocused) {
                             dispatchFocusZone({ type: "focus-list" });
+                            setSelectedIndex(optionIndex);
+                            return;
                           }
                           if (optionIndex !== boundedSelectedIndex) {
                             setSelectedIndex(optionIndex);
@@ -1841,8 +2120,8 @@ export function BrowseShell<T>({
                   />
                 ) : (
                   <DetailsSheetUI
-                    data={companionDetails}
-                    lines={buildDetailsSheetLines(selectedOption, companionDetails.secondary)}
+                    data={companionView}
+                    lines={buildDetailsSheetLines(selectedOption, companionView.secondary)}
                     width={previewWidth}
                     scrollIndex={0}
                     maxVisibleLines={viewport.breakpoint === "wide" ? 14 : 10}
@@ -1879,9 +2158,19 @@ export function BrowseShell<T>({
               }}
               width={Math.min(innerWidth, 72)}
             />
+            <CompanionHost
+              moment={momentForBrowseEmpty({
+                kind: "empty",
+                hasArtwork: false,
+                ultraCompact,
+                mode: companionMode(),
+              })}
+              rows={3}
+              marginTop={1}
+            />
           </Box>
         ) : searchState === "error" ? (
-          <Box marginTop={1} flexGrow={1}>
+          <Box marginTop={1} flexDirection="column" flexGrow={1}>
             <StateBlock
               model={{
                 kind: "error",
@@ -1893,6 +2182,16 @@ export function BrowseShell<T>({
                 ],
               }}
               width={Math.min(innerWidth, 72)}
+            />
+            <CompanionHost
+              moment={momentForBrowseEmpty({
+                kind: "error",
+                hasArtwork: false,
+                ultraCompact,
+                mode: companionMode(),
+              })}
+              rows={3}
+              marginTop={1}
             />
           </Box>
         ) : (
@@ -1908,23 +2207,36 @@ export function BrowseShell<T>({
               }}
               width={Math.min(innerWidth, 72)}
             />
-            {idle.status === "loading" && idle.showLoadingHint ? (
+            <CompanionHost
+              moment={momentForBrowseEmpty({
+                kind: "empty",
+                // The launch rows below (jump back in, surprises) already fill
+                // this frame — where they are, the surface is not bare and she
+                // does not crowd it.
+                hasArtwork: Boolean(idleReturnLoopModel && idleReturnLoopModel.rows.length > 0),
+                ultraCompact,
+                mode: companionMode(),
+              })}
+              rows={3}
+              marginTop={1}
+            />
+            {idleContextStatus === "loading" && showIdleLoadingHint ? (
               <Text color={palette.dim} dimColor>
                 Loading your local shortcuts…
               </Text>
-            ) : idle.status === "error" ? (
+            ) : idleContextStatus === "error" ? (
               <Text color={palette.dim} dimColor>
                 Local shortcuts unavailable · search is ready
               </Text>
             ) : null}
             {!commandMode &&
-            idle.model &&
-            (!viewport.ultraCompact || idle.model.rows.length > 0) ? (
+            idleReturnLoopModel &&
+            (!viewport.ultraCompact || idleReturnLoopModel.rows.length > 0) ? (
               <Box flexDirection="column" marginTop={1} gap={0}>
                 <Text color={palette.dim} bold>
-                  {idle.model.heading}
+                  {idleReturnLoopModel.heading}
                 </Text>
-                {idle.model.rows.map((row) => (
+                {idleReturnLoopModel.rows.map((row) => (
                   <Text
                     key={row.id}
                     backgroundColor={row.focused ? palette.accentFill : undefined}
@@ -1982,8 +2294,8 @@ export function BrowseShell<T>({
             : []),
           ...(listFocused && searchState === "ready" ? ["browse-title-control-menu"] : []),
           ...(idleFocused &&
-          (idle.model?.rows[idle.selectedIndex]?.id === "continue" ||
-            idle.model?.rows[idle.selectedIndex]?.id === "playlist-next")
+          (idleReturnLoopModel?.rows[idleSelectedIndex]?.id === "continue" ||
+            idleReturnLoopModel?.rows[idleSelectedIndex]?.id === "playlist-next")
             ? ["browse-title-control-menu"]
             : []),
           ...(listFocused && options.length > 0 && !queryDirty && searchState === "ready"
@@ -2063,11 +2375,17 @@ export function BrowseShell<T>({
         });
         return (
           <ShellFooter
-            taskLabel={browseTaskLabel}
+            taskLabel={
+              mouseEnabled && pointerActive && !isCalendarView && displayOptions.length > 0
+                ? "Click to select · click selection to open"
+                : browseTaskLabel
+            }
             mode={effectiveFooterMode}
             commandMode={commandMode}
             actions={visibleBrowseFooterActions}
             terminalWidth={viewport.columns}
+            maxVisible={viewport.breakpoint === "narrow" ? 3 : 5}
+            companionHint
           />
         );
       })()}
@@ -2190,6 +2508,10 @@ export function openBrowseShell<T>({
       />
     ),
     fallbackValue: { type: "cancelled" },
+    // A picker a detached overlay workflow mounts over browse resolves the
+    // mount as displaced, so SearchPhase remounts instead of reporting a
+    // cancel the user never made.
+    displacedValue: { type: "cancelled", displaced: true },
   });
 
   return session.result;

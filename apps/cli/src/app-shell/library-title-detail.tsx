@@ -169,7 +169,9 @@ export function LibraryTitleDetail({
   const rowLayout = computeMediaListRowLayout(rowWidth, { hasEpisode: true });
   const posterUrl =
     group.previewImageUrl ??
-    (entries[0]?.job ? resolveOfflineJobPreviewImage(entries[0].job) : undefined);
+    (entries[0]?.job
+      ? resolveOfflineJobPreviewImage(entries[0].job, { networkAvailable })
+      : undefined);
   const { poster: railPoster } = useRailPoster(posterUrl, {
     rows: 12,
     cols: 26,

@@ -188,7 +188,7 @@ describe("queue playback lifecycle integration", () => {
       absoluteEpisode: 13,
     });
 
-    const launch = claimQueuePlaybackLaunch(queue, selected.id, "queue");
+    const launch = claimQueuePlaybackLaunch(queue, selected.id);
     expect(launch?.intent.queueEntryId).toBe(selected.id);
     expect(launch?.intent.absoluteEpisode).toBe(13);
     expect(repo.getById(head.id)?.status).toBe("pending");
@@ -231,7 +231,7 @@ describe("queue playback lifecycle integration", () => {
       absoluteEpisode: 13,
     });
 
-    const claimed = queue.beginPlayback(next.id, "auto-next", NOW);
+    const claimed = queue.beginPlayback(next.id, NOW);
     expect(claimed?.queueEntryId).toBe(next.id);
     expect(claimed?.absoluteEpisode).toBe(13);
     expect(repo.getById(head.id)?.status).toBe("pending");
@@ -271,7 +271,7 @@ describe("queue playback lifecycle integration", () => {
       absoluteEpisode: 3,
     });
 
-    const intent = queue.beginPlayback(first.id, "queue", NOW);
+    const intent = queue.beginPlayback(first.id, NOW);
     expect(intent).toBeDefined();
     const positionBefore = repo.getById(first.id)?.queuePosition;
     const attempt = createQueuePlaybackAttempt(queue, intent!, { now: () => NOW });
@@ -305,7 +305,7 @@ describe("queue playback lifecycle integration", () => {
       absoluteEpisode: 7,
     });
 
-    expect(crashed.beginPlayback(interrupted.id, "queue", NOW)).toBeDefined();
+    expect(crashed.beginPlayback(interrupted.id, NOW)).toBeDefined();
     expect(repo.getById(interrupted.id)?.status).toBe("in-flight");
     expect(crashed.prepareForShutdown("2026-07-21T12:01:00.000Z")).toBe("recoverable");
     expect(repo.getById(interrupted.id)?.status).toBe("in-flight");
@@ -348,7 +348,7 @@ describe("queue playback lifecycle integration", () => {
       absoluteEpisode: 1,
     });
 
-    const intent = queue.beginPlayback(playing.id, "queue", NOW);
+    const intent = queue.beginPlayback(playing.id, NOW);
     const attempt = createQueuePlaybackAttempt(queue, intent!, { now: () => NOW });
 
     const result = await playWithFakePlayer({

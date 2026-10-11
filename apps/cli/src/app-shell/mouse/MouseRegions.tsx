@@ -20,6 +20,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { useRootContentSuspended } from "../RootContentSuspension";
 import type { MouseEvent } from "./terminal-mouse";
 
 export type MouseRect = {
@@ -48,9 +49,20 @@ export class MouseDispatcher {
   private regions = new Map<string, MouseRegion>();
   private orderCounter = 0;
   /** Press target held until release decides click vs miss. */
-  private pendingPress: { regionId: string; x: number; y: number } | null = null;
+  private pendingPress: { regionId: string; button: MouseEvent["button"] } | null = null;
 
   register(id: string, rect: MouseRect, handlers: MouseRegionHandlers): void {
+    const previous = this.regions.get(id);
+    if (
+      previous &&
+      this.pendingPress?.regionId === id &&
+      (previous.rect.x !== rect.x ||
+        previous.rect.y !== rect.y ||
+        previous.rect.width !== rect.width ||
+        previous.rect.height !== rect.height)
+    ) {
+      this.pendingPress = null;
+    }
     this.orderCounter += 1;
     this.regions.set(id, { id, rect, handlers, order: this.orderCounter });
   }
@@ -74,11 +86,24 @@ export class MouseDispatcher {
     return [...this.regions.values()].map(({ id, rect }) => ({ id, rect }));
   }
 
-  private hit(x: number, y: number): MouseRegion | null {
+  private hit(event: MouseEvent): MouseRegion | null {
     let best: MouseRegion | null = null;
     for (const region of this.regions.values()) {
+      // A scroll container must not intercept its rows' clicks just because
+      // the parent's layout effect registered after its children.
+      if (
+        (event.kind === "press" || event.kind === "release") &&
+        !region.handlers.onClick &&
+        !region.handlers.onRightClick
+      )
+        continue;
       const { rect } = region;
-      if (x < rect.x || y < rect.y || x >= rect.x + rect.width || y >= rect.y + rect.height) {
+      if (
+        event.x < rect.x ||
+        event.y < rect.y ||
+        event.x >= rect.x + rect.width ||
+        event.y >= rect.y + rect.height
+      ) {
         continue;
       }
       if (!best || region.order > best.order) best = region;
@@ -87,12 +112,12 @@ export class MouseDispatcher {
   }
 
   dispatch(event: MouseEvent): boolean {
-    const region = this.hit(event.x, event.y);
+    const region = this.hit(event);
 
     if (event.kind === "press") {
       this.pendingPress =
         region?.handlers.onClick || region?.handlers.onRightClick
-          ? { regionId: region.id, x: event.x, y: event.y }
+          ? { regionId: region.id, button: event.button }
           : null;
       return region !== null;
     }
@@ -100,7 +125,8 @@ export class MouseDispatcher {
     if (event.kind === "release") {
       const pending = this.pendingPress;
       this.pendingPress = null;
-      if (!pending || !region || region.id !== pending.regionId) return region !== null;
+      if (!pending || !region || region.id !== pending.regionId || pending.button !== event.button)
+        return region !== null;
       const clickEvent: MouseEvent = { ...event, kind: "press" };
       if (event.button === "right") region.handlers.onRightClick?.(clickEvent);
       else if (event.button === "left") region.handlers.onClick?.(clickEvent);
@@ -115,6 +141,7 @@ export class MouseDispatcher {
     }
 
     if (event.kind === "drag") {
+      this.pendingPress = null;
       return region !== null;
     }
 
@@ -126,8 +153,11 @@ export class MouseDispatcher {
 // React seam
 // ---------------------------------------------------------------------------
 
-const fallbackDispatcher = new MouseDispatcher();
-export const MouseDispatchContext = createContext<MouseDispatcher>(fallbackDispatcher);
+export const MouseDispatchContext = createContext<MouseDispatcher | null>(null);
+
+export function useMouseEnabled(): boolean {
+  return useContext(MouseDispatchContext) !== null;
+}
 
 /** Test/debug seam: swap the dispatcher a tree dispatches into. */
 export function MouseDispatchProvider(props: {
@@ -157,13 +187,21 @@ export function useMouseRegion(
   const dispatcher = useContext(MouseDispatchContext);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
-  const active = options.active !== false;
+  const suspended = useRootContentSuspended();
+  const active = options.active !== false && !suspended;
+
+  // Keep a press through unrelated commits (e.g. a poster completing). Only
+  // losing ownership, moving the target, or unmounting invalidates the click.
+  useLayoutEffect(() => () => dispatcher?.unregister(id), [dispatcher, id, active]);
 
   useLayoutEffect(() => {
-    if (!active) return;
+    if (!active || !dispatcher) return;
     const node = ref.current;
     const layout = node ? measureElement(node) : { x: 0, y: 0, width: 0, height: 0 };
-    if (layout.width <= 0 || layout.height <= 0) return;
+    if (layout.width <= 0 || layout.height <= 0) {
+      dispatcher.unregister(id);
+      return;
+    }
     // measureElement is 0-based layout space; SGR mouse coords are 1-based
     // terminal cells. We render no <Static>, so the live region starts at
     // terminal (1,1) — a single +1 shift maps one space onto the other.
@@ -172,7 +210,6 @@ export function useMouseRegion(
       { x: layout.x + 1, y: layout.y + 1, width: layout.width, height: layout.height },
       handlersRef.current,
     );
-    return () => dispatcher.unregister(id);
   });
 }
 

@@ -1593,6 +1593,9 @@ describe("AllManga provider evidence fixtures", () => {
 
     expect(candidates[0]).toMatchObject({
       sourceId: "source:allanime:fm-hls",
+      // The endpoint-health key is the stream's own host — a quarantined mirror
+      // is then skipped for every title, not re-probed on each resolve (#267).
+      serverId: "cdn.example",
       streamId: "stream:allmanga:hls",
       nativeLabel: "FM-HLS",
       normalizedAudioLanguage: "ja",

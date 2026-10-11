@@ -22,6 +22,15 @@ interface StreamCacheRow {
   readonly hit_count: number;
 }
 
+function parseStoredStream(streamJson: string): StreamCandidate | undefined {
+  try {
+    const parsed = streamCandidateSchema.safeParse(JSON.parse(streamJson));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export class StreamCacheRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
@@ -68,6 +77,16 @@ export class StreamCacheRepository {
     }
 
     if (isExpired(row.expires_at, now)) {
+      this.db
+        .query("DELETE FROM stream_cache WHERE cache_key = ? AND expires_at = ?")
+        .run(cacheKey, row.expires_at);
+      return undefined;
+    }
+
+    const stream = parseStoredStream(row.stream_json);
+    if (!stream) {
+      // A poisoned cache row is a cache miss, not a resolve failure — evict
+      // and let the provider resolve fresh.
       this.delete(cacheKey);
       return undefined;
     }
@@ -81,7 +100,7 @@ export class StreamCacheRepository {
 
     return {
       cacheKey: row.cache_key,
-      stream: streamCandidateSchema.parse(JSON.parse(row.stream_json)),
+      stream,
       expiresAt: row.expires_at,
       createdAt: row.created_at,
       lastAccessedAt: accessedAt,

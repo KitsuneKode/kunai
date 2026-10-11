@@ -6,6 +6,7 @@ import {
   type TrackCapabilityRisk,
   type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
+import { sanitizeTerminalText } from "@/domain/text-display";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -44,7 +45,7 @@ export type TracksPanelShellProps = {
 function riskColor(risk: TrackCapabilityRisk): string {
   switch (risk) {
     case "failed":
-      return palette.danger;
+      return palette.dangerText;
     case "fallback":
       return palette.accentDeep;
     case "unavailable":
@@ -58,7 +59,7 @@ function riskColor(risk: TrackCapabilityRisk): string {
 // information). The current selection reads as "ok" so the eye lands on it.
 function rowColor(capability: TrackCapability, highlighted: boolean): string {
   if (highlighted) return palette.accent;
-  if (capability.selected && capability.risk === "failed") return palette.danger;
+  if (capability.selected && capability.risk === "failed") return palette.dangerText;
   if (capability.selected) return palette.ok;
   if (!capability.enabled) return palette.muted;
   return riskColor(capability.risk);
@@ -68,7 +69,7 @@ function rowStatusGlyph(
   capability: TrackCapability,
 ): { readonly glyph: string; readonly color: string } | null {
   if (capability.risk === "failed") {
-    return { glyph: "✕ ", color: palette.danger };
+    return { glyph: "✕ ", color: palette.dangerText };
   }
   if (capability.selected) {
     return { glyph: "✓ ", color: palette.ok };
@@ -295,7 +296,7 @@ function OptionsPane({
                     wrap="truncate"
                   >
                     {capability.selected ? "✓ " : highlighted ? "▌ " : "  "}
-                    {labels[flatIndex] ?? capability.label}
+                    {sanitizeTerminalText(labels[flatIndex] ?? capability.label)}
                   </Text>
                 </Box>
               );
@@ -351,7 +352,7 @@ function OptionsPane({
               bold={highlighted || capability.selected}
               wrap="truncate"
             >
-              {capability.label}
+              {sanitizeTerminalText(capability.label)}
             </Text>
             {capability.detail || tag ? (
               <Text color={highlighted ? palette.accentSoft : palette.dim}>

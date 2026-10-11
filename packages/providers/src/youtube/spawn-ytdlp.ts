@@ -1,3 +1,6 @@
+import { scrubbedChildEnv } from "../shared/child-env";
+import { terminateProcessTree } from "../shared/process-tree";
+
 const DEFAULT_YTDLP_TIMEOUT_MS = 45_000;
 const DEFAULT_YTDLP_STDOUT_LIMIT_BYTES = 16 * 1024 * 1024;
 const DEFAULT_YTDLP_STDERR_LIMIT_BYTES = 1024 * 1024;
@@ -45,14 +48,27 @@ export type RunYtDlpProcessHandle = {
   cancel: (reason?: string) => void;
 };
 
-const defaultYtDlpSpawn: YtDlpSpawn = (command) =>
+const defaultYtDlpSpawn: YtDlpSpawn = (command) => {
+  const detached = process.platform !== "win32";
   // SAFETY: pipe/ignore stdio makes Bun.spawn expose the stdout, stderr,
   // exited, and kill members consumed by YtDlpProcess.
-  Bun.spawn([...command], {
+  const proc = Bun.spawn([...command], {
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
+    env: scrubbedChildEnv(),
+    // A detached POSIX spawn leads its own process group, so kill() below can
+    // reach ffmpeg mux children instead of orphaning them. Windows has no
+    // group signals — taskkill /T in terminateProcessTree covers the tree.
+    detached,
   }) as YtDlpProcess;
+  return {
+    stdout: proc.stdout,
+    stderr: proc.stderr,
+    exited: proc.exited,
+    kill: (signal) => terminateProcessTree(proc, signal, { detached }),
+  };
+};
 
 export function runYtDlpProcess(options: RunYtDlpProcessOptions): RunYtDlpProcessHandle {
   if (options.signal?.aborted) {
@@ -218,10 +234,17 @@ async function settleYtDlpProcess(options: {
   readonly stderrPromise: Promise<string>;
   readonly exitGraceMs: number;
 }): Promise<void> {
-  await Promise.race([
-    Promise.allSettled([options.stdoutPromise, options.stderrPromise, options.proc.exited]),
-    new Promise((resolve) => setTimeout(resolve, options.exitGraceMs)),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.allSettled([options.stdoutPromise, options.stderrPromise, options.proc.exited]),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, options.exitGraceMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 async function readStreamText(options: {

@@ -8,6 +8,7 @@ import {
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
+import { isJsonNumber, isJsonString } from "@kunai/types";
 import type {
   CachePolicy,
   ProviderCycleCandidate,
@@ -15,20 +16,24 @@ import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
-  ProviderSelectionDecision,
   ProviderSourceCandidate,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
   SubtitleCandidate,
 } from "@kunai/types";
-import { parseRetryAfterHeader } from "@kunai/types";
 
 import { ProviderHttpError, providerFetch } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
-import { cycleExhaustedResult } from "../shared/provider-cycle";
-import { ProviderQueryCache } from "../shared/provider-query";
-import { resolveGateBudgetMs, selectVerifiedReadyStream } from "../shared/resolve-gate";
+import {
+  cycleExhaustionFailure,
+  providerFailureCodeFromCycleFailure,
+} from "../shared/provider-cycle";
+import {
+  dropRefusedStreams,
+  resolveGateBudgetMs,
+  selectVerifiedStream,
+} from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
@@ -44,6 +49,7 @@ import {
   qualityRankFromLabel,
   streamPresentationFields,
 } from "../shared/source-inventory";
+import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { movyManifest, MOVY_PROVIDER_ID } from "./manifest";
 import { decryptMovyPayload, MovyDecryptError } from "./streamcrypto";
@@ -108,19 +114,25 @@ type MovySourcesPayload = {
   }[];
 };
 
+/** Per-mediaId seed cache — seeds carry a ~30 s server TTL. */
+const seedCache = new Map<string, { seed: string; expiresAt: number }>();
+const SEED_CACHE_MAX = 64;
 const SEED_EXPIRY_HEADROOM_MS = 5_000;
-/**
- * Per-mediaId seed cache — seeds carry a ~30 s server TTL. ProviderQueryCache
- * dedupes concurrent resolves for the same mediaId (a search→play transition
- * used to fire the seed request twice) and never freezes a failed fetch into
- * a long-lived entry.
- */
-const seedCache = new ProviderQueryCache<string, { seed: string; ttlMs: number }>({
-  ttlMs: (value) => value.ttlMs,
-  refreshHeadroomMs: SEED_EXPIRY_HEADROOM_MS,
-  maxEntries: 64,
-});
 const MOVY_CANDIDATE_TIMEOUT_MS = 15_000;
+/** Mirrors the shared engine's probe cap: three candidates inside one budget. */
+const MOVY_RESOLVE_GATE_MAX_PROBES = 3;
+
+/**
+ * Keep only variants that still name a shipped stream — a variant whose rungs
+ * all sat on a refused host would offer a quality ladder that resolves nothing.
+ */
+function dropRefusedVariants(
+  variants: readonly ProviderVariantCandidate[],
+  shippedStreams: readonly StreamCandidate[],
+): ProviderVariantCandidate[] {
+  const shippedIds = new Set(shippedStreams.map((stream) => stream.id));
+  return variants.filter((variant) => (variant.streamIds ?? []).some((id) => shippedIds.has(id)));
+}
 
 async function fetchMovySeed(
   context: ProviderRuntimeContext,
@@ -128,38 +140,55 @@ async function fetchMovySeed(
   signal?: AbortSignal,
 ): Promise<string> {
   const cacheKey = `${MOVY_API_BASE}|${mediaId}`;
-  const entry = await seedCache.query(cacheKey, async () => {
-    const response = await providerFetch(context, `${MOVY_API_BASE}/seed?mediaId=${mediaId}`, {
-      headers: { "User-Agent": USER_AGENT, Referer: MOVY_REFERER, Origin: MOVY_ORIGIN },
-      signal,
-    });
-    if (!response.ok) {
-      throw new ProviderHttpError({
-        message: `seed request failed: HTTP ${response.status}`,
-        providerId: MOVY_PROVIDER_ID,
-        stage: "seed",
-        status: response.status,
-        code: "network-error",
-        retryable: response.status >= 500 || response.status === 429,
-        retryAfterMs: parseRetryAfterHeader(response.headers.get("retry-after")),
-      });
-    }
-    // SAFETY: seed response is a two-field JSON envelope; a missing `seed` is
-    // rejected on the next line, so a shape surprise fails closed.
-    const body = (await response.json()) as { seed?: string; ttlMs?: number };
-    if (!body.seed) throw new MovyDecryptError("seed response carried no seed");
-    return { seed: body.seed, ttlMs: body.ttlMs ?? 30_000 };
+  const now = Date.now();
+  const cached = seedCache.get(cacheKey);
+  if (cached && cached.expiresAt - SEED_EXPIRY_HEADROOM_MS > now) return cached.seed;
+
+  const response = await providerFetch(context, `${MOVY_API_BASE}/seed?mediaId=${mediaId}`, {
+    headers: { "User-Agent": USER_AGENT, Referer: MOVY_REFERER, Origin: MOVY_ORIGIN },
+    signal,
   });
-  return entry.seed;
+  if (!response.ok) {
+    throw new ProviderHttpError({
+      message: `seed request failed: HTTP ${response.status}`,
+      providerId: MOVY_PROVIDER_ID,
+      stage: "seed",
+      status: response.status,
+      code: "network-error",
+      retryable: response.status >= 500 || response.status === 429,
+    });
+  }
+  // SAFETY: the seed envelope is untrusted — `seed` must be a non-empty string
+  // (a number/boolean decrypts to a TypeError), and `ttlMs` must be a finite
+  // positive number (a string concatenates onto Date.now() into an immortal
+  // entry). Either surprise fails closed and never reaches the cache.
+  const body = (await response.json()) as { seed?: unknown; ttlMs?: unknown } | null;
+  if (!body || !isJsonString(body.seed) || !body.seed) {
+    throw new MovyDecryptError("seed response carried no usable seed");
+  }
+  const ttlMs =
+    isJsonNumber(body.ttlMs) && Number.isFinite(body.ttlMs) && body.ttlMs > 0 ? body.ttlMs : 30_000;
+
+  seedCache.delete(cacheKey);
+  seedCache.set(cacheKey, {
+    seed: body.seed,
+    expiresAt: Date.now() + ttlMs,
+  });
+  while (seedCache.size > SEED_CACHE_MAX) {
+    const oldest = seedCache.keys().next();
+    if (oldest.done) break;
+    seedCache.delete(oldest.value);
+  }
+  return body.seed;
 }
 
 function invalidateMovySeed(mediaId: number): void {
-  seedCache.invalidate(`${MOVY_API_BASE}|${mediaId}`);
+  seedCache.delete(`${MOVY_API_BASE}|${mediaId}`);
 }
 
 /** Test seam — the seed cache is module state and must not leak between cases. */
 export function clearMovySeedCacheForTest(): void {
-  seedCache.reset();
+  seedCache.clear();
 }
 
 async function fetchMovyLaneSources(
@@ -200,12 +229,20 @@ async function fetchMovyLaneSources(
       });
     }
     const ciphertext = await response.text();
-    const plaintext = decryptMovyPayload(ciphertext, seed, mediaId);
     try {
+      const plaintext = decryptMovyPayload(ciphertext, seed, mediaId);
       // SAFETY: decrypted payload is the lane's sources envelope; every
       // consumer reads optional fields and empty sources fail closed below.
       return JSON.parse(plaintext) as MovySourcesPayload;
     } catch (error) {
+      // A seed that cannot decrypt this lane's ciphertext does not fit it —
+      // treat it like the 401 the site uses: drop the cached seed, refetch,
+      // retry once. Otherwise one bad draw poisons the seed cache for its
+      // whole TTL and every later resolve of the title fails.
+      if (attempt === 0) {
+        invalidateMovySeed(mediaId);
+        continue;
+      }
       throw new MovyDecryptError(`${lane}: decrypted payload was not JSON`, { cause: error });
     }
   }
@@ -247,9 +284,6 @@ type MovyResolvedCandidate = {
   readonly streams: readonly StreamCandidate[];
   readonly variants: readonly ProviderVariantCandidate[];
   readonly subtitles: readonly SubtitleCandidate[];
-  /** The lane's resolve-gate-verified pick under the caller's preferences. */
-  readonly selectedStream: StreamCandidate;
-  readonly selectionDecision: ProviderSelectionDecision;
 };
 
 async function resolveMovyLaneCandidate({
@@ -259,10 +293,8 @@ async function resolveMovyLaneCandidate({
   cachePolicy,
   laneParams,
   tmdbId,
-  selectionInput,
-  gateTimeoutMs,
-  gateWalkBudgetMs,
   signal,
+  gateTimeoutMs,
 }: {
   readonly candidate: ProviderCycleCandidate;
   readonly lane: MovyLane;
@@ -270,10 +302,8 @@ async function resolveMovyLaneCandidate({
   readonly cachePolicy: CachePolicy;
   readonly laneParams: Record<string, string>;
   readonly tmdbId: number;
-  readonly selectionInput: Parameters<typeof selectVerifiedReadyStream>[0]["input"];
-  readonly gateTimeoutMs: number;
-  readonly gateWalkBudgetMs: number;
   readonly signal?: AbortSignal;
+  readonly gateTimeoutMs: number;
 }): Promise<MovyResolvedCandidate> {
   const sourceId = candidate.sourceId ?? providerInventorySourceId(MOVY_PROVIDER_ID, lane);
   const displayLabel = `Movy ${lane}`;
@@ -378,43 +408,35 @@ async function resolveMovyLaneCandidate({
     });
   }
 
-  // Segment-probe the lane's pick before the cycle accepts it: a lane that
-  // merely answers with URLs is not evidence any of them play, and a dead
-  // lane is exactly what the per-lane cycling exists to skip. The walk keeps
-  // the caller's preference order so the attested stream is the one that
-  // ships as selected.
-  const gate = await selectVerifiedReadyStream({
+  // Probe before accepting the lane: a lane payload can carry dead mirrors
+  // (the status sweep caught a Denver source answering 404), and reporting it
+  // unprobed is the videasy failure shape — success claimed for a stream that
+  // cannot play. The gate only rejects on a definitive refusal; a slow or
+  // non-committal host still ships.
+  const selection = await selectVerifiedStream({
     streams,
-    input: selectionInput,
     context,
     signal,
     timeoutMs: gateTimeoutMs,
-    walkBudgetMs: gateWalkBudgetMs,
   });
-  if (!gate.accepted) {
+  if (!selection.accepted) {
     throw createProviderCycleFailureError(candidate, {
       failureClass: "candidate-blocked",
-      message: `${displayLabel}: ${gate.reason}`,
+      message: `${displayLabel}: ${selection.reason}`,
       retryable: false,
       at: context.now(),
-      // Every request this lane offered was refused on its own evidence —
-      // durable about this endpoint, not a regional blip.
+      // Every rung of this lane was refused by probing its own URLs, so it is
+      // durable evidence about that lane's endpoints rather than our network.
       endpointScoped: true,
     });
   }
-  const gatedStreams = gate.streams;
+  // Keep the alternatives, drop the rungs the gate proved dead.
+  const gatedStreams = dropRefusedStreams(streams, selection.refusedHosts);
   const gatedVariants = variants.filter((variant) =>
     gatedStreams.some((stream) => stream.variantId === variant.id),
   );
 
-  return {
-    provider: lane,
-    streams: gatedStreams,
-    variants: gatedVariants,
-    subtitles,
-    selectedStream: gate.selected,
-    selectionDecision: gate.decision,
-  };
+  return { provider: lane, streams: gatedStreams, variants: gatedVariants, subtitles };
 }
 
 export function buildMovyCycleCandidates(
@@ -545,16 +567,25 @@ export async function resolveMovyDirect(
     message: `Movy resolving TMDB ${tmdbId} across ${cycleCandidates.length} lanes`,
   });
 
+  // The attempt budget caps this, so the gate has to be sized against what the
+  // candidate actually gets rather than the number chosen here.
   const candidateTimeoutMs = providerCycleCandidateTimeoutMs(
     input.startupPriority ?? "balanced",
     MOVY_CANDIDATE_TIMEOUT_MS,
   );
+  const gateTimeoutMs = resolveGateBudgetMs(candidateTimeoutMs);
+
   const cycleResult = await runProviderCycle({
     providerId: MOVY_PROVIDER_ID,
     candidates: cycleCandidates,
     signal: context.signal,
     now: context.now,
     emit: context.emit,
+    // Each lane is a different upstream scraper, so a lane's health evidence
+    // belongs to that lane alone — wiring the port is what makes
+    // `endpointScoped` on the gate refusal below mean anything.
+    endpointHealth: context.endpointHealth,
+    titleId: input.title.id,
     maxAttemptsPerCandidate: 1,
     candidateTimeoutMs,
     resolveCandidate: async (candidate, candidateContext) => {
@@ -570,30 +601,29 @@ export async function resolveMovyDirect(
           cachePolicy,
           laneParams,
           tmdbId,
-          selectionInput: {
-            startupPriority: input.startupPriority,
-            qualityPreference: input.qualityPreference,
-            preferredStreamId: input.preferredStreamId,
-            preferredSourceId: input.preferredSourceId,
-            favoriteSourceNames: input.favoriteSourceNames,
-          },
-          // 16 lanes cycle serially inside one attempt bound: a lane's gate
-          // has to conclude fast enough that the lanes behind it still get
-          // their turn. 3s covers a definitive CDN verdict; 5s caps the walk
-          // so a lane whose rungs all refuse cannot eat the attempt.
-          gateTimeoutMs: resolveGateBudgetMs(candidateTimeoutMs, 3_000),
-          gateWalkBudgetMs: 5_000,
           // The per-candidate controller aborts at candidateTimeoutMs — without
           // it the fetch is never cancelled and a stalled lane leaks its
           // socket until TCP timeout.
           signal: candidateContext.signal,
+          gateTimeoutMs,
         });
       } catch (error) {
         // resolveMovyLaneCandidate already classifies its own failures (e.g.
         // candidate-empty) — rewrapping them would flatten every lane error
         // into not-found and hide transient/server evidence from provider
         // health and offline detection.
-        if (error instanceof ProviderCycleFailureError) throw error;
+        if (error instanceof ProviderCycleFailureError) {
+          // The gate's own verdict carries `endpointScoped`; keep it visible in
+          // the resolve's failure list instead of only in the cycle attempts.
+          failures.push({
+            providerId: MOVY_PROVIDER_ID,
+            code: providerFailureCodeFromCycleFailure(error.failure.failureClass),
+            message: error.failure.message,
+            retryable: error.failure.retryable,
+            at: context.now(),
+          });
+          throw error;
+        }
         // A caller abort is not lane evidence — record nothing, spend nothing.
         if (context.signal?.aborted) throw error;
         const message = error instanceof Error ? error.message : `Movy lane ${lane} failed`;
@@ -660,17 +690,13 @@ export async function resolveMovyDirect(
   }
 
   if (!cycleResult.selected) {
-    return cycleExhaustedResult({
-      input,
-      context,
-      providerId: MOVY_PROVIDER_ID,
-      attempts: cycleResult.attempts,
-      fallback: {
-        code: "not-found",
-        message: "All Movy lanes exhausted without streams",
-        retryable: true,
-      },
-      evidence: { cachePolicy, events, failures, sources, startedAt },
+    const failure = cycleExhaustionFailure(cycleResult, "All Movy lanes exhausted without streams");
+    return createExhaustedResult(input, context, MOVY_PROVIDER_ID, failure, {
+      cachePolicy,
+      events,
+      failures,
+      sources,
+      startedAt,
     });
   }
 
@@ -679,17 +705,65 @@ export async function resolveMovyDirect(
     variants: selectedVariants,
     subtitles,
     provider: laneUsed,
-    selectedStream,
-    selectionDecision,
   } = cycleResult.selected;
   const streams = [...selectedStreams];
   const variants = [...selectedVariants];
   streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
   variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
 
-  // `selectedStream` is the lane's resolve-gate pick under the caller's
-  // preferences — re-picking here could land on a rung the gate never probed.
-  const selection = { selected: selectedStream, decision: selectionDecision };
+  const selectableStreams = input.startupPriority === "fast" ? selectedStreams : streams;
+  const selection = selectReadyStream(selectableStreams, {
+    startupPriority: input.startupPriority,
+    qualityPreference: input.qualityPreference,
+    preferredStreamId: input.preferredStreamId,
+    preferredSourceId: input.preferredSourceId,
+  });
+
+  // Resolve gate: the chosen stream is probed with its own headers before any
+  // success is reported. A rejected candidate refuses its whole host, and the
+  // walk continues through the rank-ordered remainder — a dead CDN lane must
+  // end in an exhausted result, never a shipped "resolved".
+  const probeTimeoutMs = resolveGateBudgetMs(
+    providerCycleCandidateTimeoutMs(input.startupPriority ?? "balanced", MOVY_CANDIDATE_TIMEOUT_MS),
+  );
+  const gateOrder = [
+    selection.selected,
+    ...selectableStreams.filter((stream) => stream.id !== selection.selected.id),
+  ].slice(0, MOVY_RESOLVE_GATE_MAX_PROBES);
+  const gated = await selectVerifiedStream({
+    streams: gateOrder,
+    context,
+    signal: context.signal,
+    timeoutMs: probeTimeoutMs,
+  });
+
+  if (context.signal?.aborted) {
+    return createExhaustedResult(
+      input,
+      context,
+      MOVY_PROVIDER_ID,
+      { code: "cancelled", message: "Movy resolve-gate probe was cancelled", retryable: false },
+      { cachePolicy, events, failures, sources, startedAt },
+    );
+  }
+
+  if (!gated.accepted) {
+    const gateFailure: Omit<ProviderFailure, "providerId" | "at"> = {
+      code: "not-found",
+      message: `Movy selected stream is unreachable (${gated.reason})`,
+      retryable: true,
+    };
+    return createExhaustedResult(input, context, MOVY_PROVIDER_ID, gateFailure, {
+      cachePolicy,
+      events,
+      failures: [...failures, { providerId: MOVY_PROVIDER_ID, at: context.now(), ...gateFailure }],
+      sources,
+      startedAt,
+    });
+  }
+
+  const selectedStream = gated.stream;
+  const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
   const selectedSource = {
     ...createSourceCandidateFromStream({
       providerId: MOVY_PROVIDER_ID,
@@ -714,16 +788,16 @@ export async function resolveMovyDirect(
     status: "resolved",
     providerId: MOVY_PROVIDER_ID,
     selectedStreamId: selectedStream.id,
-    selectionDecision: selection.decision,
+    selectionDecision: { ...selection.decision, selectedQualityRank: selectedStream.qualityRank },
     sources: finalizeCycleSourceInventory({
       sources: sourceInventorySeeds,
       attempts: cycleResult.attempts,
       selectedSources: [selectedSource],
-      streams,
+      streams: shippedStreams,
       selectedStreamId: selectedStream.id,
     }),
-    streams,
-    variants,
+    streams: shippedStreams,
+    variants: dropRefusedVariants(variants, shippedStreams),
     subtitles,
     cachePolicy,
     trace: createResolveTrace({

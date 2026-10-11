@@ -60,6 +60,22 @@ describe("parseSgrMouseSequence", () => {
 });
 
 describe("splitMouseSequences", () => {
+  test("legacy X10 and urxvt reports never leak into the search query", () => {
+    expect(splitMouseSequences("before\x1b[M !!after\x1b[0;4;7M").input).toBe("beforeafter");
+    expect(splitMouseSequences("\x1b[M !").pendingTail).toBe("\x1b[M !");
+  });
+
+  test("horizontal wheel and overflowing coordinates cannot invent vertical navigation", () => {
+    for (const report of [
+      "\x1b[<66;4;7M",
+      "\x1b[<67;4;7M",
+      "\x1b[<0;99999999999999999999;7M",
+      "\x1b[<999999999999999;4;7M",
+    ]) {
+      expect(splitMouseSequences(report).events).toEqual([]);
+      expect(splitMouseSequences(report).input).toBe("");
+    }
+  });
   test("separates a mouse report from surrounding key bytes", () => {
     const { input, events, pendingTail } = splitMouseSequences("a\x1b[<0;5;2Mb");
     expect(input).toBe("ab");
@@ -90,9 +106,10 @@ describe("splitMouseSequences", () => {
     expect(events).toHaveLength(0);
   });
 
-  test("a bare Escape byte stays in the input stream", () => {
-    const { input } = splitMouseSequences("\x1b");
-    expect(input).toBe("\x1b");
+  test("a bare Escape is retained for the facade to release on idle", () => {
+    const { input, pendingTail } = splitMouseSequences("\x1b");
+    expect(input).toBe("");
+    expect(pendingTail).toBe("\x1b");
   });
 
   test("tracking sequences are reversible ANSI toggles", () => {

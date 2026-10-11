@@ -16,6 +16,7 @@ export type AppCommandId =
   | "random"
   | "surprise"
   | "settings"
+  | "theme"
   | "providers"
   | "presence"
   | "analytics"
@@ -32,9 +33,11 @@ export type AppCommandId =
   | "diagnostics"
   | "docs"
   | "help"
+  | "guide"
   | "about"
   | "update"
   | "image-pane"
+  | "pet"
   | "toggle-autoplay"
   | "toggle-autoskip"
   | "stop-after-current"
@@ -112,6 +115,7 @@ export const COMMAND_CONTEXTS = {
     "downloads",
     "notifications",
     "history",
+    "clear-history",
     // Title-scoped queue mutations belong beside the queue view: they show
     // their "select a title/episode first" reason when nothing is selected,
     // which is better discovery than not listing them at all.
@@ -119,7 +123,9 @@ export const COMMAND_CONTEXTS = {
     "queue-season",
     "setup",
     "settings",
+    "theme",
     "image-pane",
+    "pet",
     "sync",
     "providers",
     "presence",
@@ -130,6 +136,7 @@ export const COMMAND_CONTEXTS = {
     "report-issue",
     "docs",
     "help",
+    "guide",
     "about",
     "update",
   ],
@@ -181,12 +188,14 @@ export const COMMAND_CONTEXTS = {
     "reset-provider-health",
     "docs",
     "settings",
+    "theme",
     "providers",
     "presence",
     "analytics",
     "analytics-show",
     "setup",
     "help",
+    "guide",
     "menu",
     "about",
     "update",
@@ -251,12 +260,14 @@ export const COMMAND_CONTEXTS = {
     "reset-provider-health",
     "docs",
     "settings",
+    "theme",
     "providers",
     "presence",
     "analytics",
     "analytics-show",
     "setup",
     "help",
+    "guide",
     "menu",
     "about",
     "update",
@@ -291,6 +302,7 @@ export const COMMAND_CONTEXTS = {
     "report-issue",
     "docs",
     "help",
+    "guide",
     "about",
     "quit",
   ],
@@ -386,6 +398,12 @@ export const COMMANDS: readonly AppCommand[] = [
     description: "Open settings (relay, playback, shell, and more)",
   },
   {
+    id: "theme",
+    label: "Theme",
+    aliases: ["theme", "appearance", "colors", "colour"],
+    description: "Pick the shell color theme — applies instantly",
+  },
+  {
     id: "providers",
     label: "Providers",
     aliases: ["providers", "provider-settings", "default-provider"],
@@ -479,7 +497,7 @@ export const COMMANDS: readonly AppCommand[] = [
   {
     id: "docs",
     label: "Docs",
-    aliases: ["docs", "documentation", "guide", "manual"],
+    aliases: ["docs", "documentation", "manual"],
     description: "Open Kunai documentation",
   },
   {
@@ -487,6 +505,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Help",
     aliases: ["help", "shortcuts", "?"],
     description: "Show shortcuts and command help",
+  },
+  {
+    id: "guide",
+    label: "Guide",
+    aliases: ["guide", "tour", "learn", "start-here", "features"],
+    description: "Browse what Kunai can do, grouped by task — Enter runs it",
   },
   {
     id: "menu",
@@ -511,6 +535,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Image Pane",
     aliases: ["image", "preview", "poster"],
     description: "Toggle the image and details companion pane",
+  },
+  {
+    id: "pet",
+    label: "Companion",
+    aliases: ["pet", "kanna", "companion", "mascot", "fox"],
+    description: "Show or hide Kanna, the fox on empty and error screens",
   },
   {
     id: "toggle-autoplay",
@@ -819,6 +849,7 @@ export const HELP_PANEL_COMMAND_IDS = [
   "library",
   "settings",
   "setup",
+  "theme",
   "presence",
   "analytics",
   "follow",
@@ -855,6 +886,7 @@ export function commandGroupFor(id: AppCommandId): AppCommandGroup {
     case "share":
     case "share-qr":
     case "settings":
+    case "theme":
     case "providers":
     case "help":
       return "Core";
@@ -1069,6 +1101,7 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
     case "random":
     case "surprise":
     case "settings":
+    case "theme":
     case "presence":
     case "analytics":
     case "analytics-show":
@@ -1077,6 +1110,7 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
     case "diagnostics":
     case "docs":
     case "help":
+    case "guide":
     case "about":
     case "update":
     case "clear-cache":
@@ -1084,6 +1118,9 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
     case "clear-history":
     case "export-diagnostics":
     case "report-issue":
+    // /pet stays available even when an env pin makes it a no-op — the handler
+    // says why, which teaches more than a disabled row.
+    case "pet":
       return { enabled: true };
 
     case "details":

@@ -65,6 +65,24 @@ Jump directly when a section has alternatives:
 /quality
 ```
 
+## Confirm before play
+
+By default Kunai resolves the profile pick and launches straight into mpv. Set
+`prePlayConfirm` in Settings › Playback (or `config.json`) if you want the
+Tracks sheet first:
+
+| Mode           | Behavior                                                                                                                     |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `off`          | Auto-play the resolved pick (default)                                                                                        |
+| `when-choices` | Show the sheet only when the inventory has more than one useful choice: multiple sources, a quality ladder, or track options |
+| `always`       | Show the sheet on every play that resolves a stream inventory                                                                |
+
+The sheet is the same panel as `/tracks`: pick a source, quality, audio, or
+subtitle and playback restarts on it; `Esc` falls through to the resolved
+default. It is offered once per launched session, so autoplay into the next
+episode and stream retries do not re-ask, and bare direct streams with nothing
+to choose never show it.
+
 ## Resolution vs playback state
 
 ```text
@@ -131,7 +149,7 @@ You can always override before or during playback.
 | Wrong subtitle language | `/source` → subtitle section                                  |
 | Want higher quality     | `/quality` if alternatives exist in inventory                 |
 | Stream stalled          | `r` recover first; then `/source` if inventory has alternates |
-| Provider exhausted      | `⇧F` fallback; see [Providers](/docs/users/providers)        |
+| Provider exhausted      | `⇧F` fallback; see [Providers](/docs/users/providers)         |
 | Inventory looks stale   | `/recompute` bypasses cache for current episode               |
 
 <Callout type="info" title="Inventory-bound switching">

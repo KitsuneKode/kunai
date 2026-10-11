@@ -47,7 +47,6 @@ export async function loadProductionProviderModules(
     { allmangaProviderModule },
     { anidbProviderModule },
     { hianimeProviderModule },
-    { animekaiProviderModule },
     { animeggProviderModule },
     { kickassanimeProviderModule },
     { miruroProviderModule },
@@ -61,7 +60,6 @@ export async function loadProductionProviderModules(
     import("@kunai/providers/allmanga"),
     import("@kunai/providers/anidb"),
     import("@kunai/providers/hianime"),
-    import("@kunai/providers/animekai"),
     import("@kunai/providers/animegg"),
     import("@kunai/providers/kickassanime"),
     import("@kunai/providers/miruro"),
@@ -78,7 +76,6 @@ export async function loadProductionProviderModules(
       anidbProviderModule,
       allmangaProviderModule,
       hianimeProviderModule,
-      animekaiProviderModule,
       miruroProviderModule,
       animeggProviderModule,
       kickassanimeProviderModule,
@@ -161,10 +158,13 @@ export async function bootstrapProviders(
     let ordered: readonly CoreProviderModule[] = providerModules;
     return () => {
       const priority = createProviderPrioritySnapshot(config);
+      const raw = config.getRaw();
       const key = [
         priority.providerPriority.join(","),
         priority.animeProviderPriority.join(","),
         (priority.youtubeProviderPriority ?? []).join(","),
+        raw.providerRelay?.enabled ? "relay-on" : "relay-off",
+        JSON.stringify(raw.providerRelay?.providers ?? {}),
       ].join("|");
       if (key !== cacheKey) {
         cacheKey = key;

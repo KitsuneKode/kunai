@@ -1,9 +1,7 @@
-// =============================================================================
-// resolve-header-destination.ts — AppHeader destination pill
+// AppHeader destination pill
 //
 // Root overlays and mounted full-screen flows own the pill. Browse destination
 // (Trending / Search / …) only wins when browse is the visible surface.
-// =============================================================================
 
 import type { SessionState } from "@/domain/session/SessionState";
 

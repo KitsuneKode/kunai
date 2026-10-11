@@ -169,9 +169,12 @@ function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
  * read inside the script — `cmdkey` is not used because it cannot store
  * arbitrary secrets for arbitrary targets.
  */
-function wincredVault(spawn: CredentialSpawn): CredentialVaultPort {
+function wincredVault(spawn: CredentialSpawn, shell: string): CredentialVaultPort {
   const run = (script: string, input: string) =>
-    spawn(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script], input, SPAWN_TIMEOUT_MS);
+    // The probe resolved this binary (pwsh preferred, powershell fallback):
+    // spawning the resolved path instead of a bare name keeps the backend
+    // working on inbox PowerShell 5.1 machines with no pwsh installed.
+    spawn([shell, "-NoProfile", "-NonInteractive", "-Command", script], input, SPAWN_TIMEOUT_MS);
   return {
     backend: "wincred",
     async get(key) {
@@ -238,7 +241,8 @@ async function probeBackend(
       return which("security") ? keychainVault(spawn) : undefined;
     }
     if (backend === "wincred") {
-      return which("pwsh") || which("powershell") ? wincredVault(spawn) : undefined;
+      const shell = which("pwsh") ?? which("powershell");
+      return shell ? wincredVault(spawn, shell) : undefined;
     }
   } catch {
     return undefined;

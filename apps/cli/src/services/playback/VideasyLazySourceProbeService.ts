@@ -13,14 +13,13 @@ import type {
   ProviderSourceCandidate,
 } from "@kunai/types";
 
-import { providerWorkLanePolicy } from "./provider-work-lane-policy";
 import {
   buildSourceInventoryCacheKey,
   type SourceInventoryService,
   type SourceInventoryCacheInput,
 } from "./SourceInventoryService";
 
-const DEFAULT_PROBE_CONCURRENCY = providerWorkLanePolicy("background-inventory").concurrency;
+const DEFAULT_PROBE_CONCURRENCY = 2;
 type VideasyDirectResolver = typeof resolveVideasyDirect;
 
 function phaseBSessionKey(key: SourceInventoryCacheInput): string {

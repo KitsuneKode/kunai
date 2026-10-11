@@ -24,6 +24,7 @@ export type ShellAction =
   | "surprise"
   | "back-to-results"
   | "settings"
+  | "theme"
   | "providers"
   | "presence"
   | "analytics"
@@ -40,9 +41,11 @@ export type ShellAction =
   | "diagnostics"
   | "docs"
   | "help"
+  | "guide"
   | "about"
   | "update"
   | "image-pane"
+  | "pet"
   | "toggle-autoplay"
   | "toggle-autoskip"
   | "stop-after-current"
@@ -319,6 +322,12 @@ export type BrowseIdleContext = {
     titleId?: string;
     offlineJobId?: string;
   };
+  /** Top of the Watchlist (sort_order) plus the saved count — the "saved" idle row. */
+  savedNext?: {
+    title: string;
+    titleId: string;
+    total: number;
+  };
   todayReleaseCount?: number;
   todayReleaseTitleCount?: number;
   calendarNudge?: {
@@ -408,7 +417,11 @@ export type BrowseShellResult<T> =
       type: "launch-playback";
       launch: { readonly title: TitleInfo; readonly episode?: EpisodeInfo };
     }
-  | { type: "cancelled" };
+  | {
+      type: "cancelled";
+      /** Set when another root-content session displaced browse — not a user Esc. */
+      displaced?: true;
+    };
 
 export type PlaybackShellResult =
   | ShellAction
@@ -446,6 +459,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "random":
     case "surprise":
     case "settings":
+    case "theme":
     case "providers":
     case "presence":
     case "analytics":
@@ -461,9 +475,11 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "diagnostics":
     case "docs":
     case "help":
+    case "guide":
     case "about":
     case "update":
     case "image-pane":
+    case "pet":
     case "toggle-autoplay":
     case "toggle-autoskip":
     case "stop-after-current":

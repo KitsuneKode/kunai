@@ -1,14 +1,16 @@
 /** Best-effort registry of live mpv child processes for synchronous teardown on exit. */
 
+import { terminateProcessTree } from "../os/process-tree";
+
 export type MpvKillableProcess = {
+  /** Present on `Bun.spawn` results; absent on injected test fakes. */
+  readonly pid?: number;
   kill(signal?: NodeJS.Signals): void;
 };
 
 export type MpvChildProcess = MpvKillableProcess & {
   exited: Promise<number>;
   exitCode: number | null;
-  /** Real terminating signal when the OS delivered one — prefer it over the signal we sent. */
-  signalCode?: NodeJS.Signals | null;
 };
 
 export type MpvTerminationResult = {
@@ -32,11 +34,8 @@ export function registerMpvProcess(process: MpvKillableProcess): () => void {
  */
 export function killActiveMpvProcessesSync(): void {
   for (const process of activeProcesses) {
-    try {
-      process.kill("SIGKILL");
-    } catch {
-      // best effort — process may already be gone
-    }
+    // Tree kill: mpv's ytdl_hook yt-dlp child must not outlive this sweep.
+    terminateProcessTree(process, "SIGKILL");
   }
   activeProcesses.clear();
 }
@@ -66,31 +65,23 @@ export async function terminateMpvProcess(
       sleep(timeoutMs).then(() => undefined),
     ]);
 
-  try {
-    process.kill("SIGTERM");
-  } catch {
-    // The child may have exited between the readiness failure and teardown.
-  }
+  terminateProcessTree(process, "SIGTERM");
 
   const gracefulCode = await waitForExit(options.gracefulTimeoutMs ?? 1_500);
   if (gracefulCode !== undefined) {
     return {
       exited: true,
       exitCode: process.exitCode ?? gracefulCode,
-      signal: process.signalCode ?? "SIGTERM",
+      signal: "SIGTERM",
     };
   }
 
-  try {
-    process.kill("SIGKILL");
-  } catch {
-    // Same exit race as above; the final bounded wait reconciles it.
-  }
+  terminateProcessTree(process, "SIGKILL");
 
   const forcedCode = await waitForExit(options.forceTimeoutMs ?? 1_000);
   return {
     exited: forcedCode !== undefined,
     exitCode: process.exitCode ?? forcedCode ?? null,
-    signal: process.signalCode ?? "SIGKILL",
+    signal: "SIGKILL",
   };
 }

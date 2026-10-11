@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "@kunai/core": "workspace:*",
-    "@kunai/schemas": "workspace:*",
     "@kunai/types": "workspace:*"
   },
   "devDependencies": {

@@ -12,6 +12,8 @@ import {
   type TrackCapability,
   type TrackCapabilityGroup,
 } from "@/domain/playback/track-capabilities";
+import { providerPickerLanesForTitle, shellModeToProviderLane } from "@/domain/provider-lane";
+import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
 import type { EpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
 import { availableAudioModesFromTrace } from "@/services/playback/PlaybackSourceInventoryProjection";
 
@@ -120,10 +122,57 @@ export async function buildTracksPanelData(
     currentPresentation: currentPresentationFromStream(stream),
   });
 
+  if (stream?.playbackSourceKind === "local") {
+    return {
+      providerLabel: "Local file",
+      groups: [
+        {
+          section: "source",
+          title: "Source",
+          selectable: false,
+          emptyReason:
+            "Use player controls for downloaded audio and subtitles. Open the title online to change providers or sources.",
+          rows: [
+            {
+              section: "source",
+              label: "Downloaded file",
+              value: "local-file",
+              selected: true,
+              enabled: false,
+              reason: "Validated local file",
+              detail: "Tracks: player controls",
+              risk: "normal",
+            },
+          ],
+        },
+        ...inventoryGroups
+          .filter((group) => group.section !== "source")
+          .map((group) => ({
+            ...group,
+            selectable: false,
+            emptyReason:
+              "Use player controls for downloaded audio and subtitles. Open the title online to change providers or sources.",
+            rows: group.rows.map((row) => ({
+              ...row,
+              enabled: false,
+              reason: "Downloaded file; use player controls",
+            })),
+          })),
+      ],
+    };
+  }
+
   const providers = container.providerRegistry.getAll().map((provider) => provider.metadata);
+  // Same eligibility as the provider picker: a linked title can switch into
+  // the other lane's providers, and the playing provider is always listed.
+  const tracksLanes = providerPickerLanesForTitle(
+    shellModeToProviderLane(state.mode),
+    state.currentTitle ? resolveTitleLaneEligibility(state.currentTitle) : null,
+  );
   const providerGroup = buildProviderTrackCapabilities({
     providers,
     mode: state.mode === "anime" ? "anime" : "series",
+    lanes: tracksLanes,
     currentProviderId: result?.providerId ?? state.provider,
     healthByProviderId: buildHealthHints(container, state.currentTitle?.id),
   });

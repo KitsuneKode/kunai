@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { PROBES } from "../scripts/provider-status-sweep";
+
 /**
  * Every production provider must prove a stream is playable before reporting
  * success, and must do it through the shared gate.
@@ -18,35 +20,15 @@ import { join } from "node:path";
  */
 const PROVIDER_SRC = join(import.meta.dir, "../src");
 
-/** `loadProductionProviderModules()` — the registry this test guards. */
-const BOOTSTRAP = join(import.meta.dir, "../../../apps/cli/src/container/bootstrap-providers.ts");
-
 /**
- * Providers registered by `loadProductionProviderModules()`. Read out of the
- * bootstrap file rather than restated here — a hardcoded list is how this
- * test drifted to covering 8 providers while production ran 12.
+ * Provider source directories keyed to the production roster. The sweep's
+ * PROBES list is pinned to `loadProductionProviderModules()` by the bootstrap
+ * test, so deriving this from it means a new module cannot ship without being
+ * scanned here — the previous hand-maintained list silently missed four.
  */
-/** Bootstrap names that match `(\w+)ProviderModule` but are not provider ids —
- * `CoreProviderModule` is the module *type*, not a lane. */
-const NON_PROVIDER_MODULE_PREFIXES = new Set(["Core"]);
-
-const MODULE_IDS = [
-  ...new Set(
-    [...readFileSync(BOOTSTRAP, "utf8").matchAll(/(\w+)ProviderModule\b/g)]
-      .flatMap((match) => (match[1] ? [match[1]] : []))
-      .filter((id) => !NON_PROVIDER_MODULE_PREFIXES.has(id)),
-  ),
-] as const;
-
-const PRODUCTION_PROVIDERS = MODULE_IDS;
-
-test("every bootstrap provider module maps to a source directory", () => {
-  /* A module id that does not map to a provider dir is a rename mid-refactor —
-   * it must fail loudly here, not be filtered out of coverage (the old filter
-   * is exactly how the list drifted to 8 providers while production ran 12). */
-  const dirs = readdirSync(PROVIDER_SRC);
-  expect(MODULE_IDS.filter((id) => !dirs.includes(id))).toEqual([]);
-});
+const PRODUCTION_PROVIDERS = PROBES.map((probe) =>
+  probe.id === "allanime" ? "allmanga" : probe.id,
+);
 
 /**
  * A provider may only appear here with a reason that is about the *runtime*,
@@ -65,29 +47,23 @@ const EXEMPT = {
   // needs a live provider to measure against, and Miruro is WAF-blocked; tracked
   // in .plans/provider-playback-resilience.md.
   miruro: "per-candidate budget cannot contain a probe; needs a budget rework measured live",
-  // AnimeGG's vidcache host answers HTTP 500 to anything that is not its own
-  // player — plain GET and ranged GET alike, fresh URL or stale — while mpv
-  // plays the same URL and writes a frame (.docs/provider-dossiers/animegg.md).
-  // A probe here cannot distinguish live from dead, so it would only ever
-  // veto playable streams.
-  animegg: "upstream 500s every non-player request; a probe cannot judge the stream",
-  // ffmpeg/ffprobe fail on KickAssAnime's master where mpv succeeds —
-  // documented in .docs/provider-dossiers/kickassanime.md — so a probe is not
-  // a reachability signal for these URLs and must not veto them.
-  kickassanime: "probes fail on streams mpv plays; no verdict the gate can trust",
-} satisfies Record<string, string>;
+  // AnimeGG's CDN returns 500 to anything that is not its player — a plain or
+  // ranged GET included — while mpv plays the same URL. A probe cannot reach a
+  // verdict; worse, it would refuse streams that play fine.
+  animegg: "upstream CDN 500s every non-player request; a probe is a false positive by design",
+  // HiAnime's ladder expansion fetches the master playlist with the candidate's
+  // own headers and fails closed on definitive dead-host statuses (5xx/404/410
+  // empties the variant list and fails the resolve). Variant rungs ship from
+  // the same probed host, so a per-variant gate would re-probe one host N times.
+  hianime: "master probe is fused into ladder expansion; shipped variants share the probed host",
+};
 
 /**
- * The gate itself, the walks that apply it across a candidate's rungs, or the
- * shared direct-stream engine that calls it. All of them funnel into
+ * The gate itself, the walk that applies it across a candidate's rungs, or the
+ * shared direct-stream engine that calls it. All three funnel into
  * `verifyCandidateStream`.
  */
-const GATE_MARKERS = [
-  "verifyCandidateStream",
-  "selectVerifiedStream",
-  "selectVerifiedReadyStream",
-  "resolveDirectStreamSource",
-];
+const GATE_MARKERS = ["verifyCandidateStream", "selectVerifiedStream", "resolveDirectStreamSource"];
 
 function providerSources(provider: string): string {
   const dir = join(PROVIDER_SRC, provider);
@@ -109,10 +85,8 @@ describe("resolve gate coverage", () => {
 
   test("every exemption states a runtime reason", () => {
     for (const [provider, reason] of Object.entries(EXEMPT)) {
-      // SAFETY: keys are pinned to provider ids by the satisfies contract above;
-      // this assert is the check itself, not blind trust.
       expect(PRODUCTION_PROVIDERS).toContain(provider as (typeof PRODUCTION_PROVIDERS)[number]);
-      expect(reason.length).toBeGreaterThan(20);
+      expect(reason?.length ?? 0).toBeGreaterThan(20);
     }
   });
 

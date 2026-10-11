@@ -19,7 +19,6 @@ import {
   MIRURO_SERVER_TRY_ORDER,
   createVidkingResultFromPayload,
   createVideasyRouteCachePolicy,
-  extractQualitiesFromMaster,
   listVidkingFlavors,
   normalizeIsoLanguageCode,
   normalizeProviderDisplayLabel,
@@ -30,7 +29,6 @@ import {
   resolveVidkingDirect,
   rivestreamProviderModule,
   stableProviderInventoryId,
-  VariantTreeBuilder,
   videasyProviderModule,
   vidlinkProviderModule,
 } from "../src/index";
@@ -240,7 +238,7 @@ test("vidking direct resolver preserves nonretryable direct failure evidence", a
     },
     {
       now: () => "2026-05-01T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 2, backoff: "none" },
+      retryPolicy: { maxAttempts: 2 },
       emit: (event) => events.push(event),
       fetch: createFetchWithSeedMock(async (input) => {
         if (seedUrls.has(input)) {
@@ -282,7 +280,7 @@ test("vidking direct resolver does not retry definitive 404 responses or duplica
     },
     {
       now: () => "2026-05-26T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 2, backoff: "none" },
+      retryPolicy: { maxAttempts: 2 },
       fetch: {
         runtime: "direct-http",
         fetch: async (input) => {
@@ -323,7 +321,7 @@ test("vidking direct resolver sends Videasy session headers when provided", asyn
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: {
         runtime: "direct-http",
         fetch: async (_input, init) => {
@@ -360,7 +358,7 @@ test("vidking direct resolver reads Videasy session token from runtime auth", as
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       auth: {
         getSecret: (providerId, key) =>
           (providerId === "videasy" || providerId === "vidking") && key === "videasySessionToken"
@@ -404,7 +402,7 @@ test("vidking direct resolver can pair a session with a Bitcine app id", async (
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       auth: {
         getSecret: (providerId, key) => {
           if (providerId !== "videasy" && providerId !== "vidking") return undefined;
@@ -457,7 +455,7 @@ test("vidking session transport covers every registered Videasy flavor", async (
       },
       {
         now: () => "2026-06-04T00:00:00.000Z",
-        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        retryPolicy: { maxAttempts: 1 },
         fetch: isWingsEndpoint
           ? createFetchWithSeedMock(async (input, init) => {
               requested.set(flavor.id, {
@@ -534,7 +532,7 @@ test("vidking preferred source targets that flavor then falls back to Phase A mi
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: createFetchWithSeedMock(async (input) => {
         requestedUrls.push(String(input));
         return jsonResponse({ error: "session_missing" });
@@ -574,7 +572,7 @@ test("vidking stops source fanout after a provider-wide session guard failure", 
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       endpointHealth: passthroughEndpointHealth,
       fetch: createFetchWithSeedMock(async (input) => {
         requestedUrls.push(String(input));
@@ -609,7 +607,7 @@ test("vidking direct resolver classifies Videasy session guard responses as bloc
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 2, backoff: "none" },
+      retryPolicy: { maxAttempts: 2 },
       fetch: {
         runtime: "direct-http",
         fetch: async () => jsonResponse({ error: "session_missing" }),
@@ -669,7 +667,7 @@ test("vidking direct resolver can target a flavored endpoint without broad serve
     },
     {
       now: () => "2026-05-01T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: createFetchWithSeedMock(async (input) => {
         requestedUrls.push(String(input));
         return new Response("", { status: 504 });
@@ -719,7 +717,7 @@ test("vidking refresh intent cycles the wider flavor source set", async () => {
     },
     {
       now: () => "2026-05-01T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: {
         runtime: "direct-http",
         fetch: async (input) => {
@@ -1499,7 +1497,7 @@ test("negative fixture maps blocked vidking host to structured failure", async (
     },
     {
       now: () => "2026-05-19T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: {
         runtime: "direct-http",
         fetch: async () => jsonResponse(blocked.body, blocked.status),
@@ -1553,68 +1551,6 @@ test("negative fixture keeps rivestream parse failures inspectable", async () =>
     retryable: false,
   });
   expect(result.trace.failures[0]?.code).toBe("parse-failed");
-});
-
-test("m3u8 quality extraction exposes sorted playable variants", async () => {
-  const streams = await extractQualitiesFromMaster(
-    {
-      runtime: "direct-http",
-      fetch: async () =>
-        new Response(
-          [
-            "#EXTM3U",
-            '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1280x720,NAME="720p"',
-            "720/index.m3u8",
-            "#EXT-X-STREAM-INF:BANDWIDTH=1600000,RESOLUTION=1920x1080",
-            "https://cdn.example/1080/index.m3u8",
-          ].join("\n"),
-        ),
-    },
-    "https://cdn.example/master.m3u8",
-    {
-      providerId: "videasy",
-      protocol: "hls",
-      container: "m3u8",
-      confidence: 0.9,
-      cachePolicy: {
-        ttlClass: "stream-manifest",
-        scope: "local",
-        keyParts: ["provider", "vidking", "qualities"],
-      },
-    },
-  );
-
-  expect(streams.map((stream) => stream.qualityLabel)).toEqual(["1080p", "720p"]);
-  expect(streams[1]?.url).toBe("https://cdn.example/720/index.m3u8");
-});
-
-test("variant tree builder creates stable grouped variant ordering", () => {
-  const variants = new VariantTreeBuilder({
-    providerId: "miruro",
-    sourceId: "source:miruro:pipe",
-  })
-    .addVariant({
-      label: "Dub 720p",
-      presentation: "dub",
-      subtitleDelivery: "embedded",
-      qualityLabel: "720p",
-      qualityRank: 720,
-      streamIds: ["stream-dub-720"],
-      confidence: 0.8,
-    })
-    .addVariant({
-      label: "Sub 1080p",
-      presentation: "sub",
-      subtitleDelivery: "hardcoded",
-      qualityLabel: "1080p",
-      qualityRank: 1080,
-      streamIds: ["stream-sub-1080"],
-      confidence: 0.9,
-    })
-    .build();
-
-  expect(variants.map((variant) => variant.label)).toEqual(["Sub 1080p", "Dub 720p"]);
-  expect(variants[0]?.id.startsWith("var_")).toBe(true);
 });
 
 test("source inventory helpers create stable ids and provider evidence", () => {

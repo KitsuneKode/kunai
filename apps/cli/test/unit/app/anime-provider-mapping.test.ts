@@ -42,9 +42,7 @@ const allanimeProviderRegistry = {
       catalogIdentity: "provider-native" as const,
     },
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    capabilities: {} as never,
     canHandle: () => true,
-    resolveStream: async () => null,
     search: async () => [
       {
         id: "allanime-show-id",
@@ -74,9 +72,7 @@ const anidbProviderRegistry = {
       catalogIdentity: "provider-native" as const,
     },
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    capabilities: {} as never,
     canHandle: () => true,
-    resolveStream: async () => null,
     search: async () => [
       {
         id: "solo-leveling-19413",
@@ -105,9 +101,7 @@ const miruroProviderRegistry = {
       catalogIdentity: "anilist" as const,
     },
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    capabilities: {} as never,
     canHandle: () => true,
-    resolveStream: async () => null,
   }),
   getAll: () => [],
   getCompatible: () => [],
@@ -296,9 +290,7 @@ test("AniDB mapping rejects a non-AniDB native result and retains catalog identi
           catalogIdentity: "provider-native" as const,
         },
         // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-        capabilities: {} as never,
         canHandle: () => true,
-        resolveStream: async () => null,
         search: async () => [{ id: "LrLqaxWbfzjShWbXW", type: "series", title: "Solo Leveling" }],
       }),
       getAll: () => [],
@@ -336,9 +328,7 @@ test("an unmapped title does not re-pay the serial provider search on reselectio
           catalogIdentity: "provider-native" as const,
         },
         // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-        capabilities: {} as never,
         canHandle: () => true,
-        resolveStream: async () => null,
         search: async () => {
           providerSearchCalls += 1;
           return [];
@@ -382,9 +372,7 @@ test("an aborted mapping does not pin an unmapped marker", async () => {
           catalogIdentity: "provider-native" as const,
         },
         // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-        capabilities: {} as never,
         canHandle: () => true,
-        resolveStream: async () => null,
         search: async () => {
           providerSearchCalls += 1;
           return [];

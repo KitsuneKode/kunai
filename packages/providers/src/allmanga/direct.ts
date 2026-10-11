@@ -28,7 +28,7 @@ import {
   formatAnimeSourceArchetype,
   formatAnimeSourceLabel,
 } from "../shared/anime-source-presentation";
-import { cycleExhaustedResult } from "../shared/provider-cycle";
+import { cycleExhaustionFailure, findLastCycleFailure } from "../shared/provider-cycle";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
 import { resolveGateBudgetMs, verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -643,6 +643,8 @@ export const allmangaProviderModule: CoreProviderModule = {
           signal: context.signal,
           now: context.now,
           emit: context.emit,
+          endpointHealth: context.endpointHealth,
+          titleId: input.title.id,
           maxAttemptsPerCandidate: 1,
           candidateTimeoutMs: providerCycleCandidateTimeoutMs(
             startupPriority,
@@ -695,6 +697,10 @@ export const allmangaProviderModule: CoreProviderModule = {
                   message: `AllManga source is unreachable (${verdict.reason})`,
                   retryable: false,
                   at: context.now(),
+                  // The gate probed this candidate's own stream URL, so the
+                  // refusal is evidence about that source host alone — not a
+                  // provider-wide or regional verdict.
+                  endpointScoped: true,
                 });
               }
             }
@@ -742,27 +748,14 @@ export const allmangaProviderModule: CoreProviderModule = {
         selectedStream = cycleResult.selected;
       }
       if (!selectedStream) {
-        return cycleExhaustedResult({
-          input,
-          context,
+        const cycleFailure = findLastCycleFailure(cycleResult.attempts);
+        const failure: ProviderFailure = {
           providerId: ALLANIME_PROVIDER_ID,
-          attempts: cycleResult.attempts,
-          fallback: {
-            code: "not-found",
-            message: "No selectable AllManga streams were mapped.",
-            retryable: true,
-          },
-          evidence: {
-            cachePolicy,
-            events,
-            failures,
-            sources: finalizeCycleSourceInventory({
-              sources: buildAllmangaSourceInventorySeeds(streams, cachePolicy),
-              attempts: cycleResult.attempts,
-            }),
-            startedAt,
-          },
-        });
+          ...cycleExhaustionFailure(cycleResult, "No selectable AllManga streams were mapped."),
+          at: cycleFailure?.at ?? context.now(),
+        };
+        failures.push(failure);
+        return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, failure);
       }
       const selection = selectReadyStream([selectedStream], {
         startupPriority,
@@ -900,6 +893,10 @@ export function buildAllmangaCycleCandidates(
       id: `candidate:${stream.id}`,
       providerId: ALLANIME_PROVIDER_ID,
       sourceId: stream.sourceId,
+      // The endpoint key is the stream's own host, so a quarantined mirror is
+      // skipped for every title it would fail on, while a host that merely
+      // lacks one title stays in the pool.
+      serverId: stream.sourceEvidence?.[0]?.host,
       variantId: stream.variantId,
       streamId: stream.id,
       groupId: stream.presentation,

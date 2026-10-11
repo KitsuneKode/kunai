@@ -16,25 +16,25 @@ in the same session.
 Common launch patterns. For the full flag list synced from `kunai --help`, see
 [CLI Reference](/docs/users/cli-reference).
 
-| Invocation                    | What it does                                          |
-| ----------------------------- | ----------------------------------------------------- |
+| Invocation                    | What it does                                         |
+| ----------------------------- | ---------------------------------------------------- |
 | `kunai`                       | Open the shell; search, browse, or pick from history |
-| `kunai -S "Title"`            | Search and show results                               |
-| `kunai -S "Title" --jump 1`   | Search, auto-select first result                      |
+| `kunai -S "Title"`            | Search and show results                              |
+| `kunai -S "Title" --jump 1`   | Search, auto-select first result                     |
 | `kunai -S "Title" -q`         | Quick mode; same as `--jump 1` with search           |
-| `kunai -a -S "Anime"`         | Anime mode (anime providers)                          |
-| `kunai -i 438631 -t movie`    | Open a specific TMDB ID directly                      |
-| `kunai --continue`            | Jump to the newest unfinished history entry           |
-| `kunai --history`             | Open watch history first                              |
-| `kunai --offline`             | Open completed offline library first                  |
-| `kunai --discover`            | Open recommendations first                            |
-| `kunai --calendar`            | Open release calendar first                           |
-| `kunai --random`              | Open random picks tray first                          |
-| `kunai --open <url>`          | Play a shared `kunai://` link (trusted launch)        |
-| `kunai --setup`               | Run setup wizard                                      |
-| `kunai --download -S "Title"` | Download-only flow for a title (no shell queue UI)    |
-| `kunai --zen`                 | Minimal chrome mode                                   |
-| `kunai --debug`               | Verbose logging to `./logs.txt`                       |
+| `kunai -a -S "Anime"`         | Anime mode (anime providers)                         |
+| `kunai -i 438631 -t movie`    | Open a specific TMDB ID directly                     |
+| `kunai --continue`            | Jump to the newest unfinished history entry          |
+| `kunai --history`             | Open watch history first                             |
+| `kunai --offline`             | Open completed offline library first                 |
+| `kunai --discover`            | Open recommendations first                           |
+| `kunai --calendar`            | Open release calendar first                          |
+| `kunai --random`              | Open random picks tray first                         |
+| `kunai --open <url>`          | Play a shared `kunai://` link (trusted launch)       |
+| `kunai --setup`               | Run setup wizard                                     |
+| `kunai --download -S "Title"` | Download-only flow for a title (no shell queue UI)   |
+| `kunai --zen`                 | Minimal chrome mode                                  |
+| `kunai --debug`               | Verbose logging to `./logs.txt`                      |
 
 ### Download vs queue
 
@@ -79,7 +79,7 @@ Live registry; same table as [Providers](/docs/users/providers#active-providers)
 
 ## What is experimental / candidate
 
-- Rivestream and Miruro: candidate status in manifests; quality varies by title
+- Rivestream and Miruro: registered but region-gated on some networks; quality varies by title
 - Zen mode (`--zen`): minimal chrome, still settling
 - Notifications inbox: active, alert delivery maturing
 - Playlist queue: durable service active, multi-session recovery being validated

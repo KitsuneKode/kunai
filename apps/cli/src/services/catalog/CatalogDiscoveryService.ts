@@ -1,6 +1,7 @@
 import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
+import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   loadYoutubeTrending,
@@ -15,6 +16,9 @@ import type { JsonObject, ProviderSearchResult } from "@kunai/types";
 const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 const DISCOVERY_CACHE_TTL_MS = 30 * 60 * 1000;
 const SURPRISE_CACHE_TTL_MS = 10 * 60 * 1000;
+// Surprise keys embed a rolling 10-minute bucket, so a session that outlives
+// its TTLs still accretes one dead key per bucket per mode forever. Cap it.
+const MAX_DISCOVERY_CACHE_ENTRIES = 64;
 
 type DiscoveryCacheEntry = {
   readonly expiresAt: number;
@@ -137,6 +141,7 @@ export class CatalogDiscoveryService {
     const task = load().then((results) => {
       if (results.length > 0) {
         this.cache.set(key, { expiresAt: this.now() + ttlMs, results });
+        evictOverflowedEntries(this.cache, MAX_DISCOVERY_CACHE_ENTRIES, this.now());
       }
       return results;
     });

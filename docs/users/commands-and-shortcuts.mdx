@@ -30,8 +30,8 @@ deliberately reduced public reference generated from the keybinding registry.
 - `/queue-season` queues the rest of the current season after the selected episode.
 - `/image` toggles the image and details companion pane when the terminal supports it.
 - `/library` opens the offline library with completed local downloads.
-- `/play-local` opens a file picker for local media playback.
-- `/watch-online` returns from offline posture to online shell flows when network allows.
+- `/play-local` switches the current episode to its verified offline download.
+- `/watch-online` switches the current episode back to online provider streaming.
 - `/downloads` opens active, queued, failed, and retryable download jobs.
 - `/notifications` opens the notification inbox.
 - `/provider` opens the provider picker without changing provider until confirmed.
@@ -72,6 +72,17 @@ The tray size follows **Settings → Discover → Discover tray size**.
 Help, diagnostics, settings, notifications, history, downloads, and provider
 pickers are overlays. They should not destroy the underlying playback or browse
 context. Close the overlay to return where you were.
+
+## Mouse in search results
+
+Click a result to select it, then click the selected result again to open it.
+Click the search field to resume typing. Scrolling over results stops at the
+first and last title. Keyboard arrows keep their usual navigation behavior.
+
+Mouse support requires a compatible terminal; other screens still use their
+keyboard controls. To keep your terminal's usual selection and copy behavior,
+launch with `KUNAI_NO_MOUSE=1 kunai`. Mouse tracking is automatically disabled
+for piped input/output and `TERM=dumb`.
 
 ## Every shell command
 

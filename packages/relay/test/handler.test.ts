@@ -1,10 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { Readable, Writable } from "node:stream";
 
 import type { CoreProviderManifest } from "@kunai/core";
-import { relayRpcErrorSchema } from "@kunai/schemas";
 
-import { handleRpcRequest, relayError } from "../src/handler";
+import { handleRpcRequest } from "../src/handler";
 import { createPinnedRelayTransport, type RelayNodeRequest } from "../src/pinned-transport";
 import { buildProviderRelayRegistry } from "../src/registry";
 import type { RelayAuthorizationPolicy } from "../src/types";
@@ -71,7 +70,6 @@ const redirectProbeManifest = {
       "Content-Type": "application/json",
     },
   },
-  status: "candidate",
 } satisfies CoreProviderManifest;
 
 const redirectRegistry = buildProviderRelayRegistry([
@@ -473,6 +471,26 @@ test("handleRpcRequest handles CORS preflight without upstream fetch", async () 
   const response = await handleRpcRequest(
     new Request("https://relay.test/rpc/allanime", {
       method: "OPTIONS",
+      headers: { Origin: "https://app.example" },
+    }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      corsAllowedOrigins: ["https://app.example"],
+    },
+  );
+
+  expect(response.status).toBe(204);
+  expect(response.headers.get("access-control-allow-methods")).toContain("POST");
+  expect(response.headers.get("access-control-allow-origin")).toBe("https://app.example");
+});
+
+test("handleRpcRequest emits no CORS headers by default — the loopback relay is not a public API", async () => {
+  const preflight = await handleRpcRequest(
+    new Request("https://relay.test/rpc/allanime", {
+      method: "OPTIONS",
+      headers: { Origin: "https://evil.example" },
     }),
     {
       providerId: "allanime",
@@ -480,9 +498,8 @@ test("handleRpcRequest handles CORS preflight without upstream fetch", async () 
       authorization: localLoopbackAuthorization,
     },
   );
-
-  expect(response.status).toBe(204);
-  expect(response.headers.get("access-control-allow-methods")).toContain("POST");
+  expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+  expect(preflight.headers.get("access-control-allow-methods")).toBeNull();
 });
 
 test("handleRpcRequest authenticates before pinned transport resolves DNS", async () => {
@@ -1029,70 +1046,6 @@ test("handleRpcRequest applies one deadline to the complete redirect chain", asy
   expect(response.status).toBe(504);
   expect(attempts).toBe(2);
   expect(await response.json()).toMatchObject({ error: { code: "upstream-timeout" } });
-});
-
-describe("RPC envelope boundary", () => {
-  const handlerOptions = {
-    providerId: "allanime",
-    registry: providerRegistry,
-    authorization: localLoopbackAuthorization,
-    async transport(): Promise<Response> {
-      return new Response("{}");
-    },
-  };
-
-  test.each([
-    ["non-JSON body", "not json at all"],
-    ["a JSON scalar", "42"],
-    ["a JSON array", "[]"],
-    ["a missing method", { upstreamUrl: "https://api.allanime.day/" }],
-    ["a non-string upstreamUrl", { method: "GET", upstreamUrl: 42 }],
-    ["a non-URL upstreamUrl", { method: "GET", upstreamUrl: "definitely not a url" }],
-    ["a non-enumerable method", { method: "DELETE", upstreamUrl: "https://api.allanime.day/" }],
-    [
-      "a non-string body field",
-      { method: "POST", upstreamUrl: "https://api.allanime.day/", body: 7 },
-    ],
-    [
-      "a non-string header value",
-      {
-        method: "GET",
-        upstreamUrl: "https://api.allanime.day/",
-        headers: { "x-token": 9 },
-      },
-    ],
-  ])("rejects %s as bad-request with a schema-shaped error body", async (_label, body) => {
-    const wire =
-      typeof body === "string"
-        ? new Request("https://relay.test/rpc/allanime", { method: "POST", body })
-        : rpcRequest(body, null);
-    const response = await handleRpcRequest(wire, handlerOptions);
-
-    expect(response.status).toBe(400);
-    const parsed = relayRpcErrorSchema.safeParse(await response.json());
-    expect(parsed.success).toBe(true);
-    if (parsed.success) expect(parsed.data.error.code).toBe("bad-request");
-  });
-
-  test("schema detail names the offending field", async () => {
-    const response = await handleRpcRequest(
-      rpcRequest({ method: "GET", upstreamUrl: "definitely not a url" }, null),
-      handlerOptions,
-    );
-    const parsed = relayRpcErrorSchema.parse(await response.json());
-    expect(parsed.error.message).toContain("upstreamUrl");
-  });
-
-  test("every handler error envelope conforms to relayRpcErrorSchema", async () => {
-    for (const response of [
-      await handleRpcRequest(new Request("https://relay.test/rpc/allanime"), handlerOptions),
-      await handleRpcRequest(rpcRequest({}, null), handlerOptions),
-      relayError("upstream-timeout", "allanime", "Upstream request timed out", 504),
-    ]) {
-      const parsed = relayRpcErrorSchema.safeParse(await response.json());
-      expect(parsed.success).toBe(true);
-    }
-  });
 });
 
 function rpcRequest(body: unknown, token: string | null = "secret"): Request {

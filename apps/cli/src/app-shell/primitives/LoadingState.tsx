@@ -1,19 +1,24 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { reducedMotionEnabled } from "../motion-policy";
 import { useIsInsideOverlay } from "../overlay-layout-context";
 import { palette } from "../shell-theme";
+import { STATIC_PETAL } from "./SakuraPetal";
 
 const BUSY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 function useBrailleSpinner(active: boolean): string {
   const [frame, setFrame] = React.useState(0);
+  const reduced = reducedMotionEnabled();
+  const animate = active && !reduced;
   React.useEffect(() => {
-    if (!active) return undefined;
+    if (!animate) return undefined;
     const timer = setInterval(() => setFrame((value) => (value + 1) % BUSY_FRAMES.length), 80);
     return () => clearInterval(timer);
-  }, [active]);
-  return BUSY_FRAMES[frame] ?? "⠋";
+  }, [animate]);
+  // Under reduced motion the message still says it is busy; the glyph just stops cycling.
+  return reduced ? STATIC_PETAL : (BUSY_FRAMES[frame] ?? "⠋");
 }
 
 export function LoadingState({
@@ -37,11 +42,7 @@ export function LoadingState({
       <Text color={palette.accent}>
         {spinner} {message}
       </Text>
-      {subtitle ? (
-        <Text color={palette.dim} dimColor>
-          {subtitle}
-        </Text>
-      ) : null}
+      {subtitle ? <Text color={palette.dim}>{subtitle}</Text> : null}
     </Box>
   );
 }

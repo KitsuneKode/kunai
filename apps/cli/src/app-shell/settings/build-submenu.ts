@@ -1,3 +1,5 @@
+import { hasCurrentLabel, markCurrentLabel, stripCurrentLabel } from "@/domain/current-label";
+
 import type { ShellPickerOption } from "../types";
 import type { SettingRowDef, SettingsRegistryContext } from "./types";
 
@@ -14,11 +16,9 @@ function markCurrent(
   return options.map((option) => ({
     ...option,
     label:
-      option.value === current
-        ? option.label.includes("·  current")
-          ? option.label
-          : `${option.label}  ·  current`
-        : option.label.replace(/  ·  current$/, ""),
+      option.value === current && hasCurrentLabel(option.label)
+        ? option.label
+        : markCurrentLabel(stripCurrentLabel(option.label), option.value === current),
   }));
 }
 
@@ -62,7 +62,7 @@ export function buildSettingsSubmenuView(
       subtitle: "Shift+↑/↓ or [ ] reorder  ·  first = default",
       choices: order.map((providerId, index) => {
         const option = options.find((entry) => entry.value === providerId);
-        const name = option?.label.replace(/  ·  current$/, "") ?? providerId;
+        const name = option ? stripCurrentLabel(option.label) : providerId;
         return {
           value: providerId,
           label: `${index + 1}. ${name}`,

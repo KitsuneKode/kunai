@@ -230,11 +230,7 @@ export class ProviderEngine {
       now: this.now,
       providerId,
       signal,
-      retryPolicy: {
-        maxAttempts: this.maxAttempts,
-        backoff: "none",
-        delayMs: this.retryDelayMs,
-      },
+      retryPolicy: { maxAttempts: this.maxAttempts },
       fetch: resolveFetchPort(this.fetch, providerId),
       auth: this.auth,
       // Same rule as the attempt path: a cancelled caller must not leave
@@ -725,11 +721,7 @@ export class ProviderEngine {
       now: this.now,
       providerId: module.providerId,
       signal: attemptSignal,
-      retryPolicy: {
-        maxAttempts: this.maxAttempts,
-        backoff: "none",
-        delayMs: this.retryDelayMs,
-      },
+      retryPolicy: { maxAttempts: this.maxAttempts },
       fetch: resolveFetchPort(this.fetch, module.providerId),
       auth: this.auth,
       // Cancelling an attempt says nothing about the endpoint. Hedged fallback

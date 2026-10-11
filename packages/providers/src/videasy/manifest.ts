@@ -11,9 +11,12 @@ export const videasyManifest = defineProviderManifest({
   aliases: ["VidKing", "Cineplay", "Cineby", "HDToday", "Bitcine"],
   description: "Registered movies/series adapter; source and subtitle inventory vary by title",
   domain: "videasy.to",
-  // Not recommended while api.videasy.to fails to resolve at DNS — the wings
-  // resolve path (api.speedracelight.com) still answers, so it stays registered
-  // as a fallback rather than removed.
+  // Not recommended: the whole videasy family is down upstream — api.videasy.to
+  // NXDOMAIN, the wings stream path (api.speedracelight.com) CF 502 since
+  // 2026-09-21, and the player hosts (player.videasy.to, cineby.at, cineplay.to)
+  // all unreachable (2026-10-04). It stays registered last in the order so a
+  // revival needs no code change; only db.wingsdatabase.com (catalog mirror)
+  // still answers.
   recommended: false,
   mediaKinds: ["movie", "series"],
   capabilities: ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],

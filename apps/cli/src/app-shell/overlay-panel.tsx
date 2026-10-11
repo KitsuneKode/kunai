@@ -15,6 +15,7 @@ import { SakuraPetal } from "./primitives/SakuraPetal";
 import {
   getWindowStart,
   padColumnsEnd,
+  sanitizeTerminalText,
   truncateAtWord,
   truncateLine,
   wrapText,
@@ -202,9 +203,9 @@ export function OverlayPanel({
       {insideOverlay ? null : (
         <>
           <Text color={palette.text} bold>
-            {overlay.title}
+            {sanitizeTerminalText(overlay.title)}
           </Text>
-          <Text color={palette.dim}>{overlay.subtitle}</Text>
+          <Text color={palette.dim}>{sanitizeTerminalText(overlay.subtitle)}</Text>
         </>
       )}
       {isPickerOverlay ? (
@@ -276,7 +277,7 @@ export function OverlayPanel({
                       : option.tone === "info"
                         ? semanticToneColor("info")
                         : option.tone === "error"
-                          ? palette.danger
+                          ? palette.dangerText
                           : null;
                 // Treatment C: selection is shown by a single accent bar (rendered by
                 // PickerOptionRow) + the elevated surface, not per-row ✓/▶/○ marker soup.
@@ -313,7 +314,7 @@ export function OverlayPanel({
                           selected={selected}
                           accentColor={rowAccentColor}
                           pickerAccent={pickerAccent}
-                          labelColor={option.tone === "error" ? palette.danger : undefined}
+                          labelColor={option.tone === "error" ? palette.dangerText : undefined}
                         />
                       </Text>
                       {isHistoryPicker && option.historyProgress ? (

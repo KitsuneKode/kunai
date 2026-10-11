@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 
 import { BrowseShell } from "@/app-shell/browse-shell";
+import { RootContentSuspension } from "@/app-shell/RootContentSuspension";
 import { render as inkRender, Box, Text, useInput } from "ink";
 import { act, useRef } from "react";
 
@@ -10,6 +11,7 @@ import {
   MouseDispatcher,
   MouseDispatchProvider,
   useMouseRegion,
+  MouseTarget,
 } from "../../../../src/app-shell/mouse/MouseRegions";
 // Named import for the side effect: the module sets IS_REACT_ACT_ENVIRONMENT
 // before act() is first called, so state updates flush inside act() bounds.
@@ -37,7 +39,7 @@ class FakeStdout extends EventEmitter {
   readonly frames: string[] = [];
   isTTY = true;
   constructor(
-    public columns = CAPTURE_WIDTHS.medium,
+    public columns: number = CAPTURE_WIDTHS.medium,
     public rows = 45,
   ) {
     super();
@@ -70,24 +72,27 @@ function makeProbe(log: LogEntry[]) {
   return { Probe, keys };
 }
 
-function mountWithMouse(node: React.ReactElement) {
+function mountWithMouse(node: React.ReactElement, columns: number = CAPTURE_WIDTHS.medium) {
   const source = new FakeSource();
   const dispatcher = new MouseDispatcher();
   const proxy = new MouseSplitStdin(source, dispatcher, { write: () => {} });
   proxy.attach();
-  const stdout = new FakeStdout();
-  let instance: { unmount(): void };
+  const stdout = new FakeStdout(columns);
+  let instance: { unmount(): void; rerender(node: React.ReactNode): void };
   act(() => {
-    // SAFETY: the fake stdout implements the exact write/columns/rows surface
-    // inkRender reads; a real WriteStream is unconstructible in-process.
+    // Ink requires complete Node stream types, while this harness exercises its
+    // consumed subset. Direct assertions fail TS2352; widening stays test-local.
+    // eslint-disable-next-line anti-slop/no-known-value-widening
     const stdoutForInk: unknown = stdout;
-    // SAFETY: MouseSplitStdin implements the readable/read/setRawMode subset
-    // Ink's stdin contract calls — verified against ink 7.x source.
+    // eslint-disable-next-line anti-slop/no-known-value-widening
     const stdinForInk: unknown = proxy;
     instance = inkRender(
       <MouseDispatchProvider dispatcher={dispatcher}>{node}</MouseDispatchProvider>,
       {
+        // SAFETY: stand-ins implement Ink's consumed stream subset. The
+        // intermediate unknown is required by TS2352, not a runtime conversion.
         stdout: stdoutForInk as NodeJS.WriteStream,
+        // SAFETY: same tested readable stream subset as the stdout stand-in above.
         stdin: stdinForInk as NodeJS.ReadStream,
         debug: true,
         exitOnCtrlC: false,
@@ -102,6 +107,12 @@ function mountWithMouse(node: React.ReactElement) {
     proxy,
     stdout,
     lastFrame: () => stdout.frames.at(-1) ?? "",
+    rerender: (next: React.ReactElement) =>
+      act(() =>
+        instance.rerender(
+          <MouseDispatchProvider dispatcher={dispatcher}>{next}</MouseDispatchProvider>,
+        ),
+      ),
     /** Raw SGR click (press + release) at a terminal cell. */
     click: (x: number, y: number) => {
       act(() => {
@@ -115,7 +126,88 @@ function mountWithMouse(node: React.ReactElement) {
   };
 }
 
+function KeyboardListener() {
+  useInput(() => {});
+  return null;
+}
+
 describe("useMouseRegion through real Ink render", () => {
+  test("retained content releases mouse ownership while a root overlay covers it", () => {
+    const hits: string[] = [];
+    const node = (suspended: boolean) => (
+      <RootContentSuspension suspended={suspended}>
+        <KeyboardListener />
+        <MouseTarget id="retained" onClick={() => hits.push("click")}>
+          <Text>result</Text>
+        </MouseTarget>
+      </RootContentSuspension>
+    );
+    const handle = mountWithMouse(node(false));
+    try {
+      const region = handle.dispatcher.debugRegions()[0];
+      if (!region) throw new Error("Expected visible hit region");
+      handle.rerender(node(true));
+      expect(handle.dispatcher.size).toBe(0);
+      handle.click(region.rect.x, region.rect.y);
+      expect(hits).toEqual([]);
+      handle.rerender(node(false));
+      handle.click(region.rect.x, region.rect.y);
+      expect(hits).toEqual(["click"]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("a retained target with no visible area releases its old hit rectangle", () => {
+    const hits: string[] = [];
+    function Target({ width }: { width: number }) {
+      const ref = useRef(null);
+      useMouseRegion(ref, "shrinking", { onClick: () => hits.push("click") });
+      return (
+        <Box ref={ref} width={width} height={1}>
+          <Text>row</Text>
+        </Box>
+      );
+    }
+    const node = (width: number) => (
+      <Box>
+        <KeyboardListener />
+        <Target width={width} />
+      </Box>
+    );
+    const handle = mountWithMouse(node(10));
+    try {
+      expect(handle.dispatcher.size).toBe(1);
+      handle.rerender(node(0));
+      expect(handle.dispatcher.size).toBe(0);
+      handle.click(1, 1);
+      expect(hits).toEqual([]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("an unrelated render between press and release does not eat a click", () => {
+    const hits: string[] = [];
+    const node = (label: string) => (
+      <Box>
+        <KeyboardListener />
+        <MouseTarget id="stable" onClick={() => hits.push(label)}>
+          <Text>{label}</Text>
+        </MouseTarget>
+      </Box>
+    );
+    const handle = mountWithMouse(node("first"));
+    try {
+      act(() => handle.source.feed("\x1b[<0;1;1M"));
+      handle.rerender(node("later"));
+      act(() => handle.source.feed("\x1b[<0;1;1m"));
+      expect(hits).toEqual(["later"]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("a press+release inside the measured rect fires onClick", () => {
     const log: LogEntry[] = [];
     const { Probe } = makeProbe(log);
@@ -184,6 +276,31 @@ describe("useMouseRegion through real Ink render", () => {
 });
 
 describe("MouseDispatcher", () => {
+  test.each(["drag", "wrong-button", "moved-region"] as const)(
+    "%s cancels a pending click",
+    (mode) => {
+      const dispatcher = new MouseDispatcher();
+      let clicks = 0;
+      const rect = { x: 1, y: 1, width: 10, height: 3 };
+      const handlers = {
+        onClick: () => {
+          clicks += 1;
+        },
+      };
+      dispatcher.register("row", rect, handlers);
+      const event = { x: 2, y: 2, button: "left", ctrl: false, shift: false, alt: false } as const;
+      dispatcher.dispatch({ ...event, kind: "press" });
+      if (mode === "drag") dispatcher.dispatch({ ...event, kind: "drag" });
+      if (mode === "moved-region") dispatcher.register("row", { ...rect, x: 2 }, handlers);
+      dispatcher.dispatch({
+        ...event,
+        kind: "release",
+        button: mode === "wrong-button" ? "right" : "left",
+      });
+      expect(clicks).toBe(0);
+    },
+  );
+
   test("overlapping regions resolve to the most recently registered", () => {
     const dispatcher = new MouseDispatcher();
     const hits: string[] = [];
@@ -390,5 +507,56 @@ describe("BrowseShell mouse rows", () => {
     });
     expect(lastFrame()).toContain("▌ Alpha One");
     unmount();
+  });
+
+  test("a click restores list focus before it can open the remembered row", () => {
+    const handle = mountBrowse();
+    try {
+      const search = handle.dispatcher
+        .debugRegions()
+        .find((region) => region.id === "browse:search");
+      if (!search) throw new Error("Search input has no mouse region");
+      handle.click(search.rect.x, search.rect.y);
+      let cell = rowCenter(handle.dispatcher, 0);
+      handle.click(cell.x, cell.y);
+      expect(handle.submitted).toEqual([]);
+      expect(handle.lastFrame()).toContain("▌ Alpha One");
+      cell = rowCenter(handle.dispatcher, 0);
+      handle.click(cell.x, cell.y);
+      expect(handle.submitted).toEqual(["first"]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("the command palette shields results from pointer activation", () => {
+    const handle = mountBrowse();
+    try {
+      const cell = rowCenter(handle.dispatcher, 0);
+      act(() => handle.source.feed("/"));
+      handle.click(cell.x, cell.y);
+      expect(handle.submitted).toEqual([]);
+      expect(
+        handle.dispatcher.debugRegions().some((region) => region.id.startsWith("browse:row:")),
+      ).toBe(false);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("wheel scrolling stops at the list edges instead of wrapping", () => {
+    const handle = mountBrowse();
+    try {
+      let cell = rowCenter(handle.dispatcher, 0);
+      act(() => handle.source.feed(`\x1b[<64;${cell.x};${cell.y}M`));
+      expect(handle.lastFrame()).toContain("▌ Alpha One");
+      cell = rowCenter(handle.dispatcher, 2);
+      handle.click(cell.x, cell.y);
+      act(() => handle.source.feed(`\x1b[<65;${cell.x};${cell.y}M`));
+      expect(handle.lastFrame()).toContain("▌ Gamma Three");
+      expect(handle.submitted).toEqual([]);
+    } finally {
+      handle.unmount();
+    }
   });
 });

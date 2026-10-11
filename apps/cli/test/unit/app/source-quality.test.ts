@@ -13,6 +13,7 @@ import {
   streamSelectionFromSource,
   streamSelectionFromStream,
   streamSelectionFromTrackPick,
+  shouldOfferPrePlayConfirm,
   shouldSkipExternalSubtitleLookup,
 } from "@/app/playback/source-quality";
 import type { StreamInfo } from "@/domain/types";
@@ -458,6 +459,60 @@ test("applyPreferredStreamSelection falls back to best quality in preferred sour
   expect(next.providerResolveResult?.selectedStreamId).toBe("stream-480-source-b");
 });
 
+test("applyPreferredStreamSelection fails over to a same-label sibling when the pinned stream is dead", () => {
+  const result = streamWithCandidates.providerResolveResult;
+  if (!result) throw new Error("fixture needs an inventory");
+  const deadFirst = {
+    ...streamWithCandidates,
+    providerResolveResult: {
+      ...result,
+      selectedStreamId: "stream-1080-dead",
+      streams: [
+        {
+          id: "stream-1080-dead",
+          providerId: "vidking",
+          sourceId: "source-a",
+          protocol: "hls" as const,
+          container: "m3u8" as const,
+          qualityLabel: "1080p",
+          qualityRank: 1080,
+          headers: { referer: "https://example.com" },
+          confidence: 0.9,
+          cachePolicy: {
+            ttlClass: "stream-manifest" as const,
+            scope: "local" as const,
+            keyParts: [],
+          },
+        },
+        {
+          id: "stream-1080-live",
+          providerId: "vidking",
+          sourceId: "source-a",
+          protocol: "hls" as const,
+          container: "m3u8" as const,
+          qualityLabel: "1080p",
+          qualityRank: 1080,
+          url: "https://cdn2.example/1080.m3u8",
+          headers: { referer: "https://example.com" },
+          confidence: 0.9,
+          cachePolicy: {
+            ttlClass: "stream-manifest" as const,
+            scope: "local" as const,
+            keyParts: [],
+          },
+        },
+      ],
+    },
+  };
+
+  const next = applyPreferredStreamSelection(
+    deadFirst,
+    streamSelectionFromStream("stream-1080-dead"),
+  );
+  expect(next.url).toBe("https://cdn2.example/1080.m3u8");
+  expect(next.providerResolveResult?.selectedStreamId).toBe("stream-1080-live");
+});
+
 test("applyPreferredStreamSelection clears provider subtitle from a different source", () => {
   const next = applyPreferredStreamSelection(
     {
@@ -524,4 +579,40 @@ test("streamSelectionFromTrackPick maps each panel section to a restart intent",
 test("shouldSkipExternalSubtitleLookup is true when hardsub satisfies preference", () => {
   expect(shouldSkipExternalSubtitleLookup(streamWithCandidates, "en")).toBe(true);
   expect(shouldSkipExternalSubtitleLookup(streamWithCandidates, "interactive")).toBe(false);
+});
+
+test("shouldOfferPrePlayConfirm honors the mode contract", () => {
+  const withChoices = buildPlaybackControlSummary(streamWithSubtitles);
+  expect(shouldOfferPrePlayConfirm("off", withChoices)).toBe(false);
+  expect(shouldOfferPrePlayConfirm("when-choices", withChoices)).toBe(true);
+  expect(shouldOfferPrePlayConfirm("always", withChoices)).toBe(true);
+
+  // A bare direct stream has no inventory to confirm — never prompt on it.
+  const direct = buildPlaybackControlSummary(null);
+  expect(shouldOfferPrePlayConfirm("when-choices", direct)).toBe(false);
+  expect(shouldOfferPrePlayConfirm("always", direct)).toBe(false);
+});
+
+test("shouldOfferPrePlayConfirm skips inventories with nothing switchable", () => {
+  const summary = buildPlaybackControlSummary(streamWithSubtitles);
+  // Same inventory shape but a single source, a single playable stream, and
+  // no track controls — "when-choices" must not nag on a dead-simple play.
+  expect(
+    shouldOfferPrePlayConfirm("when-choices", {
+      ...summary,
+      sourceCount: 1,
+      showSourceControl: true,
+      showQualityControl: false,
+      showMediaTrackControl: false,
+    }),
+  ).toBe(false);
+  // Multiple real sources still prompt even when quality is fixed.
+  expect(
+    shouldOfferPrePlayConfirm("when-choices", {
+      ...summary,
+      sourceCount: 2,
+      showQualityControl: false,
+      showMediaTrackControl: false,
+    }),
+  ).toBe(true);
 });

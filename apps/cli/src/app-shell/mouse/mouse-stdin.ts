@@ -43,10 +43,19 @@ type StdinLike = EventEmitter & {
 };
 
 function chunkToText(chunk: StdinChunk): string {
-  return chunk instanceof Uint8Array ? chunk.toString("utf8") : chunk;
+  // Real readable streams may supply text or bytes; normalize at this I/O boundary.
+  // eslint-disable-next-line anti-slop/no-runtime-typeof
+  return typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
 }
 
 const PENDING_TAIL_LIMIT = 64;
+const PENDING_TAIL_IDLE_MS = 50;
+
+function scheduleTailFlush(flush: () => void): () => void {
+  const timer = setTimeout(flush, PENDING_TAIL_IDLE_MS);
+  timer.unref();
+  return () => clearTimeout(timer);
+}
 
 export class MouseSplitStdin extends EventEmitter {
   private readonly buffer: string[] = [];
@@ -55,6 +64,8 @@ export class MouseSplitStdin extends EventEmitter {
   private tracking = false;
   private detached = false;
   private readonly stdoutWrite: (data: string) => void;
+  private readonly scheduleTailFlush: (flush: () => void) => () => void;
+  private cancelTailFlush: (() => void) | null = null;
 
   constructor(
     private readonly source: StdinLike,
@@ -62,10 +73,13 @@ export class MouseSplitStdin extends EventEmitter {
     options: {
       /** Defaults to `process.stdout.write`. Injectable for tests. */
       readonly write?: (data: string) => void;
+      /** Returns cancellation; tests drive idle expiry without wall-clock sleeps. */
+      readonly scheduleTailFlush?: (flush: () => void) => () => void;
     } = {},
   ) {
     super();
     this.stdoutWrite = options.write ?? ((data) => process.stdout.write(data));
+    this.scheduleTailFlush = options.scheduleTailFlush ?? scheduleTailFlush;
     this.onSourceReadable = () => this.emit("readable");
   }
 
@@ -77,6 +91,10 @@ export class MouseSplitStdin extends EventEmitter {
   /** Stop forwarding and restore terminal mouse tracking if it was enabled. */
   detach(): void {
     this.detached = true;
+    this.cancelTailFlush?.();
+    this.cancelTailFlush = null;
+    this.pendingTail = "";
+    this.buffer.length = 0;
     this.source.removeListener("readable", this.onSourceReadable);
     this.disableTracking();
   }
@@ -96,6 +114,8 @@ export class MouseSplitStdin extends EventEmitter {
   // -- Input side: one source chunk → mouse events + clean-byte queue --------
 
   private ingest(chunk: StdinChunk): void {
+    this.cancelTailFlush?.();
+    this.cancelTailFlush = null;
     const text = chunkToText(chunk);
     const { input, events, pendingTail } = splitMouseSequences(this.pendingTail + text);
     if (input.length > 0) {
@@ -110,6 +130,17 @@ export class MouseSplitStdin extends EventEmitter {
       this.pendingTail = "";
     } else {
       this.pendingTail = pendingTail;
+      if (pendingTail) {
+        this.cancelTailFlush = this.scheduleTailFlush(() => {
+          this.cancelTailFlush = null;
+          if (this.detached || !this.pendingTail) return;
+          // Preserve bytes: an incomplete report is indistinguishable from
+          // someone typing digits and semicolons after a damaged prefix.
+          this.buffer.push(this.pendingTail);
+          this.pendingTail = "";
+          this.emit("readable");
+        });
+      }
     }
     for (const event of events) {
       const handled = this.dispatcher?.dispatch(event) === true;

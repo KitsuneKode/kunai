@@ -114,6 +114,8 @@ export interface EpisodePickerOption {
 }
 
 export interface StreamInfo {
+  /** Presentation authority only; local player access still requires a validated LocalPlaybackSource. */
+  readonly playbackSourceKind?: "local";
   readonly url: string;
   readonly deferredLocator?: string;
   readonly headers: Record<string, string>;
@@ -130,14 +132,6 @@ export interface StreamInfo {
   readonly ytdlRawOptions?: string;
   readonly isLive?: boolean;
   readonly liveStatus?: string;
-  /**
-   * Demuxer shaping the provider asks mpv for. `"capped-readahead"` bounds
-   * mpv's read-ahead queue for CDN hosts that rate-limit burst segment pulls
-   * (the megaplay-family hosts kill IPs pulling ~100 uncached segments in
-   * 10s — ani-cli mitigates with `--cache-secs=120`; here the readahead cap
-   * does the same work at the demuxer).
-   */
-  readonly demuxerProfile?: "capped-readahead";
   readonly providerResolveResult?: SharedProviderResolveResult;
   readonly cacheProvenance?:
     | "fresh"
@@ -261,13 +255,10 @@ export interface ProviderMetadata {
   readonly name: string;
   readonly aliases?: readonly string[];
   readonly description: string;
-  readonly recommended: boolean;
   readonly isAnimeProvider: boolean;
   readonly isYoutubeProvider: boolean;
   readonly providerLane: ProviderLane;
   readonly catalogIdentity?: "provider-native" | "anilist" | "tmdb";
-  /** Display-only; mirrors `ProviderManifestStatus` in `@kunai/core`. */
-  readonly status?: "production" | "candidate";
   readonly domain?: string;
 }
 
@@ -275,9 +266,4 @@ export interface SearchMetadata {
   readonly id: string;
   readonly name: string;
   readonly description: string;
-}
-
-// Capabilities
-export interface ProviderCapabilities {
-  readonly contentTypes: ContentType[];
 }

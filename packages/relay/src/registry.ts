@@ -29,9 +29,13 @@ export function buildProviderRelayRegistry(
         entry.profile.upstreamHosts.some((host) => hostMatches(parsed.hostname, host)),
       );
     },
-    isHostAllowed(providerId, url) {
+    isHostAllowed(providerId, url, kind) {
       const parsed = parseHttpUrl(url);
       if (!parsed) return false;
+      // The relay is metadata-only (no media route by contract). The kind
+      // parameter is enforced rather than ignored so a future non-metadata
+      // lane cannot slip through today's metadata allowlist unnoticed.
+      if (kind !== "metadata") return false;
       const entry = providers.find((candidate) => candidate.providerId === providerId);
       if (!entry) return false;
       return entry.profile.upstreamHosts.some((host) => hostMatches(parsed.hostname, host));

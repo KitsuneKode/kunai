@@ -29,6 +29,9 @@ const runtime: PosterRuntime = {
 // PTY after Ink frames. 256 colours roughly doubles both encode time and bytes
 // on the wire without a meaningful gain at terminal-poster dimensions.
 const APP_SHELL_SIXEL_MAX_COLORS = 64;
+// Every repaint re-sends every byte through the PTY; past this the stream
+// degrades (fewer colours, smaller) and then fails closed to half-block.
+const APP_SHELL_SIXEL_MAX_BYTES = 256 * 1024;
 
 let nextId = 1;
 function allocId(): number {
@@ -243,10 +246,15 @@ export async function renderPreparedPoster(
       };
     }
     if (plan.renderer === "sixel") {
-      const sixel = renderSixelFromImage(poster.image, {
-        ...pixelBudgetForCells(cols, rows),
-        maxColors: APP_SHELL_SIXEL_MAX_COLORS,
-      });
+      const sixel = renderSixelFromImage(
+        poster.image,
+        {
+          ...pixelBudgetForCells(cols, rows),
+          maxColors: APP_SHELL_SIXEL_MAX_COLORS,
+          maxBytes: APP_SHELL_SIXEL_MAX_BYTES,
+        },
+        signal,
+      );
       if (!sixel) return { kind: "none" };
       return {
         kind: "sixel",

@@ -13,11 +13,12 @@ import type {
   SubtitleTrack,
   TitleInfo,
 } from "@/domain/types";
+import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { registerMpvProcess, terminateMpvProcess } from "@/infra/player/mpv-process-registry";
 import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
 import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
-import { buildMpvArgs, shouldApplyStartAtSeek } from "@/mpv";
+import { buildMpvArgs, shouldApplyStartAtSeek, writeMpvSensitiveConf } from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { resolveTuning } from "@/services/persistence/tuning";
 import { checkStreamPreflight } from "@/services/playback/stream-health-check";
@@ -43,6 +44,7 @@ import {
   shouldUnlinkUnixSocket,
 } from "./mpv-ipc-endpoint";
 import { shouldEmitPlaybackProgress } from "./mpv-playback-kernel";
+import { needsMpvNetworkPreflight } from "./mpv-playback-url";
 import type { MpvUrlKind } from "./mpv-playback-url";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import {
@@ -99,7 +101,7 @@ const RECONNECT_ATTEMPT_CEILING = 12;
 
 type InProcessReconnectTrigger = "network-read-dead" | "premature-eof" | "error";
 
-type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill" | "signalCode">;
+type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill">;
 
 const defaultPersistentMpvSessionRuntime: PersistentMpvSessionRuntime = {
   which: (command) => whichLive(command),
@@ -235,6 +237,7 @@ export class PersistentMpvSession {
   } | null = null;
   private readyWorkFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private terminationPromise: Promise<void> | null = null;
+  private closePromise: Promise<void> | null = null;
   private terminated = false;
   private lastSkipTo = -1;
   private nearEofFired = false;
@@ -434,11 +437,13 @@ export class PersistentMpvSession {
 
     this.loadStartAt = shouldApplyStartAtSeek(options.startAt) ? (options.startAt ?? 0) : 0;
 
-    const preflightPromise = checkStreamPreflight(stream.url, stream.headers, undefined, {
-      cachedAt: stream.timestamp,
-      streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
-      requiresYtdl: stream.requiresYtdl,
-    });
+    const preflightPromise = needsMpvNetworkPreflight(stream.url, options.urlKind)
+      ? checkStreamPreflight(stream.url, stream.headers, undefined, {
+          cachedAt: stream.timestamp,
+          streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
+          requiresYtdl: stream.requiresYtdl,
+        })
+      : Promise.resolve({ status: "reachable" as const });
 
     if (options.timing) {
       try {
@@ -469,7 +474,6 @@ export class PersistentMpvSession {
           ytdlFormat: stream.ytdlFormat,
           ytdlRawOptions: stream.ytdlRawOptions,
           isLive: stream.isLive,
-          demuxerProfile: stream.demuxerProfile,
           urlKind: options.urlKind,
           audioPreference: options.audioPreference,
           chaptersFile: this.currentChaptersFilePath,
@@ -554,6 +558,12 @@ export class PersistentMpvSession {
   }
 
   async close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closePromise = this.performClose();
+    return this.closePromise;
+  }
+
+  private async performClose(): Promise<void> {
     this.currentCycleOptions().onPlaybackEvent?.({ type: "player-closing" });
     this.clearReadyWorkFallback();
     this.pendingReadyWork = null;
@@ -572,8 +582,8 @@ export class PersistentMpvSession {
 
     if (this.ipcSession) {
       this.abortResumeChoiceWaitForCycleEnd();
-      void this.ipcSession.send(["set_property", "user-data/kunai-loading", ""], 500);
-      const result = await this.ipcSession.send(["quit"], 1_000);
+      void this.ipcSession.send(["set_property", "user-data/kunai-loading", ""], 400);
+      const result = await this.ipcSession.send(["quit"], 500);
       if (!result.ok) {
         target?.kill("SIGTERM");
       }
@@ -581,27 +591,23 @@ export class PersistentMpvSession {
       target?.kill("SIGTERM");
     }
 
-    let closed = await this.waitForProcessClose(target, 1_500);
+    let closed = await this.waitForProcessClose(target, 800);
     if (!closed) {
       target?.kill("SIGTERM");
-      closed = await this.waitForProcessClose(target, 1_500);
+      closed = await this.waitForProcessClose(target, 800);
     }
     if (!closed) {
       target?.kill("SIGKILL");
-      closed = await this.waitForProcessClose(target, 1_000);
+      closed = await this.waitForProcessClose(target, 500);
     }
 
     await this.handleProcessTermination({
       code: target?.exitCode ?? (closed ? 0 : null),
-      // A crash signal observed before/during teardown outranks the signal we
-      // sent — the player faulted, it was not stopped.
-      signal:
-        target?.signalCode ??
-        (target?.killed
-          ? ("SIGTERM" as NodeJS.Signals)
-          : closed
-            ? null
-            : ("SIGKILL" as NodeJS.Signals)),
+      signal: target?.killed
+        ? ("SIGTERM" as NodeJS.Signals)
+        : closed
+          ? null
+          : ("SIGKILL" as NodeJS.Signals),
     });
   }
 
@@ -630,6 +636,15 @@ export class PersistentMpvSession {
       }
     }
 
+    const sensitiveConf = await writeMpvSensitiveConf(
+      {
+        url: this.initialStream.url,
+        headers: this.initialStream.headers ?? {},
+        requiresYtdl: this.initialStream.requiresYtdl,
+        ytdlRawOptions: this.initialStream.ytdlRawOptions,
+      },
+      this.ipcEndpoint,
+    );
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
@@ -643,7 +658,6 @@ export class PersistentMpvSession {
         displayTitle: this.initialOptions.displayTitle,
         startAt: this.initialStream.isLive ? undefined : this.initialOptions.startAt,
         isLive: this.initialStream.isLive,
-        demuxerProfile: this.initialStream.demuxerProfile,
         requiresYtdl: this.initialStream.requiresYtdl,
         ytdlFormat: this.initialStream.ytdlFormat,
         ytdlRawOptions: this.initialStream.ytdlRawOptions,
@@ -656,6 +670,7 @@ export class PersistentMpvSession {
         includeStartArg,
         scriptPath: this.luaScriptPath ?? undefined,
         scriptOpts: this.scriptOptsArg,
+        sensitiveOptionsPath: sensitiveConf?.path,
       },
     );
     this.loadStartAt =
@@ -663,6 +678,22 @@ export class PersistentMpvSession {
     this.subtitlesAttachedAtSpawn = Boolean(this.initialOptions.primarySubtitle);
     this.titleAppliedViaArgs = true;
 
+    try {
+      await this.spawnProcessAndConnect(mpvOptions, args);
+    } finally {
+      // The conf's only reader is mpv's startup config parse — once spawn()
+      // has settled (IPC ready, bootstrap failure, or spawn throw) the file
+      // has no further consumer.
+      await sensitiveConf?.cleanup();
+    }
+  }
+
+  /** The spawn→IPC-connect tail of {@link spawn} — kept separate so the
+   * sensitive-conf cleanup wraps every exit path with one finally. */
+  private async spawnProcessAndConnect(
+    mpvOptions: MpvRuntimeOptions | undefined,
+    args: string[],
+  ): Promise<void> {
     const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
       const active = this.activeCycle;
       if (active && (event.type === "stream-stalled" || event.type === "ipc-stalled")) {
@@ -698,7 +729,7 @@ export class PersistentMpvSession {
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",
-      env: process.env as Record<string, string>,
+      env: scrubbedChildEnv(),
     });
     this.mpv = proc;
     this.mpvUnregister = registerMpvProcess(proc);
@@ -715,9 +746,7 @@ export class PersistentMpvSession {
     proc.exited.then((code) => {
       void this.handleProcessTermination({
         code,
-        // A real crash signal (SIGSEGV/...) must reach recordPlayerExit so it
-        // classifies as an error, never as a completed watch.
-        signal: proc.signalCode ?? (proc.killed ? ("SIGTERM" as NodeJS.Signals) : null),
+        signal: proc.killed ? ("SIGTERM" as NodeJS.Signals) : null,
       });
       return undefined;
     });
@@ -1640,8 +1669,12 @@ export class PersistentMpvSession {
         ? Math.min(this.reconnectMaxBackoffMs, this.reconnectBaseBackoffMs * 2 ** (nextAttempt - 2))
         : 0;
     if (backoffBefore > 0) {
-      await Bun.sleep(backoffBefore);
-      if (!this.isGenerationCurrent(reconnectGeneration)) return false;
+      const sleepDeadline = Date.now() + backoffBefore;
+      while (Date.now() < sleepDeadline) {
+        if (this.retired || !this.isGenerationCurrent(reconnectGeneration)) return false;
+        await Bun.sleep(Math.min(50, Math.max(1, sleepDeadline - Date.now())));
+      }
+      if (this.retired || !this.isGenerationCurrent(reconnectGeneration)) return false;
     }
 
     this.reconnectInFlight = true;
@@ -1692,7 +1725,6 @@ export class PersistentMpvSession {
             ytdlFormat: this.playbackStream.ytdlFormat,
             ytdlRawOptions: this.playbackStream.ytdlRawOptions,
             isLive: this.playbackStream.isLive,
-            demuxerProfile: this.playbackStream.demuxerProfile,
             urlKind: opts.urlKind,
             audioPreference: opts.audioPreference,
             chaptersFile: this.currentChaptersFilePath ?? undefined,

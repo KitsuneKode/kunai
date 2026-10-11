@@ -55,11 +55,7 @@ export function providerResolveResultToStreamInfo(
 
   const subtitleSource = resolveSubtitleSource(result.subtitles, subtitleList);
   const liveMetadata = selected.metadata as
-    | {
-        readonly isLive?: boolean;
-        readonly liveStatus?: string;
-        readonly demuxerProfile?: string;
-      }
+    | { readonly isLive?: boolean; readonly liveStatus?: string }
     | undefined;
 
   return {
@@ -78,8 +74,6 @@ export function providerResolveResultToStreamInfo(
     // profile on a stream that is genuinely broadcasting.
     isLive: liveMetadata?.isLive === true || liveMetadata?.liveStatus === "live",
     liveStatus: liveMetadata?.liveStatus,
-    demuxerProfile:
-      liveMetadata?.demuxerProfile === "capped-readahead" ? "capped-readahead" : undefined,
     subtitle: pickedSubtitle?.url,
     subtitleList,
     subtitleSource,

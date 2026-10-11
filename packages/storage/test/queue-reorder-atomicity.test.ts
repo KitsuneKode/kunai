@@ -88,8 +88,8 @@ test("a reorder interrupted mid-batch leaves the original ordering, not a partia
     .getAll("session")
     .map((entry) => [entry.title, entry.queuePosition] as const);
 
-  // Reverse the queue, failing on the third of four writes.
-  const { db: flaky } = failingDbAfter(store, 3);
+  // Reverse the queue, failing the single set-based write.
+  const { db: flaky } = failingDbAfter(store, 1);
   const flakyRepo = new QueueRepository(flaky);
 
   expect(() => flakyRepo.setQueuePositions([...ids].reverse())).toThrow(
@@ -117,4 +117,25 @@ test("a completed reorder still applies every position", () => {
 
   expect(repo.getAll("session").map((entry) => entry.title)).toEqual(["d", "c", "b", "a"]);
   expect(repo.getAll("session").map((entry) => entry.queuePosition)).toEqual([0, 1, 2, 3]);
+});
+
+test("a failed priority insertion rolls back the new row and every position", () => {
+  const store = stores.store("queue-priority-atomicity", "data");
+  const { repo } = seedQueue(store);
+  const before = repo.getAll("session");
+  // Fail the single set-based reorder that follows the insert: the insert must
+  // roll back with it.
+  const { db: flaky } = failingDbAfter(store, 1);
+
+  expect(() =>
+    new QueueRepository(flaky).enqueue({
+      title: "next",
+      mediaKind: "movie",
+      titleId: "tmdb:99",
+      priority: 100,
+      source: "manual",
+      sessionId: "session",
+    }),
+  ).toThrow("simulated interruption mid-reorder");
+  expect(repo.getAll("session")).toEqual(before);
 });

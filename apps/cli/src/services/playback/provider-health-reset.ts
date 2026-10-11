@@ -1,10 +1,6 @@
 import type { Container } from "@/container";
 import { providerMetadataMatchesLane } from "@/domain/provider-lane";
-import type { ProviderLane, ProviderMetadata } from "@/domain/types";
-import {
-  formatProviderHealthBadge,
-  resolveEffectiveProviderHealth,
-} from "@/services/playback/provider-health-policy";
+import type { ProviderLane } from "@/domain/types";
 import type { ProviderId } from "@kunai/types";
 
 export type ProviderHealthResetScope =
@@ -208,26 +204,4 @@ export async function applyProviderHealthResetScope(
   });
 
   return { clearedGlobal, clearedTitle, clearedEndpoints };
-}
-
-export function buildEffectiveHealthByProviderId(
-  providers: readonly ProviderMetadata[],
-  getStoredHealth: (providerId: ProviderId) => import("@kunai/types").ProviderHealth | undefined,
-  now: Date = new Date(),
-): Map<string, ReturnType<typeof resolveEffectiveProviderHealth>> {
-  const map = new Map<string, ReturnType<typeof resolveEffectiveProviderHealth>>();
-  for (const provider of providers) {
-    const effective = resolveEffectiveProviderHealth(getStoredHealth(provider.id), now);
-    if (effective) map.set(provider.id, effective);
-  }
-  return map;
-}
-
-export function formatProviderHealthPickerDetail(
-  providerId: string,
-  effectiveHealth: ReturnType<typeof resolveEffectiveProviderHealth> | undefined,
-): string | undefined {
-  void providerId;
-  const badge = formatProviderHealthBadge(effectiveHealth ?? undefined);
-  return badge ? `Health: ${badge}` : undefined;
 }

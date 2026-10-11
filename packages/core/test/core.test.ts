@@ -60,7 +60,6 @@ const miruroManifest = defineProviderManifest({
   cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: ["provider"] },
   browserSafe: true,
   relaySafe: true,
-  status: "candidate",
 });
 
 const rivestreamManifest = defineProviderManifest({
@@ -83,7 +82,6 @@ const rivestreamManifest = defineProviderManifest({
   cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: ["provider"] },
   browserSafe: false,
   relaySafe: true,
-  status: "candidate",
 });
 
 const vidkingManifest = defineProviderManifest({
@@ -230,11 +228,6 @@ test("active direct providers declare cache and runtime boundaries", () => {
     expect(manifest.cachePolicy.keyParts).toContain("provider");
     expect(manifest.runtimePorts.length).toBeGreaterThan(0);
   }
-
-  expect(vidkingManifest.status).toBe("production");
-  expect(allanimeManifest.status).toBe("production");
-  expect(rivestreamManifest.status).toBe("candidate");
-  expect(miruroManifest.status).toBe("candidate");
 });
 
 test("anime provider manifests expose only implemented media kinds", () => {

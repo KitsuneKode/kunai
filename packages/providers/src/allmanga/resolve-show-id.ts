@@ -1,6 +1,5 @@
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
-import { providerFetch } from "../runtime/fetch";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import { readJsonObjectBody } from "../shared/json-body";
 import { TTLCache } from "../shared/provider-cache";
@@ -99,7 +98,7 @@ async function bridgeAllMangaShowIdFromAnilist(
   context: ProviderRuntimeContext,
 ): Promise<string | null> {
   const animeLang = resolveAnimeAudioIntent(preferredAudioLanguage).catalogMode;
-  const queries = await buildAllMangaBridgeQueries(anilistId, displayTitle, context);
+  const queries = await buildAllMangaBridgeQueries(anilistId, displayTitle, context.signal);
   let transportFailed = false;
 
   for (const query of queries) {
@@ -134,13 +133,13 @@ async function bridgeAllMangaShowIdFromAnilist(
 async function buildAllMangaBridgeQueries(
   anilistId: string,
   displayTitle: string,
-  context: ProviderRuntimeContext,
+  signal?: AbortSignal,
 ): Promise<readonly string[]> {
   const queries: string[] = [...uniqueNonEmpty([displayTitle])];
   try {
-    const response = await providerFetch(context, ANILIST_GRAPHQL, {
+    const response = await fetch(ANILIST_GRAPHQL, {
       method: "POST",
-      signal: createTimeoutSignal(context.signal, ANILIST_BRIDGE_TIMEOUT_MS),
+      signal: createTimeoutSignal(signal, ANILIST_BRIDGE_TIMEOUT_MS),
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
         query: `query ($id: Int) {

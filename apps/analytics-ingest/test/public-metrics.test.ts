@@ -13,6 +13,7 @@ const rollup = {
   day: "2026-08-13",
   computedAt: "2026-08-14T00:05:00.000Z",
   activeInstalls: 128,
+  newInstalls: 9,
   byVersion: { "0.3.0": 96, "0.2.5": 30, "0.1.0": 2 },
   byOs: { linux: 80, darwin: 44, win32: 4 },
   byArch: { x64: 96, arm64: 32 },

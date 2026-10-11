@@ -509,12 +509,6 @@ export interface EndpointHealthFailureInfo {
   readonly class: EndpointFailureClass;
   readonly titleId?: string;
   readonly at: string;
-  /**
-   * The upstream's `Retry-After` hint in milliseconds, when the failure carried
-   * one. Treated as a floor on whatever cooldown/quarantine the class would
-   * otherwise produce — never a reduction of it.
-   */
-  readonly retryAfterMs?: number;
 }
 
 export interface ProviderEndpointHealthRecord {
@@ -579,28 +573,25 @@ export interface ProviderResolveInput {
   readonly preferredSubtitleDelivery?: SubtitleDelivery;
   readonly qualityPreference?: string;
   readonly startupPriority?: StartupPriority;
-  readonly regionHint?: string;
-  readonly intent: "browse" | "focused" | "prefetch" | "play" | "refresh" | "autoplay";
+  readonly intent: "play" | "refresh";
   readonly allowedRuntimes: readonly ProviderRuntime[];
 }
 
-export type ProviderRetryBackoff = "none" | "fixed" | "exponential";
-
 export interface ProviderRetryPolicy {
   readonly maxAttempts: number;
-  readonly backoff: ProviderRetryBackoff;
-  readonly delayMs?: number;
-  readonly retryableCodes?: readonly ResolveErrorCode[];
-}
-
-export interface ProviderAbortState {
-  readonly aborted: boolean;
-  readonly reason?: "user-cancelled" | "provider-fallback" | "timeout" | "shutdown";
 }
 
 export interface ProviderFetchPort {
   readonly runtime: "browser-safe-fetch" | "direct-http";
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
+  /**
+   * Whether this port resolves `url`'s hostname on the local machine. A relay
+   * port resolves on the relay's side for hosts it forwards — local DNS
+   * answers mean nothing there — but direct fall-through (relay off,
+   * unauthorized fallback, non-registered upstream) resolves locally, so
+   * SSRF DNS re-validation still applies to those requests.
+   */
+  readonly resolvesLocally?: (url: string) => boolean;
 }
 
 /**
@@ -616,40 +607,6 @@ export const RELAYED_RESPONSE_HEADER = "X-Kunai-Relayed";
 /** True when this response was produced by the relay rather than a local fetch. */
 export function isRelayedResponse(response: Response): boolean {
   return response.headers.get(RELAYED_RESPONSE_HEADER) === "1";
-}
-
-/**
- * Field a fetch port stamps on a rethrown error when the failure is
- * relay-owned and the user opted out of direct fallback
- * (`fallbackToDirect: false`). The relay is a privacy boundary: without the
- * marker, a transport layer would catch the throw and retry the same upstream
- * URL over curl or raw fetch — silently bypassing the relay the user deployed.
- * Duck-typed rather than `instanceof` so the flag survives error
- * reconstitution across package boundaries.
- */
-export const RELAY_OWNED_ERROR_FIELD = "kunaiRelayOwnedFailure";
-
-/** Narrow carrier for the marker — a known optional field, not an open map. */
-type RelayOwnedCarrier = { kunaiRelayOwnedFailure?: unknown };
-
-export function markRelayOwnedError<T>(error: T): T {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- marker survives error reconstitution because it is duck-typed; no prototype is trusted
-  if (typeof error === "object" && error !== null) {
-    // SAFETY: object-guarded above; the marker is an optional own-property we own end to end.
-    (error as RelayOwnedCarrier)[RELAY_OWNED_ERROR_FIELD] = true;
-  }
-  return error;
-}
-
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- boundary probe: the thrown value's type is exactly what the predicate answers
-export function isRelayOwnedError(error: unknown): boolean {
-  return (
-    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- duck-typed marker read; the field IS the contract
-    typeof error === "object" &&
-    error !== null &&
-    // SAFETY: object-guarded above; reading an optional marker field.
-    (error as RelayOwnedCarrier)[RELAY_OWNED_ERROR_FIELD] === true
-  );
 }
 
 export type RelayMethod = "GET" | "POST" | "HEAD";
@@ -818,45 +775,19 @@ export interface ProviderResolveResult extends ProviderSourceInventory {
   readonly streamReachabilityVerified?: boolean;
 }
 
-export function isProviderStreamReachabilityVerified(
-  result: Pick<ProviderResolveResult, "streamReachabilityVerified"> | null | undefined,
-): boolean {
-  return result?.streamReachabilityVerified === true;
-}
-
-export function getProviderSourceInventory(result: ProviderResolveResult): ProviderSourceInventory {
-  return {
-    providerId: result.providerId,
-    selectedStreamId: result.selectedStreamId,
-    sources: result.sources,
-    variants: result.variants,
-    streams: result.streams,
-    subtitles: result.subtitles,
-    externalIds: result.externalIds,
-    release: result.release,
-    artwork: result.artwork,
-  };
-}
-
-export function getProviderResolveStatus(
-  result: Pick<ProviderResolveResult, "status">,
-): ProviderResolveResult["status"] {
-  return result.status;
-}
-
 export function isProviderResolveResultResolved(
   result: ProviderResolveResult,
 ): result is ProviderResolveResult & {
   readonly status: "resolved";
   readonly streams: readonly [StreamCandidate, ...StreamCandidate[]];
 } {
-  return result.status === "resolved" && result.streams.length > 0;
-}
-
-export function isProviderResolveResultExhausted(
-  result: ProviderResolveResult,
-): result is ProviderResolveResult & { readonly status: "exhausted" } {
-  return result.status === "exhausted";
+  return (
+    result.status === "resolved" &&
+    // A stream with neither a url nor a deferred locator cannot play — a
+    // result made only of those is exhausted wearing a resolved status, and
+    // accepting it would stop the fallback chain at a provider with nothing.
+    result.streams.some((stream) => Boolean(stream.url ?? stream.deferredLocator))
+  );
 }
 
 export type ProviderFailureClass =
@@ -906,22 +837,6 @@ export interface ProviderModule<TContext extends ProviderRuntimeContext = Provid
     input: ProviderEpisodeListInput,
     context: TContext,
   ): Promise<readonly ProviderEpisodeOption[] | null>;
-}
-
-export interface PlaybackRecoveryEvent {
-  readonly id: string;
-  readonly at: string;
-  readonly reason:
-    | "manifest-expired"
-    | "segment-failure"
-    | "buffering-timeout"
-    | "provider-fallback"
-    | "subtitle-fallback"
-    | "manual-retry";
-  readonly fromProviderId?: ProviderId;
-  readonly toProviderId?: ProviderId;
-  readonly resumeSeconds?: number;
-  readonly traceId?: string;
 }
 
 export * from "./json-value";

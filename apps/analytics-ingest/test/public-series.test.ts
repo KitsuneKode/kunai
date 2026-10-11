@@ -16,6 +16,7 @@ function rollup(day: string, over: Partial<DailyRollup> = {}): DailyRollup {
     day,
     computedAt: `${day}T00:05:00.000Z`,
     activeInstalls: 100,
+    newInstalls: 10,
     lifetimeInstalls: 400,
     byVersion: { "0.3.0": 100 },
     byOs: { linux: 60, darwin: 40 },

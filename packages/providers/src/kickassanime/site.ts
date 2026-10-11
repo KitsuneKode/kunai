@@ -235,8 +235,12 @@ export function parseKaaPlayerPage(html: string): KaaPlayerPayload | null {
 
 function normalizeHttpsUrl(value: string | undefined): string | undefined {
   if (!value) return undefined;
+  // cat-player now ships the manifest protocol-relative (`//bl.krussdomi.com/…`)
+  // rather than with the doubled slash it used to; a bare `//` has no scheme
+  // for the URL parser, so pin it to https before handing it over.
+  const candidate = value.startsWith("//") ? `https:${value}` : value;
   try {
-    const url = new URL(value);
+    const url = new URL(candidate);
     return url.protocol === "https:" ? url.toString() : undefined;
   } catch {
     return undefined;

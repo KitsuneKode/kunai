@@ -41,10 +41,28 @@ type SeasonSummaryCandidate = SeasonSummary & {
   readonly airDate: string;
 };
 
+export const MAX_TMDB_CACHE_ENTRIES = 100;
+
 // In-memory cache: `${tmdbId}:${season}` → EpisodeInfo[] (raw TMDB rows)
 const epCache = new Map<string, EpisodeInfo[]>();
 const seasonCache = new Map<string, SeasonSummary[]>();
 const showLanguageCache = new Map<string, string>();
+
+function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max = MAX_TMDB_CACHE_ENTRIES): void {
+  if (map.size >= max && !map.has(key)) {
+    const oldest = map.keys().next().value;
+    if (oldest !== undefined) {
+      map.delete(oldest);
+    }
+  }
+  map.set(key, value);
+}
+
+export function clearTmdbMemoryCachesForTest(): void {
+  epCache.clear();
+  seasonCache.clear();
+  showLanguageCache.clear();
+}
 
 function mapTmdbEpisodeRows(rows: readonly Record<string, unknown>[]): EpisodeInfo[] {
   return rows.map((episode) => {
@@ -69,10 +87,10 @@ async function resolveShowOriginalLanguage(tmdbId: string): Promise<string | nul
   try {
     const data = await fetchTmdbJsonCached(`/tv/${tmdbId}?language=en-US`);
     const language = readString(readRecord(data).original_language);
-    showLanguageCache.set(tmdbId, language);
+    setBounded(showLanguageCache, tmdbId, language);
     return language || null;
   } catch {
-    showLanguageCache.set(tmdbId, "");
+    // Transient failure must not poison the session permanently with an empty sentinel
     return null;
   }
 }
@@ -143,7 +161,7 @@ async function fetchEpisodesRaw(tmdbId: string, season: number): Promise<Episode
       mapTmdbEpisodeRows(episodes),
     );
 
-    epCache.set(key, eps);
+    setBounded(epCache, key, eps);
     return eps;
   } catch {
     return null;
@@ -212,7 +230,7 @@ export async function fetchSeasonSummaries(tmdbId: string): Promise<SeasonSummar
       .sort((a, b) => a.number - b.number);
 
     const summaries = await resolvePlayableSeasonSummaries(tmdbId, candidates);
-    seasonCache.set(key, summaries);
+    setBounded(seasonCache, key, summaries);
     return summaries;
   } catch {
     return null;

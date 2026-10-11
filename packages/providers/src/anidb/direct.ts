@@ -371,11 +371,7 @@ export const anidbProviderModule: CoreProviderModule = {
     const metadata = new Map<number, AnimeEpisodeMetadata>();
     mergeSeededEpisodeMetadataInto(metadata, metadataCacheKey);
     if (metadata.size === 0 && pageIds?.officialAid) {
-      const official = await fetchAnidbOfficialEpisodeMetadata(
-        pageIds.officialAid,
-        context.signal,
-        context,
-      );
+      const official = await fetchAnidbOfficialEpisodeMetadata(pageIds.officialAid, context.signal);
       for (const [number, meta] of official) metadata.set(number, meta);
       seedEpisodeMetadataFromProvider(metadataCacheKey, [...official.values()]);
     }
@@ -391,26 +387,23 @@ export const anidbProviderModule: CoreProviderModule = {
         { anilistId, malId: metadataMalId },
         context.signal,
         pass,
-        context,
       );
       mergeExternalEpisodeMetadataInto(metadata, externalMetadata);
     }
 
-    const baseEpisodes = episodes.map(
-      (episode): ProviderEpisodeOption => ({
-        index: episode.number,
-        label: `Episode ${episode.number}`,
-        detail: episode.filler ? "Filler" : undefined,
-        totalEpisodeCount: episodes.length,
-        // Series poster as the still fallback: an empty art slot reads as a
-        // broken row, and AniDB has no per-episode image of its own.
-        artwork: pageIds?.posterUrl ? { thumbnailUrl: pageIds.posterUrl } : undefined,
-        externalIds: {
-          anilistId,
-          malId: malId ? String(malId) : undefined,
-        },
-      }),
-    );
+    const baseEpisodes = episodes.map((episode): ProviderEpisodeOption => ({
+      index: episode.number,
+      label: `Episode ${episode.number}`,
+      detail: episode.filler ? "Filler" : undefined,
+      totalEpisodeCount: episodes.length,
+      // Series poster as the still fallback: an empty art slot reads as a
+      // broken row, and AniDB has no per-episode image of its own.
+      artwork: pageIds?.posterUrl ? { thumbnailUrl: pageIds.posterUrl } : undefined,
+      externalIds: {
+        anilistId,
+        malId: malId ? String(malId) : undefined,
+      },
+    }));
     return metadata.size > 0
       ? enrichEpisodeOptionsWithAnimeMetadata(baseEpisodes, metadata)
       : baseEpisodes;

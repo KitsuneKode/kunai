@@ -1,5 +1,4 @@
-// =============================================================================
-// strip-html.ts — turn catalog HTML leftovers into readable plain text.
+// Turn catalog HTML leftovers into readable plain text.
 //
 // AniList `description(asHtml: false)` still emits `<br>` / `<i>` fragments.
 // Stripping only `<>` left tag names in the synopsis (`iPart 1…/i brbr`).
@@ -17,7 +16,6 @@
 // Output is terminal prose, never a DOM, so this is about not printing markup
 // rather than about XSS. It is written to satisfy the stricter reading anyway:
 // a sanitizer that is only correct in its current caller invites the next one.
-// =============================================================================
 
 // `[^<>]*` rather than `[^>]*`: the permissive form lets a match run across a
 // nested `<`, so `<scr<foo>ipt>` is eaten in one greedy bite that leaves the

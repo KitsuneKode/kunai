@@ -48,7 +48,6 @@ function manifest(providerId: ProviderId, mediaKinds: readonly MediaKind[]) {
     cachePolicy: { ttlClass: "metadata", scope: "local", keyParts: [] },
     browserSafe: true,
     relaySafe: true,
-    status: "production",
   };
 }
 

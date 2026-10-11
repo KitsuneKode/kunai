@@ -23,7 +23,7 @@ Each pillar implies **one primary seam** in code (interface + owner module). Fea
 
 ### 1 — Playback smoothness (VidKing, Rive, AllAnime, Miruro, AniKai)
 
-- **Contract:** `Provider.resolveStream` returns a playable `StreamInfo` (or null with diagnosable failure). Player owns timing and IPC; no provider-specific logic in `mpv.ts`.
+- **Contract:** the provider engine `resolve(input, context)` returns a playable result (or a diagnosable failure). Player owns timing and IPC; no provider-specific logic in `mpv.ts`.
 - **Acceptance:** Golden-path smoke per provider; autoplay EOF behavior verified for TMDB + anime IDs that represent real catalog shapes.
 
 ### 2 — Subtitles (first-class, honest soft vs hard, low waste)

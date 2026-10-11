@@ -140,7 +140,9 @@ See `RELEASING.md` for full release-operator details.
 
 ## Code of conduct
 
-Be direct and kind. Focus feedback on code and behavior, not people. If something isn't working for you in the contribution process, open an issue.
+Be direct and kind. Focus feedback on code and behavior, not people. The full
+policy is the Contributor Covenant in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md);
+security reports go through [SECURITY.md](SECURITY.md), not issues.
 
 ## Terminal demos
 

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { needsMpvNetworkPreflight } from "@/infra/player/mpv-playback-url";
 import {
   buildMpvArgs,
   collectAdditionalSubtitleTracks,
@@ -106,38 +107,6 @@ test("buildMpvArgs uses fast-start demuxer profile when startupPriority is fast"
   expect(args).toContain("--demuxer-readahead-secs=10");
   expect(args).toContain("--demuxer-max-bytes=48MiB");
   expect(args.some((arg) => arg.includes("reconnect_delay_max=3"))).toBe(true);
-});
-
-test("buildMpvArgs caps readahead for burst-limited CDN streams without fast priority", () => {
-  const args = buildMpvArgs(
-    {
-      url: "https://fetch.example.cdn/anime/master.m3u8",
-      headers: {},
-      subtitle: null,
-      displayTitle: "Burst-limited lane",
-      demuxerProfile: "capped-readahead",
-    },
-    null,
-  );
-  expect(args).toContain("--demuxer-readahead-secs=10");
-  expect(args).toContain("--demuxer-max-bytes=48MiB");
-});
-
-test("buildMpvArgs keeps the live demuxer profile over a capped-readahead hint", () => {
-  const args = buildMpvArgs(
-    {
-      url: "https://fetch.example.cdn/live/master.m3u8",
-      headers: {},
-      subtitle: null,
-      displayTitle: "Live lane",
-      isLive: true,
-      demuxerProfile: "capped-readahead",
-    },
-    null,
-  );
-  expect(args).toContain("--demuxer-max-bytes=32MiB");
-  expect(args).not.toContain("--demuxer-max-bytes=48MiB");
-  expect(args).not.toContain("--demuxer-max-bytes=200MiB");
 });
 
 test("buildMpvArgs debug mode does not pass unsupported term-msg-level", () => {
@@ -431,4 +400,13 @@ test("a one-shot direct stream does not get the ytdl guard", () => {
     {},
   );
   expect(args.some((arg) => arg.startsWith("--script-opts="))).toBe(false);
+});
+
+test("network preflight follows explicit target authority on every platform", () => {
+  for (const file of ["/media/owned.mp4", "C:\\Media\\owned.mp4", "file:///media/owned.mp4"]) {
+    expect(needsMpvNetworkPreflight(file, "local")).toBe(false);
+    expect(needsMpvNetworkPreflight(file)).toBe(true);
+  }
+  expect(needsMpvNetworkPreflight("https://example.test/movie.mp4", "local")).toBe(true);
+  expect(needsMpvNetworkPreflight("--script=evil.lua", "local")).toBe(true);
 });

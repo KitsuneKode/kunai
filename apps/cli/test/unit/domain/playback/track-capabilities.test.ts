@@ -6,6 +6,7 @@ import {
   anyTrackSelectable,
   buildTrackCapabilities,
   buildTrackPanelRows,
+  composeTrackPanelGroups,
   decodeTrackSelection,
   encodeTrackSelection,
   filterTrackCapabilityGroups,
@@ -20,7 +21,6 @@ import type {
   PlaybackSourceInventoryView,
   PlaybackSubtitleOptionView,
 } from "@/services/playback/PlaybackSourceInventoryView";
-import type { ProviderId } from "@kunai/types";
 
 const PROVIDER = "vidking";
 
@@ -199,6 +199,34 @@ describe("buildTrackCapabilities", () => {
     )[0];
     expect(preplay?.rows[0]?.enabled).toBe(true);
     expect(preplay?.selectable).toBe(true);
+  });
+});
+
+describe("composeTrackPanelGroups", () => {
+  test("keeps a provider group with only an emptyReason so the panel can explain itself", () => {
+    const groups = composeTrackPanelGroups(
+      {
+        section: "provider",
+        title: "Provider",
+        rows: [],
+        selectable: false,
+        emptyReason: "No compatible providers for this mode",
+      },
+      [],
+      "movie",
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.emptyReason).toBe("No compatible providers for this mode");
+    expect(groups[0]?.selectable).toBe(false);
+  });
+
+  test("drops a provider group that has neither rows nor a reason", () => {
+    const groups = composeTrackPanelGroups(
+      { section: "provider", title: "Provider", rows: [], selectable: false },
+      [],
+      "movie",
+    );
+    expect(groups).toEqual([]);
   });
 });
 

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import type { ProviderCycleCandidate } from "@kunai/types";
 import { ProviderHttpError } from "@kunai/types";
@@ -385,68 +385,6 @@ test("classifyProviderCycleError reads ProviderHttpError structurally", () => {
   ).toMatchObject({ failureClass: "candidate-blocked", retryable: false });
 });
 
-// The duck-typed sibling: an error carrying the same fields without the
-// ProviderHttpError prototype (a provider's own class predating the base, or
-// an error reconstituted across a serialization boundary) still classifies
-// on structure — while an errno-style `code` field must not.
-test("classifyProviderCycleError reads structured fields off non-ProviderHttpError throws", () => {
-  // status-bearing plain error
-  expect(
-    classifyProviderCycleError(Object.assign(new Error("mirror refused us"), { status: 503 })),
-  ).toMatchObject({ failureClass: "candidate-server-error", retryable: true });
-
-  // a reconstituted ProviderTransportError keeps its offline verdict
-  expect(
-    classifyProviderCycleError({
-      name: "ProviderTransportError",
-      message: "hianime fetch connection error (no HTTP response; curl exit 6)",
-      transportKind: "offline",
-      code: "network-error",
-      retryable: false,
-    }),
-  ).toMatchObject({ failureClass: "candidate-network", retryable: false });
-
-  // transportKind alone carries the timeout distinction
-  expect(
-    classifyProviderCycleError({ transportKind: "timeout", message: "curl exit 28" }),
-  ).toMatchObject({ failureClass: "candidate-timeout", retryable: true });
-
-  // an errno code is not a ResolveErrorCode — message classification keeps it
-  expect(
-    classifyProviderCycleError(
-      Object.assign(new TypeError("fetch failed"), { code: "ECONNREFUSED" }),
-    ),
-  ).toMatchObject({ failureClass: "candidate-network", retryable: true });
-});
-
-// Code-only structured errors (no status, no transportKind, no explicit
-// retryable) used to default to retryable via `transportKind !== "offline"` —
-// a `{code: "blocked"}` throw kept cycling. Non-healing codes now default to
-// non-retryable, matching the message branches.
-test("classifyProviderCycleError defaults code-only failures by healability", () => {
-  for (const code of ["blocked", "parse-failed", "unsupported-title", "cancelled"] as const) {
-    expect(classifyProviderCycleError({ code, message: `${code} upstream` })).toMatchObject({
-      retryable: false,
-    });
-  }
-
-  // Codes that *can* heal keep the retryable default.
-  expect(
-    classifyProviderCycleError({ code: "network-error", message: "socket reset" }),
-  ).toMatchObject({ retryable: true });
-
-  // `not-found` is deliberately ambiguous — senders disagree — so it keeps
-  // the retryable default rather than guessing.
-  expect(classifyProviderCycleError({ code: "not-found", message: "no streams" })).toMatchObject({
-    retryable: true,
-  });
-
-  // An explicit retryable field still wins over the code default.
-  expect(
-    classifyProviderCycleError({ code: "blocked", message: "cf", retryable: true }),
-  ).toMatchObject({ retryable: true });
-});
-
 test("endpoint health sees rate-limited and server-error cycle failures", () => {
   const base = {
     providerId: "vidrock",
@@ -515,3 +453,34 @@ test("provider-wide blocked evidence does not poison endpoint health", async () 
 function fixedClock(): () => string {
   return () => "2026-05-19T00:00:00.000Z";
 }
+
+describe("hostile candidate rejections", () => {
+  test("a candidate rejecting with a non-Error value is classified, not a crash", async () => {
+    const result = await runProviderCycle({
+      providerId: "movy",
+      candidates: [
+        { id: "a", providerId: "movy", serverId: "denver", priority: 0 },
+        { id: "b", providerId: "movy", serverId: "atlanta", priority: 1 },
+      ],
+      resolveCandidate: async (candidate) => {
+        if (candidate.serverId === "denver") throw "lane exploded as a string";
+        return { ok: true };
+      },
+    });
+    expect(result.stopReason).toBe("resolved");
+    expect(result.attempts[0]?.failure).toBeDefined();
+  });
+
+  test("a candidate rejecting with null still produces a failure record", async () => {
+    const result = await runProviderCycle({
+      providerId: "movy",
+      candidates: [{ id: "a", providerId: "movy", serverId: "denver", priority: 0 }],
+      resolveCandidate: async () => {
+        throw null;
+      },
+    });
+    expect(result.stopReason).not.toBe("resolved");
+    expect(result.attempts.length).toBeGreaterThan(0);
+    expect(result.attempts.every((attempt) => attempt.failure)).toBe(true);
+  });
+});

@@ -57,7 +57,6 @@ import type { ConfigStore } from "../services/persistence/ConfigStore";
 import type { StorageMaintenanceService } from "../services/persistence/StorageMaintenanceService";
 import type { SyncTokenStore } from "../services/persistence/SyncTokenStore";
 import type { EpisodePlaybackSelectionService } from "../services/playback/EpisodePlaybackSelectionService";
-import type { MediaTrackService } from "../services/playback/MediaTrackService";
 import type { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
 import type { ProviderEndpointHealthService } from "../services/playback/ProviderEndpointHealthService";
 import type { SourceInventoryService } from "../services/playback/SourceInventoryService";
@@ -120,7 +119,6 @@ export interface Container {
   readonly titlePlaybackSource: TitlePlaybackSourceService;
   readonly videasyLazySourceProbe: VideasyLazySourceProbeService;
   readonly playbackResolveWork: PlaybackResolveWorkService;
-  readonly mediaTrackService: MediaTrackService;
   readonly featureFlags: AttentionFeatureFlags;
   readonly providerHealth: ProviderHealthRepository;
   readonly endpointHealth: ProviderEndpointHealthService;

@@ -2,6 +2,15 @@ import type { ProviderRelayConfig, StartupPriority } from "@kunai/types";
 
 export type ContinueSourcePreference = "auto" | "local" | "stream" | "ask";
 
+/**
+ * Whether playback pauses on the Tracks sheet before mpv launches.
+ * `"off"` auto-plays the resolved pick; `"when-choices"` prompts only when the
+ * inventory has a real source/quality/track choice; `"always"` prompts on
+ * every inventory. Applies to user-launched plays — autoplay advances and
+ * restarts never re-prompt.
+ */
+export type PrePlayConfirmMode = "off" | "when-choices" | "always";
+
 export type QuitNearEndBehavior = "continue" | "pause";
 
 export type QuitNearEndThresholdMode = "credits-or-90-percent" | "percent-only" | "seconds-only";
@@ -13,7 +22,6 @@ export type PresencePrivacy = "full" | "private";
 /** Opt-in usage ping. Fresh installs stay `unset` and never send network traffic. */
 export type AnalyticsPreference = "unset" | "enabled" | "disabled";
 export type DiscoverMode = "auto" | "unified" | "anime-only" | "series-only";
-export type AutoDownloadMode = "off" | "next" | "season";
 export type RecoveryMode = "guided" | "fallback-first" | "manual";
 
 /** Runtime tuning override bag; CLI tuning module resolves typed values. */
@@ -53,15 +61,14 @@ export interface KitsuneConfig {
    * never again — so a user who picks the old provider back keeps it.
    *
    * Absent means "saved before revisions existed". 1 = anime lane moved from
-   * AniDB to Miruro (2026-09-11). 2 = KickAssAnime and AnimeGG placed behind
-   * HiAnime, ahead of Miruro (revision 3, 2026-09-30). A bump needs the previous default added
+   * AniDB to Miruro (2026-09-11). 2 = unused intermediate revision.
+   * 3 = anime lane moved to HiAnime, Miruro second, KickAssAnime and AnimeGG
+   * behind it (2026-09-30). A bump needs the previous default added
    * to `INHERITED_ANIME_DEFAULTS` in ConfigServiceImpl, or it migrates nobody.
    */
   providerDefaultsRevision?: number;
   youtubeLanguageProfile: MediaLanguageProfile;
   youtubeMetadata: YouTubeMetadataConfig;
-  /** @deprecated use animeLanguageProfile/seriesLanguageProfile/movieLanguageProfile */
-  subLang: string;
   /**
    * User-owned Wyzie API key for the external subtitle search
    * (https://store.wyzie.io/redeem). Empty by default and never shipped with a
@@ -70,13 +77,10 @@ export interface KitsuneConfig {
    * no key the external lookup is skipped and only provider subtitles are used.
    */
   wyzieApiKey: string;
-  /** @deprecated use animeLanguageProfile/seriesLanguageProfile/movieLanguageProfile */
-  animeLang: "sub" | "dub";
   animeLanguageProfile: MediaLanguageProfile;
   seriesLanguageProfile: MediaLanguageProfile;
   movieLanguageProfile: MediaLanguageProfile;
   animeTitlePreference: "english" | "romaji" | "native" | "provider";
-  headless: boolean;
   showMemory: boolean;
   autoNext: boolean;
   autoplayRecommendations: boolean;
@@ -91,14 +95,28 @@ export interface KitsuneConfig {
   minimalMode: boolean;
   zenMode: boolean;
   powerSaverMode: boolean;
-  powerSaverAllowManualArtwork: boolean;
   skipRecap: boolean;
   skipIntro: boolean;
   skipPreview: boolean;
   skipCredits: boolean;
   footerHints: "detailed" | "minimal";
+  /**
+   * Kanna, the companion fox, on empty/error surfaces and the exit screen.
+   * "auto" resolves from env and terminal capability; "off" hides her until
+   * `/pet` or this setting brings her back. `KUNAI_PET=off` still wins — an
+   * automation off cannot be overridden from inside the app.
+   */
+  companionPet: "auto" | "off";
+  /**
+   * Shell theme id from `@kunai/design`'s `THEMES` registry (e.g.
+   * `"ember-dusk"`, `"nord"`). A string, not a union: `@kunai/config` may not
+   * depend on `@kunai/design` (boundary allowlist), so the registry validates
+   * at apply time and an unrecognized value falls back to the brand default.
+   */
+  theme: string;
   quitNearEndBehavior: QuitNearEndBehavior;
   continueSourcePreference: ContinueSourcePreference;
+  prePlayConfirm: PrePlayConfirmMode;
   quitNearEndThresholdMode: QuitNearEndThresholdMode;
   mpvKunaiScriptPath: string;
   mpvKunaiScriptOpts: Record<string, string>;
@@ -114,14 +132,11 @@ export interface KitsuneConfig {
   videasyAppId: "vidking" | "bc-frontend";
   downloadsEnabled: boolean;
   offlineMode: boolean;
-  autoDownload: AutoDownloadMode;
-  autoDownloadNextCount: number;
   maxConcurrentDownloads: number;
   defaultDownloadQuality: string;
   autoCleanupWatched: boolean;
   recoveryMode: RecoveryMode;
   startupPriority: StartupPriority;
-  artworkPreviewsEnabled: boolean;
   offlineArtworkCacheEnabled: boolean;
   offlineFreeSpaceReserveBytes: number;
   offlineUnknownEpisodeEstimateBytes: number;

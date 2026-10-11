@@ -115,8 +115,6 @@ export function projectPlaybackSourceInventory(
   };
 }
 
-export const buildPlaybackSourceInventoryView = projectPlaybackSourceInventory;
-
 export function buildPlaybackSourceInventoryDiagnosticsSummary(
   result: ProviderResolveResult,
   options: PlaybackSourceInventoryProjectionOptions = {},

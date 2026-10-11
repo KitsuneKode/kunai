@@ -10,9 +10,10 @@ import path from "node:path";
 
 import { SetupShell } from "@/app-shell/setup-shell";
 import type { CapabilitySnapshot } from "@/ui";
+import { Box } from "ink";
 import React from "react";
 
-import { CAPTURE_WIDTHS, render, type CaptureWidth } from "./render-capture";
+import { CAPTURE_WIDTHS, render, stripAnsi, type CaptureWidth } from "./render-capture";
 
 const CAPTURE_DIR = path.join(import.meta.dir, "..", "__captures__");
 export const SETUP_ROWS = 34;
@@ -32,15 +33,7 @@ const READY: CapabilitySnapshot = {
   issues: [],
 };
 
-export const SETUP_SCREENS = [
-  "deps",
-  "mode",
-  "language",
-  "playback",
-  "library",
-  "analytics",
-  "done",
-] as const;
+export const SETUP_SCREENS = ["deps", "mode", "language", "library", "analytics", "done"] as const;
 
 export function setupFrameAt(step: number, columns: number): string {
   // The analytics consent screen prints this machine's `process.platform` and
@@ -53,11 +46,13 @@ export function setupFrameAt(step: number, columns: number): string {
   Object.defineProperty(process, "arch", { value: "x64" });
   try {
     const handle = render(
-      <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />,
+      <Box width={columns} paddingX={1} flexDirection="column">
+        <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />
+      </Box>,
       { columns, rows: SETUP_ROWS },
     );
     for (let i = 0; i < step; i += 1) handle.stdin.enqueue("\r");
-    const frame = handle.lastFrame();
+    const frame = stripAnsi(handle.lastFrame()).replace(/\s+$/, "");
     handle.unmount();
     return frame;
   } finally {

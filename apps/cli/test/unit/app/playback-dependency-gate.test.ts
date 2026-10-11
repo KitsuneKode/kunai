@@ -213,7 +213,7 @@ describe("PlaybackPhase mpv dependency boundary", () => {
       absoluteEpisode: 1,
       source: "manual",
     });
-    const intent = queueService.beginPlayback(entry.id, "queue", "2026-07-21T12:00:00.000Z");
+    const intent = queueService.beginPlayback(entry.id, "2026-07-21T12:00:00.000Z");
     expect(intent).toBeDefined();
     expect(repo.getById(entry.id)?.status).toBe("in-flight");
 

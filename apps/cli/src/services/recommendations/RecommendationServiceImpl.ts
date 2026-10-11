@@ -1,9 +1,7 @@
-// =============================================================================
 // RecommendationServiceImpl
 //
 // TMDB-backed recommendation service with SQLite cache.
 // Falls back from videasy proxy to direct TMDB API on failure.
-// =============================================================================
 
 import type { ContentType, SearchResult } from "@/domain/types";
 import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";

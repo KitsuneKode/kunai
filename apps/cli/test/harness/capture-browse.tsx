@@ -13,6 +13,11 @@ export function BrowseIdleReturnLoopPreview() {
         titleId: "tmdb:123",
         mediaKind: "series",
       },
+      savedNext: {
+        title: "Andor",
+        titleId: "tmdb:83867",
+        total: 4,
+      },
       todayReleaseCount: 2,
       todayReleaseTitleCount: 1,
     },

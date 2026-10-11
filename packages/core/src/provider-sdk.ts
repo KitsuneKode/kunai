@@ -22,7 +22,6 @@ export interface CoreProviderModule<
 
 export const DEFAULT_PROVIDER_RETRY_POLICY: ProviderRetryPolicy = {
   maxAttempts: 2,
-  backoff: "none",
 };
 
 export function createProviderRuntimeContext({

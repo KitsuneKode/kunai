@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import { loadProductionProviderModules } from "@/container/bootstrap-providers";
+import { isAnimeOnlyProviderId } from "@/domain/media/content-kind";
 import { RELAY_CAPABLE_PROVIDER_OPTIONS } from "@/domain/provider-relay-settings";
 import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
 import { DEFAULT_CONFIG } from "@kunai/config";
+
+import { PROBES as STATUS_SWEEP_PROBES } from "../../../../../packages/providers/scripts/provider-status-sweep.ts";
 
 describe("production provider defaults", () => {
   test("every configured lane default is a registered production module", async () => {
@@ -24,18 +27,6 @@ describe("production provider defaults", () => {
     // unregistered id is a silent no-op that nothing would ever report.
     for (const id of DEFAULT_CONFIG.animeProviderPriority) expect(ids).toContain(id);
     for (const id of DEFAULT_CONFIG.providerPriority) expect(ids).toContain(id);
-
-    // A lane default renders with a "· candidate" suffix in the picker if its
-    // manifest says so, which is the wrong thing to show on the one provider
-    // most users never change.
-    for (const laneDefault of [
-      DEFAULT_CONFIG.provider,
-      DEFAULT_CONFIG.animeProvider,
-      DEFAULT_CONFIG.youtubeProvider,
-    ]) {
-      const module = modules.find((candidate) => candidate.providerId === laneDefault);
-      expect(module?.manifest.status).toBe("production");
-    }
   });
 
   test("the production roster is pinned — adding a module fails loudly here", async () => {
@@ -51,7 +42,6 @@ describe("production provider defaults", () => {
       "allanime",
       "anidb",
       "animegg",
-      "animekai",
       "hianime",
       "kickassanime",
       "miruro",
@@ -62,6 +52,18 @@ describe("production provider defaults", () => {
       "vidrock",
       "youtube",
     ]);
+  });
+
+  test("the status sweep probes every production module — an unprobed provider is invisible", async () => {
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    const probed = STATUS_SWEEP_PROBES.map((probe) => probe.id).sort();
+    const registered = modules.map((module) => module.providerId).sort();
+    // The sweep sat at 8 of 12 probes while vidrock, movy, animegg and
+    // kickassanime shipped — the board could not see them. This pin makes a
+    // missing probe row a test failure instead of a silent gap.
+    expect(probed).toEqual(registered);
   });
 
   test("the relay settings list covers every production provider that declares relayProfile", async () => {
@@ -140,5 +142,35 @@ describe("production provider defaults", () => {
         expect(keyParts).toContain("episode");
       }
     }
+  });
+});
+
+describe("anime-only provider ids", () => {
+  test("match every production module whose manifest serves only anime", async () => {
+    // History stamps a title "anime" from its provider when no AniList/MAL id
+    // resolved. A hand list that missed hianime/animegg/kickassanime/anidb
+    // mis-stamped those plays "series" — so pin it to the manifests.
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    const animeOnly = modules
+      .filter(
+        (module) =>
+          module.manifest.mediaKinds.length > 0 &&
+          module.manifest.mediaKinds.every((kind) => kind === "anime"),
+      )
+      .map((module) => module.providerId)
+      .sort();
+
+    expect(
+      animeOnly.filter((id) => !isAnimeOnlyProviderId(id)),
+      "anime-only manifest missing from ANIME_ONLY_PROVIDER_IDS",
+    ).toEqual([]);
+    expect(
+      modules
+        .map((module) => module.providerId)
+        .filter(isAnimeOnlyProviderId)
+        .sort(),
+    ).toEqual(animeOnly);
   });
 });

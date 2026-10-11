@@ -1088,7 +1088,7 @@ required:
 
 If either check fails, stop.
 
-- [ ] **Step 2: Change the schedule**
+- [x] **Step 2: Change the schedule**
 
 ```json
 {

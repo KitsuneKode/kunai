@@ -328,6 +328,7 @@ describe("anidb curl selection", () => {
   test("prefers the newest curl-impersonate build over plain curl", () => {
     expect(resolveAnidbCurl(onPath(["curl", "curl_chrome116", "curl_chrome150"]))).toEqual({
       path: "/usr/bin/curl_chrome150",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome150",
     });
@@ -342,6 +343,7 @@ describe("anidb curl selection", () => {
     const future = ["curl", "curl_chrome199", "curl_firefox210"];
     expect(resolveAnidbCurl(onPath(future))).toEqual({
       path: "/usr/bin/curl_chrome199",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome199",
     });
@@ -352,6 +354,7 @@ describe("anidb curl selection", () => {
   test("ranks family before version so a high Safari number cannot outrank Chrome", () => {
     expect(resolveAnidbCurl(onPath(["curl_safari260", "curl_chrome150"]))).toEqual({
       path: "/usr/bin/curl_chrome150",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome150",
     });
@@ -360,6 +363,7 @@ describe("anidb curl selection", () => {
   test("orders a revision suffix above the bare version", () => {
     expect(resolveAnidbCurl(onPath(["curl_chrome133", "curl_chrome133a"]))).toEqual({
       path: "/usr/bin/curl_chrome133a",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome133a",
     });
@@ -370,6 +374,7 @@ describe("anidb curl selection", () => {
   test("skips mobile builds in favour of an older desktop one", () => {
     expect(resolveAnidbCurl(onPath(["curl", "curl_chrome131_android", "curl_chrome116"]))).toEqual({
       path: "/usr/bin/curl_chrome116",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome116",
     });
@@ -378,6 +383,7 @@ describe("anidb curl selection", () => {
   test("never selects a tor build", () => {
     expect(resolveAnidbCurl(onPath(["curl", "curl_tor145"]))).toEqual({
       path: "/usr/bin/curl",
+      prefixArgs: [],
       impersonates: false,
       profile: null,
     });
@@ -386,6 +392,7 @@ describe("anidb curl selection", () => {
   test("marks plain curl as non-impersonating so cipher flags are applied", () => {
     expect(resolveAnidbCurl(onPath(["curl"]))).toEqual({
       path: "/usr/bin/curl",
+      prefixArgs: [],
       impersonates: false,
       profile: null,
     });
@@ -399,7 +406,7 @@ describe("anidb curl selection", () => {
         which: (cmd: string) => (cmd === "curl" ? "/usr/bin/curl" : null),
         listPathEntries: () => ["curl", "curl_chrome150"],
       }),
-    ).toEqual({ path: "/usr/bin/curl", impersonates: false, profile: null });
+    ).toEqual({ path: "/usr/bin/curl", prefixArgs: [], impersonates: false, profile: null });
   });
 
   test("reports no curl at all so the caller can fall back to fetch", () => {
@@ -797,6 +804,48 @@ describe("anidb search delegation", () => {
         name: "AnidbHttpStatusError",
         status: 404,
       });
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("a relayed fingerprint-retryable status is final — never re-asked direct", async () => {
+    // Without the marker check, a relayed 403 fell through to the local
+    // curl/fetch fallback — silently bypassing the relay the user deployed.
+    // Only a relayed 404 keeps its curl settle (stale-relay `unknown-provider`).
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      let transportFallbackUsed = false;
+      // SAFETY: stub records the probe and supplies no binary.
+      Bun.which = ((_cmd: string) => {
+        transportFallbackUsed = true;
+        return null;
+      }) as typeof Bun.which;
+      // SAFETY: stub only ever throws the sentinel; the full fetch surface is unused.
+      globalThis.fetch = (async () => {
+        transportFallbackUsed = true;
+        throw new Error("SENTINEL: direct upstream request happened");
+      }) as never;
+      const context: ProviderRuntimeContext = {
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () =>
+            new Response("upstream says no", {
+              status: 403,
+              headers: { "X-Kunai-Relayed": "1" },
+            }),
+        },
+        now: () => new Date().toISOString(),
+      };
+
+      await expect(searchAnidb("solo leveling", undefined, context)).rejects.toMatchObject({
+        name: "AnidbHttpStatusError",
+        status: 403,
+      });
+      expect(transportFallbackUsed).toBe(false);
     } finally {
       globalThis.fetch = originalFetch;
       Bun.which = originalWhich;

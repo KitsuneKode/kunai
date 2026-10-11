@@ -2349,7 +2349,10 @@ describe("install.sh optional dependency consent", () => {
       extraDefs,
       body,
     ].join("\n");
-    const result = spawnSync("bash", ["-c", script], { encoding: "utf8" });
+    const setsid = Bun.which("setsid");
+    const result = setsid
+      ? spawnSync(setsid, ["bash", "-c", script], { encoding: "utf8" })
+      : spawnSync("bash", ["-c", script], { encoding: "utf8" });
     expect(result.stderr, result.stderr).not.toContain("syntax error");
     return `${result.stdout}${result.stderr}`;
   }

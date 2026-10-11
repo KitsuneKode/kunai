@@ -24,14 +24,13 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
-import { parseRetryAfterHeader, ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
+import { ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
 
 import {
   miruroInventorySourceId,
   miruroCharacterLabel,
   miruroTechnicalServerLabel,
 } from "../catalogs/miruro";
-import { providerFetch } from "../runtime/fetch";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
   type AnimeEpisodeMetadata,
@@ -46,7 +45,9 @@ import {
   formatAnimeSourceDetail,
   miruroSubtitleDeliveryToMode,
 } from "../shared/anime-source-presentation";
+import { scrubbedChildEnv } from "../shared/child-env";
 import {
+  curlArgvHead,
   curlCipherArgs,
   type CurlCandidate,
   isCloudflareBlockBody,
@@ -60,9 +61,8 @@ import {
 } from "../shared/hls-ladder";
 import { isJsonNumber, isJsonObject, isJsonString, type JsonObject } from "../shared/json-value";
 import { TTLCache } from "../shared/provider-cache";
-import { appendCycleEventsToResult, cycleExhaustedResult } from "../shared/provider-cycle";
+import { appendCycleEventsToResult, cycleExhaustionFailure } from "../shared/provider-cycle";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
-import { ProviderQueryCache } from "../shared/provider-query";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
@@ -71,6 +71,7 @@ import {
   type StreamReachabilityProbeResult,
 } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { sleepAbortable } from "../shared/timeout-signal";
 import { miruroManifest, MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER } from "./manifest";
 import {
   MIRURO_KNOWN_PIPE_BASE_URLS,
@@ -112,21 +113,6 @@ const USER_AGENT =
 const MIRURO_CANDIDATE_TIMEOUT_MS = 5_000;
 const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
 
-function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal) return Bun.sleep(ms);
-  if (signal.aborted) return Promise.resolve();
-  return Promise.race([
-    Bun.sleep(ms),
-    new Promise<void>((resolve) => {
-      const onAbort = () => {
-        signal.removeEventListener("abort", onAbort);
-        resolve();
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-    }),
-  ]);
-}
-
 let miruroPipeRetrySleepImpl: (ms: number, signal?: AbortSignal) => Promise<void> = sleepAbortable;
 
 const miruroPipeRetrySleep = (ms: number, signal?: AbortSignal) =>
@@ -140,19 +126,25 @@ export function setMiruroPipeRetrySleepForTest(
 
 // Keyed by binary path — the resolved candidate can change if PATH changes
 // mid-process, and probing bare "curl" could report features of a different
-// binary than the one pipeCall spawns. Probe results are process-lifetime
-// facts (the binary does not change mid-run), so one week is "permanent".
-const curlHttp2Probes = new ProviderQueryCache<string, boolean>({
-  ttlMs: 7 * 24 * 60 * 60 * 1000,
-});
+// binary than the one pipeCall spawns.
+const curlHttp2Probes = new Map<string, Promise<boolean>>();
 
 function detectCurlHttp2Support(curlPath: string): Promise<boolean> {
-  return curlHttp2Probes.query(curlPath, () => probeCurlHttp2Support(curlPath));
+  let probe = curlHttp2Probes.get(curlPath);
+  if (probe === undefined) {
+    probe = probeCurlHttp2Support(curlPath);
+    curlHttp2Probes.set(curlPath, probe);
+  }
+  return probe;
 }
 
 async function probeCurlHttp2Support(curlPath: string): Promise<boolean> {
   try {
-    const proc = Bun.spawn([curlPath, "--version"], { stdout: "pipe", stderr: "ignore" });
+    const proc = Bun.spawn([curlPath, "--version"], {
+      stdout: "pipe",
+      stderr: "ignore",
+      env: scrubbedChildEnv(),
+    });
     const [features, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
     return exitCode === 0 && /\bHTTP2\b/i.test(features);
   } catch {
@@ -952,7 +944,9 @@ async function expandMiruroPipeStreams(
 
   if (expandable.length === 0) return { streams: out, deadHosts };
 
-  const fetchImpl = (url: string, init?: RequestInit) => providerFetch(context, url, init);
+  const fetchImpl =
+    context?.fetch?.fetch.bind(context.fetch) ??
+    ((url: string, init?: RequestInit) => fetch(url, init));
 
   const results = await Promise.allSettled(
     expandable.map(async ({ url, referer }) => {
@@ -971,6 +965,7 @@ async function expandMiruroPipeStreams(
       const combinedSignal = signal ? anySignal(signal, expandSignal) : expandSignal;
       return expandHlsMasterInventory({
         fetch: fetchImpl,
+        resolvesLocally: context?.fetch?.resolvesLocally,
         masterUrl: url,
         headers: fetchHeaders,
         signal: combinedSignal,
@@ -1708,7 +1703,9 @@ export async function fetchMiruroPipeBody(
   // curl fallback, whose abort listener on an already-dead signal never fires
   // and the subprocess would run to --max-time after the caller walked away.
   if (requestSignal.aborted) {
-    throw signal?.reason instanceof Error ? signal.reason : new Error("aborted");
+    throw signal?.reason instanceof Error
+      ? signal.reason
+      : new DOMException("Aborted", "AbortError");
   }
   if (response === undefined) {
     throw new Error("Miruro pipe fetch did not produce a response");
@@ -1763,7 +1760,7 @@ export async function fetchMiruroPipeBody(
 
   const hasCurlHttp2 = await detectCurlHttp2Support(curl.path);
   const args = [
-    curl.path,
+    ...curlArgvHead(curl),
     ...curlCipherArgs(curl.impersonates),
     "-sS",
     ...(hasCurlHttp2 ? ["--http2"] : []),
@@ -1811,26 +1808,26 @@ export async function fetchMiruroPipeBody(
     url,
   ];
 
+  // `signal` goes to Bun.spawn itself rather than an addEventListener after
+  // spawn: an abort landing between the aborted-check above and a listener
+  // registration would never fire, leaving curl to run out --max-time with no
+  // caller. Bun kills the child the moment the signal aborts, whenever that is.
   const proc = Bun.spawn(args, {
     stdout: "pipe",
     stderr: "pipe",
+    signal,
+    env: scrubbedChildEnv(),
   });
-  let aborted = false;
-  const onAbort = () => {
-    aborted = true;
-    try {
-      proc.kill();
-    } catch {
-      // ignore
-    }
-  };
-  signal?.addEventListener("abort", onAbort, { once: true });
   try {
     const raw = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();
     const exit = await proc.exited;
-    if (aborted || signal?.aborted) {
-      throw new Error("aborted");
+    if (signal?.aborted) {
+      // An AbortError-class throw is what the cycle classifier recognizes as
+      // user cancellation — a plain Error("aborted") reads as candidate-unknown.
+      throw signal.reason instanceof Error
+        ? signal.reason
+        : new DOMException("Aborted", "AbortError");
     }
     const { status, text } = interpretMiruroCurlResult({
       exitCode: exit,
@@ -1843,8 +1840,13 @@ export async function fetchMiruroPipeBody(
       xObfuscated: isMiruroObfuscatedPipeBody(text, null) ? "2" : null,
       cloudflareHtml: isCloudflareBlockBody(text),
     };
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
+  } catch (error) {
+    try {
+      proc.kill();
+    } catch {
+      // Already exited.
+    }
+    throw error;
   }
 }
 
@@ -2102,11 +2104,17 @@ export async function probeMiruroBackendDown(
   headers: Readonly<Record<string, string>> | undefined,
   context: Pick<ProviderRuntimeContext, "fetch">,
   signal?: AbortSignal,
-  /** Out-param: the response's Retry-After hint, when it carried one. */
-  hintOut?: { retryAfterMs?: number },
 ): Promise<number | null> {
   if (!/^https?:\/\//i.test(url)) return null;
-  if (MIRURO_UNPROBEABLE_STREAM_HOSTS.has(new URL(url).hostname)) return null;
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    // "https://" satisfies the prefix test but has no host — an unparseable
+    // stream row is a dud, not probe evidence.
+    return null;
+  }
+  if (MIRURO_UNPROBEABLE_STREAM_HOSTS.has(hostname)) return null;
   const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
   const timeout = AbortSignal.timeout(MIRURO_BACKEND_PROBE_TIMEOUT_MS);
   try {
@@ -2120,11 +2128,7 @@ export async function probeMiruroBackendDown(
     // what the CDN then says about one odd request is not evidence about the
     // backend. AnimeGG hands off to vidcache, which 500s anything but its player.
     if (!isSameHost(url, response.url)) return null;
-    if (!isMiruroBackendDownStatus(response.status)) return null;
-    if (hintOut) {
-      hintOut.retryAfterMs = parseRetryAfterHeader(response.headers.get("retry-after"));
-    }
-    return response.status;
+    return isMiruroBackendDownStatus(response.status) ? response.status : null;
   } catch {
     // A timeout or connection error is as likely to be this client's network as
     // the backend's, and being offline must not read as "every server is dead".
@@ -2436,17 +2440,36 @@ export const miruroProviderModule: CoreProviderModule = {
           // MiruroSourcesResponse values written by pipeCall.
           let srcData = sourceCache.get(srcCacheKey) as MiruroSourcesResponse | null;
           if (!srcData) {
-            srcData = await pipeCall(
-              context,
-              "sources",
-              {
-                episodeId: metadata.episodeId,
-                anilistId: Number(anilistId),
-                provider: metadata.serverId,
-                category: metadata.audioCategory,
-              },
-              cycleContext.signal,
-            );
+            try {
+              srcData = await pipeCall(
+                context,
+                "sources",
+                {
+                  episodeId: metadata.episodeId,
+                  anilistId: Number(anilistId),
+                  provider: metadata.serverId,
+                  category: metadata.audioCategory,
+                },
+                cycleContext.signal,
+              );
+            } catch (error) {
+              // A typed decode failure says the pipe answered with a payload we
+              // cannot read — endpoint evidence, not a transient network blip.
+              // Without this wrap the cycle classifier message-matches it to
+              // candidate-unknown (retryable) and every remaining candidate
+              // re-pays the same doomed fetch before exhaustion.
+              if (error instanceof MiruroPipeDecodeError) {
+                throw createProviderCycleFailureError(candidate, {
+                  failureClass: "candidate-parse",
+                  message:
+                    `${serverProfile.label} ` +
+                    `(${metadata.serverId}/${metadata.audioCategory}) pipe payload could not be decoded (${error.code})`,
+                  retryable: false,
+                  at: context.now(),
+                });
+              }
+              throw error;
+            }
             sourceCache.set(srcCacheKey, srcData);
           }
 
@@ -2492,15 +2515,12 @@ export const miruroProviderModule: CoreProviderModule = {
           const selected =
             result.streams.find((stream) => stream.id === result.selectedStreamId) ??
             result.streams[0];
-          // oxlint-disable-next-line anti-slop/no-known-value-widening -- open slot: retryAfterMs is attached only when the probe answers 429
-          const probeHint: { retryAfterMs?: number } = {};
           const downStatus = selected?.url
             ? await probeMiruroBackendDown(
                 selected.url,
                 selected.headers,
                 context,
                 cycleContext.signal,
-                probeHint,
               )
             : null;
           if (downStatus !== null) {
@@ -2512,7 +2532,6 @@ export const miruroProviderModule: CoreProviderModule = {
               class: "server-error",
               titleId: input.title.id,
               at: context.now(),
-              retryAfterMs: probeHint.retryAfterMs,
             });
             throw createProviderCycleFailureError(candidate, {
               // Not `candidate-network`: retryable schedules a retry of a host
@@ -2557,26 +2576,19 @@ export const miruroProviderModule: CoreProviderModule = {
 
       if (!cycleResult.selected) {
         events.push(...cycleResult.events);
-        return cycleExhaustedResult({
-          input,
-          context,
-          providerId: MIRURO_PROVIDER_ID,
-          attempts: cycleResult.attempts,
-          fallback: {
-            code: "not-found",
-            message: "No HLS streams from miruro sources pipe",
-            retryable: true,
-          },
-          evidence: {
-            cachePolicy,
-            events,
-            failures,
-            sources: finalizeCycleSourceInventory({
-              sources: sourceInventorySeeds,
-              attempts: cycleResult.attempts,
-            }),
-            startedAt,
-          },
+        const failure = cycleExhaustionFailure(
+          cycleResult,
+          "No HLS streams from miruro sources pipe",
+        );
+        return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, failure, {
+          cachePolicy,
+          events,
+          failures,
+          sources: finalizeCycleSourceInventory({
+            sources: sourceInventorySeeds,
+            attempts: cycleResult.attempts,
+          }),
+          startedAt,
         });
       }
 

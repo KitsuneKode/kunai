@@ -39,9 +39,7 @@ function createResolverContainer(
                 ...(id === "allanime" ? { catalogIdentity: "anilist" as const } : {}),
               },
               // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-              capabilities: {} as never,
               canHandle: () => true,
-              resolveStream: async () => null,
               search: async () => [],
             }
           : null,

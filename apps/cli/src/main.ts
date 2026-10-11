@@ -43,7 +43,11 @@ import {
 } from "@/app/bootstrap/launch-entry";
 import { launchShellWithPostPaintStartupWork } from "@/app/bootstrap/post-paint-startup-work";
 import { mapAnimeTitleToProviderNative } from "@/app/bootstrap/resolve-share-target";
-import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
+import {
+  isBelowOnboardedFloor,
+  maybeRunStartupSetup,
+  shouldRunSetupWizard,
+} from "@/app/bootstrap/startup-setup";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import { SessionController } from "@/app/session/SessionController";
 import {
@@ -103,6 +107,7 @@ let globalContainer: Awaited<ReturnType<typeof createContainer>> | null = null;
 let processHandlersInitialized = false;
 /** Resolves once startup lifetime-lock acquisition settled (versioned binary). */
 let lifetimeLockReady: Promise<void> = Promise.resolve();
+let fatalExitError: Error | string | null = null;
 
 async function shutdownShell(): Promise<void> {
   const { shutdownSessionApp } = await import("./app-shell/ink-shell");
@@ -135,7 +140,12 @@ function liveMainShutdownDeps(): MainShutdownDeps {
       await releaseCurrentVersionLock();
     },
     disposeContainer: () => disposeContainer(globalContainer),
-    exit: (code) => process.exit(code),
+    exit: (code) => {
+      if (fatalExitError) {
+        console.error("Fatal error:", fatalExitError);
+      }
+      process.exit(code);
+    },
   };
 }
 
@@ -414,6 +424,8 @@ async function maybeRunDownloadMode(
     anime: boolean;
     quick: boolean;
     jump?: number;
+    episode?: number;
+    season?: number;
     downloadPath?: string;
   },
   container: Awaited<ReturnType<typeof createContainer>>,
@@ -439,6 +451,15 @@ async function maybeRunDownloadMode(
   if (searchResult.status !== "success") {
     console.log("Download cancelled before a title was selected.");
     return true;
+  }
+
+  // `-e/--episode` means "download this episode" — arm the same one-shot
+  // request the playback path reads so DownloadOnlyPhase skips the checklist.
+  if (args.episode !== undefined) {
+    container.stateManager.dispatch({
+      type: "SET_EPISODE_REQUEST",
+      episode: { season: args.season ?? 1, episode: args.episode },
+    });
   }
 
   // Download mode never reaches PlaybackPhase, so nothing here would otherwise
@@ -640,9 +661,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     );
   }
 
-  // Best-effort: clear any stale `*.old` left by a prior Windows self-replace.
+  // Best-effort: clear the running Kunai binary's own Windows self-replace backup.
   void import("./services/update/self-replace").then(({ cleanupOldBinary }) =>
-    cleanupOldBinary(process.execPath).catch(() => {}),
+    cleanupOldBinary(process.execPath, import.meta.path).catch(() => {}),
   );
 
   // Parse CLI arguments before acquiring the versioned lifetime lock so short
@@ -784,6 +805,16 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   })().catch(() => {});
 
+  // The terminal graphics probe round-trips a query through the TTY (100 ms,
+  // 400 ms on Windows conhost) — start it now so it overlaps the version-lock,
+  // manifest, and config work instead of serializing in front of checkDeps.
+  // It is still awaited below before anything writes to stdout, so the escape
+  // query can never interleave into the dependency report.
+  const graphicsProbeReady = (async () => {
+    const { initTerminalGraphicsProbe } = await import("./image/probe");
+    await initTerminalGraphicsProbe();
+  })().catch(() => {});
+
   // Guard: verify required system dependencies before touching the shell.
   // Silence pre-TUI console output when onboarding will run — the system
   // check slide shows the same information visually inside the TUI.
@@ -814,11 +845,16 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       downloadOnboardingDismissed: configJson.downloadOnboardingDismissed ?? false,
     },
   });
+  // A never-onboarded install lands on the discover tray instead of an empty
+  // search box — the first screen should be something to watch, not a form.
+  // Captured before the wizard runs so a completed setup still gets the
+  // content-first landing on its first launch. Explicit routes (-S, -i,
+  // --history, --offline, --discover, share links) always win.
+  const freshInstall = isBelowOnboardedFloor(configJson.onboardingVersion ?? 0);
   // Must precede checkDeps: that snapshot records the chosen image protocol, and
   // it is what diagnostics and `/report-issue` carry into a bug report. Probing
   // afterwards would have every report claim the pre-probe fallback.
-  const { initTerminalGraphicsProbe } = await import("./image/probe");
-  await initTerminalGraphicsProbe();
+  await graphicsProbeReady;
 
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
@@ -1281,7 +1317,17 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       initialQuery: bootstrapQuery,
       initialTitle: bootstrapTitle,
       initialEpisode: bootstrapEpisode,
-      initialRoute: args.initialRoute,
+      // `-e/--episode` is a raw request, not resolved metadata: the session loop
+      // shapes it into an EpisodeInfo once the picked title's lane is known.
+      requestedEpisode:
+        args.episode !== undefined
+          ? { season: args.season ?? 1, episode: args.episode }
+          : undefined,
+      initialRoute:
+        args.initialRoute ??
+        (freshInstall && !bootstrapTitle && !bootstrapQuery && !args.offline
+          ? "recommendation"
+          : undefined),
       autoPickSearchResultIndex: autoPick,
     });
 
@@ -1289,7 +1335,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     await getShutdownCoordinator().request({ reason: "normal exit", exitCode: 0 });
   } catch (e) {
     logger.error("Kunai crashed", { error: String(e) });
-    console.error("Fatal error:", e);
+    fatalExitError = e instanceof Error ? e : String(e);
     await getShutdownCoordinator().request({ reason: "fatal error", exitCode: 1, fatal: true });
   }
 }
@@ -1313,6 +1359,9 @@ function setupSignalHandlers(): void {
   process.on("SIGINT", () => requestSignalShutdown("SIGINT", 130));
   process.on("SIGTERM", () => requestSignalShutdown("SIGTERM", 143));
   process.on("SIGHUP", () => requestSignalShutdown("SIGHUP", 129));
+  // SIGBREAK (Ctrl+Break) is the only console event Windows delivers beyond
+  // SIGINT — TerminateProcess and window-close get no catchable signal there.
+  process.on("SIGBREAK", () => requestSignalShutdown("SIGBREAK", 128 + 21));
 
   // Hard backstop: the async shutdown can lose its race with the 4s force-exit,
   // orphaning yt-dlp/ffmpeg children that then keep buffering GBs of RAM after
@@ -1327,7 +1376,7 @@ function setupSignalHandlers(): void {
   });
 
   process.on("uncaughtException", (e) => {
-    console.error("Uncaught exception:", e);
+    fatalExitError = e instanceof Error ? e : String(e);
     void getShutdownCoordinator().request({
       reason: "uncaught exception",
       exitCode: 1,
@@ -1336,7 +1385,7 @@ function setupSignalHandlers(): void {
   });
 
   process.on("unhandledRejection", (e) => {
-    console.error("Unhandled rejection:", e);
+    fatalExitError = e instanceof Error ? e : String(e);
     void getShutdownCoordinator().request({
       reason: "unhandled rejection",
       exitCode: 1,

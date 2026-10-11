@@ -30,6 +30,7 @@ describe("browse filter chips", () => {
   test("Esc ladder prefers narrow, then chips, then the typed query", () => {
     expect(
       nextBrowseEscFilterLayer({
+        searchLoading: false,
         narrowOpenOrFocused: true,
         resultFilterNonEmpty: true,
         structuredChipCount: 2,
@@ -39,6 +40,7 @@ describe("browse filter chips", () => {
 
     expect(
       nextBrowseEscFilterLayer({
+        searchLoading: false,
         narrowOpenOrFocused: false,
         resultFilterNonEmpty: false,
         structuredChipCount: 2,
@@ -48,12 +50,25 @@ describe("browse filter chips", () => {
 
     expect(
       nextBrowseEscFilterLayer({
+        searchLoading: false,
         narrowOpenOrFocused: false,
         resultFilterNonEmpty: false,
         structuredChipCount: 0,
         queryNonEmpty: true,
       }),
     ).toBe("query");
+  });
+
+  test("Esc while a search is loading selects the loading rung before anything else", () => {
+    expect(
+      nextBrowseEscFilterLayer({
+        searchLoading: true,
+        narrowOpenOrFocused: true,
+        resultFilterNonEmpty: true,
+        structuredChipCount: 2,
+        queryNonEmpty: true,
+      }),
+    ).toBe("loading");
   });
 
   test("two Escapes from a typed search clear the text, then leave", () => {
@@ -67,8 +82,12 @@ describe("browse filter chips", () => {
       structuredChipCount: 0,
     };
 
-    expect(nextBrowseEscFilterLayer({ ...base, queryNonEmpty: true })).toBe("query");
-    expect(nextBrowseEscFilterLayer({ ...base, queryNonEmpty: false })).toBe("cancel");
+    expect(nextBrowseEscFilterLayer({ searchLoading: false, ...base, queryNonEmpty: true })).toBe(
+      "query",
+    );
+    expect(nextBrowseEscFilterLayer({ searchLoading: false, ...base, queryNonEmpty: false })).toBe(
+      "cancel",
+    );
   });
 
   test("removeFilterTokenFromQuery round-trips remaining structured tokens", () => {

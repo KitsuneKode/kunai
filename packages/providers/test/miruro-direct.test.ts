@@ -859,6 +859,7 @@ describe("the WAF block message advises the cheapest fix that can still work", (
   test("tells a plain-curl user to install curl-impersonate before suggesting a relay", () => {
     const message = miruroWafBlockMessage({
       path: "/usr/bin/curl",
+      prefixArgs: [],
       impersonates: false,
       profile: null,
     });
@@ -869,6 +870,7 @@ describe("the WAF block message advises the cheapest fix that can still work", (
   test("tells a user who already impersonated that the block is region-wide", () => {
     const message = miruroWafBlockMessage({
       path: "/usr/bin/curl_chrome150",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome150",
     });
@@ -879,7 +881,7 @@ describe("the WAF block message advises the cheapest fix that can still work", (
   test("keeps the prefix runProviderCycle keys on", () => {
     for (const curl of [
       null,
-      { path: "/usr/bin/curl_chrome150", impersonates: true, profile: "chrome150" },
+      { path: "/usr/bin/curl_chrome150", prefixArgs: [], impersonates: true, profile: "chrome150" },
     ]) {
       expect(miruroWafBlockMessage(curl)).toContain("Cloudflare WAF on multiple mirrors");
     }

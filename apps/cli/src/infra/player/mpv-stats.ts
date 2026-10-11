@@ -33,6 +33,8 @@ export interface PlayerStatsState {
   readonly socketPath?: string;
   latestIpcSample: PlayerStatsSample | null;
   lastNonZeroSample: PlayerStatsSample | null;
+  /** Last positive duration observed in this playback cycle, independent of position updates. */
+  lastPositiveDurationSeconds: number;
   endReason: EndReason;
   playerExitedCleanly: boolean;
   playerExitCode: number | null;
@@ -79,6 +81,14 @@ function isMeaningful(sample: Pick<PlayerStatsSample, "positionSeconds" | "durat
   return sample.positionSeconds > 0 || sample.durationSeconds > 0;
 }
 
+// mpv can clear duration while retaining time-pos during shutdown. Both samples
+// belong to this playback cycle; keep its observed duration for EOF guards and
+// history rather than interpreting that terminal reset as an unknown duration.
+function observedDuration(state: PlayerStatsState, sample: PlayerStatsSample | null): number {
+  const duration = sample?.durationSeconds ?? 0;
+  return duration > 0 ? duration : state.lastPositiveDurationSeconds;
+}
+
 function preferStrongerProgressSample(
   existing: PlayerStatsSample | null,
   candidate: PlayerStatsSample,
@@ -99,6 +109,7 @@ export function createPlayerStatsState(socketPath?: string): PlayerStatsState {
     socketPath,
     latestIpcSample: null,
     lastNonZeroSample: null,
+    lastPositiveDurationSeconds: 0,
     endReason: "unknown",
     playerExitedCleanly: false,
     playerExitCode: null,
@@ -377,6 +388,8 @@ export function applyObservedPropertySample(
       return;
   }
 
+  if (next.durationSeconds > 0) state.lastPositiveDurationSeconds = next.durationSeconds;
+
   if (update.name === "time-pos" || update.name === "playback-time") {
     advanceTrustedProgressSeconds(
       state,
@@ -450,7 +463,7 @@ export function applyEndFileEvent(
   }
 
   const base = state.latestIpcSample ?? state.lastNonZeroSample;
-  const durationForGuard = base?.durationSeconds ?? 0;
+  const durationForGuard = observedDuration(state, base);
   let demotedPrematureEof = false;
   if (mapped === "eof" && durationForGuard > 0) {
     if (
@@ -492,6 +505,7 @@ export function applyEndFileEvent(
     source: "ipc",
     observedAt,
     endReason: mapped,
+    durationSeconds: durationForGuard,
   };
 
   if (demotedPrematureEof) {
@@ -516,21 +530,6 @@ export function applyEndFileEvent(
   }
 }
 
-/**
- * Signals that mean mpv faulted rather than being asked to stop. Kill-family
- * signals (SIGTERM/SIGINT/SIGKILL/...) stay "quit" — our own teardown
- * escalates through them.
- */
-const PLAYER_CRASH_SIGNALS: ReadonlySet<NodeJS.Signals> = new Set([
-  "SIGABRT",
-  "SIGBUS",
-  "SIGFPE",
-  "SIGILL",
-  "SIGSEGV",
-  "SIGSYS",
-  "SIGTRAP",
-]);
-
 export function recordPlayerExit(
   state: PlayerStatsState,
   exit: {
@@ -542,24 +541,17 @@ export function recordPlayerExit(
   state.playerExitSignal = exit.signal;
   state.playerExitedCleanly = exit.code === 0 && exit.signal === null;
 
-  // A player that died abnormally must never be promoted to eof — a crash
-  // after a transient eof-reached (keep-open, flaky HLS) is not a completed
-  // watch.
-  const exitedAbnormally =
-    (exit.signal !== null && PLAYER_CRASH_SIGNALS.has(exit.signal)) ||
-    (exit.code !== null && exit.code !== 0);
-
-  if (
-    state.endReason === "unknown" &&
-    state.latestIpcSample?.eofReached &&
-    !state.eofDemotedByPrematureGuard &&
-    !exitedAbnormally
-  ) {
-    state.endReason = "eof";
-  } else if (state.endReason === "unknown") {
-    if (exitedAbnormally) {
+  // An end-file IPC event is the only thing that may set "eof" from
+  // eof-reached residue (see applyEndFileEvent, guarded by the premature-EOF
+  // 95% checks). A process exit without one — the keep-open no-end-file case,
+  // a kill, or a crash — maps to error/quit and must never read back as a
+  // natural finish, or a killed mpv still writes completed:true downstream.
+  if (state.endReason === "unknown") {
+    if (exit.code !== null && exit.code !== 0) {
       state.endReason = "error";
-    } else if (exit.signal || exit.code === 0) {
+    } else if (exit.signal) {
+      state.endReason = "quit";
+    } else if (exit.code === 0) {
       state.endReason = "quit";
     }
   }
@@ -576,7 +568,7 @@ export function finalizePlaybackResult(
 
   const endReason = chosen?.endReason ?? state.endReason;
   let watchedSeconds = chosen?.positionSeconds ?? 0;
-  const duration = chosen?.durationSeconds ?? 0;
+  const duration = observedDuration(state, chosen);
   const lastTrustedProgressSeconds = state.maxTrustedProgressSeconds;
 
   if (endReason === "eof" && duration > 0) {

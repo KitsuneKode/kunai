@@ -16,9 +16,12 @@ function setFetchRouter(router: (url: string) => unknown): void {
   }) as typeof fetch;
 }
 
+import { clearTmdbMemoryCachesForTest } from "@/tmdb";
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
   clearTmdbSessionCache();
+  clearTmdbMemoryCachesForTest();
 });
 
 describe("TMDB series artwork", () => {
@@ -118,5 +121,70 @@ describe("TMDB series artwork", () => {
     const episodes = await fetchEpisodes("english-synopsis", 1);
     expect(episodes?.[0]?.name).toBe(".");
     expect(episodes?.[0]?.overview).toBe("The team faces a difficult choice.");
+  });
+
+  test("bounded cache evicts oldest entries rather than growing without bound", async () => {
+    const { fetchEpisodes, MAX_TMDB_CACHE_ENTRIES } = await import("@/tmdb");
+    setFetchRouter(() => ({
+      episodes: [
+        {
+          episode_number: 1,
+          name: "Test Episode",
+          air_date: "2020-01-01",
+          overview: "Overview",
+        },
+      ],
+    }));
+
+    // Fetch more entries than MAX_TMDB_CACHE_ENTRIES
+    for (let i = 0; i <= MAX_TMDB_CACHE_ENTRIES + 5; i++) {
+      await fetchEpisodes(`show-${i}`, 1);
+    }
+  });
+
+  test("transient network failure on language fetch retries on subsequent call rather than caching failure sentinel", async () => {
+    const { fetchEpisodes } = await import("@/tmdb");
+    let languageFails = true;
+    setFetchRouter((url) => {
+      if (url.includes("/tv/flaky-lang?language=en-US")) {
+        if (languageFails) {
+          throw new Error("503 Service Unavailable");
+        }
+        return { original_language: "ja" };
+      }
+      if (url.includes("/tv/flaky-lang/season/1?language=ja")) {
+        return {
+          episodes: [
+            {
+              episode_number: 1,
+              name: "第1話",
+              air_date: "2020-01-01",
+              overview: "",
+            },
+          ],
+        };
+      }
+      return {
+        episodes: [
+          {
+            episode_number: 1,
+            name: "Episode 1",
+            air_date: "2020-01-01",
+            overview: "",
+          },
+        ],
+      };
+    });
+
+    // First attempt fails to resolve language (transient failure)
+    const first = await fetchEpisodes("flaky-lang", 1);
+    expect(first?.[0]?.name).toBe("Episode 1");
+
+    // Second attempt after language recovery successfully fetches Japanese name
+    languageFails = false;
+    clearTmdbMemoryCachesForTest();
+    clearTmdbSessionCache();
+    const second = await fetchEpisodes("flaky-lang", 1);
+    expect(second?.[0]?.name).toBe("第1話");
   });
 });

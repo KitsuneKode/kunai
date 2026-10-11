@@ -330,6 +330,29 @@ describe("vault read failures abort mutations", () => {
     expect(vault.backend).toBe(backend);
     await expect(vault.get(CREDENTIAL_KEYS.anilistTokens)).rejects.toThrow();
   });
+
+  test("wincred spawns the resolved shell, not a hardcoded pwsh", async () => {
+    const seen: string[][] = [];
+    const spawn: CredentialSpawn = async (argv) => {
+      seen.push([...argv]);
+      return { exitCode: 1, stdout: "", stderr: "", timedOut: false };
+    };
+    // Inbox PowerShell 5.1 machine: no pwsh, only powershell.
+    const vault = await createCredentialVault({
+      paths: fakePaths(dir),
+      env: { KUNAI_CREDENTIAL_BACKEND: "wincred" },
+      which: (cmd) =>
+        cmd === "pwsh" ? null : "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      spawn,
+    });
+    expect(vault.backend).toBe("wincred");
+    await vault.get(CREDENTIAL_KEYS.anilistTokens);
+    expect(seen.length).toBeGreaterThan(0);
+    for (const argv of seen) {
+      expect(argv[0]).toContain("powershell");
+      expect(argv[0]).not.toBe("pwsh");
+    }
+  });
 });
 
 describe("ConfigService vault lane (#179)", () => {

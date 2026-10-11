@@ -26,20 +26,22 @@ Install paths are documented once on [Getting started](/docs/users/getting-start
 
 Production providers are registered in the CLI container. The live table and per-provider notes live on [Providers](/docs/users/providers#active-providers).
 
-| Provider family | Typical use | Status |
-| --- | --- | --- |
-| VidLink | Movies and series | Active default |
-| Rivestream | Movies and series | Active, second in the series order |
-| Videasy (`videasy`, legacy `vidking` alias) | Movies and series | Active fallback; canonical metadata host unreachable |
-| HiAnime (`hianime`) | Anime | Active default |
-| Miruro (`miruro`) | Anime | Active, second in the anime order |
-| KickAssAnime (`kickassanime`) | Anime | Active, third in the anime order |
-| AnimeGG (`animegg`) | Anime | Active, fourth in the anime order |
-| AniDB (`anidb`) | Anime | Active, fifth in the anime order |
-| AllManga-compatible (`allanime`) | Anime | Active, last in the anime order |
-| YouTube | Video mode (Invidious + yt-dlp) | Production |
-| Cineby | none | Not in production engine (research module) |
-| Playwright / browser providers | none | Not supported in active runtime |
+| Provider family                             | Typical use                     | Status                                               |
+| ------------------------------------------- | ------------------------------- | ---------------------------------------------------- |
+| VidLink                                     | Movies and series               | Active default                                       |
+| Rivestream                                  | Movies and series               | Active, second in the series order                   |
+| VidRock (`vidrock`)                         | Movies and series               | Active backup                                        |
+| Movy (`movy`)                               | Movies and series               | Active backup                                        |
+| Videasy (`videasy`, legacy `vidking` alias) | Movies and series               | Active fallback; canonical metadata host unreachable |
+| HiAnime (`hianime`)                         | Anime                           | Active default                                       |
+| Miruro (`miruro`)                           | Anime                           | Active, second in the anime order                    |
+| KickAssAnime (`kickassanime`)               | Anime                           | Active, third in the anime order                     |
+| AnimeGG (`animegg`)                         | Anime                           | Active, fourth in the anime order                    |
+| AniDB (`anidb`)                             | Anime                           | Active, fifth in the anime order                     |
+| AllManga-compatible (`allanime`)            | Anime                           | Active, last in the anime order                      |
+| YouTube                                     | Video mode (Invidious + yt-dlp) | Production                                           |
+| Cineby                                      | none                            | Not in production engine (research module)           |
+| Playwright / browser providers              | none                            | Not supported in active runtime                      |
 
 Provider availability can change without notice. Fallback chains and recovery are expected; see [Providers](/docs/users/providers).
 
@@ -52,16 +54,16 @@ Provider availability can change without notice. Fallback chains and recovery ar
 | Network (online playback)     | **Yes** for streaming | Use offline library for local files                                                 |
 | yt-dlp                        | YouTube and downloads | YouTube play/resolve and the download queue need it; other online playback does not |
 | ffprobe                       | No                    | Offline duration validation skipped                                                 |
-| chafa / ImageMagick           | Not used              | Retired; posters render in process, half-block is the floor                        |
+| chafa / ImageMagick           | Not used              | Retired; posters render in process, half-block is the floor                         |
 | Kitty graphics                | No                    | Best quality when available; otherwise half-block                                   |
 
 ## Downloads and offline
 
-| Capability                                | Status                                        |
-| ----------------------------------------- | --------------------------------------------- |
+| Capability                                | Status                                       |
+| ----------------------------------------- | -------------------------------------------- |
 | Download queue (`/downloads`)             | Beta; opt-in via setup                       |
-| Offline library (`/library`, `--offline`) | Beta                                          |
-| Launch download-only (`--download`)       | Beta                                          |
+| Offline library (`/library`, `--offline`) | Beta                                         |
+| Launch download-only (`--download`)       | Beta                                         |
 | Silent online/offline mode switch         | **Not supported**; mode changes are explicit |
 | Automatic season batch download           | **Not supported**; per-title enrollment      |
 
@@ -69,13 +71,13 @@ See [Downloads and offline](/docs/users/downloads-and-offline).
 
 ## Diagnostics and privacy
 
-| Capability                              | Status                                 |
-| --------------------------------------- | -------------------------------------- |
-| Local diagnostics (`/diagnostics`)      | Shipped                                |
-| Redacted export (`/export-diagnostics`) | Shipped                                |
-| Issue reporting guide (`/report-issue`) | Shipped                                |
+| Capability                              | Status                                |
+| --------------------------------------- | ------------------------------------- |
+| Local diagnostics (`/diagnostics`)      | Shipped                               |
+| Redacted export (`/export-diagnostics`) | Shipped                               |
+| Issue reporting guide (`/report-issue`) | Shipped                               |
 | Raw stream URLs in exports              | **Not supported**; redacted by design |
-| Automatic crash upload                  | **Not supported**                      |
+| Automatic crash upload                  | **Not supported**                     |
 
 See [Reliability and privacy](/docs/users/reliability-and-privacy).
 
@@ -83,18 +85,18 @@ See [Reliability and privacy](/docs/users/reliability-and-privacy).
 
 Exact binary targets and posture:
 
-| Target                      | Playback    | Binary install                          | Status                                                            |
-| --------------------------- | ----------- | --------------------------------------- | ----------------------------------------------------------------- |
-| `linux-x64` (glibc)         | mpv         | `install.sh` → `kunai-linux-x64`        | **Supported**                                                     |
-| `linux-arm64` (glibc)       | mpv         | `install.sh` → `kunai-linux-arm64`      | **Supported**                                                     |
-| `linux-x64-musl` (Alpine)   | mpv         | `install.sh` → `kunai-linux-x64-musl`   | **Supported**                                                     |
-| `linux-arm64-musl` (Alpine) | mpv         | `install.sh` → `kunai-linux-arm64-musl` | **Supported**                                                     |
-| `darwin-x64`                | mpv         | `install.sh`                            | **Beta** (unsigned; Gatekeeper may block)                         |
-| `darwin-arm64`              | mpv         | `install.sh`                            | **Beta** (unsigned; Gatekeeper may block)                         |
-| `windows-x64`               | mpv         | `install.ps1`                           | **Beta** (SmartScreen may warn)                                   |
-| `windows-arm64`             | mpv         | `install.ps1`                           | **Experimental**                                                  |
+| Target                      | Playback    | Binary install                          | Status                                                           |
+| --------------------------- | ----------- | --------------------------------------- | ---------------------------------------------------------------- |
+| `linux-x64` (glibc)         | mpv         | `install.sh` → `kunai-linux-x64`        | **Supported**                                                    |
+| `linux-arm64` (glibc)       | mpv         | `install.sh` → `kunai-linux-arm64`      | **Supported**                                                    |
+| `linux-x64-musl` (Alpine)   | mpv         | `install.sh` → `kunai-linux-x64-musl`   | **Supported**                                                    |
+| `linux-arm64-musl` (Alpine) | mpv         | `install.sh` → `kunai-linux-arm64-musl` | **Supported**                                                    |
+| `darwin-x64`                | mpv         | `install.sh`                            | **Beta** (unsigned; Gatekeeper may block)                        |
+| `darwin-arm64`              | mpv         | `install.sh`                            | **Beta** (unsigned; Gatekeeper may block)                        |
+| `windows-x64`               | mpv         | `install.ps1`                           | **Beta** (SmartScreen may warn)                                  |
+| `windows-arm64`             | mpv         | `install.ps1`                           | **Experimental**                                                 |
 | WSL (any distro)            | mpv (Linux) | Linux `install.sh`                      | Uses the **Linux** environment, not Windows-native PATH/mpv/data |
-| FreeBSD / other BSD         | Source only | Not published                           | **Unsupported** binary                                            |
+| FreeBSD / other BSD         | Source only | Not published                           | **Unsupported** binary                                           |
 
 `kunai://` protocol registration is **Linux-only** (including WSL). Poster previews: Kitty on Kitty/Ghostty, iTerm2 inline images on iTerm2 and VSCode 1.80+, sixel where reported, otherwise built-in half-block. No external binary is used.
 

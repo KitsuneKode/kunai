@@ -13,7 +13,6 @@ const ABS_ONLY_INTENT: QueuePlaybackIntent = {
   titleId: "anilist:42",
   mediaKind: "anime",
   absoluteEpisode: 13,
-  source: "auto-next",
 };
 
 describe("playlistAdvanceFromQueueIntent", () => {
@@ -64,7 +63,6 @@ describe("playlistAdvanceFromQueueIntent", () => {
       titleId: "anilist:181053",
       mediaKind: "anime",
       contentType: "movie",
-      source: "auto-next",
     };
 
     const outcome = playlistAdvanceFromQueueIntent({ intent, title: "Infinity Castle" });
@@ -106,7 +104,7 @@ describe("resolvePlaylistAutoNextCountdown", () => {
     const queue = new QueueService(repo, "s");
 
     // Claim exact ID before countdown (not head).
-    const claimed = queue.beginPlayback(selected.id, "auto-next", "2026-07-21T01:00:00.000Z");
+    const claimed = queue.beginPlayback(selected.id, "2026-07-21T01:00:00.000Z");
     expect(claimed?.queueEntryId).toBe(selected.id);
     expect(claimed?.absoluteEpisode).toBe(13);
     expect(repo.getById(head.id)?.status).toBe("pending");
@@ -133,7 +131,7 @@ describe("resolvePlaylistAutoNextCountdown", () => {
     expect(repo.getById(selected.id)?.status).toBe("pending");
 
     // Re-claim and advance: handoff carries abs-only identity on the outcome.
-    const reclaimed = queue.beginPlayback(selected.id, "auto-next", "2026-07-21T01:01:00.000Z");
+    const reclaimed = queue.beginPlayback(selected.id, "2026-07-21T01:01:00.000Z");
     const advanced = resolvePlaylistAutoNextCountdown({
       intent: reclaimed!,
       title: selected.title,
