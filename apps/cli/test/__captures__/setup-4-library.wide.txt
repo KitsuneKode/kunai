@@ -1,15 +1,24 @@
-# setup-5-library · wide (140×34)
-   🦊 Kunai · downloads & accounts                                                                                              setup 5⁄7
+# setup-4-library · wide (140×34)
+   🦊 Kunai · playback & downloads                                                                                              setup 4⁄6
  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
-                              Downloads & accounts
-                              Accounts are linked after setup, so a browser hiccup never traps you here.
+                              Playback, downloads & accounts
+                              Toggles here and in Settings — accounts are linked after setup, so a browser
+                              hiccup never traps you.
 
                               ▌ ○ Download for offline
                                     ~/.local/share/kunai
                                 ↻ Download quality — 1080p
                                     turn on downloads first — then space cycles quality
+
+                              Playback feel
+                                ○ Play the next episode automatically
+                                    Keeps a binge going without a keystroke
+                                ○ Skip intros
+                                    Uses AniSkip and IntroDB timings when they exist
+                                ○ Skip credits
+                                    Jumps the end card and rolls on
 
                               While we're here
                                 ○ AniList
