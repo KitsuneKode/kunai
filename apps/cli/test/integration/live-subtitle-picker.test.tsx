@@ -98,14 +98,22 @@ test("the rendered live subtitle picker selects an external track and then turns
     await act(async () => {});
     handle.stdin.enqueue("\r");
     let firstDone = false;
-    void first.pending.then(() => {
-      firstDone = true;
-    });
+    void first.pending.then(
+      () => {
+        firstDone = true;
+        return undefined;
+      },
+      () => {
+        firstDone = true;
+        return undefined;
+      },
+    );
     await waitUntil(() => firstDone, {
       tick,
       now: performance.now.bind(performance),
       label: "subtitle pick completed",
     });
+    await first.pending;
     expect(selections).toHaveLength(1);
     expect(selections[0]?.subtitleUrl).toBe(subtitleUrl);
     expect(container.stateManager.getState().stream?.subtitle).toBe(subtitleUrl);
@@ -115,14 +123,22 @@ test("the rendered live subtitle picker selects an external track and then turns
     await act(async () => {});
     handle.stdin.enqueue("\r");
     let secondDone = false;
-    void second.pending.then(() => {
-      secondDone = true;
-    });
+    void second.pending.then(
+      () => {
+        secondDone = true;
+        return undefined;
+      },
+      () => {
+        secondDone = true;
+        return undefined;
+      },
+    );
     await waitUntil(() => secondDone, {
       tick,
       now: performance.now.bind(performance),
       label: "subtitle off completed",
     });
+    await second.pending;
     expect(selections).toHaveLength(2);
     expect(selections[1]?.subtitleUrl).toBeNull();
     expect(container.stateManager.getState().stream?.subtitle).toBeUndefined();
