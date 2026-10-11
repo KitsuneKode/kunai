@@ -1,12 +1,10 @@
-// =============================================================================
-// download-path-naming.ts — where a downloaded file goes, on any OS.
+// Where a downloaded file goes, on any OS.
 //
 // Extracted from DownloadService because naming is the part of downloading that
 // is least about downloading and most about the three filesystems we target.
 // Buried as a private helper it had no test seam, so the Windows-only rules
 // below could not be verified from a Linux CI runner — which is exactly where
 // they need to be verified, because almost nobody developing this runs Windows.
-// =============================================================================
 
 import type { CanonicalMediaPosition } from "@/domain/media/media-presentation";
 import { joinerForNodePlatform } from "@kunai/storage";

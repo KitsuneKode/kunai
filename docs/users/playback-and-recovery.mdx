@@ -39,6 +39,7 @@ Kunai launches mpv with required headers and subtitle attachments, then supervis
 ### Return to the shell
 
 When mpv closes, Kunai shows post-play options: next episode, replay, fallback, diagnostics, or new search.
+
 </Step>
 </Steps>
 
@@ -62,20 +63,20 @@ More: [Continue watching and new episodes](/docs/users/continue-watching-and-new
 
 Provider catalogs drift. Recovery is normal usage.
 
-| Action                   | Keys / command                                             | Effect                                            |
-| ------------------------ | ---------------------------------------------------------- | ------------------------------------------------- |
-| Recover stream           | `r` in the recovery prompt or during playback, `/recover`  | Refresh current provider intent                   |
-| Refresh stream (in mpv)  | `Ctrl+R`                                                   | Re-resolve the same episode without leaving playback |
-| Resume saved position    | `Alt+R`                                                    | Jump back to your last position after refresh     |
-| Fallback provider        | `⇧F`, `/fallback`                                          | Next compatible provider                          |
-| Recompute                | `/recompute`                                               | Bypass stale cache for current episode            |
-| Replay                   | `/replay`                                                  | Start current episode from beginning              |
-| Source                   | `o`, `/source`                                             | Switch source / mirror                            |
-| Quality                  | `k`, `/quality`                                            | Switch quality                                    |
-| Reset provider health | `/reset-provider-health` | Forget down-provider memory so auto-fallback can retry |
-| Clear cache           | `/clear-cache`           | Drop cached stream URLs                                |
-| Diagnostics           | `/diagnostics`           | Runtime panel with attempt timeline                    |
-| Export                | `/export-diagnostics`    | Redacted support bundle                                |
+| Action                  | Keys / command                                            | Effect                                                 |
+| ----------------------- | --------------------------------------------------------- | ------------------------------------------------------ |
+| Recover stream          | `r` in the recovery prompt or during playback, `/recover` | Refresh current provider intent                        |
+| Refresh stream (in mpv) | `Ctrl+R`                                                  | Re-resolve the same episode without leaving playback   |
+| Resume saved position   | `Alt+R`                                                   | Jump back to your last position after refresh          |
+| Fallback provider       | `⇧F`, `/fallback`                                         | Next compatible provider                               |
+| Recompute               | `/recompute`                                              | Bypass stale cache for current episode                 |
+| Replay                  | `/replay`                                                 | Start current episode from beginning                   |
+| Source                  | `o`, `/source`                                            | Switch source / mirror                                 |
+| Quality                 | `k`, `/quality`                                           | Switch quality                                         |
+| Reset provider health   | `/reset-provider-health`                                  | Forget down-provider memory so auto-fallback can retry |
+| Clear cache             | `/clear-cache`                                            | Drop cached stream URLs                                |
+| Diagnostics             | `/diagnostics`                                            | Runtime panel with attempt timeline                    |
+| Export                  | `/export-diagnostics`                                     | Redacted support bundle                                |
 
 <Callout type="idea" title="Try recover before fallback">
   Recover keeps the same provider and may reload mpv or re-resolve. Fallback switches providers and

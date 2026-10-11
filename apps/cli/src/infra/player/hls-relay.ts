@@ -154,7 +154,9 @@ export async function fetchHlsRelayUpstream(
       throw new Error("upstream response reported an invalid byte count");
     }
     if (receivedBytes > remainingResponseBytes) {
-      throw new Error(`upstream body exceeded ${bodyLimitBytes} bytes`);
+      throw new Error(
+        `upstream body exceeded the ${bodyLimitBytes} byte budget (${receivedBytes} bytes received, ${remainingResponseBytes} remaining)`,
+      );
     }
     remainingResponseBytes -= receivedBytes;
     assertWithinDeadline();
@@ -217,11 +219,12 @@ function curlFetchOnce(
   referer: string,
   origin: string,
   budget: HlsRelayCurlBudget,
+  curlPath: string,
 ): Promise<HlsRelayCurlResponse> {
   assertRelayUpstreamUrl(url);
   return new Promise((resolve, reject) => {
     const proc = spawn(
-      "curl",
+      curlPath,
       buildHlsRelayCurlArgs(url, referer, origin, budget, curlSupportsHttp2()),
     );
     let chunks: Buffer[] = [];
@@ -275,7 +278,12 @@ function curlFetchOnce(
       settled = true;
       clearTimeout(watchdog);
       const buf = Buffer.concat(chunks);
-      if (code !== 0 && buf.length === 0) {
+      // Any non-zero exit means curl itself reports a transport failure — the
+      // buffered bytes can be a truncated transfer that still carries a
+      // parseable trailer (`-w` prints http_code for partial bodies too), so
+      // relaying them would hand mpv a cut playlist stamped with the upstream
+      // status. Only exit 0 reaches the trailer parse.
+      if (code !== 0) {
         reject(new Error(`curl exit ${code}: ${stderr.slice(0, 120)}`));
         return;
       }
@@ -317,9 +325,10 @@ function curlFetch(
   url: string,
   referer: string,
   origin: string,
+  curlPath: string,
 ): Promise<HlsRelayUpstreamResponse> {
   return fetchHlsRelayUpstream(url, (currentUrl, budget) =>
-    curlFetchOnce(currentUrl, referer, origin, budget),
+    curlFetchOnce(currentUrl, referer, origin, budget, curlPath),
   );
 }
 
@@ -394,7 +403,15 @@ export function startHlsRelay(
   streamHeaders: Readonly<Record<string, string>>,
   options: StartHlsRelayOptions = {},
 ): HlsRelayHandle {
-  if (!whichLive("curl")) {
+  let curlPath = whichLive("curl");
+  if (process.platform === "win32" && curlPath && /\.(?:bat|cmd)$/i.test(curlPath)) {
+    // A .bat/.cmd shim resolves but cannot be spawned — the BatBadBut guard
+    // refuses argv containing cmd.exe metacharacters, and every request
+    // carries `%` in the -w trailer. Prefer the real executable (System32
+    // curl.exe has shipped in-box since Windows 10 1803).
+    curlPath = whichLive("curl.exe");
+  }
+  if (!curlPath || (process.platform === "win32" && /\.(?:bat|cmd)$/i.test(curlPath))) {
     throw new Error("curl is required for HLS relay (CDN blocks non-curl TLS fingerprints)");
   }
 
@@ -440,7 +457,7 @@ export function startHlsRelay(
           return new Response("invalid upstream URL", { status: 403 });
         }
         try {
-          const r = await curlFetch(srcUrl, referer, origin);
+          const r = await curlFetch(srcUrl, referer, origin, curlPath);
           if (r.status !== 200) {
             options.onUpstreamError?.({
               status: r.status,
@@ -482,7 +499,7 @@ export function startHlsRelay(
           return new Response("invalid upstream URL", { status: 403 });
         }
         try {
-          const r = await curlFetch(srcUrl, referer, origin);
+          const r = await curlFetch(srcUrl, referer, origin, curlPath);
           if (r.status !== 200) {
             options.onUpstreamError?.({
               status: r.status,

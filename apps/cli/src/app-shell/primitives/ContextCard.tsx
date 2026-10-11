@@ -27,7 +27,7 @@ export function ContextCard({
       : model.stateTone === "warning"
         ? palette.accentDeep
         : model.stateTone === "danger"
-          ? palette.danger
+          ? palette.dangerText
           : palette.dim;
 
   return (

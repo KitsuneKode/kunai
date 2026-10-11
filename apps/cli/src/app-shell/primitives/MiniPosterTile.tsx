@@ -3,13 +3,14 @@ import { Text } from "ink";
 import React from "react";
 
 import type { KittyPlacementSlot } from "../kitty-placement-registry";
+import { sanitizeTerminalText } from "../shell-text";
 import { palette } from "../shell-theme";
 import { PosterOutput } from "../SixelPosterPane";
 import { usePosterPreview } from "../use-poster-preview";
 
 function initialsOf(title: string): string {
   return (
-    title
+    sanitizeTerminalText(title)
       .split(/\s+/)
       .filter(Boolean)
       .map((word) => word[0]?.toUpperCase() ?? "")

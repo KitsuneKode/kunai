@@ -1,6 +1,80 @@
 import { describe, expect, test } from "bun:test";
+import { EventEmitter } from "node:events";
 
-import { shouldSettleViewportImmediately } from "@/app-shell/use-viewport-policy";
+import {
+  shouldSettleViewportImmediately,
+  subscribeStdoutResize,
+} from "@/app-shell/use-viewport-policy";
+
+class FakeStdout extends EventEmitter {
+  columns = 80;
+  rows = 24;
+}
+
+describe("subscribeStdoutResize", () => {
+  test("N subscribers share a single stdout resize listener", () => {
+    const stdout = new FakeStdout();
+    const unsubs = Array.from({ length: 15 }, () => subscribeStdoutResize(stdout, () => {}));
+    expect(stdout.listenerCount("resize")).toBe(1);
+    for (const unsub of unsubs) unsub();
+    expect(stdout.listenerCount("resize")).toBe(0);
+  });
+
+  test("subscribers fire on a real dimension change and skip no-op resizes", () => {
+    const stdout = new FakeStdout();
+    const seen: string[] = [];
+    subscribeStdoutResize(stdout, (next) => seen.push(`${next.cols}x${next.rows}`));
+
+    stdout.emit("resize"); // same size — no fan-out
+    expect(seen).toEqual([]);
+
+    stdout.columns = 132;
+    stdout.emit("resize");
+    expect(seen).toEqual(["132x24"]);
+
+    stdout.emit("resize"); // unchanged again
+    expect(seen).toEqual(["132x24"]);
+  });
+
+  test("a throwing subscriber does not starve later subscribers", () => {
+    const stdout = new FakeStdout();
+    const seen: string[] = [];
+    subscribeStdoutResize(stdout, () => {
+      throw new Error("subscriber exploded");
+    });
+    subscribeStdoutResize(stdout, (next) => seen.push(`${next.cols}x${next.rows}`));
+
+    stdout.columns = 132;
+    stdout.emit("resize");
+
+    // `last` is already updated when subscribers run — without per-callback
+    // isolation the skipped subscriber would never see this resize again.
+    expect(seen).toEqual(["132x24"]);
+  });
+
+  test("a detached subscriber is not called", () => {
+    const stdout = new FakeStdout();
+    const seen: string[] = [];
+    const unsub = subscribeStdoutResize(stdout, (next) => seen.push(`${next.cols}`));
+    unsub();
+    stdout.columns = 200;
+    stdout.emit("resize");
+    expect(seen).toEqual([]);
+    expect(stdout.listenerCount("resize")).toBe(0);
+  });
+
+  test("degenerate reports fall back to sane dimensions", () => {
+    const stdout = new FakeStdout();
+    const seen: string[] = [];
+    subscribeStdoutResize(stdout, (next) => seen.push(`${next.cols}x${next.rows}`));
+    stdout.columns = 140;
+    stdout.emit("resize");
+    stdout.columns = 0;
+    stdout.rows = Number.NaN;
+    stdout.emit("resize");
+    expect(seen).toEqual(["140x24", "80x24"]);
+  });
+});
 
 describe("shouldSettleViewportImmediately", () => {
   test("settles immediately when columns shrink", () => {

@@ -55,8 +55,8 @@ export interface TmuxSessionOptions {
   readonly fakeMpv?: boolean;
   readonly fakeMpvMode?: "normal" | "fail-pre-loaded" | "hold";
   /**
-   * Command override — default `bun src/main.ts`. The compiled-binary tier
-   * passes the built binary path here; everything else stays identical.
+   * Extra shell-quoted arguments to the real `bun src/main.ts` entrypoint.
+   * This is a developer-controlled shell fragment, not an executable override.
    */
   readonly command?: string;
   /** Keep the sandbox after stop() (for post-mortem inspection). */
@@ -172,7 +172,7 @@ export async function startTmuxSession(options: TmuxSessionOptions = {}): Promis
       String(columns),
       "-y",
       String(rows),
-      `sh ${JSON.stringify(runScript)}`,
+      `sh ${shellQuote(runScript)}`,
     ]);
     sessionCreated = true;
     // remain-on-exit keeps the final frame + pane_dead after the app exits —
@@ -192,11 +192,21 @@ export async function startTmuxSession(options: TmuxSessionOptions = {}): Promis
   }
 }
 
+/** Quote one literal POSIX shell argument, including apostrophes/newlines. */
+function shellQuote(value: string): string {
+  return "'" + value.replaceAll("'", "'\"'\"'") + "'";
+}
+
 /** Write the env-owning launch script into the sandbox; returns its path. */
 function writeLaunchScript(profile: IsolatedCliProfile, options: TmuxSessionOptions): string {
   // The launch script owns env so tmux gets one simple argv and quoting stays
   // out of the tmux layer entirely. `profile.env` is the storageRootEnv set —
   // HOME + XDG + APPDATA, the same isolation every other harness uses.
+  for (const [key, value] of Object.entries(options.env ?? {})) {
+    if (key in profile.env && value !== profile.env[key]) {
+      throw new Error(`cannot override isolated profile env: ${key}`);
+    }
+  }
   const env: Record<string, string> = {
     ...profile.env,
     KUNAI_COMPILED_SMOKE: "1",
@@ -215,7 +225,7 @@ function writeLaunchScript(profile: IsolatedCliProfile, options: TmuxSessionOpti
     mkdirSync(shimDir, { recursive: true });
     writeFileSync(
       join(shimDir, "mpv"),
-      `#!/bin/sh\nexec ${JSON.stringify(bunBin)} ${JSON.stringify(FAKE_MPV_BIN)} "$@"\n`,
+      `#!/bin/sh\nexec ${shellQuote(bunBin)} ${shellQuote(FAKE_MPV_BIN)} "$@"\n`,
       { mode: 0o755 },
     );
     env.KUNAI_FAKE_MPV_EVIDENCE = join(profile.rootDir, "fake-mpv-evidence.jsonl");
@@ -227,7 +237,7 @@ function writeLaunchScript(profile: IsolatedCliProfile, options: TmuxSessionOpti
   // appending keeps the real entrypoint while letting a run carry `-S`,
   // `--debug`, etc. The string lands verbatim in the launch script, so
   // shell quoting inside it is honored.
-  const baseCommand = `${JSON.stringify(bunBin)} ${JSON.stringify(join(CLI_ROOT, "src/main.ts"))}`;
+  const baseCommand = `${shellQuote(bunBin)} ${shellQuote(join(CLI_ROOT, "src/main.ts"))}`;
   const command = options.command ? `${baseCommand} ${options.command}` : baseCommand;
   const runScript = join(profile.rootDir, "run.sh");
   // PATH is computed, not exported like the rest — a caller-provided env.PATH
@@ -242,7 +252,7 @@ function writeLaunchScript(profile: IsolatedCliProfile, options: TmuxSessionOpti
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) {
         throw new Error(`invalid env name for launch script: ${JSON.stringify(k)}`);
       }
-      return `export ${k}=${JSON.stringify(v)}`;
+      return `export ${k}=${shellQuote(v)}`;
     })
     .join("\n");
   const finalPath = [
@@ -259,7 +269,7 @@ function writeLaunchScript(profile: IsolatedCliProfile, options: TmuxSessionOpti
   // explicit --set-env CI=1 still wins for tests that want it.
   writeFileSync(
     runScript,
-    `#!/bin/sh\nunset CI CONTINUOUS_INTEGRATION\n${envLines}\nexport PATH=${JSON.stringify(finalPath)}\ncd ${JSON.stringify(CLI_ROOT)}\necho "agent-launch: ${command}"\nexec ${command}\n`,
+    `#!/bin/sh\nunset CI CONTINUOUS_INTEGRATION\n${envLines}\nexport PATH=${shellQuote(finalPath)}\ncd ${shellQuote(CLI_ROOT)}\nprintf '%s\\n' ${shellQuote(`agent-launch: ${command}`)}\nexec ${command}\n`,
     { mode: 0o755 },
   );
   return runScript;
@@ -464,7 +474,7 @@ export function attachTmuxSession(input: {
     },
     async relaunch() {
       await session.quit();
-      await tmux(["respawn-pane", "-k", "-t", name, `sh ${JSON.stringify(runScript)}`]);
+      await tmux(["respawn-pane", "-k", "-t", name, `sh ${shellQuote(runScript)}`]);
     },
     inspect: () => createProfileInspector(profile.paths),
     snapshot: () => createProfileInspector(profile.paths).snapshot(),

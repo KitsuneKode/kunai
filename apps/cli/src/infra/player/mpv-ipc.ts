@@ -57,6 +57,7 @@ export type MpvIpcSessionOptions = {
   onFileLoaded?: FileLoadedHandler;
   onCommandResult?: (result: MpvIpcCommandResult) => void;
   closeTimers?: MpvIpcCloseTimers;
+  commandTimers?: MpvIpcCloseTimers;
 };
 
 export type MpvIpcCloseTimers = {
@@ -90,7 +91,7 @@ export type MpvIpcCommandResult =
 type PendingCommand = {
   command: readonly unknown[];
   resolve: (result: MpvIpcCommandResult) => void;
-  timeout: ReturnType<typeof setTimeout>;
+  timeout: unknown;
 };
 
 // Per-socket state threaded through Bun's data field so the close handler
@@ -101,12 +102,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Encode one newline-delimited mpv command, optionally correlated with a response. */
 export function buildMpvIpcCommand(command: readonly unknown[], requestId?: number): string {
   const payload =
     requestId === undefined ? { command } : { command, request_id: Math.trunc(requestId) };
   return `${JSON.stringify(payload)}\n`;
 }
 
+/** Parse one complete IPC line; malformed and non-object payloads are ignored. */
 export function parseMpvIpcLine(raw: string): MpvIpcMessage | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -165,28 +168,65 @@ export interface MpvIpcSession {
   close(): Promise<void>;
 }
 
+/**
+ * Open a bounded, byte-ordered IPC session. Commands settle once on response,
+ * deadline, or close; expiry during a partial write closes the damaged stream.
+ */
 export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<MpvIpcSession> {
   const closeTimers = options.closeTimers ?? defaultCloseTimers;
+  const commandTimers = options.commandTimers ?? defaultCloseTimers;
   const requestIds = new Map<number, string>();
   const pendingCommands = new Map<number, PendingCommand>();
   let nextRequestId = 1;
   let closed = false;
   let closePromise: Promise<void> | null = null;
   let bufferValue = "";
+  const writes: Array<{ bytes: Buffer; offset: number; requestId?: number }> = [];
+  let queuedBytes = 0;
+  let waitingForDrain = false;
+  // Bound stalled IPC independently of the number of UI events producing commands.
+  const maxQueuedBytes = 256 * 1024;
   const decoder = new StringDecoder("utf8");
 
-  const drainPending = (error: string) => {
+  const drainPending = (error: string, timedOutRequestId?: number) => {
     for (const [requestId, pending] of Array.from(pendingCommands)) {
-      clearTimeout(pending.timeout);
-      pendingCommands.delete(requestId);
-      pending.resolve({ ok: false, command: pending.command, requestId, error });
+      pending.resolve({
+        ok: false,
+        command: pending.command,
+        requestId,
+        error: requestId === timedOutRequestId ? "timeout" : error,
+      });
     }
   };
 
-  const markClosed = (error = "session closed") => {
+  const markClosed = (error = "session closed", timedOutRequestId?: number) => {
     if (closed) return;
     closed = true;
-    drainPending(error);
+    writes.length = 0;
+    queuedBytes = 0;
+    drainPending(error, timedOutRequestId);
+  };
+
+  const flushWrites = (sock: Bun.Socket<SocketState>) => {
+    if (closed || waitingForDrain) return;
+    try {
+      for (let entry = writes[0]; entry !== undefined; entry = writes[0]) {
+        const remaining = entry.bytes.subarray(entry.offset);
+        const accepted = sock.write(remaining);
+        if (accepted < 0) throw new Error("mpv IPC socket is closed");
+        if (accepted > remaining.length) throw new Error("invalid mpv IPC write result");
+        entry.offset += accepted;
+        queuedBytes -= accepted;
+        if (entry.offset < entry.bytes.length) {
+          waitingForDrain = true;
+          return;
+        }
+        writes.shift();
+      }
+    } catch (error) {
+      markClosed(error instanceof Error ? error.message : String(error));
+      sock.terminate();
+    }
   };
 
   const socket = await Bun.connect<SocketState>({
@@ -194,6 +234,10 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
     data: { onClose: null },
     socket: {
       open() {},
+      drain(sock) {
+        waitingForDrain = false;
+        flushWrites(sock);
+      },
       data(_socket, data) {
         if (closed) return;
         bufferValue += decoder.write(data);
@@ -239,13 +283,22 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
     requestIds.set(id, name);
     initPayload += buildMpvIpcCommand(["get_property", name], id);
   }
-  socket.write(initPayload);
+  const enqueueWrite = (payload: string, requestId?: number) => {
+    if (closed || socket.readyState !== 1) throw new Error("mpv IPC session is closed");
+    const bytes = Buffer.from(payload, "utf8");
+    if (queuedBytes + bytes.length > maxQueuedBytes) throw new Error("mpv IPC write queue is full");
+    writes.push({ bytes, offset: 0, requestId });
+    queuedBytes += bytes.length;
+    flushWrites(socket);
+    if (closed) throw new Error("mpv IPC session is closed");
+  };
+  enqueueWrite(initPayload);
 
   const writeCommand = (command: readonly unknown[], requestId?: number) => {
     if (closed || socket.readyState !== 1) {
       throw new Error("mpv IPC session is closed");
     }
-    socket.write(buildMpvIpcCommand(command, requestId));
+    enqueueWrite(buildMpvIpcCommand(command, requestId), requestId);
   };
 
   return {
@@ -269,7 +322,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
           settled = true;
           const pending = pendingCommands.get(requestId);
           if (pending) {
-            clearTimeout(pending.timeout);
+            commandTimers.clearTimeout(pending.timeout);
             pendingCommands.delete(requestId);
           }
           // The `settled` guard above makes timeout/write-error/response races single-shot.
@@ -277,7 +330,20 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
           resolve(result);
           options.onCommandResult?.(result);
         };
-        const timeout = setTimeout(() => {
+        const timeout = commandTimers.setTimeout(() => {
+          const index = writes.findIndex((entry) => entry.requestId === requestId);
+          const entry = writes[index];
+          if (entry && entry.offset > 0) {
+            // Dropping half a JSON line corrupts the next command; completing it
+            // after its deadline could launch playback the user already cancelled.
+            markClosed("partial IPC write timed out", requestId);
+            socket.terminate();
+            return;
+          } else if (entry) {
+            queuedBytes -= entry.bytes.length;
+            writes.splice(index, 1);
+          }
+          // Fence queued bytes before notifying code that can re-enter this session.
           finish({ ok: false, command, requestId, error: "timeout" });
         }, timeoutMs);
         pendingCommands.set(requestId, { command, resolve: finish, timeout });
@@ -388,8 +454,6 @@ function dispatchMessage(
             requestId: message.request_id,
             error: message.error ?? "unknown mpv ipc error",
           };
-    clearTimeout(pending.timeout);
-    pendingCommands.delete(message.request_id);
     pending.resolve(result);
     return;
   }

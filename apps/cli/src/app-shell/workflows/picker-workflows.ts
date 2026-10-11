@@ -6,6 +6,7 @@ import {
   type ListShellActionContext,
 } from "@/app-shell/pickers";
 import { buildTracksPanelData } from "@/app-shell/tracks-panel-data";
+import type { ShellPickerOption } from "@/app-shell/types";
 import type { Container } from "@/container";
 import { markCurrentLabel } from "@/domain/current-label";
 import {
@@ -14,6 +15,7 @@ import {
   type DecodedTrackSelection,
   type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
+import { nearestOptionIndex } from "@/domain/session/picker-model";
 import type { EpisodePickerOption, StreamInfo } from "@/domain/types";
 import { scheduleVideasyLazySourceProbesFromContainer } from "@/services/playback/schedule-videasy-lazy-probes";
 import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
@@ -208,7 +210,7 @@ export async function openAnimeEpisodePicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: currentEpisode >= 1 && currentEpisode <= count ? currentEpisode - 1 : -1,
+      initialIndex: nearestOptionIndex(episodes, currentEpisode),
       options: episodes.map((episode) => ({
         value: String(episode),
         label: `Episode ${episode}`,
@@ -241,7 +243,10 @@ export async function openAnimeEpisodeListPicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: episodes.findIndex((episode) => episode.index === currentEpisode),
+      initialIndex: nearestOptionIndex(
+        episodes.map((episode) => episode.index),
+        currentEpisode,
+      ),
       options: episodes.map((episode) => ({
         value: String(episode.index),
         label: episode.label,
@@ -263,5 +268,19 @@ export async function openAnimeEpisodeListPicker(
       label: markCurrentLabel(episode.label, episode.index === currentEpisode),
       detail: episode.detail,
     })),
+  });
+}
+
+/** Open already prepared episode choices without performing catalog acquisition. */
+export function openPlaybackEpisodePicker(
+  container: Container,
+  season: number,
+  picker: { readonly options: readonly ShellPickerOption<string>[]; readonly initialIndex: number },
+): Promise<string | null> {
+  return openSessionPicker(container.stateManager, {
+    type: "episode_picker",
+    season,
+    options: picker.options,
+    initialIndex: picker.initialIndex,
   });
 }

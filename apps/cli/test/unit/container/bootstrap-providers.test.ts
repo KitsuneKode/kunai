@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { loadProductionProviderModules } from "@/container/bootstrap-providers";
+import { isAnimeOnlyProviderId } from "@/domain/media/content-kind";
 import { RELAY_CAPABLE_PROVIDER_OPTIONS } from "@/domain/provider-relay-settings";
 import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
 import { DEFAULT_CONFIG } from "@kunai/config";
@@ -141,5 +142,35 @@ describe("production provider defaults", () => {
         expect(keyParts).toContain("episode");
       }
     }
+  });
+});
+
+describe("anime-only provider ids", () => {
+  test("match every production module whose manifest serves only anime", async () => {
+    // History stamps a title "anime" from its provider when no AniList/MAL id
+    // resolved. A hand list that missed hianime/animegg/kickassanime/anidb
+    // mis-stamped those plays "series" — so pin it to the manifests.
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    const animeOnly = modules
+      .filter(
+        (module) =>
+          module.manifest.mediaKinds.length > 0 &&
+          module.manifest.mediaKinds.every((kind) => kind === "anime"),
+      )
+      .map((module) => module.providerId)
+      .sort();
+
+    expect(
+      animeOnly.filter((id) => !isAnimeOnlyProviderId(id)),
+      "anime-only manifest missing from ANIME_ONLY_PROVIDER_IDS",
+    ).toEqual([]);
+    expect(
+      modules
+        .map((module) => module.providerId)
+        .filter(isAnimeOnlyProviderId)
+        .sort(),
+    ).toEqual(animeOnly);
   });
 });

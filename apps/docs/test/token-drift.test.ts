@@ -10,6 +10,10 @@ const EXPECTED_HEX = {
   "--color-fd-background": "#100b0f",
   "--color-fd-card": "#1c1620",
   "--color-fd-primary": "#ff8fb0",
+  // Text and control-edge tokens that carry a contrast floor (4.5:1 / 3:1). A silent
+  // drift between the CLI palette and the docs would break the floor on one side.
+  "--color-fd-muted-foreground": "#beb1c0",
+  "--kunai-line-control": "#786782",
   "--kunai-ok": "#54d6a0",
   "--kunai-warning": "#f59a3c",
   "--kunai-danger": "#ff5d5d",

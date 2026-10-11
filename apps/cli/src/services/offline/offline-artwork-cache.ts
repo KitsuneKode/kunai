@@ -2,11 +2,16 @@ import { stat } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
+import { readBoundedBody } from "@/services/network/bounded-body";
+import { fetchGuardedStreamTarget } from "@kunai/providers";
 import type { DownloadJobRecord } from "@kunai/storage";
 
 export type OfflineArtworkFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 const POSTER_CACHE_TIMEOUT_MS = 10_000;
+// Same budget as the in-shell poster pipeline: a poster beyond this is a
+// mis-labelled or hostile body, not artwork worth keeping beside a download.
+const MAX_OFFLINE_ARTWORK_BYTES = 16 * 1024 * 1024;
 const inFlightPosterWrites = new Map<string, Promise<string | null>>();
 
 export function resolveOfflinePosterArtifactPath(job: DownloadJobRecord): string {
@@ -44,17 +49,37 @@ async function fetchAndWritePoster(
   const posterUrl = job.posterUrl;
   if (!posterUrl) return null;
 
-  const fetchImpl = fetchImplOverride ?? fetch;
-  const response = await fetchImpl(posterUrl, {
-    signal: AbortSignal.timeout(POSTER_CACHE_TIMEOUT_MS),
-    headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8" },
-  });
-  if (!response.ok) return null;
+  // Provider-supplied poster URLs are untrusted, same as stream URLs — the
+  // guarded fetch revalidates DNS and every redirect hop. An injected fetch
+  // owns its destination, matching the subtitle convention.
+  const response = fetchImplOverride
+    ? await fetchImplOverride(posterUrl, {
+        signal: AbortSignal.timeout(POSTER_CACHE_TIMEOUT_MS),
+        headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8" },
+      })
+    : await fetchGuardedStreamTarget({
+        fetchImpl: fetch,
+        url: posterUrl,
+        init: {
+          headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8" },
+        },
+        signal: AbortSignal.timeout(POSTER_CACHE_TIMEOUT_MS),
+      }).then((outcome) => (outcome.kind === "response" ? outcome.response : null));
+  if (!response || !response.ok) return null;
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().startsWith("image/")) return null;
+  if (!response.body) return null;
 
-  const data = await response.arrayBuffer();
-  if (data.byteLength <= 0) return null;
+  // Content-Length is only an early reject — it is sender-declared, so the
+  // stream is bounded independently below.
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_OFFLINE_ARTWORK_BYTES) {
+    await response.body.cancel("too-large").catch(() => {});
+    return null;
+  }
+
+  const data = await readBoundedBody(response.body, MAX_OFFLINE_ARTWORK_BYTES);
+  if (!data || data.byteLength <= 0) return null;
   await writeAtomicBytes(targetPath, data);
   return targetPath;
 }

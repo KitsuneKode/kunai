@@ -70,10 +70,12 @@ export async function runMobileApplication(input: {
 
   const nextRunCount = current.hostProofRuns + 1;
   try {
+    input.environment.signal?.throwIfAborted();
     await input.environment.terminal.render([
       "Kunai mobile host proof",
       "No playback progress will be recorded.",
     ]);
+    input.environment.signal?.throwIfAborted();
     const decision = await input.environment.terminal.choose({
       prompt: "Continue?",
       choices: [{ value: "continue", label: "Run proof" }],
@@ -87,13 +89,16 @@ export async function runMobileApplication(input: {
       return { code: 0, reason: "cancelled" };
     }
     if (decision.value !== "continue") throw new Error("invalid terminal selection");
+    input.environment.signal?.throwIfAborted();
 
     const response = await input.environment.http.request({
       method: "GET",
       url: command.probeUrl,
       timeoutMs: 8_000,
       maxBytes: MAX_PROBE_BYTES,
+      ...(input.environment.signal !== undefined && { signal: input.environment.signal }),
     });
+    input.environment.signal?.throwIfAborted();
     if (response.status < 200 || response.status >= 300 || response.bytes > MAX_PROBE_BYTES) {
       throw new Error("probe rejected");
     }
@@ -103,21 +108,40 @@ export async function runMobileApplication(input: {
       lastResult: "http-ok",
     });
 
+    input.environment.signal?.throwIfAborted();
+
     const handoff = await input.environment.player.handoff({
       player: "vlc",
       url: command.mediaUrl,
+      ...(input.environment.signal !== undefined && { signal: input.environment.signal }),
     });
+    input.environment.signal?.throwIfAborted();
     if (handoff.kind === "rejected") throw new Error("handoff rejected");
     await input.environment.state.commit({
       ...current,
       hostProofRuns: nextRunCount,
       lastResult: "handoff-accepted",
     });
+    input.environment.signal?.throwIfAborted();
     await input.environment.terminal.render([
       "VLC handoff was accepted. Playback progress cannot be observed.",
     ]);
+    input.environment.signal?.throwIfAborted();
     return { code: 0, reason: "handoff" };
   } catch {
+    if (input.environment.signal?.aborted) {
+      try {
+        await input.environment.state.commit({
+          ...current,
+          hostProofRuns: nextRunCount,
+          lastResult: "cancelled",
+        });
+        return { code: 0, reason: "cancelled" };
+      } catch {
+        await renderFailure(input.environment);
+        return { code: 1, reason: "failed" };
+      }
+    }
     await commitFailure(input.environment, current, nextRunCount);
     await renderFailure(input.environment);
     return { code: 1, reason: "failed" };

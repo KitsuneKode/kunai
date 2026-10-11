@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { waitForRootQueueSelection } from "@/app-shell/root-queue-bridge";
 import type { ShellAction } from "@/app-shell/types";
 import { buildPickerActionContext, waitForOverlayClose } from "@/app-shell/workflows";
 import {
@@ -94,7 +95,6 @@ describe("handleShellAction routing contract", () => {
     "narrow-results",
     "next",
     "next-season",
-    "notifications",
     "pick-episode",
     "play-local",
     "play-offline-ready",
@@ -147,11 +147,13 @@ describe("handleShellAction routing contract", () => {
     }
   });
 
-  test("the pass-through set is exactly 43 actions", () => {
+  test("the pass-through set is exactly 42 actions", () => {
     // A handler added for one of these, or a new unhandled action, changes this
     // number. Updating it should be a conscious edit in the same change set.
     // `image-pane` left the set when 92a7cc66f wired it to TOGGLE_COMPANION_PANE.
-    expect(new Set(PASS_THROUGH_ACTIONS).size).toBe(43);
+    // `notifications` left it when the modalPicker context listed it with no
+    // map entry — the flag-gated overlay open is its handler.
+    expect(new Set(PASS_THROUGH_ACTIONS).size).toBe(42);
   });
 
   test("a workflow-owned action still reaches its handler", async () => {
@@ -190,5 +192,23 @@ describe("runShellWorkflowFromOverlay dismissal", () => {
 
     expect(result).toBe("handled");
     expect(dispatches).toEqual([]);
+  });
+
+  test("closing a queue overlay resolves its pending selection instead of parking the caller", async () => {
+    const { container, stateManager } = createContainerFixture();
+    stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "queue" } });
+
+    // openRootQueueSelection's side of the contract: a pending resolver a bare
+    // CLOSE_TOP_OVERLAY leaves parked forever — the phase loop waits on it and
+    // the user lands on the idle surface with no input handlers.
+    const selection = waitForRootQueueSelection();
+
+    const result = await runShellWorkflowFromOverlay(container, "providers", {
+      execute: async () => "handled",
+    });
+
+    await expect(selection).resolves.toBeNull();
+    expect(result).toBe("handled");
+    expect(stateManager.getState().activeModals).toEqual([]);
   });
 });

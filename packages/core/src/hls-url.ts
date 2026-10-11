@@ -1,10 +1,8 @@
-// =============================================================================
-// hls-url.ts — pure HLS URL helpers.
+// Pure HLS URL helpers.
 //
 // These live in core, not in the providers package, because the CLI's mpv HLS
 // relay (infra) needs them too and infra must not import provider
 // implementations. Pure string/URL logic with no provider coupling.
-// =============================================================================
 
 /** True when the URL points at an HLS playlist (`.m3u8`, ignoring query/hash). */
 export function isHlsPlaylistUrl(url: string): boolean {

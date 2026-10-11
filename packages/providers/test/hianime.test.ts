@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { classifyProviderFailure } from "@kunai/core";
 import type { LooseJsonValue, ProviderRuntimeContext } from "@kunai/types";
 
 import {
@@ -23,6 +24,7 @@ import {
   parseHianimeServersHtml,
   resolveHianimeEpisodeStreams,
   resolveHianimeShow,
+  runHianimeCurlWithRetry,
   fetchHianimeEpisodeCatalog,
   hianimeFetchText,
   splitCurlHttpTrailer,
@@ -330,6 +332,60 @@ describe("hianime embed decoding", () => {
 });
 
 describe("hianime module resolve", () => {
+  test.each(["sub", "dub"] as const)(
+    "pinning the %s lane retains the requested quality",
+    async (mode) => {
+      clearHianimeCachesForTest();
+      const result = await hianimeProviderModule.resolve(
+        {
+          title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+          episode: { episode: 1 },
+          mediaKind: "anime",
+          intent: "play",
+          allowedRuntimes: ["direct-http"],
+          preferredSourceId: `source:hianime:${mode}`,
+          qualityPreference: "360p",
+        },
+        stubContext(happyRouter),
+      );
+      expect(result.status).toBe("resolved");
+      const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+      expect(selected?.qualityLabel).toBe("360p");
+      expect(selected?.presentation).toBe(mode);
+    },
+  );
+
+  test.each(["refused", "cancelled"])(
+    "a %s selected media playlist never reports provider success",
+    async (outcome) => {
+      clearHianimeCachesForTest();
+      const controller = new AbortController();
+      const result = await hianimeProviderModule.resolve(
+        {
+          title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+          episode: { episode: 1 },
+          mediaKind: "anime",
+          intent: "play",
+          allowedRuntimes: ["direct-http"],
+        },
+        {
+          ...stubContext((url) => {
+            if (url.endsWith(".m3u8") && !url.endsWith("master.m3u8")) {
+              if (outcome === "cancelled") controller.abort();
+              return new Response("fixture refusal", { status: 403 });
+            }
+            return happyRouter(url);
+          }),
+          signal: controller.signal,
+        },
+      );
+      expect(result.status).toBe("exhausted");
+      if (outcome === "cancelled")
+        expect(result.failures.some((failure) => failure.code === "cancelled")).toBe(true);
+      expect(result.trace.events?.some((event) => event.type === "provider:success")).toBe(false);
+    },
+  );
+
   test("resolves sub with ladder, subtitles, timing, and dual-mode inventory", async () => {
     clearHianimeCachesForTest();
     const result = await hianimeProviderModule.resolve(
@@ -572,6 +628,85 @@ describe("hianime module resolve", () => {
     );
     expect(result.status).toBe("exhausted");
     expect(result.failures[0]).toMatchObject({ code: "unsupported-title" });
+  });
+
+  test("a server embed URL pointing at a private address is never fetched", async () => {
+    clearHianimeCachesForTest();
+    // The embed URL is a base64 field in provider-controlled markup — without
+    // the literal-target gate a hostile page could aim the fetch+curl fallback
+    // at link-local or LAN targets (SSRF by markup). AniDB's embed fetch gates
+    // the same way.
+    const hostile = "http://169.254.169.254/latest/meta-data";
+    const hostileServers = `<div class="item server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="${Buffer.from(hostile).toString("base64")}">`;
+    let hostileFetches = 0;
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => {
+        if (url === hostile) hostileFetches++;
+        if (url.includes("/api/theme/episode/servers")) {
+          return jsonResponse({ status: true, html: hostileServers });
+        }
+        return happyRouter(url);
+      }),
+    );
+    expect(hostileFetches).toBe(0);
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]).toMatchObject({ code: "not-found", retryable: false });
+  });
+});
+
+describe("hianime curl cancellation", () => {
+  function spawnExiting(exitCode: number) {
+    return async () => ({ stdout: "", stderr: "", exitCode });
+  }
+
+  test("a signal-killed curl reports cancellation, not a retryable network fault", async () => {
+    const error = await runHianimeCurlWithRetry(
+      ["curl"],
+      undefined,
+      undefined,
+      spawnExiting(130),
+    ).catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("cancelled");
+  });
+
+  test("an aborted caller reports cancellation even when curl exits non-zero", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const error = await runHianimeCurlWithRetry(
+      ["curl"],
+      controller.signal,
+      undefined,
+      spawnExiting(1),
+    ).catch((thrown: unknown) => thrown);
+
+    // The signal's own reason is rethrown (a DOMException named AbortError),
+    // which the failure classifier reads as a user cancellation.
+    expect(error).toBeInstanceOf(Error);
+    expect(classifyProviderFailure({ message: (error as Error).message }).failureClass).toBe(
+      "user-cancelled",
+    );
+  });
+
+  test("a real connection failure still reports the transport error", async () => {
+    const error = await runHianimeCurlWithRetry(
+      ["curl"],
+      undefined,
+      undefined,
+      spawnExiting(7),
+    ).catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("connection error");
+    expect((error as Error).message).not.toContain("cancelled");
   });
 });
 

@@ -46,6 +46,10 @@ target/
 *.db
 *.sqlite
 *.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
 
 # code coverage
 coverage
@@ -121,3 +125,6 @@ apps/docs/CLAUDE.md
 # `git add -A` stages hundreds of megabytes of build output.
 .release-candidate/
 .delta/
+
+# husky regenerates its hook shims on `prepare`
+.husky/_/

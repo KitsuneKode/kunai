@@ -536,4 +536,35 @@ describe("version lock inspection", () => {
 
     await rm(root, { recursive: true, force: true });
   });
+
+  test("concurrent reclaim of a dead lock never double-acquires or destroys the survivor", async () => {
+    // Two contenders both judge the same dead lock stale. Whichever removes it
+    // second must re-verify identity — an unconditional rm would steal a fresh
+    // live lock created between the stale check and the delete.
+    const { root, layout } = await makeLayout();
+    const lockPath = join(layout.locksDir, "4.0.0.lock");
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({
+        pid: 2_147_483_646,
+        version: "4.0.0",
+        execPath: "/tmp/not-a-real-kunai",
+        acquiredAt: "2020-01-01T00:00:00.000Z",
+      })}\n`,
+    );
+
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => tryAcquireVersionLock(layout, "4.0.0")),
+    );
+    const winners = results.filter((r) => r.acquired);
+    expect(winners.length).toBeLessThanOrEqual(1);
+
+    // Whatever remains must be a valid live lock — never a torn file or a
+    // stolen-then-deleted hole.
+    const content = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number };
+    expect(content.pid).toBe(process.pid);
+    if (winners[0]?.acquired) await winners[0].release();
+
+    await rm(root, { recursive: true, force: true });
+  });
 });

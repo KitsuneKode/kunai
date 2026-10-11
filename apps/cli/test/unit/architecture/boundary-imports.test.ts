@@ -104,6 +104,10 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
       "@/app-shell/root-queue-bridge",
       "@/app-shell/ink-shell",
       "@/app-shell/pickers",
+      // The remount gate parks browse while a detached overlay workflow's
+      // picker owns the content slot — without it a browse mount evicts the
+      // live picker (or is evicted and stranded, the old bug).
+      "@/app-shell/root-content-state",
       "@/app-shell/search-browse-command-ids",
       "@/app-shell/types",
       "../../app-shell/workflows",

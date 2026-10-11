@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-10-07"
 ---
 
 # Provider: Videasy
@@ -93,7 +93,7 @@ Deliberately **not** done, and why:
   (`VIDEASY_DB_BASE` — now circuit-broken in `tmdb-proxy.ts`), title-metadata
   enrichment (degrades to `null`), and the non-wings legacy endpoints.
 - **Disposition:** demoted from series default to last in the lane
-  (`provider: "vidlink"`, `providerPriority: ["rivestream", "videasy"]`), and
+  (`provider: "vidlink"`, `providerPriority: ["rivestream", "vidrock", "videasy"]`), and
   `recommended: false` in the manifest. Registered fallback, not removed — if
   the domain resurrects the provider is whole again.
 

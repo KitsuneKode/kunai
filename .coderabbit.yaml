@@ -10,6 +10,7 @@ reviews:
   high_level_summary_placeholder: "@coderabbitai summary"
   auto_title_placeholder: "@coderabbitai"
   review_status: true
+  fail_commit_status: true
   poem: false
   collapse_walkthrough: true
   sequence_diagrams: false
@@ -30,9 +31,10 @@ reviews:
         installId or sends without a gate. See .docs/analytics-privacy-contract.md.
     - path: "packages/providers/src/allmanga/**"
       instructions: >-
-        This file carries ani-cli upstream parity logic (crypto, decoders).
-        A flag that looks dead or trivially true may be intentional upstream
-        compatibility — check .docs/providers.md before calling it a bug.
+        AllManga crypto is checked against the live mkissa chunk, not ani-cli:
+        ani-cli v5 removed its AllAnime implementation. Read
+        .docs/provider-dossiers/allmanga.md and reproduce against
+        test:live:allmanga-crypto before calling pinned constants dead or wrong.
     - path: "install.sh"
       instructions: >-
         POSIX sh, zero-dependency, runs via curl|bash. Never suggest adding jq,
@@ -42,9 +44,10 @@ reviews:
         Must stay compatible with Windows PowerShell 5.1 (not just pwsh 7).
     - path: "apps/cli/test/**"
       instructions: >-
-        Tests use isolated storage roots. Flag any test that could touch the
-        real user profile (~/.config/kunai). Real sleeps are allowed only with
-        a documented ordering rationale; prefer waitUntil gates.
+        Tests isolate storage with HOME, XDG, APPDATA, and LOCALAPPDATA via
+        storageRootEnv. KUNAI_CONFIG_DIR is not a runtime override. Flag live
+        profile access on any OS; prefer injected clocks and event gates over
+        real sleeps or raised timeouts.
   abort_on_close: true
   auto_review:
     enabled: true
@@ -54,12 +57,30 @@ reviews:
       - "DO NOT MERGE"
       - "draft"
     drafts: false
-    base_branches: []
+    base_branches:
+      - ".*"
   finishing_touches:
     docstrings:
       enabled: false
     unit_tests:
       enabled: false
+  tools:
+    shellcheck:
+      enabled: true
+    markdownlint:
+      enabled: true
+    biome:
+      enabled: false
+    eslint:
+      enabled: false
+    ruff:
+      enabled: false
+    hadolint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    actionlint:
+      enabled: true
 chat:
   auto_reply: true
   integrations:
@@ -82,20 +103,3 @@ code_generation:
     language: "en-US"
   unit_tests:
     enabled: false
-tools:
-  shellcheck:
-    enabled: true
-  markdownlint:
-    enabled: true
-  biome:
-    enabled: false
-  eslint:
-    enabled: false
-  ruff:
-    enabled: false
-  hadolint:
-    enabled: true
-  gitleaks:
-    enabled: true
-  actionlint:
-    enabled: true

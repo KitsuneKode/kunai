@@ -152,9 +152,15 @@ export const CURL_INSTALL: PlatformInstall = {
  * everywhere else falls back to the releases page. A plausible-looking
  * `apt install curl-impersonate` would name a package that does not exist,
  * which is worse than no hint at all.
+ *
+ * Windows gets a destination as well as a source: the provider resolver
+ * searches Kunai's managed helper dir directly, so extracting there works
+ * without touching PATH, whichever way Kunai itself was installed.
  */
 export const CURL_IMPERSONATE_INSTALL: PlatformInstall = {
   arch: "sudo pacman -S curl-impersonate",
   darwin: "brew install lexiforest/tap/curl-impersonate",
+  win32:
+    "extract the win32 build from https://github.com/lexiforest/curl-impersonate/releases into %LOCALAPPDATA%\\kunai\\deps\\curl-impersonate",
   fallback: "https://github.com/lexiforest/curl-impersonate/releases",
 };
