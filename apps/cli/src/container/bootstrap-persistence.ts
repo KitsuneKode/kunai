@@ -403,6 +403,15 @@ export async function bootstrapPersistence(
     onFallback: (backend, reason) => dbg("credential-vault", `using ${backend} backend: ${reason}`),
   });
   const config = await ConfigServiceImpl.load(configStore, credentialVault);
+
+  // Theme applies here, once, before any frame renders: `KUNAI_THEME` is a
+  // per-run override that is never persisted; otherwise the configured theme.
+  // Unknown names keep the default rather than failing boot on a hand edit.
+  {
+    const { setDesignTheme } = await import("@kunai/design");
+    setDesignTheme(process.env.KUNAI_THEME ?? config.theme);
+  }
+
   if (config.videasyAppIdMigratedOnLoad) {
     const { invalidateVideasyProviderCaches } =
       await import("@/app/playback/videasy-cache-invalidation");

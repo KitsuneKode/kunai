@@ -43,7 +43,11 @@ import {
 } from "@/app/bootstrap/launch-entry";
 import { launchShellWithPostPaintStartupWork } from "@/app/bootstrap/post-paint-startup-work";
 import { mapAnimeTitleToProviderNative } from "@/app/bootstrap/resolve-share-target";
-import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
+import {
+  isBelowOnboardedFloor,
+  maybeRunStartupSetup,
+  shouldRunSetupWizard,
+} from "@/app/bootstrap/startup-setup";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import { SessionController } from "@/app/session/SessionController";
 import {
@@ -420,6 +424,8 @@ async function maybeRunDownloadMode(
     anime: boolean;
     quick: boolean;
     jump?: number;
+    episode?: number;
+    season?: number;
     downloadPath?: string;
   },
   container: Awaited<ReturnType<typeof createContainer>>,
@@ -445,6 +451,15 @@ async function maybeRunDownloadMode(
   if (searchResult.status !== "success") {
     console.log("Download cancelled before a title was selected.");
     return true;
+  }
+
+  // `-e/--episode` means "download this episode" — arm the same one-shot
+  // request the playback path reads so DownloadOnlyPhase skips the checklist.
+  if (args.episode !== undefined) {
+    container.stateManager.dispatch({
+      type: "SET_EPISODE_REQUEST",
+      episode: { season: args.season ?? 1, episode: args.episode },
+    });
   }
 
   // Download mode never reaches PlaybackPhase, so nothing here would otherwise
@@ -830,6 +845,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       downloadOnboardingDismissed: configJson.downloadOnboardingDismissed ?? false,
     },
   });
+  // A never-onboarded install lands on the discover tray instead of an empty
+  // search box — the first screen should be something to watch, not a form.
+  // Captured before the wizard runs so a completed setup still gets the
+  // content-first landing on its first launch. Explicit routes (-S, -i,
+  // --history, --offline, --discover, share links) always win.
+  const freshInstall = isBelowOnboardedFloor(configJson.onboardingVersion ?? 0);
   // Must precede checkDeps: that snapshot records the chosen image protocol, and
   // it is what diagnostics and `/report-issue` carry into a bug report. Probing
   // afterwards would have every report claim the pre-probe fallback.
@@ -1296,7 +1317,17 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       initialQuery: bootstrapQuery,
       initialTitle: bootstrapTitle,
       initialEpisode: bootstrapEpisode,
-      initialRoute: args.initialRoute,
+      // `-e/--episode` is a raw request, not resolved metadata: the session loop
+      // shapes it into an EpisodeInfo once the picked title's lane is known.
+      requestedEpisode:
+        args.episode !== undefined
+          ? { season: args.season ?? 1, episode: args.episode }
+          : undefined,
+      initialRoute:
+        args.initialRoute ??
+        (freshInstall && !bootstrapTitle && !bootstrapQuery && !args.offline
+          ? "recommendation"
+          : undefined),
       autoPickSearchResultIndex: autoPick,
     });
 

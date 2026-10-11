@@ -2,6 +2,15 @@ import type { ProviderRelayConfig, StartupPriority } from "@kunai/types";
 
 export type ContinueSourcePreference = "auto" | "local" | "stream" | "ask";
 
+/**
+ * Whether playback pauses on the Tracks sheet before mpv launches.
+ * `"off"` auto-plays the resolved pick; `"when-choices"` prompts only when the
+ * inventory has a real source/quality/track choice; `"always"` prompts on
+ * every inventory. Applies to user-launched plays — autoplay advances and
+ * restarts never re-prompt.
+ */
+export type PrePlayConfirmMode = "off" | "when-choices" | "always";
+
 export type QuitNearEndBehavior = "continue" | "pause";
 
 export type QuitNearEndThresholdMode = "credits-or-90-percent" | "percent-only" | "seconds-only";
@@ -98,8 +107,16 @@ export interface KitsuneConfig {
    * automation off cannot be overridden from inside the app.
    */
   companionPet: "auto" | "off";
+  /**
+   * Shell theme id from `@kunai/design`'s `THEMES` registry (e.g.
+   * `"ember-dusk"`, `"nord"`). A string, not a union: `@kunai/config` may not
+   * depend on `@kunai/design` (boundary allowlist), so the registry validates
+   * at apply time and an unrecognized value falls back to the brand default.
+   */
+  theme: string;
   quitNearEndBehavior: QuitNearEndBehavior;
   continueSourcePreference: ContinueSourcePreference;
+  prePlayConfirm: PrePlayConfirmMode;
   quitNearEndThresholdMode: QuitNearEndThresholdMode;
   mpvKunaiScriptPath: string;
   mpvKunaiScriptOpts: Record<string, string>;
