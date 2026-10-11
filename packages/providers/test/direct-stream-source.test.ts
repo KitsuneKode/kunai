@@ -12,19 +12,29 @@ function createContext(
     providerId: "vidlink",
     now: () => new Date().toISOString(),
     signal,
-    fetch: { runtime: "direct-http", fetch: fetchImpl },
-  } as unknown as ProviderRuntimeContext;
+    fetch: {
+      runtime: "direct-http",
+      fetch: (input, init) =>
+        fetchImpl(input instanceof Request ? input.url : String(input), init ?? {}),
+    },
+  };
 }
 
 function createInput(overrides: Partial<ProviderResolveInput> = {}): ProviderResolveInput {
   return {
     mediaKind: "movie",
-    title: { id: "tmdb:27205", title: "Inception", externalIds: { tmdbId: 27205 } },
+    intent: "play",
+    title: {
+      id: "tmdb:27205",
+      kind: overrides.mediaKind ?? "movie",
+      title: "Inception",
+      externalIds: { tmdbId: "27205" },
+    },
     allowedRuntimes: ["direct-http"],
     qualityPreference: "best",
     startupPriority: "balanced",
     ...overrides,
-  } as ProviderResolveInput;
+  };
 }
 
 const THREE_STREAMS = {
@@ -200,7 +210,7 @@ describe("direct stream resolve gate", () => {
       input: createInput({
         mediaKind: "series",
         episode: { season: 0, episode: 1 },
-      } as Partial<ProviderResolveInput>),
+      }),
       context: createContext(async () => new Response("ok")),
       fetchPayload: async () => THREE_STREAMS,
     });
@@ -210,7 +220,7 @@ describe("direct stream resolve gate", () => {
       providerId: "vidlink",
       host: "vidlink.pro",
       label: "VidLink",
-      input: createInput({ mediaKind: "series" } as Partial<ProviderResolveInput>),
+      input: createInput({ mediaKind: "series" }),
       context: createContext(async () => new Response("ok")),
       fetchPayload: async () => THREE_STREAMS,
     });

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-10-11"
 ---
 
 # Kunai — Diagnostics Guide

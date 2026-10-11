@@ -1,13 +1,15 @@
 ---
-status: current
-lastReviewed: "2026-10-04"
+status: superseded
+lastReviewed: "2026-10-11"
 ---
 
 # Kunai Provider Extraction Flows (Mermaid Diagrams) 🥷✨
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
-This document provides visual, deterministic state machines for how `@kunai/providers` extracts streams from each of our supported providers. It serves as a visual companion to the textual dossiers.
+Historical extraction sketches, preserved for provenance. These diagrams do
+not describe the production transports, crypto, roster, or runtime. Current
+provider dossiers and source code own those contracts.
 
 ---
 

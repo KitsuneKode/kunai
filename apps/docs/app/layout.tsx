@@ -16,27 +16,28 @@ import type { ReactNode } from "react";
 // Vercel preview deployments resolve their canonical to the production alias,
 // but the preview URL itself is still reachable and indexable if linked — a
 // linked preview would index duplicate content under a Vercel domain.
-const isPreviewDeployment = process.env.VERCEL_ENV === "preview";
-
-export const metadata: Metadata = {
-  metadataBase: new URL(docsSiteUrl),
-  title: {
-    default: "Kunai Docs",
-    template: "%s | Kunai · terminal streaming client",
-  },
-  description:
-    "Guides for Kunai, the terminal client for anime, series, movies, and YouTube: resolve a stream, hand off to mpv, recover, and use local offline files.",
-  keywords: [
-    "kunai",
-    "terminal streaming",
-    "anime cli",
-    "movie cli",
-    "mpv",
-    "media cli",
-    "command line streaming",
-  ],
-  ...(isPreviewDeployment ? { robots: { index: false, follow: false } } : {}),
-};
+export function generateMetadata(): Metadata {
+  const metadata: Metadata = {
+    metadataBase: new URL(docsSiteUrl),
+    title: {
+      default: "Kunai Docs",
+      template: "%s | Kunai · terminal streaming client",
+    },
+    description:
+      "Guides for Kunai, the terminal client for anime, series, movies, and YouTube: resolve a stream, hand off to mpv, recover, and use local offline files.",
+    keywords: [
+      "kunai",
+      "terminal streaming",
+      "anime cli",
+      "movie cli",
+      "mpv",
+      "media cli",
+      "command line streaming",
+    ],
+  };
+  if (process.env.VERCEL_ENV === "preview") metadata.robots = { index: false, follow: false };
+  return metadata;
+}
 
 export const viewport: Viewport = {
   width: "device-width",

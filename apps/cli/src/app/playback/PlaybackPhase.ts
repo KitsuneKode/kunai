@@ -642,6 +642,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       titlePlaybackSource: container.titlePlaybackSource,
       isSourceQuarantined: (providerId, sourceId) =>
         endpointCandidatesForPinnedSource(providerId, sourceId).some((endpoint) =>
+          // SAFETY: this coordinator receives IDs from the production registry.
           container.endpointHealth.isQuarantined(providerId as ProviderId, endpoint),
         ),
     });
@@ -3696,7 +3697,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     name: topRecAdvance.title,
                     type: topRec?.type === "movie" ? "movie" : "series",
                     posterUrl: topRec?.posterPath ?? undefined,
-                    ...(topRec?.externalIds ? { externalIds: topRec.externalIds } : {}),
+                    externalIds: topRec?.externalIds,
                   },
                   mode: stateManager.getState().mode,
                 },
