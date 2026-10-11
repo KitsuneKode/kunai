@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11T12:09:28Z"
+lastReviewed: "2026-10-11T12:12:46Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -91,6 +91,11 @@ Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
 `TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache. The README CI badge points
 at `.github/workflows/ci.yml`, which runs the Linux test job plus blocking
 Windows (`windows-cli`) and macOS (`macos-cli`) legs.
+
+The docs build passes through `BUN_INSTALL_CACHE_DIR` so native packages remain
+resolvable with an isolated HOME. The cache location does not affect the site's
+contents and is excluded from the task hash; strict environment filtering stays
+enabled.
 
 ### Checkout is caller-owned
 

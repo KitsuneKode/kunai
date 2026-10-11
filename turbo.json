@@ -13,7 +13,6 @@
       "dependsOn": ["^transit"]
     },
     "typecheck": {
-      "cache": false,
       "dependsOn": ["transit"],
       // The one blocking-chain task that was cacheable: a green typecheck
       // could be a .turbo/TURBO_TOKEN replay instead of a run (AGENTS.md
@@ -120,6 +119,10 @@
     "@kunai/docs#test": {
       "dependsOn": ["transit", "generate"],
       "outputs": []
+    },
+    "@kunai/docs#build": {
+      // Store location is runtime plumbing, not an input to the generated site.
+      "passThroughEnv": ["BUN_INSTALL_CACHE_DIR"]
     },
     "@kunai/docs#typecheck": {
       // tsc resolves lib/generated-provenance.json and .source/server — both
