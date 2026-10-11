@@ -97,8 +97,12 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   skipCredits: true,
   footerHints: "detailed",
   companionPet: "auto",
+  // `DEFAULT_THEME_NAME` in `@kunai/design`, duplicated as a literal: config
+  // cannot import design (boundary allowlist). Ember Dusk stays the default.
+  theme: "ember-dusk",
   quitNearEndBehavior: "continue",
   continueSourcePreference: "auto",
+  prePlayConfirm: "off",
   quitNearEndThresholdMode: "credits-or-90-percent",
   mpvKunaiScriptPath: "",
   mpvKunaiScriptOpts: {},

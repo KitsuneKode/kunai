@@ -34,15 +34,7 @@ const READY: CapabilitySnapshot = {
   issues: [],
 };
 
-export const SETUP_SCREENS = [
-  "deps",
-  "mode",
-  "language",
-  "playback",
-  "library",
-  "analytics",
-  "done",
-] as const;
+export const SETUP_SCREENS = ["deps", "mode", "language", "library", "analytics", "done"] as const;
 
 export function setupFrameAt(step: number, columns: number): string {
   // The analytics consent screen prints this machine's `process.platform` and

@@ -178,6 +178,14 @@ export interface SessionState {
 
   readonly currentTitle: TitleInfo | null;
   readonly currentEpisode: EpisodeInfo | null;
+  /**
+   * One-shot `-e/--episode [--season]` launch request. Unlike `currentEpisode`
+   * (a resolved selection) this carries only the user's numbers; PlaybackPhase
+   * folds it into the episode-entry `flags`/`preselectedEpisode` it already
+   * supports, so an explicit flag pick bypasses the starting menu. Cleared by
+   * SELECT_TITLE — the request can never follow a title it was not asked for.
+   */
+  readonly episodeRequest: { readonly season: number; readonly episode: number } | null;
   /** Provider anime episode catalog for the active title; cleared on title change / playback end. */
   readonly currentAnimeEpisodes: readonly EpisodePickerOption[] | null;
   /**
@@ -250,6 +258,10 @@ export type StateTransition =
       detail: TitleDetail;
     }
   | { type: "SELECT_EPISODE"; episode: EpisodeInfo }
+  | {
+      type: "SET_EPISODE_REQUEST";
+      episode: { readonly season: number; readonly episode: number } | null;
+    }
   | {
       type: "SET_CURRENT_ANIME_EPISODES";
       episodes: readonly EpisodePickerOption[] | null;
@@ -338,6 +350,7 @@ export function createInitialState(
     movieLanguageProfile: initialProfiles.movie,
     currentTitle: null,
     currentEpisode: null,
+    episodeRequest: null,
     currentAnimeEpisodes: null,
     titleDetail: null,
     videoMeta: null,
@@ -465,6 +478,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         view: "details",
         currentTitle: transition.title,
         currentEpisode: null,
+        episodeRequest: null,
         currentAnimeEpisodes: null,
         // Reset detail/video metadata so a new title never shows the previous
         // one's facts; the warm fetch re-dispatches SET_TITLE_DETAIL when ready.
@@ -504,6 +518,9 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         currentEpisode: transition.episode,
         fallbackTriedProviderIds: [],
       };
+
+    case "SET_EPISODE_REQUEST":
+      return { ...state, episodeRequest: transition.episode };
 
     case "SET_CURRENT_ANIME_EPISODES":
       return {
@@ -926,6 +943,20 @@ function filterPickerOptions(
     { value: option.detail, weight: 8 },
     { value: option.badge, weight: 12 },
   ]);
+}
+
+/**
+ * The `flags` bag the episode-entry resolvers (`resolvePlaybackEpisodeEntry`,
+ * `chooseStartingEpisode`) consume: season/episode as strings, season omitted
+ * for anime absolute numbering. Kept beside the `episodeRequest` it derives
+ * from so both launch paths build the same shape.
+ */
+export function episodeRequestFlags(request: SessionState["episodeRequest"], isAnime: boolean) {
+  return request
+    ? isAnime
+      ? { episode: String(request.episode) }
+      : { season: String(request.season), episode: String(request.episode) }
+    : {};
 }
 
 function popPickerOverlay(modals: readonly OverlayState[], id: string): OverlayState[] {

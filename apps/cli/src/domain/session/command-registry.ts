@@ -16,6 +16,7 @@ export type AppCommandId =
   | "random"
   | "surprise"
   | "settings"
+  | "theme"
   | "providers"
   | "presence"
   | "analytics"
@@ -122,6 +123,7 @@ export const COMMAND_CONTEXTS = {
     "queue-season",
     "setup",
     "settings",
+    "theme",
     "image-pane",
     "pet",
     "sync",
@@ -186,6 +188,7 @@ export const COMMAND_CONTEXTS = {
     "reset-provider-health",
     "docs",
     "settings",
+    "theme",
     "providers",
     "presence",
     "analytics",
@@ -257,6 +260,7 @@ export const COMMAND_CONTEXTS = {
     "reset-provider-health",
     "docs",
     "settings",
+    "theme",
     "providers",
     "presence",
     "analytics",
@@ -392,6 +396,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Settings",
     aliases: ["settings", "config", "prefs"],
     description: "Open settings (relay, playback, shell, and more)",
+  },
+  {
+    id: "theme",
+    label: "Theme",
+    aliases: ["theme", "appearance", "colors", "colour"],
+    description: "Pick the shell color theme — applies instantly",
   },
   {
     id: "providers",
@@ -839,6 +849,7 @@ export const HELP_PANEL_COMMAND_IDS = [
   "library",
   "settings",
   "setup",
+  "theme",
   "presence",
   "analytics",
   "follow",
@@ -875,6 +886,7 @@ export function commandGroupFor(id: AppCommandId): AppCommandGroup {
     case "share":
     case "share-qr":
     case "settings":
+    case "theme":
     case "providers":
     case "help":
       return "Core";
@@ -1089,6 +1101,7 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
     case "random":
     case "surprise":
     case "settings":
+    case "theme":
     case "presence":
     case "analytics":
     case "analytics-show":

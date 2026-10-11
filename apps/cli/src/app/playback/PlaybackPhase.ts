@@ -148,6 +148,8 @@ import { planEpisodeIterationDirective } from "@/app/playback/run-playback-episo
 import { runPlaybackSession } from "@/app/playback/run-playback-session";
 import {
   applyPreferredStreamSelection,
+  buildPlaybackControlSummary,
+  shouldOfferPrePlayConfirm,
   shouldSkipExternalSubtitleLookup,
   streamSelectionFromTrackPick,
   type StreamSelectionIntent,
@@ -202,6 +204,7 @@ import {
 import { decideSoftFallbackOnResolve } from "@/domain/playback/soft-fallback-preference-policy";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
+import { episodeRequestFlags } from "@/domain/session/SessionState";
 import type {
   TitleInfo,
   EpisodeInfo,
@@ -867,10 +870,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         // Session-flow owns the current season/episode selection rules until the
         // mounted root shell fully absorbs the picker stack.
-        const preselectedEpisode =
+        //
+        // A one-shot `-e/--episode` request folds into both the preselection
+        // and the `flags` the resolvers were built for: `resolvePlaybackEpisodeEntry`
+        // auto-plays it (flags are what let a no-history pick launch directly),
+        // and `chooseStartingEpisode` returns it as an immediate selection if
+        // the menu path still runs (offline-library, movie-gated, etc).
+        const episodeRequest = stateManager.getState().episodeRequest;
+        const requestFlags = episodeRequestFlags(episodeRequest, usesNativeEpisodes);
+        const preselectedCurrentEpisode =
           stateManager.getState().currentTitle?.id === title.id
             ? stateManager.getState().currentEpisode
             : undefined;
+        const preselectedEpisode = episodeRequest ?? preselectedCurrentEpisode;
 
         const { resolvePlaybackEpisodeEntry } =
           await import("@/app-shell/title-control/smart-auto-launch");
@@ -893,7 +905,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           history,
           seasonCount,
           failedProvider,
-          flags: {},
+          flags: requestFlags,
         });
 
         if (episodeEntry.kind === "auto") {
@@ -903,7 +915,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             isAnime: usesNativeEpisodes,
             titleId: title.id,
             animeEpisodes: initialAnimeEpisodes,
-            providerEpisodeIdentity: preselectedEpisode?.providerEpisodeIdentity,
+            providerEpisodeIdentity: episodeRequest
+              ? undefined
+              : preselectedCurrentEpisode?.providerEpisodeIdentity,
           });
           run.pendingStart =
             episodeEntry.selection.startAt !== undefined ||
@@ -917,7 +931,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             isAnime: usesNativeEpisodes,
             animeEpisodeCount: title.episodeCount,
             animeEpisodes: initialAnimeEpisodes,
-            flags: {},
+            flags: requestFlags,
             getHistoryEntry: () => Promise.resolve(history),
             container,
           });
@@ -1045,6 +1059,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       // loop advances to the next episode/retry/fallback, instead of leaking
       // into the new iteration and attaching to the wrong mpv session.
       let previousIterationAbort: AbortController | null = null;
+      // The pre-play Tracks sheet is offered once per launched session: the
+      // pick itself comes back as a restart intent through this same loop, and
+      // autoplay/episode-navigation restarts must never re-prompt.
+      let prePlayConfirmOffered = false;
       while (true) {
         if (context.signal.aborted) {
           stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
@@ -2399,6 +2417,37 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               provider: resolvedProviderId,
             },
           );
+
+          // Pre-play confirm: with `prePlayConfirm` armed, the resolved
+          // inventory opens in the Tracks sheet before mpv launches so the
+          // source/quality/track pick is deliberate, not auto-taken. The pick
+          // becomes a restart intent through the same machinery the post-play
+          // pick commands use; Esc falls through to the resolved default.
+          if (
+            !prePlayConfirmOffered &&
+            shouldOfferPrePlayConfirm(
+              config.prePlayConfirm,
+              buildPlaybackControlSummary(preparedStream),
+            )
+          ) {
+            prePlayConfirmOffered = true;
+            const picked = await openTracksPanel(preparedStream, {}, container);
+            const selection = picked ? streamSelectionFromTrackPick(picked) : null;
+            if (picked && (selection || picked.section === "subtitle")) {
+              const resumeSeconds = run.pendingStart.startAt || run.pendingStart.resumePromptAt;
+              const trackStart = await completeSourceTrackPick(
+                currentEpisode,
+                picked,
+                selection,
+                resumeSeconds,
+                "pre-play-confirm",
+              );
+              if (trackStart) {
+                run.pendingStart = trackStart;
+                continue;
+              }
+            }
+          }
 
           // Play in MPV — consume the pending resume position on the first play only.
           // Pass loading handle so playStream can update it in-place (no shell flicker).

@@ -927,6 +927,13 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   "sync-connect-anilist": (c) => handleSyncConnectAniList(c),
   "sync-connect-tmdb": (c) => handleSyncConnectTmdb(c),
   "sync-disconnect": (c) => handleSyncDisconnect(c),
+  // The overlay router gates on PALETTE_WORKFLOW_ACTIONS before dispatching —
+  // without a map entry here /theme listed in rootOverlay and dropped on Enter.
+  theme: async (c) => {
+    const { openThemePicker } = await import("./picker-workflows");
+    await openThemePicker(c);
+    return "handled";
+  },
 };
 
 export async function handleShellAction({

@@ -333,10 +333,6 @@ export async function checkDeps(
     requireYtDlp: options.requireYtDlp,
   });
 
-  if ((options.requireMpv ?? true) && !snapshot.mpv && !silent) {
-    console.error("mpv not found — required for playback (shell still available).");
-  }
-
   const fingerprint = capabilityFingerprint(snapshot);
   const previous = await loadCapabilityNoticeState();
   const shouldShowRemediation =

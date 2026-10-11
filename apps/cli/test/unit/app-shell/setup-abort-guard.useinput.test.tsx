@@ -144,9 +144,8 @@ test("[s] never flips a hydrated-on standing decision off (#231, with #228)", ()
     // Walk to the library screen by confirming everything before it.
     handle.stdin.enqueue("\r"); // -> mode
     handle.stdin.enqueue("\r"); // -> language
-    handle.stdin.enqueue("\r"); // -> playback
-    handle.stdin.enqueue("\r"); // -> library
-    expect(handle.lastFrame()).toContain("Downloads & accounts");
+    handle.stdin.enqueue("\r"); // -> library (playback toggles merged in)
+    expect(handle.lastFrame()).toContain("Playback, downloads & accounts");
     expect(handle.lastFrame()).toContain("AniList");
 
     handle.stdin.enqueue("s"); // recommended = what the user already has
@@ -214,7 +213,6 @@ test("the done screen reports every media language profile", () => {
   try {
     handle.stdin.enqueue("\r"); // -> mode
     handle.stdin.enqueue("\r"); // -> language
-    handle.stdin.enqueue("\r"); // -> playback
     handle.stdin.enqueue("\r"); // -> library
     handle.stdin.enqueue("\r"); // -> analytics
     handle.stdin.enqueue("s"); // keep analytics off -> done

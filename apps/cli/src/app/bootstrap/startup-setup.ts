@@ -25,6 +25,11 @@ export const ONBOARDING_VERSION = 3;
 /** Below this, an install has never been offered setup. */
 const ONBOARDED_FLOOR = 2;
 
+/** True while the install has never completed (or deliberately exited) setup. */
+export function isBelowOnboardedFloor(onboardingVersion: number): boolean {
+  return onboardingVersion < ONBOARDED_FLOOR;
+}
+
 export function shouldRunSetupWizard({
   force,
   config,

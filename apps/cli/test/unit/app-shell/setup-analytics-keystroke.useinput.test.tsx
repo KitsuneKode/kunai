@@ -77,10 +77,10 @@ function start() {
   return { handle, results };
 }
 
-/** deps → mode → language → playback → library, by confirming each screen. */
+/** deps → mode → language → library, by confirming each screen. */
 function walkToLibrary(handle: ReturnType<typeof start>["handle"]) {
-  for (let i = 0; i < 4; i++) handle.stdin.enqueue("\r");
-  expect(stripAnsi(handle.lastFrame())).toContain("Downloads & accounts");
+  for (let i = 0; i < 3; i++) handle.stdin.enqueue("\r");
+  expect(stripAnsi(handle.lastFrame())).toContain("Playback, downloads & accounts");
 }
 
 test("arriving on the consent screen and stepping back is not consent (#227 contract)", () => {
@@ -91,7 +91,7 @@ test("arriving on the consent screen and stepping back is not consent (#227 cont
     expect(stripAnsi(handle.lastFrame())).toContain("Turn it on");
 
     handle.stdin.enqueue("\x1b[D"); // left arrow — back to the library screen
-    expect(stripAnsi(handle.lastFrame())).toContain("Downloads & accounts");
+    expect(stripAnsi(handle.lastFrame())).toContain("Playback, downloads & accounts");
 
     // Accept-all from here. Visiting the screen must not count as answering it.
     handle.stdin.enqueue("S");
@@ -214,7 +214,7 @@ test("language Tab and Shift+Tab cycle profiles while arrows choose audio/subtit
     handle.stdin.enqueue("\x1b[B"); // choose English audio for YouTube
 
     // Finish without changing the remaining screens.
-    handle.stdin.enqueue(["\r", "\r", "\r"]); // playback, library, analytics
+    handle.stdin.enqueue(["\r", "\r"]); // library, analytics
     handle.stdin.enqueue("s"); // consent: explicitly keep analytics off
     handle.stdin.enqueue("\r"); // done
 
@@ -233,7 +233,7 @@ test("language apply-to-all copies the active profile without touching playback"
     handle.stdin.enqueue(["\r", "\r"]); // deps -> mode -> language
     handle.stdin.enqueue("\x1b[B"); // series audio: English
     handle.stdin.enqueue("a"); // copy series profile to every lane
-    handle.stdin.enqueue(["\r", "\r", "\r"]); // playback, library, analytics
+    handle.stdin.enqueue(["\r", "\r"]); // library, analytics
     handle.stdin.enqueue("s");
     handle.stdin.enqueue("\r");
 

@@ -2,6 +2,7 @@ import { openDownloadConfirmationShell } from "@/app-shell/download-confirmation
 import { pickEpisodesToDownload } from "@/app/bootstrap/download-episode-checklist";
 import type { Phase, PhaseContext, PhaseResult } from "@/app/session/Phase";
 import { isTitleLevelContent } from "@/domain/media/content-kind";
+import { episodeRequestFlags } from "@/domain/session/SessionState";
 import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types";
 import {
   buildDefaultDownloadProfile,
@@ -111,19 +112,39 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
         return { status: "success", value: "back" };
       }
       const selectableAnimeEpisodes = animeEpisodes ?? undefined;
-      let episodes = this.deps.pickEpisodes
-        ? await this.deps.pickEpisodes({
-            title: input.title,
-            isAnime,
-            animeEpisodes: selectableAnimeEpisodes,
-            container,
-          })
-        : await pickEpisodesToDownload({
-            title: input.title,
-            isAnime,
-            animeEpisodes: selectableAnimeEpisodes,
-            container,
-          });
+      // An armed `-e/--episode` request means "download this episode", so it
+      // skips the interactive checklist entirely — same one-shot semantics as
+      // the playback path, cleared by the next SELECT_TITLE.
+      const episodeRequest = state.episodeRequest;
+      let episodes: readonly EpisodeInfo[] | null;
+      if (episodeRequest) {
+        episodes = [
+          isAnime
+            ? {
+                season: 1,
+                episode: episodeRequest.episode,
+                absoluteEpisode: episodeRequest.episode,
+              }
+            : {
+                season: episodeRequest.season,
+                episode: episodeRequest.episode,
+              },
+        ];
+      } else {
+        episodes = this.deps.pickEpisodes
+          ? await this.deps.pickEpisodes({
+              title: input.title,
+              isAnime,
+              animeEpisodes: selectableAnimeEpisodes,
+              container,
+            })
+          : await pickEpisodesToDownload({
+              title: input.title,
+              isAnime,
+              animeEpisodes: selectableAnimeEpisodes,
+              container,
+            });
+      }
 
       if (!episodes || episodes.length === 0) {
         if (selectableAnimeEpisodes !== undefined) {
@@ -212,12 +233,13 @@ async function pickSingleDownloadEpisodeFallback({
   readonly isAnime: boolean;
   readonly container: PhaseContext["container"];
 }): Promise<EpisodeInfo | null> {
+  const episodeRequest = container.stateManager.getState().episodeRequest;
   const selected = await chooseStartingEpisode({
     currentId: title.id,
     isAnime,
     animeEpisodeCount: title.episodeCount,
     animeEpisodes: undefined,
-    flags: {},
+    flags: episodeRequestFlags(episodeRequest, isAnime),
     getHistoryEntry: () =>
       Promise.resolve(
         container.historyRepository.getLatestForTitleIdentity({

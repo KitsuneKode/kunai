@@ -1,10 +1,10 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "a59f2b18e69160f9c4c660f27cb2cd73ee4cafa67cd3e8f692ac281ba971d6d5",
-  "docsContentFingerprint": "d489d532ff577100964080393cf4a5b3204d2efc3a08e0fd43a772a45343cb80",
+  "cliSourceFingerprint": "8a905f085fb67275e6f6f5045dd811323223cbb9d063a5460dbb5d080c0bfcfc",
+  "docsContentFingerprint": "9e8499e2403e6473b3252911834707a55b1d3c5905335c5ac3ab44cb56b76aac",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
-  "commandCount": 84,
+  "commandCount": 85,
   "providerIds": [
     "videasy",
     "vidlink",
@@ -320,6 +320,12 @@
       "label": "Settings",
       "aliases": ["settings", "config", "prefs"],
       "description": "Open settings (relay, playback, shell, and more)"
+    },
+    {
+      "id": "theme",
+      "label": "Theme",
+      "aliases": ["theme", "appearance", "colors", "colour"],
+      "description": "Pick the shell color theme — applies instantly"
     },
     {
       "id": "providers",
@@ -841,6 +847,36 @@
       "short": "",
       "long": "--jump",
       "description": "Auto-pick the n-th search result (1-based, with -S)"
+    },
+    {
+      "short": "-e",
+      "long": "--episode",
+      "description": "Start at episode n (anime: absolute; series: S1)"
+    },
+    {
+      "short": "",
+      "long": "--season",
+      "description": "Season for --episode (series only)"
+    },
+    {
+      "short": "",
+      "long": "--quality",
+      "description": "Stream quality: best | 1080p | 720p | 480p"
+    },
+    {
+      "short": "",
+      "long": "--audio",
+      "description": "Audio track: original | en | ja | dub"
+    },
+    {
+      "short": "",
+      "long": "--sub",
+      "description": "Subtitles: en | interactive | none | ar | de | es | fr | ja"
+    },
+    {
+      "short": "",
+      "long": "--dub",
+      "description": "Shortcut for --audio dub"
     },
     {
       "short": "",
