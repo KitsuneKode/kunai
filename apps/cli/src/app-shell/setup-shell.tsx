@@ -1,4 +1,4 @@
-// First run, in seven framed screens
+// First run, in six framed screens
 //
 // Every screen asks something or pays something off, and every one of them
 // wears the Sakura shell frame. Setup used to be the only surface in Kunai
@@ -39,7 +39,6 @@ import {
   LibraryScreen,
   MODE_OPTIONS,
   ModeScreen,
-  PlaybackScreen,
   type SummaryLine,
 } from "./setup/SetupScreens";
 import { ViewportResizeGate } from "./shell-primitives";
@@ -48,13 +47,12 @@ import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-p
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Screen = "deps" | "mode" | "language" | "playback" | "library" | "analytics" | "done";
+type Screen = "deps" | "mode" | "language" | "library" | "analytics" | "done";
 
 const SCREEN_ORDER: readonly Screen[] = [
   "deps",
   "mode",
   "language",
-  "playback",
   "library",
   "analytics",
   "done",
@@ -64,8 +62,7 @@ const SCREEN_CONTEXT: Record<Screen, string> = {
   deps: "welcome",
   mode: "what you watch",
   language: "language",
-  playback: "playback",
-  library: "downloads & accounts",
+  library: "playback & downloads",
   analytics: "usage ping",
   done: "ready",
 };
@@ -269,10 +266,10 @@ export function SetupShell({
     languageLaneForMode(initial.mode),
   );
   const [langFocus, setLangFocus] = useState<"audio" | "subtitle">("audio");
-  const [playbackIdx, setPlaybackIdx] = useState(0);
   const [autoNext, setAutoNext] = useState(initial.autoNext);
   const [skipIntro, setSkipIntro] = useState(initial.skipIntro);
   const [skipCredits, setSkipCredits] = useState(initial.skipCredits);
+  // Rows 0..1 are downloads, 2..4 the merged-in playback toggles, 5..7 accounts.
   const [libraryIdx, setLibraryIdx] = useState(0);
   // Hydrated from config, then clamped to what is installed: a preference saved
   // while yt-dlp existed must not come back pointing at a queue that cannot run
@@ -374,8 +371,16 @@ export function SetupShell({
       ...prefs,
       ...(remaining.has("mode") ? { mode: MODE_RECOMMENDED } : {}),
       ...(remaining.has("language") ? { languageProfiles: recommendedLanguageProfiles() } : {}),
-      ...(remaining.has("playback") ? { autoNext: true, skipIntro: true, skipCredits: true } : {}),
-      ...(remaining.has("library") ? { downloadQuality: DOWNLOAD_QUALITY_RECOMMENDED } : {}),
+      // The playback toggles live on the merged library screen — "remaining"
+      // for that screen now means its playback recommendations too.
+      ...(remaining.has("library")
+        ? {
+            autoNext: true,
+            skipIntro: true,
+            skipCredits: true,
+            downloadQuality: DOWNLOAD_QUALITY_RECOMMENDED,
+          }
+        : {}),
     };
 
     setModeIdx(
@@ -418,7 +423,7 @@ export function SetupShell({
 
   /**
    * Leaving is free before anything is decided; afterwards it costs a confirm,
-   * because one stray esc at screen six must not throw away five screens of
+   * because one stray esc late in the flow must not throw away the earlier
    * answers (#230). The caller still decides what an abort means for the
    * onboarding gate — `answeredScreens` tells it whether the user ever engaged.
    */
@@ -448,15 +453,14 @@ export function SetupShell({
       case "language":
         setLanguageProfiles(recommendedLanguageProfiles());
         break;
-      case "playback":
+      case "library":
+        // Playback toggles merged in from the old standalone screen get the
+        // on-recommendation; downloads, account links, and presence are
+        // standing decisions: "recommended" for those is whatever the user
+        // already has, which is what hydration loaded. Quality resets too.
         setAutoNext(true);
         setSkipIntro(true);
         setSkipCredits(true);
-        break;
-      case "library":
-        // Only the quality resets. Downloads, account links, and presence are
-        // standing decisions: "recommended" for those is whatever the user
-        // already has, which is what hydration loaded.
         setQualityIdx(indexOfValue(DOWNLOAD_QUALITIES, DOWNLOAD_QUALITY_RECOMMENDED));
         break;
       default:
@@ -504,8 +508,7 @@ export function SetupShell({
           [languageLane]: { ...current[languageLane], subtitle: value },
         }));
       }
-    } else if (screen === "playback") setPlaybackIdx((i) => clamp(i + delta, 2));
-    else if (screen === "library") setLibraryIdx((i) => clamp(i + delta, 4));
+    } else if (screen === "library") setLibraryIdx((i) => clamp(i + delta, 7));
     else if (screen === "analytics") setAnalyticsIdx((i) => clamp(i + delta, 1));
   }
 
@@ -520,12 +523,6 @@ export function SetupShell({
   }
 
   function toggle() {
-    if (screen === "playback") {
-      if (playbackIdx === 0) setAutoNext((v) => !v);
-      else if (playbackIdx === 1) setSkipIntro((v) => !v);
-      else setSkipCredits((v) => !v);
-      return;
-    }
     if (screen === "library") {
       // A row whose note explains it cannot work must not flip when pressed —
       // an on glyph next to "install yt-dlp" is two statements disagreeing.
@@ -537,8 +534,11 @@ export function SetupShell({
         if (downloadsEnabled) setQualityIdx((i) => (i + 1) % DOWNLOAD_QUALITIES.length);
         return;
       }
-      if (libraryIdx === 2) setConnectAniList((v) => !v);
-      else if (libraryIdx === 3) setConnectTmdb((v) => !v);
+      if (libraryIdx === 2) setAutoNext((v) => !v);
+      else if (libraryIdx === 3) setSkipIntro((v) => !v);
+      else if (libraryIdx === 4) setSkipCredits((v) => !v);
+      else if (libraryIdx === 5) setConnectAniList((v) => !v);
+      else if (libraryIdx === 6) setConnectTmdb((v) => !v);
       else setPresenceDiscord((v) => !v);
     }
   }
@@ -684,14 +684,14 @@ export function SetupShell({
             focus={langFocus}
           />
         ) : null}
-        {screen === "playback" ? (
-          <PlaybackScreen toggles={{ autoNext, skipIntro, skipCredits }} selected={playbackIdx} />
-        ) : null}
         {screen === "library" ? (
           <LibraryScreen
             toggles={{
               downloadsEnabled,
               downloadQuality: DOWNLOAD_QUALITIES[qualityIdx] ?? "1080p",
+              autoNext,
+              skipIntro,
+              skipCredits,
               connectAniList,
               connectTmdb,
               presenceDiscord,
@@ -751,7 +751,6 @@ function buildFooter(
         { key: "S", label: "remaining defaults" },
         ...back,
       ];
-    case "playback":
     case "library":
       return [
         { key: "space", label: "toggle" },

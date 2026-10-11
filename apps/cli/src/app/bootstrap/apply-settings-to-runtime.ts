@@ -27,6 +27,14 @@ export async function applySettingsToRuntime({
   await config.update(next);
   await config.save();
 
+  if (before.theme !== next.theme) {
+    // Live swap: `tokens` is rewritten in place, so the next Ink frame paints
+    // the new palette with no restart. Unknown names are ignored — a
+    // hand-edited config must not take the shell down.
+    const { setDesignTheme } = await import("@kunai/design");
+    setDesignTheme(next.theme);
+  }
+
   container.providerRegistry.setPriority(createProviderPrioritySnapshot(next));
 
   const state = stateManager.getState();

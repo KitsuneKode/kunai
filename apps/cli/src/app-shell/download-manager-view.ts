@@ -70,6 +70,7 @@ function jobStatusLabel(job: DownloadJobRecord): string {
 export function buildDownloadManagerRailModel(
   job: DownloadJobRecord | undefined,
   posterState: PreviewPosterState,
+  live?: { readonly sizeLabel?: string; readonly speedLabel?: string; readonly etaLabel?: string },
 ): PreviewRailModel | null {
   if (!job) return null;
 
@@ -86,9 +87,15 @@ export function buildDownloadManagerRailModel(
     job.status === "running" || job.status === "queued"
       ? {
           label: "Progress",
-          value: `${Math.max(0, Math.min(100, Math.round(job.progressPercent ?? 0)))}%`,
+          value: live?.sizeLabel
+            ? `${Math.max(0, Math.min(100, Math.round(job.progressPercent ?? 0)))}% of ${live.sizeLabel}`
+            : `${Math.max(0, Math.min(100, Math.round(job.progressPercent ?? 0)))}%`,
         }
       : null,
+    job.status === "running" && live?.speedLabel
+      ? { label: "Speed", value: live.speedLabel }
+      : null,
+    job.status === "running" && live?.etaLabel ? { label: "ETA", value: live.etaLabel } : null,
     { label: "Provider", value: job.providerId },
     job.selectedQualityLabel ? { label: "Quality", value: job.selectedQualityLabel } : null,
     {
