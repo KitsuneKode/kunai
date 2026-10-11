@@ -155,6 +155,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       read: (config) => config.prePlayConfirm,
       write: (config, value) => ({
         ...config,
+        // SAFETY: the row's options are PRE_PLAY_CONFIRM_SETTINGS_OPTIONS, the
+        // same union the config field declares.
         prePlayConfirm: value as typeof config.prePlayConfirm,
       }),
     },

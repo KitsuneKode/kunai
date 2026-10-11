@@ -38,12 +38,10 @@ export function getDesignThemeName(): ThemeName {
  * false on an unrecognized name (hand-edited config values included) and keeps
  * the current theme rather than failing hard.
  */
-export function setDesignTheme(name: unknown): boolean {
+export function setDesignTheme(name: string | null | undefined): boolean {
   if (!isThemeName(name)) return false;
   const next = resolveDesignTokens(detectedLevel, THEMES[name].palette);
-  for (const [key, value] of Object.entries(next)) {
-    (resolvedBox as Record<string, unknown>)[key] = value;
-  }
+  Object.assign(resolvedBox, next);
   activeThemeName = name;
   return true;
 }

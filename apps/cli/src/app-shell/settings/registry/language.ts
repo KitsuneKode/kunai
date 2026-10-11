@@ -53,6 +53,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
         ...config,
         animeLanguageProfile: {
           ...config.animeLanguageProfile,
+          // SAFETY: the row's options come from the provider quality catalog,
+          // so `value` is always a member of this union.
           quality: value as typeof config.animeLanguageProfile.quality,
         },
       }),
@@ -95,6 +97,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
         ...config,
         seriesLanguageProfile: {
           ...config.seriesLanguageProfile,
+          // SAFETY: the row's options come from the provider quality catalog,
+          // so `value` is always a member of this union.
           quality: value as typeof config.seriesLanguageProfile.quality,
         },
       }),
@@ -137,6 +141,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
         ...config,
         movieLanguageProfile: {
           ...config.movieLanguageProfile,
+          // SAFETY: the row's options come from the provider quality catalog,
+          // so `value` is always a member of this union.
           quality: value as typeof config.movieLanguageProfile.quality,
         },
       }),

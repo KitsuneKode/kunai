@@ -55,7 +55,7 @@ describe("theme registry", () => {
     expect(isThemeName("nord")).toBe(true);
     expect(isThemeName("ember-dusk")).toBe(true);
     expect(isThemeName("sakura")).toBe(false);
-    expect(isThemeName(42)).toBe(false);
+    expect(isThemeName("")).toBe(false);
     expect(isThemeName(undefined)).toBe(false);
   });
 });

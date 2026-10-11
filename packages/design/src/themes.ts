@@ -17,7 +17,7 @@ export const DEFAULT_THEME_NAME: ThemeName = "ember-dusk";
  * status hues, text ramp). The color rules in `tokens.ts` still apply
  * regardless of palette: color encodes state or content-kind, never identity.
  */
-export const THEMES: Record<ThemeName, ThemeDef> = {
+export const THEMES = {
   "ember-dusk": {
     name: "ember-dusk",
     label: "Ember Dusk",
@@ -66,14 +66,14 @@ export const THEMES: Record<ThemeName, ThemeDef> = {
     detail: "Warm retro groove — brown surfaces, signature orange accent",
     palette: gruvboxPalette,
   },
-};
+} satisfies Record<ThemeName, ThemeDef>;
 
 export function listThemes(): readonly ThemeDef[] {
   return Object.values(THEMES);
 }
 
-export function isThemeName(value: unknown): value is ThemeName {
-  return typeof value === "string" && value in THEMES;
+export function isThemeName(value: string | null | undefined): value is ThemeName {
+  return value != null && value in THEMES;
 }
 
 export function getThemeLabel(name: ThemeName): string {

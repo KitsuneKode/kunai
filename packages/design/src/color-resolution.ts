@@ -204,18 +204,20 @@ function degradePalette(palette: ThemePalette, level: "256" | "16"): ResolvedDes
     if (!blended) return level === "256" ? value : "white";
     return level === "256" ? quantizeToXterm256(blended) : quantizeToAnsi16(blended);
   };
+  const { heatRamp, ...scalars } = palette;
   const out: Record<string, string | ResolvedHeatRamp> = {};
-  for (const [name, value] of Object.entries(palette)) {
-    if (name === "heatRamp") {
-      // The input is a fixed 5-tuple, but `.map` widens to `string[]` — the
-      // length is guaranteed by the palette type, so the tuple cast is honest.
-      out.heatRamp = (value as ThemePalette["heatRamp"]).map(
-        quantize,
-      ) as unknown as ResolvedHeatRamp;
-    } else {
-      out[name] = quantize(value as string);
-    }
+  for (const [name, value] of Object.entries(scalars)) {
+    out[name] = quantize(value);
   }
+  out.heatRamp = [
+    quantize(heatRamp[0]),
+    quantize(heatRamp[1]),
+    quantize(heatRamp[2]),
+    quantize(heatRamp[3]),
+    quantize(heatRamp[4]),
+  ];
+  // SAFETY: `scalars` iterated every non-ramp token key of the palette shape,
+  // so `out` carries the full ResolvedDesignTokens key set.
   return out as ResolvedDesignTokens;
 }
 
@@ -269,12 +271,20 @@ function resolveColorToken(
   value: string | readonly string[],
   level: TerminalColorLevel,
 ): ResolvedTokenValue {
-  if (level === "truecolor") return value as ResolvedTokenValue;
+  if (level === "truecolor") {
+    // SAFETY: TokenValue and ResolvedTokenValue share the same shape, so
+    // passing the raw value through at truecolor is honest.
+    return value as ResolvedTokenValue;
+  }
   if (name === "heatRamp") {
     return level === "256" ? HEAT_RAMP_FALLBACKS.ansi256 : HEAT_RAMP_FALLBACKS.ansi16;
   }
   const fallback = ANSI_FALLBACKS[name];
-  if (!fallback) return value as ResolvedTokenValue;
+  if (!fallback) {
+    // SAFETY: no curated fallback for this token — the raw palette value
+    // carries the same ResolvedTokenValue shape.
+    return value as ResolvedTokenValue;
+  }
   return level === "256" ? fallback.ansi256 : fallback.ansi16;
 }
 
@@ -288,10 +298,15 @@ export function resolveDesignTokens(
   if (level !== "truecolor" && palette !== rawTokens) {
     return degradePalette(palette, level);
   }
-  return Object.fromEntries(
+  const resolved = Object.fromEntries(
     Object.entries(palette).map(([name, value]) => [
       name,
+      // SAFETY: Object.entries loses the literal key union; every palette key
+      // is a TokenName by the ThemePalette contract.
       resolveColorToken(name as TokenName, value, level),
     ]),
-  ) as ResolvedDesignTokens;
+  );
+  // SAFETY: the map above writes every ThemePalette key, which is the full
+  // ResolvedDesignTokens key set.
+  return resolved as ResolvedDesignTokens;
 }

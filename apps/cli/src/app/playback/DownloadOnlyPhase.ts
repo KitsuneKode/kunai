@@ -2,6 +2,7 @@ import { openDownloadConfirmationShell } from "@/app-shell/download-confirmation
 import { pickEpisodesToDownload } from "@/app/bootstrap/download-episode-checklist";
 import type { Phase, PhaseContext, PhaseResult } from "@/app/session/Phase";
 import { isTitleLevelContent } from "@/domain/media/content-kind";
+import { episodeRequestFlags } from "@/domain/session/SessionState";
 import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types";
 import {
   buildDefaultDownloadProfile,
@@ -118,11 +119,16 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
       let episodes: readonly EpisodeInfo[] | null;
       if (episodeRequest) {
         episodes = [
-          {
-            season: isAnime ? 1 : episodeRequest.season,
-            episode: episodeRequest.episode,
-            ...(isAnime ? { absoluteEpisode: episodeRequest.episode } : {}),
-          },
+          isAnime
+            ? {
+                season: 1,
+                episode: episodeRequest.episode,
+                absoluteEpisode: episodeRequest.episode,
+              }
+            : {
+                season: episodeRequest.season,
+                episode: episodeRequest.episode,
+              },
         ];
       } else {
         episodes = this.deps.pickEpisodes
@@ -233,12 +239,7 @@ async function pickSingleDownloadEpisodeFallback({
     isAnime,
     animeEpisodeCount: title.episodeCount,
     animeEpisodes: undefined,
-    flags: episodeRequest
-      ? {
-          ...(isAnime ? {} : { season: String(episodeRequest.season) }),
-          episode: String(episodeRequest.episode),
-        }
-      : {},
+    flags: episodeRequestFlags(episodeRequest, isAnime),
     getHistoryEntry: () =>
       Promise.resolve(
         container.historyRepository.getLatestForTitleIdentity({

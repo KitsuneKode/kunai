@@ -204,6 +204,7 @@ import {
 import { decideSoftFallbackOnResolve } from "@/domain/playback/soft-fallback-preference-policy";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
+import { episodeRequestFlags } from "@/domain/session/SessionState";
 import type {
   TitleInfo,
   EpisodeInfo,
@@ -872,12 +873,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         // and `chooseStartingEpisode` returns it as an immediate selection if
         // the menu path still runs (offline-library, movie-gated, etc).
         const episodeRequest = stateManager.getState().episodeRequest;
-        const episodeRequestFlags = episodeRequest
-          ? {
-              ...(usesNativeEpisodes ? {} : { season: String(episodeRequest.season) }),
-              episode: String(episodeRequest.episode),
-            }
-          : {};
+        const requestFlags = episodeRequestFlags(episodeRequest, usesNativeEpisodes);
         const preselectedCurrentEpisode =
           stateManager.getState().currentTitle?.id === title.id
             ? stateManager.getState().currentEpisode
@@ -905,7 +901,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           history,
           seasonCount,
           failedProvider,
-          flags: episodeRequestFlags,
+          flags: requestFlags,
         });
 
         if (episodeEntry.kind === "auto") {
@@ -931,7 +927,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             isAnime: usesNativeEpisodes,
             animeEpisodeCount: title.episodeCount,
             animeEpisodes: initialAnimeEpisodes,
-            flags: episodeRequestFlags,
+            flags: requestFlags,
             getHistoryEntry: () => Promise.resolve(history),
             container,
           });

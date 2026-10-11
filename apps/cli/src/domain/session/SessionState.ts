@@ -945,6 +945,20 @@ function filterPickerOptions(
   ]);
 }
 
+/**
+ * The `flags` bag the episode-entry resolvers (`resolvePlaybackEpisodeEntry`,
+ * `chooseStartingEpisode`) consume: season/episode as strings, season omitted
+ * for anime absolute numbering. Kept beside the `episodeRequest` it derives
+ * from so both launch paths build the same shape.
+ */
+export function episodeRequestFlags(request: SessionState["episodeRequest"], isAnime: boolean) {
+  return request
+    ? isAnime
+      ? { episode: String(request.episode) }
+      : { season: String(request.season), episode: String(request.episode) }
+    : {};
+}
+
 function popPickerOverlay(modals: readonly OverlayState[], id: string): OverlayState[] {
   const top = modals.at(-1);
   if (isPickerOverlay(top, id)) return modals.slice(0, -1);
