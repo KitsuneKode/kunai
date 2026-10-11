@@ -306,6 +306,33 @@ describe("package-manager-owned binary detection", () => {
     }
   });
 
+  test("resolves a Homebrew bin symlink into the Cellar before classifying", () => {
+    // `process.execPath` may be `/opt/homebrew/bin/kunai` — the symlink, not
+    // the Cellar target — so detection must realpath it or upgrade would
+    // self-replace a Homebrew-owned file.
+    expect(
+      detectInstallMethod({
+        ...binaryRun,
+        execPath: "/opt/homebrew/bin/kunai",
+        platform: "darwin",
+        realpath: () => "/opt/homebrew/Cellar/kunai/0.3.0/bin/kunai",
+      }).kind,
+    ).toBe("homebrew");
+  });
+
+  test("keeps the raw executable path when realpath fails", () => {
+    expect(
+      detectInstallMethod({
+        ...binaryRun,
+        execPath: "/opt/homebrew/Cellar/kunai/0.3.0/bin/kunai",
+        platform: "darwin",
+        realpath: () => {
+          throw new Error("dangling");
+        },
+      }).kind,
+    ).toBe("homebrew");
+  });
+
   test("a different Cellar package is not a Homebrew kunai", () => {
     expect(
       detectInstallMethod({
@@ -332,6 +359,29 @@ describe("package-manager-owned binary detection", () => {
         ...binaryRun,
         execPath: "/c/Users/k/scoop/apps/kunai/current/kunai.exe",
         platform: "win32",
+      }).kind,
+    ).toBe("scoop");
+  });
+
+  test("detects Scoop installs under custom SCOOP / SCOOP_GLOBAL roots", () => {
+    expect(
+      detectInstallMethod({
+        cwd: "D:\\tools",
+        entrypoint: "B:\\~BUN\\root\\main.js",
+        packagedBinary: true,
+        execPath: "D:\\Tools\\scoop\\apps\\kunai\\current\\kunai.exe",
+        platform: "win32",
+        env: { SCOOP: "D:\\Tools\\scoop" },
+      }).kind,
+    ).toBe("scoop");
+    expect(
+      detectInstallMethod({
+        cwd: "C:\\Tools",
+        entrypoint: "B:\\~BUN\\root\\main.js",
+        packagedBinary: true,
+        execPath: "C:\\Tools\\GlobalScoop\\apps\\kunai\\current\\kunai.exe",
+        platform: "win32",
+        env: { SCOOP_GLOBAL: "C:\\Tools\\GlobalScoop" },
       }).kind,
     ).toBe("scoop");
   });

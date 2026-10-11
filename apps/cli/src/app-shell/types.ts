@@ -24,6 +24,7 @@ export type ShellAction =
   | "surprise"
   | "back-to-results"
   | "settings"
+  | "theme"
   | "providers"
   | "presence"
   | "analytics"
@@ -321,6 +322,12 @@ export type BrowseIdleContext = {
     titleId?: string;
     offlineJobId?: string;
   };
+  /** Top of the Watchlist (sort_order) plus the saved count — the "saved" idle row. */
+  savedNext?: {
+    title: string;
+    titleId: string;
+    total: number;
+  };
   todayReleaseCount?: number;
   todayReleaseTitleCount?: number;
   calendarNudge?: {
@@ -452,6 +459,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "random":
     case "surprise":
     case "settings":
+    case "theme":
     case "providers":
     case "presence":
     case "analytics":

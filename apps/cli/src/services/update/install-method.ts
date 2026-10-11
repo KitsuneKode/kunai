@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { posix, win32 } from "node:path";
 
 import { readManagedPackageContext } from "./managed-package-context";
@@ -31,6 +32,13 @@ export type DetectInstallMethodInput = {
    * self-replace a file a package manager owns.
    */
   readonly execPath?: string;
+  /**
+   * Symlink resolver applied to `execPath` before classification. Homebrew
+   * (and Scoop-style shims) launch through a `bin/kunai` symlink or stub, so
+   * the raw path can hide package-manager ownership; defaults to
+   * `realpathSync` and falls back to the raw path when resolution fails.
+   */
+  readonly realpath?: (path: string) => string;
   readonly fileExists?: (path: string) => boolean;
   readonly env?: Record<string, string | undefined>;
 };
@@ -48,7 +56,8 @@ export function detectInstallMethod(input: DetectInstallMethodInput = {}): Insta
   const comparableEntrypoint =
     platform === "win32" ? normalizedEntrypoint.toLowerCase() : normalizedEntrypoint;
   const fileExists = input.fileExists ?? (() => false);
-  const managedContext = readManagedPackageContext(input.env);
+  const env = input.env ?? {};
+  const managedContext = readManagedPackageContext(env);
 
   if (managedContext) {
     return managedContext.manager === "bun"
@@ -87,13 +96,32 @@ export function detectInstallMethod(input: DetectInstallMethodInput = {}): Insta
   ) {
     // A compiled binary can still be package-manager-owned: resolve the
     // executable's real path before falling back to self-managed "binary".
-    const execPath = path.normalize(input.execPath ?? process.execPath).replaceAll("\\", "/");
+    // `process.execPath` may be the Homebrew `bin/kunai` symlink rather than
+    // the Cellar target, so realpath comes first; a dangling link keeps the
+    // raw path rather than aborting detection.
+    const realpath = input.realpath ?? ((candidate: string) => realpathSync(candidate));
+    const rawExecPath = input.execPath ?? process.execPath;
+    let resolvedExecPath = rawExecPath;
+    try {
+      resolvedExecPath = realpath(rawExecPath);
+    } catch {
+      resolvedExecPath = rawExecPath;
+    }
+    const execPath = path.normalize(resolvedExecPath).replaceAll("\\", "/");
     const comparableExecPath = platform === "win32" ? execPath.toLowerCase() : execPath;
     const execPathLower = comparableExecPath.toLowerCase();
     if (execPathLower.includes("/cellar/kunai/")) {
       return { kind: "homebrew", label: "Homebrew" };
     }
-    if (execPathLower.includes("/scoop/apps/kunai/")) {
+    // Scoop also lives outside a literal `scoop` directory when SCOOP /
+    // SCOOP_GLOBAL point at a custom root — match the env-declared roots too.
+    const scoopRoots = [env.SCOOP, env.SCOOP_GLOBAL]
+      .filter((value): value is string => value !== undefined && value.length > 0)
+      .map((value) => value.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase());
+    if (
+      execPathLower.includes("/scoop/apps/kunai/") ||
+      scoopRoots.some((root) => execPathLower.startsWith(`${root}/apps/kunai/`))
+    ) {
       return { kind: "scoop", label: "Scoop" };
     }
     if (platform === "linux" && comparableExecPath === "/usr/bin/kunai") {

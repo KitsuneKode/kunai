@@ -7,6 +7,7 @@ export {
   openProviderPicker,
   openSeasonPicker,
   openSubtitlePicker,
+  openThemePicker,
   openTracksPanel,
 } from "./picker-workflows";
 export {

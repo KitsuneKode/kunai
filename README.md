@@ -78,6 +78,10 @@ What that buys you:
 - **It keeps going.** Up Next, resume, watch history, a release calendar, and offline
   downloads are one command away.
 
+Local-first: history, queue, and downloads live on your machine, and usage
+analytics is strictly opt-in — off by default, and only an explicit keypress
+can turn it on.
+
 It takes the daily-driver confidence of tools like `ani-cli` and extends it into
 an app-grade browsing experience that keeps search, details, episodes, and
 playback connected while staying a deterministic, scriptable CLI.
@@ -89,6 +93,7 @@ playback connected while staying a deterministic, scriptable CLI.
 | Runtime              | self-contained binary, Bun embedded     | POSIX shell script | Python (pipx)              |
 | Interface            | persistent fullscreen shell             | one-shot prompts   | one-shot prompts           |
 | Coverage             | anime, series, movies, YouTube          | anime              | movies, series via plugins |
+| Streams              | probed before mpv sees them             | as found           | as found                   |
 | Between episodes     | Up Next, resume, continue watching      | relaunch           | relaunch                   |
 | When a provider dies | `⇧F` fallback without leaving playback  | pick another link  | plugin-dependent           |
 | Offline              | download queue + local library          | `-d` download flag | via plugins                |
@@ -475,6 +480,7 @@ page or in-app `?` over duplicating chords here.
 | `/calendar`    | Unified release calendar (anime · series · movies)                                     |
 | `/setup`       | Run the setup wizard                                                                   |
 | `/settings`    | Configure provider, language, downloads, Discord (also Discord presence and analytics) |
+| `/theme`       | Pick the shell color theme (8 palettes, applies instantly)                             |
 | `/history`     | Watch history and resume                                                               |
 | `/diagnostics` | Runtime snapshot and recent events                                                     |
 
@@ -489,6 +495,7 @@ page or in-app `?` over duplicating chords here.
 - **Discover** personalized recommendations and trending titles.
 - **Release calendar** is one content-kind-aware window across anime, series, and movies. Filter by type (Tab) or day (←/→), with honest "airs today / releases / available" status. Provider resolution happens only after you open a row.
 - **Random / Surprise** spins a non-autoplaying tray of cached recommendations.
+- **Themes** — 8 palettes (Ember Dusk, Nord, Tokyo Night, Catppuccin Mocha, Dracula, Rosé Pine, Gruvbox, Kitsunebi) via `/theme` or Settings → Appearance. They repaint instantly and degrade cleanly on 256- and 16-colour terminals.
 
 ### Playback
 
@@ -497,6 +504,8 @@ page or in-app `?` over duplicating chords here.
 - **Recompute sources** (`/recompute`) bypasses cached provider memory when provider state looks stale.
 - **Fallback** (`⇧F`) tries the next compatible provider when the current one fails.
 - **Source / quality picker** switches among already-resolved stream options.
+- **Confirm before play** (`prePlayConfirm`) opens the source/quality/subtitle sheet before every launch, or only when real choices exist.
+- **Per-lane preferences** set audio, subtitle, and quality defaults separately for anime, series, movies, and YouTube.
 - **Autoplay** automatically advances to the next episode in a series chain.
 - **Post-playback** controls open from prefetched data first; recommendations warm in the background instead of delaying the menu.
 - **Autoskip** skips intros, recaps, previews, and credits (powered by IntroDB/AniSkip when available).
@@ -511,6 +520,7 @@ everything else works normally.
 - Queue downloads from any search result (`Ctrl+D`) or with `/download`. During playback, `d` opens diagnostics.
 - Movies skip the episode picker: one key queues the download.
 - The download queue persists across sessions (backed by SQLite).
+- Live rows show percent, speed, size, and ETA while a job runs.
 - On restart, interrupted downloads are automatically resumed or retried.
 - Optional post-download integrity checks (`ffprobe`). Offline artwork uses cached poster assets when available.
 - Repairable sidecars: if the video is valid but subtitles/artwork need attention, retry repairs the sidecar without redownloading the whole video.
@@ -830,6 +840,12 @@ Contributions are welcome: bug fixes, provider parity, platform testing, and tes
 coverage all help. Provider fixes with `/diagnostics` output and macOS/Windows
 parity notes are the highest-value areas, because they are the hardest to catch
 without more machines than we have.
+
+Feature ideas and requests go through the
+[feature-request template](https://github.com/KitsuneKode/kunai/issues/new?template=feature_request.yml)
+(or [GitHub Discussions](https://github.com/KitsuneKode/kunai/discussions) for
+looser threads); the [feedback page](https://kunai.kitsunekode.in/feedback)
+explains what a report needs to be actionable.
 
 Kunai is a Bun monorepo: the CLI, provider adapters, storage, and the shared relay
 each live in their own package. Running from source, the deterministic check
