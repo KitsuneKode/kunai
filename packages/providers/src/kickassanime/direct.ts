@@ -409,8 +409,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       );
 
     const failRequest = (error: unknown, stage: string) => {
-      if (context.signal?.aborted || (error instanceof Error && error.name === "AbortError"))
-        return fail("cancelled", "KickAssAnime resolve cancelled");
+      if (context.signal?.aborted) return fail("cancelled", "KickAssAnime resolve cancelled");
       if (error instanceof ProviderHttpError)
         return fail(
           error.code,

@@ -898,6 +898,22 @@ describe("kickassanimeProviderModule", () => {
     expect(result.failures[0]).toMatchObject({ code: "timeout", retryable: true });
   });
 
+  test("a transport AbortError does not cancel an active caller", async () => {
+    const controller = new AbortController();
+    const result = await kickassanimeProviderModule.resolve(resolveInput(), {
+      ...contextWith((url) => {
+        if (url === "https://kickass-anime.ro/")
+          return new Response("no rotation", { status: 503 });
+        // Relay request deadlines can wrap their abort as AbortError. The
+        // caller is still active, so retry remains available to recovery.
+        throw new DOMException("transport request aborted", "AbortError");
+      }),
+      signal: controller.signal,
+    });
+    expect(controller.signal.aborted).toBe(false);
+    expect(result.failures[0]).toMatchObject({ code: "network-error", retryable: true });
+  });
+
   test("a dead domain is replaced by where the old alias redirects", async () => {
     const requests: string[] = [];
     const moved = catalogRoute();
