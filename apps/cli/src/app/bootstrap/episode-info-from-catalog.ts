@@ -7,6 +7,7 @@ export function episodeInfoFromSelection(args: {
   isAnime: boolean;
   titleId: string;
   animeEpisodes?: readonly EpisodePickerOption[];
+  providerEpisodeIdentity?: EpisodeInfo["providerEpisodeIdentity"];
 }): EpisodeInfo {
   const { season, episode, isAnime, titleId, animeEpisodes } = args;
 
@@ -15,7 +16,7 @@ export function episodeInfoFromSelection(args: {
     return {
       season,
       episode,
-      providerEpisodeIdentity: match?.providerEpisodeIdentity,
+      providerEpisodeIdentity: args.providerEpisodeIdentity ?? match?.providerEpisodeIdentity,
       name: match?.name ?? match?.label,
       airDate: match?.airDate ?? match?.release?.airDate,
       overview: match?.overview ?? match?.detail,
@@ -31,6 +32,7 @@ export function episodeInfoFromSelection(args: {
   return {
     season,
     episode,
+    providerEpisodeIdentity: args.providerEpisodeIdentity,
     name: cached?.name,
     airDate: cached?.airDate,
     overview: cached?.overview,

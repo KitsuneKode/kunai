@@ -16,6 +16,9 @@ import type { PosterResult, PosterState } from "./poster-types";
  */
 export const POSTER_SPINNER_DELAY_MS = 150;
 
+/** Delays for the bounded failure retries, indexed by attempt number. */
+export const POSTER_RETRY_DELAYS_MS = [1_500, 4_000] as const;
+
 type PosterPreviewState = {
   readonly poster: PosterResult;
   readonly posterState: PosterState;
@@ -190,14 +193,16 @@ export function usePosterPreview(
 ): { poster: PosterResult; posterState: PosterState; spinner: boolean } {
   const [state, dispatch] = useReducer(posterPreviewReducer, initialPosterPreviewState);
   const previousGeometry = useRef<{ readonly rows: number; readonly cols: number } | null>(null);
-  // One delayed retry per request (URL + geometry + protocol): a transient
-  // fetch failure (busy machine right after mpv teardown, slow TMDB edge)
-  // otherwise leaves the initials fallback on screen forever because nothing
-  // re-arms the effect. A new requestKey (revisit, resize, protocol change)
-  // re-arms automatically since the stored key no longer matches, and a
-  // success clears the marker so a later transient failure retries again.
+  // Bounded delayed retries per requestKey: transient failures (busy machine
+  // right after mpv teardown, a TMDB edge blip) used to leave the initials
+  // fallback up forever after a single retry. Two attempts with backoff give
+  // the blip room to pass without retrying a dead endpoint forever; a
+  // successful resolve resets the budget so the next blip can retry again.
   // Failed fetches are never cached, so the retry genuinely refetches.
-  const retryAttempted = useRef<string | null>(null);
+  const retryBudget = useRef<{ key: string | null; attempts: number }>({
+    key: null,
+    attempts: 0,
+  });
   const [retryToken, bumpRetryToken] = useReducer((token: number) => token + 1, 0);
   const requestKey = posterRequestKey(url, {
     rows,
@@ -243,12 +248,17 @@ export function usePosterPreview(
     const abort = new AbortController();
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let spinnerTimer: ReturnType<typeof setTimeout> | undefined;
-    const scheduleRetryIfFirstFailure = () => {
-      if (requestKey === null || retryAttempted.current === requestKey) return;
-      retryAttempted.current = requestKey;
+    const scheduleRetry = () => {
+      const key = requestKey ?? url;
+      if (retryBudget.current.key !== key) {
+        retryBudget.current = { key, attempts: 0 };
+      }
+      const attempt = retryBudget.current.attempts;
+      if (attempt >= POSTER_RETRY_DELAYS_MS.length) return;
+      retryBudget.current.attempts = attempt + 1;
       retryTimer = setTimeout(() => {
         if (!cancelled) bumpRetryToken();
-      }, 1_500);
+      }, POSTER_RETRY_DELAYS_MS[attempt]);
     };
     // Defer both the "loading" commit and the fetch until the debounce fires.
     // Dispatching "loading" immediately on enable forced an extra Ink frame on
@@ -280,11 +290,9 @@ export function usePosterPreview(
         .then((result) => {
           if (cancelled || abort.signal.aborted) return undefined;
           if (result.kind === "none") {
-            scheduleRetryIfFirstFailure();
-          } else if (requestKey !== null && retryAttempted.current === requestKey) {
-            // Success re-arms: a later transient failure for this same
-            // request retries again instead of pinning the fallback.
-            retryAttempted.current = null;
+            scheduleRetry();
+          } else {
+            retryBudget.current = { key: null, attempts: 0 };
           }
           startTransition(() =>
             dispatch({ type: "resolved", result, sourceKey: requestKey ?? undefined }),
@@ -293,7 +301,7 @@ export function usePosterPreview(
         })
         .catch(() => {
           if (cancelled || abort.signal.aborted) return;
-          scheduleRetryIfFirstFailure();
+          scheduleRetry();
           startTransition(() => dispatch({ type: "reset", posterState: "unavailable" }));
         })
         // Settled either way: stop the arming timer so a slow-but-successful

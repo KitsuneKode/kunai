@@ -10,6 +10,7 @@ export function createSettingsUiState(snapshot: KitsuneConfig): SettingsUiState 
     parentIndex: 0,
     inputMode: { active: false },
     searchQuery: "",
+    searchFocused: false,
     activeSectionIndex: 0,
     selectedIndex: 0,
     error: null,
@@ -70,6 +71,7 @@ export function enterSettingsSubmenu(
     parentIndex,
     inputMode: { active: false },
     searchQuery: "",
+    searchFocused: false,
     selectedIndex: 0,
     error: null,
   };
@@ -80,6 +82,7 @@ export function exitSettingsSubmenu(state: SettingsUiState): SettingsUiState {
     ...state,
     submenuId: null,
     searchQuery: "",
+    searchFocused: false,
     selectedIndex: state.parentIndex,
     error: null,
   };

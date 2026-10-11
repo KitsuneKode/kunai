@@ -75,7 +75,7 @@ function ValidShareLanding({ shared }: { readonly shared: ParsedKunaiShare }) {
             />
             <div className="relative flex items-center justify-between gap-4">
               <span className="kunai-step-label">Shared through Kunai</span>
-              <span className="rounded-full border border-[var(--kunai-line)] px-3 py-1 font-mono text-[0.65rem] tracking-[0.14em] text-[var(--color-fd-muted-foreground)] uppercase">
+              <span className="rounded-full border border-[var(--kunai-line)] px-3 py-1 font-mono text-xs tracking-[0.14em] text-[var(--color-fd-muted-foreground)] uppercase">
                 {ref.kind}
               </span>
             </div>
@@ -145,7 +145,7 @@ function InstallCommand({ label, command }: { readonly label: string; readonly c
   return (
     <div className="rounded-xl border border-[var(--kunai-line)] bg-[var(--kunai-bg)] p-3.5">
       <div className="mb-2 flex items-center justify-between gap-4">
-        <span className="font-mono text-[0.65rem] tracking-[0.12em] text-[var(--color-fd-muted-foreground)] uppercase">
+        <span className="font-mono text-xs tracking-[0.12em] text-[var(--color-fd-muted-foreground)] uppercase">
           {label}
         </span>
         <CopyButton text={command} label={`share-install-${label}`} />

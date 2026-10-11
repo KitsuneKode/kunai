@@ -34,6 +34,13 @@ const ALLOWED_URL_SCHEMES = new Set(["http:", "https:", "kunai:"]);
  */
 export function isAllowedExternalUrl(url: string): boolean {
   if (url.startsWith("-")) return false;
+  if (
+    [...url].some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+    })
+  )
+    return false;
   try {
     return ALLOWED_URL_SCHEMES.has(new URL(url).protocol);
   } catch {

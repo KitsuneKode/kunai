@@ -6,6 +6,7 @@ import { Box, Text, useInput } from "ink";
 import React from "react";
 
 import { extractErrorDebugExcerpt } from "./error-debug-excerpt";
+import { reducedMotionEnabled } from "./motion-policy";
 import {
   GUTTER_COLUMN,
   PETAL_STEP_MS,
@@ -15,7 +16,7 @@ import {
 } from "./petal-fall";
 import { buildErrorRows, type ErrorRow, type ErrorRowTone, rowText } from "./playback-error-rows";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
-import { reducedMotionEnabled, useFrameTick } from "./primitives/SakuraPetal";
+import { useFrameTick } from "./primitives/SakuraPetal";
 import { SakuraLoader } from "./SakuraLoader";
 import { palette } from "./shell-theme";
 import { useShellDimensions } from "./use-viewport-policy";
@@ -72,9 +73,7 @@ export function RootIdleShell({ state }: { state: SessionState }) {
     <Box flexDirection="column" flexGrow={1}>
       {hasSession ? (
         <Box flexDirection="column" gap={0}>
-          <Text color={palette.dim} dimColor>
-            {resolveContentKind(currentTitle, state.mode)}
-          </Text>
+          <Text color={palette.dim}>{resolveContentKind(currentTitle, state.mode)}</Text>
           <Box marginTop={1}>
             <Text color={palette.accent}>{"⏸  "}</Text>
             <Text color={palette.text} bold>
@@ -83,7 +82,7 @@ export function RootIdleShell({ state }: { state: SessionState }) {
             {currentEpisode ? <Text color={palette.muted}>{`  ${currentEpisode}`}</Text> : null}
           </Box>
           <Box marginTop={1}>
-            <Text color={palette.dim} dimColor>
+            <Text color={palette.dim}>
               {"/history to continue  ·  /calendar for today  ·  / for commands"}
             </Text>
           </Box>
@@ -95,7 +94,9 @@ export function RootIdleShell({ state }: { state: SessionState }) {
           </Text>
           <Box marginTop={1}>
             <Text color={palette.dim}>
-              {"search for a title to begin  ·  /discover for recommendations"}
+              {
+                "search for a title to begin  ·  /guide for the tour  ·  /discover for recommendations"
+              }
             </Text>
           </Box>
         </Box>
@@ -117,7 +118,7 @@ function toneColor(tone: ErrorRowTone): string {
   switch (tone) {
     case "danger-strong":
     case "danger":
-      return palette.danger;
+      return palette.dangerText;
     case "accent":
       return palette.accent;
     case "text":

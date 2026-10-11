@@ -1,4 +1,3 @@
-// =============================================================================
 // Shutdown coordinator — one bounded, ordered exit path for the live app.
 //
 // Every handled exit (normal quit, shell request, signal, fatal error)
@@ -8,7 +7,6 @@
 // Phases are failure-isolated: one failing phase is recorded and the rest
 // still run, because critical-state preservation must never be skipped.
 // A global deadline aborts a hung external release and forces the exit.
-// =============================================================================
 
 export type ShutdownIntent = {
   readonly reason: string;

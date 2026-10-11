@@ -1,4 +1,3 @@
-// =============================================================================
 // image/index.ts — terminal image capability surface.
 //
 // This module used to also own `displayPoster`, a file-based one-shot renderer
@@ -10,7 +9,6 @@
 // it meant keeping a second, slower conversion path alive for no user.
 //
 // What remains here is capability detection, which the shell and `ui.ts` do use.
-// =============================================================================
 
 export { detectImageCapability, detectTerminal, isKittyCompatible } from "./capability";
 export type {

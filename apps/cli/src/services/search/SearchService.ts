@@ -1,8 +1,6 @@
-// =============================================================================
 // Search Service Interface (Domain)
 //
 // The contract that all search services must implement.
-// =============================================================================
 
 import type { ProviderCatalogIdentity } from "@kunai/core";
 

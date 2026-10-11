@@ -2,7 +2,7 @@ import type { ProviderFetchPort } from "@kunai/types";
 
 import { isHlsMasterPlaylist, isHlsPlaylistUrl } from "./hls-manifest";
 import { normalizeQualityLabel, qualityRankFromLabel } from "./source-inventory";
-import { fetchGuardedStreamTarget } from "./stream-reachability";
+import { fetchGuardedStreamTarget, readBoundedTextBody } from "./stream-reachability";
 import { normalizeIsoLanguageCode } from "./subtitle-helpers";
 
 export type HlsLadderVariant = {
@@ -65,6 +65,7 @@ export type HlsMasterInventory = {
 
 export type ExpandHlsMasterPlaylistOptions = {
   readonly fetch: ProviderFetchPort["fetch"] | typeof fetch;
+  readonly resolvesLocally?: (url: string) => boolean;
   readonly masterUrl: string;
   readonly headers?: Record<string, string>;
   readonly signal?: AbortSignal;
@@ -104,6 +105,7 @@ export async function expandHlsMasterInventory(
     // could aim the expansion at a link-local or LAN address.
     const outcome = await fetchGuardedStreamTarget({
       fetchImpl: options.fetch,
+      resolvesLocally: options.resolvesLocally,
       url: masterUrl,
       init: {
         headers: headers ?? {},
@@ -121,7 +123,12 @@ export async function expandHlsMasterInventory(
       return empty({ kind: "http-error", httpStatus: response.status });
     }
 
-    const text = await response.text();
+    // Bounded read: a hostile or mis-labelled body must not buffer unbounded,
+    // and a truncated master must never parse as a real ladder.
+    const text = await readBoundedTextBody(response.body);
+    if (text === null) {
+      return empty({ kind: "http-error", httpStatus: response.status });
+    }
     if (!isHlsMasterPlaylist(text)) {
       return empty({ kind: "not-master", httpStatus: response.status });
     }

@@ -110,4 +110,27 @@ describe("rivestream resolve-gate failure class", () => {
 
     expect(recorded).toContainEqual({ endpoint: "primevids", class: "server-error" });
   });
+
+  test("an endpoint-scoped refusal does not stop the cycle before untried services", async () => {
+    const recorded: { endpoint: string; class: string }[] = [];
+    await rivestreamProviderModule.resolve(
+      {
+        title: { id: "1396", tmdbId: "1396", kind: "series", title: "Breaking Bad" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "series",
+        startupPriority: "balanced",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      contextWithDeadCdn(recorded),
+    );
+
+    // The dead CDN is scoped to primevids' own stream host — citadel's cycle
+    // entry is independent and must still be attempted. Before the stop
+    // predicate was narrowed, the first scoped refusal exhausted the cycle
+    // and citadel was never recorded.
+    const endpoints = recorded.map((entry) => entry.endpoint);
+    expect(endpoints).toContain("primevids");
+    expect(endpoints).toContain("citadel");
+  });
 });

@@ -3,6 +3,7 @@ export type MobileHttpRequest = {
   readonly url: string;
   readonly timeoutMs: number;
   readonly maxBytes: number;
+  readonly signal?: AbortSignal;
 };
 
 export type MobileHttpResponse = {
@@ -44,6 +45,7 @@ export interface MobilePlayerPort {
   handoff(input: {
     readonly player: "vlc";
     readonly url: string;
+    readonly signal?: AbortSignal;
   }): Promise<
     | { readonly kind: "accepted"; readonly launcher: string }
     | { readonly kind: "rejected"; readonly reason: string }
@@ -51,6 +53,7 @@ export interface MobilePlayerPort {
 }
 
 export type MobileEnvironment = {
+  readonly signal?: AbortSignal;
   readonly http: MobileHttpPort;
   readonly state: MobileStateStore;
   readonly terminal: MobileTerminalPort;

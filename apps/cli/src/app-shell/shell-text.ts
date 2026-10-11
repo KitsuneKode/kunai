@@ -5,6 +5,7 @@ export {
   measureColumns,
   padColumnsEnd,
   padColumnsStart,
+  sanitizeTerminalText,
   truncateAtWord,
   truncateLine,
   wrapText,

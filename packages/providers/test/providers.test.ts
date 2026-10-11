@@ -19,7 +19,6 @@ import {
   MIRURO_SERVER_TRY_ORDER,
   createVidkingResultFromPayload,
   createVideasyRouteCachePolicy,
-  extractQualitiesFromMaster,
   listVidkingFlavors,
   normalizeIsoLanguageCode,
   normalizeProviderDisplayLabel,
@@ -30,7 +29,6 @@ import {
   resolveVidkingDirect,
   rivestreamProviderModule,
   stableProviderInventoryId,
-  VariantTreeBuilder,
   videasyProviderModule,
   vidlinkProviderModule,
 } from "../src/index";
@@ -1553,68 +1551,6 @@ test("negative fixture keeps rivestream parse failures inspectable", async () =>
     retryable: false,
   });
   expect(result.trace.failures[0]?.code).toBe("parse-failed");
-});
-
-test("m3u8 quality extraction exposes sorted playable variants", async () => {
-  const streams = await extractQualitiesFromMaster(
-    {
-      runtime: "direct-http",
-      fetch: async () =>
-        new Response(
-          [
-            "#EXTM3U",
-            '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1280x720,NAME="720p"',
-            "720/index.m3u8",
-            "#EXT-X-STREAM-INF:BANDWIDTH=1600000,RESOLUTION=1920x1080",
-            "https://cdn.example/1080/index.m3u8",
-          ].join("\n"),
-        ),
-    },
-    "https://cdn.example/master.m3u8",
-    {
-      providerId: "videasy",
-      protocol: "hls",
-      container: "m3u8",
-      confidence: 0.9,
-      cachePolicy: {
-        ttlClass: "stream-manifest",
-        scope: "local",
-        keyParts: ["provider", "vidking", "qualities"],
-      },
-    },
-  );
-
-  expect(streams.map((stream) => stream.qualityLabel)).toEqual(["1080p", "720p"]);
-  expect(streams[1]?.url).toBe("https://cdn.example/720/index.m3u8");
-});
-
-test("variant tree builder creates stable grouped variant ordering", () => {
-  const variants = new VariantTreeBuilder({
-    providerId: "miruro",
-    sourceId: "source:miruro:pipe",
-  })
-    .addVariant({
-      label: "Dub 720p",
-      presentation: "dub",
-      subtitleDelivery: "embedded",
-      qualityLabel: "720p",
-      qualityRank: 720,
-      streamIds: ["stream-dub-720"],
-      confidence: 0.8,
-    })
-    .addVariant({
-      label: "Sub 1080p",
-      presentation: "sub",
-      subtitleDelivery: "hardcoded",
-      qualityLabel: "1080p",
-      qualityRank: 1080,
-      streamIds: ["stream-sub-1080"],
-      confidence: 0.9,
-    })
-    .build();
-
-  expect(variants.map((variant) => variant.label)).toEqual(["Sub 1080p", "Dub 720p"]);
-  expect(variants[0]?.id.startsWith("var_")).toBe(true);
 });
 
 test("source inventory helpers create stable ids and provider evidence", () => {

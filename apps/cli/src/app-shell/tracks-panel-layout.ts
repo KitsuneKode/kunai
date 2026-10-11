@@ -1,7 +1,5 @@
-// =============================================================================
-// tracks-panel-layout.ts — pure layout helpers for the Tracks panel render.
+// Pure layout helpers for the Tracks panel render.
 // Counts-header composition + subtitle-grid row chunking. No Ink/React here.
-// =============================================================================
 
 export type TrackSectionCounts = {
   readonly provider?: number;

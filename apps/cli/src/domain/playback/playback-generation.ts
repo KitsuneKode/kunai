@@ -1,11 +1,9 @@
-// =============================================================================
 // Playback Generation
 //
 // A monotonic (process, cycle) pair that identifies one mpv process and one
 // playback cycle inside it. Every asynchronous playback boundary captures the
 // generation that created it and compares before mutating current state, so a
 // replaced, stopped, or disposed session cannot be revived by late work.
-// =============================================================================
 
 export type PlaybackGeneration = {
   readonly process: number;

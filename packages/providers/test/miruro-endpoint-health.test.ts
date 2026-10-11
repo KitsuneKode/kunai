@@ -28,6 +28,15 @@ function pipeRequest(url: URL): { path?: string; query?: Record<string, unknown>
   return JSON.parse(Buffer.from(url.searchParams.get("e") ?? "", "base64url").toString("utf8"));
 }
 
+/** Pipe-encoded body whose XOR layer decodes to `text` verbatim (not JSON.stringify'd). */
+function encodeRawPipe(text: string): string {
+  const key = Uint8Array.from((PIPE_KEY.match(/.{2}/g) ?? []).map((byte) => parseInt(byte, 16)));
+  const bytes = new TextEncoder().encode(text);
+  return Buffer.from(bytes.map((byte, index) => byte ^ (key[index % key.length] ?? 0))).toString(
+    "base64url",
+  );
+}
+
 const pipe = (value: unknown) =>
   new Response(encodePipe(value), { status: 200, headers: { "x-obfuscated": "2" } });
 
@@ -37,6 +46,8 @@ function harness(options: {
   readonly quarantined?: readonly string[];
   readonly peweStatus?: number | "network-error";
   readonly peweStreams?: boolean;
+  /** When set, every `sources` pipe call returns this text XOR-encoded — undecodable JSON. */
+  readonly sourcesRaw?: string;
 }) {
   const requests: string[] = [];
   const failures: Recorded[] = [];
@@ -67,6 +78,12 @@ function harness(options: {
             });
           }
           if (request.path === "sources") {
+            if (options.sourcesRaw !== undefined) {
+              return new Response(encodeRawPipe(options.sourcesRaw), {
+                status: 200,
+                headers: { "x-obfuscated": "2" },
+              });
+            }
             const provider = request.query?.provider;
             if (provider === "pewe") {
               return pipe({
@@ -162,5 +179,22 @@ describe("miruro endpoint health", () => {
     await miruroProviderModule.resolve(INPUT as never, context);
 
     expect(successes).toContain("moo");
+  });
+
+  test("an undecodable pipe payload is parse evidence, not a retryable unknown", async () => {
+    // The pipe answered 200 with bytes that do not decode — upstream drift, not
+    // a transient network blip. Before the typed wrap, the cycle classifier
+    // read this as candidate-unknown (retryable), so every remaining server
+    // re-paid the same doomed pipe fetch before exhaustion.
+    const { context, failures } = harness({ sourcesRaw: "{oops" });
+
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    const result = await miruroProviderModule.resolve(INPUT as never, context);
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]).toMatchObject({ code: "parse-failed", retryable: false });
+    // candidate-parse maps to server-error endpoint evidence (behind the
+    // distinct-title guard) — a malformed answer IS evidence about the endpoint.
+    expect(failures.map((failure) => failure.info.class)).toContain("server-error");
   });
 });

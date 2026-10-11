@@ -1,3 +1,4 @@
+import { Sparkline } from "@/components/analytics/sparkline";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -10,7 +11,7 @@ import {
 import {
   delta,
   type Delta,
-  namedVersionCount,
+  namedBucketCount,
   residualShare,
   type TrendDirection,
 } from "@/lib/analytics-derive";
@@ -45,12 +46,15 @@ function StatCard({
   badge,
   headline,
   detail,
+  trend,
 }: {
   readonly label: string;
   readonly value: string;
   readonly badge?: { readonly text: string; readonly direction: TrendDirection };
   readonly headline: ReactNode;
   readonly detail: string;
+  /** The figure's daily history, drawn as a sparkline when it has a shape. */
+  readonly trend?: readonly number[];
 }) {
   const TrendIcon = badge ? TREND_ICON[badge.direction] : null;
   return (
@@ -76,7 +80,13 @@ function StatCard({
           </CardAction>
         ) : null}
       </CardHeader>
-      <CardFooter className="flex-col items-start gap-1.5 text-sm">
+      {trend ? (
+        <Sparkline
+          values={trend}
+          className="mx-(--card-spacing) -mt-1 h-8 w-[calc(100%-var(--card-spacing)*2)] text-(--kunai-chart-active)"
+        />
+      ) : null}
+      <CardFooter className="mt-auto flex-col items-start gap-1.5 text-sm">
         <div className="line-clamp-1 flex gap-2 font-medium">
           {headline}
           {TrendIcon ? <TrendIcon className="size-4" stroke={1.5} /> : null}
@@ -122,8 +132,11 @@ export function SectionCards({
   const lifetimeDelta = first ? delta(metrics.lifetimeInstalls, first.lifetimeInstalls) : null;
   const activeDelta = previous ? delta(metrics.activeInstalls, previous.activeInstalls) : null;
 
+  // One day, both halves. The figure and the headline of the floor tile are
+  // read from the same snapshot breakdown; mixing in the whole-window count put
+  // "0%" and "every bucket folds into other" in a single card.
   const suppressed = residualShare(metrics.byVersion);
-  const named = namedVersionCount(points);
+  const named = namedBucketCount(metrics.byVersion);
 
   // First-seen count for the snapshot day, when the series reaches it. The
   // field lives on the series only, and the tail point counts only when it is
@@ -144,6 +157,7 @@ export function SectionCards({
         }
         headline={lifetimeHeadline(lifetimeDelta)}
         detail="Cumulative: kept installs plus the retired count"
+        trend={points.map((point) => point.lifetimeInstalls)}
       />
       <StatCard
         label="Active yesterday"
@@ -157,6 +171,7 @@ export function SectionCards({
             ? `${newThatDay} of them first seen that day`
             : "A ping is one install, once a day"
         }
+        trend={points.map((point) => point.activeInstalls)}
       />
       <StatCard
         label="Reporting window"
@@ -167,7 +182,10 @@ export function SectionCards({
             in-page anchor makes it navigate there instead of just describe it.
           */
           series ? (
-            <Link href="#day-by-day" className="underline-offset-4 hover:underline">
+            <Link
+              href="#day-by-day"
+              className="-my-1 inline-block py-1 underline-offset-4 hover:underline"
+            >
               {`${series.from} → ${series.to}`}
             </Link>
           ) : (
@@ -182,10 +200,10 @@ export function SectionCards({
         badge={suppressed >= 1 ? { text: "all buckets", direction: "flat" } : undefined}
         headline={
           named > 0
-            ? `${named} ${named === 1 ? "version" : "versions"} clear the floor`
-            : "Every bucket folds into other"
+            ? `${named} ${named === 1 ? "version names itself" : "versions name themselves"} today`
+            : "Every version folds into other today"
         }
-        detail="Groups under 5 installs are not reported"
+        detail="Share of today’s installs in groups under 5, which are not named"
       />
     </div>
   );

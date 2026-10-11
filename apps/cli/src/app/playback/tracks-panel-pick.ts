@@ -13,6 +13,7 @@ export type TracksPanelPickContext = {
   readonly currentProviderId: string;
   readonly resumeSeconds: number;
   readonly reason: string;
+  readonly playbackSourceKind?: "local" | "provider";
 };
 
 export type TracksPanelPickResult =
@@ -85,6 +86,17 @@ export async function resolveTracksPanelPick(
   context: TracksPanelPickContext,
 ): Promise<TracksPanelPickResult> {
   const { container, title, episode, currentProviderId } = context;
+  if (
+    context.playbackSourceKind === "local" ||
+    container.stateManager.getState().stream?.playbackSourceKind === "local" ||
+    title.launchSource === "offline-library"
+  ) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Use player controls for downloaded tracks. Open the title online to change providers or sources.",
+    });
+    return { kind: "noop" };
+  }
 
   if (picked.section === "provider" && selection?.providerId) {
     if (selection.providerId === currentProviderId) {
@@ -239,10 +251,10 @@ async function staleTrackSelectionReason(
 export function matchTrackSelectionAgainstInventory(
   selection: StreamSelectionIntent,
   inventory: {
-    readonly streams: readonly { readonly id: string; readonly sourceId?: string }[];
+    readonly streams?: readonly { readonly id: string; readonly sourceId?: string }[];
   } | null,
 ): string | null {
-  if (!inventory) return null;
+  if (!inventory || !Array.isArray(inventory.streams)) return null;
   if (
     selection.streamId &&
     !inventory.streams.some((candidate) => candidate.id === selection.streamId)

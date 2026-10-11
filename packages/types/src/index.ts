@@ -584,6 +584,14 @@ export interface ProviderRetryPolicy {
 export interface ProviderFetchPort {
   readonly runtime: "browser-safe-fetch" | "direct-http";
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
+  /**
+   * Whether this port resolves `url`'s hostname on the local machine. A relay
+   * port resolves on the relay's side for hosts it forwards — local DNS
+   * answers mean nothing there — but direct fall-through (relay off,
+   * unauthorized fallback, non-registered upstream) resolves locally, so
+   * SSRF DNS re-validation still applies to those requests.
+   */
+  readonly resolvesLocally?: (url: string) => boolean;
 }
 
 /**

@@ -1,5 +1,4 @@
-// =============================================================================
-// sixel.ts — in-process sixel encoding.
+// In-process sixel encoding.
 //
 // Sixel is a palette format from the DEC VT300 series (vt3xx-gp chapter 14):
 // pixels are written in horizontal bands six rows tall, one byte per column per
@@ -16,7 +15,6 @@
 //
 // Windows Terminal has supported sixel since 1.22; it does not implement the
 // kitty graphics protocol, so this is the only true-pixel path there.
-// =============================================================================
 
 import type { DecodedImage } from "./decode";
 import { fitDimensions, resampleRgba } from "./renderers/half-block";

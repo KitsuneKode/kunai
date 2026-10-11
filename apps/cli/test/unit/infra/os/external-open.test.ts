@@ -28,6 +28,25 @@ function succeedingSpawn(commandCapture: string[][]): ExternalOpenRuntime["spawn
 }
 
 describe("external-open", () => {
+  test("rejects raw control characters before spawning on every platform", async () => {
+    for (const platform of ["linux", "darwin", "win32"] as const) {
+      const commands: string[][] = [];
+      const host = runtime({
+        platform,
+        which: () => "fixture-opener",
+        spawn: succeedingSpawn(commands),
+      });
+      for (const control of ["\n", "\r", "\t", "\x1b[31m", "\x7f", "\x9b"]) {
+        const url = `https://catalog.example/original${control}/path`;
+        await expect(openExternal({ kind: "url", url }, host)).resolves.toMatchObject({
+          ok: false,
+          reason: "rejected-url",
+        });
+      }
+      expect(commands).toEqual([]);
+    }
+  });
+
   test("Linux uses only xdg-open for URLs", async () => {
     const commands: string[][] = [];
     const LINUX_RUNTIME = runtime({
