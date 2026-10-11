@@ -210,14 +210,12 @@ export const animeggProviderModule: CoreProviderModule = {
     const numbers = parseAnimeggEpisodeNumbers(html, slug);
     if (numbers.length === 0) return null;
 
-    return numbers.map(
-      (episode): ProviderEpisodeOption => ({
-        index: episode,
-        label: `Episode ${episode}`,
-        totalEpisodeCount: numbers.length,
-        externalIds: { providerNativeIds: { [ANIMEGG_PROVIDER_ID]: slug } },
-      }),
-    );
+    return numbers.map((episode): ProviderEpisodeOption => ({
+      index: episode,
+      label: `Episode ${episode}`,
+      totalEpisodeCount: numbers.length,
+      externalIds: { providerNativeIds: { [ANIMEGG_PROVIDER_ID]: slug } },
+    }));
   },
 
   async resolve(input, context) {

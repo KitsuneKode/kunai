@@ -303,23 +303,22 @@ export class SyncOutboxRepository {
     readonly now?: Date;
   }): SyncOutboxMutationResult {
     const now = input.now ?? new Date();
-    const apply = this.db.transaction(
-      (): SyncOutboxMutationResult =>
-        this.transition(
-          input.item,
-          `state = 'pending',
+    const apply = this.db.transaction((): SyncOutboxMutationResult =>
+      this.transition(
+        input.item,
+        `state = 'pending',
          claim_token = NULL,
          claimed_at = NULL,
          attempts = MAX(attempts - 1, 0),
          next_attempt_at = ?,
          last_error_code = ?,
          updated_at = ?`,
-          [
-            input.notBefore.toISOString(),
-            clamp(input.errorCode, MAX_ERROR_CODE_LENGTH),
-            now.toISOString(),
-          ],
-        ),
+        [
+          input.notBefore.toISOString(),
+          clamp(input.errorCode, MAX_ERROR_CODE_LENGTH),
+          now.toISOString(),
+        ],
+      ),
     );
     return apply();
   }
