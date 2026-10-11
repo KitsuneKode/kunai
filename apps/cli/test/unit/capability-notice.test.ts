@@ -1,14 +1,20 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import * as mpvDiscovery from "@/infra/player/mpv-discovery";
 import { checkDeps } from "@/ui";
 import { getKunaiPaths } from "@kunai/storage";
 
 import { applyStorageRootEnv } from "../helpers/storage-env";
+
+const noTools = {
+  silent: false,
+  which: () => null,
+  exists: () => false,
+  listPathEntries: () => [],
+};
 
 const cleanup: (() => void)[] = [];
 afterEach(() => {
@@ -29,7 +35,7 @@ describe("capability notice state", () => {
     const originalError = console.error;
     console.error = () => {};
     try {
-      await checkDeps("0.0.0-test", { silent: false });
+      await checkDeps("0.0.0-test", noTools);
     } finally {
       console.error = originalError;
     }
@@ -55,7 +61,7 @@ describe("capability notice state", () => {
     try {
       // Resolved, not a thrown EACCES that escaped as an unhandled rejection
       // before the shell could mount.
-      const snapshot = await checkDeps("0.0.0-test", { silent: false });
+      const snapshot = await checkDeps("0.0.0-test", noTools);
       expect(snapshot).toBeDefined();
     } finally {
       console.error = originalError;
@@ -69,21 +75,27 @@ describe("capability notice state", () => {
 
   test("missing mpv is announced once on first launch", async () => {
     await isolatedRoot();
-    const discovery = spyOn(mpvDiscovery, "discoverMpvInvocation").mockReturnValue(null);
+    const lookups: string[] = [];
     const lines: string[] = [];
     const originalError = console.error;
     const originalLog = console.log;
     console.error = (line: string) => lines.push(String(line));
     console.log = (line: string) => lines.push(String(line));
     try {
-      await checkDeps("0.0.0-test", { silent: false });
+      await checkDeps("0.0.0-test", {
+        ...noTools,
+        which: (command) => {
+          lookups.push(command);
+          return null;
+        },
+      });
     } finally {
       console.error = originalError;
       console.log = originalLog;
-      discovery.mockRestore();
     }
 
     const mpv = lines.filter((line) => line.includes("mpv not found"));
     expect(mpv).toHaveLength(1);
+    expect(lookups).toContain("mpv");
   });
 });
