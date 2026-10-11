@@ -56,6 +56,7 @@ export const PALETTE_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
   // without these the palette lists them, highlights them, and drops the Enter.
   "image-pane",
   "pet",
+  "theme",
   "watch",
   "providers",
   "playlists",

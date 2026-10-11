@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   DEFAULT_THEME_NAME,
   THEMES,
+  detectTerminalColorLevel,
   getDesignThemeName,
   isThemeName,
   listThemes,
@@ -11,6 +12,14 @@ import {
   setDesignTheme,
   tokens,
 } from "@kunai/design";
+
+// `setDesignTheme` rewrites `tokens` at the level detection reports for this
+// terminal — truecolor hex under a real one, quantised values under `bun
+// test`'s pipe. Assert against the resolved expectation, never the raw hex,
+// so the suite means the same thing in every environment.
+const detectedLevel = detectTerminalColorLevel();
+const expectedAccent = (name: keyof typeof THEMES) =>
+  resolveDesignTokens(detectedLevel, THEMES[name].palette).accent;
 
 function hexToRgb(hex: string): [number, number, number] {
   const n = Number.parseInt(hex.replace("#", ""), 16);
@@ -57,7 +66,7 @@ describe("setDesignTheme live swap", () => {
     const reference = tokens;
     expect(setDesignTheme("nord")).toBe(true);
     expect(tokens).toBe(reference); // identity preserved — no re-import needed
-    expect(tokens.accent).toBe(THEMES.nord.palette.accent);
+    expect(tokens.accent).toBe(expectedAccent("nord"));
     expect(tokens.accent).not.toBe(before);
     expect(getDesignThemeName()).toBe("nord");
   });
@@ -66,7 +75,7 @@ describe("setDesignTheme live swap", () => {
     setDesignTheme("tokyo-night");
     expect(setDesignTheme("not-a-theme")).toBe(false);
     expect(getDesignThemeName()).toBe("tokyo-night");
-    expect(tokens.accent).toBe(THEMES["tokyo-night"].palette.accent);
+    expect(tokens.accent).toBe(expectedAccent("tokyo-night"));
   });
 });
 
