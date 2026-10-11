@@ -40,6 +40,9 @@ function npmOs(os: string): string {
 
 async function main(): Promise<void> {
   const cli = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8")) as CliPackageJson;
+  // Every published package carries the license text so each tarball is
+  // self-describing, same as the launcher's dist/npm/LICENSE.
+  const licenseText = await readFile(join(ROOT, "../../LICENSE"), "utf8");
 
   await rm(OUT_DIR, { recursive: true, force: true });
   await mkdir(OUT_DIR, { recursive: true });
@@ -78,7 +81,7 @@ async function main(): Promise<void> {
       // may install a glibc build on musl; the launcher detects the mismatch at
       // runtime and prints the native-installer fallback rather than crashing.
       ...(target.os === "linux" ? { libc: [target.libc === "musl" ? "musl" : "glibc"] } : {}),
-      files: ["bin/"],
+      files: ["bin/", "LICENSE"],
       preferUnplugged: true,
       // Match the launcher's publishConfig. Without it these packages publish
       // without provenance, so the attestation would cover the launcher but not
@@ -100,6 +103,7 @@ async function main(): Promise<void> {
         "```sh\nnpm install -g @kitsunekode/kunai\n```\n",
       "utf8",
     );
+    await writeFile(join(packageDir, "LICENSE"), licenseText, "utf8");
 
     built.push(packageName);
   }

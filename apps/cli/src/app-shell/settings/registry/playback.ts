@@ -2,6 +2,8 @@ import type { SettingRowDef, SettingsRegistryContext } from "../types";
 import {
   AUTO_CLEANUP_GRACE_DAY_OPTIONS,
   CONTINUE_SOURCE_PREFERENCE_OPTIONS,
+  PRE_PLAY_CONFIRM_SETTINGS_OPTIONS,
+  PROVIDER_QUALITY_SETTINGS_OPTIONS,
   QUIT_NEAR_END_BEHAVIOR_OPTIONS,
   QUIT_THRESHOLD_MODE_OPTIONS,
   RECOVERY_MODE_OPTIONS,
@@ -75,12 +77,7 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       id: "defaultDownloadQuality",
       label: "Default download quality",
       detail: "Quality ceiling used when queuing downloads (independent of playback profile)",
-      options: [
-        { value: "best", label: "Best available" },
-        { value: "1080p", label: "1080p" },
-        { value: "720p", label: "720p" },
-        { value: "480p", label: "480p" },
-      ],
+      options: PROVIDER_QUALITY_SETTINGS_OPTIONS,
       presentation: "submenu",
       read: (config) => config.defaultDownloadQuality,
       write: (config, value) => ({ ...config, defaultDownloadQuality: value }),
@@ -147,6 +144,19 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       detail: "Close mpv on EOF and continue through the next available released episode",
       read: (config) => config.autoNext,
       write: (config, value) => ({ ...config, autoNext: value }),
+    },
+    {
+      kind: "enum",
+      id: "prePlayConfirm",
+      label: "Confirm before play",
+      detail: "Show the Tracks sheet (source · quality · audio · subs) before mpv launches",
+      options: PRE_PLAY_CONFIRM_SETTINGS_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.prePlayConfirm,
+      write: (config, value) => ({
+        ...config,
+        prePlayConfirm: value as typeof config.prePlayConfirm,
+      }),
     },
     {
       kind: "boolean",

@@ -2,6 +2,7 @@ import type { SettingRowDef, SettingsRegistryContext } from "../types";
 import {
   ANIME_TITLE_SETTINGS_OPTIONS,
   AUDIO_SETTINGS_OPTIONS,
+  PROVIDER_QUALITY_SETTINGS_OPTIONS,
   SUBTITLE_SETTINGS_OPTIONS,
   YOUTUBE_QUALITY_SETTINGS_OPTIONS,
 } from "./shared";
@@ -42,6 +43,22 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     },
     {
       kind: "enum",
+      id: "animeQuality",
+      label: "Anime quality",
+      detail: "Preferred stream resolution when an anime source offers choices",
+      options: PROVIDER_QUALITY_SETTINGS_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.animeLanguageProfile.quality ?? "best",
+      write: (config, value) => ({
+        ...config,
+        animeLanguageProfile: {
+          ...config.animeLanguageProfile,
+          quality: value as typeof config.animeLanguageProfile.quality,
+        },
+      }),
+    },
+    {
+      kind: "enum",
       id: "seriesAudio",
       label: "Series audio",
       detail: "Preferred series audio track language",
@@ -68,6 +85,22 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     },
     {
       kind: "enum",
+      id: "seriesQuality",
+      label: "Series quality",
+      detail: "Preferred stream resolution when a series source offers choices",
+      options: PROVIDER_QUALITY_SETTINGS_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.seriesLanguageProfile.quality ?? "best",
+      write: (config, value) => ({
+        ...config,
+        seriesLanguageProfile: {
+          ...config.seriesLanguageProfile,
+          quality: value as typeof config.seriesLanguageProfile.quality,
+        },
+      }),
+    },
+    {
+      kind: "enum",
       id: "movieAudio",
       label: "Movie audio",
       detail: "Preferred movie audio track language",
@@ -90,6 +123,22 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       write: (config, value) => ({
         ...config,
         movieLanguageProfile: { ...config.movieLanguageProfile, subtitle: value },
+      }),
+    },
+    {
+      kind: "enum",
+      id: "movieQuality",
+      label: "Movie quality",
+      detail: "Preferred stream resolution when a movie source offers choices",
+      options: PROVIDER_QUALITY_SETTINGS_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.movieLanguageProfile.quality ?? "best",
+      write: (config, value) => ({
+        ...config,
+        movieLanguageProfile: {
+          ...config.movieLanguageProfile,
+          quality: value as typeof config.movieLanguageProfile.quality,
+        },
       }),
     },
     {

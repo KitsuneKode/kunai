@@ -2,6 +2,17 @@ import type { SearchStartupRoute } from "@/app/search/search-startup-policy";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 
 /**
+ * A raw `-e/--episode [--season]` request. Unlike `initialEpisode` — which
+ * history/share resolutions carry already shaped with provider metadata — this
+ * is just numbers: the title it lands on is not known until the user picks one,
+ * so SessionController shapes the real `EpisodeInfo` at dispatch time.
+ */
+export interface RequestedEpisode {
+  readonly season: number;
+  readonly episode: number;
+}
+
+/**
  * The launch intent the session loop is still holding.
  *
  * Deliberately one mutable object rather than a handful of locals. It was six
@@ -20,6 +31,7 @@ import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 export interface PendingSessionBootstrap {
   initialTitle: TitleInfo | null;
   initialEpisode: EpisodeInfo | null;
+  requestedEpisode?: RequestedEpisode;
   initialQuery?: string;
   initialRoute?: SearchStartupRoute;
   preserveExistingSearch: boolean;
@@ -29,6 +41,7 @@ export interface PendingSessionBootstrap {
 export interface SessionBootstrapInput {
   readonly initialTitle?: TitleInfo | null;
   readonly initialEpisode?: EpisodeInfo | null;
+  readonly requestedEpisode?: RequestedEpisode;
   readonly initialQuery?: string;
   readonly initialRoute?: SearchStartupRoute;
   readonly preserveExistingSearch?: boolean;
@@ -39,6 +52,7 @@ export function createPendingBootstrap(bootstrap: SessionBootstrapInput): Pendin
   return {
     initialTitle: bootstrap.initialTitle ?? null,
     initialEpisode: bootstrap.initialEpisode ?? null,
+    requestedEpisode: bootstrap.requestedEpisode,
     initialQuery: bootstrap.initialQuery,
     initialRoute: bootstrap.initialRoute,
     preserveExistingSearch: bootstrap.preserveExistingSearch ?? false,
@@ -57,6 +71,7 @@ export function createPendingBootstrap(bootstrap: SessionBootstrapInput): Pendin
 export function spendBootstrapIntent(pending: PendingSessionBootstrap): void {
   pending.initialTitle = null;
   pending.initialEpisode = null;
+  pending.requestedEpisode = undefined;
   pending.initialQuery = undefined;
   pending.initialRoute = undefined;
   pending.preserveExistingSearch = false;

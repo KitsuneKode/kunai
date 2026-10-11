@@ -221,6 +221,11 @@ export async function dispatchPaletteCommand(
     await workflows.openOverlay(container, { type: "settings" });
     return "handled";
   }
+  if (action === "theme") {
+    const { openThemePicker } = await import("./workflows/picker-workflows");
+    await openThemePicker(container);
+    return "handled";
+  }
   if (action === "setup") {
     return workflows.runSetup(container);
   }

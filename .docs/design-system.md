@@ -13,11 +13,20 @@ Visual reference prototypes live in [`.reference/design/cli/kunai-sakura.html`](
 
 ## Source of Truth
 
-- `packages/design/src/tokens.ts` owns shared token values (sRGB hex, tuned from an oklch source).
-- `apps/cli/src/app-shell/shell-theme.ts` adapts tokens into the `palette` consumed by Ink surfaces, plus `statusColor`, `contentTintColor`, `heatColor`.
+- `packages/design/src/tokens.ts` owns shared token values (sRGB hex, tuned from an oklch source). It is also the **Ember Dusk palette** — the brand-canonical theme.
+- `packages/design/src/themes.ts` + `palettes/` own the user-selectable theme registry: every palette fills the same semantic roles, and `setDesignTheme(name)` rewrites the live `tokens` box in place so the next Ink frame repaints without a restart.
+- `apps/cli/src/app-shell/shell-theme.ts` adapts tokens into the `palette` consumed by Ink surfaces, plus `statusColor`, `contentTintColor`, `heatColor`. `palette` entries are getters — never hold a color at module scope.
 - `apps/cli/src/menu.ts` owns legacy ANSI helpers tied to interactive flows.
 
 Do not duplicate raw hex anywhere else. New code references semantic palette names.
+
+## User-selectable themes
+
+Users pick a theme in **Settings › Appearance**, set `"theme"` in `config.json`, or override per run with `KUNAI_THEME`. Themes only recolor surfaces — the rules below (THE ONE RULE, semantic roles, Stats-only type hues) hold in every palette, so a theme is a palette swap, not a design fork.
+
+- Selection comes from `KitsuneConfig.theme` (`@kunai/config`); the registry in `@kunai/design` is the validator, unknown names fall back to `ember-dusk`.
+- Degradation is palette-aware: Ember Dusk keeps its curated 256/16 fallback table; other themes quantize to nearest xterm-256 / ANSI name so a themed accent never leaks brand rose onto a degraded terminal.
+- Adding a token in `tokens.ts` makes every palette that lacks it a compile error — `ThemePalette` derives from `TokenName`.
 
 ## The Theme: Sakura
 

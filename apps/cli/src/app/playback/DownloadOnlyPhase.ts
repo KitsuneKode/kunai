@@ -111,19 +111,34 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
         return { status: "success", value: "back" };
       }
       const selectableAnimeEpisodes = animeEpisodes ?? undefined;
-      let episodes = this.deps.pickEpisodes
-        ? await this.deps.pickEpisodes({
-            title: input.title,
-            isAnime,
-            animeEpisodes: selectableAnimeEpisodes,
-            container,
-          })
-        : await pickEpisodesToDownload({
-            title: input.title,
-            isAnime,
-            animeEpisodes: selectableAnimeEpisodes,
-            container,
-          });
+      // An armed `-e/--episode` request means "download this episode", so it
+      // skips the interactive checklist entirely — same one-shot semantics as
+      // the playback path, cleared by the next SELECT_TITLE.
+      const episodeRequest = state.episodeRequest;
+      let episodes: readonly EpisodeInfo[] | null;
+      if (episodeRequest) {
+        episodes = [
+          {
+            season: isAnime ? 1 : episodeRequest.season,
+            episode: episodeRequest.episode,
+            ...(isAnime ? { absoluteEpisode: episodeRequest.episode } : {}),
+          },
+        ];
+      } else {
+        episodes = this.deps.pickEpisodes
+          ? await this.deps.pickEpisodes({
+              title: input.title,
+              isAnime,
+              animeEpisodes: selectableAnimeEpisodes,
+              container,
+            })
+          : await pickEpisodesToDownload({
+              title: input.title,
+              isAnime,
+              animeEpisodes: selectableAnimeEpisodes,
+              container,
+            });
+      }
 
       if (!episodes || episodes.length === 0) {
         if (selectableAnimeEpisodes !== undefined) {
@@ -212,12 +227,18 @@ async function pickSingleDownloadEpisodeFallback({
   readonly isAnime: boolean;
   readonly container: PhaseContext["container"];
 }): Promise<EpisodeInfo | null> {
+  const episodeRequest = container.stateManager.getState().episodeRequest;
   const selected = await chooseStartingEpisode({
     currentId: title.id,
     isAnime,
     animeEpisodeCount: title.episodeCount,
     animeEpisodes: undefined,
-    flags: {},
+    flags: episodeRequest
+      ? {
+          ...(isAnime ? {} : { season: String(episodeRequest.season) }),
+          episode: String(episodeRequest.episode),
+        }
+      : {},
     getHistoryEntry: () =>
       Promise.resolve(
         container.historyRepository.getLatestForTitleIdentity({

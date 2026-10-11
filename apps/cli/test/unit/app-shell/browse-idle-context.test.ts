@@ -31,6 +31,20 @@ describe("buildBrowseIdleContext", () => {
       historyRepository: {
         listLatestByTitle: () => [],
       },
+      listService: {
+        getWatchlist: () => [
+          {
+            titleId: "tmdb:7",
+            title: "Saved For Later",
+            addedAt: "2026-06-10T09:00:00.000Z",
+          },
+          {
+            titleId: "tmdb:8",
+            title: "Second Saved",
+            addedAt: "2026-06-11T09:00:00.000Z",
+          },
+        ],
+      },
     };
 
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
@@ -68,6 +82,11 @@ describe("buildBrowseIdleContext", () => {
     expect(idleContext?.continueWatching?.title).toBe("Resume Me");
     expect(idleContext?.offlineReadyNext?.title).toBe("Offline Next");
     expect(idleContext?.playlistNext?.title).toBe("Queued");
+    expect(idleContext?.savedNext).toEqual({
+      title: "Saved For Later",
+      titleId: "tmdb:7",
+      total: 2,
+    });
   });
 
   test("Continue hero requires engage gate (>30s) and ignores DNS-short rows", async () => {
@@ -84,6 +103,9 @@ describe("buildBrowseIdleContext", () => {
       },
       historyRepository: {
         listLatestByTitle: () => [],
+      },
+      listService: {
+        getWatchlist: () => [],
       },
     };
 

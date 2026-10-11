@@ -2217,7 +2217,7 @@ function normalizeStreamCandidates({
       sourceEvidence,
       headers: {
         referer: streamReferer,
-        origin: VIDEASY_MEDIA_ORIGIN,
+        origin: streamOrigin,
         "user-agent": USER_AGENT,
       },
       confidence: qualityRank > 0 ? 0.92 : 0.82,
