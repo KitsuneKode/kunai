@@ -276,7 +276,10 @@ export function buildStreamInventoryView(
 ): PlaybackSourceInventoryView | null {
   const result = stream?.providerResolveResult;
   if (!result) return null;
-  return projectPlaybackSourceInventory(result, { selectedSubtitleUrl: stream?.subtitle });
+  return projectPlaybackSourceInventory(result, {
+    selectedSubtitleUrl: stream?.subtitle,
+    attachedSubtitles: stream?.subtitleList,
+  });
 }
 
 export function buildSourcePickerOptions(stream: StreamInfo): readonly SourceOption[] {

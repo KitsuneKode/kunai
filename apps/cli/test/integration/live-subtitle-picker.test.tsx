@@ -48,108 +48,120 @@ function subtitleStream(): StreamInfo {
   };
 }
 
-test("the rendered live subtitle picker selects an external track and then turns it off", async () => {
-  const { container, dispose } = await createIsolatedContainer("live-subtitle-picker");
-  const selections: PlaybackSubtitleSelection[] = [];
-  container.stateManager.dispatch({
-    type: "SELECT_TITLE",
-    title: { id: "tmdb:1", type: "movie", name: "Subtitle fixture" },
-  });
-  container.stateManager.dispatch({ type: "SELECT_EPISODE", episode: { season: 1, episode: 1 } });
-  container.stateManager.dispatch({ type: "SET_STREAM", stream: subtitleStream() });
-  container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
-  container.playerControl.setActive({
-    id: "fixture-player",
-    stop: async () => {
-      throw new Error("subtitle picks must not stop playback");
-    },
-    selectSubtitle: async (selection) => {
-      selections.push(selection);
-      return true;
-    },
-  });
-  const handle = render(<AppRoot container={container} />, { columns: 100, rows: 35 });
-  let now = Date.now();
-  const clock = spyOn(Date, "now").mockImplementation(() => now);
-  const tick = async (ms: number) => {
-    await act(async () => {
-      await Bun.sleep(ms);
+test.each(["provider", "attached"] as const)(
+  "the rendered live subtitle picker selects a %s track and then turns it off",
+  async (trackOrigin) => {
+    const { container, dispose } = await createIsolatedContainer("live-subtitle-picker");
+    const selections: PlaybackSubtitleSelection[] = [];
+    container.stateManager.dispatch({
+      type: "SELECT_TITLE",
+      title: { id: "tmdb:1", type: "movie", name: "Subtitle fixture" },
     });
-  };
-  const open = async () => {
-    let pending!: Promise<void>;
-    await act(async () => {
-      pending = openPlaybackStreamSelectionPicker(container, "subtitle", "fixture-live-picker");
-    });
-    await waitUntil(() => handle.lastFrame()?.includes("French") ?? false, {
-      tick,
-      now: performance.now.bind(performance),
-      label: "rendered subtitle rows",
-    });
-    // The overlay rejects Enter for 300ms after inventory changes. Advance
-    // that clock explicitly rather than waiting for scheduler luck.
-    now += 301;
-    return { pending };
-  };
-  try {
-    const first = await open();
-    expect(handle.lastFrame()).toContain("French");
-    handle.stdin.enqueue("\u001b[C");
-    await act(async () => {});
-    handle.stdin.enqueue("\r");
-    let firstDone = false;
-    void first.pending.then(
-      () => {
-        firstDone = true;
-        return undefined;
+    container.stateManager.dispatch({ type: "SELECT_EPISODE", episode: { season: 1, episode: 1 } });
+    const stream = subtitleStream();
+    const displayedStream: StreamInfo =
+      trackOrigin === "attached"
+        ? {
+            ...stream,
+            providerResolveResult: { ...stream.providerResolveResult!, subtitles: [] },
+            subtitleList: [{ url: subtitleUrl, language: "fr", display: "French" }],
+          }
+        : stream;
+    container.stateManager.dispatch({ type: "SET_STREAM", stream: displayedStream });
+    container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
+    container.playerControl.setActive({
+      id: "fixture-player",
+      stop: async () => {
+        throw new Error("subtitle picks must not stop playback");
       },
-      () => {
-        firstDone = true;
-        return undefined;
+      selectSubtitle: async (selection) => {
+        selections.push(selection);
+        return true;
       },
-    );
-    await waitUntil(() => firstDone, {
-      tick,
-      now: performance.now.bind(performance),
-      label: "subtitle pick completed",
     });
-    await first.pending;
-    expect(selections).toHaveLength(1);
-    expect(selections[0]?.subtitleUrl).toBe(subtitleUrl);
-    expect(container.stateManager.getState().stream?.subtitle).toBe(subtitleUrl);
-    const second = await open();
-    expect(handle.lastFrame()).toContain("✓ French");
-    handle.stdin.enqueue("\u001b[C");
-    await act(async () => {});
-    handle.stdin.enqueue("\r");
-    let secondDone = false;
-    void second.pending.then(
-      () => {
-        secondDone = true;
-        return undefined;
-      },
-      () => {
-        secondDone = true;
-        return undefined;
-      },
-    );
-    await waitUntil(() => secondDone, {
-      tick,
-      now: performance.now.bind(performance),
-      label: "subtitle off completed",
-    });
-    await second.pending;
-    expect(selections).toHaveLength(2);
-    expect(selections[1]?.subtitleUrl).toBeNull();
-    expect(container.stateManager.getState().stream?.subtitle).toBeUndefined();
-  } finally {
-    clock.mockRestore();
-    handle.unmount();
-    forceSettleAllRootContent("live-subtitle-picker-test");
-    await disposeContainer(container);
-    dispose();
-  }
-});
+    const handle = render(<AppRoot container={container} />, { columns: 100, rows: 35 });
+    let now = Date.now();
+    const clock = spyOn(Date, "now").mockImplementation(() => now);
+    const tick = async (ms: number) => {
+      await act(async () => {
+        await Bun.sleep(ms);
+      });
+    };
+    const open = async () => {
+      let pending!: Promise<void>;
+      await act(async () => {
+        pending = openPlaybackStreamSelectionPicker(container, "subtitle", "fixture-live-picker");
+      });
+      await waitUntil(() => handle.lastFrame()?.includes("French") ?? false, {
+        tick,
+        now: performance.now.bind(performance),
+        label: "rendered subtitle rows",
+      });
+      // The overlay rejects Enter for 300ms after inventory changes. Advance
+      // that clock explicitly rather than waiting for scheduler luck.
+      now += 301;
+      return { pending };
+    };
+    try {
+      const first = await open();
+      expect(handle.lastFrame()).toContain("French");
+      handle.stdin.enqueue("\u001b[C");
+      await act(async () => {});
+      handle.stdin.enqueue("\r");
+      let firstDone = false;
+      void first.pending.then(
+        () => {
+          firstDone = true;
+          return undefined;
+        },
+        () => {
+          firstDone = true;
+          return undefined;
+        },
+      );
+      await waitUntil(() => firstDone, {
+        tick,
+        now: performance.now.bind(performance),
+        label: "subtitle pick completed",
+      });
+      await first.pending;
+      expect(selections).toHaveLength(1);
+      expect(selections[0]?.subtitleUrl).toBe(subtitleUrl);
+      expect(container.stateManager.getState().stream?.subtitle).toBe(subtitleUrl);
+      const second = await open();
+      expect(handle.lastFrame()).toContain("✓ French");
+      handle.stdin.enqueue("\u001b[C");
+      await act(async () => {});
+      handle.stdin.enqueue("\r");
+      let secondDone = false;
+      void second.pending.then(
+        () => {
+          secondDone = true;
+          return undefined;
+        },
+        () => {
+          secondDone = true;
+          return undefined;
+        },
+      );
+      await waitUntil(() => secondDone, {
+        tick,
+        now: performance.now.bind(performance),
+        label: "subtitle off completed",
+      });
+      await second.pending;
+      expect(selections).toHaveLength(2);
+      expect(selections[1]?.subtitleUrl).toBeNull();
+      expect(container.stateManager.getState().stream?.subtitle).toBeUndefined();
+    } finally {
+      clock.mockRestore();
+      handle.unmount();
+      forceSettleAllRootContent("live-subtitle-picker-test");
+      await disposeContainer(container);
+      dispose();
+    }
+  },
+);
 
 test("a rejected subtitle choice preserves the current selection", async () => {
   const { container, dispose } = await createIsolatedContainer("rejected-subtitle");
