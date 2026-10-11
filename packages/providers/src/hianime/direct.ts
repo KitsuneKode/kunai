@@ -28,6 +28,7 @@ import {
   formatAnimeSourceLabel,
 } from "../shared/anime-source-presentation";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { dropRefusedStreams, selectVerifiedStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
@@ -74,6 +75,7 @@ export {
   decodeHianimeEmbedPage,
   resolveHianimeEpisodeStreams,
   resolveHianimeShow,
+  runHianimeCurlWithRetry,
   searchHianime,
   splitCurlHttpTrailer,
   type HianimeAudioMode,
@@ -346,16 +348,14 @@ export const hianimeProviderModule: CoreProviderModule = {
       return null;
     }
     if (catalog.length === 0) return [];
-    return catalog.map(
-      (entry): ProviderEpisodeOption => ({
-        index: entry.number,
-        label: formatAnimeEpisodeLabel(entry.number, entry.title),
-        ...(entry.title && { name: entry.title }),
-        detail: `Episode ${entry.number}`,
-        totalEpisodeCount: catalog.length,
-        providerEpisodeIdentity: { providerId: HIANIME_PROVIDER_ID, value: entry.episodeId },
-      }),
-    );
+    return catalog.map((entry): ProviderEpisodeOption => ({
+      index: entry.number,
+      label: formatAnimeEpisodeLabel(entry.number, entry.title),
+      ...(entry.title && { name: entry.title }),
+      detail: `Episode ${entry.number}`,
+      totalEpisodeCount: catalog.length,
+      providerEpisodeIdentity: { providerId: HIANIME_PROVIDER_ID, value: entry.episodeId },
+    }));
   },
 
   async resolve(input, context) {
@@ -576,11 +576,9 @@ export const hianimeProviderModule: CoreProviderModule = {
       const selection = selectReadyStream(streams, {
         startupPriority: input.startupPriority,
         qualityPreference: input.qualityPreference,
-        // User value only: every stream here shares `sourceId`, so defaulting
-        // would match streams[0] as `explicit` and bypass favorites, quality
-        // preference, and startup ordering. The mode switch already resolved
-        // above via explicitSourceMode, so nothing is lost.
-        preferredSourceId: input.preferredSourceId,
+        // The source pin already selected sub/dub through explicitSourceMode.
+        // Every rung now shares that source, so passing it again would override
+        // quality preference with the first rung instead of selecting a lane.
         preferredStreamId: input.preferredStreamId,
         favoriteSourceNames: input.favoriteSourceNames,
       });
@@ -588,11 +586,51 @@ export const hianimeProviderModule: CoreProviderModule = {
       // quality-sorted for the Tracks picker.
       streams.sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0));
       variants.sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0));
+
+      // Resolve gate: probe the selected stream with its own headers before
+      // reporting success, walking the rank-ordered remainder on refusal. A
+      // definitively refused ladder ends exhausted — never a shipped "resolved".
+      const gated = await selectVerifiedStream({
+        streams: [
+          selection.selected,
+          ...streams.filter((stream) => stream.id !== selection.selected.id),
+        ].slice(0, 3),
+        context,
+        signal: context.signal,
+      });
+      if (context.signal?.aborted) {
+        return createExhaustedResult(
+          input,
+          context,
+          HIANIME_PROVIDER_ID,
+          {
+            code: "cancelled",
+            message: "HiAnime resolve-gate probe was cancelled",
+            retryable: false,
+          },
+          { cachePolicy, events, failures, startedAt },
+        );
+      }
+      if (!gated.accepted) {
+        return createExhaustedResult(
+          input,
+          context,
+          HIANIME_PROVIDER_ID,
+          {
+            code: "not-found",
+            message: `HiAnime selected stream is unreachable (${gated.reason})`,
+            retryable: true,
+          },
+          { cachePolicy, events, failures, startedAt },
+        );
+      }
+      const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
+
       const sources = finalizeCycleSourceInventory({
         sources: buildHianimeSourceInventory(resolution.availableModes, audioMode, cachePolicy),
         attempts: [],
-        streams,
-        selectedStreamId: selection.selected.id,
+        streams: shippedStreams,
+        selectedStreamId: gated.stream.id,
       });
       const endedAt = context.now();
 
@@ -612,11 +650,13 @@ export const hianimeProviderModule: CoreProviderModule = {
       return {
         status: "resolved",
         providerId: HIANIME_PROVIDER_ID,
-        selectedStreamId: selection.selected.id,
-        selectionDecision: selection.decision,
+        selectedStreamId: gated.stream.id,
+        selectionDecision: { ...selection.decision, selectedQualityRank: gated.stream.qualityRank },
         sources,
-        streams,
-        variants,
+        streams: shippedStreams,
+        variants: variants.filter((variant) =>
+          (variant.streamIds ?? []).some((id) => shippedStreams.some((s) => s.id === id)),
+        ),
         subtitles,
         externalIds: {
           anilistId: input.title.externalIds?.anilistId ?? input.title.anilistId,
@@ -628,7 +668,7 @@ export const hianimeProviderModule: CoreProviderModule = {
           title: input.title,
           episode: input.episode,
           providerId: HIANIME_PROVIDER_ID,
-          streamId: selection.selected.id,
+          streamId: gated.stream.id,
           cacheHit: false,
           runtime: "direct-http",
           startedAt,

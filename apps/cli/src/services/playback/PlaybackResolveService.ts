@@ -41,7 +41,6 @@ import type { CatalogCrosswalkRepository, ProviderHealthRepository } from "@kuna
 import type {
   MediaKind,
   ProviderHealthDelta,
-  ProviderId,
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderSelectionDecision,

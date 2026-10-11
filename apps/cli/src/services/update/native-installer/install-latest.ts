@@ -337,7 +337,9 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           return { status: "skipped" as const, reason: "lock-contention" as const };
         }
 
-        void cleanupOldVersions(layout);
+        // Fire-and-forget must never reject: a cleanup failure surfacing as an
+        // unhandled rejection would turn a completed install into a crash.
+        void cleanupOldVersions(layout).catch(() => {});
 
         return { status: "installed" as const, version: resolved, versionPath };
       } catch (error) {

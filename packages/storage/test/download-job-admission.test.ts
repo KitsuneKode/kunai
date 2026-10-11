@@ -41,6 +41,18 @@ afterEach(() => {
   stores.cleanup();
 });
 
+test("due-job paging keeps equal-timestamp records reachable across the cursor", () => {
+  const repo = new DownloadJobsRepository(stores.store("due-job-cursor", "data"));
+  const createdAt = new Date().toISOString();
+  const now = new Date(Date.parse(createdAt) + 1).toISOString();
+  for (const id of ["c", "a", "b"]) {
+    repo.enqueue(enqueueInput(id, { titleId: `tmdb:${id}`, createdAt }));
+  }
+  const first = repo.listDueQueued(now, 2);
+  expect(first.map((job) => job.id)).toEqual(["a", "b"]);
+  expect(repo.listDueQueued(now, 2, { createdAt, id: "b" }).map((job) => job.id)).toEqual(["c"]);
+});
+
 function enqueueInput(
   id: string,
   overrides: Partial<Parameters<DownloadJobsRepository["enqueue"]>[0]> = {},

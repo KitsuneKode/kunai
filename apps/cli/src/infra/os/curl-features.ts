@@ -37,11 +37,19 @@ export function parseCurlHttp2Support(versionOutput: string | null): boolean {
 
 function defaultProbeVersion(): string | null {
   try {
-    const proc = Bun.spawnSync(["curl", "--version"]);
+    const proc = Bun.spawnSync({
+      cmd: ["curl", "--version"],
+      stdout: "pipe",
+      stderr: "ignore",
+      // Runs on the HLS-relay request path — a PATH curl that hangs would
+      // block the main thread for good without the bound.
+      timeout: 5_000,
+    });
     if (proc.exitCode !== 0) return null;
     return proc.stdout.toString();
   } catch {
-    // No curl on PATH, or it is a shim that cannot exec. Both mean "assume not".
+    // No curl on PATH, a shim that cannot exec, or a timeout kill. All mean
+    // "assume not".
     return null;
   }
 }

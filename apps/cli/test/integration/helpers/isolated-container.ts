@@ -43,10 +43,23 @@ export function createIsolatedCliProfile(label: string): IsolatedCliProfile {
   };
 }
 
-export function applyIsolatedCliProfile(profile: IsolatedCliProfile): void {
+export function applyIsolatedCliProfile(profile: IsolatedCliProfile): () => void {
   // Must run before the container is created: storage paths resolve from env
-  // at container construction.
+  // at container construction. The returned undo restores exactly what was
+  // there — without it the profile root leaks into process.env for the rest
+  // of the worker, and a disposed profile leaves later tests resolving
+  // storage under a deleted directory.
+  const previous = new Map<string, string | undefined>();
+  for (const key of Object.keys(profile.env)) {
+    previous.set(key, process.env[key]);
+  }
   Object.assign(process.env, profile.env);
+  return () => {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
 }
 
 export function disposeIsolatedCliProfile(profile: IsolatedCliProfile): void {
@@ -64,7 +77,7 @@ export async function createIsolatedContainer(label: string): Promise<{
   readonly dispose: () => void;
 }> {
   const profile = createIsolatedCliProfile(label);
-  applyIsolatedCliProfile(profile);
+  const restoreEnv = applyIsolatedCliProfile(profile);
   const { createContainer } = await import("@/container");
   const container = await createContainer();
   return {
@@ -83,6 +96,7 @@ export async function createIsolatedContainer(label: string): Promise<{
         }
       }
       disposeIsolatedCliProfile(profile);
+      restoreEnv();
     },
   };
 }

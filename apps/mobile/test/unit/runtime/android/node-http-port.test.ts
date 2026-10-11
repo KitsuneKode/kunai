@@ -3,6 +3,61 @@ import { describe, expect, test } from "bun:test";
 import { createNodeHttpPort } from "../../../../src/runtime/android/node-http-port";
 
 describe("Node Android HTTP port", () => {
+  test("aborts an in-flight probe from session cancellation", async () => {
+    const cancellation = new AbortController();
+    let began: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    let deadlineRemoved = false;
+    const port = createNodeHttpPort({
+      fetch: async (_url, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("cancelled")), {
+            once: true,
+          });
+          began?.();
+        }),
+      scheduleTimeout: () => 1,
+      cancelTimeout: () => {
+        deadlineRemoved = true;
+      },
+    });
+    const pending = port.request({
+      method: "GET",
+      url: "https://probe.example/status",
+      timeoutMs: 8_000,
+      maxBytes: 65_536,
+      signal: cancellation.signal,
+    });
+    await started;
+    cancellation.abort();
+    await expect(pending).rejects.toThrow("cancelled");
+    expect(deadlineRemoved).toBe(true);
+  });
+
+  test("does not contact the network for an already cancelled session", async () => {
+    const cancellation = new AbortController();
+    cancellation.abort();
+    let requests = 0;
+    const port = createNodeHttpPort({
+      fetch: async () => {
+        requests += 1;
+        return new Response();
+      },
+    });
+    await expect(
+      port.request({
+        method: "GET",
+        url: "https://probe.example/status",
+        timeoutMs: 8_000,
+        maxBytes: 65_536,
+        signal: cancellation.signal,
+      }),
+    ).rejects.toThrow();
+    expect(requests).toBe(0);
+  });
+
   test("uses the requested deadline and reports bounded response bytes", async () => {
     const deadlines: number[] = [];
     let cancelled = false;

@@ -6,6 +6,7 @@ import {
 import { type ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { markCurrentLabel } from "@/domain/current-label";
+import { formatRelativeAge } from "@/domain/relative-age";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
@@ -24,7 +25,6 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
   formatProviderHealthBadge,
   formatProviderHealthPickerLabelSuffix,
-  isProviderFallbackEligible,
   resolveEffectiveProviderHealth,
 } from "@/services/playback/provider-health-policy";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
@@ -357,8 +357,8 @@ const DAY_MS = 86_400_000;
 /** Groups sorted history entries into recency buckets (Today / This Week / Earlier). */
 export function groupHistoryByRecency(
   entries: ReadonlyArray<[string, HistoryProgress]>,
+  now: number = Date.now(),
 ): { label: string; items: ReadonlyArray<[string, HistoryProgress]> }[] {
-  const now = Date.now();
   const today: [string, HistoryProgress][] = [];
   const week: [string, HistoryProgress][] = [];
   const earlier: [string, HistoryProgress][] = [];
@@ -413,22 +413,6 @@ export function buildHistoryPanelLines(
   return lines;
 }
 
-function relativeTime(date: Date): string {
-  const now = Date.now();
-  const diff = now - date.getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks}w ago`;
-  const months = Math.floor(days / 30);
-  return `${months}mo ago`;
-}
-
 export type HistoryPickerOptionsContext = {
   readonly nextReleases?: ReadonlyMap<string, ContinueHistoryRelease>;
   readonly projections?: ReadonlyMap<string, ContinuationProjection>;
@@ -437,6 +421,8 @@ export type HistoryPickerOptionsContext = {
   // ContinueHistoryRelease — so the `caught-up` signal survives for bucketing.
   readonly releaseSignals?: ReadonlyMap<string, HistoryReleaseSignal>;
   readonly catalogBounds?: ReadonlyMap<string, CatalogEpisodeBounds>;
+  /** Clock for relative ages and recency buckets; defaults to the real one. */
+  readonly now?: number;
 };
 
 /**
@@ -537,7 +523,7 @@ function buildHistoryOptionRow(
     return {
       value: id,
       label: `${displayEntry.title}  ·  ${formatSeriesEpisode(projection.season, projection.episode)}`,
-      detail: `${directLocalPlay ? "enter plays downloaded episode" : "download ready in /library"}  ·  ${projection.badge ?? "next episode ready"}  ·  completed ${episode}  ·  ${relativeTime(new Date(displayEntry.updatedAt))}`,
+      detail: `${directLocalPlay ? "enter plays downloaded episode" : "download ready in /library"}  ·  ${projection.badge ?? "next episode ready"}  ·  completed ${episode}  ·  ${formatRelativeAge(displayEntry.updatedAt, context.now) ?? "just now"}`,
       badge: projection.badge ?? "offline",
       tone: "success",
       posterTitle: displayEntry.title,
@@ -561,7 +547,7 @@ function buildHistoryOptionRow(
       historyContentType(displayEntry) === "series"
         ? formatSeriesEpisode(entrySeason, entryEpisode)
         : "movie";
-    const timeAgo = relativeTime(new Date(displayEntry.updatedAt));
+    const timeAgo = formatRelativeAge(displayEntry.updatedAt, context.now) ?? "just now";
     const returnLoopDetail = describeHistoryReturnLoopDetail({
       entry,
       nextRelease: context.nextReleases?.get(id) ?? null,
@@ -580,7 +566,7 @@ function buildHistoryOptionRow(
     : displayEntry.positionSeconds > 10
       ? `⏸ ${formatTimestamp(displayEntry.positionSeconds)}`
       : "▶ start";
-  const timeAgo = relativeTime(new Date(displayEntry.updatedAt));
+  const timeAgo = formatRelativeAge(displayEntry.updatedAt, context.now) ?? "just now";
 
   return {
     value: id,
@@ -656,7 +642,7 @@ export function buildHistoryPickerOptions(
     }
   }
 
-  const groups = groupHistoryByRecency(remainder);
+  const groups = groupHistoryByRecency(remainder, context.now);
 
   if (groups.length <= 1 && continueWatching.length === 0) {
     return remainder.map(([id, entry]) => buildHistoryOptionRow(id, entry, context));
@@ -723,12 +709,12 @@ export function buildProviderMemoryPanelLines(input: {
 
   for (const provider of laneProviders) {
     const effective = resolveEffectiveProviderHealth(input.getProviderHealth(provider.id));
+    // The badge already appends "skipped in auto-fallback" for a down row —
+    // appending it again here used to print the note twice.
     const badge = formatProviderHealthBadge(effective ?? undefined);
-    const fallbackNote =
-      effective && !isProviderFallbackEligible(effective) ? " · skipped in auto-fallback" : "";
     lines.push({
       label: provider.name,
-      detail: badge ? `${badge}${fallbackNote}` : "no failure memory",
+      detail: badge ?? "no failure memory",
       tone:
         effective?.effectiveStatus === "down"
           ? "error"
@@ -765,14 +751,19 @@ export function buildProviderPickerOptions({
     const effective = getProviderHealth
       ? resolveEffectiveProviderHealth(getProviderHealth(provider.id))
       : undefined;
-    const healthBadge = formatProviderHealthBadge(effective ?? undefined);
+    const isCurrentProvider = provider.id === currentProvider;
+    // The same current-aware badge feeds the detail line — the label fix
+    // without it left "skipped in auto-fallback" on the playing provider.
+    const healthBadge = formatProviderHealthBadge(effective ?? undefined, undefined, {
+      isCurrentProvider,
+    });
     const healthLabelSuffix = formatProviderHealthPickerLabelSuffix(effective ?? undefined, {
-      isCurrentProvider: provider.id === currentProvider,
+      isCurrentProvider,
     });
     const healthDetail = healthBadge ? `Health: ${healthBadge}` : null;
     const crossLaneDetail = isCrossLane?.(provider) ? "via linked catalog id" : null;
     const baseDetail = formatProviderDetail(provider);
-    const baseLabel = markCurrentLabel(provider.name, provider.id === currentProvider);
+    const baseLabel = markCurrentLabel(provider.name, isCurrentProvider);
     return {
       value: provider.id,
       label: healthLabelSuffix ? `${baseLabel}${healthLabelSuffix}` : baseLabel,

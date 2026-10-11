@@ -1,8 +1,6 @@
-// =============================================================================
-// calendar-view.ts — pure view-model helpers for calendar schedule UI
+// Pure view-model helpers for calendar schedule UI
 //
 // Design authority: .reference/design/cli/kunai-sakura-calendar-locked.html
-// =============================================================================
 
 import type { BrowseShellOption } from "@/app-shell/types";
 import type { SearchResult } from "@/domain/types";

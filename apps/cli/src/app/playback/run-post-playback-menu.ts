@@ -153,7 +153,7 @@ export type PostPlaybackMenuDeps = {
     selection: StreamSelectionIntent | null,
     resumeSeconds: number,
     reason: string,
-  ) => Promise<PlaybackStartIntent>;
+  ) => Promise<PlaybackStartIntent | null>;
   readonly handoffNextEpisodePrefetch: (
     target: EpisodePrefetchTarget,
     reason: "playback.prefetch-wait" | "post-playback.autonext.prefetch-wait",
@@ -175,13 +175,14 @@ export type PostPlaybackMenuDeps = {
     animeEpisodeCount?: number;
     animeEpisodes?: readonly EpisodePickerOption[];
     container: Container;
-  }) => Promise<{ season: number; episode: number } | null>;
+  }) => Promise<Pick<EpisodeInfo, "season" | "episode" | "providerEpisodeIdentity"> | null>;
   readonly episodeInfoFromSelection: (input: {
     season: number;
     episode: number;
     isAnime: boolean;
     titleId: string;
     animeEpisodes?: readonly EpisodePickerOption[];
+    providerEpisodeIdentity?: EpisodeInfo["providerEpisodeIdentity"];
   }) => EpisodeInfo;
 
   readonly readAutoAdvanceGuards: () => AutoAdvanceGuards;
@@ -288,13 +289,15 @@ export async function runPostPlaybackMenu(
       );
       const selection = picked ? streamSelectionFromTrackPick(picked) : null;
       if (picked && selection) {
-        run.pendingStart = await deps.completeSourceTrackPick(
+        const trackStart = await deps.completeSourceTrackPick(
           currentEpisode,
           picked,
           selection,
           resumeSeconds,
           "post-playback-tracks",
         );
+        if (!trackStart) continue postPlayback;
+        run.pendingStart = trackStart;
         run.playbackSession = deps.transitionPlaybackSession(
           run.playbackSession,
           "recovery-started",
@@ -539,13 +542,15 @@ export async function runPostPlaybackMenu(
           continue postPlayback;
         }
         const fromProviderId = resolvedProviderId;
-        run.pendingStart = await deps.completeSourceTrackPick(
+        const trackStart = await deps.completeSourceTrackPick(
           currentEpisode,
           picked,
           selection,
           resumeSeconds,
           "post-playback-tracks",
         );
+        if (!trackStart) continue postPlayback;
+        run.pendingStart = trackStart;
         run.playbackSession = deps.transitionPlaybackSession(
           run.playbackSession,
           "episode-navigation",
@@ -806,13 +811,15 @@ export async function runPostPlaybackMenu(
         continue postPlayback;
       }
       const fromProviderId = resolvedProviderId;
-      run.pendingStart = await deps.completeSourceTrackPick(
+      const trackStart = await deps.completeSourceTrackPick(
         currentEpisode,
         picked,
         selection,
         resumeSeconds,
         "post-playback-tracks",
       );
+      if (!trackStart) continue postPlayback;
+      run.pendingStart = trackStart;
       run.playbackSession = deps.transitionPlaybackSession(
         run.playbackSession,
         "episode-navigation",
@@ -894,6 +901,7 @@ export async function runPostPlaybackMenu(
       const pickedEpisode = deps.episodeInfoFromSelection({
         season: selection.season,
         episode: selection.episode,
+        providerEpisodeIdentity: selection.providerEpisodeIdentity,
         isAnime: mode === "anime",
         titleId: title.id,
         animeEpisodes: iteration.currentAnimeEpisodes,

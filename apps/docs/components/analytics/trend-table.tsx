@@ -2,6 +2,7 @@
 
 import { platformColumns, platformLabel } from "@/lib/analytics-derive";
 import type { SeriesPoint } from "@/lib/analytics-series";
+import { revealWithin } from "@/lib/reveal-in-container";
 import * as React from "react";
 
 /**
@@ -56,16 +57,22 @@ export function TrendTable({
   const rows = React.useMemo(() => [...points].reverse(), [points]);
   const [visibleCount, setVisibleCount] = React.useState(TREND_TABLE_PAGE_SIZE);
   const hoveredRowRef = React.useRef<HTMLTableRowElement | null>(null);
+  const panelRef = React.useRef<HTMLDivElement | null>(null);
+  const headRef = React.useRef<HTMLTableSectionElement | null>(null);
 
   // Chart hover names a day that may sit below the rendered chunk; expand
   // until it exists. Revealed rows stay revealed on mouseleave — collapsing
   // them would shift the layout under the cursor.
-  React.useEffect(() => {
-    setVisibleCount((current) => visibleCountForDay(rows, hoveredDay, current));
-  }, [rows, hoveredDay]);
+  const requiredCount = visibleCountForDay(rows, hoveredDay, visibleCount);
+  if (requiredCount !== visibleCount) setVisibleCount(requiredCount);
 
+  // Moves the panel's own scroll position and nothing else. `scrollIntoView` here
+  // also scrolled the page toward the table whenever the chart pointer changed
+  // day, which read as the whole site shaking while hovering the chart.
   React.useEffect(() => {
-    if (hoveredDay) hoveredRowRef.current?.scrollIntoView({ block: "nearest" });
+    const panel = panelRef.current;
+    const row = hoveredRowRef.current;
+    if (hoveredDay && panel && row) revealWithin(panel, row, headRef.current?.offsetHeight ?? 0);
   }, [hoveredDay, visibleCount]);
 
   const visible = rows.slice(0, visibleCount);
@@ -79,7 +86,7 @@ export function TrendTable({
   const osColumns = platformColumns(points);
 
   return (
-    <div className="flex max-h-[260px] flex-col overflow-y-auto">
+    <div ref={panelRef} className="flex max-h-[260px] flex-col overflow-y-auto overscroll-contain">
       <table className="kunai-chart text-xs">
         <caption className="sr-only">
           {hasNewColumn
@@ -89,7 +96,7 @@ export function TrendTable({
             ? "; platform columns hold the day's published OS buckets — a dash means under the naming floor, not zero"
             : ""}
         </caption>
-        <thead className="bg-card sticky top-0">
+        <thead ref={headRef} className="bg-card sticky top-0">
           <tr>
             <th scope="col" className="text-muted-foreground text-left font-normal">
               Day

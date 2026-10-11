@@ -45,7 +45,10 @@ async function isVersionProtected(
 ): Promise<boolean> {
   const versionPath = versionBinaryPath(layout, version);
   if (protectedPaths.has(versionPath)) return true;
-  const lock = await tryAcquireVersionLock(layout, version);
+  // A probe that cannot answer (locks dir unwritable, mkdir EACCES/EROFS) is
+  // not evidence of "unlocked" — a version whose lock state is unknown stays.
+  const lock = await tryAcquireVersionLock(layout, version).catch(() => null);
+  if (lock === null) return true;
   if (!lock.acquired) return true;
   await lock.release();
   const content = await readLockContent(join(layout.locksDir, `${version}.lock`));

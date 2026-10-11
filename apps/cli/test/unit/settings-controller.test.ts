@@ -232,3 +232,106 @@ test("Esc on dirty main settings closes without reverting immediate-applied draf
   expect(result.closeOverlay).toBe(true);
   expect(result.state.draft.showMemory).toBe(draft.showMemory);
 });
+
+test("`/` focuses the settings filter without becoming filter text", () => {
+  const draft = baseConfig();
+  const registryCtx = mockRegistryCtx(draft);
+  const state = createSettingsUiState(draft);
+
+  const result = handleSettingsKey("/", inkKey({}), state, {
+    container: createContainerFixture().container,
+    registryCtx,
+  });
+
+  expect(result.handled).toBe(true);
+  expect(result.state.searchFocused).toBe(true);
+  expect(result.state.searchQuery).toBe("");
+});
+
+test("typing on the main list does not enter search — filter requires `/` first", () => {
+  const draft = baseConfig();
+  const registryCtx = mockRegistryCtx(draft);
+  const state = createSettingsUiState(draft);
+
+  const typed = handleSettingsKey("r", inkKey({}), state, {
+    container: createContainerFixture().container,
+    registryCtx,
+  });
+  expect(typed.handled).toBe(false);
+  expect(typed.state.searchQuery).toBe("");
+
+  const focused = handleSettingsKey("/", inkKey({}), state, {
+    container: createContainerFixture().container,
+    registryCtx,
+  });
+  const afterType = handleSettingsKey("r", inkKey({}), focused.state, {
+    container: createContainerFixture().container,
+    registryCtx,
+  });
+  expect(afterType.state.searchQuery).toBe("r");
+});
+
+test("`?` and `j`/`k` keys reach navigation instead of the filter", () => {
+  const draft = baseConfig();
+  const registryCtx = mockRegistryCtx(draft);
+  const state = createSettingsUiState(draft);
+
+  const help = handleSettingsKey("?", inkKey({}), state, {
+    container: createContainerFixture().container,
+    registryCtx,
+  });
+  expect(help.handled).toBe(false);
+  expect(help.state.searchQuery).toBe("");
+
+  const page = buildSettingsPage(registryCtx, {});
+  const down = handleSettingsKey("j", inkKey({}), state, {
+    container: createContainerFixture().container,
+    registryCtx,
+  });
+  expect(down.handled).toBe(true);
+  expect(down.state.selectedIndex).toBe(
+    Math.min(state.selectedIndex + 1, Math.max(0, page.rows.length - 1)),
+  );
+  expect(down.state.searchQuery).toBe("");
+});
+
+test("Esc while filtering clears the filter before the overlay closes", () => {
+  const draft = baseConfig();
+  const registryCtx = mockRegistryCtx(draft);
+  const state = {
+    ...createSettingsUiState(draft),
+    searchFocused: true,
+    searchQuery: "relay",
+  };
+
+  const first = handleSettingsKey("", inkKey({ escape: true }), state, {
+    container: createContainerFixture().container,
+    registryCtx,
+  });
+  expect(first.closeOverlay).toBeUndefined();
+  expect(first.state.searchQuery).toBe("");
+  expect(first.state.searchFocused).toBe(false);
+
+  const second = handleSettingsKey("", inkKey({ escape: true }), first.state, {
+    container: createContainerFixture().container,
+    registryCtx,
+  });
+  expect(second.closeOverlay).toBe(true);
+});
+
+test("Enter while filtering keeps the applied filter and leaves the field", () => {
+  const draft = baseConfig();
+  const registryCtx = mockRegistryCtx(draft);
+  const state = {
+    ...createSettingsUiState(draft),
+    searchFocused: true,
+    searchQuery: "relay",
+  };
+
+  const result = handleSettingsKey("", inkKey({ return: true }), state, {
+    container: createContainerFixture().container,
+    registryCtx,
+  });
+  expect(result.state.searchFocused).toBe(false);
+  expect(result.state.searchQuery).toBe("relay");
+});

@@ -24,7 +24,7 @@
  *   bun run agent:drive -- --verify-citation 'Smoke Movie' --keys '/' 'movie' '<enter>' --show frame
  */
 import { createAgentSession, type AgentSessionOptions } from "./agent-driver";
-import { writeEvidenceBundle, verifyCitations } from "./evidence";
+import { finalBackendStateJson, writeEvidenceBundle, verifyCitations } from "./evidence";
 import { advertisedKeys, frameMatcher } from "./frame-match";
 import { decodeKeyToken } from "./keys";
 
@@ -294,8 +294,11 @@ async function main(): Promise<void> {
         }
       }
     } else if (args.citations.length > 0) {
-      // Citations without a bundle verify against captured frames directly.
-      const corpus = session.frames().join("\n") + "\n" + session.frame();
+      // Without a bundle, verify against the captured frames and the same
+      // final backend state a bundle's transcript would carry.
+      const corpus = [...session.frames(), session.frame(), finalBackendStateJson(inspect)].join(
+        "\n",
+      );
       const unverified = args.citations.filter((c) => !corpus.includes(c.trim()));
       if (unverified.length > 0) {
         failed = true;

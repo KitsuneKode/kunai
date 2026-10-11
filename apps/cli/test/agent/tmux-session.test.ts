@@ -1,11 +1,18 @@
 import { describe, expect, it } from "bun:test";
-import { readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { bootSurface } from "./frame-match";
 import { startTmuxSession } from "./tmux-session";
 
+function itTmux(name: string, run: () => Promise<void>) {
+  const test = Bun.which("tmux") ? it : it.skip;
+  test(name, run);
+}
+
 describe("tmux session env validation", () => {
-  it("rejects a hostile env name and cleans up its sandbox", async () => {
+  itTmux("rejects a hostile env name and cleans up its sandbox", async () => {
     const name = `envreject-${process.pid}`;
     const before = readdirSync(tmpdir()).filter((d) => d.includes(name));
     await expect(startTmuxSession({ name, env: { "X; id #": "v" } })).rejects.toThrow(
@@ -17,9 +24,38 @@ describe("tmux session env validation", () => {
     expect(after).toEqual(before);
   });
 
-  it("rejects a missing env name entirely", async () => {
+  itTmux("rejects a missing env name entirely", async () => {
     await expect(
       startTmuxSession({ name: `envreject2-${process.pid}`, env: { "=v": "1" } }),
     ).rejects.toThrow(/invalid env name/);
+  });
+
+  itTmux("does not execute command substitution in an env value", async () => {
+    const evidenceRoot = mkdtempSync(join(tmpdir(), "kunai-env-proof-"));
+    const marker = join(evidenceRoot, "executed");
+    const s = await startTmuxSession({
+      name: `envliteral-${process.pid}`,
+      command: "--offline",
+      env: { KUNAI_LITERAL_PROBE: `$(touch '${marker}')` },
+    });
+    try {
+      await s.waitFor((frame) => bootSurface(frame) === "Library", "offline shell");
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      await s.stop();
+      rmSync(evidenceRoot, { recursive: true, force: true });
+    }
+  });
+
+  itTmux("rejects a storage-root override before launching", async () => {
+    const name = `envvault-${process.pid}`;
+    const before = readdirSync(tmpdir()).filter((d) => d.includes(name));
+    await expect(
+      startTmuxSession({
+        name,
+        env: { HOME: join(tmpdir(), `kunai-foreign-home-${process.pid}`) },
+      }),
+    ).rejects.toThrow(/cannot override isolated profile env/);
+    expect(readdirSync(tmpdir()).filter((d) => d.includes(name))).toEqual(before);
   });
 });

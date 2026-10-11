@@ -40,7 +40,10 @@ function ShareRow({ bucket }: { readonly bucket: ShareBucket }) {
         {/* Lookups stay on the raw key — `darwin` must keep matching its
             release-query fail-closed path while readers see `macOS`. */}
         {release ? (
-          <Link href={releasePath(bucket.label)} className="underline-offset-4 hover:underline">
+          <Link
+            href={releasePath(bucket.label)}
+            className="-my-1 inline-block py-1 underline-offset-4 hover:underline"
+          >
             {platformLabel(bucket.label)}
           </Link>
         ) : (

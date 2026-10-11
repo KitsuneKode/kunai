@@ -77,7 +77,7 @@ export default function HomePageInteractive() {
                 tabIndex={activeOs === os ? 0 : -1}
                 onClick={() => setActiveOs(os)}
                 onKeyDown={handleTabKeyDown}
-                className={`os-tab-button text-[11px] tracking-wider uppercase ${
+                className={`os-tab-button tracking-wider uppercase ${
                   activeOs === os ? "active" : ""
                 }`}
               >

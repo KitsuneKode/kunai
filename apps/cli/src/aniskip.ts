@@ -41,6 +41,18 @@ const malIdCache = new Map<string, number | null>();
 const anilistIdByNameCache = new Map<string, string | null>();
 const malIdFromAllAnimeShowCache = new Map<string, number | null>();
 
+/** Per-map entry bound — a long session browses hundreds of shows. */
+const ANISKIP_MAP_CAP = 256;
+
+function setCapped<K, V>(map: Map<K, V>, key: K, value: V): void {
+  if (!map.has(key) && map.size >= ANISKIP_MAP_CAP) {
+    // Map iterates insertion-ordered — the first key is the oldest write.
+    const oldest = map.keys().next().value;
+    if (oldest !== undefined) map.delete(oldest);
+  }
+  map.set(key, value);
+}
+
 /**
  * Resolve MAL numeric id from an AllAnime / AllManga catalog `show._id`, matching
  * synacktraa/ani-skip `resolve_id_allanime`. Add other opaque-id catalogs here or
@@ -65,7 +77,7 @@ async function fetchMalIdFromAllAnimeShow(
       signal: signal ?? AbortSignal.timeout(5_000),
     });
     if (!res.ok) {
-      malIdFromAllAnimeShowCache.set(showId, null);
+      setCapped(malIdFromAllAnimeShowCache, showId, null);
       return null;
     }
     const data = (await res.json()) as {
@@ -78,10 +90,10 @@ async function fetchMalIdFromAllAnimeShow(
         : typeof raw === "string" && /^\d+$/.test(raw)
           ? Number.parseInt(raw, 10)
           : null;
-    malIdFromAllAnimeShowCache.set(showId, parsed);
+    setCapped(malIdFromAllAnimeShowCache, showId, parsed);
     return parsed;
   } catch {
-    malIdFromAllAnimeShowCache.set(showId, null);
+    setCapped(malIdFromAllAnimeShowCache, showId, null);
     return null;
   }
 }
@@ -205,16 +217,16 @@ async function resolveAniListIdByName(
       signal: signal ?? AbortSignal.timeout(5_000),
     });
     if (!res.ok) {
-      anilistIdByNameCache.set(key, null);
+      setCapped(anilistIdByNameCache, key, null);
       return null;
     }
     const data = (await res.json()) as { data?: { Media?: { id?: number } } };
     const id = data?.data?.Media?.id;
     const result = typeof id === "number" ? String(id) : null;
-    anilistIdByNameCache.set(key, result);
+    setCapped(anilistIdByNameCache, key, result);
     return result;
   } catch {
-    anilistIdByNameCache.set(key, null);
+    setCapped(anilistIdByNameCache, key, null);
     return null;
   }
 }
@@ -228,7 +240,7 @@ async function resolveMALFromAniListId(
 
   const graph = await fetchArmIdGraph("anilist", anilistId, signal);
   const malId = graph?.malId ? Number.parseInt(graph.malId, 10) : null;
-  malIdCache.set(cacheKey, malId);
+  setCapped(malIdCache, cacheKey, malId);
   return malId;
 }
 
@@ -256,7 +268,7 @@ async function resolveMALFromTheMovieDbId(
 
   const graph = await fetchArmIdGraph("themoviedb", tmdbId, signal);
   const malId = graph?.malId ? Number.parseInt(graph.malId, 10) : null;
-  malIdCache.set(cacheKey, malId);
+  setCapped(malIdCache, cacheKey, malId);
   return malId;
 }
 

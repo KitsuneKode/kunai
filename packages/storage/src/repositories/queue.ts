@@ -1,4 +1,4 @@
-import type { ProviderExternalIds } from "@kunai/types";
+import { isJsonObject, type ProviderExternalIds } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
 
@@ -48,6 +48,10 @@ export interface QueueSessionInput {
   readonly updatedAt: string;
   readonly closedAt?: string;
   readonly lastActivityAt?: string;
+  /** PID of the kunai process that owns this session; absent on pre-042 rows. */
+  readonly ownerPid?: number;
+  readonly ownerHostname?: string;
+  readonly ownerProcessStartId?: string;
 }
 
 export interface QueueSessionRecord extends QueueSessionInput {
@@ -98,6 +102,9 @@ interface QueueSessionRow {
   readonly updated_at: string;
   readonly closed_at: string | null;
   readonly last_activity_at?: string | null;
+  readonly owner_pid?: number | null;
+  readonly owner_hostname?: string | null;
+  readonly owner_process_start_id?: string | null;
   readonly item_count: number;
 }
 
@@ -182,6 +189,9 @@ function mapQueueSessionRow(row: QueueSessionRow): QueueSessionRecord {
     updatedAt: row.updated_at,
     closedAt: row.closed_at ?? undefined,
     lastActivityAt: row.last_activity_at ?? undefined,
+    ownerPid: row.owner_pid ?? undefined,
+    ownerHostname: row.owner_hostname ?? undefined,
+    ownerProcessStartId: row.owner_process_start_id ?? undefined,
     itemCount: row.item_count,
   };
 }
@@ -209,6 +219,26 @@ export class QueueRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
   enqueue(input: QueueEntryInput): QueueEntry {
+    return this.db.transaction(() => {
+      const entry = this.insertEntry(input);
+      if (input.queuePosition !== undefined || entry.priority <= 0) return entry;
+
+      const ordered = this.getAll(input.sessionId);
+      // An explicit reorder takes precedence over the SQL priority tie-breaker.
+      // Insert new priority intent into that order without undoing the user's
+      // relative ordering, or allowing a new NULL position to strand "next".
+      if (!ordered.some((row) => row.queuePosition !== undefined)) return entry;
+      const remaining = ordered.filter((row) => row.id !== entry.id);
+      const before = remaining.findIndex(
+        (row) => row.status === "pending" && row.priority < entry.priority,
+      );
+      remaining.splice(before < 0 ? remaining.length : before, 0, entry);
+      this.setQueuePositions(remaining.map((row) => row.id));
+      return this.getById(entry.id) ?? entry;
+    })();
+  }
+
+  private insertEntry(input: QueueEntryInput): QueueEntry {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -279,7 +309,7 @@ export class QueueRepository {
   peekNext(sessionId: string): QueueEntry | undefined {
     const row = this.db
       .query<QueueEntryRow, [string]>(
-        `SELECT * FROM playlist_queue WHERE session_id = ? AND played_at IS NULL
+        `SELECT * FROM playlist_queue WHERE session_id = ? AND status = 'pending'
          ORDER BY ${QUEUE_ORDER_BY} LIMIT 1`,
       )
       .get(sessionId);
@@ -419,8 +449,8 @@ export class QueueRepository {
     this.db
       .query(
         `INSERT OR REPLACE INTO playback_queue_sessions
-           (id, status, created_at, updated_at, closed_at, last_activity_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+           (id, status, created_at, updated_at, closed_at, last_activity_at, owner_pid, owner_hostname, owner_process_start_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -429,6 +459,9 @@ export class QueueRepository {
         input.updatedAt,
         input.closedAt ?? null,
         lastActivityAt,
+        input.ownerPid ?? null,
+        input.ownerHostname ?? null,
+        input.ownerProcessStartId ?? null,
       );
     const record = this.getQueueSession(input.id);
     if (!record) throw new Error(`Queue session not found after insert: ${input.id}`);
@@ -448,12 +481,68 @@ export class QueueRepository {
     return row ? mapQueueSessionRow(row) : undefined;
   }
 
-  markQueueSessionRecoverable(id: string, updatedAt: string): void {
+  markQueueSessionRecoverable(
+    id: string,
+    updatedAt: string,
+    observed?: {
+      ownerPid?: number | null;
+      ownerHostname?: string | null;
+      ownerProcessStartId?: string | null;
+      activityAt?: string | null;
+    },
+  ): void {
+    if (!observed) {
+      this.db
+        .query(
+          "UPDATE playback_queue_sessions SET status = 'recoverable', updated_at = ? WHERE id = ? AND status = 'active'",
+        )
+        .run(updatedAt, id);
+      return;
+    }
+    // Compare-and-swap on the row the liveness check actually read: a session
+    // re-created (new owner_pid) or refreshed (newer activity) between the
+    // observation and this write is live work, not a crashed leftover.
+    const clauses = ["id = ?", "status = 'active'"];
+    const params: (string | number | null)[] = [];
+    if (observed.ownerPid !== undefined) {
+      clauses.push("owner_pid IS ?");
+      params.push(observed.ownerPid);
+    }
+    if (observed.activityAt !== undefined) {
+      clauses.push("COALESCE(last_activity_at, updated_at) IS ?");
+      params.push(observed.activityAt);
+    }
+    if (observed.ownerHostname !== undefined) {
+      clauses.push("owner_hostname IS ?");
+      params.push(observed.ownerHostname);
+    }
+    if (observed.ownerProcessStartId !== undefined) {
+      clauses.push("owner_process_start_id IS ?");
+      params.push(observed.ownerProcessStartId);
+    }
     this.db
       .query(
-        "UPDATE playback_queue_sessions SET status = 'recoverable', updated_at = ? WHERE id = ? AND status = 'active'",
+        `UPDATE playback_queue_sessions SET status = 'recoverable', updated_at = ? WHERE ${clauses.join(" AND ")}`,
       )
-      .run(updatedAt, id);
+      .run(updatedAt, id, ...params);
+  }
+
+  /**
+   * Active sessions (other than `exceptSessionId`) that still hold claimable
+   * rows. Callers triage by owner liveness before marking recoverable —
+   * 'active' alone does not mean crashed: a live second instance owns one.
+   */
+  listActiveQueueSessionsWithPendingWork(exceptSessionId: string): QueueSessionRecord[] {
+    return this.db
+      .query<QueueSessionRow, [string]>(
+        `SELECT s.*, COUNT(q.id) AS item_count
+         FROM playback_queue_sessions s
+         JOIN playlist_queue q ON q.session_id = s.id AND q.status IN ('pending', 'in-flight')
+         WHERE s.status = 'active' AND s.id != ?
+         GROUP BY s.id`,
+      )
+      .all(exceptSessionId)
+      .map(mapQueueSessionRow);
   }
 
   markActiveQueueSessionsRecoverable(exceptSessionId: string, updatedAt: string): number {
@@ -487,6 +576,19 @@ export class QueueRepository {
     restoredAt: string,
   ): string[] {
     const restore = this.db.transaction(() => {
+      // CAS the session claim inside the transaction: a second 'r' press, a
+      // notification action racing one, or another instance's restore must not
+      // re-run the move — and a session that was closed or re-activated since
+      // it was marked recoverable is not ours to drain.
+      const claimed = this.db
+        .query(
+          `UPDATE playback_queue_sessions
+           SET updated_at = ?
+           WHERE id = ? AND status = 'recoverable'`,
+        )
+        .run(restoredAt, sourceSessionId);
+      if (claimed.changes === 0) return [];
+
       const currentEntries = this.getAll(targetSessionId);
       const currentPlayed = currentEntries.filter((entry) => entry.status === "played");
       const currentPending = currentEntries.filter((entry) => entry.status !== "played");
@@ -566,7 +668,7 @@ function parseExternalIds(value: string | null): ProviderExternalIds | undefined
   if (!value) return undefined;
   try {
     const parsed: unknown = JSON.parse(value);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+    if (!isJsonObject(parsed)) return undefined;
     // SAFETY: the object/array/null check above leaves a plain JSON object —
     // the externalIds contract shape.
     return parsed as ProviderExternalIds;

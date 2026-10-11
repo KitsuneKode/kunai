@@ -1,15 +1,14 @@
-// =============================================================================
-// setup-screens.tsx — the seven screens, each inside the Sakura frame
+// The seven setup screens, each inside the Sakura frame.
 //
 // Every screen asks something or pays something off. The old flow spent three
 // of seven slides asking nothing, which is why it read as a slideshow.
-// =============================================================================
 
 import { Box, Text } from "ink";
 import React from "react";
 
 import { CompanionHost } from "../CompanionHost";
-import { BLOOM_FRAMES, reducedMotionEnabled, STATIC_PETAL } from "../primitives/SakuraPetal";
+import { reducedMotionEnabled } from "../motion-policy";
+import { BLOOM_FRAMES, STATIC_PETAL } from "../primitives/SakuraPetal";
 import { palette } from "../shell-theme";
 import type { ScopedDependencyRow } from "./dependency-rows";
 import { ChoiceRow, ScreenTitle, ToggleRow, type FooterKey } from "./SetupFrame";
@@ -34,7 +33,7 @@ function stateGlyph(state: ScopedDependencyRow["state"]): string {
 
 function stateColor(state: ScopedDependencyRow["state"]): string {
   if (state === "ok") return palette.ok;
-  if (state === "blocking") return palette.danger;
+  if (state === "blocking") return palette.dangerText;
   return palette.warn;
 }
 
