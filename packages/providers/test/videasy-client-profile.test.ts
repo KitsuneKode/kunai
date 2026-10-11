@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveVideasyClientProfile } from "../src/videasy/direct";
+import { resolveVideasyClientProfile, VIDEASY_MEDIA_ORIGIN } from "../src/videasy/direct";
 
 const runtimeContext = { now: () => new Date().toISOString() };
 
@@ -28,6 +28,25 @@ describe("resolveVideasyClientProfile", () => {
       defaultReferer: "https://www.cineby.at/tv/1396/1/1",
       streamReferer: "https://www.cineby.at/tv/1396/1/1",
     });
+  });
+
+  test("the stream carries the player's origin, not the API's, on every app id", () => {
+    // The Yoru server's CDN (peakstorm) answers 403 to Origin cineby.at and 200
+    // to vidking.net — the player every site in this family embeds. The API
+    // origin stays the site's own. Issue #361: the resolve gate probed with one
+    // origin and shipped the other, so it attested a stream mpv could not open.
+    const enemy = {
+      title: { id: "181886", tmdbId: "181886", kind: "movie" as const, title: "Enemy" },
+      mediaKind: "movie" as const,
+    };
+    const cineby = resolveVideasyClientProfile(enemy, runtimeContext, { appId: "bc-frontend" });
+    const vidking = resolveVideasyClientProfile(enemy, runtimeContext, { appId: "vidking" });
+
+    expect(cineby.origin).toBe("https://www.cineby.at");
+    expect(vidking.origin).not.toBe(cineby.origin);
+    // The stream's Origin is one constant for every profile: the CDN answers
+    // 403 to the cineby.at API origin on media requests.
+    expect(VIDEASY_MEDIA_ORIGIN).toBe("https://www.vidking.net");
   });
 
   test("bc-frontend uses cineby.at movie referer", () => {

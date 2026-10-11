@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-10-07"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -18,9 +18,21 @@ When playback hits certain failure signals, Kunai **reloads the same stream URL*
 
 After a successful reload, **external subtitles are re-attached** from the current cycle options (same as a fresh file load path).
 
+Provider TLS compatibility options are file-local on startup and replay. The
+mp4upload exception follows the current URL; replacing it with another host restores
+the user's prior mpv TLS setting. Native transition coverage includes exceptional
+startup, same-URL replay, normal replacement, and both enabled/disabled baselines in
+`apps/cli/test/integration/persistent-mpv-local-transition-native.test.ts`.
+
 ## When it runs
 
 1. **`network-read-dead`** (from `playback-watchdog`): demuxer reports network + underrun + `raw-input-rate === 0` while paused-for-cache, sustained for ~8s. Fires at most once per stall incident from the watchdog; **reconnect attempts** are still capped per cycle.
+
+An explicit user pause or `idle-active` suspends the watchdog clocks.
+`core-idle` alone does not: mpv can report it while waiting for network cache,
+which is exactly when starvation detection must remain active. Even a simultaneous
+`paused-for-cache` does not override an explicit user pause. The watchdog suite
+uses injected clocks to cover both cases without wall-clock sleeps.
 
 2. **Premature EOF** (playback-stats guard): `end-file` with `eof` was **demoted** to `unknown` because trusted progress was inconsistent with a full watch (`eofDemotedByPrematureGuard`).
 
@@ -32,16 +44,24 @@ If reconnect **fails** or limits are hit, the cycle ends and the usual `Playback
 
 ## Limits and backoff
 
-- **`mpvInProcessStreamReconnectMaxAttempts`** (default `3`, max `12`): counts **started** reloads per playback cycle (new episode resets the counter).
+- **`mpvInProcessStreamReconnectMaxAttempts`** (default `1`, and `1` is also the
+  cap): counts **started** reloads per playback cycle (new episode resets the
+  counter). `ConfigServiceImpl` clamps whatever is persisted down to
+  `MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS` in `packages/config/src/defaults.ts`,
+  so a hand-edited `config.json` asking for more gets one attempt. A dead stream
+  answers a reload as fast as a live one, so a larger budget buys a retry loop
+  against a URL that is not coming back. (`PersistentMpvSession.create` bounds a
+  raw injected config at a higher structural ceiling — that path is for the test
+  harness and the compiled smoke, not for user configuration.)
 - **Backoff** after a failed `loadfile`: exponential from a base delay, capped (see `PersistentMpvSession` constants). Prevents hammering a dead CDN.
 - **`reconnectInFlight`**: serializes overlapping reconnect work.
 
 ## Configuration (`~/.config/kunai/config.json`)
 
-| Field                                    | Default | Meaning                                                                                                    |
-| ---------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
-| `mpvInProcessStreamReconnect`            | `true`  | Master switch. `false` disables automatic same-URL reloads (manual **Ctrl+r** / shell refresh still work). |
-| `mpvInProcessStreamReconnectMaxAttempts` | `3`     | Max reload attempts **per episode play**. Set `0` to disable (same as turning off retries).                |
+| Field                                    | Default | Meaning                                                                                                       |
+| ---------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------- |
+| `mpvInProcessStreamReconnect`            | `true`  | Master switch. `false` disables automatic same-URL reloads (manual **Ctrl+r** / shell refresh still work).    |
+| `mpvInProcessStreamReconnectMaxAttempts` | `1`     | Max reload attempts **per episode play**, and also the cap. Set `0` to disable (same as turning off retries). |
 
 ## Relationship to other recovery
 
@@ -94,3 +114,19 @@ deciding whether to keep a loading presentation need the latter.
 - Diagnostics / shell may show **`mpv-in-process-reconnect`** events (`started` | `complete` | `failed`) with attempt number and a short `detail` (trigger + error when failed).
 - Seek policy lives in `apps/cli/src/infra/player/mpv-in-process-reconnect.ts` (`computeInProcessReconnectSeek`).
 - Presence updates from a superseded generation are dropped rather than sent.
+
+## IPC writes under backpressure
+
+Both Unix sockets and Windows named pipes use the same byte-oriented FIFO. A
+partial Bun socket write retains the remaining bytes until `drain`; a later
+command cannot splice its JSON into the unfinished line. This includes the initial
+property subscriptions and UTF-8 media paths. Queued bytes are capped at 256 KiB;
+a full queue rejects a tracked command rather than growing indefinitely.
+
+A command deadline drops an entirely unsent command. If part of that command has
+already been written, the session closes instead: discarding half a JSON line
+corrupts framing, and sending its remainder after expiry could start retired
+playback. Close discards the queue, settles pending commands, and prevents a late
+drain from sending them. Expiry removes queued bytes or closes the session before
+notifying result callbacks, so reentrant callbacks cannot send an expired command. This fixes a reproduced partial-write defect; it does not
+by itself establish the cause of intermittent native transition failures.

@@ -44,12 +44,17 @@ const view = buildHistoryView({
   selectedIndex: 0,
   maxVisible: 12,
   narrow: false,
-  context: {},
+  // Pinned past the seeded dates: a real clock ages every "ago" label and
+  // turns the committed capture red on a calendar boundary.
+  context: { now: Date.parse("2026-09-27T10:00:00.000Z") },
 });
 
-await captureSurface(
-  "history-continue",
-  <HistoryShell view={view} columns={140} listWidth={96} rowWidth={92} />,
-);
-console.log("captured history continue tab");
-process.exit(0);
+export function historyContinueNode() {
+  return <HistoryShell view={view} columns={140} listWidth={96} rowWidth={92} />;
+}
+
+if (import.meta.main) {
+  await captureSurface("history-continue", historyContinueNode());
+  console.log("captured history continue tab");
+  process.exit(0);
+}

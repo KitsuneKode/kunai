@@ -7,7 +7,7 @@ import { isFinished } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@kunai/storage";
 
 export type BuildLocalFilterFactsInput = {
-  readonly result: Pick<SearchResult, "type" | "release" | "contentShape" | "isAnime" | "year">;
+  readonly result: Pick<SearchResult, "type" | "release" | "resultKind" | "isAnime" | "year">;
   readonly historyEntry?: HistoryProgress | null;
   readonly enrichmentBadges?: readonly ResultEnrichmentBadge[];
   readonly calendar?: CalendarItem;
@@ -39,10 +39,10 @@ export function buildLocalFilterFacts(input: BuildLocalFilterFactsInput): Browse
   const year = parseYearFact(input.result.year);
 
   return {
-    ...(mediaType ? { mediaType } : {}),
-    ...(input.result.contentShape ? { contentShape: input.result.contentShape } : {}),
+    ...(mediaType ? { mediaType } : null),
+    ...(input.result.resultKind ? { resultKind: input.result.resultKind } : {}),
     ...(input.result.isAnime === true ? { isAnime: true } : {}),
-    ...(year !== undefined ? { year } : {}),
+    ...(year !== undefined ? { year } : null),
     ...deriveDownloadedFact(input.enrichmentBadges),
     ...deriveWatchedFact(input.historyEntry),
     ...deriveReleaseFact(input),

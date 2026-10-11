@@ -115,14 +115,14 @@ describe("diagnostics read policy", () => {
   });
 
   test("semantic identity ignores key order and omitted undefined fields", () => {
-    const memoryShaped = event({
+    const memoryEvent = event({
       message: "shaped",
       sessionId: "session-live",
       timestamp: 42,
       providerId: undefined,
       context: { status: "succeeded", severity: "healthy", z: 1, a: 2 },
     });
-    const sqliteShaped: DiagnosticEvent = {
+    const sqliteEvent: DiagnosticEvent = {
       timestamp: 42,
       level: "info",
       category: "runtime",
@@ -131,13 +131,13 @@ describe("diagnostics read policy", () => {
       sessionId: "session-live",
       context: { a: 2, severity: "healthy", status: "succeeded", z: 1 },
     };
-    expect(JSON.stringify(memoryShaped)).not.toBe(JSON.stringify(sqliteShaped));
-    expect(diagnosticEventIdentity(memoryShaped)).toBe(diagnosticEventIdentity(sqliteShaped));
+    expect(JSON.stringify(memoryEvent)).not.toBe(JSON.stringify(sqliteEvent));
+    expect(diagnosticEventIdentity(memoryEvent)).toBe(diagnosticEventIdentity(sqliteEvent));
 
     const service = serviceWith({
       sessionId: "session-live",
-      memory: [memoryShaped],
-      durableBySession: [sqliteShaped],
+      memory: [memoryEvent],
+      durableBySession: [sqliteEvent],
       durableGlobal: [],
     });
     expect(service.getRecent(10)).toHaveLength(1);

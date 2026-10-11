@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import { createProviderTitleBridgePort } from "@/infra/storage/provider-title-bridge-port";
-import { initLogger } from "@/logger";
+import { dbg, initLogger } from "@/logger";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/HistoryWatchLedgerBackfill";
 import { runOfflineAssetIdentityBackfill } from "@/services/offline/offline-asset-identity-backfill";
@@ -73,11 +73,15 @@ import { ResolveTraceSink } from "../services/diagnostics/ResolveTraceSink";
 import type { ConfigService } from "../services/persistence/ConfigService";
 import { ConfigServiceImpl } from "../services/persistence/ConfigServiceImpl";
 import { ConfigStoreImpl } from "../services/persistence/ConfigStoreImpl";
+import { createCredentialVault } from "../services/persistence/credential-vault-backends";
+import {
+  migrateSyncTokensToVault,
+  vaultSyncTokenFileIo,
+} from "../services/persistence/credential-vault-io";
 import { SqliteCacheStoreImpl } from "../services/persistence/SqliteCacheStoreImpl";
 import { StorageMaintenanceService } from "../services/persistence/StorageMaintenanceService";
-import { SyncTokenStore } from "../services/persistence/SyncTokenStore";
+import { realSyncTokenFileIo, SyncTokenStore } from "../services/persistence/SyncTokenStore";
 import { EpisodePlaybackSelectionService } from "../services/playback/EpisodePlaybackSelectionService";
-import { MediaTrackService } from "../services/playback/MediaTrackService";
 import { ProviderEndpointHealthService } from "../services/playback/ProviderEndpointHealthService";
 import { SourceInventoryService } from "../services/playback/SourceInventoryService";
 import { TitlePlaybackSourceService } from "../services/playback/TitlePlaybackSourceService";
@@ -127,7 +131,6 @@ export type PersistenceBootstrap = {
   readonly catalogCrosswalk: CatalogCrosswalkRepository;
   readonly playbackEventRepository: PlaybackEventRepository;
   readonly cacheStore: SqliteCacheStoreImpl;
-  readonly mediaTrackService: MediaTrackService;
   readonly recommendationCache: RecommendationCacheRepository;
   readonly providerHealth: ProviderHealthRepository;
   readonly endpointHealth: ProviderEndpointHealthService;
@@ -246,28 +249,35 @@ export async function bootstrapPersistence(
 
   // v2 adds anime content-class units (series rows with AniList/MAL ids move to
   // their AniList unit) and maintains the history_title_aliases index.
+  // A second instance launched during this pass can collide with it
+  // mid-transaction (SQLITE_BUSY_SNAPSHOT is not covered by busy_timeout) —
+  // the consolidator is idempotent, so a bounded retry is the safe answer.
   const HISTORY_IDENTITY_CONSOLIDATOR_V2_ID = "history_identity_consolidator_v2";
-  if (
-    !isHistoryIdentityConsolidatorApplied(dataDb) ||
-    !isDataMigrationApplied(dataDb, HISTORY_IDENTITY_CONSOLIDATOR_V2_ID)
-  ) {
-    runHistoryIdentityConsolidator(dataDb, {
-      dryRun: process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN === "1",
-      log: debug ? (message) => logger.info(message) : undefined,
-    });
-    if (process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN !== "1") {
-      markHistoryIdentityConsolidatorApplied(dataDb);
-      markDataMigrationApplied(dataDb, HISTORY_IDENTITY_CONSOLIDATOR_V2_ID);
+  runBootstrapUpgradeWork("history-identity-consolidator", () => {
+    if (
+      !isHistoryIdentityConsolidatorApplied(dataDb) ||
+      !isDataMigrationApplied(dataDb, HISTORY_IDENTITY_CONSOLIDATOR_V2_ID)
+    ) {
+      runHistoryIdentityConsolidator(dataDb, {
+        dryRun: process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN === "1",
+        log: debug ? (message) => logger.info(message) : undefined,
+      });
+      if (process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN !== "1") {
+        markHistoryIdentityConsolidatorApplied(dataDb);
+        markDataMigrationApplied(dataDb, HISTORY_IDENTITY_CONSOLIDATOR_V2_ID);
+      }
     }
-  }
+  });
 
-  if (!isWatchLedgerBackfillApplied(dataDb)) {
-    const stats = runHistoryWatchLedgerBackfill(dataDb);
-    if (debug) {
-      logger.info(`Watch ledger backfill updated ${stats.rowsUpdated} history rows`);
+  runBootstrapUpgradeWork("watch-ledger-backfill", () => {
+    if (!isWatchLedgerBackfillApplied(dataDb)) {
+      const stats = runHistoryWatchLedgerBackfill(dataDb);
+      if (debug) {
+        logger.info(`Watch ledger backfill updated ${stats.rowsUpdated} history rows`);
+      }
+      markWatchLedgerBackfillApplied(dataDb);
     }
-    markWatchLedgerBackfillApplied(dataDb);
-  }
+  });
 
   const configStore = new ConfigStoreImpl(storage);
   const historyRepository = new HistoryRepository(dataDb);
@@ -275,7 +285,6 @@ export async function bootstrapPersistence(
   const catalogCrosswalk = new CatalogCrosswalkRepository(cacheDb);
   const playbackEventRepository = new PlaybackEventRepository(dataDb);
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
-  const mediaTrackService = new MediaTrackService();
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
   const providerHealth = new ProviderHealthRepository(cacheDb);
   const { listDeprecatedVidkingEndpoints } = await import("@kunai/providers/videasy");
@@ -363,7 +372,15 @@ export async function bootstrapPersistence(
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
     diagnostics: diagnosticsService,
   });
-  const resolveTraceSink = new ResolveTraceSink(new ResolveTraceRepository(cacheDb));
+  const resolveTraceSink = new ResolveTraceSink(new ResolveTraceRepository(cacheDb), {
+    onFailure: (failure) => {
+      logger.warn("Resolve trace sink failed", {
+        category: "runtime",
+        operation: `diagnostics.trace.${failure.operation}.failed`,
+        error: failure.message,
+      });
+    },
+  });
   const episodePlaybackSelection = new EpisodePlaybackSelectionService(
     join(paths.configDir, "episode-playback-selections.json"),
   );
@@ -381,7 +398,11 @@ export async function bootstrapPersistence(
   const queueService = new QueueService(queueRepository, sessionId);
   const statsService = new StatsService(dataDb);
   const statsFormatter = new StatsFormatter();
-  const config = await ConfigServiceImpl.load(configStore);
+  const credentialVault = await createCredentialVault({
+    paths,
+    onFallback: (backend, reason) => dbg("credential-vault", `using ${backend} backend: ${reason}`),
+  });
+  const config = await ConfigServiceImpl.load(configStore, credentialVault);
   if (config.videasyAppIdMigratedOnLoad) {
     const { invalidateVideasyProviderCaches } =
       await import("@/app/playback/videasy-cache-invalidation");
@@ -406,7 +427,13 @@ export async function bootstrapPersistence(
     tmdb: tmdbAuth.availability,
   };
 
-  const syncTokenStore = new SyncTokenStore(paths);
+  await migrateSyncTokensToVault({ paths, vault: credentialVault });
+  const syncTokenStore = new SyncTokenStore(
+    paths,
+    credentialVault.backend === "file"
+      ? realSyncTokenFileIo
+      : vaultSyncTokenFileIo(credentialVault),
+  );
   const anilistAdapter = new AniListAdapter(syncTokenStore, undefined, anilistAuth);
   const tmdbAdapter = new TmdbAdapter(syncTokenStore, tmdbAuth.apiKey ?? "");
   await Promise.all([anilistAdapter.init(), tmdbAdapter.init()]);
@@ -430,7 +457,6 @@ export async function bootstrapPersistence(
     catalogCrosswalk,
     playbackEventRepository,
     cacheStore,
-    mediaTrackService,
     recommendationCache,
     providerHealth,
     endpointHealth,
@@ -468,4 +494,42 @@ export async function bootstrapPersistence(
     debugTracePath,
     debugSessionInstructions,
   };
+}
+
+/**
+ * One-shot whole-table upgrade work (consolidators, backfills) runs outside
+ * `runMigrations`, so two instances launching against the same upgraded profile
+ * can collide inside the deferred transaction — SQLITE_BUSY_SNAPSHOT is not
+ * covered by busy_timeout. Each unit is idempotent and re-checks its marker on
+ * the retry, so a bounded retry is the whole fix: a twin's committed marker
+ * makes the second pass a no-op.
+ */
+/**
+ * bun:sqlite surfaces SQLite error names on `code` — the BUSY family (plus its
+ * extended results) means "retryable cross-instance collision", never a
+ * corrupt statement or schema. Mirrors `isSqliteCorruptionError`'s convention:
+ * callers narrow a catch-clause value to `Error` first.
+ */
+function isSqliteContention(error: Error): boolean {
+  if (!("code" in error)) return false;
+  return (
+    error.code === "SQLITE_BUSY" ||
+    error.code === "SQLITE_BUSY_SNAPSHOT" ||
+    error.code === "SQLITE_BUSY_TIMEOUT" ||
+    error.code === "SQLITE_BUSY_RECOVERY"
+  );
+}
+
+function runBootstrapUpgradeWork(name: string, work: () => void): void {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      work();
+      return;
+    } catch (error) {
+      if (!(error instanceof Error) || attempt === 2 || !isSqliteContention(error)) {
+        throw error instanceof Error ? error : new Error(`${name} failed: ${String(error)}`);
+      }
+      Bun.sleepSync(50 * (attempt + 1));
+    }
+  }
 }

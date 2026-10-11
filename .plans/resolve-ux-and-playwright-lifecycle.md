@@ -12,7 +12,7 @@ provider-level Playwright access or a config schema extension.
 
 **Problem.** When the user presses Esc during stream resolution, we call
 `resolveController.abort()`. The `AbortSignal` is forwarded to `resolveWithFallback`
-and on to each `p.resolveStream(..., signal)`, but individual providers do not act on it
+and on to each provider `resolve(...)` call (formerly `p.resolveStream`), but individual providers do not act on it
 mid-scrape. The Playwright browser page continues running until it finishes or times out.
 The user sees "Cancelling…" and eventually gets back to results — but a background
 Chromium scrape is still alive consuming memory and CPU.
@@ -21,12 +21,16 @@ Chromium scrape is still alive consuming memory and CPU.
 close its page (or context) immediately when it fires. The typical pattern:
 
 ```ts
-signal.addEventListener("abort", () => {
-  void page.close().catch(() => {});
-}, { once: true });
+signal.addEventListener(
+  "abort",
+  () => {
+    void page.close().catch(() => {});
+  },
+  { once: true },
+);
 ```
 
-Where to do this: inside each provider's `resolveStream` method (or the shared
+Where to do this: inside each provider's `resolve` implementation (or the shared
 scraper helper it delegates to), right after `page` is acquired from the browser pool.
 
 **Scope.** Touches every Playwright-backed provider. Should be done as part of a
@@ -52,6 +56,7 @@ carries it into the next `PlaybackPhase` invocation for the same title so the pi
 pre-selects it.
 
 Implementation sketch:
+
 - Extend `PlaybackOutcome` with an optional `lastAttemptedEpisode?: EpisodeInfo` field
   on the `"back_to_results"` path
 - In `PlaybackPhase`, populate it from `currentEpisode` before returning
@@ -75,8 +80,9 @@ per-candidate deadline. If the candidate's resolve promise doesn't settle within
 timeout, treat it as a failure and move to the next candidate.
 
 Implementation sketch:
+
 - Extend `ProviderConfig` / provider override schema with `resolveTimeoutMs`
-- In `PlaybackPhase`, read it from the provider registry and wrap `p.resolveStream`
+- In `PlaybackPhase`, read it from the provider registry and wrap the resolve call
   with `Promise.race([resolve(), Bun.sleep(timeout).then(() => null)])` when set
 - Default: no timeout (current behavior)
 
@@ -97,6 +103,7 @@ Surface this as a badge in the browse shell's provider badge or the provider pic
 Example display: `provider vidking · last ok 2m ago` or `provider cineby · 2 failures`.
 
 Implementation sketch:
+
 - Add a `ProviderHealthTracker` service to the container (in-memory, no persistence
   needed initially)
 - `PlaybackPhase` records success/failure outcomes on each resolve attempt
@@ -110,12 +117,12 @@ Independent of Playwright work.
 
 ## Suggested sequencing
 
-| Priority | Item | Effort | Depends on |
-| -------- | ---- | ------ | ---------- |
-| 1 | Episode memory (#2) | Small | Nothing |
-| 2 | Per-provider timeout (#3) | Small | Nothing |
-| 3 | Provider health indicator (#4) | Medium | Nothing |
-| 4 | Provider-level abort (#1) | Medium | Playwright reliability pass |
+| Priority | Item                           | Effort | Depends on                  |
+| -------- | ------------------------------ | ------ | --------------------------- |
+| 1        | Episode memory (#2)            | Small  | Nothing                     |
+| 2        | Per-provider timeout (#3)      | Small  | Nothing                     |
+| 3        | Provider health indicator (#4) | Medium | Nothing                     |
+| 4        | Provider-level abort (#1)      | Medium | Playwright reliability pass |
 
 Items 2 and 3 can be done in any order as quick standalone improvements.
 Item 1 is the most directly felt UX gap. Item 4 is the most satisfying but

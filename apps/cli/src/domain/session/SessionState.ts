@@ -14,6 +14,7 @@ import {
 } from "../playback/playback-generation";
 import type { PlaybackProblem } from "../playback/playback-problem";
 import type { TrackCapabilityGroup, TrackCapabilitySection } from "../playback/track-capabilities";
+import { sanitizeTerminalText } from "../text-display";
 import type {
   EpisodeInfo,
   EpisodePickerOption,
@@ -124,7 +125,7 @@ export type OverlayState =
   | { type: "settings"; initialSectionId?: string }
   | { type: "provider_picker"; currentProvider: string; lane: import("../types").ProviderLane }
   | ({ type: "subtitle_picker" } & PickerOverlayState)
-  | ({ type: "season_picker"; currentSeason: number } & PickerOverlayState)
+  | ({ type: "season_picker"; currentSeason: number; initialIndex?: number } & PickerOverlayState)
   | ({ type: "episode_picker"; season: number; initialIndex?: number } & PickerOverlayState)
   | ({ type: "recommendation_picker" } & PickerOverlayState)
   | {
@@ -143,6 +144,7 @@ export type OverlayState =
   | { type: "library"; view?: "library" | "queue" }
   | { type: "diagnostics" }
   | { type: "help" }
+  | { type: "guide" }
   | { type: "about" }
   | { type: "setup"; missing: readonly string[] }
   | { type: "confirm"; message: string; confirmLabel?: string };
@@ -204,6 +206,13 @@ export interface SessionState {
   readonly watchTimeSummary: string | null;
   readonly playbackProblem: PlaybackProblem | null;
   readonly resolveRetryCount: number;
+  /**
+   * Providers already attempted in the current episode's resolve/fallback
+   * cycle. The footer's ⇧F availability and the fallback target picker both
+   * exclude these, so repeated presses walk the list instead of ping-ponging
+   * between the first two providers. Reset on episode selection.
+   */
+  readonly fallbackTriedProviderIds: readonly string[];
 
   readonly searchQuery: string;
   readonly searchResults: SearchResult[];
@@ -266,6 +275,7 @@ export type StateTransition =
   | { type: "SET_PLAYBACK_PROBLEM"; problem: PlaybackProblem }
   | { type: "CLEAR_PLAYBACK_PROBLEM" }
   | { type: "SET_RESOLVE_RETRY_COUNT"; count: number }
+  | { type: "RECORD_FALLBACK_TRIED_PROVIDERS"; providerIds: readonly string[] }
   | { type: "OPEN_OVERLAY"; overlay: OverlayState }
   | { type: "REPLACE_TOP_OVERLAY"; overlay: OverlayState }
   | {
@@ -345,6 +355,7 @@ export function createInitialState(
     watchTimeSummary: null,
     playbackProblem: null,
     resolveRetryCount: 0,
+    fallbackTriedProviderIds: [],
     searchQuery: "",
     searchResults: [],
     searchState: "idle",
@@ -491,6 +502,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         ...state,
         view: "playback",
         currentEpisode: transition.episode,
+        fallbackTriedProviderIds: [],
       };
 
     case "SET_CURRENT_ANIME_EPISODES":
@@ -554,10 +566,20 @@ export function reduceState(state: SessionState, transition: StateTransition): S
     case "SET_PLAYBACK_FEEDBACK":
       return {
         ...state,
+        // Feedback strings embed provider titles and error text — sanitize at
+        // the state boundary so every producer stays terminal-safe.
         playbackDetail:
-          transition.detail === undefined ? state.playbackDetail : (transition.detail ?? null),
+          transition.detail === undefined
+            ? state.playbackDetail
+            : transition.detail === null
+              ? null
+              : sanitizeTerminalText(transition.detail),
         playbackNote:
-          transition.note === undefined ? state.playbackNote : (transition.note ?? null),
+          transition.note === undefined
+            ? state.playbackNote
+            : transition.note === null
+              ? null
+              : sanitizeTerminalText(transition.note),
       };
 
     case "SET_WATCH_TIME_SUMMARY":
@@ -580,6 +602,16 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         ...state,
         resolveRetryCount: Math.max(0, transition.count),
       };
+
+    case "RECORD_FALLBACK_TRIED_PROVIDERS": {
+      const known = new Set(state.fallbackTriedProviderIds);
+      const additions = transition.providerIds.filter((id) => id && !known.has(id));
+      if (additions.length === 0) return state;
+      return {
+        ...state,
+        fallbackTriedProviderIds: [...state.fallbackTriedProviderIds, ...additions],
+      };
+    }
 
     case "OPEN_OVERLAY":
       return {
@@ -631,7 +663,8 @@ export function reduceState(state: SessionState, transition: StateTransition): S
             ...transition.picker,
             selectedIndex: normalizePickerIndex(
               transition.picker.selectedIndex ??
-                (transition.picker.type === "episode_picker"
+                (transition.picker.type === "episode_picker" ||
+                transition.picker.type === "season_picker"
                   ? transition.picker.initialIndex
                   : 0) ??
                 0,
@@ -646,7 +679,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
       return {
         ...state,
         activeModals: state.activeModals.map((modal, index) =>
-          index === state.activeModals.length - 1 && isPickerOverlay(modal, transition.id)
+          index === state.activeModals.length - 1 && isFilterablePickerOverlay(modal, transition.id)
             ? { ...modal, filterQuery: transition.filterQuery, selectedIndex: 0 }
             : modal,
         ),
@@ -654,7 +687,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
 
     case "MOVE_PICKER_SELECTION": {
       const top = state.activeModals.at(-1);
-      if (!isPickerOverlay(top, transition.id)) return state;
+      if (!isFilterablePickerOverlay(top, transition.id)) return state;
       const filteredLength = filterPickerOptions(top.options, top.filterQuery ?? "").length;
       const selectedIndex =
         filteredLength > 0
@@ -837,7 +870,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function isPickerOverlay(
+function isFilterablePickerOverlay(
   overlay: OverlayState | undefined,
   id?: string,
 ): overlay is Extract<OverlayState, PickerOverlayState> {
@@ -850,12 +883,31 @@ function isPickerOverlay(
   return picker && (id === undefined || overlay.id === id);
 }
 
+function isPickerOverlay(
+  overlay: OverlayState | undefined,
+  id?: string,
+): overlay is
+  | Extract<OverlayState, PickerOverlayState>
+  | Extract<OverlayState, { type: "tracks_panel" }> {
+  if (!overlay) return false;
+  const picker =
+    overlay.type === "season_picker" ||
+    overlay.type === "episode_picker" ||
+    overlay.type === "subtitle_picker" ||
+    overlay.type === "recommendation_picker" ||
+    overlay.type === "tracks_panel";
+  return picker && (id === undefined || overlay.id === id);
+}
+
 function shouldReplaceOpenOverlay(current: OverlayState | undefined, next: OverlayState): boolean {
   return Boolean(current && current.type === next.type && next.type !== "confirm");
 }
 
 function normalizePickerIndex(index: number, length: number): number {
   if (length <= 0) return 0;
+  // A miss stays unhighlighted: -1 (or non-finite) renders no highlight and
+  // Enter on it is a no-op, instead of inviting playback of row 0.
+  if (!Number.isFinite(index) || index < 0) return -1;
   return clamp(index, 0, length - 1);
 }
 
@@ -879,5 +931,9 @@ function filterPickerOptions(
 function popPickerOverlay(modals: readonly OverlayState[], id: string): OverlayState[] {
   const top = modals.at(-1);
   if (isPickerOverlay(top, id)) return modals.slice(0, -1);
+  const index = modals.findLastIndex((m) => isPickerOverlay(m, id));
+  if (index !== -1) {
+    return [...modals.slice(0, index), ...modals.slice(index + 1)];
+  }
   return [...modals];
 }

@@ -118,7 +118,7 @@ function mapPlaybackEventRow(row: PlaybackEventRow): PlaybackEventRecord {
     episode: row.episode ?? undefined,
     positionSeconds: row.position_seconds ?? undefined,
     durationSeconds: row.duration_seconds ?? undefined,
-    providerId: row.provider_id === null ? undefined : (row.provider_id as ProviderId),
+    providerId: row.provider_id === null ? undefined : row.provider_id,
     at: row.at,
     payload: parsePayload(row.payload_json),
   };

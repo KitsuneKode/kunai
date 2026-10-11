@@ -1,5 +1,4 @@
-// =============================================================================
-// watch-progress.ts — TWO distinct progress projections, never conflated:
+// TWO distinct progress projections, never conflated:
 //
 //   • projectWatchProgress  → EPISODE progress: how far into the *current episode*
 //     you are (position / duration). "completed" here means "finished this episode".
@@ -10,7 +9,6 @@
 // The historical bug: finishing one episode set the episode `completed` flag, and
 // downstream code read that as the *series* being finished, dropping mid-watch
 // series into "Completed". Keeping the two projections separate is the fix.
-// =============================================================================
 
 export type WatchProgressInput = {
   readonly timestamp?: number;

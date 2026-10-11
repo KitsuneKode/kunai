@@ -54,6 +54,7 @@ describe("ingest output is accepted by the docs parser", () => {
     day: "2026-08-13",
     computedAt: "2026-08-14T00:05:00.000Z",
     activeInstalls: 3,
+    newInstalls: 1,
     byVersion: { "0.3.0": 2, "0.2.5": 1 },
     byOs: { linux: 2, darwin: 1 },
     byArch: { x64: 2, arm64: 1 },
@@ -104,5 +105,32 @@ describe("share buckets", () => {
   test("returns nothing for an empty breakdown", () => {
     expect(rankShareBuckets({})).toEqual([]);
     expect(rankShareBuckets({ linux: 0 })).toEqual([]);
+  });
+});
+
+/**
+ * Production sends a Postgres timestamp, not ISO 8601. Every fixture in this
+ * repo used ISO, which is why the difference went unnoticed until a browser had
+ * to parse it.
+ */
+describe("updatedAt normalisation", () => {
+  test("the Postgres form becomes strict ISO", () => {
+    const parsed = parseDocsAnalyticsMetrics({
+      ...v2,
+      updatedAt: "2026-09-11 00:27:00.82757+00",
+    });
+    expect(parsed?.updatedAt).toBe("2026-09-11T00:27:00.827Z");
+  });
+
+  test("an already-ISO value is unchanged", () => {
+    const parsed = parseDocsAnalyticsMetrics({ ...v2, updatedAt: "2026-09-11T00:27:00.827Z" });
+    expect(parsed?.updatedAt).toBe("2026-09-11T00:27:00.827Z");
+  });
+
+  test("an unparseable value is kept verbatim rather than throwing", () => {
+    // toISOString throws RangeError on an invalid date, and one bad timestamp
+    // must not blank the whole panel.
+    const parsed = parseDocsAnalyticsMetrics({ ...v2, updatedAt: "not a timestamp" });
+    expect(parsed?.updatedAt).toBe("not a timestamp");
   });
 });

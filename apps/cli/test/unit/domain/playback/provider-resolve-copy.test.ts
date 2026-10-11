@@ -23,7 +23,7 @@ describe("provider resolve copy", () => {
 
   test("only offers skipping remaining retries once a retry is actually active", () => {
     expect(describeProviderResolveAttemptNote({ attempt: 2, maxAttempts: 3 })).toBe(
-      "f skips the remaining retries and tries the next provider.",
+      "⇧F skips the remaining retries and tries the next provider.",
     );
     expect(describeProviderResolveAttemptNote({ attempt: 3, maxAttempts: 3 })).toBe(
       "Final retry for this provider; fallback remains available.",
@@ -34,6 +34,6 @@ describe("provider resolve copy", () => {
     expect(describeProviderResolveProviderNote(false)).toBe(
       "Recoverable provider failures retry before fallback.",
     );
-    expect(describeProviderResolveProviderNote(true)).toBe("Trying another source.");
+    expect(describeProviderResolveProviderNote(true)).toBe("Trying the next provider.");
   });
 });

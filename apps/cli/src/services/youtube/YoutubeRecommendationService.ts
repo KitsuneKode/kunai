@@ -31,7 +31,7 @@ export type YoutubeRecommendationHistorySeed = {
   readonly completed?: boolean;
 };
 
-function providerResultToSearchResult(result: ProviderSearchResult): SearchResult {
+export function providerResultToSearchResult(result: ProviderSearchResult): SearchResult {
   return {
     id: result.id,
     type: result.type,
@@ -52,7 +52,7 @@ function providerResultToSearchResult(result: ProviderSearchResult): SearchResul
     liveStatus: result.liveStatus,
     premium: result.premium,
     paid: result.paid,
-    contentShape: result.contentShape,
+    resultKind: result.resultKind,
   };
 }
 
@@ -220,7 +220,10 @@ export async function loadYoutubeRecommendations(input: {
 /** YouTube trending for `/trending` in youtube shell mode. */
 export async function loadYoutubeTrending(signal?: AbortSignal): Promise<readonly SearchResult[]> {
   const preferredInstanceUrl = getYoutubeProviderConfig().invidiousInstanceUrl;
-  const items = await invidiousGetTrending({ preferredInstanceUrl, signal }).catch(() => []);
+  // Rejects when every instance is down: callers decide whether to degrade to an
+  // empty tray. Folding it into `[]` here hid the failure from the discovery
+  // cache, which then served that empty tray for the rest of its TTL.
+  const items = await invidiousGetTrending({ preferredInstanceUrl, signal });
   return mapInvidiousTrendingVideos([...items]).map(providerResultToSearchResult);
 }
 

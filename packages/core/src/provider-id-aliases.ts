@@ -6,7 +6,7 @@ const LEGACY_PROVIDER_ALIASES: Readonly<Record<string, ProviderId>> = {
 
 /** Canonical provider id for runtime routing (legacy aliases folded). */
 export function resolveProviderIdAlias(providerId: string): ProviderId {
-  return (LEGACY_PROVIDER_ALIASES[providerId] ?? providerId) as ProviderId;
+  return LEGACY_PROVIDER_ALIASES[providerId] ?? providerId;
 }
 
 export function isVideasyFamilyProvider(providerId: string): boolean {

@@ -87,6 +87,38 @@ describe("stream health", () => {
     });
   });
 
+  test("playback-preflight probes fresh streams that were never verified", () => {
+    // Resolve age alone must not waive the probe: providers without a
+    // resolve-gate hand streams here that no code has ever fetched, and an
+    // episode-to-episode replacement trusts the same plan.
+    expect(
+      planStreamHealth({
+        phase: "playback-preflight",
+        url: "https://cdn.example/live.m3u8",
+        cachedAt: now - 60_000,
+        now,
+      }),
+    ).toMatchObject({
+      shouldProbe: true,
+      policyReason: "forced-hls",
+    });
+  });
+
+  test("playback-preflight probes verified streams past the trust window", () => {
+    expect(
+      planStreamHealth({
+        phase: "playback-preflight",
+        url: "https://cdn.example/live.m3u8",
+        cachedAt: now - 10 * 60_000,
+        streamReachabilityVerified: true,
+        now,
+      }),
+    ).toMatchObject({
+      shouldProbe: true,
+      policyReason: "forced-hls",
+    });
+  });
+
   test("skips probes for youtube watch URLs and requiresYtdl streams", () => {
     expect(
       planStreamHealth({
@@ -113,6 +145,50 @@ describe("stream health", () => {
     });
   });
 
+  test("resolve-gate retries a non-definitive probe once, preserving headers", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const result = await runStreamHealthCheck({
+      phase: "resolve-gate",
+      url: "https://cdn.example/video.mp4",
+      headers: { Referer: "https://provider.example/watch" },
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+        return new Response("", { status: calls.length >= 3 ? 200 : 500 });
+      },
+      cachedAt: Date.now(),
+      now: Date.now(),
+    });
+
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(
+      calls.every(
+        (call) =>
+          call.init.headers === undefined ||
+          // SAFETY: the stubbed fetch records whatever init the probe forwarded; headers is a plain object here.
+          (call.init.headers as Record<string, string>).Referer ===
+            "https://provider.example/watch",
+      ),
+    ).toBe(true);
+    expect(result.probe?.status).toBe("reachable");
+  });
+
+  test("resolve-gate does not retry a definitive refusal", async () => {
+    const calls: string[] = [];
+    const result = await runStreamHealthCheck({
+      phase: "resolve-gate",
+      url: "https://cdn.example/video.mp4",
+      fetchImpl: async (url) => {
+        calls.push(String(url));
+        return new Response("", { status: 404 });
+      },
+      cachedAt: Date.now(),
+      now: Date.now(),
+    });
+
+    expect(calls.length).toBe(1);
+    expect(result.probe?.status).toBe("unreachable");
+  });
+
   test("playback-preflight stays lenient on timeout", () => {
     expect(evaluateStreamHealth("playback-preflight", { status: "timeout" })).toBe(true);
     expect(evaluateStreamHealth("resolve-gate", { status: "timeout" })).toBe(true);
@@ -131,7 +207,7 @@ describe("stream health", () => {
         }
         return new Response(new Uint8Array(2048).fill(1), { status: 206 });
       },
-      timeoutMs: STREAM_HEALTH_DEFAULTS.vidkingResolveGateTimeoutMs,
+      timeoutMs: STREAM_HEALTH_DEFAULTS.resolveGateTimeoutMs,
     });
 
     expect(result).toMatchObject({

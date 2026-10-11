@@ -33,7 +33,7 @@ briefly said `replay` for the state the browse row and both provider docs call
 | `post_live`  | `Was Live` | `↺ was live` | A finished broadcast, now seekable        |
 | `none`       | —          | —            | An ordinary upload                        |
 
-Live state is **not** a content shape. A result carries both: `contentShape`
+Live state is **not** a result kind. A result carries both: `resultKind`
 says what will open (`video` / `short` / `playlist` / `channel`), `liveStatus`
 says what state it is in. A live Short and a live video are both live.
 

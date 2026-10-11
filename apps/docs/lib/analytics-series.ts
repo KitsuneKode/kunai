@@ -36,6 +36,13 @@ export type ShareDimension = (typeof SHARE_DIMENSIONS)[number];
 export type SeriesPoint = {
   readonly day: string;
   readonly activeInstalls: number;
+  /**
+   * Installs first seen on `day`. `null` when the served series predates the
+   * field — it was added to the wire without a schema bump, so a CDN-cached
+   * response from an older ingest legitimately lacks it. Consumers treat null
+   * as "not published", not as zero.
+   */
+  readonly newInstalls: number | null;
   readonly lifetimeInstalls: number;
   readonly byVersion: Readonly<Record<string, number>>;
   readonly byOs: Readonly<Record<string, number>>;
@@ -91,9 +98,17 @@ function parsePoint(value: unknown): SeriesPoint | null {
   if (!byOs) return null;
   const byArch = parseCounts(value.byArch);
   if (!byArch) return null;
+  // Optional by design — see the field's own comment. Absent or malformed both
+  // read as "not published"; a malformed one is not allowed to poison the day.
+  const rawNew = value.newInstalls;
+  const newInstalls =
+    typeof rawNew === "number" && Number.isFinite(rawNew) && rawNew >= 0
+      ? Math.floor(rawNew)
+      : null;
   return {
     day,
     activeInstalls: Math.max(0, Math.floor(activeInstalls)),
+    newInstalls,
     lifetimeInstalls: Math.max(0, Math.floor(lifetimeInstalls)),
     byVersion,
     byOs,

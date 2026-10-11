@@ -14,5 +14,5 @@ Library
 
 [enter] open  [x] delete  [p] protect  [/] commands
 
-Missing or broken artifacts: press x to remove, then re-add via 
+Missing or broken artifacts: press x to remove, then re-add via
 /download.

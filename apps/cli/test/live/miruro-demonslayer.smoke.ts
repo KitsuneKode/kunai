@@ -1,5 +1,9 @@
 import type { TitleInfo } from "@/domain/types";
-import { clearMiruroCachesForTest, probeStreamReachability } from "@kunai/providers";
+import {
+  clearMiruroCachesForTest,
+  probeStreamReachability,
+  resolveAnimeAudioIntent,
+} from "@kunai/providers";
 
 import {
   buildProviderSmokePayload,
@@ -96,7 +100,7 @@ const payload = {
     stream,
     resolveDurationMs,
   }),
-  ...(resolveError ? providerSmokeError(resolveError) : {}),
+  ...(resolveError ? providerSmokeError(resolveError) : null),
   failureCodes,
   failureMessages,
   streamCandidates,
@@ -104,7 +108,7 @@ const payload = {
   streamReachable,
   resolverAttestedReachable,
   ...providerSmokeProfilePayload(profile),
-  animeLang: container.config.animeLang,
+  animeLang: resolveAnimeAudioIntent(container.config.animeLanguageProfile.audio).catalogMode,
   cacheCleared: clearCache,
 };
 

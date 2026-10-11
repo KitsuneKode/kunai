@@ -30,6 +30,7 @@ export {
 export type {
   HistoryProgress,
   HistoryProgressInput,
+  HistoryProgressWatchState,
   HistoryTitleLookup,
 } from "./repositories/history";
 export { HISTORY_FINISHED_RATIO, isHistoryProgressFinished } from "./repositories/history";

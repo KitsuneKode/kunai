@@ -47,17 +47,28 @@ Each of these is enforced by a test or is expensive to get wrong.
   imports no provider or player runtime; nothing outside the shell imports
   `ink`; no active code imports `.archive/legacy` or `.reference/experiments`.
   Map in [.docs/runtime-boundary-map.md](.docs/runtime-boundary-map.md).
-- **`apps/cli/src/main.ts` is the only entrypoint.** Do not add a second one.
+- **Entrypoints are app-scoped.** `apps/cli/src/main.ts` is the only desktop CLI
+  entrypoint. `apps/mobile/src/entry.ts` is the only mobile entrypoint; neither
+  app may import the other.
 - **Production providers are the ones
   `loadProductionProviderModules()` returns** in
   `apps/cli/src/container/bootstrap-providers.ts`. A module existing under
   `packages/providers/src/` does not make it live.
 - **Episode numbers are 1-based in the UI.** Providers adapt internally.
 - **`isAnimeProvider: true` is what puts a provider in anime mode.**
-- **`packages/providers/src/allmanga/api-client.ts` carries ani-cli parity
-  logic.** Check parity against the reference implementation before changing
-  crypto or decoder constants, and document deliberate divergence in
-  [.docs/providers.md](.docs/providers.md).
+- **AllManga crypto has no reference implementation left.** ani-cli `a6ac602`
+  (v5) moved to anidb and deleted every AllAnime path, so
+  `packages/providers/src/allmanga/api-client.ts` and `crypto.ts` are checked
+  against the **live mkissa chunk**, not against ani-cli. Upstream rotates every
+  constant at once, roughly monthly; `bun run test:live:allmanga-crypto` says
+  whether the pinned set still works and which half is stale, and
+  [.docs/provider-dossiers/allmanga.md](.docs/provider-dossiers/allmanga.md)
+  carries the recovery procedure.
+- **A provider must never report success for a stream it has not probed.**
+  `verifyCandidateStream` is the only resolve gate; it takes the candidate so
+  the probed request and the shipped request cannot diverge. Coverage is
+  enforced by `packages/providers/test/provider-resolve-gate-coverage.test.ts`,
+  and an exemption needs a runtime reason recorded there.
 - **Relay is metadata-only** — no media route, no video fallback; stream URLs
   stay direct. `packages/relay` is the single implementation and
   `apps/relay-server` stays a thin adapter.
@@ -72,8 +83,8 @@ Each of these is enforced by a test or is expensive to get wrong.
 **The house failure mode is the silent no-op** — a flag parsed and dropped, a
 setting persisted and ignored, a capability declared and never read.
 `apps/cli/test/unit/architecture/contract-conformance.test.ts` catches some of
-it; the rest is this list. Before calling work done, walk it and say which
-entries applied.
+it; the rest is this list. On a change that adds or alters behaviour, walk it
+before calling the work done and say which entries applied.
 
 - **Declaration → reader.** If you add a flag, config key, capability, or
   contract field, name the code that consumes it. If nothing does, you shipped
@@ -126,41 +137,24 @@ what gives mpv IPC its cancellable deadlines. Do not change APIs for style alone
 
 ## Deep docs
 
-Read one when your change lands in its subject. Not before. Full index with the
-rest of `.docs/`: [.docs/README.md](.docs/README.md).
+`.docs/` holds how the system works and why. Read one when your change lands in
+its subject — not before, and never the directory end to end.
 
-| Changing…                                                        | Read                                                                                                                                                 |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Where feature X lives                                            | [feature-map.md](.docs/feature-map.md)                                                                                                               |
-| Playback flow, provider orchestration, persistence, recovery     | [architecture.md](.docs/architecture.md)                                                                                                             |
-| Which layer or package work belongs in                           | [runtime-boundary-map.md](.docs/runtime-boundary-map.md)                                                                                             |
-| Broad refactors, service extraction, caching                     | [engineering-guide.md](.docs/engineering-guide.md)                                                                                                   |
-| Shell flow, hotkeys, overlays, setup UX                          | [ux-architecture.md](.docs/ux-architecture.md) · [keybindings.md](.docs/keybindings.md)                                                              |
-| Terminal styling and interaction patterns                        | [design-system.md](.docs/design-system.md) · [ui-redesign-playbook.md](.docs/ui-redesign-playbook.md)                                                |
-| Poster previews, Kitty/iTerm2/Sixel output, capability detection | [poster-image-rendering.md](.docs/poster-image-rendering.md)                                                                                         |
-| Adding or hardening a provider                                   | [providers.md](.docs/providers.md) · [provider-intake.md](.docs/provider-intake.md) · [provider-agent-workflow.md](.docs/provider-agent-workflow.md) |
-| A provider shape from scratch                                    | [provider-examples.md](.docs/provider-examples.md)                                                                                                   |
-| Source, quality, audio, subtitle inventory                       | [playback-source-inventory-contract.md](.docs/playback-source-inventory-contract.md)                                                                 |
-| IntroDB/AniSkip, MAL resolution, auto-skip metadata              | [playback-timing-and-aniskip.md](.docs/playback-timing-and-aniskip.md)                                                                               |
-| mpv reconnect on the persistent session path                     | [mpv-in-process-reconnect.md](.docs/mpv-in-process-reconnect.md)                                                                                     |
-| Debug logs, diagnostics panels, provider tracing                 | [diagnostics-guide.md](.docs/diagnostics-guide.md)                                                                                                   |
-| Broad reliability or debugging sweeps                            | [debugging-map.md](.docs/debugging-map.md)                                                                                                           |
-| Provider health, cache layers, reset behavior                    | [title-provider-health-and-cache-reset.md](.docs/title-provider-health-and-cache-reset.md)                                                           |
-| `/discover` and recommendations                                  | [recommendations-and-discover.md](.docs/recommendations-and-discover.md)                                                                             |
-| Share URLs, `/share`, `/watch`, `kunai --open`                   | [share-links.md](.docs/share-links.md)                                                                                                               |
-| Discord presence and social status                               | [presence-integrations.md](.docs/presence-integrations.md)                                                                                           |
-| Download, offline library, setup, onboarding                     | [download-offline-onboarding.md](.docs/download-offline-onboarding.md)                                                                               |
-| AniList/TMDB sync, the outbox, tracker auth                      | [tracker-sync.md](.docs/tracker-sync.md)                                                                                                             |
-| Tests, test seams, new runtime behaviors                         | [testing-strategy.md](.docs/testing-strategy.md)                                                                                                     |
-| CI, Husky, lint-staged, issue and PR templates                   | [repo-infrastructure.md](.docs/repo-infrastructure.md) · [lint-policy.md](.docs/lint-policy.md)                                                      |
-| Release gating                                                   | [release-reliability-gate.md](.docs/release-reliability-gate.md)                                                                                     |
-| Setup, local run flow, troubleshooting                           | [quickstart.md](.docs/quickstart.md)                                                                                                                 |
-| Product vocabulary (Watchlist / Playlists / Up Next / …)         | [adr/0001-personal-media-vocabulary.md](.docs/adr/0001-personal-media-vocabulary.md)                                                                 |
-| Parked surfaces — web, desktop, daemon, cache direction          | [architecture-v2.md](.docs/architecture-v2.md)                                                                                                       |
+Four entry points cover most work:
 
-Per-feature product rules live in [.docs/features/](.docs/features/); provider
-research dossiers in [.docs/provider-dossiers/](.docs/provider-dossiers/); local
-UI prototype harnesses in [.docs/prototypes.md](.docs/prototypes.md).
+- [feature-map.md](.docs/feature-map.md) — where feature X lives
+- [architecture.md](.docs/architecture.md) — playback flow, provider
+  orchestration, persistence, recovery
+- [runtime-boundary-map.md](.docs/runtime-boundary-map.md) — which layer or
+  package work belongs in
+- [glossary.md](.docs/glossary.md) — what we call things; product vocabulary is
+  pinned by [adr/0001](.docs/adr/0001-personal-media-vocabulary.md)
+
+Everything else routes from [.docs/README.md](.docs/README.md) — the full index,
+grouped by subsystem, contract, and working-on-it, and the one that gets updated
+when `.docs/` moves. Per-feature product rules live in
+[.docs/features/](.docs/features/); provider research dossiers in
+[.docs/provider-dossiers/](.docs/provider-dossiers/).
 
 ## Where things are written down
 
@@ -185,8 +179,10 @@ one roadmap row for the residue. A merged PR is the implementation record — do
 not keep a second checklist beside it. Doc rot here is almost always a directory
 move that leaves routing docs pointing at the old layout, so
 `bun run verify:doc-paths` checks every backticked path and relative link in
-`AGENTS.md` and `.docs/`. Cite a removed file only with wording that says so
-("the old `x.ts` was removed") — the verifier keys off that.
+`AGENTS.md` and `.docs/`, plus the mechanical half of the roadmap index: every
+`.plans/*.md` must be linked, and a LANDED row must point into `.archive/`. Cite
+a removed file only with wording that says so ("the old `x.ts` was removed") —
+the verifier keys off that.
 
 ## User data
 
@@ -204,6 +200,21 @@ legacy implementation details.
 Issues are GitHub Issues on `KitsuneKode/kunai` — workflow in
 [.docs/agents/issue-tracker.md](.docs/agents/issue-tracker.md), labels in
 [.docs/agents/triage-labels.md](.docs/agents/triage-labels.md). Domain language
-is [.docs/agents/domain.md](.docs/agents/domain.md). Kunai is single-context:
+is [.docs/agents/domain.md](.docs/agents/domain.md). Before filing an audit
+finding — or acting on one someone else filed — read
+[.docs/agents/audit-findings-bar.md](.docs/agents/audit-findings-bar.md): about a
+third of the findings this repo has received were true about a line and wrong
+about what it does. Kunai is single-context:
 one system-wide ADR set in `.docs/adr/`, no per-package context files, and new
 ADRs take the next sequential number.
+
+<!-- BEGIN:turborepo-agent-rules -->
+
+# This is NOT the Turborepo you know
+
+Turborepo configuration, task behavior, and CLI commands can vary between installed versions and may differ from your training data. Resolve the `turbo` package from this file's directory or relevant workspace; in monorepos, it may not be visible from the repository root. For example, run `node -p "require.resolve('turbo/package.json')"` from a workspace that depends on `turbo`.
+
+Read `docs/README.md` inside that installed package first, then read the relevant pages from its `docs/` directory before changing Turborepo configuration or commands. Heed deprecation notices. These bundled docs match the installed package version and are available without network access.
+
+This block is written and re-added by `turbo` before repository-scoped commands when an AI agent is detected. In the Turborepo source repository, its template is defined in `crates/turborepo-cli/src/cli/agent_guidance.rs`. Removing the managed block while updates are enabled means a later qualifying invocation will add it again. Set `"agentGuidance": false` in the root `turbo.json` or `turbo.jsonc` to opt out; this does not remove an existing block. Keep the block committed with your work to avoid an uncommitted change on the next agent invocation.
+<!-- END:turborepo-agent-rules -->

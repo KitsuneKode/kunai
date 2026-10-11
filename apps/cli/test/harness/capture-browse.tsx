@@ -4,7 +4,7 @@ import React from "react";
 
 import { captureSurface } from "./render-capture";
 
-function BrowseIdleReturnLoopPreview() {
+export function BrowseIdleReturnLoopPreview() {
   const model = buildBrowseIdleReturnLoopModel(
     {
       continueWatching: {
@@ -35,6 +35,8 @@ function BrowseIdleReturnLoopPreview() {
   );
 }
 
-await captureSurface("browse-idle-return-loop", <BrowseIdleReturnLoopPreview />);
-console.log("captured browse idle return loop");
-process.exit(0);
+if (import.meta.main) {
+  await captureSurface("browse-idle-return-loop", <BrowseIdleReturnLoopPreview />);
+  console.log("captured browse idle return loop");
+  process.exit(0);
+}

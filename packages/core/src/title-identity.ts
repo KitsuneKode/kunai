@@ -64,8 +64,9 @@ export function resolveCanonicalCatalogTitleId(
 /** Canonical title id for history / prefs / continuation lookups (alias for clarity at call sites). */
 export function resolveHistoryLookupTitleId(
   title: Pick<TitleIdentityInput, "id" | "kind" | "externalIds">,
+  options?: CanonicalTitleIdOptions,
 ): string {
-  return resolveCanonicalCatalogTitleId(title);
+  return resolveCanonicalCatalogTitleId(title, options);
 }
 
 export function looksLikeOpaqueProviderNativeId(
@@ -87,7 +88,7 @@ export function mergeProviderNativeId(
   const trimmed = nativeId.replace(/^allanime:/, "").trim();
   if (!trimmed) return externalIds;
 
-  const providerKey = providerId as ProviderId;
+  const providerKey = providerId;
   const existing = externalIds?.providerNativeIds?.[providerKey];
   if (existing === trimmed) return externalIds;
 
@@ -106,7 +107,7 @@ export function resolvePersistedHistoryTitle(
   providerId: string,
 ): TitleIdentityInput {
   const canonicalId = resolveCanonicalCatalogTitleId(title);
-  const storedNative = title.externalIds?.providerNativeIds?.[providerId as ProviderId];
+  const storedNative = title.externalIds?.providerNativeIds?.[providerId];
   const sessionNative =
     storedNative ??
     (title.id !== canonicalId && looksLikeOpaqueProviderNativeId(title.id, title.externalIds)
@@ -157,9 +158,7 @@ export function resolveProviderTitleIdentity(
   const imdbId = externalIds?.imdbId;
   const malId = externalIds?.malId;
   const storedNative =
-    providerId !== undefined
-      ? externalIds?.providerNativeIds?.[providerId as ProviderId]
-      : undefined;
+    providerId !== undefined ? externalIds?.providerNativeIds?.[providerId] : undefined;
 
   let resolvedId = title.id;
   switch (catalogIdentity) {
@@ -228,7 +227,7 @@ function compactExternalIds(externalIds: ProviderExternalIds): ProviderExternalI
     ...(externalIds.youtubeId ? { youtubeId: externalIds.youtubeId } : {}),
     ...(externalIds.youtubeChannelId ? { youtubeChannelId: externalIds.youtubeChannelId } : {}),
     ...(externalIds.youtubePlaylistId ? { youtubePlaylistId: externalIds.youtubePlaylistId } : {}),
-    ...(providerNativeIds ? { providerNativeIds } : {}),
+    ...(providerNativeIds ? { providerNativeIds } : null),
   };
   return Object.keys(compact).length > 0 ? compact : undefined;
 }
@@ -241,7 +240,7 @@ function compactProviderNativeIds(
   for (const [providerId, nativeId] of Object.entries(providerNativeIds)) {
     const trimmed = nativeId?.trim();
     if (!trimmed) continue;
-    compact[providerId as ProviderId] = trimmed;
+    compact[providerId] = trimmed;
   }
   return Object.keys(compact).length > 0 ? compact : undefined;
 }

@@ -1,4 +1,5 @@
 import { decodeMarkupEntities, markupToPlainText, stripScriptBlocks } from "../shared/markup-text";
+import { chooseProviderSearchMatch, normalizeTitleKey } from "../shared/provider-title-match";
 
 /**
  * Pure AniDB browse-markup parsing.
@@ -102,22 +103,20 @@ export function parseAnidbBrowseHtml(html: string): readonly AnidbSearchResult[]
 export function chooseAnidbSearchMatch(
   query: string,
   results: readonly AnidbSearchResult[],
+  options: {
+    /**
+     * Drop the "best guess is the first card" fallback and return `null` when
+     * no title actually matches.
+     *
+     * A user who typed a query is well served by the top card even on a weak
+     * match — they can see what they got. Code repairing a *persisted* id has
+     * no such reader: substituting the first search result there swaps the show
+     * the user previously chose for an unrelated one, silently.
+     */
+    readonly requireTitleEvidence?: boolean;
+  } = {},
 ): AnidbSearchResult | null {
-  const first = results[0] ?? null;
-  const normalizedQuery = normalizeTitle(query);
-  if (!first || !normalizedQuery) return first;
-
-  const exact = results.find((result) => normalizeTitle(result.title) === normalizedQuery);
-  if (exact) return exact;
-
-  const prefixed = results.find((result) => {
-    const normalizedTitle = normalizeTitle(result.title);
-    return (
-      normalizedTitle.startsWith(`${normalizedQuery} `) ||
-      normalizedQuery.startsWith(`${normalizedTitle} `)
-    );
-  });
-  return prefixed ?? first;
+  return chooseProviderSearchMatch(query, results, options);
 }
 
 /**
@@ -181,7 +180,7 @@ function extractAnidbCardFields(
   const rating = ratingMatch ? Number(ratingMatch[1]) : undefined;
   return {
     posterUrl: extractAnidbPosterUrl(body),
-    ...(rating !== undefined && Number.isFinite(rating) ? { rating } : {}),
+    ...(rating !== undefined && Number.isFinite(rating) ? { rating } : null),
     ...(/\bmovie\b/i.test(remainder) ? { kind: "movie" as const } : {}),
   };
 }
@@ -230,8 +229,8 @@ function extractAttribute(
 }
 
 function normalizeTitle(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+  // Shared normalizer: NFKD + Unicode letter/number classes + format-qualifier
+  // stripping ("(TV)"), so it agrees with the catalog matcher in
+  // shared/provider-title-match.ts.
+  return normalizeTitleKey(value);
 }

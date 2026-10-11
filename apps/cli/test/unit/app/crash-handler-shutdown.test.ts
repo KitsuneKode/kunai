@@ -38,6 +38,7 @@ function createDeps(calls: string[], exitCodes: number[]): MainShutdownDeps {
         beginShutdown: () => calls.push("controller:begin"),
         releaseExternalResources: async () => void calls.push("controller:release"),
       }) as never,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     getContainer: () => container as never,
     shutdownShell: async () => void calls.push("shell:restore"),
     awaitLifetimeLock: async () => void calls.push("lock:awaited"),

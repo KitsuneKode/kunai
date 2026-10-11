@@ -34,6 +34,7 @@ function fakeContainer(calls: string[], options: { failDataClose?: boolean } = {
         if (options.failDataClose) throw new Error("data close failed");
       },
     } as never,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     cacheDb: { close: () => calls.push("cache:close") } as never,
     downloadResolveAbort: null,
   });

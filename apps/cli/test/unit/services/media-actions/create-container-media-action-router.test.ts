@@ -51,6 +51,7 @@ describe("createContainerMediaActionRouter", () => {
       },
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const router = createContainerMediaActionRouter(container as never, {
       playlists: {
         addToPlaylist: async () => {
@@ -148,6 +149,7 @@ describe("createContainerMediaActionRouter", () => {
       },
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const router = createContainerMediaActionRouter(container as never, {
       downloads: {
         queueDownload: (item) => {

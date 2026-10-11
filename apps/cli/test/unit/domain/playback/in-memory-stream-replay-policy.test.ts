@@ -19,6 +19,7 @@ describe("in-memory stream replay policy", () => {
   test("rejects missing or zero timestamps", () => {
     const now = 1_700_000_000_000;
     expect(isStreamTimestampFresh({ timestamp: 0 }, now)).toBe(false);
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     expect(isStreamTimestampFresh({ timestamp: undefined as never }, now)).toBe(false);
   });
 });

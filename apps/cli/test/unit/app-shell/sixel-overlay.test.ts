@@ -181,4 +181,38 @@ describe("sixel overlay placement", () => {
     expect(writes).toHaveLength(2);
     expect(writes[1]).toContain("pixels");
   });
+
+  test("a stale mount cannot unregister a survivor under a shared slot id", async () => {
+    const writes: string[] = [];
+    overlayTesting.runtime.isWindows = () => false;
+    overlayTesting.runtime.write = (text) => {
+      writes.push(text);
+    };
+    const manager = new SixelOverlayManager();
+    const rect = { x: 1, y: 2, width: 3, height: 4 };
+
+    // Loading rail and post-play mount the same slotted id in turn.
+    manager.register("playing-rail", { rect, sixel: "pixels", owner: "mount-1" });
+    await Bun.sleep(5);
+    manager.register("playing-rail", { rect, sixel: "pixels", owner: "mount-2" });
+    await Bun.sleep(5);
+    writes.length = 0;
+
+    // The first mount unmounts: the survivor's registration must stand, so
+    // the next Ink frame still repaints it instead of going dark.
+    manager.unregister("playing-rail", "mount-1");
+    manager.afterInkRender();
+    await Bun.sleep(5);
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain("pixels");
+
+    // The owner itself can still release.
+    manager.unregister("playing-rail", "mount-2");
+    await Bun.sleep(5);
+    writes.length = 0;
+    manager.afterInkRender();
+    await Bun.sleep(5);
+    expect(writes).toHaveLength(0);
+  });
 });

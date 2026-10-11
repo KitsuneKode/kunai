@@ -51,10 +51,37 @@ passing here is not evidence that a release works.
 
 ## Scenarios
 
-| Scenario                 | Covers                                               |
-| ------------------------ | ---------------------------------------------------- |
-| `npm-contamination`      | npm global install, then native install over the top |
-| `source-data-separation` | Source checkout vs runtime data/config/cache roots   |
+| Scenario                 | Covers                                                                     |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `npm-contamination`      | npm global install, then native install over the top                       |
+| `source-data-separation` | Source checkout vs runtime roots; successful monorepo metadata publication |
+| `source-metadata`        | Source manifest selection and validation in Bash and PowerShell            |
+
+### Focused metadata checks
+
+`focused.mjs` extracts the real installer functions without executing either
+installer's entry point. It creates a disposable fixture under the system temp
+directory and isolates HOME, XDG, APPDATA, LOCALAPPDATA and temp paths.
+Run it from the checkout with Node (and optionally PowerShell); choose a sandbox
+parent via TMPDIR (or TEMP on Windows):
+
+```sh
+TMPDIR=/tmp/opencode node test/install/focused.mjs . bash powershell
+```
+
+Metadata checks cover monorepo and legacy layouts, invalid names/versions, and
+refusal to fall back when the CLI workspace exists but has broken metadata.
+Source installs read `apps/cli/package.json` when the CLI workspace exists;
+otherwise they read the legacy root `package.json`. The selected manifest must
+name `@kitsunekode/kunai` and provide a valid version.
+
+The Docker image runs Bash checks and reports PowerShell as **SKIP** when
+`pwsh` is absent. The same focused checks run with `pwsh` on Linux or Windows;
+they do not claim coverage of Windows binary activation or registry behavior.
+Each Docker scenario uses a unique `/tmp/opencode` fixture with dummy profile,
+runtime, npm-prefix, and temp directories on an executable disposable tmpfs.
+The source-data scenario additionally exercises full Bash installation with
+stub Git/Bun and asserts the resulting ownership manifest.
 
 ### npm-contamination
 

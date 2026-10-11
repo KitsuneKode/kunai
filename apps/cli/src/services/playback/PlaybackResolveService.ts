@@ -27,6 +27,7 @@ import { isVideasyFamilyProvider } from "@kunai/core";
 import {
   resolveProviderCatalogIdentity,
   type ProviderEngine,
+  type CoreProviderModule,
   type ProviderEngineEvent,
   type ProviderEngineResolveAttempt,
   type ProviderPriorityInput,
@@ -40,13 +41,13 @@ import type { CatalogCrosswalkRepository, ProviderHealthRepository } from "@kuna
 import type {
   MediaKind,
   ProviderHealthDelta,
-  ProviderId,
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderSelectionDecision,
   StartupPriority,
 } from "@kunai/types";
 
+import { getBoundNetworkObserver } from "../network/network-observation";
 import { computeProviderHealthUpdate } from "./provider-health-observation";
 import { resolveEffectiveProviderHealth } from "./provider-health-policy";
 import { resolveProviderTotalDeadlineMs } from "./provider-resolve-budget-policy";
@@ -211,8 +212,11 @@ export class PlaybackResolveService {
       readonly providerHealth?: ProviderHealthRepository;
       readonly streamHealth?: StreamHealthChecker;
       readonly streamHealthService?: StreamHealthService;
-      readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete">;
+      readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete"> &
+        Partial<Pick<SourceInventoryService, "getEntry">>;
       readonly getProviderPriority?: () => ProviderPriorityInput;
+      /** Memoized priority ordering — persists across per-resolve service instances. */
+      readonly getOrderedModules?: () => readonly CoreProviderModule[];
       titleProviderHealth?: Pick<
         TitleProviderHealthService,
         "recordFailure" | "recordCleanSuccess"
@@ -220,6 +224,8 @@ export class PlaybackResolveService {
         Partial<Pick<TitleProviderHealthService, "getSwitchSuggestion">>;
       readonly endpointHealth?: Pick<ProviderEndpointHealthService, "isQuarantined">;
       readonly titlePlaybackSource?: Pick<TitlePlaybackSourceService, "delete">;
+      /** Test seam for compressing the total-resolve deadline; production always
+       *  takes the `resolveProviderTotalDeadlineMs` fallback below. */
       readonly resolveTotalDeadlineMs?: (priority: StartupPriority) => number;
       /** Crosswalk lookup for cross-lane episode maps (ARM tmdb-season). */
       readonly catalogCrosswalk?: Pick<CatalogCrosswalkRepository, "get">;
@@ -296,6 +302,16 @@ export class PlaybackResolveService {
       input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
     }
 
+    // The resolve deadline covers the whole resolve — including the cache and
+    // inventory health probes below — so callers see one bound, not a budget
+    // that starts only once the provider engine runs.
+    const startupPriority = input.startupPriority ?? "balanced";
+    const resolveSignal = withTimeoutSignal(
+      input.signal,
+      this.deps.resolveTotalDeadlineMs?.(startupPriority) ??
+        resolveProviderTotalDeadlineMs(startupPriority),
+    );
+
     const cacheKey = this.buildCacheKey(input, input.providerId);
     // Cache reads are best-effort: a failing store (disk full, corrupt DB) must
     // degrade to a live resolve rather than take the whole playback down.
@@ -318,7 +334,7 @@ export class PlaybackResolveService {
     } else if (cachedStream && input.preferFreshStream !== true) {
       const health = await this.checkCachedStreamHealth(cachedStream, {
         force: input.forceHealthCheck === true,
-        signal: input.signal,
+        signal: resolveSignal,
         phase: "cache-revalidate",
       });
       if (health.checked) {
@@ -382,7 +398,8 @@ export class PlaybackResolveService {
       qualityPreference: input.qualityPreference,
       startupPriority: input.startupPriority,
     };
-    const inventoryResult = await this.readSourceInventory(inventoryInput);
+    const inventoryEntry = await this.readSourceInventory(inventoryInput);
+    const inventoryResult = inventoryEntry?.inventory ?? null;
     if (inventoryResult && inventoryMatchesSelection(inventoryResult, input)) {
       if (
         isVideasyFamilyProvider(input.providerId) &&
@@ -406,9 +423,20 @@ export class PlaybackResolveService {
         });
         if (inventoryStream) {
           input.onEvent?.({ type: "source-inventory-hit", providerId: input.providerId });
-          const health = await this.checkCachedStreamHealth(inventoryStream, {
-            force: true,
-            signal: input.signal,
+          // Stamp the row's real age so the health plan's staleness window can
+          // skip probing a fresh entry; `force` survives for ports that cannot
+          // report the row's age — and for a corrupt timestamp, so the probe
+          // stays mandatory rather than depending on NaN comparison semantics.
+          const inventoryCreatedMs =
+            inventoryEntry?.createdAt !== undefined
+              ? Date.parse(inventoryEntry.createdAt)
+              : Number.NaN;
+          const agedStream = Number.isFinite(inventoryCreatedMs)
+            ? { ...inventoryStream, timestamp: inventoryCreatedMs }
+            : inventoryStream;
+          const health = await this.checkCachedStreamHealth(agedStream, {
+            force: !Number.isFinite(inventoryCreatedMs),
+            signal: resolveSignal,
             phase: "cache-revalidate",
           });
           if (health.checked) {
@@ -472,7 +500,7 @@ export class PlaybackResolveService {
           ? this.deps.titleProviderHealth.getSwitchSuggestion(input.title.id, input.providerId)
           : null;
     const candidatePlan = planProviderCandidates({
-      primaryProviderId: input.providerId as ProviderId,
+      primaryProviderId: input.providerId,
       mediaKind: resolveInput.mediaKind,
       recoveryMode,
       modules: this.getPriorityOrderedModules(),
@@ -557,13 +585,6 @@ export class PlaybackResolveService {
       candidateCount: compatibleIds.length,
     });
 
-    const startupPriority = input.startupPriority ?? "balanced";
-    const resolveSignal = withTimeoutSignal(
-      input.signal,
-      this.deps.resolveTotalDeadlineMs?.(startupPriority) ??
-        resolveProviderTotalDeadlineMs(startupPriority),
-    );
-
     let engineResult = await this.deps.engine.resolveWithFallback(
       resolveInput,
       compatibleIds,
@@ -627,13 +648,18 @@ export class PlaybackResolveService {
       input.correlation,
     );
 
-    // Persist provider health deltas from all attempts
-    for (const attempt of engineResult.attempts) {
-      if (
-        attempt.result?.healthDelta &&
-        !attempt.result.failures.some((failure) => isOfflineNetworkFailure(failure))
-      ) {
-        this.persistProviderHealthDelta(attempt.result.healthDelta);
+    // Persist provider health deltas from all attempts — except on a cancelled
+    // resolve: a caller abort is a decision, not provider-health evidence, and
+    // an attempt that settled while the abort raced can still carry a stale
+    // healthDelta that would mark a healthy provider down.
+    if (!resolveSignal.aborted) {
+      for (const attempt of engineResult.attempts) {
+        if (
+          attempt.result?.healthDelta &&
+          !attempt.result.failures.some((failure) => isOfflineNetworkFailure(failure))
+        ) {
+          this.persistProviderHealthDelta(attempt.result.healthDelta);
+        }
       }
     }
 
@@ -648,19 +674,23 @@ export class PlaybackResolveService {
           );
         }
         const resolvedProviderId = engineResult.providerId ?? input.providerId;
-        const primaryFailureKind = titleProviderFailureFromAttempts(
-          engineResult.attempts,
-          input.providerId,
-        );
-        if (primaryFailureKind && resolvedProviderId !== input.providerId) {
-          this.deps.titleProviderHealth?.recordFailure(
-            input.title.id,
+        // Title-level provider health is evidence too: a cancelled resolve is
+        // neither a success nor a failure worth remembering.
+        if (!resolveSignal.aborted) {
+          const primaryFailureKind = titleProviderFailureFromAttempts(
+            engineResult.attempts,
             input.providerId,
-            resolvedProviderId,
-            primaryFailureKind,
           );
-        } else if (resolvedProviderId === input.providerId) {
-          this.deps.titleProviderHealth?.recordCleanSuccess(input.title.id, input.providerId);
+          if (primaryFailureKind && resolvedProviderId !== input.providerId) {
+            this.deps.titleProviderHealth?.recordFailure(
+              input.title.id,
+              input.providerId,
+              resolvedProviderId,
+              primaryFailureKind,
+            );
+          } else if (resolvedProviderId === input.providerId) {
+            this.deps.titleProviderHealth?.recordCleanSuccess(input.title.id, input.providerId);
+          }
         }
         const commitDecision = this.resolveCommitDecision(input, resolveSignal);
 
@@ -691,6 +721,7 @@ export class PlaybackResolveService {
                 : null,
               result: a.result,
               failure: a.failure,
+              aborted: a.aborted,
             })),
             providerTimeline,
             cacheStatus: "miss",
@@ -700,10 +731,9 @@ export class PlaybackResolveService {
       }
     }
 
-    const primaryFailureKind = titleProviderFailureFromAttempts(
-      engineResult.attempts,
-      input.providerId,
-    );
+    const primaryFailureKind = resolveSignal.aborted
+      ? null
+      : titleProviderFailureFromAttempts(engineResult.attempts, input.providerId);
     if (primaryFailureKind) {
       this.deps.titleProviderHealth?.recordFailure(
         input.title.id,
@@ -725,6 +755,7 @@ export class PlaybackResolveService {
           stream: null,
           result: a.result,
           failure: a.failure,
+          aborted: a.aborted,
         })),
         providerTimeline,
         cacheStatus: "hit",
@@ -740,6 +771,7 @@ export class PlaybackResolveService {
         stream: null,
         result: a.result,
         failure: a.failure,
+        aborted: a.aborted,
       })),
       providerTimeline,
       cacheStatus: "miss",
@@ -748,6 +780,10 @@ export class PlaybackResolveService {
   }
 
   private getPriorityOrderedModules() {
+    // Bootstrap supplies a memoized ordering keyed on the priority lists —
+    // this service is constructed per resolve, so the cache must live in a
+    // dep, not a field. Fall back to computing when the dep is absent.
+    if (this.deps.getOrderedModules) return this.deps.getOrderedModules();
     const priority = this.deps.getProviderPriority?.();
     return priority
       ? orderProviderModulesByPriority(this.deps.engine.modules, priority)
@@ -772,6 +808,16 @@ export class PlaybackResolveService {
 
   private persistProviderHealthDelta(delta: ProviderHealthDelta): void {
     if (!this.deps.providerHealth) return;
+    // A provably-shaky uplink makes timeout/failure evidence unreliable — the
+    // provider may be fine while the local network drops packets. Counting
+    // those attempts would degrade a healthy provider (and eventually fire the
+    // default-provider warning) for a problem that is ours, not theirs.
+    // Success and stalled still write: playback reaching the wire is real
+    // evidence either way, and success is how a provider heals back.
+    if (delta.outcome === "failure" || delta.outcome === "timeout") {
+      const networkStatus = getBoundNetworkObserver()?.connectivity.getSnapshot().status;
+      if (networkStatus === "limited" || networkStatus === "offline") return;
+    }
     try {
       const existing = this.deps.providerHealth.get(delta.providerId);
       this.deps.providerHealth.set(computeProviderHealthUpdate(existing, delta));
@@ -789,7 +835,7 @@ export class PlaybackResolveService {
       input.providerId,
       input.selectedSourceId,
     )) {
-      if (!this.deps.endpointHealth.isQuarantined(input.providerId as ProviderId, endpoint)) {
+      if (!this.deps.endpointHealth.isQuarantined(input.providerId, endpoint)) {
         continue;
       }
       await this.deps.titlePlaybackSource
@@ -892,9 +938,14 @@ export class PlaybackResolveService {
    */
   private async readSourceInventory(
     input: SourceInventoryCacheInput,
-  ): Promise<ProviderResolveResult | null> {
+  ): Promise<{ readonly inventory: ProviderResolveResult; readonly createdAt?: string } | null> {
     try {
-      return (await this.deps.sourceInventory?.get(input)) ?? null;
+      if (this.deps.sourceInventory?.getEntry) {
+        const entry = (await this.deps.sourceInventory.getEntry(input)) ?? null;
+        return entry ? { inventory: entry.inventory, createdAt: entry.createdAt } : null;
+      }
+      const inventory = (await this.deps.sourceInventory?.get(input)) ?? null;
+      return inventory ? { inventory } : null;
     } catch {
       return null;
     }
@@ -1068,6 +1119,16 @@ function buildProviderTimeline(
       });
       lastFailureClass = null;
       lastFailedProviderId = null;
+      return;
+    }
+
+    if (attempt.aborted) {
+      timeline.record({
+        type: "attempt-aborted",
+        attemptId,
+        providerId: attempt.providerId,
+        at: nextTimelineOrder(),
+      });
       return;
     }
 

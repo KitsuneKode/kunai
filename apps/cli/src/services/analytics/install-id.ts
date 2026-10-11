@@ -6,7 +6,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 
 const MAC_RE = /^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
 
-export function isMacShaped(value: string): boolean {
+export function isMacInstallId(value: string): boolean {
   return MAC_RE.test(value.trim());
 }
 
@@ -15,7 +15,7 @@ export function looksLikeHostnameOrUsername(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
   if (UUID_RE.test(trimmed)) return false;
-  if (isMacShaped(trimmed)) return true;
+  if (isMacInstallId(trimmed)) return true;
   // Hostnames / usernames are typically short labels without UUID structure.
   return !trimmed.includes(" ") && /^[A-Za-z0-9._-]+$/.test(trimmed);
 }
@@ -59,7 +59,7 @@ export function ensureInstallId(
   const existing = typeof config.installId === "string" ? config.installId.trim() : "";
   if (
     isValidInstallId(existing) &&
-    !isMacShaped(existing) &&
+    !isMacInstallId(existing) &&
     !looksLikeHostnameOrUsername(existing)
   ) {
     return existing;

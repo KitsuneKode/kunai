@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-18"
+lastReviewed: "2026-10-11"
 ---
 
 # Feature Map
@@ -14,7 +14,7 @@ answer "where does X live" without grepping the whole tree.
 owning code or the doc in the last column. If a row disagrees with the tree, the
 tree is right — fix the row.
 
-Verified against the tree on 2026-08-18. Paths are checked by
+Verified against the tree on 2026-09-01. Paths are checked by
 `bun run verify:doc-paths`.
 
 ## How a session flows
@@ -31,25 +31,27 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 
 ## Launch surface
 
-| Feature                                                             | Owned by                                                               | Docs                                                                                                |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Flag parsing (33 flags)                                             | `apps/cli/src/cli-args.ts`, re-exported as `main.ts` `parseArgs()`     | `docs/users/cli-reference.mdx` (generated from `--help`)                                            |
-| Modes: `-a` anime, `-y` youtube, `-m` minimal, `-z` zen, `-q` quick | `apps/cli/src/app/session/*`                                           | [.plans/kunai-execution-passes-and-cli-modes.md](../.plans/kunai-execution-passes-and-cli-modes.md) |
-| Bootstrap, first run, `--setup`                                     | `apps/cli/src/app/bootstrap/*`                                         | [download-offline-onboarding.md](./download-offline-onboarding.md)                                  |
-| `--open` / `kunai://` protocol                                      | `apps/cli/src/domain/share/*`, `app/bootstrap/resolve-share-target.ts` | [share-links.md](./share-links.md)                                                                  |
-| Container / DI wiring                                               | `apps/cli/src/container/*` (`container.ts` is a barrel)                | [architecture.md](./architecture.md)                                                                |
+| Feature                                                             | Owned by                                                                  | Docs                                                                                                        |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Flag parsing (33 flags)                                             | `apps/cli/src/cli-args.ts`, re-exported as `main.ts` `parseArgs()`        | `docs/users/cli-reference.mdx` (generated from `--help`)                                                    |
+| Modes: `-a` anime, `-y` youtube, `-m` minimal, `-z` zen, `-q` quick | `apps/cli/src/app/session/*`                                              | [.plans/kunai-execution-passes-and-cli-modes.md](../.plans/kunai-execution-passes-and-cli-modes.md)         |
+| Bootstrap, first run, `--setup`                                     | `apps/cli/src/app/bootstrap/*`                                            | [download-offline-onboarding.md](./download-offline-onboarding.md)                                          |
+| `--open` / `kunai://` protocol                                      | `apps/cli/src/domain/share/*`, `app/bootstrap/resolve-share-target.ts`    | [share-links.md](./share-links.md)                                                                          |
+| Container / DI wiring                                               | `apps/cli/src/container/*` (`container.ts` is a barrel)                   | [architecture.md](./architecture.md)                                                                        |
+| Mobile terminal host proof                                          | `apps/mobile/src/entry.ts`, `application/*`, `runtime/{android,ashell}/*` | [mobile-terminal-runtime.md](./mobile-terminal-runtime.md) · [mobile-device-lab.md](./mobile-device-lab.md) |
 
 ## Shell (Ink)
 
-| Feature                                                       | Owned by                                          | Docs                                                                  |
-| ------------------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------- |
-| Command palette, `/` commands                                 | `apps/cli/src/domain/session/command-registry.ts` | [ux-architecture.md](./ux-architecture.md)                            |
-| Keybindings                                                   | `apps/cli/src/app-shell/keybindings.ts`           | [keybindings.md](./keybindings.md)                                    |
-| Shell host, overlays, footer                                  | `apps/cli/src/app-shell/*`                        | [ux-architecture.md](./ux-architecture.md)                            |
-| Pickers (episode, provider, source, quality, audio, subtitle) | `apps/cli/src/app-shell/pickers/*`                | [runtime-boundary-map.md](./runtime-boundary-map.md#picker-ownership) |
-| Settings overlay                                              | `apps/cli/src/app-shell/settings/*`               | [ux-architecture.md](./ux-architecture.md)                            |
-| Theme + design tokens                                         | `packages/design`                                 | [design-system.md](./design-system.md)                                |
-| Poster previews (Kitty / iTerm2 / sixel / half-block)         | `apps/cli/src/image/*`                            | [poster-image-rendering.md](./poster-image-rendering.md)              |
+| Feature                                                       | Owned by                                                                          | Docs                                                                  |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Command palette, `/` commands                                 | `apps/cli/src/domain/session/command-registry.ts`                                 | [ux-architecture.md](./ux-architecture.md)                            |
+| `/guide` discovery overlay                                    | `apps/cli/src/app-shell/guide-model.ts`, `apps/cli/src/app-shell/guide-shell.tsx` | [ux-architecture.md](./ux-architecture.md)                            |
+| Keybindings                                                   | `apps/cli/src/app-shell/keybindings.ts`                                           | [keybindings.md](./keybindings.md)                                    |
+| Shell host, overlays, footer                                  | `apps/cli/src/app-shell/*`                                                        | [ux-architecture.md](./ux-architecture.md)                            |
+| Pickers (episode, provider, source, quality, audio, subtitle) | `apps/cli/src/app-shell/pickers/*`                                                | [runtime-boundary-map.md](./runtime-boundary-map.md#picker-ownership) |
+| Settings overlay                                              | `apps/cli/src/app-shell/settings/*`                                               | [ux-architecture.md](./ux-architecture.md)                            |
+| Theme + design tokens                                         | `packages/design`                                                                 | [design-system.md](./design-system.md)                                |
+| Poster previews (Kitty / iTerm2 / sixel / half-block)         | `apps/cli/src/image/*`                                                            | [poster-image-rendering.md](./poster-image-rendering.md)              |
 
 ## Search and catalog
 
@@ -80,18 +82,18 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 
 ## Playback
 
-| Feature                                    | Owned by                                                                                                            | Docs                                                                             |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Playback state machine                     | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                                        | [architecture.md](./architecture.md)                                             |
-| mpv launch + IPC (socket / named pipe)     | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                                | [quickstart.md](./quickstart.md)                                                 |
-| Persistent session + autoplay              | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                                 | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
-| Intro/credits auto-skip (IntroDB, AniSkip) | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                                | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
-| Timing sources and merge                   | `apps/cli/src/infra/timing/*` — `PlaybackTimingAggregator` merges IntroDB, AniSkip, and provider-native timings     | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
-| Subtitles                                  | `apps/cli/src/subtitle.ts`                                                                                          | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
-| Recovery / fallback / `/recover`           | `apps/cli/src/domain/recovery/*`                                                                                    | [debugging-map.md](./debugging-map.md)                                           |
-| Post-playback actions                      | `apps/cli/src/app/post-play/*`                                                                                      | [ux-architecture.md](./ux-architecture.md)                                       |
-| Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — playable refs, progress/completion policy, problem classification, local streams | [architecture.md](./architecture.md)                                             |
-| Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                             | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
+| Feature                                    | Owned by                                                                                                        | Docs                                                                             |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Playback state machine                     | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                                    | [architecture.md](./architecture.md)                                             |
+| mpv launch + IPC (socket / named pipe)     | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                            | [quickstart.md](./quickstart.md)                                                 |
+| Persistent session + autoplay              | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                             | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
+| Intro/credits auto-skip (IntroDB, AniSkip) | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                            | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
+| Timing sources and merge                   | `apps/cli/src/infra/timing/*` — `PlaybackTimingAggregator` merges IntroDB, AniSkip, and provider-native timings | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
+| Subtitles                                  | `apps/cli/src/subtitle.ts`                                                                                      | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
+| Recovery / fallback / `/recover`           | `apps/cli/src/domain/recovery/*`                                                                                | [debugging-map.md](./debugging-map.md)                                           |
+| Post-playback actions                      | `apps/cli/src/app/post-play/*`                                                                                  | [ux-architecture.md](./ux-architecture.md)                                       |
+| Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — progress/completion policy, problem classification, local streams            | [architecture.md](./architecture.md)                                             |
+| Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                         | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
 
 ## Library and personal state
 
@@ -127,7 +129,7 @@ Do not reuse these nouns for anything else.
 | Usage analytics (opt-in)              | `apps/cli/src/services/analytics/*`, `apps/cli/src/domain/analytics/*`, `apps/analytics-ingest` | [analytics-privacy-contract.md](./analytics-privacy-contract.md)                                                 |
 | Discord Rich Presence                 | `apps/cli/src/services/presence/*`                                                              | [presence-integrations.md](./presence-integrations.md)                                                           |
 | `kunai completion <shell>`            | `apps/cli/src/services/completion/*`                                                            | [repo-infrastructure.md](./repo-infrastructure.md)                                                               |
-| Update check                          | `apps/cli/src/services/update/*`                                                                | [release-reliability-gate.md](./release-reliability-gate.md)                                                     |
+| Update check                          | `apps/cli/src/services/update/*` (`version-display.ts` formats `--version`)                     | [release-reliability-gate.md](./release-reliability-gate.md)                                                     |
 | Installers, binaries, npm packages    | `install.sh`, `install.ps1`, `apps/cli/scripts/build*.ts`, `scripts/publish-npm-release.ts`     | [repo-infrastructure.md](./repo-infrastructure.md), [release-reliability-gate.md](./release-reliability-gate.md) |
 
 ## Cross-cutting plumbing
@@ -178,13 +180,13 @@ Dependency direction between these is enforced — see
 Present in the tree, deliberately not wired into production. Do not cite these
 as capabilities.
 
-| Path                                                  | What it is                                                           |
-| ----------------------------------------------------- | -------------------------------------------------------------------- |
-| `.archive/legacy/apps/cli/src/browser/*`              | Playwright interception reference; awaiting `@kunai/runtime-browser` |
-| `.archive/legacy/apps/cli/src/providers/*`            | Pre-`packages/providers` provider reference                          |
-| `.reference/experiments/*`                            | Provider research lab and scratchpads                                |
-| `packages/providers/src/cineby`, `rgshows`, `vidrock` | Modules that exist but are not in `loadProductionProviderModules()`  |
-| `apps/docs`                                           | The public docs site — content, not runtime                          |
+| Path                                       | What it is                                                           |
+| ------------------------------------------ | -------------------------------------------------------------------- |
+| `.archive/legacy/apps/cli/src/browser/*`   | Playwright interception reference; awaiting `@kunai/runtime-browser` |
+| `.archive/legacy/apps/cli/src/providers/*` | Pre-`packages/providers` provider reference                          |
+| `.reference/experiments/*`                 | Provider research lab and scratchpads                                |
+| `packages/providers/src/cineby`, `rgshows` | Modules that exist but are not in `loadProductionProviderModules()`  |
+| `apps/docs`                                | The public docs site — content, not runtime                          |
 
 Active runtime code must not import any of the first three; the boundary test
 enforces it.

@@ -156,6 +156,7 @@ test("a fresh install that never reaches consent stays unset, with no install id
   const realUpdate = container.config.update.bind(container.config);
   container.config.update = async (patch: Record<string, unknown>) => {
     patches.push(patch);
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     return realUpdate(patch as never);
   };
 

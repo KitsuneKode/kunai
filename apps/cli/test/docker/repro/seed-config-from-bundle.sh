@@ -58,9 +58,9 @@ SETTINGS_JSON="$(jq -c '
     {
       defaultMode, provider, animeProvider, youtubeProvider,
       providerPriority, animeProviderPriority, youtubeProviderPriority,
-      subLang, animeLang, animeLanguageProfile, seriesLanguageProfile,
+      animeLanguageProfile, seriesLanguageProfile,
       movieLanguageProfile, youtubeLanguageProfile,
-      animeTitlePreference, headless, showMemory, autoNext,
+      animeTitlePreference, showMemory, autoNext,
       autoplayRecommendations, resumeStartChoicePrompt,
       skipRecap, skipIntro, skipPreview, skipCredits,
       footerHints, quitNearEndBehavior, continueSourcePreference,
@@ -68,13 +68,13 @@ SETTINGS_JSON="$(jq -c '
       mpvInProcessStreamReconnectMaxAttempts,
       discoverShowOnStartup, discoverMode, discoverItemLimit,
       recommendationRailEnabled, showWatchTimeStats,
-      minimalMode, zenMode, powerSaverMode, powerSaverAllowManualArtwork,
+      minimalMode, zenMode, powerSaverMode,
       presenceProvider, presencePrivacy,
-      downloadsEnabled, offlineMode, autoDownload, autoDownloadNextCount,
+      downloadsEnabled, offlineMode,
       maxConcurrentDownloads, defaultDownloadQuality, autoCleanupWatched,
-      recoveryMode, startupPriority, artworkPreviewsEnabled,
+      recoveryMode, startupPriority,
       offlineArtworkCacheEnabled, updateChecksEnabled, autoApplyBinaryUpdates,
-      updateChannel, updateCheckIntervalDays,
+      updateCheckIntervalDays, providerDefaultsRevision,
       providerRelay: (
         .providerRelay
         | if type != "object" then null else
@@ -230,7 +230,5 @@ if echo "$CONFIG_JSON" | jq -e '
 fi
 
 printf '%s\n' "$CONFIG_JSON" >"$CONFIG_DIR/config.json"
-# Empty provider overrides — never import reporter overrides wholesale.
-printf '{}\n' >"$CONFIG_DIR/providers.json"
 
 echo "seed-config: wrote $CONFIG_DIR/config.json (redacted settings only; no history/user data)"

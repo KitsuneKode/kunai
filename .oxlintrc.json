@@ -74,6 +74,7 @@
   ],
   "ignorePatterns": [
     ".reference/experiments/**",
+    "apps/relay-server/api/**",
     "apps/cli/dist/**",
     "dist/**",
     "node_modules/**",

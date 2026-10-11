@@ -30,7 +30,12 @@ describe("resolveBootstrapIntent", () => {
 
   test("builds a direct movie/series title from id + type", () => {
     const intent = resolveBootstrapIntent(args({ id: "438631", type: "movie" }));
-    expect(intent.directTitle).toEqual({ id: "438631", type: "movie", name: "TMDB 438631" });
+    expect(intent.directTitle).toEqual({
+      id: "438631",
+      type: "movie",
+      name: "TMDB 438631",
+      externalIds: { tmdbId: "438631" },
+    });
     expect(intent.logs).toEqual([{ kind: "direct-title", id: "438631", type: "movie" }]);
   });
 

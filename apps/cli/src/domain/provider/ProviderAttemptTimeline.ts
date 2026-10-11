@@ -33,6 +33,18 @@ export type ProviderAttemptTimelineEvent =
       readonly developerDetail?: string;
     }
   | {
+      /**
+       * The candidate was cancelled mid-flight — user cancel, deadline, or a
+       * hedged sibling won. Distinct from attempt-failed: the provider produced
+       * no failure to classify.
+       */
+      readonly type: "attempt-aborted";
+      readonly traceId?: string;
+      readonly attemptId: string;
+      readonly providerId: string;
+      readonly at: number;
+    }
+  | {
       readonly type: "fallback-started";
       readonly traceId?: string;
       readonly attemptId: string;
@@ -61,7 +73,7 @@ export type ProviderAttemptSnapshot = {
   readonly attemptId: string;
   readonly providerId: string;
   readonly reason: ProviderAttemptReason;
-  readonly status: "running" | "failed" | "succeeded";
+  readonly status: "running" | "failed" | "succeeded" | "aborted";
   readonly startedAt: number;
   readonly finishedAt?: number;
   readonly failureClass?: ProviderFailureClass;
@@ -177,6 +189,22 @@ export function createProviderAttemptTimeline(
         developerDetail: event.developerDetail,
       });
       status = "failed";
+      capAttempts();
+      return;
+    }
+
+    if (event.type === "attempt-aborted") {
+      const attempt = attempts.get(event.attemptId);
+      attempts.set(event.attemptId, {
+        attemptId: event.attemptId,
+        providerId: event.providerId,
+        reason: attempt?.reason ?? "primary",
+        status: "aborted",
+        startedAt: attempt?.startedAt ?? event.at,
+        finishedAt: event.at,
+      });
+      // Timeline-level status stays as-is: an aborted attempt is not evidence
+      // of failure — the resolve was cut short, not lost.
       capAttempts();
       return;
     }

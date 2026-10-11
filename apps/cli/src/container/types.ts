@@ -58,7 +58,6 @@ import type { ConfigStore } from "../services/persistence/ConfigStore";
 import type { StorageMaintenanceService } from "../services/persistence/StorageMaintenanceService";
 import type { SyncTokenStore } from "../services/persistence/SyncTokenStore";
 import type { EpisodePlaybackSelectionService } from "../services/playback/EpisodePlaybackSelectionService";
-import type { MediaTrackService } from "../services/playback/MediaTrackService";
 import type { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
 import type { ProviderEndpointHealthService } from "../services/playback/ProviderEndpointHealthService";
 import type { SourceInventoryService } from "../services/playback/SourceInventoryService";
@@ -72,6 +71,7 @@ import type { RecommendationService } from "../services/recommendations/Recommen
 import type { ReleaseProgressWriter } from "../services/release-reconciliation/ReleaseProgressWriter";
 import type { ReleaseReconciliationService } from "../services/release-reconciliation/ReleaseReconciliationService";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
+import type { SearchServiceDefinition } from "../services/search/SearchService";
 import type { SyncAuthAvailability } from "../services/sync/auth-contract";
 import type { SyncService } from "../services/sync/SyncService";
 import type { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
@@ -120,7 +120,6 @@ export interface Container {
   readonly titlePlaybackSource: TitlePlaybackSourceService;
   readonly videasyLazySourceProbe: VideasyLazySourceProbeService;
   readonly playbackResolveWork: PlaybackResolveWorkService;
-  readonly mediaTrackService: MediaTrackService;
   readonly featureFlags: AttentionFeatureFlags;
   readonly providerHealth: ProviderHealthRepository;
   readonly endpointHealth: ProviderEndpointHealthService;
@@ -231,4 +230,12 @@ export interface ContainerOptions {
    * Production startup never sets this; prefer `loadCompiledSmokeProviderOverride`.
    */
   providerModulesOverride?: readonly CoreProviderModule[];
+  /**
+   * Test-only search-service override (agent verification harness, compiled
+   * smokes). The search registry is a separate seam from provider modules —
+   * swapping providers without this still routes typed searches at the real
+   * TMDB/AniList catalog. Production startup never sets this; prefer
+   * `loadCompiledSmokeSearchDefinitions`.
+   */
+  searchServiceDefinitions?: readonly SearchServiceDefinition[];
 }

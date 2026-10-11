@@ -2,8 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { decodePlaybackTargetWebCode, encodePlaybackTargetShortCode } from "@kunai/types";
 
-import { splitHeadline } from "../app/w/[code]/opengraph-image";
+import { isKindCrewActive } from "../lib/brand/social-card";
+import { clipLine, splitHeadline as splitHeadlineWith } from "../lib/brand/split-headline";
 import { catalogFor, initialFor, positionFor, titleFor } from "../lib/share-presentation";
+
+/** The share card's empty-title fallback, which these cases were written against. */
+const splitHeadline = (title: string) => splitHeadlineWith(title, "Shared with Kunai");
 
 describe("splitHeadline", () => {
   test("a short title stays on one line", () => {
@@ -61,6 +65,35 @@ describe("splitHeadline", () => {
   });
 });
 
+describe("clipLine", () => {
+  test("a sentence that fits is returned as written", () => {
+    expect(clipLine("Install Kunai and mpv.", 96)).toBe("Install Kunai and mpv.");
+  });
+
+  test("an over-long sentence ends on a word and is marked", () => {
+    const clipped = clipLine(
+      "Install Kunai, put it on your PATH, install mpv, run setup, and finish",
+      40,
+    );
+    expect(clipped.endsWith("…")).toBe(true);
+    expect(clipped.length).toBeLessThanOrEqual(40);
+    // Never a half word: whatever precedes the ellipsis is a whole word of the input.
+    const lastWord = clipped.slice(0, -1).split(" ").at(-1) ?? "";
+    expect("Install Kunai, put it on your PATH, install mpv, run setup, and finish").toContain(
+      lastWord,
+    );
+  });
+
+  test("the ellipsis never follows a comma", () => {
+    const clipped = clipLine("alpha beta, gamma delta epsilon", 14);
+    expect(clipped).not.toContain(",…");
+  });
+
+  test("collapses whitespace before measuring", () => {
+    expect(clipLine("a\n\n b\t c", 20)).toBe("a b c");
+  });
+});
+
 describe("share presentation is shared with the landing page", () => {
   const ref = {
     kind: "series",
@@ -90,5 +123,25 @@ describe("share presentation is shared with the landing page", () => {
 
   test("initialFor survives a title that is only whitespace", () => {
     expect(initialFor("   ")).toBe("K");
+  });
+});
+
+describe("kind crew on social cards", () => {
+  test("docs cards show every companion", () => {
+    expect(isKindCrewActive(undefined, "anime")).toBe(true);
+    expect(isKindCrewActive(undefined, "series")).toBe(true);
+    expect(isKindCrewActive(undefined, "movie")).toBe(true);
+  });
+
+  test("a share lights the matching companion", () => {
+    expect(isKindCrewActive("anime", "anime")).toBe(true);
+    expect(isKindCrewActive("anime", "movie")).toBe(false);
+    expect(isKindCrewActive("series", "series")).toBe(true);
+    expect(isKindCrewActive("movie", "movie")).toBe(true);
+  });
+
+  test("a youtube video share uses the movie companion", () => {
+    expect(isKindCrewActive("video", "movie")).toBe(true);
+    expect(isKindCrewActive("video", "anime")).toBe(false);
   });
 });

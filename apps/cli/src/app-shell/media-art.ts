@@ -1,11 +1,9 @@
-// =============================================================================
-// media-art.ts — season-aware artwork resolution with a graceful fallback chain
+// Season-aware artwork resolution with a graceful fallback chain
 //
 // One resolver feeds both the panel poster and the prev/now/next thumbnails so
 // they never disagree. The chain degrades honestly instead of leaving a blank:
 //   episode still → season poster → series poster → series backdrop → fallback
 // Pure; no I/O. The poster pipeline (chafa/Kitty) consumes the returned url.
-// =============================================================================
 
 import { episodeThumbKey, type TitleDetail } from "@/domain/catalog/title-detail";
 

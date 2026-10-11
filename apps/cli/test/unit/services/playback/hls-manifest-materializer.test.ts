@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import type { StreamInfo } from "@/domain/types";
 import {
@@ -27,6 +28,8 @@ describe("hls manifest materializer", () => {
 
   test("reports the HTTP status when a manifest request is rejected", async () => {
     const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     globalThis.fetch = (async () =>
       new Response("forbidden", { status: 403 })) as unknown as typeof fetch;
     const skipped: Array<{ reason: string; detail?: string; status?: number }> = [];
@@ -51,6 +54,8 @@ describe("hls manifest materializer", () => {
     };
     const originalFetch = globalThis.fetch;
     let fetched = false;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     globalThis.fetch = (async () => {
       fetched = true;
       return new Response("#EXTM3U\n", { status: 200 });
@@ -66,6 +71,8 @@ describe("hls manifest materializer", () => {
   test("materializes a fetched manifest into a local playlist file", async () => {
     const manifest = ["#EXTM3U", "#EXTINF:3,", "/mirror/seg-1.jpg"].join("\n");
     const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     globalThis.fetch = (async (input: string | URL | Request) => {
       const url = String(input);
       const parsedUrl = new URL(url);
@@ -76,7 +83,7 @@ describe("hls manifest materializer", () => {
         });
       }
       return originalFetch(input);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const stream: StreamInfo = {
       url: "https://light.goldweather.net/token/index.m3u8",
@@ -99,6 +106,68 @@ describe("hls manifest materializer", () => {
       const playlist = await readFile(materialized!.stream.url, "utf8");
       expect(playlist).toContain("https://light.goldweather.net/mirror/seg-1.jpg");
       expect(materialized!.stream.headers).toEqual(stream.headers);
+
+      // The file embeds signed CDN URLs — it and its dir stay owner-only in
+      // the shared tmpdir. POSIX only: Windows uses ACLs and stat mode bits
+      // there don't reflect the chmod.
+      if (process.platform !== "win32") {
+        const playlistMode = (await stat(materialized!.stream.url)).mode & 0o777;
+        const dirMode = (await stat(dirname(materialized!.stream.url))).mode & 0o777;
+        expect(playlistMode).toBe(0o600);
+        expect(dirMode).toBe(0o700);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("refuses a manifest body past the size cap", async () => {
+    const oversized = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("#EXTM3U\n"));
+        controller.enqueue(new Uint8Array(3 * 1024 * 1024));
+        controller.close();
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    globalThis.fetch = (async () =>
+      new Response(oversized, { status: 200 })) as unknown as typeof fetch;
+    const skipped: Array<{ reason: string; detail?: string }> = [];
+    try {
+      const result = await materializeHlsManifestForPlayback(createHlsStream(), (reason, detail) =>
+        skipped.push({ reason, detail }),
+      );
+      expect(result).toBeNull();
+      expect(skipped).toEqual([
+        { reason: "fetch-failed", detail: "manifest body exceeds 2097152 bytes" },
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a caller abort cancels the manifest fetch", async () => {
+    const originalFetch = globalThis.fetch;
+    let observedSignal: AbortSignal | undefined;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      observedSignal = init?.signal as AbortSignal | undefined;
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }) as unknown as typeof fetch;
+    const caller = new AbortController();
+    caller.abort();
+    try {
+      const result = await materializeHlsManifestForPlayback(
+        createHlsStream(),
+        undefined,
+        caller.signal,
+      );
+      expect(result).toBeNull();
+      expect(observedSignal?.aborted).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
     }

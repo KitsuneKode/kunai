@@ -26,6 +26,8 @@ export type TrackPickRestartOutcome = {
   readonly startIntent: PlaybackStartIntent;
   readonly resolvedProviderId: string;
   readonly requiresFreshResolve: boolean;
+  /** User-visible note (stale picks): the pick changed nothing, say why. */
+  readonly notice?: string;
 };
 
 export async function applyTrackPickRestart(input: {
@@ -42,6 +44,17 @@ export async function applyTrackPickRestart(input: {
       startIntent: startAtResumePoint(resumeSeconds, { suppressResumePrompt: true }),
       resolvedProviderId: currentProviderId,
       requiresFreshResolve: false,
+    };
+  }
+
+  if (resolved.kind === "stale-pick") {
+    // Nothing is applied and nothing restarts: resuming in place with a note
+    // beats replaying the old stream under the pretence the pick worked.
+    return {
+      startIntent: startAtResumePoint(resumeSeconds, { suppressResumePrompt: true }),
+      resolvedProviderId: currentProviderId,
+      requiresFreshResolve: false,
+      notice: resolved.reason,
     };
   }
 

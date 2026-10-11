@@ -1,6 +1,6 @@
 # settings-relay-url-error · narrow (72×45)
  Settings
- series default  ·  discover auto  ·  series videasy  ·  anime allanime
+ series default  ·  discover auto  ·  series vidlink  ·  anime hianime
 
  Relay server URL
  Type your relay server URL, then press Enter

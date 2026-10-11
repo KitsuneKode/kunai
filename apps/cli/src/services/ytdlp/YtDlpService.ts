@@ -1,5 +1,7 @@
 import { spawnYtDlpWithTimeout } from "@kunai/providers/youtube";
 
+import { whichLive } from "../../infra/os/which";
+
 export {
   buildYtdlFormatSelector,
   defaultYtdlPlaybackFormat,
@@ -11,7 +13,7 @@ export {
 } from "@kunai/providers/youtube";
 
 export function probeYtDlp(): { readonly available: boolean; readonly version?: string } {
-  const path = Bun.which("yt-dlp");
+  const path = whichLive("yt-dlp");
   if (!path) return { available: false };
   return { available: true };
 }
@@ -36,7 +38,7 @@ export type YtDlpPluginProbe = {
  * `ytsearch0:` resolves to an empty result set, so this costs no real extraction.
  */
 export async function probeYtDlpPlugins(): Promise<YtDlpPluginProbe> {
-  if (!Bun.which("yt-dlp")) return { available: false, poTokenProvider: false, plugins: [] };
+  if (!whichLive("yt-dlp")) return { available: false, poTokenProvider: false, plugins: [] };
   try {
     const proc = await spawnYtDlpWithTimeout({
       args: ["--verbose", "--simulate", "ytsearch0:x"],
@@ -91,7 +93,7 @@ export async function probeYtDlpAsync(): Promise<{
   readonly available: boolean;
   readonly version?: string;
 }> {
-  const path = Bun.which("yt-dlp");
+  const path = whichLive("yt-dlp");
   if (!path) return { available: false };
   try {
     const proc = await spawnYtDlpWithTimeout({

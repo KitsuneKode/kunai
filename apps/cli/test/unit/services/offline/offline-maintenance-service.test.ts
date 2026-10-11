@@ -26,6 +26,7 @@ describe("OfflineMaintenanceService", () => {
         fail: () => {},
       },
       assets: {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         getAsset: () => ({ filePath: import.meta.path }) as never,
         markValidation: (_id, state) => states.push(state),
       },

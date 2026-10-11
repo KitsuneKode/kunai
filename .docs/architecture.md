@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-27"
+lastReviewed: "2026-10-07"
 ---
 
 # Kunai — Runtime Architecture
@@ -38,10 +38,11 @@ user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provi
 
 ## Entrypoint
 
-`apps/cli/src/main.ts` is the only runtime entrypoint. It owns the DI container,
-config service, history store, cache store, provider registry, shared shell
-workflows, and the search/playback phases. Package scripts and the build both
-point at it.
+`apps/cli/src/main.ts` is the only desktop CLI entrypoint. It owns the DI
+container, config service, history store, cache store, provider registry, shared
+shell workflows, and the search/playback phases. Package scripts and the desktop
+build both point at it. `apps/mobile/src/entry.ts` is the separately declared
+mobile entrypoint; neither app imports the other.
 
 The old `apps/cli/index.ts` compatibility wrapper has been **removed**. Do not
 reintroduce a second entrypoint; migrate behavior into `main.ts` instead.
@@ -52,18 +53,18 @@ The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.t
 
 ## Runtime Modules
 
-| Area                  | Files                                                                                   | Responsibility                                                                                              |
-| --------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`                                            | The only entrypoint; `app/` holds bootstrap, session, search, playback, discover, post-play, offline phases |
-| DI + provider engine  | `apps/cli/src/container/*` (`container.ts` is a re-export barrel)                       | `bootstrap-providers.ts` builds the engine; also wires SQLite repos, resolve/download/presence services     |
-| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                              | Ink shell, commands, settings, history, and structured pickers                                              |
-| Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*` | Search backends, metadata fetches, and routing policy                                                       |
-| Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                               | TMDB/Videasy season data and title enrichment (migration target: catalog services)                          |
-| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | Managed `mpv` launch/IPC or detached Android intent handoff                                                 |
-| Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                                                   |
-| Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                                         |
-| Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                                        |
-| Observability         | `apps/cli/src/logger.ts`, `apps/cli/src/services/diagnostics/*`                         | Structured debug logs and diagnostics events                                                                |
+| Area                  | Files                                                                                   | Responsibility                                                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`                                            | The only desktop CLI entrypoint; `app/` holds bootstrap, session, search, playback, discover, post-play, offline phases |
+| DI + provider engine  | `apps/cli/src/container/*` (`container.ts` is a re-export barrel)                       | `bootstrap-providers.ts` builds the engine; also wires SQLite repos, resolve/download/presence services                 |
+| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                              | Ink shell, commands, settings, history, and structured pickers                                                          |
+| Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*` | Search backends, metadata fetches, and routing policy                                                                   |
+| Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                               | TMDB/Videasy season data and title enrichment (migration target: catalog services)                                      |
+| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | `mpv` launch, IPC, and Lua-assisted progress tracking; detached Android intent handoff                                  |
+| Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                                                               |
+| Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                                                     |
+| Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                                                    |
+| Observability         | `apps/cli/src/logger.ts`, `apps/cli/src/services/diagnostics/*`                         | Structured debug logs and diagnostics events                                                                            |
 
 If your change is broad enough to blur these module boundaries, stop and check whether the work belongs in the v2 migration path instead.
 
@@ -158,6 +159,26 @@ Contract proof (fake-player / render-capture, no live providers):
 `apps/cli/test/integration/queue-playback-lifecycle.test.ts`. Product vocabulary:
 [.docs/features/queue.md](./features/queue.md).
 
+### Android detached-player flow
+
+On Android/Termux, `--player auto|mpv|vlc` composes
+`HandoffPlayerService` instead of `PlayerServiceImpl`. `auto` opens the Android
+chooser; explicit choices target mpv-android or VLC. The adapter accepts only a
+final absolute HTTP(S) URL with no custom headers/cookies, yt-dlp requirement,
+local file, deferred locator, or external subtitle. It constructs an argv array
+for `am`/Termux launchers and never interpolates a shell command.
+
+An accepted `ACTION_VIEW` request is represented as detached handoff evidence,
+not playback evidence. The session emits no start/progress/completion event,
+writes no inferred history, pauses autoplay/near-EOF behavior, restores queue
+claims, and labels post-play as "opened externally". Desktop auto/mpv behavior
+continues through the observed mpv runner; desktop `--player vlc` fails with an
+explicit unsupported-player remediation.
+
+Android is an experimental preview until the physical-device matrix in
+[release-reliability-gate.md](./release-reliability-gate.md) passes. iOS remains
+unimplemented pending a separately approved runtime proof.
+
 ### Provider resolve flow
 
 Production resolution is browserless by default:
@@ -183,36 +204,28 @@ Production resolution is browserless by default:
 
 This is part of the repo's reliability contract. Changes are fine, but recovery under kill signals, EOF, or expired stream URLs needs to remain solid.
 
-### Android detached-player flow
-
-On Android/Termux, `--player auto|mpv|vlc` composes
-`HandoffPlayerService` instead of `PlayerServiceImpl`. `auto` opens the Android
-chooser; explicit choices target mpv-android or VLC. The adapter accepts only a
-final absolute HTTP(S) URL with no custom headers/cookies, yt-dlp requirement,
-local file, deferred locator, or external subtitle. It constructs an argv array
-for `am`/Termux launchers and never interpolates a shell command.
-
-An accepted `ACTION_VIEW` request is represented as detached handoff evidence,
-not playback evidence. The session emits no start/progress/completion event,
-writes no inferred history, pauses autoplay/near-EOF behavior, restores queue
-claims, and labels post-play as “opened externally.” Desktop auto/mpv behavior
-continues through the observed mpv runner; desktop `--player vlc` fails with an
-explicit unsupported-player remediation.
-
-Android is an experimental preview until the physical-device matrix in
-[release-reliability-gate.md](./release-reliability-gate.md) passes. iOS remains
-unimplemented pending a separately approved runtime proof.
-
 Observability matters here too: failures around stream resolution, cache reuse, or provider retries should leave enough logging context to explain what path the app took.
 
 ## Persistence and Data Ownership
 
-| Data          | Path                                | Owner                                |
-| ------------- | ----------------------------------- | ------------------------------------ |
-| Config        | `~/.config/kunai/config.json`       | `ConfigService` + `ConfigStoreImpl`  |
-| Watch history | OS app data dir `kunai-data.sqlite` | `@kunai/storage` + CLI history store |
-| Stream cache  | OS cache dir `kunai-cache.sqlite`   | `@kunai/storage` + CLI cache store   |
-| Debug logs    | `./logs.txt`                        | `apps/cli/src/logger.ts`             |
+| Data          | Path                                                                      | Owner                                |
+| ------------- | ------------------------------------------------------------------------- | ------------------------------------ |
+| Config        | OS config dir `kunai/config.json` (resolved by `@kunai/storage/paths.ts`) | `ConfigService` + `ConfigStoreImpl`  |
+| Watch history | OS app data dir `kunai-data.sqlite`                                       | `@kunai/storage` + CLI history store |
+| Stream cache  | OS cache dir `kunai-cache.sqlite`                                         | `@kunai/storage` + CLI cache store   |
+| Debug logs    | `./logs.txt`                                                              | `apps/cli/src/logger.ts`             |
+
+Config startup holds the shared file lock from its initial read through any
+migration write. Later saves merge only changed keys under the same lock.
+A lock timeout rejects before the write callback runs.
+
+Native credential hydration is a read; unrelated config saves never rewrite a
+hydrated token. Explicit replacements and clears share the config lock with their
+file updates. A failed replacement retains plaintext for the next launch's
+migration; a clear rejects until native deletion is verified, rather than reporting
+success and restoring the secret next launch. Native credential latency therefore
+extends this critical section; sibling operations can report bounded lock contention
+while a slow keychain operation is running.
 
 **Watch ledger (2026-06):** `history_progress` is the single source of truth for resume position, completion, and engaged watch time. Columns `watched_seconds`, `last_watched_at`, and `completed_at` (migration `024`) back Stats and continuation. All mark-watched/unwatched surfaces write through `HistoryRepository.markWatched` / `markUnwatched` (preserve resume on unmark). `playback_events` receives fire-and-forget instrumentation from the mpv position tick via `PlaybackEventRepository`. Stats aggregation lives in `WatchStatsRepository` (`packages/storage`).
 
@@ -223,6 +236,13 @@ This matters beyond rendering: with `external_ids_json` erased and a bare title 
 A session upgrades its own working `TitleInfo` the moment the catalog answers, through `domain/catalog/apply-title-detail.ts` — used by both `PlaybackPhase` and the `SET_TITLE_DETAIL` reducer, so the rendered title and the persisted one cannot disagree. `--download` never reaches `PlaybackPhase`, so it resolves the same way up front via `app/bootstrap/resolve-placeholder-title.ts`; that lane matters most because `resolveDownloadOutputPath` builds the folder and file name from the title, and no later heal can rename a file on disk. Rows written before that (their title still a placeholder) are repaired at startup by `HistoryMetadataHealer`, which resolves them by **id** rather than by searching their own text; a placeholder over an opaque provider-native id is left alone, because nothing could resolve it and a wrong repair is unrecoverable.
 
 The SQLite storage model is described in [.plans/storage-hardening.md](../.archive/plans/storage-hardening.md), with durable history/progress in the OS app data directory and disposable cache in the OS cache directory.
+
+Database opening quarantines a file only for recognized SQLite corruption codes
+(`SQLITE_CORRUPT`, its known extended forms, or `SQLITE_NOTADB`). Lock contention,
+permissions, I/O failures, and unknown errors surface the original failure without
+moving the database or its siblings. Reopening after the cause is resolved retains
+the original durable data. Confirmed corruption preserves the main file in a
+timestamped backup before creating a replacement; siblings never move first.
 
 Automatic storage maintenance is conservative:
 

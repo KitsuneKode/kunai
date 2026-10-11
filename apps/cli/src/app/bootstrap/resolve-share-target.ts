@@ -1,3 +1,4 @@
+import { catalogExternalIds } from "@/app/bootstrap/catalog-ids";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
 import type { Container } from "@/container";
 import type { PlaybackTargetRef } from "@/domain/share/playback-target-ref";
@@ -51,7 +52,7 @@ export async function resolveShareTarget(
     return {
       title,
       mode,
-      ...(episode ? { episode } : {}),
+      ...(episode ? { episode } : null),
       ...(ref.startSeconds !== undefined ? { startSeconds: ref.startSeconds } : {}),
       ...(download ? { download: true } : {}),
       ...(joinNotes(hintNote, mappingNote) ? { note: joinNotes(hintNote, mappingNote) } : {}),
@@ -62,7 +63,7 @@ export async function resolveShareTarget(
   return {
     title,
     mode,
-    ...(episode ? { episode } : {}),
+    ...(episode ? { episode } : null),
     ...(ref.startSeconds !== undefined ? { startSeconds: ref.startSeconds } : {}),
     ...(download ? { download: true } : {}),
     ...(hintNote ? { note: hintNote } : {}),
@@ -80,24 +81,6 @@ function buildTitleFromCatalogAnchor(ref: PlaybackTargetRef): TitleInfo {
     externalIds,
     ...(ref.kind === "anime" ? { isAnime: true as const } : {}),
   };
-}
-
-function catalogExternalIds(
-  ns: Extract<PlaybackTargetRef["anchor"], { by: "catalog" }>["ns"],
-  id: string,
-) {
-  switch (ns) {
-    case "youtube":
-      return /^PL[\w-]+$/.test(id) ? { youtubePlaylistId: id } : { youtubeId: id };
-    case "tmdb":
-      return { tmdbId: id };
-    case "anilist":
-      return { anilistId: id };
-    case "mal":
-      return { malId: id };
-    case "imdb":
-      return { imdbId: id.startsWith("tt") ? id : `tt${id}` };
-  }
 }
 
 function buildEpisode(ref: PlaybackTargetRef): EpisodeInfo | undefined {
@@ -129,12 +112,14 @@ function validateProviderHint(ref: PlaybackTargetRef, container: Container): str
   return undefined;
 }
 
-async function mapAnimeTitleToProviderNative(
+export async function mapAnimeTitleToProviderNative(
   title: TitleInfo,
   container: Container,
   mode: ShellMode,
 ): Promise<{ readonly title: TitleInfo; readonly note?: string }> {
-  const providerId = container.stateManager.getState().provider;
+  // This runs before SET_MODE lands, so the session provider can still be the
+  // movie-lane one — the anime mapping must target the lane's own provider.
+  const providerId = container.stateManager.getState().defaultProviders.anime;
   const catalogId = shareTitleCatalogIdForAnimeMapping(title);
   const searchResult: SearchResult = {
     id: catalogId,

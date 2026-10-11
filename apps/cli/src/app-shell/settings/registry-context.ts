@@ -1,4 +1,5 @@
 import type { Container } from "@/container";
+import { markCurrentLabel } from "@/domain/current-label";
 import type { ProviderMetadata } from "@/domain/types";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
@@ -15,7 +16,7 @@ function buildSettingsProviderOptions({
 }): readonly ShellPickerOption<string>[] {
   return providers.map((provider) => ({
     value: provider.id,
-    label: provider.id === currentProvider ? `${provider.name}  ·  current` : provider.name,
+    label: markCurrentLabel(provider.name, provider.id === currentProvider),
     detail: provider.description,
   }));
 }

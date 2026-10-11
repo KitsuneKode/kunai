@@ -1,11 +1,13 @@
 ---
-title: Reliability And Privacy
+title: Reliability and Privacy
 description: What Kunai stores locally, what it never sends, how it limits third-party traffic, and how diagnostics stay redacted by default when you report a failure.
 ---
 
 Kunai is designed to keep playback useful when providers, networks, Discord, or
 local files behave imperfectly. The default rule is simple: preserve the user's
 current context, keep durable user data safe, and make failures explainable.
+For the short statement of what leaves your machine, see
+[Privacy](/privacy).
 
 ## What Kunai Protects
 
@@ -73,8 +75,8 @@ Anonymous usage analytics are **yours to turn on or off at any time**, in
 **Settings → General → Usage analytics**.
 
 On a fresh install, setup asks you directly. It recommends turning analytics on
-and pre-selects that option — it counts unique installs and versions, never
-people — but nothing is enabled until you confirm it on that screen. Skipping
+and pre-selects that option; it counts unique installs and versions, never
+people. Nothing is enabled until you confirm it on that screen. Skipping
 setup leaves analytics **off**: no default, accept-all, or non-interactive path
 can turn it on for you. Existing installs get one non-blocking recommendation
 explaining the payload; that notice does not enable analytics, create an id, or
@@ -84,15 +86,21 @@ non-interactive terminal, or when `DO_NOT_TRACK=1` or `CI=true`.
 When on, Kunai sends at most one tiny ping per day:
 
 ```json
-{ "installId": "<sha256-hex>", "version": "<semver>", "os": "<platform>", "arch": "<arch>", "ts": 0 }
+{
+  "installId": "<sha256-hex>",
+  "version": "<semver>",
+  "os": "<platform>",
+  "arch": "<arch>",
+  "ts": 0
+}
 ```
 
 - `installId` on the wire is **`sha256` of your local install id**, not the id
   itself. The id is generated on your machine, stored only in your config, and
-  never transmitted — so the value above is a 64-character hex digest, never a
+  never transmitted, so the value above is a 64-character hex digest, never a
   UUID
 - Never titles, queries, providers, stream URLs, or file paths
-- **Your IP address is never read.** Not collected and discarded — the ingest
+- **Your IP address is never read.** Not collected and discarded; the ingest
   has no code path that reads a client address at all, so there is nothing to
   log, rate-limit on, or hand over
 - Turning it off **deletes the install id from disk**. The id exists only while
@@ -103,24 +111,44 @@ When on, Kunai sends at most one tiny ping per day:
   clears the id
 - `DO_NOT_TRACK=1` and `CI=true` block sends regardless of the setting. A value
   of `0`, `false`, or `no` does not block
-- Without an interactive terminal — piped or scripted output — analytics stays
+- Without an interactive terminal (piped or scripted output), analytics stays
   off, because the notice could not be shown
 - The ingest re-hashes that digest with an HMAC before storing it, alongside your
   platform, architecture, and version. It does not read your IP address at all
 - Raw rows are deleted after 35 days. A permanent table keeps one hashed row per
-  install with a first-seen date, which is what an exact lifetime count costs
-- Public docs show yesterday's active installs, a lifetime total, and version /
-  platform / architecture breakdowns. Any group with **fewer than 5** installs is
+  install with a first-seen date, which is what a lifetime count costs. Installs
+  silent past the retention window fold into a retired count, and one that
+  returns is counted again
+- Public docs show yesterday's active installs, installs first seen each day,
+  a lifetime total, and version / platform / architecture breakdowns. The
+  chart's platform view splits each day into Linux, macOS, and Windows where
+  each is large enough to name. The
+  lifetime total counts _installs ever observed_: rows retired for long
+  silence stay counted, so one that returns is counted again. It is not a
+  unique-install figure. Any group with **fewer than 5** installs is
   reported as `other`. This is per-breakdown small-cell suppression, not a joint
   anonymity guarantee. Those numbers can be inflated by abuse; they cannot expose
   what you watch. See the live [usage analytics](/analytics) page.
+- The page also shows **npm's own download counter** for the package, on a
+  separate card because it is a different kind of number: every tarball fetch
+  counts (reinstalls, upgrades, CI), installs made through `install.sh` or
+  GitHub binaries never reach it, and npm's days are UTC. It is fetched from
+  npm when the page revalidates, not sent to or stored by Kunai's ingest.
+- A day ends at **midnight IST (18:30 UTC)** from 15 September 2026. Days before
+  that end at midnight UTC, and 14 September 2026 is a shorter changeover day
+  whose count reads low. The "updated" time on the analytics page is shown in
+  your own clock; the day totals are not re-cut to your local midnight, because
+  only daily totals are kept and the individual pings behind them are not.
 
 Preview the exact JSON with `/analytics show`.
 
 If you turn analytics on, pings go to `analytics.kunai.kitsunekode.in`. Point
 them somewhere else by setting a **non-empty** `KUNAI_ANALYTICS_URL` or
-`analyticsEndpoint`. An empty `analyticsEndpoint` (the shipped default) means
-“use the built-in URL”, not “disable”. Turn analytics off in Settings, or set
+`analyticsEndpoint`. That address must use **https**; `http://localhost`, `127.0.0.1`, and `[::1]`
+are the only exceptions, for testing your own ingest. Any other
+cleartext address is refused and nothing is sent at all; your pings are never
+silently rerouted to the built-in URL. An empty `analyticsEndpoint` (the shipped
+default) means “use the built-in URL”, not “disable”. Turn analytics off in Settings, or set
 `DO_NOT_TRACK=1`, to send nothing. Leaving analytics off, running without a
 terminal, or setting `DO_NOT_TRACK` means nothing is ever sent, whatever the
 endpoint says.
@@ -128,9 +156,3 @@ endpoint says.
 ## Release confidence
 
 Contributor release checks (`fmt`, `lint`, `typecheck`, `test`, `build`) live in [Contribute](/docs/developer/contribute). Live provider, Discord, and real mpv checks stay manual.
-
-## Related guides
-
-- [Usage analytics pulse](/analytics)
-- [Diagnostics and reporting](/docs/users/diagnostics-and-reporting)
-- [Supported and unsupported](/docs/users/supported-and-unsupported)

@@ -10,6 +10,7 @@ import type {
   ProviderId,
   ProviderTraceEvent,
 } from "@kunai/types";
+import { ProviderHttpError } from "@kunai/types";
 
 import { guardEndpointHealthAgainstCancellation } from "./provider-attempt-cancellation";
 import { isOfflineNetworkFailure } from "./provider-failure-classifier";
@@ -69,6 +70,14 @@ const DEFAULT_RETRY_DELAY_MS = 0;
  */
 const DEFAULT_TRANSIENT_RETRY_DELAY_MS = 750;
 
+/**
+ * Distinct servers that must produce offline-classified failures before a
+ * cycle calls the uplink dead. One source's ENOTFOUND can be that domain's
+ * own death; two different servers failing the same way is real evidence.
+ * Mirrors the provider-level `OfflineEvidenceTracker` threshold.
+ */
+const OFFLINE_EVIDENCE_QUORUM = 2;
+
 export class ProviderCycleFailureError extends Error {
   constructor(readonly failure: ProviderCycleFailure) {
     super(failure.message);
@@ -79,16 +88,50 @@ export class ProviderCycleFailureError extends Error {
 export function createProviderCycleFailureError(
   candidate: Pick<ProviderCycleCandidate, "id" | "providerId">,
   input: Omit<ProviderCycleFailure, "candidateId" | "providerId"> &
-    Partial<Pick<ProviderCycleFailure, "candidateId" | "providerId">>,
+    Partial<Pick<ProviderCycleFailure, "candidateId" | "providerId">> &
+    Record<string, unknown>,
 ): ProviderCycleFailureError {
-  return new ProviderCycleFailureError({
-    providerId: input.providerId ?? candidate.providerId,
-    candidateId: input.candidateId ?? candidate.id,
-    failureClass: input.failureClass,
-    message: input.message,
-    retryable: input.retryable,
-    at: input.at,
-  });
+  const { providerId, candidateId, failureClass, message, retryable, at, ...extra } = input;
+  const failure = {
+    failureClass,
+    message,
+    retryable,
+    at,
+    providerId: providerId ?? candidate.providerId,
+    candidateId: candidateId ?? candidate.id,
+  } as ProviderCycleFailure;
+  // Forward-compatible: fields added to the failure contract later (e.g. an
+  // endpoint-scoped quarantine signal) survive the builder instead of being
+  // silently dropped here while the type moves on.
+  Object.assign(failure, extra);
+  return new ProviderCycleFailureError(failure);
+}
+
+function failOpenEndpointHealth(port: EndpointHealthPort): EndpointHealthPort {
+  return {
+    shouldTry(providerId, endpoint) {
+      try {
+        return port.shouldTry(providerId, endpoint);
+      } catch {
+        // A broken health store must not quarantine live lanes.
+        return true;
+      }
+    },
+    recordSuccess(providerId, endpoint) {
+      try {
+        port.recordSuccess(providerId, endpoint);
+      } catch {
+        // Advisory evidence — a resolved stream is worth more than its record.
+      }
+    },
+    recordFailure(providerId, endpoint, info) {
+      try {
+        port.recordFailure(providerId, endpoint, info);
+      } catch {
+        // Advisory evidence — the cycle's own failure result stands alone.
+      }
+    },
+  };
 }
 
 export async function runProviderCycle<TResolved>(
@@ -97,6 +140,12 @@ export async function runProviderCycle<TResolved>(
   const now = input.now ?? (() => new Date().toISOString());
   const events: ProviderTraceEvent[] = [];
   const attempts: ProviderCycleAttempt[] = [];
+  // Endpoint health is advisory evidence, not a resolve dependency: a throwing
+  // port must never skip live lanes, discard a resolved stream, or crash the
+  // cycle. shouldTry fails open; record calls are best-effort.
+  const endpointHealth = input.endpointHealth
+    ? failOpenEndpointHealth(input.endpointHealth)
+    : undefined;
 
   const emit = (event: ProviderTraceEvent) => {
     events.push(event);
@@ -134,7 +183,7 @@ export async function runProviderCycle<TResolved>(
   const hedgeDelayMs = Math.max(0, input.hedgeDelayMs ?? 0);
   if (hedgeDelayMs > 0) {
     return runProviderCycleRaced({
-      input,
+      input: { ...input, endpointHealth },
       hedgeDelayMs,
       candidateTimeoutMs,
       now,
@@ -146,14 +195,15 @@ export async function runProviderCycle<TResolved>(
 
   let skippedQuarantined = 0;
   let attemptedCandidates = 0;
+  // Offline evidence is corroborated across distinct servers before the walk
+  // abandons the pool: one source's DNS failure can be a dead upstream domain,
+  // not a dead uplink — miruro-style multi-mirror providers would otherwise
+  // skip every remaining mirror on the first one's ENOTFOUND.
+  const offlineEvidenceServers = new Set<string>();
 
   for (const candidate of orderCycleCandidates(input.candidates)) {
     const endpoint = candidate.serverId;
-    if (
-      endpoint &&
-      input.endpointHealth &&
-      !input.endpointHealth.shouldTry(input.providerId, endpoint)
-    ) {
+    if (endpoint && endpointHealth && !endpointHealth.shouldTry(input.providerId, endpoint)) {
       skippedQuarantined += 1;
       emit(
         createCycleTraceEvent("source:skipped", candidate, now(), {
@@ -204,8 +254,8 @@ export async function runProviderCycle<TResolved>(
         emit(
           createCycleTraceEvent("source:success", candidate, endedAt, { attempt: attemptNumber }),
         );
-        if (endpoint && input.endpointHealth) {
-          input.endpointHealth.recordSuccess(input.providerId, endpoint);
+        if (endpoint && endpointHealth) {
+          endpointHealth.recordSuccess(input.providerId, endpoint);
         }
         return {
           selected,
@@ -229,10 +279,10 @@ export async function runProviderCycle<TResolved>(
           }),
         );
 
-        if (endpoint && input.endpointHealth) {
+        if (endpoint && endpointHealth) {
           const endpointFailureClass = classifyEndpointFailureFromCycleFailure(failure);
           if (endpointFailureClass) {
-            input.endpointHealth.recordFailure(input.providerId, endpoint, {
+            endpointHealth.recordFailure(input.providerId, endpoint, {
               class: endpointFailureClass,
               titleId: input.titleId,
               at: failure.at,
@@ -251,13 +301,16 @@ export async function runProviderCycle<TResolved>(
         }
 
         if (failure.failureClass === "candidate-network" && !failure.retryable) {
-          return {
-            attempts,
-            events,
-            stopReason: "network-offline",
-            fallbackRequested: false,
-            cancelled: false,
-          };
+          offlineEvidenceServers.add(candidate.serverId ?? candidate.id);
+          if (offlineEvidenceServers.size >= OFFLINE_EVIDENCE_QUORUM) {
+            return {
+              attempts,
+              events,
+              stopReason: "network-offline",
+              fallbackRequested: false,
+              cancelled: false,
+            };
+          }
         }
 
         if (input.shouldStopAfterFailure?.(failure, candidate)) {
@@ -365,6 +418,7 @@ async function runProviderCycleRaced<TResolved>(args: {
   }
 
   let skippedQuarantined = 0;
+  const offlineEvidenceServers = new Set<string>();
   const eligible = orderCycleCandidates(input.candidates).filter((candidate) => {
     const endpoint = candidate.serverId;
     if (!endpoint || !input.endpointHealth) return true;
@@ -519,14 +573,17 @@ async function runProviderCycleRaced<TResolved>(args: {
       }
 
       if (failure.failureClass === "candidate-network" && !failure.retryable) {
-        abortAll();
-        return {
-          attempts,
-          events,
-          stopReason: "network-offline",
-          fallbackRequested: false,
-          cancelled: false,
-        };
+        offlineEvidenceServers.add(entry.candidate.serverId ?? entry.candidate.id);
+        if (offlineEvidenceServers.size >= OFFLINE_EVIDENCE_QUORUM) {
+          abortAll();
+          return {
+            attempts,
+            events,
+            stopReason: "network-offline",
+            fallbackRequested: false,
+            cancelled: false,
+          };
+        }
       }
 
       // A provider-wide guard is not answered by hammering the rest of the
@@ -695,24 +752,41 @@ export function classifyEndpointFailureFromCycleFailure(
       // A malformed response is endpoint evidence. ProviderEndpointHealthService
       // still applies its distinct-title guard before escalating it.
       return "server-error";
+    case "candidate-server-error":
+      // A 5xx IS the endpoint answering badly — server-error so the
+      // distinct-title quarantine gate can see it (#458).
+      return "server-error";
+    case "candidate-rate-limited":
+      // A 429 that survives across distinct titles is an endpoint that cannot
+      // serve this session; quarantining it is what stops the provider being
+      // re-probed forever. Same gate, same downstream title guard.
+      return "server-error";
     case "candidate-blocked":
-      // "Blocked" is not endpoint-scoped evidence. It currently includes
+      // "Blocked" is not endpoint-scoped evidence on its own. It includes
       // provider-wide session guards, regional WAF/Cloudflare responses, and
       // endpoint-local 403s. Persisting all of those as a server error can
       // quarantine a healthy mirror after two titles merely because the user
-      // has no valid provider session. Keep it out of endpoint health until the
-      // failure contract carries an explicit endpoint-scoped reason.
-      return null;
+      // has no valid provider session.
+      //
+      // `endpointScoped` is the explicit reason this waited for: a resolve-gate
+      // rejection is a segment probe against this endpoint's own stream, so a
+      // definitive refusal there is durable evidence about that server alone.
+      // `server-error` rather than `route-dead` because the shorter quarantine
+      // still carries ProviderEndpointHealthService's distinct-title guard, and
+      // a CDN that rotates hosts should not be written off for a day.
+      return failure.endpointScoped === true ? "server-error" : null;
     default:
       return null;
   }
 }
 
-export function classifyProviderCycleError(error: unknown): {
+export type ProviderCycleErrorClassification = {
   readonly failureClass: ProviderCycleFailureClass;
   readonly message: string;
   readonly retryable: boolean;
-} {
+};
+
+export function classifyProviderCycleError(error: unknown): ProviderCycleErrorClassification {
   const message =
     error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   if (isAbortError(error)) {
@@ -720,6 +794,17 @@ export function classifyProviderCycleError(error: unknown): {
       failureClass: "candidate-user-cancelled",
       message: "Provider cycle cancelled",
       retryable: false,
+    };
+  }
+  /* A provider that threw with its HTTP status attached gets classified on
+   * that status, not on whatever the message happens to contain — otherwise a
+   * 429 or 503 reads as a generic retryable blip and never reaches the
+   * quarantine gate (#458). */
+  if (error instanceof ProviderHttpError) {
+    return {
+      failureClass: providerHttpCycleFailureClass(error),
+      message: error.message,
+      retryable: error.retryable,
     };
   }
   if (isNetworkOfflineMessage(message)) {
@@ -762,6 +847,22 @@ export function classifyProviderCycleError(error: unknown): {
     message: error instanceof Error ? error.message : String(error),
     retryable: true,
   };
+}
+
+function providerHttpCycleFailureClass(error: ProviderHttpError): ProviderCycleFailureClass {
+  const { code, status } = error;
+  if (code === "rate-limited" || status === 429) return "candidate-rate-limited";
+  if (code === "provider-unavailable" || (status !== undefined && status >= 500)) {
+    return "candidate-server-error";
+  }
+  if (code === "blocked" || status === 401 || status === 403) return "candidate-blocked";
+  if (code === "timeout" || status === 408 || status === 504) return "candidate-timeout";
+  if (code === "not-found" || status === 404) return "candidate-empty";
+  if (code === "parse-failed") return "candidate-parse";
+  if (code === "expired") return "candidate-expired";
+  if (code === "unsupported-title") return "candidate-unsupported";
+  if (code === "cancelled") return "candidate-user-cancelled";
+  return "candidate-network";
 }
 
 export function isAbortError(error: unknown): boolean {

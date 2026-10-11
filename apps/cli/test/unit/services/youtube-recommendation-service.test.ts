@@ -2,16 +2,19 @@ import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
 
 import type { TitleInfo } from "@/domain/types";
 
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const invidiousGetVideo = mock(async () => null as never);
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const invidiousGetChannelVideos = mock(async () => null as never);
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const invidiousGetTrending = mock(async () => [] as never);
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const mapInvidiousRecommendedVideos = mock((items: unknown) => items as never);
 const mapInvidiousSearchItem = mock(
   (_item?: { videoId?: string; title?: string }) => null as null | Record<string, unknown>,
 );
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const mapInvidiousTrendingVideos = mock((items: unknown[]) => items as never);
-const getYoutubeProviderConfig = mock(() => ({ invidiousInstanceUrl: undefined }));
-
 // `mock.module` is process-global in Bun and applies at file-LOAD time, so it
 // affects every other test file in the run — including files that execute before
 // this one. Two rules keep it contained:
@@ -22,6 +25,13 @@ const getYoutubeProviderConfig = mock(() => ({ invidiousInstanceUrl: undefined }
 // Only the network/mapping seams below are stubbed, and `afterAll` restores the
 // module so even those cannot outlive this file.
 const actualYoutubeModule = await import("@kunai/providers/youtube");
+// Delegates rather than freezing a value: a fixed `{}` here shadows
+// configureYoutubeProvider writes for every other suite in the run (the
+// poToken/download suites read config through this same export). Captured
+// before mock.module installs because Bun mutates the namespace in place —
+// reading it off actualYoutubeModule inside the stub would recurse.
+const realGetYoutubeProviderConfig = actualYoutubeModule.getYoutubeProviderConfig;
+const getYoutubeProviderConfig = mock(() => realGetYoutubeProviderConfig());
 
 mock.module("@kunai/providers/youtube", () => ({
   ...actualYoutubeModule,
@@ -57,6 +67,7 @@ function relatedBatch(count: number) {
 
 describe("loadYoutubeRecommendations", () => {
   it("skips channel fan-out when related already fills the rail", async () => {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     mapInvidiousRecommendedVideos.mockImplementation(() => relatedBatch(8) as never);
     invidiousGetVideo.mockResolvedValue({
       authorId: "UCmine",
@@ -87,6 +98,7 @@ describe("loadYoutubeRecommendations", () => {
   });
 
   it("does not treat an unrelated history channel as the current channel", async () => {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     mapInvidiousRecommendedVideos.mockImplementation(() => relatedBatch(1) as never);
     invidiousGetVideo.mockResolvedValue({
       recommendedVideos: [{}],

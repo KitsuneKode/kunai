@@ -8,8 +8,12 @@
 //     --binary apps/cli/dist/bin/kunai-linux-x64
 // =============================================================================
 
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
+import { isMuslEnvironmentSync } from "../apps/cli/src/services/update/native-installer/musl";
+import { resolveHostReleaseBinaryTarget } from "../apps/cli/src/services/update/platform-assets";
 import {
   allReadmeCommandsPassed,
   verifyReadmeCommands,
@@ -63,9 +67,53 @@ function parseArgs(argv: readonly string[]): {
   return { mode, version, binary };
 }
 
+/**
+ * Bare `bun run verify:readme:commands` must do something real — the root
+ * script passes no arguments, so it exited 2 for everyone who ran it while CI
+ * (which passes the full arg form) looked covered. Defaults: fixture mode,
+ * the CLI package's own version, and the host binary a local
+ * `bun run build:binary:host` produces.
+ */
+export async function resolveDefaultInvocation(): Promise<{
+  mode: ReadmeCommandMode;
+  version: string;
+  binary: string;
+}> {
+  const cliPackage = JSON.parse(
+    await readFile(join(import.meta.dirname, "../apps/cli/package.json"), "utf8"),
+  ) as { version?: string };
+  if (!cliPackage.version) {
+    throw new Error("could not read version from apps/cli/package.json");
+  }
+  const hostLibc = process.platform === "linux" && isMuslEnvironmentSync() ? "musl" : "gnu";
+  const target = resolveHostReleaseBinaryTarget({ libc: hostLibc });
+  return {
+    mode: "fixture-assets",
+    version: cliPackage.version,
+    // Repo-relative POSIX form — the value is also a stable contract string
+    // for tests; `resolve`/`existsSync` translate `/` on Windows fine.
+    binary: `apps/cli/dist/bin/${target.out}`,
+  };
+}
+
+export function assertInvocationBinary(binary: string, repoRoot: string): void {
+  if (!existsSync(resolve(repoRoot, binary))) {
+    throw new Error(
+      `no host binary at ${binary}. ` +
+        `Build it first: bun run build:binary:host — or pass --binary <path>.`,
+    );
+  }
+}
+
 async function main(): Promise<void> {
-  const { mode, version, binary } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
   const repoRoot = resolve(import.meta.dirname, "..");
+  // Explicit args are validated by parseArgs (usage error on miss). With no
+  // args the defaults apply, and the binary they resolve is checked here so the
+  // message can say how to produce one.
+  const { mode, version, binary } =
+    argv.length === 0 ? await resolveDefaultInvocation() : parseArgs(argv);
+  if (argv.length === 0) assertInvocationBinary(binary, repoRoot);
   const report = await verifyReadmeCommands({
     mode,
     version,
@@ -88,7 +136,9 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((error: unknown) => {
-  console.error(`[readme-commands] ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((error: unknown) => {
+    console.error(`[readme-commands] ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  });
+}

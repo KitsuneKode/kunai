@@ -1,4 +1,8 @@
+import { providerHttpErrorForStatus } from "@kunai/types";
+
+import { blockedLiteralTargetReason } from "../shared/stream-reachability";
 import { createTimeoutSignal } from "../shared/timeout-signal";
+import { YOUTUBE_PROVIDER_ID } from "./manifest";
 
 const DEFAULT_INSTANCES_URL = "https://api.invidious.io/instances.json?sort_by=type,health,api";
 const INSTANCE_COOLDOWN_MS = 5 * 60 * 1000;
@@ -66,7 +70,12 @@ export async function fetchHealthyInvidiousInstances(
       signal: createTimeoutSignal(options.signal, INSTANCE_REGISTRY_TIMEOUT_MS),
     });
     if (!response.ok) {
-      throw new Error(`Invidious instance list failed (${response.status})`);
+      throw providerHttpErrorForStatus({
+        status: response.status,
+        message: `Invidious instance list failed (${response.status})`,
+        providerId: YOUTUBE_PROVIDER_ID,
+        stage: "instance-list",
+      });
     }
     const payload = await response.json();
     // A 200 carrying the wrong shape (`{}`, an object, a string) is as useless
@@ -133,11 +142,14 @@ export async function pickInvidiousInstance(
 const UNREACHABLE_HOST_SUFFIXES = [".onion", ".i2p", ".ygg"] as const;
 
 function isReachableInstance(url: string): boolean {
+  // The public instance registry is attacker-influenced — anyone can list an
+  // entry. Without the literal-target gate a listed "instance" could name a
+  // LAN or link-local/metadata address and every pool fetch becomes an SSRF
+  // into the user's network.
+  if (blockedLiteralTargetReason(url) !== null) return false;
   let host: string;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-    host = parsed.hostname.toLowerCase();
+    host = new URL(url).hostname.toLowerCase();
   } catch {
     return false;
   }

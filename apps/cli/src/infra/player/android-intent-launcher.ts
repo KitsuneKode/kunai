@@ -135,10 +135,9 @@ async function readOutput(stream: ReadableStream<Uint8Array> | null | undefined)
   return new Response(stream).text();
 }
 
-function errorDetail(error: unknown): string | undefined {
+function errorDetail(error: Error | string | undefined): string | undefined {
   if (error instanceof Error) return boundedDiagnostic(error.message);
-  if (typeof error === "string") return boundedDiagnostic(error);
-  return undefined;
+  return error === undefined ? undefined : boundedDiagnostic(error);
 }
 
 function reportsMissingPlayer(detail: string): boolean {
@@ -181,7 +180,7 @@ export async function launchAndroidIntent(input: {
       ok: false,
       reason: "launch-rejected",
       launcher: command.launcher,
-      detail: errorDetail(error),
+      detail: errorDetail(error instanceof Error ? error : undefined),
     };
   }
 }

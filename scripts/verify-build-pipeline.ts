@@ -7,13 +7,14 @@
 //   KUNAI_VERIFY_ALL_BINARIES=1 bun run scripts/verify-build-pipeline.ts --all-targets
 
 import { spawnSync } from "node:child_process";
-import { existsSync, statfsSync } from "node:fs";
+import { existsSync, rmSync, statfsSync } from "node:fs";
 import { join } from "node:path";
 
 import {
   RELEASE_BINARY_TARGETS,
   resolveHostReleaseBinaryTarget,
 } from "../apps/cli/src/services/update/platform-assets";
+import { assertBuildCacheSummary } from "./build-cache-proof";
 
 const REPO_ROOT = join(import.meta.dirname, "..");
 const CLI_ROOT = join(REPO_ROOT, "apps/cli");
@@ -87,8 +88,12 @@ function assertDiskBudget(): void {
   }
 }
 
-function assertTurboCacheHit(): void {
-  const output = capture("bunx", [
+/**
+ * Proves the summary qualifies both build tasks as cache hits — the summary
+ * JSON, not stdout text, is the authoritative record (#470).
+ */
+export function assertTurboCacheHit(captureRun: typeof capture = capture): void {
+  const output = captureRun("bunx", [
     "turbo",
     "run",
     "build",
@@ -96,13 +101,26 @@ function assertTurboCacheHit(): void {
     "--filter=@kitsunekode/kunai",
     "--summarize",
   ]);
-  const hitCount = (output.match(/\bcache hit\b/gi) ?? []).length;
-  if (hitCount < 2) {
+  assertBuildCacheSummary(output, REPO_ROOT);
+  log("turbo cache hits verified for build + build:binary:host");
+}
+
+/**
+ * Deletes `dist/bin` before the cache replay so a reported hit is meaningless
+ * unless Turbo also *restores* the binary — the contract remote caching exists
+ * for (#470). Runs the side effects around `assertTurboCacheHit`, which stays
+ * injectable for unit tests.
+ */
+export function assertTurboCacheRestoresOutputs(): void {
+  rmSync(join(DIST, "bin"), { recursive: true, force: true });
+  assertTurboCacheHit();
+  const restored = hostBinaryPath();
+  if (!existsSync(restored)) {
     throw new Error(
-      `[verify:build-pipeline] expected Turbo cache hits for build + build:binary:host, got ${hitCount}.`,
+      `[verify:build-pipeline] turbo summary reports cache hits but did not restore ${restored} — check the build:binary:host outputs declaration in turbo.json.`,
     );
   }
-  log(`turbo cache hits: ${hitCount}`);
+  log(`turbo cache restored ${restored}`);
 }
 
 function hostBinaryPath(): string {
@@ -142,7 +160,7 @@ async function main(): Promise<void> {
   }
 
   log("step 4/… turbo cache hit check");
-  assertTurboCacheHit();
+  assertTurboCacheRestoresOutputs();
 
   if (existsSync(hostBin)) {
     log("step 5/… verify-host-binary.sh");
@@ -198,4 +216,4 @@ async function main(): Promise<void> {
   log("ok");
 }
 
-await main();
+if (import.meta.main) await main();

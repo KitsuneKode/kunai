@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { AppHeader } from "@/app-shell/primitives/AppHeader";
+import { APP_LABEL } from "@/app-shell/shell-theme";
 import React from "react";
 
 import { captureFrame } from "../../harness/render-capture";
@@ -40,7 +41,9 @@ describe("AppHeader width budgeting", () => {
       />,
       { columns: 64 },
     );
-    expect(frame).toContain("🦊 Kunai");
+    // Asserted through the constant, not a literal: the brand has one home
+    // in `shell-theme.ts`, and a copy here would silently stop tracking it.
+    expect(frame).toContain(APP_LABEL);
     expect(frame).toContain("watch");
   });
 

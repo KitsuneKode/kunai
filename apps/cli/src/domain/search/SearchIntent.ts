@@ -181,8 +181,8 @@ function normalizeFilters(filters: SearchIntentFilters): SearchIntentFilters {
   return {
     ...filters,
     ...(normalizedGenres && normalizedGenres.length > 0 ? { genres: normalizedGenres } : {}),
-    ...(normalizedMinRating === undefined ? {} : { minRating: normalizedMinRating }),
-    ...(normalizedYear === undefined ? {} : { year: normalizedYear }),
+    ...(normalizedMinRating === undefined ? null : { minRating: normalizedMinRating }),
+    ...(normalizedYear === undefined ? null : { year: normalizedYear }),
     ...(normalizedAudio ? { audio: normalizedAudio } : {}),
     ...(normalizedSubtitles ? { subtitles: normalizedSubtitles } : {}),
   };

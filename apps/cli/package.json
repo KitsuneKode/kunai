@@ -15,7 +15,7 @@
     "streaming",
     "terminal"
   ],
-  "homepage": "https://github.com/KitsuneKode/kunai#readme",
+  "homepage": "https://kunai.kitsunekode.in",
   "bugs": {
     "url": "https://github.com/KitsuneKode/kunai/issues"
   },
@@ -46,12 +46,15 @@
     "dev": "bun run src/main.ts",
     "profile:anime": "KUNAI_HEAP_PROFILE=1 KUNAI_HEAP_CAP_MB=2048 bun run src/main.ts -a --debug",
     "start": "bun run dist/kunai.js",
+    "agent:drive": "bun test/agent/drive.ts",
+    "agent:session": "bun test/agent/session.ts",
+    "test:agent": "bun test test/agent --timeout=20000",
     "test": "bun run scripts/run-default-tests.ts",
     "test:coverage": "bun test test/unit test/integration --coverage",
     "test:coverage:report": "bun test test/unit test/integration --coverage --coverage-reporter=text",
     "test:file": "bun test --timeout=20000",
     "test:unit": "bun test test/unit --timeout=20000 --parallel",
-    "test:future": "bun test --preload ./test/support/future-clock.preload.ts test/unit --timeout=20000",
+    "test:future": "bun test --preload ./test/support/future-clock.preload.ts --path-ignore-patterns='**/native-installer/{activation,version}-lock.test.ts' test/unit --timeout=20000",
     "test:integration": "bun test test/integration --timeout=20000",
     "test:binary:smoke": "KUNAI_BINARY_SMOKE=1 bun test test/integration/compiled-binary-smoke.test.ts",
     "test:npm-global-install": "KUNAI_NPM_GLOBAL_INSTALL=1 bun test test/integration/npm-global-install.test.ts",
@@ -62,14 +65,16 @@
     "test:installer:ci": "KUNAI_INSTALLER_DOCKER=1 bash test/docker/native-installer/run-local.sh",
     "test:live:allanime": "bun test/live/allanime-demonslayer.smoke.ts",
     "test:live:android-handoff": "bun test/live/android-terminal-handoff.ts",
+    "test:live:allmanga-rotation": "bun test/live/allmanga-rotation.smoke.ts",
     "test:live:anidb": "bun test/live/anidb-onigiri.smoke.ts",
+    "test:live:hianime": "bun test/live/hianime-naruto.smoke.ts",
     "test:live:tracker-sync": "bun -e \"await import('./test/live/tracker-sync-oauth.smoke.ts')\"",
     "test:live:discord": "bun -e \"await import('./test/live/discord-presence.smoke.ts')\"",
     "test:live:miruro": "bun test/live/miruro-demonslayer.smoke.ts",
-    "test:live:matrix": "node test/live/provider-matrix.smoke.mjs",
+    "test:live:matrix": "bun test/live/provider-matrix.smoke.ts",
     "test:live:release-signoff": "bun -e \"await import('./test/live/release-provider-signoff.smoke.ts')\"",
     "test:live:youtube": "bun -e \"await import('./test/live/youtube.smoke.ts')\"",
-    "test:live:providers": "bun run test:live:videasy && bun run test:live:vidlink && bun run test:live:rivestream && bun run test:live:anidb && bun run test:live:allanime && bun run test:live:miruro && bun run test:live:youtube",
+    "test:live:providers": "bun run test:live:videasy && bun run test:live:vidlink && bun run test:live:rivestream && bun run test:live:anidb && bun run test:live:hianime && bun run test:live:allanime && bun run test:live:miruro && bun run test:live:youtube",
     "test:live:rivestream": "bun -e \"await import('./test/live/rivestream-breakingbad.smoke.ts')\"",
     "test:live:vidlink": "bun test/live/vidlink-inception.smoke.ts",
     "test:live:relay-allanime": "bun -e \"await import('./test/live/relay-allanime.smoke.ts')\"",
@@ -80,7 +85,8 @@
     "test:vhs:setup": "vhs test/vhs/setup.tape",
     "test:vhs:offline": "vhs test/vhs/offline-library.tape",
     "test:vhs:palette": "vhs test/vhs/command-palette.tape",
-    "test:vhs:all": "bun run test:vhs:setup && bun run test:vhs:offline && bun run test:vhs:palette",
+    "test:vhs:playback": "vhs test/vhs/playback-walkthrough.tape",
+    "test:vhs:all": "bun run test:vhs:setup && bun run test:vhs:offline && bun run test:vhs:palette && bun run test:vhs:playback",
     "capture:settings": "bun run test/harness/capture-settings.tsx",
     "typecheck": "bun tsc --noEmit",
     "lint": "oxlint .",
@@ -98,12 +104,14 @@
     "build:prod": "bun run check && bun run build",
     "pkg:check": "bun run scripts/verify-npm-pack.ts",
     "release:dry-run": "bun run build:prod && bun run pkg:check",
-    "link:global": "bun link",
+    "link:global": "bun run scripts/link-global.ts",
     "unlink:global": "bun unlink",
     "relink:global": "bun run unlink:global && bun run link:global",
     "prepack": "bun run build",
     "build:npm-platform": "bun run scripts/build-npm-platform-packages.ts",
-    "test:live:analytics": "bun -e \"await import('./test/live/analytics-endpoint.smoke.ts')\""
+    "test:live:analytics": "bun -e \"await import('./test/live/analytics-endpoint.smoke.ts')\"",
+    "test:live:allmanga-crypto": "bun test/live/allmanga-crypto-freshness.smoke.ts",
+    "test:live:mpv": "bun test/live/mpv-playback.smoke.ts"
   },
   "dependencies": {
     "commander": "catalog:cli",
@@ -120,7 +128,8 @@
     "@kunai/types": "workspace:*",
     "@types/bun": "catalog:",
     "@types/react": "catalog:",
-    "jpeg-js": "^0.4.4"
+    "jpeg-js": "^0.4.4",
+    "zod": "catalog:"
   },
   "peerDependencies": {
     "typescript": "catalog:"
@@ -138,6 +147,6 @@
     "@kitsunekode/kunai-windows-x64": "0.3.0"
   },
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.2"
   }
 }

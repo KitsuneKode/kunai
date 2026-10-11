@@ -51,7 +51,7 @@ export function createQueuePlaybackAttempt(
         code,
         stage,
         at: now(),
-        ...(detail !== undefined ? { detail } : {}),
+        ...(detail !== undefined ? { detail } : null),
       });
       if (restored) rolledBack = true;
       return restored;

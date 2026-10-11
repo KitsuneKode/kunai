@@ -9,11 +9,17 @@
     "./experimental": "./src/experimental.ts",
     "./research": "./src/research.ts",
     "./allmanga": "./src/allmanga/direct.ts",
+    "./allmanga/crypto": "./src/allmanga/crypto.ts",
     "./anidb": "./src/anidb/direct.ts",
+    "./hianime": "./src/hianime/direct.ts",
+    "./animegg": "./src/animegg/direct.ts",
+    "./kickassanime": "./src/kickassanime/direct.ts",
     "./miruro": "./src/miruro/direct.ts",
     "./rivestream": "./src/rivestream/direct.ts",
     "./videasy": "./src/videasy/index.ts",
     "./vidlink": "./src/vidlink/direct.ts",
+    "./movy": "./src/movy/direct.ts",
+    "./vidrock": "./src/vidrock/direct.ts",
     "./youtube": "./src/youtube/index.ts"
   },
   "scripts": {
@@ -27,9 +33,7 @@
   "dependencies": {
     "@assemblyscript/loader": "catalog:providers",
     "@kunai/core": "workspace:*",
-    "@kunai/types": "workspace:*",
-    "@types/crypto-js": "catalog:providers",
-    "crypto-js": "catalog:providers"
+    "@kunai/types": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:"

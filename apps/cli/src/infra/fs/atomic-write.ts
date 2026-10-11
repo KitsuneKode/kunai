@@ -159,7 +159,13 @@ async function restrictWindowsSecretAcl(path: string): Promise<void> {
  * umask can only narrow the creation mode, never widen it.
  */
 async function writeAndFlush(path: string, contents: string | Uint8Array, mode?: number) {
-  const handle = await open(path, "w", mode);
+  // Exclusive create + no-follow: the temp name must belong to this write
+  // alone. A pre-existing entry at that path — an attacker-planted symlink or
+  // a colliding same-pid writer — fails with EEXIST instead of being
+  // truncated or written through.
+  const flags =
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW;
+  const handle = await open(path, flags, mode);
   try {
     await handle.writeFile(contents);
     await handle.sync();
@@ -193,6 +199,40 @@ async function flushDirectory(dir: string): Promise<void> {
   }
 }
 
+/**
+ * Write to a fresh temp file beside `targetPath`, retrying on name collision.
+ *
+ * The random suffix makes collisions rare, not impossible — and an entry an
+ * attacker planted at a predicted name must be *skipped*, never unlinked or
+ * written through, which is why the EEXIST branch deliberately does not
+ * unlink.
+ */
+async function createExclusiveTemp(
+  targetPath: string,
+  write: (tmp: string) => Promise<void>,
+  nextTempPath: (targetPath: string) => string = tempPath,
+): Promise<string> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const tmp = nextTempPath(targetPath);
+    try {
+      await write(tmp);
+      return tmp;
+    } catch (error) {
+      lastError = error;
+      // SAFETY: Node fs errors carry a string .code; non-errno throws just read undefined.
+      if ((error as NodeJS.ErrnoException)?.code === "EEXIST") continue;
+      await unlink(tmp).catch(() => {});
+      throw error;
+    }
+  }
+  throw new Error(
+    `could not create a unique temp file for ${basename(targetPath)}: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
+}
+
 async function writeAtomicTextWithMode(
   targetPath: string,
   contents: string,
@@ -200,20 +240,22 @@ async function writeAtomicTextWithMode(
 ): Promise<void> {
   const dir = dirname(targetPath);
   await mkdir(dir, { recursive: true });
-  const tmp = tempPath(targetPath);
 
+  let tmp: string | undefined;
   try {
     // Secret-bearing files must be private before they become visible at the
     // destination. Applying the mode after rename leaves a crash window where
     // the process umask may have created a world-readable config.
-    await writeAndFlush(tmp, contents, posixMode);
+    tmp = await createExclusiveTemp(targetPath, (candidate) =>
+      writeAndFlush(candidate, contents, posixMode),
+    );
     if (posixMode !== undefined && process.platform === "win32") {
       await restrictWindowsSecretAcl(tmp);
     }
     await atomicMove(tmp, targetPath);
     await flushDirectory(dir);
   } catch (e) {
-    await unlink(tmp).catch(() => {});
+    if (tmp !== undefined) await unlink(tmp).catch(() => {});
     throw e;
   }
 }
@@ -230,8 +272,8 @@ export async function writeAtomicBytes(
 ): Promise<void> {
   const dir = dirname(targetPath);
   await mkdir(dir, { recursive: true });
-  const tmp = tempPath(targetPath);
 
+  let tmp: string | undefined;
   try {
     const bytes =
       data instanceof Blob
@@ -239,11 +281,11 @@ export async function writeAtomicBytes(
         : data instanceof Uint8Array
           ? data
           : new Uint8Array(data);
-    await writeAndFlush(tmp, bytes);
+    tmp = await createExclusiveTemp(targetPath, (candidate) => writeAndFlush(candidate, bytes));
     await atomicMove(tmp, targetPath);
     await flushDirectory(dir);
   } catch (e) {
-    await unlink(tmp).catch(() => {});
+    if (tmp !== undefined) await unlink(tmp).catch(() => {});
     throw e;
   }
 }
@@ -265,4 +307,81 @@ export async function writeAtomicSecretJson(targetPath: string, value: unknown):
   await writeAtomicSecretText(targetPath, JSON.stringify(value, null, 2));
 }
 
-export const __testing = { atomicMove, flushDirectory, restrictWindowsSecretAcl, writeAndFlush };
+/** Rename failures a Windows scanner/indexer can cause on a freshly written file. */
+const WINDOWS_TRANSIENT_RENAME_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+const EPHEMERAL_RENAME_ATTEMPTS = 4;
+
+interface EphemeralPublishOptions {
+  platform?: NodeJS.Platform;
+  rename?: (from: string, to: string) => Promise<void>;
+  sleep?: (milliseconds: number) => Promise<void>;
+}
+
+/**
+ * Publish a small, short-lived record atomically: a unique temp file renamed
+ * into place, owner-only (`0o600` on POSIX), with **no fsync** of the file or
+ * its directory and no Windows ACL rewrite.
+ *
+ * For records whose crash recovery does not depend on the bytes surviving
+ * (cross-process lock tickets are re-derived from pid liveness) and which hold
+ * no secret. Readers still never observe a partial record, because the target
+ * name only ever appears via `rename`. Never use this for user data.
+ *
+ * `targetPath` must be unique and not previously published: a plain `rename`
+ * is then equivalent to create-new on every platform, so none of
+ * `atomicMove`'s Windows replace/backup dance is needed. A Windows scanner can
+ * still hold the temp file briefly (EPERM/EACCES/EBUSY on rename), so only that
+ * is retried a few times; every other failure surfaces immediately.
+ */
+export async function writeAtomicEphemeralJson(
+  targetPath: string,
+  value: unknown,
+  options: EphemeralPublishOptions = {},
+): Promise<void> {
+  const platform = options.platform ?? process.platform;
+  const doRename = options.rename ?? rename;
+  const sleep = options.sleep ?? Bun.sleep;
+  await mkdir(dirname(targetPath), { recursive: true });
+  const contents = JSON.stringify(value);
+  const flags =
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW;
+  const tmp = await createExclusiveTemp(targetPath, async (candidate) => {
+    const handle = await open(candidate, flags, 0o600);
+    try {
+      await handle.writeFile(contents);
+      // The creation mode can only be narrowed by the umask; pin it exactly.
+      if (platform !== "win32") await handle.chmod(0o600);
+    } finally {
+      await handle.close();
+    }
+  });
+  try {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await doRename(tmp, targetPath);
+        return;
+      } catch (error) {
+        // SAFETY: Node fs errors carry a string .code; non-errno throws read undefined.
+        const code = (error as NodeJS.ErrnoException)?.code;
+        const transient =
+          platform === "win32" &&
+          code !== undefined &&
+          WINDOWS_TRANSIENT_RENAME_CODES.has(code) &&
+          attempt < EPHEMERAL_RENAME_ATTEMPTS;
+        if (!transient) throw error;
+        await sleep(10 * attempt);
+      }
+    }
+  } catch (error) {
+    await unlink(tmp).catch(() => {});
+    throw error;
+  }
+}
+
+export const __testing = {
+  atomicMove,
+  createExclusiveTemp,
+  flushDirectory,
+  restrictWindowsSecretAcl,
+  writeAndFlush,
+};

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-27"
+lastReviewed: 2026-09-30
 ---
 
 # Kunai — Quickstart
@@ -11,7 +11,7 @@ Use this doc for setup, local execution, and common environment issues. Architec
 
 ## Prerequisites
 
-- Bun `>=1.3.14` for source installs during beta
+- Bun `>=1.4.2` for source installs during beta (matches `engines.bun` in the root `package.json`)
 - Desktop: `mpv` in `PATH`. Android preview: Termux plus VLC or mpv-android;
   desktop mpv is not installed inside Termux.
 - No poster dependency: every renderer consumes one natively prepared image.
@@ -20,8 +20,9 @@ Use this doc for setup, local execution, and common environment issues. Architec
   floor. `chafa` and ImageMagick are no longer used.
 - `yt-dlp` for YouTube playback and downloads/offline queue (must be on `PATH` for YouTube resolve/play and when downloads are enabled)
 - `ffprobe` optional—used only for quick validation of finished files, not downloading
-- `curl` for anime mode: AniDB is the default anime provider and sits behind
-  Cloudflare, which frequently blocks Bun's own fetch. Without a `curl` on
+- `curl` for anime mode: the anime providers (HiAnime, Miruro, AniDB) sit
+  behind Cloudflare, which refuses Bun's own fetch at Miruro's API and
+  frequently at AniDB's. Without a `curl` on
   `PATH`, anime search can come back empty — and **plain curl is often not
   enough**, because Cloudflare fingerprints the TLS handshake, not just the
   User-Agent. Kunai discovers curl-impersonate wrappers from `PATH`
@@ -52,8 +53,14 @@ brew install mpv yt-dlp curl
 
 Windows options:
 
+- The native installer (`install.ps1`) places portable `yt-dlp` and (x64)
+  curl-impersonate under `%LOCALAPPDATA%\kunai\deps\` so `irm … | iex` is enough
+  for YouTube and anime search. `mpv` is still a package-manager prompt.
 - Scoop: `scoop install mpv yt-dlp`; add `ffmpeg` only if you want optional `ffprobe` validation.
-- `winget`: install `mpv` and `yt-dlp`; add `ffmpeg` only if you want optional `ffprobe` validation.
+- `winget`: `winget install --id mpv-player.mpv-CI.MSVC -e` and
+  `winget install --id yt-dlp.yt-dlp -e`. A bare `winget install yt-dlp` is
+  ambiguous against a Microsoft Store listing. Add `ffmpeg` only if you want
+  optional `ffprobe` validation. curl-impersonate has no winget package.
 - Chocolatey: `choco install mpv yt-dlp` remains an alternative when Chocolatey is already managed on the machine.
 
 Posters need nothing installed. Kunai's Windows CI provisions mpv from the
@@ -72,12 +79,12 @@ kunai --player vlc
 
 The cross-built ELF declares API 28 as its platform floor; physical-device
 qualification is still pending. Install VLC or mpv-android as an Android app.
-`--player auto` opens the system
-chooser. This preview hands off only direct HTTP(S) streams that need no custom
-headers, cookies, yt-dlp, local file, or external subtitle. Launch acceptance
-does not give Kunai progress/completion evidence, so autoplay, auto-skip,
-automatic history progress, and queue acknowledgement are disabled for that
-handoff. iOS is not supported by this runtime.
+`--player auto` opens the system chooser. This preview hands off only direct
+HTTP(S) streams that need no custom headers, cookies, yt-dlp, local file, or
+external subtitle. Launch acceptance does not give Kunai progress/completion
+evidence, so autoplay, auto-skip, automatic history progress, and queue
+acknowledgement are disabled for that handoff. iOS is not supported by this
+runtime.
 
 Kunai is Bun-first in beta. A Node/npm-only source checkout is not supported because the CLI uses Bun runtime APIs directly. Packaged binaries are the preferred future path for users who should not need to install Bun manually.
 
@@ -144,9 +151,10 @@ Do not use `bun test` directly.
 Use these when you want an intuitive visual walkthrough of the shell flows:
 
 ```sh
-bun run --cwd apps/cli test:vhs:browse
-bun run --cwd apps/cli test:vhs:help
-bun run --cwd apps/cli test:vhs:launch
+bun run --cwd apps/cli test:vhs:setup
+bun run --cwd apps/cli test:vhs:offline
+bun run --cwd apps/cli test:vhs:palette
+bun run --cwd apps/cli test:vhs:playback
 ```
 
 ## CLI flags

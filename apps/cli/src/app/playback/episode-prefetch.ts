@@ -150,6 +150,16 @@ export class EpisodePrefetchHandle {
     return this.ready !== null && matchesEpisodePrefetchTarget(this.ready.target, target);
   }
 
+  peekReadyFor(target: EpisodePrefetchTarget): EpisodePrefetchBundle | null {
+    if (!this.ready) return null;
+    if (!matchesEpisodePrefetchTarget(this.ready.target, target)) {
+      return null;
+    }
+    return !prefetchTargetSubtitleMatches(this.ready.target, target)
+      ? { ...this.ready, target, prepared: false }
+      : this.ready;
+  }
+
   takeReadyFor(target: EpisodePrefetchTarget): EpisodePrefetchBundle | null {
     if (!this.ready) return null;
     if (!matchesEpisodePrefetchTarget(this.ready.target, target)) {
@@ -161,6 +171,13 @@ export class EpisodePrefetchHandle {
     this.ready = null;
     this.activeTarget = null;
     return bundle;
+  }
+
+  putbackReady(bundle: EpisodePrefetchBundle): void {
+    if (!this.ready && bundle) {
+      this.ready = bundle;
+      this.activeTarget = bundle.target;
+    }
   }
 
   isInFlightFor(target: EpisodePrefetchTarget): boolean {

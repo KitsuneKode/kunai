@@ -89,6 +89,8 @@ function createHarness(input: {
     createdAt: now,
     updatedAt: now,
   });
+  // complete() is fenced to claimed work — the job must be 'running' first.
+  jobs.markRunning(jobId, now);
   jobs.complete(jobId, now);
   jobs.markArtifactValidated(jobId, "ready", now);
 
@@ -105,6 +107,7 @@ function createHarness(input: {
   assets.adoptCompletedJob(completed);
 
   const library = new OfflineLibraryService({
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     downloadService: { getJob: (id: string) => jobs.get(id) } as never,
     historyRepository: {
       upsertProgress: () => {},

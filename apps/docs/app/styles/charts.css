@@ -7,7 +7,7 @@
  * the same roles for the dark surface. Every value is measured against the
  * surface it actually renders on, not flipped:
  *
- *   dark  — series #ff8fb0 on #1c1620 = 8.3:1 · residual #968a98 = 5.4:1
+ *   dark  — series #ff8fb0 on #1c1620 = 8.3:1 · residual #a195a3 = 6.2:1
  *   light — series #c14a71 on #fcfcfb = 4.6:1 · residual #8b8391 = 3.6:1
  *
  * One hue per chart: these breakdowns are single-series nominal magnitude, so
@@ -62,17 +62,77 @@
 :root {
   --kunai-chart-lifetime: #d9899f;
   --kunai-chart-active: #a8123f;
+  /*
+   * First-seen installs — the innermost nested area on the per-day view, so it
+   * takes the deepest tone of the family. Same hue, lower lightness: this is a
+   * subset of `active`, not a different kind of data, so it does not earn a
+   * second colour.
+   */
+  --kunai-chart-new: #5f0a27;
+  /*
+   * The 7-day average and the release markers are annotations on the install
+   * series, not series of their own, so both take the neutral ramp rather than
+   * a hue: a dashed neutral line reads as "a guide to the data", where a third
+   * rose step would read as a third kind of install.
+   */
+  --kunai-chart-avg: #3d3540;
+  --kunai-chart-marker: #8b8391;
+  /*
+   * npm registry downloads — deliberately outside the rose family. It is a
+   * third-party counter on a different day grid, so it takes the theme's own
+   * periwinkle blue (the milestone hue in `packages/design`) rather than a
+   * greyed lavender: a clear second colour on the page, never a faded rose,
+   * and not one of the platform hues. Contrast against its surface is 3:1+
+   * in both modes.
+   */
+  --kunai-chart-npm: #4a5fd0;
+  /*
+   * Platform partition — one band per OS bucket, categorical, so they step
+   * outside the rose hue. Amber / violet / teal are the three theme-adjacent
+   * hues that stay apart for every reader: validated as ALL-PAIRS, not just
+   * adjacent, against the surface each renders on.
+   *
+   *   light — #9a6a1c / #6b4fcf / #0a8aa6 on #fcfcfb · ΔE 18.9 normal, 11.2 worst-CVD
+   *   dark  — #bf8836 / #8f74e0 / #2ba5b8 on #1c1620 · ΔE 18.1 normal,  9.5 worst-CVD
+   *
+   * `other` is the suppressed residue, not a category, so it takes the page's
+   * de-emphasis grey instead of a hue; `extra` only ever serves an
+   * out-of-schema bucket and sits one step off it.
+   */
+  --kunai-chart-os-windows: #0a8aa6;
+  --kunai-chart-os-macos: #6b4fcf;
+  --kunai-chart-os-linux: #9a6a1c;
+  --kunai-chart-os-other: #8b8391;
+  --kunai-chart-os-extra: #a99fae;
 }
 
 :root.dark {
   --kunai-chart-lifetime: #b84a6e;
   --kunai-chart-active: var(--kunai-accent);
+  --kunai-chart-new: #ffc9d9;
+  --kunai-chart-avg: #f6eff4;
+  --kunai-chart-marker: #a195a3;
+  --kunai-chart-npm: #6d85f6;
+  --kunai-chart-os-windows: #2ba5b8;
+  --kunai-chart-os-macos: #8f74e0;
+  --kunai-chart-os-linux: #bf8836;
+  --kunai-chart-os-other: #8a7f93;
+  --kunai-chart-os-extra: #b5a9bb;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     --kunai-chart-lifetime: #b84a6e;
     --kunai-chart-active: var(--kunai-accent);
+    --kunai-chart-new: #ffc9d9;
+    --kunai-chart-avg: #f6eff4;
+    --kunai-chart-marker: #a195a3;
+    --kunai-chart-npm: #6d85f6;
+    --kunai-chart-os-windows: #2ba5b8;
+    --kunai-chart-os-macos: #8f74e0;
+    --kunai-chart-os-linux: #bf8836;
+    --kunai-chart-os-other: #8a7f93;
+    --kunai-chart-os-extra: #b5a9bb;
   }
 }
 
@@ -164,6 +224,17 @@ table.kunai-chart tr.kunai-chart-row:hover td,
 table.kunai-chart tr.kunai-chart-row:hover th {
   color: inherit;
   background-color: color-mix(in oklab, var(--kunai-chart-series) 8%, transparent);
+}
+
+/*
+ * Chart → table sync: the row the chart pointer is on. Stronger than :hover
+ * because it is a *located* row, not one under the local cursor — the
+ * reader's eyes need to find it after scrolling it into view.
+ */
+table.kunai-chart tr.kunai-chart-row[data-hovered="true"] td,
+table.kunai-chart tr.kunai-chart-row[data-hovered="true"] th {
+  color: inherit;
+  background-color: color-mix(in oklab, var(--kunai-chart-series) 16%, transparent);
 }
 
 /* Column widths: labels and values are fixed so the plot keeps the remainder. */

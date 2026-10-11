@@ -38,15 +38,20 @@ import {
 const profile = createProviderSmokeProfile("videasy");
 // Bun `-e` puts the script body at argv[2]; collect flags from the full argv.
 const cli = parseVideasySmokeArgs(process.argv);
-const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
-const relaxBudgets =
-  process.env.KUNAI_VIDEASY_LIVE_RELAX === "1" || process.env.KITSUNE_LIVE_RELAX === "1";
-const startupPriority = resolveSmokeStartupPriority(process.env.KITSUNE_SMOKE_STARTUP_PRIORITY);
+function videasySmokeEnv() {
+  return {
+    clearCache: process.env.KITSUNE_CLEAR_CACHE === "1",
+    relaxBudgets:
+      process.env.KUNAI_VIDEASY_LIVE_RELAX === "1" || process.env.KITSUNE_LIVE_RELAX === "1",
+    startupPriority: resolveSmokeStartupPriority(process.env.KITSUNE_SMOKE_STARTUP_PRIORITY),
+    fixtures: resolveVideasyLiveFixtures({
+      suite: cli.suite || process.env.KUNAI_VIDEASY_LIVE_SUITE === "1",
+      fixtureId: cli.fixtureId ?? process.env.KUNAI_VIDEASY_FIXTURE ?? null,
+    }).map((fixture) => applySeasonEpisodeOverride(fixture, cli.season, cli.episode)),
+  };
+}
 
-const fixtures = resolveVideasyLiveFixtures({
-  suite: cli.suite || process.env.KUNAI_VIDEASY_LIVE_SUITE === "1",
-  fixtureId: cli.fixtureId ?? process.env.KUNAI_VIDEASY_FIXTURE ?? null,
-}).map((fixture) => applySeasonEpisodeOverride(fixture, cli.season, cli.episode));
+const { clearCache, relaxBudgets, startupPriority, fixtures } = videasySmokeEnv();
 
 const { createContainer } = await import("@/container");
 const container = await createContainer({ debug: true });
@@ -245,7 +250,7 @@ async function runVideasyFixtureSmoke({
     knownGoodLabels: fixture.knownGoodLabels,
     softResolveBudgetMs: fixture.softResolveBudgetMs,
     hardResolveBudgetMs: fixture.hardResolveBudgetMs,
-    ...(resolveError ? providerSmokeError(resolveError) : {}),
+    ...(resolveError ? providerSmokeError(resolveError) : null),
     failureCodes,
     failureMessages,
     streamCandidates,

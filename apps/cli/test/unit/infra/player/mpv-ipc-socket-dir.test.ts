@@ -79,6 +79,27 @@ describe("mpv IPC socket directory", () => {
     expect(endpoint.path).toBe("/var/folders/ab/xyz/T/kunai-ipc/kunai-mpv-abc-123.sock");
   });
 
+  test("a full-entropy session id still fits sun_path under a deep macOS TMPDIR", () => {
+    // newMpvIpcSessionId() emits ~47-char ids (pid + timestamp + 128-bit hex).
+    // GitHub macOS runners give TMPDIRs past 50 chars; embedding the whole id
+    // pushed the socket path over the 104-byte sun_path limit and every
+    // PersistentMpvSession test died with "Unable to prepare a private mpv IPC
+    // directory". The unix filename keeps only the id's random tail — the 0700
+    // directory is the privacy boundary, not name entropy.
+    const sessionId = "12345-m3abcxyz-0123456789abcdef0123456789abcdef";
+    const fake = directoryOperations();
+    const endpoint = createMpvIpcEndpoint(sessionId, "darwin", {
+      env: { TMPDIR: "/var/folders/qb/8nz0spg51dx1z34f56r00000gn/T/" },
+      directoryOperations: fake.operations,
+    });
+
+    expect(endpoint.kind).toBe("unix_socket");
+    expect(Buffer.byteLength(endpoint.path, "utf8")).toBeLessThan(104);
+    expect(endpoint.path).toBe(
+      "/var/folders/qb/8nz0spg51dx1z34f56r00000gn/T/kunai-ipc/kunai-mpv-0123456789abcdef.sock",
+    );
+  });
+
   test("an empty XDG_RUNTIME_DIR is ignored rather than producing a bare path", () => {
     expect(mpvIpcSocketDirCandidates({ XDG_RUNTIME_DIR: "   ", TMPDIR: "/tmp" })).toEqual([
       "/tmp/kunai-ipc",

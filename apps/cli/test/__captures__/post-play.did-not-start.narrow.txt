@@ -1,14 +1,15 @@
 # post-play.did-not-start · narrow (72×45)
  DR. STONE
+ S04E07
 
  ▢ playback didn't start
  nothing was recorded for this title
 
  ▌ Try again         retry the same episode [r]
-   Fallback          try another provider [f]
+   Fallback          try another provider [⇧F]
    Sources           choose another stream [o]
    Search            find another title [s]
 
  +3 picks · Frieren · Vinland Saga
 
- ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks

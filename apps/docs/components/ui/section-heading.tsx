@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "motion/react";
+import { domAnimation, LazyMotion, m } from "motion/react";
 import type { ReactNode } from "react";
 
 type SectionHeadingProps = {
@@ -19,21 +19,23 @@ export function SectionHeading({
   children,
 }: SectionHeadingProps) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.45, ease: [0.23, 1, 0.32, 1] }}
-      className={className}
-    >
-      {eyebrow ? <p className="kunai-eyebrow">{eyebrow}</p> : null}
-      <h2 className="kunai-display-title text-fd-foreground">{title}</h2>
-      {description ? (
-        <p className="text-fd-muted-foreground mt-4 max-w-3xl text-sm leading-relaxed text-pretty md:text-base">
-          {description}
-        </p>
-      ) : null}
-      {children}
-    </motion.div>
+    <LazyMotion features={domAnimation}>
+      <m.div
+        initial={{ opacity: 0, y: 12 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-80px" }}
+        transition={{ duration: 0.45, ease: [0.23, 1, 0.32, 1] }}
+        className={className}
+      >
+        {eyebrow ? <p className="kunai-eyebrow">{eyebrow}</p> : null}
+        <h2 className="kunai-display-title text-fd-foreground">{title}</h2>
+        {description ? (
+          <p className="text-fd-muted-foreground mt-4 max-w-3xl text-sm leading-relaxed text-pretty md:text-base">
+            {description}
+          </p>
+        ) : null}
+        {children}
+      </m.div>
+    </LazyMotion>
   );
 }

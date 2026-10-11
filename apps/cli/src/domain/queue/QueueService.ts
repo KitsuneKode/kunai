@@ -66,15 +66,11 @@ export class QueueService {
    * Claim an exact pending row for playback handoff.
    * Compare-and-set via storage; does not mark played until acknowledgePlaybackStarted.
    */
-  beginPlayback(
-    id: string,
-    source: QueuePlaybackIntent["source"],
-    at = new Date().toISOString(),
-  ): QueuePlaybackIntent | undefined {
+  beginPlayback(id: string, at = new Date().toISOString()): QueuePlaybackIntent | undefined {
     const entry = this.repo.getById(id);
     if (!entry || entry.sessionId !== this.sessionId) return undefined;
     if (!this.repo.markInFlight(id, this.sessionId, at)) return undefined;
-    return queuePlaybackIntentFromEntry(entry, source);
+    return queuePlaybackIntentFromEntry(entry);
   }
 
   /** Confirm playback-started for the exact claimed intent. */

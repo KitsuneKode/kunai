@@ -24,6 +24,7 @@ import React, { act } from "react";
 
 import { render, stripAnsi } from "../../harness/render-capture";
 import { createSessionStateFixture } from "../../support/session-state-fixture";
+import { waitUntil } from "../../support/wait-until";
 
 const LEGACY_ANIME_JOB = {
   id: "anime-film-legacy-job",
@@ -97,12 +98,13 @@ function createContainer(): Container {
 }
 
 async function waitForRootContent(): Promise<RootContentSession> {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    const session = getRootContentSession();
-    if (session) return session;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error("download-more did not mount a root-content flow");
+  let session: RootContentSession | null = null;
+  await waitUntil(() => (session = getRootContentSession()) !== null, {
+    label: "root-content flow mount",
+  }).catch(() => {
+    throw new Error("download-more did not mount a root-content flow");
+  });
+  return session!;
 }
 
 async function captureDownloadMoreFlow(contentType: "movie" | "series"): Promise<string> {
@@ -261,11 +263,12 @@ test("anime movie download-more restores its persisted lane before actual enqueu
         "Download Infinity Castle?",
       );
       confirmationHandle.stdin.enqueue("\r");
-      await act(async () => {
-        for (let attempt = 0; attempt < 30 && repo.listQueued(10).length === 0; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-        await Promise.resolve();
+      await waitUntil(() => repo.listQueued(10).length > 0, {
+        label: "queued download row",
+        tick: (ms) =>
+          act(async () => {
+            await new Promise((r) => setTimeout(r, ms));
+          }),
       });
     } finally {
       confirmationHandle.unmount();

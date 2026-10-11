@@ -240,9 +240,18 @@ export async function applyProviderPickerSelection(input: {
       : {}),
   });
 
+  // An explicit pick made while a resolve is still in flight must win. The
+  // resolve reason carries "fallback" so the playback loop treats the abort
+  // as a provider skip — the configured provider (now the picked one) is what
+  // the next iteration resolves, and the old provider's late result is
+  // discarded by the commit policy instead of played.
+  const cancelledInFlight = container.workControl.cancelActive("provider-fallback-picker");
+
   const next = container.stateManager.getState();
   const recomputeRequested =
-    isPlaybackSessionActive(next.playbackStatus) && Boolean(next.currentEpisode);
+    !cancelledInFlight &&
+    isPlaybackSessionActive(next.playbackStatus) &&
+    Boolean(next.currentEpisode);
   if (recomputeRequested) {
     void container.playerControl.recomputeCurrentPlayback(reason);
   }

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 
 import { QueueService } from "@/domain/queue/QueueService";
 import { DurablePlaylistService } from "@/services/playlists/DurablePlaylistService";
@@ -161,6 +161,86 @@ test("DurablePlaylistService imports safe playlist documents without autoplay in
   expect(service.listItems(playlist.id)[0]?.externalIds).toBeUndefined();
 
   db.close();
+});
+
+test("DurablePlaylistService imports large playlists in one bounded batch", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new PlaylistsRepository(db);
+  const service = new DurablePlaylistService(repo, {
+    now: () => "2026-09-01T00:00:00.000Z",
+    id: (() => {
+      let counter = 0;
+      return (prefix) => `${prefix}-import-${++counter}`;
+    })(),
+  });
+
+  const reads = spyOn(repo, "listItems");
+  const batches = spyOn(repo, "addItems");
+  try {
+    const playlist = service.importPlaylist({
+      format: "kunai-playlist",
+      version: 1,
+      exportedAt: "2026-08-31T00:00:00.000Z",
+      playlist: { name: "Big weekend" },
+      items: Array.from({ length: 50 }, (_, index) => ({
+        titleId: `${index % 2 === 0 ? "anilist" : "tmdb"}:${index + 1}`,
+        mediaKind: index % 2 === 0 ? "anime" : "movie",
+        contentType: index % 2 === 0 ? ("series" as const) : ("movie" as const),
+        externalIds:
+          index % 2 === 0 ? { anilistId: String(index + 1) } : { tmdbId: String(index + 1) },
+        title: `Imported ${index} 日本語`,
+        season: index % 2 === 0 ? 2 : undefined,
+        episode: index % 2 === 0 ? index + 1 : undefined,
+        sortOrder: index * 2,
+        providerHints: [{ providerId: "vidking", sourceId: `source-${index}` }],
+        progressPercent: 10 * index,
+      })).reverse(),
+    });
+
+    expect(playlist.name).toBe("Big weekend");
+    expect(playlist.description).toBe("Imported Kunai playlist");
+
+    expect(reads).toHaveBeenCalledTimes(0);
+    expect(batches).toHaveBeenCalledTimes(1);
+
+    const stored = service.listItems(playlist.id);
+    expect(stored).toHaveLength(50);
+    expect(stored.map((item) => item.id)).toEqual(
+      Array.from({ length: 50 }, (_, index) => `playlist-item-import-${index + 2}`),
+    );
+    expect(stored.map((item) => item.sortOrder)).toEqual(
+      Array.from({ length: 50 }, (_, index) => index),
+    );
+    expect(stored).toMatchObject(
+      Array.from({ length: 50 }, (_, index) => ({
+        titleId: `imported-unresolved:${index % 2 === 0 ? "anilist" : "tmdb"}:${index + 1}`,
+        title: `Imported ${index} 日本語`,
+        season: index % 2 === 0 ? 2 : undefined,
+        episode: index % 2 === 0 ? index + 1 : undefined,
+        contentType: index % 2 === 0 ? "series" : "movie",
+        externalIds: undefined,
+        notes: undefined,
+      })),
+    );
+    expect(stored.map((item) => JSON.parse(item.providerHintsJson ?? "[]"))).toEqual(
+      Array.from({ length: 50 }, (_, index) => [
+        { providerId: "vidking", sourceId: `source-${index}` },
+      ]),
+    );
+    expect(stored.every((item) => item.addedAt === "2026-09-01T00:00:00.000Z")).toBe(true);
+    expect(playlist).toEqual({
+      id: "playlist-import-1",
+      name: "Big weekend",
+      description: "Imported Kunai playlist",
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    });
+  } finally {
+    reads.mockRestore();
+    batches.mockRestore();
+    db.close();
+  }
 });
 
 test("DurablePlaylistService renames and deletes durable playlists", () => {

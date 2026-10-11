@@ -2,6 +2,8 @@ import type { ProviderFetchPort } from "@kunai/types";
 
 import { isHlsMasterPlaylist, isHlsPlaylistUrl } from "./hls-manifest";
 import { normalizeQualityLabel, qualityRankFromLabel } from "./source-inventory";
+import { fetchGuardedStreamTarget, readBoundedTextBody } from "./stream-reachability";
+import { normalizeIsoLanguageCode } from "./subtitle-helpers";
 
 export type HlsLadderVariant = {
   readonly url: string;
@@ -10,8 +12,60 @@ export type HlsLadderVariant = {
   readonly bandwidth?: number;
 };
 
+/** A resolved `#EXT-X-MEDIA` rendition — an alternate audio or subtitle playlist. */
+export type HlsRenditionTrack = {
+  readonly url: string;
+  readonly groupId: string;
+  /** ISO language code when the master declares one. */
+  readonly language?: string;
+  /** The rendition NAME attribute — what a player would show. */
+  readonly label: string;
+  readonly isDefault: boolean;
+};
+
+/**
+ * Everything a master playlist carries: ranked variants plus the alternate
+ * rendition groups (`#EXT-X-MEDIA`) the Tracks panel shows as audio/subtitle
+ * inventory. `audioLanguages` covers muxed audio too — a rendition may declare
+ * a LANGUAGE without a URI, which still tells us the language exists.
+ */
+/**
+ * Why an expansion returned what it did. Callers that only want variants ignore
+ * this; callers deciding whether a stream host is *alive* (as opposed to merely
+ * unlabeled or WAF-gatekept) branch on it — a 5xx/404/410 `http-error` is a dead
+ * host, while `network`/`not-master`/403 stay ambiguous because gatekept CDNs
+ * reject expansion fetches yet still play.
+ */
+export type HlsMasterProbe = {
+  readonly kind: "ok" | "http-error" | "not-master" | "network" | "blocked-target";
+  readonly httpStatus?: number;
+};
+
+/**
+ * HTTP statuses that prove a stream host is dead, not merely gatekept.
+ * 5xx and 404/410 mean mpv will fail identically on the same URL. 401/403 stay
+ * ambiguous on purpose — WAF-fronted CDNs reject expansion fetches yet still
+ * play once the player carries the provider's headers.
+ */
+// Invariant the terse `isHlsDeadHostStatus(probe.httpStatus)` idiom leans on:
+// only `http-error` probes carry a status ≥ 400 (`ok`/`not-master` are 200,
+// `network` has none) — so checking the status alone is equivalent to
+// `probe.kind === "http-error" && isHlsDeadHostStatus(probe.httpStatus)`.
+export function isHlsDeadHostStatus(status: number | undefined): boolean {
+  return status !== undefined && (status >= 500 || status === 404 || status === 410);
+}
+
+export type HlsMasterInventory = {
+  readonly variants: readonly HlsLadderVariant[];
+  readonly audioTracks: readonly HlsRenditionTrack[];
+  readonly subtitleTracks: readonly HlsRenditionTrack[];
+  readonly audioLanguages: readonly string[];
+  readonly probe: HlsMasterProbe;
+};
+
 export type ExpandHlsMasterPlaylistOptions = {
   readonly fetch: ProviderFetchPort["fetch"] | typeof fetch;
+  readonly resolvesLocally?: (url: string) => boolean;
   readonly masterUrl: string;
   readonly headers?: Record<string, string>;
   readonly signal?: AbortSignal;
@@ -23,12 +77,13 @@ const DEFAULT_MAX_VARIANTS = 12;
 
 /**
  * Fetch a master HLS playlist and expand `#EXT-X-STREAM-INF` rows into ranked
- * variant URLs for the Tracks quality picker. Media playlists / parse failures
- * fall back to a single `auto` row pointing at the original URL.
+ * variant URLs for the Tracks quality picker, alongside the `#EXT-X-MEDIA`
+ * rendition groups as audio/subtitle track inventory. Media playlists / parse
+ * failures fall back to a single `auto` row pointing at the original URL.
  */
-export async function expandHlsMasterPlaylist(
+export async function expandHlsMasterInventory(
   options: ExpandHlsMasterPlaylistOptions,
-): Promise<readonly HlsLadderVariant[]> {
+): Promise<HlsMasterInventory> {
   const { masterUrl, headers, signal, maxVariants = DEFAULT_MAX_VARIANTS } = options;
   const fallback: HlsLadderVariant = {
     url: masterUrl,
@@ -36,28 +91,142 @@ export async function expandHlsMasterPlaylist(
     // Keep rank 0 so callers do not invent a fake 1080p height from auto.
     qualityRank: 0,
   };
+  const empty = (probe: HlsMasterProbe): HlsMasterInventory => ({
+    variants: [fallback],
+    audioTracks: [],
+    subtitleTracks: [],
+    audioLanguages: [],
+    probe,
+  });
 
   try {
-    const response = await options.fetch(masterUrl, {
-      headers: headers ?? {},
+    // The master URL is provider markup, not a vetted candidate yet — the same
+    // SSRF blocklist the probe applies has to gate this fetch too, or a page
+    // could aim the expansion at a link-local or LAN address.
+    const outcome = await fetchGuardedStreamTarget({
+      fetchImpl: options.fetch,
+      resolvesLocally: options.resolvesLocally,
+      url: masterUrl,
+      init: {
+        headers: headers ?? {},
+      },
       signal: signal ?? AbortSignal.timeout(12_000),
     });
-    if (!response.ok) return [fallback];
+    if (outcome.kind === "blocked") {
+      return empty({ kind: "blocked-target" });
+    }
+    if (outcome.kind === "timeout") {
+      return empty({ kind: "network" });
+    }
+    const response = outcome.response;
+    if (!response.ok) {
+      return empty({ kind: "http-error", httpStatus: response.status });
+    }
 
-    const text = await response.text();
+    // Bounded read: a hostile or mis-labelled body must not buffer unbounded,
+    // and a truncated master must never parse as a real ladder.
+    const text = await readBoundedTextBody(response.body);
+    if (text === null) {
+      return empty({ kind: "http-error", httpStatus: response.status });
+    }
     if (!isHlsMasterPlaylist(text)) {
-      return [fallback];
+      return empty({ kind: "not-master", httpStatus: response.status });
+    }
+    // A variant whose audio group points at a separate playlist gets its sound
+    // (or its other languages) from there, and its own playlist is often
+    // video-only. Handing mpv one variant would then play silent video or drop
+    // the dub, so such a master stays whole and mpv picks. Losing the quality
+    // picker is the worst this can cost. A group whose renditions carry no URI
+    // only labels audio already muxed into each variant, so it does not trip
+    // this.
+    if (masterVariantsNeedSeparateAudio(text)) {
+      const renditions = parseHlsMasterRenditions(text, masterUrl);
+      return {
+        variants: [fallback],
+        ...renditions,
+        probe: { kind: "ok", httpStatus: response.status },
+      };
     }
 
     const variants = parseHlsMasterVariants(text, masterUrl);
-    if (variants.length === 0) return [fallback];
+    if (variants.length === 0) {
+      return empty({ kind: "not-master", httpStatus: response.status });
+    }
 
     const sorted = [...variants].sort((left, right) => right.qualityRank - left.qualityRank);
     const capped = maxVariants > 0 ? sorted.slice(0, maxVariants) : sorted;
-    return capped;
+    const renditions = parseHlsMasterRenditions(text, masterUrl);
+    return { variants: capped, ...renditions, probe: { kind: "ok", httpStatus: response.status } };
   } catch {
-    return [fallback];
+    return empty({ kind: "network" });
   }
+}
+
+export type HlsAudioRendition = {
+  /** Raw LANGUAGE attribute (`jpn`, `en-US`), as written in the manifest. */
+  readonly language?: string;
+  /** NAME attribute — the label a player shows ("Japanese"). */
+  readonly name?: string;
+  readonly isDefault: boolean;
+};
+
+/**
+ * The `#EXT-X-MEDIA:TYPE=AUDIO` renditions of a master playlist.
+ *
+ * A master can carry one video ladder and several audio tracks; the variant
+ * playlists are then video-only and the player muxes the chosen audio. Which
+ * track that is comes from mpv's `--alang`, so a provider that wants to name
+ * the audio it is about to play has to read the group rather than assume.
+ */
+export function parseHlsMasterAudioRenditions(manifestText: string): HlsAudioRendition[] {
+  const renditions: HlsAudioRendition[] = [];
+  for (const rawLine of manifestText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line.startsWith("#EXT-X-MEDIA:")) continue;
+    if (!/\bTYPE=AUDIO\b/i.test(line)) continue;
+    renditions.push({
+      language: hlsAttribute(line, "LANGUAGE"),
+      name: hlsAttribute(line, "NAME"),
+      isDefault: hlsAttribute(line, "DEFAULT")?.toUpperCase() === "YES",
+    });
+  }
+  return renditions;
+}
+
+/**
+ * True when a variant's AUDIO group has a rendition with its own `URI`.
+ *
+ * A group whose renditions carry no `URI` only labels audio already muxed into
+ * each variant (RFC 8216 §4.3.4.2.1), so one variant alone keeps its sound. A
+ * single addressed rendition in the group is enough to need the master: it is
+ * either the only audio or a language the muxed track does not have.
+ */
+export function masterVariantsNeedSeparateAudio(manifestText: string): boolean {
+  const lines = manifestText.split(/\r?\n/).map((line) => line.trim());
+  const addressedGroups = new Set<string>();
+  for (const line of lines) {
+    if (!line.startsWith("#EXT-X-MEDIA:")) continue;
+    if (hlsAttribute(line, "TYPE")?.toUpperCase() !== "AUDIO") continue;
+    const groupId = hlsAttribute(line, "GROUP-ID");
+    if (groupId && hlsAttribute(line, "URI")) addressedGroups.add(groupId);
+  }
+  if (addressedGroups.size === 0) return false;
+  return lines.some((line) => {
+    if (!line.startsWith("#EXT-X-STREAM-INF:")) return false;
+    const group = hlsAttribute(line, "AUDIO");
+    return group !== undefined && addressedGroups.has(group);
+  });
+}
+
+/**
+ * One attribute of an HLS tag, matched whole. A bare /LANGUAGE="…"/ also
+ * matches inside ASSOC-LANGUAGE, which would name the wrong track, so the name
+ * must start the list or follow a comma.
+ */
+function hlsAttribute(line: string, name: string): string | undefined {
+  const match = new RegExp(`(?:^|[:,])${name}=(?:"([^"]*)"|([^,]*))`, "i").exec(line);
+  const value = (match?.[1] ?? match?.[2])?.trim();
+  return value || undefined;
 }
 
 /** True when a stream URL looks like an HLS master (leaf or path hint). */
@@ -106,11 +275,13 @@ export function parseHlsMasterVariants(
     }
 
     const qualityLabel = normalizeQualityLabel(labelSource) ?? labelSource;
+    // `currentBandwidth` is always a number — the `?? 0` that used to trail it
+    // was dead. A 0 simply ranks the variant lowest, which is what an
+    // unlabeled, unres'd row means.
     const qualityRank =
       qualityRankFromLabel(qualityLabel) ??
       qualityRankFromLabel(currentResolution) ??
-      currentBandwidth ??
-      0;
+      currentBandwidth;
 
     variants.push({
       url: absoluteUrl,
@@ -145,4 +316,85 @@ function dedupeHlsVariantsByUrl(variants: readonly HlsLadderVariant[]): HlsLadde
     out.push(variant);
   }
   return out;
+}
+
+/**
+ * `#EXT-X-MEDIA` rows declare rendition groups: `TYPE=AUDIO|SUBTITLES|…`,
+ * `GROUP-ID`, `NAME`, `LANGUAGE`, `URI`, `DEFAULT`. Audio renditions may omit
+ * URI entirely (muxed into the variant) — those still feed `audioLanguages`
+ * even though there is no separate playlist to hand to a player.
+ *
+ * CLOSED-CAPTIONS renditions are skipped: they never carry a URI and mpv reads
+ * the embedded captions in-container.
+ */
+export function parseHlsMasterRenditions(
+  manifestText: string,
+  masterUrl: string,
+): Pick<HlsMasterInventory, "audioTracks" | "subtitleTracks" | "audioLanguages"> {
+  const audioTracks: HlsRenditionTrack[] = [];
+  const subtitleTracks: HlsRenditionTrack[] = [];
+  const audioLanguages: string[] = [];
+  const seenAudioLanguages = new Set<string>();
+  const seenUrls = new Set<string>();
+
+  for (const rawLine of manifestText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line.startsWith("#EXT-X-MEDIA:")) continue;
+    const attrs = parseHlsTagAttributes(line.slice("#EXT-X-MEDIA:".length));
+    const type = attrs["TYPE"]?.toUpperCase();
+    if (type !== "AUDIO" && type !== "SUBTITLES") continue;
+
+    const language = normalizeIsoLanguageCode(attrs["LANGUAGE"]) ?? attrs["LANGUAGE"]?.trim();
+    if (type === "AUDIO" && language && !seenAudioLanguages.has(language)) {
+      seenAudioLanguages.add(language);
+      audioLanguages.push(language);
+    }
+
+    const uri = attrs["URI"];
+    if (!uri) continue; // muxed rendition — language recorded above, nothing to hand a player
+    const url = resolveHlsVariantUrl(masterUrl, uri);
+    if (!url || seenUrls.has(url)) continue;
+    seenUrls.add(url);
+
+    const track: HlsRenditionTrack = {
+      url,
+      groupId: attrs["GROUP-ID"] ?? "",
+      ...(language ? { language } : null),
+      label: attrs["NAME"]?.trim() || language || url,
+      isDefault: attrs["DEFAULT"]?.toUpperCase() === "YES",
+    };
+    if (type === "AUDIO") audioTracks.push(track);
+    else subtitleTracks.push(track);
+  }
+
+  return { audioTracks, subtitleTracks, audioLanguages };
+}
+
+/**
+ * Parse an `EXT-X` attribute list (`KEY=value,KEY="quoted"`). Quoted values may
+ * contain commas; unquoted values terminate at the next comma per RFC 8216.
+ */
+function parseHlsTagAttributes(input: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  // Split on commas outside quotes in a single pass. A regex over the same
+  // shape backtracks per position on hostile input (a long run of '-' fails
+  // the '=' every time), and a hostile playlist is exactly what this parses.
+  let start = 0;
+  let inQuotes = false;
+  const push = (end: number) => {
+    const segment = input.slice(start, end);
+    start = end + 1;
+    const eq = segment.indexOf("=");
+    if (eq < 0) return;
+    const key = segment.slice(0, eq).trim().toUpperCase();
+    if (!/^[A-Z0-9-]+$/.test(key)) return;
+    const raw = segment.slice(eq + 1).trim();
+    const quoted = raw.startsWith('"') ? /^"([^"]*)"/.exec(raw) : null;
+    attrs[key] = raw.startsWith('"') ? (quoted?.[1] ?? "") : raw;
+  };
+  for (let i = 0; i <= input.length; i++) {
+    if (input[i] === '"') inQuotes = !inQuotes;
+    if (i === input.length || (input[i] === "," && !inQuotes)) push(i);
+  }
+  return attrs;
 }

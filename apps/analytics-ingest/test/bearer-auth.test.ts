@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { authorizeBearer, secretsMatch } from "../src/bearer-auth";
 
 function request(authorization?: string) {
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   return { headers: authorization === undefined ? {} : { authorization } } as never;
 }
 

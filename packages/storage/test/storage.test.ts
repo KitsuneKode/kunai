@@ -305,6 +305,28 @@ test("history repository round trips latest progress", () => {
   expect(repo.listLatestByTitle()).toMatchObject([{ titleId: "tmdb:1", episode: 2 }]);
 });
 
+test("history repository scopes season reads without a full-title scan", () => {
+  const db = migratedDataDb();
+  const repo = new HistoryRepository(db);
+  const seed = (season: number, episode: number) =>
+    repo.upsertProgress({
+      title: { id: "tmdb:9", kind: "series", title: "Seasons" },
+      episode: { season, episode },
+      positionSeconds: 10,
+      durationSeconds: 1200,
+      completed: false,
+      providerId: "videasy",
+      updatedAt: "2026-04-29T00:00:00.000Z",
+    });
+  seed(1, 1);
+  seed(1, 2);
+  seed(2, 1);
+
+  expect(repo.listByTitleSeason("tmdb:9", 1).map((row) => row.episode)).toEqual([1, 2]);
+  expect(repo.listByTitleSeason("tmdb:9", 2).map((row) => row.episode)).toEqual([1]);
+  expect(repo.listByTitleSeason("tmdb:9", 3)).toEqual([]);
+});
+
 test("history repository lists one latest row per title", () => {
   const db = migratedDataDb();
   const repo = new HistoryRepository(db);
@@ -417,12 +439,14 @@ test("provider health, inventory, and trace repositories round trip typed data",
     "inventory:key",
     "vidking",
     "tmdb:1",
-    { sources: 2 },
+    { streamCount: 2 },
     "2026-04-29T01:00:00.000Z",
   );
   expect(
-    inventoryRepo.get<{ sources: number }>("inventory:key", new Date("2026-04-29T00:30:00.000Z"))
-      ?.inventory.sources,
+    inventoryRepo.get<{ streamCount: number }>(
+      "inventory:key",
+      new Date("2026-04-29T00:30:00.000Z"),
+    )?.inventory.streamCount,
   ).toBe(2);
 
   const traceRepo = new ResolveTraceRepository(db);
@@ -497,6 +521,9 @@ test("download jobs repository supports queue lifecycle", () => {
 
   repo.requeue("job-1", "2026-04-29T00:02:50.000Z");
   expect(repo.get("job-1")?.status).toBe("queued");
+  // Completion writes are fenced to a live run or a repair pass — a queued row
+  // has no worker, so the claim must happen before complete() applies.
+  repo.markRunning("job-1", "2026-04-29T00:02:55.000Z");
   repo.complete("job-1", "2026-04-29T00:03:00.000Z");
   const done = repo.listCompleted(10)[0];
   expect(done?.status).toBe("completed");
@@ -824,6 +851,9 @@ test("download jobs repository preserves repairable sidecar status without losin
     completedAt: undefined,
   });
 
+  // In production repairable is only reached from a live run — the status
+  // fence keeps a queued row from jumping straight to a completed family state.
+  repo.markRunning("job-sidecar", "2026-04-29T00:02:00.000Z");
   repo.markRepairable(
     "job-sidecar",
     {
@@ -841,7 +871,12 @@ test("download jobs repository preserves repairable sidecar status without losin
   expect(repairable?.status).toBe("repairable");
   expect(repairable?.artifactStatus).toBe("expected-missing");
   expect(repairable?.repairMetadataJson).toContain("retry-sidecar");
-  expect(repo.listFailed(10).map((job) => job.id)).toContain("job-sidecar");
+  // A repairable job is a completed download carrying repair work, not a
+  // failure: it must appear in exactly one of the two lists, and be reachable
+  // for the repair sweep.
+  expect(repo.listRepairable(10).map((job) => job.id)).toContain("job-sidecar");
+  expect(repo.listCompleted(10).map((job) => job.id)).toContain("job-sidecar");
+  expect(repo.listFailed(10).map((job) => job.id)).not.toContain("job-sidecar");
 
   repo.completeWithNotes(
     "job-sidecar",
@@ -858,6 +893,80 @@ test("download jobs repository preserves repairable sidecar status without losin
   expect(completedWithNotes?.artifactStatus).toBe("optional-missing");
   expect(completedWithNotes?.repairMetadataJson).toBeUndefined();
   expect(repo.listCompleted(10).map((job) => job.id)).toContain("job-sidecar");
+});
+
+test("download jobs repository fences stale lifecycle writes off terminal states", () => {
+  const db = migratedDataDb();
+  const repo = new DownloadJobsRepository(db);
+  const now = "2026-04-29T00:00:00.000Z";
+  const enqueueBase = {
+    titleName: "Fenced",
+    mediaKind: "series" as const,
+    season: 1,
+    providerId: "vidking",
+    streamUrl: "https://example.com/master.m3u8",
+    headers: {},
+    createdAt: now,
+    updatedAt: now,
+    completedAt: undefined,
+  };
+
+  // A stale writer finishing after a sibling aborted the job must not
+  // resurrect the row.
+  repo.enqueue({
+    ...enqueueBase,
+    id: "job-aborted",
+    titleId: "tmdb:fenced-abort",
+    episode: 1,
+    outputPath: "/tmp/fenced-abort.mp4",
+    tempPath: "/tmp/fenced-abort.tmp",
+  });
+  repo.markRunning("job-aborted", now);
+  repo.abort("job-aborted", "2026-04-29T00:01:00.000Z");
+  repo.complete("job-aborted", "2026-04-29T00:01:10.000Z");
+  repo.fail("job-aborted", "late failure", false, "2026-04-29T00:01:10.000Z", "http-client");
+  repo.scheduleRetry(
+    "job-aborted",
+    "late retry",
+    "2026-04-29T00:02:00.000Z",
+    "2026-04-29T00:01:10.000Z",
+  );
+  expect(repo.get("job-aborted")?.status).toBe("aborted");
+
+  // A completed row is final — failure writes must not regress it.
+  repo.enqueue({
+    ...enqueueBase,
+    id: "job-done",
+    titleId: "tmdb:fenced-done",
+    episode: 2,
+    outputPath: "/tmp/fenced-done.mp4",
+    tempPath: "/tmp/fenced-done.tmp",
+  });
+  repo.markRunning("job-done", now);
+  repo.complete("job-done", "2026-04-29T00:01:00.000Z");
+  repo.fail("job-done", "stale failure", false, "2026-04-29T00:01:10.000Z", "http-client");
+  repo.scheduleRetry(
+    "job-done",
+    "stale retry",
+    "2026-04-29T00:02:00.000Z",
+    "2026-04-29T00:01:10.000Z",
+  );
+  repo.abort("job-done", "2026-04-29T00:01:10.000Z");
+  repo.pause("job-done", "stale pause", "2026-04-29T00:02:00.000Z", "2026-04-29T00:01:10.000Z");
+  expect(repo.get("job-done")?.status).toBe("completed");
+
+  // A live 'running' row is a lease: requeue must not steal it back to queued.
+  repo.enqueue({
+    ...enqueueBase,
+    id: "job-live",
+    titleId: "tmdb:fenced-live",
+    episode: 3,
+    outputPath: "/tmp/fenced-live.mp4",
+    tempPath: "/tmp/fenced-live.tmp",
+  });
+  repo.markRunning("job-live", now);
+  repo.requeue("job-live", "2026-04-29T00:01:10.000Z");
+  expect(repo.get("job-live")?.status).toBe("running");
 });
 
 test("download jobs repository keeps legacy artifact rows compatible with repair metadata", () => {

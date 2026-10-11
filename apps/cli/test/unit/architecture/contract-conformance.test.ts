@@ -114,9 +114,12 @@ describe("contract conformance", () => {
   });
 
   test("the Android live smoke is opt-in and forwarded from the root", () => {
+    // SAFETY: repo package.json files are read for their scripts map only;
+    // anything absent asserts as undefined below.
     const rootPackage = JSON.parse(readRepoFile("package.json")) as {
       scripts: Record<string, string>;
     };
+    // SAFETY: same read — the CLI manifest's scripts table.
     const cliPackage = JSON.parse(readRepoFile("apps/cli/package.json")) as {
       scripts: Record<string, string>;
     };
@@ -166,11 +169,8 @@ describe("contract conformance", () => {
    */
   test("every registered command is offered by at least one palette context", () => {
     // Nested `/sync-connect-*` stay under `/sync`. `/favorites` is ADR-retired.
-    // `/image-pane` has no handler. `/clear-history` is deliberately buried.
     const KNOWN_UNREACHABLE_COMMANDS = new Set([
-      "clear-history",
       "favorites",
-      "image-pane",
       "sync-connect-anilist",
       "sync-connect-tmdb",
       "sync-disconnect",
@@ -271,6 +271,7 @@ describe("contract conformance", () => {
     const declared = new Set(
       KEYBINDINGS.map((binding) => binding.scope as string).concat([...KNOWN_EMPTY_SCOPES]),
     );
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const empty = [...declared].filter((scope) => !used.has(scope as never));
 
     expect(empty.filter((scope) => !KNOWN_EMPTY_SCOPES.has(scope))).toEqual([]);
@@ -284,6 +285,7 @@ describe("contract conformance", () => {
    */
   test("every keybinding scope is reachable from resolveHelpScope", () => {
     const state = (playbackStatus: string, ...modals: readonly string[]) =>
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       ({ playbackStatus, activeModals: modals.map((type) => ({ type })) }) as never;
 
     const REACHABLE: Readonly<Record<string, () => unknown>> = {
@@ -329,11 +331,11 @@ describe("contract conformance", () => {
       },
     ];
 
-    // DEBT (2026-07-21): declared, wired to nothing.
-    // - detectGeoBlockedProviderResponse: geo-blocking is the failure the relay
-    //   exists for and nothing detects it; its allow-list also names "allmanga",
-    //   which is the module name, not the provider id ("allanime").
-    const KNOWN_ORPHANED_CONTRACTS = new Set(["detectGeoBlockedProviderResponse"]);
+    // Ratchet: entries are deleted as they gain a reader, never extended.
+    // `detectGeoBlockedProviderResponse` is read by
+    // `apps/cli/src/domain/playback/playback-problem.ts` (geoBlockedRelayHint),
+    // so the baseline is now empty.
+    const KNOWN_ORPHANED_CONTRACTS = new Set<string>([]);
 
     const orphaned: string[] = [];
     const revived: string[] = [];
@@ -365,7 +367,11 @@ describe("contract conformance", () => {
       import("@kunai/providers/videasy"),
       import("@kunai/providers/vidlink"),
       import("@kunai/providers/rivestream"),
+      import("@kunai/providers/movy"),
+      import("@kunai/providers/vidrock"),
       import("@kunai/providers/allmanga"),
+      import("@kunai/providers/anidb"),
+      import("@kunai/providers/hianime"),
       import("@kunai/providers/miruro"),
       import("@kunai/providers/youtube"),
     ]);

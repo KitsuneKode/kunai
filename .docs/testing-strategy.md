@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-10-11"
 ---
 
 # Kunai — Testing Strategy
@@ -18,24 +18,111 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 - keep opt-in live provider smoke scripts under `apps/cli/test/live/`
 - keep copyable templates for new contract tests under `apps/cli/test/templates/`
 - keep VHS tapes and captured golden outputs under `apps/cli/test/vhs/` for UI demos and visual regression review
+- keep the agent verification loop under `apps/cli/test/agent/` — user-path drivers, evidence bundles, wiring scenarios (`bun run test:agent`; not swept into `test:unit`/`test:integration`)
+- keep mobile unit/integration contracts under `apps/mobile/test/{unit,integration}/`
+- keep the redacted, opt-in device-evidence validator under `apps/mobile/test/live/`; it validates supplied evidence and never controls a device
 
-The published npm package already excludes the entire `test/` tree because `package.json` only ships `dist/kunai.js`, `dist/assets/**`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
+The published npm launcher package excludes the entire `test/` tree: its file allowlist contains `dist/kunai.mjs`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
 
-## Turborepo Test Caching
+## Turborepo Test Execution
 
-`bun run test` is `turbo run test`. Unchanged packages replay from cache (local `.turbo` and optional remote `TURBO_TOKEN` / `TURBO_TEAM`).
+`bun run test` is `turbo run test`. Test tasks currently set `cache: false`; selected suites execute on every invocation. Typecheck also disables caching; build tasks can still replay from cache. Use `--force` when reporting fresh execution of those gates.
 
-CLI suites are separate Turbo tasks so a unit-only change does not re-run integration:
+CLI suites are separate Turbo tasks for scheduling and focused invocation. Because test caching is disabled, a unit-only change selecting the CLI package still runs both suites:
 
 | Command                            | What runs                                                                                                             |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `bun run test`                     | every workspace `test` script; CLI runs `test:unit` and `test:integration` in parallel under Turbo                    |
 | `bun run test:unit`                | packages that define `test:unit` (CLI today)                                                                          |
-| `bun run test:integration`         | packages that define `test:integration` (CLI today)                                                                   |
+| `bun run test:integration`         | packages that define `test:integration` (CLI and mobile)                                                              |
 | `bun run --cwd apps/cli test`      | both CLI suites sequentially (outside Turbo); path args after `--` select files, flag-only args append to both suites |
 | `bun run ci:affected` / CI PR jobs | `--affected` — only changed packages and their dependents                                                             |
 
-Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integration cache inputs. Test/typecheck tasks depend on a local `transit` node (`dependsOn: ["transit"]`, with `transit` → `^transit`) so dependency-package changes invalidate caches without serializing suites behind each other or behind `typecheck`. Typecheck remains its own CI job and is no longer a hard prerequisite of `test`.
+Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integration cache inputs. Test/typecheck tasks depend on a local `transit` node (`dependsOn: ["transit"]`, with `transit` → `^transit`) so dependency-package changes invalidate caches without serializing suites behind each other or behind `typecheck`. Typecheck remains its own CI job. CLI integration depends on `build`, which in turn requires typecheck; this orders shared `dist/` writers. CLI unit tests have no build prerequisite. Formatting has no typecheck prerequisite.
+
+## Verification loop for contributors and agents
+
+Use `storageRootEnv()` from `apps/cli/test/helpers/storage-env.ts` for every
+throwaway profile. It redirects HOME/XDG/APPDATA and forces
+`KUNAI_CREDENTIAL_BACKEND=file`: native credential vault entries belong to the
+OS account and are not isolated by a different HOME. `createCredentialVault()`
+consumes that existing override before probing an OS backend. The common
+compiled/agent profile harness inherits it, and `applyStorageRootEnv()` restores
+the prior override with the other environment values. Backend-specific tests
+must use explicit injected environment and spawn ports; they must never probe
+the developer's credential store.
+
+1. Start with the feature map and the owning test file. Use
+   `bun run --cwd apps/cli test:file test/unit/<area>/<file>.test.ts` for a focused
+   reproduction; the package script supplies the timeout budget and preload.
+   `bun test` runs with the developer's real home, so a test that mounts a shell
+   or boots a service writes the real profile unless it isolates itself
+   (`BrowseShell` saves a submitted query to search history, for one). Isolate
+   with `applyStorageRootEnv` from `test/helpers/storage-env.ts`. To check a
+   suspect test, compare the real profile's mtime and hash around a multi-file
+   run; a lone file can exit before the async write lands and look clean.
+2. Change the failure trigger deliberately: deferred resolve/reject, cancellation,
+   injected clock, or fake timer. A sleep is not an acknowledgement. A generous
+   test timeout bounds a hang; it does not prove synchronization.
+3. For a regression test, temporarily remove the behavior it protects and confirm
+   the assertion fails. Restore it before broader validation. Do not mutate source
+   while another verification command is reading the same tree.
+4. Run the owning suite, then `bun run ci:affected` with a verified
+   `TURBO_SCM_BASE`. Missing or stale comparison history is not evidence of a
+   small change; inspect Turbo's dry run before relying on selection.
+5. `bun run ci:preflight` runs the repository lint baseline, document paths
+   and review-date checks before the long tasks in both `ci` and `ci:affected`.
+   Plain `bun run lint` does not include this hosted baseline gate. The freshness
+   check compares committed HEAD with its base; run it after committing a content
+   review date, rather than using a skip flag for meaningful edits.
+6. Before handoff, run the required full gates and report the exact revision,
+   command, exit status, failures, skips, and cache status. Separate local Linux,
+   hosted Windows/macOS, opt-in database/native, and live-provider evidence.
+
+For live CLI behavior use the repo's `verify-kunai` skill and the held-session
+`doctor` command. It checks liveness, interactive chrome, contained profile
+paths, file credentials and no analytics opt-in; it does not verify source
+revision, provider availability or player progress. The launcher shell-quotes
+literal environment/path values and refuses storage/vault overrides. `--command`
+remains a developer-controlled shell fragment of extra main.ts arguments.
+Reports belong outside the temporary profile. Failed interactive startup saves
+a diagnostic report outside the profile and stops only its created session;
+`--keep-profile` preserves the shadow directory. Existing sidecars are decoded through a schema and checked
+before any inspector read or cleanup; deletion additionally requires the
+profile directory to belong to the requested session name. Tests for these commands live in the
+separate `bun run test:agent` tier, not the default unit/integration suites.
+
+The debounce contract in
+`apps/cli/test/unit/app-shell/settle-value.test.tsx` advances Bun fake timers inside
+React `act()`. It covers the pre-deadline frame, the final frame, and cancellation
+of an older selection's timer. Restore real timers after each test.
+
+The activation-lock multiprocess test drains child output immediately, reports a
+nonzero child exit during handshake polling, and kills/reaps every remaining
+child before profile cleanup. Keep the real-process mutual-exclusion coverage:
+mock-only lock tests cannot establish cross-process exclusion.
+
+Storage corruption recovery tests inject a failure only at the main-file rename
+boundary, retaining real SQLite and filesystem assertions. This exercises the
+surviving-WAL ordering contract without depending on chmod denying access on the
+host. Restore the filesystem spy in `finally`; never report a pass by returning
+before the recovery assertions when a platform cannot establish a premise.
+
+The process-shutdown integration tests wait for the isolated data store, then
+send the real signal. `startCli` registers signal handlers before initializing
+that store, so no UI-mount sleep is required. Require the shutdown-handler
+message in the PTY transcript as well as the exit status: the default OS signal
+action can produce the same status without running Kunai's cleanup.
+The macOS Expect wrapper uses `log_file -a` so disabling console echo does not
+also suppress the transcript. The real Expect integration fixture checks both
+quiet stdout and retained child output; it skips explicitly without Expect.
+
+The direct CLI runner consumes option values separately from file patterns:
+`test -- -t "name"` still searches only unit/integration. Focused runs retain the
+20-second baseline; explicit timeout flags override it and
+`KUNAI_TEST_TIMEOUT_MS` takes final precedence. Subprocess fixtures in
+`apps/cli/test/unit/scripts/default-test-runner.test.ts` verify discovery,
+timeout argv, failure propagation, and the Turbo aggregator path.
 
 ## Ink Render Harness (`apps/cli/test/harness/render-capture.ts`)
 
@@ -164,6 +251,19 @@ dropped. Step-level `timeout-minutes` in CI stays the real hang detector.
 
 ### Determinism: prefer `simulateTicks` over `countCommits`
 
+For asynchronous process tests, await a fixture-owned process-start promise
+before asserting active-process cancellation. A persisted download `running`
+lease precedes stream resolution and process registration; it is not a process
+readiness signal. A synchronous spawn acknowledgment resumes its awaiting test
+only after the production call finishes registering the returned handle. Keep
+pre-registration cancellation tests separate from active-process tests.
+
+The polling helper in `apps/cli/test/support/wait-until.ts` accepts both `now`
+and `tick`. Inject both when testing its deadlines, advance the clock from the
+tick, and assert predicate/tick behavior rather than elapsed wall time. Exercise
+readiness exactly at the deadline to cover the final predicate check. Ordinary
+callers retain the real clock, bounded polling, and descriptive timeout errors.
+
 `countCommits` uses real `setTimeout`, which is sensitive to CI load. The same
 property — "this surface commits at most N frames in a window" — is usually
 provable with `simulateTicks` instead, with no time dependence. Keep
@@ -196,7 +296,6 @@ added the following tests and removed the following dead tests.
 | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/cli/test/unit/app-shell/render-capture.test.tsx` (extended)       | `render()` + `simulateTicks()` + `act()` wiring; the previous real-time `countCommits(Flickering)` test was timing-dependent, replaced with a deterministic 6-commit assertion.                                   |
 | `apps/cli/test/unit/app-shell/input-router.useinput.test.tsx`           | First test to drive `useInput` through the harness. Asserts the router wires through correctly: Ctrl+C → hard-global, `/` in command-palette context → palette, `/` in text-input context → open-command-palette. |
-| `apps/cli/test/unit/app-shell/dot-matrix-loader.test.tsx` (rewritten)   | Loader animation is interval-driven; replaced the real-time assertion with `simulateTicks` so the commit count is exact.                                                                                          |
 | `apps/cli/test/unit/main-args.test.ts` (extended)                       | `--jump` / `--quick` / `-q` / `--continue` / `--history` / `--offline` parsing and invalid-input fallthrough.                                                                                                     |
 | `apps/cli/test/unit/app-shell/help-overlay.test.tsx`                    | The "no-drift" contract from `keybindings.ts:7-9`: every live binding label is rendered in some tab, no hard-coded copy can reappear, and `HELP_TABS` matches the registry order.                                 |
 | `apps/cli/test/unit/app-shell/post-play-h.useinput.test.tsx`            | P0-2 regression: `h` from the post-play surface routes to `onResolve("history")`; Ctrl+H does not; overlay-blocked `h` is dropped.                                                                                |
@@ -329,6 +428,31 @@ Local equivalent: `KUNAI_INSTALLER_DOCKER=1 bun run test:installer:docker`
 
 - Spawns `pwsh -File install.ps1 -DryRun` (no downloads, no sandbox directories)
 - Localhost release fixtures cover empty assets and missing `SHA256SUMS` entries
+- PATH-conflict remediation is extracted from `Get-PathConflictRemedy` so Linux CI
+  covers bun/npm/pnpm/yarn/scoop/choco/winget mappings; the full installer PATH
+  diagnostic still runs on Windows
+- Download progress helpers (`Format-ByteSize`, `Write-DownloadProgress`) are
+  extracted the same way; `Invoke-BoundedDownload` is gated to wipe a failed
+  transfer instead of drawing 100%
+- Portable Windows helpers (`Install-PortableYtDlp`, `Install-PortableCurlImpersonate`)
+  are extracted and run against a localhost fixture: verified `yt-dlp.exe` plus a
+  `curl_chrome*.bat` tarball land under `KUNAI_DATA_DIR/deps`, a checksum mismatch
+  leaves no dest and prints `winget install --id yt-dlp.yt-dlp -e`, and an
+  already-present dest skips the download. Isolate PATH so a host yt-dlp cannot
+  short-circuit the install. Override bases with `KUNAI_YTDLP_RELEASE_BASE` /
+  `KUNAI_CURL_IMPERSONATE_RELEASE_BASE`; never point the probe at a live profile.
+  Wrapper-dir identity is `realpath` of both sides: Windows GitHub runners
+  expand `RUNNER~1` to `runneradmin`, and macOS rewrites `/var` to `/private/var`
+  while pwsh keeps `/var`
+- Helper functions and the script-scope constants they close over are both
+  extracted from `install.ps1`, never restated in the probe — a re-implemented
+  copy tests itself and lets the shipped one drift
+- The HTTP/2 curl prompt has its own case driving `Install-OptionalDeps` with
+  curl-impersonate reporting installed: an impersonate build must not suppress
+  it, because the HLS relay spawns the literal `curl`
+- The locked-dest case skips as uid 0 as well as on Windows. `chmod 0o500` is
+  not a lock for root, so the fail-closed branch would never be reached and the
+  test would pass without asserting anything
 - Skipped when `pwsh` is not installed (same pattern as Docker tests); CI `installer-lint` / Windows jobs cover pwsh
 
 **Bash installer fixtures** (`apps/cli/test/integration/install-scripts.test.ts`):
@@ -353,6 +477,8 @@ Best target for:
 - browse shell snapshots
 - help and diagnostics overlays
 - command palette discoverability
+- series and anime playback walkthroughs (`test:vhs:playback`), a typed
+  fixture session rather than a live provider run
 - before and after UX comparison for major shell redesign passes
 
 Use VHS for terminal UX capture and review, not as the only proof that behavior works.
@@ -399,9 +525,95 @@ Run it only inside Android/Termux. The harness creates an isolated temporary
 HOME/XDG profile, requires an explicit compiled binary path, refuses desktop
 hosts and roots inside the real profile, and prints compiled entrypoint,
 binary/runtime, TTY, SQLite WAL/reopen, player, and launcher evidence. A green
-launcher smoke proves only that Android accepted the intent; provider playback,
-media start, completion, app suspension, return-to-terminal, cold start,
-responsiveness, and memory remain separate device observations.
+launcher smoke proves only that Android accepted the intent; provider playback
+qualification is a separate, device-level record.
+
+### 7. Agent verification loop (`apps/cli/test/agent/`)
+
+Best target for:
+
+- "does the feature actually work for a user" — real keystrokes in, rendered
+  frame out, SQLite/config truth checked in the same run
+- wiring claims that sit between unit tests and VHS tapes (a key reaching a
+  reader that commits a row)
+- bug reproductions that need a narrated, reviewable artifact instead of a
+  boolean
+
+Two drivers share one sandbox model (seeded throwaway profile via
+storage-root env, fixture providers + fixture search, optional fake-mpv shim,
+`ProfileInspector` reading SQLite/config directly):
+
+- **L2 `bun run agent:drive`** — stateless replay against the real `AppRoot`
+  - `SessionController` in-process. `--keys` replays literal text, named keys
+    (`<enter>`, `<esc>`, …), `<wait:TEXT>` for human-paced surface waits, and
+    `<wait-config:key=value>` for debounced config writes. `--show` prints
+    frame/keys/history/queue/config/tables/delta/journal; `--evidence` writes
+    the bundle; `--verify-citation` re-checks a quoted claim against captured
+    artifacts.
+- **L3 `bun run agent:session`** — a held tmux session running real
+  `src/main.ts` under a real PTY. `start` / `see` / `do` / `wait-for` /
+  `inspect` / `report` / `relaunch` / `stop` / `keys`. `see` is
+  `capture-pane` — the actual rendered screen — and `relaunch` is a
+  first-class verb (quit, reboot the same profile, prove state survived).
+  Linux/macOS only; tmux missing is a loud failure, not a skip-pass.
+
+Wait predicates share a grammar: text is a literal substring unless wrapped in
+`/…/`, which compiles a RegExp (`[\s\S]` spans lines). `keys` (or
+`--show keys`) extracts the `[key]` hints a surface advertises — build a key
+plan from that list instead of guessing. `dispose()` replays the real quit
+sequence and resends Esc on a cadence through the settle window — cancel keys
+dropped into an overlay's input-attach gap are a real UX hazard the harness
+survives the way a user does. A phase still parked at the deadline is recorded
+as a `forced-stop` journal finding, not silently abandoned.
+
+`KUNAI_REAL_MPV=1` opts into real playback: the harness serves a generated
+mp4 over `Bun.serve`, remaps a fixture stream URL via `KUNAI_SMOKE_MEDIA_BASE`,
+and proves playback with two independent witnesses — mpv IPC `time-pos`
+advancing AND Kunai's own `history_progress` row. CI runs it on pushes to
+main (the Test job installs mpv/ffmpeg/tmux); elsewhere absence prints a skip
+line. The same Test job runs `bun run test:agent` on PRs — L2 is in-process,
+no external tools needed. `onboarding.test.ts` drives the real setup wizard
+over tmux (fresh seed → s → S → Enter → `onboardingVersion` committed,
+`analytics` still `unset`) and self-gates on `Bun.which("tmux")`.
+
+Rules that make the loop trustworthy:
+
+- every claim cites captured evidence — no quote, no verification
+- the profile is always a throwaway; `KUNAI_CONFIG_DIR` is never an override
+- analytics stays off and `dispose()` asserts no `installId` was minted
+- a frame that renders before its input handlers attach is real UX truth —
+  wait on the surface (`<wait:>`), don't retry keys blindly
+- a frame that says "applied" while the file stays unchanged is a deferred
+  write or a silent no-op — wait on the backend (`<wait-config:>` /
+  `waitForBackend`) before concluding either way
+
+The agent-facing recipe lives in `.agents/skills/verify-kunai/SKILL.md`;
+scenarios in `test/agent/wiring.test.ts` are the regression-shaped subset.
+
+The independent mobile application uses a stricter two-part gate. Its default
+unit/integration suites build and scan both platform artifacts, execute the
+Android bundle under real Node, and exercise the iOS fake host. Physical work
+is manual; the opt-in command validates exactly one Android and one iOS
+URL-free evidence row against generated artifact-set metadata:
+
+Portable bundle, metadata, and Node assertions run on every contributor host.
+Windows visibly skips only the POSIX executable-mode and a-Shell launcher
+checks; Linux/macOS and the physical iPhone procedure own those shell-specific
+claims.
+
+```sh
+bun run test:live:mobile-host-proof -- \
+  --metadata apps/mobile/dist/mobile-build-meta.json \
+  --evidence /path/to/android.json \
+  --evidence /path/to/ios.json
+```
+
+The validator rejects unknown or sensitive fields, wrong versions/targets/set
+digests, non-physical or duplicate/missing rows, and every failed observation.
+Android ARM64 Termux and physical iPhone a-Shell mini procedures are owned by
+[mobile-device-lab.md](./mobile-device-lab.md). A green cross-build,
+fake-host run, launcher exit, or intent acceptance must not become a platform
+support claim.
 
 ## Non-Flaky Test Rules
 
@@ -503,8 +715,6 @@ Opt-in release-candidate smoke, run only when provider traffic is acceptable:
 - Source refresh tests must prove that voluntary refresh cooldown does not block broken-stream recovery, and that a failed fresh lookup can keep the current cached stream instead of stalling playback.
 - Storage maintenance tests must seed durable user tables and disposable cache tables together, then prove automatic maintenance only prunes cache-class rows.
 - Fake mpv IPC lifecycle tests cover app-side orchestration only; keep one manual real-mpv smoke for release candidates that touch playback.
-- Android intent tests cover command construction only; keep VLC and mpv-android
-  physical-device gates separate and never infer playback from accepted handoff.
 - Live provider and Discord smokes are opt-in and must not be added to `bun run test`, CI, or Husky.
 
 ## Manual Smoke Matrix
@@ -571,14 +781,24 @@ bun run test:coverage
 ```
 
 Committed layout goldens under `apps/cli/test/__captures__/` are asserted in
-`golden-captures.test.ts`. Refresh captures via harness scripts such as
-`bun run --cwd apps/cli capture:settings`.
+`golden-captures.test.ts` (shape) and re-rendered and diffed byte-for-byte in
+`golden-captures-live.test.tsx` — a committed capture with no producing harness
+fixture is dead weight, so every family must be regenerable. Refresh captures
+via harness scripts such as `bun run --cwd apps/cli capture:settings`.
 
 ### Test quality rules for refactors
 
 - Assert runtime behavior, not source substrings (except intentional architecture/doc drift guards).
 - Prefer real backends: `createIsolatedContainer`, temp SQLite, provider fixtures.
 - Mock only external boundaries (`fetch`, `Bun.spawn` for mpv/yt-dlp, live sites).
+- Stubbing `globalThis.fetch` is not enough for `fetchGuardedStreamTarget`: it
+  DNS-checks only the platform `fetch` captured at module load. Pass a distinct
+  `fetchImpl`, or expect the stubbed global to skip DNS. Do not let unit tests
+  depend on how `example.com` or a CDN name resolves on the host.
+- `npm-launcher.test.ts` needs a real Node on PATH. `bun run` / turbo expose a
+  `node` symlink to Bun; under that shim `require.resolve` finds the optional
+  `@kitsunekode/kunai-<target>` package and the tests spawn the compiled app
+  instead of the vendor stand-in. Skip when `node` is Bun; CI installs Node.
 - Use `simulateTicks` from the render harness instead of real timers in unit tests.
 - TDD on rewrite: write the new behavior test first, then delete brittle guards.
 
@@ -586,3 +806,17 @@ For CLI UX:
 
 - prefer VHS tapes over brittle pseudo-interactive assertions when the real need is visual review
 - prefer deterministic state tests over VHS when the real need is behavior confidence
+
+## Automated PR review
+
+CodeRabbit configuration belongs in `.coderabbit.yaml` and must validate against
+[its published schema](https://coderabbit.ai/integrations/schema.v2.json). Tool settings
+are nested under `reviews.tools`; a root-level `tools` object is ignored by the bot.
+`reviews.auto_review.base_branches` includes `.*` so stacked PRs targeting feature
+branches are eligible alongside default-branch PRs. `reviews.fail_commit_status`
+reports review errors as failures instead of successful checks.
+
+A successful bot status is not evidence of a completed review: inspect the review
+or walkthrough for skipped-review and configuration warnings. Draft and explicitly
+excluded-title rules still apply. This configuration enables reviews; it does not
+make them required by branch protection or prove that a hosted review ran.

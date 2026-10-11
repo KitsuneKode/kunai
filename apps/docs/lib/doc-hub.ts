@@ -20,8 +20,9 @@ const USER_GROUP_IDS: readonly DocNavGroup[] = ["setup", "daily", "offline", "tr
 const DEVELOPER_GROUP_IDS: readonly DocNavGroup[] = ["develop"];
 
 function groupsFor(ids: readonly DocNavGroup[]): readonly DocHubGroup[] {
+  const wanted = new Set<DocNavGroup>(ids);
   return hubGroups()
-    .filter((group) => ids.includes(group.id))
+    .filter((group) => wanted.has(group.id))
     .map((group) => ({
       id: group.id,
       eyebrow: group.eyebrow,

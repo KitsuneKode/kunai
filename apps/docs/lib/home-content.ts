@@ -19,25 +19,43 @@ export type HomeFlowStep = {
   readonly description: string;
 };
 
+/**
+ * The four catalog modes, in the order `Tab` cycles them in the shell.
+ *
+ * These live in the server-rendered hero on purpose. The terminal simulator is
+ * the only other place on this page that names what Kunai plays, and it is
+ * loaded with `ssr: false` after an interaction — so before this row existed,
+ * neither a crawler nor a visitor skimming for two seconds could learn that
+ * Kunai plays anime at all.
+ */
+export const homeKinds = ["Anime", "Series", "Movies", "YouTube"] as const;
+
 export const homeHero = {
-  eyebrow: "Terminal-first playback",
-  title: "Kunai — a terminal client for third-party streams.",
+  title: "Watch anime, series and movies from your terminal.",
   description:
-    "Search a title, resolve a URL a third-party provider already serves, hand playback to mpv, and recover without restarting when something stalls.",
+    "Search anime, series, movies and YouTube, resolve a direct stream on your machine, and play it in mpv, with downloads, resume and recovery built in.",
+  kinds: homeKinds,
+  /** Earns its place by teaching a real hotkey rather than labelling the row. */
+  kindsHint: { key: "Tab", label: "cycles modes" },
   installCommands: [CANONICAL_INSTALL, CANONICAL_SETUP],
   primaryCta: {
     label: "Get started",
     href: "/docs/users/getting-started",
   },
   secondaryCta: {
-    label: "Browse docs",
-    href: "/docs",
+    label: "See what it can do",
+    href: "/docs/users/what-you-can-do",
   },
 } as const;
 
 const providerCount = codeMetadata.providerIds.length;
 
 export const homeHighlights = [
+  {
+    label: "Four catalog modes",
+    detail:
+      "Series, anime, and YouTube each get their own mode. Tab cycles them; /anime, /series, and /youtube jump straight to one.",
+  },
   {
     label: "Direct providers",
     detail: `${providerCount} provider modules resolve streams on your machine. No browser automation and no shared relay by default.`,
@@ -58,12 +76,12 @@ export const homeFlow: readonly HomeFlowStep[] = [
   {
     title: "Search or continue",
     description:
-      "Find a title, resume history, or open calendar, recommendations, or your offline library from the shell.",
+      "Find an episode, a film or a YouTube video, or pick up where you left off from history, the release calendar or your offline library.",
   },
   {
     title: "Resolve locally",
     description:
-      "Kunai asks registered adapters for a stream URL they already serve, then hands that URL to mpv.",
+      "Kunai asks a provider for a stream it already serves, checks that it plays, then hands the URL to mpv.",
   },
   {
     title: "Play in mpv",

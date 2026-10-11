@@ -1,4 +1,4 @@
-import type { SessionState } from "@/domain/session/SessionState";
+import type { OverlayState, SessionState } from "@/domain/session/SessionState";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import type { RootOwnedOverlay } from "./root-shell-state";
@@ -30,9 +30,9 @@ export function isRootChoiceOverlay(
 }
 
 export function isRootMediaPickerOverlay(
-  overlay: RootOwnedOverlay,
+  overlay: OverlayState,
 ): overlay is Extract<
-  RootOwnedOverlay,
+  OverlayState,
   | { type: "season_picker" }
   | { type: "episode_picker" }
   | { type: "subtitle_picker" }
@@ -47,13 +47,21 @@ export function isRootMediaPickerOverlay(
 }
 
 export function getRootOverlayResetKey(overlay: RootOwnedOverlay): string {
-  return overlay.type === "episode_picker"
-    ? `${overlay.type}:${overlay.season}:${overlay.options.map((option) => option.value).join(",")}`
-    : overlay.type;
+  if (overlay.type === "episode_picker") {
+    return `${overlay.type}:${overlay.season}:${overlay.options.map((option) => option.value).join(",")}`;
+  }
+  if (overlay.type === "season_picker") {
+    return `${overlay.type}:${overlay.options.map((option) => option.value).join(",")}`;
+  }
+  return overlay.type;
 }
 
 export function getRootOverlayInitialIndex(overlay: RootOwnedOverlay): number {
-  return overlay.type === "episode_picker" ? Math.max(0, overlay.initialIndex ?? 0) : 0;
+  if (overlay.type === "episode_picker" || overlay.type === "season_picker") {
+    const initial = overlay.initialIndex ?? 0;
+    return Number.isFinite(initial) && initial >= 0 ? initial : -1;
+  }
+  return 0;
 }
 
 export function buildRootGenericPickerOptions(
@@ -78,6 +86,7 @@ export function buildRootGenericPickerOptions(
 
 export function getRootOverlayTitle(overlay: RootOwnedOverlay, _state: SessionState): string {
   if (overlay.type === "help") return "Help";
+  if (overlay.type === "guide") return "Guide";
   if (overlay.type === "about") return "About";
   if (overlay.type === "diagnostics") return "Diagnostics";
   if (overlay.type === "downloads") return "Downloads";
@@ -110,6 +119,7 @@ export function getRootOverlaySubtitle({
   readonly settingsError: string | null;
 }): string {
   if (overlay.type === "help") return "Global commands, editing, filtering, and shell behavior";
+  if (overlay.type === "guide") return "What Kunai can do, grouped by task · Enter runs it";
   if (overlay.type === "about") return "Kunai";
   if (overlay.type === "diagnostics") return "Current runtime snapshot and recent spans";
   if (overlay.type === "downloads")
@@ -139,6 +149,7 @@ export function getRootOverlaySubtitle({
   if (overlay.type === "recommendation_picker")
     return `${overlay.options.length} picks based on your watch history`;
   if (overlay.type === "tracks_panel") {
+    if (overlay.providerLabel) return overlay.providerLabel;
     const provider = state.provider;
     return provider ? `Provider ${provider}` : "Choose source, quality, or audio";
   }

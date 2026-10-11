@@ -52,8 +52,8 @@ export default function HomePageInteractive() {
     <section id="install" className="kunai-home-install kunai-flow-section">
       <SectionHeading
         eyebrow="Install"
-        title="Get started in three steps."
-        description="The preferred path is a self-contained binary — no Bun or Node required. Pick your OS for the exact bootstrap and mpv commands."
+        title="Install in three steps."
+        description="The preferred path is a self-contained binary, no Bun or Node required. Pick your OS for the exact bootstrap and mpv commands."
       />
 
       <div className="install-section kunai-surface-shell">
@@ -77,7 +77,7 @@ export default function HomePageInteractive() {
                 tabIndex={activeOs === os ? 0 : -1}
                 onClick={() => setActiveOs(os)}
                 onKeyDown={handleTabKeyDown}
-                className={`os-tab-button text-[11px] tracking-wider uppercase ${
+                className={`os-tab-button tracking-wider uppercase ${
                   activeOs === os ? "active" : ""
                 }`}
               >

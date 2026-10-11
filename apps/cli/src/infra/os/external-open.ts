@@ -1,5 +1,7 @@
 import { dirname } from "node:path";
 
+import { whichLive } from "./which";
+
 export type ExternalOpenTarget =
   | { readonly kind: "url"; readonly url: string }
   | { readonly kind: "path"; readonly path: string };
@@ -32,6 +34,13 @@ const ALLOWED_URL_SCHEMES = new Set(["http:", "https:", "kunai:"]);
  */
 export function isAllowedExternalUrl(url: string): boolean {
   if (url.startsWith("-")) return false;
+  if (
+    [...url].some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+    })
+  )
+    return false;
   try {
     return ALLOWED_URL_SCHEMES.has(new URL(url).protocol);
   } catch {
@@ -67,7 +76,7 @@ export function isExternalOpenDisabled(env: NodeJS.ProcessEnv = process.env): bo
 
 export const defaultExternalOpenRuntime: ExternalOpenRuntime = {
   platform: process.platform,
-  which: (command) => Bun.which(command),
+  which: (command) => whichLive(command),
   spawn: (command, options) =>
     Bun.spawn(command, {
       stdout: "ignore",

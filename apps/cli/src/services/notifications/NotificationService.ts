@@ -138,6 +138,16 @@ export class NotificationService {
     this.emitChange();
   }
 
+  /**
+   * Remove a notification because its underlying condition cleared — NOT a
+   * user delete. Unlike `delete`, no suppression tombstone is written, so the
+   * same dedupKey fires again if the condition returns.
+   */
+  remove(dedupKey: string): void {
+    this.deps.repo.removeByDedupKey(dedupKey);
+    this.emitChange();
+  }
+
   deleteByKind(kind: string): number {
     const removed = this.deps.repo.deleteByKind(kind);
     this.emitChange();
@@ -176,6 +186,7 @@ export const KNOWN_NOTIFICATION_KINDS: ReadonlySet<string> = new Set([
   "download-failed",
   "download-complete",
   "new-episode",
+  "provider-health",
 ]);
 
 export function defaultNotificationActionIds(input: {

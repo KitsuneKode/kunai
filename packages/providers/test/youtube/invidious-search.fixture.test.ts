@@ -78,6 +78,6 @@ describe("mapInvidiousSearchItem", () => {
       isShort: true,
     });
 
-    expect(mapped?.contentShape).toBe("short");
+    expect(mapped?.resultKind).toBe("short");
   });
 });

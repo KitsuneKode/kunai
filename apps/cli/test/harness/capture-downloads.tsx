@@ -9,9 +9,12 @@
 //
 // Poster rendering is disabled through the real capability gate, so a capture
 // performs no network, subprocess, or timer work.
+//
+// The module is importable: the live-diff test re-mounts `DownloadsCapture`
+// and byte-compares the frame against the committed capture. The env gate and
+// file writes run only under `import.meta.main` so importing this file cannot
+// mutate a host test process.
 // =============================================================================
-
-process.env.KUNAI_POSTER = "0";
 
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { OverlayLayoutProvider } from "@/app-shell/overlay-layout-context";
@@ -107,7 +110,7 @@ const container = {
 } as unknown as Container;
 
 /** Rebuilds the overlay budget from the live terminal size on every mount. */
-function DownloadsCapture() {
+export function DownloadsCapture() {
   const { cols, rows } = useShellDimensions();
   const layout = useMemo(
     () => ({
@@ -125,6 +128,9 @@ function DownloadsCapture() {
   );
 }
 
-await captureSurface("downloads", <DownloadsCapture />);
-console.log("captured download manager");
-process.exit(0);
+if (import.meta.main) {
+  process.env.KUNAI_POSTER = "0";
+  await captureSurface("downloads", <DownloadsCapture />);
+  console.log("captured download manager");
+  process.exit(0);
+}

@@ -31,7 +31,7 @@ export function ReleaseWithdrawnNotice({ release }: ReleaseWithdrawnNoticeProps)
       className="border-fd-border bg-fd-muted/40 flex flex-col gap-3 rounded-md border border-dashed p-4 text-sm"
     >
       <p id="withdrawn-heading" className="kunai-type-caption m-0">
-        Withdrawn — do not install {release.tag}
+        Withdrawn: do not install {release.tag}
       </p>
       <p className="text-fd-muted-foreground m-0 leading-6">
         This release was pulled after publication. It is kept here so links to it still explain

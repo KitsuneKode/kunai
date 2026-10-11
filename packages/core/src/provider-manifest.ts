@@ -28,13 +28,10 @@ export interface CoreProviderManifest {
    */
   readonly relaySafe: boolean;
   readonly relayProfile?: RelayProfile;
-  readonly status: ProviderManifestStatus;
   /** When omitted, anime providers default to `anilist`; others default to `tmdb`. */
   readonly catalogIdentity?: ProviderCatalogIdentity;
   readonly notes?: readonly string[];
 }
-
-export type ProviderManifestStatus = "production" | "candidate" | "experimental" | "research";
 
 export function resolveProviderCatalogIdentity(
   manifest: Pick<CoreProviderManifest, "catalogIdentity" | "mediaKinds">,

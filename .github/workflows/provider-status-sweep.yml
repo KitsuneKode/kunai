@@ -1,0 +1,48 @@
+name: Provider status sweep
+
+# Daily upstream health check: resolves a known-good title through every
+# configured provider probe from the runner's network and commits the result
+# to apps/docs/lib/generated-provider-status.json, which the docs site's
+# provider-status page renders.
+#
+# Scheduled on purpose: upstream status is a property of the providers, not of
+# any PR, and the sweep needs real network time (up to ~4 min worst case).
+# Runner egress is a clean-region view; region-gated providers report as
+# "blocked" rather than dead.
+
+on:
+  schedule:
+    - cron: "23 6 * * *" # daily 06:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write # commits the refreshed status JSON
+
+# One sweep at a time: a second run overlapping the first would race the
+# status-file commit, and the loser wastes a full provider-probe cycle.
+concurrency:
+  group: provider-status-sweep
+  cancel-in-progress: true
+
+jobs:
+  sweep:
+    name: Probe providers and publish status
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: provider-status
+
+      # The anime lane is mismeasured without this: anidb/miruro sit behind
+      # Cloudflare, which 403s a bare runner handshake in <100ms, so every row
+      # would read "blocked" no matter how healthy the upstream is.
+      - uses: ./.github/actions/setup-curl-impersonate
+
+      - name: Run the provider sweep
+        working-directory: packages/providers
+        run: bun run scripts/provider-status-sweep.ts
+
+      - name: Commit the status file if it changed
+        run: bash .github/scripts/publish-provider-status.sh

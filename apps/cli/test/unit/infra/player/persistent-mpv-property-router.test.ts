@@ -94,6 +94,27 @@ describe("PersistentMpvPropertyRouter", () => {
 
     expect(actions).toEqual(["pick-quality"]);
     expect(commands).toContainEqual(["set_property", "user-data/kunai-request", ""]);
+
+    router.handlePropertyUpdate({
+      name: "user-data/kunai-request",
+      value: "source",
+      observedAt: 2,
+    });
+    expect(actions).toEqual(["pick-quality", "pick-source"]);
+
+    router.handlePropertyUpdate({
+      name: "user-data/kunai-request",
+      value: "cycle-source",
+      observedAt: 3,
+    });
+    expect(actions).toEqual(["pick-quality", "pick-source", "cycle-source"]);
+
+    router.handlePropertyUpdate({
+      name: "user-data/kunai-request",
+      value: "cycle-audio",
+      observedAt: 4,
+    });
+    expect(actions).toEqual(["pick-quality", "pick-source", "cycle-source", "cycle-audio"]);
   });
 
   test("accepts playback samples, updates position, and emits ready/start progress hooks", () => {
@@ -184,5 +205,59 @@ describe("PersistentMpvPropertyRouter", () => {
 
     expect(copied).toBe(true);
     expect(commands).toContainEqual(["set_property", "user-data/kunai-request", ""]);
+  });
+
+  test("emits track-changed for well-formed ids and drops malformed values", () => {
+    const { ipc, commands } = createFakeIpc();
+    const events: unknown[] = [];
+    const router = new PersistentMpvPropertyRouter({
+      getActiveCycle: () => null,
+      getIpcSession: () => ipc,
+      getCurrentOptions: () => ({
+        displayTitle: "Episode",
+        primarySubtitle: null,
+        onPlaybackEvent: (event) => events.push(event),
+      }),
+      subtitleManager: new PersistentSubtitleManager(),
+      notifyMpvActionRequest: () => {},
+      finishResumeChoiceWait: () => {},
+      handleResumeSeekFromMpv: async () => {},
+      handleCopyShareFromMpv: async () => {},
+      onSkipRequestFromMpv: async () => {},
+      setCurrentPositionSeconds: () => {},
+      maybeRearmSkippedSegmentsOnBackwardSeek: () => {},
+      getCurrentPositionSeconds: () => 0,
+      maybeEmitPlaybackProgress: () => {},
+      handleSegmentSkipProgress: async () => {},
+      fireNearEofIfNeeded: () => {},
+      observeWatchdog: () => {},
+    });
+
+    router.handlePropertyUpdate({
+      name: "user-data/kunai-track-changed",
+      value: "audio:2",
+      observedAt: 1,
+    });
+    router.handlePropertyUpdate({
+      name: "user-data/kunai-track-changed",
+      value: "sub:0",
+      observedAt: 2,
+    });
+    // Malformed values used to reach the note renderer as `id: NaN`.
+    for (const value of ["audio:", "audio:abc", "sub:", "nonsense", "", "audio:-1"]) {
+      router.handlePropertyUpdate({
+        name: "user-data/kunai-track-changed",
+        value,
+        observedAt: 3,
+      });
+    }
+
+    expect(events).toEqual([
+      { type: "track-changed", trackType: "audio", id: 2 },
+      { type: "track-changed", trackType: "sub", id: 0 },
+    ]);
+    // The property is cleared once per observed value either way.
+    const clears = commands.filter((command) => command[1] === "user-data/kunai-track-changed");
+    expect(clears).toHaveLength(8);
   });
 });

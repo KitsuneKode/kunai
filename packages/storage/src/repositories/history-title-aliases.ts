@@ -43,20 +43,23 @@ export class HistoryTitleAliasRepository {
     aliases: readonly HistoryTitleAliasInput[],
     now = new Date().toISOString(),
   ): void {
-    const statement = this.db.query(
-      `
-        INSERT INTO history_title_aliases (alias_ns, alias_id, title_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(alias_ns, alias_id) DO UPDATE SET
-          title_id = excluded.title_id,
-          updated_at = excluded.updated_at
-      `,
-    );
-    for (const alias of aliases) {
-      const id = alias.id.trim();
-      if (!id) continue;
-      statement.run(alias.ns, id, titleId, now, now);
-    }
+    if (aliases.length === 0) return;
+    this.db.transaction(() => {
+      const statement = this.db.query(
+        `
+          INSERT INTO history_title_aliases (alias_ns, alias_id, title_id, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(alias_ns, alias_id) DO UPDATE SET
+            title_id = excluded.title_id,
+            updated_at = excluded.updated_at
+        `,
+      );
+      for (const alias of aliases) {
+        const id = alias.id.trim();
+        if (!id) continue;
+        statement.run(alias.ns, id, titleId, now, now);
+      }
+    })();
   }
 
   lookupTitleId(ns: HistoryTitleAliasNs, id: string): string | undefined {
@@ -69,15 +72,93 @@ export class HistoryTitleAliasRepository {
   }
 
   /** Resolve any alias row that points this raw id at a canonical title_id. */
-  lookupTitleIdByAliasId(id: string): string | undefined {
+  lookupTitleIdByAliasId(
+    id: string,
+    allowedNamespaces?: readonly HistoryTitleAliasNs[],
+  ): string | undefined {
     const trimmed = id.trim();
     if (!trimmed) return undefined;
-    const row = this.db
+    if (allowedNamespaces && allowedNamespaces.length > 0) {
+      const placeholders = allowedNamespaces.map(() => "?").join(", ");
+      const row = this.db
+        .query<Pick<HistoryTitleAliasRow, "title_id">, [string, ...string[]]>(
+          `SELECT title_id FROM history_title_aliases WHERE alias_id = ? AND alias_ns IN (${placeholders}) LIMIT 1`,
+        )
+        .get(trimmed, ...allowedNamespaces);
+      return row?.title_id ?? undefined;
+    }
+    const rows = this.db
       .query<Pick<HistoryTitleAliasRow, "title_id">, [string]>(
-        "SELECT title_id FROM history_title_aliases WHERE alias_id = ? LIMIT 1",
+        "SELECT title_id FROM history_title_aliases WHERE alias_id = ? LIMIT 2",
       )
-      .get(trimmed);
-    return row?.title_id ?? undefined;
+      .all(trimmed);
+    const first = rows[0];
+    const second = rows[1];
+    if (!first) return undefined;
+    if (second && first.title_id !== second.title_id) {
+      // Conflicting title_ids for the same raw id across different namespaces:
+      // fail closed to prevent merging unrelated works in History.
+      return undefined;
+    }
+    return first.title_id;
+  }
+
+  /**
+   * Bulk form of `lookupTitleId` for identity resolution: one round-trip for
+   * N (ns, id) pairs instead of one query per alias on the resume path.
+   * Returns the title_id per pair that has a row, keyed by pair index.
+   */
+  lookupTitleIds(
+    pairs: readonly (readonly [ns: HistoryTitleAliasNs, id: string])[],
+  ): ReadonlyMap<number, string> {
+    const found = new Map<number, string>();
+    if (pairs.length === 0) return found;
+    const values = pairs.map(() => "(?, ?)").join(", ");
+    const params: string[] = [];
+    for (const [ns, id] of pairs) params.push(ns, id);
+    const rows = this.db
+      .query<HistoryTitleAliasRow, string[]>(
+        `SELECT alias_ns, alias_id, title_id FROM history_title_aliases WHERE (alias_ns, alias_id) IN (VALUES ${values})`,
+      )
+      .all(...params);
+    const byPair = new Map(
+      rows.map((row) => [`${row.alias_ns}\u0000${row.alias_id}`, row.title_id]),
+    );
+    pairs.forEach(([ns, id], index) => {
+      const titleId = byPair.get(`${ns}\u0000${id}`);
+      if (titleId !== undefined) found.set(index, titleId);
+    });
+    return found;
+  }
+
+  /**
+   * Bulk form of `lookupTitleIdByAliasId`: one round-trip for N raw ids.
+   * Fails closed if multiple conflicting canonical title_ids exist for a single raw id.
+   */
+  lookupTitleIdsByAliasId(ids: readonly string[]): ReadonlyMap<string, string> {
+    const found = new Map<string, string>();
+    const trimmed = [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))];
+    if (trimmed.length === 0) return found;
+    const placeholders = trimmed.map(() => "?").join(", ");
+    const rows = this.db
+      .query<HistoryTitleAliasRow, string[]>(
+        `SELECT alias_ns, alias_id, title_id FROM history_title_aliases WHERE alias_id IN (${placeholders})`,
+      )
+      .all(...trimmed);
+    const byId = new Map<string, string[]>();
+    for (const row of rows) {
+      const list = byId.get(row.alias_id) ?? [];
+      list.push(row.title_id);
+      byId.set(row.alias_id, list);
+    }
+    for (const [aliasId, titleIds] of byId) {
+      const distinct = new Set(titleIds);
+      const firstId = titleIds[0];
+      if (distinct.size === 1 && firstId !== undefined) {
+        found.set(aliasId, firstId);
+      }
+    }
+    return found;
   }
 
   listByTitleId(titleId: string): readonly HistoryTitleAlias[] {

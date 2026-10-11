@@ -11,7 +11,13 @@ export const videasyManifest = defineProviderManifest({
   aliases: ["VidKing", "Cineplay", "Cineby", "HDToday", "Bitcine"],
   description: "Registered movies/series adapter; source and subtitle inventory vary by title",
   domain: "videasy.to",
-  recommended: true,
+  // Not recommended: the whole videasy family is down upstream — api.videasy.to
+  // NXDOMAIN, the wings stream path (api.speedracelight.com) CF 502 since
+  // 2026-09-21, and the player hosts (player.videasy.to, cineby.at, cineplay.to)
+  // all unreachable (2026-10-04). It stays registered last in the order so a
+  // revival needs no code change; only db.wingsdatabase.com (catalog mirror)
+  // still answers.
+  recommended: false,
   mediaKinds: ["movie", "series"],
   capabilities: ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
   runtimePorts: [
@@ -63,9 +69,11 @@ export const videasyManifest = defineProviderManifest({
   notes: [
     "2026-07-16: active stream API is api.speedracelight.com (player.videasy.to / cineby.at).",
     "2026-08-26: the api.wingsdatabase.com seed mirror was removed — NXDOMAIN on public resolvers; the surviving apex does not serve /seed. db.wingsdatabase.com still resolves and stays listed.",
+    "2026-11: api.videasy.to / db.videasy.to went NXDOMAIN — the TMDB-format catalog moved to db.wingsdatabase.com/3 (verified /search/multi + /movie external_ids). VIDEASY_DB_BASES walks live-first.",
     "2026-07-16: Cineby server catalog labels (Yoru/Neon/Sage/Jett/…) map to /cdn /neon2 /ym /jett /… routes.",
     "2026-07-18: Inventory UI order matches cineby Servers (Yoru first). Resolve Phase A is Yoru → Cypher → Neon → Sage → Jett → Breach → Vyse; localized servers stay Phase B.",
-    "2026-07-18: Resolve-gate always segment-probes HLS before attesting streamReachabilityVerified; dead CDNs fail over instead of hanging.",
+    "2026-07-18: Resolve-gate always segment-probes HLS before accepting a candidate; definitive-dead CDNs fail over instead of hanging.",
+    "2026-09-12: Resolve-gate no longer attests streamReachabilityVerified — the probe's 200 did not survive to mpv on signed CDN URLs (#361), so downstream checks re-probe rather than trust a false green for 5m.",
     "2026-07-11: stream sources-with-title routes on api.videasy.to remain route-dead (404).",
     "bc-frontend is the default Videasy client profile; stream/API origin/referer follow cineby.at (seed already did).",
     "Do not mark browser-safe because local decrypt/runtime behavior is required.",

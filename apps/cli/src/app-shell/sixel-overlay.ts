@@ -12,6 +12,12 @@ type SixelOverlay = {
   readonly sixel: string;
   /** Repaint after any Ink frame that may have rewritten this blank slot. */
   readonly repaintAfterInkRender?: boolean;
+  /**
+   * Mount that owns this registration. Two mounts can share one overlay id
+   * (slotted rails across surfaces); an unmount must only release its own
+   * registration, never a survivor's.
+   */
+  readonly owner?: string | number;
 };
 
 const ESC = "\x1b";
@@ -44,6 +50,7 @@ function sameOverlay(a: SixelOverlay | undefined, b: SixelOverlay): boolean {
     a !== undefined &&
     a.sixel === b.sixel &&
     (a.repaintAfterInkRender ?? true) === (b.repaintAfterInkRender ?? true) &&
+    (a.owner ?? null) === (b.owner ?? null) &&
     sameRect(a.rect, b.rect)
   );
 }
@@ -90,7 +97,13 @@ export class SixelOverlayManager {
     this.scheduleFlush();
   }
 
-  unregister(id: string): void {
+  unregister(id: string, owner?: string | number): void {
+    if (owner !== undefined) {
+      // A stale mount unmounting must not release a survivor's registration
+      // under the same slotted id — only the current owner may release.
+      const current = this.desired.get(id) ?? this.shown.get(id);
+      if (current?.owner !== undefined && current.owner !== owner) return;
+    }
     if (!this.desired.delete(id)) return;
     this.dirty.delete(id);
     this.scheduleFlush();

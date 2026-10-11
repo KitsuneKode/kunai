@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import * as fsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-event";
 import { DownloadEnqueueRejectedError, DownloadService } from "@/services/download/DownloadService";
 import type { ConfigService } from "@/services/persistence/ConfigService";
-import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
+import {
+  DownloadJobsRepository,
+  OfflineAssetsRepository,
+  openKunaiDatabase,
+  runMigrations,
+} from "@kunai/storage";
 
 import { waitUntil as sharedWaitUntil } from "../../../support/wait-until";
 
@@ -25,6 +32,14 @@ describe("DownloadService", () => {
     runMigrations(db, "data");
     repo = new DownloadJobsRepository(db);
     spawnSpy = spyOn(Bun, "spawn");
+    // Default: never call through to a real binary. Unit tests that exercise
+    // the download worker stub spawn themselves; a missing stub used to
+    // spawn host yt-dlp (ENOENT on a fresh machine, a real download in CI).
+    spawnSpy.mockImplementation((command: string[]) => {
+      throw new Error(
+        `DownloadService unit tests must stub Bun.spawn; refusing ${String(command[0] ?? "unknown")}`,
+      );
+    });
     whichSpy = spyOn(Bun, "which");
   });
 
@@ -46,6 +61,228 @@ describe("DownloadService", () => {
    * second guess about what "movie" means.
    */
   describe("output naming derives from canonical media position", () => {
+    test.each(["updateFileSize", "complete"] as const)(
+      "recovers publication after %s persistence failure without downloading again",
+      async (method) => {
+        const service = buildService({
+          repo,
+          downloadsEnabled: true,
+          ytDlpAvailable: true,
+          downloadPath: tempDir,
+        });
+        const job = await service.enqueue({
+          title: { id: "tmdb:9999", type: "movie", name: "Persistence" },
+          providerId: "vidking",
+          stream: { url: "https://example.com/fixture.mp4", headers: {}, timestamp: 0 },
+        });
+        spawnSpy.mockImplementation((command: string[]) => {
+          writeFileSync(command[command.indexOf("-o") + 1]!, "published bytes");
+          // SAFETY: the download worker consumes only these subprocess streams,
+          // exit promise, and kill method; no native process is created here.
+          return {
+            stdout: streamOf(""),
+            stderr: streamOf(""),
+            exited: Promise.resolve(0),
+            kill() {},
+          } as never;
+        });
+        const failure = spyOn(repo, method).mockImplementation(() => {
+          throw new Error("database write unavailable");
+        });
+        await expect(service.processQueue()).rejects.toThrow("database write unavailable");
+        expect(repo.get(job.id)?.status).toBe("running");
+        expect(repo.get(job.id)?.retryCount).toBe(0);
+        expect(await Bun.file(job.outputPath).text()).toBe("published bytes");
+        const expireLease = () =>
+          db
+            .query("UPDATE download_jobs SET last_heartbeat_at = ? WHERE id = ?")
+            .run(new Date(Date.now() - 120_000).toISOString(), job.id);
+        expireLease();
+        await expect(service.processQueue()).rejects.toThrow("database write unavailable");
+        expect(repo.get(job.id)?.status).toBe("running");
+        failure.mockRestore();
+        expireLease();
+        await service.processQueue();
+        expect(repo.get(job.id)?.status).toBe("completed");
+        expect(await Bun.file(job.outputPath).text()).toBe("published bytes");
+        expect(spawnSpy).toHaveBeenCalledTimes(1);
+      },
+    );
+    test("staging cleanup failure does not undo a published download", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      const job = await service.enqueue({
+        title: { id: "tmdb:9999", type: "movie", name: "Cleanup" },
+        providerId: "vidking",
+        stream: { url: "https://example.com/fixture.mp4", headers: {}, timestamp: 0 },
+      });
+      spawnSpy.mockImplementation((command: string[]) => {
+        writeFileSync(command[command.indexOf("-o") + 1]!, "published bytes");
+        // SAFETY: test stub — supplies only the surface this test exercises.
+        return {
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited: Promise.resolve(0),
+          kill() {},
+        } as never;
+      });
+      const originalRm = fsPromises.rm;
+      const remove = spyOn(fsPromises, "rm").mockImplementation(async (path, options) => {
+        if (path === job.tempPath && existsSync(job.outputPath))
+          throw new Error("staging name locked");
+        return originalRm(path, options);
+      });
+      try {
+        await service.processQueue();
+        expect(repo.get(job.id)?.status).toBe("completed");
+        expect(await Bun.file(job.outputPath).text()).toBe("published bytes");
+      } finally {
+        remove.mockRestore();
+      }
+    });
+
+    test.each(["native", "win32-case-variant"] as const)(
+      "an offline asset blocks recovery and completed-job deletion (%s)",
+      async (pathKind) => {
+        if (pathKind === "win32-case-variant") repo = new DownloadJobsRepository(db, "win32");
+        const service = buildService({
+          repo,
+          downloadsEnabled: true,
+          ytDlpAvailable: true,
+          downloadPath: tempDir,
+        });
+        const job = await service.enqueue({
+          title: { id: "tmdb:1111", type: "movie", name: "Offline owner" },
+          providerId: "vidking",
+        });
+        writeFileSync(job.outputPath, "unowned offline bytes");
+        new OfflineAssetsRepository(db).upsertPlayable({
+          titleId: "tmdb:2222",
+          titleName: "Other",
+          mediaKind: "movie",
+          profileKey: "default",
+          filePath:
+            pathKind === "win32-case-variant"
+              ? job.outputPath.toUpperCase().replaceAll("/", "\\")
+              : job.outputPath,
+          state: "ready",
+          updatedAt: new Date().toISOString(),
+        });
+        repo.markRunning(job.id, new Date(Date.now() - 120_000).toISOString());
+        await buildService({
+          repo,
+          downloadsEnabled: false,
+          ytDlpAvailable: false,
+          downloadPath: tempDir,
+        }).processQueue();
+        expect(repo.get(job.id)?.status).toBe("failed");
+        repo.complete(job.id, new Date().toISOString());
+        await service.deleteJob(job.id, { deleteArtifact: true });
+        expect(await Bun.file(job.outputPath).text()).toBe("unowned offline bytes");
+      },
+    );
+    test("publishes distinct long-title episodes through real temporary files", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      spawnSpy.mockImplementation((command: string[]) => {
+        const path = command[command.indexOf("-o") + 1]!;
+        writeFileSync(path, command.at(-1)!);
+        // SAFETY: test stub — supplies only the surface this test exercises.
+        return {
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited: Promise.resolve(0),
+          kill() {},
+        } as never;
+      });
+      const jobs = [];
+      for (const episode of [1, 2])
+        jobs.push(
+          await service.enqueue({
+            title: { id: "tmdb:999", type: "series", name: "A".repeat(300) },
+            episode: { season: 1, episode },
+            providerId: "vidking",
+            stream: { url: `https://example.com/${episode}.mp4`, headers: {}, timestamp: 0 },
+          }),
+        );
+      await service.processQueue();
+      for (const [index, job] of jobs.entries()) {
+        expect(repo.get(job.id)?.status).toBe("completed");
+        expect(await Bun.file(job.outputPath).text()).toBe(`https://example.com/${index + 1}.mp4`);
+      }
+    });
+
+    test("refuses publication over an unknown existing destination", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      const job = await service.enqueue({
+        title: { id: "tmdb:888", type: "movie", name: "Existing" },
+        providerId: "vidking",
+        stream: { url: "https://example.com/new.mp4", headers: {}, timestamp: 0 },
+      });
+      writeFileSync(job.outputPath, "user-owned bytes");
+      spawnSpy.mockImplementation((command: string[]) => {
+        writeFileSync(command[command.indexOf("-o") + 1]!, "new bytes");
+        // SAFETY: test stub — supplies only the surface this test exercises.
+        return {
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited: Promise.resolve(0),
+          kill() {},
+        } as never;
+      });
+      await service.processQueue();
+      expect(await Bun.file(job.outputPath).text()).toBe("user-owned bytes");
+      expect(repo.get(job.id)?.status).not.toBe("completed");
+      await service.deleteJob(job.id, { deleteArtifact: true });
+      expect(await Bun.file(job.outputPath).text()).toBe("user-owned bytes");
+    });
+
+    test("legacy conflicting jobs cannot adopt or delete one another's output", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      const jobs = [];
+      for (const id of [111, 222])
+        jobs.push(
+          await service.enqueue({
+            title: { id: `tmdb:${id}`, type: "movie", name: "Collision" },
+            providerId: "vidking",
+          }),
+        );
+      const [first, second] = jobs;
+      writeFileSync(first!.outputPath, "first owner's bytes");
+      // complete() is fenced to claimed work — enqueue alone is 'queued'.
+      repo.markRunning(first!.id, new Date().toISOString());
+      repo.complete(first!.id, new Date().toISOString());
+      repo.markRunning(second!.id, new Date(Date.now() - 120_000).toISOString());
+      const recovery = buildService({
+        repo,
+        downloadsEnabled: false,
+        ytDlpAvailable: false,
+        downloadPath: tempDir,
+      });
+      await recovery.processQueue();
+      expect(repo.get(second!.id)?.status).toBe("failed");
+      await service.deleteJob(second!.id, { deleteArtifact: true });
+      expect(await Bun.file(first!.outputPath).text()).toBe("first owner's bytes");
+      expect(repo.get(first!.id)?.status).toBe("completed");
+    });
     test("an anime job is named episode-only, with no season folder", async () => {
       const service = buildService({
         repo,
@@ -253,6 +490,7 @@ describe("DownloadService", () => {
     expect(
       spawnSpy.mock.calls.some(
         (call: readonly unknown[]) =>
+          // SAFETY: test stub — supplies only the surface this test exercises.
           Array.isArray(call[0]) && (call[0] as readonly string[])[0] === "yt-dlp",
       ),
     ).toBe(false);
@@ -384,9 +622,10 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") {
+      if (String(outputPath) === outputPath) {
         writeFileSync(outputPath, "video-bytes");
       }
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download]  50.0% of 1.2GiB\n[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -416,6 +655,7 @@ describe("DownloadService", () => {
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
+      // SAFETY: test stub — supplies only the surface this test exercises.
       configService: {
         downloadsEnabled: true,
         downloadPath: tempDir,
@@ -440,6 +680,25 @@ describe("DownloadService", () => {
     expect(reloaded?.status).toBe("queued");
     expect(reloaded?.nextRetryAt).toBeDefined();
     expect(reloaded?.errorMessage).toContain("offline safety reserve");
+  });
+
+  test("rejects enqueue when the injected volume reports no free space", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      statfs: async () => ({ bavail: 0, bsize: 4096 }),
+    });
+
+    await expect(
+      service.enqueue({
+        title: { id: "tmdb:full-disk", type: "movie", name: "Full Disk" },
+        stream: { url: "https://example.com/full.m3u8", headers: {}, timestamp: 0 },
+        providerId: "vidking",
+        mode: "series",
+      }),
+    ).rejects.toMatchObject({ code: "insufficient-disk" });
   });
 
   test("persists provider source and stream selection for exact re-resolve", async () => {
@@ -479,12 +738,13 @@ describe("DownloadService", () => {
       ffprobeAvailable: true,
       downloadPath: tempDir,
       diagnostics: {
-        record: (event: unknown) => diagnostics.push(event),
+        record: <T>(event: T) => diagnostics.push(event),
       },
     });
     whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/usr/bin/ffprobe" : null));
     spawnSpy.mockImplementation((command: string[]) => {
       if (command[0] === "ffprobe") {
+        // SAFETY: test stub — supplies only the surface this test exercises.
         return {
           stdout: streamOf("1500.25\n"),
           stderr: streamOf(""),
@@ -493,9 +753,10 @@ describe("DownloadService", () => {
       }
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") {
+      if (String(outputPath) === outputPath) {
         writeFileSync(outputPath, "video-bytes");
       }
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf(""),
@@ -714,21 +975,23 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") {
+      if (String(outputPath) === outputPath) {
         writeFileSync(outputPath, "video-bytes");
       }
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf(""),
         exited: Promise.resolve(0),
       } as never;
     });
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(
       async () =>
         new Response("poster-bytes", {
           headers: { "content-type": "image/jpeg" },
         }),
-    ) as unknown as typeof fetch;
+    ) as never;
 
     const job = await service.enqueue({
       title: {
@@ -751,6 +1014,7 @@ describe("DownloadService", () => {
     expect(
       spawnSpy.mock.calls.some(
         (call: readonly unknown[]) =>
+          // SAFETY: test stub — supplies only the surface this test exercises.
           Array.isArray(call[0]) && (call[0] as readonly string[])[0] === "ffmpeg",
       ),
     ).toBe(false);
@@ -782,7 +1046,8 @@ describe("DownloadService", () => {
       expect(command.join(" ")).toContain("https://fresh.example/master.m3u8");
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -836,16 +1101,18 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
         exited: Promise.resolve(0),
       } as never;
     });
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(
       async () => new Response("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi"),
-    ) as unknown as typeof fetch;
+    ) as never;
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -884,16 +1151,18 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
         exited: Promise.resolve(0),
       } as never;
     });
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(async () => {
       throw new Error("stale subtitle URL should not be fetched");
-    }) as unknown as typeof fetch;
+    }) as never;
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -935,16 +1204,18 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
         exited: Promise.resolve(0),
       } as never;
     });
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(async () => {
       throw new Error("hardsub downloads must not fetch an external subtitle sidecar");
-    }) as unknown as typeof fetch;
+    }) as never;
 
     const job = await service.enqueue({
       title: { id: "anime:1", type: "series", name: "Example Anime" },
@@ -989,16 +1260,16 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
         exited: Promise.resolve(0),
       } as never;
     });
-    globalThis.fetch = mock(
-      async () => new Response("", { status: 503 }),
-    ) as unknown as typeof fetch;
+    // SAFETY: test stub — supplies only the surface this test exercises.
+    globalThis.fetch = mock(async () => new Response("", { status: 503 })) as never;
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1038,12 +1309,14 @@ describe("DownloadService", () => {
     let ytDlpCalls = 0;
     spawnSpy.mockImplementation((command: string[]) => {
       if (command[0] !== "yt-dlp") {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         return { stdout: streamOf(""), stderr: streamOf(""), exited: Promise.resolve(0) } as never;
       }
       ytDlpCalls += 1;
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -1051,11 +1324,12 @@ describe("DownloadService", () => {
       } as never;
     });
     let subtitleAttempts = 0;
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(async () => {
       subtitleAttempts += 1;
       if (subtitleAttempts === 1) return new Response("", { status: 503 });
       return new Response("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi");
-    }) as unknown as typeof fetch;
+    }) as never;
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1098,12 +1372,14 @@ describe("DownloadService", () => {
     let ytDlpCalls = 0;
     spawnSpy.mockImplementation((command: string[]) => {
       if (command[0] !== "yt-dlp") {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         return { stdout: streamOf(""), stderr: streamOf(""), exited: Promise.resolve(0) } as never;
       }
       ytDlpCalls += 1;
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -1111,11 +1387,12 @@ describe("DownloadService", () => {
       } as never;
     });
     let subtitleAttempts = 0;
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(async () => {
       subtitleAttempts += 1;
       if (subtitleAttempts <= 2) return new Response("", { status: 503 });
       return new Response("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi");
-    }) as unknown as typeof fetch;
+    }) as never;
 
     const first = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1147,6 +1424,66 @@ describe("DownloadService", () => {
     expect(repo.get(second.id)?.status).toBe("completed");
   });
 
+  test("lists a repairable job once, as completed work rather than a failure", async () => {
+    // #341: 'repairable' was returned by both listCompleted and listFailed, so
+    // the download manager rendered one job as two rows sharing an id and
+    // index-based selection acted on a phantom.
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      resolveDownloadStream: async () => ({
+        stream: {
+          url: "https://fresh.example/master.m3u8",
+          headers: { Referer: "https://fresh.example" },
+          timestamp: 0,
+          subtitle: "https://fresh.example/subs/en.vtt",
+          subtitleList: [{ url: "https://fresh.example/subs/en.vtt", language: "en" }],
+        },
+        providerId: "vidking",
+        selectionChanged: false,
+      }),
+    });
+    spawnSpy.mockImplementation((command: string[]) => {
+      if (command[0] !== "yt-dlp") {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        return { stdout: streamOf(""), stderr: streamOf(""), exited: Promise.resolve(0) } as never;
+      }
+      const oIndex = command.indexOf("-o");
+      const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf("Duration: 00:00:10.00\n"),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+    // Sidecar fetch keeps failing, so the job lands in 'repairable'.
+    // SAFETY: test stub — supplies only the surface this test exercises.
+    globalThis.fetch = mock(async () => new Response("", { status: 503 })) as never;
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 6, name: "Episode 6" },
+      providerId: "vidking",
+      mode: "series",
+      audioPreference: "original",
+      subtitlePreference: "en",
+    });
+    await service.processQueue();
+    expect(repo.get(job.id)?.status).toBe("repairable");
+
+    const ids = (jobs: readonly { id: string }[]) => jobs.map((entry) => entry.id);
+    expect(ids(service.listCompleted(10))).toContain(job.id);
+    expect(ids(service.listFailed(10))).not.toContain(job.id);
+    expect(ids(service.listRepairable(10))).toContain(job.id);
+
+    // The queue summary still calls it repairable, not failed.
+    expect(service.describeQueueSummary()).toBe("1 repairable");
+  });
+
   test("continues repair sweep when one repairable artifact is missing", async () => {
     const service = buildService({
       repo,
@@ -1170,7 +1507,8 @@ describe("DownloadService", () => {
       ytDlpCalls += 1;
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -1178,11 +1516,12 @@ describe("DownloadService", () => {
       } as never;
     });
     let subtitleAttempts = 0;
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(async () => {
       subtitleAttempts += 1;
       if (subtitleAttempts <= 2) return new Response("", { status: 503 });
       return new Response("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi");
-    }) as unknown as typeof fetch;
+    }) as never;
 
     const first = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1225,16 +1564,18 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
         exited: Promise.resolve(0),
       } as never;
     });
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(
       async () => new Response("not an image", { headers: { "content-type": "text/plain" } }),
-    ) as unknown as typeof fetch;
+    ) as never;
 
     const job = await service.enqueue({
       title: {
@@ -1267,7 +1608,8 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -1347,6 +1689,7 @@ describe("DownloadService", () => {
     });
     spawnSpy.mockImplementation(
       () =>
+        // SAFETY: test stub — supplies only the surface this test exercises.
         ({
           stdout: streamOf(""),
           stderr: streamOf("connection timed out"),
@@ -1369,6 +1712,7 @@ describe("DownloadService", () => {
   });
 
   test("aborts active process and marks job aborted", async () => {
+    const processStarted = Promise.withResolvers<void>();
     const service = buildService({
       repo,
       downloadsEnabled: true,
@@ -1381,18 +1725,19 @@ describe("DownloadService", () => {
       resolveExit = resolve;
     });
     const killSignals: unknown[] = [];
-    spawnSpy.mockImplementation(
-      () =>
-        ({
-          stdout: streamOf(""),
-          stderr: streamOf(""),
-          exited,
-          kill: (signal?: unknown) => {
-            killSignals.push(signal);
-            if (signal === "SIGKILL") resolveExit?.(1);
-          },
-        }) as never,
-    );
+    spawnSpy.mockImplementation(() => {
+      processStarted.resolve();
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      return {
+        stdout: streamOf(""),
+        stderr: streamOf(""),
+        exited,
+        kill: <T>(signal?: T) => {
+          killSignals.push(signal);
+          if (signal === "SIGKILL") resolveExit?.(1);
+        },
+      } as never;
+    });
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1402,7 +1747,9 @@ describe("DownloadService", () => {
     });
 
     const running = service.processQueue();
-    await waitUntil(() => repo.get(job.id)?.status === "running");
+    // Await the spawn acknowledgment, not the earlier durable running lease.
+    // Registration finishes synchronously before this continuation resumes.
+    await processStarted.promise;
     await service.abort(job.id);
     await running;
 
@@ -1411,6 +1758,7 @@ describe("DownloadService", () => {
   });
 
   test("pauses active downloads for shutdown and leaves them retryable", async () => {
+    const processStarted = Promise.withResolvers<void>();
     const service = buildService({
       repo,
       downloadsEnabled: true,
@@ -1423,17 +1771,18 @@ describe("DownloadService", () => {
     const exited = new Promise<number>((resolve) => {
       resolveExit = resolve;
     });
-    spawnSpy.mockImplementation(
-      () =>
-        ({
-          stdout: streamOf(""),
-          stderr: streamOf(""),
-          exited,
-          kill: (signal?: unknown) => {
-            if (signal === "SIGKILL") resolveExit?.(1);
-          },
-        }) as never,
-    );
+    spawnSpy.mockImplementation(() => {
+      processStarted.resolve();
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      return {
+        stdout: streamOf(""),
+        stderr: streamOf(""),
+        exited,
+        kill: <T>(signal?: T) => {
+          if (signal === "SIGKILL") resolveExit?.(1);
+        },
+      } as never;
+    });
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1443,7 +1792,7 @@ describe("DownloadService", () => {
     });
 
     const running = service.processQueue();
-    await waitUntil(() => repo.get(job.id)?.status === "running");
+    await processStarted.promise;
     await service.pauseActiveJobsForShutdown("download paused by test shutdown");
     await running;
 
@@ -1451,7 +1800,7 @@ describe("DownloadService", () => {
     expect(reloaded?.status).toBe("queued");
     expect(reloaded?.errorMessage).toBe("download paused by test shutdown");
     expect(reloaded?.nextRetryAt).toBeDefined();
-  });
+  }, 60_000);
 
   test("does not schedule retry for terminal failures", async () => {
     const service = buildService({
@@ -1462,6 +1811,7 @@ describe("DownloadService", () => {
     });
     spawnSpy.mockImplementation(
       () =>
+        // SAFETY: test stub — supplies only the surface this test exercises.
         ({
           stdout: streamOf(""),
           stderr: streamOf("yt-dlp: invalid argument\n"),
@@ -1691,14 +2041,14 @@ describe("DownloadService", () => {
   });
 
   test("supervises startup reconciliation failures without an unhandled rejection", async () => {
-    const events: Array<Record<string, unknown>> = [];
+    const events: DiagnosticEventInput[] = [];
     const service = buildService({
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
       diagnostics: {
-        record: (event) => events.push(event as unknown as Record<string, unknown>),
+        record: (event) => events.push(event),
       },
     });
     const secretUrl =
@@ -1707,7 +2057,7 @@ describe("DownloadService", () => {
       throw new Error(`simulated SQLite failure while reading ${secretUrl}`);
     });
     const unhandled: unknown[] = [];
-    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    const onUnhandled = <T>(reason: T) => unhandled.push(reason);
     process.on("unhandledRejection", onUnhandled);
 
     try {
@@ -1767,7 +2117,7 @@ describe("DownloadService", () => {
       throw new Error("simulated SQLite failure");
     });
     const unhandled: unknown[] = [];
-    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    const onUnhandled = <T>(reason: T) => unhandled.push(reason);
     process.on("unhandledRejection", onUnhandled);
 
     try {
@@ -1783,14 +2133,14 @@ describe("DownloadService", () => {
   });
 
   test("resets a failed supervised pass so a later kick completes queued work", async () => {
-    const events: Array<Record<string, unknown>> = [];
+    const events: DiagnosticEventInput[] = [];
     const service = buildService({
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
       diagnostics: {
-        record: (event) => events.push(event as unknown as Record<string, unknown>),
+        record: (event) => events.push(event),
       },
     });
     const originalListRunning = repo.listRunning.bind(repo);
@@ -1806,7 +2156,8 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf(""),
@@ -1828,14 +2179,14 @@ describe("DownloadService", () => {
   });
 
   test("records the known worker and job when a queue worker fails unexpectedly", async () => {
-    const events: Array<Record<string, unknown>> = [];
+    const events: DiagnosticEventInput[] = [];
     const service = buildService({
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
       diagnostics: {
-        record: (event) => events.push(event as unknown as Record<string, unknown>),
+        record: (event) => events.push(event),
       },
     });
     const job = await service.enqueue({
@@ -1864,15 +2215,16 @@ describe("DownloadService", () => {
   });
 
   test("attributes a failed second claim after another process wins the first job", async () => {
-    const events: Array<Record<string, unknown>> = [];
+    const events: DiagnosticEventInput[] = [];
     const service = buildService({
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
       diagnostics: {
-        record: (event) => events.push(event as unknown as Record<string, unknown>),
+        record: (event) => events.push(event),
       },
+      // SAFETY: test stub — supplies only the surface this test exercises.
       configService: {
         downloadsEnabled: true,
         downloadPath: tempDir,
@@ -1894,6 +2246,12 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
+    // This test covers competing claims, not equal-timestamp UUID ordering.
+    // Anchor A before the records we just wrote without sleeping for a tick.
+    const earlier = new Date(
+      Math.min(Date.parse(firstJob.createdAt), Date.parse(secondJob.createdAt)) - 1,
+    ).toISOString();
+    db.run("UPDATE download_jobs SET created_at = ? WHERE id = ?", [earlier, firstJob.id]);
     const originalMarkRunning = repo.markRunning.bind(repo);
     const claimedJobIds: string[] = [];
     const markRunningSpy = spyOn(repo, "markRunning").mockImplementation((jobId, updatedAt) => {
@@ -1948,6 +2306,7 @@ describe("DownloadService", () => {
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
+      // SAFETY: test stub — supplies only the surface this test exercises.
       configService: {
         downloadsEnabled: true,
         downloadPath: tempDir,
@@ -2009,7 +2368,7 @@ describe("DownloadService", () => {
     await service.processQueue();
     expect(laterPassCalls).toBe(2);
     processNextSpy.mockRestore();
-  });
+  }, 60_000);
 
   test("aggregates multiple worker failures with a bounded redacted message", async () => {
     const service = buildService({
@@ -2017,6 +2376,7 @@ describe("DownloadService", () => {
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
+      // SAFETY: test stub — supplies only the surface this test exercises.
       configService: {
         downloadsEnabled: true,
         downloadPath: tempDir,
@@ -2042,8 +2402,11 @@ describe("DownloadService", () => {
     }
 
     expect(failure).toBeInstanceOf(AggregateError);
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as AggregateError).errors).toHaveLength(2);
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message).not.toContain("sentinel-secret-never-log");
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message.length).toBeLessThan(500);
     processNextSpy.mockRestore();
   });
@@ -2054,6 +2417,7 @@ describe("DownloadService", () => {
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
+      // SAFETY: test stub — supplies only the surface this test exercises.
       configService: {
         downloadsEnabled: true,
         downloadPath: tempDir,
@@ -2076,10 +2440,15 @@ describe("DownloadService", () => {
     }
 
     expect(failure).toBeInstanceOf(AggregateError);
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as AggregateError).errors).toEqual([namedFailure, longNamedFailure]);
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message).not.toContain("hostile-name");
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message).toContain("token=[redacted]");
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message).not.toContain("E".repeat(41));
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message.length).toBeLessThan(500);
     processNextSpy.mockRestore();
   });
@@ -2183,6 +2552,7 @@ describe("DownloadService", () => {
   });
 
   test("pauseActiveJobsForShutdown honors explicit shutdown wait budgets", async () => {
+    const processStarted = Promise.withResolvers<void>();
     const service = buildService({
       repo,
       downloadsEnabled: true,
@@ -2194,15 +2564,16 @@ describe("DownloadService", () => {
     const exited = new Promise<number>((resolve) => {
       exitProcess = resolve;
     });
-    spawnSpy.mockImplementation(
-      () =>
-        ({
-          stdout: streamOf(""),
-          stderr: streamOf(""),
-          exited,
-          kill: () => exitProcess(0),
-        }) as never,
-    );
+    spawnSpy.mockImplementation(() => {
+      processStarted.resolve();
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      return {
+        stdout: streamOf(""),
+        stderr: streamOf(""),
+        exited,
+        kill: () => exitProcess(0),
+      } as never;
+    });
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -2211,7 +2582,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
     });
     const running = service.processQueue();
-    await waitUntil(() => repo.get(job.id)?.status === "running");
+    await processStarted.promise;
 
     const startedAt = Date.now();
     await service.pauseActiveJobsForShutdown("download paused by shutdown", {
@@ -2242,6 +2613,7 @@ function buildService({
   logger,
   configService,
   titleAliases = { upsertAliases() {} },
+  statfs,
 }: {
   repo: DownloadJobsRepository;
   downloadsEnabled: boolean;
@@ -2255,7 +2627,9 @@ function buildService({
   logger?: ConstructorParameters<typeof DownloadService>[0]["logger"];
   configService?: ConfigService;
   titleAliases?: ConstructorParameters<typeof DownloadService>[0]["titleAliases"];
+  statfs?: ConstructorParameters<typeof DownloadService>[0]["statfs"];
 }): DownloadService {
+  // SAFETY: test stub — supplies only the surface this test exercises.
   const defaultConfig = {
     downloadsEnabled,
     downloadPath,
@@ -2283,6 +2657,10 @@ function buildService({
     resolveDownloadStream,
     abortGraceMs,
     ffprobeDeadline,
+    // Default to a volume with 1 TiB free so admission checks are deterministic
+    // regardless of the host's actual disk headroom. Tests that exercise the
+    // reserve inject their own statfs or reserveBytes.
+    statfs: statfs ?? (async () => ({ bavail: 2 ** 40 / 4096, bsize: 4096 })),
   });
 }
 

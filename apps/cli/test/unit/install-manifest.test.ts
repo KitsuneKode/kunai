@@ -21,6 +21,8 @@ import {
 } from "@/services/update/native-installer/install-layout";
 import { writeInstalledVersionMetadata } from "@/services/update/native-installer/version-metadata";
 
+import { waitUntil } from "../support/wait-until";
+
 const made: string[] = [];
 afterEach(() => {
   for (const d of made.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -44,11 +46,7 @@ function migrationLayout(configDir: string) {
 }
 
 async function waitForPath(path: string): Promise<void> {
-  const deadline = Date.now() + 2_000;
-  while (!existsSync(path)) {
-    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`);
-    await Bun.sleep(5);
-  }
+  await waitUntil(() => existsSync(path), { label: `path exists: ${path}` });
 }
 
 const LEGACY_VERSIONED = {
@@ -791,9 +789,18 @@ test("write preserves installedAt and refreshes updatedAt", async () => {
     },
     migrationLayout(dir),
   );
+  // Pin the on-disk updatedAt to the past, THEN read the baseline: the
+  // rewrite must stamp a fresh value, and a pinned seed makes the
+  // not-equal assertion deterministic instead of racing Date.now()'s
+  // millisecond granularity on a fast (or stalled-parallel) runner.
+  const manifestFile = Bun.file(`${dir}/install.json`);
+  // SAFETY: install.json was written by the manifest writer under test; only
+  // the updatedAt field is touched, and a malformed read still fails the test.
+  const onDisk = (await manifestFile.json()) as { updatedAt?: string };
+  onDisk.updatedAt = "2000-01-01T00:00:00.000Z";
+  await Bun.write(manifestFile, JSON.stringify(onDisk));
   const first = await readInstallManifest(dir);
   expect(first?.managedPaths).toEqual([]);
-  await Bun.sleep(5);
   await writeInstallManifest(
     {
       method: "npm-global",

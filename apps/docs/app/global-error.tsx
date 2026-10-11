@@ -17,7 +17,7 @@ export default function GlobalError({
         <p className="text-xs font-semibold tracking-widest text-[var(--kunai-accent)] uppercase">
           Kunai Docs
         </p>
-        <h1 className="text-2xl font-light">The docs site hit an unexpected error</h1>
+        <h1 className="text-2xl font-normal">The docs site hit an unexpected error</h1>
         <p className="text-fd-muted-foreground max-w-md text-sm">
           {error.message || "Reload the page or head back to the documentation home."}
         </p>

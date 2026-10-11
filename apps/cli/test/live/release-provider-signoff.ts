@@ -89,7 +89,7 @@ export function assertReleaseProviderSignoffComplete(signoff: ReleaseProviderSig
       throw new Error(`Duplicate release signoff lane: ${route.lane}`);
     }
     lanes.add(route.lane);
-    assertRouteShape(route);
+    assertRoutePayload(route);
   }
 
   for (const required of RELEASE_SIGNOFF_REQUIRED_LANES) {
@@ -151,7 +151,14 @@ export function classifyReleaseSignoffFailure(input: {
   const haystack = [input.error ?? "", ...(input.failureCodes ?? [])].join(" ").toLowerCase();
   if (
     input.timedOut ||
-    /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket/.test(
+    // `cloudflare`/`just a moment`/`challenge` are as much a WAF-shaped block as
+    // a bare 403, and the anidb client reports one in words rather than a status
+    // code: "anidb blocked by Cloudflare (try curl-impersonate)". Without them a
+    // runner refused on TLS fingerprint was filed as provider drift, which sent
+    // a release investigation at a provider that was healthy the whole time.
+    // A bare 5xx would match "episode 512" — statuses count only in HTTP-status
+    // context ("HTTP 503", "status: 500"), the shape every provider emits.
+    /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket|cloudflare|just a moment|challenge|blocked by|unreachable|unavailable|\b(?:http|status)\b[\s=:/]*(?:\d[\d.]*\s)?5\d{2}\b/.test(
       haystack,
     )
   ) {
@@ -173,7 +180,7 @@ function sanitizeRoute(route: ReleaseProviderSignoffRoute): ReleaseProviderSigno
   };
 }
 
-function assertRouteShape(route: ReleaseProviderSignoffRoute): void {
+function assertRoutePayload(route: ReleaseProviderSignoffRoute): void {
   const { lane } = route;
   if (!route.configuredProvider.trim()) {
     throw new Error(`Release signoff lane ${lane} requires configuredProvider`);

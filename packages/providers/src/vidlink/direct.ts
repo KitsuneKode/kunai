@@ -1,8 +1,14 @@
 import type { CoreProviderModule } from "@kunai/core";
 import type {
+  EndpointFailureClass,
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
+} from "@kunai/types";
+import {
+  httpStatusIsRetryable,
+  httpStatusToResolveErrorCode,
+  ProviderHttpError,
 } from "@kunai/types";
 
 import { providerFetch } from "../runtime/fetch";
@@ -11,12 +17,30 @@ import {
   resolveDirectStreamSource,
   type DirectStreamInput,
   type DirectStreamPayload,
+  type DirectSubtitleInput,
 } from "../shared/direct-stream-source";
-import { expandHlsMasterPlaylist, looksLikeHlsMasterUrl } from "../shared/hls-ladder";
+import {
+  expandHlsMasterInventory,
+  isHlsDeadHostStatus,
+  looksLikeHlsMasterUrl,
+} from "../shared/hls-ladder";
+import { readJsonObjectBody } from "../shared/json-body";
+import { sleepAbortable } from "../shared/timeout-signal";
 import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
 
 export { VIDLINK_PROVIDER_ID };
 
+/**
+ * Third-party single point of failure: VidLink cannot build a source path
+ * without an enc-dec.app encryption, and there is no local equivalent — the
+ * scheme is theirs, so Kunai must not invent one. The outage fallback is the
+ * memo below, not a second encryptor: enc-dec output is a deterministic
+ * function of the tmdb id, so a value cached inside its own 30-minute TTL
+ * keeps resolving through an enc-dec.app outage with no new network
+ * dependency. Past the TTL the lane fails with a structured `enc-dec` error
+ * naming enc-dec.app (see `encryptTmdbId`) so the outage reads as a
+ * third-party dependency, never as a title miss.
+ */
 const ENC_DEC_BASE = "https://enc-dec.app/api";
 /** Playback environment VidLink maps to its DASH + signed-cookie delivery path. */
 const VIDLINK_PLAYBACK_ENVIRONMENT = "webkit";
@@ -33,10 +57,92 @@ const ENC_DEC_CACHE_TTL_MS = 30 * 60_000;
  * session touches many titles. Evicts oldest-first via Map insertion order.
  */
 const ENC_DEC_CACHE_MAX_ENTRIES = 256;
+/**
+ * enc-dec's output is a deterministic encryption of the tmdb id, so persisting
+ * it within its own 30-minute TTL is safe — it is not a signed URL or a
+ * per-session credential. The in-memory Map stays L1 so a hot loop never
+ * round-trips SQLite.
+ */
+const ENC_DEC_PERSIST_NAMESPACE = "vidlink:enc-dec";
 
 const encDecCache = new Map<number, { result: string; expiresAt: number }>();
 
-function rememberEncDecResult(tmdbId: number, result: string): void {
+const VIDLINK_API_ENDPOINT = "vidlink.pro";
+const ENC_DEC_ENDPOINT = "enc-dec.app";
+
+let vidlinkRetrySleepImpl: (ms: number, signal?: AbortSignal) => Promise<void> = sleepAbortable;
+const vidlinkRetrySleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+  vidlinkRetrySleepImpl(ms, signal);
+
+/** Test seam: replace the retry sleep (restore with the default afterwards). */
+export function setVidlinkRetrySleepForTest(sleep: typeof vidlinkRetrySleepImpl | null): void {
+  vidlinkRetrySleepImpl = sleep ?? sleepAbortable;
+}
+
+/**
+ * Endpoint-health adapter for VidLink's two hard dependencies. Unlike Videasy
+ * there is no pre-existing in-memory tracker to fall back on, so a missing
+ * port simply means no quarantine — matching the pre-port behavior.
+ */
+function createVidlinkEndpointHealth(context: ProviderRuntimeContext) {
+  const port = context.endpointHealth;
+  return {
+    shouldTry(endpoint: string): boolean {
+      return port ? port.shouldTry(VIDLINK_PROVIDER_ID, endpoint) : true;
+    },
+    recordSuccess(endpoint: string): void {
+      port?.recordSuccess(VIDLINK_PROVIDER_ID, endpoint);
+    },
+    recordFailure(endpoint: string, info: { class: EndpointFailureClass; titleId?: string }): void {
+      port?.recordFailure(VIDLINK_PROVIDER_ID, endpoint, {
+        class: info.class,
+        titleId: info.titleId,
+        at: context.now(),
+      });
+    },
+  };
+}
+
+/**
+ * Which failures are endpoint evidence. A `not-found` is the service saying it
+ * does not carry this title — title-shaped, not health-shaped — so it must
+ * never quarantine the host. Throttles and transport problems cool off;
+ * sustained 5xx earns the longer server-error quarantine.
+ */
+function vidlinkFailureClass(code: ProviderHttpError["code"]): EndpointFailureClass | undefined {
+  if (code === "provider-unavailable") return "server-error";
+  if (
+    code === "rate-limited" ||
+    code === "blocked" ||
+    code === "timeout" ||
+    code === "network-error"
+  ) {
+    return "transient";
+  }
+  return undefined;
+}
+
+function vidlinkHttpError(status: number, endpoint: string, stage: string): ProviderHttpError {
+  return new ProviderHttpError({
+    providerId: VIDLINK_PROVIDER_ID,
+    stage,
+    status,
+    message: `${endpoint} returned HTTP ${status}`,
+    code: httpStatusToResolveErrorCode(status),
+    retryable: httpStatusIsRetryable(status),
+  });
+}
+
+/** Test-only: drop the L1 enc-dec map so the persistent cache path is observable. */
+export function clearVidlinkEncDecCacheForTest(): void {
+  encDecCache.clear();
+}
+
+function rememberEncDecResult(
+  context: ProviderRuntimeContext,
+  tmdbId: number,
+  result: string,
+): void {
   // Refresh insertion order so re-encrypted ids are treated as recently used.
   encDecCache.delete(tmdbId);
   encDecCache.set(tmdbId, { result, expiresAt: Date.now() + ENC_DEC_CACHE_TTL_MS });
@@ -45,6 +151,9 @@ function rememberEncDecResult(tmdbId: number, result: string): void {
     if (oldest.done) break;
     encDecCache.delete(oldest.value);
   }
+  void context.cache
+    ?.write(ENC_DEC_PERSIST_NAMESPACE, String(tmdbId), result, ENC_DEC_CACHE_TTL_MS)
+    .catch(() => {});
 }
 
 interface VidlinkCaption {
@@ -86,19 +195,25 @@ export function resolveVidlinkDirect(
     context,
     resolveGateProbe: true,
     fetchPayload: async ({ tmdbId, season, episode, input: resolveInput, context: ctx }) => {
-      const encryptedId = await encryptTmdbId(ctx, tmdbId, ctx.signal);
+      const encryptedId = await encryptTmdbId(ctx, tmdbId, ctx.signal, resolveInput.title.id);
       const path =
         resolveInput.mediaKind === "movie"
           ? `movie/${encryptedId}`
           : `tv/${encryptedId}/${season}/${episode}`;
 
-      const response = await fetchVidlinkApi(ctx, `${VIDLINK_API_BASE}/${path}`, ctx.signal);
+      const response = await fetchVidlinkApi(
+        ctx,
+        `${VIDLINK_API_BASE}/${path}`,
+        ctx.signal,
+        resolveInput.title.id,
+      );
 
-      const data = (await response.json()) as { stream?: VidlinkStream };
-      const stream = data.stream;
+      const data = await readJsonObjectBody<{ stream?: VidlinkStream }>(response);
+      const stream = data?.stream;
       if (!stream) return null;
 
       const streams: DirectStreamInput[] = [];
+      const manifestSubtitles: DirectSubtitleInput[] = [];
       if (stream.type === "file" && stream.qualities) {
         for (const [quality, file] of Object.entries(stream.qualities)) {
           if (file?.url) streams.push({ url: file.url, qualityHint: quality });
@@ -113,7 +228,8 @@ export function resolveVidlinkDirect(
           ...stream.headers,
         };
         if (looksLikeHlsMasterUrl(stream.playlist) || /\.m3u8(?:[?#]|$)/i.test(stream.playlist)) {
-          const variants = await expandHlsMasterPlaylist({
+          const inventory = await expandHlsMasterInventory({
+            resolvesLocally: ctx.fetch?.resolvesLocally,
             fetch: (url: string, init?: RequestInit) =>
               providerFetch(ctx, url, {
                 ...init,
@@ -127,8 +243,31 @@ export function resolveVidlinkDirect(
             headers: playlistHeaders,
             signal: ctx.signal,
           });
-          for (const variant of variants) {
-            streams.push({ url: variant.url, qualityHint: variant.qualityLabel });
+          // A dead host (5xx / 404 / 410) fails identically in mpv — dropping
+          // the row beats emitting an `auto` fallback to a corpse URL. Ambiguous
+          // failures (403 / timeout / non-master) still fall back because
+          // gatekept CDNs reject expansion yet play once headers ride along.
+          if (
+            inventory.probe.kind !== "http-error" ||
+            !isHlsDeadHostStatus(inventory.probe.httpStatus)
+          ) {
+            for (const variant of inventory.variants) {
+              streams.push({
+                url: variant.url,
+                qualityHint: variant.qualityLabel,
+                audioLanguages:
+                  inventory.audioLanguages.length > 0 ? inventory.audioLanguages : undefined,
+              });
+            }
+            // Rendition playlists the provider didn't list in `captions` still
+            // belong in subtitle inventory — the Tracks panel reads it.
+            for (const track of inventory.subtitleTracks) {
+              manifestSubtitles.push({
+                url: track.url,
+                language: track.language,
+                label: track.label,
+              });
+            }
           }
         } else {
           // A DASH manifest is one adaptive URL: mpv switches renditions inside
@@ -144,11 +283,16 @@ export function resolveVidlinkDirect(
 
       const payload: DirectStreamPayload = {
         streams,
-        subtitles: (stream.captions ?? []).map((caption) => ({
-          url: caption.url,
-          language: caption.language,
-          type: caption.type,
-        })),
+        // Provider captions first, then master-manifest rendition subs —
+        // normalizeSubtitles dedupes by URL so overlapping entries collapse.
+        subtitles: [
+          ...(stream.captions ?? []).map((caption) => ({
+            url: caption.url,
+            language: caption.language,
+            type: caption.type,
+          })),
+          ...manifestSubtitles,
+        ],
         headers: {
           referer: VIDLINK_REFERER,
           origin: VIDLINK_ORIGIN,
@@ -174,12 +318,23 @@ function highestVidlinkResolution(resolutions: readonly string[] | undefined): s
   return `${Math.max(...heights)}p`;
 }
 
-/** Fetch VidLink API with retry on 5xx. */
+/** Fetch VidLink API with retry on 5xx, inside the endpoint quarantine. */
 async function fetchVidlinkApi(
   context: ProviderRuntimeContext,
   url: string,
   signal: AbortSignal | undefined,
+  titleId: string | undefined,
 ): Promise<Response> {
+  const endpointHealth = createVidlinkEndpointHealth(context);
+  if (!endpointHealth.shouldTry(VIDLINK_API_ENDPOINT)) {
+    throw new ProviderHttpError({
+      providerId: VIDLINK_PROVIDER_ID,
+      stage: "api",
+      message: "vidlink.pro is quarantined after recent failures",
+      code: "provider-unavailable",
+      retryable: true,
+    });
+  }
   const maxAttempts = 2;
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -201,17 +356,34 @@ async function fetchVidlinkApi(
         },
         signal: directStreamFetchSignal(signal, VIDLINK_FETCH_TIMEOUT_MS),
       });
-      if (response.ok) return response;
+      if (response.ok) {
+        endpointHealth.recordSuccess(VIDLINK_API_ENDPOINT);
+        return response;
+      }
+      const error = vidlinkHttpError(response.status, VIDLINK_API_ENDPOINT, "api");
+      if (!signal?.aborted) {
+        const failureClass = vidlinkFailureClass(error.code);
+        if (failureClass)
+          endpointHealth.recordFailure(VIDLINK_API_ENDPOINT, { class: failureClass, titleId });
+      }
       if (attempt < maxAttempts && response.status >= 500 && !signal?.aborted) {
-        lastError = new Error(`VidLink API returned HTTP ${response.status}`);
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        lastError = error;
+        await vidlinkRetrySleep(500, signal);
+        signal?.throwIfAborted();
         continue;
       }
-      throw new Error(`VidLink API returned HTTP ${response.status}`);
+      throw error;
     } catch (error) {
+      if (error instanceof ProviderHttpError && !error.retryable) {
+        throw error;
+      }
+      if (!(error instanceof ProviderHttpError) && !signal?.aborted) {
+        endpointHealth.recordFailure(VIDLINK_API_ENDPOINT, { class: "transient", titleId });
+      }
       if (attempt >= maxAttempts || signal?.aborted) throw error;
       lastError = error instanceof Error ? error : new Error(String(error));
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await vidlinkRetrySleep(500, signal);
+      signal?.throwIfAborted();
     }
   }
   throw lastError ?? new Error("VidLink API fetch failed");
@@ -222,9 +394,33 @@ async function encryptTmdbId(
   context: ProviderRuntimeContext,
   tmdbId: number,
   signal: AbortSignal | undefined,
+  titleId: string | undefined,
 ): Promise<string> {
   const cached = encDecCache.get(tmdbId);
   if (cached && Date.now() < cached.expiresAt) return cached.result;
+  const persisted = await context.cache
+    ?.read<string>(ENC_DEC_PERSIST_NAMESPACE, String(tmdbId))
+    .catch(() => null);
+  if (persisted) {
+    // L1 only — re-writing the port entry here would restart its TTL and let a
+    // repeatedly-read value outlive the 30-minute window indefinitely.
+    encDecCache.set(tmdbId, {
+      result: persisted,
+      expiresAt: Date.now() + ENC_DEC_CACHE_TTL_MS,
+    });
+    return persisted;
+  }
+
+  const endpointHealth = createVidlinkEndpointHealth(context);
+  if (!endpointHealth.shouldTry(ENC_DEC_ENDPOINT)) {
+    throw new ProviderHttpError({
+      providerId: VIDLINK_PROVIDER_ID,
+      stage: "enc-dec",
+      message: "enc-dec.app is quarantined after recent failures",
+      code: "provider-unavailable",
+      retryable: true,
+    });
+  }
 
   const maxAttempts = 2;
   let lastError: Error | undefined;
@@ -235,22 +431,56 @@ async function encryptTmdbId(
         signal: directStreamFetchSignal(signal, VIDLINK_FETCH_TIMEOUT_MS),
       });
       if (!response.ok) {
-        throw new Error(`enc-dec.app returned HTTP ${response.status}`);
+        throw vidlinkHttpError(response.status, ENC_DEC_ENDPOINT, "enc-dec");
       }
+      // SAFETY: response.json() resolves to the parsed document; result is checked optional.
       const data = (await response.json()) as { result?: string };
       if (!data?.result) {
-        throw new Error("enc-dec.app did not return an encrypted id");
+        // A 200 without `result` is response-shape drift, not a network blip —
+        // classify parse so the cycle records it honestly instead of retrying.
+        throw new ProviderHttpError({
+          providerId: VIDLINK_PROVIDER_ID,
+          stage: "enc-dec",
+          status: response.status,
+          message: "enc-dec.app did not return an encrypted id",
+          code: "parse-failed",
+          retryable: false,
+        });
       }
       // TTL runs from when the value was received, not from when the request
       // started — a slow request must not shorten its own cache lifetime.
-      rememberEncDecResult(tmdbId, data.result);
+      rememberEncDecResult(context, tmdbId, data.result);
+      endpointHealth.recordSuccess(ENC_DEC_ENDPOINT);
       return data.result;
     } catch (error) {
+      if (error instanceof ProviderHttpError && !error.retryable) {
+        throw error;
+      }
+      if (!signal?.aborted) {
+        const failureClass =
+          error instanceof ProviderHttpError ? vidlinkFailureClass(error.code) : "transient";
+        if (failureClass) {
+          endpointHealth.recordFailure(ENC_DEC_ENDPOINT, { class: failureClass, titleId });
+        }
+      }
       lastError = error instanceof Error ? error : new Error(String(error));
       if (attempt < maxAttempts && !signal?.aborted) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await vidlinkRetrySleep(500, signal);
+        signal?.throwIfAborted();
       }
     }
   }
-  throw lastError ?? new Error("enc-dec.app encryption failed after retries");
+  // A classified upstream error keeps its own code (5xx → provider-unavailable,
+  // which already fed the endpoint quarantine above). Anything else is wrapped
+  // so the failure names the third-party dependency that actually failed —
+  // without this the lane would report a bare network-error and read as a
+  // title miss.
+  if (lastError instanceof ProviderHttpError) throw lastError;
+  throw new ProviderHttpError({
+    providerId: VIDLINK_PROVIDER_ID,
+    stage: "enc-dec",
+    message: `third-party enc-dec.app encryption failed after retries: ${lastError?.message ?? "unknown error"}`,
+    code: "network-error",
+    retryable: true,
+  });
 }

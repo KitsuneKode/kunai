@@ -20,7 +20,7 @@ export type HandoffPlaybackErrorReason =
   | "player-shutting-down"
   | AndroidIntentFailure;
 
-const BLOCKER_COPY: Readonly<Record<HandoffBlocker, string>> = {
+const BLOCKER_COPY = {
   "custom-headers-required": "the stream requires HTTP headers",
   "cookies-required": "the stream requires cookies",
   "yt-dlp-required": "the stream requires yt-dlp",
@@ -28,18 +28,16 @@ const BLOCKER_COPY: Readonly<Record<HandoffBlocker, string>> = {
   "unsupported-scheme": "the media URL is not absolute HTTP or HTTPS",
   "external-subtitle-unsupported": "the selected stream requires external subtitles",
   "local-source-unsupported": "local files are not supported by Android handoff",
-};
+} satisfies Readonly<Record<HandoffBlocker, string>>;
 
-const FAILURE_COPY: Readonly<
-  Record<Exclude<HandoffPlaybackErrorReason, "unsupported-stream">, string>
-> = {
+const FAILURE_COPY = {
   "local-source-unsupported": "Android handoff does not support local files yet.",
   "player-shutting-down": "The player is shutting down.",
   "intent-launcher-missing":
     "No Android intent launcher was found. Run `pkg install termux-am` and try again.",
   "player-not-installed": "The requested Android player is not installed.",
   "launch-rejected": "Android rejected the external player launch.",
-};
+} satisfies Readonly<Record<Exclude<HandoffPlaybackErrorReason, "unsupported-stream">, string>>;
 
 export class HandoffPlaybackError extends Error {
   override readonly name = "HandoffPlaybackError";

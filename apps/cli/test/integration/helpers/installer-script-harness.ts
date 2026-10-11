@@ -24,6 +24,11 @@ export function windowsShellEnvDefaults(root: string): NodeJS.ProcessEnv {
     LOCALAPPDATA: join(root, "localappdata"),
     APPDATA: join(root, "appdata"),
     USERPROFILE: join(root, "userprofile"),
+    // The installer refuses elevated/root tokens by default (#454); tests
+    // exercise the install path, not the guard, and must pass on elevated CI
+    // runners and root container jobs.
+    KUNAI_INSTALL_ALLOW_ELEVATED: "1",
+    KUNAI_INSTALL_ALLOW_ROOT: "1",
   };
 }
 

@@ -14,7 +14,15 @@ export const youtubeManifest = defineProviderManifest({
   runtimePorts: [
     {
       runtime: "direct-http",
-      operations: ["resolve-stream", "health-check"],
+      // Metadata legs are real HTTP too (Invidious/Piped) — listing only
+      // resolve-stream/health-check made the port contradict `capabilities`.
+      operations: [
+        "search",
+        "list-episodes",
+        "resolve-stream",
+        "resolve-subtitles",
+        "health-check",
+      ],
       browserSafe: true,
       relaySafe: false,
       localOnly: true,
@@ -26,7 +34,10 @@ export const youtubeManifest = defineProviderManifest({
     keyParts: [
       "provider",
       YOUTUBE_PROVIDER_ID,
+      "media-kind",
       "title",
+      "season",
+      "episode",
       "audio",
       "subtitle",
       "quality",
@@ -38,6 +49,5 @@ export const youtubeManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: false,
-  status: "production",
   notes: ["Metadata via Invidious/Piped; playback via youtube.com watch URLs and mpv ytdl."],
 });

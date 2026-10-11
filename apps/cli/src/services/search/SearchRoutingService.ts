@@ -40,6 +40,16 @@ export type SearchRoutingDiagnosis =
       readonly attemptedDefaultFallback: false;
     };
 
+/**
+ * A provider search that threw while the lane kept working. Surfaced so the
+ * empty-result copy can say "the provider is down", not just "no results" —
+ * an outage and a typo used to render identically (#464).
+ */
+export type ProviderSearchFailure = {
+  readonly providerId: string;
+  readonly message: string;
+};
+
 export type SearchRoutingResult = {
   readonly results: SearchResult[];
   readonly resolvedLane: ProviderLane;
@@ -48,6 +58,7 @@ export type SearchRoutingResult = {
   readonly strategy: "provider-native" | "registry" | "unsupported";
   readonly evidence: SearchFilterEvidence;
   readonly diagnosis?: SearchRoutingDiagnosis;
+  readonly providerSearchFailures?: readonly ProviderSearchFailure[];
 };
 
 export type SearchFilterEvidence = {
@@ -81,9 +92,7 @@ export async function searchTitles(
           {
             audioPreference: youtubeProfile.audio,
             subtitlePreference: youtubeProfile.subtitle,
-            ...(isContentShapeType(intent.filters.type)
-              ? { contentShape: intent.filters.type }
-              : {}),
+            ...(isResultKind(intent.filters.type) ? { resultKind: intent.filters.type } : {}),
           },
           context.signal,
         )
@@ -103,7 +112,10 @@ export async function searchTitles(
   }
 
   if (advanced) {
-    const compatibleSearch = context.searchRegistry.getForProvider(routing.providerId);
+    const compatibleSearch = context.searchRegistry.getForProvider(
+      routing.providerId,
+      provider?.metadata.catalogIdentity,
+    );
     if (compatibleSearch) {
       const evidence = classifySearchEvidence(intent, compatibleSearch.metadata.id, context.mode);
       const results = applyLocalSearchFilters(
@@ -178,58 +190,117 @@ export async function searchTitles(
     };
   }
 
-  if (provider && routing.mode === "anime" && provider.search) {
-    const results = await provider.search(
-      query,
-      {
-        audioPreference: context.animeLanguageProfile.audio,
-        subtitlePreference: context.animeLanguageProfile.subtitle,
-      },
-      context.signal,
-    );
+  const providerSearchFailures: ProviderSearchFailure[] = [];
 
-    if (results) {
+  if (routing.mode === "anime") {
+    /* The configured provider leads; the rest of the lane follows in priority
+     * order. One provider's outage must not read as "no results" or hide the
+     * search three working providers could have answered (#464). */
+    const laneCandidates = [
+      ...(provider ? [provider] : []),
+      ...context.providerRegistry
+        .getAll()
+        .filter(
+          (candidate) =>
+            candidate.metadata.providerLane === "anime" &&
+            candidate.metadata.id !== provider?.metadata.id,
+        ),
+    ];
+
+    for (const candidate of laneCandidates) {
+      if (!candidate.search) continue;
+      let results: readonly SearchResult[] | null | undefined;
+      try {
+        results = await candidate.search(
+          query,
+          {
+            audioPreference: context.animeLanguageProfile.audio,
+            subtitlePreference: context.animeLanguageProfile.subtitle,
+          },
+          context.signal,
+        );
+      } catch (error) {
+        if (context.signal?.aborted) throw error;
+        providerSearchFailures.push({
+          providerId: candidate.metadata.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
+
+      // An honest empty answer is a catalog verdict, not an outage — hand the
+      // query to the registry catalog exactly as before.
+      if (!results || results.length === 0) break;
+
       const normalized = results.map(normalizeProviderSearchResult);
 
-      if (normalized.length > 0) {
-        // Skip AniList enrichment when provider already supplied rich metadata.
-        const hasNativeMetadata = normalized.some(
-          (r) => r.posterPath && r.metadataSource === "AniList",
-        );
-        const hasCachedAliases = normalized.some((r) => (r.titleAliases?.length ?? 0) > 0);
-        const enriched =
-          context.enrichAnimeMetadata === false || hasNativeMetadata || hasCachedAliases
-            ? normalized
-            : await enrichAnimeSearchResultsWithAniList(query, normalized, context.signal);
+      // Skip AniList enrichment when provider already supplied rich metadata.
+      const hasNativeMetadata = normalized.some(
+        (r) => r.posterPath && r.metadataSource === "AniList",
+      );
+      const hasCachedAliases = normalized.some((r) => (r.titleAliases?.length ?? 0) > 0);
+      const enriched =
+        context.enrichAnimeMetadata === false || hasNativeMetadata || hasCachedAliases
+          ? normalized
+          : await enrichAnimeSearchResultsWithAniList(query, normalized, context.signal);
 
-        // Apply the same local-filter pipeline every other provider path uses so
-        // the returned evidence can never claim a filter that was not applied.
-        const evidence = classifySearchEvidence(intent, provider.metadata.id, context.mode);
-        return {
-          results: withResolvedSearchLane(
-            applyLocalSearchFilters(enriched, intent, evidence),
-            resolvedLane,
-          ),
+      // Apply the same local-filter pipeline every other provider path uses so
+      // the returned evidence can never claim a filter that was not applied.
+      const evidence = classifySearchEvidence(intent, candidate.metadata.id, context.mode);
+      return {
+        results: withResolvedSearchLane(
+          applyLocalSearchFilters(enriched, intent, evidence),
           resolvedLane,
-          sourceId: provider.metadata.id,
-          sourceName: provider.metadata.name,
-          strategy: "provider-native",
-          evidence,
-        };
-      }
+        ),
+        resolvedLane,
+        sourceId: candidate.metadata.id,
+        sourceName: candidate.metadata.name,
+        strategy: "provider-native",
+        evidence,
+        providerSearchFailures:
+          providerSearchFailures.length > 0 ? providerSearchFailures : undefined,
+      };
     }
   }
 
   const searchService =
-    context.searchRegistry.getForProvider(routing.providerId) ??
+    context.searchRegistry.getForProvider(routing.providerId, provider?.metadata.catalogIdentity) ??
     context.searchRegistry.getDefault();
 
   const evidence = classifySearchEvidence(intent, searchService.metadata.id, context.mode);
-  const results = applyLocalSearchFilters(
-    await searchService.search(query, context.signal, intent),
-    intent,
-    evidence,
-  );
+  let upstream: SearchResult[];
+  try {
+    upstream = [...(await searchService.search(query, context.signal, intent))];
+  } catch (error) {
+    // An anime provider without its own search (Miruro) reaches the catalog
+    // only through this registry service, so an AniList outage — it answers
+    // 403 "temporarily disabled" outright — left that lane with no search at
+    // all. A sibling anime provider that does carry native search (AniDB,
+    // AllManga) can still answer, and a degraded result set beats a dead
+    // search box. Cancellation is the caller leaving, not an outage.
+    if (context.signal?.aborted === true || routing.mode !== "anime") throw error;
+    const borrowed = await searchAnimeViaSiblingProvider(query, routing.providerId, context);
+    if (!borrowed) throw error;
+    return {
+      results: withResolvedSearchLane(
+        applyLocalSearchFilters(borrowed.results, intent, evidence),
+        resolvedLane,
+      ),
+      resolvedLane,
+      sourceId: borrowed.providerId,
+      sourceName: borrowed.providerName,
+      strategy: "provider-native",
+      evidence,
+      diagnosis: {
+        code: "provider-native-fallback",
+        providerId: borrowed.providerId,
+        // Stayed inside the anime lane; the default catalog was never used.
+        attemptedDefaultFallback: false,
+      },
+    };
+  }
+
+  const results = applyLocalSearchFilters(upstream, intent, evidence);
 
   return {
     results: withResolvedSearchLane(results, resolvedLane),
@@ -238,7 +309,57 @@ export async function searchTitles(
     sourceName: searchService.metadata.name,
     strategy: "registry",
     evidence,
+    providerSearchFailures: providerSearchFailures.length > 0 ? providerSearchFailures : undefined,
   };
+}
+
+/**
+ * Borrow native search from another anime provider when the lane's own catalog
+ * route is unavailable. Registry order is priority order, so the first provider
+ * that both advertises search and answers wins.
+ */
+async function searchAnimeViaSiblingProvider(
+  query: string,
+  excludeProviderId: string,
+  context: SearchRoutingContext,
+): Promise<{
+  readonly results: SearchResult[];
+  readonly providerId: string;
+  readonly providerName: string;
+} | null> {
+  const siblings = context.providerRegistry
+    .getAll()
+    .filter(
+      (candidate) =>
+        candidate.metadata.id !== excludeProviderId &&
+        candidate.metadata.isAnimeProvider === true &&
+        typeof candidate.search === "function",
+    );
+
+  for (const sibling of siblings) {
+    if (context.signal?.aborted === true) return null;
+    try {
+      const results = await sibling.search?.(
+        query,
+        {
+          audioPreference: context.animeLanguageProfile.audio,
+          subtitlePreference: context.animeLanguageProfile.subtitle,
+        },
+        context.signal,
+      );
+      const normalized = (results ?? []).map(normalizeProviderSearchResult);
+      if (normalized.length > 0) {
+        return {
+          results: normalized,
+          providerId: sibling.metadata.id,
+          providerName: sibling.metadata.name,
+        };
+      }
+    } catch {
+      // Try the next sibling; the original failure is rethrown if none answer.
+    }
+  }
+  return null;
 }
 
 function withResolvedSearchLane(
@@ -373,7 +494,7 @@ function getLocalFilterKeys(intent: SearchIntent, sourceId: string): readonly st
   // must never be claimed as local (that would empty the list dishonestly).
   const catalogType =
     sourceId === "tmdb" || sourceId === "anilist"
-      ? isContentShapeType(intent.filters.type)
+      ? isResultKind(intent.filters.type)
         ? undefined
         : intent.filters.type
       : intent.filters.type;
@@ -408,9 +529,7 @@ function getUnsupportedFilterKeys(intent: SearchIntent, sourceId: string): reado
       : null,
     // A YouTube content shape typed against a TMDB/AniList catalog cannot be
     // honored — report it as unsupported rather than silently emptying results.
-    (sourceId === "tmdb" || sourceId === "anilist") && isContentShapeType(filters.type)
-      ? "type"
-      : null,
+    (sourceId === "tmdb" || sourceId === "anilist") && isResultKind(filters.type) ? "type" : null,
     filters.provider ? "provider" : null,
     filters.audio ? "audio" : null,
     filters.subtitles ? "subtitles" : null,
@@ -430,11 +549,11 @@ function applyLocalSearchFilters(
   let filtered = results;
   if (localKeys.has("type") && intent.filters.type && intent.filters.type !== "all") {
     const type = intent.filters.type;
-    if (isContentShapeType(type)) {
+    if (isResultKind(type)) {
       // Only narrow by content shape when the result set actually carries shape
       // facts; otherwise skip the dimension instead of emptying every row.
-      if (results.some((result) => typeof result.contentShape === "string")) {
-        filtered = filtered.filter((result) => result.contentShape === type);
+      if (results.some((result) => typeof result.resultKind === "string")) {
+        filtered = filtered.filter((result) => result.resultKind === type);
       }
     } else {
       filtered = filtered.filter((result) => result.type === type);
@@ -455,7 +574,7 @@ function applyLocalSearchFilters(
   return filtered;
 }
 
-function isContentShapeType(
+function isResultKind(
   type: SearchIntent["filters"]["type"],
 ): type is "video" | "short" | "playlist" | "channel" {
   return type === "video" || type === "short" || type === "playlist" || type === "channel";

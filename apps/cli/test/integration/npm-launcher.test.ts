@@ -53,13 +53,37 @@ function targetIdForHost(): string {
 }
 
 /**
+ * True when `bin` is real Node, not Bun's `node` symlink.
+ *
+ * `bun run` / turbo put a `node` symlink to Bun on PATH. `require.resolve`
+ * of `@kitsunekode/kunai-<target>` then succeeds from Bun's package cache and
+ * the launcher spawns the real compiled binary instead of the vendor stand-in
+ * these tests install. The contract under test is "runs under plain Node".
+ */
+function isPlainNode(bin: string): boolean {
+  try {
+    const real = realpathSync(bin);
+    if (/(?:^|[/\\])bun(?:\.exe)?$/i.test(real)) return false;
+  } catch {
+    // Keep probing — a dangling symlink still is not Node.
+  }
+  const probe = Bun.spawnSync({
+    cmd: [bin, "-p", "process.versions.bun || ''"],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return probe.exitCode === 0 && probe.stdout.toString().trim() === "";
+}
+
+/**
  * These tests exist to prove the launcher runs under plain Node, so Node is a
  * prerequisite rather than something they can assert. Throwing in `beforeAll`
  * when it is absent reported an unnamed failure with no useful location on any
  * machine without Node; skipping says what is actually missing. CI installs
  * Node, so coverage there is unchanged.
  */
-const NODE_BIN = Bun.which("node");
+const NODE_CANDIDATE = Bun.which("node");
+const NODE_BIN = NODE_CANDIDATE && isPlainNode(NODE_CANDIDATE) ? NODE_CANDIDATE : null;
 const nodeTest = NODE_BIN ? test : test.skip;
 const WINDOWS_LAUNCHER_BINARY = process.env.KUNAI_NPM_LAUNCHER_BINARY;
 const windowsNativeLauncherTest =
@@ -119,9 +143,10 @@ const code = process.argv.indexOf("--exit-code");
 if (code !== -1) process.exit(Number(process.argv[code + 1] ?? 0));
 if (process.argv.includes("--echo-args")) {
   process.stdout.write(process.argv.slice(2).join(","));
-  process.exit(0);
+  // Natural exit lets piped stdout drain before the stand-in terminates.
+} else {
+  setTimeout(() => {}, 30000);
 }
-setTimeout(() => {}, 30000);
 `,
   );
   chmodSync(stand, 0o755);
@@ -197,7 +222,7 @@ function readManagedContext(fixtureLauncher: string, unrelated = "preserved") {
   };
 }
 
-nodeTest("launcher is plain Node ESM with a node shebang and no bun: imports", () => {
+test("launcher is plain Node ESM with a node shebang and no bun: imports", () => {
   const source = readFileSync(LAUNCHER_SOURCE, "utf8");
   expect(source.startsWith("#!/usr/bin/env node")).toBe(true);
   expect(/from\s+["']bun:|require\(["']bun:/.test(source)).toBe(false);
@@ -220,6 +245,7 @@ nodeTest("resolves Android ARM64 and x64 without Linux libc fallback", () => {
     process.stdout.write(JSON.stringify(rows));
   `;
   const result = Bun.spawnSync({
+    // SAFETY: nodeTest skips this whole case when NODE_BIN is null.
     cmd: [NODE_BIN as string, "--input-type=module", "--eval", probe],
     stdout: "pipe",
     stderr: "pipe",
@@ -341,8 +367,8 @@ nodeTest("reports an actionable error when the platform binary is missing", () =
   removeTempDir(empty);
 });
 
-// Signal semantics are POSIX-only.
-const signalTest = process.platform === "win32" ? test.skip : test;
+// Signal semantics are POSIX-only, and still need a real Node on PATH.
+const signalTest = NODE_BIN && process.platform !== "win32" ? test : test.skip;
 
 signalTest("dies by the same signal as the child, giving 128+n", async () => {
   for (const [signal, expected] of [
@@ -355,7 +381,11 @@ signalTest("dies by the same signal as the child, giving 128+n", async () => {
       stdout: "ignore",
       stderr: "ignore",
     });
-    await Bun.sleep(400);
+    // The launcher registers its handlers synchronously in main(); there is no
+    // readiness artifact to poll, so this is a bounded grace, not a sleep for
+    // correctness. 400ms flaked on loaded runners — 1.5s matches the sibling
+    // process-shutdown test's mount budget.
+    await Bun.sleep(1_500);
     process.kill(child.pid, signal);
     // Re-raising while a handler is still registered makes Node run the handler
     // instead of terminating — the launcher removes it first, and this pins that.

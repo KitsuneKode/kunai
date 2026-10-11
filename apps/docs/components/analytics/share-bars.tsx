@@ -1,5 +1,7 @@
-import { residualShare } from "@/lib/analytics-derive";
+import { platformLabel, residualShare } from "@/lib/analytics-derive";
 import { rankShareBuckets, type ShareBucket } from "@/lib/analytics-metrics";
+import { getReleaseByTag, releasePath } from "@/lib/release-notes";
+import Link from "next/link";
 
 /**
  * A ranked horizontal bar chart for one breakdown of the usage snapshot.
@@ -20,6 +22,13 @@ function formatShare(share: number): string {
 }
 
 function ShareRow({ bucket }: { readonly bucket: ShareBucket }) {
+  /*
+    A bucket that names a real release deep-links to its notes — "what is
+    everyone on" naturally asks "what changed in it". The lookup is the
+    gate: residual buckets and labels with no release artifact (an OS or
+    arch name can never match a tag) stay plain text, never a 404 link.
+  */
+  const release = bucket.residual ? null : getReleaseByTag(bucket.label);
   return (
     <tr className="kunai-chart-row">
       <th
@@ -28,7 +37,18 @@ function ShareRow({ bucket }: { readonly bucket: ShareBucket }) {
           bucket.residual ? "text-muted-foreground" : "text-foreground font-medium"
         }`}
       >
-        {bucket.label}
+        {/* Lookups stay on the raw key — `darwin` must keep matching its
+            release-query fail-closed path while readers see `macOS`. */}
+        {release ? (
+          <Link
+            href={releasePath(bucket.label)}
+            className="-my-1 inline-block py-1 underline-offset-4 hover:underline"
+          >
+            {platformLabel(bucket.label)}
+          </Link>
+        ) : (
+          platformLabel(bucket.label)
+        )}
       </th>
       {/*
         Decorative: the bar restates the count and percentage cells that follow,
@@ -89,7 +109,7 @@ export function ShareBars({
       ) : (
         <table className="kunai-chart">
           <caption className="sr-only">
-            {label} — installs and share of the snapshot day, largest first.
+            {label}: installs and share of the snapshot day, largest first.
           </caption>
           <colgroup>
             <col className="kunai-chart-col-label" />

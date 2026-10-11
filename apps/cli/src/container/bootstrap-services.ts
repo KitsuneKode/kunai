@@ -2,9 +2,17 @@ import { existsSync } from "node:fs";
 
 import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playback-checkpoint";
 
+import { setCompanionPreferenceSource } from "../app-shell/companion-policy";
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
 import { detectPlayerPlatform, resolvePlayerMode } from "../domain/playback/player-choice";
+import { shouldRecoverQueueOwner } from "../domain/queue/queue-owner-recovery";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
+import {
+  isProcessAlive,
+  normalizedHostname,
+  processStartId,
+} from "../infra/os/process-owner-identity";
+import { whichLive } from "../infra/os/which";
 import { HandoffPlayerService } from "../infra/player/handoff-player-service";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
@@ -116,7 +124,6 @@ export function bootstrapServices(input: {
     episodePlaybackSelection,
     titlePlaybackSource,
     videasyLazySourceProbe,
-    mediaTrackService,
     listService,
     queueService,
     statsService,
@@ -156,6 +163,10 @@ export function bootstrapServices(input: {
 
   const offlineTitleIdentity = new OfflineTitleIdentityService(historyTitleAliases, offlineAssets);
   const offlineAssetService = new OfflineAssetService(offlineAssets, offlineTitleIdentity);
+  // The companion reads her stored preference through this source, so `/pet`
+  // and the settings row take effect on the next render — no restart, and no
+  // separate state to drift out of sync with config.json.
+  setCompanionPreferenceSource(() => config.companionPet);
   const connectivity = new Connectivity(() => config.offlineMode);
   const notificationSinkRegistry = new NotificationSinkRegistry();
   notificationSinkRegistry.register(
@@ -190,7 +201,7 @@ export function bootstrapServices(input: {
     config,
     logger,
     ytDlpAvailable: options?.capabilitySnapshot?.ytDlp ?? false,
-    ffprobeAvailable: Boolean(Bun.which("ffprobe")),
+    ffprobeAvailable: Boolean(whichLive("ffprobe")),
     diagnostics: diagnosticsService,
     onCompletedArtifact: (job) => {
       const asset = offlineAssetService.adoptCompletedJob(job);
@@ -290,15 +301,44 @@ export function bootstrapServices(input: {
     diagnostics: diagnosticsService,
   });
   const startupAt = new Date().toISOString();
-  // Crash/stale active sessions (including in-flight rows) become recoverable
-  // before this process owns a fresh active session.
-  queueRepository.markActiveQueueSessionsRecoverable(sessionId, startupAt);
+  const ownerHostname = normalizedHostname();
+  const ownStartId = processStartId(process.pid);
+  // Probe each distinct owner once, within one shared native-probe budget.
+  const ownerProbeDeadline = Date.now() + 2_000;
+  const ownerStarts = new Map<number, string | null>();
+  const readOwnerStart = (pid: number): string | null => {
+    if (!ownerStarts.has(pid)) {
+      ownerStarts.set(pid, processStartId(pid, Math.max(0, ownerProbeDeadline - Date.now())));
+    }
+    return ownerStarts.get(pid) ?? null;
+  };
+  for (const session of queueRepository.listActiveQueueSessionsWithPendingWork(sessionId)) {
+    if (
+      !shouldRecoverQueueOwner({
+        session,
+        hostname: ownerHostname,
+        now: Date.parse(startupAt),
+        isAlive: isProcessAlive,
+        processStartId: readOwnerStart,
+      })
+    )
+      continue;
+    queueRepository.markQueueSessionRecoverable(session.id, startupAt, {
+      ownerPid: session.ownerPid ?? null,
+      ownerHostname: session.ownerHostname ?? null,
+      ownerProcessStartId: session.ownerProcessStartId ?? null,
+      activityAt: session.lastActivityAt ?? session.updatedAt,
+    });
+  }
   queueRepository.createQueueSession({
     id: sessionId,
     status: "active",
     createdAt: startupAt,
     updatedAt: startupAt,
     lastActivityAt: startupAt,
+    ownerPid: process.pid,
+    ownerHostname,
+    ownerProcessStartId: ownStartId ?? undefined,
   });
   notificationService.deleteByKind("queue-recovery");
   const latestRecoverableSession = queueRepository.listRecoverableQueueSessions()[0];
@@ -345,7 +385,9 @@ export function bootstrapServices(input: {
     diagnostics: diagnosticsService,
   });
   const durablePlaylistService = new DurablePlaylistService(playlistsRepository);
-  const searchRegistry = new SearchRegistryImpl({ logger, tracer }, SEARCH_SERVICE_DEFINITIONS);
+  const searchRegistry = new SearchRegistryImpl({ logger, tracer }, [
+    ...(options?.searchServiceDefinitions ?? SEARCH_SERVICE_DEFINITIONS),
+  ]);
   const shellChrome = options?.shellChrome ?? "default";
   const capabilitySnapshot = options?.capabilitySnapshot ?? null;
   const recommendationService = new RecommendationServiceImpl(recommendationCache);
@@ -489,7 +531,6 @@ export function bootstrapServices(input: {
     episodePlaybackSelection,
     titlePlaybackSource,
     videasyLazySourceProbe,
-    mediaTrackService,
     featureFlags,
     providerHealth,
     endpointHealth,

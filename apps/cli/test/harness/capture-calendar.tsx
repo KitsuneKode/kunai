@@ -1,5 +1,3 @@
-process.env.KUNAI_POSTER = "0";
-
 import { CalendarDayStrip, CalendarScheduleRow } from "@/app-shell/calendar-ui";
 import type { BrowseShellOption } from "@/app-shell/types";
 import { useShellDimensions } from "@/app-shell/use-viewport-policy";
@@ -87,7 +85,7 @@ const rows = [
  * and medium (100), so the narrow capture could not fail on overflow and the
  * wide one never showed the wide layout.
  */
-function CalendarList() {
+export function CalendarList() {
   const { cols } = useShellDimensions();
   const width = cols;
   return (
@@ -109,12 +107,15 @@ function CalendarList() {
   );
 }
 
-function CalendarStrip() {
+export function CalendarStrip() {
   const { cols } = useShellDimensions();
   return <CalendarDayStrip days={dayStripDays} selectedDayKey="d6" maxWidth={cols} />;
 }
 
-await captureSurface("calendar-rows", <CalendarList />);
-await captureSurface("calendar-daystrip", <CalendarStrip />);
-console.log("captured calendar rows + day strip");
-process.exit(0);
+if (import.meta.main) {
+  process.env.KUNAI_POSTER = "0";
+  await captureSurface("calendar-rows", <CalendarList />);
+  await captureSurface("calendar-daystrip", <CalendarStrip />);
+  console.log("captured calendar rows + day strip");
+  process.exit(0);
+}

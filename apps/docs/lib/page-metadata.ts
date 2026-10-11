@@ -15,7 +15,13 @@ export const SOCIAL_IMAGE = {
   url: "/opengraph-image",
   width: 1200,
   height: 630,
-  alt: "Kunai — a terminal client for third-party streams",
+  alt: "Kunai: Kanna, the rose kitsune, above a row of anime, series, and movie marks",
+} as const;
+
+/** Same card, dedicated Twitter file-convention route. */
+export const TWITTER_IMAGE = {
+  ...SOCIAL_IMAGE,
+  url: "/twitter-image",
 } as const;
 
 /** SERP descriptions get the full 150–160; social cards truncate near 125. */
@@ -34,7 +40,24 @@ type PageMetadataInput = {
   readonly absoluteTitle?: boolean;
   /** Keep the page reachable but out of the index — used by withdrawn releases. */
   readonly noindex?: boolean;
+  /**
+   * Share routes ship their own `opengraph-image.tsx` / `twitter-image.tsx`.
+   * Declaring a site-wide image here would replace those and every unfurl
+   * would show the docs card instead of the title that was shared.
+   */
+  readonly socialImage?: "site" | "segment";
+  /**
+   * A card for this page alone, as a site-relative path. For routes that cannot
+   * use the `opengraph-image` file convention: it is not allowed beneath a
+   * catch-all segment, which is what the docs tree is. Wins over `socialImage`.
+   */
+  readonly socialImageUrl?: string;
 };
+
+/** The docs card route for a docs page URL, e.g. `/docs/users/glossary`. */
+export function docsOgImagePath(pageUrl: string): string {
+  return `/og${pageUrl}`;
+}
 
 function socialDescriptionFor(input: PageMetadataInput): string {
   const explicit = input.socialDescription?.trim();
@@ -54,6 +77,9 @@ function socialDescriptionFor(input: PageMetadataInput): string {
 export function buildPageMetadata(input: PageMetadataInput): Metadata {
   const url = docsCanonicalUrl(input.path);
   const socialDescription = socialDescriptionFor(input);
+  const ownImage = input.socialImageUrl
+    ? { ...SOCIAL_IMAGE, url: input.socialImageUrl, alt: `Kunai docs: ${input.title}` }
+    : null;
 
   const metadata: Metadata = {
     title: input.absoluteTitle ? { absolute: input.title } : input.title,
@@ -65,13 +91,21 @@ export function buildPageMetadata(input: PageMetadataInput): Metadata {
       url,
       type: input.type ?? "website",
       siteName: "Kunai Docs",
-      images: [SOCIAL_IMAGE],
+      ...(ownImage
+        ? { images: [ownImage] }
+        : input.socialImage === "segment"
+          ? null
+          : { images: [SOCIAL_IMAGE] }),
     },
     twitter: {
       card: "summary_large_image",
       title: input.title,
       description: socialDescription,
-      images: [SOCIAL_IMAGE],
+      ...(ownImage
+        ? { images: [ownImage] }
+        : input.socialImage === "segment"
+          ? null
+          : { images: [TWITTER_IMAGE] }),
     },
   };
 

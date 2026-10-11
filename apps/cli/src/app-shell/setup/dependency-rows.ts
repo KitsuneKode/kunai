@@ -71,7 +71,7 @@ export function buildDependencyRows(
     fix: mpvIssue ? fixFor(mpvIssue.install, which) : null,
     ...(mpvRequired && !snapshot.mpv
       ? { consequence: "Nothing can play until this is installed." }
-      : {}),
+      : null),
   });
 
   const ytDlpIssue = issue("yt-dlp-missing");
@@ -83,7 +83,7 @@ export function buildDependencyRows(
     role: "youtube · downloads",
     detail: snapshot.ytDlp ? "found on PATH" : "not found",
     fix: ytDlpIssue ? fixFor(ytDlpIssue.install, which) : null,
-    ...(snapshot.ytDlp ? {} : { consequence: "YouTube playback and downloads need it." }),
+    ...(snapshot.ytDlp ? null : { consequence: "YouTube playback and downloads need it." }),
   });
 
   // Named ffmpeg, because that is the package. `ffprobe` is only the binary we
@@ -98,27 +98,31 @@ export function buildDependencyRows(
     detail: snapshot.ffprobe ? "found on PATH" : "not found",
     fix: ffmpegIssue ? fixFor(ffmpegIssue.install, which) : null,
     ...(snapshot.ffprobe
-      ? {}
+      ? null
       : {
           consequence: "Without it yt-dlp cannot merge streams, so quality quietly caps lower.",
         }),
   });
 
-  const curlIssue = issue("curl-impersonate-missing") ?? issue("curl-missing");
+  const curlIssue =
+    issue("curl-invocation-failed") ?? issue("curl-impersonate-missing") ?? issue("curl-missing");
+  const curlBroken = Boolean(issue("curl-invocation-failed"));
   rows.push({
     id: "curl-impersonate",
     name: "curl-impersonate",
     scope: "anime",
-    state: snapshot.curl.impersonates ? "ok" : "degraded",
+    state: snapshot.curl.impersonates && !curlBroken ? "ok" : "degraded",
     role: "anime search",
-    detail: snapshot.curl.impersonates
-      ? `matching ${snapshot.curl.profile}`
-      : snapshot.curl.present
-        ? "only plain curl"
-        : "no curl at all",
+    detail: curlBroken
+      ? `${snapshot.curl.profile ?? "curl"} resolved but cannot execute`
+      : snapshot.curl.impersonates
+        ? `matching ${snapshot.curl.profile}`
+        : snapshot.curl.present
+          ? "only plain curl"
+          : "no curl at all",
     fix: curlIssue ? fixFor(curlIssue.install, which) : null,
-    ...(snapshot.curl.impersonates
-      ? {}
+    ...(snapshot.curl.impersonates && !curlBroken
+      ? null
       : {
           consequence:
             "Cloudflare fingerprints the TLS handshake, so anime search can come back empty.",

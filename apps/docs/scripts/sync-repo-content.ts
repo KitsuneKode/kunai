@@ -164,9 +164,8 @@ function buildFaq(): readonly TroubleshootingFaqEntry[] {
 /**
  * The OG mascot as a data URL.
  *
- * `next/og` needs an inlineable source; the PNG is ~1.3 KB, so base64 costs
- * less than shipping the file and re-reading it. A missing source yields an
- * empty string and the card renders without the mascot.
+ * `next/og` needs an inlineable source. The illustrated still is tens of KB,
+ * which is cheaper than a filesystem probe the Turbopack tracer cannot follow.
  */
 function buildMascot(): { readonly mascotDataUrl: string } {
   if (!fs.existsSync(MASCOT_PATH)) return { mascotDataUrl: "" };

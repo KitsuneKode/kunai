@@ -409,13 +409,11 @@ describe("offline-library helpers", () => {
     expect(
       resolveOfflineJobPreviewImage(posterOnly, {
         networkAvailable: true,
-        artworkPreviewsEnabled: true,
       }),
     ).toBe("https://img.example/poster.jpg");
     expect(
       groupOfflineLibraryEntries([{ job: posterOnly, status: "ready" }], {
         networkAvailable: false,
-        artworkPreviewsEnabled: true,
       })[0]?.previewImageUrl,
     ).toBeUndefined();
   });

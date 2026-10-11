@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-10-07"
 ---
 
 # Poster and terminal image output
@@ -15,7 +15,7 @@ Use this doc when changing terminal poster previews, capability detection, the s
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/cli/src/image/`                                | Shared subsystem: capability detection (`detectImageCapability()`), the `Bun.Image` preparation seam (`native-image.ts`), and the PNG bridge (`decode.ts`). The old `convert.ts` ImageMagick path and the runtime `jpeg-js` decoder were removed. Ink shell renders from prepared posters in `app-shell/poster-renderer.ts` |
 | `apps/cli/src/app-shell/poster-renderer.ts`          | App-shell rendering: plans one renderer, then draws a `PreparedPoster` — Kitty graphics, iTerm2 inline images, measured Sixel overlays, or half-block text; returns `PosterResult` (`kitty`, `sixel`, `text`, or `none`)                                                                                                    |
-| `apps/cli/src/app-shell/kitty-placement-registry.ts` | Named Kitty slots (`postplay-hero`, `postplay-rail`, `postplay-prev`, `postplay-next`, discovery 0–2, `playing-next`, …); per-slot delete so siblings coexist                                                                                                                                                               |
+| `apps/cli/src/app-shell/kitty-placement-registry.ts` | Named Kitty slots (`postplay-hero`, `postplay-rail`, `postplay-prev`, `postplay-next`, discovery 0–2, `playing-next`, `companion`, …); per-slot delete so siblings coexist                                                                                                                                                  |
 | `apps/cli/src/app-shell/image-pane.ts`               | Fetches TMDB/remote bytes or local thumbnail bytes, calls `renderPoster`, LRU cache keyed by URL/path + dimensions + **renderer id** (+ named placement slot for Kitty/Sixel)                                                                                                                                               |
 | `apps/cli/src/app-shell/poster-source-cache.ts`      | Resolves TMDB poster paths, absolute remote URLs, and local `file://` / absolute thumbnail paths without confusing local files for TMDB paths                                                                                                                                                                               |
 | `apps/cli/src/ui.ts`                                 | `checkDeps()` snapshot: `image` capability plus playback tools; posters contribute no dependency                                                                                                                                                                                                                            |
@@ -41,14 +41,15 @@ Details live in `apps/cli/src/image/capability.ts`.
 
 ## Environment variables
 
-| Variable                | Purpose                                                                            |
-| ----------------------- | ---------------------------------------------------------------------------------- |
-| `KUNAI_POSTER`          | `0` / `false` disables poster flows                                                |
-| `KUNAI_IMAGE_PROTOCOL`  | Force or constrain renderer (see capability module)                                |
-| `KUNAI_IMAGE_SIZE`      | Legacy size hint; unused by the Ink poster path (kept for env compatibility)       |
-| `KUNAI_IMAGE_DEBUG`     | `1` enables `[kunai:image]` debug lines                                            |
-| `KUNAI_IMAGE_PROBE`     | `0` / `false` skips the startup graphics probe (falls back to name heuristics)     |
-| `KUNAI_IMAGE_TRANSPORT` | `file` / `direct` / `auto` — how Kitty pixel data reaches the terminal (see below) |
+| Variable                | Purpose                                                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `KUNAI_POSTER`          | `0` / `false` disables poster flows                                                                                                                    |
+| `KUNAI_PET`             | `off` retires the companion; `glyph` pins it to 🦊 (never half-block). Per-run pin — the stored toggle is config `companionPet` via `/pet` or settings |
+| `KUNAI_IMAGE_PROTOCOL`  | Force or constrain renderer (see capability module)                                                                                                    |
+| `KUNAI_IMAGE_SIZE`      | Legacy size hint; unused by the Ink poster path (kept for env compatibility)                                                                           |
+| `KUNAI_IMAGE_DEBUG`     | `1` enables `[kunai:image]` debug lines                                                                                                                |
+| `KUNAI_IMAGE_PROBE`     | `0` / `false` skips the startup graphics probe (falls back to name heuristics)                                                                         |
+| `KUNAI_IMAGE_TRANSPORT` | `file` / `direct` / `auto` — how Kitty pixel data reaches the terminal (see below)                                                                     |
 
 ### `KUNAI_IMAGE_TRANSPORT`
 

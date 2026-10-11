@@ -28,14 +28,14 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
+import { providerHttpErrorForStatus } from "@kunai/types";
 
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import { readJsonObjectBody } from "../shared/json-body";
+import { decryptOpensslSalted, sha256Hex } from "../shared/openssl-evp";
 import { HealthTracker, TTLCache } from "../shared/provider-cache";
-import {
-  appendCycleEventsToResult,
-  findLastCycleFailure,
-  providerFailureCodeFromCycleFailure,
-} from "../shared/provider-cycle";
+import { appendCycleEventsToResult, cycleExhaustionFailure } from "../shared/provider-cycle";
+import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
@@ -49,9 +49,8 @@ import {
   normalizeQualityLabel,
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
-import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "../shared/stream-health";
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
-import { combineAbortSignals, createTimeoutSignal } from "../shared/timeout-signal";
+import { combineAbortSignals, createTimeoutSignal, sleepAbortable } from "../shared/timeout-signal";
 // Embedded so `bun build --compile` single-file binaries carry the WASM (resolves
 // to a real path in dev/npm-bundle, a `/$bunfs/` path in a compiled binary —
 // `Bun.file()` reads both). See .archive/superpowers/archive/plans/2026-06-13-*.
@@ -77,6 +76,24 @@ import { videasyManifest, VIDEOSY_PROVIDER_ID, VIDKING_PROVIDER_ID } from "./man
 export { VIDEOSY_PROVIDER_ID, VIDKING_PROVIDER_ID };
 export const VIDKING_REFERER = "https://www.vidking.net/";
 export const VIDKING_ORIGIN = "https://www.vidking.net";
+
+/**
+ * Origin the media CDN expects on the stream request.
+ *
+ * This is **not** `clientProfile.origin`. That one says which front-end we
+ * impersonate when *calling* the Videasy API (`cineby.at` for `bc-frontend`);
+ * this one is what the CDN's hotlink rule accepts on the media request. Reusing
+ * the API origin for the stream shipped a URL that answers 403, while the
+ * resolve gate probed the default and passed — a gate attesting a request shape
+ * production never makes.
+ *
+ * Measured against `moon.peakstorm.top` on 2026-09-08 with the cineby watch page
+ * as Referer: `vidking.net` -> 200, `cineby.at` -> 403, absent -> 403.
+ *
+ * Deliberately not a parameter. The probed shape and the shipped shape must not
+ * be able to diverge.
+ */
+export const VIDEASY_MEDIA_ORIGIN = VIDKING_ORIGIN;
 /** Default bc-frontend stream/API client profile (matches cineby.at seed + playback). */
 export const CINEBY_REFERER = "https://www.cineby.at/";
 export const CINEBY_ORIGIN = "https://www.cineby.at";
@@ -107,8 +124,21 @@ export const WINGS_API_BASE = "https://api.speedracelight.com";
  * this list when one exists rather than reintroducing a second constant.
  */
 export const WINGS_API_BASES: readonly string[] = [WINGS_API_BASE];
-/** TMDB proxy on the old domain (redirects to api.videasy.to/3). */
-export const VIDEASY_DB_BASE = "https://api.videasy.to/3";
+/**
+ * TMDB-format catalog mirrors in live-first order. `api.videasy.to` went
+ * NXDOMAIN — `db.wingsdatabase.com` serves the identical `/3` contract
+ * (verified: /search/multi and /movie/{id}?append_to_response=external_ids).
+ * The dead canonical host stays last so a revival wins without a code change;
+ * ENOTFOUND fails in milliseconds so it costs almost nothing per lookup.
+ * `db.speedracelight.com` answers but 429s every catalog path — deliberately
+ * omitted until it serves them.
+ */
+export const VIDEASY_DB_BASES = [
+  "https://db.wingsdatabase.com/3",
+  "https://api.videasy.to/3",
+] as const;
+/** Primary catalog base — first live mirror. */
+export const VIDEASY_DB_BASE = VIDEASY_DB_BASES[0];
 
 /* ── Wings / SpeedRace endpoint mapping ──
  * Endpoints in the `wings-*` namespace are routed to the active stream API.
@@ -138,6 +168,7 @@ export function displayHostForEndpoint(endpoint: string): string {
 
 export type VideasyClientProfile = {
   readonly appId: string;
+  /** Origin sent to the sources API — the site fronting it. */
   readonly origin: string;
   readonly defaultReferer: string;
   readonly streamReferer: string;
@@ -344,6 +375,7 @@ export async function resolveVideasyDirect(
     qualityPreference: input.qualityPreference,
     startupPriority: input.startupPriority,
     videasyAppId,
+    apiRoute: resolvedOptions?.serverEndpoint,
   });
   const events: ProviderTraceEvent[] = [];
   const sources: ProviderSourceCandidate[] = [];
@@ -717,18 +749,11 @@ export async function resolveVideasyDirect(
   }
 
   events.push(...cycleResult.events);
-  const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-  const failure = cycleFailure
-    ? {
-        code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-        message: cycleFailure.message,
-        retryable: cycleFailure.retryable,
-      }
-    : {
-        code: "not-found" as const,
-        message: "VidKing direct resolver did not find a playable source",
-        retryable: false,
-      };
+  const failure = cycleExhaustionFailure(
+    cycleResult,
+    "VidKing direct resolver did not find a playable source",
+    false,
+  );
 
   return createExhaustedResult(input, context, VIDEOSY_PROVIDER_ID, failure, {
     cachePolicy,
@@ -946,7 +971,6 @@ export function createVidkingResultFromPayload({
   startedAt,
   failures = [],
   streamReferer,
-  streamOrigin,
   sourceQualityFilter,
   sourceDisplayLabel,
   flavorArchetype,
@@ -966,7 +990,6 @@ export function createVidkingResultFromPayload({
   readonly startedAt?: string;
   readonly failures?: readonly ProviderFailure[];
   readonly streamReferer?: string;
-  readonly streamOrigin?: string;
   readonly sourceQualityFilter?: string;
   readonly sourceDisplayLabel?: string;
   readonly flavorArchetype?: string;
@@ -1016,8 +1039,9 @@ export function createVidkingResultFromPayload({
     cachePolicy: policy,
     sourceId: resolvedSourceId,
     server: resolvedServer,
-    streamReferer,
-    streamOrigin,
+    // This helper is exported and callable with neither, so the fallbacks live
+    // here; the resolve path always passes the profile's pair.
+    streamReferer: streamReferer ?? VIDKING_REFERER,
     sourceQualityFilter,
     flavorLabel: themedLabel,
     serverName: themedLabel,
@@ -1269,8 +1293,6 @@ function buildEmbedReferer(
 
 type VidkingStreamProbeOutcome = {
   readonly ok: boolean;
-  /** True only when a real HTTP probe returned reachable (never attested on skip/timeout). */
-  readonly verified: boolean;
 };
 
 async function probeSelectedVidkingPayloadStream({
@@ -1292,6 +1314,7 @@ async function probeSelectedVidkingPayloadStream({
   readonly sourceId: string;
   readonly server: VidkingServerEndpoint;
   readonly streamReferer?: string;
+  /** Must be the shipped stream's origin: the gate verifies the request mpv will make. */
   readonly sourceQualityFilter?: string;
   readonly engineOptions?: VidKingEngineOptions;
   readonly events: ProviderTraceEvent[];
@@ -1305,14 +1328,14 @@ async function probeSelectedVidkingPayloadStream({
     cachePolicy,
     sourceId,
     server,
-    streamReferer,
+    streamReferer: streamReferer ?? VIDKING_REFERER,
     sourceQualityFilter,
     flavorLabel: presentation.themeLabel,
     serverName: presentation.themeLabel,
     engineOptions,
   });
   if (streams.length === 0) {
-    return { ok: false, verified: false };
+    return { ok: false };
   }
 
   const selection = selectReadyStream(streams, {
@@ -1323,36 +1346,29 @@ async function probeSelectedVidkingPayloadStream({
     favoriteSourceNames: input.favoriteSourceNames,
   });
   const selected = selection.selected;
-  const streamUrl = selected.url?.trim();
-  if (!streamUrl) {
-    return { ok: false, verified: false };
+  if (!selected.url?.trim()) {
+    return { ok: false };
   }
 
-  // Always segment-probe HLS/direct before accepting a candidate. Balanced/fast used to
-  // skip this for website-parity latency; that attested dead CDN masters as healthy.
+  // Always segment-probe before accepting a candidate. Balanced/fast used to
+  // skip this for website-parity latency; that attested dead CDN masters as
+  // healthy. The candidate goes in whole, so the probed request shape is the
+  // shipped one — verifying a differently-assembled header set is what let a
+  // 403 stream through while the gate reported success.
   const probeStartedAt = Date.now();
-  const health = await runStreamHealthCheck({
-    phase: "resolve-gate",
-    url: streamUrl,
-    headers: selected.headers,
-    fetchImpl: context.fetch?.fetch.bind(context.fetch),
-    timeoutMs: STREAM_HEALTH_DEFAULTS.vidkingResolveGateTimeoutMs,
-    signal: signal ?? context.signal,
-  });
+  const verdict = await verifyCandidateStream({ stream: selected, context, signal });
   const probeDurationMs = Date.now() - probeStartedAt;
 
-  if (health.healthy) {
-    const verified = health.probed === true && health.probe?.status === "reachable";
-    return { ok: true, verified };
+  if (verdict.accepted) {
+    /* A green probe is not proof the URL serves the player: Videasy CDN URLs
+     * have answered this probe 200 and then 403 to the immediate next identical
+     * request, mpv included (issue #361). Keep the probe as a negative gate —
+     * definitive failures still fail over — but attest nothing downstream. */
+    return { ok: true };
   }
 
-  const probe = health.probe;
-  const reason =
-    probe?.status === "timeout"
-      ? "stream probe timed out"
-      : probe?.status === "unreachable"
-        ? probe.reason
-        : "stream probe failed";
+  const probe = verdict.probe;
+  const reason = verdict.reason;
 
   emitTraceEvent(events, context, {
     type: "source:failed",
@@ -1368,7 +1384,7 @@ async function probeSelectedVidkingPayloadStream({
       probe: probe?.status ?? "failed",
     },
   });
-  return { ok: false, verified: false };
+  return { ok: false };
 }
 
 /* ── Wings seed transport cache ──
@@ -1495,9 +1511,16 @@ async function fetchWingsdatabaseSeed(
             ),
             headers: seedHeaders,
           });
-          if (!response.ok) throw new Error(`seed HTTP ${response.status}`);
-          const body = (await response.json()) as { seed?: string; ttlMs?: number };
-          if (!body.seed) throw new Error("seed payload missing seed");
+          if (!response.ok) {
+            throw providerHttpErrorForStatus({
+              status: response.status,
+              message: `seed HTTP ${response.status}`,
+              providerId: VIDEOSY_PROVIDER_ID,
+              stage: "wings-seed",
+            });
+          }
+          const body = await readJsonObjectBody<{ seed?: string; ttlMs?: number }>(response);
+          if (!body?.seed) throw new Error("seed payload missing seed");
           return { apiBase, seed: body.seed, ttlMs: body.ttlMs ?? 30_000 };
         } catch (error) {
           // Three different causes reach this catch and only one is host
@@ -1690,6 +1713,10 @@ async function tryVidkingServer(opts: {
             if (!isRetryableFailure(context, f)) {
               break;
             }
+            // Same transient grace the cycle engine applies between attempts —
+            // an immediate re-hit hammers the same host inside the candidate
+            // timeout and turns one throttle response into several.
+            await sleepAbortable(750, candidateSignal);
             continue;
           }
 
@@ -1767,10 +1794,12 @@ async function tryVidkingServer(opts: {
             startedAt,
             failures,
             streamReferer,
-            streamOrigin: clientProfile.origin,
             sourceQualityFilter: engineOptions.filterQuality,
             engineOptions,
-            streamReachabilityVerified: streamProbe.verified,
+            // The probe's reachable verdict does not survive to the player on
+            // this provider (#361), so the result is shipped unattested and
+            // downstream health checks re-probe instead of trusting it for 5m.
+            streamReachabilityVerified: undefined,
           });
           if (result) {
             endpointHealth.recordSuccess(server);
@@ -1972,9 +2001,8 @@ export async function decodeVideasyGuardedPayload(
   if (!sessionToken) {
     throw new Error("Videasy guarded payload requires a session token");
   }
-  const { default: CryptoJS } = await import("crypto-js");
-  const key = CryptoJS.SHA256(`g:${sessionToken}`).toString();
-  const decrypted = CryptoJS.AES.decrypt(payload.slice(3), key).toString(CryptoJS.enc.Utf8);
+  const key = sha256Hex(`g:${sessionToken}`);
+  const decrypted = decryptOpensslSalted(payload.slice(3), key);
   if (!decrypted) {
     throw new Error("Videasy guarded session payload could not be decrypted");
   }
@@ -2047,9 +2075,7 @@ export async function decodeVidkingPayload(
     const payloadPtr = wasm.__newString(payload);
     const decryptedPtr = wasm.decrypt(payloadPtr, tmdbId);
     const wasmDecryptedBase64 = wasm.__getString(decryptedPtr);
-    const { default: CryptoJS } = await import("crypto-js");
-    const decryptedBytes = CryptoJS.AES.decrypt(wasmDecryptedBase64, "");
-    const finalJson = decryptedBytes.toString(CryptoJS.enc.Utf8);
+    const finalJson = decryptOpensslSalted(wasmDecryptedBase64, "");
     return JSON.parse(finalJson) as VidkingPayload;
   });
 }
@@ -2090,8 +2116,7 @@ function normalizeStreamCandidates({
   cachePolicy,
   sourceId,
   server,
-  streamReferer = VIDKING_REFERER,
-  streamOrigin = VIDKING_ORIGIN,
+  streamReferer,
   sourceQualityFilter,
   flavorLabel,
   serverName,
@@ -2102,8 +2127,14 @@ function normalizeStreamCandidates({
   readonly cachePolicy: CachePolicy;
   readonly sourceId: string;
   readonly server?: string;
-  readonly streamReferer?: string;
-  readonly streamOrigin?: string;
+  /**
+   * Required, with no default: this is the only place stream headers are
+   * built, and the resolve gate and the shipped result both come through it.
+   * When it was optional the gate took the default and the result took the
+   * profile, so the gate verified a request mpv never made (#361). The Origin
+   * header is not a parameter at all — it is pinned to VIDEASY_MEDIA_ORIGIN.
+   */
+  readonly streamReferer: string;
   readonly sourceQualityFilter?: string;
   readonly flavorLabel?: string;
   readonly serverName?: string;
@@ -2186,7 +2217,7 @@ function normalizeStreamCandidates({
       sourceEvidence,
       headers: {
         referer: streamReferer,
-        origin: streamOrigin,
+        origin: VIDEASY_MEDIA_ORIGIN,
         "user-agent": USER_AGENT,
       },
       confidence: qualityRank > 0 ? 0.92 : 0.82,
@@ -2327,41 +2358,46 @@ async function fetchVideasyDbTitleMetadata(
 ): Promise<VideasyDbTitleMetadata | null> {
   const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
   const path = mediaKind === "series" ? `tv/${tmdbId}` : `movie/${tmdbId}`;
-  const url = `${VIDEASY_DB_BASE}/${path}?append_to_response=external_ids&language=en`;
 
-  try {
-    const response = await requester(url, {
-      headers: {
-        accept: "application/json",
-        referer: "https://player.videasy.to/",
-        "user-agent": USER_AGENT,
-      },
-      signal: createVideasyFetchSignal(context.signal, 8_000),
-    });
-    if (!response.ok) return null;
+  for (const base of VIDEASY_DB_BASES) {
+    const url = `${base}/${path}?append_to_response=external_ids&language=en`;
+    try {
+      const response = await requester(url, {
+        headers: {
+          accept: "application/json",
+          referer: "https://player.videasy.to/",
+          "user-agent": USER_AGENT,
+        },
+        signal: createVideasyFetchSignal(context.signal, 8_000),
+      });
+      if (!response.ok) continue;
 
-    const data = (await response.json()) as {
-      readonly name?: string;
-      readonly title?: string;
-      readonly first_air_date?: string;
-      readonly release_date?: string;
-      readonly external_ids?: { readonly imdb_id?: string | null };
-    };
+      const data = await readJsonObjectBody<{
+        readonly name?: string;
+        readonly title?: string;
+        readonly first_air_date?: string;
+        readonly release_date?: string;
+        readonly external_ids?: { readonly imdb_id?: string | null };
+      }>(response);
+      if (!data) return null;
 
-    const releaseDate = data.first_air_date ?? data.release_date;
-    const year =
-      typeof releaseDate === "string" && releaseDate.length >= 4
-        ? Number.parseInt(releaseDate.slice(0, 4), 10)
-        : undefined;
+      const releaseDate = data.first_air_date ?? data.release_date;
+      const year =
+        typeof releaseDate === "string" && releaseDate.length >= 4
+          ? Number.parseInt(releaseDate.slice(0, 4), 10)
+          : undefined;
 
-    return {
-      title: data.name ?? data.title,
-      year: Number.isFinite(year) ? year : undefined,
-      imdbId: data.external_ids?.imdb_id?.trim() || undefined,
-    };
-  } catch {
-    return null;
+      return {
+        title: data.name ?? data.title,
+        year: Number.isFinite(year) ? year : undefined,
+        imdbId: data.external_ids?.imdb_id?.trim() || undefined,
+      };
+    } catch {
+      // Mirror dead or malformed — try the next catalog host.
+      continue;
+    }
   }
+  return null;
 }
 
 async function enrichVideasyResolveInput(
@@ -2472,10 +2508,8 @@ function emitRetryIfNeeded(
   });
 }
 
-function isRetryableFailure(context: ProviderRuntimeContext, failure: ProviderFailure): boolean {
-  if (!failure.retryable) return false;
-  const retryableCodes = context.retryPolicy?.retryableCodes;
-  return !retryableCodes || retryableCodes.includes(failure.code);
+function isRetryableFailure(_context: ProviderRuntimeContext, failure: ProviderFailure): boolean {
+  return failure.retryable === true;
 }
 
 function normalizeVidkingAudioLanguage(

@@ -11,6 +11,9 @@ export interface DatabaseMaintenanceOptions {
   readonly maxDiagnosticEvents?: number;
   readonly diagnosticRetentionDays?: number;
   readonly providerHealthRetentionDays?: number;
+  readonly notificationRetentionDays?: number;
+  readonly maxNotifications?: number;
+  readonly maxNotificationSuppressions?: number;
 }
 
 export interface CacheMaintenancePruneCounts {
@@ -29,9 +32,15 @@ export interface CacheMaintenancePruneCounts {
   readonly diagnosticEvents: number;
 }
 
+export interface DataMaintenancePruneCounts {
+  readonly notifications: number;
+  readonly notificationSuppressions: number;
+}
+
 export interface DatabaseMaintenanceResult {
   readonly database: MaintenanceDatabaseKind;
   readonly pruned: CacheMaintenancePruneCounts;
+  readonly dataPruned: DataMaintenancePruneCounts;
   readonly optimized: boolean;
   readonly checkpointed: boolean;
 }
@@ -52,22 +61,37 @@ const EMPTY_PRUNE_COUNTS: CacheMaintenancePruneCounts = {
   diagnosticEvents: 0,
 };
 
+const EMPTY_DATA_PRUNE_COUNTS: DataMaintenancePruneCounts = {
+  notifications: 0,
+  notificationSuppressions: 0,
+};
+
 export function runDatabaseMaintenance(
   db: KunaiDatabase,
   options: DatabaseMaintenanceOptions,
 ): DatabaseMaintenanceResult {
   const optimized = options.optimize !== false;
   const checkpointed = options.checkpointWal === true;
+  const now = options.now ?? new Date();
   const pruned =
     options.database === "cache"
       ? pruneCacheTables(db, {
-          now: options.now ?? new Date(),
+          now,
           maxResolveTraces: options.maxResolveTraces ?? 200,
           maxDiagnosticEvents: options.maxDiagnosticEvents ?? 10_000,
           diagnosticRetentionDays: options.diagnosticRetentionDays ?? 14,
           providerHealthRetentionDays: options.providerHealthRetentionDays ?? 7,
         })
       : EMPTY_PRUNE_COUNTS;
+  const dataPruned =
+    options.database === "data"
+      ? pruneDataTables(db, {
+          now,
+          notificationRetentionDays: options.notificationRetentionDays ?? 90,
+          maxNotifications: options.maxNotifications ?? 500,
+          maxNotificationSuppressions: options.maxNotificationSuppressions ?? 5_000,
+        })
+      : EMPTY_DATA_PRUNE_COUNTS;
 
   if (optimized) {
     db.exec("PRAGMA optimize");
@@ -80,6 +104,7 @@ export function runDatabaseMaintenance(
   return {
     database: options.database,
     pruned,
+    dataPruned,
     optimized,
     checkpointed,
   };
@@ -209,6 +234,97 @@ function pruneCacheTables(
       providerEndpointHealth,
       releaseProgress,
       diagnosticEvents: staleDiagnosticEvents + overflowDiagnosticEvents,
+    };
+  });
+
+  return prune();
+}
+
+/**
+ * Data-DB retention. Notifications accrue one row per distinct dedup key and
+ * nothing ever swept them — a long-lived profile grew the table forever, and
+ * `listAllActive`/`listAllArchived` read it unbounded. The same applies to
+ * `notification_suppressions`.
+ *
+ * Deleting a row without tombstoning its dedup key would let the next
+ * `recordSignals` pass resurrect it, so every pruned key is written into
+ * `notification_suppressions` first — the same contract `clearArchived` and
+ * `deleteByDedupKey` already use.
+ */
+function pruneDataTables(
+  db: KunaiDatabase,
+  options: {
+    readonly now: Date;
+    readonly notificationRetentionDays: number;
+    readonly maxNotifications: number;
+    readonly maxNotificationSuppressions: number;
+  },
+): DataMaintenancePruneCounts {
+  const nowIso = options.now.toISOString();
+  const staleBefore = new Date(
+    options.now.getTime() - options.notificationRetentionDays * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const prune = db.transaction((): DataMaintenancePruneCounts => {
+    // Stale rows the user has already resolved — read, dismissed, or archived —
+    // are the safe retention cut. Active unread rows are left alone by age and
+    // only trimmed by the hard ceiling below.
+    const tombstoneStale = db
+      .query(
+        `INSERT INTO notification_suppressions (dedup_key, suppressed_at)
+         SELECT dedup_key, ? FROM notifications
+         WHERE (read_at IS NOT NULL OR dismissed_at IS NOT NULL OR archived_at IS NOT NULL)
+           AND updated_at <= ?
+         ON CONFLICT(dedup_key) DO NOTHING`,
+      )
+      .run(nowIso, staleBefore);
+    const staleNotifications = db
+      .query(
+        `DELETE FROM notifications
+         WHERE (read_at IS NOT NULL OR dismissed_at IS NOT NULL OR archived_at IS NOT NULL)
+           AND updated_at <= ?`,
+      )
+      .run(staleBefore).changes;
+
+    db.query(
+      `INSERT INTO notification_suppressions (dedup_key, suppressed_at)
+       SELECT dedup_key, ? FROM notifications
+       WHERE dedup_key IN (
+         SELECT dedup_key FROM notifications
+         ORDER BY updated_at DESC, dedup_key DESC
+         LIMIT -1 OFFSET ?
+       )
+       ON CONFLICT(dedup_key) DO NOTHING`,
+    ).run(nowIso, options.maxNotifications);
+    // The tombstone and delete SELECTs must agree on which rows are overflow:
+    // equal updated_at ties are ordered nondeterministically without the
+    // unique dedup_key tie-breaker, so both order by it identically.
+    const overflowNotifications = db
+      .query(
+        `DELETE FROM notifications
+         WHERE dedup_key IN (
+           SELECT dedup_key FROM notifications
+           ORDER BY updated_at DESC, dedup_key DESC
+           LIMIT -1 OFFSET ?
+         )`,
+      )
+      .run(options.maxNotifications).changes;
+
+    const notificationSuppressions = db
+      .query(
+        `DELETE FROM notification_suppressions
+         WHERE dedup_key IN (
+           SELECT dedup_key FROM notification_suppressions
+           ORDER BY suppressed_at DESC, dedup_key DESC
+           LIMIT -1 OFFSET ?
+         )`,
+      )
+      .run(options.maxNotificationSuppressions).changes;
+
+    void tombstoneStale;
+    return {
+      notifications: staleNotifications + overflowNotifications,
+      notificationSuppressions,
     };
   });
 

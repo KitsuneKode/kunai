@@ -1,0 +1,23 @@
+---
+title: Provider status
+description: Daily live check on every registered provider, covering upstream reachability, resolve health, lane counts, and known gate reasons.
+status: shipped
+---
+
+A scheduled job resolves a known-good title through every production provider once a day from a clean network and publishes the result here. This board is **upstream health**, not your network's view: a region-gated provider may work fine for you (or vice versa).
+
+<ProviderStatusBoard />
+
+## What the statuses mean
+
+- **Working**: upstream reachable and a real resolve returned playable lanes.
+- **Limited**: the provider works somewhere but not for the sweep: either upstream responds yet resolve exhausted without a clear block reason (`degraded`, usually a scheme rotation or partial outage), or the sweep network is challenged (`blocked`: Cloudflare WAF, captcha). Region-gated providers often work from other regions or through a user-owned relay (`providerRelay.baseUrl`).
+- **Down**: nobody can resolve through it right now: upstream reports maintenance (`down`, 503 pages) or the front door does not answer at all (`dead`: DNS or connection failure). A sustained dead reading means the provider is gone for everyone; a one-off can be a runner-side network fault.
+
+The small tag under each badge is the raw sweep verdict (`healthy`, `degraded`, `blocked`, `down`, `dead`) and the note column carries the specifics.
+
+## How this affects playback
+
+You do not need this page to have a good experience. Kunai's provider-health tracking already demotes a provider that fails, and [fallback cycling moves to the next candidate automatically](/docs/users/providers). This board exists so you can tell _why_ a provider is struggling and whether it is you or them.
+
+If your configured default provider shows **Down** here for days, pick another in [Settings → Provider order](/docs/users/customization); the board shows which ones are working right now. When nothing resolves at all, that is a different failure class: see [playback and recovery](/docs/users/playback-and-recovery) for the fallback chain and [diagnostics](/docs/users/diagnostics-and-reporting) for the redacted support bundle.

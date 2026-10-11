@@ -11,6 +11,12 @@ export interface ResolveAttempt<TStream> {
   readonly stream: TStream | null;
   readonly result?: ProviderResolveResult;
   readonly failure?: ProviderFailure;
+  /**
+   * The candidate was cancelled mid-flight (user cancel, deadline, or a
+   * hedged sibling won). No failure is attached because the provider never
+   * produced one.
+   */
+  readonly aborted?: boolean;
 }
 
 export interface ResolveWithFallbackResult<TStream> {

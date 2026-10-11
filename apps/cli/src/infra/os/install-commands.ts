@@ -1,3 +1,4 @@
+import { whichLive } from "./which";
 /**
  * Per-platform install commands, and how to pick the one that applies here.
  *
@@ -51,7 +52,7 @@ export function resolveInstallCommand(
   if (platform === "darwin") return install.darwin ?? install.fallback ?? null;
   if (platform === "win32") return install.win32 ?? install.fallback ?? null;
 
-  const which = options.which ?? ((command: string) => Bun.which(command));
+  const which = options.which ?? ((command: string) => whichLive(command));
   for (const manager of LINUX_MANAGERS) {
     // Probe rather than read /etc/os-release: a user on Arch with `apt` from a
     // container, or on an immutable distro, is described by what they can run.
@@ -73,13 +74,23 @@ const REMEDIATION_LABELS: readonly (readonly [keyof PlatformInstall, string])[] 
   ["fallback", "Other"],
 ];
 
+/**
+ * Column width for the remediation label, derived rather than hardcoded.
+ * `padEnd(8)` sat next to a label that is exactly 8 characters ("openSUSE"),
+ * so that entry emitted `- openSUSEsudo zypper install mpv` with no separator —
+ * two commands glued into one unrunnable line. Deriving the width from the
+ * table means the next label added cannot reintroduce it.
+ */
+const REMEDIATION_LABEL_WIDTH =
+  Math.max(...REMEDIATION_LABELS.map(([, label]) => label.length)) + 1;
+
 /** Every command, labelled — what `kunai doctor` prints and diagnostics carry. */
 export function buildRemediationLines(install: PlatformInstall): readonly string[] {
   if (install.note) return [install.note];
   const lines: string[] = [];
   for (const [key, label] of REMEDIATION_LABELS) {
     const command = install[key];
-    if (command) lines.push(`${label.padEnd(8)}${command}`);
+    if (command) lines.push(`${label.padEnd(REMEDIATION_LABEL_WIDTH)}${command}`);
   }
   return lines;
 }
@@ -100,7 +111,9 @@ export const YT_DLP_INSTALL: PlatformInstall = {
   fedora: "sudo dnf install yt-dlp",
   suse: "sudo zypper install yt-dlp",
   darwin: "brew install yt-dlp",
-  win32: "winget install yt-dlp",
+  // `winget install yt-dlp` matches both yt-dlp.yt-dlp and a Microsoft Store
+  // listing, so the command doctor used to print cannot actually be run.
+  win32: "winget install --id yt-dlp.yt-dlp -e",
   fallback: "pip install yt-dlp",
 };
 
@@ -139,9 +152,15 @@ export const CURL_INSTALL: PlatformInstall = {
  * everywhere else falls back to the releases page. A plausible-looking
  * `apt install curl-impersonate` would name a package that does not exist,
  * which is worse than no hint at all.
+ *
+ * Windows gets a destination as well as a source: the provider resolver
+ * searches Kunai's managed helper dir directly, so extracting there works
+ * without touching PATH, whichever way Kunai itself was installed.
  */
 export const CURL_IMPERSONATE_INSTALL: PlatformInstall = {
   arch: "sudo pacman -S curl-impersonate",
   darwin: "brew install lexiforest/tap/curl-impersonate",
+  win32:
+    "extract the win32 build from https://github.com/lexiforest/curl-impersonate/releases into %LOCALAPPDATA%\\kunai\\deps\\curl-impersonate",
   fallback: "https://github.com/lexiforest/curl-impersonate/releases",
 };

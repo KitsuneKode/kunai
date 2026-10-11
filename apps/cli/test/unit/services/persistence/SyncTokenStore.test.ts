@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -248,5 +248,22 @@ describe("SyncTokenStore on the real filesystem", () => {
     const store = new SyncTokenStore(paths);
 
     expect(await store.load()).toEqual({});
+  });
+
+  test("a corrupt token file is quarantined, never merged over", async () => {
+    await mkdir(paths.configDir, { recursive: true });
+    const garbage = "{not-json";
+    await writeFile(tokenPath, garbage, "utf8");
+    const store = new SyncTokenStore(paths);
+
+    // The corrupt bytes must survive aside, not be silently discarded, and a
+    // later patch must start from empty rather than merging over garbage.
+    await store.patchTmdb(TMDB);
+
+    expect(await store.load()).toEqual({ tmdb: TMDB });
+    const siblings = await readdir(paths.configDir);
+    const quarantine = siblings.find((name) => name.startsWith("sync-tokens.json.corrupt-"));
+    expect(quarantine).toBeDefined();
+    expect(await readFile(join(paths.configDir, quarantine ?? ""), "utf8")).toBe(garbage);
   });
 });

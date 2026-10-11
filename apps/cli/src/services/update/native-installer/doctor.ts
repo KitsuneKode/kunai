@@ -410,8 +410,15 @@ function collectFindings(input: {
   }
 
   for (const issue of report.dependencies.issues) {
+    // `degraded` describes what the shell can still do; doctor's verdict is
+    // install health. Missing mpv means Kunai cannot play at all, and a curl
+    // that resolves but cannot execute is a broken install (providers will
+    // attempt it and throw mid-request) — both are errors so the exit code is
+    // honest for scripts. yt-dlp/ffmpeg/missing-curl stay warnings: each gates
+    // one lane, not the product.
+    const core = issue.id === "mpv-missing" || issue.id === "curl-invocation-failed";
     findings.push({
-      severity: issue.severity === "fatal" ? "error" : "warning",
+      severity: issue.severity === "fatal" || core ? "error" : "warning",
       code: issue.id,
       message: issue.message,
       remediation: [...issue.remediation],

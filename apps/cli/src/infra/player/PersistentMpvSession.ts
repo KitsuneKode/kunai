@@ -13,20 +13,25 @@ import type {
   SubtitleTrack,
   TitleInfo,
 } from "@/domain/types";
+import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { registerMpvProcess, terminateMpvProcess } from "@/infra/player/mpv-process-registry";
 import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
+import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
-import { buildMpvArgs, shouldApplyStartAtSeek } from "@/mpv";
+import { buildMpvArgs, shouldApplyStartAtSeek, writeMpvSensitiveConf } from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { resolveTuning } from "@/services/persistence/tuning";
 import { checkStreamPreflight } from "@/services/playback/stream-health-check";
+import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
 
+import { whichLive } from "../os/which";
 import {
   buildKunaiBridgeScriptOptsArg,
   isEphemeralKunaiLuaScript,
   parseSkipPromptDurationMs,
   resolveKunaiMpvBridgeScriptPath,
 } from "./kunai-mpv-bridge";
+import { discoverMpvInvocation } from "./mpv-discovery";
 import { computeInProcessReconnectSeek } from "./mpv-in-process-reconnect";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "./mpv-ipc";
@@ -39,6 +44,7 @@ import {
   shouldUnlinkUnixSocket,
 } from "./mpv-ipc-endpoint";
 import { shouldEmitPlaybackProgress } from "./mpv-playback-kernel";
+import { needsMpvNetworkPreflight } from "./mpv-playback-url";
 import type { MpvUrlKind } from "./mpv-playback-url";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import {
@@ -85,12 +91,20 @@ export {
 const IN_PROCESS_RECONNECT_BASE_BACKOFF_MS = 1_800;
 const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
 
+/**
+ * Upper bound on a reconnect budget handed to `create` in a raw config object.
+ * Well above the persisted cap (`MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS`) so the
+ * session harness can drive multi-attempt paths; nothing a user can configure
+ * reaches it.
+ */
+const RECONNECT_ATTEMPT_CEILING = 12;
+
 type InProcessReconnectTrigger = "network-read-dead" | "premature-eof" | "error";
 
 type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill">;
 
 const defaultPersistentMpvSessionRuntime: PersistentMpvSessionRuntime = {
-  which: (command) => Bun.which(command),
+  which: (command) => whichLive(command),
   spawn: (command, options) => Bun.spawn(command, options),
   waitForIpcEndpoint: waitForMpvIpcEndpoint,
   openIpcSession: openMpvIpcSession,
@@ -223,6 +237,7 @@ export class PersistentMpvSession {
   } | null = null;
   private readyWorkFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private terminationPromise: Promise<void> | null = null;
+  private closePromise: Promise<void> | null = null;
   private terminated = false;
   private lastSkipTo = -1;
   private nearEofFired = false;
@@ -363,10 +378,19 @@ export class PersistentMpvSession {
     const cfg = opts.kitsuneConfig;
     session.mpvInProcessStreamReconnectEnabled = cfg.mpvInProcessStreamReconnect !== false;
     const maxAttempts = cfg.mpvInProcessStreamReconnectMaxAttempts;
+    // The fallback is the shipped default, not a number of its own. It read 3
+    // while the default has been 1 and `ConfigServiceImpl` has capped persisted
+    // values at 1 — so a config that reached here without the key got a budget
+    // the CLI does not offer anywhere in its UI.
+    //
+    // `RECONNECT_ATTEMPT_CEILING` stays above that cap on purpose: it bounds a
+    // raw config object handed straight to this factory (compiled smoke, the
+    // session harness), which never passes through the persisted clamp. It is a
+    // structural guard against a nonsense value, not the user-facing policy.
     session.mpvInProcessStreamReconnectMaxAttempts =
       typeof maxAttempts === "number" && Number.isFinite(maxAttempts)
-        ? Math.max(0, Math.min(12, Math.trunc(maxAttempts)))
-        : 3;
+        ? Math.max(0, Math.min(RECONNECT_ATTEMPT_CEILING, Math.trunc(maxAttempts)))
+        : MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS;
     const tuning = resolveTuning(cfg.tuningOverrides);
     session.reconnectBaseBackoffMs = tuning.mpvReconnectBaseBackoffMs;
     session.reconnectMaxBackoffMs = tuning.mpvReconnectMaxBackoffMs;
@@ -413,11 +437,32 @@ export class PersistentMpvSession {
 
     this.loadStartAt = shouldApplyStartAtSeek(options.startAt) ? (options.startAt ?? 0) : 0;
 
-    const preflightPromise = checkStreamPreflight(stream.url, stream.headers, undefined, {
-      cachedAt: stream.timestamp,
-      streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
-      requiresYtdl: stream.requiresYtdl,
-    });
+    const preflightPromise = needsMpvNetworkPreflight(stream.url, options.urlKind)
+      ? checkStreamPreflight(stream.url, stream.headers, undefined, {
+          cachedAt: stream.timestamp,
+          streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
+          requiresYtdl: stream.requiresYtdl,
+        })
+      : Promise.resolve({ status: "reachable" as const });
+
+    if (options.timing) {
+      try {
+        const oldChapters = this.currentChaptersFilePath;
+        this.currentChaptersFilePath = await writeMpvChaptersFile(
+          options.timing,
+          `${this.id}-${this.cycleGeneration.cycle}`,
+        );
+        if (oldChapters && oldChapters !== this.currentChaptersFilePath) {
+          void removeMpvChaptersFile(oldChapters);
+        }
+      } catch {
+        // Best effort chapters file
+      }
+    } else if (this.currentChaptersFilePath) {
+      const oldChapters = this.currentChaptersFilePath;
+      this.currentChaptersFilePath = null;
+      void removeMpvChaptersFile(oldChapters);
+    }
 
     const loadResult = await this.ipcSession?.send(
       buildPersistentLoadfileCommand(
@@ -430,6 +475,8 @@ export class PersistentMpvSession {
           ytdlRawOptions: stream.ytdlRawOptions,
           isLive: stream.isLive,
           urlKind: options.urlKind,
+          audioPreference: options.audioPreference,
+          chaptersFile: this.currentChaptersFilePath,
         },
       ),
       3_000,
@@ -493,6 +540,7 @@ export class PersistentMpvSession {
     if (!this.activeCycle) return;
     this.currentOptions = { ...this.currentOptions, timing };
     void this.handleSegmentSkipProgress(this.currentOptions);
+    void this.syncMpvChaptersFile(timing);
   }
 
   updateAutoSkipEnabled(enabled: boolean): void {
@@ -510,6 +558,12 @@ export class PersistentMpvSession {
   }
 
   async close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closePromise = this.performClose();
+    return this.closePromise;
+  }
+
+  private async performClose(): Promise<void> {
     this.currentCycleOptions().onPlaybackEvent?.({ type: "player-closing" });
     this.clearReadyWorkFallback();
     this.pendingReadyWork = null;
@@ -518,12 +572,18 @@ export class PersistentMpvSession {
     this.retirePendingFileLoad();
     this.loadedFileGeneration = null;
 
+    if (this.currentChaptersFilePath) {
+      const path = this.currentChaptersFilePath;
+      this.currentChaptersFilePath = null;
+      void removeMpvChaptersFile(path);
+    }
+
     const target = this.mpv;
 
     if (this.ipcSession) {
       this.abortResumeChoiceWaitForCycleEnd();
-      void this.ipcSession.send(["set_property", "user-data/kunai-loading", ""], 500);
-      const result = await this.ipcSession.send(["quit"], 1_000);
+      void this.ipcSession.send(["set_property", "user-data/kunai-loading", ""], 400);
+      const result = await this.ipcSession.send(["quit"], 500);
       if (!result.ok) {
         target?.kill("SIGTERM");
       }
@@ -531,14 +591,14 @@ export class PersistentMpvSession {
       target?.kill("SIGTERM");
     }
 
-    let closed = await this.waitForProcessClose(target, 1_500);
+    let closed = await this.waitForProcessClose(target, 800);
     if (!closed) {
       target?.kill("SIGTERM");
-      closed = await this.waitForProcessClose(target, 1_500);
+      closed = await this.waitForProcessClose(target, 800);
     }
     if (!closed) {
       target?.kill("SIGKILL");
-      closed = await this.waitForProcessClose(target, 1_000);
+      closed = await this.waitForProcessClose(target, 500);
     }
 
     await this.handleProcessTermination({
@@ -565,6 +625,26 @@ export class PersistentMpvSession {
     // Persistent replacements always pass a file-local loadfile `start` option
     // (`0` for normal navigation, resume seconds for direct continue). That
     // clears any process-level --start used for the initial file.
+    if (this.initialOptions.timing) {
+      try {
+        this.currentChaptersFilePath = await writeMpvChaptersFile(
+          this.initialOptions.timing,
+          `${this.id}-${Date.now()}`,
+        );
+      } catch {
+        // Best effort chapters file
+      }
+    }
+
+    const sensitiveConf = await writeMpvSensitiveConf(
+      {
+        url: this.initialStream.url,
+        headers: this.initialStream.headers ?? {},
+        requiresYtdl: this.initialStream.requiresYtdl,
+        ytdlRawOptions: this.initialStream.ytdlRawOptions,
+      },
+      this.ipcEndpoint,
+    );
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
@@ -581,6 +661,7 @@ export class PersistentMpvSession {
         requiresYtdl: this.initialStream.requiresYtdl,
         ytdlFormat: this.initialStream.ytdlFormat,
         ytdlRawOptions: this.initialStream.ytdlRawOptions,
+        chaptersFile: this.currentChaptersFilePath,
       },
       ipcServerCliArg(this.ipcEndpoint),
       {
@@ -589,6 +670,7 @@ export class PersistentMpvSession {
         includeStartArg,
         scriptPath: this.luaScriptPath ?? undefined,
         scriptOpts: this.scriptOptsArg,
+        sensitiveOptionsPath: sensitiveConf?.path,
       },
     );
     this.loadStartAt =
@@ -596,6 +678,22 @@ export class PersistentMpvSession {
     this.subtitlesAttachedAtSpawn = Boolean(this.initialOptions.primarySubtitle);
     this.titleAppliedViaArgs = true;
 
+    try {
+      await this.spawnProcessAndConnect(mpvOptions, args);
+    } finally {
+      // The conf's only reader is mpv's startup config parse — once spawn()
+      // has settled (IPC ready, bootstrap failure, or spawn throw) the file
+      // has no further consumer.
+      await sensitiveConf?.cleanup();
+    }
+  }
+
+  /** The spawn→IPC-connect tail of {@link spawn} — kept separate so the
+   * sensitive-conf cleanup wraps every exit path with one finally. */
+  private async spawnProcessAndConnect(
+    mpvOptions: MpvRuntimeOptions | undefined,
+    args: string[],
+  ): Promise<void> {
     const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
       const active = this.activeCycle;
       if (active && (event.type === "stream-stalled" || event.type === "ipc-stalled")) {
@@ -613,7 +711,11 @@ export class PersistentMpvSession {
     };
     this.watchdog = createPlaybackWatchdog(emitPlaybackEvent);
 
-    if (!this.runtime.which("mpv")) {
+    const mpvInvocation = discoverMpvInvocation({
+      which: this.runtime.which,
+      ...(this.runtime.exists && { exists: this.runtime.exists }),
+    });
+    if (!mpvInvocation) {
       this.currentCycleOptions().onPlaybackEvent?.({
         type: "ipc-command-failed",
         command: "spawn",
@@ -623,11 +725,11 @@ export class PersistentMpvSession {
       return;
     }
 
-    const proc = this.runtime.spawn(["mpv", ...args], {
+    const proc = this.runtime.spawn([...mpvInvocation.argv, ...args], {
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",
-      env: process.env as Record<string, string>,
+      env: scrubbedChildEnv(),
     });
     this.mpv = proc;
     this.mpvUnregister = registerMpvProcess(proc);
@@ -961,6 +1063,7 @@ export class PersistentMpvSession {
         this.waitResumeOrStartOverChoice(seconds, displayTitle, timeLabel),
       handleSegmentSkipProgress: async (readyOptions) =>
         this.handleSegmentSkipProgress(readyOptions),
+      syncChaptersFile: (timing) => this.syncMpvChaptersFile(timing ?? null),
       isLiveStream: () => this.playbackStream.isLive === true,
       onIpcCommandFailure: (command, error) => {
         dbg("mpv-ipc", `${command}-failed`, { error });
@@ -1215,7 +1318,7 @@ export class PersistentMpvSession {
       title: ctx.title,
       episode: ctx.episode,
       providerId: ctx.providerId,
-      ...(position > 0 ? { startSeconds: position } : {}),
+      ...(position > 0 && { startSeconds: position }),
     });
     ctx.onCopied?.(result);
   }
@@ -1254,6 +1357,36 @@ export class PersistentMpvSession {
       ) {
         this.skipPromptSegmentKey = null;
       }
+    }
+  }
+
+  private currentChaptersFilePath: string | null = null;
+
+  private async syncMpvChaptersFile(timing: PlaybackTimingMetadata | null): Promise<void> {
+    const oldPath = this.currentChaptersFilePath;
+    if (!timing) {
+      if (oldPath) {
+        this.currentChaptersFilePath = null;
+        if (this.ipcSession) {
+          await this.ipcSession.send(["set_property", "chapters-file", ""], 1_000).catch(() => {});
+        }
+        await removeMpvChaptersFile(oldPath).catch(() => {});
+      }
+      return;
+    }
+    try {
+      const newPath = await writeMpvChaptersFile(timing, `${this.id}-${Date.now()}`);
+      if (newPath) {
+        this.currentChaptersFilePath = newPath;
+        if (this.ipcSession) {
+          await this.ipcSession.send(["set_property", "chapters-file", newPath], 1_000);
+        }
+      }
+      if (oldPath && oldPath !== newPath) {
+        await removeMpvChaptersFile(oldPath);
+      }
+    } catch {
+      // Best-effort chapters sync
     }
   }
 
@@ -1369,6 +1502,11 @@ export class PersistentMpvSession {
       await this.closeIpcSession();
       await this.cleanupSocket();
       await this.cleanupLuaScript();
+      if (this.currentChaptersFilePath) {
+        const fileToClean = this.currentChaptersFilePath;
+        this.currentChaptersFilePath = null;
+        await removeMpvChaptersFile(fileToClean);
+      }
 
       this.mpvUnregister?.();
       this.mpvUnregister = null;
@@ -1531,8 +1669,12 @@ export class PersistentMpvSession {
         ? Math.min(this.reconnectMaxBackoffMs, this.reconnectBaseBackoffMs * 2 ** (nextAttempt - 2))
         : 0;
     if (backoffBefore > 0) {
-      await Bun.sleep(backoffBefore);
-      if (!this.isGenerationCurrent(reconnectGeneration)) return false;
+      const sleepDeadline = Date.now() + backoffBefore;
+      while (Date.now() < sleepDeadline) {
+        if (this.retired || !this.isGenerationCurrent(reconnectGeneration)) return false;
+        await Bun.sleep(Math.min(50, Math.max(1, sleepDeadline - Date.now())));
+      }
+      if (this.retired || !this.isGenerationCurrent(reconnectGeneration)) return false;
     }
 
     this.reconnectInFlight = true;
@@ -1584,6 +1726,8 @@ export class PersistentMpvSession {
             ytdlRawOptions: this.playbackStream.ytdlRawOptions,
             isLive: this.playbackStream.isLive,
             urlKind: opts.urlKind,
+            audioPreference: opts.audioPreference,
+            chaptersFile: this.currentChaptersFilePath ?? undefined,
           },
         ),
         12_000,

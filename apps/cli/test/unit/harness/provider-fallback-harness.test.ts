@@ -48,27 +48,26 @@ function manifest(providerId: ProviderId, mediaKinds: readonly MediaKind[]) {
     cachePolicy: { ttlClass: "metadata", scope: "local", keyParts: [] },
     browserSafe: true,
     relaySafe: true,
-    status: "production",
   };
 }
 
 function createHarnessEngine(onCandidateIds: (ids: readonly ProviderId[]) => void): ProviderEngine {
   const modules = [
     {
-      providerId: "primary" as ProviderId,
-      manifest: manifest("primary" as ProviderId, ["series"]),
+      providerId: "primary",
+      manifest: manifest("primary", ["series"]),
     },
     {
-      providerId: "fallback-a" as ProviderId,
-      manifest: manifest("fallback-a" as ProviderId, ["series"]),
+      providerId: "fallback-a",
+      manifest: manifest("fallback-a", ["series"]),
     },
     {
-      providerId: "fallback-down" as ProviderId,
-      manifest: manifest("fallback-down" as ProviderId, ["series"]),
+      providerId: "fallback-down",
+      manifest: manifest("fallback-down", ["series"]),
     },
     {
-      providerId: "anime-only" as ProviderId,
-      manifest: manifest("anime-only" as ProviderId, ["anime"]),
+      providerId: "anime-only",
+      manifest: manifest("anime-only", ["anime"]),
     },
   ];
   const output: ProviderEngineResolveOutput = { result: null, providerId: null, attempts: [] };
@@ -121,7 +120,7 @@ describe("provider fallback harness", () => {
         candidates = ids;
       }),
       cacheStore: createMemoryCache(),
-      providerHealth: createProviderHealth([recentDownHealth("fallback-down" as ProviderId)]),
+      providerHealth: createProviderHealth([recentDownHealth("fallback-down")]),
     });
 
     await service.resolve(resolveInput("primary"));
@@ -151,7 +150,7 @@ describe("provider fallback harness", () => {
         candidates = ids;
       }),
       cacheStore: createMemoryCache(),
-      providerHealth: createProviderHealth([recentDownHealth("fallback-down" as ProviderId)]),
+      providerHealth: createProviderHealth([recentDownHealth("fallback-down")]),
     });
 
     await service.resolve(resolveInput("fallback-down", "manual"));

@@ -131,7 +131,7 @@ async function runQueueManual(container: Container): Promise<number> {
     absoluteEpisode: fx.siblingAbsoluteEpisode,
     source: "manual",
   });
-  const intent = container.queueService.beginPlayback(claimed.id, "queue");
+  const intent = container.queueService.beginPlayback(claimed.id);
   if (!intent) return 1;
   const attempt = createQueuePlaybackAttempt(container.queueService, intent);
   attempt.setStage("player-launch");
@@ -218,7 +218,7 @@ async function runFailedHandoff(container: Container): Promise<number> {
     absoluteEpisode: fx.absoluteEpisode,
     source: "manual",
   });
-  const intent = container.queueService.beginPlayback(entry.id, "queue");
+  const intent = container.queueService.beginPlayback(entry.id);
   if (!intent) return 1;
   const attempt = createQueuePlaybackAttempt(container.queueService, intent);
   attempt.setStage("player-launch");
@@ -292,7 +292,7 @@ async function runShutdownRestore(container: Container): Promise<number> {
     absoluteEpisode: fx.absoluteEpisode,
     source: "manual",
   });
-  const intent = container.queueService.beginPlayback(interrupted.id, "queue");
+  const intent = container.queueService.beginPlayback(interrupted.id);
   if (!intent) return 1;
 
   const playPromise = container.player.play(stream(fx.streamUrl), {

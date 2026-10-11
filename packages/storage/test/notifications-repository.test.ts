@@ -124,6 +124,58 @@ test("NotificationRepository: clearArchived purges only archived rows", () => {
   expect(r.listActive(50, 0).map((n) => n.dedupKey)).toEqual(["b"]);
 });
 
+test("NotificationRepository: clearArchived timestamps tombstones and preserves existing suppressions", () => {
+  const db = stores.store("notifications-clear", "data");
+  const r = new NotificationRepository(db);
+  const recordedAt = new Date().toISOString();
+  const clearedAt = new Date(Date.parse(recordedAt) + 1).toISOString();
+  r.deleteByDedupKey("previously-deleted", recordedAt);
+  r.upsert(base("archived", recordedAt));
+  r.archive("archived", recordedAt);
+  r.upsert(base("active", recordedAt));
+
+  expect(r.clearArchived(clearedAt)).toBe(1);
+  expect(r.listSuppressedKeys()).toEqual(new Set(["previously-deleted", "archived"]));
+  expect(
+    db
+      .query("SELECT suppressed_at FROM notification_suppressions WHERE dedup_key = ?")
+      .get("archived"),
+  ).toEqual({ suppressed_at: clearedAt });
+  expect(r.clearArchived(clearedAt)).toBe(0);
+  expect(r.getByDedupKey("active")).toBeDefined();
+});
+
+test("NotificationRepository: clearArchived rolls back tombstones when deletion fails", () => {
+  const db = stores.store("notifications-clear-rollback", "data");
+  const r = new NotificationRepository(db);
+  const recordedAt = new Date().toISOString();
+  const clearedAt = new Date(Date.parse(recordedAt) + 1).toISOString();
+  r.deleteByDedupKey("existing", recordedAt);
+  r.upsert(base("existing", recordedAt));
+  r.upsert(base("new", recordedAt));
+  r.archive("existing", recordedAt);
+  r.archive("new", recordedAt);
+  const before = r.listArchived();
+  // A real SQLite failure after INSERT SELECT proves the outer transaction
+  // rolls back both newly inserted tombstones and updates to existing ones.
+  db.exec(`CREATE TEMP TRIGGER reject_archive_delete BEFORE DELETE ON notifications
+    BEGIN SELECT RAISE(ABORT, 'fixture archive delete failure'); END`);
+
+  expect(() => r.clearArchived(clearedAt)).toThrow("fixture archive delete failure");
+  expect(r.listArchived()).toEqual(before);
+  expect(r.listSuppressedKeys()).toEqual(new Set(["existing"]));
+  expect(
+    db
+      .query("SELECT suppressed_at FROM notification_suppressions WHERE dedup_key = ?")
+      .get("existing"),
+  ).toEqual({ suppressed_at: recordedAt });
+
+  db.exec("DROP TRIGGER reject_archive_delete");
+  expect(r.clearArchived(clearedAt)).toBe(2);
+  expect(r.listArchived()).toEqual([]);
+  expect(r.listSuppressedKeys()).toEqual(new Set(["existing", "new"]));
+});
+
 test("NotificationRepository: dismissed notices leave the active list and counts", () => {
   const r = repo();
   r.upsert(base("older", "2026-06-14T01:00:00.000Z"));

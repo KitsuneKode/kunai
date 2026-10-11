@@ -55,7 +55,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                   query,
                   preferredAudioLanguage: opts.audioPreference,
                   preferredSubtitleLanguage: opts.subtitlePreference,
-                  preferredContentShape: opts.contentShape,
+                  preferredResultKind: opts.resultKind,
                 },
                 this.engine.createRuntimeContext(module.providerId, signal),
               );
@@ -93,7 +93,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                 liveStatus: r.liveStatus,
                 premium: r.premium,
                 paid: r.paid,
-                contentShape: r.contentShape,
+                resultKind: r.resultKind,
               }));
             }
           : undefined,

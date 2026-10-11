@@ -40,9 +40,11 @@ export type ShellAction =
   | "diagnostics"
   | "docs"
   | "help"
+  | "guide"
   | "about"
   | "update"
   | "image-pane"
+  | "pet"
   | "toggle-autoplay"
   | "toggle-autoskip"
   | "stop-after-current"
@@ -206,7 +208,7 @@ export type PlaybackRecommendationRailItem = {
   readonly externalIds?: import("@/domain/types").SearchResult["externalIds"];
   readonly channelId?: string;
   readonly channelTitle?: string;
-  readonly contentShape?: import("@/domain/types").SearchResult["contentShape"];
+  readonly resultKind?: import("@/domain/types").SearchResult["resultKind"];
 };
 
 export type LoadingShellStage =
@@ -330,7 +332,7 @@ export type BrowseIdleContextLoader = () => Promise<BrowseIdleContext | undefine
 
 export type BrowseLocalFilterFacts = {
   readonly mediaType?: "movie" | "series";
-  readonly contentShape?: "video" | "short" | "playlist" | "channel";
+  readonly resultKind?: "video" | "short" | "playlist" | "channel";
   readonly isAnime?: boolean;
   readonly downloaded?: boolean;
   readonly watched?: WatchFilter;
@@ -408,7 +410,11 @@ export type BrowseShellResult<T> =
       type: "launch-playback";
       launch: { readonly title: TitleInfo; readonly episode?: EpisodeInfo };
     }
-  | { type: "cancelled" };
+  | {
+      type: "cancelled";
+      /** Set when another root-content session displaced browse — not a user Esc. */
+      displaced?: true;
+    };
 
 export type PlaybackShellResult =
   | ShellAction
@@ -461,9 +467,11 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "diagnostics":
     case "docs":
     case "help":
+    case "guide":
     case "about":
     case "update":
     case "image-pane":
+    case "pet":
     case "toggle-autoplay":
     case "toggle-autoskip":
     case "stop-after-current":

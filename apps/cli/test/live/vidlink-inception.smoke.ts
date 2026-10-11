@@ -106,7 +106,7 @@ const payload = {
   streamReachable,
   // Last on purpose: on a rejected resolve the locals above are still empty and
   // would otherwise blank out the real failure codes this carries.
-  ...(resolveError ? providerSmokeError(resolveError) : {}),
+  ...(resolveError ? providerSmokeError(resolveError) : null),
   ...providerSmokeProfilePayload(profile),
   cacheCleared: clearCache,
 };

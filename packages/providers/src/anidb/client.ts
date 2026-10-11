@@ -1,20 +1,28 @@
 import type { ProviderRuntimeContext, ResolveErrorCode, StartupPriority } from "@kunai/types";
+import {
+  httpStatusIsRetryable,
+  httpStatusToResolveErrorCode,
+  isRelayedResponse,
+  ProviderHttpError,
+} from "@kunai/types";
 
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
 import {
+  curlArgvHead,
   curlCipherArgs,
   isCloudflareChallengeText,
   resolveCurlCandidate,
   type CurlCandidate,
   type CurlEnvironment,
 } from "../shared/curl-impersonate";
-import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
+import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { markupToPlainText } from "../shared/markup-text";
 import { TTLCache } from "../shared/provider-cache";
 import {
   BALANCED_QUALITY_WAIT_BUDGET_MS,
   QUALITY_FIRST_WAIT_BUDGET_MS,
 } from "../shared/startup-selection";
+import { blockedLiteralTargetReason } from "../shared/stream-reachability";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { anidbNumericId, parseAnidbBrowseHtml, type AnidbSearchResult } from "./browse-parser";
 
@@ -27,6 +35,7 @@ export {
   type AnidbSearchResult,
   type AnidbSeasonEvidence,
 } from "./browse-parser";
+import { scrubbedChildEnv } from "../shared/child-env";
 
 export const ANIDB_BASE = "https://anidb.app";
 export const ANIDB_REFERER = "https://anidb.app/";
@@ -41,9 +50,21 @@ export const ANIDB_HTTP_API_CLIENT_VERSION = "1";
 export const ANIDB_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-const episodeCache = new TTLCache<string, readonly AnidbEpisodeEntry[]>(1_800_000);
-const languageCache = new TTLCache<string, readonly AnidbLanguageEntry[]>(300_000);
-const malCache = new TTLCache<string, number | null>(3_600_000);
+// Every cache below is keyed by a caller-chosen aid/eid, so without a hard
+// ceiling a long session or a scripted catalog walk grows them for the life of
+// the process — a TTL only reaps the entry you ask for again.
+const ANIDB_CACHE_MAX_ENTRIES = 512;
+const episodeCache = new TTLCache<string, AnidbEpisodeCatalog>(1_800_000, {
+  maxEntries: ANIDB_CACHE_MAX_ENTRIES,
+});
+/** A miss is cached far shorter than a hit: reindexes are permanent, 404s from a hiccup are not. */
+const ANIDB_MISSING_CATALOG_TTL_MS = 120_000;
+const languageCache = new TTLCache<string, readonly AnidbLanguageEntry[]>(300_000, {
+  maxEntries: ANIDB_CACHE_MAX_ENTRIES,
+});
+const malCache = new TTLCache<string, number | null>(3_600_000, {
+  maxEntries: ANIDB_CACHE_MAX_ENTRIES,
+});
 const externalIdsCache = new TTLCache<
   string,
   {
@@ -52,11 +73,20 @@ const externalIdsCache = new TTLCache<
     readonly officialAid: number | null;
     readonly posterUrl: string | null;
   }
->(3_600_000);
+>(3_600_000, { maxEntries: ANIDB_CACHE_MAX_ENTRIES });
 const officialEpisodeMetadataCache = new TTLCache<
   string,
   ReadonlyMap<number, AnimeEpisodeMetadata>
->(30 * 24 * 60 * 60 * 1000);
+>(30 * 24 * 60 * 60 * 1000, { maxEntries: ANIDB_CACHE_MAX_ENTRIES });
+
+// External ids and official episode numbers are effectively immutable — a
+// MAL/AniList link or an episode title doesn't change between sessions, so
+// they persist through `context.cache` (SQLite) and the process-local TTLMap
+// stays as L1. Neither is signed or session-scoped.
+const ANIDB_EXTERNAL_IDS_NAMESPACE = "anidb:external-ids";
+const ANIDB_EXTERNAL_IDS_PERSIST_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const ANIDB_OFFICIAL_EPISODES_NAMESPACE = "anidb:official-episodes";
+const ANIDB_OFFICIAL_EPISODES_PERSIST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type AnidbEpisodeEntry = {
   readonly id: number;
@@ -99,7 +129,7 @@ export type AnidbModeOutcome =
       readonly failure: {
         readonly code: ResolveErrorCode;
         readonly message: string;
-        readonly retryable: true;
+        readonly retryable: boolean;
       };
     };
 
@@ -127,6 +157,168 @@ export function resolveAnidbCurl(environment: Partial<CurlEnvironment> = {}): Cu
  * and is frequently still challenged, since Cloudflare fingerprints the TLS
  * handshake rather than trusting the User-Agent.
  */
+/**
+ * An AniDB HTTP status a caller is allowed to branch on.
+ *
+ * `anidb.app` reindexes slugs, so "this id is gone" (404) and "this id is
+ * blocked right now" (403 / Cloudflare) demand opposite responses: re-search
+ * for the first, keep the id and surface a retryable error for the second.
+ * Reading that distinction back out of a message string is how it gets lost,
+ * so the status rides on the error.
+ */
+export class AnidbHttpStatusError extends ProviderHttpError {
+  override readonly name = "AnidbHttpStatusError";
+  declare readonly status: number;
+
+  constructor(status: number) {
+    super({
+      // Message shape preserved from the untyped throw this replaces.
+      message: `anidb fetch HTTP ${status}`,
+      status,
+      code: httpStatusToResolveErrorCode(status),
+      retryable: httpStatusIsRetryable(status),
+    });
+  }
+}
+
+/**
+ * A Cloudflare challenge that every available transport has already failed to
+ * clear. Typed rather than message-matched so the failure classifier can tell
+ * "blocked" from "the network is down" without reading prose: a challenge is
+ * not a network fault, and retrying it cannot succeed.
+ */
+export class AnidbBlockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AnidbBlockedError";
+  }
+}
+
+/**
+ * The remediation to suggest, given what actually ran. Telling a user on
+ * curl-impersonate to install curl-impersonate is the advice they already
+ * followed, and it is the advice that makes a blocked provider look like a
+ * configuration problem instead of an upstream one.
+ */
+function anidbBlockedMessage(impersonates: boolean): string {
+  return impersonates
+    ? "anidb blocked by Cloudflare (curl-impersonate was already used)"
+    : "anidb blocked by Cloudflare (try curl-impersonate)";
+}
+
+/**
+ * AniDB answers a maintenance window with a real 200 and an "Under
+ * Maintenance" page, so a body check is the only way not to scrape the outage
+ * as an empty catalogue.
+ */
+export function isAnidbMaintenanceText(text: string): boolean {
+  return /<title>Under Maintenance<\/title>/i.test(text) || /under maintenance/i.test(text);
+}
+
+/** curl reports the final status after redirects; the body keeps the rest. */
+const ANIDB_STATUS_WRITE_OUT = ["-w", "\n%{http_code}"] as const;
+
+function splitAnidbStatus(stdout: string): { readonly body: string; readonly status: number } {
+  const cut = stdout.lastIndexOf("\n");
+  if (cut < 0) return { body: "", status: Number.parseInt(stdout, 10) || 0 };
+  const status = Number.parseInt(stdout.slice(cut + 1), 10);
+  return { body: stdout.slice(0, cut), status: Number.isFinite(status) ? status : 0 };
+}
+
+/** Like ANIDB_STATUS_WRITE_OUT but also reports `redirect_url` — used only on the redirect-manual path, which never follows (`-s`, not `-sL`). */
+const ANIDB_MANUAL_WRITE_OUT = ["-w", "\n%{http_code} %{redirect_url}"] as const;
+
+function splitAnidbStatusAndRedirect(stdout: string): {
+  readonly body: string;
+  readonly status: number;
+  readonly redirectUrl: string;
+} {
+  const cut = stdout.lastIndexOf("\n");
+  const line = cut < 0 ? stdout : stdout.slice(cut + 1);
+  const match = /^(\d{3})(?:\s+(.*))?$/.exec(line);
+  const status = match?.[1] ? Number.parseInt(match[1], 10) : 0;
+  return {
+    body: cut < 0 ? "" : stdout.slice(0, cut),
+    status: Number.isFinite(status) ? status : 0,
+    redirectUrl: match?.[2]?.trim() ?? "",
+  };
+}
+
+/**
+ * One request that does NOT follow redirects, returning status/Location so the
+ * caller can re-validate each hop. `anidbFetchText`'s curl path follows inside
+ * curl (`-sL`), which would bypass the per-hop blocklist `fetchProbeTarget`
+ * applies — so the HLS master expansion routes here instead.
+ */
+async function anidbFetchRedirectAware(
+  url: string,
+  options: {
+    readonly context?: ProviderRuntimeContext;
+    readonly signal?: AbortSignal;
+  },
+): Promise<Response> {
+  const headers = { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER };
+  if (options.context?.fetch) {
+    return options.context.fetch.fetch(url, {
+      headers,
+      signal: createTimeoutSignal(options.signal, 15_000),
+      redirect: "manual",
+    });
+  }
+  const curl = resolveAnidbCurl();
+  if (!curl) {
+    return fetch(url, {
+      headers,
+      signal: createTimeoutSignal(options.signal, 15_000),
+      redirect: "manual",
+    });
+  }
+  const args = [
+    ...curlArgvHead(curl),
+    "-s",
+    "-A",
+    ANIDB_USER_AGENT,
+    "-H",
+    `Referer: ${ANIDB_REFERER}`,
+    "--max-time",
+    "12",
+    ...anidbCipherArgs(curl.impersonates),
+    ...ANIDB_MANUAL_WRITE_OUT,
+    "--",
+    url,
+  ];
+  const stdout = await runAnidbCurlWithRetry(args, options.signal);
+  const { body, status, redirectUrl } = splitAnidbStatusAndRedirect(stdout);
+  if (status < 200 || status > 599) {
+    throw new AnidbHttpStatusError(status);
+  }
+  const responseHeaders = new Headers({
+    "content-type": "application/vnd.apple.mpegurl",
+  });
+  if (redirectUrl) responseHeaders.set("location", redirectUrl);
+  const nullBody = status === 204 || status === 304 || (status >= 300 && status < 400);
+  return new Response(nullBody ? null : body, { status, headers: responseHeaders });
+}
+
+/**
+ * Statuses where a better TLS fingerprint can still change the answer, so the
+ * curl fallback is worth a request. Everything else — a missing id, a 5xx
+ * outage — is the upstream's real answer, and retrying only doubles the
+ * latency before the same result.
+ */
+function isFingerprintRetryableStatus(status: number): boolean {
+  return status === 403 || status === 429;
+}
+
+/**
+ * Fetches an AniDB page as text, or throws {@link AnidbHttpStatusError}.
+ *
+ * Every read reports its status. A best-effort mode used to hand the caller
+ * whatever body an error carried, so a `503 Under Maintenance` page was scraped
+ * for result rows, found none, and reported an outage as "no such anime" —
+ * silently, with no health signal for provider fallback. Callers that treat a
+ * missing id as a real answer catch the 404 explicitly.
+ */
 export async function anidbFetchText(
   url: string,
   options: {
@@ -141,13 +333,59 @@ export async function anidbFetchText(
         headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
         signal: createTimeoutSignal(options.signal, 15_000),
       });
-      if (response.ok) {
+      if (isRelayedResponse(response)) {
+        /* The relay answered for this request — re-asking the same URL direct
+         * would silently bypass the relay the user deployed (#460). Treat the
+         * response as final, including a 403/429 the old code used to retry
+         * with a better TLS fingerprint.
+         *
+         * One documented exception: a 404 can be the relay's own
+         * `unknown-provider` miss rather than anidb.app's verdict — a relay
+         * deployed before this provider existed answers that way. Reading it
+         * as the catalogue's verdict marks the title permanently missing, so
+         * that one case still falls through to let curl settle it. */
+        if (response.status === 404) {
+          // Falls through to curl below.
+        } else {
+          const text = await response.text();
+          if (response.ok) {
+            if (isAnidbMaintenanceText(text)) {
+              throw new AnidbHttpStatusError(503);
+            }
+            if (!isCloudflareChallengeText(text)) {
+              return text;
+            }
+            throw new AnidbBlockedError("anidb blocked by Cloudflare via relay");
+          }
+          throw new AnidbHttpStatusError(response.status);
+        }
+      } else if (response.ok) {
         const text = await response.text();
+        if (isAnidbMaintenanceText(text)) {
+          throw new AnidbHttpStatusError(503);
+        }
         if (!isCloudflareChallengeText(text)) {
           return text;
         }
+      } else if (!isFingerprintRetryableStatus(response.status)) {
+        // Falling through to curl exists so a Cloudflare challenge gets a
+        // second chance with a better TLS fingerprint. An upstream outage or
+        // a genuine 404 is not a fingerprint problem, so it is answered here.
+        throw new AnidbHttpStatusError(response.status);
       }
-    } catch {
+    } catch (error) {
+      // Relayed-final outcomes above throw inside this try — without the
+      // rethrow a relayed verdict would fall to curl and silently bypass the
+      // user's relay, which is exactly the bypass the check exists to stop.
+      if (error instanceof AnidbHttpStatusError || error instanceof AnidbBlockedError) {
+        throw error;
+      }
+      // A cancelled caller is not a fingerprint problem either. Without this
+      // an abort during the context fetch is swallowed and the fallback spends
+      // a whole curl request on work nobody is waiting for. Checked against
+      // `options.signal` rather than the error shape, so the 15s internal
+      // timeout still earns its second chance through curl.
+      if (options.signal?.aborted === true) throw error;
       // Fallback to local curl/impersonate
     }
   }
@@ -159,18 +397,32 @@ export async function anidbFetchText(
       signal: createTimeoutSignal(options.signal, 15_000),
     });
     if (!response.ok) {
-      throw new Error(`anidb fetch HTTP ${response.status}`);
+      // Read the body before answering with the status. Cloudflare serves its
+      // challenge with a 4xx as often as with a 200, and there is no curl left
+      // to fall through to on this path — so a challenge that arrived as a 403
+      // used to be reported as a plain network error and handed to the retry
+      // budget. The paths that *do* have a curl fallback keep their order: they
+      // let the better transport try first, and only classify a challenge when
+      // it has been asked and failed.
+      const text = await response.text();
+      if (isCloudflareChallengeText(text)) {
+        throw new AnidbBlockedError("anidb blocked by Cloudflare (install curl)");
+      }
+      throw new AnidbHttpStatusError(response.status);
     }
     const text = await response.text();
     if (isCloudflareChallengeText(text)) {
-      throw new Error("anidb blocked by Cloudflare (install curl)");
+      throw new AnidbBlockedError("anidb blocked by Cloudflare (install curl)");
+    }
+    if (isAnidbMaintenanceText(text)) {
+      throw new AnidbHttpStatusError(503);
     }
     return text;
   }
 
   const maxTime = String(options.maxTimeSec ?? 12);
   const args = [
-    curl.path,
+    ...curlArgvHead(curl),
     "-sL",
     "-A",
     ANIDB_USER_AGENT,
@@ -179,16 +431,34 @@ export async function anidbFetchText(
     "--max-time",
     maxTime,
     ...anidbCipherArgs(curl.impersonates),
+    ...ANIDB_STATUS_WRITE_OUT,
+    // Everything after `--` is an operand, never an option. Embed and playlist
+    // URLs arrive from upstream JSON, so without this a value beginning with
+    // `-` would be read as curl flags rather than as the address to fetch.
+    "--",
     url,
   ];
   const stdout = await runAnidbCurlWithRetry(args, options.signal);
-  if (isCloudflareChallengeText(stdout)) {
-    throw new Error("anidb blocked by Cloudflare (try curl-impersonate)");
+  // `-sL` has no `--fail`, so curl exits 0 and hands back the error page for a
+  // 404. Without asking for the status explicitly the miss is indistinguishable
+  // from a body that merely failed to parse, which is how a reindexed id used
+  // to look exactly like an empty catalogue.
+  const { body, status } = splitAnidbStatus(stdout);
+  if (status >= 400) throw new AnidbHttpStatusError(status);
+  if (isCloudflareChallengeText(body)) {
+    throw new AnidbBlockedError(anidbBlockedMessage(curl.impersonates));
   }
-  return stdout;
+  if (isAnidbMaintenanceText(body)) {
+    throw new AnidbHttpStatusError(503);
+  }
+  return body;
 }
 
 const ANIDB_CURL_TIMEOUT_EXIT_CODE = 28;
+
+/** curl killed by SIGINT / SIGTERM — 128 + signal number. */
+const ANIDB_CURL_SIGINT_EXIT_CODE = 130;
+const ANIDB_CURL_SIGTERM_EXIT_CODE = 143;
 
 /**
  * AniDB TTFB from constrained networks sits close to the curl budget, so a lone
@@ -210,6 +480,18 @@ export async function runAnidbCurlWithRetry(
     result = await spawnOnce(args, signal);
   }
   if (result.exitCode !== 0) {
+    // Quitting kunai mid-resolve kills curl, and "curl exit 130" matches
+    // neither "abort" nor "cancel", so the failure classifier read a plain
+    // Ctrl-C as an unknown network fault: retryable, worth a fallback provider,
+    // and logged at ERROR. Say cancelled in the one place that knows the
+    // process was signalled, so the existing cancellation handling applies.
+    if (signal?.aborted === true) throw signal.reason ?? new Error("anidb curl cancelled");
+    if (
+      result.exitCode === ANIDB_CURL_SIGINT_EXIT_CODE ||
+      result.exitCode === ANIDB_CURL_SIGTERM_EXIT_CODE
+    ) {
+      throw new Error(`anidb curl cancelled (exit ${result.exitCode})`);
+    }
     throw new Error(result.stderr.trim() || `curl exit ${result.exitCode}`);
   }
   return result.stdout;
@@ -223,6 +505,7 @@ function defaultSpawnOnce(
     stdout: "pipe",
     stderr: "pipe",
     signal,
+    env: scrubbedChildEnv(),
   });
   return Promise.all([
     new Response(proc.stdout).text(),
@@ -238,6 +521,11 @@ export async function searchAnidb(
 ): Promise<readonly AnidbSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
+  // Status reporting is what separates "this title is not on AniDB" from
+  // "AniDB is down": a 503 hands back an error page, the browse parser finds
+  // no cards, and an origin outage is reported to the user as zero results for
+  // their query — and to the release signoff as provider drift. Every read now
+  // raises `AnidbHttpStatusError` for status >= 400, so the throw does the work.
   const page = await anidbFetchText(`${ANIDB_BASE}/browse?q=${encodeURIComponent(trimmed)}`, {
     signal,
     context,
@@ -284,6 +572,23 @@ export async function fetchAnidbExternalIds(
       posterUrl: cached.posterUrl ?? undefined,
     };
   }
+  const persisted = await context?.cache
+    ?.read<{
+      malId: number | null;
+      anilistId: string | null;
+      officialAid: number | null;
+      posterUrl: string | null;
+    }>(ANIDB_EXTERNAL_IDS_NAMESPACE, showId)
+    .catch(() => null);
+  if (persisted) {
+    externalIdsCache.set(showId, persisted);
+    return {
+      malId: persisted.malId ?? undefined,
+      anilistId: persisted.anilistId ?? undefined,
+      officialAid: persisted.officialAid ?? undefined,
+      posterUrl: persisted.posterUrl ?? undefined,
+    };
+  }
 
   try {
     const page = await anidbFetchText(`${ANIDB_BASE}/anime/${encodeURIComponent(showId)}`, {
@@ -299,7 +604,11 @@ export async function fetchAnidbExternalIds(
     const officialAid =
       Number.isFinite(parsedOfficial) && parsedOfficial > 0 ? parsedOfficial : null;
     const posterUrl = readMetaContent(page, "og:image") ?? null;
-    externalIdsCache.set(showId, { malId, anilistId, officialAid, posterUrl });
+    const ids = { malId, anilistId, officialAid, posterUrl };
+    externalIdsCache.set(showId, ids);
+    void context?.cache
+      ?.write(ANIDB_EXTERNAL_IDS_NAMESPACE, showId, ids, ANIDB_EXTERNAL_IDS_PERSIST_TTL_MS)
+      .catch(() => {});
     return {
       malId: malId ?? undefined,
       anilistId: anilistId ?? undefined,
@@ -316,10 +625,22 @@ export async function fetchAnidbExternalIds(
 export async function fetchAnidbOfficialEpisodeMetadata(
   officialAid: number,
   signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
 ): Promise<ReadonlyMap<number, AnimeEpisodeMetadata>> {
   const cacheKey = String(officialAid);
   const cached = officialEpisodeMetadataCache.get(cacheKey);
   if (cached) return new Map(cached);
+  const persisted = await context?.cache
+    ?.read<ReadonlyArray<[number, AnimeEpisodeMetadata]>>(
+      ANIDB_OFFICIAL_EPISODES_NAMESPACE,
+      cacheKey,
+    )
+    .catch(() => null);
+  if (persisted?.length) {
+    const map = new Map(persisted);
+    officialEpisodeMetadataCache.set(cacheKey, map);
+    return new Map(map);
+  }
 
   try {
     const response = await fetch(
@@ -339,6 +660,14 @@ export async function fetchAnidbOfficialEpisodeMetadata(
     const metadata = parseAnidbOfficialEpisodeMetadata(xml);
     if (metadata.size === 0) return new Map();
     officialEpisodeMetadataCache.set(cacheKey, metadata);
+    void context?.cache
+      ?.write(
+        ANIDB_OFFICIAL_EPISODES_NAMESPACE,
+        cacheKey,
+        [...metadata],
+        ANIDB_OFFICIAL_EPISODES_PERSIST_TTL_MS,
+      )
+      .catch(() => {});
     return new Map(metadata);
   } catch {
     return new Map();
@@ -420,23 +749,62 @@ function readMetaContent(html: string, property: string): string | undefined {
   return propertyFirst.exec(html)?.[1] ?? contentFirst.exec(html)?.[1];
 }
 
-export async function fetchAnidbEpisodes(
+/**
+ * An episode list, plus whether the show id itself resolved.
+ *
+ * `episodes: []` alone cannot carry this: a season announced but not yet
+ * listed is legitimately empty, and treating that the same as a reindexed id
+ * sends the caller off to search and hand back a *different show*. The two
+ * need separate answers, so they get separate fields.
+ */
+export type AnidbEpisodeCatalog = {
+  readonly episodes: readonly AnidbEpisodeEntry[];
+  /** The id is gone (HTTP 404) — not merely empty. */
+  readonly missing: boolean;
+};
+
+const ANIDB_EMPTY_CATALOG: AnidbEpisodeCatalog = { episodes: [], missing: false };
+const ANIDB_MISSING_CATALOG: AnidbEpisodeCatalog = { episodes: [], missing: true };
+
+export async function fetchAnidbEpisodeCatalog(
   showId: string,
   signal?: AbortSignal,
   context?: ProviderRuntimeContext,
-): Promise<readonly AnidbEpisodeEntry[]> {
+): Promise<AnidbEpisodeCatalog> {
   const numericId = anidbNumericId(showId);
-  if (!numericId) return [];
+  if (!numericId) return ANIDB_EMPTY_CATALOG;
   const cached = episodeCache.get(showId);
   if (cached) return cached;
 
   const url = `${ANIDB_BASE}/api/frontend/anime/${numericId}/episodes`;
-  const text = await anidbFetchText(url, { signal, context });
+  let text: string;
+  try {
+    text = await anidbFetchText(url, { signal, context });
+  } catch (error) {
+    // A reindexed slug (Solo Leveling 19413 → 4883) 404s permanently. Record
+    // it as a miss so the caller can re-search, and cache it briefly so a dead
+    // id is not re-requested once per call site on the same resolve.
+    if (error instanceof AnidbHttpStatusError && error.status === 404) {
+      episodeCache.set(showId, ANIDB_MISSING_CATALOG, ANIDB_MISSING_CATALOG_TTL_MS);
+      return ANIDB_MISSING_CATALOG;
+    }
+    throw error;
+  }
   let parsed: { episodes?: readonly Record<string, unknown>[] };
   try {
+    // SAFETY: JSON.parse resolves to the parsed document; the episodes field is shape-checked below.
     parsed = JSON.parse(text) as { episodes?: readonly Record<string, unknown>[] };
   } catch {
-    return [];
+    // Unparseable is not the same as absent: the id may be fine and the body
+    // mangled, so this must not be reported as a miss.
+    return ANIDB_EMPTY_CATALOG;
+  }
+  // `?? []` only covers null and undefined. A body like `{"episodes":{}}`
+  // parses cleanly and then throws on `.flatMap`, turning malformed upstream
+  // data into a crash rather than an empty listing. A non-array field is
+  // empty-but-present, the same as an unparseable body: not a missing id.
+  if (parsed.episodes !== undefined && !Array.isArray(parsed.episodes)) {
+    return ANIDB_EMPTY_CATALOG;
   }
   const episodes = (parsed.episodes ?? [])
     .flatMap((entry) => {
@@ -452,8 +820,18 @@ export async function fetchAnidbEpisodes(
     })
     .sort((left, right) => left.number - right.number);
 
-  episodeCache.set(showId, episodes);
-  return episodes;
+  const catalog: AnidbEpisodeCatalog = { episodes, missing: false };
+  episodeCache.set(showId, catalog);
+  return catalog;
+}
+
+/** Episode list only, for the callers that cannot act on a missing id. */
+export async function fetchAnidbEpisodes(
+  showId: string,
+  signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
+): Promise<readonly AnidbEpisodeEntry[]> {
+  return (await fetchAnidbEpisodeCatalog(showId, signal, context)).episodes;
 }
 
 export async function fetchAnidbLanguages(
@@ -466,9 +844,17 @@ export async function fetchAnidbLanguages(
   if (cached) return cached;
 
   const url = `${ANIDB_BASE}/api/frontend/episode/${episodeId}/languages`;
-  const text = await anidbFetchText(url, { signal, context });
+  let text: string;
+  try {
+    text = await anidbFetchText(url, { signal, context });
+  } catch (error) {
+    // No languages row for this episode is a real answer, not a failure.
+    if (error instanceof AnidbHttpStatusError && error.status === 404) return [];
+    throw error;
+  }
   let parsed: { languages?: readonly Record<string, unknown>[] };
   try {
+    // SAFETY: JSON.parse resolves to the parsed document; the languages field is shape-checked below.
     parsed = JSON.parse(text) as { languages?: readonly Record<string, unknown>[] };
   } catch {
     return [];
@@ -506,8 +892,10 @@ export async function collectAnidbAvailableAudioModes(
 ): Promise<readonly ("sub" | "dub")[]> {
   const languages = await fetchAnidbLanguages(episodeId, signal, context);
   const modes: ("sub" | "dub")[] = [];
-  if (languages.some((entry) => entry.code === "jpn")) modes.push("sub");
-  if (languages.some((entry) => entry.code === "eng")) modes.push("dub");
+  // Exact `jpn`/`eng` only — `kor`/future codes are runtime evidence, not a
+  // third audio mode. Case-insensitive to match `languageEntryForMode`.
+  if (languages.some((entry) => entry.code.toLowerCase() === "jpn")) modes.push("sub");
+  if (languages.some((entry) => entry.code.toLowerCase() === "eng")) modes.push("dub");
   return modes;
 }
 
@@ -516,51 +904,68 @@ export async function fetchAnidbMasterUrl(
   signal?: AbortSignal,
   context?: ProviderRuntimeContext,
 ): Promise<string | null> {
+  // The embed_url is scraped from upstream JSON — provider-controlled text.
+  // Without the target gate a hostile or compromised payload could name a
+  // LAN/loopback/`file:` target and the fetch+curl fallback would go there.
+  if (blockedLiteralTargetReason(embedUrl) !== null) return null;
   const page = await anidbFetchText(embedUrl, { signal, context });
   const match = /file:\s*'([^']+)'/.exec(page);
   return match?.[1]?.trim() || null;
 }
 
 /**
- * Resolves HLS ladder stream links for a single AniDB language embed.
+ * Resolves HLS ladder stream links for a single AniDB language embed. When the
+ * master host answered with a dead status, `deadHostStatus` carries it so the
+ * caller can classify the empty result honestly instead of guessing.
  */
 export async function resolveAnidbLanguageStreams(options: {
   readonly context?: ProviderRuntimeContext;
   readonly language: AnidbLanguageEntry;
   readonly audioMode: "sub" | "dub";
   readonly signal?: AbortSignal;
-}): Promise<readonly AnidbStreamLink[]> {
+}): Promise<{
+  readonly links: readonly AnidbStreamLink[];
+  readonly deadHostStatus?: number;
+}> {
+  const empty = (deadHostStatus?: number) => ({ links: [] as const, deadHostStatus });
   const masterUrl = await fetchAnidbMasterUrl(
     options.language.embedUrl,
     options.signal,
     options.context,
   );
-  if (!masterUrl) return [];
+  if (!masterUrl) return empty();
 
-  const variants = await expandHlsMasterPlaylist({
-    fetch: async (url: string, init?: RequestInit) => {
-      const text = await anidbFetchText(url, {
+  const inventory = await expandHlsMasterInventory({
+    resolvesLocally: options.context?.fetch?.resolvesLocally,
+    // `fetchProbeTarget` passes `redirect: "manual"` and walks each hop itself
+    // so the per-hop blocklist applies — routing that through `anidbFetchText`
+    // (curl `-sL`) would follow redirects inside curl and bypass it entirely.
+    fetch: (url: string, init?: RequestInit) =>
+      anidbFetchRedirectAware(url, {
         signal: (init?.signal instanceof AbortSignal ? init.signal : undefined) ?? options.signal,
         context: options.context,
-      });
-      return new Response(text, {
-        status: 200,
-        headers: { "content-type": "application/vnd.apple.mpegurl" },
-      });
-    },
+      }),
     masterUrl,
     headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
     signal: options.signal,
   });
+  // Dead master host → drop the `auto` fallback row that would point mpv at
+  // the same dead URL.
+  const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
 
-  return variants.map((variant) => ({
-    url: variant.url,
-    quality: variant.qualityLabel,
-    audioMode: options.audioMode,
-    referer: ANIDB_REFERER,
-    protocol: "hls" as const,
-    container: "m3u8" as const,
-  }));
+  return {
+    links: variants.map((variant) => ({
+      url: variant.url,
+      quality: variant.qualityLabel,
+      audioMode: options.audioMode,
+      referer: ANIDB_REFERER,
+      protocol: "hls" as const,
+      container: "m3u8" as const,
+    })),
+    deadHostStatus: isHlsDeadHostStatus(inventory.probe.httpStatus)
+      ? inventory.probe.httpStatus
+      : undefined,
+  };
 }
 
 /**
@@ -694,34 +1099,47 @@ async function settleAnidbLanguage(options: {
   readonly callerSignal?: AbortSignal;
 }): Promise<AnidbModeOutcome> {
   try {
-    const links = await resolveAnidbLanguageStreams({
+    const resolution = await resolveAnidbLanguageStreams({
       context: options.context,
       language: options.language,
       audioMode: options.mode,
       signal: options.signal,
     });
     if (options.callerSignal?.aborted) throw options.callerSignal.reason;
+    const { links, deadHostStatus } = resolution;
     if (links.length > 0) return { mode: options.mode, status: "resolved", links };
+    // `not-found`/`provider-unavailable`, not `parse-failed`: an empty link
+    // list means the source exposed nothing playable (dead-host drop
+    // included) — nothing failed to decode. A gone route is terminal; a 5xx
+    // maintenance window may heal, so only it keeps a retry budget.
+    const upstreamDown = deadHostStatus !== undefined && deadHostStatus >= 500;
     return {
       mode: options.mode,
       status: "failed",
       links: [],
       failure: {
-        code: "parse-failed",
-        message: `AniDB ${options.mode} source did not expose a playable HLS stream`,
-        retryable: true,
+        code: upstreamDown ? "provider-unavailable" : "not-found",
+        message:
+          deadHostStatus !== undefined
+            ? `AniDB ${options.mode} master host answered HTTP ${deadHostStatus} — dead upstream`
+            : `AniDB ${options.mode} source did not expose a playable HLS stream`,
+        retryable: upstreamDown,
       },
     };
   } catch (error) {
     if (options.callerSignal?.aborted) throw error;
+    // A typed HTTP status (a missing playlist 404s permanently) keeps its own
+    // classification — flattening it to retryable network-error would spend a
+    // second resolve budget on a dead id.
+    const statusError = error instanceof AnidbHttpStatusError ? error : undefined;
     return {
       mode: options.mode,
       status: "failed",
       links: [],
       failure: {
-        code: "network-error",
+        code: statusError ? httpStatusToResolveErrorCode(statusError.status) : "network-error",
         message: error instanceof Error ? error.message : `AniDB ${options.mode} source failed`,
-        retryable: true,
+        retryable: statusError ? httpStatusIsRetryable(statusError.status) : true,
       },
     };
   }

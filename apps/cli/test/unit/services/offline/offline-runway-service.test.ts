@@ -62,10 +62,12 @@ function createService(overrides: Record<string, unknown> = {}) {
       estimateAvailableEpisodeSlots: async () => 1,
       enqueue: async (input: unknown) => {
         enqueued.push(input);
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         return {} as never;
       },
       kickQueue: () => {},
     },
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     scheduler: { enqueue: () => {}, drain: async () => ({}) as never },
     ...overrides,
   } as never);
@@ -155,6 +157,7 @@ describe("OfflineRunwayService", () => {
         estimateAvailableEpisodeSlots: async () => 2,
         enqueue: async (input: unknown) => {
           enqueued.push(input);
+          // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
           return {} as never;
         },
         kickQueue: () => {},

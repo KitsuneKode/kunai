@@ -202,8 +202,8 @@ export async function runSetupWizard({
       // does not have (#232). The post-connect step below flips it on success.
       sync: {
         ...current.sync,
-        anilist: { ...current.sync.anilist, ...(prefs.connectAniList ? {} : { enabled: false }) },
-        tmdb: { ...current.sync.tmdb, ...(prefs.connectTmdb ? {} : { enabled: false }) },
+        anilist: { ...current.sync.anilist, ...(prefs.connectAniList ? null : { enabled: false }) },
+        tmdb: { ...current.sync.tmdb, ...(prefs.connectTmdb ? null : { enabled: false }) },
       },
       ...analyticsPatch,
       // Every lane is written from its own answer. Two earlier shapes were both

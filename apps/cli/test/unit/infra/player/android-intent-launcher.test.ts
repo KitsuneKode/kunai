@@ -10,6 +10,8 @@ import {
 const URL = "https://media.example/episode.m3u8?token=secret&title=one%20two";
 
 function output(text: string): ReadableStream<Uint8Array> {
+  // SAFETY: Bun's Response.body is a ReadableStream<Uint8Array>; the cast only
+  // names the element type lib.dom leaves unparameterized.
   return new Response(text).body as ReadableStream<Uint8Array>;
 }
 

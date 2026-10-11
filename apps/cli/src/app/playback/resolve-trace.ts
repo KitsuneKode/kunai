@@ -36,14 +36,14 @@ export function createResolveTraceStub({
           airDate: episode.airDate,
         }
       : undefined,
-    selectedProviderId: providerId as ProviderId,
+    selectedProviderId: providerId,
     cacheHit: false,
     steps: [
       {
         at: startedAtIso,
         stage: "provider",
         message: "Provider resolution started",
-        providerId: providerId as ProviderId,
+        providerId: providerId,
       },
     ],
     failures: [],

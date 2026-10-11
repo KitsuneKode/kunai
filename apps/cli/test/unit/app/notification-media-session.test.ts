@@ -70,6 +70,7 @@ describe("notification-media-session", () => {
   test("applyMediaItemSessionRouting uses provider hints when no title preference exists", () => {
     const { container, dispatches } = createRoutingContainer();
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     applyMediaItemSessionRouting(container as never, {
       ...seriesItem,
       providerHints: [{ providerId: "vidking" }],
@@ -87,6 +88,7 @@ describe("notification-media-session", () => {
   test("applyMediaItemSessionRouting switches to anime mode for anime items", () => {
     const { container, dispatches } = createRoutingContainer();
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     applyMediaItemSessionRouting(container as never, {
       mediaKind: "anime",
       titleId: "mal:1",
@@ -105,6 +107,7 @@ describe("notification-media-session", () => {
   test("applyMediaItemSessionRouting switches video items into the YouTube lane", () => {
     const { container, dispatches } = createRoutingContainer();
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     applyMediaItemSessionRouting(container as never, {
       mediaKind: "video",
       titleId: "youtube:abc123",

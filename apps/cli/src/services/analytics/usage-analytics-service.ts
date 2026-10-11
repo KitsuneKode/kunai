@@ -5,6 +5,7 @@ import {
   resolveConsentState,
   type ConsentEnv,
 } from "@/domain/analytics/consent-policy";
+import { dbgErr } from "@/logger";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import { ensureInstallId, installIdDigest } from "./install-id";
@@ -199,28 +200,39 @@ export class UsageAnalyticsService {
     }
     if (!canSend(state)) return { kind: "quiet" };
 
-    this.pingInBackground();
+    this.pingInBackground(options);
     return { kind: "pinged" };
   }
 
   /** Fire-and-forget; never blocks startup/playback. Failures are silent. */
-  pingInBackground(): void {
-    void this.maybePing().catch(() => {
+  pingInBackground(options: { readonly isInteractive: boolean }): void {
+    void this.maybePing(options).catch(() => {
       // Silent by design — analytics must never surface as a user-facing failure.
     });
   }
 
-  async maybePing(): Promise<void> {
+  /**
+   * `isInteractive` is the caller's, never assumed. This gate is deliberately a
+   * second one — `onSessionStart` has already refused a non-TTY session — but a
+   * second gate that hardcodes the permissive answer is not a gate. Non-TTY is a
+   * hard delivery bar even for an opted-in install (`consent-policy.ts`), so
+   * re-deriving it as `true` here would make the next caller of this method a
+   * contract breach rather than a bug.
+   */
+  async maybePing(options: { readonly isInteractive: boolean }): Promise<void> {
     const config = this.deps.config.getRaw();
     const state = resolveConsentState({
       env: this.env,
-      isInteractive: true,
+      isInteractive: options.isInteractive,
       stored: config.analytics,
     });
     if (!canSend(state)) return;
 
     const endpoint = this.deps.endpoint.trim();
     if (!endpoint) return;
+    // Second gate, not a duplicate of `resolveAnalyticsEndpoint`: the endpoint
+    // is injected, so nothing else guarantees what arrives here.
+    if (!isTransportSafeAnalyticsEndpoint(endpoint)) return;
 
     const now = this.now();
     if (
@@ -245,6 +257,15 @@ export class UsageAnalyticsService {
 
     const outcome = await this.send(endpoint, payload);
 
+    // Consent and rotation can change while the request is in flight, including
+    // through Settings/setup writers outside this service. Compare the original
+    // stored id (which ensureInstallId may have repaired), not the payload id.
+    const current = this.deps.config.getRaw();
+    if (current.analytics !== "enabled" || current.installId !== config.installId) return;
+
+    // ConfigServiceImpl.update mutates synchronously before its promise resolves:
+    // there is no yield between this guard and the mutation. save reads the latest
+    // config at flush, so a later disable/rotation also wins across the await below.
     // Success and permanent rejection both consume the 24h cadence; only a
     // transient failure schedules a near-term retry.
     await this.deps.config.update(
@@ -268,6 +289,10 @@ export class UsageAnalyticsService {
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify(payload),
         signal: controller.signal,
+        // An https endpoint that 302s to http:// would carry the payload right
+        // back out in cleartext, so the scheme check above has to survive the
+        // hop. Refusing to follow one at all is simpler than re-validating each.
+        redirect: "error",
       });
       return response.status >= 500 ? "retry" : "permanent";
     } catch {
@@ -279,13 +304,62 @@ export class UsageAnalyticsService {
   }
 }
 
+/**
+ * Loopback hosts allowed over cleartext http, so a self-hoster can develop
+ * against `apps/analytics-ingest` locally. Same list, same reason as
+ * `normalizeRelayBaseUrl` in `packages/relay`.
+ */
+const LOOPBACK_ANALYTICS_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+/**
+ * https only, plus the loopback exception above.
+ *
+ * The payload carries `sha256(installId)` with version, OS, and architecture.
+ * Over cleartext http anything on the path reads it and can follow one install
+ * from day to day — the digest exists so no *endpoint* holds the raw id, and
+ * that is worth little if the wire is readable.
+ */
+export function isTransportSafeAnalyticsEndpoint(endpoint: string): boolean {
+  const trimmed = endpoint.trim();
+  if (!trimmed) return false;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === "https:") return true;
+    return url.protocol === "http:" && LOOPBACK_ANALYTICS_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Where this install would ping: `KUNAI_ANALYTICS_URL`, then
+ * `analyticsEndpoint`, then the built-in default.
+ *
+ * An override that is not transport-safe returns `""`, which stops sending
+ * entirely — it is **not** redirected to the built-in default. Somebody who
+ * pointed their installs at their own ingest asked for their telemetry to go
+ * there and nowhere else; quietly sending it to Kunai's endpoint instead would
+ * be the same class of breach as enabling analytics for them. This is the
+ * posture `normalizeRelayBaseUrl` already takes: an unusable base URL turns the
+ * feature off rather than substituting one the user did not choose.
+ */
 export function resolveAnalyticsEndpoint(
   env: NodeJS.ProcessEnv = process.env,
   configured = "",
 ): string {
   const fromEnv = typeof env.KUNAI_ANALYTICS_URL === "string" ? env.KUNAI_ANALYTICS_URL.trim() : "";
-  if (fromEnv) return fromEnv;
+  if (fromEnv) return acceptOverride(fromEnv, "KUNAI_ANALYTICS_URL");
   const fromConfig = configured.trim();
-  if (fromConfig) return fromConfig;
+  if (fromConfig) return acceptOverride(fromConfig, "analyticsEndpoint");
   return DEFAULT_ANALYTICS_ENDPOINT;
+}
+
+function acceptOverride(endpoint: string, source: string): string {
+  if (isTransportSafeAnalyticsEndpoint(endpoint)) return endpoint;
+  dbgErr(
+    "analytics.endpoint",
+    `${source} must be https (loopback http allowed); analytics will not send`,
+    new Error("rejected non-https analytics endpoint"),
+  );
+  return "";
 }

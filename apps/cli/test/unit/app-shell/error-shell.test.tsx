@@ -5,6 +5,7 @@ import React, { act } from "react";
 
 import { CAPTURE_WIDTHS, captureFrame, render } from "../../harness/render-capture";
 import { frameWidth, renderedWidth } from "../../support/rendered-width";
+import { waitUntil } from "../../support/wait-until";
 
 /**
  * Let the petal-fall interval run for real, with its state updates flushed
@@ -60,7 +61,15 @@ describe("ErrorShell", () => {
   test("panel width never changes across the frames of the fall", async () => {
     const handle = render(<ErrorShell {...props} />, { columns: CAPTURE_WIDTHS.medium });
     try {
-      await advance(1300);
+      await waitUntil(
+        () => new Set(handle.frames.filter((frame) => frame.includes("Playback failed"))).size > 1,
+        {
+          label: "petal fall advanced past the mount frame",
+          tick: async (ms) => {
+            await advance(ms);
+          },
+        },
+      );
       const panelFrames = handle.frames.filter((frame) => frame.includes("Playback failed"));
 
       // Guard against the assertion below passing for the wrong reason.
@@ -82,6 +91,48 @@ describe("ErrorShell", () => {
         expect(renderedWidth(line)).toBeLessThanOrEqual(columns);
       }
     }
+  });
+
+  // #465: the cell buffer used to count code points as columns, so an
+  // unwrapped CJK row (waterfall entries are never wrapped) rendered nearly
+  // twice its allotted width and petal lanes measured where text ended in the
+  // wrong place.
+  test("an unwrapped CJK waterfall row stays inside the panel width", () => {
+    const frame = captureFrame(
+      <ErrorShell
+        {...props}
+        waterfall={{
+          title: "ソースの試行",
+          truncated: false,
+          rows: [
+            {
+              label: "ストリーム解決プロバイダーの直接接続を試行しています",
+              detail: "タイムアウトしました",
+              status: "failed" as const,
+            },
+          ],
+        }}
+      />,
+      { columns: CAPTURE_WIDTHS.narrow },
+    );
+    expect(frame).toContain("Playback failed");
+    for (const line of frame.split("\n")) {
+      expect(renderedWidth(line)).toBeLessThanOrEqual(CAPTURE_WIDTHS.narrow);
+    }
+  });
+
+  // #465: the sentence that says what failed used to clip mid-word with no
+  // ellipsis. It now wraps inside the panel, and only a message longer than
+  // the row budget shows the cut — with a visible marker.
+  test("a long failure message wraps instead of clipping silently", () => {
+    const message =
+      "The upstream provider rejected the signed playback URL because the session " +
+      "token expired; refresh it under /settings or pick another provider";
+    const frame = captureFrame(<ErrorShell message={message} onResolve={() => {}} />, {
+      columns: CAPTURE_WIDTHS.medium,
+    });
+    expect(frame).toContain("The upstream provider rejected");
+    expect(frame).toContain("pick another provider");
   });
 
   test("r triggers retry", () => {
@@ -120,7 +171,7 @@ describe("ErrorShell", () => {
       { columns: CAPTURE_WIDTHS.medium },
     );
     try {
-      await advance(900);
+      await advance(50);
       handle.stdin.enqueue("r");
       expect(retried).toBe(1);
     } finally {

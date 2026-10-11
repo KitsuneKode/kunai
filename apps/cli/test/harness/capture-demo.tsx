@@ -30,7 +30,7 @@ const base: PostPlayShellProps = {
   currentSeason: 4,
 };
 
-const states: ReadonlyArray<readonly [string, Partial<PostPlayShellProps>]> = [
+export const states: ReadonlyArray<readonly [string, Partial<PostPlayShellProps>]> = [
   ["mid-series", {}],
   ["stopped-early", { resumeLabel: "resume S04E07  ·  18:49" }],
   [
@@ -46,8 +46,17 @@ const states: ReadonlyArray<readonly [string, Partial<PostPlayShellProps>]> = [
   ["did-not-start", { postPlayState: { kind: "did-not-start" } as PostPlayState }],
 ];
 
-for (const [name, override] of states) {
-  await captureSurface(`post-play.${name}`, <PostPlayShell {...base} {...override} />);
+export function postPlayFixtures(): ReadonlyArray<readonly [string, React.ReactElement]> {
+  return states.map(([name, override]) => [
+    `post-play.${name}`,
+    <PostPlayShell key={name} {...base} {...override} />,
+  ]);
 }
-console.log(`captured ${states.length} post-play states`);
-process.exit(0);
+
+if (import.meta.main) {
+  for (const [name, node] of postPlayFixtures()) {
+    await captureSurface(name, node);
+  }
+  console.log(`captured ${states.length} post-play states`);
+  process.exit(0);
+}

@@ -15,6 +15,7 @@ import type {
   ProviderVariantCandidate,
   StreamCandidate,
 } from "@kunai/types";
+import { ProviderHttpError } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
@@ -32,14 +33,19 @@ import {
   formatAnimeSourceArchetype,
   formatAnimeSourceDetail,
 } from "../shared/anime-source-presentation";
+import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import {
   ANIDB_REFERER,
   ANIDB_USER_AGENT,
+  AnidbBlockedError,
+  AnidbHttpStatusError,
   anidbNumericId,
   chooseAnidbSearchMatch,
+  fetchAnidbEpisodeCatalog,
+  type AnidbEpisodeCatalog,
   fetchAnidbEpisodes,
   fetchAnidbExternalIds,
   fetchAnidbOfficialEpisodeMetadata,
@@ -57,13 +63,16 @@ import { routeAnidbSeason } from "./season-routing";
 
 export { ANIDB_PROVIDER_ID };
 export {
+  AnidbHttpStatusError,
   anidbNumericId,
   chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
   collectAnidbAvailableAudioModes,
+  fetchAnidbEpisodeCatalog,
   fetchAnidbExternalIds,
   fetchAnidbOfficialEpisodeMetadata,
   fetchAnidbMalId,
+  isAnidbMaintenanceText,
   looksLikeAnidbShowId,
   parseAnidbBrowseHtml,
   parseAnidbSeasonEvidence,
@@ -72,6 +81,7 @@ export {
   runAnidbCurlWithRetry,
   resolveAnidbEpisodeStreams,
   searchAnidb,
+  type AnidbEpisodeCatalog,
   type AnidbSearchResult,
   type AnidbSeasonEvidence,
 } from "./client";
@@ -98,7 +108,49 @@ async function resolveAnidbShow(
   context?: ProviderRuntimeContext,
 ): Promise<AnidbSearchResult | null> {
   const direct = directAnidbShowFromInput(input);
-  if (direct) return direct;
+  if (direct) {
+    // A persisted `providerNativeIds.anidb` can point at a reindexed slug
+    // (Solo Leveling 19413 → 4883), which 404s permanently. Re-search so a
+    // history entry does not strand — but only on evidence that the id is
+    // actually gone.
+    const query = input.title.title?.trim() ?? "";
+    if (!query) return direct;
+
+    let catalog: AnidbEpisodeCatalog;
+    try {
+      catalog = await fetchAnidbEpisodeCatalog(direct.id, signal, context);
+    } catch (error) {
+      // The caller cancelling is a decision, not an anidb condition: returning
+      // a result nobody awaits hides it. An internal timeout is different and
+      // stays below, where keeping the id is right.
+      if (signal?.aborted === true) throw error;
+      // Cloudflare or a transient fault says nothing about whether the id is
+      // valid, so keep it and let the caller surface something retryable.
+      return direct;
+    }
+
+    // Only a 404 means the id is gone. An empty-but-present catalogue is a
+    // season that exists with no episodes listed yet; re-searching that would
+    // trade a correct id for whatever the browse page happens to rank first.
+    if (!catalog.missing) return direct;
+
+    let searched: readonly AnidbSearchResult[];
+    try {
+      searched = await searchAnidb(query, signal, context);
+    } catch (error) {
+      // Same rule as the catalog probe above: a caller cancel is a decision,
+      // while a Cloudflare/HTTP fault says nothing about whether the id is
+      // valid — keep it and let the caller surface something retryable.
+      if (signal?.aborted === true) throw error;
+      return direct;
+    }
+    return (
+      chooseAnidbSearchMatch(query, searched, { requireTitleEvidence: true }) ??
+      // No titled match: the dead id is more honest than a guess. Resolve
+      // surfaces `catalog-unavailable` from here.
+      direct
+    );
+  }
 
   const query = input.title.title?.trim() ?? "";
   if (!query) return null;
@@ -246,34 +298,62 @@ export const anidbProviderModule: CoreProviderModule = {
   providerId: ANIDB_PROVIDER_ID,
   manifest: anidbManifest,
 
-  async search(input, context) {
-    const results = await searchAnidb(input.query, context.signal, context);
-    const mapped: ProviderSearchResult[] = [];
-    for (const result of results.slice(0, 40)) {
-      mapped.push({
-        id: result.id,
-        type: result.kind === "movie" ? "movie" : "series",
-        title: result.title,
-        metadataSource: "AniDB",
-        ...(result.posterUrl
-          ? {
-              posterPath: result.posterUrl,
-              artwork: { posterUrl: result.posterUrl, thumbnailUrl: result.posterUrl },
-            }
-          : {}),
-        ...(result.rating !== undefined ? { rating: result.rating } : {}),
-        externalIds: {
-          providerNativeIds: { [ANIDB_PROVIDER_ID]: result.id },
-        },
-      });
+  async search(input, context): Promise<readonly ProviderSearchResult[] | null> {
+    try {
+      const results = await searchAnidb(input.query, context.signal, context);
+      const mapped: ProviderSearchResult[] = [];
+      for (const result of results.slice(0, 40)) {
+        mapped.push({
+          id: result.id,
+          type: result.kind === "movie" ? "movie" : "series",
+          title: result.title,
+          metadataSource: "AniDB",
+          ...(result.posterUrl
+            ? {
+                posterPath: result.posterUrl,
+                artwork: { posterUrl: result.posterUrl, thumbnailUrl: result.posterUrl },
+              }
+            : null),
+          ...(result.rating !== undefined ? { rating: result.rating } : null),
+          externalIds: {
+            providerNativeIds: { [ANIDB_PROVIDER_ID]: result.id },
+          },
+        });
+      }
+      return mapped;
+    } catch (error) {
+      if (context.signal?.aborted) throw error;
+      return null;
     }
-    return mapped;
   },
 
   async listEpisodes(input, context) {
-    const showId = (await resolveAnidbShow(input, context.signal, context))?.id;
+    let baseShow: Awaited<ReturnType<typeof resolveAnidbShow>>;
+    try {
+      baseShow = await resolveAnidbShow(input, context.signal, context);
+    } catch (error) {
+      // `searchAnidb` now reports HTTP status, so a browse outage throws here.
+      // Null is the contract's transport-failure channel (same as `search`) —
+      // unreachable provider, not "this title has no episodes". A cancelled
+      // caller is a decision and keeps propagating.
+      if (context.signal?.aborted === true) throw error;
+      return null;
+    }
+    const showId = baseShow?.id;
     if (!showId) return null;
-    const episodes = await fetchAnidbEpisodes(showId, context.signal, context);
+    let catalog: Awaited<ReturnType<typeof fetchAnidbEpisodeCatalog>>;
+    try {
+      catalog = await fetchAnidbEpisodeCatalog(showId, context.signal, context);
+    } catch (error) {
+      // Same null contract as the resolve leg above: transport failures are
+      // retryable, a cancelled caller keeps propagating.
+      if (context.signal?.aborted === true) throw error;
+      return null;
+    }
+    // A re-searched id that still 404s is gone for this resolve — null keeps
+    // it retryable; a present-but-empty catalog is the real empty list.
+    if (catalog.missing) return null;
+    const episodes = catalog.episodes;
     if (episodes.length === 0) return [];
 
     const suppliedMalId = input.title.externalIds?.malId ?? input.title.malId;
@@ -311,21 +391,19 @@ export const anidbProviderModule: CoreProviderModule = {
       mergeExternalEpisodeMetadataInto(metadata, externalMetadata);
     }
 
-    const baseEpisodes = episodes.map(
-      (episode): ProviderEpisodeOption => ({
-        index: episode.number,
-        label: `Episode ${episode.number}`,
-        detail: episode.filler ? "Filler" : undefined,
-        totalEpisodeCount: episodes.length,
-        // Series poster as the still fallback: an empty art slot reads as a
-        // broken row, and AniDB has no per-episode image of its own.
-        artwork: pageIds?.posterUrl ? { thumbnailUrl: pageIds.posterUrl } : undefined,
-        externalIds: {
-          anilistId,
-          malId: malId ? String(malId) : undefined,
-        },
-      }),
-    );
+    const baseEpisodes = episodes.map((episode): ProviderEpisodeOption => ({
+      index: episode.number,
+      label: `Episode ${episode.number}`,
+      detail: episode.filler ? "Filler" : undefined,
+      totalEpisodeCount: episodes.length,
+      // Series poster as the still fallback: an empty art slot reads as a
+      // broken row, and AniDB has no per-episode image of its own.
+      artwork: pageIds?.posterUrl ? { thumbnailUrl: pageIds.posterUrl } : undefined,
+      externalIds: {
+        anilistId,
+        malId: malId ? String(malId) : undefined,
+      },
+    }));
     return metadata.size > 0
       ? enrichEpisodeOptionsWithAnimeMetadata(baseEpisodes, metadata)
       : baseEpisodes;
@@ -347,7 +425,20 @@ export const anidbProviderModule: CoreProviderModule = {
       });
     }
 
-    const baseShow = await resolveAnidbShow(input, context.signal, context);
+    let baseShow: Awaited<ReturnType<typeof resolveAnidbShow>>;
+    try {
+      baseShow = await resolveAnidbShow(input, context.signal, context);
+    } catch (error) {
+      // Same rule as listEpisodes: a browse outage is a retryable transport
+      // failure, not an exhausted search — and a caller cancel is a decision
+      // that keeps propagating rather than a provider failure.
+      if (context.signal?.aborted === true) throw error;
+      return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
+        code: "provider-unavailable",
+        message: `AniDB browse unreachable: ${error instanceof Error ? error.message : String(error)}`,
+        retryable: true,
+      });
+    }
     if (!baseShow) {
       return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
         code: "unsupported-title",
@@ -481,6 +572,54 @@ export const anidbProviderModule: CoreProviderModule = {
         preferredStreamId: input.preferredStreamId,
         favoriteSourceNames: input.favoriteSourceNames,
       });
+      // Prove the selected stream plays before reporting success. AniDB has no
+      // source cycle — every candidate is a rung of the same CDN ladder — so a
+      // refusal here means the ladder is gone and provider fallback should take
+      // over, rather than mpv being handed a stream that cannot open.
+      const gate = await verifyCandidateStream({
+        stream: selection.selected,
+        context,
+        signal: context.signal,
+      });
+      // Abort is not a stream verdict. The gate treats a cut-short probe as
+      // inconclusive and *accepts* it (timeout is not proof the CDN is dead),
+      // so checking only `!gate.accepted` lets a cancelled resolve report
+      // success with an unproven stream. Cancelled takes precedence.
+      if (context.signal?.aborted) {
+        return createExhaustedResult(
+          input,
+          context,
+          ANIDB_PROVIDER_ID,
+          {
+            code: "cancelled",
+            message: "AniDB resolution was cancelled",
+            retryable: false,
+          },
+          {
+            cachePolicy,
+            events,
+            failures,
+            startedAt,
+          },
+        );
+      }
+      if (!gate.accepted) {
+        const failure: ProviderFailure = {
+          providerId: ANIDB_PROVIDER_ID,
+          code: "not-found",
+          message: `AniDB selected stream is unreachable (${gate.reason})`,
+          retryable: true,
+          at: context.now(),
+        };
+        failures.push(failure);
+        return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, failure, {
+          cachePolicy,
+          events,
+          failures,
+          startedAt,
+        });
+      }
+
       const sources = finalizeCycleSourceInventory({
         sources: buildAnidbSourceInventory(resolvedModes, audioMode, cachePolicy),
         attempts: [],
@@ -568,11 +707,30 @@ export const anidbProviderModule: CoreProviderModule = {
         );
       }
       const message = error instanceof Error ? error.message : String(error);
+      // A Cloudflare challenge is not a network fault, and no retry clears it.
+      // The engine reads `retryable` to decide whether to buy this provider a
+      // second full attempt — 12s each under the `balanced` default — before
+      // any fallback is considered, so an unconditional `true` here spends half
+      // the resolve budget on a request that cannot succeed. The message test
+      // stays as a floor for a challenge that arrives from a path that has not
+      // been converted to the typed error yet. A blocked verdict is only
+      // produced after the inner Bun/fetch → curl sequence is spent, so a
+      // second engine attempt cannot succeed — the same
+      // "retryable: !captchaBlocked" policy allmanga already states.
+      const cloudflare = /cloudflare/i.test(message);
+      const blocked = error instanceof AnidbBlockedError || cloudflare;
+      // A status-bearing error carries its own verdict — a bare 403 whose body
+      // never said "cloudflare" is still blocked, and a 429 is a rate limit,
+      // not a retryable network blip (#458).
+      const structured =
+        error instanceof AnidbHttpStatusError || error instanceof ProviderHttpError
+          ? error
+          : undefined;
       const failure: ProviderFailure = {
         providerId: ANIDB_PROVIDER_ID,
-        code: /cloudflare/i.test(message) ? "blocked" : "network-error",
+        code: blocked ? "blocked" : (structured?.code ?? "network-error"),
         message,
-        retryable: true,
+        retryable: blocked ? false : (structured?.retryable ?? true),
         at: context.now(),
       };
       failures.push(failure);

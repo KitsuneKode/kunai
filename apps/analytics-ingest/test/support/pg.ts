@@ -25,8 +25,25 @@ export const SCRATCH_DAYS = {
   main: "1999-02-01",
 } as const;
 
-export function testInstallId(n: number): string {
-  return `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+/**
+ * Suite-scoped install ids.
+ *
+ * These files share one scratch database. `install_lifetime.first_seen` is
+ * write-once, so a hardening ping of install 1 on May and a lifecycle ping of
+ * install 1 on February used to be the same HMAC: February's lifetime count
+ * dropped the three May rows and failed on main as Expected 8, Received 5.
+ * Prefixing the last UUID group keeps each suite's n=1 a different install.
+ */
+export type AnalyticsTestSuite = "lifecycle" | "hardening" | "store";
+
+const SUITE_PREFIX: Record<AnalyticsTestSuite, string> = {
+  lifecycle: "00",
+  hardening: "10",
+  store: "20",
+};
+
+export function testInstallId(n: number, suite: AnalyticsTestSuite): string {
+  return `00000000-0000-4000-8000-${SUITE_PREFIX[suite]}${String(n).padStart(10, "0")}`;
 }
 
 export async function resetAnalyticsTables(): Promise<void> {

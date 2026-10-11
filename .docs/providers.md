@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-27"
+lastReviewed: "2026-10-11"
 ---
 
 # Kunai — Provider Guide
@@ -14,6 +14,31 @@ For new providers and major provider rewrites, start with the intake workflow in
 For concrete example patterns and demo provider shapes, use [.docs/provider-examples.md](./provider-examples.md).
 
 For **auto-skip timing** (IntroDB + AniSkip), **MAL / catalog identity** for anime, and **templates for wiring new anime providers** into that pipeline, read [.docs/playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md).
+
+## Published status observations
+
+The scheduled `.github/workflows/provider-status-sweep.yml` writes the configured
+live probe results to `apps/docs/lib/generated-provider-status.json`. Its current
+eight-probe roster is narrower than the desktop production registry; an omitted
+provider has no measured row. Runner-region results do not prove every user's
+network, title or playback request.
+
+`.github/scripts/publish-provider-status.sh` snapshots that output and publishes
+only the status artifact from a fresh detached worktree at the dispatch branch's
+current remote head. Probe/runtime edits are never committed, reset, stashed or
+rebased. Commit and push hooks are disabled only for those bot commands. A
+concurrent branch advance triggers up to three clean attempts; a newer remote
+observation wins over an older candidate. Identical observations are idempotent.
+
+`generatedAt` is the actual sweep observation time and advances after a new
+sweep even when every provider stays healthy. A daily freshness update is
+meaningful evidence; do not suppress it as timing noise. This script fixes
+publication plumbing; it does not run a new sweep or manufacture a healthy row.
+
+Local Git regression tests exercise dirty-checkout preservation, one-artifact
+publication, branch choice, fresh timestamps, idempotency, stale-result
+protection, concurrent remote advancement and hook isolation. Windows skips
+these Bash workflow mechanics; the publication job runs on Ubuntu.
 
 ## Direction: Provider SDK (Implemented)
 
@@ -31,7 +56,7 @@ apps/cli shell
 
 - `@kunai/types` — canonical TypeScript contracts: `ProviderModule`, `ProviderResolveResult`, `StreamCandidate`, `SubtitleCandidate`, `ProviderFailure`, `ResolveTrace`
 - `@kunai/core` — `ProviderEngine` (orchestration, retry, timeout, fallback), `CoreProviderManifest`, `defineProviderManifest`, `resolveWithFallback`, cache-policy helpers
-- `@kunai/providers` — supported direct-provider modules (`videasy`, `vidlink`, `rivestream`, `allmanga`, `miruro`) plus research/candidate modules kept out of the production resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
+- `@kunai/providers` — supported direct-provider modules (`videasy`, `vidlink`, `rivestream`, `vidrock`, `movy`, `allmanga`, `anidb`, `hianime`, `animegg`, `kickassanime`, `miruro`, `youtube`) plus research/candidate modules kept out of the production resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
 - `@kunai/storage` — SQLite cache, history, health, source inventory, trace persistence
 - `@kunai/schemas` — Zod validation schemas for all shared types
 - `apps/cli` — Ink UX, mpv IPC, `ProviderRegistry` (engine compat wrapper), `provider-result-adapter`/`stream-request-adapter` (type conversion), playback orchestration
@@ -152,7 +177,11 @@ Providers share a persisted endpoint-health gate on `ProviderRuntimeContext.endp
 - **server-error** (persistent 5xx): quarantine ~1h, triggered by failures across ≥2 distinct titles **or** ≥3 consecutive failures on a single title. The single-title trigger exists because normal viewing stays on one title, so the distinct-title rule alone never fired in practice. A success clears the streak.
 - **transient** (timeout/network): in-memory cooldown only; never persisted.
 
-`runProviderCycle` skips quarantined candidates (`source:skipped`, reason `quarantined`) and records failures/successes by class. Videasy seeds deprecated routes (`1movies`, Sanji) into the gate; runtime quarantine can still learn new dead endpoints. A pinned title source is cleared when its endpoint is quarantined. Resolve-gate stream probes allow slow CDN timeouts (unverified) but fail on definitive 4xx/5xx; playback preflight re-resolves the same provider once with `intent: "refresh"` before cross-provider fallback.
+`runProviderCycle` skips quarantined candidates (`source:skipped`, reason `quarantined`) and records failures/successes by class. Videasy seeds deprecated routes (`1movies`, Sanji) into the gate; runtime quarantine can still learn new dead endpoints. VidLink participates per-endpoint across its two hard dependencies (`vidlink.pro` API and `enc-dec.app`): classified non-OK statuses feed the gate (429/403/timeout/network → transient, persistent 5xx → server-error), while 404 stays title-shaped and never records health evidence. AllManga keys its cycle candidates on the stream's own source host (`metadata.sourceHost`), so a mirror host that refuses the resolve-gate probe (`endpointScoped`) is quarantined once instead of being re-probed on every resolve; a host that merely lacks the title stays in the pool. A pinned title source is cleared when its endpoint is quarantined. Resolve-gate stream probes allow slow CDN timeouts (unverified) but fail on definitive 4xx/5xx; playback preflight re-resolves the same provider once with `intent: "refresh"` before cross-provider fallback.
+
+The same module DNS-checks probe answers only on the platform `fetch` captured
+at load. A stubbed or injected `fetchImpl` owns its destinations, so unit tests
+that replace `globalThis.fetch` do not depend on how `example.com` resolves.
 
 **Every 4xx is definitive at the resolve gate.** `isDefinitiveHttpStatus` in
 `packages/providers/src/shared/stream-reachability.ts` treats the whole 4xx range
@@ -169,6 +198,55 @@ answers, so one dead or hotlink-protected URL no longer condemns its working
 siblings. It stops immediately when `context.signal` aborts — a cancelled resolve
 keeps its selection rather than recording a stream failure.
 
+### Persistent provider cache (`context.cache`)
+
+`ProviderCachePort` (SQLite-backed) survives process restarts — a cold Miruro
+resolve was measured at 12s where a warm one is 0ms, so stable data belongs
+here. The rule is _what may be persisted_, not whether to cache:
+
+- **Persist:** episode lists/catalogs, id mappings (AniDB `malId`/`anilistId`/
+  `officialAid`, official episode titles), manifest _structure_ — data that is
+  effectively immutable for its TTL class (`episode-list`, `provider-metadata`,
+  `catalog-static`).
+- **Never persist:** resolved stream URLs, signed cookies/headers, or any value
+  whose validity is tied to a session or a signature. Those stay in memory
+  (or at `session`/`stream-manifest` TTL at most). VidLink's `enc-dec` output
+  is the edge case that _is_ allowed: it is a deterministic function of the
+  tmdb id, not a signed artifact, so it persists inside its own 30-minute
+  window — and a port hit must not re-write the entry or it would outlive the
+  window indefinitely.
+- Miss-or-expired must degrade to a refetch, and a port failure degrades to
+  `null`/no-op — the provider never fails because the cache did.
+- Namespace keys `<provider>:<purpose>` (`anidb:external-ids`,
+  `hianime:episodes`, `vidlink:enc-dec`) so `/reset-provider-health`-style
+  sweeps can scope them.
+
+**Stream verification has two boundaries.** Production direct providers route
+resolve-time candidate checks through the shared `verifyCandidateStream` gate,
+directly or through its candidate walk. Coverage derives the adapter keys from
+`loadProductionProviderModules()` rather than maintaining an eight-provider
+list beside a twelve-provider registry. YouTube's watch-URL/ytdl runtime and
+Miruro's measured probe-budget limitation have explicit exemptions in
+`packages/providers/test/provider-resolve-gate-coverage.test.ts`; an exemption
+is not direct-media verification.
+
+Movy, HiAnime and AnimeGG check the chosen stream first and walk at most three
+ranked candidates. Definitively refused hosts are removed from returned streams
+and variant inventories. KickassAnime checks its single master, including its
+media playlist/segment through the shared HLS probe, and cannot report success
+for a definitively missing master. Cancellation during the probe returns a
+cancelled result without a provider-success event. The candidate's own headers
+are passed to its probe, not reconstructed separately. Slow/indeterminate probes
+retain the shared unverified policy; this does not attest that playback will work.
+
+The playback preflight is the universal boundary: any stream
+that is not provider-attested inside `playbackTrustMs` is probed at handoff, and
+the probe races mpv's `loadfile`, so it adds no wait — a definitive dead URL
+fails fast only when mpv itself also fails. Stream age alone used to waive that
+probe for the first five minutes (`recent-resolve`), which let autoplay
+replacements hand mpv URLs no code had ever fetched; the waiver now requires
+attestation (issue #459).
+
 **VidLink needs the browser playback environment (2026-08-24).** Without an
 `x-playback-environment` header, `vidlink.pro/api/b` answers with
 `deliveryType: "file"` — direct MP4s on `bcdn.hakunaymatata.com` flagged
@@ -184,6 +262,10 @@ so a cached resolve older than an hour will 403 on replay. And mpv only has
 dedicated options for referer and user-agent — everything else a provider
 attaches has to ride `http-header-fields`, which is why
 `normalizeStreamHttpHeaders` forwards unknown headers instead of dropping them.
+Those fields (and `ytdl-raw-options`, which can carry a PO token) never ride
+mpv argv: `writeMpvSensitiveConf` writes them to an owner-only `--include`
+conf next to the IPC socket, deleted once the endpoint proves mpv's startup
+parse is done — argv is world-readable via `/proc/<pid>/cmdline`.
 
 **Per-candidate timeouts are clamped to the attempt budget.**
 `providerCycleCandidateTimeoutMs` (in `packages/core/src/provider-attempt-budget.ts`)
@@ -198,6 +280,13 @@ Provider priority is user-configurable:
 
 - `provider` / `animeProvider` remain the default provider for a new session mode.
 - `providerPriority` controls movie/series fallback and picker order.
+  The shipped default is `["rivestream", "vidrock", "videasy"]` behind the
+  `vidlink` lane lead: Rivestream first (eleven-service local cycle behind the
+  shared resolve gate), VidRock second (multi-lane AES-GCM payloads behind the
+  direct-stream gate), Videasy last and still loaded (session/turnstile-gated
+  with a rotted `videasy.to` domain — a working fallback, not a removal).
+  Unlisted providers (e.g. `movy`, still `candidate` status) stay reachable
+  after configured entries.
 - `animeProviderPriority` controls anime fallback and picker order.
 - Priority lists are applied when the provider engine is built and read again
   during playback resolve, so settings changes affect fallback order without a
@@ -267,8 +356,12 @@ Source inventory and language normalization:
   stream-to-source/variant projection.
 - Use `packages/providers/src/shared/hls-ladder.ts` (`expandHlsMasterPlaylist`) to
   expand lone HLS master playlists into ranked quality candidates for Tracks
-  `/quality`. Wired for Miruro masters, AllManga `master.m3u8` links, and Vidlink
-  playlists.
+  `/quality`. Wired for Miruro masters, AllManga `master.m3u8` links, Vidlink
+  playlists, HiAnime and AniDB ladders. The `auto` fallback row only exists for
+  a fetched body that is not a master playlist (or a master with no variants) —
+  HTTP statuses and transport failures throw `ProviderHttpError` instead, so a
+  dead HLS host fails its candidate rather than attesting a stream mpv cannot
+  open.
 - Use strict ISO language fields for public stream/subtitle language data.
   Provider labels such as `Vietsub`, `H-SUB`, `HindiCast`, `FlowCast`, or
   site-specific server names belong in evidence/metadata, not in primary
@@ -329,12 +422,12 @@ healthy instances.
 Third lane provider for standalone videos, Shorts, playlists, and channels.
 
 - **Search/browse:** Invidious primary with instance rotation; optional Piped fallback (`config.youtubeMetadata.pipedApiUrl`); tertiary `ytsearch:` via yt-dlp when both fail (a `type:short` query leads with yt-dlp instead, see below). Badges distinguish active live streams (`● LIVE`), premieres (`Upcoming`), archived streams (`Was Live`), Shorts, playlists, and channels.
-- Search results preserve a `contentShape` of `video`, `short`, `playlist`, or
+- Search results preserve a `resultKind` of `video`, `short`, `playlist`, or
   `channel`; `liveStatus` separately identifies `live`, `upcoming`, and
-  `post_live`. The browse UI labels these shapes before playback, so channels,
+  `post_live`. The browse UI labels these kinds before playback, so channels,
   playlists, Shorts, and live entries cannot be mistaken for ordinary videos.
-  Invidious forks that omit a shape/status signal are labelled conservatively.
-  Shape comes from the provider — `is_short` or a `/shorts/` URL — never from
+  Invidious forks that omit a kind/status signal are labelled conservatively.
+  Kind comes from the provider — `is_short` or a `/shorts/` URL — never from
   duration: YouTube raised the Shorts ceiling to three minutes in October 2024,
   so a length test both mislabels brief videos and misses long Shorts.
 - `type:short` is YouTube-only and runs its own search rather than filtering one.
@@ -388,6 +481,11 @@ to `vidking`; use `bc-frontend` only for Bitcine-minted sessions. This is an
 attended session handoff only; do not add code that bypasses Turnstile or
 silently harvests browser tokens.
 
+Videasy/VidKing payloads arrive as the OpenSSL `Salted__` envelope that
+CryptoJS's passphrase-mode `AES.decrypt` consumes. That envelope is implemented
+locally in `packages/providers/src/shared/openssl-evp.ts` (EVP_BytesToKey, MD5,
+one iteration, AES-256-CBC with PKCS7); `crypto-js` is no longer a dependency.
+
 ## Registration
 
 - Implement provider module in `packages/providers/src/<provider>/direct.ts` implementing `CoreProviderModule`
@@ -397,7 +495,7 @@ silently harvests browser tokens.
   `loadProductionProviderModules()` is the single production provider list
 - The `ProviderRegistry` (engine compat wrapper) is built automatically from engine modules
 
-No separate CLI adapter file is needed. The `createProviderFromModule()` factory in `apps/cli/src/services/providers/Provider.ts` creates the CLI `Provider` wrapper with `resolveStream` (calls module), `metadata`, `canHandle`, and optional `search`/`listEpisodes`.
+No separate CLI adapter file is needed. The `createProviderFromModule()` factory in `apps/cli/src/services/providers/Provider.ts` creates the CLI `Provider` wrapper with `metadata`, `canHandle`, and optional `search`/`listEpisodes`; stream resolution runs through the engine path (`module.resolve(input, context)`), never through the wrapper.
 
 ## Workflow Reminder
 
@@ -480,21 +578,67 @@ rotations — lives in
 `packages/providers/src/allmanga/api-client.ts` contains the crypto/decoder and GraphQL helpers shared by the `allmangaProviderModule`. The module itself (`allmanga/direct.ts`) implements `CoreProviderModule`.
 
 - `packages/providers/src/allmanga/api-client.ts` should stay aligned with the specific ani-cli/AllManga-inspired behavior it implements unless Kunai deliberately chooses a different contract
-- when AllAnime or AllManga breaks, compare against ani-cli before guessing at a fix
-- on this machine, the canonical local ani-cli checkout is `~/Projects/osc/ani-cli`
+- when AllAnime or AllManga breaks, compare against ani-cli **v4.x** before guessing at a fix — upstream deleted its AllAnime code in v5.0 (2026-08-01) and moved to anidb.app, so `master` and the pinned v5 checkout contain no mkissa logic to compare against; the live AllManga mkissa JS chunk is the current source of truth
+- on this machine, the canonical local ani-cli checkout is `~/Projects/osc/ani-cli` (version pinned in `scripts/parity-references.json`)
 - if ani-cli is also broken upstream, Kunai may carry a temporary local fix, but that divergence should be documented and easy to remove when parity can be restored
 - this is a concrete API-client parity policy, not the default contract for every anime source
 - when fixing this family of providers, check:
   - search GraphQL query shape
   - episode list query shape
   - episode source GET with persisted query + `aaReq` AES-256-GCM attestation — without this the API returns `AA_CRYPTO_MISSING`; a rotated key/epoch/build returns `AA_CRYPTO_STALE`/`AA_CRYPTO_INVALID`/`AA_CRYPTO_MISSING_BUILD`
-  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=140&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only
+  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=<pinned>&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only, and must be derived under the pinned profile
   - `aaReq` AES-256-GCM over `{v,ts,epoch,buildId,qh,k}` with IV `SHA-256(epoch:buildId:qh:ts:k)[0:12]`; send `x-build-id` on API GETs
   - `tobeparsed` AES-256-GCM decoding: base64(0x01 || iv12 || ct || tag16)
   - source-name inventory and ranking (`Default`, `Yt-mp4`, `S-mp4`, `Mp4`/mp4upload, `Luf-Mp4`, `Ak`; Filemoon removed upstream)
   - downstream link extraction from decoded source URLs — `Mp4` scrapes the embed HTML for `src: "…"` and plays with `Referer: https://www.mp4upload.com` plus mpv `--tls-verify=no`
 
+### mkissa crypto rotations
+
+**A rotation moves every derivation constant, not just the `buildId`.** The
+140 -> 171 rotation (2026-09-16) changed `saltMul`, `saltAdd`, `fragMul`,
+`fragAdd`, the boot prefix, the boot-token separator (`.` -> `/`), the order of
+the boot-token parts, and all four mask fragments. A token built from the new
+`buildId` with the old constants is rejected `invalid_boot_token`, so pinning
+the number alone does not restore playback.
+
+Everything that rotates therefore lives in one object,
+`ALLMANGA_CRYPTO_PROFILE` in `packages/providers/src/allmanga/crypto.ts`.
+Replace the whole object; never one field.
+
+The endpoint distinguishes the two failures, and so does
+`classifyAllMangaBootstrapFailure`:
+
+| Response                             | Meaning                                                     |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `404 {"error":"unknown_build_id"}`   | `build-rotated` — upstream dropped our build; re-extract    |
+| `403 {"error":"invalid_boot_token"}` | `token-rejected` — constants drifted under a live build     |
+| anything else                        | `unavailable` — upstream flake, bundled material is correct |
+
+Upstream keeps a small window of recent builds addressable, but each build has
+its own constants, so a neighbouring `buildId` is not a usable fallback.
+
+To catch the next rotation before users do:
+
+```sh
+KUNAI_LIVE_ALLMANGA_ROTATION=1 bun run test:live:allmanga-rotation
+```
+
+It re-reads the buildId from the live bundle and asks the bootstrap endpoint to
+accept a token built from the pinned profile. Only an HTTP 200 proves the whole
+profile still derives. To re-extract after it fails, pull the crypto chunk
+(the one containing `x-aa-boot`) from
+`cdn.mkissa.net/all/mk/_app/immutable/chunks/`, decode its rotated string
+table, and read the config object next to the `bootPrefix` literal.
+
 ## Capability Flags
+
+The mp4upload TLS compatibility exception is scoped to the current file. Persistent
+startup uses mpv's per-file command-line group; subsequent loads and same-stream
+replays use file-local loadfile options. Leaving that file restores mpv's prior
+configuration, including a user-selected TLS policy. Kunai does not force verification
+on for other hosts or change the existing one-shot exception. A native mpv 0.41 Linux
+test observes effective options at `file-loaded` with local transport substituted:
+it proves option lifetime, not a live certificate attack or other platform behavior.
 
 | Field                   | Meaning                                                      |
 | ----------------------- | ------------------------------------------------------------ |
@@ -512,37 +656,142 @@ only the contracts every provider must honour.
 | AllManga / AllAnime | [allmanga.md](./provider-dossiers/allmanga.md) · [allanime-parity-history.md](./provider-dossiers/allanime-parity-history.md)                                     |
 | AniDB               | [anidb-runtime-contract.md](./provider-dossiers/anidb-runtime-contract.md) · [anidb-metadata-capabilities.md](./provider-dossiers/anidb-metadata-capabilities.md) |
 | Miruro              | [miruro.md](./provider-dossiers/miruro.md)                                                                                                                        |
+| HiAnime             | [hianime.md](./provider-dossiers/hianime.md)                                                                                                                      |
 | Videasy             | [videasy.md](./provider-dossiers/videasy.md)                                                                                                                      |
+| VidLink             | [vidlink.md](./provider-dossiers/vidlink.md)                                                                                                                      |
 | Rivestream          | [rivestream.md](./provider-dossiers/rivestream.md)                                                                                                                |
-| Cineby              | [cineby.md](./provider-dossiers/cineby.md) · [cineby-anime.md](./provider-dossiers/cineby-anime.md)                                                               |
+| Movy                | [movy.md](./provider-dossiers/movy.md)                                                                                                                            |
+| VidRock             | [vidrock.md](./provider-dossiers/vidrock.md)                                                                                                                      |
+| YouTube             | [youtube.md](./provider-dossiers/youtube.md)                                                                                                                      |
+
+Cineby is **not** a production provider: it is a research-only Videasy-flavor
+wrapper (`packages/providers/src/cineby`, marked `"research-only"` in
+`packages/providers/src/research.ts`, kept out of
+`loadProductionProviderModules()` until it passes the provider quality gate).
+Its dossiers ([cineby.md](./provider-dossiers/cineby.md) ·
+[cineby-anime.md](./provider-dossiers/cineby-anime.md)) are research material,
+not active contracts — do not cite that table row as a capability.
 
 Active providers are registered in `apps/cli/src/container/bootstrap-providers.ts` via
 `loadProductionProviderModules()`. A module existing under `packages/providers/src/` does not make
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
-`anidb` is the **default** provider-native anime catalog and the first configured
-anime priority (`animeProvider: "anidb"`, `animeProviderPriority: ["anidb"]`).
-The priority list is ordering, not an allowlist: registered `allanime` and
-`miruro` modules remain available after AniDB and are manually selectable. See
-[the AllAnime parity history](./provider-dossiers/allanime-parity-history.md) and
+`hianime` is the **default** anime provider (`animeProvider: "hianime"`,
+`animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb",
+"allanime"]`, provider-defaults revision 3). The lead moved off AniDB when
+anidb.app started answering 503 at the origin, matching ani-cli's own `fix:`
+switch to hianime. `anidb` stays registered and in the priority tail: it still
+carries the AID cross-link and XML episode-title strengths the other adapters
+lack. `miruro` is the first fallback — it fronts roughly a dozen backends
+behind one AniList-keyed pipe, so an upstream outage costs a server rather
+than the lane.
+
+Miruro's search goes through its own pipe (`search`, `q` + `type: "ANIME"`),
+which relays AniList's catalog: results carry AniList and MAL ids exactly as the
+AniList search service emits them, so history sees one title whichever path
+found it, and AniSkip gets its MAL id without calling AniList. This matters
+because AniList's API was disabled outright on 2026-09-10 while the pipe kept
+answering. A null or empty pipe search falls through to the AniList catalog in
+`searchTitles`, so either catalog alone is enough. Advanced (filtered) anime
+searches and `/discover` still go to AniList directly.
+
+Before accepting a candidate, the resolve issues one ranged GET of the selected
+URL and rejects the server on 404/410/429/5xx — the pipe hands out a backend's
+URL whether or not that backend is up (`pewe` served `hls.anidb.app` URLs
+through AniDB's maintenance). 401/403 and network errors never reject: some
+Miruro CDNs refuse Bun's fetch while mpv plays them, and offline must not read
+as every server dead. The check never attests reachability.
+
+429 was itself an exception here until 2026-09-12, when the release signoff's
+anime lane resolved a `pewe` stream that answered 429 to mpv, to curl with the
+stream's headers, and to curl with none. That is the evidence the rule above
+demands — the stream does not play for anyone — so Miruro now matches the
+resolve gate's policy that every 4xx is definitive, and 401/403 remain the
+narrow exception because only Bun's fetch sees them.
+
+A rejected backend is recorded against its server id (`pewe`, `moo` — sub and
+dub share one) as a `server-error` through `context.endpointHealth`, and the
+cycle is handed the same port, so a backend quarantined by the usual rules
+(three consecutive failures on one title, or two titles) is skipped without a
+request. The engine records nothing for `candidate-empty`, which is correct — an
+episode a server lacks is not evidence against the server — so the definitive
+status is recorded by Miruro itself, and never for a timeout or an aborted probe.
+
+The probe does not ask `animegg.org` at all. Its `/play` endpoint, where every
+`moo` stream starts, never answers Bun's fetch while curl and mpv get a 302 at
+once, so each probe spent the full timeout to learn nothing. Measured on
+2026-09-12 against the live pipe, a Miruro resolve went from ~4.3 s to ~2.3 s
+from that alone, and ~1.1 s once `pewe` was quarantined.
+
+Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
+backends is reached through it, so the providers behind it are the ones that
+share none of that. `kickassanime` and `animegg` follow it in the default
+order: both have their own catalog, site and CDN, but KickAssAnime can also
+take over a title found in _another_ catalog — it matches the show by name and
+year and remembers the result on the title bridge — whereas AnimeGG only plays
+what its own search found. AniDB and AllAnime close the order, AniDB for when
+it returns and AllAnime for the ani-cli parity path. See
+[the KickAssAnime dossier](./provider-dossiers/kickassanime.md) and
+[the AnimeGG dossier](./provider-dossiers/animegg.md), both of which record why a
+reachability probe cannot judge their streams.
+
+KickAssAnime is also the first provider to serve **one file with several audio
+renditions** — a dub is an `EXT-X-MEDIA` track inside the same master, not a
+separate URL. The track is chosen by mpv's `--alang`, which is why
+`toMpvLanguageToken` now maps Kunai's `sub`/`dub` modes onto real language
+tokens (`dub` reached mpv verbatim before and matched nothing, so asking for a
+dub silently played Japanese), and why `alang` is set per `loadfile` rather than
+only at spawn. Its variant playlists are video-only, so that master is never
+expanded into per-quality URLs.
+
+The priority list is ordering, not an allowlist. `planProviderCandidates` falls
+back through every registered anime module that health allows; the list only
+decides the order. See
+[the AllAnime parity history](./provider-dossiers/allanime-parity-history.md),
+[the HiAnime dossier](./provider-dossiers/hianime.md), and
 [the Miruro dossier](./provider-dossiers/miruro.md) for their network failure
 modes.
 
-| ID           | Content Types | Runtime     | Module Location                               |
-| ------------ | ------------- | ----------- | --------------------------------------------- |
-| `vidlink`    | movie, series | direct-http | `packages/providers/src/vidlink/direct.ts`    |
-| `rivestream` | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts` |
-| `videasy`    | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`    |
-| `anidb`      | anime         | direct-http | `packages/providers/src/anidb/direct.ts`      |
-| `allanime`   | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`   |
-| `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
-| `youtube`    | video         | direct-http | `packages/providers/src/youtube/direct.ts`    |
+A saved config holds whatever lane default was current when it was written, as
+though it were a choice, because the whole merged config is written on every
+save. `ConfigServiceImpl.load` keeps a table of every default a build may have
+written (`INHERITED_ANIME_DEFAULTS`), each tied to the `providerDefaultsRevision`
+it shipped under, and migrates a config only when its exact pair matches an entry
+for its _own_ revision — then stamps the current revision. Any other anime setup
+is left alone, and so is a choice made after a migration: a revision-1 user who
+picks AniDB again holds the revision-0 pair, which is only inherited at
+revision 0. Revision 1's list grew twice across stacked changes, so both of its
+lists are in the table; that keeps the migration correct whichever of those
+builds was released.
+
+A future lane-default change must bump the revision **and** add the previous
+default to the table — a bump alone stamps configs without changing them.
+
+| ID             | Content Types | Runtime     | Module Location                                 |
+| -------------- | ------------- | ----------- | ----------------------------------------------- |
+| `vidlink`      | movie, series | direct-http | `packages/providers/src/vidlink/direct.ts`      |
+| `rivestream`   | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts`   |
+| `movy`         | movie, series | direct-http | `packages/providers/src/movy/direct.ts`         |
+| `videasy`      | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`      |
+| `vidrock`      | movie, series | direct-http | `packages/providers/src/vidrock/direct.ts`      |
+| `anidb`        | anime         | direct-http | `packages/providers/src/anidb/direct.ts`        |
+| `animegg`      | anime         | direct-http | `packages/providers/src/animegg/direct.ts`      |
+| `kickassanime` | anime         | direct-http | `packages/providers/src/kickassanime/direct.ts` |
+| `allanime`     | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`     |
+| `hianime`      | anime         | direct-http | `packages/providers/src/hianime/direct.ts`      |
+| `miruro`       | anime         | direct-http | `packages/providers/src/miruro/direct.ts`       |
+| `youtube`      | video         | direct-http | `packages/providers/src/youtube/direct.ts`      |
 
 ### Anime catalog identity
 
 Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tmdb`) via `resolveProviderCatalogIdentity()` in `@kunai/core`.
 
-- **AniDB (`anidb`)** — `provider-native`, and the default anime route. Native ids must satisfy
+- **KickAssAnime (`kickassanime`)** — `provider-native`; third in the default anime order, behind HiAnime and Miruro. Slugs are
+  `name-<4 hex>` (`sousou-no-frieren-2d15`), and only that shape is accepted as a native id, so an
+  AniList id or another site's slug is never sent as one. A title from any other catalog is matched
+  by name and year — exactly one hit, or the provider steps aside — and the slug is then stored
+  through `context.titleBridge` against the AniList id, so later plays ask nothing.
+- **AniDB (`anidb`)** — `provider-native`; fifth in the default anime order, behind HiAnime, Miruro, KickAssAnime and AnimeGG (demoted from the lead when anidb.app went 503). Native ids must satisfy
   `slug-positiveNumericSuffix`; numeric AniList ids and opaque AllAnime ids are not AniDB ids. The
   AllManga Tier-1 lookup never runs for AniDB, and only a validated AniDB slug may be written to
   `providerNativeIds.anidb` — otherwise the result keeps its catalog identity.
@@ -551,6 +800,10 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   results are remapped to opaque AllAnime show ids before resolve; `externalIds.anilistId` is
   preserved on merge. An AllAnime lookup may populate only `providerNativeIds.allanime`.
 - **Miruro** — `anilist`. Discovery ids stay numeric AniList ids; no AllManga Tier-1 remapping runs.
+- **HiAnime (`hianime`)** — `provider-native`, the anime lane default. Native
+  ids are `slug-positiveNumericSuffix` (same shape
+  as AniDB); discovery searches by title and remaps to the matched slug.
+  A HiAnime lookup populates only `providerNativeIds.hianime`.
 - **AllAnime and Miruro episode numbering** — when a request carries both a
   season-relative `episode` and `absoluteEpisode`, their APIs receive the
   season-relative value. Absolute numbering is used only for an absolute-only
@@ -569,9 +822,37 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   prefetch/recent-stream reuse, cache invalidation, queued downloads, offline
   artifact admission, and local playback retain the same identity so an older
   row at the same UI index cannot supply the wrong stream.
+- **HiAnime provider-native episode identity** — each row carries the opaque
+  servers-API `episodeId` (`data-id`) in `EpisodeIdentity.providerEpisodeIdentity`.
+  Resolve uses it only while it still belongs to the active catalog and fails
+  closed otherwise, mirroring the AllAnime contract above. Numbering follows
+  the same season-relative-first rule as AllAnime/Miruro via the shared
+  `selectProviderEpisodeNumber` helper.
 
 A catalog's own id space is numeric, so a non-numeric id is never accepted into the `anilistId` or
 `tmdbId` slot even when the active provider declares that catalog identity.
+
+### Season→entry resolution (#266)
+
+Providers must not be asked for "season N of <title>" — the season the user
+picked _is_ a catalog entry, and resolving it by title ordinal fails on
+arc-named seasons (AniDB's `Entertainment District Arc`) and mis-counts
+continuations (AoT's `Season 3 Part 2` is not season 4). The contract:
+
+- `TitleIdentity.relations` carries prequel/sequel edges (AniList `relations`,
+  corroborated by AniDB `Sequel` links) and `aliases` carries the known names.
+- `resolveSeasonEntryId` in `apps/cli/src/domain/catalog/season-entry-resolution.ts`
+  walks the graph: prequel chain to the franchise root, then forward over
+  sequel edges — counting only real seasons. Movies/OVAs are traversed but not
+  counted; `Part N`/`Cour N`/`第Nクール` titles are continuations and extend the
+  current season. Any ambiguity (branching sequels, multiple prequels, a cycle)
+  returns `undefined` — the caller fails closed, never guesses by title match.
+
+Per-adapter verdicts: **anidb** — consumes the graph for arc-named seasons
+(fail-closed without it, unchanged); **allmanga** — same contract when its
+entry mapping lands; **miruro** — already AniList-keyed, nothing needed;
+**hianime** — episode catalogs are season-flat, verdict: not applicable;
+**vidlink/videasy/youtube** — TMDB/movie lanes, not applicable.
 
 ### Title identity persistence contract
 

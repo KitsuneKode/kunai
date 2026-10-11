@@ -1,7 +1,7 @@
 # Command-palette tour — network-free. Launches the offline shell (no provider
 # calls) and walks the palette through help, diagnostics, and history overlays.
 # Run via: bun run --cwd apps/cli test:vhs:palette
-Output test/vhs/golden/command-palette.gif
+Output test/vhs/captures/command-palette.gif
 
 Set Width 1600
 Set Height 900

@@ -1,16 +1,46 @@
 import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
+import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
-import { loadYoutubeTrending } from "@/services/youtube/YoutubeRecommendationService";
+import {
+  loadYoutubeTrending,
+  providerResultToSearchResult,
+} from "@/services/youtube/YoutubeRecommendationService";
+import {
+  getYoutubeProviderConfig,
+  invidiousSearch,
+  mapInvidiousSearchItem,
+} from "@kunai/providers/youtube";
+import type { JsonObject, ProviderSearchResult } from "@kunai/types";
 const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 const DISCOVERY_CACHE_TTL_MS = 30 * 60 * 1000;
 const SURPRISE_CACHE_TTL_MS = 10 * 60 * 1000;
+// Surprise keys embed a rolling 10-minute bucket, so a session that outlives
+// its TTLs still accretes one dead key per bucket per mode forever. Cap it.
+const MAX_DISCOVERY_CACHE_ENTRIES = 64;
 
 type DiscoveryCacheEntry = {
   readonly expiresAt: number;
   readonly results: readonly SearchResult[];
 };
+
+/**
+ * Raised when a discovery source could not be read — offline, upstream error,
+ * malformed payload, or an aborted request.
+ *
+ * A loader must reject rather than fold a failure into `[]`: the service caches
+ * a resolved list for the whole TTL, so `[]`-on-failure poisons trending for
+ * half an hour and the only way out is `clearTrendingCache()`. Rejecting keeps
+ * "the upstream is down" distinct from "the provider genuinely has nothing",
+ * and only the second is worth caching.
+ */
+export class DiscoveryUnavailableError extends Error {
+  constructor(source: string, reason: string, options?: { readonly cause?: unknown }) {
+    super(`${source} discovery is unavailable: ${reason}`, options);
+    this.name = "DiscoveryUnavailableError";
+  }
+}
 
 export type CatalogDiscoveryLoader = (signal?: AbortSignal) => Promise<readonly SearchResult[]>;
 export type CatalogSurpriseLoader = (
@@ -64,18 +94,7 @@ export class CatalogDiscoveryService {
         : mode === "youtube"
           ? (this.loaders.youtube ?? loadYoutubeDiscoveryList)
           : this.loaders.tmdb;
-    const task = loader(signal).then((results) => {
-      this.cache.set(key, {
-        expiresAt: this.now() + DISCOVERY_CACHE_TTL_MS,
-        results,
-      });
-      return results;
-    });
-    this.inflight.set(key, task);
-
-    const results = await task.finally(() => {
-      this.inflight.delete(key);
-    });
+    const results = await this.runLoad(key, DISCOVERY_CACHE_TTL_MS, () => loader(signal));
     return [...results];
   }
 
@@ -99,19 +118,38 @@ export class CatalogDiscoveryService {
         : mode === "youtube"
           ? (this.loaders.youtubeSurprise ?? loadYoutubeSurpriseList)
           : (this.loaders.tmdbSurprise ?? loadTmdbSurpriseList);
-    const task = loader(options, signal).then((results) => {
-      this.cache.set(key, {
-        expiresAt: this.now() + SURPRISE_CACHE_TTL_MS,
-        results,
-      });
+    const results = await this.runLoad(key, SURPRISE_CACHE_TTL_MS, () => loader(options, signal));
+    return shuffleResults(results, options.random);
+  }
+
+  /**
+   * Runs a loader once per key, caching only a load that actually succeeded.
+   *
+   * A rejection — an offline blip, an upstream error, or the `AbortError` from
+   * navigating away mid-fetch — leaves the cache untouched and propagates, so
+   * the next call retries instead of serving an empty tray for the rest of the
+   * TTL. An empty resolved list is not cached either: the loaders below reject
+   * on failure, but an injected loader that still folds one into `[]` must not
+   * be able to poison the cache through this path. In-flight dedup is
+   * unchanged — concurrent callers share the one promise, success or failure.
+   */
+  private async runLoad(
+    key: string,
+    ttlMs: number,
+    load: () => Promise<readonly SearchResult[]>,
+  ): Promise<readonly SearchResult[]> {
+    const task = load().then((results) => {
+      if (results.length > 0) {
+        this.cache.set(key, { expiresAt: this.now() + ttlMs, results });
+        evictOverflowedEntries(this.cache, MAX_DISCOVERY_CACHE_ENTRIES, this.now());
+      }
       return results;
     });
     this.inflight.set(key, task);
 
-    const results = await task.finally(() => {
+    return task.finally(() => {
       this.inflight.delete(key);
     });
-    return shuffleResults(results, options.random);
   }
 }
 
@@ -126,22 +164,60 @@ async function loadYoutubeDiscoveryList(signal?: AbortSignal): Promise<SearchRes
   return [...results].slice(0, 12);
 }
 
+/**
+ * Broad-interest queries the surprise spinner draws from. Trending alone made
+ * `/surprise` echo `/trending` — a random query through Invidious search gives
+ * the tray a genuinely different pool on each cache bucket.
+ */
+const YOUTUBE_SURPRISE_QUERIES = [
+  "documentary",
+  "science explained",
+  "history deep dive",
+  "cooking",
+  "nature",
+  "space",
+  "engineering",
+  "travel",
+  "music production",
+  "interview",
+] as const;
+
 async function loadYoutubeSurpriseList(
-  _options: CatalogSurpriseLoadOptions,
+  options: CatalogSurpriseLoadOptions,
   signal?: AbortSignal,
 ): Promise<SearchResult[]> {
-  // YouTube has no TMDB-style surprise pool — trending is the native spin source.
+  const query = pickRandom(YOUTUBE_SURPRISE_QUERIES, options.random) ?? "documentary";
+  const preferredInstanceUrl = getYoutubeProviderConfig().invidiousInstanceUrl;
+  try {
+    const items = await invidiousSearch(query, { preferredInstanceUrl, signal });
+    const videos = items
+      .map((item) => mapInvidiousSearchItem(item))
+      .filter((item): item is ProviderSearchResult => item !== null)
+      .slice(0, 20)
+      .map(providerResultToSearchResult);
+    if (videos.length > 0) return videos;
+  } catch (error) {
+    // A caller abort is not a search miss — don't spend a trending fetch
+    // on a signal that is already dead.
+    if (signal?.aborted) throw error;
+    // A search miss is not a tray-killer — trending still spins.
+  }
   return loadYoutubeDiscoveryList(signal);
 }
 
+// SAFETY: fetchTmdbJsonCached resolves to JsonValue; the results array is shape-checked immediately below.
 async function loadTmdbDiscoveryList(signal?: AbortSignal): Promise<SearchResult[]> {
   const data = (await fetchTmdbJsonCached(
     "/trending/all/week?language=en-US&page=1",
     signal,
     3500,
-  ).catch(() => null)) as Record<string, unknown> | null;
-  if (!data) return [];
-  const rawResults = Array.isArray(data.results) ? data.results : [];
+  ).catch((error: unknown) => {
+    throw new DiscoveryUnavailableError("TMDB trending", "request failed", { cause: error });
+  })) as Record<string, unknown> | null;
+  if (!data || !Array.isArray(data.results)) {
+    throw new DiscoveryUnavailableError("TMDB trending", "malformed payload");
+  }
+  const rawResults = data.results;
 
   return rawResults
     .map(readRecord)
@@ -177,14 +253,19 @@ async function loadTmdbSurpriseList(
       : ["popularity.desc", "vote_average.desc", "first_air_date.desc"];
   const sortBy = pickRandom(sortOptions, options.random) ?? "popularity.desc";
   const page = 1 + Math.floor(options.random() * 20);
+  // SAFETY: fetchTmdbJsonCached resolves to JsonValue; the results array is shape-checked immediately below.
   const voteFloor = sortBy === "vote_average.desc" ? 150 : 50;
   const data = (await fetchTmdbJsonCached(
     `/discover/${mediaType}?language=en-US&page=${page}&sort_by=${sortBy}&vote_count.gte=${voteFloor}`,
     signal,
     3500,
-  ).catch(() => null)) as Record<string, unknown> | null;
-  if (!data) return [];
-  const rawResults = Array.isArray(data.results) ? data.results : [];
+  ).catch((error: unknown) => {
+    throw new DiscoveryUnavailableError("TMDB surprise", "request failed", { cause: error });
+  })) as Record<string, unknown> | null;
+  if (!data || !Array.isArray(data.results)) {
+    throw new DiscoveryUnavailableError("TMDB surprise", "malformed payload");
+  }
+  const rawResults = data.results;
   return rawResults
     .map(readRecord)
     .filter((record) => record.id !== null && record.id !== undefined)
@@ -209,10 +290,7 @@ async function loadTmdbSurpriseList(
     });
 }
 
-async function loadAnimeDiscoveryList(signal?: AbortSignal): Promise<SearchResult[]> {
-  const gqlQuery = `query{
-    Page(page:1, perPage:12){
-      media(type:ANIME, sort:TRENDING_DESC, status_not:NOT_YET_RELEASED){
+const ANILIST_MEDIA_FIELDS = `
         id
         title{romaji english native}
         coverImage{extraLarge large}
@@ -223,31 +301,73 @@ async function loadAnimeDiscoveryList(signal?: AbortSignal): Promise<SearchResul
         averageScore
         popularity
         startDate{year}
-        synonyms
+        synonyms`;
+
+async function loadAnimeDiscoveryList(signal?: AbortSignal): Promise<SearchResult[]> {
+  const gqlQuery = `query{
+    Page(page:1, perPage:12){
+      media(type:ANIME, sort:TRENDING_DESC, status_not:NOT_YET_RELEASED){
+${ANILIST_MEDIA_FIELDS}
       }
     }
   }`;
 
-  const response = await fetch(ANILIST_GRAPHQL_URL, {
-    method: "POST",
-    signal: signal ?? AbortSignal.timeout(3500),
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
+  const media = await fetchAniListMedia("AniList trending", { query: gqlQuery }, signal);
+  return media.map(anilistMediaToSearchResult);
+}
+
+/**
+ * Per-title anime recommendations — AniList's `Media.recommendations` edge
+ * returns titles the community rated as similar, so post-play "more like
+ * this" is anchored to what just finished instead of generic trending. A
+ * failure or a title with no recommendations resolves to `[]` so callers can
+ * fall back to the trending pool.
+ */
+export async function loadAnimeRecommendationsForMedia(
+  anilistId: string,
+  signal?: AbortSignal,
+): Promise<SearchResult[]> {
+  if (!/^\d+$/.test(anilistId)) return [];
+  const gqlQuery = `query($id:Int){
+    Media(id:$id, type:ANIME){
+      recommendations(sort:RATING_DESC, page:1, perPage:12){
+        nodes{ mediaRecommendation{
+${ANILIST_MEDIA_FIELDS}
+        } }
+      }
+    }
+  }`;
+
+  const payload = await postAniList(
+    "AniList recommendations",
+    {
+      query: gqlQuery,
+      variables: { id: Number(anilistId) },
     },
-    body: JSON.stringify({ query: gqlQuery }),
-  }).catch(() => null);
-  if (!response?.ok) return [];
+    signal,
+  );
+  const nodes =
+    (
+      payload.data as
+        | {
+            Media?: {
+              recommendations?: {
+                nodes?: readonly {
+                  mediaRecommendation?: AniListDiscoveryMedia | null;
+                }[];
+              };
+            };
+          }
+        | undefined
+    )?.Media?.recommendations?.nodes ?? [];
 
-  const data = (await response.json()) as {
-    readonly data?: {
-      readonly Page?: {
-        readonly media?: readonly AniListDiscoveryMedia[];
-      };
-    };
-  };
-
-  return (data.data?.Page?.media ?? []).map(anilistMediaToSearchResult);
+  return nodes
+    .map((node) => node.mediaRecommendation)
+    .filter((media): media is AniListDiscoveryMedia => Boolean(media?.id))
+    .map((media) => ({
+      ...anilistMediaToSearchResult(media),
+      metadataSource: "AniList similar titles",
+    }));
 }
 
 async function loadAnimeSurpriseList(
@@ -289,6 +409,30 @@ async function loadAnimeSurpriseList(
     }
   }`;
 
+  const media = await fetchAniListMedia(
+    "AniList surprise",
+    { query: gqlQuery, variables: { page, sort: [sort], ...(genre && { genre }) } },
+    signal,
+  );
+
+  return media.map((entry) => ({
+    ...anilistMediaToSearchResult(entry),
+    metadataSource: `AniList surprise · ${genre ?? "mixed"} · ${sort.toLowerCase().replace("_desc", "")}`,
+  }));
+}
+
+/**
+ * Posts a GraphQL document to AniList and returns the parsed payload.
+ *
+ * Rejects with {@link DiscoveryUnavailableError} on every failure shape —
+ * transport error, non-2xx, unparseable body, or a GraphQL error (AniList
+ * answers those with HTTP 200 and no `data`). Callers own the shape of `data`.
+ */
+async function postAniList(
+  source: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<{ readonly data?: unknown }> {
   const response = await fetch(ANILIST_GRAPHQL_URL, {
     method: "POST",
     signal: signal ?? AbortSignal.timeout(3500),
@@ -296,22 +440,34 @@ async function loadAnimeSurpriseList(
       "content-type": "application/json",
       accept: "application/json",
     },
-    body: JSON.stringify({ query: gqlQuery, variables: { page, sort: [sort], genre } }),
-  }).catch(() => null);
-  if (!response?.ok) return [];
+    body: JSON.stringify(body),
+  }).catch((error: unknown) => {
+    throw new DiscoveryUnavailableError(source, "request failed", { cause: error });
+  });
+  if (!response.ok) throw new DiscoveryUnavailableError(source, `HTTP ${response.status}`);
+  // SAFETY: response.json() resolves to the parsed document; data is checked optional.
 
-  const data = (await response.json()) as {
-    readonly data?: {
-      readonly Page?: {
-        readonly media?: readonly AniListDiscoveryMedia[];
-      };
-    };
-  };
+  return (await response.json().catch((error: unknown) => {
+    throw new DiscoveryUnavailableError(source, "unreadable payload", { cause: error });
+  })) as { readonly data?: unknown };
+}
 
-  return (data.data?.Page?.media ?? []).map((media) => ({
-    ...anilistMediaToSearchResult(media),
-    metadataSource: `AniList surprise · ${genre ?? "mixed"} · ${sort.toLowerCase().replace("_desc", "")}`,
-  }));
+async function fetchAniListMedia(
+  source: string,
+  body: JsonObject,
+  signal?: AbortSignal,
+): Promise<readonly AniListDiscoveryMedia[]> {
+  const payload = await postAniList(source, body, signal);
+  // SAFETY: the data payload is a parsed JSON object narrowed to the AniList page shape.
+  const media = (
+    payload.data as
+      | {
+          readonly Page?: { readonly media?: readonly AniListDiscoveryMedia[] };
+        }
+      | undefined
+  )?.Page?.media;
+  if (!media) throw new DiscoveryUnavailableError(source, "response carried no media page");
+  return media;
 }
 
 type AniListDiscoveryMedia = {
@@ -375,6 +531,7 @@ function buildAniListAliases(providerTitle: string, media: AniListDiscoveryMedia
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
+  // SAFETY: the typeof + !Array.isArray guard narrows value to a plain object.
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};

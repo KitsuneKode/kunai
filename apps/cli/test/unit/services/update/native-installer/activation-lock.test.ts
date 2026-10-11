@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
+import * as fsPromises from "node:fs/promises";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
+  __testing,
   tryAcquireActivationLock,
   withActivationLock,
 } from "@/services/update/native-installer/activation-lock";
@@ -14,7 +16,20 @@ import {
 } from "@/services/update/native-installer/install-layout";
 
 const made: string[] = [];
-const RECLAIM_TEST_TIMEOUT_MS = process.platform === "win32" ? 1_000 : 100;
+/**
+ * Acquisition budget for tests that assert the lock IS acquired.
+ *
+ * The mirror image of `RETAIN_TEST_TIMEOUT_MS` below, and it has to be read the
+ * other way round: there the deadline firing is the assertion, here it is the
+ * failure. Reclaiming a corrupt lock costs a poll interval plus the corrupt
+ * grace period plus however long the runner takes to stat and read the file,
+ * and `tryAcquireActivationLock` measures that against a real `Date.now()`.
+ * A 100ms budget was therefore an assertion about disk and scheduler speed:
+ * CI failed `reclaims persistently corrupt metadata after the partial-write
+ * grace period` at 285.92ms on a runner where the logic was entirely correct.
+ * This bound only has to catch a lock that never resolves.
+ */
+const RECLAIM_TEST_TIMEOUT_MS = process.platform === "win32" ? 10_000 : 5_000;
 
 /**
  * Acquisition budget for tests that assert the lock is *retained*.
@@ -151,7 +166,11 @@ describe("activation lock", () => {
       pollMs: 5,
       corruptGraceMs: 150,
     });
-    await Bun.sleep(10);
+    // Ordering gate: the first acquire should be mid-poll before the second
+    // starts so the second's queue time lands inside its own deadline. There
+    // is no exported "acquire started" observable; 50ms gives the 5ms poll
+    // loop ten turns of headroom under parallel load.
+    await Bun.sleep(50);
     const startedAt = performance.now();
     const second = await tryAcquireActivationLock(layout, "2.0.0", {
       timeoutMs: 30,
@@ -160,7 +179,9 @@ describe("activation lock", () => {
     const elapsedMs = performance.now() - startedAt;
 
     expect(second.acquired).toBe(false);
-    expect(elapsedMs).toBeLessThan(100);
+    // Deadline is 30ms; 200ms still proves bounded bail without flaking on
+    // scheduler jitter.
+    expect(elapsedMs).toBeLessThan(200);
 
     const first = await firstPromise;
     if (first.acquired) await first.release();
@@ -310,7 +331,11 @@ describe("activation lock", () => {
       const enteredPath = join(process.env.KUNAI_TEST_LOCKS_DIR, \`activation-worker-entered-\${workerId}\`);
       const releasePath = join(process.env.KUNAI_TEST_LOCKS_DIR, \`activation-worker-release-\${workerId}\`);
       await writeFile(readyPath, "ready");
-      while (!existsSync(process.env.KUNAI_TEST_START_PATH)) await Bun.sleep(5);
+      const startDeadline = Date.now() + 15000;
+      while (!existsSync(process.env.KUNAI_TEST_START_PATH)) {
+        if (Date.now() > startDeadline) { console.error("worker-" + workerId + ": start sentinel never appeared"); process.exit(3); }
+        await Bun.sleep(5);
+      }
       const result = await withActivationLock(
         { locksDir: process.env.KUNAI_TEST_LOCKS_DIR },
         process.env.KUNAI_TEST_VERSION,
@@ -323,7 +348,11 @@ describe("activation lock", () => {
             await writeFile(process.env.KUNAI_TEST_VIOLATION_PATH, "overlap");
           }
           await writeFile(enteredPath, "entered");
-          while (!existsSync(releasePath)) await Bun.sleep(5);
+          const releaseDeadline = Date.now() + 15000;
+          while (!existsSync(releasePath)) {
+            if (Date.now() > releaseDeadline) { console.error("worker-" + workerId + ": release sentinel never appeared"); process.exit(3); }
+            await Bun.sleep(5);
+          }
           if (ownsSentinel) await rm(process.env.KUNAI_TEST_CRITICAL_PATH, { recursive: true });
         },
         { timeoutMs: Number(process.env.KUNAI_TEST_ACQUIRE_TIMEOUT_MS), pollMs: 1 },
@@ -348,9 +377,30 @@ describe("activation lock", () => {
         }),
       );
 
+      // Drain immediately: a crashing worker must not block on a full pipe or
+      // lose its actual error behind the parent's handshake timeout.
+      const outputs = processes.map(async (child) => {
+        const [stdout, stderr] = await Promise.all([
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ]);
+        return { stdout, stderr };
+      });
+      const assertWorkersHealthy = async (): Promise<void> => {
+        for (const [index, child] of processes.entries()) {
+          if (child.exitCode === null || child.exitCode === 0) continue;
+          const output = await outputs[index];
+          throw new Error(
+            `Activation worker ${index} exited ${child.exitCode}\n` +
+              `stdout: ${output?.stdout}\nstderr: ${output?.stderr}`,
+          );
+        }
+      };
+
       const waitForWorkerCount = async (prefix: string, expected: number): Promise<void> => {
         const deadlineAt = Date.now() + CONTENTION_HANDSHAKE_DEADLINE_MS;
         while (Date.now() < deadlineAt) {
+          await assertWorkersHealthy();
           const count = (await readdir(layout.locksDir)).filter((name) =>
             name.startsWith(prefix),
           ).length;
@@ -372,24 +422,34 @@ describe("activation lock", () => {
         );
       };
 
-      await waitForWorkerCount("activation-worker-ready-", CONTENTION_WORKERS);
-      await writeFile(startPath, "start");
-      const released = new Set<string>();
-      for (let enteredCount = 1; enteredCount <= CONTENTION_WORKERS; enteredCount += 1) {
-        await waitForWorkerCount("activation-worker-entered-", enteredCount);
-        expect(existsSync(violationPath)).toBe(false);
-        const entered = (await readdir(layout.locksDir)).filter((name) =>
-          name.startsWith("activation-worker-entered-"),
-        );
-        const next = entered.find((name) => !released.has(name));
-        if (!next) throw new Error("Missing newly entered activation worker");
-        released.add(next);
-        await writeFile(join(layout.locksDir, next.replace("entered", "release")), "release");
-      }
-      const statuses = await Promise.all(processes.map((process) => process.exited));
+      try {
+        await waitForWorkerCount("activation-worker-ready-", CONTENTION_WORKERS);
+        await writeFile(startPath, "start");
+        const released = new Set<string>();
+        for (let enteredCount = 1; enteredCount <= CONTENTION_WORKERS; enteredCount += 1) {
+          await waitForWorkerCount("activation-worker-entered-", enteredCount);
+          expect(existsSync(violationPath)).toBe(false);
+          const entered = (await readdir(layout.locksDir)).filter((name) =>
+            name.startsWith("activation-worker-entered-"),
+          );
+          const next = entered.find((name) => !released.has(name));
+          if (!next) throw new Error("Missing newly entered activation worker");
+          released.add(next);
+          await writeFile(join(layout.locksDir, next.replace("entered", "release")), "release");
+        }
+        const statuses = await Promise.all(processes.map((process) => process.exited));
 
-      expect(statuses).toEqual(Array.from({ length: CONTENTION_WORKERS }, () => 0));
-      expect(existsSync(violationPath)).toBe(false);
+        expect(statuses).toEqual(Array.from({ length: CONTENTION_WORKERS }, () => 0));
+        expect(existsSync(violationPath)).toBe(false);
+      } finally {
+        // Reap before afterEach removes the profile, including assertion and
+        // handshake failures. Otherwise workers keep polling deleted paths.
+        for (const child of processes) {
+          if (child.exitCode === null) child.kill();
+        }
+        await Promise.all(processes.map((child) => child.exited));
+        await Promise.all(outputs);
+      }
     },
     CONTENTION_TEST_TIMEOUT_MS,
   );
@@ -645,4 +705,243 @@ describe("activation lock", () => {
       }
     },
   );
+});
+
+/**
+ * The restore path is where a lost reclaim race used to become a process
+ * crash: `link(quarantine, lock)` reports ENOENT when the quarantine was
+ * deleted upstream or is momentarily invisible after a Windows rename, and
+ * the only tolerated code was EEXIST. These cases pin the race outcomes
+ * without multi-process luck.
+ */
+describe("activation lock quarantine restore", () => {
+  async function makeRoot(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "kunai-activation-restore-"));
+    made.push(root);
+    return root;
+  }
+
+  test("restores the quarantine onto an absent canonical path", async () => {
+    const root = await makeRoot();
+    const lockPath = join(root, "lock");
+    const quarantinePath = join(root, "lock.quarantine.test");
+    await writeFile(quarantinePath, '{"schemaVersion":1}', "utf8");
+
+    await __testing.restoreQuarantinedLock(quarantinePath, lockPath);
+
+    expect(JSON.parse(await readFile(lockPath, "utf8"))).toMatchObject({ schemaVersion: 1 });
+    expect(existsSync(quarantinePath)).toBe(false);
+  });
+
+  for (const code of ["ENOENT", "EPERM", "EACCES", "EBUSY"]) {
+    test(`restores after one transient ${code} link failure`, async () => {
+      const root = await makeRoot();
+      const lockPath = join(root, "lock");
+      const quarantinePath = join(root, "quarantine");
+      await writeFile(quarantinePath, "original-owner", "utf8");
+      let attempts = 0;
+      const pauses: number[] = [];
+      await __testing.restoreQuarantinedLock(quarantinePath, lockPath, {
+        link: async (source, destination) => {
+          attempts += 1;
+          if (attempts === 1) throw Object.assign(new Error("transient"), { code });
+          await fsPromises.link(source, destination);
+        },
+        pause: async (ms) => {
+          pauses.push(ms);
+        },
+      });
+      expect(attempts).toBe(2);
+      expect(pauses).toEqual([5]);
+      expect(await readFile(lockPath, "utf8")).toBe("original-owner");
+      expect(existsSync(quarantinePath)).toBe(false);
+    });
+  }
+
+  for (const code of ["EACCES", "EPERM"]) {
+    test(`a ${code} create reaches corrupt grace for a readable partial record`, async () => {
+      const layout = await makeLayout();
+      const path = activationLockPath(layout);
+      await writeFile(path, "{partial-record");
+      const original = fsPromises.writeFile;
+      let canonicalAttempts = 0;
+      const create = spyOn(fsPromises, "writeFile").mockImplementation(
+        async (target, data, options) => {
+          if (target === path && ++canonicalAttempts === 1)
+            throw Object.assign(new Error("name transition"), { code });
+          return original(target, data, options);
+        },
+      );
+      try {
+        const acquired = await tryAcquireActivationLock(layout, "4.2.0", {
+          timeoutMs: RECLAIM_TEST_TIMEOUT_MS,
+          pollMs: 1,
+          corruptGraceMs: 0,
+        });
+        expect(acquired.acquired).toBe(true);
+        expect(JSON.parse(await readFile(path, "utf8")).version).toBe("4.2.0");
+        if (acquired.acquired) await acquired.release();
+      } finally {
+        create.mockRestore();
+      }
+    });
+
+    for (const condition of ["empty", "unreadable"] as const) {
+      test(`a ${code} create with ${condition} data is not treated as contention`, async () => {
+        const layout = await makeLayout();
+        const path = activationLockPath(layout);
+        await writeFile(path, condition === "empty" ? "" : "{partial-record");
+        const originalWrite = fsPromises.writeFile;
+        const originalRead = fsPromises.readFile;
+        const create = spyOn(fsPromises, "writeFile").mockImplementation(
+          async (target, data, options) => {
+            if (target === path) throw Object.assign(new Error("permission denied"), { code });
+            return originalWrite(target, data, options);
+          },
+        );
+        const reads =
+          condition === "unreadable"
+            ? spyOn(fsPromises, "readFile").mockRejectedValue(
+                Object.assign(new Error("unreadable"), { code: "EACCES" }),
+              )
+            : undefined;
+        try {
+          await expect(
+            tryAcquireActivationLock(layout, "4.2.0", { timeoutMs: 40, pollMs: 1 }),
+          ).rejects.toThrow("Could not create activation lock");
+          expect(create).toHaveBeenCalledTimes(1);
+          expect(await originalRead(path, "utf8")).toBe(
+            condition === "empty" ? "" : "{partial-record",
+          );
+        } finally {
+          reads?.mockRestore();
+          create.mockRestore();
+        }
+      });
+    }
+
+    test(`a denied create with no owner propagates ${code} immediately`, async () => {
+      const layout = await makeLayout();
+      const path = activationLockPath(layout);
+      const original = fsPromises.writeFile;
+      const denied = Object.assign(new Error("permission denied"), { code });
+      const create = spyOn(fsPromises, "writeFile").mockImplementation(
+        async (target, data, options) => {
+          if (target === path) throw denied;
+          return original(target, data, options);
+        },
+      );
+      try {
+        await expect(
+          tryAcquireActivationLock(layout, "4.1.0", {
+            timeoutMs: 40,
+            pollMs: 1,
+          }),
+        ).rejects.toThrow("Could not create activation lock");
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(existsSync(path)).toBe(false);
+      } finally {
+        create.mockRestore();
+      }
+    });
+
+    test(`denied stale-owner reclamation propagates ${code} without deleting ownership`, async () => {
+      const layout = await makeLayout();
+      const path = activationLockPath(layout);
+      const holder = await tryAcquireActivationLock(layout, "4.1.0");
+      expect(holder.acquired).toBe(true);
+      if (!holder.acquired) throw new Error("fixture holder missing");
+      const raw = await readFile(path, "utf8");
+      const stale = JSON.stringify({ ...JSON.parse(raw), pid: 999999999 });
+      await writeFile(path, stale);
+      const original = fsPromises.rename;
+      let deniedAttempts = 0;
+      const renames = spyOn(fsPromises, "rename").mockImplementation(
+        async (source, destination) => {
+          if (source === path) {
+            deniedAttempts += 1;
+            throw Object.assign(new Error("permission denied"), { code });
+          }
+          return original(source, destination);
+        },
+      );
+      try {
+        await expect(
+          tryAcquireActivationLock(layout, "4.2.0", {
+            timeoutMs: 40,
+            pollMs: 1,
+          }),
+        ).rejects.toThrow("permission denied");
+        expect(deniedAttempts).toBe(1);
+        expect(await readFile(path, "utf8")).toBe(stale);
+      } finally {
+        renames.mockRestore();
+      }
+    });
+
+    test(`a ${code} create still retains a verified live holder`, async () => {
+      const layout = await makeLayout();
+      const path = activationLockPath(layout);
+      const holder = await tryAcquireActivationLock(layout, "4.1.0");
+      expect(holder.acquired).toBe(true);
+      if (!holder.acquired) throw new Error("fixture holder missing");
+      const raw = await readFile(path, "utf8");
+      const original = fsPromises.writeFile;
+      const create = spyOn(fsPromises, "writeFile").mockImplementation(
+        async (target, data, options) => {
+          if (target === path) throw Object.assign(new Error("name held"), { code });
+          return original(target, data, options);
+        },
+      );
+      try {
+        expect(
+          await tryAcquireActivationLock(layout, "4.2.0", {
+            timeoutMs: 5,
+            pollMs: 1,
+          }),
+        ).toEqual({ acquired: false, holderPid: process.pid });
+        expect(await readFile(path, "utf8")).toBe(raw);
+      } finally {
+        create.mockRestore();
+        await holder.release();
+      }
+    });
+  }
+
+  test("a quarantine deleted upstream resolves instead of crashing the reclaimer", async () => {
+    const root = await makeRoot();
+    const lockPath = join(root, "lock");
+    const quarantinePath = join(root, "lock.quarantine.gone");
+
+    await expect(
+      __testing.restoreQuarantinedLock(quarantinePath, lockPath),
+    ).resolves.toBeUndefined();
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test("keeps a canonical owner that won the race and the quarantine for diagnostics", async () => {
+    const root = await makeRoot();
+    const lockPath = join(root, "lock");
+    const quarantinePath = join(root, "lock.quarantine.owner");
+    await writeFile(lockPath, '{"schemaVersion":1,"winner":true}', "utf8");
+    await writeFile(quarantinePath, '{"schemaVersion":1,"winner":false}', "utf8");
+
+    await __testing.restoreQuarantinedLock(quarantinePath, lockPath);
+
+    expect(await readFile(lockPath, "utf8")).toContain('"winner":true');
+    expect(existsSync(quarantinePath)).toBe(true);
+  });
+
+  test("a quarantine that exists but cannot link still fails", async () => {
+    const root = await makeRoot();
+    // The destination parent is absent, so link() fails ENOENT while the
+    // quarantine itself exists — the retry budget expires and the error
+    // propagates rather than being swallowed as a lost race.
+    const lockPath = join(root, "missing-parent", "lock");
+    const quarantinePath = join(root, "lock.quarantine.stuck");
+    await writeFile(quarantinePath, '{"schemaVersion":1}', "utf8");
+
+    await expect(__testing.restoreQuarantinedLock(quarantinePath, lockPath)).rejects.toThrow();
+    expect(existsSync(quarantinePath)).toBe(true);
+  });
 });

@@ -1,5 +1,5 @@
 ---
-title: Commands And Shortcuts
+title: Commands and Shortcuts
 description: Every Kunai shell command, playback shortcut, overlay, and safe action, plus the full searchable command registry generated straight from the CLI itself.
 ---
 
@@ -10,15 +10,14 @@ available without losing the playing context.
 Press `?` in the shell for the full live help overlay. The table below is a
 deliberately reduced public reference generated from the keybinding registry.
 
-
 ## Personal Media Vocabulary
 
-- **Watchlist** — built-in watch-later list (`/watchlist`, `/wl`)
-- **Playlists** — durable named collections (`/playlists`; `/playlist` and `/pl` are aliases)
-- **Up Next** — current playback order (`/up-next`; `/queue` is a compatibility alias)
-- **Downloads** — offline download jobs (`/downloads`)
-- **Follow / Unfollow / Mute** — release attention, not saved-for-later state
-- **Favourites** — browse `f` stars a row; it is not Watchlist and not Up Next
+- **Watchlist:** built-in watch-later list (`/watchlist`, `/wl`)
+- **Playlists:** durable named collections (`/playlists`; `/playlist` and `/pl` are aliases)
+- **Up Next:** current playback order (`/up-next`; `/queue` is a compatibility alias)
+- **Downloads:** offline download jobs (`/downloads`)
+- **Follow / Unfollow / Mute:** release attention, not saved-for-later state
+- **Favourites:** browse `f` stars a row; it is not Watchlist and not Up Next
 
 ## Global Commands
 
@@ -27,9 +26,12 @@ deliberately reduced public reference generated from the keybinding registry.
 - `/watchlist` opens the built-in watch-later list.
 - `/playlists` opens durable saved playlists.
 - `/up-next` opens the current playback order.
+- `/playlist-add` adds the selected or active title to Up Next.
+- `/queue-season` queues the rest of the current season after the selected episode.
+- `/image` toggles the image and details companion pane when the terminal supports it.
 - `/library` opens the offline library with completed local downloads.
-- `/play-local` opens a file picker for local media playback.
-- `/watch-online` returns from offline posture to online shell flows when network allows.
+- `/play-local` switches the current episode to its verified offline download.
+- `/watch-online` switches the current episode back to online provider streaming.
 - `/downloads` opens active, queued, failed, and retryable download jobs.
 - `/notifications` opens the notification inbox.
 - `/provider` opens the provider picker without changing provider until confirmed.
@@ -73,7 +75,7 @@ context. Close the overlay to return where you were.
 
 ## Every shell command
 
-The full command registry, searchable. Generated from the CLI — it updates when
+The full command registry, searchable. Generated from the CLI; it updates when
 you run `bun run --cwd apps/docs generate`.
 
 <CommandReference />
@@ -99,4 +101,4 @@ support bundle. Use `/report-issue` to open the GitHub issue page.
 Use `/docs` to open documentation. With `KUNAI_DOCS_URL` unset it opens the GitHub `docs/` tree, not the published site. Set `KUNAI_DOCS_URL` to point at a local, preview, or production docs origin.
 
 For the full generated command list, see [Feature tour](/docs/users/feature-tour#shell-commands).
-Launch flags are documented in [CLI reference](/docs/users/cli-reference).
+Launch flags are documented in [CLI Reference](/docs/users/cli-reference).

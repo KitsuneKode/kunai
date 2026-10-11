@@ -18,6 +18,10 @@ They are not diagnostics. Diagnostics explain technical evidence; notifications 
 - opening the inbox must not stop, replace, or steal active playback
 - provider availability sync is experimental and off by default
 - muted titles suppress new episode notifications
+- clearing the Archive permanently suppresses those exact notification identities,
+  just like individual deletion; repeated reconciliation cannot recreate them
+- archive clearing preserves active notices and allows newer episode identities;
+  suppression and deletion commit together or both roll back
 
 ## Inbox
 

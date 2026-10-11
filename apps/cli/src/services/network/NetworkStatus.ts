@@ -22,6 +22,17 @@ export type NetworkUserHint = {
   readonly actions: readonly ("offline-library" | "retry" | "diagnostics" | "back")[];
 };
 
+/**
+ * Substrings that identify a transport failure with no HTTP response behind it.
+ *
+ * Every entry must be a phrase the *transport* emits. A bare token like `dns`
+ * used to be in this list and it was a live hazard: any provider message that
+ * happened to contain those three letters — a title echoed into an error, a URL
+ * with `dns` in a path — classified as `offline`, and
+ * `DEFAULT_CONSECUTINE_OFFLINE_THRESHOLD = 2` across two distinct providers
+ * then halts every remaining live candidate, including working ones. The
+ * resolver's actual phrasings are enumerated instead.
+ */
 const NETWORK_ERROR_PATTERNS = [
   "enotfound",
   "eai_again",
@@ -33,7 +44,19 @@ const NETWORK_ERROR_PATTERNS = [
   "unable to connect",
   "failedtoopensocket",
   "was there a typo in the url or port",
-  "dns",
+  // curl: "Could not resolve host: …" — the bare "could not resolve" prefix
+  // covers wget and other transports too.
+  "could not resolve",
+  // glibc resolver: "Name or service not known" / "Temporary failure in name resolution"
+  "name or service not known",
+  "temporary failure in name resolution",
+  // Windows resolver and Bun: "no such host"
+  "no such host",
+  // undici / Node: "dns lookup failed"; nslookup-flavoured: "dns query"
+  "dns lookup",
+  "dns query",
+  "getaddrinfo",
+  "nodename nor servname",
 ];
 
 export function classifyNetworkFailure(message: string): NetworkStatus {

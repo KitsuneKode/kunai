@@ -1,4 +1,3 @@
-// =============================================================================
 import { isAnimeLikely } from "@/services/anime-classifier";
 // Search service registry
 //
@@ -9,7 +8,6 @@ import { isAnimeLikely } from "@/services/anime-classifier";
 // API providers own their own search() — they don't
 // appear here. This layer is for providers that delegate search to a shared
 // HTTP endpoint (TMDB proxy today; HiAnime as a future SearchService).
-// =============================================================================
 import {
   fetchTmdbJsonCached,
   formatTmdbSearchError,
@@ -41,7 +39,39 @@ export type SearchService = {
 // db.videasy.to is the same TMDB-format API that powers Cineplay + Videasy.
 // No API key needed. Response is identical to TMDB /search/multi.
 
-const cache = new Map<string, SearchResult[]>();
+// Mapped-result cache on top of fetchTmdbJsonCached's JSON cache — the extra
+// layer buys case-insensitive dedup (path keys differ by raw casing). Same
+// short TTL as the JSON cache, plus a bound so a long session of distinct
+// queries cannot grow it forever.
+const RESULT_CACHE_TTL_MS = 2 * 60 * 1_000;
+const RESULT_CACHE_MAX = 100;
+const cache = new Map<string, { readonly expiresAt: number; readonly value: SearchResult[] }>();
+
+function cacheRead(key: string): SearchResult[] | undefined {
+  const entry = cache.get(key);
+  if (!entry) return undefined;
+  if (entry.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return undefined;
+  }
+  return entry.value;
+}
+
+function cacheWrite(key: string, value: SearchResult[]): void {
+  // Overwriting an existing key frees no slot — only a new key can need one.
+  if (!cache.has(key) && cache.size >= RESULT_CACHE_MAX) {
+    let oldestKey: string | undefined;
+    let oldestExpiry = Number.POSITIVE_INFINITY;
+    for (const [entryKey, entry] of cache) {
+      if (entry.expiresAt < oldestExpiry) {
+        oldestExpiry = entry.expiresAt;
+        oldestKey = entryKey;
+      }
+    }
+    if (oldestKey !== undefined) cache.delete(oldestKey);
+  }
+  cache.set(key, { expiresAt: Date.now() + RESULT_CACHE_TTL_MS, value });
+}
 
 async function fetchTmdbSearchJson(path: string, signal?: AbortSignal): Promise<unknown> {
   try {
@@ -53,7 +83,7 @@ async function fetchTmdbSearchJson(path: string, signal?: AbortSignal): Promise<
 
 export async function searchVideasy(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const key = query.toLowerCase().trim();
-  const cached = cache.get(key);
+  const cached = cacheRead(key);
   if (cached !== undefined) return cached;
 
   let data: Record<string, unknown>;
@@ -83,7 +113,7 @@ export async function searchVideasy(query: string, signal?: AbortSignal): Promis
       externalIds: { tmdbId: String(r.id) },
     }));
 
-  cache.set(key, results);
+  cacheWrite(key, results);
   return results;
 }
 
@@ -366,7 +396,7 @@ export const TMDB_SERVICE: SearchService = {
   id: "tmdb",
   name: "TMDB / Videasy",
   description: "TMDB proxy (db.videasy.to) — movies, series, no API key",
-  compatibleProviders: ["videasy"],
+  compatibleProviders: [],
   search: searchVideasy,
 };
 

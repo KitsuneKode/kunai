@@ -1,5 +1,7 @@
 import type { PlaybackFailureClass } from "@/infra/player/playback-failure-classifier";
-import { classifyNetworkFailure } from "@/services/network/NetworkStatus";
+import { classifyProviderFailure, isOfflineNetworkFailure } from "@kunai/core";
+import { detectGeoBlockedProviderResponse } from "@kunai/relay";
+import type { ProviderFailure } from "@kunai/types";
 
 export type ErrorScenario =
   | { kind: "provider-timeout"; providerName: string; elapsedSec: number }
@@ -115,11 +117,26 @@ export function buildLocalPlaybackFailureProblem(): PlaybackProblem {
 
 export function buildProviderResolveProblem({
   attempts,
+  fallbackAvailable = true,
+  hasStreamCandidates = false,
 }: {
   attempts: readonly {
-    readonly failure?: { readonly code?: string; readonly message?: string } | undefined;
+    readonly failure?:
+      | {
+          readonly providerId?: string;
+          readonly code?: string;
+          readonly message?: string;
+        }
+      | undefined;
   }[];
   capabilitySnapshot?: unknown;
+  /**
+   * False when every compatible provider already ran (or none is compatible):
+   * offering "try the next provider" then is a dead end.
+   */
+  readonly fallbackAvailable?: boolean;
+  /** False when no attempt produced streams or sources the picker could show. */
+  readonly hasStreamCandidates?: boolean;
 }): PlaybackProblem {
   if (hasRuntimeMissingFailure(attempts)) {
     return {
@@ -143,12 +160,15 @@ export function buildProviderResolveProblem({
     };
   }
 
-  const failureMessages = attempts
-    .map((attempt) => attempt.failure?.message ?? "")
-    .filter(Boolean)
-    .join(" ");
+  const fallbackActions: readonly PlaybackProblemAction[] = fallbackAvailable
+    ? ["try-next-provider", "diagnostics"]
+    : ["diagnostics"];
+  const tryNextAction: PlaybackProblemAction = fallbackAvailable
+    ? "try-next-provider"
+    : "diagnostics";
+  const streamAction: PlaybackProblemAction = hasStreamCandidates ? "pick-stream" : tryNextAction;
 
-  if (classifyNetworkFailure(failureMessages) === "offline") {
+  if (attempts.some((attempt) => hasOfflineSignature(attempt.failure))) {
     return {
       stage: "provider-resolve",
       severity: "blocking",
@@ -159,78 +179,87 @@ export function buildProviderResolveProblem({
     };
   }
 
-  if (/net::|ERR_INTERNET|network|ECONNREFUSED|ETIMEDOUT/i.test(failureMessages)) {
-    return {
-      stage: "provider-resolve",
-      severity: "recoverable",
-      cause: "network",
-      userMessage: "Network error while resolving the stream.",
-      recommendedAction: "refresh",
-      secondaryActions: ["try-next-provider", "diagnostics"],
-    };
-  }
-
-  if (/timeout|timed out/i.test(failureMessages)) {
-    return {
-      stage: "provider-resolve",
-      severity: "recoverable",
-      cause: "provider-timeout",
-      userMessage: "The provider timed out while resolving the stream.",
-      recommendedAction: "refresh",
-      secondaryActions: ["try-next-provider", "diagnostics"],
-    };
-  }
-
-  if (
-    /session_missing|session_invalid|session_expired|turnstile_failed|guarded_session_invalid|valid browser session|x-session-token|videasy session/i.test(
-      failureMessages,
-    )
-  ) {
+  const sessionFailure = findSessionFailure(attempts);
+  if (sessionFailure) {
+    const providerName = sessionFailure.providerId
+      ? formatProviderDisplayName(sessionFailure.providerId)
+      : "This provider";
     return {
       stage: "provider-resolve",
       severity: "blocking",
       cause: "provider-session",
-      userMessage:
-        "VidKing needs your attended Bitcine/Videasy browser session before this source can resolve.",
+      userMessage: `${providerName} needs a saved browser session before this source can resolve.`,
       recommendedAction: "settings",
-      secondaryActions: ["try-next-provider", "diagnostics"],
+      secondaryActions: fallbackActions,
     };
   }
 
-  if (/403|401|auth|forbidden|unauthorized/i.test(failureMessages)) {
-    return {
-      stage: "provider-resolve",
-      severity: "recoverable",
-      cause: "provider-access",
-      userMessage: "The provider returned an access error. This title may be region-locked.",
-      recommendedAction: "try-next-provider",
-      secondaryActions: ["diagnostics"],
-    };
-  }
+  // The last *meaningful* failure is why the chain exhausted — earlier
+  // providers already fell back, so their complaints are context, not cause.
+  const last = lastMeaningfulFailure(attempts);
+  const classification = last ? classifyProviderFailure(last) : undefined;
 
-  if (
-    /no stream|stream not found|no streams found|no playable stream|no stream candidates/i.test(
-      failureMessages,
-    )
-  ) {
-    return {
-      stage: "provider-resolve",
-      severity: "blocking",
-      cause: "no-stream",
-      userMessage: "No playable stream was found for this episode.",
-      recommendedAction: "pick-stream",
-      secondaryActions: ["try-next-provider", "diagnostics"],
-    };
+  switch (classification?.failureClass) {
+    case "timeout":
+      return {
+        stage: "provider-resolve",
+        severity: "recoverable",
+        cause: "provider-timeout",
+        userMessage: classification.userSummary,
+        recommendedAction: "refresh",
+        secondaryActions: fallbackActions,
+      };
+    case "network":
+      return {
+        stage: "provider-resolve",
+        severity: "recoverable",
+        cause: "network",
+        userMessage: classification.userSummary,
+        recommendedAction: "refresh",
+        secondaryActions: fallbackActions,
+      };
+    case "rate-limited":
+    case "blocked": {
+      // The one production reader of `detectGeoBlockedProviderResponse`: a
+      // blocked provider is where regional blocking surfaces, so a geo-block
+      // signature on the failure earns a relay hint. Hint path only — the relay
+      // stays metadata-only, no media route is offered or implied here.
+      const geoHint = geoBlockedRelayHint(last);
+      return {
+        stage: "provider-resolve",
+        severity: "recoverable",
+        cause: "provider-access",
+        userMessage: geoHint
+          ? `${classification.userSummary} ${geoHint}`
+          : classification.userSummary,
+        recommendedAction: tryNextAction,
+        secondaryActions: ["diagnostics"],
+      };
+    }
+    case "provider-empty":
+    case "provider-parse":
+    case "expired-stream":
+    case "unsupported-title":
+    case "sub-dub-mismatch":
+    case "title-episode-gap":
+      return {
+        stage: "provider-resolve",
+        severity: "blocking",
+        cause: "no-stream",
+        userMessage: classification.userSummary,
+        recommendedAction: streamAction,
+        secondaryActions: fallbackActions,
+      };
+    default:
+      return {
+        stage: "provider-resolve",
+        severity: "blocking",
+        cause: "no-stream",
+        userMessage: "No playable stream was found for this episode.",
+        recommendedAction: streamAction,
+        secondaryActions: fallbackActions,
+      };
   }
-
-  return {
-    stage: "provider-resolve",
-    severity: "blocking",
-    cause: "no-stream",
-    userMessage: "No playable stream was found from the available provider attempts.",
-    recommendedAction: "pick-stream",
-    secondaryActions: ["try-next-provider", "diagnostics"],
-  };
 }
 
 export function buildPlayerFailureProblem(failureClass: PlaybackFailureClass): PlaybackProblem {
@@ -400,4 +429,82 @@ function hasYtDlpMissingFailure(
     const message = attempt.failure?.message?.toLowerCase() ?? "";
     return code === "yt-dlp-missing" || message.includes("yt-dlp");
   });
+}
+
+function hasOfflineSignature(
+  failure: { readonly code?: string; readonly message?: string } | undefined,
+): boolean {
+  return Boolean(
+    failure?.message &&
+    isOfflineNetworkFailure({
+      // SAFETY: code passes through for the record only — the classifier reads message patterns, not the code.
+      code: (failure.code as ProviderFailure["code"]) ?? "unknown",
+      message: failure.message,
+    }),
+  );
+}
+
+const SESSION_GUARD_PATTERN =
+  /session_missing|session_invalid|session_expired|turnstile_failed|guarded_session_invalid|valid browser session|x-session-token|videasy session/i;
+
+/**
+ * Hint copy for a failure that carries a geo-block signature. The detector
+ * reads the failure message as the response body — attempts here carry no
+ * status or upstream URL, and every field on its input is optional.
+ */
+function geoBlockedRelayHint(
+  failure: { readonly providerId?: string; readonly message?: string } | undefined,
+): string | null {
+  if (!failure?.message) return null;
+  const detection = detectGeoBlockedProviderResponse({
+    providerId: failure.providerId,
+    body: failure.message,
+  });
+  if (!detection.blocked) return null;
+  return detection.relaySuggested
+    ? "This looks like regional blocking — a personal metadata relay (Relay in Settings) can sometimes reach this provider."
+    : "This looks like regional blocking from this network.";
+}
+
+function findSessionFailure(
+  attempts: readonly {
+    readonly failure?: { readonly providerId?: string; readonly message?: string } | undefined;
+  }[],
+): { readonly providerId?: string; readonly message?: string } | undefined {
+  return attempts.find((attempt) => SESSION_GUARD_PATTERN.test(attempt.failure?.message ?? ""))
+    ?.failure;
+}
+
+/**
+ * The last non-noise failure in candidate order. Aborted attempts carry no
+ * failure at all, and a bare "unknown" from an early provider must not shadow
+ * the typed failure that actually exhausted the chain.
+ */
+function lastMeaningfulFailure(
+  attempts: readonly {
+    readonly failure?:
+      | {
+          readonly providerId?: string;
+          readonly code?: string;
+          readonly message?: string;
+        }
+      | undefined;
+  }[],
+): { readonly providerId?: string; readonly code?: string; readonly message?: string } | undefined {
+  const failures = attempts.flatMap((attempt) => (attempt.failure ? [attempt.failure] : []));
+  if (failures.length === 0) return undefined;
+  const meaningful = failures.findLast((failure) => {
+    if (failure.code && failure.code !== "unknown") return true;
+    const cls = classifyProviderFailure(failure);
+    return cls.failureClass !== "unknown" && cls.failureClass !== "user-cancelled";
+  });
+  return meaningful ?? failures.at(-1);
+}
+
+function formatProviderDisplayName(providerId: string): string {
+  return providerId
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }

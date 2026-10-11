@@ -41,17 +41,27 @@ export async function loadProductionProviderModules(
   const [
     { videasyProviderModule },
     { vidlinkProviderModule },
+    { vidrockProviderModule },
     { rivestreamProviderModule },
+    { movyProviderModule },
     { allmangaProviderModule },
     { anidbProviderModule },
+    { hianimeProviderModule },
+    { animeggProviderModule },
+    { kickassanimeProviderModule },
     { miruroProviderModule },
     { youtubeProviderModule },
   ] = await Promise.all([
     import("@kunai/providers/videasy"),
     import("@kunai/providers/vidlink"),
+    import("@kunai/providers/vidrock"),
     import("@kunai/providers/rivestream"),
+    import("@kunai/providers/movy"),
     import("@kunai/providers/allmanga"),
     import("@kunai/providers/anidb"),
+    import("@kunai/providers/hianime"),
+    import("@kunai/providers/animegg"),
+    import("@kunai/providers/kickassanime"),
     import("@kunai/providers/miruro"),
     import("@kunai/providers/youtube"),
   ]);
@@ -60,10 +70,15 @@ export async function loadProductionProviderModules(
     [
       videasyProviderModule,
       vidlinkProviderModule,
+      vidrockProviderModule,
       rivestreamProviderModule,
+      movyProviderModule,
       anidbProviderModule,
       allmangaProviderModule,
+      hianimeProviderModule,
       miruroProviderModule,
+      animeggProviderModule,
+      kickassanimeProviderModule,
       youtubeProviderModule,
     ],
     providerPriority,
@@ -134,6 +149,30 @@ export async function bootstrapProviders(
   });
 
   const providerRegistry = createProviderRegistry(engine, providerPriority);
+
+  // The module ordering is a pure function of the priority lists, which change
+  // only via config edits — memoize on the joined lists rather than re-sorting
+  // the module array on every resolve.
+  const getOrderedModules = (() => {
+    let cacheKey: string | null = null;
+    let ordered: readonly CoreProviderModule[] = providerModules;
+    return () => {
+      const priority = createProviderPrioritySnapshot(config);
+      const raw = config.getRaw();
+      const key = [
+        priority.providerPriority.join(","),
+        priority.animeProviderPriority.join(","),
+        (priority.youtubeProviderPriority ?? []).join(","),
+        raw.providerRelay?.enabled ? "relay-on" : "relay-off",
+        JSON.stringify(raw.providerRelay?.providers ?? {}),
+      ].join("|");
+      if (key !== cacheKey) {
+        cacheKey = key;
+        ordered = orderProviderModulesByPriority(providerModules, priority);
+      }
+      return ordered;
+    };
+  })();
   const streamHealthService = new StreamHealthService();
   const playbackResolveWork = new PlaybackResolveWorkService(
     new PlaybackResolveCoordinator({
@@ -147,6 +186,7 @@ export async function bootstrapProviders(
       titlePlaybackSource: titlePlaybackSource,
       diagnostics: diagnosticsService,
       getProviderPriority: () => createProviderPrioritySnapshot(config),
+      getOrderedModules,
       catalogCrosswalk: persistence.catalogCrosswalk,
     }),
     {

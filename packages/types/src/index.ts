@@ -5,9 +5,10 @@ export type ProviderLane = "anime" | "series" | "youtube";
 export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
 
 /** The user-visible YouTube result kind; collections are not playable videos. */
-export type YouTubeContentShape = "video" | "short" | "playlist" | "channel";
+export type YouTubeResultKind = "video" | "short" | "playlist" | "channel";
 
 export type * from "./provider-cycle";
+export * from "./provider-http-error";
 export * from "./share";
 
 export type ProviderId = string & { readonly __brand?: "ProviderId" };
@@ -158,6 +159,34 @@ export interface ProviderSourceEvidence {
   readonly metadata?: Record<string, unknown>;
 }
 
+/**
+ * One edge in a title's relation graph — how this entry connects to a sibling
+ * catalog entry. `kind` is normalized across sources: AniList `SEQUEL`/`PREQUEL`
+ * and AniDB `Sequel`/`Prequel` links both land here; continuation-of-a-season
+ * (AniList does not type PART edges — "Season 3 Part 2" is a `sequel` whose
+ * title carries the marker) is distinguished downstream by the season-entry
+ * resolver, which never counts a continuation as a new season.
+ */
+export type TitleRelationKind =
+  | "sequel"
+  | "prequel"
+  | "season-part"
+  | "side-story"
+  | "alternative"
+  | "adaptation"
+  | "summary"
+  | "other";
+
+export interface TitleRelationEdge {
+  readonly kind: TitleRelationKind;
+  /** Catalog id of the related entry — `anilist:<id>` or a provider-native id. */
+  readonly targetId: string;
+  readonly targetTitle?: string;
+  readonly targetYear?: number;
+  /** Which catalog asserted the edge — corroboration between sources matters. */
+  readonly source: "anilist" | "anidb" | "tmdb";
+}
+
 export interface TitleIdentity {
   readonly id: string;
   readonly kind: MediaKind;
@@ -168,6 +197,17 @@ export interface TitleIdentity {
   readonly imdbId?: string;
   readonly malId?: string;
   readonly externalIds?: ProviderExternalIds;
+  /**
+   * Known alias titles (english/romaji/native/synonyms). Providers match on
+   * these instead of re-guessing from the display title alone.
+   */
+  readonly aliases?: readonly string[];
+  /**
+   * Relation edges for this entry, populated on the anime lane. A provider
+   * asking "which entry is season N" must use the season-entry resolver over
+   * this graph — never a title-string ordinal guess.
+   */
+  readonly relations?: readonly TitleRelationEdge[];
 }
 
 /** Exact provider-owned episode identity selected from a provider episode catalog. */
@@ -404,7 +444,12 @@ export type ProviderTraceEventType =
   // requested (e.g. a dub was asked for but only a sub server answered). The
   // downgrade is otherwise silent, so the shell cannot tell the user their
   // language intent was not honoured.
-  | "audio:fallback";
+  | "audio:fallback"
+  // Emitted when HLS ladder expansion collapsed to the single `auto` row
+  // (master unreachable, unparseable, or variant-less). Playback proceeds on
+  // the master URL, but the quality picker has no rungs — without this the
+  // auto row is indistinguishable from a genuine single-variant master.
+  | "ladder:fallback";
 
 export interface ProviderTraceEvent {
   readonly type: ProviderTraceEventType;
@@ -502,6 +547,13 @@ export interface ProviderCachePort {
 export interface ProviderRuntimePort {
   readonly runtime: ProviderRuntime;
   readonly operations: readonly ProviderOperation[];
+  /**
+   * "Safe to execute inside a browser runtime" — NOT "requires a browser".
+   * `false` means the port relies on Node/Bun-only APIs (raw sockets, crypto,
+   * child processes). Every Kunai production provider is a headless resolver;
+   * none of them need a browser, and a generated table that renders this column
+   * as "browser required" would invert the meaning.
+   */
   readonly browserSafe: boolean;
   readonly relaySafe: boolean;
   readonly localOnly: boolean;
@@ -521,28 +573,40 @@ export interface ProviderResolveInput {
   readonly preferredSubtitleDelivery?: SubtitleDelivery;
   readonly qualityPreference?: string;
   readonly startupPriority?: StartupPriority;
-  readonly regionHint?: string;
-  readonly intent: "browse" | "focused" | "prefetch" | "play" | "refresh" | "autoplay";
+  readonly intent: "play" | "refresh";
   readonly allowedRuntimes: readonly ProviderRuntime[];
 }
 
-export type ProviderRetryBackoff = "none" | "fixed" | "exponential";
-
 export interface ProviderRetryPolicy {
   readonly maxAttempts: number;
-  readonly backoff: ProviderRetryBackoff;
-  readonly delayMs?: number;
-  readonly retryableCodes?: readonly ResolveErrorCode[];
-}
-
-export interface ProviderAbortState {
-  readonly aborted: boolean;
-  readonly reason?: "user-cancelled" | "provider-fallback" | "timeout" | "shutdown";
 }
 
 export interface ProviderFetchPort {
   readonly runtime: "browser-safe-fetch" | "direct-http";
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
+  /**
+   * Whether this port resolves `url`'s hostname on the local machine. A relay
+   * port resolves on the relay's side for hosts it forwards — local DNS
+   * answers mean nothing there — but direct fall-through (relay off,
+   * unauthorized fallback, non-registered upstream) resolves locally, so
+   * SSRF DNS re-validation still applies to those requests.
+   */
+  readonly resolvesLocally?: (url: string) => boolean;
+}
+
+/**
+ * Header a fetch port sets when the response actually came back through the
+ * relay (value "1"). A provider that would otherwise retry the same URL
+ * directly — say, to dodge a Cloudflare challenge — must treat a marked
+ * response as final: re-requesting upstream direct would silently bypass the
+ * relay the user deployed. Absent means the port answered locally (relay off,
+ * unauthorized fallback, or a direct port), so local fall-through stays legal.
+ */
+export const RELAYED_RESPONSE_HEADER = "X-Kunai-Relayed";
+
+/** True when this response was produced by the relay rather than a local fetch. */
+export function isRelayedResponse(response: Response): boolean {
+  return response.headers.get(RELAYED_RESPONSE_HEADER) === "1";
 }
 
 export type RelayMethod = "GET" | "POST" | "HEAD";
@@ -590,6 +654,18 @@ export interface RelayRpcRequest {
   readonly body?: string;
 }
 
+/**
+ * Set by the client-side relay fetch port on any response that came back
+ * through a relay hop, overwriting whatever the upstream sent under this name.
+ *
+ * A relay answers some requests itself (`unknown-provider` from a deployment
+ * that predates a provider, `unauthorized`, `host-not-allowed`) and proxies the
+ * rest. The client cannot tell those apart from the wire, so an adapter must
+ * not read an HTTP status that arrived over a relay hop as the upstream's own
+ * verdict.
+ */
+export const RELAY_HOP_HEADER = "X-Kunai-Relay-Hop";
+
 export interface RelayRpcErrorBody {
   readonly error: {
     readonly code: RelayErrorCode;
@@ -635,7 +711,7 @@ export interface ProviderSearchInput {
   readonly preferredAudioLanguage?: string;
   readonly preferredSubtitleLanguage?: string;
   /** Optional provider-native shape hint (used by YouTube Shorts filtering). */
-  readonly preferredContentShape?: YouTubeContentShape;
+  readonly preferredResultKind?: YouTubeResultKind;
 }
 
 export interface ProviderSearchResult {
@@ -666,7 +742,7 @@ export interface ProviderSearchResult {
   readonly liveStatus?: YouTubeLiveStatus;
   readonly premium?: boolean;
   readonly paid?: boolean;
-  readonly contentShape?: YouTubeContentShape;
+  readonly resultKind?: YouTubeResultKind;
 }
 
 export interface ProviderEpisodeListInput {
@@ -699,45 +775,19 @@ export interface ProviderResolveResult extends ProviderSourceInventory {
   readonly streamReachabilityVerified?: boolean;
 }
 
-export function isProviderStreamReachabilityVerified(
-  result: Pick<ProviderResolveResult, "streamReachabilityVerified"> | null | undefined,
-): boolean {
-  return result?.streamReachabilityVerified === true;
-}
-
-export function getProviderSourceInventory(result: ProviderResolveResult): ProviderSourceInventory {
-  return {
-    providerId: result.providerId,
-    selectedStreamId: result.selectedStreamId,
-    sources: result.sources,
-    variants: result.variants,
-    streams: result.streams,
-    subtitles: result.subtitles,
-    externalIds: result.externalIds,
-    release: result.release,
-    artwork: result.artwork,
-  };
-}
-
-export function getProviderResolveStatus(
-  result: Pick<ProviderResolveResult, "status">,
-): ProviderResolveResult["status"] {
-  return result.status;
-}
-
 export function isProviderResolveResultResolved(
   result: ProviderResolveResult,
 ): result is ProviderResolveResult & {
   readonly status: "resolved";
   readonly streams: readonly [StreamCandidate, ...StreamCandidate[]];
 } {
-  return result.status === "resolved" && result.streams.length > 0;
-}
-
-export function isProviderResolveResultExhausted(
-  result: ProviderResolveResult,
-): result is ProviderResolveResult & { readonly status: "exhausted" } {
-  return result.status === "exhausted";
+  return (
+    result.status === "resolved" &&
+    // A stream with neither a url nor a deferred locator cannot play — a
+    // result made only of those is exhausted wearing a resolved status, and
+    // accepting it would stop the fallback chain at a provider with nothing.
+    result.streams.some((stream) => Boolean(stream.url ?? stream.deferredLocator))
+  );
 }
 
 export type ProviderFailureClass =
@@ -789,18 +839,4 @@ export interface ProviderModule<TContext extends ProviderRuntimeContext = Provid
   ): Promise<readonly ProviderEpisodeOption[] | null>;
 }
 
-export interface PlaybackRecoveryEvent {
-  readonly id: string;
-  readonly at: string;
-  readonly reason:
-    | "manifest-expired"
-    | "segment-failure"
-    | "buffering-timeout"
-    | "provider-fallback"
-    | "subtitle-fallback"
-    | "manual-retry";
-  readonly fromProviderId?: ProviderId;
-  readonly toProviderId?: ProviderId;
-  readonly resumeSeconds?: number;
-  readonly traceId?: string;
-}
+export * from "./json-value";

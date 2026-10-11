@@ -3,11 +3,14 @@ import { describe, expect, test } from "bun:test";
 import type { ProviderRuntimeContext } from "@kunai/types";
 
 import {
+  AnidbHttpStatusError,
   anidbNumericId,
   anidbProviderModule,
   chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
+  fetchAnidbExternalIds,
   fetchAnidbMalId,
+  isAnidbMaintenanceText,
   looksLikeAnidbShowId,
   parseAnidbBrowseHtml,
   parseAnidbSeasonEvidence,
@@ -23,6 +26,25 @@ import { isOfficialAnidbApi, urlHasHostname } from "./helpers/anidb-urls";
 
 const fixture = (name: string) =>
   Bun.file(new URL(`./fixtures/anidb/${name}`, import.meta.url)).text();
+
+/**
+ * AniDB segment-probes the selected stream before reporting success, so the
+ * fixtures have to answer the hops that probe walks: the variant playlist a
+ * master points at, and the first segment. Leaving these to the 404 fallback
+ * reads as a dead ladder — which is what the gate exists to reject.
+ */
+function anidbFixtureCdnResponse(url: string): Response | null {
+  if (url.includes("segment-0.ts")) {
+    return new Response(new Uint8Array(2048), {
+      status: 206,
+      headers: { "Content-Range": "bytes 0-2047/2048" },
+    });
+  }
+  if (/\d+p\.m3u8/.test(url)) {
+    return new Response("#EXTM3U\n#EXTINF:4.0,\nsegment-0.ts\n", { status: 200 });
+  }
+  return null;
+}
 
 describe("anidb fetch stub URL match", () => {
   test("official API match is host and port, not a substring spoof", () => {
@@ -306,6 +328,7 @@ describe("anidb curl selection", () => {
   test("prefers the newest curl-impersonate build over plain curl", () => {
     expect(resolveAnidbCurl(onPath(["curl", "curl_chrome116", "curl_chrome150"]))).toEqual({
       path: "/usr/bin/curl_chrome150",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome150",
     });
@@ -320,6 +343,7 @@ describe("anidb curl selection", () => {
     const future = ["curl", "curl_chrome199", "curl_firefox210"];
     expect(resolveAnidbCurl(onPath(future))).toEqual({
       path: "/usr/bin/curl_chrome199",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome199",
     });
@@ -330,6 +354,7 @@ describe("anidb curl selection", () => {
   test("ranks family before version so a high Safari number cannot outrank Chrome", () => {
     expect(resolveAnidbCurl(onPath(["curl_safari260", "curl_chrome150"]))).toEqual({
       path: "/usr/bin/curl_chrome150",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome150",
     });
@@ -338,6 +363,7 @@ describe("anidb curl selection", () => {
   test("orders a revision suffix above the bare version", () => {
     expect(resolveAnidbCurl(onPath(["curl_chrome133", "curl_chrome133a"]))).toEqual({
       path: "/usr/bin/curl_chrome133a",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome133a",
     });
@@ -348,6 +374,7 @@ describe("anidb curl selection", () => {
   test("skips mobile builds in favour of an older desktop one", () => {
     expect(resolveAnidbCurl(onPath(["curl", "curl_chrome131_android", "curl_chrome116"]))).toEqual({
       path: "/usr/bin/curl_chrome116",
+      prefixArgs: [],
       impersonates: true,
       profile: "chrome116",
     });
@@ -356,6 +383,7 @@ describe("anidb curl selection", () => {
   test("never selects a tor build", () => {
     expect(resolveAnidbCurl(onPath(["curl", "curl_tor145"]))).toEqual({
       path: "/usr/bin/curl",
+      prefixArgs: [],
       impersonates: false,
       profile: null,
     });
@@ -364,6 +392,7 @@ describe("anidb curl selection", () => {
   test("marks plain curl as non-impersonating so cipher flags are applied", () => {
     expect(resolveAnidbCurl(onPath(["curl"]))).toEqual({
       path: "/usr/bin/curl",
+      prefixArgs: [],
       impersonates: false,
       profile: null,
     });
@@ -377,7 +406,7 @@ describe("anidb curl selection", () => {
         which: (cmd: string) => (cmd === "curl" ? "/usr/bin/curl" : null),
         listPathEntries: () => ["curl", "curl_chrome150"],
       }),
-    ).toEqual({ path: "/usr/bin/curl", impersonates: false, profile: null });
+    ).toEqual({ path: "/usr/bin/curl", prefixArgs: [], impersonates: false, profile: null });
   });
 
   test("reports no curl at all so the caller can fall back to fetch", () => {
@@ -493,6 +522,82 @@ describe("chooseAnidbSearchMatch", () => {
   });
 });
 
+describe("anidb search reports an outage instead of an empty result set", () => {
+  /**
+   * A 503 from the origin used to reach the browse parser as an error page, the
+   * parser found no cards, and `search` returned `[]`. The user saw "No results
+   * for …" for a provider that was down, and the release signoff read the empty
+   * `failureCodes` and filed it as provider drift. `null` is the contract's
+   * transport-failure channel; `[]` is a real answer and must mean one.
+   */
+  test("search returns null when the provider answers 503", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    const search = anidbProviderModule.search;
+    if (!search) throw new Error("the anidb module must expose search");
+
+    try {
+      // SAFETY: the stub answers the one call shape Bun.which is asked for in
+      // this test — a command name in, a path-or-null out.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: `as never` — the stub implements only the fetch call shape used
+      // under test; never is assignable to the write position without a chain.
+      globalThis.fetch = (async () =>
+        new Response("<html><body>503 Service Unavailable</body></html>", {
+          status: 503,
+        })) as never;
+
+      // SAFETY: `as never` — the search call reads only `signal` off the
+      // context in this path.
+      const results = await search({ query: "onigiri" }, {
+        signal: undefined,
+      } as never);
+
+      expect(results).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  /**
+   * Pins the mechanism, not just the symptom: the browse path now asks for the
+   * HTTP status, so a relay 404 is answered immediately instead of spending a
+   * curl request to be told the same thing. Before unconditional status reporting this fell
+   * through to the transport fallback.
+   */
+  test("a relay 404 is answered without falling through to a local transport", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    let transportFallbackUsed = false;
+
+    try {
+      // SAFETY: the stub records the lookup and answers the one call shape
+      // Bun.which is asked for in this test.
+      Bun.which = ((_cmd: string) => {
+        transportFallbackUsed = true;
+        return null;
+      }) as typeof Bun.which;
+
+      // SAFETY: `as never` — the stub supplies only the context fetch used by
+      // this path; never is assignable to the slot without a chain.
+      const context = {
+        fetch: {
+          fetch: async () => new Response("not found", { status: 404 }),
+        },
+      } as never;
+
+      await expect(searchAnidb("a title that does not exist", undefined, context)).rejects.toThrow(
+        /404/,
+      );
+      expect(transportFallbackUsed).toBe(false);
+    } finally {
+      Bun.which = originalWhich;
+    }
+  });
+});
+
 describe("anidb search delegation", () => {
   test("searchAnidb returns the shared browse parser contract", async () => {
     clearAnidbCachesForTest();
@@ -501,10 +606,36 @@ describe("anidb search delegation", () => {
     const originalFetch = globalThis.fetch;
 
     try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
-      globalThis.fetch = (async () =>
-        new Response(page, { status: 200 })) as unknown as typeof fetch;
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      globalThis.fetch = (async () => new Response(page, { status: 200 })) as never;
       expect(await searchAnidb("solo leveling")).toEqual(parseAnidbBrowseHtml(page));
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("searchAnidb surfaces an upstream 503 instead of an empty result set", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+
+    try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // anidb.app answered search with a 503 "Under Maintenance" page
+      // (2026-10): without status reporting it parsed cleanly to zero results
+      // and the outage posed as an empty catalog.
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      globalThis.fetch = (async () =>
+        new Response("<!doctype html><title>Under Maintenance</title>", {
+          status: 503,
+          statusText: "Service Unavailable",
+        })) as never;
+      await expect(searchAnidb("solo leveling")).rejects.toBeInstanceOf(AnidbHttpStatusError);
+      await expect(searchAnidb("solo leveling")).rejects.toMatchObject({ status: 503 });
     } finally {
       globalThis.fetch = originalFetch;
       Bun.which = originalWhich;
@@ -515,11 +646,13 @@ describe("anidb search delegation", () => {
     const originalWhich = Bun.which;
     const originalFetch = globalThis.fetch;
     try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: test stub — supplies only the surface this test exercises.
       globalThis.fetch = (async () =>
         new Response('<a href="/anime/show-1" title="Show"><article></article></a>', {
           status: 200,
-        })) as unknown as typeof fetch;
+        })) as never;
 
       const search = anidbProviderModule.search;
       if (!search) throw new Error("AniDB search is not configured");
@@ -538,11 +671,13 @@ describe("anidb search delegation", () => {
     const originalWhich = Bun.which;
     const originalFetch = globalThis.fetch;
     try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: test stub — supplies only the surface this test exercises.
       globalThis.fetch = (async () =>
         new Response(await fixture("browse-live-cards.html"), {
           status: 200,
-        })) as unknown as typeof fetch;
+        })) as never;
 
       const search = anidbProviderModule.search;
       if (!search) throw new Error("AniDB search is not configured");
@@ -566,6 +701,156 @@ describe("anidb search delegation", () => {
       Bun.which = originalWhich;
     }
   });
+
+  test("isAnidbMaintenanceText identifies maintenance titles and notices", () => {
+    expect(
+      isAnidbMaintenanceText(
+        "<!DOCTYPE html><html><head><title>Under Maintenance</title></head><body></body></html>",
+      ),
+    ).toBe(true);
+    expect(isAnidbMaintenanceText("anidb.app is currently under maintenance")).toBe(true);
+    expect(
+      isAnidbMaintenanceText(
+        "<html><head><title>Search Results</title></head><body></body></html>",
+      ),
+    ).toBe(false);
+  });
+
+  test("searchAnidb throws when upstream returns maintenance page", async () => {
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      // SAFETY: stub lacks the real which() overloads; returning null for every cmd is all this test needs.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: stub only ever returns one canned Response; the full fetch surface is unused.
+      globalThis.fetch = (async () =>
+        new Response("<!DOCTYPE html><title>Under Maintenance</title>", {
+          status: 503,
+        })) as never;
+
+      await expect(searchAnidb("Frieren")).rejects.toThrow();
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("anidbProviderModule.search returns null on maintenance instead of empty results", async () => {
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      // SAFETY: stub lacks the real which() overloads; returning null for every cmd is all this test needs.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: stub only ever returns one canned Response; the full fetch surface is unused.
+      globalThis.fetch = (async () =>
+        new Response("<!DOCTYPE html><title>Under Maintenance</title>", {
+          status: 503,
+        })) as never;
+
+      const search = anidbProviderModule.search;
+      if (!search) throw new Error("AniDB search is not configured");
+      const result = await search({ query: "Frieren" }, { now: () => new Date().toISOString() });
+      expect(result).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("an HTTP error status surfaces instead of parsing the error page into []", async () => {
+    // anidb.app answers 503 at the origin; without reportStatus the browse
+    // call used to parse that page and report "no results" — an outage the UI
+    // could not distinguish from a genuine miss.
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      // SAFETY: stub lacks the real which() overloads; returning null for every cmd is all this test needs.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: stub only ever returns one canned Response; the full fetch surface is unused.
+      globalThis.fetch = (async () =>
+        new Response("Service Unavailable", { status: 503 })) as never;
+
+      await expect(searchAnidb("solo leveling")).rejects.toBeInstanceOf(AnidbHttpStatusError);
+      await expect(searchAnidb("solo leveling")).rejects.toMatchObject({ status: 503 });
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("a relay-side 404 is answered without spending a curl fallback", async () => {
+    // If control ever fell through to the fallback, the plain-fetch stub below
+    // serves a parseable page and the search resolves instead of throwing —
+    // the rejection itself proves the status short-circuit ran.
+    clearAnidbCachesForTest();
+    const page = await fixture("browse-current.html");
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      // SAFETY: stub lacks the real which() overloads; returning null for every cmd is all this test needs.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: stub only ever returns one canned Response; the full fetch surface is unused.
+      globalThis.fetch = (async () => new Response(page, { status: 200 })) as never;
+      const context: ProviderRuntimeContext = {
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () => new Response("missing", { status: 404 }),
+        },
+        now: () => new Date().toISOString(),
+      };
+
+      await expect(searchAnidb("solo leveling", undefined, context)).rejects.toMatchObject({
+        name: "AnidbHttpStatusError",
+        status: 404,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("a relayed fingerprint-retryable status is final — never re-asked direct", async () => {
+    // Without the marker check, a relayed 403 fell through to the local
+    // curl/fetch fallback — silently bypassing the relay the user deployed.
+    // Only a relayed 404 keeps its curl settle (stale-relay `unknown-provider`).
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      let transportFallbackUsed = false;
+      // SAFETY: stub records the probe and supplies no binary.
+      Bun.which = ((_cmd: string) => {
+        transportFallbackUsed = true;
+        return null;
+      }) as typeof Bun.which;
+      // SAFETY: stub only ever throws the sentinel; the full fetch surface is unused.
+      globalThis.fetch = (async () => {
+        transportFallbackUsed = true;
+        throw new Error("SENTINEL: direct upstream request happened");
+      }) as never;
+      const context: ProviderRuntimeContext = {
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () =>
+            new Response("upstream says no", {
+              status: 403,
+              headers: { "X-Kunai-Relayed": "1" },
+            }),
+        },
+        now: () => new Date().toISOString(),
+      };
+
+      await expect(searchAnidb("solo leveling", undefined, context)).rejects.toMatchObject({
+        name: "AnidbHttpStatusError",
+        status: 403,
+      });
+      expect(transportFallbackUsed).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
 });
 
 describe("anidb episode stream inventory", () => {
@@ -574,6 +859,7 @@ describe("anidb episode stream inventory", () => {
     const originalWhich = Bun.which;
     const originalFetch = globalThis.fetch;
     try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
       globalThis.fetch = stub;
       return await run();
@@ -586,6 +872,7 @@ describe("anidb episode stream inventory", () => {
 
   test("ignores languages that Kunai cannot label honestly", async () => {
     const resolution = await withClientStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
       (async (input: string | URL | Request) => {
         const url = String(input);
         if (url.includes("/api/frontend/anime/1234/episodes")) {
@@ -606,8 +893,9 @@ describe("anidb episode stream inventory", () => {
           return new Response("#EXTM3U\n#EXTINF:4,\nsegment.ts");
         }
         throw new Error(`unexpected request: ${url}`);
-      }) as typeof fetch,
+      }) as never,
       () =>
+        // SAFETY: test stub — supplies only the surface this test exercises.
         resolveAnidbEpisodeStreams({
           showId: "show-1234",
           episodeNumber: 1,
@@ -625,6 +913,7 @@ describe("anidb episode stream inventory", () => {
     let englishRequestAborted = false;
     const startedAt = performance.now();
     const resolution = await withClientStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
       (async (input: string | URL | Request, init?: RequestInit) => {
         const url = String(input);
         if (url.includes("/api/frontend/anime/1234/episodes")) {
@@ -648,7 +937,7 @@ describe("anidb episode stream inventory", () => {
           return await new Promise<Response>((resolve, reject) => {
             const timer = setTimeout(
               () => resolve(new Response("file: 'https://cdn.example/eng.m3u8'")),
-              200,
+              400,
             );
             init?.signal?.addEventListener(
               "abort",
@@ -665,8 +954,9 @@ describe("anidb episode stream inventory", () => {
           return new Response("#EXTM3U\n#EXTINF:4,\nsegment.ts");
         }
         throw new Error(`unexpected request: ${url}`);
-      }) as typeof fetch,
+      }) as never,
       () =>
+        // SAFETY: test stub — supplies only the surface this test exercises.
         resolveAnidbEpisodeStreams({
           showId: "show-1234",
           episodeNumber: 1,
@@ -676,7 +966,9 @@ describe("anidb episode stream inventory", () => {
         } as Parameters<typeof resolveAnidbEpisodeStreams>[0]),
     );
 
-    expect(performance.now() - startedAt).toBeLessThan(150);
+    // Well under the 400ms the gated alternate would add if it serialized —
+    // the margin makes the bound jitter-proof instead of tight.
+    expect(performance.now() - startedAt).toBeLessThan(350);
     expect(resolution.requested).toMatchObject({ mode: "sub", status: "resolved" });
     expect(resolution.alternate).toMatchObject({ mode: "dub", status: "timed-out" });
     expect(englishRequestAborted).toBe(true);
@@ -692,11 +984,9 @@ describe("anidb direct resolve season routing", () => {
   function anidbFetchStub(routes: {
     readonly browse?: string;
     readonly episodesByNumericId: Record<string, { id: number; number: number }[]>;
-  }) {
-    return (async (input: unknown) => {
-      const url = String(
-        typeof input === "string" ? input : ((input as { url?: string })?.url ?? input),
-      );
+  }): typeof fetch {
+    const stub = async (input: string | URL | Request) => {
+      const url = String(input instanceof Request ? input.url : input);
       if (url.includes("/browse?")) {
         return new Response(routes.browse ?? "", { status: 200 });
       }
@@ -724,7 +1014,9 @@ describe("anidb direct resolve season routing", () => {
         return new Response("#EXTM3U\n#EXTINF:4,\nseg0.ts\n", { status: 200 });
       }
       throw new Error(`unexpected anidb request: ${url}`);
-    }) as unknown as typeof fetch;
+    };
+    // SAFETY: the provider only calls fetch(); preconnect is never exercised.
+    return stub as typeof fetch;
   }
 
   async function resolveWithStub(
@@ -735,6 +1027,7 @@ describe("anidb direct resolve season routing", () => {
     const originalWhich = Bun.which;
     const originalFetch = globalThis.fetch;
     try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
       globalThis.fetch = stub;
       return await anidbProviderModule.resolve(input, CONTEXT);
@@ -747,6 +1040,7 @@ describe("anidb direct resolve season routing", () => {
 
   test("routes a season-2 request to the sibling title and uses cour numbering", async () => {
     const result = await resolveWithStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
       {
         title: {
           id: "solo-leveling-19413",
@@ -788,6 +1082,7 @@ describe("anidb direct resolve season routing", () => {
 
   test("an unlabelled title whose catalog lacks the absolute episode falls back to cour numbering", async () => {
     const result = await resolveWithStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
       {
         title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
         episode: { season: 1, episode: 1, absoluteEpisode: 13 },
@@ -827,6 +1122,7 @@ describe("anidb direct resolve season routing", () => {
   test("propagates resolved malId into externalIds when not provided in input", async () => {
     clearAnidbCachesForTest();
     const result = await resolveWithStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
       {
         title: { id: "onigiri-3942", kind: "anime", title: "Onigiri" },
         episode: { season: 1, episode: 1 },
@@ -835,10 +1131,9 @@ describe("anidb direct resolve season routing", () => {
         intent: "play",
         allowedRuntimes: ["direct-http"],
       } as Parameters<typeof anidbProviderModule.resolve>[0],
-      (async (input: unknown) => {
-        const url = String(
-          typeof input === "string" ? input : ((input as { url?: string })?.url ?? input),
-        );
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      (async (input: string | URL | Request) => {
+        const url = String(input instanceof Request ? input.url : input);
         if (url.includes("/anime/onigiri-3942")) {
           return new Response('<a href="https://myanimelist.net/anime/32612/Onigiri">MAL</a>', {
             status: 200,
@@ -867,8 +1162,8 @@ describe("anidb direct resolve season routing", () => {
             status: 200,
           });
         }
-        return new Response("", { status: 404 });
-      }) as unknown as typeof fetch,
+        return anidbFixtureCdnResponse(url) ?? new Response("", { status: 404 });
+      }) as never,
     );
 
     expect(result.status).toBe("resolved");
@@ -879,6 +1174,7 @@ describe("anidb direct resolve season routing", () => {
   test("preserves existing input malId over resolving new malId", async () => {
     clearAnidbCachesForTest();
     const result = await resolveWithStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
       {
         title: {
           id: "onigiri-3942",
@@ -903,8 +1199,113 @@ describe("anidb direct resolve season routing", () => {
     expect(result.externalIds?.malId).toBe("99999");
   });
 
+  /**
+   * A Cloudflare challenge is not a network fault and no retry clears it. The
+   * engine reads `retryable` to decide whether to buy this provider a second
+   * full attempt — 12s each under the `balanced` default — so an unconditional
+   * `true` spent half the resolve budget on a request that cannot succeed
+   * before any fallback was considered. Mirrors the `AllMangaCaptchaError`
+   * policy in allmanga/direct.ts.
+   */
+  test("a Cloudflare challenge is reported as blocked and not retryable", async () => {
+    // SAFETY: test stub — supplies only the surface this test exercises.
+    const challenge = (async () =>
+      new Response("<html><head><title>Just a moment...</title></head></html>", {
+        status: 403,
+      })) as never;
+
+    const result = await resolveWithStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      challenge,
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("blocked");
+    expect(result.failures[0]?.retryable).toBe(false);
+  });
+
+  /**
+   * A 404 on the stream playlist is a definitive miss — the upstream said the
+   * source is gone. Marking it retryable would spend a second 12s resolve
+   * budget re-fetching a route that cannot come back within the attempt.
+   */
+  test("a missing stream playlist is not-found and not retryable", async () => {
+    const inner = anidbFetchStub({
+      episodesByNumericId: { "700": [{ id: 70001, number: 1 }] },
+    });
+    const gonePlaylist = async (input: string | URL | Request) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.includes("stream.m3u8")) {
+        return new Response("gone", { status: 404 });
+      }
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      return inner(input as Parameters<typeof fetch>[0]);
+    };
+
+    const result = await resolveWithStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      // SAFETY: the stub answers the two routes this test drives.
+      gonePlaylist as never,
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("not-found");
+    expect(result.failures[0]?.retryable).toBe(false);
+  });
+
+  /**
+   * A 5xx on the playlist is an upstream outage, not a missing source — it
+   * may heal, so the failure stays retryable and labeled
+   * `provider-unavailable` instead of conflating it with a gone route.
+   */
+  test("an upstream-down playlist is provider-unavailable and retryable", async () => {
+    const inner = anidbFetchStub({
+      episodesByNumericId: { "700": [{ id: 70001, number: 1 }] },
+    });
+    const maintenance = async (input: string | URL | Request) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.includes("stream.m3u8")) {
+        return new Response("under maintenance", { status: 503 });
+      }
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      return inner(input as Parameters<typeof fetch>[0]);
+    };
+
+    const result = await resolveWithStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      // SAFETY: the stub answers the two routes this test drives.
+      maintenance as never,
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("provider-unavailable");
+    expect(result.failures[0]?.retryable).toBe(true);
+  });
+
   test("does not fall back to Japanese when a requested dub is unavailable", async () => {
     const result = await resolveWithStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
       {
         title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
         episode: { season: 1, episode: 1 },
@@ -921,8 +1322,29 @@ describe("anidb direct resolve season routing", () => {
     expect(result.failures[0]?.retryable).toBe(false);
   });
 
+  test("a Cloudflare block is not retryable once both inner transports are spent", async () => {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    const result = await resolveWithStub(
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      (async () => {
+        throw new Error("request blocked by Cloudflare challenge");
+      }) as never,
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("blocked");
+    expect(result.failures[0]?.retryable).toBe(false);
+  });
+
   test("does not advertise hardcoded English subs without a subtitle track", async () => {
     const result = await resolveWithStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
       {
         title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
         episode: { season: 1, episode: 1 },
@@ -952,6 +1374,7 @@ describe("anidb direct resolve season routing", () => {
   test("resolves dual audio streams (sub and dub) when episode exposes both languages", async () => {
     clearAnidbCachesForTest();
     const result = await resolveWithStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
       {
         title: { id: "kaguya-sama-1234", kind: "anime", title: "Kaguya-sama" },
         episode: { season: 1, episode: 1 },
@@ -960,10 +1383,9 @@ describe("anidb direct resolve season routing", () => {
         intent: "play",
         allowedRuntimes: ["direct-http"],
       } as Parameters<typeof anidbProviderModule.resolve>[0],
-      (async (input: unknown) => {
-        const url = String(
-          typeof input === "string" ? input : ((input as { url?: string })?.url ?? input),
-        );
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      (async (input: string | URL | Request) => {
+        const url = String(input instanceof Request ? input.url : input);
         if (url.includes("/api/frontend/anime/1234/episodes")) {
           return new Response(JSON.stringify({ episodes: [{ id: 555, number: 1 }] }), {
             status: 200,
@@ -998,8 +1420,8 @@ describe("anidb direct resolve season routing", () => {
             { status: 200 },
           );
         }
-        return new Response("", { status: 404 });
-      }) as unknown as typeof fetch,
+        return anidbFixtureCdnResponse(url) ?? new Response("", { status: 404 });
+      }) as never,
     );
 
     expect(result.status).toBe("resolved");
@@ -1023,6 +1445,7 @@ describe("anidb direct resolve season routing", () => {
 
   test("keeps requested success and reports a rejected alternate without advertising it", async () => {
     const result = await resolveWithStub(
+      // SAFETY: test stub — supplies only the surface this test exercises.
       {
         title: { id: "kaguya-sama-1234", kind: "anime", title: "Kaguya-sama" },
         episode: { season: 1, episode: 1 },
@@ -1031,6 +1454,7 @@ describe("anidb direct resolve season routing", () => {
         intent: "play",
         allowedRuntimes: ["direct-http"],
       } as Parameters<typeof anidbProviderModule.resolve>[0],
+      // SAFETY: test stub — supplies only the surface this test exercises.
       (async (input: string | URL | Request) => {
         const url = String(input);
         if (url.includes("/api/frontend/anime/1234/episodes")) {
@@ -1054,7 +1478,7 @@ describe("anidb direct resolve season routing", () => {
           throw new Error("English embed unavailable");
         }
         throw new Error(`unexpected request: ${url}`);
-      }) as typeof fetch,
+      }) as never,
     );
 
     expect(result.status).toBe("resolved");
@@ -1073,8 +1497,10 @@ describe("anidb episode metadata", () => {
     const originalFetch = globalThis.fetch;
 
     try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
-      globalThis.fetch = (async (input: unknown) => {
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      globalThis.fetch = (async (input: string | URL | Request) => {
         const url = String(input);
         if (url.includes("/api/frontend/anime/700/episodes")) {
           return new Response(
@@ -1139,7 +1565,7 @@ describe("anidb episode metadata", () => {
           );
         }
         return new Response("not found", { status: 404 });
-      }) as unknown as typeof fetch;
+      }) as never;
 
       const episodes = await anidbProviderModule.listEpisodes?.(
         {
@@ -1186,7 +1612,9 @@ describe("fetchAnidbMalId", () => {
     let fetchCalls = 0;
 
     try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: test stub — supplies only the surface this test exercises.
       globalThis.fetch = (async (url: string) => {
         fetchCalls++;
         if (String(url).includes("/anime/onigiri-3942")) {
@@ -1196,7 +1624,7 @@ describe("fetchAnidbMalId", () => {
           );
         }
         return new Response("Not found", { status: 404 });
-      }) as unknown as typeof fetch;
+      }) as never;
 
       const first = await fetchAnidbMalId("onigiri-3942");
       expect(first).toBe(32612);
@@ -1218,11 +1646,13 @@ describe("fetchAnidbMalId", () => {
     const originalFetch = globalThis.fetch;
 
     try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: test stub — supplies only the surface this test exercises.
       globalThis.fetch = (async () =>
         new Response("<html><body>No links here</body></html>", {
           status: 200,
-        })) as unknown as typeof fetch;
+        })) as never;
 
       expect(await fetchAnidbMalId("unknown-123")).toBeUndefined();
     } finally {
@@ -1241,11 +1671,13 @@ describe("fetchAnidbMalId", () => {
     let fetchCalls = 0;
 
     try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: test stub — supplies only the surface this test exercises.
       globalThis.fetch = (async () => {
         fetchCalls++;
         return new Response("<html><body>No links here</body></html>", { status: 200 });
-      }) as unknown as typeof fetch;
+      }) as never;
 
       expect(await fetchAnidbMalId("no-mal-1")).toBeUndefined();
       expect(await fetchAnidbMalId("no-mal-1")).toBeUndefined();
@@ -1265,7 +1697,9 @@ describe("fetchAnidbMalId", () => {
     let fetchCalls = 0;
 
     try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: test stub — supplies only the surface this test exercises.
       globalThis.fetch = (async () => {
         fetchCalls++;
         if (fetchCalls === 1) throw new Error("connection reset");
@@ -1273,11 +1707,73 @@ describe("fetchAnidbMalId", () => {
           '<html><body><a href="https://myanimelist.net/anime/32612/Onigiri">MAL</a></body></html>',
           { status: 200 },
         );
-      }) as unknown as typeof fetch;
+      }) as never;
 
       expect(await fetchAnidbMalId("flaky-1")).toBeUndefined();
       expect(await fetchAnidbMalId("flaky-1")).toBe(32612);
       expect(fetchCalls).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+});
+
+describe("anidb external ids persistent cache (#205)", () => {
+  test("survives an in-memory clear — second call reads the port, not the network", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    const persisted = new Map<string, unknown>();
+
+    // SAFETY: test stub — supplies only the surface this test exercises.
+    const context = {
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (input: string | URL) => {
+          fetchCalls++;
+          if (String(input).includes("/anime/persist-42")) {
+            return new Response(
+              '<html><body><a href="https://myanimelist.net/anime/32612/x">MAL</a>' +
+                '<a href="https://anilist.co/anime/999/x">AL</a></html>',
+              { status: 200 },
+            );
+          }
+          return new Response("Not found", { status: 404 });
+        },
+      },
+      cache: {
+        read: async <T>(ns: string, key: string): Promise<T | null> =>
+          // SAFETY: the port contract promises callers get back what they wrote.
+          (persisted.get(`${ns}:${key}`) as T) ?? null,
+        write: async <T>(ns: string, key: string, value: T) => {
+          persisted.set(`${ns}:${key}`, value);
+        },
+      },
+      // SAFETY: the context stub provides only the ports this suite exercises.
+    } as never;
+
+    try {
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: test stub — supplies only the surface this test exercises.
+      globalThis.fetch = (async () => {
+        fetchCalls++;
+        return new Response("Not found", { status: 404 });
+      }) as never;
+
+      const first = await fetchAnidbExternalIds("persist-42", undefined, context);
+      expect(first?.malId).toBe(32612);
+      expect(fetchCalls).toBe(1);
+
+      // Process-restart equivalent: every in-memory layer is gone, the
+      // SQLite-backed port is not.
+      clearAnidbCachesForTest();
+      const second = await fetchAnidbExternalIds("persist-42", undefined, context);
+      expect(second?.malId).toBe(32612);
+      expect(second?.anilistId).toBe("999");
+      expect(fetchCalls).toBe(1);
     } finally {
       globalThis.fetch = originalFetch;
       Bun.which = originalWhich;

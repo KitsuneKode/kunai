@@ -35,6 +35,7 @@ import {
   type HlsRelayStopReason,
 } from "./hls-relay";
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
+import { discoverMpvInvocation } from "./mpv-discovery";
 import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
@@ -188,7 +189,10 @@ export class PlayerServiceImpl implements PlayerService {
     const materialized = await materializePlaybackMediaForPlayback(
       stream,
       (reason, detail, httpStatus) => {
-        if (reason === "http-error" && isTerminalHlsHttpStatus(httpStatus)) {
+        if (
+          reason === "blocked-target" ||
+          (reason === "http-error" && isTerminalHlsHttpStatus(httpStatus))
+        ) {
           terminalHlsFailure = { detail, httpStatus };
           return;
         }
@@ -208,6 +212,7 @@ export class PlayerServiceImpl implements PlayerService {
           }),
         );
       },
+      options.abortSignal,
     );
     if (terminalHlsFailure !== null) {
       const failure = terminalHlsFailure as {
@@ -233,7 +238,9 @@ export class PlayerServiceImpl implements PlayerService {
           },
         }),
       );
-      await materialized.cleanup();
+      // Best-effort temp cleanup — a Windows indexer holding the playlist must
+      // not turn a reported manifest rejection into a thrown play().
+      await materialized.cleanup().catch(() => {});
       return {
         watchedSeconds: 0,
         duration: 0,
@@ -407,7 +414,9 @@ export class PlayerServiceImpl implements PlayerService {
         // Keep activeHlsRelay for the next cycle; play() stops/replaces it at the top.
       } else {
         this.stopActiveHlsRelay("playback-end");
-        await materialized.cleanup();
+        // Best-effort temp cleanup, same contract as the deferred path — an
+        // fs fault here must not mask a completed playback as a failure.
+        await materialized.cleanup().catch(() => {});
       }
     }
   }
@@ -510,7 +519,7 @@ export class PlayerServiceImpl implements PlayerService {
               await control.stopCurrentFile?.(reason);
             },
           }
-        : {}),
+        : null),
     };
   }
 
@@ -544,7 +553,7 @@ export class PlayerServiceImpl implements PlayerService {
   }
 
   async isAvailable(): Promise<boolean> {
-    return Boolean(Bun.which("mpv"));
+    return discoverMpvInvocation() !== null;
   }
 
   async playLocal(options: {

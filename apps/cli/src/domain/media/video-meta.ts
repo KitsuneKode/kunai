@@ -1,5 +1,4 @@
-// =============================================================================
-// video-meta.ts — derive a VideoMeta snapshot from a SearchResult
+// Derive a VideoMeta snapshot from a SearchResult
 //
 // YouTube/video fields (channel, views, published, duration, …) live on
 // SearchResult but NOT on TitleInfo, and video titles never populate a
@@ -7,7 +6,6 @@
 // (and the `video` media-panel kind) has a real data source. Keeping it in
 // domain/ lets both the reducer and the bootstrap launch path share one
 // implementation instead of duplicating the field-by-field copy.
-// =============================================================================
 
 import type { SearchResult, VideoMeta } from "@/domain/types";
 import type { ProviderExternalIds } from "@kunai/types";
@@ -23,7 +21,7 @@ export function videoMetaFromSearchResult(result: SearchResult): VideoMeta | nul
     result.viewCount !== undefined ||
     result.publishedAt !== undefined ||
     result.durationSeconds !== undefined ||
-    result.contentShape !== undefined ||
+    result.resultKind !== undefined ||
     result.liveStatus !== undefined ||
     result.episodeCount !== undefined ||
     result.premium !== undefined ||
@@ -35,7 +33,7 @@ export function videoMetaFromSearchResult(result: SearchResult): VideoMeta | nul
     viewCount: result.viewCount,
     publishedAt: result.publishedAt,
     durationSeconds: result.durationSeconds,
-    contentShape: result.contentShape,
+    resultKind: result.resultKind,
     liveStatus: result.liveStatus,
     videoCount: result.episodeCount,
     premium: result.premium,

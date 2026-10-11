@@ -149,8 +149,10 @@ export class StatsService {
     const windowStart = windowStartIso(windowDays);
 
     const totals = this.repo.totalsSince(windowStart, mediaKind);
+    // One scan feeds both the activity metrics and the heatmap — they are the
+    // same rows, and `history_progress` is large enough that a second identical
+    // query is a full table scan for nothing.
     const dayRows = this.repo.dailyActivitySince(windowStart, mediaKind);
-    const heatmapRows = this.repo.dailyActivitySince(windowStart, mediaKind);
     const showRows = this.repo.topShowsSince(windowStart, mediaKind);
     const weeklyRows = this.repo.weeklyBucketsSince(windowStart, mediaKind);
     const kindRows = this.repo.kindBreakdownSince(windowStart, mediaKind);
@@ -220,7 +222,7 @@ export class StatsService {
       providerBreakdown,
       hourOfDay,
       dailyKindMix: [...dailyKindByDate.values()],
-      heatmap: heatmapRows.map((row) => ({
+      heatmap: dayRows.map((row) => ({
         date: row.date,
         watchedCount: row.watchedCount,
         totalSeconds: row.totalSeconds,

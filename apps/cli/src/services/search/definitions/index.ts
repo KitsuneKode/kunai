@@ -1,8 +1,6 @@
-// =============================================================================
 // Search Service Definitions Registry
 //
 // Export all search service definitions.
-// =============================================================================
 
 import type { SearchServiceDefinition } from "../SearchService";
 import { createAniListSearchService } from "./anilist";
@@ -16,7 +14,11 @@ export const SEARCH_SERVICE_DEFINITIONS: SearchServiceDefinition[] = [
       name: "AniList",
       description: "AniList GraphQL search and advanced anime discovery",
     },
-    compatibleProviders: ["anidb", "allanime", "allmanga", "miruro", "hianime"],
+    servesCatalog: "anilist",
+    // Provider-native adapters that still borrow the AniList catalog for
+    // filtered search. AniList-identity providers (miruro) match via
+    // servesCatalog and need no entry here.
+    compatibleProviders: ["anidb", "allanime", "allmanga", "hianime"],
     factory: createAniListSearchService,
   },
   {
@@ -26,7 +28,10 @@ export const SEARCH_SERVICE_DEFINITIONS: SearchServiceDefinition[] = [
       name: "TMDB / Videasy",
       description: "TMDB proxy (db.videasy.to) - movies, series, no API key",
     },
-    compatibleProviders: ["videasy"],
+    // videasy, vidlink, rivestream and any future provider resolving TMDB ids
+    // match via catalog identity — no list maintenance.
+    servesCatalog: "tmdb",
+    compatibleProviders: [],
     factory: createTMDBSearchService,
   },
 ];

@@ -30,6 +30,8 @@ test("npm package README points users at public docs and the real Windows mpv pa
   expect(readme).not.toContain("../../.docs/");
   expect(readme).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
   expect(readme).not.toMatch(/winget install mpv(?:\s|`)/);
+  expect(readme).toContain("winget install --id yt-dlp.yt-dlp -e");
+  expect(readme).not.toMatch(/winget install yt-dlp(?:\s|`)/);
 });
 
 describeWithNode("npm pack guard with binaries on disk", () => {

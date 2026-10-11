@@ -8,16 +8,16 @@ import {
 
 describe("buildYtdlFormatSelector", () => {
   test("best uses DASH merge first", () => {
-    expect(defaultYtdlPlaybackFormat()).toBe("bv*+ba/b");
-    expect(buildYtdlFormatSelector("best")).toBe("bv*+ba/b");
+    expect(defaultYtdlPlaybackFormat()).toBe("bv*+ba/b/ba");
+    expect(buildYtdlFormatSelector("best")).toBe("bv*+ba/b/ba");
   });
 
   test("height caps prefer bestvideo+bestaudio, not muxed best[height]", () => {
     expect(buildYtdlFormatSelector("1080p")).toBe(
-      "bv*[height<=?1080]+ba/bv*[height<=?1080]/bv*+ba/b",
+      "bv*[height<=?1080]+ba/bv*[height<=?1080]/bv*+ba/b/ba",
     );
     expect(buildYtdlFormatSelector("2160p")).toBe(
-      "bv*[height<=?2160]+ba/bv*[height<=?2160]/bv*+ba/b",
+      "bv*[height<=?2160]+ba/bv*[height<=?2160]/bv*+ba/b/ba",
     );
   });
 });

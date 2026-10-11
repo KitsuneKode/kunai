@@ -32,6 +32,8 @@ import {
 } from "@tabler/icons-react";
 import Link from "next/link";
 
+import { LocalTime } from "./local-time";
+
 function formatUpdatedAt(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
@@ -40,6 +42,16 @@ function formatUpdatedAt(iso: string): string {
     .replace("T", " ")
     .replace(/\.\d{3}Z$/, " UTC");
 }
+
+/**
+ * How old a snapshot may be before the page says so.
+ *
+ * The ingest cron computes daily, so one missed run is normal and should not
+ * alarm; two missed runs means the page is masquerading a stale snapshot as
+ * current — on a page whose pitch is trust, that is worth a badge. Not an
+ * error state: the last honest snapshot is still the right thing to show.
+ */
+export const SNAPSHOT_STALE_AFTER_MS = 48 * 60 * 60 * 1000;
 
 const BREAKDOWNS = [
   {
@@ -67,9 +79,9 @@ function BreakdownCards({ metrics }: { readonly metrics: DocsAnalyticsMetrics })
           </Card>
         ))}
       </div>
-      <p className="text-muted-foreground m-0 text-xs text-pretty">
+      <p className="text-muted-foreground m-0 text-xs leading-5 text-pretty">
         Each breakdown counts the same installs a different way, so the three add up to the same day
-        total — they are not parts of one whole. Small-cell suppression is applied per breakdown; it
+        total; they are not parts of one whole. Small-cell suppression is applied per breakdown; it
         is not a joint anonymity guarantee.
       </p>
     </div>
@@ -89,7 +101,7 @@ function PayloadContractCard() {
       <CardHeader>
         <CardTitle>Exact wire payload</CardTitle>
         <CardDescription>
-          Nothing else is accepted. Extra keys — titles, queries, URLs — are rejected.
+          Nothing else is accepted. Extra keys (titles, queries, URLs) are rejected.
         </CardDescription>
         <CardAction>
           <CopyButton text={payload} label="payload" />
@@ -120,7 +132,7 @@ function GuaranteesCard() {
     {
       icon: IconLock,
       title: "Install ids are hashed before storage",
-      body: "The ingest keeps HMAC hashes of the install id with your platform, architecture, and version — never a raw UUID.",
+      body: "The ingest keeps HMAC hashes of the install id with your platform, architecture, and version, never a raw UUID.",
     },
     {
       icon: IconShieldCheck,
@@ -227,7 +239,7 @@ export function AnalyticsMetricsEmpty() {
           render={<Link href="/docs/users/cli-reference" />}
           nativeButton={false}
         >
-          CLI reference
+          CLI Reference
         </Button>
       </EmptyContent>
     </Empty>
@@ -254,18 +266,27 @@ export function AnalyticsZeroDayEmpty({ day }: { readonly day: string }) {
 export function UsagePanel({
   metrics,
   series,
+  nowMs,
 }: {
   readonly metrics: DocsAnalyticsMetrics | null;
   readonly series: DocsAnalyticsSeries | null;
+  readonly nowMs: number;
 }) {
+  /*
+    ISR keeps serving the last good snapshot even if the ingest cron dies,
+    so "updated" can drift quietly forever. Stale is judged from the
+    snapshot's own updatedAt, rendered at revalidate time.
+  */
+  const stale = metrics ? nowMs - Date.parse(metrics.updatedAt) > SNAPSHOT_STALE_AFTER_MS : false;
+
   return (
     <div className="flex flex-col gap-6">
       <Alert className="border-border/80 bg-card/60">
         <IconShieldCheck />
-        <AlertTitle>Optional · aggregates only · enable or disable in Settings</AlertTitle>
+        <AlertTitle>Opt-in, aggregates only</AlertTitle>
         <AlertDescription>
           Public day and lifetime counts, plus version, OS and architecture breakdowns. Never who is
-          running Kunai, what they watched, or any install UUID.
+          running Kunai, what they watched, or any install UUID. Turn it on or off in Settings.
         </AlertDescription>
       </Alert>
 
@@ -277,11 +298,24 @@ export function UsagePanel({
             <p className="text-muted-foreground m-0 text-xs">
               Snapshot day <span className="font-mono tabular-nums">{metrics.day}</span>
               {" · "}
-              updated {formatUpdatedAt(metrics.updatedAt)}
+              updated{" "}
+              <LocalTime iso={metrics.updatedAt} utcLabel={formatUpdatedAt(metrics.updatedAt)} />
             </p>
+            {/* A native disclosure: the changeover detail is reference material for
+                the few who read the day-by-day table closely, so it stays one
+                line until asked for instead of occupying the top of the page. */}
+            <details className="text-muted-foreground basis-full text-xs">
+              <summary className="hover:text-foreground w-fit cursor-pointer underline decoration-dotted underline-offset-4">
+                Days end at midnight IST
+              </summary>
+              <p className="m-0 mt-1.5 max-w-prose leading-5 text-pretty">
+                Days end at midnight IST (18:30 UTC) from 15 September 2026. 14 September 2026 is an
+                18.5-hour changeover day ending at 18:30 UTC; earlier days end at midnight UTC.
+              </p>
+            </details>
             <div className="flex flex-wrap items-center gap-2">
+              {stale ? <Badge variant="outline">data may be stale</Badge> : null}
               <Badge variant="outline">schema v{metrics.schemaVersion}</Badge>
-              <Badge variant="secondary">opt out with /analytics</Badge>
             </div>
           </div>
 

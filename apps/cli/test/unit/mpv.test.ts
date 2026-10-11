@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { needsMpvNetworkPreflight } from "@/infra/player/mpv-playback-url";
 import {
   buildMpvArgs,
   collectAdditionalSubtitleTracks,
@@ -252,6 +253,29 @@ test("buildMpvArgs maps language preferences to mpv alang/slang", () => {
   expect(args).toContain("--slang=no");
 });
 
+test("buildMpvArgs turns Kunai's sub/dub audio modes into tracks mpv can match", () => {
+  // The Tracks panel writes the mode into the audio profile. `--alang=dub`
+  // matches no track, so on a multi-audio master mpv stayed on the default
+  // Japanese one and a dub request played the sub.
+  const argsFor = (audioPreference: string) =>
+    buildMpvArgs(
+      {
+        url: "https://cdn.example/master.m3u8",
+        headers: {},
+        subtitle: null,
+        audioPreference,
+        subtitlePreference: "en",
+        displayTitle: "Audio mode",
+      },
+      "/tmp/kunai-test.sock",
+    );
+
+  expect(argsFor("dub")).toContain("--alang=en");
+  expect(argsFor("sub")).toContain("--alang=orig");
+  expect(argsFor("DUB")).toContain("--alang=en");
+  expect(argsFor("en")).toContain("--alang=en");
+});
+
 test("buildMpvArgs skips slang for interactive subtitle mode", () => {
   const args = buildMpvArgs(
     {
@@ -376,4 +400,13 @@ test("a one-shot direct stream does not get the ytdl guard", () => {
     {},
   );
   expect(args.some((arg) => arg.startsWith("--script-opts="))).toBe(false);
+});
+
+test("network preflight follows explicit target authority on every platform", () => {
+  for (const file of ["/media/owned.mp4", "C:\\Media\\owned.mp4", "file:///media/owned.mp4"]) {
+    expect(needsMpvNetworkPreflight(file, "local")).toBe(false);
+    expect(needsMpvNetworkPreflight(file)).toBe(true);
+  }
+  expect(needsMpvNetworkPreflight("https://example.test/movie.mp4", "local")).toBe(true);
+  expect(needsMpvNetworkPreflight("--script=evil.lua", "local")).toBe(true);
 });

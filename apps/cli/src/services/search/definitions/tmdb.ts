@@ -1,8 +1,6 @@
-// =============================================================================
 // TMDB Search Service Adapter
 //
 // Wraps the Videasy-backed TMDB search helper into the SearchService interface.
-// =============================================================================
 
 import type { SearchResult, TitleInfo, SearchMetadata } from "@/domain/types";
 import { discoverVideasy, searchVideasy } from "@/search";
@@ -16,7 +14,8 @@ export class TMDBSearchService implements SearchService {
     description: "TMDB proxy (db.videasy.to) - movies, series, no API key",
   };
 
-  readonly compatibleProviders = ["videasy"];
+  readonly servesCatalog = "tmdb" as const;
+  readonly compatibleProviders: string[] = [];
 
   constructor(private deps: SearchDeps) {}
 

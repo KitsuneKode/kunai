@@ -5,6 +5,10 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  isAbortError,
+  isOfflineNetworkFailure,
+  ProviderCycleFailureError,
+  providerCycleCandidateTimeoutMs,
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
@@ -23,11 +27,21 @@ import type {
 
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import {
+  expandHlsMasterInventory,
+  isHlsDeadHostStatus,
+  type HlsLadderVariant,
+} from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import {
-  findLastCycleFailure,
+  cycleExhaustionFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
+import {
+  dropRefusedStreams,
+  resolveGateBudgetMs,
+  selectVerifiedStream,
+} from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
@@ -101,6 +115,20 @@ let providerServicesCache:
       readonly expiresAtMs: number;
     }
   | undefined;
+
+/**
+ * Reset the module-level caches between tests.
+ *
+ * `providerServicesCache` and `secretKeyCache` outlive a single test file —
+ * module state is per process, not per file — so a test that resolves through
+ * this provider leaves discovery already cached for whatever runs next. Tests
+ * asserting on discovery call counts then see zero, and only in whatever order
+ * the runner happens to pick.
+ */
+export function clearRivestreamCachesForTest(): void {
+  providerServicesCache = undefined;
+  secretKeyCache.clear();
+}
 
 type RivestreamProviderServicesResponse = {
   readonly data?: unknown;
@@ -225,7 +253,13 @@ const cArray = [
   "rFRD5wlM",
 ];
 
-function generateSecretKey(e: string | number) {
+/**
+ * Exported for the rotation canary in `test/rivestream-secret-key.test.ts` —
+ * the pinned vector there fails fast in CI when the upstream `cArray` salt or
+ * hash rotates, instead of surfacing as 401 resolve failures. See
+ * `.docs/provider-dossiers/rivestream.md` (known failure modes).
+ */
+export function generateSecretKey(e: string | number) {
   if (e === undefined) return "rive";
   try {
     let t, n;
@@ -397,18 +431,39 @@ export const rivestreamProviderModule: CoreProviderModule = {
         secretKey,
       });
 
+      // The attempt budget caps this, so the gate has to be sized against what
+      // the candidate actually gets rather than the number chosen here.
+      const candidateTimeoutMs = providerCycleCandidateTimeoutMs(
+        input.startupPriority ?? "balanced",
+        RIVESTREAM_CANDIDATE_TIMEOUT_MS,
+      );
+      const gateTimeoutMs = resolveGateBudgetMs(
+        candidateTimeoutMs,
+        RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
+      );
       const cycleResult = await runProviderCycle({
         providerId: RIVESTREAM_PROVIDER_ID,
         candidates: cycleCandidates,
         signal: context.signal,
         now: context.now,
         emit: context.emit,
+        // Without these the cycle can neither skip a quarantined mirror nor
+        // record what it learned, so every resolve re-walked all eleven
+        // services and paid the full gate cost each time.
+        endpointHealth: context.endpointHealth,
+        titleId: input.title.id,
         maxAttemptsPerCandidate: 1,
-        candidateTimeoutMs: 10_000,
-        resolveCandidate: async (candidate) => {
+        candidateTimeoutMs,
+        // Every service is fetched through the same www.rivestream.app front
+        // door — a block there repeats identically for the rest, so stop
+        // early. Endpoint-scoped refusals name one service's own stream CDN,
+        // not the shared front door: stopping on them forfeits every untried
+        // service to a single dead mirror.
+        shouldStopAfterFailure: (failure) =>
+          failure.failureClass === "candidate-blocked" && failure.endpointScoped !== true,
+        resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
-          const sourceDataPromise = prefetchedSources.get(provider);
-          if (!provider || !sourceDataPromise) {
+          if (!provider) {
             throw createProviderCycleFailureError(candidate, {
               failureClass: "candidate-unsupported",
               message: `Rivestream candidate ${candidate.id} is missing provider metadata`,
@@ -416,27 +471,75 @@ export const rivestreamProviderModule: CoreProviderModule = {
               at: context.now(),
             });
           }
+          // A mirror quarantined when prefetch ran can become eligible by the
+          // time the cycle reaches it (or vice versa): fetch on demand rather
+          // than failing a candidate the cycle chose to try. The on-demand
+          // request binds the candidate signal so it does not outlive the
+          // attempt; shared prefetch requests stay on the parent signal.
+          const sourceDataPromise =
+            prefetchedSources.get(provider) ??
+            fetchRivestreamSourceData({
+              context,
+              provider,
+              input,
+              tmdbId,
+              typeStr,
+              season,
+              episode,
+              secretKey,
+              signal: candidateContext.signal,
+            });
 
           try {
             return await resolveRivestreamProviderCandidate({
               candidate,
               provider,
               input,
-              context,
+              context: {
+                ...context,
+                signal: candidateContext.signal ?? context.signal,
+              },
               cachePolicy,
               sourceDataPromise,
+              signal: candidateContext.signal,
+              gateTimeoutMs,
             });
           } catch (error) {
+            // A user cancellation is the engine's call — let it classify the
+            // abort instead of wrapping it as a candidate failure.
+            if (isAbortError(error) && context.signal?.aborted) throw error;
+            // The resolve gate already decided, and its verdict carries the
+            // parts that matter downstream: `candidate-blocked` and
+            // `endpointScoped`. Rebuilding it from a generic `ProviderHttpError`
+            // would relabel it `candidate-empty` and drop the flag, so endpoint
+            // health records nothing and the dead mirror is re-walked on every
+            // play.
+            if (error instanceof ProviderCycleFailureError) {
+              failures.push({
+                providerId: RIVESTREAM_PROVIDER_ID,
+                code: providerFailureCodeFromCycleFailure(error.failure.failureClass),
+                message: error.failure.message,
+                retryable: error.failure.retryable,
+                at: context.now(),
+              });
+              throw error;
+            }
             const providerError =
               error instanceof ProviderHttpError
                 ? error
                 : new ProviderHttpError({
                     providerId: RIVESTREAM_PROVIDER_ID,
                     stage: "source:start",
-                    code: isRivestreamAbortOrTimeoutError(error) ? "timeout" : "not-found",
+                    code: isRivestreamAbortOrTimeoutError(error) ? "timeout" : "network-error",
                     message:
                       error instanceof Error ? error.message : `Internal server ${provider} failed`,
-                    retryable: true,
+                    // Offline signatures (ENOTFOUND, EAI_AGAIN, …) are
+                    // non-retryable so the cycle's network-offline early-exit
+                    // fires; other transport errors stay transient.
+                    retryable: !isOfflineNetworkFailure({
+                      code: "network-error",
+                      message: error instanceof Error ? error.message : "",
+                    }),
                     cause: error,
                   });
             failures.push({
@@ -481,18 +584,10 @@ export const rivestreamProviderModule: CoreProviderModule = {
       }
 
       if (!cycleResult.selected) {
-        const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-        const failure = cycleFailure
-          ? {
-              code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-              message: cycleFailure.message,
-              retryable: cycleFailure.retryable,
-            }
-          : {
-              code: "not-found" as const,
-              message: "All internal servers exhausted without returning streams.",
-              retryable: true,
-            };
+        const failure = cycleExhaustionFailure(
+          cycleResult,
+          "All internal servers exhausted without returning streams.",
+        );
         return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, failure, {
           cachePolicy,
           events,
@@ -771,8 +866,14 @@ function fetchRivestreamSourceData(opts: {
   readonly season: number;
   readonly episode: number;
   readonly secretKey: string;
+  /**
+   * Bound to the cycle candidate when the request is made for one specific
+   * attempt (on-demand fetch). Prefetch requests stay on `context.signal`:
+   * they are shared across candidates and must outlive any single one.
+   */
+  readonly signal?: AbortSignal;
 }): Promise<RivestreamSourceResponse> {
-  const { context, provider, input, tmdbId, typeStr, season, episode, secretKey } = opts;
+  const { context, provider, input, tmdbId, typeStr, season, episode, secretKey, signal } = opts;
   let url = `${RIVESTREAM_API_BASE}?requestID=${typeStr}VideoProvider&id=${tmdbId}`;
   if (input.mediaKind === "series") url += `&season=${season}&episode=${episode}`;
   url += `&service=${provider}&secretKey=${secretKey}&proxyMode=noProxy`;
@@ -782,7 +883,7 @@ function fetchRivestreamSourceData(opts: {
     url,
     {
       headers: { "User-Agent": USER_AGENT, Referer: RIVESTREAM_REFERER },
-      signal: createTimeoutSignal(context.signal, 8000),
+      signal: createTimeoutSignal(signal ?? context.signal, 8000),
     },
     { providerId: RIVESTREAM_PROVIDER_ID, stage: "source:start" },
   );
@@ -804,6 +905,15 @@ function prefetchRivestreamServiceCandidates(opts: {
   for (const candidate of candidates) {
     const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
     if (!provider || prefetched.has(provider)) continue;
+    // A quarantined mirror is skipped by the cycle, so firing its request here
+    // is pure waste — one request per quarantined mirror per resolve. The
+    // cycle still owns the skip decision; this only avoids the HTTP call.
+    if (
+      context.endpointHealth &&
+      !context.endpointHealth.shouldTry(RIVESTREAM_PROVIDER_ID, provider)
+    ) {
+      continue;
+    }
     const promise = fetchRivestreamSourceData({
       context,
       provider,
@@ -825,6 +935,44 @@ function isRivestreamAbortOrTimeoutError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
 
+export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, string> | null {
+  let params: URLSearchParams;
+  try {
+    params = new URL(sourceUrl).searchParams;
+  } catch {
+    return null;
+  }
+  const raw = params.get("headers");
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof value !== "string") continue;
+    const cleaned = value.replace(/[\r\n]/g, "").trim();
+    if (!name.trim() || !cleaned) continue;
+    headers[name.trim()] = cleaned;
+  }
+  return Object.keys(headers).length > 0 ? headers : null;
+}
+
+export function resolveRivestreamStreamHeaders(sourceUrl: string): Record<string, string> {
+  const proxyHeaders = parseRivestreamProxyHeaders(sourceUrl);
+  if (!proxyHeaders) {
+    return { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT };
+  }
+  const headers: Record<string, string> = { ...proxyHeaders };
+  if (!Object.keys(headers).some((name) => name.toLowerCase() === "user-agent")) {
+    headers["user-agent"] = USER_AGENT;
+  }
+  return headers;
+}
+
 async function resolveRivestreamProviderCandidate({
   candidate,
   provider,
@@ -832,6 +980,8 @@ async function resolveRivestreamProviderCandidate({
   context,
   cachePolicy,
   sourceDataPromise,
+  signal,
+  gateTimeoutMs,
 }: {
   readonly candidate: ProviderCycleCandidate;
   readonly provider: string;
@@ -839,6 +989,9 @@ async function resolveRivestreamProviderCandidate({
   readonly context: ProviderRuntimeContext;
   readonly cachePolicy: CachePolicy;
   readonly sourceDataPromise: Promise<RivestreamSourceResponse>;
+  readonly signal?: AbortSignal;
+  /** Sized against the clamped candidate timeout, never the raw constant. */
+  readonly gateTimeoutMs: number;
 }): Promise<RivestreamResolvedCandidate> {
   const displayLabel = displayRivestreamSourceLabel(provider);
   const audioSubtitle = inferRivestreamAudioSubtitle(provider);
@@ -855,18 +1008,52 @@ async function resolveRivestreamProviderCandidate({
     });
   }
 
-  const streams: StreamCandidate[] = [];
-  const variants: ProviderVariantCandidate[] = [];
+  let streams: StreamCandidate[] = [];
+  let variants: ProviderVariantCandidate[] = [];
   const subtitles: SubtitleCandidate[] = [];
 
-  rawSources.forEach((source) => {
-    if (!source.url) return;
+  // Expand HLS masters into per-rendition rows so the Tracks panel shows the
+  // real ladder (360p/720p/…) instead of a single `auto` row — and a dead
+  // master host drops out here instead of failing in mpv.
+  const expandedSources = await Promise.all(
+    rawSources.map(async (source) => {
+      if (!source.url || !source.url.includes(".m3u8")) {
+        return { source, variants: null as readonly HlsLadderVariant[] | null };
+      }
+      const inventory = await expandHlsMasterInventory({
+        resolvesLocally: context.fetch?.resolvesLocally,
+        fetch: context.fetch?.fetch.bind(context.fetch) ?? fetch,
+        masterUrl: source.url,
+        headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
+        // The per-candidate controller aborts at candidateTimeoutMs — ladder
+        // expansion runs after the prefetch, so a hung master must die with
+        // the attempt instead of lingering as an orphan fetch.
+        signal: signal ?? context.signal,
+      });
+      if (isHlsDeadHostStatus(inventory.probe.httpStatus)) {
+        return { source, variants: [] as readonly HlsLadderVariant[] };
+      }
+      // Only a parsed master expands — the `auto` fallback row would erase the
+      // API's own quality label, so any other probe result keeps the source row.
+      return {
+        source,
+        variants:
+          inventory.probe.kind === "ok"
+            ? inventory.variants
+            : (null as readonly HlsLadderVariant[] | null),
+      };
+    }),
+  );
+
+  for (const { source, variants: ladder } of expandedSources) {
+    if (!source.url || ladder?.length === 0) continue;
     const qualityStr = String(source.quality || source.format || "auto");
-    const qualityLabel = normalizeQualityLabel(qualityStr);
-    const qualityRank = qualityRankFromLabel(qualityStr) ?? 0;
-    const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, [source.url]);
-    const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, qualityLabel, source.url]);
-    const protocol = source.url.includes(".m3u8") ? "hls" : "mp4";
+    const protocol = source.url.includes(".m3u8")
+      ? "hls"
+      : source.url.includes(".mpd")
+        ? "dash"
+        : "mp4";
+    const streamHeaders = resolveRivestreamStreamHeaders(source.url);
     const normalizedAudioLanguage =
       inferRivestreamAudioLanguage(provider, qualityStr) ??
       normalizeIsoLanguageCode(input.preferredAudioLanguage);
@@ -896,35 +1083,48 @@ async function resolveRivestreamProviderCandidate({
       }),
     ];
 
-    streams.push({
-      id: streamId,
-      providerId: RIVESTREAM_PROVIDER_ID,
-      sourceId,
-      variantId,
-      url: source.url,
-      protocol,
-      container: protocol === "hls" ? "m3u8" : "mp4",
-      audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
-      qualityLabel,
-      qualityRank,
-      languageEvidence,
-      sourceEvidence,
-      headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
-      confidence: 0.95,
-      cachePolicy,
-      ...streamPresentationFields({ displayLabel, subtitle: audioSubtitle }),
-    });
+    // Expanded masters emit one row per rendition; anything else stays a
+    // single row at the API's own quality label.
+    const rows: { url: string; qualityStr: string }[] = ladder
+      ? ladder.map((v) => ({ url: v.url, qualityStr: v.qualityLabel }))
+      : [{ url: source.url, qualityStr }];
 
-    const stream = streams[streams.length - 1];
-    if (stream) {
-      variants.push(
-        createVariantCandidateFromStream({
-          providerId: RIVESTREAM_PROVIDER_ID,
-          stream,
-        }),
-      );
+    for (const row of rows) {
+      const qualityLabel = normalizeQualityLabel(row.qualityStr);
+      const qualityRank = qualityRankFromLabel(row.qualityStr) ?? 0;
+      const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, [row.url]);
+      const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, qualityLabel, row.url]);
+
+      streams.push({
+        id: streamId,
+        providerId: RIVESTREAM_PROVIDER_ID,
+        sourceId,
+        variantId,
+        url: row.url,
+        protocol,
+        container: protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4",
+        audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
+        qualityLabel,
+        qualityRank,
+        languageEvidence,
+        sourceEvidence,
+        headers: streamHeaders,
+        confidence: 0.95,
+        cachePolicy,
+        ...streamPresentationFields({ displayLabel, subtitle: audioSubtitle }),
+      });
+
+      const stream = streams[streams.length - 1];
+      if (stream) {
+        variants.push(
+          createVariantCandidateFromStream({
+            providerId: RIVESTREAM_PROVIDER_ID,
+            stream,
+          }),
+        );
+      }
     }
-  });
+  }
 
   const embeddedCaptions = extractRivestreamCaptions(sourceData.data);
   for (const subtitle of embeddedCaptions) {
@@ -946,8 +1146,66 @@ async function resolveRivestreamProviderCandidate({
     });
   }
 
+  if (streams.length === 0) {
+    throw createProviderCycleFailureError(candidate, {
+      failureClass: "candidate-empty",
+      message: `Rivestream ${provider} returned sources but all masters were unreachable`,
+      retryable: true,
+      at: context.now(),
+    });
+  }
+
+  // Segment-probe before accepting the candidate. Rivestream's dead mirrors
+  // answer 200 on the master playlist and refuse every segment, so without this
+  // the cycle stops at the first server that merely *responds* and never
+  // reaches one that plays.
+  const selection = await selectVerifiedStream({
+    streams,
+    context,
+    timeoutMs: gateTimeoutMs,
+  });
+  if (!selection.accepted) {
+    throw createProviderCycleFailureError(candidate, {
+      failureClass: "candidate-blocked",
+      message: `${displayLabel}: ${selection.reason}`,
+      retryable: false,
+      at: context.now(),
+      // Every rung of this service was refused by probing its own streams, so
+      // it is durable evidence about this endpoint rather than a regional block.
+      endpointScoped: true,
+    });
+  }
+  // Keep the alternatives, drop the rungs the gate proved dead.
+  streams = dropRefusedStreams(streams, selection.refusedHosts);
+  variants = variants.filter((variant) =>
+    streams.some((candidateStream) => candidateStream.variantId === variant.id),
+  );
+
   return { provider, sourceId, streams, variants, subtitles };
 }
+
+/**
+ * Per-candidate bound for one mirror. Sized through the shared clamp so it can
+ * never exceed the attempt budget it runs inside — an unclamped value is dead
+ * code: the engine kills the whole attempt before the candidate bound fires and
+ * the trace records nothing attributable.
+ */
+export const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
+
+/**
+ * Budget for the resolve-gate probe.
+ *
+ * An HLS gate is three sequential round trips — master, variant, segment — and
+ * against Rivestream's dead mirror those measured 2.1-2.9s. The shared 3s
+ * default therefore landed right on the edge: the same candidate was rejected
+ * on one run and accepted on the next, because a cut-short probe reports
+ * `timeout`, which is deliberately *not* treated as proof of a dead stream.
+ * A gate that cannot reach a verdict is worse than no gate at all.
+ *
+ * Kept well below {@link RIVESTREAM_CANDIDATE_TIMEOUT_MS} so the probe cannot
+ * eat the budget its own candidate needs.
+ */
+export const RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS = 6_000;
 
 function extractRivestreamCaptions(
   data: RivestreamSourceResponse["data"],
@@ -965,9 +1223,13 @@ function rivestreamFailureClassFromProviderError(
   | "candidate-empty"
   | "candidate-timeout"
   | "candidate-blocked"
+  | "candidate-rate-limited"
+  | "candidate-server-error"
   | "candidate-parse" {
   if (error.code === "timeout") return "candidate-timeout";
   if (error.code === "blocked") return "candidate-blocked";
+  if (error.code === "rate-limited") return "candidate-rate-limited";
+  if (error.code === "provider-unavailable") return "candidate-server-error";
   if (error.code === "parse-failed") return "candidate-parse";
   if (error.code === "not-found") return "candidate-empty";
   return "candidate-network";

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildErrorRows, rowText } from "@/app-shell/playback-error-rows";
+import { measureColumns } from "@/domain/text-display";
 
 const base = { message: "An unknown error occurred", canRetry: true };
 
@@ -117,6 +118,27 @@ describe("buildErrorRows", () => {
     expect(withDebug).toContain("at resolve (x.ts:1:1)");
 
     expect(linesOf(base)).not.toContain("debug");
+  });
+
+  test("wraps a long message to the text width instead of clipping it", () => {
+    const message =
+      "videasy resolve failed — the provider returned a malformed stream manifest for every candidate";
+    const rows = buildErrorRows({ ...base, message, textWidth: 32 });
+    const lines = rows.map(rowText);
+
+    const messageRows = lines.filter((line) => message.split(" ").some((w) => line.includes(w)));
+    expect(messageRows.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(measureColumns(line)).toBeLessThanOrEqual(32);
+    }
+    // The reason survives — the one sentence that says what failed is not cut.
+    expect(lines.join(" ")).toContain("malformed stream manifest");
+  });
+
+  test("a long message without a text width is still a single row", () => {
+    const message = "a failure message longer than any reasonable panel width would allow";
+    const lines = linesOf({ ...base, message });
+    expect(lines).toContain(message);
   });
 
   test("a longer panel produces more rows, which lengthens the fall", () => {

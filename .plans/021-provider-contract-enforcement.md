@@ -178,9 +178,13 @@ Extend the classification tests **first** — this changes observable recovery b
 
 ---
 
-### Stage 7 — Delete the engine-bypassing second resolve path (S)
+### Stage 7 — Delete the engine-bypassing second resolve path (S) — landed
 
-`apps/cli/src/services/providers/Provider.ts:88` gives every provider
+**Landed:** `Provider.resolveStream`, `defaultResolveStream`, and `Provider.capabilities`
+were removed; `module.resolve(input, context)` through the engine is the only
+resolve path. Historical finding kept for context:
+
+`apps/cli/src/services/providers/Provider.ts:88` gave every provider
 `resolveStream: opts.resolveStream ?? defaultResolveStream(module, opts.mode)`.
 `defaultResolveStream` (`:113-116`) calls `module.resolve` with a bare context: no
 `fetch` (no relay), no `auth` (no Videasy session token), no `endpointHealth`, no

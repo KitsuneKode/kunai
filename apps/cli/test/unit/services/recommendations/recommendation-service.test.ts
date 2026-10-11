@@ -1,11 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import type { SearchResult } from "@/domain/types";
+import { clearTmdbSessionCache } from "@/services/catalog/tmdb-proxy";
 import {
   buildRecommendCacheKey,
   isCacheExpired,
   RecommendationServiceImpl,
 } from "@/services/recommendations/RecommendationServiceImpl";
+
+// The host-breaker chain in tmdb-proxy keeps per-host failure state across
+// tests in this file — a 503 stub would otherwise poison every later case.
+afterEach(() => {
+  clearTmdbSessionCache();
+});
 
 describe("recommendation cache", () => {
   test("buildRecommendCacheKey includes id and type", () => {
@@ -34,6 +41,7 @@ describe("recommendation cache", () => {
     globalThis.fetch = createFetchDouble(async () => new Response("{}", { status: 503 }));
 
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       const service = new RecommendationServiceImpl(cache as never);
       const section = await service.getTrending();
 
@@ -50,6 +58,7 @@ describe("recommendation cache", () => {
     globalThis.fetch = createFetchDouble(async () => new Response("{}", { status: 503 }));
 
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       const service = new RecommendationServiceImpl(cache as never);
       const section = await service.getForTitle("438631", "movie");
 
@@ -72,6 +81,7 @@ describe("recommendation cache", () => {
     );
 
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       const service = new RecommendationServiceImpl(cache as never);
       const section = await service.getTrending();
 
@@ -115,6 +125,7 @@ describe("recommendation cache", () => {
     });
 
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       const service = new RecommendationServiceImpl(cache as never);
       const section = await service.getPersonalizedByHistory([
         {
@@ -152,6 +163,7 @@ describe("recommendation cache", () => {
     globalThis.fetch = createFetchDouble(async () => new Response("{}", { status: 503 }));
 
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       const service = new RecommendationServiceImpl(cache as never);
       const section = await service.getForTitle("438631", "movie");
 

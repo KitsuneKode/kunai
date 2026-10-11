@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { KunaiPaths } from "@kunai/storage";
@@ -32,7 +32,12 @@ export interface SyncTokens {
  * implementation so mutation interleavings are forced rather than raced.
  */
 export interface SyncTokenFileIo {
-  /** Persisted tokens, or `{}` when the file is absent or unreadable. */
+  /**
+   * Persisted tokens; `{}` when the file is absent. A present-but-corrupt file
+   * is quarantined aside (`<path>.corrupt-<ts>.json`) before returning `{}`,
+   * so a later patch can never merge over — and erase — the other tracker's
+   * credential.
+   */
   readonly readTokens: (path: string) => Promise<SyncTokens>;
   /** Replace the whole file with `tokens`. */
   readonly writeTokens: (path: string, tokens: SyncTokens) => Promise<void>;
@@ -40,10 +45,24 @@ export interface SyncTokenFileIo {
 
 export const realSyncTokenFileIo: SyncTokenFileIo = {
   async readTokens(path: string): Promise<SyncTokens> {
+    let raw: string;
     try {
-      const raw = await readFile(path, "utf8");
+      raw = await readFile(path, "utf8");
+    } catch {
+      // Absent (or unreadable) file: no tokens yet. This is the only case
+      // that may merge over an empty object.
+      return {};
+    }
+    try {
       return JSON.parse(raw) as SyncTokens;
     } catch {
+      // Corrupt file: never merge a single-tracker patch over `{}` and
+      // silently erase the other tracker's credential. Quarantine the bytes
+      // aside (same directory, owner-only perms via rename) and start fresh —
+      // the user re-authenticates once instead of losing a tracker they never
+      // touched.
+      const quarantine = `${path}.corrupt-${Date.now()}.json`;
+      await rename(path, quarantine).catch(() => undefined);
       return {};
     }
   },

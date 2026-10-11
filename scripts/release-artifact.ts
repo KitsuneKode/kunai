@@ -66,6 +66,11 @@ export function transitionReleaseStatus(
       ...artifact,
       status: "published",
       publishedAt,
+      // The site renders `date` verbatim ("Released 2026-09-02"). Notes regen
+      // always produces null — the changelog carries no dates — so the publish
+      // transition derives it once and `generate-release-notes` preserves it.
+      date:
+        artifact.date ?? (/^\d{4}-\d{2}-\d{2}/.test(publishedAt) ? publishedAt.slice(0, 10) : null),
     };
   }
 

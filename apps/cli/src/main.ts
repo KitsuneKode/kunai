@@ -29,6 +29,7 @@ import {
   formatBootstrapPlan,
   resolveAutoPickIndex,
   resolveBootstrapIntent,
+  resolveLaunchMode,
   resolveLaunchSurfaceName,
 } from "@/app/bootstrap/bootstrap-intent";
 import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
@@ -41,6 +42,7 @@ import {
   titleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
 import { launchShellWithPostPaintStartupWork } from "@/app/bootstrap/post-paint-startup-work";
+import { mapAnimeTitleToProviderNative } from "@/app/bootstrap/resolve-share-target";
 import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import { SessionController } from "@/app/session/SessionController";
@@ -50,7 +52,7 @@ import {
   type ShutdownRuntime,
 } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
-import { buildCliHelpText, parseCliArgs, type CliArgs } from "@/cli-args";
+import { buildCliHelpText, CliUsageError, parseCliArgs, type CliArgs } from "@/cli-args";
 import { createContainer, disposeContainer } from "@/container";
 import { detectPlayerPlatform, resolvePlayerMode } from "@/domain/playback/player-choice";
 import {
@@ -102,6 +104,7 @@ let globalContainer: Awaited<ReturnType<typeof createContainer>> | null = null;
 let processHandlersInitialized = false;
 /** Resolves once startup lifetime-lock acquisition settled (versioned binary). */
 let lifetimeLockReady: Promise<void> = Promise.resolve();
+let fatalExitError: Error | string | null = null;
 
 async function shutdownShell(): Promise<void> {
   const { shutdownSessionApp } = await import("./app-shell/ink-shell");
@@ -134,7 +137,12 @@ function liveMainShutdownDeps(): MainShutdownDeps {
       await releaseCurrentVersionLock();
     },
     disposeContainer: () => disposeContainer(globalContainer),
-    exit: (code) => process.exit(code),
+    exit: (code) => {
+      if (fatalExitError) {
+        console.error("Fatal error:", fatalExitError);
+      }
+      process.exit(code);
+    },
   };
 }
 
@@ -204,19 +212,23 @@ function getShutdownCoordinator(): ShutdownCoordinator {
   return shutdownCoordinator;
 }
 
-async function maybeRunOfflineMode(
+/**
+ * `--offline` opens the library and then plays on: offline is a starting
+ * surface, not a mode that owns the process. This deliberately does not end the
+ * run, which is why it reports nothing — it used to return `false`
+ * unconditionally while its caller branched on the result, so the exit path
+ * behind that branch had never run.
+ */
+function openOfflineLibrary(
   args: { offline: boolean },
   container: Awaited<ReturnType<typeof createContainer>>,
-): Promise<boolean> {
-  if (!args.offline) {
-    return false;
-  }
+): void {
+  if (!args.offline) return;
 
   container.stateManager.dispatch({
     type: "OPEN_OVERLAY",
     overlay: { type: "library", view: "library" },
   });
-  return false;
 }
 
 type StartupHistoryTarget = {
@@ -580,6 +592,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     process.exit(
       await runDoctor({
         json: argv.includes("--json"),
+        strict: argv.includes("--strict"),
         runningExecutable: { path: process.execPath, version: KUNAI_VERSION },
       }),
     );
@@ -634,14 +647,25 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     );
   }
 
-  // Best-effort: clear any stale `*.old` left by a prior Windows self-replace.
+  // Best-effort: clear the running Kunai binary's own Windows self-replace backup.
   void import("./services/update/self-replace").then(({ cleanupOldBinary }) =>
-    cleanupOldBinary(process.execPath).catch(() => {}),
+    cleanupOldBinary(process.execPath, import.meta.path).catch(() => {}),
   );
 
   // Parse CLI arguments before acquiring the versioned lifetime lock so short
   // paths (--help / --version / protocol install) never leave lock residue.
-  const args = parseArgs(argv);
+  let args: CliArgs;
+  try {
+    args = parseArgs(argv);
+  } catch (error) {
+    // Usage errors exit 2 — the code `kunai completion` already uses — so a
+    // wrapper script can tell "I typo'd a flag" apart from a real failure.
+    if (error instanceof CliUsageError) {
+      process.stderr.write(`kunai: ${error.message}\nRun "kunai --help" for usage.\n`);
+      process.exit(2);
+    }
+    throw error;
+  }
   if (args.help) {
     process.stdout.write(buildHelpText());
     return;
@@ -719,13 +743,35 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (args.dryRun) {
     const plan = formatBootstrapPlan({
       intent: resolveBootstrapIntent(args),
-      mode: args.anime ? "anime" : args.youtube ? "youtube" : "movie/series",
+      mode: resolveLaunchMode(args) ?? "movie/series",
       route: resolveLaunchSurfaceName(args),
       shareAction: pendingShareLaunch?.action,
       download: args.download,
       setup: args.setup,
     });
     process.stdout.write(`${plan.join("\n")}\n`);
+    return;
+  }
+
+  // A piped launch can never mount the shell, so reject before the lifetime
+  // lock, terminal probe, dependency check, container, and every queued or
+  // background task that only exists for an interactive session. Two routes do
+  // real work headless past this point and are exempt: `--support-bundle` and
+  // the env-gated compiled-smoke harness — both need the container, which is
+  // why the guard lives here rather than at arg parse. A new headless route
+  // that mounts nothing must add its own exemption.
+  const setupIsInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const compiledSmokeRequested =
+    process.env.KUNAI_COMPILED_SMOKE === "1" && Boolean(process.env.KUNAI_COMPILED_SMOKE_SCENARIO);
+  if (!setupIsInteractive && !args.supportBundle && !compiledSmokeRequested) {
+    process.stderr.write(
+      "kunai: this command needs an interactive terminal.\n" +
+        "Nothing was started. Pipe-aware routes that do work without a TTY:\n" +
+        "  kunai --help | --version | --dry-run\n" +
+        "  kunai doctor | kunai diagnostics | kunai completion | kunai upgrade --check\n" +
+        "  kunai --support-bundle\n",
+    );
+    process.exitCode = 1;
     return;
   }
 
@@ -743,6 +789,16 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       await lockCurrentVersion().catch(() => {});
       void cleanupOldVersions().catch(() => {});
     }
+  })().catch(() => {});
+
+  // The terminal graphics probe round-trips a query through the TTY (100 ms,
+  // 400 ms on Windows conhost) — start it now so it overlaps the version-lock,
+  // manifest, and config work instead of serializing in front of checkDeps.
+  // It is still awaited below before anything writes to stdout, so the escape
+  // query can never interleave into the dependency report.
+  const graphicsProbeReady = (async () => {
+    const { initTerminalGraphicsProbe } = await import("./image/probe");
+    await initTerminalGraphicsProbe();
   })().catch(() => {});
 
   // Guard: verify required system dependencies before touching the shell.
@@ -765,10 +821,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   })();
   // Interactivity is part of the question: this decides whether `checkDeps`
-  // stays silent because the wizard will show the same information visually. In
-  // a pipe the wizard never mounts, so the console remediation is the only
-  // channel left and must not be suppressed.
-  const setupIsInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  // stays silent because the wizard will show the same information visually.
+  // (Piped launches were already rejected above, so only TTY sessions get here.)
   const onboardingWillRun = shouldRunSetupWizard({
     force: args.setup,
     interactive: setupIsInteractive,
@@ -780,8 +834,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // Must precede checkDeps: that snapshot records the chosen image protocol, and
   // it is what diagnostics and `/report-issue` carry into a bug report. Probing
   // afterwards would have every report claim the pre-probe fallback.
-  const { initTerminalGraphicsProbe } = await import("./image/probe");
-  await initTerminalGraphicsProbe();
+  await graphicsProbeReady;
 
   const startupPlayerMode = resolvePlayerMode({
     choice: args.player,
@@ -793,9 +846,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     requireYtDlp: !args.offline && (args.youtube || configJson.defaultMode === "youtube"),
   });
 
-  const { loadCompiledSmokeProviderOverride } =
+  const { loadCompiledSmokeProviderOverride, loadCompiledSmokeSearchDefinitions } =
     await import("./container/compiled-smoke-provider-override");
-  const providerModulesOverride = await loadCompiledSmokeProviderOverride();
+  const [providerModulesOverride, searchServiceDefinitions] = await Promise.all([
+    loadCompiledSmokeProviderOverride(),
+    loadCompiledSmokeSearchDefinitions(),
+  ]);
 
   // Bootstrap the DI container
   const container = await createContainer({
@@ -808,6 +864,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     capabilitySnapshot,
     appVersion: KUNAI_VERSION,
     providerModulesOverride,
+    searchServiceDefinitions,
   });
   globalContainer = container;
   const { logger, config, stateManager } = container;
@@ -856,7 +913,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     config.youtubeProvider,
   );
 
-  const initialMode = args.youtube ? "youtube" : args.anime ? "anime" : config.defaultMode;
+  const initialMode = resolveLaunchMode(args) ?? config.defaultMode;
   if (initialMode === "anime") {
     stateManager.dispatch({
       type: "SET_MODE",
@@ -874,8 +931,35 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const bootstrapIntent = resolveBootstrapIntent(args);
   let bootstrapQuery: string | undefined = bootstrapIntent.query;
   let bootstrapTitle: TitleInfo | null = bootstrapIntent.directTitle;
+  if (bootstrapTitle?.isAnime) {
+    // `-i anilist:`/`mal:` ids are catalog-keyed, but the anime provider still
+    // needs the provider-native id — the same mapping a share link runs.
+    const mapped = await mapAnimeTitleToProviderNative(bootstrapTitle, container, "anime");
+    bootstrapTitle = mapped.title;
+  }
   let bootstrapEpisode: EpisodeInfo | null = null;
   let autoPickSearchResultIndex = bootstrapIntent.autoPickSearchResultIndex;
+
+  // Untrusted handoffs confirm before any share resolution: mapping an anime
+  // catalog anchor makes provider network calls, and applying the resolved
+  // target dispatches session state — neither may run on external input alone.
+  if (protocolHandoff && !pendingShareLaunch?.trusted) {
+    const { confirmProtocolHandoff } = await import("./app-shell/workflows");
+    const confirmed = await confirmProtocolHandoff(protocolHandoff);
+    if (!confirmed) {
+      container.diagnosticsService.record({
+        category: "session",
+        message: "Protocol handoff cancelled by local confirmation",
+        context: {
+          action: protocolHandoff.action,
+          anchor: protocolHandoff.ref.anchor.by,
+        },
+      });
+      await disposeContainer(container);
+      if (process.stdin.isTTY) process.stdin.unref();
+      return;
+    }
+  }
 
   if (pendingShareLaunch) {
     const shareBootstrap = await applyShareRefLaunch(container, pendingShareLaunch);
@@ -925,6 +1009,24 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
             `Try: kunai -i ${entry.id} -t movie\n`,
         );
         break;
+      case "id-unknown-namespace":
+        logger.warn("Ignoring direct ID with an unknown namespace", { id: entry.id });
+        process.stderr.write(
+          `kunai: -i/--id ${entry.id} uses an unknown namespace, so it was ignored.\n` +
+            `Supported: anilist:<id>, mal:<id>, tmdb:<id>, youtube:<id> — or a bare TMDB id.\n`,
+        );
+        break;
+      case "id-lane-conflict":
+        logger.warn("Direct ID namespace conflicts with the requested lane", {
+          id: entry.id,
+          namespace: entry.namespace,
+          lane: entry.lane,
+        });
+        process.stderr.write(
+          `kunai: -i/--id ${entry.id} is a ${entry.namespace}: id but ` +
+            `${entry.lane === "youtube" ? "-y/--youtube" : "-a/--anime"} selected the ${entry.lane} lane, so it was ignored.\n`,
+        );
+        break;
     }
   }
 
@@ -970,6 +1072,58 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         // checkForUpdate records its own failures; keep startup fire-and-forget.
       }
     })();
+
+  // Provider-health notice: if a lane's configured default provider is
+  // measured `down`, surface a one-row suggestion for a healthier alternative.
+  // Runs even in offline mode — the health rows are local SQLite, not a
+  // network probe — and deletes the stale row when the provider heals.
+  try {
+    const { providerHealthNotice } = await import("./services/playback/provider-health-notice");
+    const { providerPriorityForLane } = await import("./domain/provider-lane");
+    const { resolveProviderLaneFromModule } = await import("@kunai/core");
+    const laneDefaults: ReadonlyArray<{ id: string; lane: "series" | "anime" | "youtube" }> = [
+      { id: config.provider, lane: "series" },
+      { id: config.animeProvider, lane: "anime" },
+      { id: config.youtubeProvider, lane: "youtube" },
+    ];
+    const healthRows = container.providerHealth.list();
+    // Suggestions must stay inside the lane — a movie provider can't resolve
+    // anime, so recommending rivestream when the anime default is down would
+    // be a notice that points at a provider the lane will reject.
+    const loadedByLane = new Map<string, string[]>();
+    for (const module of container.engine.modules) {
+      const lane = resolveProviderLaneFromModule(module);
+      const list = loadedByLane.get(lane) ?? [];
+      list.push(module.providerId);
+      loadedByLane.set(lane, list);
+    }
+    const seen = new Set<string>();
+    for (const { id: laneDefault, lane } of laneDefaults) {
+      if (seen.has(laneDefault)) continue;
+      seen.add(laneDefault);
+      const notice = providerHealthNotice({
+        configuredProvider: laneDefault,
+        providerPriority: providerPriorityForLane(config, lane),
+        loadedProviders: loadedByLane.get(lane) ?? [],
+        healthRows,
+      });
+      if (notice) {
+        container.notificationService.recordSignals([
+          {
+            type: "provider-health",
+            providerId: notice.downProviderId,
+            suggestedProviderId: notice.suggestedProviderId ?? undefined,
+          },
+        ]);
+      } else {
+        // Not delete() — that tombstones the key and a later relapse would
+        // never surface again. remove() clears the healed row only.
+        container.notificationService.remove(`provider-health:${laneDefault}`);
+      }
+    }
+  } catch {
+    // The notice is advisory; a broken health row must never block startup.
+  }
   if (!config.offlineMode) {
     try {
       // Awaited, not fire-and-forget: the shell reads
@@ -1113,24 +1267,6 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       },
     });
   }
-  if (protocolHandoff && !pendingShareLaunch?.trusted) {
-    const { confirmProtocolHandoff } = await import("./app-shell/workflows");
-    const confirmed = await confirmProtocolHandoff(protocolHandoff);
-    if (!confirmed) {
-      container.diagnosticsService.record({
-        category: "session",
-        message: "Protocol handoff cancelled by local confirmation",
-        context: {
-          action: protocolHandoff.action,
-          anchor: protocolHandoff.ref.anchor.by,
-        },
-      });
-      await shutdownShell();
-      await disposeContainer(container);
-      if (process.stdin.isTTY) process.stdin.unref();
-      return;
-    }
-  }
   await maybeRunStartupSetup({
     force: args.setup,
     config: {
@@ -1140,12 +1276,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     container,
     loadSetupWorkflow: () => import("./app-shell/workflows/setup-workflows"),
   });
-  if (await maybeRunOfflineMode(args, container)) {
-    await shutdownShell();
-    await disposeContainer(container);
-    if (process.stdin.isTTY) process.stdin.unref();
-    return;
-  }
+  openOfflineLibrary(args, container);
   if (await maybeRunDownloadMode(args, container, bootstrapTitle)) {
     await shutdownShell();
     await disposeContainer(container);
@@ -1180,7 +1311,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     await getShutdownCoordinator().request({ reason: "normal exit", exitCode: 0 });
   } catch (e) {
     logger.error("Kunai crashed", { error: String(e) });
-    console.error("Fatal error:", e);
+    fatalExitError = e instanceof Error ? e : String(e);
     await getShutdownCoordinator().request({ reason: "fatal error", exitCode: 1, fatal: true });
   }
 }
@@ -1204,6 +1335,9 @@ function setupSignalHandlers(): void {
   process.on("SIGINT", () => requestSignalShutdown("SIGINT", 130));
   process.on("SIGTERM", () => requestSignalShutdown("SIGTERM", 143));
   process.on("SIGHUP", () => requestSignalShutdown("SIGHUP", 129));
+  // SIGBREAK (Ctrl+Break) is the only console event Windows delivers beyond
+  // SIGINT — TerminateProcess and window-close get no catchable signal there.
+  process.on("SIGBREAK", () => requestSignalShutdown("SIGBREAK", 128 + 21));
 
   // Hard backstop: the async shutdown can lose its race with the 4s force-exit,
   // orphaning yt-dlp/ffmpeg children that then keep buffering GBs of RAM after
@@ -1218,7 +1352,7 @@ function setupSignalHandlers(): void {
   });
 
   process.on("uncaughtException", (e) => {
-    console.error("Uncaught exception:", e);
+    fatalExitError = e instanceof Error ? e : String(e);
     void getShutdownCoordinator().request({
       reason: "uncaught exception",
       exitCode: 1,
@@ -1227,7 +1361,7 @@ function setupSignalHandlers(): void {
   });
 
   process.on("unhandledRejection", (e) => {
-    console.error("Unhandled rejection:", e);
+    fatalExitError = e instanceof Error ? e : String(e);
     void getShutdownCoordinator().request({
       reason: "unhandled rejection",
       exitCode: 1,

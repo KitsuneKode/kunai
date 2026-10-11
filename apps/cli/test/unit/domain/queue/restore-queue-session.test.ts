@@ -385,7 +385,7 @@ test("in-flight shutdown recovery restores the exact row as pending", () => {
     sessionId: "crashed",
   });
   const crashed = new QueueService(repo, "crashed");
-  expect(crashed.beginPlayback(entry.id, "queue", "2026-07-19T00:30:00.000Z")).toBeDefined();
+  expect(crashed.beginPlayback(entry.id, "2026-07-19T00:30:00.000Z")).toBeDefined();
   expect(crashed.prepareForShutdown("2026-07-19T00:31:00.000Z")).toBe("recoverable");
   expect(repo.getById(entry.id)?.status).toBe("in-flight");
 

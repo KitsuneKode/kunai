@@ -58,6 +58,8 @@ Exports must never include:
 
 Imported unresolved items are inert until explicitly resolved. They must not autoplay from guesses or replace the current Up Next order.
 
+Import creates the playlist metadata first, then inserts the ordered items in one transaction without per-item playlist scans. If item insertion fails, the item batch rolls back; the newly created empty playlist remains.
+
 ## Service Boundary
 
 The durable playlist service creates playlist rows, appends identity-only items, and exports safe Kunai playlist documents. It projects progress from history at export or render time instead of copying mutable progress into playlist storage.

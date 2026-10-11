@@ -8,11 +8,11 @@ downloads on · runway: title opt-in
 
 
 DOWNLOADED ─────────────────────────────────────────────────────────────────────────────────────────
-▌ Dune: Part Two ↓ 1/1                                               Movie                ↓ 1 movie 
+▌ Dune: Part Two ↓ 1/1                                               Movie                ↓ 1 movie
   Severance ↓ 1/1                                                    S02                ↓ 1 episode
   Frieren: Beyond Journey's End ↓ 1/1                                E29                ↓ 1 episode
 
- ▸ Resume Movie offline                         ↵ enter 
+ ▸ Resume Movie offline                         ↵ enter
 
 
 Library

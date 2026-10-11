@@ -41,13 +41,44 @@ describe("buildQueueView", () => {
       entry({ id: "3", title: "Later", episode: 3 }),
     ];
     const v = buildQueueView({ entries, ...base, selectedId: "2" });
-    expect(v.rows.map((r) => r.state)).toEqual(["played", "playing", "pending"]);
+    expect(v.rows.map((r) => r.state)).toEqual(["played", "next", "pending"]);
     expect(v.rows[1]!.position).toBe(1);
     // Anime hides season unless the caller proves it is meaningful.
     expect(v.rows[1]!.episodeLabel).toBe("E08");
     expect(v.rows[2]!.episodeLabel).toBe("E03");
     expect(v.selectedIndex).toBe(1);
     expect(v.counts).toEqual({ unplayed: 2, total: 3 });
+  });
+
+  test("a claim is starting and the next pending row stays upcoming", () => {
+    const v = buildQueueView({
+      entries: [
+        entry({ id: "later", title: "Later", status: "pending" }),
+        entry({ id: "claim", title: "Resolving", status: "in-flight" }),
+      ],
+      ...base,
+    });
+    expect(v.rows.map((row) => row.state)).toEqual(["next", "starting"]);
+    expect(v.counts.unplayed).toBe(2);
+  });
+
+  test("failed startup returns the item to Up Next without claiming playback", () => {
+    const v = buildQueueView({
+      entries: [
+        entry({
+          id: "retry",
+          title: "Retry",
+          status: "pending",
+          lastFailure: {
+            code: "mpv-launch-failed",
+            stage: "player-launch",
+            at: "2026-06-14T01:00:00Z",
+          },
+        }),
+      ],
+      ...base,
+    });
+    expect(v.rows[0]!.state).toBe("next");
   });
 
   test("maps source labels and resolves posters", () => {

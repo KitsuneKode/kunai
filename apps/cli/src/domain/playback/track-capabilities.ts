@@ -1,3 +1,4 @@
+import { sanitizeTerminalText } from "@/domain/text-display";
 import type {
   PlaybackInventoryOptionState,
   PlaybackSourceInventoryView,
@@ -213,11 +214,15 @@ export function buildTrackCapabilities(
   if (!view) return [];
 
   const mediaKind = options.mediaKind;
-  const bySection = new Map<TrackCapabilitySection, TrackCapability[]>();
+  const bySection = new Map<
+    TrackCapabilitySection,
+    { rows: TrackCapability[]; emptyReason?: string }
+  >();
   const push = (capability: TrackCapability): void => {
-    const rows = bySection.get(capability.section) ?? [];
-    rows.push(capability);
-    bySection.set(capability.section, rows);
+    // SAFETY: a fresh accumulator is empty by construction; the cast only names the row type.
+    const entry = bySection.get(capability.section) ?? { rows: [] as TrackCapability[] };
+    entry.rows.push(capability);
+    bySection.set(capability.section, entry);
   };
 
   for (const group of view.sourceGroups) {
@@ -329,30 +334,49 @@ export function composeTrackPanelGroups(
   inventoryGroups: readonly TrackCapabilityGroup[],
   mediaKind?: string,
 ): readonly TrackCapabilityGroup[] {
-  const bySection = new Map<TrackCapabilitySection, TrackCapability[]>();
-  if (providerGroup && providerGroup.rows.length > 0) {
-    bySection.set(providerGroup.section, [...providerGroup.rows]);
+  const bySection = new Map<
+    TrackCapabilitySection,
+    { rows: TrackCapability[]; emptyReason?: string }
+  >();
+  if (providerGroup && (providerGroup.rows.length > 0 || providerGroup.emptyReason)) {
+    bySection.set(providerGroup.section, {
+      rows: [...providerGroup.rows],
+      emptyReason: providerGroup.emptyReason,
+    });
   }
   for (const group of inventoryGroups) {
-    const rows = bySection.get(group.section) ?? [];
-    bySection.set(group.section, [...rows, ...group.rows]);
+    // SAFETY: a fresh accumulator is empty by construction; the cast only names the row type.
+    const entry = bySection.get(group.section) ?? { rows: [] as TrackCapability[] };
+    bySection.set(group.section, {
+      rows: [...entry.rows, ...group.rows],
+      emptyReason: entry.emptyReason ?? group.emptyReason,
+    });
   }
   return orderTrackCapabilityGroups(bySection, trackSectionOrderForMediaKind(mediaKind));
 }
 
 function orderTrackCapabilityGroups(
-  bySection: Map<TrackCapabilitySection, TrackCapability[]>,
+  bySection: Map<TrackCapabilitySection, { rows: TrackCapability[]; emptyReason?: string }>,
   sectionOrder: readonly TrackCapabilitySection[],
 ): readonly TrackCapabilityGroup[] {
   const groups: TrackCapabilityGroup[] = [];
   for (const section of sectionOrder) {
-    const rows = bySection.get(section);
-    if (!rows || rows.length === 0) continue;
+    const entry = bySection.get(section);
+    if (!entry || (entry.rows.length === 0 && !entry.emptyReason)) continue;
     groups.push({
       section,
       title: SECTION_TITLES[section],
-      rows,
-      selectable: rows.some((row) => row.enabled),
+      // Labels/details/reasons carry stream metadata (mpv native labels, source
+      // names) — sanitize display fields; `value` stays raw, it is the identity
+      // a selection applies.
+      rows: entry.rows.map((row) => ({
+        ...row,
+        label: sanitizeTerminalText(row.label),
+        reason: row.reason !== undefined ? sanitizeTerminalText(row.reason) : undefined,
+        detail: row.detail !== undefined ? sanitizeTerminalText(row.detail) : undefined,
+      })),
+      selectable: entry.rows.some((row) => row.enabled),
+      emptyReason: entry.emptyReason,
     });
   }
   return groups;

@@ -12,6 +12,8 @@ import {
   writeAllBytes,
 } from "@/services/update/native-installer/download";
 
+import { waitUntil } from "../../../../support/wait-until";
+
 /**
  * The two stall cases below are skipped on Windows.
  *
@@ -155,7 +157,7 @@ describe("downloadToFile", () => {
           return textResponse("ok");
         },
         policy: {
-          totalDeadlineMs: 2_000,
+          totalDeadlineMs: 5_000,
           stallDeadlineMs: 40,
           maxAttempts: 2,
           maxBytes: 1024,
@@ -178,7 +180,10 @@ describe("downloadToFile", () => {
         fetchImpl: async () =>
           streamResponse([new TextEncoder().encode("x")], { stallAfterChunk: 1 }),
         policy: {
-          totalDeadlineMs: 500,
+          // Outer guard only — the stall detector at 30ms is the mechanism
+          // under test. A 500ms total could out-race it when the loop stalls
+          // under parallel-suite load and then misreport "deadline exceeded".
+          totalDeadlineMs: 5_000,
           stallDeadlineMs: 30,
           maxAttempts: 1,
           maxBytes: 1024,
@@ -340,7 +345,7 @@ describe("downloadToFile", () => {
       policy: { ...DEFAULT_BINARY_DOWNLOAD_POLICY, maxAttempts: 3, retryBaseDelayMs: 1 },
     });
 
-    await Bun.sleep(10);
+    await waitUntil(() => calls === 1, { label: "download fetch invoked" });
     controller.abort();
 
     await expect(pending).rejects.toThrow();

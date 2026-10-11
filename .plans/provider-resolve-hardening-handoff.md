@@ -173,6 +173,11 @@ Guard it: probe at most one `down` provider per resolve, and never let a probe
 extend the resolve deadline. A recovery mechanism that slows down the happy
 path is a net loss.
 
+**Status:** the candidate selector (`selectShadowProbeTarget`) shipped ahead of
+the executor and sat unreferenced; it was removed in the dead-declaration sweep
+(#474). Re-derive it from this plan when the executor lands — the design above
+is unchanged.
+
 ---
 
 ## Slice C — latency-aware ordering

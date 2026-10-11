@@ -1,5 +1,4 @@
-// =============================================================================
-// media-panel-model.ts — ONE content-kind-aware view-model for the media panel
+// ONE content-kind-aware view-model for the media panel
 //
 // Both Now Playing and Post-play render the same `MediaPanel` from this model,
 // so movie / series / anime / video share one tasteful layout. A new kind plugs
@@ -10,7 +9,6 @@
 // (aligned label/value rows), synopsis (clamped), miniCards (resume/prev/next),
 // poster (season-aware art), progress. Per-kind builders only decide WHAT fills
 // each slot; the component decides HOW it renders.
-// =============================================================================
 
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { ContentKind } from "@/domain/media/content-kind";
@@ -334,12 +332,12 @@ function buildMoviePanel(
 function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   const meta = ctx.videoMeta ?? undefined;
   const views = formatViewCount(meta?.viewCount);
-  const isChannel = meta?.contentShape === "channel";
-  const isPlaylist = meta?.contentShape === "playlist";
+  const isChannel = meta?.resultKind === "channel";
+  const isPlaylist = meta?.resultKind === "playlist";
   // Shape comes from the provider (`is_short` / a `/shorts/` URL), never from
   // duration: YouTube raised the Shorts ceiling to three minutes in Oct 2024, so
   // a length test both mislabels short videos and misses long Shorts.
-  const isShort = meta?.contentShape === "short";
+  const isShort = meta?.resultKind === "short";
   const secondary = meta?.channelTitle || undefined;
 
   const facts: MediaPanelFact[] = [];
@@ -376,12 +374,12 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   }
   const nextLabel = ctx.nextEpisodeLabel ?? ctx.queueNextLabel;
   if (nextLabel) {
-    const shaped = isPlaylist || isChannel;
+    const isContainerKind = isPlaylist || isChannel;
     miniCards.push({
       kind: "next",
       section: "up next",
       label: nextLabel,
-      meta: shaped ? (isChannel ? "channel" : "playlist") : isShort ? "short" : "related",
+      meta: isContainerKind ? (isChannel ? "channel" : "playlist") : isShort ? "short" : "related",
       thumbUrl: ctx.nextEpisodeThumbUrl,
     });
   }

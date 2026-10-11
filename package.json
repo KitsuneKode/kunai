@@ -5,6 +5,7 @@
   "workspaces": {
     "packages": [
       "apps/cli",
+      "apps/mobile",
       "apps/docs",
       "apps/relay-server",
       "apps/analytics-ingest",
@@ -12,13 +13,13 @@
     ],
     "catalog": {
       "typescript": "^7.0.2",
-      "@types/bun": "1.4.0",
-      "@types/node": "^26.3.0",
-      "@types/react": "^19.2.18",
-      "@types/react-dom": "^19.2.5",
-      "react": "^19.2.8",
-      "react-dom": "^19.2.8",
-      "zod": "^4.4.3"
+      "@types/bun": "1.4.2",
+      "@types/node": "^26.6.4",
+      "@types/react": "^19.3.0",
+      "@types/react-dom": "^19.3.0",
+      "react": "^19.3.0",
+      "react-dom": "^19.3.0",
+      "zod": "^4.6.5"
     },
     "catalogs": {
       "cli": {
@@ -27,33 +28,33 @@
       },
       "lint": {
         "@oxlint/plugins": "1.74.0",
-        "oxfmt": "^0.59.0",
+        "oxfmt": "^0.71.0",
         "oxlint": "1.74.0"
       },
       "providers": {
-        "@assemblyscript/loader": "^0.28.20",
-        "@types/crypto-js": "^4.2.2",
-        "crypto-js": "^4.2.0"
+        "@assemblyscript/loader": "^0.28.20"
       },
       "repo": {
-        "turbo": "^2.10.12"
+        "turbo": "^2.11.7"
       },
       "web": {
-        "@base-ui/react": "^1.7.0",
-        "@tabler/icons-react": "^3.46.0",
+        "@base-ui/react": "^1.8.0",
+        "@tabler/icons-react": "^3.48.0",
         "@tailwindcss/postcss": "^4.3.3",
         "@types/mdx": "^2.0.14",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
-        "fumadocs-core": "^16.15.2",
-        "fumadocs-mdx": "^15.3.1",
-        "fumadocs-ui": "^16.15.2",
-        "motion": "^12.43.0",
-        "next": "^16.3.2",
-        "tailwind-merge": "^3.6.0",
+        "fumadocs-core": "^16.15.18",
+        "fumadocs-mdx": "^15.4.6",
+        "fumadocs-ui": "^16.15.18",
+        "motion": "^14.0.0",
+        "next": "^16.3.8",
+        "tailwind-merge": "^3.7.0",
         "tailwindcss": "^4.3.3",
         "tw-animate-css": "^1.4.0",
-        "typescript": "5.9.3"
+        "typescript": "5.9.3",
+        "react-markdown": "^10.1.0",
+        "remark-gfm": "^4.0.1"
       }
     }
   },
@@ -65,13 +66,19 @@
     "dev:docs": "bun run --cwd apps/docs dev",
     "start": "bun run --cwd apps/cli start",
     "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
+    "lint": "turbo run lint //#lint:root",
+    "lint:root": "oxlint scripts tools",
     "lint:anti-slop": "oxlint --config .oxlintrc.anti-slop.json .",
     "lint:anti-slop:changed": "bun run scripts/anti-slop-changed.ts",
-    "fmt": "turbo run fmt",
-    "fmt:check": "turbo run fmt:check",
+    "lint:anti-slop:baseline": "bun run scripts/anti-slop-baseline.ts",
+    "lint:anti-slop:baseline:update": "bun run scripts/anti-slop-baseline.ts --update",
+    "fmt": "turbo run fmt && bun run fmt:root",
+    "fmt:check": "turbo run fmt:check && bun run fmt:root:check",
+    "fmt:root": "oxfmt --write '*.md' '*.json' '*.toml' '*.yml' '*.yaml' .oxfmtrc.json .oxlintrc.json .oxlintrc.anti-slop.json .run.toml .gitguardian.yaml .changeset .docs .github .plans .release docs scripts test tools",
+    "fmt:root:check": "oxfmt --check '*.md' '*.json' '*.toml' '*.yml' '*.yaml' .oxfmtrc.json .oxlintrc.json .oxlintrc.anti-slop.json .run.toml .gitguardian.yaml .changeset .docs .github .plans .release docs scripts test tools",
     "test": "turbo run test",
     "test:coverage": "bun run --cwd apps/cli test:coverage",
+    "sandbox": "scripts/dev-sandbox.sh",
     "test:cli:file": "bun run --cwd apps/cli test:file",
     "test:npm-global-install": "bun run --cwd apps/cli test:npm-global-install",
     "test:installer:pwsh": "bun run --cwd apps/cli test:installer:pwsh",
@@ -82,6 +89,9 @@
     "test:installer:scenarios": "bash test/install/run.sh",
     "test:live:allanime": "bun run --cwd apps/cli test:live:allanime",
     "test:live:android-handoff": "bun run --cwd apps/cli test:live:android-handoff",
+    "test:live:allmanga-rotation": "bun run --cwd apps/cli test:live:allmanga-rotation",
+    "test:live:allmanga-crypto": "bun run --cwd apps/cli test:live:allmanga-crypto",
+    "test:live:mobile-host-proof": "bun run --cwd apps/mobile test:live:mobile-host-proof",
     "test:live:analytics": "bun run --cwd apps/cli test:live:analytics",
     "test:live:anidb": "bun run --cwd apps/cli test:live:anidb",
     "test:live:tracker-sync": "bun run --cwd apps/cli test:live:tracker-sync",
@@ -98,8 +108,8 @@
     "test:live:offline-beta": "bun run --cwd apps/cli test:live:offline-beta",
     "test:live:videasy": "bun run --cwd apps/cli test:live:videasy",
     "test:live:videasy:suite": "bun run --cwd apps/cli test:live:videasy:suite",
-    "ci": "turbo run typecheck lint fmt:check test --summarize",
-    "ci:affected": "turbo run typecheck lint fmt:check test --affected --summarize",
+    "ci": "bun run ci:preflight && turbo run typecheck lint //#lint:root fmt:check test --summarize && bun run verify:parity-references && bun run verify:doc-coverage",
+    "ci:affected": "bun run ci:preflight && bun run scripts/ci-affected-run.ts typecheck --summarize && bun run scripts/ci-affected-run.ts lint \"//#lint:root\" --summarize && bun run scripts/ci-affected-run.ts fmt:check --summarize && bun run scripts/ci-affected-run.ts test --summarize",
     "build": "turbo run build build:binary:host --filter=@kitsunekode/kunai",
     "brand:social": "bun .reference/design/brand/generate-social-cards.mjs",
     "build:binaries": "turbo run build:binaries --filter=@kitsunekode/kunai",
@@ -109,7 +119,7 @@
     "verify:binary:host": "bun run --cwd apps/cli verify:binary:host",
     "build:all": "turbo run build",
     "build:docs": "turbo run build --filter=@kunai/docs",
-    "check": "turbo run check",
+    "check": "turbo run check //#lint:root",
     "clean": "turbo run clean",
     "experiments:install": "bun install --cwd .reference/experiments",
     "experiments:list": "bun run --cwd .reference/experiments list",
@@ -121,6 +131,7 @@
     "verify:doc-paths": "bun run scripts/verify-doc-paths.ts",
     "verify:doc-coverage": "bun run scripts/verify-doc-coverage.ts",
     "verify:doc-frontmatter": "bun run scripts/verify-doc-frontmatter.ts",
+    "verify:parity-references": "bun run scripts/verify-parity-references.ts",
     "release:dry-run": "bun run --cwd apps/cli release:dry-run",
     "changeset": "bunx changeset",
     "version:packages": "bunx changeset version && bun run scripts/sync-npm-platform-versions.ts && bun run scripts/sync-root-changelog.ts && bun run release:notes",
@@ -140,9 +151,12 @@
     "prototype:layout-fixtures": "bun run apps/cli/scripts/export-list-row-layout-fixtures.ts",
     "test:unit": "turbo run test:unit",
     "test:integration": "turbo run test:integration",
+    "test:agent": "turbo run test:agent",
     "build:npm-platform": "bun run --cwd apps/cli build:npm-platform",
     "release:publish": "bun run scripts/publish-npm-release.ts",
-    "release:publish:check": "bun run scripts/publish-npm-release.ts"
+    "release:publish:check": "bun run scripts/publish-npm-release.ts",
+    "verify:dependency-patches": "bun run scripts/verify-dependency-patches.mjs",
+    "ci:preflight": "bun run lint:anti-slop:baseline && bun run verify:doc-paths && bun run verify:doc-frontmatter"
   },
   "dependencies": {
     "typescript": "catalog:"
@@ -152,7 +166,7 @@
     "@changesets/cli": "^2.31.1",
     "@oxlint/plugins": "catalog:lint",
     "husky": "^9.1.7",
-    "lint-staged": "^17.3.0",
+    "lint-staged": "^17.6.0",
     "oxfmt": "catalog:lint",
     "oxlint": "catalog:lint",
     "turbo": "catalog:repo"
@@ -161,15 +175,16 @@
     "@types/node": "catalog:",
     "fumadocs-core": "catalog:web",
     "fumadocs-ui": "catalog:web",
+    "mdast-util-to-markdown": "2.1.2",
     "ws": "^8.21.0"
   },
   "lint-staged": {
     "**/*.{ts,tsx}": [
       "oxlint",
-      "oxfmt --write"
+      "oxfmt --write --no-error-on-unmatched-pattern"
     ],
-    "**/*.{json,md}": [
-      "oxfmt --write"
+    "**/*.{json,md,mdx,yml,yaml,toml}": [
+      "oxfmt --write --no-error-on-unmatched-pattern"
     ],
     "apps/cli/package.json": [
       "bun run guard"
@@ -187,8 +202,34 @@
       "bun run release:notes:check"
     ]
   },
-  "engines": {
-    "bun": ">=1.4.0"
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "1.4.2",
+      "onFail": "error"
+    },
+    "runtime": {
+      "name": "bun",
+      "version": ">=1.4.2",
+      "onFail": "error"
+    }
   },
-  "packageManager": "bun@1.4.0"
+  "engines": {
+    "bun": ">=1.4.2"
+  },
+  "packageManager": "bun@1.4.2",
+  "patchedDependencies": {
+    "braces@3.0.3": "patches/braces@3.0.3.patch"
+  },
+  "trustedDependencies": [
+    "bun-types",
+    "@types/react",
+    "@types/react-dom",
+    "motion",
+    "framer-motion",
+    "fumadocs-ui",
+    "fumadocs-core",
+    "fumadocs-mdx",
+    "next"
+  ]
 }

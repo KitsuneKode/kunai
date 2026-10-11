@@ -57,6 +57,29 @@ test("createRelayFetchPort routes allowlisted provider requests through RPC", as
   });
 });
 
+test("createRelayFetchPort keeps a relay base URL's sub-path", async () => {
+  // `new URL("/rpc/x", base)` read the leading slash as absolute and dropped
+  // `/prod`, so a self-hosted relay behind a path prefix 404ed and every request
+  // fell back to direct — silently, and for as long as the relay stayed configured.
+  let called = "";
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example/prod" },
+    registry,
+    async fetch(input) {
+      called = String(input);
+      return Response.json({ ok: true });
+    },
+  });
+
+  await port.fetch("https://api.allanime.day/api", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: '{"query":"x"}',
+  });
+
+  expect(called).toBe("https://relay.example/prod/rpc/allanime");
+});
+
 test("createRelayFetchPort uses direct fetch when relay is not configured", async () => {
   let direct = false;
   const port = createRelayFetchPort({
@@ -203,4 +226,24 @@ test("normalizeRelayBaseUrl accepts HTTPS and local HTTP only", () => {
   expect(normalizeRelayBaseUrl("https://relay.example/")).toBe("https://relay.example");
   expect(normalizeRelayBaseUrl("http://127.0.0.1:8787/")).toBe("http://127.0.0.1:8787");
   expect(normalizeRelayBaseUrl("http://relay.example")).toBeUndefined();
+});
+
+test("resolvesLocally tracks which side of the port answers a URL", () => {
+  const relayed = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", token: "t" },
+    registry,
+    fetch: async () => Response.json({}),
+  });
+  // Relayed upstreams resolve on the relay — local DNS answers mean nothing.
+  expect(relayed.resolvesLocally?.("https://api.allanime.day/api")).toBe(false);
+  // Everything else falls through to a local fetch — DNS validation applies.
+  expect(relayed.resolvesLocally?.("https://unregistered.example/x")).toBe(true);
+  expect(relayed.resolvesLocally?.("https://api.videasy.to/x")).toBe(true);
+
+  const directOnly = createRelayFetchPort({
+    relayConfig: { baseUrl: "" },
+    registry,
+    fetch: async () => Response.json({}),
+  });
+  expect(directOnly.resolvesLocally?.("https://api.allanime.day/api")).toBe(true);
 });

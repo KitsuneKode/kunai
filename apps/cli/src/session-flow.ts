@@ -14,6 +14,7 @@ import { applyUserProviderSwitch } from "@/app/playback/playback-provider-switch
 import type { Container } from "@/container";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { resolveEpisodeAvailability } from "@/domain/playback/playback-policy";
+import { providerMetadataMatchesLane, shellModeToProviderLane } from "@/domain/provider-lane";
 import { COMMAND_CONTEXTS, type AppCommandId } from "@/domain/session/command-registry";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { EpisodePickerOption } from "@/domain/types";
@@ -194,7 +195,7 @@ function createPickerActionContext(
     ? buildPickerActionContext({
         container,
         taskLabel,
-        ...(allowed ? { allowed } : {}),
+        ...(allowed ? { allowed } : null),
       })
     : undefined;
 }
@@ -216,7 +217,10 @@ async function switchProviderFromStartingPicker(
     providers: providerRegistry
       .getAll()
       .map((provider) => provider.metadata)
-      .filter((provider) => provider.isAnimeProvider === (state.mode === "anime")),
+      .filter((provider) =>
+        providerMetadataMatchesLane(provider, shellModeToProviderLane(state.mode)),
+      ),
+    getProviderHealth: (providerId) => container.providerHealth.get(providerId),
     actionContext: buildPickerActionContext({
       container,
       taskLabel: "Choose provider",

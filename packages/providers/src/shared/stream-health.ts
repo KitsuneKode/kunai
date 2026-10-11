@@ -12,7 +12,7 @@ export type StreamHealthPhase = "resolve-gate" | "cache-revalidate" | "playback-
 
 export type StreamHealthStrategy = "none" | "hls-manifest-get" | "head-then-range";
 
-export type StreamHealthSkipReason = "provider-attested" | "fresh-cache" | "recent-resolve";
+export type StreamHealthSkipReason = "provider-attested" | "fresh-cache";
 
 export type StreamHealthPolicyReason =
   | "no-cache"
@@ -21,14 +21,22 @@ export type StreamHealthPolicyReason =
   | "forced-direct"
   | "stale-hls"
   | "stale-direct"
-  | "provider-attested"
-  | "recent-resolve";
+  | "provider-attested";
 
 export const STREAM_HEALTH_DEFAULTS = {
   staleAfterMs: 60_000,
   playbackTrustMs: 5 * 60 * 1000,
-  resolveGateTimeoutMs: 3_000,
-  vidkingResolveGateTimeoutMs: 2_500,
+  /**
+   * One budget for every provider resolve gate.
+   *
+   * An HLS gate is three sequential round trips (master, variant, segment),
+   * measured at 2.1-2.9s against a live dead mirror. A cut-short probe reports
+   * `timeout`, which `isStreamReachableForResolve` treats as "not proven dead"
+   * — so a budget that cannot reach a verdict does not fail loudly, it passes
+   * dead streams intermittently. Videasy used to carry its own tighter 2.5s
+   * copy; per-provider budgets are how that drifts back.
+   */
+  resolveGateTimeoutMs: 6_000,
   preflightTimeoutMs: 3_000,
 } as const;
 
@@ -49,6 +57,7 @@ export type StreamHealthCheckInput = {
   readonly streamReachabilityVerified?: boolean;
   readonly force?: boolean;
   readonly fetchImpl?: StreamReachabilityFetch;
+  readonly resolvesLocally?: (url: string) => boolean;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
   readonly now?: number;
@@ -124,6 +133,7 @@ export async function runStreamHealthCheck(
     url: input.url,
     headers: input.headers,
     fetchImpl: input.fetchImpl,
+    resolvesLocally: input.resolvesLocally,
     timeoutMs: plan.timeoutMs,
     signal: input.signal,
   });
@@ -133,6 +143,7 @@ export async function runStreamHealthCheck(
       url: input.url,
       headers: input.headers,
       fetchImpl: input.fetchImpl,
+      resolvesLocally: input.resolvesLocally,
       timeoutMs: Math.max(plan.timeoutMs, 1_500),
       signal: input.signal,
     });
@@ -180,9 +191,9 @@ function planPlaybackPreflightHealth(
   ) {
     return skipPlan(context, "provider-attested", "provider-attested");
   }
-  if (typeof context.ageMs === "number" && context.ageMs <= context.playbackTrustMs) {
-    return skipPlan(context, "recent-resolve", "recent-resolve");
-  }
+  // Resolve age alone is not evidence: providers without a resolve-gate hand
+  // playback URLs no code has fetched, so the trust window only applies to
+  // streams a probe already verified.
   return probePlan(context, "forced");
 }
 

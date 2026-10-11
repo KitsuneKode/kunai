@@ -1,4 +1,7 @@
+import { providerHttpErrorForStatus } from "@kunai/types";
+
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
+import { YOUTUBE_PROVIDER_ID } from "./manifest";
 
 const PIPED_FETCH_TIMEOUT_MS = 15_000;
 
@@ -40,7 +43,12 @@ export async function pipedSearch(
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {
-    throw new Error(`Piped search failed (${response.status})`);
+    throw providerHttpErrorForStatus({
+      status: response.status,
+      message: `Piped search failed (${response.status})`,
+      providerId: YOUTUBE_PROVIDER_ID,
+      stage: "piped-search",
+    });
   }
   return (await response.json()) as PipedSearchResponse;
 }

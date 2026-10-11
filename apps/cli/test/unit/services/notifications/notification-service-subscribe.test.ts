@@ -19,6 +19,7 @@ function makeService() {
     listSuppressedKeys: () => new Set<string>(),
   };
   return new NotificationService({
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     repo: repo as never,
     getMutedTitleIds: () => new Set<string>(),
   });
@@ -68,6 +69,7 @@ describe("NotificationService.dismiss", () => {
       listSuppressedKeys: () => new Set<string>(),
     };
     const service = new NotificationService({
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       repo: repo as never,
       getMutedTitleIds: () => new Set<string>(),
     });

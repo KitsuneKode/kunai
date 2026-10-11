@@ -27,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
+      analytics: ${{ steps.filter.outputs.analytics }}
       cli: ${{ steps.filter.outputs.cli }}
       docs: ${{ steps.filter.outputs.docs }}
       doc-coverage: ${{ steps.filter.outputs.doc-coverage }}
@@ -51,13 +52,30 @@ jobs:
         id: filter
         with:
           filters: |
+            # The ingest's Postgres suites are gated on ANALYTICS_TEST_DATABASE_URL
+            # and skip silently without it, so the ordinary `Test` job proves
+            # nothing about them. Anything that can change what that SQL does —
+            # the app, its migrations, or the harness that runs them — has to
+            # reach the analytics-postgres job below.
+            analytics:
+              - 'apps/analytics-ingest/**'
+              - 'package.json'
+              - 'bun.lock'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-bun-monorepo/**'
             cli:
+              - '.github/scripts/open-release-metadata-pr.sh'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-bun-monorepo/**'
+              - 'scripts/**'
               - 'apps/cli/**'
               - 'packages/**'
               - 'turbo.json'
               - 'package.json'
               - 'bun.lock'
             docs:
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-bun-monorepo/**'
               - 'apps/docs/**'
               - 'docs/**'
               - '.docs/**'
@@ -66,6 +84,7 @@ jobs:
               - 'scripts/verify-doc-paths.ts'
               - 'scripts/verify-doc-frontmatter.ts'
               - 'apps/cli/src/container.ts'
+              - 'apps/cli/src/container/bootstrap-providers.ts'
               - 'apps/cli/src/domain/session/command-registry.ts'
               - 'apps/cli/src/cli-args.ts'
               - 'packages/providers/**/manifest.ts'
@@ -79,6 +98,7 @@ jobs:
             # pure-code PR would add an unrouted directory and skip the gate
             # that exists to catch exactly that.
             doc-coverage:
+              - '.github/workflows/ci.yml'
               - 'apps/**'
               - 'packages/**'
               - 'scripts/*.ts'
@@ -125,13 +145,29 @@ jobs:
         with:
           turbo-cache-prefix: fmt
 
-      - name: Format check (affected on PR)
+      - name: Format check (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
-        run: bunx turbo run fmt:check --affected --summarize
+        run: bun run scripts/ci-affected-run.ts fmt:check --summarize
 
       - name: Format check (full on main)
         if: github.event_name == 'push'
         run: bunx turbo run fmt:check --summarize
+
+      # Root-owned files (workflows, scripts/, root configs, docs/) are not in
+      # any workspace, so turbo never checks them — this must always run.
+      - name: Format check (root files)
+        run: bun run fmt:root:check
+
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verification-fmt-${{ github.run_attempt }}
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: |
+            .turbo/runs/*.json
 
   lint:
     name: Lint
@@ -147,17 +183,31 @@ jobs:
         with:
           turbo-cache-prefix: lint
 
-      - name: Lint (affected on PR)
+      - name: Lint (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
-        run: bunx turbo run lint --affected --summarize
+        run: bun run scripts/ci-affected-run.ts lint "//#lint:root" --summarize
 
       - name: Lint (full on main)
         if: github.event_name == 'push'
-        run: bunx turbo run lint --summarize
+        run: bunx turbo run lint //#lint:root --summarize
 
       - name: Anti-slop changed-file advisory
         if: github.event_name == 'pull_request'
         run: bun run lint:anti-slop:changed
+
+      - name: Anti-slop count baseline
+        run: bun run lint:anti-slop:baseline
+
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verification-lint-${{ github.run_attempt }}
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: |
+            .turbo/runs/*.json
 
   typecheck:
     name: Typecheck
@@ -173,13 +223,24 @@ jobs:
         with:
           turbo-cache-prefix: typecheck
 
-      - name: Typecheck (affected on PR)
+      - name: Typecheck (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
-        run: bunx turbo run typecheck --affected --summarize
+        run: bun run scripts/ci-affected-run.ts typecheck --summarize
 
       - name: Typecheck (full on main)
         if: github.event_name == 'push'
         run: bunx turbo run typecheck --summarize
+
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verification-typecheck-${{ github.run_attempt }}
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: |
+            .turbo/runs/*.json
 
   test:
     name: Test
@@ -195,13 +256,103 @@ jobs:
         with:
           turbo-cache-prefix: test
 
-      - name: Test (affected on PR)
+      # YouTube-provider resolve tests gate on `Bun.which("yt-dlp")` — the
+      # resolve path requires the binary even though every test injects its
+      # metadata service, so the binary is present but never invoked. Without
+      # it those tests used to report a vacuous pass (#468).
+      - name: Install yt-dlp (present-only; never invoked by tests)
+        run: |
+          sudo curl -sSfL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod +x /usr/local/bin/yt-dlp
+          yt-dlp --version
+
+      - name: Test (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
-        run: bunx turbo run test --affected --summarize
+        run: |
+          set -o pipefail
+          bun run scripts/ci-affected-run.ts test --summarize 2>&1 | tee ci-test.log
 
       - name: Test (full on main)
         if: github.event_name == 'push'
-        run: bunx turbo run test --summarize
+        run: |
+          set -o pipefail
+          bunx turbo run test --summarize 2>&1 | tee ci-test.log
+
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verification-test-${{ github.run_attempt }}
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: |
+            .turbo/runs/*.json
+            ci-test.log
+
+      - name: Test agent verification loop
+        # L2 in-process wiring checks — real AppRoot + real SessionController +
+        # real container, no tmux/mpv needed (the real-mpv tier self-gates).
+        # ~3s. Deliberately not folded into `test`: it owns its own timeout
+        # semantics and should stay visibly separate in job output.
+        timeout-minutes: 5
+        run: bun run test:agent
+
+      - name: Agent verification with real mpv
+        # The L3 tier that proves playback end-to-end: real main.ts under tmux,
+        # real mpv decoding generated media over loopback, asserted by two
+        # witnesses (mpv IPC time-pos advancing + the committed history row).
+        # Push-only: the apt install costs a couple of minutes, too heavy for
+        # every PR — the L2 suite above covers PRs.
+        if: github.event_name == 'push'
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq mpv ffmpeg tmux
+          KUNAI_REAL_MPV=1 bun run test:agent
+
+  analytics-postgres:
+    name: Analytics Postgres suites
+    needs: changes
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.analytics == 'true'
+    runs-on: ubuntu-latest
+    # The whole run is a container start, two migrations and ~110 assertions;
+    # observed well under a minute. This ceiling identifies a wedged container
+    # pull rather than budgeting for slow tests.
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: analytics-pg
+
+      # Deliberately the same command a developer runs locally, rather than a
+      # second copy of the compose topology expressed as `services:`. The store
+      # talks to Neon over HTTP, so it needs the proxy as well as Postgres, and
+      # two definitions of that pair would drift — which is the class of bug
+      # this job exists to catch.
+      #
+      # The database is a throwaway container the harness starts and destroys:
+      # loopback-only, tmpfs-backed, seeded credentials, empty every run. No
+      # real project or production URL is ever reachable from this job.
+      #
+      # The skip assertion is the point of the step, not a flourish. Every skip
+      # construct in this suite is `describe.skipIf(!TEST_DATABASE_URL)`, so a
+      # database that never came up produces a *green* run — measured at 82 pass
+      # / 33 skip / 0 fail — against 109 pass / 0 skip when it did. A zero exit
+      # code alone would therefore prove nothing, which is the exact false pass
+      # this job exists to close.
+      - name: Run the Postgres-backed analytics suites
+        run: |
+          set -euo pipefail
+          bun run --cwd apps/analytics-ingest test:pg 2>&1 | tee pg-suites.log
+          if grep -qE '^ *[0-9]+ skip' pg-suites.log; then
+            echo "::error::Postgres cases skipped — the database never came up, so this job proved nothing"
+            exit 1
+          fi
+          echo "Every Postgres-gated case executed against a real database."
 
   windows-cli:
     name: Windows CLI parity
@@ -248,8 +399,10 @@ jobs:
           # pays a synchronous full GC per teardown so Windows actually releases
           # the file handles; under full-suite load that intermittently pushes
           # one test over the line, and which test loses moves between runs.
-          # The 8-minute step bound above stays the real hang detector.
-          KUNAI_TEST_TIMEOUT_MS: "20000"
+          # 60s per test ends that flake class entirely: a genuinely wedged test
+          # still fails, just after a wait no scheduling delay can exceed. The
+          # 8-minute step bound above stays the real hang detector.
+          KUNAI_TEST_TIMEOUT_MS: "60000"
         run: bun run --cwd apps/cli test
 
       - name: Test Windows storage lifecycle
@@ -326,6 +479,11 @@ jobs:
       # the Linux leg cannot see it.
       - name: Test CLI
         timeout-minutes: 8
+        env:
+          # Same starvation class as the Windows leg: the scripts' own 20s
+          # per-test cap loses a different scheduling-heavy test each run under
+          # load. The step bound stays the real hang detector.
+          KUNAI_TEST_TIMEOUT_MS: "60000"
         run: bun run --cwd apps/cli test
 
       - name: Test storage lifecycle
@@ -492,6 +650,15 @@ jobs:
       - name: Package check (no dist/bin bloat)
         run: bun run pkg:check
 
+      # The class this suite covers — a compiled binary that exits 0 doing
+      # nothing — only reproduces on a compiled artifact, so release.yml alone
+      # was re-proving it. The host binary above is the artifact it runs
+      # (#468).
+      - name: Compiled binary smoke
+        env:
+          KUNAI_BINARY_SMOKE: "1"
+        run: bun run --cwd apps/cli test:file -- test/integration/compiled-binary-smoke.test.ts
+
   checks-docs:
     name: Docs build
     needs: changes
@@ -586,7 +753,7 @@ jobs:
 
       - name: Upload linux binaries for installer job
         if: needs.changes.outputs.installer == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: kunai-linux-binaries
           retention-days: 1
@@ -616,13 +783,13 @@ jobs:
         run: bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios >/dev/null
 
       - name: Download linux binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           name: kunai-linux-binaries
           path: apps/cli/dist/bin
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # docker/setup-buildx-action@v4
 
       - name: Cache installer smoke images
         uses: actions/cache@v5
@@ -634,7 +801,7 @@ jobs:
 
       - name: Build glibc smoke image
         if: matrix.variant == 'glibc'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # docker/build-push-action@v7
         with:
           context: apps/cli/test/docker/native-installer
           file: apps/cli/test/docker/native-installer/Dockerfile
@@ -646,7 +813,7 @@ jobs:
 
       - name: Build musl smoke image
         if: matrix.variant == 'musl'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # docker/build-push-action@v7
         with:
           context: apps/cli/test/docker/native-installer
           file: apps/cli/test/docker/native-installer/Dockerfile
@@ -697,3 +864,33 @@ jobs:
           turbo-cache-prefix: installer-scenarios
       - name: Run hermetic installer scenarios
         run: bun run test:installer:scenarios
+
+  ci-ready:
+    name: CI ready
+    if: ${{ always() }}
+    needs:
+      [
+        changes,
+        fmt,
+        lint,
+        typecheck,
+        test,
+        analytics-postgres,
+        windows-cli,
+        macos-cli,
+        installer-lint,
+        build-cli,
+        checks-docs,
+        checks-doc-coverage,
+        build-binaries,
+        installer-docker,
+        installer-scenarios,
+      ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v5
+      - name: Require successful jobs or expected path-filter skips
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/ci-ready.mjs

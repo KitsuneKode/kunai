@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-07-29"
+lastReviewed: "2026-09-29"
 ---
 
 # Provider Usage Matrix
@@ -18,13 +18,17 @@ This document normalizes and compares behavior across all Kunai provider engines
 
 ## Feature Matrix
 
-| Provider       | Mode         | Search | Catalog | Sources     | Quality | Audio          | Soft Subs | Hardsub | Downloads | Notes                                                            |
-| -------------- | ------------ | ------ | ------- | ----------- | ------- | -------------- | --------- | ------- | --------- | ---------------------------------------------------------------- |
-| **VidKing**    | series/movie | yes    | yes     | server-like | yes     | server-derived | yes       | maybe   | yes       | Language often hidden in `quality` string.                       |
-| **Cineby**     | series/movie | yes    | yes     | server      | yes     | server-derived | yes       | maybe   | yes       | Valorant agent aliases (`killjoy`=de) dictate audio.             |
-| **AllManga**   | anime        | yes    | yes     | server      | yes     | sub/dub split  | yes       | yes     | yes       | `translationType` is a first-class dimension. Native thumbnails. |
-| **Miruro**     | anime        | yes    | yes     | server      | yes     | sub/dub split  | yes       | yes     | yes       | `bee` (softsub) vs `kiwi` (hardsub). XOR API.                    |
-| **Rivestream** | series/movie | yes    | yes     | server      | yes     | manifest       | yes       | maybe   | yes       | Source/Quality merged in strings (`FlowCast (1080)`).            |
+| Provider       | Mode         | Search | Catalog | Sources     | Quality | Audio          | Soft Subs | Hardsub | Downloads | Notes                                                                                                         |
+| -------------- | ------------ | ------ | ------- | ----------- | ------- | -------------- | --------- | ------- | --------- | ------------------------------------------------------------------------------------------------------------- |
+| **Videasy**    | series/movie | no     | no      | server-like | yes     | server-derived | yes       | maybe   | yes       | Formerly VidKing; aliases include Cineplay/Cineby/HDToday/Bitcine. Language often hidden in `quality` string. |
+| **VidLink**    | series/movie | no     | no      | direct      | yes     | single         | yes       | maybe   | yes       | TMDB id encrypted via enc-dec.app; `x-playback-environment` picks DASH+CDN-cookie lane over 429'd MP4 lane.   |
+| **Cineby**     | series/movie | yes    | yes     | server      | yes     | server-derived | yes       | maybe   | yes       | Valorant agent aliases (`killjoy`=de) dictate audio. Research only.                                           |
+| **AllManga**   | anime        | yes    | yes     | server      | yes     | sub/dub split  | yes       | yes     | yes       | `translationType` is a first-class dimension. Native thumbnails.                                              |
+| **Miruro**     | anime        | no     | yes     | server      | yes     | sub/dub split  | yes       | yes     | yes       | Identity by AniList id; no own search. `bee` (softsub) vs `kiwi` (hardsub). XOR pipe API.                     |
+| **HiAnime**    | anime        | yes    | yes     | server      | yes     | sub/dub split  | yes       | yes     | yes       | Retryable-failure allowlist; embed deobfuscation; hianime.at/zokoanime/aniwatchtv.                            |
+| **AniDB**      | anime        | yes    | yes     | sequential  | yes     | muxed          | maybe     | yes     | yes       | Sequential resolver (no cycle); `catalog.missing` vs transient distinction drives re-search.                  |
+| **Rivestream** | series/movie | no     | no      | server      | yes     | manifest       | yes       | maybe   | yes       | Source/Quality merged in strings (`FlowCast (1080)`). All services behind one aggregator host.                |
+| **YouTube**    | video        | yt-dlp | n/a     | formats     | yes     | muxed          | yes       | no      | yes       | yt-dlp spawn; `localOnly`, `relaySafe: false` by design; video mode, not movie/series.                        |
 
 ---
 

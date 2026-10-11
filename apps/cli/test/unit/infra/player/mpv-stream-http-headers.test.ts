@@ -4,6 +4,7 @@ import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-h
 import {
   buildPersistentLoadfileCommand,
   buildPersistentLoadfileOptions,
+  toMpvLanguageToken,
   normalizeStreamHttpHeaders,
   shouldDisableMpvTlsVerify,
 } from "@/infra/player/mpv-stream-http-headers";
@@ -22,6 +23,35 @@ describe("normalizeStreamHttpHeaders", () => {
       origin: "https://www.cineplay.to",
       extraFields: [],
     });
+  });
+
+  test("recognizes any casing of the headers mpv has a dedicated option for", () => {
+    // HTTP header names are case-insensitive. These spellings used to be lost
+    // twice over — missed by the dedicated lookup, then excluded from
+    // extraFields by the lowercase check — so the header reached neither mpv
+    // option nor the header list.
+    expect(
+      normalizeStreamHttpHeaders({
+        REFERER: "https://example.test/watch",
+        "USER-AGENT": "kunai-test",
+        ORIGIN: "https://example.test",
+      }),
+    ).toEqual({
+      referer: "https://example.test/watch",
+      userAgent: "kunai-test",
+      origin: "https://example.test",
+      extraFields: [],
+    });
+  });
+
+  test("prefers the exact lowercase spelling when a provider sends both", () => {
+    // Object key order must not decide which value wins.
+    const normalized = normalizeStreamHttpHeaders({
+      Referer: "https://uppercase.test/",
+      referer: "https://lowercase.test/",
+    });
+    expect(normalized.referer).toBe("https://lowercase.test/");
+    expect(normalized.extraFields).toEqual([]);
   });
 
   test("forwards provider headers mpv has no dedicated option for", () => {
@@ -54,6 +84,37 @@ describe("normalizeStreamHttpHeaders", () => {
 
   test("drops empty header values", () => {
     expect(normalizeStreamHttpHeaders({ referer: "  ", origin: "" })).toEqual({ extraFields: [] });
+  });
+
+  test("preserves a whitespace-only user-agent — it is load-bearing for vidrock ngcorp hosts", () => {
+    // " " is the only ffmpeg-expressible spelling of an effectively-empty UA.
+    // Trimming it away leaves mpv sending its default Lavf UA, which the
+    // segment hosts drop — so this normalization must keep the value.
+    expect(normalizeStreamHttpHeaders({ "user-agent": " " }).userAgent).toBe(" ");
+    expect(normalizeStreamHttpHeaders({ "user-agent": "\n" }).userAgent).toBeUndefined();
+  });
+
+  test("drops a header name that is not an RFC 7230 token", () => {
+    // Header names are not ours: VidLink spreads what its API answered into the
+    // payload, so an upstream can name a header. A comma in the name splits one
+    // field into two, and a colon or CR/LF writes a field the host never sent.
+    const normalized = normalizeStreamHttpHeaders({
+      "X-Ok": "kept",
+      "X-Bad,X-Injected": "dropped",
+      "X-Bad: Injected": "dropped",
+      "X-Bad\r\nX-Injected": "dropped",
+      "X Bad": "dropped",
+    });
+
+    expect(normalized.extraFields).toEqual(["X-Ok: kept"]);
+  });
+
+  test("keeps the unusual-but-legal characters a token allows", () => {
+    // The pattern is a whitelist, so it has to admit the odd names that are
+    // genuinely valid — dropping those would be the same silent loss.
+    expect(normalizeStreamHttpHeaders({ "X-Odd_Name.1~*": "kept" }).extraFields).toEqual([
+      "X-Odd_Name.1~*: kept",
+    ]);
   });
 });
 
@@ -160,7 +221,7 @@ describe("buildPersistentLoadfileOptions", () => {
     });
 
     expect(options.ytdl).toBe("yes");
-    expect(options["ytdl-format"]).toBe("bv*+ba/b");
+    expect(options["ytdl-format"]).toBe("bv*+ba/b/ba");
   });
 
   test("still disables ytdl outright for remote HLS manifests", () => {
@@ -336,7 +397,7 @@ describe("buildPersistentLoadfileCommand", () => {
       undefined,
     );
     expect(options.ytdl).toBe("yes");
-    expect(options["ytdl-format"]).toBe("bv*+ba/b");
+    expect(options["ytdl-format"]).toBe("bv*+ba/b/ba");
   });
 
   test("a remote HLS manifest still turns ytdl off and sets no format", () => {
@@ -360,5 +421,33 @@ describe("buildPersistentLoadfileCommand", () => {
         urlKind: "local",
       })[1],
     ).toBe("/tmp/kunai-hls/playlist.m3u8");
+  });
+});
+
+describe("per-file audio language", () => {
+  test("a loadfile carries alang, so a mid-session dub switch reaches mpv", () => {
+    // --alang set at spawn is a process option; a persistent session that
+    // started on sub kept choosing Japanese after the switch without this.
+    const options = buildPersistentLoadfileOptions(
+      "https://cdn.example/master.m3u8",
+      0,
+      {},
+      {
+        audioPreference: "dub",
+      },
+    );
+    expect(options.alang).toBe("en");
+  });
+
+  test("no audio preference leaves mpv's own choice alone", () => {
+    expect(
+      buildPersistentLoadfileOptions("https://cdn.example/master.m3u8", 0, {}).alang,
+    ).toBeUndefined();
+  });
+
+  test("subtitle modes are not rewritten as audio ones", () => {
+    expect(toMpvLanguageToken("sub", { forSubtitle: true })).toBe("sub");
+    expect(toMpvLanguageToken("none", { forSubtitle: true })).toBe("no");
+    expect(toMpvLanguageToken("none", { forSubtitle: false })).toBe("none");
   });
 });

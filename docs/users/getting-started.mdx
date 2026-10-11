@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: Install Kunai, put it on your PATH, install mpv, run setup, and complete a first playback session end to end — with the exact commands for your platform.
+description: Install Kunai, put it on your PATH, install mpv, run setup, and complete a first playback session end to end, with the exact commands for your platform.
 ---
 
 Kunai is a terminal-first media shell. You search for a title, pick what to watch, Kunai resolves a direct-provider stream on your machine, and hands playback to `mpv`. The shell stays alive so you can recover, continue, or pick something else without restarting.
@@ -25,7 +25,7 @@ kunai -S "Dune"
 
 If `kunai: command not found` after install, the binary is not on `PATH`. On Linux/macOS add `~/.local/bin` (the installer prints the exact `export`). On Windows add `%LOCALAPPDATA%\kunai\bin`. Then `kunai doctor`.
 
-`-S` opens search results. Select a title, pick an episode when prompted, wait for provider resolution, then confirm the committed `mpv` startup. If `mpv` is missing, setup and browsing stay available — only playback handoff is blocked.
+`-S` opens search results. Select a title, pick an episode when prompted, wait for provider resolution, then confirm the committed `mpv` startup. If `mpv` is missing, setup and browsing stay available; only playback handoff is blocked.
 
 ## Other install methods
 
@@ -56,7 +56,7 @@ kunai --setup
 git clone https://github.com/KitsuneKode/kunai.git
 cd kunai
 bun install
-bun run link:global
+bun run link:global   # builds the launcher + host binary; needs node on PATH
 kunai --setup
 ```
 
@@ -69,14 +69,14 @@ Day-to-day watching uses the installed `kunai` binary. Source launch recipes liv
 
 Press `/` for the command palette. Surfaces that matter:
 
-| Surface | Command | Meaning |
-| --- | --- | --- |
-| Watchlist | `/watchlist` | Built-in watch-later list |
-| Playlists | `/playlists` | Durable named collections |
-| Up Next | `/up-next` | Current playback order (`/queue` is an alias) |
-| Downloads | `/downloads` | Queued / running / failed jobs |
-| Library | `/library` | Completed offline titles |
-| History | `/history` | Resume progress |
+| Surface   | Command      | Meaning                                       |
+| --------- | ------------ | --------------------------------------------- |
+| Watchlist | `/watchlist` | Built-in watch-later list                     |
+| Playlists | `/playlists` | Durable named collections                     |
+| Up Next   | `/up-next`   | Current playback order (`/queue` is an alias) |
+| Downloads | `/downloads` | Queued / running / failed jobs                |
+| Library   | `/library`   | Completed offline titles                      |
+| History   | `/history`   | Resume progress                               |
 
 `Tab` cycles catalog mode (series / anime / YouTube). `Ctrl+F` narrows loaded results. `/filters` opens the public filter surface. During playback, provider fallback is `⇧F` (`Shift+F`), not a bare `f`.
 
@@ -84,13 +84,13 @@ Press `/` for the command palette. Surfaces that matter:
 
 Stay in the shell. `/recover` refreshes the current provider. `/fallback` or `⇧F` walks the priority chain. `/diagnostics` shows evidence; `/export-diagnostics` writes a redacted bundle.
 
-Empty anime search with AniDB as the default often means **curl is missing** — AniDB sits behind Cloudflare. `kunai doctor` reports curl. See [Troubleshooting](/docs/users/troubleshooting).
+Anime episodes that will not play, or an anime search that reports a provider unreachable rather than coming back empty, often mean **curl is missing**: the anime providers sit behind Cloudflare and the plain-fetch fallback gets challenged. `kunai doctor` reports curl. See [Troubleshooting](/docs/users/troubleshooting).
 
 ## Next reads
 
 - [Install and update](/docs/users/install-and-update) for upgrade, rollback, unsigned binaries, and PATH
-- [Disclaimer](/docs/users/supported-and-unsupported#disclaimer) — Kunai is a client; it does not host content
+- [Disclaimer](/docs/users/supported-and-unsupported#disclaimer): Kunai is a client; it does not host content
 - [Platforms](/docs/users/platforms) for OS-specific optional tools
 - [Providers](/docs/users/providers) for fallback chains and per-provider notes
 - [Playback and recovery](/docs/users/playback-and-recovery) for the full failure playbook
-- [CLI reference](/docs/users/cli-reference) for launch flags (`--continue`, `-a`, `--offline`)
+- [CLI Reference](/docs/users/cli-reference) for launch flags (`--continue`, `-a`, `--offline`)

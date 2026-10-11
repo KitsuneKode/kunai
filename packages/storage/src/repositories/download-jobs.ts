@@ -1,4 +1,5 @@
 import { SQLiteError } from "bun:sqlite";
+import { win32 } from "node:path";
 
 import type {
   MediaKind,
@@ -144,7 +145,37 @@ export class DownloadJobAdmissionConflictError extends Error {
 const DOWNLOAD_INTENT_UNIQUE_INDEX = "idx_download_jobs_blocking_intent";
 
 export class DownloadJobsRepository {
-  constructor(private readonly db: KunaiDatabase) {}
+  /** A legacy shared destination is ambiguous even when the other job failed. */
+  hasConflictingOutputOwner(jobId: string, outputPath: string): boolean {
+    if (this.platform === "win32") {
+      // Compare only at the ownership boundary: keep recorded paths intact.
+      // SQLite NOCASE is ASCII-only; filenames can include Unicode letters.
+      const identity = win32.normalize(outputPath).toUpperCase();
+      return this.db
+        .query<{ path: string }, [string, string]>(
+          `SELECT output_path AS path FROM download_jobs WHERE id <> ?
+         UNION ALL
+         SELECT file_path AS path FROM offline_assets WHERE origin_job_id IS NULL OR origin_job_id <> ?`,
+        )
+        .all(jobId, jobId)
+        .some(({ path }) => win32.normalize(path).toUpperCase() === identity);
+    }
+    return (
+      this.db
+        .query<{ conflict: number }, [string, string, string, string]>(
+          `SELECT EXISTS (
+        SELECT 1 FROM download_jobs WHERE output_path = ? AND id <> ?
+        UNION ALL
+        SELECT 1 FROM offline_assets WHERE file_path = ? AND (origin_job_id IS NULL OR origin_job_id <> ?)
+      ) AS conflict`,
+        )
+        .get(outputPath, jobId, outputPath, jobId)?.conflict === 1
+    );
+  }
+  constructor(
+    private readonly db: KunaiDatabase,
+    private readonly platform: NodeJS.Platform = process.platform,
+  ) {}
 
   enqueue(
     input: Omit<
@@ -348,6 +379,8 @@ export class DownloadJobsRepository {
   }
 
   complete(id: string, updatedAt: string): void {
+    // Only a live run can complete — a stale writer must not resurrect a row
+    // another instance aborted or deleted mid-publish.
     this.db
       .query(
         `
@@ -360,7 +393,11 @@ export class DownloadJobsRepository {
               updated_at = ?,
               completed_at = ?,
               last_validated_at = ?
-          WHERE id = ?
+          -- Completion is only reachable from a live run or the sidecar-repair
+          -- path (repairable / completed-with-notes). Writing 'completed' over
+          -- an aborted, failed, or still-queued row is a stale writer
+          -- resurrecting work another instance cancelled.
+          WHERE id = ? AND status IN ('running', 'repairable', 'completed-with-notes')
         `,
       )
       .run(updatedAt, updatedAt, updatedAt, id);
@@ -389,7 +426,10 @@ export class DownloadJobsRepository {
               updated_at = ?,
               completed_at = COALESCE(completed_at, ?),
               last_validated_at = ?
+          -- Same fence as complete(), plus 'completed': the artwork-missing
+          -- downgrade path moves completed → completed-with-notes.
           WHERE id = ?
+            AND status IN ('running', 'repairable', 'completed-with-notes', 'completed')
         `,
       )
       .run(
@@ -426,7 +466,9 @@ export class DownloadJobsRepository {
               updated_at = ?,
               completed_at = COALESCE(completed_at, ?),
               last_validated_at = ?
-          WHERE id = ?
+          -- Live run or a re-failed repair pass; never resurrect aborted,
+          -- failed, or queued rows.
+          WHERE id = ? AND status IN ('running', 'repairable', 'completed-with-notes')
         `,
       )
       .run(
@@ -472,7 +514,12 @@ export class DownloadJobsRepository {
               artifact_status = CASE WHEN ? = 'artifact-invalid' THEN 'invalid-file' ELSE artifact_status END,
               retry_count = retry_count + ?,
               updated_at = ?
+          -- 'completed' is final and 'aborted' is user intent: a stale failing
+          -- writer must not resurrect either. 'repairable' and
+          -- 'completed-with-notes' may still fail when the repair sweep finds
+          -- the artifact file missing.
           WHERE id = ?
+            AND status NOT IN ('completed', 'aborted')
         `,
       )
       .run(message, failureKind, failureKind, incrementRetry ? 1 : 0, updatedAt, id);
@@ -490,6 +537,7 @@ export class DownloadJobsRepository {
               next_retry_at = ?,
               updated_at = ?
           WHERE id = ?
+            AND status NOT IN ('completed', 'completed-with-notes', 'repairable', 'aborted')
         `,
       )
       .run(message, retryAt, updatedAt, id);
@@ -505,7 +553,7 @@ export class DownloadJobsRepository {
               failure_kind = 'interrupted',
               next_retry_at = ?,
               updated_at = ?
-          WHERE id = ?
+          WHERE id = ? AND status IN ('running', 'queued')
         `,
       )
       .run(message, retryAt, updatedAt, id);
@@ -523,7 +571,10 @@ export class DownloadJobsRepository {
               repair_metadata_json = NULL,
               next_retry_at = NULL,
               updated_at = ?
-          WHERE id = ?
+          -- A 'running' row belongs to a live worker (possibly another
+          -- instance); flipping it to queued is how two yt-dlp processes end up
+          -- writing the same temp file.
+          WHERE id = ? AND status != 'running'
         `,
         )
         .run(updatedAt, id);
@@ -550,6 +601,7 @@ export class DownloadJobsRepository {
               next_retry_at = NULL,
               updated_at = ?
           WHERE id = ?
+            AND status NOT IN ('completed', 'completed-with-notes', 'repairable', 'aborted')
         `,
       )
       .run(updatedAt, id);
@@ -605,6 +657,36 @@ export class DownloadJobsRepository {
       .map(mapRow);
   }
 
+  /**
+   * Due work only, ordered before the page limit. A page of deferred pauses
+   * must not hide a job whose retry time has already passed.
+   */
+  listDueQueued(
+    nowIso: string,
+    limit: number,
+    after?: { readonly createdAt: string; readonly id: string },
+  ): readonly DownloadJobRecord[] {
+    const due = `status = 'queued' AND (next_retry_at IS NULL OR next_retry_at <= ?)`;
+    if (!after) {
+      return this.db
+        .query<DownloadJobRow, [string, number]>(
+          `SELECT * FROM download_jobs WHERE ${due} ORDER BY created_at ASC, id ASC LIMIT ?`,
+        )
+        .all(nowIso, limit)
+        .map(mapRow);
+    }
+    return this.db
+      .query<DownloadJobRow, [string, string, string, string, number]>(
+        `SELECT * FROM download_jobs
+         WHERE ${due}
+           AND (created_at > ? OR (created_at = ? AND id > ?))
+         ORDER BY created_at ASC, id ASC
+         LIMIT ?`,
+      )
+      .all(nowIso, after.createdAt, after.createdAt, after.id, limit)
+      .map(mapRow);
+  }
+
   listPaused(limit = 200): readonly DownloadJobRecord[] {
     const now = new Date().toISOString();
     return this.db
@@ -647,19 +729,38 @@ export class DownloadJobsRepository {
       .map(mapRow);
   }
 
+  /**
+   * Terminal failures only.
+   *
+   * 'repairable' is deliberately absent. `markRepairable` sets
+   * progress_percent = 100 and stamps completed_at: the media downloaded and is
+   * playable, only the sidecars failed. It is a completed download carrying
+   * repair work, not a failure, so it belongs in {@link listCompleted} and is
+   * swept through {@link listRepairable}. Listing it in both places is what made
+   * the download manager render one job as two rows sharing an id, so
+   * index-based selection acted on a phantom.
+   */
   listFailed(limit = 100): readonly DownloadJobRecord[] {
     return this.db
       .query<DownloadJobRow, [number]>(
         `
-          -- KNOWN ISSUE: 'repairable' is also returned by listCompleted, so a
-          -- repairable job appears in both result sets and the download manager
-          -- renders it as two rows sharing an id (index-based selection then
-          -- acts on a phantom). It cannot simply be dropped here: the repair
-          -- sweep in DownloadService uses listFailed to find repairable work.
-          -- The fix is a dedicated listRepairable() for the sweep, then removing
-          -- 'repairable' from this clause -- not a one-line edit.
           SELECT * FROM download_jobs
-          WHERE status IN ('failed', 'aborted', 'repairable')
+          WHERE status IN ('failed', 'aborted')
+          ORDER BY updated_at DESC
+          LIMIT ?
+        `,
+      )
+      .all(limit)
+      .map(mapRow);
+  }
+
+  /** Jobs whose media landed but whose sidecars need another pass. */
+  listRepairable(limit = 100): readonly DownloadJobRecord[] {
+    return this.db
+      .query<DownloadJobRow, [number]>(
+        `
+          SELECT * FROM download_jobs
+          WHERE status = 'repairable'
           ORDER BY updated_at DESC
           LIMIT ?
         `,
@@ -700,7 +801,7 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
             value: row.provider_episode_value,
           }
         : undefined,
-    providerId: row.provider_id as ProviderId,
+    providerId: row.provider_id,
     mode: row.mode ?? undefined,
     subLang: row.sub_lang ?? undefined,
     animeLang: row.anime_lang ?? undefined,
@@ -731,7 +832,7 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     failureKind: row.failure_kind ?? undefined,
     artifactStatus: row.artifact_status ?? "pending",
     repairMetadataJson: row.repair_metadata_json ?? undefined,
-    lastResolvedProviderId: (row.last_resolved_provider_id as ProviderId | null) ?? undefined,
+    lastResolvedProviderId: row.last_resolved_provider_id ?? undefined,
     lastValidatedAt: row.last_validated_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

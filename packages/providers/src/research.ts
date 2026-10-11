@@ -41,7 +41,7 @@ export const providerResearchProfiles = [
     implementationSource: "mixed",
     supportedContent: ["movie", "series"],
     sourceStrategy:
-      "Direct api.videasy.net sources-with-title payload; select highest-ranked source.",
+      "Direct api.speedracelight.com sources-with-title payload; select highest-ranked source.",
     subtitleStrategy:
       "Prefer provider payload subtitle inventory, then use Wyzie only as a fallback when direct subtitles are missing.",
     productionGap: "Move direct resolver and WASM asset ownership behind the Provider SDK package.",
@@ -102,6 +102,56 @@ export const providerResearchProfiles = [
       "Provider payload or embedded HLS subtitle tracks; verify English selection through mpv.",
     productionGap:
       "Registered and serving. Fixture coverage for animal-server subtitle delivery and dub/source availability is still thin.",
+  },
+  {
+    providerId: "animegg",
+    status: "production",
+    migrationAction: "promote-direct-provider",
+    migrationRank: 45,
+    dossierPath: ".docs/provider-dossiers/animegg.md",
+    evidencePaths: ["packages/providers/src/animegg/site.ts"],
+    runtimeClass: "direct-http server-rendered HTML scrape",
+    implementationSource: "production-code",
+    supportedContent: ["anime"],
+    sourceStrategy:
+      "Search, series, episode and embed pages are plain HTML; the embed carries direct MP4s per quality.",
+    subtitleStrategy:
+      "None: the subbed version is hard-subbed, so streams declare hardcoded delivery and no track is advertised.",
+    productionGap:
+      "The `bk` backup per source is unused because it is a direct URL for some titles and an mp4upload embed page for others.",
+  },
+  {
+    providerId: "kickassanime",
+    status: "production",
+    migrationAction: "promote-direct-provider",
+    migrationRank: 50,
+    dossierPath: ".docs/provider-dossiers/kickassanime.md",
+    evidencePaths: ["packages/providers/src/kickassanime/site.ts"],
+    runtimeClass: "direct-http JSON catalog + Astro island player",
+    implementationSource: "production-code",
+    supportedContent: ["anime"],
+    sourceStrategy:
+      "Plain JSON catalog (fsearch/episodes/servers), then the VidStreaming page carries the HLS master as serialized Astro props.",
+    subtitleStrategy:
+      "External .vtt tracks straight from the player props — the only anime source in the tree with soft subs rather than burned-in.",
+    productionGap:
+      "Upstream rotated the playable server name (VidStreaming → CatStream); production now accepts either. BirdStream's DASH is still parsed but never chosen, so the fallback story is single-server.",
+  },
+  {
+    providerId: "anikoto",
+    status: "candidate",
+    migrationAction: "hold-for-future-runtime",
+    migrationRank: 55,
+    dossierPath: ".docs/provider-dossiers/anikoto-candidate.md",
+    evidencePaths: [".docs/provider-dossiers/anikoto-candidate.md"],
+    runtimeClass: "WordPress/Kiranime site fronting a third-party embed",
+    implementationSource: "scratchpad-report",
+    supportedContent: ["anime"],
+    sourceStrategy:
+      "Probed 2026-09-12: catalog is usable (GET /wp-json/kiranime/v1/anime/search?query=, episode lists in HTML), but every episode is one player.apnshare.org iframe that 403s a plain fetch — an embed extractor, the most fragile class, for coverage KickAssAnime and AnimeGG already give directly.",
+    subtitleStrategy: "Unknown: the embed was never opened, so no track evidence exists.",
+    productionGap:
+      "Needs an apnshare extractor plus impersonation before it is worth a dossier; its domain is also rotating (.to/.tv dead, .org redirects to .cc).",
   },
   {
     providerId: "anikai",

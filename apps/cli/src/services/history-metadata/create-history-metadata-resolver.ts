@@ -1,12 +1,10 @@
-// =============================================================================
-// create-history-metadata-resolver.ts — title-search backed metadata resolver
+// Title-search backed metadata resolver
 //
 // History titles often carry a provider-opaque id (e.g. AllManga) with no catalog
 // key, so the only way to recover a poster + external ids is a catalog title
 // search. Matching is conservative — a wrong match would backfill the wrong ids and
 // poison reconciliation — so we only accept a result whose normalised title equals
 // or contains (a sequel-suffix tolerance) the history title.
-// =============================================================================
 
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { TitleDetail } from "@/domain/catalog/title-detail";
@@ -51,9 +49,9 @@ function resolvedMetadataFromSearchResult(match: SearchResult): ResolvedHistoryM
       : undefined;
   if (!posterUrl && !externalIds && !episodeCount) return null;
   return {
-    ...(posterUrl ? { posterUrl } : {}),
-    ...(externalIds ? { externalIds } : {}),
-    ...(episodeCount ? { episodeCount } : {}),
+    ...(posterUrl ? { posterUrl } : null),
+    ...(externalIds ? { externalIds } : null),
+    ...(episodeCount ? { episodeCount } : null),
   };
 }
 
@@ -96,9 +94,9 @@ function resolvedMetadataFromDetail(detail: TitleDetail): ResolvedHistoryMetadat
       : undefined;
   return {
     title,
-    ...(posterUrl ? { posterUrl } : {}),
+    ...(posterUrl ? { posterUrl } : null),
     ...(detail.externalIds ? { externalIds: detail.externalIds } : {}),
-    ...(episodeCount ? { episodeCount } : {}),
+    ...(episodeCount ? { episodeCount } : null),
   };
 }
 

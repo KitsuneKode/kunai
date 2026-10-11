@@ -1,8 +1,9 @@
 import { createDecipheriv } from "node:crypto";
 
+import { isOfflineNetworkFailure } from "@kunai/core";
 import type { ProviderEpisodeIdentity, ProviderRuntimeContext } from "@kunai/types";
 
-import { providerFetch } from "../runtime/fetch";
+import { createProviderHttpError, ProviderHttpError, providerFetch } from "../runtime/fetch";
 import {
   allMangaEpisodeMetadataCacheKey,
   enrichEpisodeOptionsWithAnimeMetadata,
@@ -14,9 +15,9 @@ import {
   shouldSkipExternalEpisodeMetadataEnrichment,
   type AnimeEpisodeMetadata,
 } from "../shared/anime-metadata";
-import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
+import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
-import { createTimeoutSignal } from "../shared/timeout-signal";
+import { createTimeoutSignal, sleepAbortable } from "../shared/timeout-signal";
 import {
   ALLMANGA_BUILD_ID,
   ALLMANGA_CRYPTO_MATERIAL_TTL_MS,
@@ -25,24 +26,35 @@ import {
   BUNDLED_ALLMANGA_CRYPTO,
   buildAllMangaAaReq,
   fetchAllMangaCryptoMaterial,
+  getLastAllMangaRotationSignal,
   type AllMangaCryptoMaterial,
 } from "./crypto";
 import { ALLANIME_PROVIDER_ID } from "./manifest";
 
 export {
+  ALLMANGA_BOOTSTRAP_URL,
   ALLMANGA_BUILD_ID,
   ALLMANGA_CONTENT_LANE_EPISODE,
+  ALLMANGA_CRYPTO_PROFILE,
+  ALLMANGA_KEY_GROUP,
   ALLMANGA_EPOCH,
   ALLMANGA_KEY_HEX,
   ALLMANGA_QUERY_HASH,
+  ALLMANGA_SITE_ORIGIN,
   BUNDLED_ALLMANGA_CRYPTO,
   buildAllMangaAaReq,
   buildAllMangaBootToken,
+  classifyAllMangaBootstrapFailure,
   currentAllMangaEpochCandidates,
   deriveKeyFromPartB,
   deriveMaskKey,
+  getLastAllMangaRotationSignal,
   hashBuildId,
+  resetAllMangaRotationSignalForTest,
+  type AllMangaBootPart,
   type AllMangaCryptoMaterial,
+  type AllMangaCryptoProfile,
+  type AllMangaRotationSignal,
 } from "./crypto";
 
 export type AllMangaSearchResult = {
@@ -340,20 +352,6 @@ let cachedCryptoMaterial: { readonly material: AllMangaCryptoMaterial; expiresAt
   null;
 let inFlightCryptoMaterial: Promise<AllMangaCryptoMaterial | null> | null = null;
 let cryptoMaterialOverrideForTest: AllMangaCryptoMaterial | null = null;
-function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal) return Bun.sleep(ms);
-  if (signal.aborted) return Promise.resolve();
-  return Promise.race([
-    Bun.sleep(ms),
-    new Promise<void>((resolve) => {
-      const onAbort = () => {
-        signal.removeEventListener("abort", onAbort);
-        resolve();
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-    }),
-  ]);
-}
 
 let retrySleep: (ms: number, signal?: AbortSignal) => Promise<void> = (ms, signal) =>
   sleepAbortable(ms, signal);
@@ -396,6 +394,27 @@ export function refreshAllMangaCryptoMaterial(
   inFlightCryptoMaterial ??= fetchAllMangaCryptoMaterial(context, ua, signal)
     .then((material) => {
       const resolved = material ?? BUNDLED_ALLMANGA_CRYPTO;
+      if (!material) {
+        // Say which failure this was. A rotation and a flaky upstream both used
+        // to surface as the same unexplained crypto miss, which is why the
+        // 140 -> 171 rotation went unnoticed until playback broke.
+        const signalKind = getLastAllMangaRotationSignal() ?? "unavailable";
+        context.emit?.({
+          type: "cache:stale",
+          at: context.now(),
+          providerId: ALLANIME_PROVIDER_ID,
+          message:
+            signalKind === "build-rotated"
+              ? `mkissa rejected build ${ALLMANGA_BUILD_ID} as unknown — upstream rotated; re-extract ALLMANGA_CRYPTO_PROFILE`
+              : signalKind === "token-rejected"
+                ? `mkissa rejected our boot token for build ${ALLMANGA_BUILD_ID} — derivation constants drifted; re-extract ALLMANGA_CRYPTO_PROFILE`
+                : "mkissa bootstrap unavailable — using bundled crypto material",
+          attributes: {
+            rotationSignal: signalKind,
+            buildId: ALLMANGA_BUILD_ID,
+          },
+        });
+      }
       cachedCryptoMaterial = {
         material: resolved,
         // A failed bootstrap falls back to bundled material; retry sooner.
@@ -709,6 +728,31 @@ export function isAllMangaCaptchaResponse(rawText: string): boolean {
   return rawText.includes("NEED_CAPTCHA");
 }
 
+/**
+ * The persisted-query hash no longer matches upstream's schema.
+ *
+ * It rotates on its own schedule, independently of the derivation constants, so
+ * this can fire while the pinned build id is perfectly current. Without its own
+ * error it fell through to "no sources", which reads as a missing episode
+ * rather than as drift — and drift is the one failure that says *which half* to
+ * re-pin.
+ */
+export class AllMangaQueryDriftError extends Error {
+  readonly code = "allmanga-query-drift" as const;
+
+  constructor() {
+    super(
+      "AllAnime rejected the persisted query hash (PersistedQueryNotFound). " +
+        "Upstream rotated its GraphQL schema or query hash.",
+    );
+    this.name = "AllMangaQueryDriftError";
+  }
+}
+
+export function isAllMangaPersistedQueryNotFound(rawText: string): boolean {
+  return rawText.includes("PersistedQueryNotFound");
+}
+
 export async function resolveEpisodeSources(opts: {
   readonly context: ProviderRuntimeContext;
   readonly apiUrl: string;
@@ -772,9 +816,29 @@ export async function resolveEpisodeSources(opts: {
           "x-build-id": material.buildId || ALLMANGA_BUILD_ID,
         },
       });
-      rawText = getRes.ok ? await getRes.text() : null;
-    } catch {
-      rawText = null;
+      if (!getRes.ok) {
+        throw createProviderHttpError(getRes, {
+          providerId: ALLANIME_PROVIDER_ID,
+          stage: "episode-sources",
+        });
+      }
+      rawText = await getRes.text();
+    } catch (error) {
+      if (error instanceof ProviderHttpError) throw error;
+      const message = error instanceof Error ? error.message : "AllManga source request failed";
+      const timedOut =
+        error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      // A dead connection must not read as an empty source list: offline
+      // signatures are non-retryable so the engine's offline budget caps the
+      // provider early instead of counting it as a catalog miss.
+      throw new ProviderHttpError({
+        providerId: ALLANIME_PROVIDER_ID,
+        stage: "episode-sources",
+        code: timedOut ? "timeout" : "network-error",
+        message,
+        retryable: timedOut || !isOfflineNetworkFailure({ code: "network-error", message }),
+        cause: error,
+      });
     }
 
     if (!rawText) return [];
@@ -786,20 +850,45 @@ export async function resolveEpisodeSources(opts: {
       throw new AllMangaCaptchaError();
     }
 
+    if (isAllMangaPersistedQueryNotFound(rawText)) {
+      throw new AllMangaQueryDriftError();
+    }
+
     if (rawText.includes("Too many requests")) {
       rateLimitRetries += 1;
-      if (rateLimitRetries > 2) return [];
+      if (rateLimitRetries > 2) {
+        throw new ProviderHttpError({
+          providerId: ALLANIME_PROVIDER_ID,
+          stage: "episode-sources",
+          status: 429,
+          code: "rate-limited",
+          message: "AllManga rate-limited the source request",
+          retryable: true,
+        });
+      }
       rawText = null;
       await retrySleep(3_200, signal);
+      // retrySleep resolves (not rejects) on abort — without this check an
+      // aborted resolve burns another network round instead of cancelling.
+      signal?.throwIfAborted();
       continue;
     }
 
     if (/AA_CRYPTO_(STALE|INVALID|MISSING)/.test(rawText)) {
       staleRefreshes += 1;
-      if (staleRefreshes > 2) return [];
+      if (staleRefreshes > 2) {
+        throw new ProviderHttpError({
+          providerId: ALLANIME_PROVIDER_ID,
+          stage: "episode-sources",
+          code: "provider-unavailable",
+          message: "AllManga crypto bootstrap stayed stale after refresh",
+          retryable: true,
+        });
+      }
       rawText = null;
       material = await refreshAllMangaCryptoMaterial(context, ua, signal);
       await retrySleep(400, signal);
+      signal?.throwIfAborted();
       continue;
     }
 
@@ -864,15 +953,13 @@ export async function resolveEpisodeSources(opts: {
     if (isMp4UploadSource(source.sourceName, decoded)) {
       const sourceName = source.sourceName;
       apiJobs.push(
-        fetchMp4UploadLinks(decoded, referer, ua, context, adapterController.signal)
-          .then((links) =>
-            links.map((link) => ({
-              ...link,
-              quality: link.quality || sourceName,
-              sourceName: link.sourceName ?? sourceName,
-            })),
-          )
-          .catch(() => [] as StreamLink[]),
+        fetchMp4UploadLinks(decoded, referer, ua, context, adapterController.signal).then((links) =>
+          links.map((link) => ({
+            ...link,
+            quality: link.quality || sourceName,
+            sourceName: link.sourceName ?? sourceName,
+          })),
+        ),
       );
       continue;
     }
@@ -884,15 +971,13 @@ export async function resolveEpisodeSources(opts: {
     const sourceName = source.sourceName;
     const fetcher = sourceName === "Ak" ? fetchAkLinks : fetchStreamLinks;
     apiJobs.push(
-      fetcher(decoded, referer, ua, context, adapterController.signal)
-        .then((links) =>
-          links.map((link) => ({
-            ...link,
-            quality: link.quality || sourceName,
-            sourceName: link.sourceName ?? sourceName,
-          })),
-        )
-        .catch(() => [] as StreamLink[]),
+      fetcher(decoded, referer, ua, context, adapterController.signal).then((links) =>
+        links.map((link) => ({
+          ...link,
+          quality: link.quality || sourceName,
+          sourceName: link.sourceName ?? sourceName,
+        })),
+      ),
     );
   }
 
@@ -907,6 +992,30 @@ export async function resolveEpisodeSources(opts: {
   });
   signal?.removeEventListener("abort", abortAdapters);
   const apiLinks = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  /*
+    An adapter lane refusing is an upstream outage, not an empty source list.
+    When no lane produced links and none produced direct sources, a typed
+    refusal must reach the cycle even if other lanes merely fulfilled empty —
+    the refused lane may have been the only one holding the real source, and
+    blocked/unavailable must not be recorded as a catalog miss. A 404 is
+    different: it is scoped to that source's URL and is exactly how a real
+    lane empties, which is what the next lane (e.g. required Ak) exists to
+    catch — so 404-only rejections keep the empty result. Untyped rejections
+    stay flattened too: a generic error cannot classify the failure any
+    better than an empty list can.
+  */
+  if (settled.length > 0 && apiLinks.length === 0 && direct.length === 0) {
+    const refusal = settled
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason)
+      .find(
+        (reason): reason is ProviderHttpError =>
+          reason instanceof ProviderHttpError && reason.status !== 404,
+      );
+    if (refusal) {
+      throw refusal;
+    }
+  }
 
   const result = [...direct, ...apiLinks].sort(
     (left, right) => (parseInt(right.quality) || 0) - (parseInt(left.quality) || 0),
@@ -1190,7 +1299,10 @@ async function fetchStreamLinks(
     headers: { Referer: referer, "User-Agent": ua },
   });
   if (!response.ok) {
-    return [];
+    throw createProviderHttpError(response, {
+      providerId: ALLANIME_PROVIDER_ID,
+      stage: "episode-source-links",
+    });
   }
 
   let body = await response.text();
@@ -1256,7 +1368,10 @@ async function fetchStreamLinks(
       }
       return links;
     }
-  } catch {
+  } catch (error) {
+    // Typed upstream failures are the result, not a parse slip — the regex
+    // fallback exists for malformed JSON, not for hiding a 403 behind it.
+    if (error instanceof ProviderHttpError) throw error;
     // Fall through to regex fallback for ani-cli parity.
   }
 
@@ -1367,7 +1482,12 @@ async function fetchAkLinks(
     signal: createTimeoutSignal(signal, 15_000),
     headers: { Referer: referer, "User-Agent": ua },
   });
-  if (!response.ok) return [];
+  if (!response.ok) {
+    throw createProviderHttpError(response, {
+      providerId: ALLANIME_PROVIDER_ID,
+      stage: "episode-source-links",
+    });
+  }
 
   let body = await response.text();
   body = body.replace(/\\u002F/g, "/").replace(/\\\//g, "/");
@@ -1497,7 +1617,8 @@ async function fetchM3u8Variants({
   readonly subtitle?: string;
   readonly signal?: AbortSignal;
 }): Promise<StreamLink[]> {
-  const variants = await expandHlsMasterPlaylist({
+  const inventory = await expandHlsMasterInventory({
+    resolvesLocally: context.fetch?.resolvesLocally,
     fetch: (requestUrl: string, init?: RequestInit) =>
       providerFetch(context, requestUrl, {
         ...init,
@@ -1512,6 +1633,9 @@ async function fetchM3u8Variants({
     headers: { Referer: referer, "User-Agent": ua },
     signal,
   });
+  // Dead master host → the `auto` fallback row points at the same dead URL;
+  // drop it so upstream failure propagates instead of handing mpv a corpse.
+  const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
 
   return variants.map((variant) => ({
     url: variant.url,

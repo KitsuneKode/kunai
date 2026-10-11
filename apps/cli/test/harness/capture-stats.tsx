@@ -52,7 +52,7 @@ const sampleStats: WatchStats = {
   genreAffinityNote: null,
 };
 
-function StatsOverviewCapture({
+export function StatsOverviewCapture({
   innerWidth = 120,
   rows = 42,
 }: {
@@ -106,9 +106,24 @@ function StatsOverviewCapture({
   );
 }
 
-await captureSurface("stats-overview", <StatsOverviewCapture />);
+export function statsFixtures(): ReadonlyArray<readonly [string, React.ReactElement]> {
+  const overview = <StatsOverviewCapture />;
+  const insights = <StatsInsightsCapture />;
+  return [
+    ["stats-overview", overview],
+    ["stats-insights", insights],
+  ];
+}
 
-function StatsInsightsCapture({
+if (import.meta.main) {
+  for (const [name, node] of statsFixtures()) {
+    await captureSurface(name, node);
+  }
+  console.log("captured stats surfaces");
+  process.exit(0);
+}
+
+export function StatsInsightsCapture({
   innerWidth = 120,
   rows = 42,
 }: {
@@ -143,7 +158,3 @@ function StatsInsightsCapture({
     </Box>
   );
 }
-
-await captureSurface("stats-insights", <StatsInsightsCapture />);
-console.log("captured stats overview and insights chrome");
-process.exit(0);

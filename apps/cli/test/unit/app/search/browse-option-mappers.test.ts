@@ -12,7 +12,7 @@ test("toBrowseResultOption labels YouTube videos by content shape, not transport
     year: "2009",
     overview: "",
     posterPath: "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg",
-    contentShape: "video",
+    resultKind: "video",
     channelTitle: "Rick Astley",
     channelId: "UCuAXFkgsw1L7NyaFkawy4LQ",
     externalIds: {
@@ -59,7 +59,7 @@ test("toBrowseResultOption explains YouTube playlists as picker flows", () => {
     year: "",
     overview: "",
     posterPath: "https://i.ytimg.com/vi/abc/mqdefault.jpg",
-    contentShape: "playlist",
+    resultKind: "playlist",
     externalIds: { youtubePlaylistId: "PL123" },
   };
 
@@ -79,7 +79,7 @@ test("toBrowseResultOption labels channels with avatar poster and video count", 
     year: "",
     overview: "Channel bio",
     posterPath: "https://yt3.ggpht.com/avatar.jpg",
-    contentShape: "channel",
+    resultKind: "channel",
     episodeCount: 120,
     channelTitle: "Example Channel",
     channelId: "UCchannel",
@@ -102,7 +102,7 @@ function youtubeLiveResult(overrides: Partial<SearchResult> = {}): SearchResult 
     year: "2026",
     overview: "",
     posterPath: null,
-    contentShape: "video",
+    resultKind: "video",
     liveStatus: "live",
     channelTitle: "A Channel",
     externalIds: { youtubeId: "liveid" },
@@ -152,12 +152,12 @@ test("live state renders identically wherever it appears", () => {
 
 test("a Short is labelled from its shape, never from its duration", () => {
   const brief = toBrowseResultOption(
-    youtubeLiveResult({ liveStatus: undefined, durationSeconds: 45, contentShape: "video" }),
+    youtubeLiveResult({ liveStatus: undefined, durationSeconds: 45, resultKind: "video" }),
   );
   expect(brief.detail?.startsWith("Video")).toBe(true);
 
   const long = toBrowseResultOption(
-    youtubeLiveResult({ liveStatus: undefined, durationSeconds: 170, contentShape: "short" }),
+    youtubeLiveResult({ liveStatus: undefined, durationSeconds: 170, resultKind: "short" }),
   );
   expect(long.detail?.startsWith("Short")).toBe(true);
 });
@@ -176,24 +176,24 @@ test("every YouTube shape and live state renders distinctly in the browse row", 
     externalIds: { youtubeId: "x" },
   };
   const cases: readonly [string, Partial<SearchResult>, string, string | undefined][] = [
-    ["video", { contentShape: "video", durationSeconds: 754 }, "Video", undefined],
-    ["short", { contentShape: "short", durationSeconds: 45 }, "Short", undefined],
+    ["video", { resultKind: "video", durationSeconds: 754 }, "Video", undefined],
+    ["short", { resultKind: "short", durationSeconds: 45 }, "Short", undefined],
     // A three-minute Short is still a Short; a 45-second upload is still a video.
-    ["long short", { contentShape: "short", durationSeconds: 170 }, "Short", undefined],
-    ["brief video", { contentShape: "video", durationSeconds: 45 }, "Video", undefined],
-    ["live", { contentShape: "video", liveStatus: "live" }, "Video", "● LIVE"],
-    ["upcoming", { contentShape: "video", liveStatus: "upcoming" }, "Video", "Upcoming"],
-    ["post_live", { contentShape: "video", liveStatus: "post_live" }, "Video", "Was Live"],
-    ["playlist", { contentShape: "playlist", episodeCount: 24 }, "Playlist", undefined],
-    ["channel", { contentShape: "channel", episodeCount: 310 }, "Channel", undefined],
+    ["long short", { resultKind: "short", durationSeconds: 170 }, "Short", undefined],
+    ["brief video", { resultKind: "video", durationSeconds: 45 }, "Video", undefined],
+    ["live", { resultKind: "video", liveStatus: "live" }, "Video", "● LIVE"],
+    ["upcoming", { resultKind: "video", liveStatus: "upcoming" }, "Video", "Upcoming"],
+    ["post_live", { resultKind: "video", liveStatus: "post_live" }, "Video", "Was Live"],
+    ["playlist", { resultKind: "playlist", episodeCount: 24 }, "Playlist", undefined],
+    ["channel", { resultKind: "channel", episodeCount: 310 }, "Channel", undefined],
   ];
 
-  for (const [name, over, expectedShape, expectedBadge] of cases) {
+  for (const [name, over, expectedKind, expectedBadge] of cases) {
     const option = toBrowseResultOption({ ...base, ...over } as SearchResult);
-    expect(option.detail?.startsWith(expectedShape), `${name} shape`).toBe(true);
+    expect(option.detail?.startsWith(expectedKind), `${name} shape`).toBe(true);
     expect(option.previewBadge, `${name} badge`).toBe(expectedBadge);
     // The shape label is always present, so a live video still reads as a video.
-    expect(option.previewMeta, `${name} meta shape`).toContain(expectedShape);
+    expect(option.previewMeta, `${name} meta shape`).toContain(expectedKind);
     if (expectedBadge) {
       expect(option.previewMeta, `${name} meta state`).toContain(expectedBadge);
     }
@@ -208,7 +208,7 @@ test("a live row says Enter joins the live edge, a premiere says it has not star
     overview: "",
     posterPath: null,
     externalIds: { youtubeId: "x" },
-    contentShape: "video" as const,
+    resultKind: "video" as const,
   };
   expect(toBrowseResultOption({ ...base, liveStatus: "live" } as SearchResult).previewNote).toBe(
     "This stream is live. Press Enter to join at the live edge.",
@@ -236,21 +236,21 @@ test("collection counts render zero and singular correctly in the browse row", (
 
   const empty = toBrowseResultOption({
     ...base,
-    contentShape: "playlist",
+    resultKind: "playlist",
     episodeCount: 0,
   } as SearchResult);
   expect(empty.previewMeta).toContain("0 videos");
 
   const single = toBrowseResultOption({
     ...base,
-    contentShape: "playlist",
+    resultKind: "playlist",
     episodeCount: 1,
   } as SearchResult);
   expect(single.previewMeta).toContain("1 video");
 
   const many = toBrowseResultOption({
     ...base,
-    contentShape: "channel",
+    resultKind: "channel",
     episodeCount: 310,
   } as SearchResult);
   expect(many.previewMeta).toContain("310 videos");
@@ -259,7 +259,7 @@ test("collection counts render zero and singular correctly in the browse row", (
   const oneEpisode = toBrowseResultOption({
     ...base,
     type: "series",
-    contentShape: undefined,
+    resultKind: undefined,
     externalIds: {},
     episodeCount: 1,
   } as SearchResult);

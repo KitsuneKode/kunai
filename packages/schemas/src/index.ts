@@ -74,8 +74,10 @@ export const resolveErrorCodeSchema = z.enum([
   "expired",
   "parse-failed",
   "runtime-missing",
+  "yt-dlp-missing",
   "timeout",
   "cancelled",
+  "missing-input",
   "unknown",
 ]);
 
@@ -333,6 +335,9 @@ export const providerTraceEventSchema = z.object({
     "runtime:released",
     "retry:scheduled",
     "retry:aborted",
+    "inventory:audio-modes",
+    "audio:fallback",
+    "ladder:fallback",
   ]),
   at: z.iso.datetime(),
   providerId: z.string().min(1),

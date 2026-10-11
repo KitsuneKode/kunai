@@ -196,18 +196,18 @@ const shortsSearch = provider.search
       .search("cooking", {
         audioPreference: container.config.youtubeLanguageProfile.audio,
         subtitlePreference: container.config.youtubeLanguageProfile.subtitle,
-        contentShape: "short",
+        resultKind: "short",
       })
       .catch(() => null)
   : null;
-const shortsShapes = [...new Set((shortsSearch ?? []).map((result) => result.contentShape))];
+const shortsResults = [...new Set((shortsSearch ?? []).map((result) => result.resultKind))];
 
 console.log(
   JSON.stringify({
-    ok: (shortsSearch?.length ?? 0) > 0 && shortsShapes.every((shape) => shape === "short"),
+    ok: (shortsSearch?.length ?? 0) > 0 && shortsResults.every((kind) => kind === "short"),
     check: "type-short-search",
     resultCount: shortsSearch?.length ?? 0,
-    shapes: shortsShapes,
+    kinds: shortsResults,
   }),
 );
 
@@ -216,10 +216,10 @@ if (!shortsSearch?.length) {
     reason: "type_short_search_returned_nothing",
     hint: "The Shorts lane must use YouTube's own Shorts search filter; `ytsearch:` never returns Shorts.",
   });
-} else if (shortsShapes.some((shape) => shape !== "short")) {
+} else if (shortsResults.some((kind) => kind !== "short")) {
   qualityFailures.push({
     reason: "type_short_search_returned_non_shorts",
-    shapes: shortsShapes,
+    kinds: shortsResults,
   });
 }
 

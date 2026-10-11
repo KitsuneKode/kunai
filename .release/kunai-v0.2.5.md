@@ -1,5 +1,7 @@
 # Kunai 0.2.5
 
+Released 2026-06-07
+
 A large reliability + experience pass: continuous play, offline parity, smarter
 anime classification, a rebuilt calendar, downloads that don't eat your RAM, and
 a long tail of UX fixes.
@@ -11,7 +13,7 @@ a long tail of UX fixes.
   Next panel; reorder queued items (move up/down); save the queue as a playlist;
   import/export.
 - **Offline parity.** Downloaded episodes now play through the _same_ path as
-  online — full resume **offer** (not a forced seek), auto-skip, OSD, track
+  online: full resume **offer** (not a forced seek), auto-skip, OSD, track
   control, autoplay into the next downloaded episode, and history.
 - **Smarter anime.** Deterministic TMDB anime classifier (research-validated)
   tags results as _Anime_; it is authoritative for the persisted content kind, so
@@ -46,7 +48,7 @@ a long tail of UX fixes.
 
 - **Config:** an explicit `vidking` provider choice now persists (was reverted every
   load).
-- **Progress:** episode progress and series progress are now separate — finishing
+- **Progress:** episode progress and series progress are now separate; finishing
   one episode no longer mislabels a whole series "Completed"; `unknown` release
   state → Continue, not falsely Completed.
 - **Downloads:** runaway RAM + orphaned `yt-dlp` fixed (bounded fragment buffering,

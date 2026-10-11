@@ -11,6 +11,18 @@ describe("NetworkStatus", () => {
   test("classifies OS and DNS failures as offline", () => {
     expect(classifyNetworkFailure("getaddrinfo ENOTFOUND api.example.test")).toBe("offline");
     expect(classifyNetworkFailure("Network is unreachable")).toBe("offline");
+    expect(classifyNetworkFailure("curl: (6) Could not resolve host: anidb.app")).toBe("offline");
+    expect(classifyNetworkFailure("Temporary failure in name resolution")).toBe("offline");
+    expect(classifyNetworkFailure("Name or service not known")).toBe("offline");
+  });
+
+  test("does not classify messages that merely mention dns as offline", () => {
+    // A bare "dns" substring matched titles, URLs and provider copy — two such
+    // false positives used to trip the engine's offline threshold.
+    expect(classifyNetworkFailure('no results for "the dns diaries"')).toBe("unknown");
+    expect(classifyNetworkFailure("HTTP 403 from https://dns.cdn.example/v/1.m3u8")).toBe(
+      "unknown",
+    );
   });
 
   test("classifies Bun unable-to-connect failures as offline", () => {
@@ -19,6 +31,29 @@ describe("NetworkStatus", () => {
     ).toBe("offline");
     expect(classifyNetworkFailure("FailedToOpenSocket")).toBe("offline");
     expect(classifyNetworkFailure("Was there a typo in the url or port?")).toBe("offline");
+  });
+
+  test("classifies the resolver's real phrasings as offline", () => {
+    // The forms curl, glibc, Windows and Bun actually emit. The bare `dns`
+    // token that used to stand in for all of these is gone; see the pattern
+    // list's comment for why it was a hazard.
+    expect(classifyNetworkFailure("curl: (6) Could not resolve host: anidb.app")).toBe("offline");
+    expect(classifyNetworkFailure("Name or service not known")).toBe("offline");
+    expect(classifyNetworkFailure("no such host")).toBe("offline");
+    expect(classifyNetworkFailure("dns lookup failed")).toBe("offline");
+  });
+
+  test("does not read a bare dns token as a network outage", () => {
+    // Two of these across distinct providers would trip
+    // DEFAULT_CONSECUTIVE_OFFLINE_THRESHOLD and halt every remaining live
+    // candidate — including the ones that are working.
+    expect(classifyNetworkFailure('anidb search returned zero results for "dns"')).not.toBe(
+      "offline",
+    );
+    expect(classifyNetworkFailure("Could not parse manifest at /tmp/dns/manifest.m3u8")).not.toBe(
+      "offline",
+    );
+    expect(classifyNetworkFailure("provider dns stream inventory empty")).not.toBe("offline");
   });
 
   test("classifies single timeouts as limited instead of offline", () => {

@@ -148,7 +148,7 @@ const payload = {
   episodeCount: title.episodeCount ?? null,
   episodeOptions: episodes?.length ?? 0,
   firstEpisodes: episodes?.slice(0, 3).map((episode) => episode.label) ?? [],
-  ...(resolveError ? providerSmokeError(resolveError) : {}),
+  ...(resolveError ? providerSmokeError(resolveError) : null),
   failureCodes,
   failureMessages,
   streamCandidates,

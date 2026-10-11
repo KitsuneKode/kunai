@@ -17,20 +17,66 @@ const config = {
 describe("playback provider fallback", () => {
   test("picks the first compatible provider that is not current", () => {
     expect(
-      pickCompatibleFallbackProvider(
-        [{ metadata: { id: "vidking" } }, { metadata: { id: "rivestream" } }],
-        "vidking",
-      )?.metadata.id,
+      pickCompatibleFallbackProvider({
+        providers: [{ metadata: { id: "vidking" } }, { metadata: { id: "rivestream" } }],
+        currentProviderId: "vidking",
+      })?.metadata.id,
     ).toBe("rivestream");
   });
 
   test("returns undefined when no alternate provider exists", () => {
     expect(
-      pickCompatibleFallbackProvider([{ metadata: { id: "vidking" } }], "vidking"),
+      pickCompatibleFallbackProvider({
+        providers: [{ metadata: { id: "vidking" } }],
+        currentProviderId: "vidking",
+      }),
     ).toBeUndefined();
   });
 
-  test("switches provider through the shared user-switch path and invalidates recent stream", async () => {
+  test("skips providers already tried this cycle instead of ping-ponging", () => {
+    expect(
+      pickCompatibleFallbackProvider({
+        providers: [
+          { metadata: { id: "vidking" } },
+          { metadata: { id: "rivestream" } },
+          { metadata: { id: "allmanga" } },
+        ],
+        currentProviderId: "allmanga",
+        excludedProviderIds: new Set(["vidking", "allmanga"]),
+      })?.metadata.id,
+    ).toBe("rivestream");
+  });
+
+  test("skips health-gated providers when an eligibility gate is given", () => {
+    expect(
+      pickCompatibleFallbackProvider({
+        providers: [
+          { metadata: { id: "vidking" } },
+          { metadata: { id: "rivestream" } },
+          { metadata: { id: "allmanga" } },
+        ],
+        currentProviderId: "vidking",
+        isFallbackEligible: (id) => id !== "rivestream",
+      })?.metadata.id,
+    ).toBe("allmanga");
+  });
+
+  test("returns undefined when every alternate is tried or ineligible", () => {
+    expect(
+      pickCompatibleFallbackProvider({
+        providers: [
+          { metadata: { id: "vidking" } },
+          { metadata: { id: "rivestream" } },
+          { metadata: { id: "allmanga" } },
+        ],
+        currentProviderId: "vidking",
+        excludedProviderIds: new Set(["rivestream"]),
+        isFallbackEligible: (id) => id !== "allmanga",
+      }),
+    ).toBeUndefined();
+  });
+
+  test("applies a session-scoped switch without persisting a per-title preference", async () => {
     const dispatches: unknown[] = [];
     const invalidatedEpisodes: string[] = [];
     const sourceInventoryDeletes: string[] = [];
@@ -79,7 +125,9 @@ describe("playback provider fallback", () => {
       provider: "rivestream",
       forceFreshResolve: true,
     });
-    expect(configUpdates.at(-1)?.titleProviderPreferences).toEqual({ "1396": "rivestream" });
+    // ⇧F is a recovery hop, not a durable per-title preference — the explicit
+    // provider picker remains the only path that writes one.
+    expect(configUpdates).toEqual([]);
     expect(sourceInventoryDeletes.sort()).toEqual(["rivestream", "vidking"]);
     expect(invalidatedEpisodes).toEqual(["1:2"]);
   });

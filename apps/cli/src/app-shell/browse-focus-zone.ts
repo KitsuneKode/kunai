@@ -1,10 +1,8 @@
-// =============================================================================
-// browse-focus-zone.ts — pure focus-zone reducer for browse shell
+// Pure focus-zone reducer for browse shell
 //
 // Zones: query (default text) → list (bare hotkeys) → filter (local narrow) → idle
 // Printable keys edit text only in query/filter; list owns i/enter/q/d without
 // leaking keystrokes into the search box.
-// =============================================================================
 
 export type BrowseFocusZone = "query" | "filter" | "list" | "idle";
 

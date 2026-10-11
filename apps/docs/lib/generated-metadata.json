@@ -1,27 +1,41 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "d8dc24782ad9f1dc1e90a75a2ab018ad910c87e30815e281a3f7641f92dc79ca",
-  "docsContentFingerprint": "d92bb55eb676113a513c79747f8417ed860f1972e2f7dcd3b549039441a1d1d1",
+  "cliSourceFingerprint": "a59f2b18e69160f9c4c660f27cb2cd73ee4cafa67cd3e8f692ac281ba971d6d5",
+  "docsContentFingerprint": "598b68d932c511dd77f1295b8813c9974a5b7c9e5afe231c8bc8ce3a68a7585d",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
-  "commandCount": 82,
-  "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
+  "commandCount": 84,
+  "providerIds": [
+    "videasy",
+    "vidlink",
+    "vidrock",
+    "rivestream",
+    "movy",
+    "anidb",
+    "allanime",
+    "hianime",
+    "miruro",
+    "animegg",
+    "kickassanime",
+    "youtube"
+  ],
   "providers": [
     {
       "id": "videasy",
       "displayName": "Videasy",
       "description": "Registered movies/series adapter; source and subtitle inventory vary by title",
       "domain": "videasy.to",
-      "recommended": true,
+      "recommended": false,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
-      "status": "active",
       "notes": [
         "2026-07-16: active stream API is api.speedracelight.com (player.videasy.to / cineby.at).",
         "2026-08-26: the api.wingsdatabase.com seed mirror was removed — NXDOMAIN on public resolvers; the surviving apex does not serve /seed. db.wingsdatabase.com still resolves and stays listed.",
+        "2026-11: api.videasy.to / db.videasy.to went NXDOMAIN — the TMDB-format catalog moved to db.wingsdatabase.com/3 (verified /search/multi + /movie external_ids). VIDEASY_DB_BASES walks live-first.",
         "2026-07-16: Cineby server catalog labels (Yoru/Neon/Sage/Jett/…) map to /cdn /neon2 /ym /jett /… routes.",
         "2026-07-18: Inventory UI order matches cineby Servers (Yoru first). Resolve Phase A is Yoru → Cypher → Neon → Sage → Jett → Breach → Vyse; localized servers stay Phase B.",
-        "2026-07-18: Resolve-gate always segment-probes HLS before attesting streamReachabilityVerified; dead CDNs fail over instead of hanging.",
+        "2026-07-18: Resolve-gate always segment-probes HLS before accepting a candidate; definitive-dead CDNs fail over instead of hanging.",
+        "2026-09-12: Resolve-gate no longer attests streamReachabilityVerified — the probe's 200 did not survive to mpv on signed CDN URLs (#361), so downstream checks re-probe rather than trust a false green for 5m.",
         "2026-07-11: stream sources-with-title routes on api.videasy.to remain route-dead (404).",
         "bc-frontend is the default Videasy client profile; stream/API origin/referer follow cineby.at (seed already did).",
         "Do not mark browser-safe because local decrypt/runtime behavior is required."
@@ -35,7 +49,6 @@
       "recommended": true,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked"],
-      "status": "active",
       "notes": [
         "Browserless: TMDB id is encrypted via enc-dec.app, then sources are fetched from vidlink.pro/api/b.",
         "Returns a multi-quality HLS playlist (mpv selects the rendition) plus provider subtitles.",
@@ -43,25 +56,55 @@
       ]
     },
     {
+      "id": "vidrock",
+      "displayName": "VidRock",
+      "description": "Backup source for movies and series with direct video files",
+      "domain": "vidrock.net",
+      "recommended": false,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "multi-source", "quality-ranked"],
+      "notes": [
+        "Browserless fallback: GET vidrock.net/api/{movie|tv}/… returns a map of",
+        "server lanes whose url fields are AES-256-GCM ciphertexts; each decrypts",
+        "to a direct HLS URL. Streams carry a single-space User-Agent — the ngcorp",
+        "segment hosts drop connections that send a real UA, and ' ' is the only",
+        "value ffmpeg can emit that passes. A resolve-gate probe filters TLS-gated",
+        "lanes (workers.dev, CF-challenged .lol/.site hosts) that mpv cannot play."
+      ]
+    },
+    {
       "id": "rivestream",
       "displayName": "Rivestream",
-      "description": "Candidate movies/series adapter; quality varies by title",
+      "description": "Mirror-aggregator for movies/series; coverage varies by title",
       "domain": "rivestream.app",
       "recommended": true,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
-      "status": "candidate",
       "notes": ["Bypasses Playwright entirely by generating the 32-bit MurmurHash signature natively in Node.js."]
+    },
+    {
+      "id": "movy",
+      "displayName": "Movy",
+      "description": "Movies and series via a multi-lane source aggregator",
+      "domain": "movy.sx",
+      "recommended": false,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked", "multi-source"],
+      "notes": [
+        "Browserless: TMDB id gets a short-lived seed from api.wecollege.net/seed, then each named lane (atlanta, denver, miami, …) answers an encrypted `/{lane}/sources` payload that the client XOR-decrypts into {sources, subtitles}.",
+        "Each lane is a distinct upstream scraper (stillhaven, vidzy, workers.dev proxies, multi-language mirrors); lanes surface as individual sources so server switching and fallback cycling apply per lane.",
+        "Anime lane (anikoto/sources-id) is not wired yet — movies and series only.",
+        "External dependency: api.wecollege.net is movy.sx's own backend; if it moves or rate-limits, resolve degrades to the next provider."
+      ]
     },
     {
       "id": "anidb",
       "displayName": "AniDB",
-      "description": "Registered default anime adapter; catalog and streams are third-party",
+      "description": "anidb.app catalog and streams — ani-cli v5's source",
       "domain": "anidb.app",
       "recommended": true,
       "mediaKinds": ["anime"],
       "capabilities": ["search", "episode-list", "source-resolve", "quality-ranked"],
-      "status": "active",
       "notes": [
         "Parity with ani-cli v5.0 (2026-08-01): browse search, /api/frontend anime episodes + episode languages, embed → HLS master.",
         "Episode metadata follows the explicit anidb.app → official anidb.net AID cross-link, then reads official XML; AniList/Jikan fill missing fields and still artwork.",
@@ -74,36 +117,112 @@
     {
       "id": "allanime",
       "displayName": "AllManga",
-      "description": "Anime episodes in sub and dub — the primary anime source",
+      "description": "Anime episodes in sub and dub — the ani-cli parity source",
       "domain": "mkissa.to",
       "recommended": false,
       "mediaKinds": ["anime"],
       "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
-      "status": "active",
       "notes": [
         "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
         "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
         "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
-        "2026-08: mkissa crypto rotates buildId + derivation constants (81 → 119 → 140; 140 added bootPrefix HMAC and group.host.lane.buildId.epoch payload) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. ani-cli v5 moved primary to anidb.app."
+        "2026-10: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171 → 177; 177 moved the boot payload to group/lane/host/buildId/epoch and added an env-gated mask XOR) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
+      ]
+    },
+    {
+      "id": "hianime",
+      "displayName": "HiAnime",
+      "description": "Anime episodes in sub and dub via HiAnime (ani-cli parity lane)",
+      "domain": "hianime.at",
+      "recommended": true,
+      "mediaKinds": ["anime"],
+      "capabilities": [
+        "search",
+        "episode-list",
+        "source-resolve",
+        "subtitle-resolve",
+        "multi-source",
+        "quality-ranked"
+      ],
+      "notes": [
+        "Parity with ani-cli v5.1.5: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
+        "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
+        "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
+        "Each season is a separate provider-native slug; there is no in-provider season routing.",
+        "Bun/fetch may meet Cloudflare where curl passes; the client falls back to curl/curl-impersonate like AniDB/Miruro.",
+        "Relay-safe for metadata RPC (/rpc/hianime). Video always stays direct; the relay has no media route."
       ]
     },
     {
       "id": "miruro",
       "displayName": "Miruro",
-      "description": "Alternate anime source — useful when a title is missing elsewhere",
+      "description": "Primary anime source — sub and dub from many backends behind one AniList-keyed pipe",
       "domain": "www.miruro.bz",
-      "recommended": false,
+      "recommended": true,
       "mediaKinds": ["anime"],
-      "capabilities": ["episode-list", "source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
-      "status": "candidate",
+      "capabilities": [
+        "search",
+        "episode-list",
+        "source-resolve",
+        "subtitle-resolve",
+        "multi-source",
+        "quality-ranked"
+      ],
       "notes": [
         "2026-07-16: Browser network on www.miruro.bz/watch/{anilistId}/... uses GET /api/secure/pipe?e=… (200 plain + x-obfuscated). HLS on vault*.ultracloud / owocdn with stream.referer https://kwik.cx/.",
         "Bun fetch often gets CF 403 HTML on pipe; production path falls back to curl --http2 with browser headers (dossier-proven on this machine).",
-        "Primary hosts: www.miruro.bz, www.miruro.ru. Bare miruro.bz/.ru are 301 redirects to www. and still CF-block at the pipe path; miruro.com serves a different app shell with no /api/secure/pipe; miruro.tv/.to are TLS-dead — all stay off the resolve list.",
+        "2026-09-11: all four www. mirrors (.bz, .ru, .to, .tv) serve /api/secure/pipe — the earlier 'miruro.tv/.to are TLS-dead' reading came from a network whose reachability to them flaps (same host timed out, failed fast, then answered within minutes). Bare origins are 301 redirects to www.; miruro.com is a landing page with no pipe and is excluded by name.",
+        "2026-09-11: mirror order is live. status.miruro.com is Uptime Kuma with public JSON (/api/status-page/miruro plus /api/status-page/heartbeat/miruro); it is read in the background, names mirrors Kunai does not ship with, and only ever demotes a mirror it calls down. The mirror that last answered leads. See miruro/mirrors.ts.",
         "Uses Miruro pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
-        "The default anime priority names AniDB first; that list is ordering, not an allowlist, so Miruro remains a registered fallback and manually selectable when the curl/http2 path works.",
+        "2026-09-11: default anime provider (config providerDefaultsRevision 1), ahead of AniDB and AllAnime. The case for it is structural, not a speed claim: it fronts ~a dozen backends, so an upstream outage costs one server — on 2026-09-11 anidb.app and api.mkissa.net were both refusing us while moo/bee/bonk/kiwi served streams.",
+        "2026-09-11: searches through its own pipe (path `search`, query `q` plus `type: ANIME`; `search`/`query` are ignored and return the popular list). It relays AniList's catalog, so it kept answering while AniList's API was disabled. `dubLanguages` on those rows is voice-actor data, not availability.",
+        "2026-09-11: the pipe returns a backend's URL whether or not that backend is up — `pewe` served hls.anidb.app URLs (503) through AniDB's maintenance, and won the cycle. Candidates are now rejected on 404/410/429/502/503/504 from one ranged GET, and only when that status came from the host asked. Never on 401/403 (owocdn answers Bun's fetch 403 while mpv plays), never on a plain 500 (AnimeGG hands off to vidcache, which 500s anything but its player), and never on a cross-host redirect.",
+        "Structural dependency: every backend is reached through miruro.bz/.ru. If Miruro itself goes dark, all of them go with it — which is why AniDB and AllAnime stay registered behind it.",
         "May hit Cloudflare rate limits if called too frequently.",
-        "2026-08-17: curl --http2 with browser headers also receives CF 403 HTML from some networks; the WAF block message now carries a relay hint."
+        "2026-09-11: the pipe is reachable — Bun fetch is always CF-403'd (its TLS fingerprint), and curl clears the edge on both mirrors. The superseded 2026-08-17 note claiming curl also received CF 403 was measured through a predicate that read any HTML body as a Cloudflare block, including the mirror's own `502 upstream unreachable` page.",
+        "2026-09-12: 429 joined that list. The release signoff's anime lane resolved a pewe stream that answered 429 to mpv, to curl with the stream's headers and to curl with none — a rate-limited master is refused to everyone, unlike the 403 that only Bun's fetch sees. Skipping it costs one server attempt; accepting it cost a failed play on the default anime provider. With pewe skipped the cycle lands on moo and plays (verified: 1080p frame).",
+        "2026-09-12: rejected backends are recorded through context.endpointHealth as server-error against the server id, and the cycle skips a quarantined one without asking it. The probe also no longer asks animegg.org, whose /play never answers Bun's fetch (curl and mpv get a 302 at once): it spent the full timeout on every Moo resolve. Together they took a Miruro resolve from ~4.3s to ~1.1s once pewe was quarantined.",
+        "A 444/502 from the pipe is one of Miruro's backing servers being down (pewe follows AniDB, ally follows AllManga), not a WAF block, and must not stop the cycle — the remaining servers are usually healthy."
+      ]
+    },
+    {
+      "id": "animegg",
+      "displayName": "AnimeGG",
+      "description": "Independent anime source — direct MP4s, sub and dub, no AniList dependency",
+      "domain": "www.animegg.org",
+      "recommended": true,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "quality-ranked"],
+      "notes": [
+        "2026-09-11: added as the anime lane's independent second source. Its value is what it does NOT share with Miruro: its own catalog (provider-native slugs, no AniList), its own site, its own CDN. Miruro reaches AnimeGG too, as its `moo` server — but only through miruro.bz, so it dies with Miruro. This adapter does not.",
+        "Four plain HTML documents, no JavaScript and no crypto: /search/?q= -> /series/<slug> -> /<slug>-episode-<n> -> /embed/<id>, which carries `var videoSources = [{file, label}]` of direct MP4s.",
+        "Sub and dub are the episode page's own `#videos` tabs (`data-id`, `data-mirror`, `data-version`), so audio is read, never guessed. Naruto ep 1 exposes subbed 25881 and dubbed 25882.",
+        "The subbed version is hard-subbed — burned-in English, no separate track. It advertises no subtitle-resolve and must not claim soft subs.",
+        "Streams are /play/<id>/video.mp4?for=<token>, which 302s to a per-request vidcache host. That CDN answers `{\"error\":\"Invalid request (bad hand off)\"}` with HTTP 500 to anything that is not its player — a plain or ranged GET included — while mpv plays the same URL. Never read a probe of these as evidence the stream is dead.",
+        "`bk` on each source is a backup, but not a uniform one: a direct CDN URL for One Piece and an mp4upload embed page for Naruto. Unused until one extractor covers both.",
+        "No Cloudflare challenge on any of the four documents; the four HTML documents need no referer.",
+        "A title found in another catalog is matched against /search/?q= by name — title and alt titles, exactly one hit — and the slug is remembered on the title bridge. `title.id` is never trusted as a slug: AnimeGG slugs are plain kebab, so a same-shaped id from elsewhere (or AniList's numeric 21) would reach /series/<id>. Alt titles are split on both `,` and `;` — Frieren's English name sits after a semicolon.",
+        "The STREAM does need one. Without a referer the CDN refuses the hand-off and mpv writes no frame; with the episode page as referer it plays. animegg.org 302s either way, so a status check on the /play URL cannot see this — only the player can."
+      ]
+    },
+    {
+      "id": "kickassanime",
+      "displayName": "KickAssAnime",
+      "description": "Independent anime source — HLS with separate subtitle tracks, sub and dub",
+      "domain": "kaa.lt",
+      "recommended": true,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
+      "notes": [
+        "2026-09-11: added as a second anime source independent of Miruro, and the only one that ships subtitles as separate tracks rather than burned in.",
+        "Catalog is a plain JSON API: POST /api/fsearch {query, page}; GET /api/show/<slug>/episodes?ep=<page>&lang=<locale>; GET /api/show/<slug>/episode/ep-<n>-<epSlug> -> servers. Locales: ja-JP is sub, en-US is dub; dub coverage is often partial (Naruto: 2 of 220).",
+        "The site's JS is obfuscated, but nothing on the stream path is encrypted: the cat-player page carries the manifest and subtitles as serialized Astro island props ([0, value] / [1, array] tuples).",
+        "Headers are the whole trick, and each hop wants a different one. The HLS manifest needs `Referer: https://krussdomi.com/` (403 without). Segments — MPEG-TS served as .jpg from a rotating CDN host (st1.advancedairesearchlab.xyz on 2026-09-11, st1.narutokun.xyz on 2026-09-12) — need `Origin: https://krussdomi.com`; the referer alone is refused. Subtitle .vtt files need the same. Both headers are derived from the player's own origin rather than hardcoded, so a player move carries them along.",
+        "mpv applies the stream's referer and Origin to --sub-file / sub-add requests too, so subtitles load with no per-track headers (verified: sid=1 external webvtt).",
+        "Sub and dub are usually ONE file: the master carries a dub per audio rendition (Frieren ships nine, Japanese marked DEFAULT), so both locales hand back the same manifest id. The track is mpv's to choose via --alang, which is why `selectKaaAudio` reads the rendition group instead of trusting the locale — and why Kunai's audio setting had to stop reaching mpv as the literal `dub`, which matched no track and played Japanese.",
+        "The variant playlists are video-only (the audio lives in the rendition group), so the ladder is never expanded into per-quality URLs — mpv gets the master and picks. That is also why qualityRank is 0 rather than an invented height.",
+        "Only the HLS lanes are used: the servers list rotated VidStreaming to CatStream on the same cat-player page (2026-10-04), and both names stay playable. BirdStream serves DASH with many subtitle languages, but its manifest answered 404 for the title tested; the doubled slash in its URL (https:////bl.krussdomi.com) is normalized if it is ever enabled. CatStream's manifest now arrives protocol-relative (//bl.krussdomi.com/…), pinned to https by the same normalizer.",
+        "The domain rotates (kaa.to -> kaa.mx -> kickass-anime.ro -> kaa.lt). kickass-anime.ro still 301s to the current one and is asked when kaa.lt stops answering at connection level. Its redirect is read by hand (redirect: manual) and accepted only for an https `kaa.<tld>` / `kickass-anime.<tld>` host: an old alias can lapse and be bought, and following it blindly would hand the new owner the API base and every stream URL behind it."
       ]
     },
     {
@@ -114,7 +233,6 @@
       "recommended": true,
       "mediaKinds": ["video"],
       "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
-      "status": "production",
       "notes": ["Metadata via Invidious/Piped; playback via youtube.com watch URLs and mpv ytdl."]
     }
   ],
@@ -296,7 +414,7 @@
     {
       "id": "docs",
       "label": "Docs",
-      "aliases": ["docs", "documentation", "guide", "manual"],
+      "aliases": ["docs", "documentation", "manual"],
       "description": "Open Kunai documentation"
     },
     {
@@ -304,6 +422,12 @@
       "label": "Help",
       "aliases": ["help", "shortcuts", "?"],
       "description": "Show shortcuts and command help"
+    },
+    {
+      "id": "guide",
+      "label": "Guide",
+      "aliases": ["guide", "tour", "learn", "start-here", "features"],
+      "description": "Browse what Kunai can do, grouped by task — Enter runs it"
     },
     {
       "id": "menu",
@@ -328,6 +452,12 @@
       "label": "Image Pane",
       "aliases": ["image", "preview", "poster"],
       "description": "Toggle the image and details companion pane"
+    },
+    {
+      "id": "pet",
+      "label": "Companion",
+      "aliases": ["pet", "kanna", "companion", "mascot", "fox"],
+      "description": "Show or hide Kanna, the fox on empty and error screens"
     },
     {
       "id": "toggle-autoplay",
@@ -630,7 +760,7 @@
     {
       "short": "-i",
       "long": "--id",
-      "description": "Open a specific title id"
+      "description": "Open a specific title id or namespaced catalog id"
     },
     {
       "short": "-t",
@@ -640,7 +770,7 @@
     {
       "short": "-a",
       "long": "--anime",
-      "description": "Anime mode (AniDB default with provider fallback)"
+      "description": "Anime mode (HiAnime default with provider fallback)"
     },
     {
       "short": "-y",
@@ -892,7 +1022,7 @@
     }
   ],
   "runtimeBaseline": {
-    "bun": "1.4.0",
+    "bun": "1.4.2",
     "mpv": "0.38+"
   },
   "shortcuts": [

@@ -1,6 +1,7 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import type { ProviderCycleCandidate } from "@kunai/types";
+import { ProviderHttpError } from "@kunai/types";
 
 import {
   classifyEndpointFailureFromCycleFailure,
@@ -275,12 +276,60 @@ test("runProviderCycle does not retry network-offline failures inside the same r
   });
 
   expect(result.selected).toBeUndefined();
-  expect(attempts).toEqual(["source:kiwi"]);
+  // Offline evidence corroborates across distinct servers: both candidates
+  // must fail DNS-level before the walk calls the uplink dead.
+  expect(attempts).toEqual(["source:kiwi", "source:telli"]);
   expect(result.stopReason).toBe("network-offline");
   expect(result.attempts.map((attempt) => attempt.failure?.failureClass)).toEqual([
     "candidate-network",
+    "candidate-network",
   ]);
   expect(result.attempts.every((attempt) => attempt.failure?.retryable === false)).toBe(true);
+});
+
+test("runProviderCycle keeps cycling past a single dead domain to a live sibling server", async () => {
+  const attempts: string[] = [];
+
+  const result = await runProviderCycle({
+    providerId: "allanime",
+    candidates,
+    maxAttemptsPerCandidate: 3,
+    now: fixedClock(),
+    async resolveCandidate(candidate) {
+      attempts.push(candidate.id);
+      if (candidate.serverId === "kiwi") {
+        throw new Error("getaddrinfo ENOTFOUND dead.example.invalid");
+      }
+      return { streamId: candidate.id };
+    },
+  });
+
+  // One provider-internal domain being unreachable is a dead-mirror signal,
+  // not a dead uplink — the next server must still get its attempt.
+  expect(result.selected).toEqual({ streamId: "source:telli" });
+  expect(attempts).toEqual(["source:kiwi", "source:telli"]);
+  expect(result.stopReason).toBe("resolved");
+});
+
+test("runProviderCycle retries an offline-classified failure on the same server only once per verdict", async () => {
+  const attempts: string[] = [];
+
+  const result = await runProviderCycle({
+    providerId: "allanime",
+    candidates: [candidates[0]!],
+    maxAttemptsPerCandidate: 3,
+    now: fixedClock(),
+    async resolveCandidate(candidate) {
+      attempts.push(candidate.id);
+      throw new Error("getaddrinfo ENOTFOUND api.allanime.day");
+    },
+  });
+
+  // A single dead domain never reaches quorum: the walk ends exhausted on
+  // that server's failure rather than claiming the uplink is down.
+  expect(result.selected).toBeUndefined();
+  expect(attempts).toEqual(["source:kiwi"]);
+  expect(result.stopReason).toBe("exhausted");
 });
 
 test("classifyProviderCycleError keeps blocked and parse failures non-retryable", () => {
@@ -296,6 +345,61 @@ test("classifyProviderCycleError keeps blocked and parse failures non-retryable"
     failureClass: "candidate-network",
     retryable: true,
   });
+});
+
+// #458: a status-bearing ProviderHttpError classifies on the status, not on
+// what the message happens to contain — a 429/503 used to degrade to a
+// retryable "candidate-unknown" and never reached the quarantine gate.
+test("classifyProviderCycleError reads ProviderHttpError structurally", () => {
+  expect(
+    classifyProviderCycleError(
+      new ProviderHttpError({
+        message: "RGShows API returned HTTP 429",
+        status: 429,
+        code: "rate-limited",
+        retryable: true,
+      }),
+    ),
+  ).toMatchObject({ failureClass: "candidate-rate-limited", retryable: true });
+
+  expect(
+    classifyProviderCycleError(
+      new ProviderHttpError({
+        message: "VidRock API returned HTTP 503",
+        status: 503,
+        code: "provider-unavailable",
+        retryable: true,
+      }),
+    ),
+  ).toMatchObject({ failureClass: "candidate-server-error", retryable: true });
+
+  expect(
+    classifyProviderCycleError(
+      new ProviderHttpError({
+        message: "upstream answered 403 without naming cloudflare",
+        status: 403,
+        code: "blocked",
+        retryable: false,
+      }),
+    ),
+  ).toMatchObject({ failureClass: "candidate-blocked", retryable: false });
+});
+
+test("endpoint health sees rate-limited and server-error cycle failures", () => {
+  const base = {
+    providerId: "vidrock",
+    candidateId: "source:vidrock",
+    message: "failed",
+    retryable: true,
+    at: "2026-05-19T00:00:00.000Z",
+  } as const;
+
+  expect(
+    classifyEndpointFailureFromCycleFailure({ ...base, failureClass: "candidate-rate-limited" }),
+  ).toBe("server-error");
+  expect(
+    classifyEndpointFailureFromCycleFailure({ ...base, failureClass: "candidate-server-error" }),
+  ).toBe("server-error");
 });
 
 test("endpoint health learns from parse failures but not ambiguous provider blocks", () => {
@@ -349,3 +453,34 @@ test("provider-wide blocked evidence does not poison endpoint health", async () 
 function fixedClock(): () => string {
   return () => "2026-05-19T00:00:00.000Z";
 }
+
+describe("hostile candidate rejections", () => {
+  test("a candidate rejecting with a non-Error value is classified, not a crash", async () => {
+    const result = await runProviderCycle({
+      providerId: "movy",
+      candidates: [
+        { id: "a", providerId: "movy", serverId: "denver", priority: 0 },
+        { id: "b", providerId: "movy", serverId: "atlanta", priority: 1 },
+      ],
+      resolveCandidate: async (candidate) => {
+        if (candidate.serverId === "denver") throw "lane exploded as a string";
+        return { ok: true };
+      },
+    });
+    expect(result.stopReason).toBe("resolved");
+    expect(result.attempts[0]?.failure).toBeDefined();
+  });
+
+  test("a candidate rejecting with null still produces a failure record", async () => {
+    const result = await runProviderCycle({
+      providerId: "movy",
+      candidates: [{ id: "a", providerId: "movy", serverId: "denver", priority: 0 }],
+      resolveCandidate: async () => {
+        throw null;
+      },
+    });
+    expect(result.stopReason).not.toBe("resolved");
+    expect(result.attempts.length).toBeGreaterThan(0);
+    expect(result.attempts.every((attempt) => attempt.failure)).toBe(true);
+  });
+});

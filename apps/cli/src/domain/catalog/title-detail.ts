@@ -177,9 +177,9 @@ export function mergeArtwork(
   return {
     poster: firstNonEmpty(ordered, (c) => c.poster),
     backdrop: firstNonEmpty(ordered, (c) => c.backdrop),
-    ...(seasonPosters ? { seasonPosters } : {}),
-    ...(episodeThumbnails ? { episodeThumbnails } : {}),
-    ...(contributingSources.length ? { contributingSources } : {}),
+    ...(seasonPosters ? { seasonPosters } : null),
+    ...(episodeThumbnails ? { episodeThumbnails } : null),
+    ...(contributingSources.length ? { contributingSources } : null),
   };
 }
 

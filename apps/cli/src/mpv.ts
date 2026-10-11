@@ -1,8 +1,12 @@
 import { existsSync } from "node:fs";
-import { unlink } from "node:fs/promises";
+import { rm, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import type { PlaybackResult } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
+import { createPrivateTempDir } from "@/infra/fs/temp-dir";
+import { scrubbedChildEnv } from "@/infra/os/child-env";
+import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "@/infra/player/mpv-ipc";
 import {
@@ -18,7 +22,11 @@ import {
   shouldEmitPlaybackProgress,
 } from "@/infra/player/mpv-playback-kernel";
 import { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
-import { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
+import {
+  isAllowedMpvUrl,
+  needsMpvNetworkPreflight,
+  type MpvUrlKind,
+} from "@/infra/player/mpv-playback-url";
 import {
   registerMpvProcess,
   terminateMpvProcess,
@@ -28,14 +36,14 @@ import {
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
 import {
+  DEFAULT_MPV_YTDL_FORMAT,
   composeDemuxerLavfOptions,
   LIVE_DEMUXER_LAVF_OPTIONS,
   LIVE_DEMUXER_OPTIONS,
   LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
-} from "@/infra/player/mpv-stream-http-headers";
-import {
   normalizeStreamHttpHeaders,
   shouldDisableMpvTlsVerify,
+  toMpvLanguageToken,
 } from "@/infra/player/mpv-stream-http-headers";
 import {
   buildYoutubeMpvScriptOpts,
@@ -62,6 +70,7 @@ import { createPlaybackWatchdog } from "@/infra/player/playback-watchdog";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
+import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
 import {
   checkStreamPreflight,
@@ -104,43 +113,70 @@ export async function launchMpv(opts: {
     await unlinkIfExists(ipcEndpoint.path);
   }
 
-  const args = buildMpvArgs(opts, ipcServerCliArg(ipcEndpoint), {
-    mpv: opts.mpv,
-  });
-  const stats = createPlayerStatsState(ipcEndpoint.path);
-  noteTrustedSeek(stats, opts.startAt ?? 0);
-  const baseEmit = opts.onPlaybackEvent ?? (() => {});
-  const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
-    if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
-      noteStreamStall(stats, Date.now());
+  let chaptersFile: string | null = null;
+  if (opts.timing) {
+    try {
+      chaptersFile = await writeMpvChaptersFile(opts.timing, sessionId);
+    } catch {
+      // Best effort chapters file
     }
-    baseEmit(event);
-  };
-
-  if (!Bun.which("mpv")) {
-    throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
   }
 
-  const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
-  const mpv = Bun.spawn(["mpv", ...args], {
-    stdin: stdio,
-    stdout: stdio,
-    stderr: stdio,
-    env: process.env as Record<string, string>,
-  });
-  const unregisterMpv = registerMpvProcess(mpv);
   try {
-    return await launchMpvInner(
-      mpv,
-      unregisterMpv,
-      opts,
-      sessionId,
-      ipcEndpoint,
-      stats,
-      emitPlaybackEvent,
-    );
+    const sensitiveConf = await writeMpvSensitiveConf(opts, ipcEndpoint);
+    const args = buildMpvArgs({ ...opts, chaptersFile }, ipcServerCliArg(ipcEndpoint), {
+      mpv: opts.mpv,
+      sensitiveOptionsPath: sensitiveConf?.path,
+    });
+    const stats = createPlayerStatsState(ipcEndpoint.path);
+    noteTrustedSeek(stats, opts.startAt ?? 0);
+    const baseEmit = opts.onPlaybackEvent ?? (() => {});
+    const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
+      if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
+        noteStreamStall(stats, Date.now());
+      }
+      baseEmit(event);
+    };
+
+    const mpvInvocation = discoverMpvInvocation();
+    if (!mpvInvocation) {
+      throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
+    }
+
+    const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
+    const mpv = Bun.spawn([...mpvInvocation.argv, ...args], {
+      stdin: stdio,
+      stdout: stdio,
+      stderr: stdio,
+      env: scrubbedChildEnv(),
+    });
+    const unregisterMpv = registerMpvProcess(mpv);
+    try {
+      const result = await launchMpvInner(
+        mpv,
+        unregisterMpv,
+        opts,
+        sessionId,
+        ipcEndpoint,
+        stats,
+        emitPlaybackEvent,
+      );
+      // The conf file's only reader finished with it during startup — by the
+      // time the IPC endpoint is live, `--include` is long parsed.
+      await sensitiveConf?.cleanup();
+      return result;
+    } catch (error) {
+      // A failed launch still wrote the conf — mpv either died before parsing
+      // it or is gone; neither keeps the file alive.
+      await sensitiveConf?.cleanup();
+      throw error;
+    } finally {
+      unregisterMpv();
+    }
   } finally {
-    unregisterMpv();
+    if (chaptersFile) {
+      await removeMpvChaptersFile(chaptersFile).catch(() => {});
+    }
   }
 }
 
@@ -286,14 +322,18 @@ async function launchMpvInner(
   opts.onControlReady?.(control);
   emitPlaybackEvent({ type: "mpv-process-started" });
 
+  // `killed` survives into recordPlayerExit as the exit signal, so a process we
+  // terminated can never be promoted to a natural eof downstream.
   const exitPromise = mpv.exited.then((code) => ({
     code,
     signal: mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null,
   }));
 
-  const preflight = checkStreamPreflight(opts.url, opts.headers, 3_000, {
-    requiresYtdl: opts.requiresYtdl,
-  }).then((result) => {
+  const preflight = (
+    needsMpvNetworkPreflight(opts.url, opts.urlKind)
+      ? checkStreamPreflight(opts.url, opts.headers, 3_000, { requiresYtdl: opts.requiresYtdl })
+      : Promise.resolve<StreamPreflightResult>({ status: "reachable" })
+  ).then((result) => {
     if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
       dbg("mpv", "preflight-definitive-failure", {
         reason: result.reason,
@@ -427,6 +467,9 @@ async function launchMpvInner(
   await ipcBootstrap;
 
   // Wait for the end-file IPC event (or timeout) before finalizing playback result.
+  // A timeout here — e.g. a keep-open session that never emits end-file — leaves
+  // endReason unknown, and unknown never writes completed:true downstream
+  // (recordPlayerExit refuses to infer eof without an end-file event).
   await Promise.race([endFileReceived, Bun.sleep(1_500).then(() => undefined)]);
 
   await closeIpcSession(ipcSession);
@@ -507,6 +550,88 @@ export async function cleanupAbortedMpvLaunch(options: {
   return socketPathCleanedUp;
 }
 
+/**
+ * The options that can carry credentials: stream `http-header-fields` (e.g.
+ * CloudFront signed cookies) and `ytdl-raw-options` (the yt-dlp extractor-args
+ * block may embed a po_token). mpv's argv is world-readable on POSIX while it
+ * runs, so when the caller supplies an owner-only conf path these go there via
+ * `--include` and never touch argv.
+ *
+ * Both the argv and conf paths draw from this one collector so the sensitive
+ * set cannot drift between them.
+ */
+export function collectSensitiveMpvOptions(opts: {
+  readonly url: string;
+  readonly headers?: Record<string, string>;
+  readonly requiresYtdl?: boolean;
+  readonly ytdlRawOptions?: string;
+}): string[] {
+  const lines: string[] = [];
+  const { origin, extraFields } = normalizeStreamHttpHeaders(opts.headers);
+  const headerFields = [...(origin ? [`Origin: ${origin}`] : []), ...extraFields];
+  if (headerFields.length > 0) {
+    lines.push(`http-header-fields=${headerFields.join(",")}`);
+  }
+  if (opts.ytdlRawOptions?.trim() && (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl)) {
+    lines.push(`ytdl-raw-options=${opts.ytdlRawOptions.trim()}`);
+  }
+  return lines;
+}
+
+/** mpv's length-quoting — `%<byteLen>%<value>` — keeps `#`, commas, and spaces intact in conf files. */
+function quoteMpvConfValue(value: string): string {
+  return `%${new TextEncoder().encode(value).length}%${value}`;
+}
+
+/**
+ * Write the sensitive options into an owner-only conf file placed next to the
+ * IPC socket (itself in a private directory) — or a fresh private dir on
+ * Windows, where the endpoint is a named pipe with no filesystem path. Returns
+ * the path for {@link buildMpvArgs}' `sensitiveOptionsPath`, or null when no
+ * sensitive options exist for this stream.
+ *
+ * Lifetime: mpv parses `--include` files once at startup, so the caller may
+ * delete the file as soon as the IPC endpoint is provably live.
+ */
+export async function writeMpvSensitiveConf(
+  opts: {
+    readonly url: string;
+    readonly headers?: Record<string, string>;
+    readonly requiresYtdl?: boolean;
+    readonly ytdlRawOptions?: string;
+  },
+  ipcEndpoint: ReturnType<typeof createMpvIpcEndpoint>,
+): Promise<{ readonly path: string; readonly cleanup: () => Promise<void> } | null> {
+  const lines = collectSensitiveMpvOptions(opts);
+  if (lines.length === 0) return null;
+  const body = `${lines
+    .map((line) => {
+      const eq = line.indexOf("=");
+      return `${line.slice(0, eq)}=${quoteMpvConfValue(line.slice(eq + 1))}`;
+    })
+    .join("\n")}\n`;
+
+  if (ipcEndpoint.kind === "unix_socket") {
+    const path = `${ipcEndpoint.path}.conf`;
+    await writeFile(path, body, { mode: 0o600 });
+    return {
+      path,
+      cleanup: async () => {
+        await rm(path, { force: true }).catch(() => {});
+      },
+    };
+  }
+  const dir = await createPrivateTempDir("mpv-conf");
+  const path = join(dir, "kunai-mpv.conf");
+  await writeFile(path, body, { mode: 0o600 });
+  return {
+    path,
+    cleanup: async () => {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    },
+  };
+}
+
 export function buildMpvArgs(
   opts: {
     url: string;
@@ -523,6 +648,7 @@ export function buildMpvArgs(
     ytdlFormat?: string;
     ytdlRawOptions?: string;
     isLive?: boolean;
+    chaptersFile?: string | null;
   },
   ipcPath: string | null,
   config?: {
@@ -532,6 +658,13 @@ export function buildMpvArgs(
     scriptPath?: string;
     /** Single `--script-opts=` value (comma-separated key=value). */
     scriptOpts?: string;
+    /**
+     * Owner-only conf file the sensitive options (`http-header-fields`,
+     * `ytdl-raw-options`) were written into by {@link writeMpvSensitiveConf}.
+     * When set, they leave argv — which is world-readable on POSIX — and only
+     * `--include=<path>` is emitted.
+     */
+    sensitiveOptionsPath?: string;
   },
 ): string[] {
   if (!isAllowedMpvUrl(opts.url, opts.urlKind ?? "remote")) {
@@ -544,10 +677,10 @@ export function buildMpvArgs(
   const args: string[] = [];
 
   if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
-    args.push(`--ytdl-format=${opts.ytdlFormat ?? "bv*+ba/b"}`);
-    if (opts.ytdlRawOptions?.trim()) {
-      args.push(`--ytdl-raw-options=${opts.ytdlRawOptions.trim()}`);
-    }
+    args.push("--ytdl=yes");
+    args.push(`--ytdl-format=${opts.ytdlFormat ?? DEFAULT_MPV_YTDL_FORMAT}`);
+    // `ytdl-raw-options` (may carry a po_token) is emitted through the
+    // sensitive sink below — it must not ride argv when a conf path exists.
   } else if (opts.url.toLowerCase().includes(".m3u8") && config?.persistent !== true) {
     // One-shot only. `--ytdl=no` is process-wide and a later per-file
     // `ytdl: "yes"` cannot lift it, so a persistent session launched on an HLS
@@ -558,13 +691,23 @@ export function buildMpvArgs(
     args.push("--ytdl=no");
   }
 
-  const { referer, userAgent, origin, extraFields } = normalizeStreamHttpHeaders(opts.headers);
+  const { referer, userAgent } = normalizeStreamHttpHeaders(opts.headers);
   if (referer) args.push(`--referrer=${referer}`);
   if (userAgent) args.push(`--user-agent=${userAgent}`);
-  const headerFields = [...(origin ? [`Origin: ${origin}`] : []), ...extraFields];
-  if (headerFields.length > 0) args.push(`--http-header-fields=${headerFields.join(",")}`);
+  // argv is world-readable on POSIX (`/proc/<pid>/cmdline`), so
+  // credential-bearing options never ride it when a conf path was supplied —
+  // they land in the owner-only `--include` file the caller wrote instead.
+  const sensitive = collectSensitiveMpvOptions(opts);
+  if (sensitive.length > 0) {
+    if (config?.sensitiveOptionsPath) {
+      args.push(`--include=${config.sensitiveOptionsPath}`);
+    } else {
+      for (const line of sensitive) args.push(`--${line}`);
+    }
+  }
   // ani-cli plays mp4upload with --tls-verify=no; without it mpv rejects some hosts.
-  if (shouldDisableMpvTlsVerify(opts.url, opts.headers)) {
+  const disableTlsVerify = shouldDisableMpvTlsVerify(opts.url, opts.headers);
+  if (disableTlsVerify && !config?.persistent) {
     args.push("--tls-verify=no");
   }
 
@@ -596,10 +739,15 @@ export function buildMpvArgs(
     args.push(`--start=${opts.startAt}`);
   }
   args.push(`--force-media-title=${opts.displayTitle}`);
+  if (opts.chaptersFile) {
+    args.push(`--chapters-file=${opts.chaptersFile}`);
+  }
   if (config?.persistent) {
     // keep-open=no is intentional: with keep-open=yes, mpv silently pauses at the last
     // frame on natural EOF and never fires the end-file IPC event, so play() hangs and
     // auto-advance is unreachable. keep-open=no fires end-file with reason "eof" reliably.
+    // Completion depends on that event: without it the result stays unknown and history
+    // is never marked completed.
     // idle=yes keeps the process alive between episodes; force-window=immediate gives
     // instant visual feedback while mpv is still resolving the media.
     args.push("--keep-open=no");
@@ -683,22 +831,16 @@ export function buildMpvArgs(
     if (scriptOpts) args.push(`--script-opts=${scriptOpts}`);
   }
 
-  args.push("--", opts.url);
+  if (disableTlsVerify && config?.persistent) {
+    // mpv restores the user's baseline after this file, just as loadfile's
+    // per-file options do for replacements and reconnects. The validated
+    // exception URL is HTTPS and cannot be parsed as a command-line option.
+    args.push("--{", "--tls-verify=no", opts.url, "--}");
+  } else {
+    args.push("--", opts.url);
+  }
 
   return args;
-}
-
-function toMpvLanguageToken(
-  value: string | undefined,
-  options: { forSubtitle: boolean },
-): string | null {
-  if (!value) return null;
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return null;
-  if (normalized === "original") return "orig";
-  if (options.forSubtitle && normalized === "none") return "no";
-  if (normalized === "interactive" || normalized === "fzf") return null;
-  return normalized;
 }
 
 export function collectAdditionalSubtitleTracks(

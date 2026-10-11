@@ -67,8 +67,8 @@ export const connectedConnection = (
   expiresAt?: string,
 ): Extract<ConnectionState, { state: "connected" }> => ({
   state: "connected",
-  ...(username ? { username } : {}),
-  ...(expiresAt ? { expiresAt } : {}),
+  ...(username ? { username } : null),
+  ...(expiresAt ? { expiresAt } : null),
 });
 
 export const needsReauthConnection = (
@@ -77,7 +77,7 @@ export const needsReauthConnection = (
 ): Extract<ConnectionState, { state: "needs-reauth" }> => ({
   state: "needs-reauth",
   reason,
-  ...(username ? { username } : {}),
+  ...(username ? { username } : null),
 });
 
 export type SyncFailureKind = "network" | "remote" | "mapping" | "invalid";
@@ -129,7 +129,7 @@ export type SyncOutcome =
 
 export const syncOk = (detail?: string): SyncOutcome => ({
   status: "ok",
-  ...(detail ? { detail } : {}),
+  ...(detail ? { detail } : null),
 });
 
 export const syncSkipped = (reason: string): SyncOutcome => ({ status: "skipped", reason });
@@ -150,9 +150,9 @@ export function syncFailed(
   detail?: string,
 ): Extract<SyncOutcome, { status: "failed" }> {
   if (kind === "network" || kind === "remote") {
-    return { status: "failed", code, kind, retryable: true, ...(detail ? { detail } : {}) };
+    return { status: "failed", code, kind, retryable: true, ...(detail ? { detail } : null) };
   }
-  return { status: "failed", code, kind, retryable: false, ...(detail ? { detail } : {}) };
+  return { status: "failed", code, kind, retryable: false, ...(detail ? { detail } : null) };
 }
 
 export const syncRateLimited = (
@@ -161,7 +161,7 @@ export const syncRateLimited = (
 ): Extract<SyncOutcome, { status: "rate-limited" }> => ({
   status: "rate-limited",
   retryAfterMs,
-  ...(detail ? { detail } : {}),
+  ...(detail ? { detail } : null),
 });
 
 export const syncNeedsReauth = (
@@ -170,7 +170,7 @@ export const syncNeedsReauth = (
 ): Extract<SyncOutcome, { status: "needs-reauth" }> => ({
   status: "needs-reauth",
   code,
-  ...(detail ? { detail } : {}),
+  ...(detail ? { detail } : null),
 });
 
 /** Every adapter mutation is cancellable; there is no uninterruptible path. */

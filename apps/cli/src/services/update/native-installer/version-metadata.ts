@@ -40,11 +40,57 @@ export type VerifyStoredVersionResult =
 
 const VERIFICATIONS = new Set(["release-checksum", "legacy-unverified"]);
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
+type MutableMetadata = {
+  -readonly [K in keyof InstalledVersionMetadata]: InstalledVersionMetadata[K];
+};
+
+type MetadataRecord = {
+  readonly schemaVersion?: unknown;
+  readonly version?: unknown;
+  readonly target?: unknown;
+  readonly artifactName?: unknown;
+  readonly artifactSha256?: unknown;
+  readonly sizeBytes?: unknown;
+  readonly sourceUrl?: unknown;
+  readonly archiveName?: unknown;
+  readonly archiveSha256?: unknown;
+  readonly archiveSizeBytes?: unknown;
+  readonly archiveSourceUrl?: unknown;
+  readonly verification?: unknown;
+  readonly installedAt?: unknown;
+};
+
+function isObjectLike<T>(value: T): value is T & object {
+  return value !== null && !Array.isArray(value) && value instanceof Object;
 }
 
-function archiveProvenanceIsValid(value: Record<string, unknown>): boolean {
+function isStringValue<T>(value: T): value is T & string {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
+
+function isNonEmptyString<T>(value: T): value is T & string {
+  return isStringValue(value) && value.length > 0;
+}
+
+function isSha256Value<T>(value: T): value is T & string {
+  return isStringValue(value) && /^[a-fA-F0-9]{64}$/.test(value);
+}
+
+function isPositiveSafeInteger<T>(value: T): value is T & number {
+  // SAFETY: Number.isSafeInteger has already rejected every non-number value.
+  return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function isNonNegativeFinite<T>(value: T): value is T & number {
+  // SAFETY: Number.isFinite has already rejected every non-number value.
+  return Number.isFinite(value) && (value as number) >= 0;
+}
+
+function isNumberValue<T>(value: T): value is T & number {
+  return Object.prototype.toString.call(value) === "[object Number]";
+}
+
+function archiveProvenanceIsValid(value: MetadataRecord): boolean {
   const fields = [
     value.archiveName,
     value.archiveSha256,
@@ -56,42 +102,36 @@ function archiveProvenanceIsValid(value: Record<string, unknown>): boolean {
   return (
     present === fields.length &&
     isNonEmptyString(value.archiveName) &&
-    isNonEmptyString(value.archiveSha256) &&
-    /^[a-fA-F0-9]{64}$/.test(value.archiveSha256) &&
-    typeof value.archiveSizeBytes === "number" &&
-    Number.isSafeInteger(value.archiveSizeBytes) &&
-    value.archiveSizeBytes > 0 &&
+    isSha256Value(value.archiveSha256) &&
+    isPositiveSafeInteger(value.archiveSizeBytes) &&
     isNonEmptyString(value.archiveSourceUrl)
   );
 }
 
-function parseMetadata(raw: unknown): InstalledVersionMetadata | null {
-  if (!raw || typeof raw !== "object") return null;
-  const value = raw as Record<string, unknown>;
+function parseMetadata<T>(raw: T): InstalledVersionMetadata | null {
+  if (!isObjectLike(raw)) return null;
+  // SAFETY: raw is a parsed JSON object; every field is validated before use.
+  const value = raw as MetadataRecord;
   if (value.schemaVersion !== 1) return null;
   if (!isNonEmptyString(value.version) || !parseCanonicalVersion(value.version)) return null;
   if (!isNonEmptyString(value.target)) return null;
   if (!isNonEmptyString(value.artifactName)) return null;
-  if (!isNonEmptyString(value.artifactSha256) || !/^[a-fA-F0-9]{64}$/.test(value.artifactSha256)) {
+  if (!isSha256Value(value.artifactSha256)) {
     return null;
   }
-  if (
-    typeof value.sizeBytes !== "number" ||
-    !Number.isFinite(value.sizeBytes) ||
-    value.sizeBytes < 0
-  ) {
+  if (!isNonNegativeFinite(value.sizeBytes)) {
     return null;
   }
   if (!isNonEmptyString(value.sourceUrl)) return null;
   if (!archiveProvenanceIsValid(value)) return null;
-  if (typeof value.verification !== "string" || !VERIFICATIONS.has(value.verification)) {
+  if (!isStringValue(value.verification) || !VERIFICATIONS.has(value.verification)) {
     return null;
   }
   if (!isNonEmptyString(value.installedAt) || Number.isNaN(Date.parse(value.installedAt))) {
     return null;
   }
 
-  return {
+  const metadata: MutableMetadata = {
     schemaVersion: 1,
     version: value.version,
     target: value.target,
@@ -99,19 +139,21 @@ function parseMetadata(raw: unknown): InstalledVersionMetadata | null {
     artifactSha256: value.artifactSha256.toLowerCase(),
     sizeBytes: value.sizeBytes,
     sourceUrl: value.sourceUrl,
-    ...(typeof value.archiveName === "string" ? { archiveName: value.archiveName } : {}),
-    ...(typeof value.archiveSha256 === "string"
-      ? { archiveSha256: value.archiveSha256.toLowerCase() }
-      : {}),
-    ...(typeof value.archiveSizeBytes === "number"
-      ? { archiveSizeBytes: value.archiveSizeBytes }
-      : {}),
-    ...(typeof value.archiveSourceUrl === "string"
-      ? { archiveSourceUrl: value.archiveSourceUrl }
-      : {}),
+    // SAFETY: VERIFICATIONS holds exactly the metadata verification union members.
     verification: value.verification as InstalledVersionMetadata["verification"],
     installedAt: value.installedAt,
   };
+  if (isStringValue(value.archiveName)) metadata.archiveName = value.archiveName;
+  if (isStringValue(value.archiveSha256)) {
+    metadata.archiveSha256 = value.archiveSha256.toLowerCase();
+  }
+  if (isNumberValue(value.archiveSizeBytes)) {
+    metadata.archiveSizeBytes = value.archiveSizeBytes;
+  }
+  if (isStringValue(value.archiveSourceUrl)) {
+    metadata.archiveSourceUrl = value.archiveSourceUrl;
+  }
+  return metadata;
 }
 
 export async function writeInstalledVersionMetadata(

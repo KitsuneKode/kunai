@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-08-27
+Last updated: 2026-10-11
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -34,31 +34,35 @@ archive and put only the residue here.
 
 ### Shell and UI
 
-| Track                       | Remaining                                             | Plan                                                                                   |
-| --------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Single mounted content tree | Collapse `SearchPhase`/`PlaybackPhase` launcher loops | [phase-1.8-single-mounted-content-tree.md](./phase-1.8-single-mounted-content-tree.md) |
-| Persistent shell            | Full back-stack, root-owned footer                    | [persistent-shell-implementation.md](./persistent-shell-implementation.md)             |
-| Fullscreen root shell       | Flatten remaining nested chrome                       | [fullscreen-root-shell-redesign.md](./fullscreen-root-shell-redesign.md)               |
-| Sakura theme rollout        | Remaining surfaces after the token foundation         | [sakura-rollout.md](./sakura-rollout.md)                                               |
-| Terminal image protocol     | Flicker hardening and `ink-shell` split               | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
+| Track                       | Remaining                                                 | Plan                                                                                   |
+| --------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Single mounted content tree | Collapse `SearchPhase`/`PlaybackPhase` launcher loops     | [phase-1.8-single-mounted-content-tree.md](./phase-1.8-single-mounted-content-tree.md) |
+| Persistent shell            | Full back-stack, root-owned footer                        | [persistent-shell-implementation.md](./persistent-shell-implementation.md)             |
+| Fullscreen root shell       | Flatten remaining nested chrome                           | [fullscreen-root-shell-redesign.md](./fullscreen-root-shell-redesign.md)               |
+| Sakura theme rollout        | Remaining surfaces after the token foundation             | [sakura-rollout.md](./sakura-rollout.md)                                               |
+| Terminal image protocol     | Flicker hardening and `ink-shell` split                   | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
+| Kanna character system      | `seek`/`peek` redraws, then tracing the four raster poses | [2026-08-31-kanna-character-system.md](./2026-08-31-kanna-character-system.md)         |
+| Kanna voice and presence    | Remaining voice moments, terminal reactions, pose map     | [kanna-mascot-personality.md](./kanna-mascot-personality.md)                           |
 
 ### Playback and providers
 
-| Track                      | Remaining                                                                                            | Plan                                                                                                   |
-| -------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Mobile terminal handoff    | Android core implemented; cross-build/review and real-device qualification remain, with iOS deferred | [design](./mobile-terminal-handoff.md) · [implementation](./mobile-terminal-handoff-implementation.md) |
-| Provider resolve hardening | Health recovery, latency ordering, and measured hedge-delay calibration                              | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)                       |
-| Provider hardening         | Research and scraper capability roadmap                                                              | [provider-hardening.md](./provider-hardening.md)                                                       |
-| Provider result contract   | Contract work before broad `@kunai/core` extraction                                                  | [provider-result-contract.md](./provider-result-contract.md)                                           |
-| Beta UI/provider hardening | Tasks 8–10: input routing, subtitle calls, display honesty                                           | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                       |
-| Resolve UX and Playwright  | Pick up during a browser/provider reliability pass                                                   | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md)                     |
+| Track                        | Remaining                                                                                                                                                        | Plan                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mobile terminal runtime      | Node/a-Shell host proofs and the Termux binary + player handoff (#287) implemented; physical qualification, catalog/providers, installers, and publishing remain | [runtime](../.docs/mobile-terminal-runtime.md) · [device lab](../.docs/mobile-device-lab.md) · [mobile app design](./mobile-app-runtime.md) · [terminal handoff](./mobile-terminal-handoff.md) · [handoff implementation](./mobile-terminal-handoff-implementation.md) · [mobile parity and phone web](./2026-10-11-mobile-parity-and-phone-web.md) |
+| Queue and phone follow-up    | Truthful queue state; qualify real phone request profiles, offline durability, and no-store touch direction                                                      | [decisions and evidence](2026-10-03-queue-mobile-followup.md)                                                                                                                                                                                                                                                                                       |
+| Provider playback resilience | Miruro gate budget, scheduled crypto freshness check                                                                                                             | [provider-playback-resilience.md](./provider-playback-resilience.md)                                                                                                                                                                                                                                                                                |
+| Provider resolve hardening   | Health recovery, latency ordering, and measured hedge-delay calibration                                                                                          | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)                                                                                                                                                                                                                                                                    |
+| Provider hardening           | Research and scraper capability roadmap                                                                                                                          | [provider-hardening.md](./provider-hardening.md)                                                                                                                                                                                                                                                                                                    |
+| Provider result contract     | Contract work before broad `@kunai/core` extraction                                                                                                              | [provider-result-contract.md](./provider-result-contract.md)                                                                                                                                                                                                                                                                                        |
+| Beta UI/provider hardening   | Tasks 8–10: input routing, subtitle calls, display honesty                                                                                                       | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                                                                                                                                                                                                                                                                    |
+| Resolve UX and Playwright    | Pick up during a browser/provider reliability pass                                                                                                               | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md)                                                                                                                                                                                                                                                                  |
 
 ### Offline and release stability
 
 | Track                          | Remaining                                                                                            | Plan                                                                                                 |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | 0.3.0 merge train              | Merge order, chain-A publication, regression watch                                                   | [2026-08-24-0-3-0-merge-train.md](./2026-08-24-0-3-0-merge-train.md)                                 |
-| Provider-independent offline   | Keep downloads playable after provider retirement                                                    | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
+| Provider-independent offline   | Candidate fix: downloads survive provider retirement; merge and platform qualification pending       | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
 | Offline artwork cache          | Library previews                                                                                     | [offline-artwork-cache-and-library-previews.md](./offline-artwork-cache-and-library-previews.md)     |
 | Boundary + downloads           | Reviewed adaptive-download design, not started                                                       | [boundary-hardening-and-adaptive-downloads.md](./boundary-hardening-and-adaptive-downloads.md)       |
 | Poster release smokes          | Real-terminal Kitty, iTerm2, Sixel, and multiplexer pass                                             | [poster-protocol-release-smokes.md](./poster-protocol-release-smokes.md)                             |
@@ -66,9 +70,10 @@ archive and put only the residue here.
 
 ### Analytics
 
-| Track                    | Remaining                                                                                                                                  | Plan                                                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| Usage analytics redesign | Explicit opt-in implementation is complete; verified Neon/Vercel deployment, secret/firewall/cost controls, and live endpoint smoke remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
+| Track                    | Remaining                                                                                                                                            | Plan                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
+| Analytics day boundary   | Task 8 only: schedule is now `0 19 * * *`; prove the IST clock is live in prod before merge, then verify the first run                               | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
 
 ### Docs
 
@@ -77,37 +82,106 @@ archive and put only the residue here.
 | Analytics series + social cards | Serve the retained `daily_rollup` history, adoption/trend charts, per-share OG images                                                | [2026-08-26-analytics-series-and-social-cards.md](./2026-08-26-analytics-series-and-social-cards.md) |
 | User docs overhaul              | Accuracy/framing PR first; then first-run, debugging playbook, coverage, nav, agent-docs, deploy `apps/docs` to kunai.kitsunekode.in | [2026-08-18-user-docs-overhaul.md](./2026-08-18-user-docs-overhaul.md)                               |
 
+### Verification and CI
+
+| Track                | Remaining                                                                                         | Plan                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Test and CI maturity | Native crash diagnosis, merge enforcement, measured CI cost, coverage and agent verification gaps | [2026-09-12-test-ci-audit.md](./2026-09-12-test-ci-audit.md) |
+
 ### Structure
 
-| Track                        | Remaining                                                                                                                                                                                                          | Plan                                                                         |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| Turborepo package boundaries | Phase 4G provider package migration                                                                                                                                                                                | [turborepo-and-package-boundaries.md](./turborepo-and-package-boundaries.md) |
-| Codebase architecture sweep  | Planning                                                                                                                                                                                                           | [codebase-architecture-sweep.md](./codebase-architecture-sweep.md)           |
-| CLI structure and naming     | Planned                                                                                                                                                                                                            | [cli-structure-and-naming.md](./cli-structure-and-naming.md)                 |
-| Search/catalog service       | Active design; implementation stays pragmatic                                                                                                                                                                      | [search-service.md](./search-service.md)                                     |
-| Duplicated domain types      | `ProviderLane` declared identically in `apps/cli/src/domain/types.ts` and `packages/types/src/index.ts`; neither marked canonical. Same shape as the `MediaKind` duplication. Pick one owner, re-export the other. | [turborepo-and-package-boundaries.md](./turborepo-and-package-boundaries.md) |
+| Track                        | Remaining                                                                                                                                                                                                                                                              | Plan                                                                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Turborepo package boundaries | Phase 4G provider package migration                                                                                                                                                                                                                                    | [turborepo-and-package-boundaries.md](./turborepo-and-package-boundaries.md)                           |
+| Codebase architecture sweep  | Planning                                                                                                                                                                                                                                                               | [codebase-architecture-sweep.md](./codebase-architecture-sweep.md)                                     |
+| CLI structure and naming     | Planned                                                                                                                                                                                                                                                                | [cli-structure-and-naming.md](./cli-structure-and-naming.md)                                           |
+| Search/catalog service       | Active design; implementation stays pragmatic                                                                                                                                                                                                                          | [search-service.md](./search-service.md)                                                               |
+| Duplicated domain types      | `ProviderLane` declared identically in `apps/cli/src/domain/types.ts` and `packages/types/src/index.ts`; neither marked canonical. `MediaKind` was the same shape and is now single-source in `packages/types`; do the same here. Pick one owner, re-export the other. | [turborepo-and-package-boundaries.md](./turborepo-and-package-boundaries.md)                           |
+| Agent verification loop      | L2 replay + L3 tmux + real-mpv tier + fresh-profile onboarding landed with `verify-kunai` skill; real-mpv CI leg runs push-only. Remaining: advertised-key coverage-map spike                                                                                          | [2026-08-31-agent-verification-harness.md](../.archive/plans/2026-08-31-agent-verification-harness.md) |
 
 ### Production readiness — external audit
 
 Numbered plans from an external audit. They keep their original numbers because
 the K-reconciliation below and the commit history both cite them by id.
 
-| Plan                                                | Remaining work                                                            | Status                                            |
-| --------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
-| [006](./006-startup-defer-network-and-providers.md) | Startup provider loading residue                                          | BLOCKED (engine registry is intentionally fixed)  |
-| [008](./008-tui-timer-and-poster-perf.md)           | Download-alert root coupling                                              | BLOCKED (other timer/poster slices landed)        |
-| [010](./010-characterization-tests-for-giants.md)   | Characterization net for private `AppRoot`                                | BLOCKED (needs a full-container harness)          |
-| [011](./011-split-shell-workflows.md)               | Split `shell-workflows.ts`                                                | BLOCKED by 010                                    |
-| [012](./012-decompose-playback-phase.md)            | Extract `PlaybackPhase` transition core                                   | BLOCKED by 010                                    |
-| [013](./013-split-ink-shell-host-surface.md)        | Split Ink host/surface/overlay winner                                     | BLOCKED by 010                                    |
-| [014](./014-enforce-layering-boundaries.md)         | Retire remaining baselined layer inversions                               | BLOCKED (boundary ratchet is active)              |
-| [015](./015-retire-legacy-flat-modules.md)          | Retire legacy flat root modules                                           | BLOCKED by 011 and 012                            |
-| [021](./021-provider-contract-enforcement.md)       | Enforce or remove unread provider/relay contracts                         | PARTIAL; K-04/K-08 release slice complete         |
-| [022](./022-shell-interaction-coherence.md)         | Destructive confirms, filter capture, errors, Esc semantics               | PARTIAL; 022.1 landed                             |
-| [023](./023-cli-surface-honesty.md)                 | CLI surface honesty                                                       | PARTIAL; K-16 fixed by PR #144                    |
-| [030](./030-distribution-documentation-truth.md)    | Distribution documentation truth                                          | TODO after release behavior settles               |
-| [032](./032-sync-identity-and-capability-truth.md)  | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete |
-| [043](./043-history-key-migration-transaction.md)   | Transactional legacy history-key migration                                | TODO; independent data-migration PR               |
+| Plan                                                              | Remaining work                                                            | Status                                            |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
+| [006](./006-startup-defer-network-and-providers.md)               | Startup provider loading residue                                          | BLOCKED (engine registry is intentionally fixed)  |
+| [008](./008-tui-timer-and-poster-perf.md)                         | Download-alert root coupling                                              | BLOCKED (other timer/poster slices landed)        |
+| [010](./010-characterization-tests-for-giants.md)                 | Characterization net for private `AppRoot`                                | PARTIAL (shell-side net landed; harness exists)   |
+| [011](./011-split-shell-workflows.md)                             | Split `shell-workflows.ts`                                                | BLOCKED by 010                                    |
+| [012](./012-decompose-playback-phase.md)                          | Extract `PlaybackPhase` transition core                                   | BLOCKED by 010                                    |
+| [013](./013-split-ink-shell-host-surface.md)                      | Split Ink host/surface/overlay winner                                     | BLOCKED by 010                                    |
+| [014](./014-enforce-layering-boundaries.md)                       | Retire remaining baselined layer inversions                               | BLOCKED (boundary ratchet is active)              |
+| [015](./015-retire-legacy-flat-modules.md)                        | Retire legacy flat root modules                                           | BLOCKED by 011 and 012                            |
+| [021](./021-provider-contract-enforcement.md)                     | Enforce or remove unread provider/relay contracts                         | PARTIAL; K-04/K-08 release slice complete         |
+| [022](./022-shell-interaction-coherence.md)                       | Destructive confirms, filter capture, errors, Esc semantics               | PARTIAL; 022.1 landed                             |
+| [023](./023-cli-surface-honesty.md)                               | CLI surface honesty                                                       | PARTIAL; K-16 fixed by PR #144                    |
+| [030](./030-distribution-documentation-truth.md)                  | Distribution documentation truth                                          | TODO after release behavior settles               |
+| [032](./032-sync-identity-and-capability-truth.md)                | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete |
+| [043](../.archive/plans/043-history-key-migration-transaction.md) | Transactional legacy history-key migration                                | LANDED via #293                                   |
+| [044](./044-namespace-mal-history-keys.md)                        | Namespace MAL-derived history keys                                        | READY (needs migration review)                    |
+| [045](./045-repoint-title-id-references-on-merge.md)              | Repoint `title_id` references when consolidation merges                   | READY (classify tables first)                     |
+
+### Second audit — 2026-09-19
+
+Written against `main@51f19b633` for open issues with no PR in flight. Execute
+in number order unless a row says otherwise.
+
+| Plan                                                                  | Issue | Remaining work                                                                                                            | Status                             |
+| --------------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| [048](../.archive/plans/048-deterministic-download-disk-admission.md) | #238  | none — statfs dep injection + deterministic stub landed                                                                   | LANDED                             |
+| [049](../.archive/plans/049-vidlink-endpoint-quarantine.md)           | #194  | none — `ProviderHttpError` classification + quarantine on both legs landed                                                | LANDED                             |
+| [050](../.archive/plans/050-hls-rendition-tracks.md)                  | #189  | switch Miruro's `expandHlsMasterPlaylist` call to `expandHlsMasterInventory` (VidLink consumes renditions; Miruro static) | PARTIAL                            |
+| [051](../.archive/plans/051-audit-adrs.md)                            | #117  | enforcement follow-ups: containment wrapper impl + gate holes #105/#109 (deferred by plan)                                | LANDED                             |
+| [052](../.archive/plans/052-os-credential-vault.md)                   | #179  | native Keychain binding to remove `security -w` argv exposure; vault spawns off the first-paint path (measure under 060)  | PARTIAL                            |
+| [053](../.archive/plans/053-evp-bytes-to-key.md)                      | #106  | none — EVP_BytesToKey port landed, `crypto-js` dropped                                                                    | LANDED                             |
+| [054](../.archive/plans/054-anime-season-entry-resolution.md)         | #266  | live AniList relations fetch + AniDB consumption of resolveSeasonEntryId                                                  | PARTIAL (contract landed)          |
+| [055](../.archive/plans/055-provider-cache-generalization.md)         | #205  | none — anidb/vidlink persist via the port; rivestream stays memory-only, youtube/hianime already covered                  | LANDED                             |
+| [056](../.archive/plans/056-namespaced-direct-play-ids.md)            | #92   | imdb→tmdb resolution via TMDB `/find` — `imdb:` ids rejected until then                                                   | PARTIAL                            |
+| [057](../.archive/plans/057-command-reachability-residue.md)          | #91   | `/queue-season` on browse series rows (root palette listing landed; browse row pending)                                   | PARTIAL                            |
+| [058](../.archive/plans/058-fractional-episode-count-source.md)       | #273  | name the `448.2` producer — provenance logging landed, needs a live repro                                                 | PARTIAL                            |
+| [059](./059-npm-update-notify-e2e.md)                                 | #121  | Real-machine pass on the npm-channel update notify path                                                                   | TODO (needs npm-installed machine) |
+| [060](./060-first-paint-profile.md)                                   | #275  | Cold/warm first-paint attribution before any reorder; must also cover the 052 vault probe/migrate spawns on the boot path | TODO                               |
+| [061](./061-install-ps1-parity-gaps.md)                               | —     | `KUNAI_REPO` + deps-for-all-methods; then a parity-contract test so seams can't drift                                     | TODO                               |
+| [062](./062-post-install-cleanup-rejection.md)                        | —     | Fix `cleanupOldVersions` rejection; classify all `void` sites; write the convention                                       | TODO                               |
+| [063](./063-docs-dev-dep-advisories.md)                               | —     | Clear `bun audit`; `minimumReleaseAge` floor; weekly informational audit job                                              | TODO                               |
+| [064](../.archive/plans/064-analytics-day-table-order-and-paging.md)  | —     | none — day-by-day table is newest-first with chunked reveal                                                               | LANDED                             |
+| [065](./065-share-landing-cta-resilience.md)                          | —     | `/w/` CTA: post-click "install below" state + copyable `kunai://` link                                                    | TODO                               |
+| [066](../.archive/plans/066-analytics-cross-links-and-staleness.md)   | —     | none — release links, `#day-by-day` anchor, and the 48h stale badge all landed                                            | LANDED                             |
+| [067](../.archive/plans/067-chart-table-highlight-sync.md)            | —     | none — chart hover reveals and scrolls the matching table row                                                             | LANDED                             |
+
+048–058 are implemented on `advisor/NNN-*` worktree branches (see each plan's
+"Implementation" note); rows stay until the branch lands. Review residue that
+did not fit a row above:
+
+- **054 follow-ups** — live AniList `relations` fetch into `TitleIdentity` and
+  the AniDB adapter consuming `resolveSeasonEntryId`. The landed branch is the
+  contract + pure resolver only; ordinal guessing is still what runs today.
+- **052 follow-ups** — native Keychain binding to remove the `security -w`
+  argv exposure; vault spawns off the first-paint path (measure under 060).
+- **056 residue** — `imdb:` is accepted by the grammar but nothing resolves
+  imdb→tmdb (`TitleDetailService` only _reads_ `imdb_id` from TMDB). Reject or
+  add `/find` before advertising it in `--help`.
+
+Audit reconciliation (verified against `main@51f19b633` — close, don't plan):
+
+- **#192 cancelled resolves → negative health** — already fixed;
+  `isProviderHealthNeutral` guards `createExhaustedResult`
+  (`resolve-helpers.ts:79-94`), landed in PR #185 on 2026-08-25. Stale issue.
+- **#278 changeset-on-staged-version guard** — already fixed;
+  `release-guard.ts:135-140` fails when pending changesets meet a `staged`
+  release artifact. Stale issue.
+- **#91 command reachability** — mostly landed (#268 coverage test + #282);
+  residue only → plan 057.
+- **#92 minimal mode** — shipped as `-m/--minimal`; residue is the
+  namespaced-id flag → plan 056.
+- **#274 hedge calibration** — owned by provider-resolve-hardening-handoff
+  Slice C; not re-planned.
+- **#205 provider cache** — port + Miruro landed in #206, warm-on-search in
+  `SearchPhase`; residue is generalization → plan 055.
+- **#109–#113** — owned by the numbered architecture plans (010–015) and the
+  codebase-architecture-sweep; not re-planned.
 
 Status values: TODO · PARTIAL · BLOCKED (with reason) · IN PROGRESS.
 
@@ -146,7 +220,9 @@ Count: **17 fixed, 0 open**.
 1. The docs/truth reconciliation and plan 047 lifecycle slice are complete.
 2. Provider routing plan 046 and the plan 021 K-04/K-08 release slice are
    complete. PR #144 completed K-16 without narrowing valid launch previews.
-3. Execute plan 043 as its own migration PR.
+3. Plan 043 is complete — the transaction had already landed; the rollback and
+   accumulated-field tests that prove it, and a poster-URL loss those tests
+   exposed on the legacy-key migration path, shipped separately.
 4. The rebased tracker-sync implementation and plan 032's deterministic work
    are complete. Keep sync experimental until the disposable-account live smoke
    proves the production container → SQLite outbox → restart → remote mutation path.
@@ -156,6 +232,27 @@ Count: **17 fixed, 0 open**.
 The release PR is intentionally last: Changesets will keep updating it while
 stability fixes merge, and merging it early would version an incomplete
 candidate.
+
+### Delivery and follow-ups — 2026-10-02
+
+Proposed, not started. Written against `origin/main@e509732e7` and the open-PR
+state on 2026-10-02.
+
+| Plan                                                                                       | Remaining work                                                                                          | Status   |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------- |
+| [2026-10-02-pr-stack-consolidation.md](./2026-10-02-pr-stack-consolidation.md)             | 30 PRs landed 2026-10-07; re-implement the unmerged stacks' security, playback and UX residue           | PARTIAL  |
+| [2026-10-02-signed-provider-profile-feed.md](./2026-10-02-signed-provider-profile-feed.md) | Design spike: a signed, data-only feed so rotating provider constants ship without a release            | PROPOSED |
+| [2026-10-02-share-moment-discoverability.md](./2026-10-02-share-moment-discoverability.md) | Surface the existing `Ctrl+Shift+S` share-at-timestamp key in the playing legend, README and docs       | PROPOSED |
+| [2026-10-02-color-followups.md](./2026-10-02-color-followups.md)                           | After the APCA text-tier retune: remove the remaining `dimColor` double-dimming once the PR stacks land | PROPOSED |
+
+### Release readiness — 2026-10-08
+
+Verified against `integrate/backlog-20261007@f840fe511` after three external
+audits. Gate 0 lands the integration on `main`; Phase 1 is release-blocking.
+
+| Plan                                                                 | Remaining work                                                                               | Status |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------ |
+| [2026-10-08-release-readiness.md](./2026-10-08-release-readiness.md) | Land the integration, then downloads, playback, consent, sanitizer, shell and relay blockers | TODO   |
 
 ## Rules
 

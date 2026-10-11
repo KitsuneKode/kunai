@@ -4,7 +4,7 @@ import type { SearchResult, ShellMode } from "@/domain/types";
 
 function isYoutubeSearchResult(result: SearchResult): boolean {
   return (
-    result.contentShape !== undefined ||
+    result.resultKind !== undefined ||
     Boolean(result.externalIds?.youtubeId) ||
     Boolean(result.externalIds?.youtubePlaylistId) ||
     result.id.startsWith("youtube:")

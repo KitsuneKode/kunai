@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 
 import { createProviderEngine } from "@kunai/core";
 
@@ -19,7 +19,6 @@ import {
   MIRURO_SERVER_TRY_ORDER,
   createVidkingResultFromPayload,
   createVideasyRouteCachePolicy,
-  extractQualitiesFromMaster,
   listVidkingFlavors,
   normalizeIsoLanguageCode,
   normalizeProviderDisplayLabel,
@@ -30,7 +29,6 @@ import {
   resolveVidkingDirect,
   rivestreamProviderModule,
   stableProviderInventoryId,
-  VariantTreeBuilder,
   videasyProviderModule,
   vidlinkProviderModule,
 } from "../src/index";
@@ -39,6 +37,18 @@ import {
   getProviderResearchProfile,
   providerResearchProfiles,
 } from "../src/research";
+import { clearRivestreamCachesForTest } from "../src/rivestream/direct";
+import { encryptOpensslSalted, sha256Hex } from "../src/shared/openssl-evp";
+
+// Resolving through rivestream caches service discovery in module state, which
+// outlives this file and leaks across sibling suites. Clear around every test
+// so discovery-call assertions see the requests their own resolve issued.
+beforeEach(() => {
+  clearRivestreamCachesForTest();
+});
+afterEach(() => {
+  clearRivestreamCachesForTest();
+});
 
 /** Route policies are built by the provider's one owner, never hand-rolled here. */
 const TEST_ROUTE_POLICY = (apiRoute: string) =>
@@ -228,7 +238,7 @@ test("vidking direct resolver preserves nonretryable direct failure evidence", a
     },
     {
       now: () => "2026-05-01T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 2, backoff: "none" },
+      retryPolicy: { maxAttempts: 2 },
       emit: (event) => events.push(event),
       fetch: createFetchWithSeedMock(async (input) => {
         if (seedUrls.has(input)) {
@@ -270,7 +280,7 @@ test("vidking direct resolver does not retry definitive 404 responses or duplica
     },
     {
       now: () => "2026-05-26T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 2, backoff: "none" },
+      retryPolicy: { maxAttempts: 2 },
       fetch: {
         runtime: "direct-http",
         fetch: async (input) => {
@@ -311,7 +321,7 @@ test("vidking direct resolver sends Videasy session headers when provided", asyn
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: {
         runtime: "direct-http",
         fetch: async (_input, init) => {
@@ -348,7 +358,7 @@ test("vidking direct resolver reads Videasy session token from runtime auth", as
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       auth: {
         getSecret: (providerId, key) =>
           (providerId === "videasy" || providerId === "vidking") && key === "videasySessionToken"
@@ -392,7 +402,7 @@ test("vidking direct resolver can pair a session with a Bitcine app id", async (
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       auth: {
         getSecret: (providerId, key) => {
           if (providerId !== "videasy" && providerId !== "vidking") return undefined;
@@ -445,7 +455,7 @@ test("vidking session transport covers every registered Videasy flavor", async (
       },
       {
         now: () => "2026-06-04T00:00:00.000Z",
-        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        retryPolicy: { maxAttempts: 1 },
         fetch: isWingsEndpoint
           ? createFetchWithSeedMock(async (input, init) => {
               requested.set(flavor.id, {
@@ -522,7 +532,7 @@ test("vidking preferred source targets that flavor then falls back to Phase A mi
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: createFetchWithSeedMock(async (input) => {
         requestedUrls.push(String(input));
         return jsonResponse({ error: "session_missing" });
@@ -562,7 +572,7 @@ test("vidking stops source fanout after a provider-wide session guard failure", 
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       endpointHealth: passthroughEndpointHealth,
       fetch: createFetchWithSeedMock(async (input) => {
         requestedUrls.push(String(input));
@@ -597,7 +607,7 @@ test("vidking direct resolver classifies Videasy session guard responses as bloc
     },
     {
       now: () => "2026-06-04T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 2, backoff: "none" },
+      retryPolicy: { maxAttempts: 2 },
       fetch: {
         runtime: "direct-http",
         fetch: async () => jsonResponse({ error: "session_missing" }),
@@ -617,10 +627,9 @@ test("vidking direct resolver classifies Videasy session guard responses as bloc
 });
 
 test("vidking guarded v2 payload unwraps with Videasy session key", async () => {
-  const { default: CryptoJS } = await import("crypto-js");
   const sessionToken = "session-123";
-  const key = CryptoJS.SHA256(`g:${sessionToken}`).toString();
-  const guarded = `v2:${CryptoJS.AES.encrypt("inner-payload", key).toString()}`;
+  const key = sha256Hex(`g:${sessionToken}`);
+  const guarded = `v2:${encryptOpensslSalted("inner-payload", key)}`;
 
   await expect(decodeVideasyGuardedPayload(guarded, sessionToken)).resolves.toBe("inner-payload");
   await expect(decodeVideasyGuardedPayload(guarded, undefined)).rejects.toThrow(
@@ -629,13 +638,11 @@ test("vidking guarded v2 payload unwraps with Videasy session key", async () => 
 });
 
 test("vidking guarded v2 unwrap is path agnostic for every Videasy flavor", async () => {
-  const { default: CryptoJS } = await import("crypto-js");
-
   for (const flavor of listVidkingFlavors()) {
     const sessionToken = `session-${flavor.id}`;
-    const key = CryptoJS.SHA256(`g:${sessionToken}`).toString();
+    const key = sha256Hex(`g:${sessionToken}`);
     const innerPayload = `payload-for-${flavor.endpoint}-${flavor.id}`;
-    const guarded = `v2:${CryptoJS.AES.encrypt(innerPayload, key).toString()}`;
+    const guarded = `v2:${encryptOpensslSalted(innerPayload, key)}`;
 
     await expect(decodeVideasyGuardedPayload(guarded, sessionToken)).resolves.toBe(innerPayload);
   }
@@ -660,7 +667,7 @@ test("vidking direct resolver can target a flavored endpoint without broad serve
     },
     {
       now: () => "2026-05-01T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: createFetchWithSeedMock(async (input) => {
         requestedUrls.push(String(input));
         return new Response("", { status: 504 });
@@ -710,7 +717,7 @@ test("vidking refresh intent cycles the wider flavor source set", async () => {
     },
     {
       now: () => "2026-05-01T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: {
         runtime: "direct-http",
         fetch: async (input) => {
@@ -886,7 +893,7 @@ test("rivestream falls back to static provider services when service discovery i
           const url = String(input);
           requests.push(url);
           if (url.includes("VideoProviderServices")) return new Response("", { status: 503 });
-          return jsonResponse(sourceFixture);
+          return rivestreamFixtureCdnResponse(url) ?? jsonResponse(sourceFixture);
         },
       },
     },
@@ -929,7 +936,10 @@ test("rivestream evidence fixture preserves provider server label and normalized
         fetch: async (input) => {
           const url = String(input);
           requests.push(url);
-          return jsonResponse(url.includes("VideoProviderServices") ? services : sourceFixture);
+          return (
+            rivestreamFixtureCdnResponse(url) ??
+            jsonResponse(url.includes("VideoProviderServices") ? services : sourceFixture)
+          );
         },
       },
     },
@@ -994,6 +1004,7 @@ test("rivestream fixture fast startup keeps the first ready stream", async () =>
       fetch: {
         runtime: "direct-http",
         fetch: async (input) =>
+          rivestreamFixtureCdnResponse(String(input)) ??
           jsonResponse(String(input).includes("VideoProviderServices") ? services : source),
       },
     },
@@ -1047,6 +1058,7 @@ test("rivestream fast startup selects provider ready-order before returned quali
         fetch: {
           runtime: "direct-http",
           fetch: async (input) =>
+            rivestreamFixtureCdnResponse(String(input)) ??
             jsonResponse(String(input).includes("VideoProviderServices") ? services : source),
         },
       },
@@ -1103,7 +1115,10 @@ test("rivestream caches provider services across cold resolves", async () => {
           fetch: async (input) => {
             const url = String(input);
             requests.push(url);
-            return jsonResponse(url.includes("VideoProviderServices") ? services : source);
+            return (
+              rivestreamFixtureCdnResponse(url) ??
+              jsonResponse(url.includes("VideoProviderServices") ? services : source)
+            );
           },
         },
       },
@@ -1390,13 +1405,22 @@ test("miruro stream selection prefers active CDN HLS over direct kwik candidates
   expect(result?.streams).toHaveLength(3);
 });
 
-test("miruro pipe requests use only TLS-reachable official mirrors", () => {
+test("miruro pipe requests cover every official mirror", () => {
   // `www.` only: that is what the browser hits for /api/secure/pipe, and the
-  // bare hosts just redirect. TLS-dead hosts (miruro.tv) stay out so they
-  // cannot burn the engine's attempt budget.
+  // bare hosts just redirect. All four served the pipe on 2026-09-11; the
+  // earlier "miruro.tv/.to are TLS-dead" reading came from a network whose
+  // reachability to them flaps.
   expect(createMiruroPipeRequestUrls("payload")).toEqual([
     "https://www.miruro.bz/api/secure/pipe?e=payload",
     "https://www.miruro.ru/api/secure/pipe?e=payload",
+    "https://www.miruro.to/api/secure/pipe?e=payload",
+    "https://www.miruro.tv/api/secure/pipe?e=payload",
+  ]);
+});
+
+test("miruro pipe requests follow a supplied mirror order", () => {
+  expect(createMiruroPipeRequestUrls("payload", ["https://www.miruro.to"])).toEqual([
+    "https://www.miruro.to/api/secure/pipe?e=payload",
   ]);
 });
 
@@ -1473,7 +1497,7 @@ test("negative fixture maps blocked vidking host to structured failure", async (
     },
     {
       now: () => "2026-05-19T00:00:00.000Z",
-      retryPolicy: { maxAttempts: 1, backoff: "none" },
+      retryPolicy: { maxAttempts: 1 },
       fetch: {
         runtime: "direct-http",
         fetch: async () => jsonResponse(blocked.body, blocked.status),
@@ -1527,68 +1551,6 @@ test("negative fixture keeps rivestream parse failures inspectable", async () =>
     retryable: false,
   });
   expect(result.trace.failures[0]?.code).toBe("parse-failed");
-});
-
-test("m3u8 quality extraction exposes sorted playable variants", async () => {
-  const streams = await extractQualitiesFromMaster(
-    {
-      runtime: "direct-http",
-      fetch: async () =>
-        new Response(
-          [
-            "#EXTM3U",
-            '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1280x720,NAME="720p"',
-            "720/index.m3u8",
-            "#EXT-X-STREAM-INF:BANDWIDTH=1600000,RESOLUTION=1920x1080",
-            "https://cdn.example/1080/index.m3u8",
-          ].join("\n"),
-        ),
-    },
-    "https://cdn.example/master.m3u8",
-    {
-      providerId: "videasy",
-      protocol: "hls",
-      container: "m3u8",
-      confidence: 0.9,
-      cachePolicy: {
-        ttlClass: "stream-manifest",
-        scope: "local",
-        keyParts: ["provider", "vidking", "qualities"],
-      },
-    },
-  );
-
-  expect(streams.map((stream) => stream.qualityLabel)).toEqual(["1080p", "720p"]);
-  expect(streams[1]?.url).toBe("https://cdn.example/720/index.m3u8");
-});
-
-test("variant tree builder creates stable grouped variant ordering", () => {
-  const variants = new VariantTreeBuilder({
-    providerId: "miruro",
-    sourceId: "source:miruro:pipe",
-  })
-    .addVariant({
-      label: "Dub 720p",
-      presentation: "dub",
-      subtitleDelivery: "embedded",
-      qualityLabel: "720p",
-      qualityRank: 720,
-      streamIds: ["stream-dub-720"],
-      confidence: 0.8,
-    })
-    .addVariant({
-      label: "Sub 1080p",
-      presentation: "sub",
-      subtitleDelivery: "hardcoded",
-      qualityLabel: "1080p",
-      qualityRank: 1080,
-      streamIds: ["stream-sub-1080"],
-      confidence: 0.9,
-    })
-    .build();
-
-  expect(variants.map((variant) => variant.label)).toEqual(["Sub 1080p", "Dub 720p"]);
-  expect(variants[0]?.id.startsWith("var_")).toBe(true);
 });
 
 test("source inventory helpers create stable ids and provider evidence", () => {
@@ -1771,6 +1733,29 @@ async function readFixture<T>(path: string): Promise<T> {
 
 async function readTextFixture(path: string): Promise<string> {
   return Bun.file(new URL(path, FIXTURE_BASE)).text();
+}
+
+/**
+ * Rivestream segment-probes a stream before accepting the candidate, so a
+ * fixture CDN has to answer like one: a media playlist that names a segment,
+ * and a segment with enough bytes to satisfy the range probe. Returning the
+ * source JSON for these too reads as a playlist with no segments — which is
+ * exactly what a dead mirror looks like, and the gate would reject it.
+ */
+function rivestreamFixtureCdnResponse(url: string): Response | null {
+  if (url.endsWith(".m3u8")) {
+    return new Response("#EXTM3U\n#EXTINF:4.0,\nsegment-0.ts\n", {
+      status: 200,
+      headers: { "Content-Type": "application/vnd.apple.mpegurl" },
+    });
+  }
+  if (url.includes("segment-0.ts")) {
+    return new Response("0".repeat(2048), {
+      status: 206,
+      headers: { "Content-Range": "bytes 0-2047/2048" },
+    });
+  }
+  return null;
 }
 
 function jsonResponse(value: unknown, status = 200): Response {

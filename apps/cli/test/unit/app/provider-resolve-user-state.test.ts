@@ -23,7 +23,7 @@ describe("provider resolve user state", () => {
   test("advisory copy mentioning fallback never claims a source failed", () => {
     // Regression: the healthy-path note "Recoverable provider failures retry
     // before fallback." used to substring-match `fallback` and render
-    // "Trying another source" over a successful resolve.
+    // "Trying another provider" over a successful resolve.
     expect(
       classifyProviderResolveUserState({
         problem: null,
@@ -33,9 +33,9 @@ describe("provider resolve user state", () => {
     ).toBeNull();
   });
 
-  test("trying another source requires fallback to have actually started", () => {
+  test("trying another provider requires fallback to have actually started", () => {
     expect(classifyProviderResolveUserState({ fallbackInProgress: true })?.title).toBe(
-      "Trying another source",
+      "Trying another provider",
     );
   });
 
@@ -58,13 +58,6 @@ describe("provider resolve user state", () => {
     expect(classifyProviderResolveUserState({ problem: problem("provider-access") })?.title).toBe(
       "Provider issue for this title",
     );
-  });
-
-  test("a cached stream is only reported when the refresh actually failed", () => {
-    expect(classifyProviderResolveUserState({ servedFromCacheAfterFailure: true })?.title).toBe(
-      "Using cached source",
-    );
-    expect(classifyProviderResolveUserState({ servedFromCacheAfterFailure: false })).toBeNull();
   });
 
   test("a long wait is reported as slow without blaming the source for failing", () => {

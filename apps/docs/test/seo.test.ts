@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { codeMetadata } from "../lib/code-metadata";
+import { docNavEntries } from "../lib/doc-navigation";
+import { navGroupForHref } from "../lib/doc-page-nav";
 import { BUN_GLOBAL_INSTALL } from "../lib/install-commands";
 import { source } from "../lib/source";
 
@@ -64,13 +66,20 @@ describe("docs SEO drift", () => {
     }
   });
 
-  test("every sitemap page has internal doc links in body or is a hub", () => {
+  test("every sitemap page has internal doc links in body, a related-guides grid, or is a hub", () => {
     const pages = source.getPages();
     for (const page of pages) {
       const content = readDocFile(page);
       const internalLinks = (content.match(/\/docs\/[^\s")]+/g) ?? []).length;
       const isHub = page.data.info.path.endsWith("index.mdx");
-      expect(internalLinks >= 2 || isHub).toBe(true);
+      // `RelatedDocLinks` renders same-group nav entries as internal links on
+      // every grouped page, so a grouped page satisfies the rule even when its
+      // prose carries few inline links.
+      const group = navGroupForHref(page.url);
+      const hasRelatedGrid =
+        group !== null &&
+        docNavEntries.some((entry) => entry.group === group && entry.href !== page.url);
+      expect(internalLinks >= 2 || isHub || hasRelatedGrid).toBe(true);
     }
   });
 

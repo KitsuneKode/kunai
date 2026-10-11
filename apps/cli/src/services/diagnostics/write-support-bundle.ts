@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
-import { writeAtomicJson } from "@/infra/fs/atomic-write";
+import { writeAtomicSecretJson } from "@/infra/fs/atomic-write";
+import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { cacheMigrations, dataMigrations } from "@kunai/storage";
 
 import type { DiagnosticsSupportBundle, DiagnosticsBundleEnvironment } from "./support-bundle";
@@ -41,7 +42,7 @@ export async function writeSupportBundleFile(input: {
     input.now ?? new Date(),
     input.filePrefix ?? SUPPORT_BUNDLE_FILE_PREFIX,
   );
-  await writeAtomicJson(target.path, input.bundle);
+  await writeAtomicSecretJson(target.path, input.bundle);
   return target;
 }
 
@@ -73,9 +74,10 @@ export function resolveTerminalName(input?: {
 
 /** Best-effort local mpv version probe. Never throws; safe for CLI export path. */
 export async function probeMpvVersion(): Promise<string | null> {
-  if (!Bun.which("mpv")) return null;
+  const mpvInvocation = discoverMpvInvocation();
+  if (!mpvInvocation) return null;
   try {
-    const proc = Bun.spawn(["mpv", "--version"], {
+    const proc = Bun.spawn([...mpvInvocation.argv, "--version"], {
       stdout: "pipe",
       stderr: "pipe",
       env: process.env,

@@ -105,7 +105,11 @@ export function usePlaybackPosterSurfaceCleanup(
   useEffect(() => {
     if (phase === "bootstrap") {
       sawBootstrapRef.current = true;
-      clearRenderedPosterImages();
+      // Placements only: a full cache wipe here blanks browse/post-play art
+      // and drops in-flight fetches, whose late uploads then ghost back after
+      // the wipe. Byte caches stay warm across the hop; shutdown owns the
+      // full clear.
+      undisplayPlacementsKeepCache();
       return;
     }
     if (phase === "playing") {
@@ -114,7 +118,7 @@ export function usePlaybackPosterSurfaceCleanup(
         sawBootstrapRef.current = false;
         return;
       }
-      clearRenderedPosterImages();
+      undisplayPlacementsKeepCache();
     }
   }, [phase]);
 }
@@ -128,7 +132,7 @@ export function usePosterSurfaceBoundaryCleanup(active: boolean): void {
     if (!active) return undefined;
     undisplayPlacementsKeepCache();
     return () => {
-      clearRenderedPosterImages();
+      undisplayPlacementsKeepCache();
     };
   }, [active]);
 }
@@ -173,7 +177,7 @@ function posterCacheKey(
     inkEmbedded = false,
     placementSlot,
   }: PosterFetchOptions,
-): { readonly key: string; readonly resolved: string; readonly rendererKey: string } {
+): { readonly key: string; readonly resolved: string | null; readonly rendererKey: string } {
   const resolved = resolvePosterUrl(url, { cols, variant });
   const detectedRenderer = runtime.detectImageCapability().renderer;
   const rendererKey = inkEmbedded
@@ -234,6 +238,9 @@ export async function fetchPoster(
     inkEmbedded,
     placementSlot,
   });
+
+  // The URL contract refused this reference — nothing safe to fetch.
+  if (!resolved) return { kind: "none" };
 
   const cached = posterCache.get(key);
   if (cached) {

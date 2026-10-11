@@ -7,6 +7,8 @@ import {
   type AnalyticsPayload,
 } from "@/services/analytics/usage-analytics-service";
 
+import { IST_DAY_BOUNDARY_FROM } from "../../../../analytics-ingest/src/analytics-day";
+
 const ROOT = join(import.meta.dir, "../../../../..");
 const CONTRACT = join(ROOT, ".docs/analytics-privacy-contract.md");
 const USER_DOC = join(ROOT, "docs/users/reliability-and-privacy.mdx");
@@ -120,5 +122,58 @@ describe("analytics payload documentation drift", () => {
 
   test("the contract states that the ingest never reads a client IP", () => {
     expect(prose(CONTRACT)).toMatch(/never reads a client IP/i);
+  });
+});
+
+/**
+ * The day boundary is a single constant in `analytics-day.ts`. Both documents
+ * describe it by date, so each date here is derived from that constant and
+ * never typed. If the cutover moves, these fail until both documents move with
+ * it — otherwise production would switch at one instant while the published
+ * description named another.
+ */
+describe("the documents state the cutover the ingest clock uses", () => {
+  const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+  const MONTHS = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  const longUtcDate = (ms: number) => {
+    const date = new Date(ms);
+    return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+  };
+
+  /** The UTC date of the cutover instant: the short changeover day. */
+  const seamDay = longUtcDate(IST_DAY_BOUNDARY_FROM);
+  /** The IST date at the cutover instant: the first full IST day. */
+  const firstIstDay = longUtcDate(IST_DAY_BOUNDARY_FROM + IST_OFFSET_MS);
+
+  test("the contract names the exact cutover instant and the first IST day", () => {
+    const body = prose(CONTRACT);
+    expect(body).toContain(new Date(IST_DAY_BOUNDARY_FROM).toISOString());
+    expect(body).toContain(firstIstDay);
+  });
+
+  test("the contract's changeover sentence names the right label", () => {
+    // The ISO instant check above would still pass if only the instant moved
+    // and this sentence kept describing the old seam day.
+    const seamLabel = new Date(IST_DAY_BOUNDARY_FROM).toISOString().slice(0, 10);
+    expect(prose(CONTRACT)).toContain(`\`${seamLabel}\` spans 00:00 to 18:30 UTC`);
+  });
+
+  test("the user doc names the first IST day and the changeover day", () => {
+    const body = prose(USER_DOC);
+    expect(body).toContain(firstIstDay);
+    expect(body).toContain(seamDay);
   });
 });

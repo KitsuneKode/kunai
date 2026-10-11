@@ -13,7 +13,13 @@ export type DiagnosticsSupportBundleInput = {
   readonly capabilities?: Record<string, unknown> | null;
   readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary | null;
   readonly sessionState?: SessionState | null;
-  readonly downloadSummary?: { active: number; completed: number; failed?: number } | null;
+  readonly downloadSummary?: {
+    active: number;
+    completed: number;
+    failed?: number;
+    /** Completed downloads whose sidecars still need a pass; not counted in `failed`. */
+    repairable?: number;
+  } | null;
   readonly releaseSummary?: { titleCount: number; episodeCount: number } | null;
   readonly releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
   readonly presenceSnapshot?: PresenceSnapshot | null;

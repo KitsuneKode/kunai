@@ -38,9 +38,8 @@ function createResolverContainer(
                   id === "allanime" || (id === providerId && overrides.isAnimeProvider === true),
                 ...(id === "allanime" ? { catalogIdentity: "anilist" as const } : {}),
               },
-              capabilities: {} as never,
+              // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
               canHandle: () => true,
-              resolveStream: async () => null,
               search: async () => [],
             }
           : null,
@@ -49,6 +48,9 @@ function createResolverContainer(
       getState: () => ({
         provider: providerId,
         mode: overrides.isAnimeProvider || providerId === "allanime" ? "anime" : "series",
+        defaultProviders: {
+          anime: overrides.animeProvider ?? "allanime",
+        },
       }),
       dispatch: () => {},
       subscribe: () => () => {},

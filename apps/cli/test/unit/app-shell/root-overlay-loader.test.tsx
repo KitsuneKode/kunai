@@ -17,6 +17,7 @@ import { Text } from "ink";
 import React, { act } from "react";
 
 import { render } from "../../harness/render-capture";
+import { waitUntil } from "../../support/wait-until";
 
 afterEach(() => {
   setRootOverlayModuleImportForTests(null);
@@ -43,6 +44,7 @@ function ReducerBackedRootHost({ stateManager }: { stateManager: SessionStateMan
       <RootOverlayLoader
         overlay={overlay}
         state={state}
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         container={{ stateManager } as never}
         onRedraw={() => {}}
       />
@@ -55,6 +57,7 @@ function mountLoader(actions: unknown[]) {
   return render(
     <RootOverlayLoader
       overlay={{ type: "help" }}
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       state={{} as never}
       container={
         {
@@ -208,8 +211,13 @@ test("a failed module load shows the failure state and a later mount can retry",
   const actions: unknown[] = [];
   const failed = mountLoader(actions);
   try {
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitUntil(() => failed.lastFrame().includes("Panel unavailable"), {
+      label: "failure state rendered",
+      tick: async (ms) => {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, ms));
+        });
+      },
     });
     expect(failed.lastFrame()).toContain("Panel unavailable");
   } finally {

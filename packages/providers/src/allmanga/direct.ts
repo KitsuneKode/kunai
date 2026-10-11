@@ -3,6 +3,7 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  providerCycleCandidateTimeoutMs,
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
@@ -19,6 +20,7 @@ import type {
   SubtitleCandidate,
 } from "@kunai/types";
 
+import { ProviderHttpError } from "../runtime/fetch";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
   allmangaSubtitleMode,
@@ -26,11 +28,9 @@ import {
   formatAnimeSourceArchetype,
   formatAnimeSourceLabel,
 } from "../shared/anime-source-presentation";
-import {
-  findLastCycleFailure,
-  providerFailureCodeFromCycleFailure,
-} from "../shared/provider-cycle";
+import { cycleExhaustionFailure, findLastCycleFailure } from "../shared/provider-cycle";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { resolveGateBudgetMs, verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   normalizeProviderDisplayLabel,
@@ -41,6 +41,7 @@ import { normalizeIsoLanguageCode, subtitleLanguageDisplayName } from "../shared
 import {
   type StreamLink,
   AllMangaCaptchaError,
+  AllMangaQueryDriftError,
   loadAvailableEpisodesDetail,
   resolveAnimeEpisodeString,
   resolveEpisodeSources,
@@ -66,6 +67,15 @@ export function safeAllMangaHostname(url: string): string | null {
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0";
 const ALLANIME_API_URL = "https://api.mkissa.net/api";
+
+/**
+ * How long one source candidate may take before the cycle abandons it.
+ *
+ * Sized to contain the resolve gate: a gate that cannot finish inside its
+ * candidate's budget is cut short, reports `timeout`, and is let through — so
+ * an under-sized budget silently stops the gate rejecting dead sources.
+ */
+export const ALLMANGA_CANDIDATE_TIMEOUT_MS = 9_000;
 const ALLANIME_REFERER = "https://mkissa.to";
 export const ALLMANGA_QUALITY_FIRST_WAIT_BUDGET_MS = 4_000;
 // The Ak endpoint (separate CDN, slowest single step) normally answers in
@@ -633,8 +643,13 @@ export const allmangaProviderModule: CoreProviderModule = {
           signal: context.signal,
           now: context.now,
           emit: context.emit,
+          endpointHealth: context.endpointHealth,
+          titleId: input.title.id,
           maxAttemptsPerCandidate: 1,
-          candidateTimeoutMs: 2_500,
+          candidateTimeoutMs: providerCycleCandidateTimeoutMs(
+            startupPriority,
+            ALLMANGA_CANDIDATE_TIMEOUT_MS,
+          ),
           resolveCandidate: async (candidate, cycleContext) => {
             const stream = streams.find((item) => item.id === candidate.streamId);
             if (!stream?.url && !stream?.deferredLocator) {
@@ -660,6 +675,36 @@ export const allmangaProviderModule: CoreProviderModule = {
                 qualityRank: stream.qualityRank ?? null,
               },
             });
+            // Prove the source plays before accepting it, so a dead mirror
+            // cycles to the next candidate instead of being reported as a
+            // success. A deferred Ak handle has no URL to probe yet and is
+            // materialised later, so it passes through untouched.
+            if (stream.url && !stream.deferredLocator) {
+              const verdict = await verifyCandidateStream({
+                stream,
+                context,
+                // The candidate's signal, not the attempt's: when this candidate
+                // times out its probe has to be abandoned with it, or the
+                // request outlives the thing that asked for it.
+                signal: cycleContext.signal,
+                timeoutMs: resolveGateBudgetMs(
+                  providerCycleCandidateTimeoutMs(startupPriority, ALLMANGA_CANDIDATE_TIMEOUT_MS),
+                ),
+              });
+              if (!verdict.accepted) {
+                throw createProviderCycleFailureError(candidate, {
+                  failureClass: "candidate-blocked",
+                  message: `AllManga source is unreachable (${verdict.reason})`,
+                  retryable: false,
+                  at: context.now(),
+                  // The gate probed this candidate's own stream URL, so the
+                  // refusal is evidence about that source host alone — not a
+                  // provider-wide or regional verdict.
+                  endpointScoped: true,
+                });
+              }
+            }
+
             return stream;
           },
         });
@@ -704,21 +749,11 @@ export const allmangaProviderModule: CoreProviderModule = {
       }
       if (!selectedStream) {
         const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-        const failure: ProviderFailure = cycleFailure
-          ? {
-              providerId: ALLANIME_PROVIDER_ID,
-              code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-              message: cycleFailure.message,
-              retryable: cycleFailure.retryable,
-              at: cycleFailure.at,
-            }
-          : {
-              providerId: ALLANIME_PROVIDER_ID,
-              code: "not-found",
-              message: "No selectable AllManga streams were mapped.",
-              retryable: true,
-              at: context.now(),
-            };
+        const failure: ProviderFailure = {
+          providerId: ALLANIME_PROVIDER_ID,
+          ...cycleExhaustionFailure(cycleResult, "No selectable AllManga streams were mapped."),
+          at: cycleFailure?.at ?? context.now(),
+        };
         failures.push(failure);
         return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, failure);
       }
@@ -802,13 +837,23 @@ export const allmangaProviderModule: CoreProviderModule = {
       // reporting it as retryable network noise is what made this look like an
       // empty episode rather than a blocked request.
       const captchaBlocked = error instanceof AllMangaCaptchaError;
-      const failure: ProviderFailure = {
-        providerId: ALLANIME_PROVIDER_ID,
-        code: captchaBlocked ? "blocked" : "network-error",
-        message: error instanceof Error ? error.message : "AllManga API failed",
-        retryable: !captchaBlocked,
-        at: context.now(),
-      };
+      const queryDrift = error instanceof AllMangaQueryDriftError;
+      const failure: ProviderFailure =
+        error instanceof ProviderHttpError
+          ? {
+              providerId: ALLANIME_PROVIDER_ID,
+              code: error.code,
+              message: error.message,
+              retryable: error.retryable,
+              at: context.now(),
+            }
+          : {
+              providerId: ALLANIME_PROVIDER_ID,
+              code: captchaBlocked ? "blocked" : queryDrift ? "parse-failed" : "network-error",
+              message: error instanceof Error ? error.message : "AllManga API failed",
+              retryable: !captchaBlocked && !queryDrift,
+              at: context.now(),
+            };
       failures.push(failure);
 
       return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, failure);
@@ -848,6 +893,10 @@ export function buildAllmangaCycleCandidates(
       id: `candidate:${stream.id}`,
       providerId: ALLANIME_PROVIDER_ID,
       sourceId: stream.sourceId,
+      // The endpoint key is the stream's own host, so a quarantined mirror is
+      // skipped for every title it would fail on, while a host that merely
+      // lacks one title stays in the pool.
+      serverId: stream.sourceEvidence?.[0]?.host,
       variantId: stream.variantId,
       streamId: stream.id,
       groupId: stream.presentation,

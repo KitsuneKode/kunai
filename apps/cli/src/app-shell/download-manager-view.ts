@@ -1,12 +1,10 @@
-// =============================================================================
-// download-manager-view.ts — pure layout and rail policy for the download
+// Pure layout and rail policy for the download
 // manager.
 //
 // The shell used to recompute its own width from raw terminal columns while
 // living inside a root-owned overlay whose frame had already spent some of
 // them, so rows overflowed at exactly the widths people run. Splitting the
 // arithmetic out makes the 72/100/140 budget assertable without mounting Ink.
-// =============================================================================
 
 import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { DownloadJobRecord } from "@/services/storage/storage-read-models";

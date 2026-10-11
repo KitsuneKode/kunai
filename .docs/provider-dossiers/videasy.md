@@ -1,11 +1,49 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-10-07"
 ---
 
 # Provider: Videasy
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Production status (2026-11) — catalog host moved
+
+`api.videasy.to` and `db.videasy.to` are **NXDOMAIN** on public resolvers —
+the TMDB-format catalog (`/3/search/multi`, `/{movie|tv}/{id}?append_to_response=external_ids`)
+moved to **`db.wingsdatabase.com/3`** (verified live: 200 with real results).
+`db.speedracelight.com` answers but 429s every catalog path — not usable.
+
+`VIDEASY_DB_BASES` now walks mirrors live-first (wingsdatabase, then the dead
+canonical host so a revival wins for free). Consumers: the app-level
+`fetchTmdbProxyJson` chain (search/discover/trending) and videasy's own
+`fetchVideasyDbTitleMetadata` enrichment — both iterate all bases before
+giving up; the search chain still ends at direct TMDB with the baked key.
+
+## Upstream status (2026-09-21) — operator wind-down, do not re-investigate
+
+The whole videasy deployment is being dismantled, not rotating:
+
+- `videasy.to`, `api.videasy.to`, `www.videasy.to` — A records **deleted**
+  (zone still served by ns1/ns2.ddos-guard.net, so DNS resolves the SOA but
+  nothing else).
+- `player.videasy.to` — edge still answers TLS but returns **502**; the
+  backend origin behind ddos-guard is gone.
+- `speedracelight.com` / `api.speedracelight.com` — the API surface the
+  adapter targets; A record removed, Cloudflare edge orphaned.
+- Cloudflare DoH (`1.1.1.1/dns-query`) confirms `videasy.to` has **no A
+  record** — this is upstream truth, not a local resolver artifact.
+
+**Verdict:** operator shutdown (likely DMCA-class). Recovery is not a code
+change — if the operator resurfaces it will be a new domain and a manifest
+edit, not a crypto/scheme fix. The adapter is kept in production loading on
+purpose: it is `DEFAULT_CONFIG.provider`, so removal would leave stored
+configs naming an unloaded module, and the endpoint-health circuit breaker
+already does the right job — one bounded probe per heal TTL, honest
+`network-error` reporting, automatic resurrection if upstream ever returns.
+Re-evaluate removal only if the upstream stays dead for months or a
+replacement default provider is chosen deliberately. (They resurfaced on a
+new domain — see the 2026-11 entry above.)
 
 ## Production status (2026-08-13) — cache and transport hardening
 
@@ -45,6 +83,37 @@ Deliberately **not** done, and why:
 - **Deprecated route/WASM deletion was not attempted.** It is separate non-blocking
   cleanup and is explicitly not a release blocker; the routes are proven inert by
   contract tests instead.
+
+## Production status (2026-09-27)
+
+- **Split brain:** `videasy.to` and `api.videasy.to` fail DNS resolution
+  (NXDOMAIN on the resolvers tested), but `api.speedracelight.com` and
+  `player.videasy.to` still answer 200. Everything in Phase A is `wings-*`, so
+  resolve still works end-to-end; what died is the TMDB-mirror DB
+  (`VIDEASY_DB_BASE` — now circuit-broken in `tmdb-proxy.ts`), title-metadata
+  enrichment (degrades to `null`), and the non-wings legacy endpoints.
+- **Disposition:** demoted from series default to last in the lane
+  (`provider: "vidlink"`, `providerPriority: ["rivestream", "vidrock", "videasy"]`), and
+  `recommended: false` in the manifest. Registered fallback, not removed — if
+  the domain resurrects the provider is whole again.
+
+## Probe attestation (2026-09-12, issue #361)
+
+- **Symptom:** the resolve-gate probe fetched the signed playlist + first
+  segment and got 200, then the next identical request — same URL, same
+  headers, same process — got 403. mpv received the URL and could not open it.
+- **Ruled out by the reporter:** headers, TLS fingerprinting, the ytdl_hook
+  artifact, the gate consuming a one-shot URL (first fetch 403s even with the
+  gate off), and per-resolve tokens (URL is deterministic per title/route).
+- **Shipped fix:** `probeSelectedVidkingPayloadStream` still runs as a
+  _negative_ gate — definitive failures break to the next flavor — but its
+  green no longer sets `streamReachabilityVerified`. Downstream
+  `planResolveGateHealth`/`planCacheRevalidateHealth` then re-probe stale
+  entries instead of replaying a false green for `playbackTrustMs` (5m).
+- **Still open:** a check that represents playback (e.g. requiring the URL to
+  survive a second probe) needs a measurement before it lands; see the issue.
+- **Pin:** `packages/providers/test/videasy-probe-attestation.test.ts` drives a
+  full fixture resolve and asserts the result ships unattested on probe 200.
 
 ## Production status (2026-07-16)
 

@@ -197,7 +197,14 @@ function rowToEvent(row: DiagnosticEventRow): StoredDiagnosticEvent {
 }
 
 function parseContext(value: string): Record<string, unknown> | undefined {
-  const parsed = JSON.parse(value) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    // A poisoned context column is data loss in one row, not a reason to fail
+    // the whole read — resolve-trace skips these the same way.
+    return undefined;
+  }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return undefined;
   }

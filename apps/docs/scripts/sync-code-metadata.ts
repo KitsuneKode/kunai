@@ -22,7 +22,6 @@ type ProviderMetadata = {
   readonly recommended: boolean;
   readonly mediaKinds: readonly string[];
   readonly capabilities: readonly string[];
-  readonly status: string;
   readonly notes: readonly string[];
 };
 
@@ -43,8 +42,13 @@ const PROVIDER_MODULE_DIR: Record<string, string> = {
   videasyProviderModule: "videasy",
   vidlinkProviderModule: "vidlink",
   rivestreamProviderModule: "rivestream",
+  movyProviderModule: "movy",
+  vidrockProviderModule: "vidrock",
   allmangaProviderModule: "allmanga",
   anidbProviderModule: "anidb",
+  hianimeProviderModule: "hianime",
+  animeggProviderModule: "animegg",
+  kickassanimeProviderModule: "kickassanime",
   miruroProviderModule: "miruro",
   youtubeProviderModule: "youtube",
 };
@@ -52,9 +56,14 @@ const PROVIDER_MODULE_DIR: Record<string, string> = {
 const PROVIDER_ID_CONSTANTS: Record<string, string> = {
   ALLANIME_PROVIDER_ID: "allanime",
   ANIDB_PROVIDER_ID: "anidb",
+  ANIMEGG_PROVIDER_ID: "animegg",
   CINEBY_PROVIDER_ID: "cineby",
+  HIANIME_PROVIDER_ID: "hianime",
+  KICKASSANIME_PROVIDER_ID: "kickassanime",
   MIRURO_PROVIDER_ID: "miruro",
+  MOVY_PROVIDER_ID: "movy",
   RIVESTREAM_PROVIDER_ID: "rivestream",
+  VIDROCK_PROVIDER_ID: "vidrock",
   VIDEOSY_PROVIDER_ID: "videasy",
   VIDLINK_PROVIDER_ID: "vidlink",
   YOUTUBE_PROVIDER_ID: "youtube",
@@ -108,7 +117,6 @@ function parseManifest(manifestPath: string, fallbackDir: string): ProviderMetad
     recommended: extractBoolean(normalizedContent, "recommended"),
     mediaKinds: extractArray(normalizedContent, "mediaKinds"),
     capabilities: extractArray(normalizedContent, "capabilities"),
-    status: extractString(normalizedContent, "status") || "active",
     notes: extractArray(normalizedContent, "notes"),
   };
 }

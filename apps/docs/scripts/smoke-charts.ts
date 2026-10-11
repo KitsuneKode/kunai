@@ -73,7 +73,9 @@ async function connect(): Promise<{
   let targets: { type: string; webSocketDebuggerUrl: string }[] = [];
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      targets = await (await fetch(`http://127.0.0.1:${DEBUG_PORT}/json`)).json();
+      const res = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json`);
+      if (!res.ok) throw new Error(`CDP /json returned ${res.status}`);
+      targets = await res.json();
       break;
     } catch {
       await Bun.sleep(250);

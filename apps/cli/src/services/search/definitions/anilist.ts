@@ -36,7 +36,8 @@ export class AniListSearchService implements SearchService {
     description: "AniList GraphQL search and advanced anime discovery",
   };
 
-  readonly compatibleProviders = ["anidb", "allanime", "allmanga", "miruro", "hianime"];
+  readonly servesCatalog = "anilist" as const;
+  readonly compatibleProviders = ["anidb", "allanime", "allmanga", "hianime"];
 
   constructor(private deps: SearchDeps) {}
 

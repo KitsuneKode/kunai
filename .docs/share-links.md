@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-09-12"
 ---
 
 # Share Links & PlaybackTargetRef
@@ -9,12 +9,12 @@ lastReviewed: "2026-08-24"
 
 Kunai copies browser-safe `https://kunai.kitsunekode.in/w/<code>` links while preserving the portable `kunai://` application handoff. Both decode to the same catalog-anchored playback target.
 
-The web code is a checksummed, base64url-encoded ref. The landing page is a pure decoder: it uses no share database and drops `/w/` page views before analytics sends. Compact `k1…` catalog codes are accepted directly and inside `/w/<code>`; search anchors deliberately have no compact form.
+The web code is a checksummed, base64url-encoded ref. The landing page is a pure decoder: it uses no share database. Both Vercel Web Analytics and Speed Insights suppress `/w/` events through their `beforeSend` hooks. The filter checks the event URL, including relative URLs and delayed samples after navigation; malformed URLs fail closed. Ordinary non-share events retain their existing behavior. Compact `k1…` catalog codes are accepted directly and inside `/w/<code>`; search anchors deliberately have no compact form.
 
 ## URL grammar
 
 ```
-kunai://play?cat=<ns>:<id>&kind=<movie|series|anime>&s=<season>&e=<episode>&abs=<absolute>&t=<seconds>&src=<providerId>&sq=<quality>&n=<label>
+kunai://play?cat=<ns>:<id>&kind=<movie|series|anime|video>&s=<season>&e=<episode>&abs=<absolute>&t=<seconds>&src=<providerId>&sq=<quality>&n=<label>
 kunai://download?...   # same query params, queues a download instead of playback
 ```
 
@@ -26,17 +26,17 @@ kunai://play?q=<query>&kind=...
 
 ### Parameters
 
-| Param     | Meaning                                                                          |
-| --------- | -------------------------------------------------------------------------------- |
-| `cat`     | Catalog anchor: `tmdb`, `anilist`, `mal`, or `imdb` namespace + id (`tmdb:1396`) |
-| `q`       | Search query fallback (mutually exclusive with `cat`)                            |
-| `kind`    | `movie`, `series`, or `anime`                                                    |
-| `s` / `e` | Season and episode (1-based)                                                     |
-| `abs`     | Absolute episode number (anime)                                                  |
-| `t`       | Start timestamp in seconds, `1m23s`, or `1:23`                                   |
-| `src`     | Provider hint (`allanime`, etc.)                                                 |
-| `sq`      | Quality hint                                                                     |
-| `n`       | Human label (not required for resolution)                                        |
+| Param     | Meaning                                                                                                              |
+| --------- | -------------------------------------------------------------------------------------------------------------------- |
+| `cat`     | Catalog anchor: `tmdb`, `anilist`, `mal`, `imdb`, or `youtube` namespace + id (`tmdb:1396`)                          |
+| `q`       | Search query fallback (mutually exclusive with `cat`)                                                                |
+| `kind`    | `movie`, `series`, `anime`, or `video`. Optional: a link without it is read as `series`, whatever the namespace says |
+| `s` / `e` | Season and episode (1-based)                                                                                         |
+| `abs`     | Absolute episode number (anime)                                                                                      |
+| `t`       | Start timestamp in seconds, `1m23s`, or `1:23`                                                                       |
+| `src`     | Provider hint (`allanime`, etc.)                                                                                     |
+| `sq`      | Quality hint                                                                                                         |
+| `n`       | Human label (not required for resolution)                                                                            |
 
 Parser returns `null` when neither `cat` nor `q` is present, or when the catalog namespace is invalid.
 

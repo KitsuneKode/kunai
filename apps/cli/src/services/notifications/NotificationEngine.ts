@@ -48,6 +48,11 @@ export type NotificationSignal =
        * had, and offered an update action with nothing to do.
        */
       readonly pendingRestart?: boolean;
+    }
+  | {
+      readonly type: "provider-health";
+      readonly providerId: string;
+      readonly suggestedProviderId?: string;
     };
 
 export interface DerivedNotification {
@@ -58,7 +63,8 @@ export interface DerivedNotification {
     | "download-complete"
     | "download-failed"
     | "app-update"
-    | "app-restart-required";
+    | "app-restart-required"
+    | "provider-health";
   readonly title: string;
   readonly body: string;
   readonly item?: MediaItemIdentity;
@@ -205,6 +211,22 @@ export function deriveNotifications(
               updatedAt: input.now,
             },
       );
+      continue;
+    }
+
+    if (signal.type === "provider-health") {
+      derived.push({
+        // The signal only exists while the provider is down, so a stable key
+        // refreshes the same row rather than stacking notices per launch.
+        dedupKey: `provider-health:${signal.providerId}`,
+        kind: "provider-health",
+        title: `${signal.providerId} is unreachable`,
+        body: signal.suggestedProviderId
+          ? `Your default provider is down. Try ${signal.suggestedProviderId} — change it in Settings → Provider order.`
+          : "Your default provider is down and no healthy fallback is on record. Check provider status or pick another provider in Settings.",
+        createdAt: input.now,
+        updatedAt: input.now,
+      });
       continue;
     }
 

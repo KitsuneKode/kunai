@@ -213,15 +213,63 @@ describe("release provider signoff", () => {
       }),
     ).toBe("harness-failure");
   });
+
+  test("a Cloudflare block is an environment failure, not provider drift", () => {
+    // The real 0.3.0 signoff message. The client reports the block in words
+    // rather than a status code, so matching only `403` filed a runner refused
+    // on TLS fingerprint as drift and pointed the investigation at a provider
+    // that was healthy the whole time.
+    for (const error of [
+      "anidb blocked by Cloudflare (try curl-impersonate)",
+      "anidb blocked by Cloudflare (install curl)",
+      "unexpected page: Just a moment...",
+    ]) {
+      expect(classifyReleaseSignoffFailure({ resolved: false, streamReachable: null, error })).toBe(
+        "environment-network",
+      );
+    }
+
+    // Still drift when the route itself is the problem: the widened pattern
+    // must not swallow genuine upstream contract failures.
+    expect(
+      classifyReleaseSignoffFailure({
+        resolved: false,
+        streamReachable: null,
+        error: "no playable source for episode 1",
+      }),
+    ).toBe("provider-drift");
+    // An episode number is not an HTTP status — the bare 5xx pattern once
+    // filed "episode 512" as a network failure instead of provider drift.
+    expect(
+      classifyReleaseSignoffFailure({
+        resolved: false,
+        streamReachable: null,
+        error: "no playable source for episode 512",
+      }),
+    ).toBe("provider-drift");
+    // A real HTTP status in context still classifies as an upstream failure.
+    expect(
+      classifyReleaseSignoffFailure({
+        resolved: false,
+        streamReachable: null,
+        error: "anidb fetch HTTP 503",
+      }),
+    ).toBe("environment-network");
+  });
 });
 
 describe("release provider route derivation", () => {
   test("derives signoff providers from production defaults", () => {
-    const cases = buildReleaseProviderRouteCases(DEFAULT_CONFIG, ["videasy", "anidb", "youtube"]);
+    const cases = buildReleaseProviderRouteCases(DEFAULT_CONFIG, [
+      "vidlink",
+      "hianime",
+      "anidb",
+      "youtube",
+    ]);
     expect(cases.map((route) => [route.lane, route.configuredProvider])).toEqual([
-      ["movie", "videasy"],
-      ["series", "videasy"],
-      ["anime", "anidb"],
+      ["movie", "vidlink"],
+      ["series", "vidlink"],
+      ["anime", "hianime"],
     ]);
   });
 
@@ -249,10 +297,40 @@ describe("release provider route derivation", () => {
           season: 1,
           episode: 1,
         },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         { search: async () => [] } as never,
         { audio: "original", subtitle: "en" },
       ),
     ).rejects.toThrow('Default anime provider "anidb" search returned zero results for "Onigiri"');
+  });
+
+  test("default anime search returning null reports transport failure, not drift", async () => {
+    // `null` is the provider contract's transport-failure channel. Collapsing
+    // it into `[]` filed an anidb.app maintenance 503 as provider drift.
+    await expect(
+      resolveReleaseAnimeSearchTitle(
+        {
+          lane: "anime",
+          configuredProvider: "anidb",
+          mode: "anime",
+          searchQuery: "Onigiri",
+          expectedTitle: "Onigiri",
+          season: 1,
+          episode: 1,
+        },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        { search: async () => null } as never,
+        { audio: "original", subtitle: "en" },
+      ),
+    ).rejects.toThrow('Default anime provider "anidb" search transport failed for "Onigiri"');
+    expect(
+      classifyReleaseSignoffFailure({
+        resolved: false,
+        streamReachable: null,
+        error:
+          'Default anime provider "anidb" search transport failed for "Onigiri" (provider unreachable)',
+      }),
+    ).toBe("environment-network");
   });
 
   test("default anime search selects the provider's own native result", async () => {
@@ -282,6 +360,65 @@ describe("release provider route derivation", () => {
 
     expect(title.id).toBe("onigiri-3942");
     expect(title.externalIds?.providerNativeIds?.anidb).toBe("onigiri-3942");
+  });
+
+  // A provider id with no search of its own, keyed on the AniList catalog.
+  const CATALOG_ONLY_ROUTE = {
+    lane: "anime",
+    configuredProvider: "catalog-only",
+    mode: "anime",
+    searchQuery: "Onigiri",
+    expectedTitle: "Onigiri",
+    season: 1,
+    episode: 1,
+  } as const;
+
+  test("a default with no search of its own finds the title through its compatible catalog", async () => {
+    // The app routes such a provider to its compatible catalog; requiring
+    // provider.search would fail signoff on a route that works in production.
+    const title = await resolveReleaseAnimeSearchTitle(
+      CATALOG_ONLY_ROUTE,
+      {},
+      { audio: "original", subtitle: "en" },
+      {
+        // SAFETY: resolveReleaseAnimeSearchTitle reads only id, type and title
+        // from catalog rows, and each row below sets all three.
+        catalog: {
+          search: async () => [
+            { id: "anilist:1", type: "series", title: "Onigiri Tabetai" },
+            { id: "anilist:21828", type: "series", title: "Onigiri" },
+          ],
+        } as never,
+      },
+    );
+
+    expect(title.id).toBe("anilist:21828");
+  });
+
+  test("a catalog route that finds nothing is still provider drift", async () => {
+    await expect(
+      resolveReleaseAnimeSearchTitle(
+        CATALOG_ONLY_ROUTE,
+        {},
+        { audio: "original", subtitle: "en" },
+        { catalog: { search: async () => [] } },
+      ),
+    ).rejects.toThrow(
+      'Default anime provider "catalog-only" search returned zero results for "Onigiri"',
+    );
+  });
+
+  test("a default with neither its own search nor a catalog fails before any network work", async () => {
+    await expect(
+      resolveReleaseAnimeSearchTitle(
+        CATALOG_ONLY_ROUTE,
+        {},
+        {
+          audio: "original",
+          subtitle: "en",
+        },
+      ),
+    ).rejects.toThrow("has no search capability and no compatible catalog");
   });
 
   test("release evidence is unacceptable when a different provider succeeds", () => {

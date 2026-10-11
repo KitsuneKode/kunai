@@ -1,5 +1,4 @@
-// =============================================================================
-// setup-frame.tsx — the Sakura shell frame, for setup
+// The Sakura shell frame, for setup
 //
 // Setup was the only surface in Kunai with no frame: no header, no surface
 // label, no `[/] commands`. That, more than any copy, is why it read as a
@@ -11,12 +10,13 @@
 //   🦊 Kunai · <context>                                        setup · N⁄7
 //   <body — the current decision>
 //   [key] label  [key] label                                         Setup
-// =============================================================================
 
 import { Box, Text } from "ink";
 import React from "react";
 
-import { palette } from "../shell-theme";
+import type { CompanionMoment } from "../companion-moment";
+import { CompanionHost } from "../CompanionHost";
+import { APP_LABEL, palette } from "../shell-theme";
 
 export type FooterKey = { readonly key: string; readonly label: string };
 
@@ -115,6 +115,7 @@ export function SetupFrame({
   totalSteps,
   footer,
   children,
+  companion = "setup",
 }: {
   readonly width: number;
   readonly context: string;
@@ -122,6 +123,13 @@ export function SetupFrame({
   readonly totalSteps: number;
   readonly footer: readonly FooterKey[];
   readonly children: React.ReactNode;
+  /**
+   * The moment the frame reports, or `null` when the screen inside draws its
+   * own. Two Kannas on one screen is not twice the character — it reads as a
+   * rendering fault, and the summary screen has always intended to *replace*
+   * the wizard's `wait` rather than sit beneath it.
+   */
+  readonly companion?: CompanionMoment | null;
 }) {
   const gutter = setupGutter(width);
 
@@ -133,7 +141,7 @@ export function SetupFrame({
         left={
           <Text>
             <Text color={palette.text} bold>
-              🦊 Kunai
+              {APP_LABEL}
             </Text>
             <Text color={palette.dim}>{" · "}</Text>
             <Text color={palette.muted}>{context}</Text>
@@ -154,6 +162,14 @@ export function SetupFrame({
           sits a little above centre: dead-centre in a tall terminal leaves the
           top half looking abandoned, and the eye starts high. */}
       <Box flexDirection="column" width={width} flexGrow={1} paddingX={gutter} paddingTop={2}>
+        {/* One pose for the whole wizard. Flipping it on the last step meant a
+            fresh placement upload on a step transition, which is the one moment
+            the pane is already re-laying out.
+
+            The wrapper is conditional, not just the pet: a Box with a margin
+            around a null child still lays out its margin, so `KUNAI_PET=off`
+            left an empty row behind — which is not "retired entirely". */}
+        <CompanionHost moment={companion} rows={4} marginBottom={1} />
         {children}
       </Box>
 

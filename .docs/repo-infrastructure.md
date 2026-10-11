@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-10-11"
 ---
 
 # Kunai — Repo Infrastructure
@@ -35,7 +35,7 @@ The monorepo uses [Bun catalogs](https://bun.sh/docs/pm/catalogs) in the root
 - `catalog:cli` — `commander`, `ink` (CLI runtime)
 - `catalog:lint` — `oxlint`, `oxfmt` (root only; turbo package scripts +
   lint-staged resolve them via workspace hoist)
-- `catalog:providers` — `@assemblyscript/loader`, `crypto-js`, `@types/crypto-js`
+- `catalog:providers` — `@assemblyscript/loader`; provider crypto uses built-in APIs
 - `catalog:repo` — `turbo` (root orchestration only)
 - `catalog:web` — Next.js, Fumadocs, Tailwind, Motion, Base UI, Tabler icons,
   docs UI helpers, and docs TypeScript 5.9 (`apps/docs` only)
@@ -46,6 +46,13 @@ or `next` tags.
 Root `overrides` dedupe known transitive drift (`@types/node`, `fumadocs-core`,
 `fumadocs-ui`). Fumadocs still pulls Radix + `lucide-react` transitively; do not
 re-catalog those as direct docs deps — docs UI uses Base UI + Tabler.
+
+`braces@3.0.3` has a tracked Bun depth-limit patch for CVE-2026-93687. Shared
+CI setup checks the installed Changesets/shadcn paths after frozen install with
+`bun run verify:dependency-patches`; [patch maintenance](../patches/README.md)
+records provenance, compatibility, and removal criteria. The registry audit
+still flags 3.0.3 because upstream has no patched release; behavioral verification
+does not turn that audit green.
 
 `.reference/experiments` is **outside** the default workspace, so it cannot use
 `catalog:` protocols. Main installs stay lean; research deps install only via
@@ -58,7 +65,9 @@ Default workspace packages: `apps/cli`, `apps/docs`, `apps/relay-server`,
 
 `bun install` runs the root `prepare` script and installs Husky hooks.
 
-The pre-commit hook runs staged-file lint/format only:
+The pre-commit hook runs staged-file lint/format only. Its formatter commands
+allow an all-ignored batch (for example captured reference source) to be empty;
+active matched files still undergo the normal formatter check:
 
 ```sh
 bunx lint-staged
@@ -79,9 +88,26 @@ bun run test
 Pull requests and pushes to `main` use the composite setup action
 [`.github/actions/setup-bun-monorepo`](../.github/actions/setup-bun-monorepo/action.yml):
 Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
-`TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache.
+`TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache. The README CI badge points
+at `.github/workflows/ci.yml`, which runs the Linux test job plus blocking
+Windows (`windows-cli`) and macOS (`macos-cli`) legs.
 
 ### Checkout is caller-owned
+
+`CI ready` is the aggregate merge check. It runs with `always()` after every
+CI job and executes `scripts/ci-ready.mjs` using the runner's Node, without a
+workspace install. It rejects missing dependencies, failures, cancellations,
+invalid filter outputs and unexpected skips. Only jobs whose path conditions
+are false may skip. Update the policy and its routing fixtures when changing
+job conditions. Release Guard runs on every PR so docs-only changes also emit
+`Version ↔ changelog guard`; a required workflow must not disappear behind a
+PR path filter. Remote enforcement must be checked separately from this YAML.
+
+Release publication proposes its status update through a reviewed metadata PR,
+using `.github/scripts/open-release-metadata-pr.sh`. It does not push to main.
+Maintainers approve bot-created workflow runs when requested, then review and
+merge the PR after required checks pass. Recovery is documented in
+[RELEASING.md](../RELEASING.md#metadata-pr-recovery).
 
 **Every job must run `actions/checkout` before it uses a local composite
 action.** The composite deliberately does not check out.
@@ -109,23 +135,53 @@ The invariant is enforced two ways:
 
 **Parallel jobs** (`.github/workflows/ci.yml`):
 
-| Job                   | PR                                                                                    | Main         |
-| --------------------- | ------------------------------------------------------------------------------------- | ------------ |
-| `fmt`                 | `turbo run fmt:check --affected`                                                      | full         |
-| `lint`                | `turbo run lint --affected` + changed-file anti-slop advisory                         | full         |
-| `typecheck`           | `turbo run typecheck --affected`                                                      | full         |
-| `test`                | `turbo run test --affected` (CLI splits into cached `test:unit` + `test:integration`) | full         |
-| `windows-cli`         | root typecheck + CLI tests when CLI paths change                                      | same on main |
-| `build-cli`           | `bun run build` + `bun run pkg:check` when CLI paths change                           | same on main |
-| `build-binaries`      | 2 Linux targets via Turbo when CLI/installer paths change                             | same         |
-| `checks-docs`         | docs gate when docs paths change                                                      | same         |
-| `checks-doc-coverage` | `verify:doc-coverage` when a scanned code root or the feature map changes             | same         |
+| Job                   | PR                                                                                          | Main         |
+| --------------------- | ------------------------------------------------------------------------------------------- | ------------ |
+| `fmt`                 | `scripts/ci-affected-run.ts fmt:check` + `fmt:root:check` for root-owned files              | full + root  |
+| `lint`                | `scripts/ci-affected-run.ts lint` + changed-file anti-slop advisory + count baseline        | full         |
+| `typecheck`           | `scripts/ci-affected-run.ts typecheck` (task is `cache: false` — always a real run)         | full         |
+| `test`                | `scripts/ci-affected-run.ts test` (CLI splits into cached `test:unit` + `test:integration`) | full         |
+| `windows-cli`         | root typecheck + CLI tests when CLI paths change                                            | same on main |
+| `build-cli`           | `bun run build` + `bun run pkg:check` when CLI paths change                                 | same on main |
+| `build-binaries`      | 2 Linux targets via Turbo when CLI/installer paths change                                   | same         |
+| `checks-docs`         | docs gate when docs paths change                                                            | same         |
+| `checks-doc-coverage` | `verify:doc-coverage` when a scanned code root or the feature map changes                   | same         |
+
+Format, lint, typecheck, and test jobs retain Turbo run summaries for seven days,
+including failed attempts. The Linux test job also retains its combined output;
+`pipefail` preserves the test failure when output is piped through `tee`. Artifact
+names include the run attempt so retries retain distinct evidence.
+
+Formatting runs independently of typecheck. Provider registration changes in
+`apps/cli/src/container/bootstrap-providers.ts` reach the docs freshness gate;
+`apps/cli/test/unit/scripts/ci-ready.test.ts` guards that selection.
 
 `checks-doc-coverage` is separate from `checks-docs` on purpose. Its trigger is
 every directory the gate scans (`apps/cli/src/{services,domain,infra,app}`,
 `packages/**`), because a new unrouted directory arrives as new _code_ files and
 would otherwise skip the check meant to catch it. It runs `setup-bun` without
 `bun install` — the script imports only `node:fs` and `node:path`.
+
+`scripts/ci-affected-run.ts` wraps `--affected` because a PR touching only
+non-package files (`.github/`, `install.sh`, `tools/`, `docs/`, `.docs/`) used
+to select zero workspace tasks and exit 0 — four green legs that ran nothing.
+The wrapper dry-runs the selection first and falls back to the full task when
+it is empty. Root-owned files still need their own unconditional step: they are
+not in any workspace, so turbo never sees them regardless of the diff
+(`fmt:root:check` covers `.github/`, `scripts/`, `docs/`, `.changeset/`, and the
+root configs). Locally, `bun run ci` runs the four blocking tasks plus the
+`verify:doc-*` and `verify:parity-references` gates; pre-push calls it.
+
+`verify:doc-frontmatter` (inside `checks-docs`) has two halves. The first is
+static: every live `.docs` doc declares `status`, an ISO `lastReviewed`, and the
+L3 banner. The second compares the change set against `origin/main` and fails
+when a doc's body moved but its `lastReviewed` did not — the field only means
+something if editing a doc forces you to answer for it. Set `lastReviewed` to
+the day you actually re-read the doc against the tree; for a mechanical sweep
+that cannot change meaning, re-run with `SKIP_DOC_FRESHNESS=1`. Both halves need
+history, which is why every `checkout` in the workflow pins `fetch-depth: 0`; on
+a checkout without the base ref the freshness half skips with a notice rather
+than failing on the shape of the clone.
 
 Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` covering
 `~/.bun/install/cache` only (Bun reconstructs `node_modules` from the store).
@@ -221,10 +277,24 @@ Open Windows parity backlog:
 
 **Local pipeline verification**
 
+The local build-cache gate reads the JSON summary path printed by that exact
+Turbo invocation. Both `@kitsunekode/kunai#build` and
+`@kitsunekode/kunai#build:binary:host` must occur once with cache status `HIT`;
+cached dependency typechecks cannot satisfy the gate. Missing or ambiguous
+summary announcements, unreadable/malformed summaries, duplicate required tasks,
+and either build missing the cache all fail verification. Historical summaries
+are never selected by timestamp.
+
 ```sh
 bun run verify:build-pipeline       # fast: build + pkg:check + turbo cache
 bun run verify:build-pipeline:pr    # PR parity: + 2 Linux binaries
 KUNAI_VERIFY_ALL_BINARIES=1 bun run verify:build-pipeline:all-targets  # opt-in 10-target build
+
+# README quick-start commands against a real binary. Bare invocation defaults
+# to fixture-assets mode + `bun run build:binary:host` output; CI/release pass
+# the explicit form:
+bun run verify:readme:commands -- \
+  --mode fixture-assets --version 0.3.0 --binary apps/cli/dist/bin/kunai-linux-x64
 ```
 
 ## Release guardrails
@@ -232,7 +302,7 @@ KUNAI_VERIFY_ALL_BINARIES=1 bun run verify:build-pipeline:all-targets  # opt-in 
 Release workflow details live in [RELEASING.md](../RELEASING.md). Infrastructure touchpoints:
 
 - `bun run guard` — local version ↔ changelog consistency check
-- `.github/workflows/release-guard.yml` — runs `bun run guard` on PRs that touch `apps/cli/**`, `.changeset/**`, or release scripts
+- `.github/workflows/release-guard.yml` — runs `bun run guard` on every PR; main pushes remain path-filtered to release-related changes
 - `.github/workflows/release.yml` — version/publish pipeline (scoped paths; runs guard before publish)
 - Changelog parser tests: `apps/cli/test/unit/scripts/release-changelog.test.ts`
 
@@ -241,3 +311,41 @@ Release workflow details live in [RELEASING.md](../RELEASING.md). Infrastructure
 - Branch protection configuration lives in GitHub settings.
 - Binary publishing is tracked separately in packaging/release plans.
 - Typecheck does not run in pre-commit; it belongs in CI and pre-push/full local verification.
+
+## Local cache and CI evidence ownership
+
+Turbo uses an explicit `.turbo/cache` directory per checkout. Its automatic
+worktree cache sharing can otherwise restore outputs containing absolute paths
+from another checkout. Remote cache remains separately configured. The setup
+action restores and saves only `.turbo/cache`, so run summaries under
+`.turbo/runs` belong to the current CI attempt rather than a cached previous job.
+Verification tasks remain uncached; build caching and affected-package selection
+continue to provide reuse without replacing fresh release evidence.
+
+## React documentation rendering
+
+Viewer-local timestamps use a `useSyncExternalStore` server snapshot so UTC
+markup remains identical during hydration and useful without JavaScript.
+Analytics snapshot age receives one request clock sample from the async server
+route per ISR generation; the route retains a narrow purity-lint exception
+because freezing that clock would make the stale badge unreliable. The footer
+year is a deployment/module snapshot, not a continuously updating clock.
+
+Chart-hover table expansion adjusts its monotonic reveal count before commit,
+so the matching row is present without an effect-driven render cascade. Rows
+stay revealed when hover ends. Kanna visibility subscribes to pointer preference,
+reduced motion, storage, dismissal, and restoration changes through a browser
+external store, using an empty server snapshot. This preserves dismissal before
+paint and supports restoration even when browser storage is denied.
+
+The docs build declares `BUN_INSTALL_CACHE_DIR` in its package Turbo task
+environment, extending the root list rather than replacing it.
+`apps/docs/next.config.mjs` consumes this path to include Bun's global dependency
+store in the Turbopack and tracing roots. Turbo strict mode otherwise drops a
+custom cache path, making an isolated installation build fail with dependency
+symlinks outside the filesystem root. The cache path participates in the build
+hash because changing it changes generated absolute paths.
+
+The root `test:live:allmanga-crypto` command forwards to the CLI's existing
+metadata-only freshness probe; it does not resolve or play a video. It is an
+opt-in live command, outside default unit/integration CI.

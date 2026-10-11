@@ -1,5 +1,5 @@
 ---
-title: Downloads And Offline
+title: Downloads and Offline
 description: Queue Kunai downloads, play local files, manage the offline library, clean up finished jobs, and diagnose a download that stalled or failed to resume.
 status: beta
 ---
@@ -13,7 +13,7 @@ Kunai separates the download queue from the offline library.
 - `--offline` starts Kunai directly in the completed offline library.
 - `--zen --offline` starts in the same local shelf with minimal chrome for quick local playback.
 
-This split keeps "is my download running?" separate from "what can I watch locally?"
+This split keeps "is my download running?" separate from "what can I watch locally?" The offline shelf exists for planes, trains, and providers having a bad afternoon.
 
 ## Enabling Downloads
 
@@ -60,12 +60,12 @@ This resolves a title at launch, runs the download flow, and exits without openi
 
 Inside a normal session:
 
-- `/downloads` — queue overlay (queued, running, failed jobs)
-- `/download` during playback — queue the current item for offline
+- `/downloads`: queue overlay (queued, running, failed jobs)
+- `/download` during playback: queue the current item for offline
 
 ## How Titles Are Labelled
 
-Kunai names a download the way the content is actually shaped, everywhere it appears —
+Kunai names a download the way the content is actually shaped, everywhere it appears:
 the queue, the offline library, notifications, the mpv window title, and the file on disk:
 
 - **Movies** are title-level downloads and read as a quiet `Movie`. A movie never shows a
@@ -75,7 +75,7 @@ the queue, the offline library, notifications, the mpv window title, and the fil
 - **Videos** (YouTube and similar) keep their own identity rather than borrowing series labels.
 
 Older movie downloads that were saved with a placeholder season 1 / episode 1 keep working
-and are re-labelled on sight — nothing is rewritten or migrated on disk.
+and are re-labelled on sight; nothing is rewritten or migrated on disk.
 
 ## Resume after quit
 
@@ -97,7 +97,7 @@ stolen. Completed files in `/library` are unaffected.
 
 ## Persistent offline mode
 
-`offlineMode` in config keeps the shell in a local-only posture until you turn it off. This is separate from the `--offline` launch flag. Network status appears in the shell header — mode changes are never silent.
+`offlineMode` in config keeps the shell in a local-only posture until you turn it off. This is separate from the `--offline` launch flag. Network status appears in the shell header; mode changes are never silent.
 
 Use `/watch-online` when you want to return from offline posture to online shell flows.
 
@@ -109,5 +109,5 @@ Use `/watch-online` when you want to return from offline posture to online shell
 
 `kunai://download?...` uses the same query params as play links but queues a download instead. See [Share links](/docs/users/share-links).
 
-More detail is in [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) and the [CLI reference](/docs/users/cli-reference#download-modes-do-not-confuse).
+More detail is in [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) and the [CLI Reference](/docs/users/cli-reference#download-modes-do-not-confuse).
 Continue Watching behavior is covered in [Continue watching and new episodes](/docs/users/continue-watching-and-new-episodes).

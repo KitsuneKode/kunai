@@ -122,10 +122,16 @@ export function buildCommandPickerModel(
       enabled: command.enabled,
       disabledReason: command.reason,
       group: showGrouped ? (CONTEXT_COMMAND_IDS.has(command.id) ? "context" : "global") : undefined,
-      keywords: command.aliases.map((alias, index) => ({
-        value: alias,
-        weight: index === 0 ? -8 : 6,
-      })),
+      // The id is the canonical handle docs and habits use — a hyphenated id
+      // like `image-pane` never matches "Image Pane" (the hyphen isn't a word
+      // boundary in the query), so the id itself must be a match target.
+      keywords: [
+        { value: command.id, weight: -8 },
+        ...command.aliases.map((alias, index) => ({
+          value: alias,
+          weight: index === 0 ? -8 : 6,
+        })),
+      ],
     })),
   });
 }

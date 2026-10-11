@@ -35,7 +35,9 @@
     "next": "catalog:web",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "recharts": "3.8.0",
+    "react-markdown": "catalog:web",
+    "recharts": "3.10.1",
+    "remark-gfm": "catalog:web",
     "tailwind-merge": "catalog:web",
     "tw-animate-css": "catalog:web"
   },
@@ -46,11 +48,11 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "shadcn": "^4.19.0",
+    "shadcn": "^4.21.1",
     "tailwindcss": "catalog:web",
     "typescript": "catalog:web"
   },
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.2"
   }
 }

@@ -30,8 +30,8 @@
   },
 
   "ignorePatterns": [
-    ".reference/experiments/**/*.ts",
-    ".reference/experiments/**/node_modules/**",
+    ".archive/**",
+    ".reference/**",
     "apps/cli/dist/**",
     "dist/**",
     "node_modules/**",
@@ -46,6 +46,10 @@
     "pnpm-lock.yaml",
     "package-lock.json",
     "yarn.lock",
+
+    "docs/users/customization.mdx",
+    "docs/users/troubleshooting.mdx",
+    ".plans/044-namespace-mal-history-keys.md",
 
     "**/*.min.js",
     "**/*.d.ts"

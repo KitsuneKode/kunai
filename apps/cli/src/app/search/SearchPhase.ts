@@ -16,6 +16,7 @@ import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import type { CalendarRouteRequest } from "@/app-shell/hooks/use-calendar-route";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { chooseFromListShell } from "@/app-shell/pickers";
+import { getRootContentSession, waitForRootContentSlot } from "@/app-shell/root-content-state";
 import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
 import {
   applyHistorySelectionProvider,
@@ -59,8 +60,11 @@ import {
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import { ensureSessionProviderMatchesLane } from "@/domain/session/session-display";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
+import { countLabel } from "@/domain/text-display";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
+import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
+import { registerMpvProcess, type MpvChildProcess } from "@/infra/player/mpv-process-registry";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import {
   resultEnrichmentKey,
@@ -90,6 +94,33 @@ const SEEDED_CALENDAR_TYPE_TABS: Partial<Record<ShellAction, CalendarTypeTab>> =
   "series-calendar": "TV",
   "tracked-calendar": "Tracked",
 };
+
+/**
+ * The trailer window is detached mpv — no IPC socket, no session — so it lives
+ * in the process registry instead: quit-time teardown kills it like the main
+ * player, and a re-press replaces the running one rather than stacking
+ * windows on a key mash.
+ */
+let liveTrailerProcess: MpvChildProcess | null = null;
+
+function spawnTrailerMpv(argv: readonly string[], target: string): boolean {
+  if (liveTrailerProcess && liveTrailerProcess.exitCode === null) {
+    try {
+      liveTrailerProcess.kill("SIGTERM");
+    } catch {
+      // Already gone between the liveness check and the kill.
+    }
+  }
+  const proc = Bun.spawn([...argv, target], {
+    stdout: "ignore",
+    stderr: "ignore",
+    stdin: "ignore",
+  });
+  liveTrailerProcess = proc;
+  const unregister = registerMpvProcess(proc);
+  void proc.exited.then(unregister, unregister);
+  return true;
+}
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -324,14 +355,39 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       // go through the same honest local-filter pipeline as interactive Enter.
       let pendingSearchEvidence: SearchFilterEvidence | undefined;
       let pendingSearchWarnings: readonly string[] = [];
+      let pendingSearchEmptyMessage: string | undefined;
       let initialSearchError: string | undefined;
 
       while (true) {
         const currentState = stateManager.getState();
         if (container.config.offlineMode && currentState.searchQuery.trim().length === 0) {
-          container.stateManager.dispatch({
-            type: "OPEN_OVERLAY",
-            overlay: { type: "library", view: "library" },
+          // The library is the offline home surface. Returning `cancelled`
+          // synchronously here livelocks the session loop: it retries cancelled
+          // phases, and a phase that resolves without ever blocking spins on
+          // pure microtasks — starving the event loop (SIGINT undelivered) while
+          // pushing an unbounded library overlay per iteration. Open it once,
+          // then park on a real state change so each retry is gated by the user
+          // closing the surface.
+          if (!currentState.activeModals.some((modal) => modal.type === "library")) {
+            container.stateManager.dispatch({
+              type: "OPEN_OVERLAY",
+              overlay: { type: "library", view: "library" },
+            });
+          }
+          await new Promise<void>((resolve) => {
+            if (context.signal.aborted) {
+              resolve();
+              return;
+            }
+            const unsubscribe = stateManager.subscribe((state) => {
+              if (state.activeModals.some((modal) => modal.type === "library")) return;
+              unsubscribe();
+              resolve();
+            });
+            context.signal.addEventListener("abort", () => {
+              unsubscribe();
+              resolve();
+            });
           });
           return { status: "cancelled" };
         }
@@ -402,6 +458,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           this.warmAnimeEpisodesForResults(context, results);
           pendingSearchEvidence = search.evidence;
           pendingSearchWarnings = searchIntent.warnings;
+          pendingSearchEmptyMessage =
+            search.results.length === 0 ? buildSearchEmptyMessage(search) : undefined;
 
           logger.info("Bootstrap search complete", {
             query: searchIntent.intent.query,
@@ -545,16 +603,35 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         // into the shell, so run them through the same local-filter pipeline that
         // interactive Enter uses — otherwise `-S "mob downloaded:true"` would show
         // an unfiltered list while Enter honestly narrows it.
+        const consumedSearchEvidence = pendingSearchEvidence;
         const initialBrowse = buildBrowseInitialResults({
           options: browseState.searchResults.map((r) =>
             mapBrowseResultOption(container, browseContext, r),
           ),
           query: browseState.searchQuery,
-          evidence: pendingSearchEvidence,
+          evidence: consumedSearchEvidence,
         });
         const initialWarnings = pendingSearchWarnings;
+        const initialEmptyMessage = pendingSearchEmptyMessage;
         pendingSearchEvidence = undefined;
         pendingSearchWarnings = [];
+        pendingSearchEmptyMessage = undefined;
+
+        // A picker mounted by a detached overlay workflow (e.g. /providers run
+        // from Up Next) owns the content slot until the user dismisses it.
+        // Mounting browse now would evict and cancel it; wait for the slot
+        // instead. The wait resolves inside the foreign session's settle, so
+        // another workflow's mount can land before this continuation — the
+        // recheck loops until the slot is free at mount time, keeping the
+        // check and the mount in one synchronous turn.
+        for (;;) {
+          const holding = getRootContentSession();
+          if (holding === null || holding.kind === "browse") break;
+          await waitForRootContentSlot(context.signal);
+          if (context.signal.aborted) {
+            return { status: "cancelled" };
+          }
+        }
 
         const outcomePromise = this.dependencies.openBrowseShell({
           mode: syncedState.mode,
@@ -621,10 +698,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               ? browseState.searchQuery.trim().length === 0
                 ? (routeSubtitle ??
                   `${browseState.searchResults.length} recommendation picks · loaded`)
-                : `${initialBrowse.options.length} results · previous search${initialBrowse.subtitleSuffix}`
+                : `${countLabel(initialBrowse.options.length, "result")} · previous search${initialBrowse.subtitleSuffix}`
               : undefined,
           initialWarnings,
           initialSelectedIndex: browseState.selectedResultIndex,
+          initialEmptyMessage,
           placeholder:
             syncedState.mode === "anime"
               ? "Demon Slayer"
@@ -704,16 +782,12 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             void playTrailer(
               {
                 playUrl: async (target) => {
-                  if (!Bun.which("mpv")) return false;
+                  const mpvInvocation = discoverMpvInvocation();
+                  if (!mpvInvocation) return false;
                   // Same scheme gate as every other mpv playback path; a
                   // non-URL target falls back to the browser opener below.
                   if (!isAllowedMpvUrl(target, "remote")) return false;
-                  Bun.spawn(["mpv", target], {
-                    stdout: "ignore",
-                    stderr: "ignore",
-                    stdin: "ignore",
-                  });
-                  return true;
+                  return spawnTrailerMpv(mpvInvocation.argv, target);
                 },
                 openInBrowser: async (target) => {
                   const opened = await openExternalUrl(target);
@@ -777,12 +851,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               source: search.sourceId,
               filters: search.evidence,
               diagnosis: search.diagnosis?.code,
+              providerSearchFailures: search.providerSearchFailures?.map((f) => f.providerId),
             });
             diagnosticsService.record(
               buildSearchDiagnosticEvent({
                 operation: "search.query.completed",
                 status: "succeeded",
-                severity: "healthy",
+                severity: search.providerSearchFailures?.length ? "degraded" : "healthy",
                 recommendedAction: "none",
                 message: "Search complete",
                 context: {
@@ -792,6 +867,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   source: search.sourceId,
                   filters: search.evidence,
                   diagnosis: search.diagnosis?.code,
+                  providerSearchFailures: search.providerSearchFailures,
                 },
               }),
             );
@@ -802,21 +878,30 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
               options: results.map((r) => mapBrowseResultOption(container, freshBrowseContext, r)),
-              subtitle: `${results.length} results · ${search.sourceName}`,
+              subtitle: `${countLabel(results.length, "result")} · ${search.sourceName}`,
               upstreamFilterBadges: search.evidence.upstream,
               localFilterBadges: search.evidence.local,
               unsupportedFilterBadges: search.evidence.unsupported,
               warnings: searchIntent.warnings,
-              emptyMessage: "No results found. Adjust the query and try again.",
+              emptyMessage: buildSearchEmptyMessage(search),
             };
           },
           onLoadDiscovery: async () => {
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
             const mode = stateManager.getState().mode;
+            // Trending rejects when the upstream is down, which is what lets
+            // `observeOnline` see the failure at all. Browse still degrades to
+            // the empty-state copy below rather than tearing down the phase.
             const results = await observeOnline(container, "search-error", () =>
               loadDiscoveryList(mode, context.signal),
-            );
+            ).catch((error: unknown): SearchResult[] => {
+              // A cancelled navigation is not an empty tray. Swallowing it here
+              // recorded a "succeeded / healthy" discovery event and pushed state
+              // into a phase the user had already left.
+              if (context.signal.aborted) throw error;
+              return [];
+            });
 
             logger.info("Discovery list loaded", {
               mode,
@@ -918,6 +1003,32 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         if (outcome.type === "cancelled") {
+          // A foreign session that displaced this browse resolves it with the
+          // displaced marker, not the plain cancelled fallback — the eviction
+          // reason rides the outcome, so awaits between settle and here cannot
+          // launder it into a real Esc. Park until the slot frees, then
+          // remount rather than reporting a cancel the user never made.
+          if (outcome.displaced) {
+            // The evicted mount consumed the one-shot inputs. A calendar route
+            // that never reached onCalendarAccepted committed nothing — hand
+            // the request back so the remount still opens it; the pending
+            // search evidence belongs to this mount and goes back with it.
+            if (
+              openedCalendarRoute !== undefined &&
+              acceptedCalendarRequestKey !== openedCalendarRoute.requestKey
+            ) {
+              pendingCalendarRoute = openedCalendarRoute;
+              pendingCalendarType = initialCalendarTypeTab;
+            }
+            pendingSearchEvidence = consumedSearchEvidence;
+            pendingSearchWarnings = initialWarnings;
+            pendingSearchEmptyMessage = initialEmptyMessage;
+            await waitForRootContentSlot(context.signal);
+            if (context.signal.aborted) {
+              return { status: "cancelled" };
+            }
+            continue;
+          }
           return { status: "cancelled" };
         }
 
@@ -1022,8 +1133,23 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               } else {
                 const queueNext = container.queueService.peekNext();
                 if (queueNext && latestIdleContext?.playlistNext?.titleId === queueNext.titleId) {
-                  const title = titleInfoFromQueueEntry(queueNext);
-                  stateManager.dispatch({ type: "SELECT_TITLE", title });
+                  // Claim like play-queue-next does: an attached-but-unclaimed
+                  // intent can never satisfy the in-flight ack CAS, so the
+                  // head row would stay pending forever after it played.
+                  const launch = claimQueuePlaybackLaunch(container.queueService, queueNext.id);
+                  if (launch) {
+                    stateManager.dispatch({
+                      type: "SELECT_TITLE",
+                      title: titleInfoFromQueuePlaybackLaunch(launch),
+                    });
+                  } else {
+                    logger.info("Idle playlist-next claim failed; priming without queue intent", {
+                      queueEntryId: queueNext.id,
+                    });
+                    const { queuePlaybackIntent: _unclaimed, ...title } =
+                      titleInfoFromQueueEntry(queueNext);
+                    stateManager.dispatch({ type: "SELECT_TITLE", title });
+                  }
                 }
               }
             } else {
@@ -1079,7 +1205,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               continue;
             }
             // Claim the exact peeked row — do not re-peek after claim.
-            const launch = claimQueuePlaybackLaunch(container.queueService, next.id, "queue");
+            const launch = claimQueuePlaybackLaunch(container.queueService, next.id);
             if (!launch) {
               logger.info("Queue-next claim failed; leaving row pending for retry", {
                 queueEntryId: next.id,
@@ -1241,7 +1367,12 @@ async function loadSearchRoute(
   const bundle =
     route === "trending"
       ? {
-          results: await loadDiscoveryList(mode, context.signal),
+          results: await loadDiscoveryList(mode, context.signal).catch(
+            (error: unknown): SearchResult[] => {
+              if (context.signal.aborted) throw error;
+              return [];
+            },
+          ),
           subtitle:
             mode === "anime"
               ? "AniList trending"
@@ -1314,6 +1445,24 @@ function appendSearchFilterChip(query: string, chip: string): string {
   if (!trimmed) return chip;
   if (trimmed.split(/\s+/).includes(chip)) return trimmed;
   return `${trimmed} ${chip}`;
+}
+
+/**
+ * An empty answer must say *why* when we know: providers that threw get named
+ * (the lane failed over and still found nothing), an unsupported advanced
+ * search says the catalog can't answer, and only a real "nothing matches"
+ * keeps the generic copy (#464).
+ */
+function buildSearchEmptyMessage(search: Awaited<ReturnType<typeof searchTitles>>): string {
+  const failures = search.providerSearchFailures;
+  if (failures && failures.length > 0) {
+    const names = [...new Set(failures.map((failure) => failure.providerId))].join(", ");
+    return `Provider search failed (${names}). Check /diagnostics or switch provider with /provider.`;
+  }
+  if (search.diagnosis?.code === "compatible-catalog-unavailable") {
+    return "The active provider can't answer a filtered search like this. Simplify the query or switch provider with /provider.";
+  }
+  return "No results found. Adjust the query and try again.";
 }
 
 type BrowseDisplayContext = {

@@ -13,7 +13,7 @@ const youtubeResult: SearchResult = {
   year: "2009",
   overview: "",
   posterPath: null,
-  contentShape: "video",
+  resultKind: "video",
   externalIds: { youtubeId: "dQw4w9WgXcQ" },
 };
 

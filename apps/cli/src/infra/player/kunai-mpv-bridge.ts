@@ -1,8 +1,9 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 
+import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { getKunaiPaths } from "@kunai/storage";
 
@@ -29,8 +30,11 @@ export function userKunaiMpvBridgePath(): string {
 
 /**
  * Materialize the bridge at a writable path mpv can load via `--script=`.
- * Uses `Bun.write` (not Node `copyFile`) so it works when `bundledPath` is a
- * `/$bunfs/` embedded path inside a compiled binary. `dest` is injectable for tests.
+ * The write is atomic (`writeAtomicBytes` — temp + rename): two instances
+ * refreshing the bridge at once, or a crash mid-copy, used to be able to leave
+ * a torn lua file that mpv would then fail to load. `Bun.file().arrayBuffer()`
+ * reads a `/$bunfs/` embedded path inside a compiled binary just fine.
+ * `dest` is injectable for tests.
  */
 export async function ensureUserKunaiMpvBridge(
   bundledPath: string,
@@ -38,8 +42,10 @@ export async function ensureUserKunaiMpvBridge(
 ): Promise<void> {
   await mkdir(dirname(dest), { recursive: true });
   if (!existsSync(bundledPath)) return;
+  const writeFresh = async () =>
+    writeAtomicBytes(dest, new Uint8Array(await Bun.file(bundledPath).arrayBuffer()));
   if (!existsSync(dest)) {
-    await Bun.write(dest, Bun.file(bundledPath));
+    await writeFresh();
     return;
   }
   // Refresh when the source is newer. stat on a `/$bunfs/` path can throw; treat
@@ -47,7 +53,7 @@ export async function ensureUserKunaiMpvBridge(
   const { statSync } = await import("node:fs");
   try {
     if (statSync(bundledPath).mtimeMs > statSync(dest).mtimeMs) {
-      await Bun.write(dest, Bun.file(bundledPath));
+      await writeFresh();
     }
   } catch {
     // best-effort
@@ -81,17 +87,42 @@ export function buildKunaiBridgeScriptOptsArg(
   for (const [k, v] of Object.entries(opts)) {
     const key = k.trim();
     if (!key || v === "") continue;
+    // mpv splits `--script-opts` on commas and a key on its first `=`, with no
+    // escape for either. An entry carrying one cannot be represented, and
+    // emitting it anyway does not fail loudly — it silently redefines the
+    // neighbouring option or truncates this one. Dropping it is the honest
+    // outcome, as with a comma in a stream header value.
+    if (key.includes(",") || key.includes("=") || v.includes(",")) continue;
     parts.push(`${SCRIPT_OPTS_ID}-${key}=${v}`);
   }
   if (parts.length === 0) return undefined;
   return parts.join(",");
 }
 
-/** Only temp generated keys scripts should be deleted on shutdown. */
+/**
+ * Only temp generated keys scripts should be deleted on shutdown.
+ *
+ * The shape must be exact: the file is a *direct child* of the OS temp dir
+ * whose *basename* carries the `kunai-mpv-keys-` prefix and a `.lua` suffix.
+ * The old predicate (`startsWith(tmpdir()) && path.includes(prefix)`) also
+ * matched anything inside a temp *directory* of that name, paths under
+ * `/tmp`-lookalike prefixes (`/tmpfoo/`), and non-lua files — a custom
+ * `mpvKunaiScriptPath` shaped like either would have been deleted from under
+ * the user.
+ */
 export function isEphemeralKunaiLuaScript(path: string | null | undefined): boolean {
   if (!path) return false;
-  const t = tmpdir();
-  return path.startsWith(t) && path.includes("kunai-mpv-keys-");
+  const resolved = resolve(path);
+  const tmp = resolve(tmpdir());
+  const roots = new Set([tmp]);
+  // macOS temp is a symlink (`/var/…` → `/private/var/…`); compare both spellings.
+  try {
+    roots.add(realpathSync(tmp));
+  } catch {
+    // tmpdir unreadable — the lexical spelling still applies.
+  }
+  if (!roots.has(dirname(resolved))) return false;
+  return /^kunai-mpv-keys-[^/\\]+\.lua$/.test(basename(resolved));
 }
 
 /** Duration for skip chip + delayed auto-skip (ms), from config script-opts `prompt_seconds`. */

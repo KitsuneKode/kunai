@@ -1,3 +1,4 @@
+import { KunaiFoxBanner } from "@/components/brand/kunai-fox-banner";
 import { DocSectionCards } from "@/components/docs/doc-section-cards";
 import { DocsHubIntro } from "@/components/docs/docs-hub-intro";
 import { DocsRootCards } from "@/components/docs/docs-root-cards";
@@ -8,6 +9,7 @@ import { CliFlagsTable } from "@/components/reference/cli-flags-table";
 import { CommandReference } from "@/components/reference/command-reference";
 import { FeatureStatusTable } from "@/components/reference/feature-status-table";
 import { GlossaryFromCodegen } from "@/components/reference/glossary-from-codegen";
+import { ProviderStatusBoard } from "@/components/reference/provider-status-board";
 import { ProviderTable } from "@/components/reference/provider-table";
 import { ShortcutTable } from "@/components/reference/shortcut-table";
 import { SyncedAt } from "@/components/reference/synced-at";
@@ -25,6 +27,7 @@ const fumadocsUiComponents = {
 
 const kunaiMdxComponents = {
   ProviderTable,
+  ProviderStatusBoard,
   CommandReference,
   CliFlagsTable,
   FeatureStatusTable,
@@ -37,6 +40,7 @@ const kunaiMdxComponents = {
   QuickStartSteps,
   ScopeCallout,
   ProviderDocSection,
+  KunaiFoxBanner,
 } satisfies MDXComponents;
 
 export function useMDXComponents(components?: MDXComponents): MDXComponents {

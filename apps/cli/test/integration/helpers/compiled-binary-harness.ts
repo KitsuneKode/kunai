@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,6 +7,7 @@ import {
   COMPILED_SMOKE_SCENARIO_IDS,
   type CompiledSmokeScenarioId,
 } from "@/app/compiled-smoke/scenarios";
+import { DEFAULT_CONFIG } from "@kunai/config";
 import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
 
 import { storageRootEnv } from "../../helpers/storage-env";
@@ -74,6 +74,9 @@ export function createCompiledSmokeProfile(): CompiledSmokeProfile {
     `${JSON.stringify({
       onboardingVersion: 2,
       downloadOnboardingDismissed: true,
+      // Stamped at the current revision so the load-time provider-defaults
+      // migration leaves these ids pinned — the scenarios assert on them.
+      providerDefaultsRevision: DEFAULT_CONFIG.providerDefaultsRevision,
       provider: "videasy",
       animeProvider: "allanime",
     })}\n`,
@@ -119,6 +122,8 @@ exec ${JSON.stringify(GLIBC_BIN)} "$@"
 
 function readEvidence(path: string): Record<string, unknown>[] {
   if (!existsSync(path)) return [];
+  // SAFETY: this harness writes the evidence file itself — one JSON object
+  // per line — so every non-empty line parses to a plain object.
   return readFileSync(path, "utf8")
     .split("\n")
     .map((line) => line.trim())
@@ -192,53 +197,9 @@ export function evidenceHasPlaybackStart(evidence: readonly Record<string, unkno
   });
 }
 
-export function openDataDb(path: string): Database {
-  return new Database(path, { readonly: true });
-}
-
-export function historyRows(db: Database): Array<{
-  title_id: string;
-  media_kind: string;
-  season: number | null;
-  episode: number | null;
-  absolute_episode: number | null;
-}> {
-  return db
-    .query(
-      `SELECT title_id, media_kind, season, episode, absolute_episode
-       FROM history_progress
-       ORDER BY updated_at DESC`,
-    )
-    .all() as Array<{
-    title_id: string;
-    media_kind: string;
-    season: number | null;
-    episode: number | null;
-    absolute_episode: number | null;
-  }>;
-}
-
-export function queueRows(db: Database): Array<{
-  id: string;
-  title_id: string;
-  absolute_episode: number | null;
-  status: string;
-  last_failure_json: string | null;
-}> {
-  return db
-    .query(
-      `SELECT id, title_id, absolute_episode, status, last_failure_json
-       FROM playlist_queue
-       ORDER BY queue_position ASC, added_at ASC`,
-    )
-    .all() as Array<{
-    id: string;
-    title_id: string;
-    absolute_episode: number | null;
-    status: string;
-    last_failure_json: string | null;
-  }>;
-}
+// Canonical home of these readers is test/agent/profile-inspector.ts — the
+// profile inspector is the single way every driver asks "what persisted".
+export { openDataDb, historyRows, queueRows } from "../../agent/profile-inspector";
 
 export { COMPILED_SMOKE_FIXTURES, COMPILED_SMOKE_SCENARIO_IDS };
 export type { CompiledSmokeScenarioId };

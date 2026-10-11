@@ -64,6 +64,7 @@ test("collectReleaseReconciliationRows merges history with followed-only titles"
     },
   };
 
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   const rows = collectReleaseReconciliationRows(container as never);
 
   expect(rows.map((entry) => entry.titleId)).toEqual(["anilist:1", "anilist:2"]);
@@ -127,7 +128,9 @@ test("release reconciliation triggers share one coalescing scheduler identity", 
   };
   const entries = [row({ titleId: "anilist:1" })];
 
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   enqueueReleaseReconciliation(container as never, entries, "startup");
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   enqueueReleaseReconciliation(container as never, entries, "history");
 
   expect(ids).toEqual(["release-reconciliation", "release-reconciliation"]);
@@ -152,7 +155,9 @@ test("power saver suppresses passive release reconciliation from browse and hist
   };
   const entries = [row({ titleId: "anilist:1" })];
 
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   enqueueReleaseReconciliation(container as never, entries, "browse-idle");
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   enqueueReleaseReconciliation(container as never, entries, "history");
 
   expect(ids).toEqual([]);
@@ -194,6 +199,7 @@ test("release reconciliation batches offline policy attention lookup once per tr
     row({ titleId: "anilist:2", title: "Anime 2", episode: 2 }),
   ];
 
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   enqueueReleaseReconciliation(container as never, entries, "history");
   await Promise.all(runs);
 
@@ -231,6 +237,7 @@ test("release reconciliation completion callback runs after cache write pass", a
   };
 
   enqueueReleaseReconciliation(
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     container as never,
     [row({ titleId: "anilist:1" })],
     "history",

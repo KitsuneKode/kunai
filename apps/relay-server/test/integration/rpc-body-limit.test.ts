@@ -16,7 +16,7 @@ import { createServer, type Server } from "node:http";
 
 import { DEFAULT_MAX_REQUEST_BODY_BYTES } from "@kunai/relay";
 
-import { createRelayRpcHandler } from "../../api/rpc/[providerId]";
+import { createRelayRpcHandler } from "../../src/api/rpc/[providerId]";
 
 let server: Server;
 let base: string;

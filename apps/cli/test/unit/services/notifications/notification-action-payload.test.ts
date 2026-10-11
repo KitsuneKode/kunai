@@ -65,6 +65,7 @@ describe("defaultNotificationActionIds", () => {
           actionJson: JSON.stringify(emitted),
         } as never);
         // An id the overlay cannot run is dead weight that silently disappears.
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         expect(executable, `${kind} hasItem=${hasItem}`).toEqual(emitted as never);
       }
     }

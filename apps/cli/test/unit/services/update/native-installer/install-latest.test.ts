@@ -37,6 +37,7 @@ import {
 } from "@/services/update/platform-assets";
 
 import { createReleaseArchive } from "../../../../../scripts/build-release-archives";
+import { waitUntil } from "../../../../support/wait-until";
 
 const made: string[] = [];
 
@@ -89,11 +90,7 @@ function sumsFor(assetName: string, digest: string): string {
 }
 
 async function waitForPath(path: string): Promise<void> {
-  const deadline = Date.now() + 2_000;
-  while (!existsSync(path)) {
-    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`);
-    await Bun.sleep(5);
-  }
+  await waitUntil(() => existsSync(path), { label: `path exists: ${path}` });
 }
 
 async function seedLauncher(launcherPath: string, versionPath: string): Promise<void> {

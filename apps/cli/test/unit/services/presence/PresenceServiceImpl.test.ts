@@ -16,6 +16,8 @@ import {
   resolvePresenceClientIdSource,
 } from "@/services/presence/PresenceServiceImpl";
 
+const erased = <V extends object>(value: V): object => value;
+
 function createConfig(partial: Partial<KitsuneConfig>): ConfigService {
   const raw: KitsuneConfig = { ...DEFAULT_CONFIG, ...partial };
   return {
@@ -108,7 +110,7 @@ describe("PresenceServiceImpl", () => {
     // No catalog ids, so there is no catalog button — but the play target is
     // still known, and it is the one button worth showing.
     expect(buildDiscordActivity(activity, "full").buttons).toEqual([
-      { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full") as string },
+      { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full")! },
     ]);
     expect(buildDiscordActivity(activity, "private")).toMatchObject({
       details: "Watching with Kunai",
@@ -249,7 +251,7 @@ describe("PresenceServiceImpl", () => {
       details: "Frieren: Beyond Journey's End",
       details_url: "https://anilist.co/anime/154587",
       buttons: [
-        { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full") as string },
+        { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full")! },
         { label: "View on AniList", url: "https://anilist.co/anime/154587" },
       ],
       assets: {
@@ -297,7 +299,7 @@ describe("PresenceServiceImpl", () => {
     // Still exposed for anything reading the payload, and as a real button.
     expect(payload.playable_ref).toContain("kunai://play?");
     expect(payload.buttons).toEqual([
-      { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full") as string },
+      { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full")! },
       {
         label: "View on TMDB",
         url: "https://www.themoviedb.org/movie/969681",
@@ -320,7 +322,7 @@ describe("PresenceServiceImpl", () => {
     };
 
     expect(buildDiscordActivity(activity, "full").buttons).toEqual([
-      { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full") as string },
+      { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full")! },
       {
         label: "View episode on TMDB",
         url: "https://www.themoviedb.org/tv/1396/season/4/episode/9",
@@ -343,6 +345,7 @@ describe("PresenceServiceImpl", () => {
     const payload = buildDiscordActivity(activity, "full");
     expect(payload.details).toBe("Breaking Bad");
     expect(String(payload.state)).toContain("S4 E9");
+    // SAFETY: the fixture activity always carries a timestamps pair.
     const timestamps = payload.timestamps as { start: number; end: number };
     expect(timestamps.end - timestamps.start).toBe(1440);
     expect(payload).not.toHaveProperty("small_image");
@@ -425,7 +428,7 @@ describe("PresenceServiceImpl", () => {
     });
     const calls: string[] = [];
 
-    Object.assign(service as unknown as Record<string, unknown>, {
+    Object.assign(service, {
       discordClient: {
         async login() {},
         async setActivity() {},
@@ -445,9 +448,11 @@ describe("PresenceServiceImpl", () => {
     await service.clearPlayback("test-clear");
 
     expect(calls).toEqual(["clear"]);
-    expect((service as unknown as { lastActivityHash: string | null }).lastActivityHash).toBeNull();
+    // SAFETY: reads the private field the service declares for this probe.
+    expect((erased(service) as { lastActivityHash: string | null }).lastActivityHash).toBeNull();
     expect(
-      (service as unknown as { watchSessionStartedAtMs: number | null }).watchSessionStartedAtMs,
+      // SAFETY: reads the private field the service declares for this probe.
+      (erased(service) as { watchSessionStartedAtMs: number | null }).watchSessionStartedAtMs,
     ).toBeNull();
   });
 
@@ -462,7 +467,7 @@ describe("PresenceServiceImpl", () => {
       diagnostics,
     });
 
-    Object.assign(service as unknown as Record<string, unknown>, {
+    Object.assign(service, {
       shuttingDown: true,
       discordClient: {
         async login() {},
@@ -480,7 +485,8 @@ describe("PresenceServiceImpl", () => {
 
     // `level` is what decides whether this reaches the console sink at all.
     expect(diagnostics.events.some((event) => event.level === "error")).toBe(false);
-    expect((service as unknown as { status: string }).status).not.toBe("unavailable");
+    // SAFETY: reads the private field the service declares for this probe.
+    expect((erased(service) as { status: string }).status).not.toBe("unavailable");
   });
 
   test("a clear that fails while running is still a real fault", async () => {
@@ -491,7 +497,7 @@ describe("PresenceServiceImpl", () => {
       diagnostics,
     });
 
-    Object.assign(service as unknown as Record<string, unknown>, {
+    Object.assign(service, {
       shuttingDown: false,
       discordClient: {
         async login() {},
@@ -508,7 +514,8 @@ describe("PresenceServiceImpl", () => {
     await service.clearPlayback("test-clear");
 
     expect(diagnostics.events.some((event) => event.level === "error")).toBe(true);
-    expect((service as unknown as { status: string }).status).toBe("unavailable");
+    // SAFETY: reads the private field the service declares for this probe.
+    expect((erased(service) as { status: string }).status).toBe("unavailable");
   });
 
   test("describes effective discord client id source", () => {
@@ -589,19 +596,22 @@ describe("PresenceServiceImpl", () => {
       config: createConfig({ presenceProvider: "discord" }),
       diagnostics: diagnostics,
     });
-    const activities: Record<string, unknown>[] = [];
+    const activities: unknown[] = [];
     let intervalCount = 0;
-    globalThis.setInterval = ((_callback: (...args: unknown[]) => void) => {
+    // SAFETY: the fake timer stub only counts invocations; the service never
+    // inspects the handle Bun would return.
+    globalThis.setInterval = erased((_callback: (...args: unknown[]) => void) => {
       intervalCount += 1;
-      return intervalCount as unknown as ReturnType<typeof setInterval>;
-    }) as unknown as typeof setInterval;
+      return intervalCount;
+    }) as typeof setInterval;
+    // SAFETY: the fake clock only exposes the fields the service calls.
     globalThis.clearInterval = (() => {}) as typeof clearInterval;
     Date.now = () => 10_000;
 
-    Object.assign(service as unknown as Record<string, unknown>, {
+    Object.assign(service, {
       discordClient: {
         async login() {},
-        async setActivity(activity: Record<string, unknown>) {
+        async setActivity<T>(activity: T) {
           activities.push(activity);
         },
         async clearActivity() {},
@@ -663,7 +673,7 @@ describe("PresenceServiceImpl", () => {
     });
     const calls: string[] = [];
 
-    Object.assign(service as unknown as Record<string, unknown>, {
+    Object.assign(service, {
       discordClient: {
         async login() {},
         async setActivity() {},
@@ -695,10 +705,10 @@ describe("PresenceServiceImpl", () => {
     });
     const setActivityCalls: unknown[] = [];
 
-    Object.assign(service as unknown as Record<string, unknown>, {
+    Object.assign(service, {
       discordClient: {
         async login() {},
-        async setActivity(payload: unknown) {
+        async setActivity<T>(payload: T) {
           setActivityCalls.push(payload);
         },
         async clearActivity() {},
@@ -743,7 +753,7 @@ describe("PresenceServiceImpl", () => {
       on() {},
     };
 
-    Object.assign(service as unknown as Record<string, unknown>, {
+    Object.assign(service, {
       connectPromise: Promise.resolve(client),
       lastActivityHash: "activity-hash",
       lastActivityPayload: { details: "Connecting while exiting" },
@@ -797,7 +807,7 @@ describe("presence clear during shutdown", () => {
       releaseStuckUpdate = resolve;
     });
 
-    Object.assign(service as unknown as Record<string, unknown>, {
+    Object.assign(service, {
       discordClient: {
         async login() {},
         async setActivity() {
@@ -842,7 +852,7 @@ describe("presence clear during shutdown", () => {
       diagnostics,
     });
 
-    Object.assign(service as unknown as Record<string, unknown>, {
+    Object.assign(service, {
       discordClient: {
         async login() {},
         async setActivity() {},
@@ -871,7 +881,7 @@ describe("presence clear during shutdown", () => {
     });
     const calls: string[] = [];
 
-    Object.assign(service as unknown as Record<string, unknown>, {
+    Object.assign(service, {
       discordClient: {
         async login() {},
         async setActivity() {},
@@ -891,7 +901,9 @@ describe("presence clear during shutdown", () => {
     await service.shutdown();
 
     expect(calls).toEqual(["clear", "destroy"]);
-    expect((service as unknown as { lastActivityPayload: unknown }).lastActivityPayload).toBeNull();
-    expect((service as unknown as { lastActivityHash: string | null }).lastActivityHash).toBeNull();
+    // SAFETY: reads the private field the service declares for this probe.
+    expect((erased(service) as { lastActivityPayload: unknown }).lastActivityPayload).toBeNull();
+    // SAFETY: reads the private field the service declares for this probe.
+    expect((erased(service) as { lastActivityHash: string | null }).lastActivityHash).toBeNull();
   });
 });

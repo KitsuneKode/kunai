@@ -21,7 +21,7 @@ const config = {
   },
 } satisfies KitsuneConfig;
 
-const registryCtx = {
+export const registryCtx = {
   config,
   presenceSnapshot: null,
   seriesProviderOptions: [],
@@ -48,9 +48,9 @@ const registryCtx = {
   container: {} as Container,
 };
 
-const page = buildSettingsPage(registryCtx);
-const mainState = createSettingsUiState(config);
-const inputState = {
+export const page = buildSettingsPage(registryCtx);
+export const mainState = createSettingsUiState(config);
+export const inputState = {
   ...createSettingsUiState(config),
   inputMode: {
     active: true as const,
@@ -60,44 +60,53 @@ const inputState = {
   },
   error: null,
 };
-const errorState = {
+export const errorState = {
   ...inputState,
   error: "Type a safe https:// relay URL or local http://127.0.0.1 URL.",
 };
 
-await captureSurface(
-  "settings-main",
-  <SettingsOverlay
-    page={page}
-    state={mainState}
-    registryCtx={registryCtx}
-    width={100}
-    maxRows={14}
-    error={null}
-  />,
-);
-await captureSurface(
-  "settings-relay-url-input",
-  <SettingsOverlay
-    page={page}
-    state={inputState}
-    registryCtx={registryCtx}
-    width={100}
-    maxRows={14}
-    error={null}
-  />,
-);
-await captureSurface(
-  "settings-relay-url-error",
-  <SettingsOverlay
-    page={page}
-    state={errorState}
-    registryCtx={registryCtx}
-    width={100}
-    maxRows={14}
-    error={errorState.error}
-  />,
-);
+export function settingsFixtures(): ReadonlyArray<readonly [string, React.ReactElement]> {
+  const main = (
+    <SettingsOverlay
+      page={page}
+      state={mainState}
+      registryCtx={registryCtx}
+      width={100}
+      maxRows={14}
+      error={null}
+    />
+  );
+  const input = (
+    <SettingsOverlay
+      page={page}
+      state={inputState}
+      registryCtx={registryCtx}
+      width={100}
+      maxRows={14}
+      error={null}
+    />
+  );
+  const error = (
+    <SettingsOverlay
+      page={page}
+      state={errorState}
+      registryCtx={registryCtx}
+      width={100}
+      maxRows={14}
+      error={errorState.error}
+    />
+  );
+  return [
+    ["settings-main", main],
+    ["settings-relay-url-input", input],
+    ["settings-relay-url-error", error],
+  ];
+}
 
-console.log("captured settings overlays");
-process.exit(0);
+if (import.meta.main) {
+  for (const [name, node] of settingsFixtures()) {
+    await captureSurface(name, node);
+  }
+  console.log("captured settings overlays");
+  process.exit(0);
+}

@@ -36,7 +36,7 @@ export type ContentType = "movie" | "series";
 export type ShellMode = "series" | "anime" | "youtube";
 export type ProviderLane = "anime" | "series" | "youtube";
 export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
-export type YouTubeContentShape = "video" | "short" | "playlist" | "channel";
+export type YouTubeResultKind = "video" | "short" | "playlist" | "channel";
 
 /**
  * YouTube/video metadata captured from the originating {@link SearchResult} at
@@ -50,7 +50,7 @@ export interface VideoMeta {
   readonly viewCount?: number;
   readonly publishedAt?: string;
   readonly durationSeconds?: number;
-  readonly contentShape?: YouTubeContentShape;
+  readonly resultKind?: YouTubeResultKind;
   readonly liveStatus?: YouTubeLiveStatus;
   readonly videoCount?: number;
   readonly premium?: boolean;
@@ -114,6 +114,8 @@ export interface EpisodePickerOption {
 }
 
 export interface StreamInfo {
+  /** Presentation authority only; local player access still requires a validated LocalPlaybackSource. */
+  readonly playbackSourceKind?: "local";
   readonly url: string;
   readonly deferredLocator?: string;
   readonly headers: Record<string, string>;
@@ -196,7 +198,7 @@ export interface SearchResult {
   readonly liveStatus?: YouTubeLiveStatus;
   readonly premium?: boolean;
   readonly paid?: boolean;
-  readonly contentShape?: YouTubeContentShape;
+  readonly resultKind?: YouTubeResultKind;
   /** Lane that produced this row at the search-routing boundary (selection prefers this over shell mode). */
   readonly resolvedLane?: ProviderLane;
 }
@@ -276,12 +278,10 @@ export interface ProviderMetadata {
   readonly name: string;
   readonly aliases?: readonly string[];
   readonly description: string;
-  readonly recommended: boolean;
   readonly isAnimeProvider: boolean;
   readonly isYoutubeProvider: boolean;
   readonly providerLane: ProviderLane;
   readonly catalogIdentity?: "provider-native" | "anilist" | "tmdb";
-  readonly status?: "production" | "candidate" | "experimental" | "research";
   readonly domain?: string;
 }
 
@@ -289,9 +289,4 @@ export interface SearchMetadata {
   readonly id: string;
   readonly name: string;
   readonly description: string;
-}
-
-// Capabilities
-export interface ProviderCapabilities {
-  readonly contentTypes: ContentType[];
 }

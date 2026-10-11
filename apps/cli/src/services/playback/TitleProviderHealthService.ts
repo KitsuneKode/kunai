@@ -66,7 +66,10 @@ export class TitleProviderHealthService {
     const now = this.now();
     const existing = this.repository.get(titleId, providerId, now);
     if (!existing) return;
-    if (existing.errorClass !== "parse") {
+    const isSevere =
+      existing.errorClass === "parse" &&
+      (!existing.severeUntil || new Date(existing.severeUntil).getTime() > now.getTime());
+    if (!isSevere) {
       this.repository.delete(titleId, providerId);
       return;
     }

@@ -12,7 +12,7 @@ import {
 } from "@/infra/os/install-commands";
 import { probeCapabilities } from "@/ui";
 
-const NOTHING = { which: () => null, listPathEntries: () => [] };
+const NOTHING = { which: () => null, listPathEntries: () => [], exists: () => false };
 
 async function bareSnapshot() {
   return probeCapabilities(NOTHING);
@@ -56,10 +56,39 @@ describe("resolveInstallCommand", () => {
       which: (command) => (command === "apt" ? "/usr/bin/apt" : null),
     });
     expect(debian).toBe("https://github.com/lexiforest/curl-impersonate/releases");
-    expect(resolveInstallCommand(CURL_IMPERSONATE_INSTALL, { platform: "win32" })).toBe(
-      "https://github.com/lexiforest/curl-impersonate/releases",
-    );
+    // Windows has no package either; the hint names the managed dir the
+    // resolver searches, so no PATH edit is needed.
+    const windows = resolveInstallCommand(CURL_IMPERSONATE_INSTALL, { platform: "win32" }) ?? "";
+    expect(windows).toContain("https://github.com/lexiforest/curl-impersonate/releases");
+    expect(windows).toContain("%LOCALAPPDATA%\\kunai\\deps\\curl-impersonate");
+    expect(windows).not.toMatch(/winget|choco|scoop/);
+    expect(YT_DLP_INSTALL.win32).toBe("winget install --id yt-dlp.yt-dlp -e");
     expect(buildRemediationLines(CURL_IMPERSONATE_INSTALL).join("\n")).not.toContain("apt install");
+  });
+
+  /**
+   * `padEnd(8)` sat next to a label that is exactly 8 characters, so the suse
+   * entry printed `- openSUSEsudo zypper install mpv` — two commands glued into
+   * one line that cannot be run. The width is now derived from the table, so
+   * this asserts the property rather than the current label set: every emitted
+   * line has whitespace between its label and its command.
+   */
+  test("every remediation line separates its label from its command", () => {
+    for (const install of [
+      MPV_INSTALL,
+      YT_DLP_INSTALL,
+      FFMPEG_INSTALL,
+      CURL_INSTALL,
+      CURL_IMPERSONATE_INSTALL,
+    ]) {
+      const lines = buildRemediationLines(install).filter((line) => !line.startsWith("http"));
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) {
+        expect(line).toMatch(/^\S.*?\s{1,}\S/);
+        // No label may run straight into a command with no gap at all.
+        expect(line).not.toMatch(/[A-Za-z](sudo|brew|winget|zypper|pacman|apt|dnf|choco)\b/);
+      }
+    }
   });
 });
 
@@ -114,6 +143,18 @@ describe("every dependency is installable on every platform we ship to", () => {
     expect(command).not.toContain("apt");
     expect(command).not.toContain("brew");
   });
+
+  test("remediation labels never glue onto the command", () => {
+    // `openSUSE` is exactly 8 chars — a fixed padEnd(8) rendered
+    // "openSUSEsudo zypper install mpv" (#452). Every line must keep a
+    // separator between the label and the command.
+    for (const line of buildRemediationLines(MPV_INSTALL)) {
+      expect(line).toMatch(/^[A-Za-z]+\s+\S/);
+    }
+    const suse = buildRemediationLines(MPV_INSTALL).find((line) => line.includes("zypper"));
+    expect(suse).toContain("openSUSE ");
+    expect(suse).toContain("sudo zypper install mpv");
+  });
 });
 
 describe("buildDependencyRows", () => {
@@ -149,6 +190,7 @@ describe("buildDependencyRows", () => {
     const plain = await probeCapabilities({
       which: (command) => (command === "curl" ? "/usr/bin/curl" : null),
       listPathEntries: () => ["curl"],
+      canExecuteCurlInvocation: () => true,
     });
     const row = buildDependencyRows(plain).find((r) => r.id === "curl-impersonate");
     expect(row?.state).toBe("degraded");
@@ -157,10 +199,25 @@ describe("buildDependencyRows", () => {
     const impersonating = await probeCapabilities({
       which: (command) => `/usr/bin/${command}`,
       listPathEntries: () => ["curl", "curl_chrome150"],
+      canExecuteCurlInvocation: () => true,
     });
     const ok = buildDependencyRows(impersonating).find((r) => r.id === "curl-impersonate");
     expect(ok?.state).toBe("ok");
     expect(ok?.detail).toBe("matching chrome150");
+  });
+
+  test("a resolved-but-unexecutable impersonate build is not an ok row", async () => {
+    // Resolution says what exists, not what runs — a backend that fails to
+    // spawn must show as degraded with a fix, never a green "matching" row.
+    const broken = await probeCapabilities({
+      which: (command) => `/usr/bin/${command}`,
+      listPathEntries: () => ["curl", "curl_chrome150"],
+      canExecuteCurlInvocation: () => false,
+    });
+    const row = buildDependencyRows(broken).find((r) => r.id === "curl-impersonate");
+    expect(row?.state).toBe("degraded");
+    expect(row?.detail).toContain("cannot execute");
+    expect(row?.fix).not.toBeNull();
   });
 
   test("mpv degrades rather than blocks", async () => {
@@ -213,6 +270,7 @@ describe("selectStartupIssueRows", () => {
     const healthy = await probeCapabilities({
       which: (command) => `/usr/bin/${command}`,
       listPathEntries: () => ["curl", "curl_chrome150"],
+      canExecuteCurlInvocation: () => true,
     });
     const selected = selectStartupIssueRows(buildDependencyRows(healthy), {
       mode: "anime",

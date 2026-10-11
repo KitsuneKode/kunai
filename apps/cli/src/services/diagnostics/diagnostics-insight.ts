@@ -3,13 +3,14 @@ import { formatPlaybackGeneration } from "@/domain/playback/playback-generation"
 import type { PlaybackProblemAction } from "@/domain/playback/playback-problem";
 import type { SessionState } from "@/domain/session/SessionState";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
+import { presenceStatusDetail } from "@/services/presence/presence-status-line";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import type { ReleaseProgressDiagnosticsSummary } from "@/services/storage/storage-read-models";
 import type { ProviderHealth, ProviderId } from "@kunai/types";
 
 import type { DiagnosticEvent } from "./diagnostic-event";
 import { buildRuntimeHealthSnapshot } from "./runtime-health";
-import type { RuntimeMemorySample } from "./runtime-memory";
+import type { RuntimeMemorySample, RuntimeMemorySnapshot } from "./runtime-memory";
 
 // ---------------------------------------------------------------------------
 // Shared taxonomy
@@ -113,10 +114,18 @@ export type DiagnosticsInsight = {
 export type BuildDiagnosticsInsightInput = {
   readonly state: SessionState;
   readonly recentEvents: readonly DiagnosticEvent[];
-  readonly downloadSummary?: { active: number; completed: number; failed?: number } | null;
+  readonly downloadSummary?: {
+    active: number;
+    completed: number;
+    failed?: number;
+    /** Completed downloads whose sidecars still need a pass; not counted in `failed`. */
+    repairable?: number;
+  } | null;
   readonly releaseSummary?: { titleCount: number; episodeCount: number } | null;
   readonly releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
   readonly presenceSnapshot?: PresenceSnapshot | null;
+  /** Defaults to the live process; injected so a verdict can be computed without reading host memory. */
+  readonly memorySnapshot?: RuntimeMemorySnapshot;
   readonly memorySamples?: readonly RuntimeMemorySample[];
   readonly getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
 };
@@ -215,8 +224,9 @@ export function buildDiagnosticsInsight(input: BuildDiagnosticsInsightInput): Di
   const runtimeHealth = buildRuntimeHealthSnapshot({
     recentEvents: input.recentEvents,
     currentProvider: input.state.provider,
+    memorySnapshot: input.memorySnapshot,
     memorySamples: input.memorySamples,
-    persistedProviderHealth: input.getProviderHealth?.(input.state.provider as ProviderId),
+    persistedProviderHealth: input.getProviderHealth?.(input.state.provider),
   });
 
   const healthRows = buildHealthRows(input, runtimeHealth);
@@ -295,6 +305,11 @@ function buildHealthRows(
     (event) => event.operation === "subtitle.attach.outcome",
   );
   const failedDownloads = downloadSummary?.failed ?? 0;
+  // Repairable jobs used to arrive inside `failed`. They are still the
+  // recoverable half of the download health row, so count them explicitly
+  // now that the two lists are disjoint.
+  const repairableDownloads = downloadSummary?.repairable ?? 0;
+  const actionableDownloads = failedDownloads + repairableDownloads;
 
   const playbackSeverity: DiagnosticSeverity =
     state.playbackProblem?.severity === "blocking"
@@ -349,7 +364,7 @@ function buildHealthRows(
 
   const downloadSeverity: DiagnosticSeverity = !downloadSummary
     ? "unknown"
-    : failedDownloads > 0
+    : actionableDownloads > 0
       ? "recoverable"
       : "healthy";
 
@@ -410,7 +425,7 @@ function buildHealthRows(
       "downloads",
       downloadSeverity,
       resolveDownloadReason(downloadSummary),
-      failedDownloads > 0 ? "retry-download" : "none",
+      actionableDownloads > 0 ? "retry-download" : "none",
     ),
     buildHealthRow(
       "discord",
@@ -752,7 +767,7 @@ function resolveProviderReason(
 
 function resolveDiscordReason(presenceSnapshot: PresenceSnapshot | null | undefined): string {
   if (!presenceSnapshot) return "Disabled or not used this session";
-  return `${presenceSnapshot.status} · ${presenceSnapshot.detail}`;
+  return presenceStatusDetail(presenceSnapshot.status, presenceSnapshot.detail, " · ");
 }
 
 function resolveProviderAction(
@@ -765,11 +780,20 @@ function resolveProviderAction(
 }
 
 function resolveDownloadReason(
-  summary: { active: number; completed: number; failed?: number } | null | undefined,
+  summary:
+    | { active: number; completed: number; failed?: number; repairable?: number }
+    | null
+    | undefined,
 ): string {
   if (!summary) return "Queue status unavailable";
   const failed = summary.failed ?? 0;
+  const repairable = summary.repairable ?? 0;
   if (failed > 0) return `${failed} download job${failed === 1 ? "" : "s"} failed`;
+  // Distinct wording: the media is on disk and playable, only sidecars are
+  // missing, so this is not the same news as a failed download.
+  if (repairable > 0) {
+    return `${repairable} download${repairable === 1 ? "" : "s"} need${repairable === 1 ? "s" : ""} sidecar repair`;
+  }
   if (summary.active > 0) return `${summary.active} active job${summary.active === 1 ? "" : "s"}`;
   return "Queue idle";
 }

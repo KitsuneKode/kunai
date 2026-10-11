@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-10-07"
 ---
 
 # Kunai — UX Architecture
@@ -136,6 +136,11 @@ Title details should be honest about data quality:
 - keep actual Kitty/Ghostty image rendering outside the Ink render tree until the image-pane service owns layout, clearing, and flicker control
 - never require image support for selection, playback, or episode navigation
 
+External link labels are sanitized for terminal rendering. Their targets stay
+opaque through the details model and `l` shortcut: display sanitization must not
+rewrite the URL being opened. The shared desktop opener rejects raw control
+characters and permits only its explicit URL schemes on every platform.
+
 Post-playback should use the same rule for lightweight panels so provider changes, history, diagnostics, help, and about do not break the user out of the current title context.
 Settings should follow that same in-shell rule for browse and post-playback shells, even while deeper season, episode, and subtitle flows still finish their overlay migration.
 
@@ -232,7 +237,7 @@ Playback command vocabulary is intentionally narrow:
 - `restart` / `replay` is local playback control. It starts the same episode from the beginning and should not force provider refetch by default.
 - `recover` is repair. It treats the current stream as suspect, refetches the same playback intent, and resumes near the last trusted position before trying fallback.
 - `refresh source` is an advanced diagnostics action. It may try a fresh provider resolve, but it must preserve the current playable cached stream when no better source is found.
-- `fallback` changes source/provider after recovery fails or when the user explicitly asks for another provider.
+- `fallback` changes the provider after recovery fails or when the user explicitly asks for another provider. It is session-scoped — the durable per-title preference path is the `/provider` picker. Same-provider source failover is a separate mechanic and should stay visibly distinct in copy.
 
 Short-lived playback feedback should use mpv OSD plus shell status text for non-blocking outcomes such as `No fresher source found. Continuing current stream.` Full loading or error screens are for broken playback, not healthy-playback refresh misses.
 
@@ -346,3 +351,12 @@ every path that can open the surface.
 - blocking setup wizards for common adjustments
 - asking for raw values when structured data already exists
 - decorative animation that delays interaction
+
+## Playback command input ownership
+
+`LoadingShell` mounts its playback input reader inside `ShellFrame`, below the
+command-mode context provider. While the palette is open, letters and Escape
+belong to it; closing the palette restores playback shortcuts. On a cancellable
+resolve, the first Escape closes the palette and a subsequent Escape cancels
+the resolve. The regression suite delivers Ink's pending-Escape callback
+explicitly instead of waiting for its timer.

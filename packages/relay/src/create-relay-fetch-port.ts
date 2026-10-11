@@ -1,3 +1,5 @@
+import { RELAYED_RESPONSE_HEADER } from "@kunai/types";
+
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
 import { RELAY_ERROR_CODE_HEADER, type RelayRpcRequest } from "./types";
 import type { RelayFetchPort, RelayFetchPortOptions } from "./types";
@@ -10,8 +12,24 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
   const baseUrl = relay.baseUrl;
   const fallbackToDirect = relay.fallbackToDirect ?? true;
 
+  // The synchronous half of the relay decision — everything except the
+  // request-body decode. A URL that would not relay resolves its name on this
+  // machine, so probes re-validate its DNS answers; a URL that would relay
+  // resolves on the relay's side, where local answers mean nothing.
+  const wouldRelay = (upstreamUrl: string): boolean => {
+    if (!baseUrl) return false;
+    const entry = options.providerId
+      ? options.registry.get(options.providerId)
+      : options.registry.findByUpstreamUrl(upstreamUrl);
+    if (!entry) return false;
+    if (relay.providers?.[entry.providerId]?.enabled === false) return false;
+    if (entry.manifest.relaySafe !== true) return false;
+    return options.registry.isHostAllowed(entry.providerId, upstreamUrl, "metadata");
+  };
+
   return {
     runtime: "direct-http",
+    resolvesLocally: (url) => !wouldRelay(url),
     async fetch(input, init) {
       if (!baseUrl) return fetchImpl(input, init);
 
@@ -29,7 +47,12 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
         return fetchImpl(input, init);
       }
 
-      const relayUrl = new URL(`/rpc/${entry.providerId}`, baseUrl);
+      // Appended, not resolved against the base: `new URL("/rpc/x", base)`
+      // treats a leading slash as absolute and drops the base's own path, so a
+      // relay hosted under a sub-path (`https://host/prod`) was called at
+      // `/rpc/x` and 404ed into permanent direct fallback. `normalizeRelayBaseUrl`
+      // deliberately preserves that path, so it is a supported deployment.
+      const relayUrl = new URL(`${baseUrl}/rpc/${encodeURIComponent(entry.providerId)}`);
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
@@ -47,7 +70,7 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
         if (fallbackToDirect && isRelayAuthorizationFailure(response)) {
           return fetchImpl(input, init);
         }
-        return response;
+        return markRelayedResponse(response);
       } catch (error) {
         if (!fallbackToDirect) throw error;
         return fetchImpl(input, init);
@@ -57,6 +80,22 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
 }
 
 export { normalizeRelayBaseUrl } from "./normalize-relay-base-url";
+
+/**
+ * Mark responses that really came through the relay so a provider cannot
+ * silently re-request the same URL direct (issue #460). Responses produced by
+ * the port's own direct-fallback branches stay unmarked on purpose — the user
+ * already opted into that bypass via `fallbackToDirect`.
+ */
+function markRelayedResponse(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set(RELAYED_RESPONSE_HEADER, "1");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 function isRelayAuthorizationFailure(response: Response): boolean {
   const code = response.headers.get(RELAY_ERROR_CODE_HEADER);
@@ -82,7 +121,7 @@ async function toRelayRequest(
     method,
     upstreamUrl,
     headers,
-    ...(body !== undefined ? { body } : {}),
+    ...(body !== undefined ? { body } : null),
   };
 }
 

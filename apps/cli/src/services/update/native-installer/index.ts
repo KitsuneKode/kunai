@@ -88,7 +88,7 @@ export {
   type NativeUninstallOptions,
   type NativeUninstallResult,
 } from "./native-uninstall";
-export { isMuslEnvironment, isMuslEnvironmentSync } from "./musl";
+export { isMuslEnvironmentSync } from "./musl";
 export {
   verifyStoredVersion,
   writeInstalledVersionMetadata,

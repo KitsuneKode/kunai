@@ -23,7 +23,7 @@
 
 - `ink-shell.tsx:29-45` imports mix host concerns (`registerExitHandler`/`requestHardExit` from graceful-exit, `markInteractiveShellMounted`, `deleteAllKittyImages`, `recordRender` diagnostics, playback stats) with rendering.
 - 26 `useState` at the root component (grep-verified); timer effects at `:404`, `:619`, `:637`, `:661` (plan 008 addresses the timer-driven ones).
-- Overlay mechanisms present: `root-overlay-shell.tsx`, `overlay-panel.tsx`, `picker-overlay.tsx`, `overlay-picker-row.tsx`, `root-overlay-model.ts`, `overlay-back-stack.ts`, `root-workflow-dispatch.ts`, `root-overlay-bridge.ts`, plus `command-router.ts`.
+- Overlay mechanisms present: `root-overlay-shell.tsx`, `overlay-panel.tsx`, `overlay-picker-row.tsx`, `root-overlay-model.ts`, `overlay-back-stack.ts`, `root-workflow-dispatch.ts`, `root-overlay-bridge.ts`, plus `command-router.ts`.
 
 Repo conventions: presentational primitives live under `app-shell/primitives/`; the boundary test (`apps/cli/test/unit/architecture/boundary-imports.test.ts`) enforces app-shell not importing provider/player runtime — keep that green. Conventional commits.
 
@@ -81,7 +81,7 @@ From `root-overlay-shell.tsx`, extract one self-contained overlay (e.g. the trac
 
 ### Step 5: Document the canonical overlay mechanism
 
-In `.docs/ux-architecture.md`, add a short section naming which overlay/dispatch stack is canonical (the `root-overlay-*` + `overlay-back-stack` path appears newest — confirm by git recency: `git log -1 --format=%ci` on each candidate file) and mark `overlay-panel`/`picker-overlay` as deprecated-pending-migration. This gives contributors one answer.
+In `.docs/ux-architecture.md`, add a short section naming which overlay/dispatch stack is canonical (the `root-overlay-*` + `overlay-back-stack` path appears newest — confirm by git recency: `git log -1 --format=%ci` on each candidate file) and mark `overlay-panel` as deprecated-pending-migration (`picker-overlay` was dead code and has been deleted). This gives contributors one answer.
 
 **Verify**: the doc names one winner with a one-line rationale.
 
@@ -108,4 +108,4 @@ In `.docs/ux-architecture.md`, add a short section naming which overlay/dispatch
 
 - After this lands, new screens are surface components; new process concerns go in `ShellHost` — never back into a merged mega-file.
 - Reviewer: confirm the boundary-imports test still passes (app-shell must not import provider/player runtime) and that clean exit works.
-- Deferred: full overlay-mechanism consolidation (migrate all `overlay-panel`/`picker-overlay` call sites onto the canonical stack, then delete the losers) — a dedicated follow-up once the winner is documented here.
+- Deferred: full overlay-mechanism consolidation (migrate all `overlay-panel` call sites onto the canonical stack, then delete the losers) — a dedicated follow-up once the winner is documented here.

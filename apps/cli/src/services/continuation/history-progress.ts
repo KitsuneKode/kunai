@@ -1,9 +1,7 @@
-// =============================================================================
-// history-progress.ts — finished-state authority + timestamp formatting
+// Finished-state authority + timestamp formatting
 //
 // Single authority for "is this episode finished" over the canonical
 // HistoryProgress row. Replaces the lossy facade-era isFinished.
-// =============================================================================
 
 import { isAnimeOnlyProviderId } from "@/domain/media/content-kind";
 import type { ContentType, ProviderLane } from "@/domain/types";
@@ -24,7 +22,7 @@ import type { MediaKind } from "@kunai/types";
 export function correctedHistoryMediaKind(
   progress: Pick<HistoryProgress, "mediaKind" | "externalIds" | "providerId">,
 ): MediaKind {
-  // 1. An anime-only provider (AllAnime/Miruro) is definitive — anime even if stored
+  // 1. An anime-only provider (see ANIME_ONLY_PROVIDER_IDS) is definitive — anime even if stored
   //    "series" with no external id (the common AllAnime mislabel).
   if (isAnimeOnlyProviderId(progress.providerId)) return "anime";
   // 2. An AniList/MAL id is definitive too (those catalogs are anime-only) — so an
@@ -85,7 +83,9 @@ function hasHistoryEpisodeIdentity(
  * theatrical films persist as `mediaKind: "anime"` with no episode identity;
  * collapsing every anime row to `"series"` relaunches them as S01E01.
  */
-export function historyContentType(progress: HistoryProgress): ContentType {
+export function historyContentType(
+  progress: Pick<HistoryProgress, "mediaKind" | "episode" | "absoluteEpisode">,
+): ContentType {
   if (progress.mediaKind === "video") {
     return hasHistoryEpisodeIdentity(progress) ? "series" : "movie";
   }

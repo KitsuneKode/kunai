@@ -1,4 +1,6 @@
-import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
+import os from "node:os";
+import { dirname, join, parse, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createMDX } from "fumadocs-mdx/next";
@@ -6,6 +8,42 @@ import { createMDX } from "fumadocs-mdx/next";
 const appDir = dirname(fileURLToPath(import.meta.url));
 /** Monorepo root. `docs/` MDX is compiled from here at build time. */
 const monorepoRoot = join(appDir, "../..");
+
+// With bun's `install.globalStore`, node_modules symlinks realpath into
+// <bun-cache>/links/ — outside the repo. Turbopack refuses to resolve files
+// outside its root, so the root must cover the nearest common ancestor of the
+// project and the store (the home directory on a normal install).
+const bunGlobalStoreLinks = join(
+  process.env.BUN_INSTALL_CACHE_DIR ?? join(os.homedir(), ".bun", "install", "cache"),
+  "links",
+);
+const turbopackRoot = (() => {
+  if (!existsSync(bunGlobalStoreLinks)) return monorepoRoot;
+  // join() emits platform separators — on Windows these are `C:\...` paths, so
+  // a `split("/")` would produce one segment and the walk below would collapse
+  // the root to "/". Split on both separators; Windows compares drive segments
+  // case-insensitively, POSIX byte-exact.
+  const toSegments = (p) => p.split(/[\\/]+/).filter(Boolean);
+  const sameSegment = (a, b) =>
+    process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  const projectSegments = toSegments(monorepoRoot);
+  const storeSegments = toSegments(bunGlobalStoreLinks);
+  let i = 0;
+  while (
+    i < projectSegments.length &&
+    i < storeSegments.length &&
+    sameSegment(projectSegments[i], storeSegments[i])
+  ) {
+    i += 1;
+  }
+  // Reattach the root: POSIX's leading "/" was filtered out, and on Windows
+  // the drive "C:" arrives as a segment but its root already carries it.
+  const root = parse(monorepoRoot).root;
+  const segments = projectSegments.slice(0, i);
+  if (segments.length > 0 && segments[0] + sep === root) segments.shift();
+  const tail = segments.join(sep);
+  return tail ? root + tail : root;
+})();
 
 /** @type {import('next').NextConfig} */
 const config = {
@@ -17,7 +55,9 @@ const config = {
   // Vercel project whose Root Directory is `apps/docs` that inference can land
   // on the app instead of the workspace, and the workspace files the build
   // itself reads (docs/ MDX, the `@kunai/design` workspace package) drop out.
-  outputFileTracingRoot: monorepoRoot,
+  // tracing root and turbopack root must agree, or Next ignores turbopack.root.
+  outputFileTracingRoot: turbopackRoot,
+  turbopack: { root: turbopackRoot },
   // No outputFileTracingIncludes: nothing is read at request time any more.
   // `.release/*.json`, `docs/`, and the OG mascot are baked into
   // `lib/generated-*.json` by `scripts/sync-repo-content.ts`, and every route

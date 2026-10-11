@@ -13,7 +13,11 @@ import type {
 } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
-import { externalIdsToAliases, HistoryTitleAliasRepository } from "./history-title-aliases";
+import {
+  externalIdsToAliases,
+  HistoryTitleAliasRepository,
+  type HistoryTitleAliasNs,
+} from "./history-title-aliases";
 import { SyncReconciliationRepository } from "./sync-reconciliation";
 
 export interface HistoryProgressInput {
@@ -50,6 +54,18 @@ export interface HistoryProgress {
   readonly updatedAt: string;
   readonly createdAt: string;
 }
+
+/** The watch-state half of a history row — everything consolidation must not lose. */
+export type HistoryProgressWatchState = Pick<
+  HistoryProgress,
+  | "positionSeconds"
+  | "durationSeconds"
+  | "watchedSeconds"
+  | "completed"
+  | "completedAt"
+  | "lastWatchedAt"
+  | "createdAt"
+>;
 
 /** Canonical title lookup for history reads (resume, continue, episode progress). */
 export interface HistoryTitleLookup {
@@ -191,7 +207,12 @@ export class HistoryRepository {
         completedAt,
         input.providerId ?? null,
         serializeExternalIds(externalIds),
-        input.posterUrl ?? null,
+        // Falls back to `existing` for the same reason the ON CONFLICT clause
+        // COALESCEs: a write that does not carry a poster must not remove one.
+        // The COALESCE alone is not enough, because the legacy-key migration
+        // DELETEs the old row first — there is then no conflict to COALESCE
+        // against, and the poster was dropped on the way across.
+        input.posterUrl ?? existing?.posterUrl ?? null,
         now,
         now,
       );
@@ -325,17 +346,37 @@ export class HistoryRepository {
   }
 
   /**
-   * Resolve the latest history row for a title identity. Tries the canonical catalog
-   * id first, then alias-mapped ids, then the raw session id for legacy opaque rows.
+   * Resolve the latest history row for a title identity. Candidate ids keep
+   * their preference order (canonical → aliases → legacy), and the latest row
+   * under the first matching id wins — the same decision the old per-id loop
+   * made, in one round-trip instead of one query per candidate.
    */
   getLatestForTitleIdentity(
     title: Pick<TitleIdentity, "id" | "kind" | "externalIds">,
   ): HistoryProgress | undefined {
-    for (const titleId of this.collectLookupTitleIds(title)) {
-      const latest = this.getLatestForTitle(titleId);
-      if (latest) return latest;
+    const titleIds = this.collectLookupTitleIds(title);
+    if (titleIds.length === 0) return undefined;
+    const placeholders = titleIds.map(() => "?").join(", ");
+    const rows = this.db
+      .query<HistoryProgressRow, string[]>(
+        `SELECT * FROM history_progress WHERE title_id IN (${placeholders})`,
+      )
+      .all(...titleIds)
+      .map(mapHistoryRow);
+    const rank = new Map(titleIds.map((id, index) => [id, index]));
+    let best: HistoryProgress | undefined;
+    for (const row of rows) {
+      if (best === undefined) {
+        best = row;
+        continue;
+      }
+      const rowRank = rank.get(row.titleId) ?? Number.MAX_SAFE_INTEGER;
+      const bestRank = rank.get(best.titleId) ?? Number.MAX_SAFE_INTEGER;
+      if (rowRank < bestRank || (rowRank === bestRank && row.updatedAt > best.updatedAt)) {
+        best = row;
+      }
     }
-    return undefined;
+    return best;
   }
 
   /**
@@ -358,8 +399,21 @@ export class HistoryRepository {
       return this.getLatestForTitleIdentity(lookup);
     }
 
-    for (const titleId of this.collectLookupTitleIds(lookup)) {
-      const progress = this.getProgress({ ...lookup, id: titleId }, episode);
+    // Exact-episode keys for every candidate id, resolved in one round-trip.
+    // First candidate id with a row wins — the old per-id key loop's decision.
+    const titleIds = this.collectLookupTitleIds(lookup);
+    if (titleIds.length === 0) return undefined;
+    const keys = titleIds.map((id) => createHistoryKey({ ...lookup, id }, episode));
+    const placeholders = keys.map(() => "?").join(", ");
+    const rows = this.db
+      .query<HistoryProgressRow, string[]>(
+        `SELECT * FROM history_progress WHERE key IN (${placeholders})`,
+      )
+      .all(...keys)
+      .map(mapHistoryRow);
+    const byKey = new Map(rows.map((row) => [row.key, row]));
+    for (const key of keys) {
+      const progress = byKey.get(key);
       if (progress) return progress;
     }
     return undefined;
@@ -389,58 +443,62 @@ export class HistoryRepository {
       readonly externalIds?: ProviderExternalIds;
     },
   ): boolean {
-    let changed = false;
-    if (metadata.title) {
-      // Repair only rows still stored under a stand-in name. A row whose title a
-      // catalog or a user already supplied is never overwritten from here — the
-      // healer resolves from an id, and a wrong repair is unrecoverable where a
-      // missed one is not.
-      const rows = this.db
-        .query<{ key: string; title: string }, [string]>(
-          "SELECT key, title FROM history_progress WHERE title_id = ?",
-        )
-        .all(titleId);
-      for (const row of rows) {
-        if (!isPlaceholderTitleName(row.title, titleId)) continue;
+    return this.db.transaction(() => {
+      let changed = false;
+      if (metadata.title) {
+        // Repair only rows still stored under a stand-in name. A row whose title a
+        // catalog or a user already supplied is never overwritten from here — the
+        // healer resolves from an id, and a wrong repair is unrecoverable where a
+        // missed one is not.
+        const rows = this.db
+          .query<{ key: string; title: string }, [string]>(
+            "SELECT key, title FROM history_progress WHERE title_id = ?",
+          )
+          .all(titleId);
+        const updateTitleStmt = this.db.query(
+          "UPDATE history_progress SET title = ? WHERE key = ?",
+        );
+        for (const row of rows) {
+          if (!isPlaceholderTitleName(row.title, titleId)) continue;
+          const result = updateTitleStmt.run(metadata.title, row.key);
+          changed ||= result.changes > 0;
+        }
+      }
+      if (metadata.posterUrl) {
         const result = this.db
-          .query("UPDATE history_progress SET title = ? WHERE key = ?")
-          .run(metadata.title, row.key);
+          .query(
+            "UPDATE history_progress SET poster_url = ? WHERE title_id = ? AND (poster_url IS NULL OR poster_url = '')",
+          )
+          .run(metadata.posterUrl, titleId);
         changed ||= result.changes > 0;
       }
-    }
-    if (metadata.posterUrl) {
-      const result = this.db
-        .query(
-          "UPDATE history_progress SET poster_url = ? WHERE title_id = ? AND (poster_url IS NULL OR poster_url = '')",
-        )
-        .run(metadata.posterUrl, titleId);
-      changed ||= result.changes > 0;
-    }
-    const externalIdsJson = serializeExternalIds(metadata.externalIds);
-    if (externalIdsJson) {
-      const rows = this.db
-        .query<{ key: string; external_ids_json: string | null }, [string]>(
-          "SELECT key, external_ids_json FROM history_progress WHERE title_id = ?",
-        )
-        .all(titleId);
+      const externalIdsJson = serializeExternalIds(metadata.externalIds);
+      if (externalIdsJson) {
+        const rows = this.db
+          .query<{ key: string; external_ids_json: string | null }, [string]>(
+            "SELECT key, external_ids_json FROM history_progress WHERE title_id = ?",
+          )
+          .all(titleId);
 
-      for (const row of rows) {
-        const existing = parseExternalIds(row.external_ids_json);
-        const shouldReplaceEmpty = !row.external_ids_json;
-        const merged = shouldReplaceEmpty
-          ? metadata.externalIds
-          : mergeBackfillExternalIds(existing, metadata.externalIds);
-        const nextJson = serializeExternalIds(merged);
-        if (!nextJson || nextJson === row.external_ids_json) continue;
-        this.db
-          .query("UPDATE history_progress SET external_ids_json = ? WHERE key = ?")
-          .run(nextJson, row.key);
-        changed = true;
+        const updateExtStmt = this.db.query(
+          "UPDATE history_progress SET external_ids_json = ? WHERE key = ?",
+        );
+        for (const row of rows) {
+          const existing = parseExternalIds(row.external_ids_json);
+          const shouldReplaceEmpty = !row.external_ids_json;
+          const merged = shouldReplaceEmpty
+            ? metadata.externalIds
+            : mergeBackfillExternalIds(existing, metadata.externalIds);
+          const nextJson = serializeExternalIds(merged);
+          if (!nextJson || nextJson === row.external_ids_json) continue;
+          updateExtStmt.run(nextJson, row.key);
+          changed = true;
+        }
+
+        this.titleAliases.upsertAliases(titleId, externalIdsToAliases(metadata.externalIds));
       }
-
-      this.titleAliases.upsertAliases(titleId, externalIdsToAliases(metadata.externalIds));
-    }
-    return changed;
+      return changed;
+    })();
   }
 
   listRecent(limit = 20): readonly HistoryProgress[] {
@@ -491,6 +549,29 @@ export class HistoryRepository {
   }
 
   /**
+   * Episode rows for one season of a title. The episode picker opened this on
+   * every render with a full-title scan plus an in-memory filter; pushing the
+   * season predicate into SQLite keeps picker-open latency flat as series
+   * histories grow. `COALESCE(season, 1)` mirrors the picker's
+   * `(season ?? 1)` matching so absolute-numbered rows behave identically.
+   */
+  listByTitleSeason(titleId: string, season: number, limit = 500): readonly HistoryProgress[] {
+    return this.db
+      .query<HistoryProgressRow, [string, number, number]>(
+        `
+          SELECT * FROM history_progress
+          WHERE title_id = ? AND COALESCE(season, 1) = ?
+          ORDER BY
+            COALESCE(episode, 0) ASC,
+            updated_at DESC
+          LIMIT ?
+        `,
+      )
+      .all(titleId, season, limit)
+      .map(mapHistoryRow);
+  }
+
+  /**
    * List every episode row for a title after resolving canonical id, aliases, and
    * legacy raw id forms (bare TMDB ↔ `tmdb:` prefix, provider opaque ids, etc.).
    */
@@ -523,10 +604,67 @@ export class HistoryRepository {
   /**
    * Candidate title_ids for a lookup, in preference order:
    * canonical catalog id → alias-mapped ids → bare/prefixed TMDB variants → legacy raw id.
+   *
+   * Alias reads run in two bulk queries (pairs, then raw ids) instead of one
+   * query per alias: the old shape issued ~6 sequential alias reads plus one
+   * history read per candidate on the resume path. Planning (which aliases to
+   * ask about) stays a pure function of the title, so bulk-resolving first
+   * and assembling after returns the identical order.
    */
   private collectLookupTitleIds(
     title: Pick<TitleIdentity, "id" | "kind" | "externalIds">,
   ): readonly string[] {
+    type Step =
+      | { readonly kind: "literal"; readonly id: string }
+      | { readonly kind: "pair"; readonly ns: HistoryTitleAliasNs; readonly id: string }
+      | { readonly kind: "aliasId"; readonly id: string };
+    const steps: Step[] = [];
+    const pairIndex = new Map<number, number>();
+    const pairs: (readonly [HistoryTitleAliasNs, string])[] = [];
+    const aliasIds: string[] = [];
+    const planPair = (ns: HistoryTitleAliasNs, id: string) => {
+      pairIndex.set(steps.length, pairs.length);
+      pairs.push([ns, id] as const);
+      steps.push({ kind: "pair", ns, id });
+    };
+    const planAliasId = (id: string) => {
+      steps.push({ kind: "aliasId", id });
+      aliasIds.push(id);
+    };
+
+    steps.push({ kind: "literal", id: resolveHistoryLookupTitleId(title) });
+
+    for (const alias of externalIdsToAliases(title.externalIds)) {
+      planPair(alias.ns, alias.id);
+    }
+
+    if (title.id.startsWith("tmdb:")) {
+      const bare = title.id.slice("tmdb:".length);
+      planPair("tmdb", bare);
+      steps.push({ kind: "literal", id: bare });
+    } else if ((title.kind === "movie" || title.kind === "series") && /^\d+$/.test(title.id)) {
+      planPair("tmdb", title.id);
+      steps.push({ kind: "literal", id: `tmdb:${title.id}` });
+    }
+
+    if (title.kind === "anime" && /^\d+$/.test(title.id)) {
+      planPair("anilist", title.id);
+      planPair("mal", title.id);
+    }
+
+    const tmdbId = title.externalIds?.tmdbId?.trim();
+    if (tmdbId) {
+      planPair("tmdb", tmdbId);
+      steps.push({ kind: "literal", id: tmdbId });
+      steps.push({ kind: "literal", id: `tmdb:${tmdbId}` });
+    }
+
+    planAliasId(title.id);
+    steps.push({ kind: "literal", id: title.id });
+
+    const pairResults = this.titleAliases.lookupTitleIds(pairs);
+    const aliasIdResults = this.titleAliases.lookupTitleIdsByAliasId(aliasIds);
+
     const ordered: string[] = [];
     const seen = new Set<string>();
     const add = (id: string | undefined) => {
@@ -536,40 +674,25 @@ export class HistoryRepository {
       ordered.push(trimmed);
     };
 
-    add(resolveHistoryLookupTitleId(title));
-
-    for (const alias of externalIdsToAliases(title.externalIds)) {
-      add(this.titleAliases.lookupTitleId(alias.ns, alias.id));
-    }
-
-    if (title.id.startsWith("tmdb:")) {
-      const bare = title.id.slice("tmdb:".length);
-      add(this.titleAliases.lookupTitleId("tmdb", bare));
-      add(bare);
-    } else if ((title.kind === "movie" || title.kind === "series") && /^\d+$/.test(title.id)) {
-      add(this.titleAliases.lookupTitleId("tmdb", title.id));
-      add(`tmdb:${title.id}`);
-    }
-
-    if (title.kind === "anime" && /^\d+$/.test(title.id)) {
-      add(this.titleAliases.lookupTitleId("anilist", title.id));
-      add(this.titleAliases.lookupTitleId("mal", title.id));
-    }
-
-    const tmdbId = title.externalIds?.tmdbId?.trim();
-    if (tmdbId) {
-      add(this.titleAliases.lookupTitleId("tmdb", tmdbId));
-      add(tmdbId);
-      add(`tmdb:${tmdbId}`);
-    }
-
-    add(this.titleAliases.lookupTitleIdByAliasId(title.id));
-    add(title.id);
+    steps.forEach((step, stepIndex) => {
+      if (step.kind === "literal") add(step.id);
+      else if (step.kind === "pair") add(pairResults.get(pairIndex.get(stepIndex) ?? -1));
+      else add(aliasIdResults.get(step.id.trim()));
+    });
 
     return ordered;
   }
 
-  listAllProgress(): readonly HistoryProgress[] {
+  listAllProgress(options?: { limit?: number; offset?: number }): readonly HistoryProgress[] {
+    if (options?.limit !== undefined) {
+      const offset = options.offset ?? 0;
+      return this.db
+        .query<HistoryProgressRow, [number, number]>(
+          "SELECT * FROM history_progress LIMIT ? OFFSET ?",
+        )
+        .all(options.limit, offset)
+        .map(mapHistoryRow);
+    }
     return this.db
       .query<HistoryProgressRow, []>("SELECT * FROM history_progress")
       .all()
@@ -584,6 +707,59 @@ export class HistoryRepository {
 
   deleteProgressByKey(key: string): void {
     this.db.query("DELETE FROM history_progress WHERE key = ?").run(key);
+  }
+
+  /**
+   * Overwrite the watch state of one row.
+   *
+   * Consolidation merges two rows that turned out to be the same title, and the
+   * surviving key is chosen by identity (most recently touched), not by who
+   * watched further. Without this the loser's progress went out with
+   * `deleteProgressByKey` and a resume position could travel backwards.
+   */
+  updateProgressWatchStateByKey(key: string, state: HistoryProgressWatchState): void {
+    this.db
+      .query(
+        `UPDATE history_progress
+         SET position_seconds = ?,
+             duration_seconds = ?,
+             watched_seconds = ?,
+             completed = ?,
+             completed_at = ?,
+             last_watched_at = ?,
+             created_at = ?
+         WHERE key = ?`,
+      )
+      .run(
+        Math.round(state.positionSeconds),
+        state.durationSeconds === undefined ? null : Math.round(state.durationSeconds),
+        Math.round(state.watchedSeconds ?? 0),
+        state.completed ? 1 : 0,
+        state.completedAt ?? null,
+        state.lastWatchedAt ?? null,
+        state.createdAt,
+        key,
+      );
+  }
+
+  /**
+   * Give a row a poster only if it does not already have one.
+   *
+   * Consolidation picks the survivor by recency, and the row touched most
+   * recently is often the one that arrived with the least metadata. The poster
+   * then went out with the row being deleted — the same shape as the legacy-key
+   * migration losing it, and the reason `upsertProgress` COALESCEs rather than
+   * overwrites. Never replaces an existing poster: a survivor that has one has
+   * a more recent one.
+   */
+  fillMissingPosterByKey(key: string, posterUrl: string): void {
+    const trimmed = posterUrl.trim();
+    if (!trimmed) return;
+    this.db
+      .query(
+        "UPDATE history_progress SET poster_url = ? WHERE key = ? AND (poster_url IS NULL OR poster_url = '')",
+      )
+      .run(trimmed, key);
   }
 
   updateProgressExternalIdsByKey(key: string, externalIds: ProviderExternalIds): void {
@@ -655,7 +831,7 @@ export function createHistoryKey(
 }
 
 function migrateLegacyProviderId(providerId: string): ProviderId {
-  return (providerId === "vidking" ? "videasy" : providerId) as ProviderId;
+  return providerId === "vidking" ? "videasy" : providerId;
 }
 
 function mapHistoryRow(row: HistoryProgressRow): HistoryProgress {
@@ -734,7 +910,7 @@ function parseProviderNativeIds(
   const compact: Partial<Record<ProviderId, string>> = {};
   for (const [providerId, nativeId] of Object.entries(value)) {
     if (typeof nativeId !== "string" || !nativeId.trim()) continue;
-    compact[providerId as ProviderId] = nativeId.trim();
+    compact[providerId] = nativeId.trim();
   }
   return Object.keys(compact).length > 0 ? compact : undefined;
 }
@@ -742,6 +918,7 @@ function parseProviderNativeIds(
 function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
   if (!value) return undefined;
   try {
+    // SAFETY: each returned ID is checked below; invalid shapes throw into this catch.
     const parsed = JSON.parse(value) as Partial<ProviderExternalIds>;
     const providerNativeIds = parseProviderNativeIds(parsed.providerNativeIds);
     const externalIds: ProviderExternalIds = {
@@ -760,7 +937,7 @@ function parseExternalIds(value: string | null): ProviderExternalIds | undefined
       ...(typeof parsed.youtubePlaylistId === "string" && parsed.youtubePlaylistId
         ? { youtubePlaylistId: parsed.youtubePlaylistId }
         : {}),
-      ...(providerNativeIds ? { providerNativeIds } : {}),
+      ...(providerNativeIds ? { providerNativeIds } : null),
     };
     return Object.keys(externalIds).length > 0 ? externalIds : undefined;
   } catch {

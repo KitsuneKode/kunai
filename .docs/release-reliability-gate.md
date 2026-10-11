@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-27"
+lastReviewed: "2026-10-07"
 ---
 
 # Kunai Release Reliability Gate
@@ -48,8 +48,9 @@ upload and after protected-job download. It must contain only `package.json`,
 uses those same verified bytes rather than repacking them.
 
 For native release assets, the legacy `SHA256SUMS` name continues to cover the
-ten raw compatibility binaries because installers and updaters request it.
-`SHA256SUMS.archives` separately covers the ten archives. Verification rejects
+ten raw compatibility binaries because already-published installers and
+updaters request it. `SHA256SUMS.archives` separately covers the ten
+archives. Verification rejects
 missing, duplicate, unexpected, empty, oversized, hash-mismatched, or
 non-canonical assets. A canonical archive has one entry whose name is the raw
 asset name and no directory prefix; tar metadata is normalized with executable
@@ -109,6 +110,16 @@ and a removed manifest is not recreated. Issue #132 and 0.3.0 dispatch remain
 blocked until this complete stack passes protected native release gates.
 
 ## Native Installer Activation Gate
+
+Activation-lock name contention is retried within its deadline. `EACCES` and
+`EPERM` require evidence of a live holder or a changed lock name before they are
+treated as contention. Readable nonempty partial records receive the corrupt-write
+grace period; missing, empty, or unreadable data alone does not establish contention.
+A denied create or unchanged stale-owner reclaim reports
+the filesystem error instead of claiming another updater is busy. Quarantine
+restoration retries transient link failures without replacing a canonical owner.
+The focused tests inject these failures and their retry scheduler; they do not
+depend on antivirus timing or a sleep to establish ordering.
 
 Native install, in-process update, rollback, and uninstall share one short
 cross-language activation lock at `{dataDir}/locks/activation.lock`. The Bash,
@@ -211,6 +222,10 @@ that case, the release owner must record the exception in the PR description and
 update both package/root changelogs and the generated release artifact in the
 same change. Do not leave a loose changeset behind, because Changesets would
 otherwise open a follow-up version bump on top of the unreleased candidate.
+`bun run guard` enforces that staged-release combination. It scopes changesets by
+package name, so a file that names no package (an empty bookkeeping changeset) or
+names a different one cannot bump the published package and does not trip the
+rule.
 
 ## Provider Reality Gate
 
@@ -256,6 +271,16 @@ Expected result for each provider:
 - `failureCodes` is empty or contains only non-blocking fallback evidence when a fallback stream was selected
 - output includes `isolatedProfile: true`
 
+The route signoff needs `streamReachable: true` — proof, not neutrality. Its
+first judge is a Bun probe; when that times out, the route is settled by mpv
+decoding one frame (`mpvDecodesStream` in `apps/cli/test/live/provider-smoke.ts`)
+and a `[signoff] … mpv decode says …` line is written to stderr. Some hosts never
+answer Bun's fetch while mpv plays them — AnimeGG's `/play`, where Miruro's `moo`
+streams start — and reading that silence as `provider-drift` failed the signoff
+on a stream that played. mpv giving up without a frame is still a failure; mpv
+missing or still working at 45 s leaves the route inconclusive, which still
+fails approval.
+
 Do not run live provider smokes in default CI. They are opt-in checks for provider drift and release confidence.
 
 Provider smokes should be run once per touched provider family, not in a loop while developing. Repeated iteration belongs in fixture-backed provider tests and mocked fetch/runtime ports.
@@ -285,16 +310,27 @@ with a maintainer's real library.
 
 ## Analytics Deployment Gate
 
-Analytics may ship with an empty endpoint and explicit opt-in because that
-configuration sends nothing. Before deploying or configuring a public endpoint:
+Kunai ships a Kunai-owned HTTPS endpoint for explicitly opted-in installs. That
+makes the deployment checks below part of release signoff while the default is
+present. Leaving the override unset uses that default rather than disabling the
+endpoint; only a non-HTTPS override is rejected, and it fails closed to an empty
+endpoint instead of falling back. Nothing sends without explicit consent either
+way.
 
 Run the storage path against a real Postgres. The local harness needs only
 Docker — it starts a throwaway database plus the Neon HTTP proxy the driver
-requires, migrates, runs, and tears down:
+requires, migrates, runs the whole `test/` directory, and tears down:
 
 ```sh
 bun run --cwd apps/analytics-ingest test:pg
 ```
+
+CI runs this same command in the `Analytics Postgres suites` job whenever
+`apps/analytics-ingest/**` changes, and fails if any case reports `skip` — a
+database that never starts otherwise produces a green run with every Postgres
+case silently skipped. The harness serialises the suites and namespaces install ids per file; a leftover `install_lifetime` row from another file is how main used to fail `Expected: 8, Received: 5` on `lifetimeInstalls`. Release signoff still needs a local or Neon run recorded
+against the release commit, but a regression no longer waits for that run to
+surface.
 
 Against an isolated Neon project instead, opt in explicitly. The suites write
 and prune, so they gate on `ANALYTICS_TEST_DATABASE_URL` rather than
@@ -309,8 +345,8 @@ Expected evidence: all 12 Postgres integration cases run instead of skip;
 the production stable-hash secret is configured; Vercel/Neon secrets, firewall,
 retention, cron freshness, and cost limits are verified; a live opt-in ping is
 stored once, appears only as bounded aggregate data, and disabling analytics in
-Settings stops later sends. These checks block endpoint deployment, not a code
-release whose endpoint remains empty.
+Settings stops later sends. These checks block release while the production
+endpoint remains the shipped default.
 
 ## Discord Presence Gate
 
@@ -413,13 +449,13 @@ bun run test:live:android-handoff
 
 Repeat with `mpv`. The harness invokes the compiled canonical entrypoint for
 help, version, and the handoff scenario, then creates a WAL database and proves
-it can reopen the written row under isolated Termux storage. Record separately: real Ink TTY
-input and resume, installer and
-upgrade, VLC/mpv-android launch, media start, return to Kunai, qualifying anime
-and TMDB providers, rejection of header/subtitle-dependent streams, analytics
-remaining disabled, cold start, responsiveness, and memory. Until at least one
-ARM64 device passes the preview matrix, Android remains unverified; general
-availability additionally needs minimum/middle/current Android versions.
+it can reopen the written row under isolated Termux storage. Record separately:
+real Ink TTY input and resume, installer and upgrade, VLC/mpv-android launch,
+media start, return to Kunai, qualifying anime and TMDB providers, rejection of
+header/subtitle-dependent streams, analytics remaining disabled, cold start,
+responsiveness, and memory. Until at least one ARM64 device passes the preview
+matrix, Android remains unverified; general availability additionally needs
+minimum/middle/current Android versions.
 
 iOS, Android TV, and other TV platforms are not part of this gate.
 
@@ -585,3 +621,13 @@ Before tagging, confirm on the candidate that:
 - the native installer Docker lifecycle passes (`bun run test:installer:docker`)
 - `set-release-status.ts <version> withdrawn` renders the withdrawal on
   `/releases` and on the release's own page
+
+## Cleanup ownership
+
+Startup self-replace cleanup requires an embedded compiled entrypoint and removes
+only `<running Kunai binary>.old`. Source and npm-bundle starts leave the Bun
+runtime and its backups untouched. Native uninstall recognizes transaction
+residue by schema and matching record/file identity, preserves foreign JSON,
+text, and directories, and removes the transaction directory only with `rmdir`.
+A default uninstall continues to preserve configuration, history, cache, and
+offline downloads; an explicit purge retains its separate user-root contract.

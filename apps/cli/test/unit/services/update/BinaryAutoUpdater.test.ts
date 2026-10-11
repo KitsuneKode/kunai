@@ -8,6 +8,7 @@ function updater(
 ): BinaryAutoUpdater {
   return new BinaryAutoUpdater({
     config: {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       getRaw: () => raw as never,
       update: async () => {},
       save: async () => {},
@@ -71,6 +72,7 @@ describe("BinaryAutoUpdater.runOnce", () => {
     let installedVersion = "";
     const instance = new BinaryAutoUpdater({
       config: {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         getRaw: () => enabled as never,
         update: async (patch) => {
           patches.push(patch);
@@ -103,6 +105,7 @@ describe("BinaryAutoUpdater.runOnce", () => {
     let resolvedLatest = false;
     const instance = new BinaryAutoUpdater({
       config: {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         getRaw: () => enabled as never,
         update: async () => {},
         save: async () => {},

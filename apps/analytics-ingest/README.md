@@ -24,15 +24,21 @@ This README is the operator's guide; the contract wins on any disagreement.
 
 ## Tables
 
-| Table              | Holds                                                       | Retention |
-| ------------------ | ----------------------------------------------------------- | --------- |
-| `ping_day`         | `(day, HMAC(installId), version, os, arch)`; PK is the gate | 35 days   |
-| `install_lifetime` | one hashed row per install + first-seen date                | permanent |
-| `daily_rollup`     | counts only, no identity                                    | permanent |
+| Table              | Holds                                                       | Retention             |
+| ------------------ | ----------------------------------------------------------- | --------------------- |
+| `ping_day`         | `(day, HMAC(installId), version, os, arch)`; PK is the gate | 35 days               |
+| `install_lifetime` | one hashed row per install + first-seen/last-seen dates     | retired after silence |
+| `lifetime_retired` | a counter holding installs folded out of `install_lifetime` | permanent             |
+| `daily_rollup`     | counts only, no identity                                    | permanent             |
 
-`install_lifetime` is a durable pseudonymous record — the cost of an exact
-lifetime count. The contract states this plainly; do not describe it as
-equivalent to a probabilistic sketch.
+`install_lifetime` is a durable pseudonymous record — the cost of a durable
+lifetime figure — and its `first_seen` is what makes the per-day first-seen
+count (`daily_rollup.new_installs`) exact. Rows unseen for
+`lifetimeRetentionDays` (default 400) fold into `lifetime_retired`, which keeps
+the published total from dropping; identity is lost in the fold, so a return
+after retirement counts again — read the lifetime figure as cumulative
+observations, not unique installs. The contract states this plainly; do not
+describe it as equivalent to a probabilistic sketch.
 
 ## Endpoints
 
@@ -43,7 +49,9 @@ equivalent to a probabilistic sketch.
 | `GET /api/cron/snapshot`  | `CRON_SECRET`           | Rolls up yesterday, then prunes raw rows. |
 | `GET /api/metrics/admin`  | `ANALYTICS_ADMIN_TOKEN` | Last 30 days, **unsuppressed**.           |
 
-Cron runs at `5 0 * * *` (see `vercel.json`).
+Cron runs at `0 19 * * *` (see `vercel.json`). The analytics day closes at
+midnight IST (18:30 UTC); hour 19 is the first hour that cannot fire before the
+close — Hobby may run a job anywhere inside its scheduled hour.
 
 ## Setup
 
@@ -63,8 +71,20 @@ Cron runs at `5 0 * * *` (see `vercel.json`).
    DATABASE_URL="postgres://..." bun run --cwd apps/analytics-ingest migrate
    ```
 
-4. Deploy and run a live smoke. Then explicitly set `KUNAI_ANALYTICS_URL` and
-   `KUNAI_ANALYTICS_METRICS_URL`; neither has a production default.
+   For a git-connected project, set the root directory to
+   `apps/analytics-ingest`; install and functions config come from
+   `vercel.json`. To skip deploys on unrelated monorepo commits, set the
+   Ignored Build Step (Settings → Git) to:
+
+   ```sh
+   bash "$(git rev-parse --show-toplevel)/scripts/vercel-ignored-build.sh" \
+     apps/analytics-ingest package.json bun.lock
+   ```
+
+4. Deploy and run a live smoke. The CLI and docs ship Kunai-owned production
+   defaults for the ping and public aggregate endpoints. Set `KUNAI_ANALYTICS_URL`
+   or `KUNAI_ANALYTICS_METRICS_URL` only to override those defaults; CLI endpoint
+   overrides must use HTTPS.
 
 5. Treat `ANALYTICS_HASH_SECRET` as stable. Do not rotate it in place: plan a
    versioned migration and reconciliation first, or exact lifetime counts will
@@ -83,13 +103,15 @@ bun run --cwd apps/analytics-ingest test      # offline, in-memory store
 bun run --cwd apps/analytics-ingest test:pg   # real Postgres, needs Docker
 ```
 
-`test` runs everything that does not need a database. The two Postgres suites
+`test` runs everything that does not need a database. The Postgres suites
 skip, and a skip reads as a pass — which is why `test:pg` exists.
 
 `test:pg` brings up the throwaway Postgres in `docker-compose.yml`, applies the
-schema, runs `postgres-store` and `postgres-ingest-lifecycle` against it, and
-tears it down. `test:pg -- --keep` leaves the containers up for iteration;
-`db:down` cleans up afterwards.
+schema, runs the `postgres-*.test.ts` files against it with `--max-concurrency 1`,
+and tears it down. Those files share one database and `install_lifetime.first_seen`
+is write-once, so each suite mints install ids through `testInstallId(n, suite)`
+rather than reusing n=1 across files. `test:pg -- --keep` leaves the containers
+up for iteration; `db:down` cleans up afterwards.
 
 The container credentials are `kunai:kunai`. That protects nothing — loopback
 only, tmpfs-backed, destroyed when the run ends — and secret scanners flag it,

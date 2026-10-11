@@ -48,6 +48,7 @@ export type PersistentReadyWorkExecutorDeps = {
     timeLabel: string | undefined,
   ): Promise<PersistentResumeStartChoice>;
   handleSegmentSkipProgress(options: PersistentReadyWorkOptions): Promise<void>;
+  syncChaptersFile?(timing: PlaybackTimingMetadata | null | undefined): Promise<void>;
   /**
    * Whether the file currently loaded is an active broadcast.
    *
@@ -175,6 +176,8 @@ export class PersistentReadyWorkExecutor {
     }
     if (!isCurrent()) return;
     this.deps.setSubtitlesAttachedAtSpawn(false);
+    await this.deps.syncChaptersFile?.(options.timing);
+    if (!isCurrent()) return;
     await this.deps.handleSegmentSkipProgress(options);
   }
 }

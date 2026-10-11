@@ -2,173 +2,241 @@
 
 ## 0.3.0
 
-Security, honesty, and platform fixes from a full codebase review.
-
-Provider source reliability and lower cold-start waiting.
-
-- **AniDB:** source inventory now comes from exact per-episode `jpn`/`eng`
-  evidence. The requested audio mode resolves first; optional alternate audio is
-  skipped in fast mode and bounded in balanced/quality-first modes, so a slow or
-  missing alternate cannot hold a playable requested stream or appear as a
-  selectable source.
-- **AllAnime:** the mkissa build-140 crypto rotation is locked with independent
-  known-answer vectors and exact bootstrap-header tests. Cold episode-catalog
-  and crypto preparation now overlap, and baseline source adapters share a 1.5
-  second inventory window so a dead mirror cannot hold already-playable peers.
-  The production cold smoke kept four candidates while dropping from 12.257 to
-  2.573 seconds; request retries and their individual deadlines are unchanged.
-- **Relay diagnostics:** `bun run test:relay` reads the user's existing relay
-  config without modifying it, preflights `/health` through Bun itself, then
-  runs the AllAnime smoke in an isolated profile. It reports only the relay
-  origin, token presence, provider count, and bounded failure code; full URLs,
-  URL queries, fragments, embedded credentials, and tokens are not logged.
-- **Provider ordering:** the default remains `animeProviderPriority: ["anidb"]`.
-  The field is documented as ordering rather than an allowlist; registered
-  AllAnime and Miruro providers remain available behind AniDB.
-
-Launch flags, discovery, and the queue.
-
-- **`-S <query>` shows its results.** The search ran, but the view and the shell
-  were both chosen from a state snapshot taken before it finished — and that
-  snapshot is empty by construction — so a successful search landed on the empty
-  search surface and looked like the query had merely been typed for you.
-- **A search on launch now shows a loader.** The idle surface rendered the
-  welcome screen regardless of search state, so the header said "searching" over
-  a screen with no sign of work in flight.
-- **`-i/--id` says when it is ignored.** An id without a usable `-t`, or under
-  `-a`, was dropped with a debug-only warning, so the run looked normal and the
-  flag silently did nothing.
-- **`/random` and `/surprise` honour your Discover tray size** and are on the
-  browse palette next to `/trending`. The tray was clamped to five picks while
-  the setting's smallest option is twelve, so no configured value could ever
-  take effect; a uniform shuffle also discarded the stratification that keeps
-  one source from filling the tray.
-- **`/up-next` opens during playback.** The queue was reachable everywhere
-  except the one activity that consumes it.
-- **`--dry-run` prints the plan instead of starting a session.** The flag was
-  documented as a general launch flag and read in exactly two places
-  (`--install-protocol-handler` and `rollback`), so `kunai -S "Dune" --dry-run`
-  parsed it, discarded it, and mounted the full interactive shell — starting the
-  session it had just promised not to. It now prints the resolved mode, surface,
-  query or title, auto-pick, and any flag it will ignore, and exits before
-  anything is created: no version lock, no version pruning, no database, no
-  terminal probe.
-- **`--zen` no longer plays a title you did not pick.** Zen is documented as a
-  bare layout, but it set `--quick`, which is not a layout flag at all — it means
-  "auto-pick result #1". `kunai -S "Dune" --zen` skipped the result list and
-  started playing the top hit. Zen now changes chrome only; use `--zen --quick`
-  for the old behaviour.
-- **Finishing a title no longer triggers a search you did not ask for.**
-  Launching with both a query and a direct target (`-S "Dune" --history`, a
-  share link, `-i` with `-t`) left the query armed after the chosen title
-  played, so the session bounced into a stale search when playback ended — and
-  with the auto-pick index still set, under `--quick` that search immediately
-  played its first hit, writing a history row and a tracker sync for a title
-  nobody selected.
-- **The library footer stops advertising a key that did nothing.** `m` was
-  registered for a title-control menu and shown as available; no handler read
-  it, so the keystroke was typed into the filter box instead.
-
-Privacy hardening, and a consent bug in the installer.
-
-- **Diagnostics no longer leak signed-CDN tokens or your IP address.**
-  Redaction judged only the parameter _name_, so anything the CDN keyed
-  differently — `?q=<token>`, `?md5=<hash>`, `?ip=`, `?client_ip=` — passed
-  through intact into the debug log, the diagnostics store, and the support
-  bundle people paste into GitHub issues. Values are now judged too: an
-  unbroken high-entropy blob is redacted, while readable values like `?q=Dune`
-  survive so traces stay useful.
-- **Analytics sends a hash, never your install id.** The ping now carries
-  `sha256(installId)`; the id itself never leaves your machine. The payload is
-  still exactly five keys. Because the hash input changed, installs from before
-  this release are counted once more.
-- **You can rotate your install id** from Settings while staying opted in. The
-  new id is freshly random, so earlier pings cannot be linked to it. Disabling
-  analytics still clears the id entirely.
-- **The installer no longer treats "no terminal" as a yes.** `curl … | bash` in
-  CI, a container, or a sandbox would auto-answer the optional-dependency
-  prompts and run `sudo apt-get/pacman/dnf install` unattended, because
-  `-r /dev/tty` tests permission bits rather than a controlling terminal and a
-  failed read fell through to the default. `--yes` is now the only thing that
-  accepts on your behalf; a skipped step says so.
-- **`kunai` works in the next terminal you open.** The installer printed a PATH
-  line and stopped, which changes nothing in your shell — so on macOS and
-  Alpine, where `~/.local/bin` is not already on PATH, the install "succeeded"
-  and the command was not found. It now writes your shell profile (opt out with
-  `--skip-path-update`) and prints one `source` line for the current shell.
-- **Apple Silicon binaries run.** Release binaries are cross-compiled on Linux
-  and therefore arrive unsigned, which arm64 macOS refuses to execute — the
-  shell reports only `killed: 9`. The installer now ad-hoc signs on your Mac.
-- **The public usage page works.** `/analytics` on the docs site showed
-  "not published yet" permanently while the ingest was serving real data.
-- **AllAnime survives a bad response** instead of failing the provider, and the
-  relay's private-host guard covers IPv4-mapped IPv6 such as
-  `::ffff:169.254.169.254`.
-- **Discord Rich Presence can no longer end your session.** A malformed frame
-  from Discord reached `JSON.parse` inside the socket callback, and a throw
-  there is an uncaught exception rather than a rejected promise — which Kunai
-  escalates to a fatal shutdown. A cosmetic, optional integration was able to
-  print a stack trace over the UI and stop playback. Unreadable frames are now
-  dropped, and a frame claiming an implausible size drops the connection instead
-  of buffering toward it.
-- **An unplugged drive no longer kills the session or strands the download.**
-  When the download folder became unwritable or disappeared mid-session,
-  preparing the output directory threw past the point where the job was claimed:
-  the job stayed claimed for the rest of the run — displayed as queued, never
-  startable again — and the error surfaced as an unhandled rejection, which is
-  also a fatal shutdown. The job is now paused with a readable reason and picked
-  up on a later attempt.
-- **Reordering Up Next is all-or-nothing.** Positions were written one row at a
-  time outside a transaction, so an interruption part-way left the queue with
-  duplicate positions rather than a stale-but-valid order.
-- **Anime playback stops stalling the interface between segments.** The relay
-  decoded every video segment into a JavaScript string twice — once to find a
-  status trailer, once to check whether the bytes were a playlist — which for a
-  6 MiB segment cost about 50 ms of blocked main thread and 60 MiB of garbage,
-  on the same thread that reads your keystrokes. Both checks now work on bytes.
-- **The relay's CDN allowlist is a domain check again.** The patterns matched
-  any hostname _containing_ the allowed name, so a crafted stream URL could
-  point the local relay at an attacker's host.
-- **The mpv control socket lives in a private directory.** It sat in the shared
-  temp directory; on systems with a group-writable umask that left mpv's
-  command interface reachable by another process running as the same group.
-  It now uses `$XDG_RUNTIME_DIR/kunai`, falling back to an owner-only temp
-  subdirectory (macOS sets no runtime dir). Windows is unaffected — it uses a
-  named pipe.
-- **Links open only if they are links.** External URLs went straight to
-  `xdg-open`/`open`/`explorer.exe` whatever their scheme, and a value beginning
-  with `-` was read by the opener as a flag. Only `http`, `https`, and `kunai`
-  URLs are opened now; anything else is still shown and copyable.
-
-- **Downloads:** provider stream URLs and headers are guarded before reaching
-  yt-dlp (scheme check, leading-dash rejection, `--` terminator, CRLF-stripped
-  headers), closing an argv option-injection path the mpv lane already blocked.
-- **Storage:** the data and cache SQLite files (plus `-wal`/`-shm`) are chmod'd
-  to owner-only on every open, matching config and token handling.
-- **Windows:** every install path now installs real mpv instead of mpv.net.
-  mpv.net ships `mpvnet.exe`, but Kunai probes for `mpv` and drives playback
-  over mpv's IPC socket and Lua bridge, so a "successful" dependency install
-  could still leave playback reporting mpv as missing.
-- **CLI:** `--jump` help says what the flag does (auto-pick the n-th search
-  result) and warns on invalid values; headless download failures and rejected
-  `--handoff-url` values exit nonzero.
-- **Playback:** one-shot mpv launches attach the full collected subtitle
-  inventory and report the real track count; prefetched and back-navigation
-  streams are re-resolved when blocked or older than five minutes instead of
-  replaying a possibly expired URL.
-- **AniSkip:** the TMDB to MAL fallback is refused beyond season 1, so
-  split-cour anime no longer risk wrong auto-skip windows.
-- **Docs:** the command-honesty gate counts the browse palette; user docs stop
-  promising `/sync` as a typed command; the
-  keybindings doc's post-playback table matches the code; provider descriptions
-  state adapter roles instead of speed or "recommended" claims.
-
-New in this release: `kunai completion <shell>` prints a completion script for
-bash, zsh, fish, and PowerShell, covering every flag and maintenance
-subcommand. `/docs` now opens the published documentation site at
-https://kunai.kitsunekode.in instead of the GitHub tree.
-
 ### Minor Changes
+
+- Give Kunai a mascot, and one of her rather than two.
+
+  Kanna is a rose kitsune. A **kanna** (鉋) is a Japanese hand plane. You run it
+  over rough wood and the roughness leaves in one curl. Kunai is the blade; she is
+  who holds it.
+
+  - **She appears where waiting happens, and nowhere else.** Setup, the setup
+    summary, the goodbye screen, and (as one short line of text) every empty and
+    error state. That text tier is the one that matters: the illustrated fox needs
+    a graphics protocol and reaches four terminals, while copy reaches all of them.
+    She is silent on `loading`, `info` and `success`, which already say what is
+    happening.
+  - **`KUNAI_PET=off` retires her entirely**, text included; `glyph` pins the
+    portable 🦊; non-TTY output gets neither, instead of a stray emoji in a pipe.
+  - **Quitting is no longer slower for people who never see her.** The exit
+    animation budget had tripled as a constant, so every user paid 440ms on every
+    quit for a still that most terminals would never paint. It is now derived from
+    whether the still will actually render.
+
+  Kunai had been shipping two mascots. A pixel-grid generator called itself the
+  source of truth and fed the README hero, both social cards, the GitHub preview
+  and the Discord icon, so everything a person met _before_ installing was a
+  different animal from the one inside the program. There is now a single traced
+  vector source, and every one of those surfaces renders from it.
+
+  She appears in the terminal where the session is actually waiting: while
+  providers are being raced, on the beat where a stream is handed to mpv, and when
+  a resolve fails. One rule keeps that from becoming clutter: she never competes
+  with content artwork, so where a poster renders she does not. Failure is the one
+  exception, because a surface explaining what went wrong outranks a picture.
+
+  Every surface reports what the session is _doing_ and a single host decides what
+  to draw. That is what retires the three poses which were embedded in the binary
+  with no way to reach them, and it is enforced: one test fails if an embedded pose
+  becomes undrawable, another if a moment has no reporter.
+
+  On the docs site she roams, and she is an animal with attention rather than a
+  cursor mirror. She has to notice a movement (small ones are ignored), take a beat
+  to decide, walk over, and settle _beside_ you rather than on you; anything that
+  lands under the pointer reads as cursor decoration. Changing direction mid-walk
+  costs her a moment of speed instead of snapping. At rest she watches you, gets
+  bored, and only then curls up. She is goofier there than in the terminal on
+  purpose: the CLI is her at work, where a chatty line in someone's shell is a bug.
+
+  The browser tab is hers too: the favicon is Kanna rather than the blade mark,
+  which stays as the insignia on badges and the cards.
+
+  Fixes found while building it, all pre-existing:
+
+  - **Ctrl-K search on the docs site returned nothing for every term.** The route
+    declared `dynamic = "force-static"` while exporting a `GET` that answers one
+    `?query=` per request, so Next prerendered it once with no query and served
+    that forever. The built payload was two bytes.
+  - **A failed clipboard write still reported success.** The copy button did not
+    await `writeText`, so a rejected write (insecure context, denied permission,
+    no clipboard API) still said "Copied" and still fired the event the fox
+    reacts to.
+  - **Discord presence printed its status twice** on the shell boot line, both
+    settings actions, and the diagnostics reason: "unavailable · unavailable ·
+    Could not connect to…". Four surfaces composed that line by hand and all four
+    repeated a status the detail already carried.
+  - **The social card drew its type row on top of the mascot.** The layout was
+    written for a corner peek on a dark square with empty space beside it; the art
+    changed to a centred bust and the layout did not follow.
+  - **The installer Docker matrix was failing every scenario on both libc
+    variants** with `release companion not found`: the build job uploaded raw
+    executables while the fixture installs from the archive.
+
+  Security, honesty, and platform fixes from a full codebase review.
+
+  Provider source reliability and lower cold-start waiting.
+
+  - **AniDB:** source inventory now comes from exact per-episode `jpn`/`eng`
+    evidence. The requested audio mode resolves first; optional alternate audio is
+    skipped in fast mode and bounded in balanced/quality-first modes, so a slow or
+    missing alternate cannot hold a playable requested stream or appear as a
+    selectable source.
+  - **AllAnime:** the mkissa build-140 crypto rotation is locked with independent
+    known-answer vectors and exact bootstrap-header tests. Cold episode-catalog
+    and crypto preparation now overlap, and baseline source adapters share a 1.5
+    second inventory window so a dead mirror cannot hold already-playable peers.
+    The production cold smoke kept four candidates while dropping from 12.257 to
+    2.573 seconds; request retries and their individual deadlines are unchanged.
+  - **Relay diagnostics:** `bun run test:relay` reads the user's existing relay
+    config without modifying it, preflights `/health` through Bun itself, then
+    runs the AllAnime smoke in an isolated profile. It reports only the relay
+    origin, token presence, provider count, and bounded failure code; full URLs,
+    URL queries, fragments, embedded credentials, and tokens are not logged.
+  - **Provider ordering:** the default remains `animeProviderPriority: ["anidb"]`.
+    The field is documented as ordering rather than an allowlist; registered
+    AllAnime and Miruro providers remain available behind AniDB.
+
+  Launch flags, discovery, and the queue.
+
+  - **`-S <query>` shows its results.** The search ran, but the view and the shell
+    were both chosen from a state snapshot taken before it finished, and that
+    snapshot is empty by construction, so a successful search landed on the empty
+    search surface and looked like the query had merely been typed for you.
+  - **A search on launch now shows a loader.** The idle surface rendered the
+    welcome screen regardless of search state, so the header said "searching" over
+    a screen with no sign of work in flight.
+  - **`-i/--id` says when it is ignored.** An id without a usable `-t`, or under
+    `-a`, was dropped with a debug-only warning, so the run looked normal and the
+    flag silently did nothing.
+  - **`/random` and `/surprise` honour your Discover tray size** and are on the
+    browse palette next to `/trending`. The tray was clamped to five picks while
+    the setting's smallest option is twelve, so no configured value could ever
+    take effect; a uniform shuffle also discarded the stratification that keeps
+    one source from filling the tray.
+  - **`/up-next` opens during playback.** The queue was reachable everywhere
+    except the one activity that consumes it.
+  - **`--dry-run` prints the plan instead of starting a session.** The flag was
+    documented as a general launch flag and read in exactly two places
+    (`--install-protocol-handler` and `rollback`), so `kunai -S "Dune" --dry-run`
+    parsed it, discarded it, and mounted the full interactive shell, starting the
+    session it had just promised not to. It now prints the resolved mode, surface,
+    query or title, auto-pick, and any flag it will ignore, and exits before
+    anything is created: no version lock, no version pruning, no database, no
+    terminal probe.
+  - **`--zen` no longer plays a title you did not pick.** Zen is documented as a
+    bare layout, but it set `--quick`, which is not a layout flag at all; it means
+    "auto-pick result #1". `kunai -S "Dune" --zen` skipped the result list and
+    started playing the top hit. Zen now changes chrome only; use `--zen --quick`
+    for the old behaviour.
+  - **Finishing a title no longer triggers a search you did not ask for.**
+    Launching with both a query and a direct target (`-S "Dune" --history`, a
+    share link, `-i` with `-t`) left the query armed after the chosen title
+    played, so the session bounced into a stale search when playback ended, and
+    with the auto-pick index still set, under `--quick` that search immediately
+    played its first hit, writing a history row and a tracker sync for a title
+    nobody selected.
+  - **The library footer stops advertising a key that did nothing.** `m` was
+    registered for a title-control menu and shown as available; no handler read
+    it, so the keystroke was typed into the filter box instead.
+
+  Privacy hardening, and a consent bug in the installer.
+
+  - **Diagnostics no longer leak signed-CDN tokens or your IP address.**
+    Redaction judged only the parameter _name_, so anything the CDN keyed
+    differently (`?q=<token>`, `?md5=<hash>`, `?ip=`, `?client_ip=`) passed
+    through intact into the debug log, the diagnostics store, and the support
+    bundle people paste into GitHub issues. Values are now judged too: an
+    unbroken high-entropy blob is redacted, while readable values like `?q=Dune`
+    survive so traces stay useful.
+  - **Analytics sends a hash, never your install id.** The ping now carries
+    `sha256(installId)`; the id itself never leaves your machine. The payload is
+    still exactly five keys. Because the hash input changed, installs from before
+    this release are counted once more.
+  - **You can rotate your install id** from Settings while staying opted in. The
+    new id is freshly random, so earlier pings cannot be linked to it. Disabling
+    analytics still clears the id entirely.
+  - **The installer no longer treats "no terminal" as a yes.** `curl … | bash` in
+    CI, a container, or a sandbox would auto-answer the optional-dependency
+    prompts and run `sudo apt-get/pacman/dnf install` unattended, because
+    `-r /dev/tty` tests permission bits rather than a controlling terminal and a
+    failed read fell through to the default. `--yes` is now the only thing that
+    accepts on your behalf; a skipped step says so.
+  - **`kunai` works in the next terminal you open.** The installer printed a PATH
+    line and stopped, which changes nothing in your shell, so on macOS and
+    Alpine, where `~/.local/bin` is not already on PATH, the install "succeeded"
+    and the command was not found. It now writes your shell profile (opt out with
+    `--skip-path-update`) and prints one `source` line for the current shell.
+  - **Apple Silicon binaries run.** Release binaries are cross-compiled on Linux
+    and therefore arrive unsigned, which arm64 macOS refuses to execute; the
+    shell reports only `killed: 9`. The installer now ad-hoc signs on your Mac.
+  - **The public usage page works.** `/analytics` on the docs site showed
+    "not published yet" permanently while the ingest was serving real data.
+  - **AllAnime survives a bad response** instead of failing the provider, and the
+    relay's private-host guard covers IPv4-mapped IPv6 such as
+    `::ffff:169.254.169.254`.
+  - **Discord Rich Presence can no longer end your session.** A malformed frame
+    from Discord reached `JSON.parse` inside the socket callback, and a throw
+    there is an uncaught exception rather than a rejected promise, which Kunai
+    escalates to a fatal shutdown. A cosmetic, optional integration was able to
+    print a stack trace over the UI and stop playback. Unreadable frames are now
+    dropped, and a frame claiming an implausible size drops the connection instead
+    of buffering toward it.
+  - **An unplugged drive no longer kills the session or strands the download.**
+    When the download folder became unwritable or disappeared mid-session,
+    preparing the output directory threw past the point where the job was claimed:
+    the job stayed claimed for the rest of the run (displayed as queued, never
+    startable again), and the error surfaced as an unhandled rejection, which is
+    also a fatal shutdown. The job is now paused with a readable reason and picked
+    up on a later attempt.
+  - **Reordering Up Next is all-or-nothing.** Positions were written one row at a
+    time outside a transaction, so an interruption part-way left the queue with
+    duplicate positions rather than a stale-but-valid order.
+  - **Anime playback stops stalling the interface between segments.** The relay
+    decoded every video segment into a JavaScript string twice (once to find a
+    status trailer, once to check whether the bytes were a playlist), which for a
+    6 MiB segment cost about 50 ms of blocked main thread and 60 MiB of garbage,
+    on the same thread that reads your keystrokes. Both checks now work on bytes.
+  - **The relay's CDN allowlist is a domain check again.** The patterns matched
+    any hostname _containing_ the allowed name, so a crafted stream URL could
+    point the local relay at an attacker's host.
+  - **The mpv control socket lives in a private directory.** It sat in the shared
+    temp directory; on systems with a group-writable umask that left mpv's
+    command interface reachable by another process running as the same group.
+    It now uses `$XDG_RUNTIME_DIR/kunai`, falling back to an owner-only temp
+    subdirectory (macOS sets no runtime dir). Windows is unaffected: it uses a
+    named pipe.
+  - **Links open only if they are links.** External URLs went straight to
+    `xdg-open`/`open`/`explorer.exe` whatever their scheme, and a value beginning
+    with `-` was read by the opener as a flag. Only `http`, `https`, and `kunai`
+    URLs are opened now; anything else is still shown and copyable.
+
+  - **Downloads:** provider stream URLs and headers are guarded before reaching
+    yt-dlp (scheme check, leading-dash rejection, `--` terminator, CRLF-stripped
+    headers), closing an argv option-injection path the mpv lane already blocked.
+  - **Storage:** the data and cache SQLite files (plus `-wal`/`-shm`) are chmod'd
+    to owner-only on every open, matching config and token handling.
+  - **Windows:** every install path now installs real mpv instead of mpv.net.
+    mpv.net ships `mpvnet.exe`, but Kunai probes for `mpv` and drives playback
+    over mpv's IPC socket and Lua bridge, so a "successful" dependency install
+    could still leave playback reporting mpv as missing.
+  - **CLI:** `--jump` help says what the flag does (auto-pick the n-th search
+    result) and warns on invalid values; headless download failures and rejected
+    `--handoff-url` values exit nonzero.
+  - **Playback:** one-shot mpv launches attach the full collected subtitle
+    inventory and report the real track count; prefetched and back-navigation
+    streams are re-resolved when blocked or older than five minutes instead of
+    replaying a possibly expired URL.
+  - **AniSkip:** the TMDB to MAL fallback is refused beyond season 1, so
+    split-cour anime no longer risk wrong auto-skip windows.
+  - **Docs:** the command-honesty gate counts the browse palette; user docs stop
+    promising `/sync` as a typed command; the
+    keybindings doc's post-playback table matches the code; provider descriptions
+    state adapter roles instead of speed or "recommended" claims.
+
+  New in this release: `kunai completion <shell>` prints a completion script for
+  bash, zsh, fish, and PowerShell, covering every flag and maintenance
+  subcommand. `/docs` now opens the published documentation site at
+  https://kunai.kitsunekode.in instead of the GitHub tree.
 
 - [#169](https://github.com/KitsuneKode/kunai/pull/169) [`9d94664`](https://github.com/KitsuneKode/kunai/commit/9d946648ca253965fa88c485be448e81c2a1f470) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Make shared playback targets easy to open outside an existing Kunai install.
 
@@ -191,7 +259,7 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
     date (clamped to 2h–1 week), so a newly-aired episode is never hidden behind a
     stale cache.
   - Only a non-empty catalog is persisted; a failed or empty body is never cached.
-    The cache degrades to a no-op on any store error — a broken cache slows a
+    The cache degrades to a no-op on any store error; a broken cache slows a
     resolve, never fails it. Stream/source URLs stay in-memory and are never
     persisted.
 
@@ -199,8 +267,8 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
 
   - After an anime search, Kunai warms the persistent episode cache for the single
     top anime result in the background, so the Cloudflare-gated catalog fetch
-    (~6s) is already paid by the time you pick it. It is fire-and-forget — it never
-    blocks, delays, or fails the search — deduped so a title is warmed once per
+    (~6s) is already paid by the time you pick it. It is fire-and-forget: it never
+    blocks, delays, or fails the search. Deduped so a title is warmed once per
     session, and limited to one gated call per search to stay gentle on the WAF.
 
 - [#59](https://github.com/KitsuneKode/kunai/pull/59) [`15cac9e`](https://github.com/KitsuneKode/kunai/commit/15cac9e0c1dbc91c957d0b2133a515b7585803e6) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Keep the anime auto-skip and provider-relay paths working after upstream rotations.
@@ -213,7 +281,7 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
 - [`e9e7134`](https://github.com/KitsuneKode/kunai/commit/e9e7134) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Show posters on every terminal, including Windows.
 
   - New half-block renderer decodes JPEG/PNG in process and paints two pixels per
-    cell with truecolour SGR, so posters no longer require `chafa` — which is
+    cell with truecolour SGR, so posters no longer require `chafa`, which is
     effectively never installed on Windows, where posters previously never
     appeared at all.
   - Windows Terminal no longer auto-selects sixel: support only landed in 1.22 and
@@ -239,7 +307,7 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
 
   - **A malformed language tag can no longer take down a resolve.** `Intl.DisplayNames.of()`
     throws on anything that is not a well-formed BCP-47 tag, and several values reaching it are
-    not — YouTube's `a.en` auto-caption codes, `live_chat`, and `none`, which Kunai ships as its
+    not: YouTube's `a.en` auto-caption codes, `live_chat`, and `none`, which Kunai ships as its
     own default subtitle preference. Labels now degrade instead of throwing, YouTube's dotted
     auto-caption tags resolve to the real language, and the `live_chat` metadata track is dropped
     before it can reach the picker.
@@ -256,8 +324,8 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
   - **YouTube live streams play.** mpv's ytdl hook turns each `ytdl-raw-options` entry into a bare
     `--flag` when its value is empty, so Kunai's `live-from-start=no` reached yt-dlp as
     `--live-from-start no` and `no` was read as a second URL. Live playback now joins at the live
-    edge, holds a short demuxer buffer to stay there — at spawn and on every in-session
-    replacement alike — and suppresses every seek that assumes a fixed position: the start
+    edge, holds a short demuxer buffer to stay there (at spawn and on every in-session
+    replacement alike) and suppresses every seek that assumes a fixed position: the start
     argument, the loadfile offset, the watch-later resume prompt, and the seek that used to fire
     after an in-process reconnect.
 
@@ -266,7 +334,7 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
     with no Proof-of-Origin requirement, and yt-dlp skips rather than attempts formats whose token
     is missing, so a token-gated client in front spent a whole failover lane on formats that were
     never going to be offered. A configured PO token now survives a restart, reaches downloads as
-    well as playback, and is written in the single-prefix form yt-dlp can actually parse — before,
+    well as playback, and is written in the single-prefix form yt-dlp can actually parse; before,
     it was dropped by config normalization, omitted by downloads, and malformed on the wire.
   - **A YouTube premiere says it has not started.** Opening one reports that instead of handing
     mpv a stream that cannot play yet, and rows carry view counts, humanized upload times, and
@@ -278,8 +346,8 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
     progress, `esc` to cancel, and `r` to retry a failure. It previously passed a signal from a
     controller nobody held, so cancelling was impossible and the wizard waited on an unresponsive
     screen until the tracker's own deadline expired.
-  - **Stopping early shows where you stopped.** The post-play bar read season progress — "3 / 10"
-    after 23 seconds of an episode — and films got no bar at all. It now reads elapsed position
+  - **Stopping early shows where you stopped.** The post-play bar read season progress ("3 / 10"
+    after 23 seconds of an episode), and films got no bar at all. It now reads elapsed position
     over runtime for both, without a misleading percentage or a season fallback when runtime is
     unavailable.
   - **Discord presence clears when Kunai exits.** A single Discord IPC frame was allowed ten
@@ -299,6 +367,19 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
   - **Windows install guidance names the real mpv package.** The README, npm package page, and
     platform guide use `mpv-player.mpv-CI.MSVC`, which provides the `mpv.exe` Kunai probes and
     controls, instead of the ambiguous package name that can leave only `mpvnet.exe` available.
+  - **History consolidation keeps the furthest watch state.** When an opaque row and its catalog
+    row resolve to the same episode, the newer identity still wins while progress, completion,
+    duration, and first-watched time keep the most useful evidence from both rows.
+  - **Legacy YouTube history keeps its poster while migrating.** Rekeying an older video row no
+    longer drops its thumbnail from Library and Continue Watching.
+  - **Installer recovery refuses unsafe staging paths.** Bash now matches the TypeScript
+    installer: abandoned transactions cannot escape the cache through traversal, prefix-sharing
+    siblings, or a staging-directory symlink before cleanup.
+  - **Silent persistence and fallback failures are closed.** Shutdown waits for an in-flight
+    settings save; failed discovery fetches are not cached as empty; absolute-numbered anime works
+    in retention, cleanup, and crash resume; analytics rejects insecure overrides; relay sub-paths
+    are preserved; Windows paths are measured before tightening; AniSkip survives an untimed
+    IntroDB segment; unreadable config is not overwritten; and sandbox paths resolve only when used.
 
 - Also new since 0.2.5, the last release you could install:
 
@@ -306,7 +387,7 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
     everything else, with live/upcoming handling, SponsorBlock and cookie settings,
     and video watch history counted in your stats.
   - **Playback that recovers.** Persistent mpv sessions, provider fallback with
-    endpoint-health diagnostics, and honest cancellation — a dead source retries
+    endpoint-health diagnostics, and honest cancellation: a dead source retries
     the next one instead of looping.
   - **Share links.** `kunai://` round trips, so a title (and timestamp) can be
     handed to someone else or reopened later.
@@ -348,9 +429,9 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
 - [#163](https://github.com/KitsuneKode/kunai/pull/163) [`5dbd508`](https://github.com/KitsuneKode/kunai/commit/5dbd50898f1cfb83321cf16827eb35f492754ba4) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Keep unexpected background download-queue failures inside the download
   subsystem so they cannot terminate playback.
 
-- [#210](https://github.com/KitsuneKode/kunai/pull/210) [`ea96a00`](https://github.com/KitsuneKode/kunai/commit/ea96a00) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - YouTube plays at the quality you chose on the persistent player path. The format selector was set on mpv's `ytdl` option, which is a yes/no flag — mpv answered `unsupported format for accessing property` and dropped it, so the ceiling silently never applied while the spawn path honoured it. The two player paths now agree.
+- [#210](https://github.com/KitsuneKode/kunai/pull/210) [`ea96a00`](https://github.com/KitsuneKode/kunai/commit/ea96a00) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - YouTube plays at the quality you chose on the persistent player path. The format selector was set on mpv's `ytdl` option, which is a yes/no flag; mpv answered `unsupported format for accessing property` and dropped it, so the ceiling silently never applied while the spawn path honoured it. The two player paths now agree.
 
-- [#211](https://github.com/KitsuneKode/kunai/pull/211) [`b9962fd0`](https://github.com/KitsuneKode/kunai/commit/b9962fd0) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Tracker credentials are private on Windows and survive a power cut everywhere. The owner-only permission was applied under a POSIX-only branch, so on Windows `sync-tokens.json` and `config.json` kept whatever `%APPDATA%` inherited; they now get an inheritance-free, user-only ACL. Neither file was ever flushed either, so an atomic rename could reach the journal while the data sat in the page cache — a power loss left a correctly named, empty config. Both are now flushed before the rename and the directory entry after it.
+- [#211](https://github.com/KitsuneKode/kunai/pull/211) [`b9962fd0`](https://github.com/KitsuneKode/kunai/commit/b9962fd0) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Tracker credentials are private on Windows and survive a power cut everywhere. The owner-only permission was applied under a POSIX-only branch, so on Windows `sync-tokens.json` and `config.json` kept whatever `%APPDATA%` inherited; they now get an inheritance-free, user-only ACL. Neither file was ever flushed either, so an atomic rename could reach the journal while the data sat in the page cache; a power loss left a correctly named, empty config. Both are now flushed before the rename and the directory entry after it.
 
 - [#156](https://github.com/KitsuneKode/kunai/pull/156) [`049d18d`](https://github.com/KitsuneKode/kunai/commit/049d18d) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - `-i/--id` no longer leaves a placeholder title in your history, and a partial write can no longer erase external ids that were already resolved. Continue-watching rows keep the identity they were saved with.
 
@@ -372,7 +453,8 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
 
   ### Privacy
   - Do not send analytics before consent, without an interactive terminal, or when DNT or CI blocks it.
-  - Leave the production endpoint disabled until an operator configures and verifies one.
+  - Send only to the Kunai-owned HTTPS endpoint after explicit consent; reject insecure overrides
+    without falling back to the default.
 
 - [#27](https://github.com/KitsuneKode/kunai/pull/27) [`35aa301`](https://github.com/KitsuneKode/kunai/commit/35aa301b78b79eca17c16c697d139756f0394da1) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Recover active playback from transient buffer, stall, and seek states while rejecting stale mpv cycle events and presence updates.
 
@@ -397,12 +479,12 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
   client secret, so Kunai ships an application id and nothing else. Delivery is
   paced against AniList's published rate-limit headers, and a `429` defers the
   whole batch for that tracker using the server's own wait rather than retrying
-  into it. Sync can be paused for a while — distinct from turning a tracker off —
+  into it. Sync can be paused for a while (distinct from turning a tracker off),
   with work still queueing while paused.
 
   Favourites and watchlist now reach the right tracker. A list change carries the
   title's catalogue ids instead of dropping them, and AniList is resolved from an
-  explicit id rather than from the lane a row arrived through — anime almost always
+  explicit id rather than from the lane a row arrived through; anime almost always
   arrives as a TMDB-typed `series`, so the old lane check rejected the very titles
   it existed to route while TMDB accepted them. Favouriting an anime wrote to TMDB
   and never to AniList; more often it queued nothing at all and still reported
@@ -429,8 +511,8 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
   gets a covering index. Existing duplicates collapse onto the earliest row.
 
   In the shell, the favourite mark moves to its own accent-tinted column on the
-  right — prefixed into the title it took the title's colour and pushed every
-  favourited row a glyph out of alignment — and a toggle now reports which way it
+  right; prefixed into the title, it took the title's colour and pushed every
+  favourited row a glyph out of alignment. A toggle now reports which way it
   went, and where it synced, instead of "Updated favourites" for both directions.
   Favourites reach the screens where you actually spend time: `l` toggles during
   loading and playback, and the playing rail and post-play panel both show the
@@ -439,11 +521,11 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
 
   Connecting TMDB no longer hangs when the API is unreachable. Artwork and
   metadata try a mirror before going direct, so they can work on a network where
-  account linking cannot — linking must be direct, because a request token and
+  account linking cannot; linking must be direct, because a request token and
   session id are account credentials. That now fails in seconds with an
   explanation instead of stalling forever with no output.
 
-  Sync gains a settings page — the first reachable Connect surface — with a status
+  Sync gains a settings page (the first reachable Connect surface) with a status
   badge in the root crumb. It is marked experimental: the delivery path is covered
   by tests but has not yet been verified against a live tracker account.
 
@@ -467,7 +549,7 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
 
 - Continuous play (Up Next), offline parity, smarter anime classification, a rebuilt calendar, and a long tail of UX fixes.
   - **Continuous play (Up Next).** Auto-continue into the next episode → your queue → a recommendation when caught up (cancelable countdown). `/queue` opens the Up Next panel; reorder queued items (move up/down); save the queue as a playlist; import/export.
-  - **Offline parity.** Downloaded episodes now play through the _same_ path as online — full resume **offer** (not a forced seek), auto-skip, OSD, track control, autoplay into the next downloaded episode, and history.
+  - **Offline parity.** Downloaded episodes now play through the _same_ path as online: full resume **offer** (not a forced seek), auto-skip, OSD, track control, autoplay into the next downloaded episode, and history.
   - **Smarter anime.** Deterministic TMDB anime classifier (research-validated) tags results as _Anime_; it is authoritative for the persisted content kind, so an anime watched via a series provider is still classified as anime. Fix a wrong label any time with `/mark-anime` · `/mark-series`.
   - **Rebuilt calendar.** Rolling ±7-day schedule (past week + upcoming), type tabs (All/Anime/Series/Movies/Tracked), per-day navigation, `/anime-calendar` and `/series-calendar` shortcuts, boxed day chips with a distinct _today_ highlight, and aligned columns that no longer shift on long titles.
   - **Share links.** `/share` copies a catalog-anchored `kunai://` URL for the current title; `/watch` opens a `kunai://` link from your clipboard.
@@ -475,7 +557,7 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
   - **Downloads.** Parallel N-worker pool (`maxConcurrentDownloads`, default 3, 1–5); runaway RAM and orphaned `yt-dlp` are fixed (bounded fragment buffering, SIGKILL children on exit, socket timeout); partial-download badges (`↓ n/total`); pause-on-quit + auto-resume on return.
   - **Calendar polish.** Chronological day strip, no phantom "Nothing on schedule" days, enter-at-today navigation, no layout shift on long titles, ±7-day clamp.
   - **Classification fix.** Content-derived kind on the write path (drama-on-anime-provider no longer labeled anime).
-  - **Progress fix.** Episode progress and series progress are now separate — finishing one episode no longer mislabels a whole series "Completed"; `unknown` release state → Continue, not falsely Completed.
+  - **Progress fix.** Episode progress and series progress are now separate; finishing one episode no longer mislabels a whole series "Completed"; `unknown` release state → Continue, not falsely Completed.
   - **Library fix.** Offline episodes ordered by season/episode, not download time.
   - **Playback fix.** Failed-to-start stream no longer pauses autoplay; single-season episode-list escape no longer loops.
   - **Presence fix.** Discord shows a real progress bar only when duration is known.
@@ -494,7 +576,7 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
   - The source/server picker labels each server row with the audio language behind a flag, matching the web-style Servers tab so dub/sub choices read at a glance.
   - Applied a consistent semantic tone pass: shared 3-role footer color hierarchy, de-noised headers, browse rows tinted by content kind (anime / series / movie), split info vs. warning tones on the loading/dependency screen, and unified tone colors across overlays, history, and details.
   - Rebuilt the details overlay around a compact model with an inline renderer, replacing the previous sparse, spam-prone layout, and added a terminal-portable `Ctrl+O` details shortcut while dropping the advertised-but-broken `Shift+Enter`.
-  - Fixed autoplay correctness: switching provider, source, or quality — and recovery — no longer pauses an autoplay chain.
+  - Fixed autoplay correctness: switching provider, source, or quality (and recovery) no longer pauses an autoplay chain.
   - Polished mpv resume OSD (real newline events instead of overflow, a smaller card, rose brand accent) and tightened the palette by dropping empty scroll-placeholder lines and dead top margin.
   - Fixed the calendar: the left column shows real clock time while the countdown stays in the status column, and structured-item view detection restores the day strip, type tabs, and per-kind colors.
 

@@ -19,7 +19,7 @@ export type ProviderResolveFailurePlanInput = {
   readonly resolveAborted: boolean;
   readonly sessionAborted: boolean;
   readonly streamSwitchSelection: unknown | null;
-  readonly resolveAbortIntent: "cancel" | "fallback" | null;
+  readonly resolveAbortIntent: "cancel" | "fallback" | "retry" | null;
   readonly hasCompatibleFallbackProvider: boolean;
   /** From showPlaybackProblem when resolve was not user-aborted. */
   readonly problemAction: "dismiss" | "retry" | null;
@@ -42,6 +42,9 @@ export function planEpisodeIterationDirective(
     }
     if (input.resolveAbortIntent === "fallback" && input.hasCompatibleFallbackProvider) {
       return { kind: "restart", reason: "provider-fallback-skip" };
+    }
+    if (input.resolveAbortIntent === "retry") {
+      return { kind: "restart", reason: "resolve-retry" };
     }
     return { kind: "exit", result: "back_to_results" };
   }

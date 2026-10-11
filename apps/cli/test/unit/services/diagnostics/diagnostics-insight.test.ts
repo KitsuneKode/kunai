@@ -9,6 +9,7 @@ import {
   formatSessionVerdictLabel,
   type RecommendedAction,
 } from "@/services/diagnostics/diagnostics-insight";
+import type { RuntimeMemorySnapshot } from "@/services/diagnostics/runtime-memory";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 
 function baseState() {
@@ -19,6 +20,22 @@ function baseState() {
   });
 }
 
+/**
+ * The memory row defaults to the live process. Under the full unit suite that
+ * process can sit above the warning line or on swap, which turned a pure
+ * verdict test into a host-memory test; a quiet snapshot keeps it about the
+ * session.
+ */
+const quietMemory: RuntimeMemorySnapshot = {
+  appRssBytes: 256 * 1024 ** 2,
+  appHeapUsedBytes: 64 * 1024 ** 2,
+  appHeapTotalBytes: 128 * 1024 ** 2,
+  playbackChildRssBytes: 0,
+  playbackChildSwapBytes: 0,
+  playbackChildCount: 0,
+  appSwapBytes: 0,
+};
+
 describe("buildDiagnosticsInsight", () => {
   test("healthy session reports healthy verdict and none action", () => {
     const state = {
@@ -28,6 +45,7 @@ describe("buildDiagnosticsInsight", () => {
     };
     const insight = buildDiagnosticsInsight({
       state,
+      memorySnapshot: quietMemory,
       recentEvents: [
         {
           timestamp: 1,
@@ -48,6 +66,17 @@ describe("buildDiagnosticsInsight", () => {
     expect(insight.healthRows.find((row) => row.subsystem === "playback")?.severity).toBe(
       "healthy",
     );
+  });
+
+  test("an injected memory snapshot drives the memory row", () => {
+    const insight = buildDiagnosticsInsight({
+      state: baseState(),
+      memorySnapshot: { ...quietMemory, appSwapBytes: 1 },
+      recentEvents: [],
+    });
+
+    expect(insight.healthRows.find((row) => row.subsystem === "memory")?.severity).toBe("degraded");
+    expect(insight.degradedSubsystems).toContain("memory");
   });
 
   test("provider timeout is explainable with fallback-provider action", () => {

@@ -25,12 +25,18 @@ export function resolveAttentionFeatureFlags(
   const env = options.env ?? process.env;
   const envAvailabilitySync = readBoolean(env.KUNAI_EXPERIMENTAL_PROVIDER_AVAILABILITY_SYNC);
   const envPlaylistSharing = readBoolean(env.KUNAI_PLAYLIST_SHARING);
+  // The default-on features get kill-switch env vars so a bad rollout can be
+  // disabled without a rebuild — same contract as the experimental flags above.
+  const envAttentionInbox = readBoolean(env.KUNAI_ATTENTION_INBOX);
+  const envQueueRecovery = readBoolean(env.KUNAI_QUEUE_RECOVERY);
+  const envNewEpisodeProjection = readBoolean(env.KUNAI_NEW_EPISODE_PROJECTION);
 
   return {
-    attentionInbox: options.overrides?.attentionInbox ?? true,
-    queueRecovery: options.overrides?.queueRecovery ?? true,
+    attentionInbox: options.overrides?.attentionInbox ?? envAttentionInbox ?? true,
+    queueRecovery: options.overrides?.queueRecovery ?? envQueueRecovery ?? true,
     playlistSharing: options.overrides?.playlistSharing ?? envPlaylistSharing ?? false,
-    newEpisodeProjection: options.overrides?.newEpisodeProjection ?? true,
+    newEpisodeProjection:
+      options.overrides?.newEpisodeProjection ?? envNewEpisodeProjection ?? true,
     providerAvailabilitySync:
       options.overrides?.providerAvailabilitySync ?? envAvailabilitySync ?? false,
   };

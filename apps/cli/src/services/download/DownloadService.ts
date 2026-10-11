@@ -1,4 +1,5 @@
-import { mkdir, rename, rm, stat, statfs } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { copyFile, link, mkdir, open, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
@@ -18,6 +19,7 @@ import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import { redactDiagnosticValue } from "@/services/diagnostics/redaction";
+import { readBoundedBody } from "@/services/network/bounded-body";
 import {
   cacheOfflinePosterArtwork,
   resolveOfflinePosterArtifactPath,
@@ -25,6 +27,7 @@ import {
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
 import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
+import { fetchGuardedStreamTarget } from "@kunai/providers";
 import {
   buildYoutubeYtdlProfile,
   getYoutubeProviderConfig,
@@ -42,6 +45,7 @@ import {
 } from "@kunai/storage";
 import type { MediaKind, ProviderExternalIds } from "@kunai/types";
 
+import { whichLive } from "../../infra/os/which";
 import { downloadJobShellMode } from "./download-job-mode";
 import { persistLanguageHintsFromEnqueueInput } from "./download-language-hints";
 import { resolveDownloadOutputPath } from "./download-path-naming";
@@ -69,8 +73,18 @@ const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
+// A subtitle is a text sidecar — a few hundred KB at most. Anything beyond this
+// is a mis-labelled or hostile body, not a subtitle.
+const MAX_SUBTITLE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
+/**
+ * How long a job waits when storage is unusable rather than the download being
+ * wrong — an unavailable folder, a breached reserve, or a volume that filled
+ * mid-transfer. Long enough that a full disk is not re-attempted in a tight
+ * loop, short enough that freeing space is noticed within one sitting.
+ */
+const STORAGE_DEFERRAL_RETRY_MS = 30 * 60 * 1000;
 const FFPROBE_DEADLINE_MS = 30_000;
 const FFPROBE_TERMINATION_GRACE_MS = 2_500;
 const FFPROBE_FORCE_WAIT_MS = 2_500;
@@ -250,6 +264,82 @@ type DownloadSidecarResult = {
   readonly repairMetadataJson?: string;
 };
 
+export type StagedDownloadPublishFs = {
+  readonly link: (tempPath: string, outputPath: string) => Promise<void>;
+  readonly copyFile: (src: string, dest: string, flags?: number) => Promise<void>;
+  /** Durable flush of a freshly copied artifact (fsync). */
+  readonly fsyncFile: (path: string) => Promise<void>;
+  readonly removeFile: (path: string) => Promise<void>;
+};
+
+const defaultStagedDownloadPublishFs: StagedDownloadPublishFs = {
+  link: (tempPath, outputPath) => link(tempPath, outputPath),
+  copyFile: (src, dest, flags) => copyFile(src, dest, flags),
+  fsyncFile: async (path) => {
+    const handle = await open(path, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  },
+  removeFile: (path) => rm(path, { force: true }),
+};
+
+function publishErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+  const code = (error as { readonly code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function existingDestinationError(cause: unknown): Error {
+  return new Error(
+    "Download destination already exists; existing file preserved. Choose a different download directory.",
+    { cause },
+  );
+}
+
+/**
+ * Exclusive publication of a staged download.
+ *
+ * Hard-link first: atomic and fails if ANY destination exists. Volumes that
+ * cannot hard-link (cross-device EXDEV, exFAT EPERM/ENOTSUP/EOPNOTSUPP) fall
+ * back to an exclusive copy (COPYFILE_EXCL, so an existing destination still
+ * fails instead of being overwritten) plus fsync, then staging cleanup.
+ * EEXIST always throws with the destination preserved — neither lane ever
+ * silently overwrites.
+ */
+export async function publishStagedDownloadArtifact(
+  tempPath: string,
+  outputPath: string,
+  fs: StagedDownloadPublishFs = defaultStagedDownloadPublishFs,
+): Promise<"hard-linked" | "copied"> {
+  try {
+    await fs.link(tempPath, outputPath);
+    return "hard-linked";
+  } catch (error) {
+    const code = publishErrorCode(error);
+    if (code === "EEXIST") throw existingDestinationError(error);
+    if (code !== "EXDEV" && code !== "EPERM" && code !== "ENOTSUP" && code !== "EOPNOTSUPP") {
+      throw error;
+    }
+  }
+  try {
+    await fs.copyFile(tempPath, outputPath, fsConstants.COPYFILE_EXCL);
+  } catch (error) {
+    if (publishErrorCode(error) === "EEXIST") throw existingDestinationError(error);
+    throw error;
+  }
+  try {
+    await fs.fsyncFile(outputPath);
+  } catch (error) {
+    await fs.removeFile(outputPath).catch(() => {});
+    throw error;
+  }
+  await fs.removeFile(tempPath).catch(() => {});
+  return "copied";
+}
+
 export class DownloadService {
   private queueWorkerRunning = false;
   private lastQueuePassFailureContext: DownloadQueueFailureContext | undefined;
@@ -260,6 +350,7 @@ export class DownloadService {
     { readonly mode: "abort" | "pause"; readonly reason: string }
   >();
   private readonly activeProcesses = new Map<string, ActiveDownloadProcess>();
+  private readonly publishedJobIds = new Set<string>();
   // Jobs picked by a worker but not yet markRunning in the DB. Lets multiple
   // concurrent workers run without two of them claiming the same queued job in
   // the window between `selectEligibleQueuedJob` and `markRunning` (an await).
@@ -299,6 +390,16 @@ export class DownloadService {
       readonly diagnostics?: Pick<DiagnosticsService, "record">;
       readonly onCompletedArtifact?: (job: DownloadJobRecord) => Promise<void> | void;
       readonly onTerminalFailure?: (job: DownloadJobRecord, error: string) => Promise<void> | void;
+      // Volume stats go through deps so unit tests don't read host disk — the
+      // suite's verdict must not depend on how full the test volume happens to be.
+      readonly statfs?: (path: string) => Promise<{ bavail: number; bsize: number }>;
+      /**
+       * Default download directory override. Without it the fallback derives
+       * from `getKunaiPaths().dataDbPath`, so a test that resolves the default
+       * without an isolated storage root computes a path under the developer's
+       * real profile. The user's configured `downloadPath` still wins over this.
+       */
+      readonly defaultDownloadDir?: string;
     },
   ) {}
 
@@ -391,7 +492,9 @@ export class DownloadService {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
     const outputPath = this.resolveOutputPath(input);
-    const tempPath = `${outputPath}.tmp.${id}`;
+    // A full-length output component cannot also fit an appended UUID.
+    // Keep staging in the same directory for atomic, exclusive publication.
+    const tempPath = join(dirname(outputPath), `.tmp.${id}${DOWNLOAD_FILE_EXT}`);
     await mkdir(dirname(outputPath), { recursive: true });
 
     const storage = await this.evaluateStorageForPath(
@@ -488,6 +591,15 @@ export class DownloadService {
     return this.deps.repo.listFailed(limit);
   }
 
+  /**
+   * Completed downloads whose sidecars still need a pass. Separate from
+   * {@link listFailed} because a repairable job is playable -- see the note on
+   * `DownloadJobsRepository.listFailed`.
+   */
+  listRepairable(limit = 100): readonly DownloadJobRecord[] {
+    return this.deps.repo.listRepairable(limit);
+  }
+
   getJob(id: string): DownloadJobRecord | undefined {
     return this.deps.repo.get(id);
   }
@@ -500,11 +612,10 @@ export class DownloadService {
 
   describeQueueSummary(): string | null {
     const active = this.listActive(120);
-    const failed = this.listFailed(20);
     const running = active.filter((job) => job.status === "running").length;
     const queued = active.filter((job) => job.status === "queued").length;
-    const repairable = failed.filter((job) => job.status === "repairable").length;
-    const terminalFailed = failed.length - repairable;
+    const repairable = this.listRepairable(20).length;
+    const terminalFailed = this.listFailed(20).length;
     const parts: string[] = [];
     if (running > 0) parts.push(`${running} running`);
     if (queued > 0) parts.push(`${queued} queued`);
@@ -529,7 +640,7 @@ export class DownloadService {
   async estimateAvailableEpisodeSlots(outputDirectory?: string): Promise<number> {
     const baseDir = outputDirectory?.trim() || this.resolveDefaultDownloadDirectory();
     await mkdir(baseDir, { recursive: true });
-    const diskStats = await statfs(baseDir);
+    const diskStats = await this.statfs(baseDir);
     return estimateAllowedNewAssets({
       availableBytes: diskStats.bavail * diskStats.bsize,
       reserveBytes: this.offlineFreeSpaceReserveBytes(),
@@ -543,6 +654,12 @@ export class DownloadService {
     const job = this.deps.repo.get(jobId);
     if (job?.status === "repairable" || job?.status === "completed-with-notes") {
       await this.repairSidecars(job);
+      return;
+    }
+    if (this.isForeignLiveJob(job)) {
+      this.deps.logger.warn("Refusing to retry a download owned by a live Kunai instance", {
+        jobId,
+      });
       return;
     }
     try {
@@ -559,7 +676,7 @@ export class DownloadService {
   }
 
   async repairRepairableSidecars(limit = 100): Promise<DownloadRepairSummary> {
-    const jobs = this.listFailed(limit).filter((job) => job.status === "repairable");
+    const jobs = this.listRepairable(limit);
     let repaired = 0;
     let stillRepairable = 0;
     let failed = 0;
@@ -648,7 +765,7 @@ export class DownloadService {
     } catch (error) {
       this.claimedJobIds.delete(next.id);
       const detail = error instanceof Error ? error.message : String(error);
-      const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const retryAt = new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString();
       this.deps.repo.pause(
         next.id,
         `Download paused because the download folder is unavailable: ${detail}`,
@@ -667,7 +784,7 @@ export class DownloadService {
 
     if (!storage.allowed) {
       this.claimedJobIds.delete(next.id);
-      const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const retryAt = new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString();
       this.deps.repo.pause(
         next.id,
         this.formatInsufficientDiskMessage(storage.requiredBytes),
@@ -724,6 +841,11 @@ export class DownloadService {
       }
       return completed;
     } catch (error) {
+      // Only successful no-clobber publication proves this worker owns the
+      // output. Keep its running lease recoverable if metadata/completion
+      // persistence fails; queueing a download retry would collide with itself.
+      // Surface the error, including persistent database failures on recovery.
+      if (this.publishedJobIds.has(next.id)) throw error;
       const active = this.activeProcesses.get(next.id);
       const cancellation = this.cancellationRequests.get(next.id);
       const cancelled = active?.cancelRequested === true || cancellation !== undefined;
@@ -744,7 +866,29 @@ export class DownloadService {
       } else {
         const analysis = analyzeDownloadFailure(message);
         const retriesLeft = next.retryCount + 1 < next.maxAttempts;
-        if (analysis.retryable && retriesLeft) {
+        if (analysis.failureKind === "disk-full") {
+          // The pre-flight reserve check only sees the volume as it was before
+          // the transfer started. A disk that fills underneath a running job —
+          // because the estimate was low, or because something else consumed
+          // the space — used to land in `unknown`, which is retryable: the job
+          // re-downloaded from zero into the same full disk until it had spent
+          // every attempt. Defer it the way the pre-flight check defers, so
+          // both discoveries of the same condition behave the same and the
+          // retry budget survives to be useful once space is freed.
+          this.deps.repo.pause(
+            next.id,
+            this.formatDiskExhaustedMessage(),
+            new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString(),
+            failedAt,
+          );
+          this.deps.diagnostics?.record({
+            category: "download",
+            level: "warn",
+            operation: "download.capacity.midflight",
+            message: "Download paused because the download volume filled during the transfer",
+            context: { jobId: next.id },
+          });
+        } else if (analysis.retryable && retriesLeft) {
           const retryAt = new Date(Date.now() + retryDelayMs(next.retryCount)).toISOString();
           this.deps.repo.scheduleRetry(next.id, message, retryAt, failedAt);
         } else {
@@ -759,6 +903,7 @@ export class DownloadService {
       return this.deps.repo.get(next.id) ?? null;
     } finally {
       stopHeartbeat();
+      this.publishedJobIds.delete(next.id);
       this.activeProcesses.delete(next.id);
       this.cancellationRequests.delete(next.id);
       this.claimedJobIds.delete(next.id);
@@ -785,6 +930,11 @@ export class DownloadService {
    * The only non-awaited queue entry point. Production callers that merely
    * nudge background work use this seam so an unexpected repository or worker
    * rejection remains diagnosable without reaching the CLI-wide fatal policy.
+   *
+   * Fire-and-forget is bounded here, not retried inline: the rejection is
+   * reported once via reportQueuePassFailure (diagnostics + logger), and every
+   * pass starts with reconcileInterruptedJobs(), so a lost pass is recovered —
+   * re-queued or adopted — on the next kick instead of stranding the job.
    */
   kickQueue(source: DownloadQueueKickSource): void {
     void this.processQueue().catch((error: unknown) => {
@@ -916,9 +1066,9 @@ export class DownloadService {
 
   async drainQueue(maxWaitMs = 60_000): Promise<void> {
     const deadline = Date.now() + maxWaitMs;
-    while (this.hasActiveJobs() && Date.now() < deadline) {
+    while (!this.shutdownRequested && this.hasActiveJobs() && Date.now() < deadline) {
       await this.processQueue();
-      if (this.hasActiveJobs()) {
+      if (!this.shutdownRequested && this.hasActiveJobs()) {
         await Bun.sleep(250);
       }
     }
@@ -942,8 +1092,34 @@ export class DownloadService {
       await this.terminateProcess(active.process, active.cancel);
       return;
     }
+    if (this.isForeignLiveJob(job)) {
+      // Keep the cancellation marker: if this instance later recovers the job
+      // because the owner died, the pending cancel still applies. But the row
+      // and its temp file belong to a sibling that is writing right now.
+      this.deps.logger.warn("Refusing to abort a download owned by a live Kunai instance", {
+        jobId,
+      });
+      return;
+    }
     await rm(job.tempPath, { force: true }).catch(() => {});
     this.deps.repo.abort(jobId, new Date().toISOString());
+  }
+
+  /**
+   * `running` is a lease, not ownership. When the row is running but this
+   * process holds no child for it and the heartbeat is still fresh, a sibling
+   * Kunai instance is actively working the job — mutating it from here would
+   * unlink the owner's temp file mid-write and flip its status out from under
+   * it. A stale heartbeat means the owner is likely gone and recovery
+   * (`reconcileInterruptedJobs`) is the correct path.
+   */
+  private isForeignLiveJob(job: DownloadJobRecord | undefined): boolean {
+    if (!job || job.status !== "running" || this.activeProcesses.has(job.id)) {
+      return false;
+    }
+    const heartbeatAt = job.lastHeartbeatAt ?? job.startedAt;
+    const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : Number.NaN;
+    return Number.isFinite(heartbeatMs) && Date.now() - heartbeatMs < STALLED_HEARTBEAT_MS;
   }
 
   /**
@@ -1008,11 +1184,22 @@ export class DownloadService {
   async deleteJob(jobId: string, opts: { deleteArtifact?: boolean } = {}): Promise<void> {
     const job = this.deps.repo.get(jobId);
     if (!job) return;
+    if (this.isForeignLiveJob(job)) {
+      // The row, temp file, and (possibly) partial output belong to a sibling
+      // that is heartbeating right now — deleting any of them corrupts its run.
+      this.deps.logger.warn("Refusing to delete a download owned by a live Kunai instance", {
+        jobId,
+      });
+      return;
+    }
     if (job.status === "running" || this.activeProcesses.has(jobId)) {
       await this.abort(jobId);
     }
     await rm(job.tempPath, { force: true }).catch(() => {});
-    if (opts.deleteArtifact) {
+    const ownsArtifact =
+      ["completed", "completed-with-notes", "repairable"].includes(job.status) &&
+      !this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath);
+    if (opts.deleteArtifact && ownsArtifact) {
       await rm(job.outputPath, { force: true }).catch(() => {});
       if (job.subtitlePath) await rm(job.subtitlePath, { force: true }).catch(() => {});
       if (job.thumbnailPath) await rm(job.thumbnailPath, { force: true }).catch(() => {});
@@ -1036,6 +1223,10 @@ export class DownloadService {
 
   private async executeYtDlpDownload(job: DownloadJobRecord): Promise<DownloadJobRecord> {
     const resolved = await this.resolveStreamForJob(job);
+    // Resolution can outlive abort/shutdown. Let the queue's cancellation
+    // handler retain that decision before persisting metadata or starting a child.
+    if (this.cancellationRequests.has(job.id))
+      throw new Error("download cancelled during resolution");
     const selectedStream = resolved.stream.providerResolveResult?.streams.find(
       (stream) => stream.id === resolved.stream.providerResolveResult?.selectedStreamId,
     );
@@ -1072,6 +1263,8 @@ export class DownloadService {
       headers: resolved.stream.headers,
       subtitleUrl: resolved.stream.subtitle ?? job.subtitleUrl,
       subtitleLanguage: subtitleLanguage ?? job.subtitleLanguage,
+      // SAFETY: resolved.providerId is the provider that produced the verified
+      // stream; the job record stores that identity verbatim.
       lastResolvedProviderId: resolved.providerId as never,
     };
 
@@ -1205,7 +1398,21 @@ export class DownloadService {
     // publication so an empty/invalid result can never replace a playable
     // last-known-good output at the stable path.
     const validation = await this.validateCompletedArtifact(job.tempPath, job.id);
-    await rename(job.tempPath, job.outputPath);
+    if (this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath)) {
+      throw new Error(
+        "Download destination is shared with another job; choose a different directory",
+      );
+    }
+    // Exclusive publication in both lanes: hard-link first (atomic, fails if
+    // ANY destination exists), exclusive copy+fsync on volumes without
+    // hard-link support (cross-device/exFAT). Neither lane silently overwrites.
+    await publishStagedDownloadArtifact(job.tempPath, job.outputPath);
+    this.publishedJobIds.add(job.id);
+    await rm(job.tempPath).catch(() => {
+      // Publication succeeded. A locked staging name must not turn a valid
+      // artifact into a retry that collides with its own published output.
+      this.deps.logger.warn("Published download retained a temporary name", { jobId: job.id });
+    });
     this.persistValidatedArtifactMetadata(job.id, validation);
     return this.deps.repo.get(job.id) ?? job;
   }
@@ -1365,7 +1572,7 @@ export class DownloadService {
     if (!fileStat.isFile() || fileStat.size <= 0) {
       throw new Error("artifact-invalid: downloaded file is empty or not a regular file");
     }
-    if (!this.deps.ffprobeAvailable || !Bun.which("ffprobe")) {
+    if (!this.deps.ffprobeAvailable || !whichLive("ffprobe")) {
       return { fileSize: fileStat.size };
     }
     const proc = Bun.spawn(
@@ -1489,10 +1696,23 @@ export class DownloadService {
     }
     try {
       const policy = buildDownloadStreamPolicy(job.headers);
-      const res = await fetch(job.subtitleUrl, {
-        headers: policy.headers,
+      const outcome = await fetchGuardedStreamTarget({
+        fetchImpl: fetch,
+        url: job.subtitleUrl,
+        init: { headers: policy.headers },
         signal: AbortSignal.timeout(15_000),
       });
+      if (outcome.kind === "blocked") {
+        return buildRepairableSidecarResult(
+          job,
+          "subtitle",
+          `subtitle target blocked: ${outcome.reason}`,
+        );
+      }
+      if (outcome.kind === "timeout") {
+        return buildRepairableSidecarResult(job, "subtitle", "subtitle request timed out");
+      }
+      const res = outcome.response;
       if (!res.ok) {
         return buildRepairableSidecarResult(
           job,
@@ -1505,9 +1725,23 @@ export class DownloadService {
         subtitleUrl: job.subtitleUrl,
         contentType: res.headers.get("content-type"),
       });
-      const data = await res.arrayBuffer();
-      if (data.byteLength <= 0) {
-        return buildRepairableSidecarResult(job, "subtitle", "subtitle response was empty");
+      // Content-Length is sender-declared and only an early reject — the body
+      // itself is bounded below, so a lying or absent header cannot pull a
+      // giant payload into memory.
+      const declared = Number(res.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > MAX_SUBTITLE_BYTES) {
+        await res.body?.cancel("too-large").catch(() => {});
+        return buildRepairableSidecarResult(job, "subtitle", "subtitle response too large");
+      }
+      const data = res.body ? await readBoundedBody(res.body, MAX_SUBTITLE_BYTES) : null;
+      if (!data || data.byteLength <= 0) {
+        // readBoundedBody returns null on overflow, abort, and mid-body drops —
+        // all are retryable sidecar failures rather than a poisoned artifact.
+        return buildRepairableSidecarResult(
+          job,
+          "subtitle",
+          "subtitle response was empty, too large, or interrupted",
+        );
       }
       await writeAtomicBytes(targetPath, data);
       this.deps.repo.updateOfflineMetadata(
@@ -1653,22 +1887,37 @@ export class DownloadService {
   }
 
   private selectEligibleQueuedJob(nowIso: string): DownloadJobRecord | null {
-    const now = Date.parse(nowIso);
-    const queued = this.deps.repo.listQueued(50);
-    for (const job of queued) {
-      if (this.claimedJobIds.has(job.id)) continue;
-      if (!job.nextRetryAt) return job;
-      const retryAt = Date.parse(job.nextRetryAt);
-      if (Number.isFinite(retryAt) && retryAt <= now) return job;
+    const pageSize = 50;
+    let after: { readonly createdAt: string; readonly id: string } | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const queued = this.deps.repo.listDueQueued(nowIso, pageSize, after);
+      if (queued.length === 0) return null;
+      for (const job of queued) {
+        if (!this.claimedJobIds.has(job.id)) return job;
+      }
+      const last = queued.at(-1);
+      if (!last || queued.length < pageSize) return null;
+      after = { createdAt: last.createdAt, id: last.id };
     }
     return null;
   }
 
   /**
-   * Auto-resume on return: a previous quit pauses active jobs with
-   * `next_retry_at = now`, so on the next launch they are immediately eligible —
-   * re-queue them. Disk-space pauses carry a FUTURE retry time and stay paused
-   * until that elapses, so they are not prematurely resumed here.
+   * Repair for an unparseable `next_retry_at`, not the ordinary resume path.
+   *
+   * The ordinary case needs nothing from here: `listDueQueued` filters retry time before limiting the page,
+   * so deferred work cannot hide a later eligible job. A shutdown pause (`next_retry_at = now`) is
+   * therefore already eligible on the next pass.
+   *
+   * What it does do is narrow and load-bearing. `listPaused` compares
+   * `next_retry_at` as a *string* in SQL, so a corrupt value like `not-a-date`
+   * sorts greater than any timestamp and is returned here, while
+   * the due query excludes it forever because it sorts after the current ISO timestamp.
+   * Without this pass such a row is stranded for the life of the install.
+   *
+   * Verified against a real database rather than by reading: a future-dated
+   * pause is returned by `listPaused` and requeued by nobody; a corrupt one is
+   * requeued only here.
    */
   private resumeEligiblePausedJobs(): void {
     const now = Date.now();
@@ -1703,6 +1952,13 @@ export class DownloadService {
 
       const publishedOutput = await stat(runningJob.outputPath).catch(() => null);
       if (publishedOutput) {
+        if (this.deps.repo.hasConflictingOutputOwner(runningJob.id, runningJob.outputPath)) {
+          const message =
+            "Download destination ownership is ambiguous; existing artifact preserved";
+          this.deps.repo.fail(runningJob.id, message, false, now, "artifact-invalid");
+          this.emit({ type: "failed", jobId: runningJob.id, error: message });
+          continue;
+        }
         let validation: ArtifactValidationResult;
         try {
           validation = await this.validateCompletedArtifact(runningJob.outputPath, runningJob.id);
@@ -1839,9 +2095,12 @@ export class DownloadService {
 
   private resolveDefaultDownloadDirectory(): string {
     const configuredBase = this.deps.config.downloadPath.trim();
-    return configuredBase.length > 0
-      ? configuredBase
-      : join(dirname(getKunaiPaths().dataDbPath), "downloads");
+    if (configuredBase.length > 0) return configuredBase;
+    return this.deps.defaultDownloadDir ?? join(dirname(getKunaiPaths().dataDbPath), "downloads");
+  }
+
+  private statfs(path: string): Promise<{ bavail: number; bsize: number }> {
+    return (this.deps.statfs ?? statfs)(path);
   }
 
   private async evaluateStorageForPath(
@@ -1850,7 +2109,7 @@ export class DownloadService {
     qualityLabel?: string,
   ) {
     await mkdir(dirname(outputPath), { recursive: true });
-    const diskStats = await statfs(dirname(outputPath));
+    const diskStats = await this.statfs(dirname(outputPath));
     const qualityEstimate = estimateBytesForDownloadQuality(qualityLabel);
     return evaluateStorageAdmission({
       availableBytes: diskStats.bavail * diskStats.bsize,
@@ -1880,6 +2139,22 @@ export class DownloadService {
     return (
       this.deps.config.offlineUnknownEpisodeEstimateBytes ?? DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES
     );
+  }
+
+  /**
+   * Deliberately not phrased as a reserve breach: the reserve message names a
+   * figure the pre-flight check computed, and there is no such figure once the
+   * volume is actually full.
+   *
+   * It also does not promise an automatic resume. Freeing space triggers
+   * nothing on its own — the deferral is time-based, and a queue pass only
+   * happens on a `kickQueue` (startup, opening downloads, queueing another,
+   * offline repair). There is no periodic tick, so an idle session can hold a
+   * due job indefinitely. Stating the action the user can actually take beats
+   * a promise the runtime does not keep.
+   */
+  private formatDiskExhaustedMessage(): string {
+    return "Download paused because the download volume ran out of space. Free space, then retry it from /downloads.";
   }
 
   private formatInsufficientDiskMessage(requiredBytes: number): string {
@@ -2042,6 +2317,24 @@ export function analyzeDownloadFailure(message: string): DownloadFailureAnalysis
   if (normalized.includes("artifact-invalid")) {
     return { failureKind: "artifact-invalid", retryable: false };
   }
+
+  // After the two `artifact-*` branches and before everything else.
+  //
+  // Those two prefixes are markers this file constructs itself, with terminal
+  // semantics chosen deliberately; the disk phrases below are unstructured
+  // vendor text scraped from yt-dlp, ffmpeg or the OS. A structured marker we
+  // wrote outranks a substring we found — otherwise a stray "no space left on
+  // device" anywhere in an artifact-validation message silently re-routes our
+  // own classification.
+  //
+  // Never `retryable`: a retry re-downloads the whole file from zero and fails
+  // at the same byte, spending a provider request per attempt against a disk
+  // that is still full. `processNextQueued` defers this kind into the same
+  // pause lane the pre-flight reserve check uses, so a volume that fills
+  // mid-transfer ends up where one that was already full does.
+  if (isDiskExhaustionMessage(normalized)) {
+    return { failureKind: "disk-full", retryable: false };
+  }
   if (normalized.includes("download aborted") || normalized.includes("aborted")) {
     return { failureKind: "aborted", retryable: false };
   }
@@ -2095,6 +2388,25 @@ export function analyzeDownloadFailure(message: string): DownloadFailureAnalysis
     return { failureKind: "network", retryable: true };
   }
   return { failureKind: "unknown", retryable: true };
+}
+
+/**
+ * Every spelling of "the volume is full" that can reach us.
+ *
+ * Matched on phrases rather than the bare words "disk" or "space" so an
+ * upstream message like `HTTP Error 500: disk backend unavailable` is not
+ * claimed as a local storage failure.
+ */
+function isDiskExhaustionMessage(normalized: string): boolean {
+  return (
+    // POSIX ENOSPC as yt-dlp, ffmpeg and node:fs each render it.
+    normalized.includes("no space left on device") ||
+    normalized.includes("enospc") ||
+    // Windows ERROR_DISK_FULL never uses the POSIX wording.
+    normalized.includes("not enough space on the disk") ||
+    // EDQUOT is a full disk from the writer's side: same cause and remedy.
+    normalized.includes("disk quota exceeded")
+  );
 }
 
 function resolveThumbnailArtifactPath(outputPath: string): string {

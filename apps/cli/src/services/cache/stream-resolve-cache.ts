@@ -1,9 +1,7 @@
-// =============================================================================
 // Stream resolve cache keys
 //
 // Single place for SQLite stream cache preimages used by playback and browser
 // scrape paths so providers do not duplicate keying policy.
-// =============================================================================
 
 import type { TitleInfo, EpisodeInfo, ShellMode } from "@/domain/types";
 import type { CoreProviderManifest } from "@kunai/core";
@@ -27,7 +25,7 @@ export function buildApiStreamResolveCacheKey(input: {
   return `api-resolve:${parts.join(":")}`;
 }
 
-/** Embed scrapes key the cache by canonical embed page URL (unchanged behavior). */
+/** Embed scrapes key the cache by canonical embed page URL. */
 export function buildEmbedStreamCacheKey(embedPageUrl: string): string {
   return embedPageUrl;
 }
@@ -45,7 +43,7 @@ function buildManifestDrivenPolicyParts(input: {
   readonly selectedSourceId?: string;
   readonly selectedStreamId?: string;
 }): readonly string[] {
-  const baseTokens = input.providerManifest?.cachePolicy.keyParts ?? [
+  const baseTokens = input.providerManifest?.cachePolicy?.keyParts ?? [
     "provider",
     input.providerId,
     "media-kind",

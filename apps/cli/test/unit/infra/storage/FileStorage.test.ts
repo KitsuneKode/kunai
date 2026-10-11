@@ -1,9 +1,28 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { chmod, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
 
 import { FileStorage } from "@/infra/storage/FileStorage";
+import { getKunaiPaths } from "@kunai/storage";
+
+import { applyStorageRootEnv } from "../../../helpers/storage-env";
+
+/**
+ * Corrupt-config backups are timestamped, so a test asserts on the set of
+ * backups that exist rather than on one fixed name. A fixed `.corrupt.bak` was
+ * the defect: every launch overwrote the previous one.
+ *
+ * `dirname`/`basename` rather than string surgery: the first version split on
+ * `"/"`, which is right on POSIX and silently wrong on Windows, where the
+ * separator is `\`. It passed on Linux and failed three tests on the Windows
+ * parity leg.
+ */
+async function corruptBackups(configPath: string): Promise<string[]> {
+  const dir = dirname(configPath);
+  const base = basename(configPath);
+  return (await readdir(dir)).filter((name) => name.startsWith(`${base}.corrupt.`)).sort();
+}
 
 const tempDirs: string[] = [];
 
@@ -12,6 +31,60 @@ afterEach(async () => {
     const dir = tempDirs.pop();
     if (dir) await rm(dir, { recursive: true, force: true });
   }
+});
+
+describe("FileStorage default path resolution", () => {
+  // The module used to build its path map as a module-level constant, so
+  // `getKunaiPaths()` ran while the file was being imported and froze the
+  // developer's real config.json in. A suite that imported this file — however
+  // indirectly — before pointing its storage root at a sandbox then wrote the
+  // live profile. Import has already happened by the time this test runs, which
+  // is exactly the condition that used to lose: the root set here must still win.
+  test("honours a storage root set after this module was imported", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-root-"));
+    tempDirs.push(dir);
+
+    // Captured before the override so the guard below is a plain inequality.
+    // Comparing path *spelling* is what two earlier versions of this test got
+    // wrong: macOS hands out `/var/...` for a directory that resolves to
+    // `/private/var/...`, and Windows reports the 8.3 form (`RUNNER~1`) where
+    // `realpath` gives the long one. Neither is the point.
+    const liveConfigPath = getKunaiPaths().configPath;
+
+    const restore = applyStorageRootEnv(dir);
+    try {
+      // The same resolver the production default calls, evaluated now — so this
+      // asserts deferral without hard-coding any platform's storage layout.
+      const expected = getKunaiPaths().configPath;
+
+      // Refuse to write until the sandbox is proven to be in effect. If a
+      // platform ever stops honouring the override this fails here, rather than
+      // writing the developer's real profile.
+      expect(expected).not.toBe(liveConfigPath);
+
+      await new FileStorage().write("config", { sandboxed: true });
+
+      expect(await Bun.file(expected).exists()).toBe(true);
+
+      // Empty string, never null: `toContain` rejects a null receiver, and
+      // whether the machine running this happens to have a real config.json is
+      // not something the test may depend on — it does on a developer box and
+      // does not on a fresh CI runner.
+      const liveContents = await Bun.file(liveConfigPath)
+        .text()
+        .catch(() => "");
+      expect(liveContents).not.toContain("sandboxed");
+    } finally {
+      restore();
+    }
+  });
+
+  test("an unknown key still throws, and exists() still answers false", async () => {
+    const storage = new FileStorage({ config: "/tmp/kunai-unused.json" });
+
+    expect(storage.read("nope")).rejects.toThrow("Unknown storage key: nope");
+    expect(await storage.exists("nope")).toBe(false);
+  });
 });
 
 describe("FileStorage", () => {
@@ -53,7 +126,6 @@ describe("FileStorage", () => {
       const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
       tempDirs.push(dir);
       const configPath = join(dir, "config.json");
-      const backupPath = `${configPath}.corrupt.bak`;
       await writeFile(configPath, '{"providerRelay":{"token":"secret"}');
       await chmod(configPath, 0o644);
 
@@ -61,9 +133,88 @@ describe("FileStorage", () => {
 
       await expect(storage.read("config")).resolves.toBeNull();
       expect((await stat(configPath)).mode & 0o777).toBe(0o600);
-      expect((await stat(backupPath)).mode & 0o777).toBe(0o600);
+      const [backup] = await corruptBackups(configPath);
+      expect(backup).toBeDefined();
+      expect((await stat(join(dir, backup!))).mode & 0o777).toBe(0o600);
     },
   );
+
+  test("reads a missing file as nothing stored, without a backup or a warning", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const warnings: string[] = [];
+    const storage = new FileStorage({ config: configPath }, (message) => warnings.push(message));
+
+    // The read path used to chmod outside its guard, so a file that vanished
+    // after the existence check rejected with ENOENT instead of returning null.
+    await expect(storage.read("config")).resolves.toBeNull();
+    expect(warnings).toEqual([]);
+    expect(await corruptBackups(configPath)).toEqual([]);
+  });
+
+  test("backs up the corrupt file's actual bytes, not an empty placeholder", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const corrupt = '{"providerRelay":{"token":"secret"}';
+    await writeFile(configPath, corrupt);
+
+    const warnings: string[] = [];
+    const storage = new FileStorage({ config: configPath }, (message) => warnings.push(message));
+
+    await expect(storage.read("config")).resolves.toBeNull();
+    // The backup exists to preserve the content — an empty one destroys it.
+    const [backup] = await corruptBackups(configPath);
+    expect(backup).toBeDefined();
+    await expect(readFile(join(dir, backup!), "utf8")).resolves.toBe(corrupt);
+    expect(warnings).toHaveLength(1);
+  });
+
+  /**
+   * The defect this naming scheme exists to prevent. A fixed `.corrupt.bak`
+   * meant the second launch overwrote the first launch's only copy — and since
+   * the unreadable config is never rewritten, every later launch re-detected,
+   * re-warned and re-clobbered it. Proven here with two distinct sentinels.
+   */
+  test("two corrupt launches keep both sets of bytes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+
+    await writeFile(configPath, "CORRUPT-SENTINEL-AAA");
+    const first = new FileStorage({ config: configPath });
+    await expect(first.read("config")).resolves.toBeNull();
+
+    await writeFile(configPath, "CORRUPT-SENTINEL-BBB");
+    const second = new FileStorage({ config: configPath });
+    await expect(second.read("config")).resolves.toBeNull();
+
+    const backups = await corruptBackups(configPath);
+    expect(backups).toHaveLength(2);
+    const contents = await Promise.all(
+      backups.map(async (name) => readFile(join(dir, name), "utf8")),
+    );
+    expect(contents.sort()).toEqual(["CORRUPT-SENTINEL-AAA", "CORRUPT-SENTINEL-BBB"]);
+  });
+
+  test("the corrupt-config warning does not claim the file was rewritten", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const corrupt = "{ this is not json";
+    await writeFile(configPath, corrupt);
+
+    const warnings: string[] = [];
+    const storage = new FileStorage({ config: configPath }, (message) => warnings.push(message));
+    await expect(storage.read("config")).resolves.toBeNull();
+
+    // The claim has to match the behaviour: nothing rewrites `configPath`, so
+    // "has been reset to defaults" sent people looking for a rewrite that never
+    // happened, and the bytes are still sitting there.
+    expect(warnings[0]).not.toMatch(/reset/i);
+    await expect(readFile(configPath, "utf8")).resolves.toBe(corrupt);
+  });
 
   test("keeps the write queue usable after a failed write", async () => {
     const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
@@ -77,5 +228,308 @@ describe("FileStorage", () => {
 
     await expect(recovered.read<{ ok: boolean }>("config")).resolves.toEqual({ ok: true });
     await expect(readFile(configPath, "utf8")).resolves.toContain('"ok": true');
+  });
+
+  test("a corrupt read quarantines the live file: writes divert until acknowledged", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const corrupt = "{ this is not json";
+    await writeFile(configPath, corrupt);
+
+    const warnings: string[] = [];
+    const storage = new FileStorage({ config: configPath }, (message) => warnings.push(message));
+    await expect(storage.read("config")).resolves.toBeNull();
+    expect(storage.needsRecovery).toBe(true);
+
+    // The next save must not replace the user's bytes with in-memory defaults:
+    // it lands in a timestamped recovery file and the live file is untouched.
+    await storage.write("config", { provider: "videasy" });
+    await expect(readFile(configPath, "utf8")).resolves.toBe(corrupt);
+    const recovered = (await readdir(dir))
+      .filter((name) => name.startsWith("config.json.recovered."))
+      .sort();
+    expect(recovered).toHaveLength(1);
+    await expect(readFile(join(dir, recovered[0]!), "utf8")).resolves.toContain("videasy");
+    expect(storage.needsRecovery).toBe(true);
+
+    // Explicit user action lifts the quarantine; the following write lands live.
+    storage.acknowledgeRecovery();
+    expect(storage.needsRecovery).toBe(false);
+    await storage.write("config", { provider: "videasy" });
+    await expect(readFile(configPath, "utf8")).resolves.toContain("videasy");
+  });
+
+  test("a clean read after an external repair lifts the quarantine on its own", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    await writeFile(configPath, "{ broken");
+
+    const storage = new FileStorage({ config: configPath });
+    await expect(storage.read("config")).resolves.toBeNull();
+    expect(storage.needsRecovery).toBe(true);
+
+    // The user hand-repairs the file outside this process; the next read
+    // proves it healthy and writes go live again with no explicit action.
+    await writeFile(configPath, '{"provider":"videasy"}');
+    await expect(storage.read<{ provider: string }>("config")).resolves.toEqual({
+      provider: "videasy",
+    });
+    expect(storage.needsRecovery).toBe(false);
+    await storage.write("config", { provider: "vidlink" });
+    await expect(readFile(configPath, "utf8")).resolves.toContain("vidlink");
+  });
+
+  test("withLock serializes overlapping cycles across storage instances", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const entered = Promise.withResolvers<void>();
+    const ownerGate = Promise.withResolvers<void>();
+    const waiting = Promise.withResolvers<void>();
+    const retryGate = Promise.withResolvers<void>();
+    const first = new FileStorage({ config: configPath });
+    const second = new FileStorage({ config: configPath }, undefined, {
+      wait: async () => {
+        waiting.resolve();
+        await retryGate.promise;
+      },
+    });
+    const order: string[] = [];
+    const held = first.withLock("config", async () => {
+      order.push("a-start");
+      entered.resolve();
+      await ownerGate.promise;
+      order.push("a-end");
+    });
+    await entered.promise;
+    const queued = second.withLock("config", async () => {
+      order.push("b-start", "b-end");
+    });
+    try {
+      await waiting.promise;
+      expect(order).toEqual(["a-start"]);
+      ownerGate.resolve();
+      await held;
+      retryGate.resolve();
+      await queued;
+      expect(order).toEqual(["a-start", "a-end", "b-start", "b-end"]);
+      expect(await Bun.file(`${configPath}.lock`).exists()).toBe(false);
+    } finally {
+      ownerGate.resolve();
+      retryGate.resolve();
+      await Promise.all([held, queued]);
+    }
+  });
+
+  test("lock timeout rejects without entering an owner's critical section, then permits retry", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const first = new FileStorage({ config: configPath });
+    const warnings: string[] = [];
+    let waits = 0;
+    let clock = Date.now();
+    const second = new FileStorage({ config: configPath }, (message) => warnings.push(message), {
+      now: () => clock,
+      wait: async (milliseconds) => {
+        waits += 1;
+        clock += milliseconds;
+      },
+    });
+    let releaseOwner: () => void = () => {};
+    const ownerGate = new Promise<void>((resolve) => {
+      releaseOwner = resolve;
+    });
+    const ownerEntered = Promise.withResolvers<void>();
+    const owner = first.withLock("config", async () => {
+      ownerEntered.resolve();
+      await ownerGate;
+    });
+    await ownerEntered.promise;
+    const ownerBytes = await readFile(`${configPath}.lock`, "utf8");
+    let entered = false;
+    try {
+      await expect(
+        second.withLock("config", async () => {
+          entered = true;
+        }),
+      ).rejects.toThrow("settings were not saved");
+      expect(entered).toBe(false);
+      // The default 5s acquire budget, polled every 25ms on the injected clock.
+      expect(waits).toBe(200);
+      expect(warnings).toEqual(["Config file is busy; settings were not saved"]);
+      expect(await readFile(`${configPath}.lock`, "utf8")).toBe(ownerBytes);
+    } finally {
+      releaseOwner();
+      await owner;
+    }
+    await expect(second.withLock("config", async () => "retried")).resolves.toBe("retried");
+    expect(await Bun.file(`${configPath}.lock`).exists()).toBe(false);
+  });
+
+  test("withLock reclaims a stale lock left by a dead holder", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const lockPath = `${configPath}.lock`;
+    // A crashed process never reaches its finally — the leftover file has to
+    // age out instead of deadlocking every later save.
+    await writeFile(lockPath, "999999\n");
+    const stale = new Date(Date.now() - 60_000);
+    await utimes(lockPath, stale, stale);
+
+    const storage = new FileStorage({ config: configPath });
+    const result = await storage.withLock("config", async () => "ran");
+    expect(result).toBe("ran");
+    expect(await Bun.file(lockPath).exists()).toBe(false);
+  });
+
+  test("an aged live owner keeps its lock and another writer times out", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const lockPath = `${configPath}.lock`;
+    const entered = Promise.withResolvers<void>();
+    const hold = Promise.withResolvers<void>();
+    const first = new FileStorage({ config: configPath });
+    const owner = first.withLock("config", async () => {
+      entered.resolve();
+      await hold.promise;
+    });
+    await entered.promise;
+    const bytes = await readFile(lockPath, "utf8");
+    await utimes(lockPath, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+    let clock = Date.now();
+    const second = new FileStorage({ config: configPath }, undefined, {
+      now: () => clock,
+      timeoutMs: 50,
+      wait: async (milliseconds) => {
+        clock += milliseconds;
+      },
+    });
+    let ran = false;
+    try {
+      await expect(
+        second.withLock("config", async () => {
+          ran = true;
+        }),
+      ).rejects.toThrow();
+      expect(ran).toBe(false);
+      expect(await readFile(lockPath, "utf8")).toBe(bytes);
+    } finally {
+      hold.resolve();
+      await owner;
+    }
+  });
+
+  test("late release preserves a successor's owner record", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const lockPath = `${configPath}.lock`;
+    const successor = JSON.stringify({ pid: process.pid, ownerId: "successor" });
+    const storage = new FileStorage({ config: configPath }, undefined, {
+      onBeforeRelease: async () => {
+        await writeFile(lockPath, successor);
+      },
+    });
+    await storage.withLock("config", async () => "done");
+    expect(await readFile(lockPath, "utf8")).toBe(successor);
+  });
+
+  test("concurrent dead-owner reclaim keeps critical sections exclusive", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    await writeFile(`${configPath}.lock`, "999999999");
+    let active = 0;
+    let maximum = 0;
+    const run = async (storage: FileStorage) =>
+      storage.withLock("config", async () => {
+        active += 1;
+        maximum = Math.max(maximum, active);
+        try {
+          await storage.write("config", { complete: true });
+        } finally {
+          active -= 1;
+        }
+      });
+    // Exclusivity, not speed, is under test: real filesystem contention must
+    // not depend on the production acquire budget (slow CI disks, Windows AV).
+    const generous = { timeoutMs: 30_000 };
+    await Promise.all([
+      run(new FileStorage({ config: configPath }, undefined, generous)),
+      run(new FileStorage({ config: configPath }, undefined, generous)),
+    ]);
+    expect(maximum).toBe(1);
+    expect(await readdir(dir)).toEqual(["config.json"]);
+  });
+
+  test("release has its own 5s budget and reports a stuck guard instead of hanging", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    let clock = Date.now();
+    let waits = 0;
+    const storage = new FileStorage({ config: configPath }, undefined, {
+      now: () => clock,
+      wait: async (milliseconds) => {
+        waits += 1;
+        clock += milliseconds;
+      },
+      onBeforeRelease: async () => {
+        // A live local contender mid-choosing: its ticket number never lands.
+        await writeFile(
+          `${configPath}.lock.ticket-stuck`,
+          JSON.stringify({ pid: process.pid, hostname: hostname(), ownerId: "stuck", ticket: 0 }),
+        );
+      },
+    });
+    await expect(storage.withLock("config", async () => "done")).rejects.toThrow(
+      "config lock timed out",
+    );
+    expect(waits).toBe(200);
+  });
+
+  test("a foreign-host owner cannot be reclaimed by a local PID probe", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const foreign = JSON.stringify({
+      pid: 999999999,
+      hostname: "foreign-host",
+      ownerId: "foreign",
+    });
+    await writeFile(`${configPath}.lock`, foreign);
+    let clock = Date.now();
+    const storage = new FileStorage({ config: configPath }, undefined, {
+      now: () => clock,
+      timeoutMs: 50,
+      wait: async (milliseconds) => {
+        clock += milliseconds;
+      },
+    });
+    await expect(storage.withLock("config", async () => {})).rejects.toThrow();
+    expect(await readFile(`${configPath}.lock`, "utf8")).toBe(foreign);
+  });
+
+  test("withLock releases the claim when the guarded cycle throws", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-lock-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const storage = new FileStorage({ config: configPath });
+
+    await expect(
+      storage.withLock("config", async () => {
+        throw new Error("merge exploded");
+      }),
+    ).rejects.toThrow("merge exploded");
+
+    // A leaked claim would wedge every later save behind the wait-fallback.
+    expect(await Bun.file(`${configPath}.lock`).exists()).toBe(false);
+    const again = await storage.withLock("config", async () => "ok");
+    expect(again).toBe("ok");
   });
 });

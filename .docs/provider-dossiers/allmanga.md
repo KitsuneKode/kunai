@@ -29,7 +29,7 @@ The source flow matches ani-cli:
 
 ```text
 episode GraphQL persisted GET + aaReq + x-build-id
-  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 119, 7-day epochs)
+  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 166, 7-day epochs)
   -> decoded source names + encoded API paths (or direct https embeds)
   -> per-source API fetch on allanime.day
   -> mp4 / HLS / DASH-shaped candidates
@@ -94,10 +94,82 @@ The experiment generated a temporary MPD from one selected video representation 
 ## Known
 
 - GraphQL search/catalog is working with `youtu-chan.com` referer.
-- The AES-256-GCM `tobeparsed` decode path and build id 119 crypto bootstrap are verified working (re-derived 2026-08-17 after the 81→119 build rotation; episodes resolve through a user relay); AES-CTR must not be restored (see `.docs/providers.md`).
+- The AES-256-GCM `tobeparsed` decode path and the build id 166 crypto bootstrap are verified working (re-derived 2026-09-08 after the 140→166 rotation; the episode query executes and `aaReq` is accepted); AES-CTR must not be restored (see `.docs/providers.md`).
 - Source APIs can return valid data that is not a single HLS/mp4 URL.
 - Returning only the `Ak` video URL would be wrong because audio is separate.
 - The provider contract already allows `protocol: "dash"` and `container: "mpd"`, but there is no implemented AllManga MPD/EDL handoff for `rawUrls`.
+
+## Recovering a build rotation
+
+Upstream rotates the client crypto roughly monthly
+(`81` → `119` → `140` → `166` → `171` → `177`). The _derivation_ constants
+move together — build id, salts, fragment offsets, mask fragments, key, epoch —
+and a partial update fails exactly like a total one, so recover those as a set.
+The persisted-query hash rotates on its own schedule and can be stale while the
+derivation set is current, or the reverse; either way every resolve returns
+zero streams, so check both. Done 2026-09-08 for `140` → `166`, and again
+2026-10-13 for `171` → `177` (two intermediate builds `172`–`176` never made it
+into the tree — probing `166`–`174` returned `unknown_build_id` while `177`
+answered `invalid_boot_token`, bracketing the live generation before the chunk
+was read).
+
+**Read the failure first — the endpoint says which half is stale.**
+
+| Bootstrap answer                  | Meaning                                               |
+| --------------------------------- | ----------------------------------------------------- |
+| `404 unknown_build_id`            | `ALLMANGA_BUILD_ID` rotated out                       |
+| `403 invalid_boot_token`          | build id is current, the derivation constants rotated |
+| `400 missing_build_id` / `..lane` | a dropped query param, not upstream drift             |
+| Cloudflare HTML instead of JSON   | missing `Referer`/`Origin: https://mkissa.to`         |
+
+Scanning build ids until the answer flips from `unknown_build_id` to
+`invalid_boot_token` brackets the live build without reading any JS.
+
+**Then re-extract from the crypto chunk.** It is the chunk under
+`cdn.mkissa.net/all/mk/_app/immutable/chunks/` containing both `buildId` and
+`client-crypto` (`BVxTyUEI.js` on 2026-09-08, `RD7DzHLl.js` on 2026-10-13);
+reach it by crawling `_app/immutable/entry/app.*.js`. Strings are 3-character
+fragments in a rotated table, so nothing greps out as a literal — and **every
+symbol name in this section rotates with the build**, so find them by shape,
+not by name. On build 177 the pieces were: `tu()` returns the string array;
+`Un(e) = tu()[e - 374]` is the accessor; `At`/`cr` are two-arg wrappers over
+`Un`; and a `push/shift` checksum IIFE `})(tu, N)` rotates the array in place —
+replay it verbatim in a JS engine before reading. The config object literal
+(`$f`, next to the `tu` table) then reads almost plainly:
+
+- `saltMul`, `saltAdd`, `fragMul`, `fragAdd` — literal numbers.
+- `bootPrefix`, `parts` — concatenated `At()`/`cr()` calls plus suffixes;
+  `join` is a literal.
+- `md = cr(…)` — the build id (`"177"` on 2026-10-13).
+- `vm = [At(…)+…, …]` — the four base64 8-byte mask fragments.
+- New on 177: `v`, `omitEmptyLane`, `envXor`. `envXor` is XORed into every
+  mask-key byte only when the `Xk()` browser-env probe passes; API requests
+  accept the raw mask, so it is documented in `crypto.ts` but not ported.
+
+Historic name map for orientation: 140/166 called the table `Xc`, the accessor
+`Vr`, the config `Rf`, the masks `mm`, and the build id `cd = fr(296)`. `parts`
+is the boot payload field order and rotates independently of the separator;
+build 140 signed `group.host.lane.buildId.epoch`, build 166 signed
+`group:lane:epoch:host:buildId`, build 177 signs `group/lane/host/buildId/epoch`.
+
+**The persisted query hash rotates too**, and separately. It is a true persisted
+query — the document is never sent — so a stale hash returns
+`PersistedQueryNotFound` and every resolve yields zero streams. Rebuild it by
+expanding the episode query template — find the builder whose body contains
+`episode(` (named `iK` on 140, `Dj` on 177) and expand its fragments (`Oi`,
+`Kt`, `Zr()`, and their children `Hd`, `Hs`, `ku`→`Ka`→`fR`/`dp`→`mR`/`up`),
+then take `sha256` of the result with the mobile-only `$qat` lines omitted —
+the pinned hash is the desktop variant.
+
+Confirm the whole chain live before landing: bootstrap must answer `200` with a
+`partB`, the episode GET must return `"tobeparsed"` rather than an
+`AA_CRYPTO_*` or `PersistedQueryNotFound` error, and the resolved URL must
+decode — `mpv --no-config --vo=null --ao=null --frames=2`. On 2026-09-08 that
+chain produced h264 1920x1080 with `alang=jpn` audio from `video.wixstatic.com`.
+
+`NEED_CAPTCHA` after a few rapid resolves is upstream rate limiting, not a
+crypto fault; it surfaces as `AllMangaCaptchaError` and must not be worked
+around.
 
 ## Unknown
 

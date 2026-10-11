@@ -44,7 +44,7 @@ function setupQueue() {
 test("claimQueuePlaybackLaunch claims row B via beginPlayback, not head", () => {
   const { db, repo, service, head, selected } = setupQueue();
 
-  const launch = claimQueuePlaybackLaunch(service, selected.id, "queue");
+  const launch = claimQueuePlaybackLaunch(service, selected.id);
 
   expect(launch).toEqual({
     title: "selected",
@@ -53,7 +53,6 @@ test("claimQueuePlaybackLaunch claims row B via beginPlayback, not head", () => 
       titleId: "selected",
       mediaKind: "anime",
       absoluteEpisode: 13,
-      source: "queue",
     },
   });
   expect(repo.getById(head.id)?.status).toBe("pending");
@@ -64,13 +63,13 @@ test("claimQueuePlaybackLaunch claims row B via beginPlayback, not head", () => 
 
 test("failed compare-and-set leaves overlay open (no resolve, no close)", () => {
   const { db, service, selected } = setupQueue();
-  expect(claimQueuePlaybackLaunch(service, selected.id, "queue")).toBeDefined();
+  expect(claimQueuePlaybackLaunch(service, selected.id)).toBeDefined();
 
   const resolve = mock(() => {});
   const closeOverlay = mock(() => {});
   const outcome = resolveQueueRowPlaySelection(service, selected.id, resolve, closeOverlay);
 
-  expect(outcome).toBe("failed");
+  expect(outcome).toEqual({ status: "failed" });
   expect(resolve).not.toHaveBeenCalled();
   expect(closeOverlay).not.toHaveBeenCalled();
 
@@ -84,11 +83,17 @@ test("Enter path resolves bridge with claimed intent then closes overlay", () =>
 
   const outcome = resolveQueueRowPlaySelection(service, selected.id, resolve, closeOverlay);
 
-  expect(outcome).toBe("claimed");
+  expect(outcome.status).toBe("claimed");
+  if (outcome.status === "claimed") {
+    expect(outcome.launch).toMatchObject({
+      title: "selected",
+      intent: { queueEntryId: selected.id, absoluteEpisode: 13 },
+    });
+  }
   expect(resolve).toHaveBeenCalledTimes(1);
   expect(resolve.mock.calls[0]?.[0]).toMatchObject({
     title: "selected",
-    intent: { queueEntryId: selected.id, absoluteEpisode: 13, source: "queue" },
+    intent: { queueEntryId: selected.id, absoluteEpisode: 13 },
   });
   expect(closeOverlay).toHaveBeenCalledTimes(1);
 

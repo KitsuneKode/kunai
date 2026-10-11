@@ -1831,7 +1831,7 @@ const HELP_TABS = {
   About: [
     { key: "version", desc: APP_VERSION },
     { key: "runtime", desc: "Bun + Ink" },
-    { key: "repo", desc: "github.com/kitsunelabs/kunai" },
+    { key: "repo", desc: "github.com/kitsunekode/kunai" },
   ],
 } as const;
 ```

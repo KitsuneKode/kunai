@@ -20,11 +20,15 @@ import {
   buildAllmangaCycleCandidates,
   buildAllMangaAaReq,
   buildAllMangaBootToken,
+  ALLMANGA_CRYPTO_PROFILE,
   ALLMANGA_KEY_HEX,
   ALLMANGA_QUERY_HASH,
   BUNDLED_ALLMANGA_CRYPTO,
   buildStreamHeaders,
+  classifyAllMangaBootstrapFailure,
   AllMangaCaptchaError,
+  AllMangaQueryDriftError,
+  isAllMangaPersistedQueryNotFound,
   clearAllMangaProviderCachesForTest,
   decodeTobeparsed,
   decryptTobeparsedPlaintext,
@@ -47,6 +51,7 @@ import {
   setAllMangaProviderCacheClockForTest,
   setAllMangaRetrySleepForTest,
 } from "../src/index";
+import { ProviderHttpError } from "../src/runtime/fetch";
 
 const TEST_KEY_HEX = ALLMANGA_KEY_HEX;
 const FIXTURE_BASE = new URL("./fixtures/allmanga/", import.meta.url);
@@ -325,7 +330,7 @@ describe("buildAllMangaAaReq", () => {
 describe("AllManga crypto material (mkissa bootstrap)", () => {
   const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
   const PART_B = Buffer.from(partBBytes).toString("base64");
-  const EXPECTED_KEY_HEX = "532fbba462deed2b68657d7c758b7bcd6978e4ebeac46cd4e3f6d4c24ab863c7";
+  const EXPECTED_KEY_HEX = "b0c86bcfacc8736cf42aea6e3e5e2a46791cbdf1b47fd82377a1ec135fa9d3e9";
   const PLAIN_SOURCE_JSON = JSON.stringify({
     data: {
       episode: {
@@ -416,10 +421,10 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(material?.keyHex).toBe(EXPECTED_KEY_HEX);
     expect(material?.epoch).toBe(6900);
     expect(material?.queryHash).toBe(ALLMANGA_QUERY_HASH);
-    expect(material?.buildId).toBe("140");
-    expect(site.bootstrapHeaders?.get("x-build-id")).toBe("140");
+    expect(material?.buildId).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
+    expect(site.bootstrapHeaders?.get("x-build-id")).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
     expect(site.bootstrapHeaders?.get("x-aa-boot")).toBe(
-      "9589a0b5c93919e01039dc83eeced3966f2abda839f8302dc7087e7b3df5cd35",
+      "3ad8ed385db4e65e056749c0fa37dc12d2f27688acfdf2291fdf2d8ddc2731d6",
     );
     expect(site.bootstrapHeaders?.get("origin")).toBe("https://mkissa.to");
     expect(site.bootstrapHeaders?.get("referer")).toBe("https://mkissa.to/");
@@ -429,23 +434,59 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(site.bootstrapFetchCount).toBe(1);
   });
 
-  test("matches independent build-140 derivation and boot-token vectors", () => {
-    expect(hashBuildId("140").toString("hex")).toBe(
-      "07041a152a2823383631cec4dfdcd2ede2e0fbf08e89869c9794aaa5bab8b348",
+  test("matches independent build-177 derivation and boot-token vectors", () => {
+    expect(hashBuildId("177").toString("hex")).toBe(
+      "786a46b4ae9af0e2decc2612087a5644beaa80f2eedc3622180a66544eba9082",
     );
-    expect(deriveMaskKey("140").toString("hex")).toBe(
-      "522db8a067d8ea23616f7670788574dd786af7ffffd27bccfaeccfde57a67ce7",
+    expect(deriveMaskKey("177").toString("hex")).toBe(
+      "b1ca68cba9ce7464fd20e16233502556680eaee5a169cf3b6ebbf70f42b7ccc9",
     );
-    expect(deriveKeyFromPartB(PART_B, "140").toString("hex")).toBe(EXPECTED_KEY_HEX);
+    expect(deriveKeyFromPartB(PART_B, "177").toString("hex")).toBe(EXPECTED_KEY_HEX);
     expect(
       buildAllMangaBootToken({
-        buildId: "140",
+        buildId: "177",
         epoch: 6900,
         keyGroup: "mkissa",
         refererHost: "mkissa.to",
         contentLane: "k7",
       }),
-    ).toBe("9589a0b5c93919e01039dc83eeced3966f2abda839f8302dc7087e7b3df5cd35");
+    ).toBe("3ad8ed385db4e65e056749c0fa37dc12d2f27688acfdf2291fdf2d8ddc2731d6");
+  });
+
+  test("bundled fallback key is derived under the pinned profile", () => {
+    // A key left over from a previous build is not a degraded fallback, it is
+    // a guaranteed decrypt failure. This is what made the 140 -> 171 rotation
+    // fail silently: the buildId moved and the bundled key did not.
+    // `livePartB` is the partB the live bootstrap actually returned on
+    // 2026-10-13 (build 177, epoch 2960), so it must derive ALLMANGA_KEY_HEX.
+    const livePartB = "1a5H9vWfNHrbAJxUevZQadwo7oz3UptJHnBvxEesHIM=";
+    expect(deriveKeyFromPartB(livePartB, ALLMANGA_CRYPTO_PROFILE.buildId).toString("hex")).toBe(
+      ALLMANGA_KEY_HEX,
+    );
+    expect(BUNDLED_ALLMANGA_CRYPTO.buildId).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
+  });
+
+  test("classifies the two rotation failures apart", () => {
+    expect(classifyAllMangaBootstrapFailure(404, '{"error":"unknown_build_id"}')).toBe(
+      "build-rotated",
+    );
+    expect(classifyAllMangaBootstrapFailure(403, '{"error":"invalid_boot_token"}')).toBe(
+      "token-rejected",
+    );
+    expect(classifyAllMangaBootstrapFailure(500, "upstream exploded")).toBe("unavailable");
+    // Status alone still classifies when the body is not the documented JSON.
+    expect(classifyAllMangaBootstrapFailure(404, "")).toBe("build-rotated");
+    expect(classifyAllMangaBootstrapFailure(403, "")).toBe("token-rejected");
+    // Cloudflare or generic HTML blocks must report unavailable, never token-rejected.
+    expect(
+      classifyAllMangaBootstrapFailure(
+        403,
+        "<!DOCTYPE html><html><title>Just a moment...</title></html>",
+      ),
+    ).toBe("unavailable");
+    expect(classifyAllMangaBootstrapFailure(404, "<html><body>404 Not Found</body></html>")).toBe(
+      "unavailable",
+    );
   });
 
   test("falls back to bundled material when bootstrap fails", async () => {
@@ -511,6 +552,34 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(site.bootstrapFetchCount).toBe(1);
   });
 
+  /**
+   * The persisted-query hash rotates on its own schedule, so this fires while
+   * the pinned build id is still current. It used to fall through the retry
+   * loop and return an empty list — indistinguishable from an episode that has
+   * no sources, and therefore no signal about which half to re-pin.
+   */
+  test("surfaces a rotated persisted-query hash as drift, not as an empty episode", async () => {
+    using site = mockCryptoSiteFetch({
+      apiResponses: [
+        '{"errors":[{"message":"PersistedQueryNotFound","extensions":{"code":"PERSISTED_QUERY_NOT_FOUND"}}]}',
+      ],
+    });
+
+    let thrown: unknown;
+    try {
+      await resolveWithSiteSources();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(AllMangaQueryDriftError);
+    expect((thrown as Error).message).toContain("query hash");
+    // Drift is not a crypto-material problem and not transient: no
+    // re-bootstrap, and no retry budget spent on an identical request.
+    expect(site.apiCallCount).toBe(1);
+    expect(site.bootstrapFetchCount).toBe(1);
+  });
+
   test("does not mistake NEED_CAPTCHA for a stale key or a rate limit", async () => {
     using site = mockCryptoSiteFetch({
       apiResponses: ['{"errors":[{"message":"NEED_CAPTCHA"}]}', PLAIN_SOURCE_JSON],
@@ -528,6 +597,30 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     } finally {
       clearAllMangaProviderCachesForTest();
     }
+  });
+
+  test("surfaces PersistedQueryNotFound as AllMangaQueryDriftError", async () => {
+    expect(
+      isAllMangaPersistedQueryNotFound('{"errors":[{"message":"PersistedQueryNotFound"}]}'),
+    ).toBe(true);
+    expect(isAllMangaPersistedQueryNotFound('{"data":{"episode":null}}')).toBe(false);
+
+    using site = mockCryptoSiteFetch({
+      apiResponses: ['{"errors":[{"message":"PersistedQueryNotFound"}]}'],
+    });
+
+    let thrown: unknown;
+    try {
+      await resolveWithSiteSources();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(AllMangaQueryDriftError);
+    // SAFETY: the instanceof check above proves this is an Error.
+    expect((thrown as Error).message).toContain("PersistedQueryNotFound");
+    expect(site.apiCallCount).toBe(1);
+    expect(site.bootstrapFetchCount).toBe(1);
   });
 
   test("backs off on API rate limiting instead of failing", async () => {
@@ -834,15 +927,18 @@ describe("AllManga provider evidence fixtures", () => {
     using fetchMock = await mockAllMangaFetch({ liveCrypto: true, catalogGate });
 
     const resolvePromise = resolveEvidenceEpisode();
-    for (
-      let attempt = 0;
-      attempt < 50 && !fetchMock.startedRequests.includes("catalog");
-      attempt++
-    ) {
-      await Bun.sleep(1);
-    }
-    await Bun.sleep(20);
-    const overlapped = fetchMock.startedRequests.includes("bootstrap");
+    const waitForStart = async (name: string): Promise<boolean> => {
+      const deadline = Date.now() + 1_000;
+      while (Date.now() < deadline) {
+        if (fetchMock.startedRequests.includes(name)) return true;
+        await Bun.sleep(5);
+      }
+      return fetchMock.startedRequests.includes(name);
+    };
+    expect(await waitForStart("catalog")).toBe(true);
+    // The bootstrap lane must start while the catalog lane is still gated —
+    // bounded poll on the same observable, not a fixed settle.
+    const overlapped = await waitForStart("bootstrap");
     releaseCatalog();
     const result = await resolvePromise;
 
@@ -1132,10 +1228,9 @@ describe("AllManga provider evidence fixtures", () => {
     using fetchMock = await mockAllMangaFetch({
       subSourceFixture: "fast-and-slow-baseline",
       fastBaselineDelayMs: 10,
-      slowBaselineDelayMs: 100,
+      slowBaselineDelayMs: 400,
     });
 
-    const startedAt = performance.now();
     const links = await resolveEpisodeSources({
       context: TEST_CONTEXT,
       apiUrl: "https://api.allanime.day/api",
@@ -1152,8 +1247,59 @@ describe("AllManga provider evidence fixtures", () => {
     const hosts = links.map((link) => new URL(link.url).hostname);
     expect(hosts).toContain("video.wixstatic.com");
     expect(hosts).toContain("direct.example");
-    expect(performance.now() - startedAt).toBeLessThan(80);
+    // The observable bound is the abort itself, not a wall-clock budget that a
+    // loaded CI runner can exceed without the budget path ever running late.
     expect(fetchMock.abortedBaselineRequests).toBe(1);
+  });
+
+  /**
+   * A typed refusal survives lanes that merely fulfilled empty: the refused
+   * lane may have been the only one holding the real source, so flattening
+   * it into [] would record an upstream outage as a catalog miss.
+   */
+  test("a refused adapter lane propagates even when another lane fulfilled empty", async () => {
+    await using _fetchMock = await mockAllMangaFetch({
+      subSourceFixture: "baseline-dead-and-empty",
+    });
+
+    const attempt = resolveEpisodeSources({
+      context: TEST_CONTEXT,
+      apiUrl: "https://api.allanime.day/api",
+      referer: "https://youtu-chan.com",
+      ua: "ua",
+      showId: "show-allmanga-evidence",
+      epStr: "1",
+      mode: "sub",
+      sourceLane: "baseline",
+      signal: new AbortController().signal,
+    } as Parameters<typeof resolveEpisodeSources>[0]);
+
+    await expect(attempt).rejects.toBeInstanceOf(ProviderHttpError);
+    await expect(attempt).rejects.toMatchObject({ status: 503 });
+  });
+
+  /**
+   * A 404 is scoped to that source's URL — exactly how a real lane empties —
+   * so a gone-only settle keeps the empty result for the next lane to win.
+   */
+  test("a gone adapter lane with an empty sibling still resolves empty", async () => {
+    await using _fetchMock = await mockAllMangaFetch({
+      subSourceFixture: "baseline-gone-and-empty",
+    });
+
+    const links = await resolveEpisodeSources({
+      context: TEST_CONTEXT,
+      apiUrl: "https://api.allanime.day/api",
+      referer: "https://youtu-chan.com",
+      ua: "ua",
+      showId: "show-allmanga-evidence",
+      epStr: "1",
+      mode: "sub",
+      sourceLane: "baseline",
+      signal: new AbortController().signal,
+    } as Parameters<typeof resolveEpisodeSources>[0]);
+
+    expect(links).toEqual([]);
   });
 
   test("quality-first startup includes prompt Ak response", async () => {
@@ -1447,6 +1593,9 @@ describe("AllManga provider evidence fixtures", () => {
 
     expect(candidates[0]).toMatchObject({
       sourceId: "source:allanime:fm-hls",
+      // The endpoint-health key is the stream's own host — a quarantined mirror
+      // is then skipped for every title, not re-probed on each resolve (#267).
+      serverId: "cdn.example",
       streamId: "stream:allmanga:hls",
       nativeLabel: "FM-HLS",
       normalizedAudioLanguage: "ja",
@@ -1660,6 +1809,36 @@ function mockAllMangaBridgeFetch(
   };
 }
 
+/**
+ * AllManga segment-probes a source before accepting it, so a fixture CDN has to
+ * answer like one. Returning 404 for these reads as a dead mirror — which is
+ * exactly what the gate is there to reject — and every resolve fixture would
+ * fail for the wrong reason.
+ */
+function allMangaFixtureCdnResponse(url: string, method: string): Response | null {
+  if (url.includes("segment-0.ts")) {
+    return new Response(new Uint8Array(2048), {
+      status: 206,
+      headers: { "Content-Range": "bytes 0-2047/2048" },
+    });
+  }
+  if (url.includes(".m3u8")) {
+    return new Response("#EXTM3U\n#EXTINF:4.0,\nsegment-0.ts\n", {
+      status: 200,
+      headers: { "Content-Type": "application/vnd.apple.mpegurl" },
+    });
+  }
+  if (url.includes(".mp4")) {
+    return method === "HEAD"
+      ? new Response(null, { status: 200 })
+      : new Response(new Uint8Array(2048), {
+          status: 206,
+          headers: { "Content-Range": "bytes 0-2047/2048" },
+        });
+  }
+  return null;
+}
+
 async function mockAllMangaFetch(
   options: {
     readonly subSourceFixture?:
@@ -1668,6 +1847,8 @@ async function mockAllMangaFetch(
       | "mixed-unselectable-baseline-ak"
       | "baseline-ak"
       | "fast-and-slow-baseline"
+      | "baseline-dead-and-empty"
+      | "baseline-gone-and-empty"
       | "cycle-hls-720-mp4-1080";
     readonly akDelayMs?: number;
     readonly fastBaselineDelayMs?: number;
@@ -1701,45 +1882,59 @@ async function mockAllMangaFetch(
     options.subSourceFixture === "mixed-unselectable-baseline-ak" ||
     options.subSourceFixture === "baseline-ak" ||
     options.subSourceFixture === "cycle-hls-720-mp4-1080" ||
+    options.subSourceFixture === "baseline-dead-and-empty" ||
+    options.subSourceFixture === "baseline-gone-and-empty" ||
     options.subSourceFixture === "fast-and-slow-baseline"
       ? {
           data: {
             episode: {
               episodeString: "1",
               sourceUrls:
-                options.subSourceFixture === "cycle-hls-720-mp4-1080"
+                options.subSourceFixture === "baseline-dead-and-empty" ||
+                options.subSourceFixture === "baseline-gone-and-empty"
                   ? [
                       {
-                        sourceName: "1080p",
-                        sourceUrl: "--https://cdn.allmanga.example/sub/1080/video.mp4?token=x",
+                        sourceName: "Default",
+                        sourceUrl:
+                          options.subSourceFixture === "baseline-dead-and-empty"
+                            ? "--/baseline-dead"
+                            : "--/baseline-gone",
                       },
-                      {
-                        sourceName: "720p",
-                        sourceUrl: "--https://cdn.allmanga.example/sub/720/master.m3u8",
-                      },
+                      { sourceName: "Luf-Mp4", sourceUrl: "--/baseline-empty" },
                     ]
-                  : options.subSourceFixture === "fast-and-slow-baseline"
+                  : options.subSourceFixture === "cycle-hls-720-mp4-1080"
                     ? [
                         {
-                          sourceName: "Yt-mp4",
-                          sourceUrl: "--https://direct.example/video.mp4",
+                          sourceName: "1080p",
+                          sourceUrl: "--https://cdn.allmanga.example/sub/1080/video.mp4?token=x",
                         },
-                        { sourceName: "Default", sourceUrl: "--/baseline-fast" },
-                        { sourceName: "Luf-Mp4", sourceUrl: "--/baseline-slow" },
+                        {
+                          sourceName: "720p",
+                          sourceUrl: "--https://cdn.allmanga.example/sub/720/master.m3u8",
+                        },
                       ]
-                    : [
-                        {
-                          sourceName: "Default",
-                          sourceUrl:
-                            options.subSourceFixture === "baseline-ak"
-                              ? "--https://cdn.allmanga.example/sub//1080/master.m3u8"
-                              : "--/broken-source",
-                        },
-                        {
-                          sourceName: "Ak",
-                          sourceUrl: "--/ak-source",
-                        },
-                      ],
+                    : options.subSourceFixture === "fast-and-slow-baseline"
+                      ? [
+                          {
+                            sourceName: "Yt-mp4",
+                            sourceUrl: "--https://direct.example/video.mp4",
+                          },
+                          { sourceName: "Default", sourceUrl: "--/baseline-fast" },
+                          { sourceName: "Luf-Mp4", sourceUrl: "--/baseline-slow" },
+                        ]
+                      : [
+                          {
+                            sourceName: "Default",
+                            sourceUrl:
+                              options.subSourceFixture === "baseline-ak"
+                                ? "--https://cdn.allmanga.example/sub//1080/master.m3u8"
+                                : "--/broken-source",
+                          },
+                          {
+                            sourceName: "Ak",
+                            sourceUrl: "--/ak-source",
+                          },
+                        ],
             },
           },
         }
@@ -1825,6 +2020,15 @@ async function mockAllMangaFetch(
       });
       return jsonResponse({ links: [] });
     }
+    if (url.includes("/baseline-dead")) {
+      return new Response("upstream unavailable", { status: 503 });
+    }
+    if (url.includes("/baseline-gone")) {
+      return new Response("gone", { status: 404 });
+    }
+    if (url.includes("/baseline-empty")) {
+      return jsonResponse({ links: [] });
+    }
     const bodyText = typeof init?.body === "string" ? init.body : "";
     if (url.includes("variables=")) {
       const variablesMatch = /variables=([^&]+)/.exec(url);
@@ -1856,6 +2060,8 @@ async function mockAllMangaFetch(
       const body = JSON.parse(bodyText) as { variables?: { translationType?: string } };
       return jsonResponse(body.variables?.translationType === "dub" ? fixtures.dub : fixtures.sub);
     }
+    const cdn = allMangaFixtureCdnResponse(url, String(init?.method ?? "GET"));
+    if (cdn) return cdn;
     return new Response("{}", { status: 404 });
   }) as typeof fetch;
 

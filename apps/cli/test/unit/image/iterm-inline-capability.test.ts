@@ -104,10 +104,20 @@ describe("image capability — iTerm2 inline images", () => {
     expect(capability.renderer).toBe("kitty-native");
   });
 
-  test("KUNAI_IMAGE_PROTOCOL=iterm forces inline images", () => {
-    const capability = capabilityFor({ KUNAI_IMAGE_PROTOCOL: "iterm", TERM: "xterm-256color" });
+  test("KUNAI_IMAGE_PROTOCOL=iterm forces inline images where supported", () => {
+    const capability = capabilityFor({ KUNAI_IMAGE_PROTOCOL: "iterm", TERM_PROGRAM: "iTerm.app" });
 
     expect(capability.renderer).toBe("iterm-inline");
+  });
+
+  test("KUNAI_IMAGE_PROTOCOL=iterm falls back to half-block on unknown terminals", () => {
+    // A forced protocol must still be one the terminal speaks: emitting a
+    // whole PNG as base64 into a terminal without inline-image support dumps
+    // raw bytes across the UI.
+    const capability = capabilityFor({ KUNAI_IMAGE_PROTOCOL: "iterm", TERM: "xterm-256color" });
+
+    expect(capability.renderer).toBe("half-block");
+    expect(capability.available).toBe(true);
   });
 
   test("a non-TTY stdout renders nothing regardless of terminal", () => {

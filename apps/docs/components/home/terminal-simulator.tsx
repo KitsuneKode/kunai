@@ -1,9 +1,10 @@
 "use client";
 
 import { commandsForPalette } from "@/lib/home-presenters";
-import { motion, AnimatePresence } from "motion/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 
+import { simulatedCommandScript } from "./simulated-command-script";
+import { TerminalCommandPalette } from "./terminal-command-palette";
 import type { HomeCommandMetadata, HomeLogEntry, HomeProviderMetadata } from "./types";
 
 interface TerminalSimulatorProps {
@@ -13,6 +14,22 @@ interface TerminalSimulatorProps {
   readonly cliVersion: string;
   readonly runtimeBaseline: { readonly bun: string; readonly mpv: string };
 }
+
+/**
+ * The command the demo types for a visitor who has not touched the terminal.
+ *
+ * A search for a real title shows the whole promise in one run: query,
+ * provider, verified stream, hand-off to mpv. It is the same script a visitor
+ * gets from the "/search Dune" preset, so the demo is not a second code path.
+ */
+const DEMO_COMMAND = "/search Dune";
+/** Quiet beat after mount before the first character, so the page lands first. */
+const DEMO_START_MS = 1100;
+/** Per-character delay; jittered so it reads as typing, not a ticker. */
+const DEMO_KEY_MS = 55;
+const DEMO_KEY_JITTER_MS = 40;
+/** Pause between the last character and Enter. */
+const DEMO_SUBMIT_MS = 380;
 
 const TerminalSimulator = memo(function TerminalSimulator({
   providers,
@@ -39,6 +56,12 @@ const TerminalSimulator = memo(function TerminalSimulator({
   const terminalInputRef = useRef<HTMLInputElement>(null);
   const paletteInputRef = useRef<HTMLInputElement>(null);
   const terminalStageRef = useRef<HTMLDivElement>(null);
+  const scriptTimersRef = useRef<number[]>([]);
+  // The demo stops for good the first time the visitor does anything. Held in
+  // refs because the typing loop runs on timers that outlive any one render.
+  const interactedRef = useRef(false);
+  const demoTypingRef = useRef(false);
+  const runCommandRef = useRef<(command: string) => void>(() => {});
 
   const filteredCommands = useMemo(
     () => commandsForPalette(paletteCommands, allCommands, searchQuery),
@@ -68,10 +91,60 @@ const TerminalSimulator = memo(function TerminalSimulator({
   }, []);
 
   useEffect(() => {
-    if (selectedPaletteIndex >= filteredCommands.length) {
-      setSelectedPaletteIndex(0);
+    const timers = scriptTimersRef.current;
+    return () => {
+      for (const id of timers) window.clearTimeout(id);
+      timers.length = 0;
+    };
+  }, []);
+
+  // The demo. Skipped entirely under reduced motion, where a terminal that types
+  // by itself is motion with nothing to opt out of it but this check.
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
+
+    let timer: number | undefined;
+    let typed = 0;
+
+    const submit = () => {
+      demoTypingRef.current = false;
+      if (interactedRef.current) return;
+      runCommandRef.current(DEMO_COMMAND);
+    };
+    const typeNext = () => {
+      if (interactedRef.current) return;
+      typed += 1;
+      setTerminalInput(DEMO_COMMAND.slice(0, typed));
+      timer = window.setTimeout(
+        typed < DEMO_COMMAND.length ? typeNext : submit,
+        typed < DEMO_COMMAND.length
+          ? DEMO_KEY_MS + Math.random() * DEMO_KEY_JITTER_MS
+          : DEMO_SUBMIT_MS,
+      );
+    };
+
+    timer = window.setTimeout(() => {
+      if (interactedRef.current) return;
+      demoTypingRef.current = true;
+      typeNext();
+    }, DEMO_START_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // Anything the visitor does ends the demo. If it was mid-word, the half-typed
+  // command goes with it: leaving "/sea" in the box reads as their typo.
+  const endDemo = () => {
+    interactedRef.current = true;
+    if (demoTypingRef.current) {
+      demoTypingRef.current = false;
+      setTerminalInput("");
     }
-  }, [filteredCommands.length, selectedPaletteIndex]);
+  };
+
+  // Clamp at read time instead of syncing state in an effect: a stale index
+  // past the filtered list end simply reads as the last row.
+  const selectedIndex =
+    filteredCommands.length === 0 ? 0 : Math.min(selectedPaletteIndex, filteredCommands.length - 1);
 
   const focusTerminalInput = () => {
     if (terminalInputRef.current) {
@@ -84,137 +157,31 @@ const TerminalSimulator = memo(function TerminalSimulator({
 
     setCommandPaletteOpen(false);
     setTerminalState("running");
-
-    const addLog = (line: string, delay: number) => {
-      setTimeout(() => {
-        setTerminalLogs((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, text: line }]);
-      }, delay);
-    };
-
     setTerminalInput("");
     setTerminalLogs((prev) => [
       ...prev,
       { id: `${Date.now()}-input`, text: `\nkunai > ${cmdText}` },
     ]);
 
-    let accDelay = 100;
-
-    if (cmdText.startsWith("/search ") || cmdText.startsWith("search ") || cmdText === "search") {
-      const parts = cmdText.split(" ");
-      const query = parts.slice(1).join(" ") || "Dune";
-
-      addLog(`[QUERY] Querying metadata catalogs for "${query}"...`, accDelay);
-      accDelay += 600;
-      addLog(`[ OK ] Match found: "${query}" (Release verified, 2024)`, accDelay);
-      accDelay += 400;
-      addLog("[FETCH] Fetching active streams from verification cache...", accDelay);
-      accDelay += 500;
-
-      const isAnime = query.toLowerCase().match(/(naruto|piece|totoro|titan|frieren|re:zero|oshi)/);
-      const eligibleProviders = providers.filter((p) => {
-        const kindsSet = new Set(p.mediaKinds.map((k) => k.toLowerCase()));
-        return isAnime ? kindsSet.has("anime") : kindsSet.has("movie") || kindsSet.has("series");
-      });
-
-      const primaryProvider =
-        eligibleProviders.find((p) => p.recommended) || eligibleProviders[0] || providers[0];
-
-      if (primaryProvider) {
-        addLog(
-          `[INFO] Selected provider: ${primaryProvider.displayName} (${primaryProvider.domain})`,
-          accDelay,
-        );
-        accDelay += 500;
-        addLog(
-          `[INFO] Resolving stream parameters [status: ${primaryProvider.status}]...`,
-          accDelay,
-        );
-        accDelay += 700;
-        if (primaryProvider.capabilities.includes("quality-ranked")) {
-          addLog("[ OK ] Stream verified: 1080p selected (variants: 720p, 480p)", accDelay);
-        } else {
-          addLog("[ OK ] Stream verified: direct-http source resolved", accDelay);
-        }
-        accDelay += 400;
-      }
-
-      addLog("[PLAY] Launching mpv player window...", accDelay);
-      accDelay += 600;
-      addLog(`[mpv] Playing "${query}" - supervisor handoff established.`, accDelay);
-      accDelay += 500;
-      addLog("[mpv] Press 'r' to recover stream, 'f' to try fallback, 'Esc' to return.", accDelay);
-    } else if (cmdText.startsWith("/discover") || cmdText === "discover") {
-      addLog("[QUERY] Querying catalog recommendation engine...", accDelay);
-      accDelay += 500;
-      addLog("[INFO] Reading local SQLite continuation weights...", accDelay);
-      accDelay += 400;
-      addLog("\nTrending Today [Discover]:", accDelay);
-      accDelay += 200;
-      addLog("  1. Frieren: Beyond Journey's End (Series) [Anime]", accDelay);
-      accDelay += 100;
-      addLog("  2. Dune: Part Two (Movie) [Sci-Fi]", accDelay);
-      accDelay += 100;
-      addLog("  3. Erased (Series) [Mystery]", accDelay);
-      accDelay += 400;
-      addLog("\nUse arrow keys and press Enter to launch.", accDelay);
-    } else if (cmdText.startsWith("/calendar") || cmdText === "calendar") {
-      addLog("[FETCH] Fetching release calendar schedule...", accDelay);
-      accDelay += 600;
-      addLog("Releasing Today (Source Sync):", accDelay);
-      accDelay += 200;
-      addLog("  [AIRING] Oshi no Ko S3 Ep 02 - Direct HTTP resolved", accDelay);
-      accDelay += 150;
-      addLog("  [AIRING] Re:Zero S3 Ep 14 - MAL synced (in 3h)", accDelay);
-      accDelay += 150;
-      addLog("  [AIRING] House of the Dragon S3 Ep 03 (Aired 12h ago)", accDelay);
-      accDelay += 300;
-      addLog("\nReady. Check commands bar for offline sync schedules.", accDelay);
-    } else if (cmdText.startsWith("/setup") || cmdText === "setup" || cmdText.includes("setup")) {
-      addLog("[SETUP] Initializing Setup Wizard...", accDelay);
-      accDelay += 400;
-      addLog("Checking dependencies...", accDelay);
-      accDelay += 300;
-      addLog("  mpv: OK (0.38.0)", accDelay);
-      addLog("  posters (kitty graphics): OK", accDelay);
-      addLog("  sqlite3: OK", accDelay);
-      accDelay += 400;
-      addLog("Configure default media directories:", accDelay);
-      addLog("  Download path: ~/Downloads/kunai", accDelay);
-      addLog("  Cache DB limit: 512MB", accDelay);
-      accDelay += 300;
-      addLog("Configuration atomic-written to ~/.config/kunai/config.json", accDelay);
-    } else if (cmdText.startsWith("/recover") || cmdText === "recover") {
-      addLog("[RECOVERY] Recovery sequence initiated.", accDelay);
-      accDelay += 300;
-      addLog("Requesting a fresh stream from the active provider...", accDelay);
-      accDelay += 500;
-      addLog("[ OK ] Resolved new stream segment (no playback drift). Resuming mpv...", accDelay);
-    } else if (cmdText.startsWith("/fallback") || cmdText === "fallback") {
-      addLog("[WARN] Fallback sequence requested.", accDelay);
-      accDelay += 300;
-      addLog("Switching stream source from current provider...", accDelay);
-      accDelay += 450;
-      addLog("Connecting to fallback provider: Miruro (domain: miruro.tv)...", accDelay);
-      accDelay += 500;
-      addLog("[ OK ] Miruro stream resolved at 720p. Playback restored.", accDelay);
-    } else if (cmdText.startsWith("/help") || cmdText === "help") {
-      addLog("Help Manual - Context Commands:", accDelay);
-      accDelay += 150;
-      paletteCommands.forEach((cmd) => {
-        addLog(`  /${cmd.id.padEnd(12)} - ${cmd.description}`, accDelay);
-        accDelay += 50;
-      });
-      addLog("Type '/' for more commands or open the CLI reference.", accDelay);
-    } else {
-      addLog(`Evaluating unknown command: "${cmdText}"`, accDelay);
-      accDelay += 300;
-      addLog("Command not recognized. Type '/' for suggestions, or '/help'.", accDelay);
+    const script = simulatedCommandScript(cmdText, providers, paletteCommands);
+    for (const step of script.steps) {
+      scriptTimersRef.current.push(
+        window.setTimeout(() => {
+          setTerminalLogs((prev) => [
+            ...prev,
+            { id: `${Date.now()}-${Math.random()}`, text: step.line },
+          ]);
+        }, step.at),
+      );
     }
-
-    setTimeout(() => {
-      setTerminalState("idle");
-    }, accDelay);
+    scriptTimersRef.current.push(
+      window.setTimeout(() => {
+        setTerminalState("idle");
+      }, script.doneAt),
+    );
   };
+
+  runCommandRef.current = runSimulatedCommand;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (commandPaletteOpen) {
@@ -230,11 +197,9 @@ const TerminalSimulator = memo(function TerminalSimulator({
         );
       } else if (e.key === "Enter") {
         e.preventDefault();
-        const selected = filteredCommands[selectedPaletteIndex];
+        const selected = filteredCommands[selectedIndex];
         if (selected) {
-          const runCmd = `/${selected.id}`;
-          setTerminalInput(runCmd);
-          runSimulatedCommand(runCmd);
+          runSimulatedCommand(`/${selected.id}`);
         }
       } else if (e.key === "Escape") {
         setCommandPaletteOpen(false);
@@ -295,6 +260,9 @@ const TerminalSimulator = memo(function TerminalSimulator({
           commandPaletteOpen ? "is-focused" : ""
         }`}
         aria-label="Kunai terminal preview"
+        onPointerDownCapture={endDemo}
+        onKeyDownCapture={endDemo}
+        onFocusCapture={endDemo}
       >
         <div className="kunai-terminal-top">
           <span className="text-fd-muted-foreground flex items-center gap-1.5 text-xs">
@@ -309,7 +277,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
 
         <div
           ref={terminalBodyRef}
-          className="kunai-terminal-body scrollbar block max-h-[360px] min-h-[260px] w-full cursor-text text-left focus:outline-none"
+          className="kunai-terminal-body scrollbar block h-[19rem] w-full cursor-text text-left focus:outline-none"
           onClick={focusTerminalInput}
           role="presentation"
         >
@@ -320,11 +288,11 @@ const TerminalSimulator = memo(function TerminalSimulator({
           ))}
 
           <span className="kunai-terminal-input-row">
-            <span className="kunai-text-accent mr-2 text-xs font-bold">kunai &gt;</span>
+            <span className="kunai-text-accent mr-2 text-xs font-semibold">kunai &gt;</span>
             <input
               ref={terminalInputRef}
               type="text"
-              className="text-fd-foreground w-full border-none bg-transparent font-mono text-xs outline-none"
+              className="text-fd-foreground w-full border-none bg-transparent font-mono text-base outline-none sm:text-xs"
               value={terminalInput}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
@@ -334,63 +302,21 @@ const TerminalSimulator = memo(function TerminalSimulator({
             />
             <span className="kunai-cursor shrink-0" />
           </span>
-
-          <AnimatePresence initial={false}>
-            {commandPaletteOpen && filteredCommands.length > 0 && (
-              <motion.span
-                initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                transition={{ type: "spring", duration: 0.3, bounce: 0 }}
-                className="kunai-command-palette"
-                onClick={(e) => e.stopPropagation()}
-                role="presentation"
-              >
-                <span className="palette-search-wrapper">
-                  <span className="kunai-text-accent mr-2 font-bold">/</span>
-                  <input
-                    ref={paletteInputRef}
-                    type="text"
-                    className="palette-search-input text-fd-foreground w-full border-none bg-transparent text-xs outline-none"
-                    value={searchQuery.replace(/^\//, "")}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search commands..."
-                    aria-label="CLI commands query filter"
-                  />
-                </span>
-                <span className="palette-list flex max-h-[180px] flex-col gap-0.5 overflow-y-auto p-1.5">
-                  {filteredCommands.map((cmd, index) => (
-                    <button
-                      type="button"
-                      key={cmd.id}
-                      className={`palette-item flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
-                        index === selectedPaletteIndex
-                          ? "is-selected"
-                          : "text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const runCmd = `/${cmd.id}`;
-                        setTerminalInput(runCmd);
-                        runSimulatedCommand(runCmd);
-                      }}
-                      onMouseEnter={() => setSelectedPaletteIndex(index)}
-                    >
-                      <span>
-                        <span className="text-fd-foreground font-semibold">/{cmd.id}</span>
-                        <span className="kunai-text-accent ml-1.5 text-[10px] opacity-60">
-                          ({cmd.label})
-                        </span>
-                        <span className="kunai-step-meta mt-0.5 block">{cmd.description}</span>
-                      </span>
-                      <span className="palette-shortcut">Enter</span>
-                    </button>
-                  ))}
-                </span>
-              </motion.span>
-            )}
-          </AnimatePresence>
         </div>
+
+        {/* The palette hangs off the stage, not the scrolling body: inside
+            `.kunai-terminal-body` its `top` resolves against scrolled content,
+            so once logs overflow she renders above the visible region. */}
+        <TerminalCommandPalette
+          open={commandPaletteOpen}
+          commands={filteredCommands}
+          selectedIndex={selectedIndex}
+          searchQuery={searchQuery}
+          inputRef={paletteInputRef}
+          onSearchChange={setSearchQuery}
+          onSelectIndex={setSelectedPaletteIndex}
+          onRun={(cmd) => runSimulatedCommand(`/${cmd.id}`)}
+        />
 
         <div className="kunai-terminal-presets mt-4">
           <span className="kunai-step-meta shrink-0">Try one</span>
@@ -399,7 +325,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
               type="button"
               key={cmd}
               onClick={() => onPresetClick(cmd)}
-              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-[10px] transition-[transform,border-color,background-color,color] duration-150 ease-out active:scale-[0.96]"
+              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-xs transition-[transform,border-color,background-color,color] duration-150 ease-out active:scale-[0.96]"
             >
               {cmd}
             </button>

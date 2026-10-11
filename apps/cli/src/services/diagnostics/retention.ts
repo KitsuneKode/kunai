@@ -1,4 +1,4 @@
-import { readdir, rm, stat } from "node:fs/promises";
+import { lstat, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 export async function pruneOldDiagnosticFiles({
@@ -26,8 +26,14 @@ export async function pruneOldDiagnosticFiles({
         .map(async (entry) => {
           const path = join(dir, entry);
           try {
-            const stats = await stat(path);
-            return stats.isFile() ? { entry, path, mtimeMs: stats.mtimeMs } : null;
+            // `lstat`, so a symlink is judged as itself rather than by whatever
+            // it points at. `rm` unlinks the link either way, so following it
+            // only ever meant sorting by a target's mtime — and letting a link
+            // planted in the diagnostics directory decide which real files are
+            // old enough to delete.
+            const stats = await lstat(path);
+            const prunable = stats.isFile() || stats.isSymbolicLink();
+            return prunable ? { entry, path, mtimeMs: stats.mtimeMs } : null;
           } catch {
             return null;
           }

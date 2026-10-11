@@ -23,14 +23,23 @@ describe("DownloadService youtube argv contract", () => {
     runMigrations(db, "data");
     repo = new DownloadJobsRepository(db);
     spawnSpy = spyOn(Bun, "spawn");
+    spawnSpy.mockImplementation((command: string[]) => {
+      throw new Error(
+        `YouTube download unit tests must stub yt-dlp; refusing ${String(command[0] ?? "unknown")}`,
+      );
+    });
     whichSpy = spyOn(Bun, "which");
-    configureYoutubeProvider({
+    const youtubeRuntime = {
       cookiesFromBrowser: "firefox",
       cookiesFile: "/tmp/cookies.txt",
       extractorArgs: "youtube:player_client=android",
       poToken: "android.gvs+DOWNLOAD_TOKEN",
       sponsorblockRemove: "sponsor",
-    });
+    };
+    configureYoutubeProvider(youtubeRuntime);
+    // Pin the runtime read DownloadService actually makes, so a parallel file
+    // calling configureYoutubeProvider({}) cannot drop the PO token.
+    spyOn(youtubeProviders, "getYoutubeProviderConfig").mockImplementation(() => youtubeRuntime);
     runYtDlpSpy = spyOn(youtubeProviders, "runYtDlpProcess");
   });
 
@@ -54,6 +63,7 @@ describe("DownloadService youtube argv contract", () => {
       const outputPath = oIndex >= 0 ? options.args[oIndex + 1] : "";
       if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
       return {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         process: { kill: mock(() => {}) } as never,
         completed: Promise.resolve({ exitCode: 0, stderr: "" }),
         cancel: mock(() => {}),
@@ -135,22 +145,91 @@ describe("DownloadService youtube argv contract", () => {
     expect(runYtDlpSpy).not.toHaveBeenCalled();
   });
 
+  test.each(["abort", "shutdown"] as const)(
+    "%s during stream resolution does not launch a downloader or persist fresh stream metadata",
+    async (action) => {
+      const resolving = Promise.withResolvers<void>();
+      const releaseResolution = Promise.withResolvers<void>();
+      const resolved = youtubeResolveResult();
+      const freshStreamUrl = "https://www.youtube.com/watch?v=refreshed";
+      const service = buildYoutubeService({
+        repo,
+        downloadPath: tempDir,
+        resolveDownloadStream: async () => {
+          resolving.resolve();
+          await releaseResolution.promise;
+          // SAFETY: `resolved` already is a DownloadResolveResult; only the stream url is swapped for the probe.
+          return {
+            ...resolved,
+            stream: { ...resolved.stream, url: freshStreamUrl },
+          } as never;
+        },
+      });
+      // If the regression starts a child, it exits immediately so the test
+      // reports the forbidden launch rather than hanging behind its lifetime.
+      runYtDlpSpy.mockImplementation(() => ({
+        // SAFETY: a stubbed child process — only `kill`/`exited` are read, the rest of ChildProcess is unused.
+        process: { kill: mock(() => {}), exited: Promise.resolve(1) } as never,
+        completed: Promise.resolve({ exitCode: 1, stderr: "unexpected late launch" }),
+        cancel: mock(() => {}),
+      }));
+      const job = await service.enqueue({
+        title: { id: "youtube:video:abc123", type: "movie", name: "Example video" },
+        stream: { url: "https://www.youtube.com/watch?v=abc123", headers: {}, timestamp: 0 },
+        providerId: "youtube",
+        mode: "youtube",
+      });
+
+      const running = service.processQueue();
+      await resolving.promise;
+      expect(repo.get(job.id)?.status).toBe("running");
+      if (action === "abort") await service.abort(job.id);
+      else service.beginShutdown("download paused during resolution");
+      releaseResolution.resolve();
+      await running;
+
+      expect(runYtDlpSpy).not.toHaveBeenCalled();
+      const reloaded = repo.get(job.id);
+      expect(reloaded?.status).toBe(action === "abort" ? "aborted" : "queued");
+      expect(reloaded?.streamUrl).toBe(job.streamUrl);
+      expect(reloaded?.retryCount).toBe(0);
+      if (action === "abort") expect(reloaded?.nextRetryAt).toBeUndefined();
+      else {
+        expect(reloaded?.errorMessage).toBe("download paused during resolution");
+        expect(reloaded?.nextRetryAt).toBeDefined();
+      }
+    },
+  );
+
   test("abort calls runYtDlpProcess cancel handle", async () => {
+    const resolving = Promise.withResolvers<void>();
+    const releaseResolution = Promise.withResolvers<void>();
+    const processStarted = Promise.withResolvers<void>();
     const cancel = mock(() => {});
     let resolveCompleted!: (value: { exitCode: number; stderr: string }) => void;
     const completed = new Promise<{ exitCode: number; stderr: string }>((resolve) => {
       resolveCompleted = resolve;
     });
-    runYtDlpSpy.mockImplementation(() => ({
-      process: { kill: mock(() => {}) } as never,
-      completed,
-      cancel,
-    }));
+    runYtDlpSpy.mockImplementation(() => {
+      processStarted.resolve();
+      return {
+        process: {
+          kill: mock(() => {}),
+          exited: completed.then(({ exitCode }) => exitCode),
+        } as never,
+        completed,
+        cancel,
+      };
+    });
 
     const service = buildYoutubeService({
       repo,
       downloadPath: tempDir,
-      resolveDownloadStream: async () => youtubeResolveResult() as unknown as DownloadResolveResult,
+      resolveDownloadStream: async () => {
+        resolving.resolve();
+        await releaseResolution.promise;
+        return youtubeResolveResult() as unknown as DownloadResolveResult;
+      },
       abortGraceMs: 0,
     });
 
@@ -165,12 +244,20 @@ describe("DownloadService youtube argv contract", () => {
       mode: "youtube",
     });
     const processPromise = service.processQueue();
-    await Bun.sleep(20);
-    await service.abort(job.id);
+    await resolving.promise;
+    expect(repo.get(job.id)?.status).toBe("running");
+    expect(runYtDlpSpy).not.toHaveBeenCalled();
+    releaseResolution.resolve();
+    // The mock resolves this synchronously; the continuation resumes after
+    // executeYtDlpDownload has registered the returned process handle.
+    await processStarted.promise;
+    const aborting = service.abort(job.id);
     resolveCompleted({ exitCode: 1, stderr: "terminated" });
+    await aborting;
     await processPromise;
 
     expect(cancel).toHaveBeenCalled();
+    expect(repo.get(job.id)?.status).toBe("aborted");
   });
 });
 
@@ -220,6 +307,7 @@ function buildYoutubeService({
       cookiesFromBrowser: "firefox",
       cookiesFile: "/tmp/cookies.txt",
       extractorArgs: "youtube:player_client=android",
+      poToken: "android.gvs+DOWNLOAD_TOKEN",
       sponsorblockRemove: "sponsor",
       instanceUrl: "",
       pipedApiUrl: "",

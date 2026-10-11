@@ -147,8 +147,18 @@ test("PlayerControlServiceImpl records refresh recover and fallback as stop-back
   expect(service.consumeLastAction()).toBe("recover");
   expect(await service.fallbackCurrentPlayback("fallback-key")).toBe(true);
   expect(service.consumeLastAction()).toBe("fallback");
+  expect(await service.cycleSourceCurrentPlayback("cycle-source-key")).toBe(true);
+  expect(service.consumeLastAction()).toBe("cycle-source");
+  expect(await service.cycleAudioCurrentPlayback("cycle-audio-key")).toBe(true);
+  expect(service.consumeLastAction()).toBe("cycle-audio");
   expect(stoppedReasons).toEqual([]);
-  expect(stoppedCurrentReasons).toEqual(["refresh-key", "recover-key", "fallback-key"]);
+  expect(stoppedCurrentReasons).toEqual([
+    "refresh-key",
+    "recover-key",
+    "fallback-key",
+    "cycle-source-key",
+    "cycle-audio-key",
+  ]);
 });
 
 test("PlayerControlServiceImpl reloads subtitles without stopping playback", async () => {

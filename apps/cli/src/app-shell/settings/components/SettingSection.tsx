@@ -32,16 +32,12 @@ export const SettingRowStatus = React.memo(function SettingRowStatus({
       : row.def.tone === "warning"
         ? semanticToneColor("warning")
         : row.def.tone === "error"
-          ? palette.danger
+          ? palette.dangerText
           : semanticToneColor("info");
   return (
     <Box flexDirection="column" marginLeft={2}>
       <Text color={tone}>{row.def.label}</Text>
-      {row.detail ? (
-        <Text color={palette.dim} dimColor>
-          {row.detail}
-        </Text>
-      ) : null}
+      {row.detail ? <Text color={palette.dim}>{row.detail}</Text> : null}
     </Box>
   );
 });
@@ -60,10 +56,10 @@ export const SettingRowAction = React.memo(function SettingRowAction({
   return (
     <Box width={rowWidth} backgroundColor={selected ? palette.accentFill : undefined}>
       <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
-      {danger ? <Text color={palette.danger}>! </Text> : null}
+      {danger ? <Text color={palette.dangerText}>! </Text> : null}
       <Text
         bold={selected}
-        color={danger ? palette.danger : selected ? palette.text : palette.textDim}
+        color={danger ? palette.dangerText : selected ? palette.text : palette.textDim}
       >
         {row.def.label}
       </Text>

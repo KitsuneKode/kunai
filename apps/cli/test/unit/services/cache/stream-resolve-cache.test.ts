@@ -238,3 +238,59 @@ test("buildEmbedStreamCacheKey preserves embed URL", () => {
   const url = "https://example.com/embed/123";
   expect(buildEmbedStreamCacheKey(url)).toBe(url);
 });
+
+test("buildApiStreamResolveCacheKey separates YouTube episodes under channel/playlist", () => {
+  const base = {
+    providerId: "youtube",
+    providerManifest: youtubeManifest,
+    title: { id: "channel:UC123", type: "series" as const, name: "Channel" },
+    mode: "series" as const,
+    audioPreference: "original",
+    subtitlePreference: "none",
+  };
+
+  const ep1 = buildApiStreamResolveCacheKey({
+    ...base,
+    episode: { season: 1, episode: 1 },
+  });
+  const ep2 = buildApiStreamResolveCacheKey({
+    ...base,
+    episode: { season: 1, episode: 2 },
+  });
+
+  expect(ep1).not.toBe(ep2);
+  expect(ep1).toContain(":1:");
+  expect(ep2).toContain(":2:");
+});
+
+test("a manifest with a missing or malformed cachePolicy degrades to a plain key", () => {
+  const title = { id: "abc", type: "series" as const, name: "X", year: "2020" };
+  const base = {
+    providerId: "vidlink",
+    title,
+    episode: { season: 1, episode: 3 },
+    mode: "series" as const,
+    audioPreference: "original",
+    subtitlePreference: "en",
+    qualityPreference: "1080p",
+  };
+
+  expect(() =>
+    buildApiStreamResolveCacheKey({ ...base, providerManifest: undefined }),
+  ).not.toThrow();
+  expect(() =>
+    buildApiStreamResolveCacheKey({
+      ...base,
+      // SAFETY: a cache record missing cachePolicy must not crash the key
+      // builder — cache payloads are untrusted at read time.
+      providerManifest: { id: "vidlink" } as never,
+    }),
+  ).not.toThrow();
+  expect(() =>
+    buildApiStreamResolveCacheKey({
+      ...base,
+      // SAFETY: same — a string where the cachePolicy object belongs.
+      providerManifest: { id: "vidlink", cachePolicy: "not-an-object" } as never,
+    }),
+  ).not.toThrow();
+});

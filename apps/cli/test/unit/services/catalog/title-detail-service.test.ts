@@ -13,11 +13,13 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { ARTWORK_PREFERENCE, episodeThumbKey, mergeArtwork } from "@/domain/catalog/title-detail";
+import { initLogger } from "@/logger";
 import {
   clearTitleDetailCache,
   fetchTitleDetail,
   peekTitleDetail,
 } from "@/services/catalog/TitleDetailService";
+import { clearTmdbSessionCache } from "@/services/catalog/tmdb-proxy";
 
 // ---------------------------------------------------------------------------
 // Helpers to build minimal fake TMDB/AniList API responses
@@ -175,6 +177,9 @@ beforeEach(() => {
 
 afterEach(() => {
   clearTitleDetailCache();
+  // The tmdb-proxy host breakers are module state — a stubbed 5xx/transport
+  // failure must not carry into the next test.
+  clearTmdbSessionCache();
 });
 
 // ---------------------------------------------------------------------------
@@ -860,6 +865,42 @@ describe("episode counts are whole numbers", () => {
       } finally {
         restore();
       }
+    }
+  });
+
+  test("a rejected count records where the bad value came from (#273)", async () => {
+    const records: Array<{ msg: string; data?: Record<string, unknown> }> = [];
+    const capture = {
+      child: () => ({
+        debug: (msg: string, data?: Record<string, unknown>) => records.push({ msg, data }),
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        fatal: () => {},
+      }),
+    };
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    initLogger(true, capture as never);
+    const restore = mockFetch((url) => {
+      if (url.includes("graphql.anilist.co"))
+        return jsonResponse({ data: { Media: anilistMediaPayload({ episodes: 448.2 }) } });
+      return null;
+    });
+
+    try {
+      const detail = await fetchTitleDetail("anilist:21", "series");
+      expect(detail.episodeCount).toBeUndefined();
+      const record = records.find(
+        (r) => r.msg === "episodeCount rejected: non-integer upstream value",
+      );
+      expect(record?.data).toMatchObject({
+        site: "anilist-media",
+        titleId: "21",
+        value: "448.2",
+      });
+    } finally {
+      restore();
+      initLogger(false);
     }
   });
 });

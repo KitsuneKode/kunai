@@ -87,6 +87,9 @@ import {
 } from "./calendar-ui.model";
 import { sortCalendarOptions } from "./calendar-view";
 import type { ResolvedAppCommand } from "./commands";
+import { momentForBrowseEmpty } from "./companion-moment";
+import { companionMode } from "./companion-policy";
+import { CompanionHost } from "./CompanionHost";
 import { DetailsSheetUI } from "./details-pane-ui";
 import {
   buildBrowseDetailsPanel,
@@ -98,7 +101,7 @@ import {
 import { buildDetailsSheet } from "./details-sheet.model";
 import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
-import { deleteAllKittyImages } from "./image-pane";
+import { undisplayPlacementsKeepCache } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
 import { buildFooterActionsFromBindings } from "./keybindings";
 import {
@@ -134,7 +137,7 @@ import {
 import { CommandPalette } from "./shell-command-ui";
 import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
-import { getWindowStart, measureColumns } from "./shell-text";
+import { getWindowStart, measureColumns, sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 import {
   toShellAction,
@@ -150,7 +153,10 @@ import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 function clearShellScreen() {
   if (process.stdout.isTTY) {
-    deleteAllKittyImages();
+    // Placements must go (the frame is cleared), but source bytes stay warm:
+    // wiping the 48MB+32MB byte caches here refetches + redecodes every poster
+    // the moment the user returns. Full wipe is for session shutdown only.
+    undisplayPlacementsKeepCache();
   }
 }
 
@@ -192,6 +198,7 @@ export function BrowseShell<T>({
   initialResults,
   initialResultSubtitle,
   initialErrorMessage,
+  initialEmptyMessage,
   initialWarnings,
   initialSelectedIndex,
   initialCalendarTypeTab,
@@ -224,6 +231,8 @@ export function BrowseShell<T>({
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
   initialErrorMessage?: string;
+  /** The cause-named empty copy from a bootstrap search that found nothing. */
+  initialEmptyMessage?: string;
   initialWarnings?: readonly string[];
   initialSelectedIndex?: number;
   initialCalendarTypeTab?: CalendarTypeTab;
@@ -282,7 +291,7 @@ export function BrowseShell<T>({
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const actionFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashActionFeedback = useCallback((message: string) => {
-    setActionFeedback(message);
+    setActionFeedback(sanitizeTerminalText(message));
     if (actionFeedbackTimer.current) clearTimeout(actionFeedbackTimer.current);
     actionFeedbackTimer.current = setTimeout(() => setActionFeedback(null), 2500);
   }, []);
@@ -313,7 +322,9 @@ export function BrowseShell<T>({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftQuery, setDraftQuery] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(initialErrorMessage ?? null);
-  const [emptyMessage, setEmptyMessage] = useState(() => browseIdleHint(mode));
+  const [emptyMessage, setEmptyMessage] = useState(
+    () => initialEmptyMessage ?? browseIdleHint(mode),
+  );
   const [activeIdleContext, setActiveIdleContext] = useState(idleContext);
   const [idleContextStatus, setIdleContextStatus] = useState<"loading" | "ready" | "error">(
     loadIdleContext ? "loading" : "ready",
@@ -570,7 +581,7 @@ export function BrowseShell<T>({
 
       try {
         const response = await onSearch(rawQuery);
-        if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+        if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
         const processed = processBrowseSearchResults(response, parsedQuery);
         const activeBadges = [
           ...processed.upstreamFilterBadges.map((badge) => `upstream ${badge}`),
@@ -596,7 +607,7 @@ export function BrowseShell<T>({
         setSearchState("ready");
         setFocusZone(processed.options.length > 0 ? "list" : "query");
       } catch (error) {
-        if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+        if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
         setSearchState("error");
         setOptions([]);
@@ -645,7 +656,7 @@ export function BrowseShell<T>({
 
     try {
       const response = await onLoadDiscovery();
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setOptions(response.options);
       setSelectedIndex(0);
@@ -655,7 +666,7 @@ export function BrowseShell<T>({
       setSearchState("ready");
       setFocusZone(response.options.length > 0 ? "list" : "query");
     } catch (error) {
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setSearchState("error");
       setOptions([]);
@@ -684,7 +695,7 @@ export function BrowseShell<T>({
 
     try {
       const response = await onLoadRecommendations();
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       // Cold cache: stay on the loading surface until the network refresh lands.
       // Warm cache: paint immediately, then soft-refresh in the background.
@@ -731,7 +742,7 @@ export function BrowseShell<T>({
           });
       }
     } catch (error) {
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setSearchState("error");
       setOptions([]);
@@ -1170,6 +1181,13 @@ export function BrowseShell<T>({
     commandMode,
   });
   const maxVisible = getBrowseListMaxVisible(viewport.rows, browseChromeRows);
+  // The card follows the selected row at once; enriched details arrive when the
+  // selection settles. Rendering only the settled data flashed "No selection"
+  // over a row that was plainly selected.
+  const companionView =
+    settledOption === selectedOption
+      ? companionDetails
+      : buildDetailsPanelDataFromBrowseOption(selectedOption);
   const windowStart = getWindowStart(boundedSelectedIndex, displayOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
   const visibleOptions = displayOptions.slice(windowStart, windowEnd);
@@ -1566,11 +1584,20 @@ export function BrowseShell<T>({
       }
 
       const escLayer = nextBrowseEscFilterLayer({
+        searchLoading: searchState === "loading",
         narrowOpenOrFocused: resultFilterFocused || filterModeOpen,
         resultFilterNonEmpty: resultFilter.length > 0,
         structuredChipCount: structuredFilterChips.length,
         queryNonEmpty: query.trim().length > 0,
       });
+
+      if (escLayer === "loading") {
+        // Invalidate the request gate so the late resolve lands stale and is
+        // dropped, then return to the idle surface rather than closing out.
+        searchRequestGateRef.current.invalidate();
+        clearResults();
+        return;
+      }
 
       if (escLayer === "narrow") {
         if (resultFilter.length > 0) {
@@ -1648,11 +1675,11 @@ export function BrowseShell<T>({
       // Closed loop: the last row wraps to the first instead of dropping back
       // into the search box. Bouncing to the query zone here made row 0
       // unreachable going down whenever the remembered row was the last one.
-      if (boundedSelectedIndex >= displayOptions.length - 1) {
-        setSelectedIndex(0);
-        return;
-      }
-      setSelectedIndex((current) => current + 1);
+      setSelectedIndex((current) => {
+        const max = displayOptions.length - 1;
+        const bounded = Math.min(Math.max(0, current), max);
+        return bounded >= max ? 0 : bounded + 1;
+      });
       return;
     }
 
@@ -1668,11 +1695,11 @@ export function BrowseShell<T>({
         dispatchFocusZone({ type: "arrow-up" });
         return;
       }
-      if (boundedSelectedIndex === 0) {
-        setSelectedIndex(displayOptions.length - 1);
-        return;
-      }
-      setSelectedIndex((current) => current - 1);
+      setSelectedIndex((current) => {
+        const max = displayOptions.length - 1;
+        const bounded = Math.min(Math.max(0, current), max);
+        return bounded <= 0 ? max : bounded - 1;
+      });
       return;
     }
 
@@ -1800,7 +1827,7 @@ export function BrowseShell<T>({
                   <Box key={`${chip.key}-${chip.label}`} marginRight={2}>
                     <Text color={palette.accentSoft}>
                       {index < 9 ? `${index + 1} ` : ""}
-                      {chip.label}
+                      {sanitizeTerminalText(chip.label)}
                       <Text color={palette.muted}> ×</Text>
                     </Text>
                   </Box>
@@ -1823,7 +1850,7 @@ export function BrowseShell<T>({
                   : displayOptions.length === 0
                     ? canFocusIdleRows
                       ? "Type a title · ↓ for you now · / commands"
-                      : "Type a title · / commands · /filters for guided search"
+                      : "Type a title · / commands · /guide tour · /filters guided search"
                     : listFocused
                       ? undefined
                       : "↓ results · / commands"
@@ -2040,8 +2067,8 @@ export function BrowseShell<T>({
                   />
                 ) : (
                   <DetailsSheetUI
-                    data={companionDetails}
-                    lines={buildDetailsSheetLines(selectedOption, companionDetails.secondary)}
+                    data={companionView}
+                    lines={buildDetailsSheetLines(selectedOption, companionView.secondary)}
                     width={previewWidth}
                     scrollIndex={0}
                     maxVisibleLines={viewport.breakpoint === "wide" ? 14 : 10}
@@ -2071,13 +2098,26 @@ export function BrowseShell<T>({
               model={{
                 kind: "empty",
                 title: `No results for "${lastSearchedQuery}"`,
-                detail: "Try a different title, adjust filters, or browse by genre.",
+                // `emptyMessage` names the cause when we know one — a provider
+                // outage and a typo used to render the same copy (#464).
+                detail:
+                  emptyMessage || "Try a different title, adjust filters, or browse by genre.",
               }}
               width={Math.min(innerWidth, 72)}
             />
+            <CompanionHost
+              moment={momentForBrowseEmpty({
+                kind: "empty",
+                hasArtwork: false,
+                ultraCompact,
+                mode: companionMode(),
+              })}
+              rows={3}
+              marginTop={1}
+            />
           </Box>
         ) : searchState === "error" ? (
-          <Box marginTop={1} flexGrow={1}>
+          <Box marginTop={1} flexDirection="column" flexGrow={1}>
             <StateBlock
               model={{
                 kind: "error",
@@ -2089,6 +2129,16 @@ export function BrowseShell<T>({
                 ],
               }}
               width={Math.min(innerWidth, 72)}
+            />
+            <CompanionHost
+              moment={momentForBrowseEmpty({
+                kind: "error",
+                hasArtwork: false,
+                ultraCompact,
+                mode: companionMode(),
+              })}
+              rows={3}
+              marginTop={1}
             />
           </Box>
         ) : (
@@ -2103,6 +2153,19 @@ export function BrowseShell<T>({
                 detail: browseEmptyDetail(mode, emptyMessage),
               }}
               width={Math.min(innerWidth, 72)}
+            />
+            <CompanionHost
+              moment={momentForBrowseEmpty({
+                kind: "empty",
+                // The launch rows below (jump back in, surprises) already fill
+                // this frame — where they are, the surface is not bare and she
+                // does not crowd it.
+                hasArtwork: Boolean(idleReturnLoopModel && idleReturnLoopModel.rows.length > 0),
+                ultraCompact,
+                mode: companionMode(),
+              })}
+              rows={3}
+              marginTop={1}
             />
             {idleContextStatus === "loading" && showIdleLoadingHint ? (
               <Text color={palette.dim} dimColor>
@@ -2264,6 +2327,8 @@ export function BrowseShell<T>({
             commandMode={commandMode}
             actions={visibleBrowseFooterActions}
             terminalWidth={viewport.columns}
+            maxVisible={viewport.breakpoint === "narrow" ? 3 : 5}
+            companionHint
           />
         );
       })()}
@@ -2279,6 +2344,7 @@ export function openBrowseShell<T>({
   initialResults,
   initialResultSubtitle,
   initialErrorMessage,
+  initialEmptyMessage,
   initialWarnings,
   initialSelectedIndex,
   initialCalendarTypeTab,
@@ -2308,6 +2374,8 @@ export function openBrowseShell<T>({
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
   initialErrorMessage?: string;
+  /** The cause-named empty copy from a bootstrap search that found nothing. */
+  initialEmptyMessage?: string;
   initialWarnings?: readonly string[];
   initialSelectedIndex?: number;
   initialCalendarTypeTab?: CalendarTypeTab;
@@ -2351,6 +2419,7 @@ export function openBrowseShell<T>({
         initialResults={initialResults}
         initialResultSubtitle={initialResultSubtitle}
         initialErrorMessage={initialErrorMessage}
+        initialEmptyMessage={initialEmptyMessage}
         initialWarnings={initialWarnings}
         initialSelectedIndex={initialSelectedIndex}
         initialCalendarTypeTab={initialCalendarTypeTab}
@@ -2382,6 +2451,10 @@ export function openBrowseShell<T>({
       />
     ),
     fallbackValue: { type: "cancelled" },
+    // A picker a detached overlay workflow mounts over browse resolves the
+    // mount as displaced, so SearchPhase remounts instead of reporting a
+    // cancel the user never made.
+    displacedValue: { type: "cancelled", displaced: true },
   });
 
   return session.result;

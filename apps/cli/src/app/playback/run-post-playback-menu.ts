@@ -24,6 +24,7 @@ import {
 } from "@/app/playback/playback-postplay-policy";
 import { alignPostPlayProviderRestart } from "@/app/playback/playback-provider-align";
 import {
+  isProviderIdFallbackEligible,
   pickCompatibleFallbackProvider,
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
@@ -34,6 +35,7 @@ import {
 } from "@/app/playback/playback-recommendation-actions";
 import type { PlaybackRunState } from "@/app/playback/playback-run-state";
 import {
+  didPlaybackStart,
   resolvePostPlaybackSessionAction,
   type PlaybackSessionPhaseEvent,
   type PlaybackSessionState,
@@ -151,7 +153,7 @@ export type PostPlaybackMenuDeps = {
     selection: StreamSelectionIntent | null,
     resumeSeconds: number,
     reason: string,
-  ) => Promise<PlaybackStartIntent>;
+  ) => Promise<PlaybackStartIntent | null>;
   readonly handoffNextEpisodePrefetch: (
     target: EpisodePrefetchTarget,
     reason: "playback.prefetch-wait" | "post-playback.autonext.prefetch-wait",
@@ -173,13 +175,14 @@ export type PostPlaybackMenuDeps = {
     animeEpisodeCount?: number;
     animeEpisodes?: readonly EpisodePickerOption[];
     container: Container;
-  }) => Promise<{ season: number; episode: number } | null>;
+  }) => Promise<Pick<EpisodeInfo, "season" | "episode" | "providerEpisodeIdentity"> | null>;
   readonly episodeInfoFromSelection: (input: {
     season: number;
     episode: number;
     isAnime: boolean;
     titleId: string;
     animeEpisodes?: readonly EpisodePickerOption[];
+    providerEpisodeIdentity?: EpisodeInfo["providerEpisodeIdentity"];
   }) => EpisodeInfo;
 
   readonly readAutoAdvanceGuards: () => AutoAdvanceGuards;
@@ -286,13 +289,15 @@ export async function runPostPlaybackMenu(
       );
       const selection = picked ? streamSelectionFromTrackPick(picked) : null;
       if (picked && selection) {
-        run.pendingStart = await deps.completeSourceTrackPick(
+        const trackStart = await deps.completeSourceTrackPick(
           currentEpisode,
           picked,
           selection,
           resumeSeconds,
           "post-playback-tracks",
         );
+        if (!trackStart) continue postPlayback;
+        run.pendingStart = trackStart;
         run.playbackSession = deps.transitionPlaybackSession(
           run.playbackSession,
           "recovery-started",
@@ -390,8 +395,12 @@ export async function runPostPlaybackMenu(
       };
       deps.updatePlaybackFeedback({ detail: null, note: null });
     }
-    const playbackStarted =
-      result.endReason === "eof" || result.watchedSeconds >= 30 || resumeSeconds > 10;
+    // One policy answers this, shared with the recovery panel and the history
+    // ledger. The threshold that used to live here (`eof || watchedSeconds >= 30
+    // || resumeSeconds > 10`) required proof of success and read its absence as
+    // proof of failure, so a short watch — or one whose stats never arrived —
+    // was reported to the user as "playback didn't start".
+    const playbackStarted = didPlaybackStart(result);
     const postPlayInput = buildPostPlayInputFromPlaybackContext({
       title,
       currentEpisode,
@@ -534,13 +543,15 @@ export async function runPostPlaybackMenu(
           continue postPlayback;
         }
         const fromProviderId = resolvedProviderId;
-        run.pendingStart = await deps.completeSourceTrackPick(
+        const trackStart = await deps.completeSourceTrackPick(
           currentEpisode,
           picked,
           selection,
           resumeSeconds,
           "post-playback-tracks",
         );
+        if (!trackStart) continue postPlayback;
+        run.pendingStart = trackStart;
         run.playbackSession = deps.transitionPlaybackSession(
           run.playbackSession,
           "episode-navigation",
@@ -570,11 +581,7 @@ export async function runPostPlaybackMenu(
       }
       if (postAction.type === "play-queue-entry") {
         // Claim the exact advertised id — do not substitute a reordered peekNext head.
-        const launch = claimQueuePlaybackLaunch(
-          container.queueService,
-          postAction.queueEntryId,
-          "post-play",
-        );
+        const launch = claimQueuePlaybackLaunch(container.queueService, postAction.queueEntryId);
         if (!launch) {
           container.logger.info("Post-play queue claim failed; leaving row pending for retry", {
             queueEntryId: postAction.queueEntryId,
@@ -731,13 +738,22 @@ export async function runPostPlaybackMenu(
       break postPlayback;
     }
     if (routedAction === "fallback") {
-      const fallback = pickCompatibleFallbackProvider(
-        deps.getCompatibleProviders(),
-        resolvedProviderId,
-      );
+      const fallback = pickCompatibleFallbackProvider({
+        providers: deps.getCompatibleProviders(),
+        currentProviderId: resolvedProviderId,
+        excludedProviderIds: new Set(container.stateManager.getState().fallbackTriedProviderIds),
+        isFallbackEligible: (providerId) => isProviderIdFallbackEligible(container, providerId),
+      });
       if (!fallback) {
+        deps.updatePlaybackFeedback({
+          note: "No untried provider left to fall back to. Press o for sources or /diagnostics.",
+        });
         continue postPlayback;
       }
+      container.stateManager.dispatch({
+        type: "RECORD_FALLBACK_TRIED_PROVIDERS",
+        providerIds: [resolvedProviderId],
+      });
       const switched = await deps.switchPlaybackProviderFallback({
         container,
         fromProviderId: resolvedProviderId,
@@ -796,13 +812,15 @@ export async function runPostPlaybackMenu(
         continue postPlayback;
       }
       const fromProviderId = resolvedProviderId;
-      run.pendingStart = await deps.completeSourceTrackPick(
+      const trackStart = await deps.completeSourceTrackPick(
         currentEpisode,
         picked,
         selection,
         resumeSeconds,
         "post-playback-tracks",
       );
+      if (!trackStart) continue postPlayback;
+      run.pendingStart = trackStart;
       run.playbackSession = deps.transitionPlaybackSession(
         run.playbackSession,
         "episode-navigation",
@@ -884,6 +902,7 @@ export async function runPostPlaybackMenu(
       const pickedEpisode = deps.episodeInfoFromSelection({
         season: selection.season,
         episode: selection.episode,
+        providerEpisodeIdentity: selection.providerEpisodeIdentity,
         isAnime: mode === "anime",
         titleId: title.id,
         animeEpisodes: iteration.currentAnimeEpisodes,

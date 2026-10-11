@@ -2,6 +2,8 @@ import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 
+import { isSqliteCorruptionError } from "./sqlite-errors";
+
 export type KunaiDatabase = Database;
 
 /**
@@ -66,7 +68,14 @@ export function openKunaiDatabase(path: string, options: OpenDatabaseOptions = {
       db.exec(`PRAGMA busy_timeout = ${options.busyTimeoutMs ?? 5000}`);
 
       if (options.wal !== false) {
-        db.exec("PRAGMA journal_mode = WAL");
+        try {
+          db.exec("PRAGMA journal_mode = WAL");
+        } catch {
+          // WAL needs POSIX advisory locks the filesystem may not have —
+          // %APPDATA% on OneDrive/SMB mounts rejects it outright. Rollback
+          // journals work everywhere; degrading beats failing every launch.
+          db.exec("PRAGMA journal_mode = DELETE");
+        }
       }
 
       bestEffortChmodOwnerOnly(path);
@@ -93,7 +102,7 @@ export type OpenDatabaseWithRecoveryResult = {
 };
 
 /**
- * Open a database, quarantining an unreadable file instead of bricking startup.
+ * Open a database, quarantining a confirmed corrupt file instead of bricking startup.
  *
  * A corrupt `kunai-data.sqlite` (power loss, disk fault) used to throw out of
  * bootstrap on every launch with no way back in. Mirroring the JSON config
@@ -122,6 +131,7 @@ export function openKunaiDatabaseWithCorruptionRecovery(
     } catch {
       // The handle may itself be unusable; quarantine only needs the files.
     }
+    if (!(error instanceof Error) || !isSqliteCorruptionError(error)) throw error;
     const moved = quarantineCorruptDatabaseFiles(path);
     if (moved.length === 0) {
       // Nothing could be moved aside (locked file, unwritable dir) — surface

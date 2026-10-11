@@ -1,3 +1,4 @@
+import { Sparkline } from "@/components/analytics/sparkline";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -10,13 +11,15 @@ import {
 import {
   delta,
   type Delta,
-  namedVersionCount,
+  namedBucketCount,
   residualShare,
   type TrendDirection,
 } from "@/lib/analytics-derive";
 import type { DocsAnalyticsMetrics } from "@/lib/analytics-metrics";
 import type { DocsAnalyticsSeries } from "@/lib/analytics-series";
 import { IconMinus, IconTrendingDown, IconTrendingUp } from "@tabler/icons-react";
+import Link from "next/link";
+import type { ReactNode } from "react";
 
 /**
  * The four figures the page leads with.
@@ -43,12 +46,15 @@ function StatCard({
   badge,
   headline,
   detail,
+  trend,
 }: {
   readonly label: string;
   readonly value: string;
   readonly badge?: { readonly text: string; readonly direction: TrendDirection };
-  readonly headline: string;
+  readonly headline: ReactNode;
   readonly detail: string;
+  /** The figure's daily history, drawn as a sparkline when it has a shape. */
+  readonly trend?: readonly number[];
 }) {
   const TrendIcon = badge ? TREND_ICON[badge.direction] : null;
   return (
@@ -74,7 +80,13 @@ function StatCard({
           </CardAction>
         ) : null}
       </CardHeader>
-      <CardFooter className="flex-col items-start gap-1.5 text-sm">
+      {trend ? (
+        <Sparkline
+          values={trend}
+          className="mx-(--card-spacing) -mt-1 h-8 w-[calc(100%-var(--card-spacing)*2)] text-(--kunai-chart-active)"
+        />
+      ) : null}
+      <CardFooter className="mt-auto flex-col items-start gap-1.5 text-sm">
         <div className="line-clamp-1 flex gap-2 font-medium">
           {headline}
           {TrendIcon ? <TrendIcon className="size-4" stroke={1.5} /> : null}
@@ -120,8 +132,18 @@ export function SectionCards({
   const lifetimeDelta = first ? delta(metrics.lifetimeInstalls, first.lifetimeInstalls) : null;
   const activeDelta = previous ? delta(metrics.activeInstalls, previous.activeInstalls) : null;
 
+  // One day, both halves. The figure and the headline of the floor tile are
+  // read from the same snapshot breakdown; mixing in the whole-window count put
+  // "0%" and "every bucket folds into other" in a single card.
   const suppressed = residualShare(metrics.byVersion);
-  const named = namedVersionCount(points);
+  const named = namedBucketCount(metrics.byVersion);
+
+  // First-seen count for the snapshot day, when the series reaches it. The
+  // field lives on the series only, and the tail point counts only when it is
+  // the same day the snapshot describes — a lagging series must not lend the
+  // wrong day's number to this tile.
+  const latest = points.at(-1);
+  const newThatDay = latest?.day === metrics.day ? (latest.newInstalls ?? null) : null;
 
   return (
     <div className="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs @xl/analytics:grid-cols-2 @5xl/analytics:grid-cols-4">
@@ -134,7 +156,8 @@ export function SectionCards({
             : undefined
         }
         headline={lifetimeHeadline(lifetimeDelta)}
-        detail="Exact — one hashed row per install"
+        detail="Cumulative: kept installs plus the retired count"
+        trend={points.map((point) => point.lifetimeInstalls)}
       />
       <StatCard
         label="Active yesterday"
@@ -143,12 +166,32 @@ export function SectionCards({
           activeDelta ? { text: activeDelta.label, direction: activeDelta.direction } : undefined
         }
         headline={`Distinct installs on ${metrics.day}`}
-        detail="A ping is one install, once a day"
+        detail={
+          newThatDay !== null
+            ? `${newThatDay} of them first seen that day`
+            : "A ping is one install, once a day"
+        }
+        trend={points.map((point) => point.activeInstalls)}
       />
       <StatCard
         label="Reporting window"
         value={points.length > 0 ? `${points.length} days` : "—"}
-        headline={series ? `${series.from} → ${series.to}` : "History not published yet"}
+        headline={
+          /*
+            The tile summarizes the day-by-day card lower on the page; an
+            in-page anchor makes it navigate there instead of just describe it.
+          */
+          series ? (
+            <Link
+              href="#day-by-day"
+              className="-my-1 inline-block py-1 underline-offset-4 hover:underline"
+            >
+              {`${series.from} → ${series.to}`}
+            </Link>
+          ) : (
+            "History not published yet"
+          )
+        }
         detail="Daily rollups, never pruned"
       />
       <StatCard
@@ -157,10 +200,10 @@ export function SectionCards({
         badge={suppressed >= 1 ? { text: "all buckets", direction: "flat" } : undefined}
         headline={
           named > 0
-            ? `${named} ${named === 1 ? "version" : "versions"} clear the floor`
-            : "Every bucket folds into other"
+            ? `${named} ${named === 1 ? "version names itself" : "versions name themselves"} today`
+            : "Every version folds into other today"
         }
-        detail="Groups under 5 installs are not reported"
+        detail="Share of today’s installs in groups under 5, which are not named"
       />
     </div>
   );
