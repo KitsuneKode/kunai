@@ -134,15 +134,26 @@ export function SettingsShell({
 
   // A failed save must reach the user and the support bundle, not vanish into
   // a void promise: settings silently not sticking is otherwise undiagnosable.
-  const reportSaveFailure = useCallback(
-    (error: unknown) => {
-      const detail = error instanceof Error ? error.message : String(error);
-      container.diagnosticsService.record({
-        category: "session",
-        message: "Settings persist failed",
-        context: { error: detail },
-      });
-      setState((current) => ({ ...current, error: `Couldn't save settings: ${detail}` }));
+  const saveDraft = useCallback(
+    async (draft: SettingsUiState["draft"], phase: "editing" | "closing") => {
+      try {
+        await persistSettingsDraft(container, draft);
+      } catch (error) {
+        // Normalize a rejection at the persistence boundary; rendering and
+        // diagnostics consume the message rather than arbitrary throw values.
+        const detail = error instanceof Error ? error.message : String(error);
+        container.diagnosticsService.record({
+          category: "session",
+          message:
+            phase === "closing"
+              ? "Settings draft lost on close: final persist failed"
+              : "Settings persist failed",
+          context: { error: detail },
+        });
+        if (phase === "editing") {
+          setState((current) => ({ ...current, error: `Couldn't save settings: ${detail}` }));
+        }
+      }
     },
     [container],
   );
@@ -154,25 +165,19 @@ export function SettingsShell({
   draftRef.current = state.draft;
   useEffect(
     () => () => {
-      void persistSettingsDraft(container, draftRef.current).catch((error: unknown) => {
-        container.diagnosticsService.record({
-          category: "session",
-          message: "Settings draft lost on close: final persist failed",
-          context: { error: error instanceof Error ? error.message : String(error) },
-        });
-      });
+      void saveDraft(draftRef.current, "closing");
     },
-    [container],
+    [saveDraft],
   );
 
   useEffect(() => {
     if (settingsEqual(state.draft, container.config.getRaw())) return;
     const next = state.draft;
     const timer = setTimeout(() => {
-      void persistSettingsDraft(container, next).catch(reportSaveFailure);
+      void saveDraft(next, "editing");
     }, 300);
     return () => clearTimeout(timer);
-  }, [state.draft, container, reportSaveFailure]);
+  }, [state.draft, container, saveDraft]);
 
   useEffect(() => () => actionAbortRef.current?.abort(), []);
 
@@ -200,7 +205,7 @@ export function SettingsShell({
         return;
       }
       if (result.persist === "immediate") {
-        void persistSettingsDraft(container, result.state.draft).catch(reportSaveFailure);
+        void saveDraft(result.state.draft, "editing");
       }
       if (result.runActionId) {
         void runAction(result.runActionId);
