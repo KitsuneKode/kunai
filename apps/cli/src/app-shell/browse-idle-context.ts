@@ -12,7 +12,11 @@ import { applyYoutubeHistoryEnrichment } from "@/services/youtube/youtube-histor
 
 type IdleContextContainer = Pick<
   Container,
-  "queueService" | "releaseProgressCache" | "offlineAssetService" | "historyRepository"
+  | "queueService"
+  | "releaseProgressCache"
+  | "offlineAssetService"
+  | "historyRepository"
+  | "listService"
 >;
 
 export async function buildBrowseIdleContext(
@@ -30,6 +34,7 @@ export async function buildBrowseIdleContext(
   let continueWatching: BrowseIdleContext["continueWatching"];
   let continueWatchingSelection: ContinueWatchingSelection | null = null;
   let offlineReadyNext: BrowseIdleContext["offlineReadyNext"];
+  let savedNext: BrowseIdleContext["savedNext"];
   let calendarNudge: BrowseIdleContext["calendarNudge"];
 
   try {
@@ -100,6 +105,16 @@ export async function buildBrowseIdleContext(
     if (airingTodayCount > 0) {
       calendarNudge = { airingTodayCount };
     }
+
+    const watchlist = container.listService.getWatchlist();
+    const topSaved = watchlist[0];
+    if (topSaved) {
+      savedNext = {
+        title: topSaved.title,
+        titleId: topSaved.titleId,
+        total: watchlist.length,
+      };
+    }
   } catch {
     // best-effort local reads only
   }
@@ -108,6 +123,7 @@ export async function buildBrowseIdleContext(
     playlistNextItem ||
     continueWatching ||
     offlineReadyNext ||
+    savedNext ||
     releaseSummary.episodeCount > 0 ||
     calendarNudge
       ? {
@@ -129,6 +145,7 @@ export async function buildBrowseIdleContext(
             : undefined,
           continueWatching,
           offlineReadyNext,
+          savedNext,
           todayReleaseCount: releaseSummary.episodeCount,
           todayReleaseTitleCount: releaseSummary.titleCount,
           calendarNudge,

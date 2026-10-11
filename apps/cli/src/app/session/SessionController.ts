@@ -7,9 +7,14 @@
 
 import { primeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import type { SearchPhaseInput } from "@/app/search/SearchPhase";
-import { createPendingBootstrap, spendBootstrapIntent } from "@/app/session/pending-bootstrap";
+import {
+  createPendingBootstrap,
+  spendBootstrapIntent,
+  type RequestedEpisode,
+} from "@/app/session/pending-bootstrap";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { abortOrphanDownloadResolve, type Container } from "@/container";
+import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { buildDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
@@ -20,10 +25,30 @@ export interface SessionBootstrap {
   initialQuery?: string;
   initialTitle?: TitleInfo | null;
   initialEpisode?: EpisodeInfo | null;
+  /** Raw `-e/--episode [--season]` pick, shaped into an EpisodeInfo once the title is known. */
+  requestedEpisode?: RequestedEpisode;
   initialRoute?: SearchPhaseInput["initialRoute"];
   preserveExistingSearch?: boolean;
   /** 1-based search result index for the first bootstrap query (`--jump` / `--quick`). */
   autoPickSearchResultIndex?: number;
+}
+
+/**
+ * Arm the one-shot `-e/--episode` request for the picked title. The raw
+ * numbers go into `state.episodeRequest`; PlaybackPhase folds them into the
+ * `flags`/`preselectedEpisode` its episode-entry resolver already supports
+ * (anime season-1 flattening included), so a flag pick plays directly instead
+ * of opening the starting menu.
+ */
+function armEpisodeRequest(
+  stateManager: SessionStateManager,
+  request: RequestedEpisode | undefined,
+): void {
+  if (!request) return;
+  stateManager.dispatch({
+    type: "SET_EPISODE_REQUEST",
+    episode: { season: request.season, episode: request.episode },
+  });
 }
 
 export class SessionController {
@@ -114,9 +139,14 @@ export class SessionController {
             if (pending.initialEpisode) {
               stateManager.dispatch({ type: "SELECT_EPISODE", episode: pending.initialEpisode });
             }
+            // An explicit `-e/--episode` outranks even a resolved resume target
+            // (`--continue -e 5` plays E5, not the newest unfinished entry) —
+            // PlaybackPhase prefers the armed request over `currentEpisode`.
+            armEpisodeRequest(stateManager, pending.requestedEpisode);
             spendBootstrapIntent(pending);
           } else {
             // Phase 1: Search
+            const requestedEpisode = pending.requestedEpisode;
             const searchResult = await this.executePhase(
               {
                 initialQuery: pending.initialQuery,
@@ -138,6 +168,9 @@ export class SessionController {
             }
 
             title = searchResult.value;
+            // `-e/--episode` survives the pick: the raw request becomes the
+            // episode-entry flags PlaybackPhase reads at launch.
+            armEpisodeRequest(stateManager, requestedEpisode);
           }
 
           // Phase 2: Playback (inner loop for episodes)

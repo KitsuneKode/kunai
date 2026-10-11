@@ -967,6 +967,7 @@ export function BrowseShell<T>({
   const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(activeIdleContext, {
     idleFocused,
     selectedIndex: idleSelectedIndex,
+    showDiscoveryRowWhenEmpty: idleContextStatus === "ready",
   });
   const canFocusIdleRows =
     options.length === 0 &&
