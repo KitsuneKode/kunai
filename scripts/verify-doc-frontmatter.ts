@@ -122,11 +122,18 @@ for (const relative of files) {
   }
 
   const reviewed = /^lastReviewed:\s*"?(\S+?)"?\s*$/m.exec(frontmatter)?.[1];
+  const reviewedAt = Date.parse(reviewed ?? "");
   if (!reviewed) {
     problems.push(`${path} — frontmatter missing 'lastReviewed:'`);
-  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(reviewed)) {
+  } else if (
+    !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}Z)?$/.test(reviewed) ||
+    !Number.isFinite(reviewedAt) ||
+    new Date(reviewedAt).toISOString().replace(".000Z", "Z").slice(0, reviewed.length) !== reviewed
+  ) {
     // "unknown" and friends silently defeat the point of the field.
-    problems.push(`${path} — lastReviewed '${reviewed}' is not an ISO date (YYYY-MM-DD)`);
+    problems.push(
+      `${path} — lastReviewed '${reviewed}' is not an ISO date or UTC timestamp`,
+    );
   }
 
   if (!text.includes(BANNER)) {
