@@ -2,7 +2,15 @@ import { posix, win32 } from "node:path";
 
 import { readManagedPackageContext } from "./managed-package-context";
 
-export type InstallMethodKind = "source" | "bun-global" | "npm-global" | "binary" | "unknown";
+export type InstallMethodKind =
+  | "source"
+  | "bun-global"
+  | "npm-global"
+  | "binary"
+  | "homebrew"
+  | "scoop"
+  | "system-package"
+  | "unknown";
 
 export type InstallMethod = {
   readonly kind: InstallMethodKind;
@@ -16,6 +24,13 @@ export type DetectInstallMethodInput = {
   readonly entrypoint?: string;
   readonly packagedBinary?: boolean;
   readonly platform?: NodeJS.Platform;
+  /**
+   * Compiled-binary path on disk (defaults to `process.execPath`). Used to tell
+   * a package-manager-owned binary — Homebrew Cellar, Scoop app dir, distro
+   * /usr/bin — from a flat self-managed one so `kunai upgrade` does not
+   * self-replace a file a package manager owns.
+   */
+  readonly execPath?: string;
   readonly fileExists?: (path: string) => boolean;
   readonly env?: Record<string, string | undefined>;
 };
@@ -69,6 +84,20 @@ export function detectInstallMethod(input: DetectInstallMethodInput = {}): Insta
     bunfsEntrypoint ||
     (!comparableEntrypoint.endsWith(".js") && !comparableEntrypoint.endsWith(".ts"))
   ) {
+    // A compiled binary can still be package-manager-owned: resolve the
+    // executable's real path before falling back to self-managed "binary".
+    const execPath = path.normalize(input.execPath ?? process.execPath).replaceAll("\\", "/");
+    const comparableExecPath = platform === "win32" ? execPath.toLowerCase() : execPath;
+    const execPathLower = comparableExecPath.toLowerCase();
+    if (execPathLower.includes("/cellar/kunai/")) {
+      return { kind: "homebrew", label: "Homebrew" };
+    }
+    if (execPathLower.includes("/scoop/apps/kunai/")) {
+      return { kind: "scoop", label: "Scoop" };
+    }
+    if (platform === "linux" && comparableExecPath === "/usr/bin/kunai") {
+      return { kind: "system-package", label: "System package" };
+    }
     return { kind: "binary", label: "Packaged binary" };
   }
 
@@ -85,6 +114,12 @@ export function updateGuidanceForInstallMethod(method: InstallMethod): string {
       return "npm global install detected. Update manually with npm install -g @kitsunekode/kunai.";
     case "binary":
       return "Packaged binary detected. Update with `kunai upgrade`.";
+    case "homebrew":
+      return "Homebrew install detected. Update with `brew upgrade kunai`.";
+    case "scoop":
+      return "Scoop install detected. Update with `scoop update kunai`.";
+    case "system-package":
+      return "Installed by your system package manager — update with it (Arch: `yay -Syu kunai-bin` or your AUR helper).";
     case "unknown":
       return "Unknown install method. Check how Kunai was installed before updating manually.";
   }
