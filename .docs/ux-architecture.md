@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-07"
+lastReviewed: "2026-10-11"
 ---
 
 # Kunai — UX Architecture
@@ -360,3 +360,11 @@ belong to it; closing the palette restores playback shortcuts. On a cancellable
 resolve, the first Escape closes the palette and a subsequent Escape cancels
 the resolve. The regression suite delivers Ink's pending-Escape callback
 explicitly instead of waiting for its timer.
+
+### Multilingual terminal text
+
+Display helpers sanitize provider text before measuring it with Bun's terminal-cell
+width calculation. Truncation walks complete grapheme clusters, so combining
+accents, flags and joined emoji stay intact. Padding and ellipsis placement use
+the same cell budget as CJK titles. Surfaces reuse
+`apps/cli/src/domain/text-display.ts` rather than counting code points or UTF-16 units.
