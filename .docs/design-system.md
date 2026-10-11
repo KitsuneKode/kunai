@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-10-11"
 ---
 
 # Kunai — Terminal Design System (Sakura)
@@ -13,11 +13,20 @@ Visual reference prototypes live in [`.reference/design/cli/kunai-sakura.html`](
 
 ## Source of Truth
 
-- `packages/design/src/tokens.ts` owns shared token values (sRGB hex, tuned from an oklch source).
-- `apps/cli/src/app-shell/shell-theme.ts` adapts tokens into the `palette` consumed by Ink surfaces, plus `statusColor`, `contentTintColor`, `heatColor`.
+- `packages/design/src/tokens.ts` owns shared token values (sRGB hex, tuned from an oklch source). It is also the **Ember Dusk palette** — the brand-canonical theme.
+- `packages/design/src/themes.ts` + `palettes/` own the user-selectable theme registry: every palette fills the same semantic roles, and `setDesignTheme(name)` rewrites the live `tokens` box in place so the next Ink frame repaints without a restart.
+- `apps/cli/src/app-shell/shell-theme.ts` adapts tokens into the `palette` consumed by Ink surfaces, plus `statusColor`, `contentTintColor`, `heatColor`. `palette` entries are getters — never hold a color at module scope.
 - `apps/cli/src/menu.ts` owns legacy ANSI helpers tied to interactive flows.
 
 Do not duplicate raw hex anywhere else. New code references semantic palette names.
+
+## User-selectable themes
+
+Users pick a theme in **Settings › Appearance**, set `"theme"` in `config.json`, or override per run with `KUNAI_THEME`. Themes only recolor surfaces — the rules below (THE ONE RULE, semantic roles, Stats-only type hues) hold in every palette, so a theme is a palette swap, not a design fork.
+
+- Selection comes from `KitsuneConfig.theme` (`@kunai/config`); the registry in `@kunai/design` is the validator, unknown names fall back to `ember-dusk`.
+- Degradation is palette-aware: Ember Dusk keeps its curated 256/16 fallback table; other themes quantize to nearest xterm-256 / ANSI name so a themed accent never leaks brand rose onto a degraded terminal.
+- Adding a token in `tokens.ts` makes every palette that lacks it a compile error — `ThemePalette` derives from `TokenName`.
 
 ## The Theme: Sakura
 
@@ -53,8 +62,8 @@ tokens.accentFill   // pre-blended onto bg for selection / badge depth
 
 // state
 tokens.ok      tokens.okDim      // ready · complete · available (mint)
-tokens.danger  tokens.dangerDim  // real, actionable error (crimson)
-tokens.milestone                 // series-complete only (plum)
+tokens.danger  tokens.dangerDim  // borders and art only; error text uses tokens.dangerText
+tokens.milestone                 // series-complete glyph and fill; text uses tokens.milestoneText
 
 // text ramp — carries ~80% of hierarchy
 tokens.text  tokens.textDim  tokens.muted  tokens.dim  tokens.faint
@@ -111,7 +120,10 @@ Kunai feels like a calm, fast media command shell: content-first in normal use, 
 
 Loading · success · empty · error — see [.reference/design/cli/02-state-ux.md](../.reference/design/cli/02-state-ux.md). Failure/recovery surfaces (`playback did not start`, `stream stalled`, `no source`, `provider degraded`, diagnostics) are first-class, not afterthoughts — they are where a scraper app earns trust.
 
-Width budget is owned by the container, not the terminal: inside a root overlay
+Width budget is owned by the container, not the terminal. Setup subtracts
+`ROOT_HORIZONTAL_PADDING` on both sides before sizing its frame and content.
+Its committed captures include the padded parent; rendering setup by itself
+would miss wrapped dividers in the real app. Inside a root overlay
 `OverlayLayoutProvider.contentColumns` is authoritative, because the frame consumes the
 difference. Narrow list surfaces stay full-width and actionable and drop their companion rail
 first; a wide surface adds one constrained rail driven by the settled selection, never by the raw

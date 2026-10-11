@@ -1,8 +1,6 @@
-// =============================================================================
 // Search Registry
 //
 // Manages search service registration and resolution.
-// =============================================================================
 
 import type { ProviderCatalogIdentity } from "@kunai/core";
 

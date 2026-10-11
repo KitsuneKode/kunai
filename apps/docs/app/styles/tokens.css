@@ -1,12 +1,14 @@
 :root {
-  /* Ember Dusk — synced from packages/design/src/tokens.ts */
+  /* Ember Dusk — synced from packages/design/src/tokens.ts, except --color-fd-muted-foreground.
+     The terminal's `muted` was lifted to #bcafbe for legibility, but this variable also drives the
+     chart "residual" de-emphasis gray in charts.css, which must stay quieter than the series. */
   --color-fd-background: #100b0f;
   --color-fd-foreground: #f6eff4;
   --color-fd-primary: #ff8fb0;
   --color-fd-primary-foreground: #100b0f;
   --color-fd-border: color-mix(in oklab, #473b51 70%, transparent);
   --color-fd-muted: #1c1620;
-  --color-fd-muted-foreground: #968a98;
+  --color-fd-muted-foreground: #beb1c0;
   --color-fd-accent: #2a2030;
   --color-fd-accent-foreground: #f6eff4;
   --color-fd-popover: #1c1620;
@@ -17,6 +19,8 @@
   --color-fd-secondary-foreground: #f6eff4;
   --color-fd-ring: #ff8fb0;
   --color-fd-overlay: rgba(8, 5, 9, 0.72);
+  /* Border for controls (inputs, outlined buttons, toggles): 3:1 on every surface. */
+  --kunai-line-control: #786782;
   --fd-layout-width: 92rem;
 
   /* shadcn semantic aliases */
@@ -62,10 +66,27 @@
   --kunai-text-title: clamp(1.65rem, 2.8vw, 2.35rem);
   --kunai-text-lead: clamp(1rem, 1.4vw, 1.125rem);
   --kunai-text-body: 0.9375rem;
-  --kunai-text-caption: 0.6875rem;
+  /* The smallest text anywhere on the site. Labels, meta and captions stop here:
+     below 12px Outfit and JetBrains Mono lose their counters and the hairlines of
+     the serif disappear. If something will not fit at this size, shorten it. */
+  --kunai-text-caption: 0.75rem;
+  --kunai-text-code: 0.8125rem;
   --kunai-leading-tight: 1.05;
   --kunai-leading-body: 1.65;
   --kunai-tracking-eyebrow: 0.16em;
+
+  /* Weight scale. Four names, and nothing else is written as a number.
+     - regular   body copy, code, table cells
+     - medium    UI that is acted on: nav, tabs, buttons, labels
+     - semibold  headings below display size, emphasis, active state
+     - display   Cormorant at 28px and up only; it is too thin to read below that
+     Outfit and JetBrains Mono ship as variable fonts, so a weight costs nothing
+     to load. 700 and 900 are retired: at these sizes they read as shouting, not
+     as a further step of hierarchy. */
+  --kunai-weight-regular: 400;
+  --kunai-weight-medium: 500;
+  --kunai-weight-semibold: 600;
+  --kunai-weight-display: 300;
 
   /* Surfaces — concentric radii (outer = inner + padding) */
   --kunai-radius-shell: 1.25rem;

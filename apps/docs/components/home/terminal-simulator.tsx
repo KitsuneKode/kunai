@@ -15,6 +15,22 @@ interface TerminalSimulatorProps {
   readonly runtimeBaseline: { readonly bun: string; readonly mpv: string };
 }
 
+/**
+ * The command the demo types for a visitor who has not touched the terminal.
+ *
+ * A search for a real title shows the whole promise in one run: query,
+ * provider, verified stream, hand-off to mpv. It is the same script a visitor
+ * gets from the "/search Dune" preset, so the demo is not a second code path.
+ */
+const DEMO_COMMAND = "/search Dune";
+/** Quiet beat after mount before the first character, so the page lands first. */
+const DEMO_START_MS = 1100;
+/** Per-character delay; jittered so it reads as typing, not a ticker. */
+const DEMO_KEY_MS = 55;
+const DEMO_KEY_JITTER_MS = 40;
+/** Pause between the last character and Enter. */
+const DEMO_SUBMIT_MS = 380;
+
 const TerminalSimulator = memo(function TerminalSimulator({
   providers,
   paletteCommands,
@@ -41,6 +57,11 @@ const TerminalSimulator = memo(function TerminalSimulator({
   const paletteInputRef = useRef<HTMLInputElement>(null);
   const terminalStageRef = useRef<HTMLDivElement>(null);
   const scriptTimersRef = useRef<number[]>([]);
+  // The demo stops for good the first time the visitor does anything. Held in
+  // refs because the typing loop runs on timers that outlive any one render.
+  const interactedRef = useRef(false);
+  const demoTypingRef = useRef(false);
+  const runCommandRef = useRef<(command: string) => void>(() => {});
 
   const filteredCommands = useMemo(
     () => commandsForPalette(paletteCommands, allCommands, searchQuery),
@@ -76,6 +97,49 @@ const TerminalSimulator = memo(function TerminalSimulator({
       timers.length = 0;
     };
   }, []);
+
+  // The demo. Skipped entirely under reduced motion, where a terminal that types
+  // by itself is motion with nothing to opt out of it but this check.
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
+
+    let timer: number | undefined;
+    let typed = 0;
+
+    const submit = () => {
+      demoTypingRef.current = false;
+      if (interactedRef.current) return;
+      runCommandRef.current(DEMO_COMMAND);
+    };
+    const typeNext = () => {
+      if (interactedRef.current) return;
+      typed += 1;
+      setTerminalInput(DEMO_COMMAND.slice(0, typed));
+      timer = window.setTimeout(
+        typed < DEMO_COMMAND.length ? typeNext : submit,
+        typed < DEMO_COMMAND.length
+          ? DEMO_KEY_MS + Math.random() * DEMO_KEY_JITTER_MS
+          : DEMO_SUBMIT_MS,
+      );
+    };
+
+    timer = window.setTimeout(() => {
+      if (interactedRef.current) return;
+      demoTypingRef.current = true;
+      typeNext();
+    }, DEMO_START_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // Anything the visitor does ends the demo. If it was mid-word, the half-typed
+  // command goes with it: leaving "/sea" in the box reads as their typo.
+  const endDemo = () => {
+    interactedRef.current = true;
+    if (demoTypingRef.current) {
+      demoTypingRef.current = false;
+      setTerminalInput("");
+    }
+  };
 
   // Clamp at read time instead of syncing state in an effect: a stale index
   // past the filtered list end simply reads as the last row.
@@ -116,6 +180,8 @@ const TerminalSimulator = memo(function TerminalSimulator({
       }, script.doneAt),
     );
   };
+
+  runCommandRef.current = runSimulatedCommand;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (commandPaletteOpen) {
@@ -194,6 +260,9 @@ const TerminalSimulator = memo(function TerminalSimulator({
           commandPaletteOpen ? "is-focused" : ""
         }`}
         aria-label="Kunai terminal preview"
+        onPointerDownCapture={endDemo}
+        onKeyDownCapture={endDemo}
+        onFocusCapture={endDemo}
       >
         <div className="kunai-terminal-top">
           <span className="text-fd-muted-foreground flex items-center gap-1.5 text-xs">
@@ -208,7 +277,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
 
         <div
           ref={terminalBodyRef}
-          className="kunai-terminal-body scrollbar block max-h-[360px] min-h-[260px] w-full cursor-text text-left focus:outline-none"
+          className="kunai-terminal-body scrollbar block h-[19rem] w-full cursor-text text-left focus:outline-none"
           onClick={focusTerminalInput}
           role="presentation"
         >
@@ -219,11 +288,11 @@ const TerminalSimulator = memo(function TerminalSimulator({
           ))}
 
           <span className="kunai-terminal-input-row">
-            <span className="kunai-text-accent mr-2 text-xs font-bold">kunai &gt;</span>
+            <span className="kunai-text-accent mr-2 text-xs font-semibold">kunai &gt;</span>
             <input
               ref={terminalInputRef}
               type="text"
-              className="text-fd-foreground w-full border-none bg-transparent font-mono text-xs outline-none"
+              className="text-fd-foreground w-full border-none bg-transparent font-mono text-base outline-none sm:text-xs"
               value={terminalInput}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
@@ -256,7 +325,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
               type="button"
               key={cmd}
               onClick={() => onPresetClick(cmd)}
-              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-[10px] transition-[transform,border-color,background-color,color] duration-150 ease-out active:scale-[0.96]"
+              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-xs transition-[transform,border-color,background-color,color] duration-150 ease-out active:scale-[0.96]"
             >
               {cmd}
             </button>

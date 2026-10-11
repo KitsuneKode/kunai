@@ -51,12 +51,21 @@ function queueStatePresentation(job: DownloadJobRecord): { label: string; color:
     return { label: "◇ repairable", color: palette.accent };
   }
   if (job.status === "failed") {
-    return { label: "✗ failed", color: palette.danger };
+    return { label: "✗ failed", color: palette.dangerText };
   }
   return { label: "— aborted", color: palette.dim };
 }
 
-function queueMetaLine(job: DownloadJobRecord): {
+export type DownloadLiveStats = {
+  readonly sizeLabel?: string;
+  readonly speedLabel?: string;
+  readonly etaLabel?: string;
+};
+
+function queueMetaLine(
+  job: DownloadJobRecord,
+  live?: DownloadLiveStats,
+): {
   primary: string;
   secondary?: string;
   tone: string;
@@ -66,7 +75,7 @@ function queueMetaLine(job: DownloadJobRecord): {
     const eta = formatEta(job);
     return {
       primary: `${percent}%`,
-      secondary: eta ? `· ${eta}` : undefined,
+      secondary: live?.speedLabel ? `· ${live.speedLabel}` : eta ? `· ${eta}` : undefined,
       tone: palette.accent,
     };
   }
@@ -141,7 +150,7 @@ function QueueSummaryHeader({
       ) : null}
       {failedCount > 0 ? (
         <Text>
-          <Text color={palette.danger} bold>
+          <Text color={palette.dangerText} bold>
             {failedCount}
           </Text>
           <Text color={palette.muted}> failed</Text>
@@ -192,9 +201,37 @@ export function DownloadManagerContent({
     setFailedJobs(lists.failedJobs);
   }, [container]);
 
+  const [liveStats, setLiveStats] = useState<ReadonlyMap<string, DownloadLiveStats>>(
+    () => new Map(),
+  );
+
   useEffect(() => {
     refresh();
     const unsub = container.downloadService.onEvent((event) => {
+      if (event.type === "progress") {
+        setLiveStats((previous) => {
+          const next = new Map(previous);
+          next.set(event.jobId, {
+            sizeLabel: event.sizeLabel,
+            speedLabel: event.speedLabel,
+            etaLabel: event.etaLabel,
+          });
+          return next;
+        });
+      }
+      if (
+        event.type === "complete" ||
+        event.type === "failed" ||
+        event.type === "aborted" ||
+        event.type === "deleted"
+      ) {
+        setLiveStats((previous) => {
+          if (!previous.has(event.jobId)) return previous;
+          const next = new Map(previous);
+          next.delete(event.jobId);
+          return next;
+        });
+      }
       if (
         event.type === "enqueued" ||
         event.type === "progress" ||
@@ -398,7 +435,7 @@ export function DownloadManagerContent({
   const renderJob = (job: DownloadJobRecord, index: number) => {
     const isSelected = index === selectedIndex;
     const state = queueStatePresentation(job);
-    const meta = queueMetaLine(job);
+    const meta = queueMetaLine(job, liveStats.get(job.id));
     const { positionLabel, kindLabel } = presentMedia({
       title: job.titleName,
       mediaKind: job.mediaKind,
@@ -463,7 +500,7 @@ export function DownloadManagerContent({
             {meta.secondary ? (
               <Text color={palette.dim} dimColor wrap="truncate">
                 {" "}
-                {truncateLine(meta.secondary, 6)}
+                {truncateLine(meta.secondary, Math.max(4, queueLayout.metaWidth - 4))}
               </Text>
             ) : null}
           </Box>
@@ -508,6 +545,7 @@ export function DownloadManagerContent({
           posterState: railPoster.posterState,
           spinner: railPoster.spinner,
         }),
+        selectedJob ? liveStats.get(selectedJob.id) : undefined,
       )
     : null;
 

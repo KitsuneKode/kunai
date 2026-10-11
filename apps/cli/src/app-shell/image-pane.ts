@@ -177,7 +177,7 @@ function posterCacheKey(
     inkEmbedded = false,
     placementSlot,
   }: PosterFetchOptions,
-): { readonly key: string; readonly resolved: string; readonly rendererKey: string } {
+): { readonly key: string; readonly resolved: string | null; readonly rendererKey: string } {
   const resolved = resolvePosterUrl(url, { cols, variant });
   const detectedRenderer = runtime.detectImageCapability().renderer;
   const rendererKey = inkEmbedded
@@ -238,6 +238,9 @@ export async function fetchPoster(
     inkEmbedded,
     placementSlot,
   });
+
+  // The URL contract refused this reference — nothing safe to fetch.
+  if (!resolved) return { kind: "none" };
 
   const cached = posterCache.get(key);
   if (cached) {

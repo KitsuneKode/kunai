@@ -4,6 +4,7 @@ import path from "node:path";
 
 import {
   COMPANION_MOMENTS,
+  momentForBrowseEmpty,
   momentForLoading,
   poseForMoment,
   type CompanionMoment,
@@ -91,11 +92,41 @@ describe("momentForLoading", () => {
   });
 });
 
+describe("momentForBrowseEmpty", () => {
+  const base = { kind: "empty", hasArtwork: false, ultraCompact: false } as const;
+
+  test("she sits on the bare launch frame", () => {
+    expect(momentForBrowseEmpty({ ...base, mode: "graphics" })).toBe("empty");
+  });
+
+  test("failure leads here too — an error surface outranks an empty frame", () => {
+    expect(momentForBrowseEmpty({ ...base, kind: "error", mode: "graphics" })).toBe("trouble");
+  });
+
+  test("content artwork wins — she does not crowd a full frame", () => {
+    expect(momentForBrowseEmpty({ ...base, hasArtwork: true, mode: "graphics" })).toBeNull();
+  });
+
+  test("the glyph tier already speaks on these surfaces — no lone emoji row", () => {
+    // StateBlock's voice line carries a 🦊 of its own; a second glyph standing
+    // alone under it is noise, not presence.
+    for (const mode of ["glyph", "off"] as const) {
+      expect(momentForBrowseEmpty({ ...base, mode })).toBeNull();
+      expect(momentForBrowseEmpty({ ...base, kind: "error", mode })).toBeNull();
+    }
+  });
+
+  test("ultra-compact has no spare rows — the voice line still reaches it", () => {
+    expect(momentForBrowseEmpty({ ...base, ultraCompact: true, mode: "graphics" })).toBeNull();
+  });
+});
+
 describe("no moment is a dead letter", () => {
   test("every moment has a reporter in the shell", () => {
     // A moment nothing reports is the same shape of bug as a pose nothing
     // draws: a declaration with no reader.
     const sources = [
+      "browse-shell.tsx",
       "loading-shell.tsx",
       "setup-shell.tsx",
       "setup/SetupScreens.tsx",
@@ -120,6 +151,7 @@ describe("single ownership", () => {
     // is the bug the setup wizard shipped, twice.
     const offenders: string[] = [];
     for (const file of [
+      "browse-shell.tsx",
       "setup/SetupFrame.tsx",
       "setup/SetupScreens.tsx",
       "exit-shell.tsx",
@@ -180,6 +212,7 @@ describe("moment vocabulary", () => {
       "handoff",
       "watching",
       "trouble",
+      "empty",
       "farewell",
     ];
     expect([...COMPANION_MOMENTS].sort()).toEqual([...named].sort());

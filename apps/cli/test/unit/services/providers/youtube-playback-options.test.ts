@@ -26,14 +26,17 @@ afterEach(() => {
 
 describe("resolveYoutubeYtdlRawOptions", () => {
   test("carries a configured PO token through to the mpv raw options", () => {
-    // This is the seam the token was lost at: it reached config and settings but no
-    // reader carried it to the player, so the feature was a no-op end to end.
-    configureYoutubeProvider({
+    // Pass the config into the reader rather than only stashing it on the
+    // process-global provider slot: `bun test --parallel` shares that slot
+    // across files, so a sibling suite's configureYoutubeProvider({}) used
+    // to drop the token between the write and the assertion.
+    const config = {
       extractorArgs: "youtube:player_client=visionos",
       poToken: "TOKENVALUE",
-    });
+    };
+    configureYoutubeProvider(config);
 
-    const raw = resolveYoutubeYtdlRawOptions(youtubeStream()) ?? "";
+    const raw = resolveYoutubeYtdlRawOptions(youtubeStream(), undefined, config) ?? "";
     const expected = "youtube:player_client=visionos;po_token=visionos.gvs+TOKENVALUE";
     // mpv sub-option values are length-prefixed; a miscount truncates the value.
     expect(raw).toContain(`extractor-args=%${expected.length}%${expected}`);
@@ -43,14 +46,17 @@ describe("resolveYoutubeYtdlRawOptions", () => {
     // Each source is one player client and yt-dlp matches a token against the client
     // it was issued for, so a token pinned to the global default is skipped on every
     // other lane.
-    configureYoutubeProvider({
+    const config = {
       extractorArgs: "youtube:player_client=visionos,web",
       poToken: "TOKENVALUE",
-    });
+    };
+    configureYoutubeProvider(config);
 
     const raw =
       resolveYoutubeYtdlRawOptions(
         youtubeStream({ metadata: { extractorArgs: "youtube:player_client=web" } }),
+        undefined,
+        config,
       ) ?? "";
     expect(raw).toContain("po_token=web.gvs+TOKENVALUE");
     expect(raw).not.toContain("visionos");
@@ -59,26 +65,33 @@ describe("resolveYoutubeYtdlRawOptions", () => {
   test("one youtube: prefix only, so yt-dlp can parse the args at all", () => {
     // yt-dlp strips `IE_KEY:` exactly once and splits the rest on `;`. A second
     // `youtube:` lands in the key name and the value is silently dropped.
-    configureYoutubeProvider({
+    const config = {
       extractorArgs: "youtube:player_client=visionos",
       poToken: "TOKENVALUE",
-    });
+    };
+    configureYoutubeProvider(config);
 
-    const raw = resolveYoutubeYtdlRawOptions(youtubeStream()) ?? "";
+    const raw = resolveYoutubeYtdlRawOptions(youtubeStream(), undefined, config) ?? "";
     const args = raw.slice(raw.indexOf("extractor-args="));
     expect(args.split("youtube:").length - 1).toBe(1);
   });
 
   test("no token configured leaves the extractor args untouched", () => {
-    configureYoutubeProvider({ extractorArgs: "youtube:player_client=visionos" });
-    const raw = resolveYoutubeYtdlRawOptions(youtubeStream()) ?? "";
+    const config = { extractorArgs: "youtube:player_client=visionos" };
+    configureYoutubeProvider(config);
+    const raw = resolveYoutubeYtdlRawOptions(youtubeStream(), undefined, config) ?? "";
     expect(raw).not.toContain("po_token");
   });
 
   test("a live stream asks yt-dlp to join at the live edge", () => {
-    configureYoutubeProvider({ extractorArgs: "youtube:player_client=visionos" });
+    const config = { extractorArgs: "youtube:player_client=visionos" };
+    configureYoutubeProvider(config);
     const raw =
-      resolveYoutubeYtdlRawOptions(youtubeStream({ metadata: { liveStatus: "live" } })) ?? "";
+      resolveYoutubeYtdlRawOptions(
+        youtubeStream({ metadata: { liveStatus: "live" } }),
+        undefined,
+        config,
+      ) ?? "";
     // `live-from-start=no` reached yt-dlp as `--live-from-start no`, making `no` a
     // positional URL; the flag form is the one mpv's ytdl hook emits correctly.
     expect(raw).toContain("no-live-from-start=");

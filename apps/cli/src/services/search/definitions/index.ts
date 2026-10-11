@@ -1,8 +1,6 @@
-// =============================================================================
 // Search Service Definitions Registry
 //
 // Export all search service definitions.
-// =============================================================================
 
 import type { SearchServiceDefinition } from "../SearchService";
 import { createAniListSearchService } from "./anilist";

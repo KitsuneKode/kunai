@@ -75,6 +75,22 @@ test("DNS checkpoint does not overwrite existing resume position or lastWatchedA
   expect(row?.updatedAt).toBe(oldTimestamp);
 });
 
+test("a dropped finalize write is reported through onWriteError instead of crashing", () => {
+  const dir = stores.dir("ledger-write-error");
+  const db = stores.db(dir);
+  const repo = new HistoryRepository(db);
+  const events = new PlaybackEventRepository(db);
+  const errors: unknown[] = [];
+  const ledger = new PlaybackHistoryLedger(repo, events, (error) => errors.push(error));
+
+  ledger.start({ title, episode, mediaKind: "series" }, 0);
+  db.close();
+
+  ledger.finalize({ positionSeconds: 10, durationSeconds: 100, completed: false });
+
+  expect(errors).toHaveLength(1);
+});
+
 test("DNS abandon clears ledger without persisting on shutdown flush", () => {
   const { ledger, repo } = makeLedger();
   const oldTimestamp = "2026-06-01T12:00:00.000Z";

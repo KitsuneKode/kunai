@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-03"
+lastReviewed: "2026-10-03"
 ---
 
 # Mobile device lab
@@ -172,6 +172,10 @@ Run these cases with the same checksummed artifact:
    and backslash. It must reach the prompt without syntax execution.
 5. Pass plaintext HTTP, credentials, a fragment, CR, LF, or another scheme. It
    must exit before HTTP or VLC.
+6. Run a proof against a tester-owned endpoint that lets you interrupt the
+   pending probe. After choosing `Run proof`, press Ctrl+C during HTTP work.
+   Confirm no VLC launch, a responsive terminal, `lastResult: "cancelled"`,
+   and no `session.lock`. The next run must start without manual lock recovery.
 
 The artifact exits `0` for help, version, cancellation, and an accepted handoff;
 `2` for invalid commands or URLs; and `1` for state, HTTP, or handoff failure.

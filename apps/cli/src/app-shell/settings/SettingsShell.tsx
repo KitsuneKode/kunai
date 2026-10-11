@@ -1,12 +1,14 @@
 import type { Container } from "@/container";
+import { getDesignThemeName, setDesignTheme } from "@kunai/design";
 import { useInput } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { buildSettingsPage } from "./build-page";
+import { buildSettingsSubmenuView } from "./build-submenu";
 import { SettingsFooter } from "./components/SettingsFooter";
 import { handleSettingsKey } from "./controller";
 import { isSettingVisible } from "./gates";
-import { firstSelectableRowIndex } from "./navigation";
+import { clampSelectedIndex, firstSelectableRowIndex } from "./navigation";
 import { persistSettingsDraft } from "./persist";
 import { buildSettingsRegistry } from "./registry";
 import { buildSettingsRegistryContext } from "./registry-context";
@@ -158,14 +160,23 @@ export function SettingsShell({
     [container],
   );
 
-  // The debounced save above dies with the shell: exiting settings within
+  // The debounced save below dies with the shell: exiting settings within
   // 300ms of the last edit silently dropped the draft. Flush best-effort on
   // unmount; persistSettingsDraft no-ops when nothing changed.
   const draftRef = useRef(state.draft);
-  draftRef.current = state.draft;
+  /** Theme active before a submenu preview began — restored on Esc/unmount. */
+  const themePreviewOriginRef = useRef<string | null>(null);
+  useEffect(() => {
+    draftRef.current = state.draft;
+  }, [state.draft]);
   useEffect(
     () => () => {
       void saveDraft(draftRef.current, "closing");
+      // Preview is transient; only a confirmed choice persists the theme.
+      if (themePreviewOriginRef.current !== null) {
+        setDesignTheme(themePreviewOriginRef.current);
+        themePreviewOriginRef.current = null;
+      }
     },
     [saveDraft],
   );
@@ -196,6 +207,28 @@ export function SettingsShell({
       const result = handleSettingsKey(input, key, state, { container, registryCtx });
       if (!result.handled) return;
 
+      // Theme live preview: while the theme enum submenu is open, repaint on
+      // highlight so the whole shell shows the palette, not a swatch. On
+      // close, Enter's persist applies the pick; Esc restores the theme that
+      // was active before previewing — `KUNAI_THEME`'s mask included.
+      if (result.state.submenuId === "theme") {
+        const submenu = buildSettingsSubmenuView("theme", registryCtx, page.defById);
+        const choice =
+          submenu?.choices[clampSelectedIndex(result.state.selectedIndex, submenu.choices.length)];
+        if (choice && choice.value !== getDesignThemeName()) {
+          if (themePreviewOriginRef.current === null) {
+            themePreviewOriginRef.current = getDesignThemeName();
+          }
+          setDesignTheme(choice.value);
+        }
+      } else if (state.submenuId === "theme") {
+        const origin = themePreviewOriginRef.current;
+        themePreviewOriginRef.current = null;
+        setDesignTheme(
+          result.persist ? result.state.draft.theme : (origin ?? result.state.draft.theme),
+        );
+      }
+
       setState(result.state);
       if (result.statusMessage !== undefined) {
         onStatus(result.statusMessage);
@@ -215,7 +248,13 @@ export function SettingsShell({
     { isActive: !commandMode },
   );
 
-  const footerMode = state.inputMode.active ? "input" : state.submenuId ? "submenu" : "main";
+  const footerMode = state.inputMode.active
+    ? "input"
+    : state.submenuId
+      ? "submenu"
+      : state.searchFocused
+        ? "search"
+        : "main";
 
   return (
     <>

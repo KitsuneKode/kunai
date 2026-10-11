@@ -1,8 +1,6 @@
-// =============================================================================
 // Structured Logger Implementation
 //
 // Structured logging to console and file.
-// =============================================================================
 
 import {
   appendFileSync,
@@ -15,6 +13,8 @@ import {
   unlinkSync,
 } from "node:fs";
 import { dirname } from "node:path";
+
+import { sanitizeTerminalText } from "@/domain/text-display";
 
 import type { Logger, LogEntry } from "./Logger";
 
@@ -99,8 +99,11 @@ export class StructuredLogger implements Logger {
         : undefined;
     const sanitizedMessage = this.options.sanitize?.(message) ?? message;
     const sanitizedContext = this.options.sanitize?.(mergedContext) ?? mergedContext;
-    const serializedMessage =
-      typeof sanitizedMessage === "string" ? sanitizedMessage : String(sanitizedMessage);
+    // Messages embed provider/mpv error text; a log line must never carry raw
+    // control bytes to stderr or the log file.
+    const serializedMessage = sanitizeTerminalText(
+      typeof sanitizedMessage === "string" ? sanitizedMessage : String(sanitizedMessage),
+    );
 
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),

@@ -1,8 +1,6 @@
-// =============================================================================
 // Logger Interface
 //
 // Structured logging for observability.
-// =============================================================================
 
 export interface LogEntry {
   timestamp: string;

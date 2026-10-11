@@ -815,7 +815,8 @@ describe("panel-data", () => {
     expect(miruro?.detail).toContain("Health:");
     expect(miruro?.detail).toContain("down");
     // The playing provider is running, not skipped — the auto-fallback suffix
-    // would be a false statement next to "current".
+    // would be a false statement next to "current", on both label and detail.
+    expect(miruro?.detail).not.toContain("skipped in auto-fallback");
     expect(miruro?.label).toContain("down");
     expect(miruro?.label).not.toContain("skipped in auto-fallback");
     // A non-current provider keeps the honest auto-fallback explanation.

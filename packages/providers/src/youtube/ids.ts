@@ -60,21 +60,46 @@ export function buildYoutubeWatchUrl(videoId: string): string {
   return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
 }
 
+/**
+ * Host-level YouTube check — substring matching let a hostile stream URL like
+ * `http://169.254.169.254/x?u=youtu.be/` classify as "provider-attested" and
+ * skip every reachability probe on the way to mpv. Only a real youtube.com /
+ * youtu.be host qualifies.
+ */
+function isYoutubeHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com");
+}
+
 export function isYoutubeWatchUrl(url: string): boolean {
-  return /(?:youtube\.com\/watch|youtu\.be\/|youtube\.com\/live\/|youtube\.com\/shorts\/)/i.test(
-    url.trim(),
-  );
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (!isYoutubeHostname(host)) return false;
+  if (host === "youtu.be") return true;
+  const path = parsed.pathname;
+  return path === "/watch" || path.startsWith("/live/") || path.startsWith("/shorts/");
 }
 
 export function extractYoutubeVideoIdFromUrl(url: string): string | null {
-  const trimmed = url.trim();
-  const watchMatch = trimmed.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
-  if (watchMatch?.[1]) return watchMatch[1];
-  const shortMatch = trimmed.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
-  if (shortMatch?.[1]) return shortMatch[1];
-  const liveMatch = trimmed.match(/youtube\.com\/live\/([a-zA-Z0-9_-]{11})/);
-  if (liveMatch?.[1]) return liveMatch[1];
-  const shortsMatch = trimmed.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/);
-  if (shortsMatch?.[1]) return shortsMatch[1];
-  return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return null;
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (!isYoutubeHostname(host)) return null;
+  if (host === "youtu.be") {
+    const shortMatch = parsed.pathname.match(/^\/([a-zA-Z0-9_-]{11})/);
+    return shortMatch?.[1] ?? null;
+  }
+  const videoId = parsed.searchParams.get("v");
+  if (videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId)) return videoId;
+  const deepMatch = parsed.pathname.match(/^\/(?:live|shorts)\/([a-zA-Z0-9_-]{11})/);
+  return deepMatch?.[1] ?? null;
 }

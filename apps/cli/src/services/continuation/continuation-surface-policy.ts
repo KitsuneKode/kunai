@@ -1,10 +1,8 @@
-// =============================================================================
-// continuation-surface-policy.ts — one conservative Continue/History projection
+// One conservative Continue/History projection
 //
 // Startup Continue, History tabs/actions, and post-play must agree. Without
 // authoritative release evidence a finished title is up to date / completed —
 // never an optimistic fabricated E+1.
-// =============================================================================
 
 import type { CatalogEpisodeBounds } from "@/domain/continuation/catalog-episode-bounds";
 import {

@@ -41,10 +41,11 @@ export function detectInstallMethod(input: DetectInstallMethodInput = {}): Insta
       : { kind: "npm-global", label: "npm global", packageRoot: managedContext.packageRoot };
   }
 
+  const isScriptEntrypoint =
+    comparableEntrypoint.endsWith(".js") || comparableEntrypoint.endsWith(".ts");
   if (
-    fileExists(path.join(cwd, "package.json")) &&
-    fileExists(path.join(cwd, "apps/cli/src/main.ts")) &&
-    fileExists(path.join(cwd, ".git"))
+    isSourceCheckout(cwd, path, fileExists) ||
+    (isScriptEntrypoint && isSourceCheckout(entrypoint, path, fileExists))
   ) {
     return { kind: "source", label: "Source checkout" };
   }
@@ -57,14 +58,55 @@ export function detectInstallMethod(input: DetectInstallMethodInput = {}): Insta
     return { kind: "npm-global", label: "npm global" };
   }
 
+  // A `bun build --compile` binary presents its virtual entrypoint as
+  // `/$bunfs/root/…main.js` (POSIX) or `B:\~BUN\root\main.js` (Windows) — the
+  // `.js` suffix below would otherwise misclassify a flat release binary as
+  // "unknown" and degrade `kunai upgrade` to manual guidance.
+  const bunfsEntrypoint =
+    comparableEntrypoint.startsWith("/$bunfs/") || comparableEntrypoint.includes("/~bun/");
+
   if (
     input.packagedBinary ||
+    bunfsEntrypoint ||
     (!comparableEntrypoint.endsWith(".js") && !comparableEntrypoint.endsWith(".ts"))
   ) {
     return { kind: "binary", label: "Packaged binary" };
   }
 
   return { kind: "unknown", label: "Unknown install method" };
+}
+
+/**
+ * True when `start` is this checkout, or a file/directory under it.
+ *
+ * `cwd` used to have to be the repo root (`cwd/apps/cli/src/main.ts`).
+ * `bun run src/main.ts --version` from `apps/cli` therefore reported unknown.
+ * Walk parents so a source run from any package directory still detects.
+ */
+function isSourceCheckout(
+  start: string,
+  path: typeof posix | typeof win32,
+  fileExists: (path: string) => boolean,
+): boolean {
+  if (!start) return false;
+  // Entrypoints are files (`…/src/main.ts`). Start at the containing directory
+  // so the first probe is a real directory rather than `main.ts/package.json`.
+  let current = path.extname(start) ? path.dirname(start) : start;
+  const seen = new Set<string>();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    if (
+      fileExists(path.join(current, "package.json")) &&
+      fileExists(path.join(current, "apps/cli/src/main.ts")) &&
+      fileExists(path.join(current, ".git"))
+    ) {
+      return true;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return false;
 }
 
 export function updateGuidanceForInstallMethod(method: InstallMethod): string {

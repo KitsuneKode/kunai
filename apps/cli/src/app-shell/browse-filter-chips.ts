@@ -2,7 +2,7 @@ import type { FilterState, FilterStateKey } from "@/domain/search/SearchIntent";
 import { clearFilterStateKey, describeFilterStateChips } from "@/domain/search/SearchIntent";
 import { parseSearchIntentText } from "@/domain/search/SearchIntentParser";
 
-export type BrowseEscFilterLayer = "narrow" | "chips" | "query" | "cancel";
+export type BrowseEscFilterLayer = "loading" | "narrow" | "chips" | "query" | "cancel";
 
 export type StructuredFilterChip = {
   readonly key: FilterStateKey;
@@ -39,11 +39,15 @@ export function shouldResearchAfterFilterChange(input: {
  * via `/trending` — it just is not what Escape means.
  */
 export function nextBrowseEscFilterLayer(input: {
+  readonly searchLoading: boolean;
   readonly narrowOpenOrFocused: boolean;
   readonly resultFilterNonEmpty: boolean;
   readonly structuredChipCount: number;
   readonly queryNonEmpty: boolean;
 }): BrowseEscFilterLayer {
+  // A request in flight is the freshest thing to undo — peeling filters or
+  // text while it resolves would still land the escaped results on top.
+  if (input.searchLoading) return "loading";
   if (input.narrowOpenOrFocused || input.resultFilterNonEmpty) return "narrow";
   if (input.structuredChipCount > 0) return "chips";
   if (input.queryNonEmpty) return "query";

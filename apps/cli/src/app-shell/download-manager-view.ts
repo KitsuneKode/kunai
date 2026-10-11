@@ -1,12 +1,10 @@
-// =============================================================================
-// download-manager-view.ts — pure layout and rail policy for the download
+// Pure layout and rail policy for the download
 // manager.
 //
 // The shell used to recompute its own width from raw terminal columns while
 // living inside a root-owned overlay whose frame had already spent some of
 // them, so rows overflowed at exactly the widths people run. Splitting the
 // arithmetic out makes the 72/100/140 budget assertable without mounting Ink.
-// =============================================================================
 
 import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
@@ -72,6 +70,7 @@ function jobStatusLabel(job: DownloadJobRecord): string {
 export function buildDownloadManagerRailModel(
   job: DownloadJobRecord | undefined,
   posterState: PreviewPosterState,
+  live?: { readonly sizeLabel?: string; readonly speedLabel?: string; readonly etaLabel?: string },
 ): PreviewRailModel | null {
   if (!job) return null;
 
@@ -88,9 +87,15 @@ export function buildDownloadManagerRailModel(
     job.status === "running" || job.status === "queued"
       ? {
           label: "Progress",
-          value: `${Math.max(0, Math.min(100, Math.round(job.progressPercent ?? 0)))}%`,
+          value: live?.sizeLabel
+            ? `${Math.max(0, Math.min(100, Math.round(job.progressPercent ?? 0)))}% of ${live.sizeLabel}`
+            : `${Math.max(0, Math.min(100, Math.round(job.progressPercent ?? 0)))}%`,
         }
       : null,
+    job.status === "running" && live?.speedLabel
+      ? { label: "Speed", value: live.speedLabel }
+      : null,
+    job.status === "running" && live?.etaLabel ? { label: "ETA", value: live.etaLabel } : null,
     { label: "Provider", value: job.providerId },
     job.selectedQualityLabel ? { label: "Quality", value: job.selectedQualityLabel } : null,
     {

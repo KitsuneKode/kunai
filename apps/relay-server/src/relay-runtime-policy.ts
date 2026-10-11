@@ -9,12 +9,14 @@ export interface RelayDevelopmentEnvironment {
   readonly PORT?: string;
   readonly RELAY_HOST?: string;
   readonly RELAY_TOKEN?: string;
+  readonly RELAY_CORS_ORIGINS?: string;
 }
 
 export interface RelayDevelopmentPolicy {
   readonly hostname: string;
   readonly port: number;
   readonly authorization: RelayAuthorizationPolicy;
+  readonly corsAllowedOrigins: readonly string[];
 }
 
 export function resolveRelayDevelopmentPolicy(
@@ -31,7 +33,36 @@ export function resolveRelayDevelopmentPolicy(
     hostname,
     port: resolvePort(env.PORT),
     authorization: token ? { mode: "bearer", token } : { mode: "local-loopback" },
+    corsAllowedOrigins: resolveCorsOrigins(env.RELAY_CORS_ORIGINS),
   };
+}
+
+/**
+ * Comma-separated origin allowlist; absent/empty means CORS is off entirely.
+ * Entries must be bare origins — a path or typo would otherwise never match
+ * and fail closed without telling the operator why.
+ */
+function resolveCorsOrigins(value: string | undefined): readonly string[] {
+  const origins = (value ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+  for (const origin of origins) {
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new Error(
+        `RELAY_CORS_ORIGINS entries must be origins like https://app.example; received ${origin}`,
+      );
+    }
+    if (parsed.origin !== origin) {
+      throw new Error(
+        `RELAY_CORS_ORIGINS entries must be bare origins (scheme://host[:port]); received ${origin}`,
+      );
+    }
+  }
+  return origins;
 }
 
 export function createRelayDevServerOptions(policy: RelayDevelopmentPolicy) {
@@ -39,7 +70,10 @@ export function createRelayDevServerOptions(policy: RelayDevelopmentPolicy) {
     hostname: policy.hostname,
     port: policy.port,
     fetch(request: Request) {
-      return handleRelayRequest(request, { authorization: policy.authorization });
+      return handleRelayRequest(request, {
+        authorization: policy.authorization,
+        corsAllowedOrigins: policy.corsAllowedOrigins,
+      });
     },
   };
 }

@@ -1,10 +1,8 @@
-// =============================================================================
-// anilist-format.ts — map AniList Media.format onto Kunai's episode axis.
+// Map AniList Media.format onto Kunai's episode axis.
 //
 // Identity (anime vs series vs movie) is ContentKind. Structure (does this
 // title have episodes?) is ContentType. AniList format is the catalog signal
 // that stamps structure. Host episode lists are not an input.
-// =============================================================================
 
 import type { ContentType, TitleInfo } from "@/domain/types";
 

@@ -1,5 +1,4 @@
-// =============================================================================
-// queue-restore.ts — container adapter + status copy for queue session restore.
+// Container adapter + status copy for queue session restore.
 //
 // Both restore entry points (the queue overlay's `r` key and the
 // queue-recovery notification action) route through here so they cannot drift
@@ -8,7 +7,6 @@
 //
 // Domain restore prefers queue-owned in-flight identity, then promotes an exact
 // history match among restored rows. It never invents a new queue entry.
-// =============================================================================
 
 import type { Container } from "@/container";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";

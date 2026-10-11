@@ -36,11 +36,17 @@ export function findLastCycleFailure(
  * call site's generic "exhausted" message would lie — nothing was attempted.
  * Name the quarantine so the failure reads as the transient state it is.
  */
+export interface CycleExhaustionOutcome {
+  readonly code: ResolveErrorCode;
+  readonly message: string;
+  readonly retryable: boolean;
+}
+
 export function cycleExhaustionFailure(
   cycleResult: Pick<ProviderCycleResult<unknown>, "attempts" | "stopReason">,
   exhaustedMessage: string,
   exhaustedRetryable = true,
-): { code: ResolveErrorCode; message: string; retryable: boolean } {
+): CycleExhaustionOutcome {
   const cycleFailure = findLastCycleFailure(cycleResult.attempts);
   if (cycleFailure) {
     return {
@@ -74,6 +80,10 @@ export function providerFailureCodeFromCycleFailure(
       return "expired";
     case "candidate-blocked":
       return "blocked";
+    case "candidate-rate-limited":
+      return "rate-limited";
+    case "candidate-server-error":
+      return "provider-unavailable";
     case "candidate-parse":
       return "parse-failed";
     case "candidate-unsupported":

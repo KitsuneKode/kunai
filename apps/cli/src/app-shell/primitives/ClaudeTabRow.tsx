@@ -66,7 +66,7 @@ export const ClaudeTabRow = React.memo(function ClaudeTabRow({
       ) : null}
       {hint ? (
         <Box marginLeft={1} flexShrink={0}>
-          <Text color={palette.dim} dimColor wrap="truncate">
+          <Text color={palette.dim} wrap="truncate">
             {truncateLine(hint, Math.max(12, (maxWidth ?? 120) - 48))}
           </Text>
         </Box>

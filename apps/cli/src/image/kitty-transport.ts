@@ -1,5 +1,4 @@
-// =============================================================================
-// kitty-transport.ts — the one Kitty graphics upload path.
+// The one Kitty graphics upload path.
 //
 // Both the legacy one-shot renderer and the Ink app shell upload through here.
 // Payloads are prepared in-process: PNG passes through untouched, JPEG (all of
@@ -11,7 +10,6 @@
 // file which it reads and then deletes itself (kitty graphics spec). Remote
 // sessions (SSH) must stream base64 chunks instead — the terminal cannot read
 // our filesystem.
-// =============================================================================
 
 import { createHash } from "node:crypto";
 import { unlink } from "node:fs/promises";

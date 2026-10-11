@@ -16,7 +16,13 @@ const GEO_BLOCK_PATTERNS = [
   { reason: "turnstile", pattern: /cf-turnstile|turnstile challenge/i },
 ] as const;
 
-const RELAY_SUGGESTION_PROVIDERS = new Set(["allanime", "allmanga"]);
+/**
+ * Provider ids whose metadata is known-relayable past regional blocking.
+ * `allanime` is the provider id; `allmanga` is only the module directory name
+ * (`packages/providers/src/allmanga/`, `ALLANIME_PROVIDER_ID`) and never
+ * matches a real `providerId`, so listing it here suggested relay to nobody.
+ */
+const RELAY_SUGGESTION_PROVIDERS = new Set(["allanime"]);
 
 export function detectGeoBlockedProviderResponse(input: GeoBlockDetectionInput): GeoBlockDetection {
   const body = input.body ?? "";

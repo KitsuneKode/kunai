@@ -52,6 +52,14 @@ export type PaletteCommandResult =
 export const PALETTE_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
   "setup",
   "update",
+  // Preference toggles and global commands the rootOverlay context advertises —
+  // without these the palette lists them, highlights them, and drops the Enter.
+  "image-pane",
+  "pet",
+  "theme",
+  "watch",
+  "providers",
+  "playlists",
   "report-issue",
   "clear-cache",
   "reset-provider-health",
@@ -214,6 +222,11 @@ export async function dispatchPaletteCommand(
     await workflows.openOverlay(container, { type: "settings" });
     return "handled";
   }
+  if (action === "theme") {
+    const { openThemePicker } = await import("./workflows/picker-workflows");
+    await openThemePicker(container);
+    return "handled";
+  }
   if (action === "setup") {
     return workflows.runSetup(container);
   }
@@ -223,11 +236,9 @@ export async function dispatchPaletteCommand(
     return passthrough;
   }
 
-  if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
-    const result = await workflows.runAction(action, container);
-    return result === "quit" ? "quit" : result;
-  }
-
+  // Anything left goes to the workflow map; "unhandled" is the honest answer
+  // for ids with no handler. Surfaces that must gate *before* dispatching —
+  // the root overlay — check PALETTE_WORKFLOW_ACTIONS themselves.
   const result = await workflows.runAction(action, container);
   return result === "quit" ? "quit" : result;
 }

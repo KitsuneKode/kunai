@@ -32,6 +32,14 @@ describe("DownloadService", () => {
     runMigrations(db, "data");
     repo = new DownloadJobsRepository(db);
     spawnSpy = spyOn(Bun, "spawn");
+    // Default: never call through to a real binary. Unit tests that exercise
+    // the download worker stub spawn themselves; a missing stub used to
+    // spawn host yt-dlp (ENOENT on a fresh machine, a real download in CI).
+    spawnSpy.mockImplementation((command: string[]) => {
+      throw new Error(
+        `DownloadService unit tests must stub Bun.spawn; refusing ${String(command[0] ?? "unknown")}`,
+      );
+    });
     whichSpy = spyOn(Bun, "which");
   });
 
@@ -259,6 +267,8 @@ describe("DownloadService", () => {
         );
       const [first, second] = jobs;
       writeFileSync(first!.outputPath, "first owner's bytes");
+      // complete() is fenced to claimed work — enqueue alone is 'queued'.
+      repo.markRunning(first!.id, new Date().toISOString());
       repo.complete(first!.id, new Date().toISOString());
       repo.markRunning(second!.id, new Date(Date.now() - 120_000).toISOString());
       const recovery = buildService({
@@ -2236,6 +2246,12 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
+    // This test covers competing claims, not equal-timestamp UUID ordering.
+    // Anchor A before the records we just wrote without sleeping for a tick.
+    const earlier = new Date(
+      Math.min(Date.parse(firstJob.createdAt), Date.parse(secondJob.createdAt)) - 1,
+    ).toISOString();
+    db.run("UPDATE download_jobs SET created_at = ? WHERE id = ?", [earlier, firstJob.id]);
     const originalMarkRunning = repo.markRunning.bind(repo);
     const claimedJobIds: string[] = [];
     const markRunningSpy = spyOn(repo, "markRunning").mockImplementation((jobId, updatedAt) => {

@@ -1,5 +1,6 @@
 import { providerHttpErrorForStatus } from "@kunai/types";
 
+import { blockedLiteralTargetReason } from "../shared/stream-reachability";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { YOUTUBE_PROVIDER_ID } from "./manifest";
 
@@ -141,11 +142,14 @@ export async function pickInvidiousInstance(
 const UNREACHABLE_HOST_SUFFIXES = [".onion", ".i2p", ".ygg"] as const;
 
 function isReachableInstance(url: string): boolean {
+  // The public instance registry is attacker-influenced — anyone can list an
+  // entry. Without the literal-target gate a listed "instance" could name a
+  // LAN or link-local/metadata address and every pool fetch becomes an SSRF
+  // into the user's network.
+  if (blockedLiteralTargetReason(url) !== null) return false;
   let host: string;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-    host = parsed.hostname.toLowerCase();
+    host = new URL(url).hostname.toLowerCase();
   } catch {
     return false;
   }

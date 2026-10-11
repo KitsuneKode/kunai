@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Status: **planned** — implement before retiring a production provider, or promote during a broader offline-durability pass.
+Status: **candidate implemented** on `fix/offline-provider-authority-20261003`; integration and release evidence remain separate. Keep this plan active until the implementation PR merges, then archive it.
 
 **Goal:** Keep a verified downloaded artifact playable even when the provider recorded on its download job is no longer registered.
+
+**Candidate evidence:** Retired-provider phase regressions cover movies, series, anime, manual Next, autoplay, local timing and subtitle handoff, generation callbacks, cancellation, missing/empty files, and local player failure. Focused phase/player suites pass; complete branch verification and independent review are recorded in the PR. The regression also exposed and removed local post-play AniList release reconciliation.
 
 **Architecture:** Resolve playback source authority before requiring a provider module. Represent local and provider acquisition as a discriminated union, keep provider-only orchestration behind the provider arm, and send both arms through the existing unified player lifecycle. Do not model the local library as a fake provider.
 

@@ -8,6 +8,7 @@ import {
 import { describeEpisodeWatchPresentation } from "@/app/playback/playback-episode-picker";
 import type { Container } from "@/container";
 import { markCurrentLabel } from "@/domain/current-label";
+import { nearestOptionIndex } from "@/domain/session/picker-model";
 import type { OverlayPickerOption } from "@/domain/session/SessionState";
 import {
   formatEpisodePickerDetail,
@@ -101,8 +102,9 @@ export async function chooseSeasonFromOptions(
     const picked = await openSessionPicker(container.stateManager, {
       type: "season_picker",
       currentSeason,
-      initialIndex: seasons.findIndex(
-        (season) => normalizeSeasonEntry(season).number === currentSeason,
+      initialIndex: nearestOptionIndex(
+        seasons.map((season) => normalizeSeasonEntry(season).number),
+        currentSeason,
       ),
       options,
     });
@@ -202,7 +204,10 @@ export async function chooseEpisodeFromOptions(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season,
-      initialIndex: episodes.findIndex((episode) => episode.number === currentEpisode),
+      initialIndex: nearestOptionIndex(
+        episodes.map((episode) => episode.number),
+        currentEpisode,
+      ),
       options,
     });
     if (!picked) return null;

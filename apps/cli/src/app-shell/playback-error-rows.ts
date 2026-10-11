@@ -1,17 +1,15 @@
-// =============================================================================
-// playback-error-rows.ts — the failure panel's content, as rows of segments
+// The failure panel's content, as rows of segments
 //
 // ErrorShell used to build its layout inline as nested Boxes. The petal fall
 // needs to know which cells each row's text occupies, and Ink exposes no cell
 // buffer, so the content becomes data first and is rendered second. Row content
 // and ordering match what the panel rendered before this module existed.
-// =============================================================================
 
 import type { ErrorScenario } from "@/domain/playback/playback-problem";
-import { sanitizeTerminalText, wrapText } from "@/domain/text-display";
 
 import type { ErrorDebugExcerpt } from "./error-debug-excerpt";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
+import { sanitizeTerminalText, wrapText } from "./shell-text";
 
 export type ErrorRowTone = "danger-strong" | "danger" | "accent" | "text" | "ok" | "muted" | "dim";
 
@@ -20,10 +18,9 @@ export type ErrorRow = { readonly segments: readonly ErrorRowSegment[] };
 
 const BLANK: ErrorRow = { segments: [] };
 
+// Segment text is provider/mpv-controlled (failure details, scenario titles) —
+// sanitize at row construction so the per-cell renderer never sees raw escapes.
 const row = (text: string, tone: ErrorRowTone): ErrorRow => ({
-  // Provider titles, URLs, and failure details flow through these rows, so
-  // strip terminal escapes at the single choke point. wrapText() sanitizes
-  // too, but scenario/waterfall rows never pass through it.
   segments: [{ text: sanitizeTerminalText(text), tone }],
 });
 
@@ -70,13 +67,11 @@ function waterfallRows(model: PlaybackFailureWaterfallModel): readonly ErrorRow[
     const marker = entry.status === "succeeded" ? "✓" : entry.status === "failed" ? "x" : "·";
     const tone: ErrorRowTone =
       entry.status === "succeeded" ? "ok" : entry.status === "failed" ? "danger" : "dim";
-    // Labels and details name providers, sources, and URLs — sanitize here:
-    // unlike every other row builder, these segments bypass row().
     const segments: ErrorRowSegment[] = [
-      { text: sanitizeTerminalText(`${marker} ${entry.label}`), tone },
+      { text: `${marker} ${sanitizeTerminalText(entry.label)}`, tone },
     ];
     if (entry.detail)
-      segments.push({ text: sanitizeTerminalText(`  ·  ${entry.detail}`), tone: "dim" });
+      segments.push({ text: `  ·  ${sanitizeTerminalText(entry.detail)}`, tone: "dim" });
     rows.push({ segments });
   }
 
