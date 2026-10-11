@@ -1,5 +1,4 @@
-// =============================================================================
-// prepared-poster-cache.ts — one native preparation per source and geometry.
+// One native preparation per source and geometry.
 //
 // Preparation is the expensive step (decode + resize + PNG bridge), and the same
 // poster is routinely wanted at the same size by more than one surface: two rails
@@ -9,10 +8,10 @@
 //
 // Both halves of a PreparedPoster stay resident, so the cache weighs the PNG and
 // the decoded RGBA together; counting one would under-report by the larger.
-// =============================================================================
 
 import { preparePoster, type PosterPixelBounds, type PreparedPoster } from "@/image/native-image";
 
+import { createKeyedInflight } from "./inflight";
 import { ByteBudgetLruCache } from "./poster-byte-cache";
 import type { PosterSource } from "./poster-source-cache";
 
@@ -23,6 +22,7 @@ const runtime = {
   preparePoster,
 };
 
+const preparedInflight = createKeyedInflight();
 const preparedCache = new ByteBudgetLruCache<string, PreparedPoster>({
   maxEntries: MAX_PREPARED_POSTER_CACHE_ENTRIES,
   maxBytes: MAX_PREPARED_POSTER_CACHE_BYTES,
@@ -35,6 +35,7 @@ export function preparedPosterCacheKey(sourceIdentity: string, bounds: PosterPix
 
 export function clearPreparedPosterCache(): void {
   preparedCache.clear();
+  preparedInflight.clear();
 }
 
 /**
@@ -54,11 +55,19 @@ export async function getPreparedPoster(
   if (cached) return cached;
   if (signal?.aborted) return null;
 
-  const prepared = await runtime.preparePoster(source.bytes, bounds, signal);
-  if (!prepared || signal?.aborted) return null;
-
-  preparedCache.set(key, prepared);
-  return prepared;
+  // Decode is the expensive step — the leader finishes it once for every
+  // joiner, so an aborted caller cannot strand a second caller's decode.
+  // `signal` races this caller's own await only.
+  return preparedInflight.join(
+    key,
+    async () => {
+      const prepared = await runtime.preparePoster(source.bytes, bounds);
+      if (!prepared) return null;
+      preparedCache.set(key, prepared);
+      return prepared;
+    },
+    signal,
+  );
 }
 
 export const __testing = {

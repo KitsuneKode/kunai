@@ -1,10 +1,8 @@
-// =============================================================================
-// use-calendar-state.ts — cohesive state for the calendar/schedule browse view.
+// Cohesive state for the calendar/schedule browse view.
 //
 // Consolidates calendar state and keeps it date-scoped. A caller can seed an
 // initial tab so commands like /anime-calendar open pre-filtered, but the list
 // always resolves to one concrete date instead of mixing date and week modes.
-// =============================================================================
 
 import type { BrowseShellOption } from "@/app-shell/types";
 import type { SearchResult } from "@/domain/types";

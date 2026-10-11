@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { needsMpvNetworkPreflight } from "@/infra/player/mpv-playback-url";
 import {
   buildMpvArgs,
   collectAdditionalSubtitleTracks,
@@ -399,4 +400,13 @@ test("a one-shot direct stream does not get the ytdl guard", () => {
     {},
   );
   expect(args.some((arg) => arg.startsWith("--script-opts="))).toBe(false);
+});
+
+test("network preflight follows explicit target authority on every platform", () => {
+  for (const file of ["/media/owned.mp4", "C:\\Media\\owned.mp4", "file:///media/owned.mp4"]) {
+    expect(needsMpvNetworkPreflight(file, "local")).toBe(false);
+    expect(needsMpvNetworkPreflight(file)).toBe(true);
+  }
+  expect(needsMpvNetworkPreflight("https://example.test/movie.mp4", "local")).toBe(true);
+  expect(needsMpvNetworkPreflight("--script=evil.lua", "local")).toBe(true);
 });

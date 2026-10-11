@@ -141,6 +141,107 @@ export function formatDayTick(value: number): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
+/**
+ * Named (non-residual, non-empty) buckets in ONE breakdown.
+ *
+ * The snapshot tile reads a single day, so its figure and its headline must
+ * come from that same day. `namedVersionCount` spans the whole series, which
+ * suppresses across the window and so can name nothing while today's snapshot
+ * names one — pairing the two put "0%" and "every bucket folds into other" in
+ * one tile.
+ */
+export function namedBucketCount(counts: Readonly<Record<string, number>>): number {
+  let named = 0;
+  for (const [bucket, count] of Object.entries(counts)) {
+    if (bucket !== RESIDUAL_LABEL && count > 0) named += 1;
+  }
+  return named;
+}
+
+/**
+ * Trailing mean over `window` points, aligned to the input.
+ *
+ * Active installs oscillate by a handful per day at this population, so the raw
+ * line is mostly noise. The mean shortens at the start of the series rather
+ * than padding with zeros, which would draw a false ramp-up. Null inputs (a
+ * field the wire did not carry that day) are skipped, and a window with no real
+ * values stays null so the chart draws a gap, not a zero.
+ */
+export function rollingMean(
+  values: readonly (number | null)[],
+  window: number,
+): readonly (number | null)[] {
+  return values.map((_, index) => {
+    const slice = values.slice(Math.max(0, index - window + 1), index + 1);
+    const real = slice.filter((value): value is number => value !== null);
+    if (real.length === 0) return null;
+    return real.reduce((sum, value) => sum + value, 0) / real.length;
+  });
+}
+
+/**
+ * SVG path data for a sparkline: a stroked `line` and a closed `area` under it.
+ *
+ * Returns null below two points, where there is no shape to draw. The vertical
+ * scale runs from zero, not from the series minimum: a sparkline that rescales
+ * to its own range turns a wobble of 4 → 5 into a cliff, which on a page about
+ * honest counts is exactly the misreading to avoid. An all-zero run draws along
+ * the floor, which is the honest picture of nothing.
+ */
+export function sparklinePaths(
+  values: readonly number[],
+  width: number,
+  height: number,
+): { readonly line: string; readonly area: string } | null {
+  if (values.length < 2) return null;
+  const peak = Math.max(...values, 1);
+  const pad = 2;
+  const usable = height - pad * 2;
+  const step = width / (values.length - 1);
+  const coords = values.map((value, index) => {
+    const x = index * step;
+    const y = pad + usable - (Math.max(value, 0) / peak) * usable;
+    return [Number(x.toFixed(2)), Number(y.toFixed(2))] as const;
+  });
+  const line = coords.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x},${y}`).join(" ");
+  const last = coords.at(-1);
+  const first = coords[0];
+  if (!last || !first) return null;
+  const area = `${line} L${last[0]},${height} L${first[0]},${height} Z`;
+  return { line, area };
+}
+
+export type ReleaseMarker = {
+  /** The release's calendar day, `YYYY-MM-DD`, as it sits on the x-axis. */
+  readonly day: string;
+  readonly tag: string;
+};
+
+/**
+ * Releases that fall inside the plotted window, oldest first.
+ *
+ * A marker outside the axis domain would either clip or stretch the domain, so
+ * only releases between the first and last plotted day are returned. Two
+ * releases on one day collapse to the later-listed tag: a vertical line carries
+ * one label, and the day is what the reader is locating.
+ */
+export function releaseMarkers(
+  points: readonly SeriesPoint[],
+  releases: readonly { readonly date: string | null; readonly tag: string }[],
+): readonly ReleaseMarker[] {
+  const first = points[0]?.day;
+  const last = points.at(-1)?.day;
+  if (!first || !last) return [];
+  const byDay = new Map<string, ReleaseMarker>();
+  for (const release of releases) {
+    const day = release.date?.slice(0, 10);
+    if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    if (day < first || day > last) continue;
+    byDay.set(day, { day, tag: release.tag });
+  }
+  return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+}
+
 /** Distinct named (non-residual) buckets seen anywhere in the window. */
 export function namedVersionCount(points: readonly SeriesPoint[]): number {
   const seen = new Set<string>();
@@ -178,6 +279,13 @@ export function platformLabel(key: string): string {
  * the residual last. A bucket absent from every point earns no column — the
  * table should not promise a series that is empty end to end. Returns [] when
  * `byOs` is empty across the window (an unpublishable or pre-field series).
+ *
+ * Also returns [] when the residual is the ONLY bucket. The ingest folds a
+ * bucket that is under the small-cell floor on any single day into `other` for
+ * every day of the window, so while the population is small no platform ever
+ * clears it and `other` is simply everyone. A one-part "breakdown" is the
+ * Active column again under a different name, and as a chart it is a single
+ * unexplained grey band, so it earns neither a tab nor a column.
  */
 export function platformColumns(points: readonly SeriesPoint[]): readonly string[] {
   const seen = new Set<string>();
@@ -193,6 +301,71 @@ export function platformColumns(points: readonly SeriesPoint[]): readonly string
   // remains beyond the residual is an unexpected key and sorts before it.
   const unexpected = [...seen].filter((key) => key !== RESIDUAL_LABEL).sort();
   const columns = [...named, ...unexpected];
+  if (columns.length === 0) return [];
   if (seen.has(RESIDUAL_LABEL)) columns.push(RESIDUAL_LABEL);
   return columns;
+}
+
+/**
+ * The day the day labels changed clock.
+ *
+ * Up to and including this label, a day was a UTC day; from the next one, an IST
+ * day. The cutover is at 00:00 IST, which is 18:30 UTC, so the UTC day carrying
+ * this label ran only 18.5 hours and undercounts. The ingest owns the rule
+ * (`IST_DAY_BOUNDARY_FROM` in `apps/analytics-ingest/src/analytics-day.ts`); this
+ * is the label the page marks, kept next to the other derived chart facts.
+ */
+export const CLOCK_SEAM_DAY = "2026-09-14";
+
+/** Hours the seam day actually covered. */
+export const CLOCK_SEAM_HOURS = 18.5;
+
+/** The seam, when the plotted window contains it. */
+export function clockSeamIn(days: readonly string[]): string | null {
+  return days.includes(CLOCK_SEAM_DAY) ? CLOCK_SEAM_DAY : null;
+}
+
+/** Median of a list, or 0 for an empty one. */
+export function median(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const upper = sorted[mid] ?? 0;
+  return sorted.length % 2 === 1 ? upper : ((sorted[mid - 1] ?? 0) + upper) / 2;
+}
+
+/** Round up to a "nice" axis number: 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8 times a power of ten. */
+export function niceCeil(value: number): number {
+  if (!(value > 0)) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const step = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find(
+    (candidate) => candidate * magnitude >= value,
+  );
+  return (step ?? 10) * magnitude;
+}
+
+export type AxisCap = {
+  /** Top of the y-axis. */
+  readonly cap: number;
+  /** True when the tallest value was cut off by the cap rather than fitted. */
+  readonly clipped: boolean;
+};
+
+/**
+ * Where to stop a count axis so ordinary days stay readable.
+ *
+ * A launch day that is thirty times a normal day flattens every other bar to a
+ * hairline when the axis is fitted to it. When one value exceeds both a floor of
+ * 20 and four times the next highest, the axis is fitted to the rest instead and
+ * the outlier is drawn cut off at the top. The caller must label the cut bar with
+ * its real value; a clipped bar with no number is a lie by omission.
+ */
+export function robustAxisCap(values: readonly number[]): AxisCap {
+  const sorted = [...values].sort((a, b) => b - a);
+  const top = sorted[0] ?? 0;
+  const next = sorted[1] ?? 0;
+  if (top > 20 && top > next * 4) {
+    return { cap: niceCeil(Math.max(next, 1) * 1.25), clipped: true };
+  }
+  return { cap: niceCeil(Math.max(top, 1)), clipped: false };
 }

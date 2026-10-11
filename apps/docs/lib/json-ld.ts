@@ -27,10 +27,11 @@ export function websiteJsonLd() {
 /**
  * The home page describes an installable application, not just a website.
  *
- * `WebSite` alone made Kunai ineligible for the software result Google renders
- * for a free app — the one that shows the platforms and the price. Every field
- * here is a fact the repo already asserts elsewhere; nothing is invented, and
- * there is deliberately no `aggregateRating`, because there are no ratings.
+ * This tells a search engine the platforms, the price, the licence and where to
+ * get it, which `WebSite` alone does not. It does not promise a rich result:
+ * Google's software-app result also asks for a rating or review, and there are
+ * deliberately none here because there are none to claim. Every field is a fact
+ * the repo already asserts elsewhere; nothing is invented.
  */
 export function softwareApplicationJsonLd(input: {
   readonly version: string;
@@ -42,6 +43,9 @@ export function softwareApplicationJsonLd(input: {
     name: "Kunai",
     url: docsSiteUrl,
     description: input.description,
+    // The same card the site shares, so a crawler that wants a picture of the
+    // app is handed the one a person would see.
+    image: `${docsSiteUrl}/opengraph-image`,
     applicationCategory: "MultimediaApplication",
     applicationSubCategory: "Command Line Media Player",
     operatingSystem: "Linux, macOS, Windows",
@@ -59,6 +63,12 @@ export function softwareApplicationJsonLd(input: {
       "@type": "Organization",
       name: "Kunai",
       url: "https://github.com/KitsuneKode/kunai",
+      // Where else the project verifiably lives, so the entity is one thing to
+      // a crawler rather than three unconnected pages.
+      sameAs: [
+        "https://github.com/KitsuneKode/kunai",
+        "https://www.npmjs.com/package/@kitsunekode/kunai",
+      ],
     },
   };
 }

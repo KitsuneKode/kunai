@@ -6,7 +6,7 @@ import { formatLocalTimestamp, LocalTime } from "../components/analytics/local-t
 
 /**
  * `LocalTime` swaps a server-rendered UTC label for the viewer's clock after
- * mount. The swap itself is React's `useEffect`/`useState` contract and needs a
+ * mount. The swap itself is React's `useSyncExternalStore` contract and needs a
  * DOM to run, which this repo's tests do not have. Everything that can actually
  * go wrong — parsing, the invalid-date guard, formatting in a real zone — lives
  * in `formatLocalTimestamp`, which is tested here directly.
@@ -58,7 +58,7 @@ describe("formatLocalTimestamp", () => {
 });
 
 describe("LocalTime server render", () => {
-  test("renders the UTC label, not the local one, before any effect runs", () => {
+  test("renders the UTC label, not the local one, during the server snapshot", () => {
     // What the server sends and what the first client render must match, so
     // hydration does not mismatch.
     const html = renderToStaticMarkup(

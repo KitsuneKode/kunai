@@ -1,3 +1,5 @@
+import type { JsonValue } from "@kunai/types";
+
 import type { KunaiDatabase } from "../sqlite";
 
 /** How long a claim stays the claimer's before another worker may take it back. */
@@ -138,7 +140,14 @@ export class SyncOutboxRepository {
            last_error_code = NULL,
            last_error_detail = NULL,
            updated_at = excluded.updated_at
-         WHERE json_extract(excluded.payload_json, '$.kind') != 'progress:set'
+         WHERE CASE
+            -- A stored row whose payload is not an object can never answer the
+            -- progress comparison (malformed JSON raises inside json_extract,
+            -- and scalar JSON makes every term NULL), which would throw on or
+            -- silently swallow the fresh intent. Either way it is superseded.
+            WHEN NOT json_valid(sync_outbox.payload_json)
+              OR json_type(sync_outbox.payload_json) != 'object' THEN 1
+            ELSE json_extract(excluded.payload_json, '$.kind') != 'progress:set'
             OR json_extract(sync_outbox.payload_json, '$.kind') != 'progress:set'
             OR json_extract(excluded.payload_json, '$.progress')
                  > json_extract(sync_outbox.payload_json, '$.progress')
@@ -147,7 +156,8 @@ export class SyncOutboxRepository {
                 = json_extract(sync_outbox.payload_json, '$.progress')
               AND json_extract(excluded.payload_json, '$.status') = 'completed'
               AND json_extract(sync_outbox.payload_json, '$.status') != 'completed'
-            )`,
+            )
+         END`,
       )
       .run(
         crypto.randomUUID(),
@@ -293,23 +303,22 @@ export class SyncOutboxRepository {
     readonly now?: Date;
   }): SyncOutboxMutationResult {
     const now = input.now ?? new Date();
-    const apply = this.db.transaction(
-      (): SyncOutboxMutationResult =>
-        this.transition(
-          input.item,
-          `state = 'pending',
+    const apply = this.db.transaction((): SyncOutboxMutationResult =>
+      this.transition(
+        input.item,
+        `state = 'pending',
          claim_token = NULL,
          claimed_at = NULL,
          attempts = MAX(attempts - 1, 0),
          next_attempt_at = ?,
          last_error_code = ?,
          updated_at = ?`,
-          [
-            input.notBefore.toISOString(),
-            clamp(input.errorCode, MAX_ERROR_CODE_LENGTH),
-            now.toISOString(),
-          ],
-        ),
+        [
+          input.notBefore.toISOString(),
+          clamp(input.errorCode, MAX_ERROR_CODE_LENGTH),
+          now.toISOString(),
+        ],
+      ),
     );
     return apply();
   }
@@ -500,12 +509,26 @@ function clampOptional(value: string | undefined, max: number): string | null {
   return value === undefined ? null : clamp(value, max);
 }
 
+// A stored payload that no longer parses is unparseable intent. Mapping it to
+// `undefined` lets `deliver` dead-letter it through the normal path — throwing
+// here would roll back the claim transaction and wedge the whole queue behind
+// one poisoned row.
+function parsePayloadJson(json: string): JsonValue | undefined {
+  try {
+    // SAFETY: JSON.parse yields only JSON grammar shapes — object, array,
+    // scalar, null — which is exactly what JsonValue names.
+    return JSON.parse(json) as JsonValue;
+  } catch {
+    return undefined;
+  }
+}
+
 function mapRow(row: SyncOutboxRow): SyncOutboxItem {
   return {
     id: row.id,
     trackerId: row.tracker_id,
     dedupeKey: row.dedupe_key,
-    payload: JSON.parse(row.payload_json) as unknown,
+    payload: parsePayloadJson(row.payload_json),
     generation: row.generation,
     claimToken: row.claim_token ?? undefined,
     claimedAt: row.claimed_at ?? undefined,

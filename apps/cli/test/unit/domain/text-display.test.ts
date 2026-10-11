@@ -28,6 +28,17 @@ test("sanitizeTerminalText strips ANSI CSI and OSC sequences", () => {
   );
 });
 
+test("sanitizeTerminalText strips an OSC ended by the string terminator", () => {
+  expect(
+    sanitizeTerminalText(`x${ESC}]8;;https://evil.example${ESC}\\click${ESC}]8;;${ESC}\\y`),
+  ).toBe("xclicky");
+});
+
+test("sanitizeTerminalText handles many unterminated OSC introducers", () => {
+  const hostile = `${ESC}]`.repeat(20_000);
+  expect(sanitizeTerminalText(`a${hostile}b`)).toBe("ab");
+});
+
 test("sanitizeTerminalText strips C0/C1 controls, bidi marks, and BOM", () => {
   expect(sanitizeTerminalText("line1\nline2\r\nline3")).toBe("line1line2line3");
   expect(sanitizeTerminalText(`tab${BS}etween`)).toBe("tabetween");

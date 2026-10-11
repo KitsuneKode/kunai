@@ -69,7 +69,7 @@ test("failed compare-and-set leaves overlay open (no resolve, no close)", () => 
   const closeOverlay = mock(() => {});
   const outcome = resolveQueueRowPlaySelection(service, selected.id, resolve, closeOverlay);
 
-  expect(outcome).toBe("failed");
+  expect(outcome).toEqual({ status: "failed" });
   expect(resolve).not.toHaveBeenCalled();
   expect(closeOverlay).not.toHaveBeenCalled();
 
@@ -83,7 +83,13 @@ test("Enter path resolves bridge with claimed intent then closes overlay", () =>
 
   const outcome = resolveQueueRowPlaySelection(service, selected.id, resolve, closeOverlay);
 
-  expect(outcome).toBe("claimed");
+  expect(outcome.status).toBe("claimed");
+  if (outcome.status === "claimed") {
+    expect(outcome.launch).toMatchObject({
+      title: "selected",
+      intent: { queueEntryId: selected.id, absoluteEpisode: 13 },
+    });
+  }
   expect(resolve).toHaveBeenCalledTimes(1);
   expect(resolve.mock.calls[0]?.[0]).toMatchObject({
     title: "selected",

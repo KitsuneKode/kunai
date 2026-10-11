@@ -1,8 +1,6 @@
-// =============================================================================
 // Tracer Implementation
 //
 // Distributed tracing with spans.
-// =============================================================================
 
 import type { Tracer, TracerOptions, Span, Trace } from "./Tracer";
 

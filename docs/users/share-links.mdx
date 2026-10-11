@@ -77,16 +77,15 @@ kunai://download?...   # same query params; queues a download instead of playbac
 kunai://play?q=<query>&kind=...   # search fallback when no catalog id is known
 ```
 
-| Parameter | Meaning                                                                                      |
-| --------- | -------------------------------------------------------------------------------------------- |
-| `cat`     | Catalog anchor: `tmdb:`, `anilist:`, `mal:`, `imdb:`, or `youtube:` namespace + id             |
-| `q`       | Search query fallback (use instead of `cat` when no stable id)                                 |
+| Parameter | Meaning                                                                                                                                      |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cat`     | Catalog anchor: `tmdb:`, `anilist:`, `mal:`, `imdb:`, or `youtube:` namespace + id                                                           |
+| `q`       | Search query fallback (use instead of `cat` when no stable id)                                                                               |
 | `kind`    | `movie`, `series`, `anime`, or `video`. Optional, but write it: a link without it is read as `series` even when the namespace says otherwise |
-| `s` / `e` | Season and episode (1-based)                                                                 |
-| `t`       | Start offset in seconds, `1m23s`, or `1:23`                                                    |
-| `src`     | Optional provider hint                                                                       |
-| `sq`      | Optional quality hint                                                                        |
-
+| `s` / `e` | Season and episode (1-based)                                                                                                                 |
+| `t`       | Start offset in seconds, `1m23s`, or `1:23`                                                                                                  |
+| `src`     | Optional provider hint                                                                                                                       |
+| `sq`      | Optional quality hint                                                                                                                        |
 
 ## Examples
 

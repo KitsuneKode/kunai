@@ -23,8 +23,14 @@ function QueueRow({
   const innerWidth = Math.max(16, rowWidth - 5);
   const layout = computeMediaListRowLayout(innerWidth, { hasEpisode: true });
   const stateLabel =
-    row.state === "playing" ? "▶ playing" : row.state === "played" ? "played" : row.sourceLabel;
-  const stateColor = row.state === "playing" ? palette.ok : palette.muted;
+    row.state === "starting"
+      ? "starting"
+      : row.state === "next"
+        ? "up next"
+        : row.state === "played"
+          ? "played"
+          : row.sourceLabel;
+  const stateColor = row.state === "starting" ? palette.accent : palette.muted;
   return (
     <Box flexDirection="row">
       <Box width={5}>
@@ -40,7 +46,7 @@ function QueueRow({
             episodeCode: row.episodeLabel,
             statusLabel: stateLabel,
             statusColor: stateColor,
-            statusDim: row.state !== "playing",
+            statusDim: row.state !== "starting",
             layout,
           })}
         />

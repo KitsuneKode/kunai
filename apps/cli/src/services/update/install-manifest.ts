@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 
+import { writeAtomicText } from "@/infra/fs/atomic-write";
 import { getKunaiPaths } from "@kunai/storage";
 
 import { withActivationLock, type ActivationLockOptions } from "./native-installer/activation-lock";
@@ -438,10 +439,9 @@ function joinManifestPath(configDir: string): string {
 async function persistManifest(manifest: InstallManifest, configDir: string): Promise<void> {
   const path = joinManifestPath(configDir);
   await mkdir(configDir, { recursive: true });
-  // Atomic: temp file in the target dir + rename (CLAUDE.md fs guidance).
-  const tmp = `${path}.tmp-${process.pid}`;
-  await writeFile(tmp, `${JSON.stringify(manifest, null, 2)}\n`);
-  await rename(tmp, path);
+  // The shared atomic writer uses an O_EXCL+O_NOFOLLOW random temp — the old
+  // `${path}.tmp-${pid}` name was predictable and followed symlinks.
+  await writeAtomicText(path, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 function inspectCurrentSchema(

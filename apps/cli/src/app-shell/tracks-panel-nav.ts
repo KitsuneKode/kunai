@@ -1,10 +1,8 @@
-// =============================================================================
-// tracks-panel-nav.ts — pure nested-navigation reducer for the Tracks panel.
+// Pure nested-navigation reducer for the Tracks panel.
 //
 // Mirrors browse-focus-zone.ts. Two panes: "sections" (left, the category list)
 // and "options" (right, the focused section's rows). Indices are clamped against
 // a context-provided count; the reducer never reads the capability groups directly.
-// =============================================================================
 
 export type TracksNavPane = "sections" | "options";
 

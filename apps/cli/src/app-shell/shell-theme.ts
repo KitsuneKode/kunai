@@ -29,14 +29,16 @@ export const palette = {
   warn: tokens.warn, // caution · in-flight · aired-not-confirmed
   warnDim: tokens.warnDim,
   warnFill: tokens.warnFill,
-  danger: tokens.danger, // real, actionable error
+  danger: tokens.danger, // borders and art only: Lc 46 on the canvas is too dark to read as text
   dangerDim: tokens.dangerDim,
   dangerFill: tokens.dangerFill,
+  dangerText: tokens.dangerText, // real, actionable error, as text
   info: tokens.info, // neutral-positive signal · cool counterweight
   infoDim: tokens.infoDim,
   infoFill: tokens.infoFill,
-  milestone: tokens.milestone, // series-complete only
+  milestone: tokens.milestone, // series-complete glyph and fill; Lc 40 on the canvas, not for text
   milestoneDim: tokens.milestoneDim,
+  milestoneText: tokens.milestoneText, // series-complete, as text
 
   // ---- media-type hues (Stats surface only) ----
   typeAnime: tokens.typeAnime,
@@ -73,7 +75,7 @@ export function statusColor(tone: ShellStatus["tone"] = "neutral"): string {
     case "warning":
       return palette.warn;
     case "error":
-      return palette.danger;
+      return palette.dangerText;
     case "info":
       return palette.info;
     default:
@@ -186,7 +188,7 @@ export function semanticToneColor(tone: SemanticTone | undefined): string {
     case "warning":
       return palette.warn;
     case "error":
-      return palette.danger;
+      return palette.dangerText;
     default:
       return palette.muted;
   }

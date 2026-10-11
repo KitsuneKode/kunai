@@ -1,4 +1,3 @@
-// =============================================================================
 // SakuraPetal.tsx — the ❀ signature motif, animated once and reused everywhere
 //
 // One primitive, three modes:
@@ -6,14 +5,14 @@
 //   • placeholder — a calm static ❀ in `dim` for empty poster/thumb slots
 //   • complete    — settles to mint `ok`
 //
-// Honors reduced-motion (static ❀) via KUNAI_REDUCED_MOTION / NO_MOTION, and a
-// viewport-pause `active` prop so off-screen petals stop reconciling. The glyph
-// stays a single cell so terminals never see width jitter mid-cycle.
-// =============================================================================
+// Honors reduced-motion (static ❀, see motion-policy.ts), and a viewport-pause
+// `active` prop so off-screen petals stop reconciling. The glyph stays a single
+// cell so terminals never see width jitter mid-cycle.
 
 import { Text } from "ink";
 import React from "react";
 
+import { reducedMotionEnabled } from "../motion-policy";
 import { palette } from "../shell-theme";
 
 export type SakuraPetalMode = "loading" | "placeholder" | "complete";
@@ -23,11 +22,6 @@ export const BLOOM_FRAMES = ["❀", "✿", "❁", "✾"] as const;
 export const STATIC_PETAL = "❀";
 
 const FRAME_INTERVAL_MS = 150;
-
-/** Reduced-motion gate honored by every Sakura animation (petal + loader). */
-export function reducedMotionEnabled(): boolean {
-  return Boolean(process.env.KUNAI_REDUCED_MOTION || process.env.NO_MOTION);
-}
 
 /**
  * Monotonic frame tick shared by the loader's shimmer/drift. `active` pauses the

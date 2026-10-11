@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-27"
+lastReviewed: "2026-10-07"
 ---
 
 # Cloudflare Handling: What Actually Shipped 🛡️
@@ -40,6 +40,11 @@ browser's.
   ranks families chrome → firefox → safari → edge and newest version inside
   each family, then falls back to plain `curl`. No hardcoded binary list — the
   previous allowlist rotted the moment upstream renamed a wrapper.
+- On Windows, when PATH yields no usable build, it also searches Kunai's
+  managed `<data dir>\deps\curl-impersonate` (one level of nesting allowed),
+  where `install.ps1` provisions the pinned archive. The installer puts that
+  dir on the user PATH too, but a terminal opened before the install — and
+  any install that never ran the helper step — does not see it.
 - `curlCipherArgs()` applies ani-cli's cipher list **only on Darwin and only
   for plain curl**: Windows `curl.exe` links Schannel and rejects OpenSSL
   cipher names outright, and an impersonate build already carries the

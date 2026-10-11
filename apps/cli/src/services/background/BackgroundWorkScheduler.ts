@@ -64,12 +64,15 @@ export class BackgroundWorkScheduler {
     } = {},
   ) {}
 
-  /** Returns false (and drops the item) once shutdown has begun. */
+  /**
+   * Returns false (and drops the item) once shutdown has begun, or when a full
+   * queue of strictly-higher-priority work sheds the item instead of evicting.
+   */
   enqueue(item: BackgroundWorkItem): boolean {
     if (this.shuttingDown) return false;
     const maxQueued = Math.max(1, Math.trunc(this.options.maxQueued ?? 500));
     if (!this.queue.has(item.id) && this.queue.size >= maxQueued) {
-      this.evictLowestPriority(item);
+      if (!this.evictLowestPriority(item)) return false;
     }
     this.queue.set(item.id, item);
     this.sortedSnapshot = undefined;
@@ -242,7 +245,7 @@ export class BackgroundWorkScheduler {
    * never starve playback-critical or user-requested items. The drop is
    * recorded — silent shedding would be the house silent-no-op failure.
    */
-  private evictLowestPriority(incoming: BackgroundWorkItem): void {
+  private evictLowestPriority(incoming: BackgroundWorkItem): boolean {
     let victim: BackgroundWorkItem | undefined;
     for (const item of this.queue.values()) {
       // Strictly-lower wins, so ties keep the earliest-inserted victim:
@@ -251,7 +254,24 @@ export class BackgroundWorkScheduler {
         victim = item;
       }
     }
-    if (!victim) return;
+    if (!victim) return true;
+    // A lower-priority newcomer must never displace higher-priority work —
+    // a maintenance burst would otherwise starve the lanes the bound exists
+    // to protect. The incoming item is the one that sheds instead.
+    if (LANE_PRIORITY[incoming.lane] < LANE_PRIORITY[victim.lane]) {
+      this.options.diagnostics?.record({
+        level: "debug",
+        category: "runtime",
+        operation: "background.work.shed",
+        message: "Background work queue full; shed incoming lower-priority item",
+        context: {
+          shedId: incoming.id,
+          shedLane: incoming.lane,
+          keptLane: victim.lane,
+        },
+      });
+      return false;
+    }
     this.queue.delete(victim.id);
     this.options.diagnostics?.record({
       level: "debug",
@@ -265,6 +285,7 @@ export class BackgroundWorkScheduler {
         admittedLane: incoming.lane,
       },
     });
+    return true;
   }
 }
 

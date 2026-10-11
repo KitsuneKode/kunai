@@ -26,6 +26,10 @@ export default async function AnalyticsPage() {
     fetchDocsAnalyticsSeries(),
     fetchNpmDownloads(),
   ]);
+  // This async server route samples the request clock once per ISR generation.
+  // Freezing it at module load would hide an ingest outage behind a fresh badge.
+  // oxlint-disable-next-line react/purity
+  const nowMs = Date.now();
 
   return (
     /*
@@ -37,17 +41,16 @@ export default async function AnalyticsPage() {
     */
     <main className="kunai-home @container/analytics relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-14 md:px-10">
       <header className="border-border flex flex-col gap-4 border-b pb-8">
-        <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
+        <p className="text-muted-foreground text-xs font-medium tracking-[0.16em] uppercase">
           Trust surface
         </p>
         <h1 className="kunai-display-title max-w-none text-4xl md:text-5xl">Usage analytics</h1>
         <p className="text-muted-foreground max-w-3xl text-base leading-7 text-pretty">
-          A quiet public pulse for installs running Kunai, not a growth dashboard. Analytics is
-          optional; enable or disable it in Settings.
+          A quiet public pulse for installs running Kunai, not a growth dashboard.
         </p>
       </header>
 
-      <UsagePanel metrics={metrics} series={series} />
+      <UsagePanel metrics={metrics} series={series} nowMs={nowMs} />
       <TrendSection series={series} />
       <NpmSection series={npm} />
       <BreakdownSection metrics={metrics} />

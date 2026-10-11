@@ -14,7 +14,9 @@ describe("runShellWorkflowFromOverlay", () => {
     let modalCount = 1;
     const container = {
       stateManager: {
-        getState: () => ({ activeModals: Array.from({ length: modalCount }) }),
+        getState: () => ({
+          activeModals: Array.from({ length: modalCount }, () => ({ type: "settings" })),
+        }),
         dispatch: (event: { type: string }) => {
           dispatches.push(event.type);
           if (event.type === "CLOSE_TOP_OVERLAY") modalCount = 0;

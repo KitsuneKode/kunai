@@ -4,6 +4,7 @@ import { ChartInstalls } from "@/components/analytics/chart-installs";
 import { ShareSection } from "@/components/analytics/share-section";
 import { TrendTable } from "@/components/analytics/trend-table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import type { ReleaseMarker } from "@/lib/analytics-derive";
 import type { DocsAnalyticsSeries } from "@/lib/analytics-series";
 import * as React from "react";
 
@@ -19,7 +20,13 @@ import * as React from "react";
  *
  * `hoveredDay` is one string of state; no debounce needed.
  */
-export function TrendSync({ series }: { readonly series: DocsAnalyticsSeries }) {
+export function TrendSync({
+  series,
+  releases,
+}: {
+  readonly series: DocsAnalyticsSeries;
+  readonly releases: readonly ReleaseMarker[];
+}) {
   const [hoveredDay, setHoveredDay] = React.useState<string | null>(null);
 
   return (
@@ -28,6 +35,7 @@ export function TrendSync({ series }: { readonly series: DocsAnalyticsSeries }) 
         points={series.points}
         from={series.from}
         to={series.to}
+        releases={releases}
         onDayHover={setHoveredDay}
       />
 

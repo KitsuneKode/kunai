@@ -1,4 +1,4 @@
-import type { CompanionPose } from "./companion-policy";
+import type { CompanionMode, CompanionPose } from "./companion-policy";
 
 /**
  * What the session is doing, in the only terms the companion cares about.
@@ -30,6 +30,8 @@ export type CompanionMoment =
   | "watching"
   /** Something failed and the surface has nothing else to show. */
   | "trouble"
+  /** A bare list surface — no results came back, or nothing was asked yet. */
+  | "empty"
   /** On the way out. */
   | "farewell";
 
@@ -49,6 +51,7 @@ const POSE_BY_MOMENT = {
   handoff: "go",
   watching: "watch",
   trouble: "oops",
+  empty: "idle",
   farewell: "nap",
 } as const satisfies Record<CompanionMoment, CompanionPose>;
 
@@ -90,4 +93,35 @@ export function momentForLoading({
   // `loading` is the generic case and says nothing about what is happening, so
   // there is no pose that would mean anything on it.
   return null;
+}
+
+/**
+ * The moment a bare browse surface is in, or `null` for no companion.
+ *
+ * Same rule as `momentForLoading` — she fills the empty frame, she does not
+ * crowd a full one — plus two narrower gates this surface needs:
+ *
+ * - Glyph terminals already hear her here: the `StateBlock` voice line carries
+ *   a 🦊 of its own. A second lone glyph under it reads as a stray emoji, so
+ *   only the real illustration earns the frame.
+ * - Ultra-compact viewports have no spare rows for her; the voice line still
+ *   reaches them.
+ */
+export function momentForBrowseEmpty({
+  kind,
+  hasArtwork,
+  ultraCompact,
+  mode,
+}: {
+  readonly kind: "empty" | "error";
+  readonly hasArtwork: boolean;
+  readonly ultraCompact: boolean;
+  readonly mode: CompanionMode;
+}): CompanionMoment | null {
+  if (mode !== "graphics" || ultraCompact) return null;
+  // Failure leads, same as loading: an error surface is telling someone
+  // something went wrong, and that outranks an empty frame.
+  if (kind === "error") return "trouble";
+  if (hasArtwork) return null;
+  return "empty";
 }

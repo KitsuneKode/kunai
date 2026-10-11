@@ -1,12 +1,10 @@
-// =============================================================================
-// enrich-selected-title.ts — search-select seam for catalog identity parity.
+// Search-select seam for catalog identity parity.
 //
 // After the user picks a search result (either lane), fill the cross-catalog id
 // bag via CatalogIdentityService so the episode picker, provider eligibility,
 // history unit, AniSkip (MAL), and IntroDB (TMDB) all see the same identity.
 // Cached + bounded (ARM client timeout ≈4s); failures degrade to the original
 // title untouched.
-// =============================================================================
 
 import { isAnimeContent } from "@/domain/media/content-kind";
 import type { ShellMode, TitleInfo } from "@/domain/types";

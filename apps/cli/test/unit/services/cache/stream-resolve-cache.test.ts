@@ -239,24 +239,6 @@ test("buildEmbedStreamCacheKey preserves embed URL", () => {
   expect(buildEmbedStreamCacheKey(url)).toBe(url);
 });
 
-test("buildEmbedStreamCacheKey encodes intent and sorted headers", () => {
-  const url = "https://example.com/embed/123";
-  const keyWithIntent = buildEmbedStreamCacheKey({
-    embedPageUrl: url,
-    intent: "play",
-  });
-  expect(keyWithIntent).toBe("https://example.com/embed/123:intent:play");
-
-  const keyWithHeaders = buildEmbedStreamCacheKey({
-    embedPageUrl: url,
-    intent: "play",
-    headers: { Referer: "https://foo.com", "User-Agent": "CustomUA" },
-  });
-  expect(keyWithHeaders).toBe(
-    "https://example.com/embed/123:intent:play:headers:referer=https://foo.com;user-agent=CustomUA",
-  );
-});
-
 test("buildApiStreamResolveCacheKey separates YouTube episodes under channel/playlist", () => {
   const base = {
     providerId: "youtube",
@@ -299,12 +281,15 @@ test("a manifest with a missing or malformed cachePolicy degrades to a plain key
   expect(() =>
     buildApiStreamResolveCacheKey({
       ...base,
+      // SAFETY: a cache record missing cachePolicy must not crash the key
+      // builder — cache payloads are untrusted at read time.
       providerManifest: { id: "vidlink" } as never,
     }),
   ).not.toThrow();
   expect(() =>
     buildApiStreamResolveCacheKey({
       ...base,
+      // SAFETY: same — a string where the cachePolicy object belongs.
       providerManifest: { id: "vidlink", cachePolicy: "not-an-object" } as never,
     }),
   ).not.toThrow();

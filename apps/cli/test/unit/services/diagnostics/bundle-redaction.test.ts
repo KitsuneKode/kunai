@@ -129,6 +129,29 @@ describe("bundle-redaction", () => {
     expect(serialized).not.toContain(HOST);
     expect(serialized).toContain("[redacted-host]");
   });
+
+  test("redacts single-label machine names but leaves media tokens and words alone", () => {
+    // LAN hosts like `nas-01` carry no dot, so the dotted-only predicate leaked
+    // them through `label` fields. A bare word is ambiguous — the machine cue
+    // is a digit AND a hyphen. `pi4`-style names stay readable on purpose:
+    // they cannot be told apart from `720p`/`x264` media tokens.
+    const redacted = redactBundleValue({
+      sourceGroups: [
+        { id: "a", label: "nas-01", hints: [], state: "ready" },
+        { id: "b", label: "htpc-livingroom-2", hints: [], state: "ready" },
+        { id: "c", label: "movies", hints: [], state: "ready" },
+        { id: "d", label: "720p", hints: [], state: "ready" },
+        { id: "e", label: "web-dl", hints: [], state: "ready" },
+      ],
+    });
+
+    const serialized = JSON.stringify(redacted);
+    expect(serialized).not.toContain("nas-01");
+    expect(serialized).not.toContain("htpc-livingroom-2");
+    expect(serialized).toContain("movies");
+    expect(serialized).toContain("720p");
+    expect(serialized).toContain("web-dl");
+  });
 });
 
 describe("support-bundle privacy acceptance", () => {

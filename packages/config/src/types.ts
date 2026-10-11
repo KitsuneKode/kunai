@@ -91,6 +91,13 @@ export interface KitsuneConfig {
   skipPreview: boolean;
   skipCredits: boolean;
   footerHints: "detailed" | "minimal";
+  /**
+   * Kanna, the companion fox, on empty/error surfaces and the exit screen.
+   * "auto" resolves from env and terminal capability; "off" hides her until
+   * `/pet` or this setting brings her back. `KUNAI_PET=off` still wins — an
+   * automation off cannot be overridden from inside the app.
+   */
+  companionPet: "auto" | "off";
   quitNearEndBehavior: QuitNearEndBehavior;
   continueSourcePreference: ContinueSourcePreference;
   quitNearEndThresholdMode: QuitNearEndThresholdMode;

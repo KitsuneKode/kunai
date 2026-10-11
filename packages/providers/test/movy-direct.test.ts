@@ -46,14 +46,14 @@ const MOVIE_INPUT: ProviderResolveInput = {
 };
 
 function contextReturning(
-  handler: (url: string) => Response | Promise<Response>,
+  handler: (url: string, init?: RequestInit) => Response | Promise<Response>,
 ): ProviderRuntimeContext {
   return {
     ...TEST_CONTEXT,
     // SAFETY: test stub — supplies only the fetch surface this module calls.
     fetch: {
       runtime: "direct-http",
-      fetch: async (url: string | URL | Request) => handler(String(url)),
+      fetch: async (url: string | URL | Request, init?: RequestInit) => handler(String(url), init),
     } as ProviderRuntimeContext["fetch"],
   };
 }
@@ -65,8 +65,10 @@ describe("decryptMovyPayload", () => {
     // a shape surprise fails the expectations, never ships silently.
     const parsed = JSON.parse(plain) as { sources?: { url?: string }[] };
     expect(Array.isArray(parsed.sources)).toBe(true);
-    expect(parsed.sources?.length).toBeGreaterThan(0);
-    expect(parsed.sources?.[0]?.url).toMatch(/^https?:\/\//);
+    expect(parsed.sources?.length).toBe(1);
+    expect(parsed.sources?.[0]?.url).toBe(
+      "https://mbph.stillhaven.top/mp4/3mRCP1BX_cl-Yj_NcKYNQdKQuuqi6OW44Lyb7BXnLJUbeGfmEBhOkJ2Ext9sqv-Mt2ePyC6PuF49m0f1pCxgQlO_XCNVwu1GKF9oSV2VephzPXk9zBuVBOyypRCtJldYv866Hif8KOLrtXdUd6wo0tDGmsm3cdpdce6jawy6Gpj2z3A95OyXZkyPmRp0gkmHQ1BDZ1dhU5JXdjjUo9EdA-t-GA9l7R3pfZw3zOidE5I9Ey_Ecn3CiYvh432bBC0v",
+    );
   });
 
   test("rejects a wrong seed via the mvm1 magic check", () => {
@@ -78,6 +80,16 @@ describe("decryptMovyPayload", () => {
   test("rejects a wrong mediaId via the mvm1 magic check", () => {
     expect(() => decryptMovyPayload(FIXTURE.body, FIXTURE.seed, 999)).toThrow(MovyDecryptError);
   });
+
+  test("decrypt is deterministic for the pinned seed vector", () => {
+    // Rotation canary: the same (ciphertext, seed, mediaId) must always decode
+    // to the same bytes — a drifting keystream fails here in CI, not in mpv.
+    // Wire protocol: `.docs/provider-dossiers/movy.md` ("STREAMCRYPTO wire protocol").
+    const first = decryptMovyPayload(FIXTURE.body, FIXTURE.seed, FIXTURE.mediaId);
+    expect(decryptMovyPayload(FIXTURE.body, FIXTURE.seed, FIXTURE.mediaId)).toBe(first);
+    // The `mvm1` magic prefix is stripped: the plaintext is bare JSON.
+    expect(first.startsWith("{")).toBe(true);
+  });
 });
 
 afterEach(() => {
@@ -87,6 +99,28 @@ afterEach(() => {
 });
 
 describe("resolveMovyDirect", () => {
+  test.each(["refused", "cancelled"])(
+    "a %s selected CDN never reports provider success",
+    async (outcome) => {
+      const controller = new AbortController();
+      const ctx = {
+        ...contextReturning((url, init) => {
+          if (url.includes("/seed"))
+            return new Response(JSON.stringify({ seed: FIXTURE.seed, ttlMs: 30000 }));
+          if (url.includes("/denver/sources")) return new Response(FIXTURE.body);
+          if (outcome === "cancelled" && init?.redirect === "manual") controller.abort();
+          return new Response("fixture refusal", { status: 403 });
+        }),
+        signal: controller.signal,
+      };
+      const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+      expect(result.status).toBe("exhausted");
+      if (outcome === "cancelled")
+        expect(result.failures.some((failure) => failure.code === "cancelled")).toBe(true);
+      expect(result.trace.events?.some((event) => event.type === "provider:success")).toBe(false);
+    },
+  );
+
   test("rejects non-movie/series titles", async () => {
     const result = await movyProviderModule.resolve(
       { ...MOVIE_INPUT, mediaKind: "anime" },

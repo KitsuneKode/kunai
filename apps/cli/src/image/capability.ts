@@ -89,6 +89,9 @@ export function isKittyCompatible(env: NodeJS.ProcessEnv = process.env): boolean
  */
 export function isMultiplexed(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env.TMUX || env.STY) return true;
+  // Zellij sets no TERM marker — it leaves `xterm-256color` and swallows
+  // graphics escapes, so only its own env vars reveal it.
+  if (env.ZELLIJ || env.ZELLIJ_SESSION_NAME) return true;
   return /^(?:screen|tmux)(?:-|$)/i.test(env.TERM ?? "");
 }
 
@@ -153,7 +156,12 @@ function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
     // Multiplexer detection feeds the result, so it has to feed the key too.
     env.TMUX ?? "",
     env.STY ?? "",
+    env.ZELLIJ ?? "",
+    env.ZELLIJ_SESSION_NAME ?? "",
     env.TERM ?? "",
+    // The auto-path treats NO_COLOR like TERM=dumb — omitting it would serve
+    // a pre-NO_COLOR result to an env that should get none.
+    env.NO_COLOR ?? "",
   ]);
 }
 
@@ -168,6 +176,14 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
 
   const terminal = detectTerminal(env);
   const override = normalizeProtocol(env.KUNAI_IMAGE_PROTOCOL);
+
+  // A dumb terminal or an explicit no-colour request cannot render even the
+  // half-block path — it is ANSI colour markup like everything else. Explicit
+  // KUNAI_IMAGE_PROTOCOL overrides still win: the user asked for that
+  // protocol specifically.
+  if (override === "auto" && (env.TERM === "dumb" || env.NO_COLOR !== undefined)) {
+    return noneCapability(terminal, "terminal reports no colour support");
+  }
 
   if (override === "invalid") {
     debugImage(`Invalid KUNAI_IMAGE_PROTOCOL value: ${env.KUNAI_IMAGE_PROTOCOL ?? ""}`);
@@ -253,7 +269,14 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   // an unrecognised terminal (foot, contour, mlterm, xterm -ti vt340) does sixel
   // at all — the name heuristics below can never learn either.
   const probe = getProbedGraphicsSupport();
-  if (probe?.kittyGraphics) {
+  // Answering a=q is necessary but not sufficient: kunai places images with
+  // Unicode placeholders, which WezTerm's opt-in kitty mode, Konsole, and
+  // iTerm2's partial kitty support do not implement. Claiming kitty-native
+  // there demoted those terminals to half-block — *below* the sixel or iterm
+  // protocol they actually speak — so named non-placeholder terminals fall
+  // through to their real best below. An unknown terminal keeps kitty: the
+  // probe is the only evidence and kitty-over-SSH depends on it.
+  if (probe?.kittyGraphics && terminal === "unknown") {
     return buildCapability({
       terminal,
       protocol: "kitty",

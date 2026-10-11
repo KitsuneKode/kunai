@@ -1,3 +1,4 @@
+import { sanitizeTerminalText } from "@/domain/text-display";
 import type {
   PlaybackInventoryOptionState,
   PlaybackSourceInventoryView,
@@ -365,7 +366,15 @@ function orderTrackCapabilityGroups(
     groups.push({
       section,
       title: SECTION_TITLES[section],
-      rows: entry.rows,
+      // Labels/details/reasons carry stream metadata (mpv native labels, source
+      // names) — sanitize display fields; `value` stays raw, it is the identity
+      // a selection applies.
+      rows: entry.rows.map((row) => ({
+        ...row,
+        label: sanitizeTerminalText(row.label),
+        reason: row.reason !== undefined ? sanitizeTerminalText(row.reason) : undefined,
+        detail: row.detail !== undefined ? sanitizeTerminalText(row.detail) : undefined,
+      })),
       selectable: entry.rows.some((row) => row.enabled),
       emptyReason: entry.emptyReason,
     });
