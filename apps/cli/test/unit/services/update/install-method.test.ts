@@ -287,3 +287,101 @@ describe("install method detection", () => {
     expect(updateGuidanceForInstallMethod(posix)).toContain("kunai upgrade");
   });
 });
+
+describe("package-manager-owned binary detection", () => {
+  const binaryRun = {
+    cwd: "/home/user",
+    entrypoint: "/$bunfs/root/main.js",
+    packagedBinary: true as const,
+    fileExists: () => false,
+  };
+
+  test("detects Homebrew Cellar installs across prefixes", () => {
+    for (const [execPath, platform] of [
+      ["/opt/homebrew/Cellar/kunai/0.3.0/bin/kunai", "darwin"],
+      ["/usr/local/Cellar/kunai/0.3.0/bin/kunai", "darwin"],
+      ["/home/linuxbrew/.linuxbrew/Cellar/kunai/0.3.0/bin/kunai", "linux"],
+    ] as const) {
+      expect(detectInstallMethod({ ...binaryRun, execPath, platform }).kind).toBe("homebrew");
+    }
+  });
+
+  test("a different Cellar package is not a Homebrew kunai", () => {
+    expect(
+      detectInstallMethod({
+        ...binaryRun,
+        execPath: "/opt/homebrew/Cellar/ffmpeg/7.1/bin/ffmpeg",
+        platform: "darwin",
+      }).kind,
+    ).toBe("binary");
+  });
+
+  test("detects Scoop installs on Windows app paths", () => {
+    expect(
+      detectInstallMethod({
+        cwd: "C:\\Users\\k",
+        entrypoint: "B:\\~BUN\\root\\main.js",
+        packagedBinary: true,
+        execPath: "C:\\Users\\k\\scoop\\apps\\kunai\\current\\kunai.exe",
+        platform: "win32",
+      }).kind,
+    ).toBe("scoop");
+    // POSIX-normalized scoop paths (msys/git-bash view) match too.
+    expect(
+      detectInstallMethod({
+        ...binaryRun,
+        execPath: "/c/Users/k/scoop/apps/kunai/current/kunai.exe",
+        platform: "win32",
+      }).kind,
+    ).toBe("scoop");
+  });
+
+  test("detects distro /usr/bin/kunai as a system package on Linux only", () => {
+    expect(
+      detectInstallMethod({
+        ...binaryRun,
+        execPath: "/usr/bin/kunai",
+        platform: "linux",
+      }).kind,
+    ).toBe("system-package");
+    // A POSIX-looking path on macOS/Windows says nothing about a package manager.
+    expect(
+      detectInstallMethod({
+        ...binaryRun,
+        execPath: "/usr/bin/kunai",
+        platform: "darwin",
+      }).kind,
+    ).toBe("binary");
+    expect(
+      detectInstallMethod({
+        cwd: "C:\\Users\\k",
+        entrypoint: "B:\\~BUN\\root\\main.js",
+        packagedBinary: true,
+        execPath: "C:\\usr\\bin\\kunai.exe",
+        platform: "win32",
+      }).kind,
+    ).toBe("binary");
+  });
+
+  test("a flat self-managed binary still detects as binary", () => {
+    expect(
+      detectInstallMethod({
+        ...binaryRun,
+        execPath: "/home/user/.local/bin/kunai",
+        platform: "linux",
+      }).kind,
+    ).toBe("binary");
+  });
+
+  test("guidance names the owning package manager", () => {
+    expect(updateGuidanceForInstallMethod({ kind: "homebrew", label: "Homebrew" })).toContain(
+      "brew upgrade kunai",
+    );
+    expect(updateGuidanceForInstallMethod({ kind: "scoop", label: "Scoop" })).toContain(
+      "scoop update kunai",
+    );
+    expect(
+      updateGuidanceForInstallMethod({ kind: "system-package", label: "System package" }),
+    ).toContain("package manager");
+  });
+});

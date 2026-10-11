@@ -248,12 +248,14 @@ export function renderSrcinfo(input: AurRenderInput): string {
 // ---------------------------------------------------------------------------
 // CLI
 
-function parseArgs(argv: readonly string[]): {
-  version: string;
-  sumsPath: string;
-  licensePath?: string;
-  outDir: string;
-} {
+export type RenderCliArgs = {
+  readonly version: string;
+  readonly sumsPath: string;
+  readonly licensePath?: string;
+  readonly outDir: string;
+};
+
+function parseArgs(argv: readonly string[]): RenderCliArgs {
   const args: Record<string, string> = {};
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i];
@@ -287,7 +289,7 @@ function main(): void {
     : "SKIP";
 
   const aurInput: AurRenderInput = { channel, sums, licenseSha256 };
-  const files: Record<string, string> = {
+  const files = {
     "Formula/kunai.rb": renderHomebrewFormula(channel, sums),
     "bucket/kunai.json": renderScoopManifest(channel, sums),
     "aur/kunai-bin/PKGBUILD": renderPkgbuild(aurInput),

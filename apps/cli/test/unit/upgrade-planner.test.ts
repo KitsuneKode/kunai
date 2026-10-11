@@ -79,3 +79,21 @@ test("older latest than current is a no-op (no downgrade)", () => {
   });
   expect(p.kind).toBe("up-to-date");
 });
+
+test("homebrew channel plans manual guidance, never a self-replace", () => {
+  const p = planUpgrade({ ...base, channel: "homebrew", os: "darwin", arch: "arm64" });
+  expect(p.kind).toBe("manual");
+  if (p.kind === "manual") expect(p.message).toContain("brew upgrade kunai");
+});
+
+test("scoop channel plans manual guidance, never a self-replace", () => {
+  const p = planUpgrade({ ...base, channel: "scoop", os: "windows", arch: "x64" });
+  expect(p.kind).toBe("manual");
+  if (p.kind === "manual") expect(p.message).toContain("scoop update kunai");
+});
+
+test("system-package channel plans manual guidance, never a self-replace", () => {
+  const p = planUpgrade({ ...base, channel: "system-package", os: "linux", arch: "x64" });
+  expect(p.kind).toBe("manual");
+  if (p.kind === "manual") expect(p.message).toContain("package manager");
+});
