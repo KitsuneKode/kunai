@@ -366,8 +366,7 @@ export function fetchGuardedStreamTarget(options: {
     init: { ...options.init, signal: options.signal },
     remaining: () => 1, // the caller's signal owns the deadline
     parentSignal: options.signal,
-    resolveNamesFor:
-      options.resolvesLocally ?? (() => isGuardedPlatformFetch(options.fetchImpl)),
+    resolveNamesFor: options.resolvesLocally ?? (() => isGuardedPlatformFetch(options.fetchImpl)),
   });
 }
 
@@ -385,8 +384,7 @@ export async function probeStreamReachability(
   // Compare against the captured platform fetch, not `input.fetchImpl ===
   // undefined`: defaulting to a stubbed `globalThis.fetch` used to keep DNS
   // on and treat documentation hosts as blocked-target.
-  const resolveNamesFor =
-    input.resolvesLocally ?? (() => isGuardedPlatformFetch(fetchImpl));
+  const resolveNamesFor = input.resolvesLocally ?? (() => isGuardedPlatformFetch(fetchImpl));
 
   if (isHlsPlaylistUrl(input.url)) {
     return probeHlsManifest(
