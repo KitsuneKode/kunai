@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-07"
+lastReviewed: "2026-10-11"
 ---
 
 # Feature Map
@@ -125,11 +125,12 @@ Do not reuse these nouns for anything else.
 | Feature                               | Owned by                                                                                        | Docs                                                                                                             |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `/diagnostics`, `/export-diagnostics` | `apps/cli/src/services/diagnostics/*`, `app-shell/diagnostics/*`                                | [diagnostics-guide.md](./diagnostics-guide.md)                                                                   |
+| `kunai doctor`                        | `apps/cli/src/services/update/run-doctor.ts`, `native-installer/doctor.ts`                      | [debugging-map.md](./debugging-map.md)                                                                           |
 | Debug logging, tracing                | `apps/cli/src/logger.ts`, `infra/tracer/*`, `infra/diagnostics/*`                               | [diagnostics-guide.md](./diagnostics-guide.md)                                                                   |
 | Usage analytics (opt-in)              | `apps/cli/src/services/analytics/*`, `apps/cli/src/domain/analytics/*`, `apps/analytics-ingest` | [analytics-privacy-contract.md](./analytics-privacy-contract.md)                                                 |
 | Discord Rich Presence                 | `apps/cli/src/services/presence/*`                                                              | [presence-integrations.md](./presence-integrations.md)                                                           |
 | `kunai completion <shell>`            | `apps/cli/src/services/completion/*`                                                            | [repo-infrastructure.md](./repo-infrastructure.md)                                                               |
-| Update check                          | `apps/cli/src/services/update/*`                                                                | [release-reliability-gate.md](./release-reliability-gate.md)                                                     |
+| Update check                          | `apps/cli/src/services/update/*` (`version-display.ts` formats `--version`)                     | [release-reliability-gate.md](./release-reliability-gate.md)                                                     |
 | Installers, binaries, npm packages    | `install.sh`, `install.ps1`, `apps/cli/scripts/build*.ts`, `scripts/publish-npm-release.ts`     | [repo-infrastructure.md](./repo-infrastructure.md), [release-reliability-gate.md](./release-reliability-gate.md) |
 
 ## Cross-cutting plumbing

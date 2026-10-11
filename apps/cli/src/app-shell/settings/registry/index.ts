@@ -1,4 +1,5 @@
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
+import { appearanceSettingsRows } from "./appearance";
 import { discoverSettingsRows } from "./discover";
 import { generalSettingsRows } from "./general";
 import { languageSettingsRows } from "./language";
@@ -14,6 +15,7 @@ import { youtubeSettingsRows } from "./youtube";
 export function buildSettingsRegistry(ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
     ...generalSettingsRows(ctx),
+    ...appearanceSettingsRows(ctx),
     ...discoverSettingsRows(ctx),
     ...providerSettingsRows(ctx),
     ...relaySettingsRows(ctx),

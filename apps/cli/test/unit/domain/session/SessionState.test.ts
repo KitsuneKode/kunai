@@ -979,4 +979,27 @@ describe("root shell surface selection", () => {
       "root-overlay",
     );
   });
+
+  test("SET_EPISODE_REQUEST arms a one-shot pick that SELECT_TITLE cannot inherit", () => {
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    expect(state.episodeRequest).toBeNull();
+
+    state = reduceState(state, {
+      type: "SET_EPISODE_REQUEST",
+      episode: { season: 2, episode: 5 },
+    });
+    expect(state.episodeRequest).toEqual({ season: 2, episode: 5 });
+
+    // The request is bound to the title it was asked for — the next SELECT_TITLE
+    // clears it so `-e 5` can never leak into an unrelated pick.
+    state = reduceState(state, {
+      type: "SELECT_TITLE",
+      title: { id: "999", type: "series", name: "Next Title" },
+    });
+    expect(state.episodeRequest).toBeNull();
+  });
 });

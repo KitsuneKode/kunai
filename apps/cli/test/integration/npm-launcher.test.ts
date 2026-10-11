@@ -52,13 +52,37 @@ function targetIdForHost(): string {
 }
 
 /**
+ * True when `bin` is real Node, not Bun's `node` symlink.
+ *
+ * `bun run` / turbo put a `node` symlink to Bun on PATH. `require.resolve`
+ * of `@kitsunekode/kunai-<target>` then succeeds from Bun's package cache and
+ * the launcher spawns the real compiled binary instead of the vendor stand-in
+ * these tests install. The contract under test is "runs under plain Node".
+ */
+function isPlainNode(bin: string): boolean {
+  try {
+    const real = realpathSync(bin);
+    if (/(?:^|[/\\])bun(?:\.exe)?$/i.test(real)) return false;
+  } catch {
+    // Keep probing — a dangling symlink still is not Node.
+  }
+  const probe = Bun.spawnSync({
+    cmd: [bin, "-p", "process.versions.bun || ''"],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return probe.exitCode === 0 && probe.stdout.toString().trim() === "";
+}
+
+/**
  * These tests exist to prove the launcher runs under plain Node, so Node is a
  * prerequisite rather than something they can assert. Throwing in `beforeAll`
  * when it is absent reported an unnamed failure with no useful location on any
  * machine without Node; skipping says what is actually missing. CI installs
  * Node, so coverage there is unchanged.
  */
-const NODE_BIN = Bun.which("node");
+const NODE_CANDIDATE = Bun.which("node");
+const NODE_BIN = NODE_CANDIDATE && isPlainNode(NODE_CANDIDATE) ? NODE_CANDIDATE : null;
 const nodeTest = NODE_BIN ? test : test.skip;
 const WINDOWS_LAUNCHER_BINARY = process.env.KUNAI_NPM_LAUNCHER_BINARY;
 const windowsNativeLauncherTest =
@@ -197,7 +221,7 @@ function readManagedContext(fixtureLauncher: string, unrelated = "preserved") {
   };
 }
 
-nodeTest("launcher is plain Node ESM with a node shebang and no bun: imports", () => {
+test("launcher is plain Node ESM with a node shebang and no bun: imports", () => {
   const source = readFileSync(LAUNCHER_SOURCE, "utf8");
   expect(source.startsWith("#!/usr/bin/env node")).toBe(true);
   expect(/from\s+["']bun:|require\(["']bun:/.test(source)).toBe(false);
@@ -310,8 +334,8 @@ nodeTest("reports an actionable error when the platform binary is missing", () =
   removeTempDir(empty);
 });
 
-// Signal semantics are POSIX-only.
-const signalTest = process.platform === "win32" ? test.skip : test;
+// Signal semantics are POSIX-only, and still need a real Node on PATH.
+const signalTest = NODE_BIN && process.platform !== "win32" ? test : test.skip;
 
 signalTest("dies by the same signal as the child, giving 128+n", async () => {
   for (const [signal, expected] of [

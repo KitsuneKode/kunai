@@ -6,7 +6,7 @@ import { frameWidth, stripAnsi } from "../../support/rendered-width";
 for (const columns of [72, 80, 100, 140]) {
   test(`setup fits the padded app container at ${columns} columns`, () => {
     const frame = stripAnsi(setupFrameAt(0, columns));
-    expect(frame).toContain("setup 1⁄7");
+    expect(frame).toContain("setup 1⁄6");
     expect(frame).toContain("[enter]");
     expect(frameWidth(frame)).toBeLessThanOrEqual(columns);
     // An overflowing horizontal border wraps its remaining cells onto a

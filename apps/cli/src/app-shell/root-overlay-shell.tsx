@@ -974,6 +974,11 @@ export function RootOverlayShell({
   const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
     footerActions,
     commands,
+    // The settings surface owns `/` itself — its footer advertises it as
+    // search. Without disabling here, one keystroke opened the palette AND
+    // armed the settings filter (both handlers see commandMode=false on the
+    // same event), and closing the palette left a phantom focused search.
+    disabled: overlay.type === "settings",
     escapeAction: null,
     onResolve: resolveOverlayPaletteAction,
   });

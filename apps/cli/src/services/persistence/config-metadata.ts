@@ -55,6 +55,15 @@ export const CONFIG_METADATA = [
     envOverride: "KUNAI_PET",
   },
   {
+    key: "theme",
+    label: "Theme",
+    section: "general",
+    effect: "immediate",
+    privacy: "local",
+    editable: true,
+    envOverride: "KUNAI_THEME",
+  },
+  {
     key: "discoverShowOnStartup",
     label: "Recommendations on startup",
     section: "recommendations",
@@ -107,6 +116,15 @@ export const CONFIG_METADATA = [
     privacy: "local",
     editable: true,
     options: ["balanced", "fast", "quality-first"],
+  },
+  {
+    key: "prePlayConfirm",
+    label: "Confirm before play",
+    section: "playback",
+    effect: "immediate",
+    privacy: "local",
+    editable: true,
+    options: ["off", "when-choices", "always"],
   },
   {
     key: "downloadsEnabled",

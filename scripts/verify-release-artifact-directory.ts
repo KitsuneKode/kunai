@@ -77,7 +77,7 @@ export function smokeReleaseLinuxX64(directory: string, expectedVersion: string)
     );
   }
   const printed = versionOut.slice("kunai ".length).trim();
-  // Accept optional build/channel suffix: "0.2.6 (source (detected))"
+  // Accept optional build/channel suffix: "0.2.6 (binary)" / "0.2.6 (source)"
   if (printed !== expectedVersion && !printed.startsWith(`${expectedVersion} `)) {
     throw new Error(
       `[release-assets] kunai-linux-x64 --version expected ${expectedVersion}, got ${printed}`,
