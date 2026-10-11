@@ -139,10 +139,12 @@ describe("trend section wiring", () => {
 });
 
 describe("platform columns", () => {
-  const withOs = makePoints(3).map((point, i): SeriesPoint => ({
-    ...point,
-    byOs: i === 2 ? { linux: 6, darwin: 5, other: 2 } : { other: point.activeInstalls },
-  }));
+  const withOs = makePoints(3).map(
+    (point, i): SeriesPoint => ({
+      ...point,
+      byOs: i === 2 ? { linux: 6, darwin: 5, other: 2 } : { other: point.activeInstalls },
+    }),
+  );
 
   test("a named OS bucket earns its column; an under-floor day reads a dash", () => {
     const html = renderToStaticMarkup(<TrendTable points={withOs} />);

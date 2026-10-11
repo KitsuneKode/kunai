@@ -176,7 +176,10 @@ root configs). Locally, `bun run ci` runs the four blocking tasks plus the
 static: every live `.docs` doc declares `status`, an ISO `lastReviewed`, and the
 L3 banner. The second compares the change set against `origin/main` and fails
 when a doc's body moved but its `lastReviewed` did not — the field only means
-something if editing a doc forces you to answer for it. Set `lastReviewed` to
+something if editing a doc forces you to answer for it. Two same-day edits
+cannot each move the date, so an unchanged `lastReviewed` that already says
+today also counts as reconciled (the base-side reviewer already dated it).
+Set `lastReviewed` to
 the day you actually re-read the doc against the tree; for a mechanical sweep
 that cannot change meaning, re-run with `SKIP_DOC_FRESHNESS=1`. Both halves need
 history, which is why every `checkout` in the workflow pins `fetch-depth: 0`; on

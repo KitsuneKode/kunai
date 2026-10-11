@@ -51,6 +51,37 @@ const STATUS_VALUES = new Set(["current", "draft", "superseded"]);
 
 const DOC_PREFIX = ".docs/";
 const REVIEWED_LINE = /^[+-]lastReviewed:/m;
+const HEAD_REVIEWED = /^lastReviewed:\s*"?([0-9]{4}-[0-9]{2}-[0-9]{2})"?\s*$/m;
+
+/** UTC `YYYY-MM-DD`; injected at the call site so tests pin the day. */
+export function utcToday(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+/**
+ * True when a changed doc counts as reconciled for this change set.
+ *
+ * The patch moved `lastReviewed`, or the head value already says today — two
+ * same-day edits cannot each move the date, so the second one would otherwise
+ * fail a gate it already satisfies (e.g. two PRs touching the same doc the day
+ * the base branch last reconciled it).
+ */
+export function docIsReconciled(
+  patch: string | null,
+  headLastReviewed: string | undefined,
+  today: string,
+): boolean {
+  if (patch !== null && REVIEWED_LINE.test(patch)) return true;
+  return headLastReviewed === today;
+}
+
+function headLastReviewed(path: string): string | undefined {
+  try {
+    return HEAD_REVIEWED.exec(readFileSync(resolve(ROOT, path), "utf8"))?.[1];
+  } catch {
+    return undefined;
+  }
+}
 
 function git(...args: string[]): string | null {
   const proc = Bun.spawnSync(["git", ...args], { cwd: ROOT });
@@ -82,7 +113,7 @@ function freshnessBase(): string | null {
  * reconcile. Additions are included — a new doc states a review date it should
  * have actually earned.
  */
-function unreconciledSince(base: string): string[] {
+function unreconciledSince(base: string, today: string): string[] {
   const changed = git("diff", "--name-only", "--diff-filter=d", base, "HEAD", "--", ".docs");
   if (changed === null) return [];
 
@@ -91,16 +122,19 @@ function unreconciledSince(base: string): string[] {
     if (!path.startsWith(DOC_PREFIX) || !path.endsWith(".md")) continue;
     if (EXCLUDED_DIRS.some((dir) => path.startsWith(DOC_PREFIX + dir))) continue;
     const patch = git("diff", "-U0", base, "HEAD", "--", path);
-    if (patch !== null && !REVIEWED_LINE.test(patch)) result.push(path);
+    if (!docIsReconciled(patch, headLastReviewed(path), today)) result.push(path);
   }
   return result;
 }
 
-const files = [...new Bun.Glob("**/*.md").scanSync({ cwd: resolve(ROOT, ".docs") })]
-  .filter((path) => !EXCLUDED_DIRS.some((dir) => path.startsWith(dir)))
-  .sort();
+function liveDocs(): string[] {
+  return [...new Bun.Glob("**/*.md").scanSync({ cwd: resolve(ROOT, ".docs") })]
+    .filter((path) => !EXCLUDED_DIRS.some((dir) => path.startsWith(dir)))
+    .sort();
+}
 
-const problems: string[] = [];
+function checkStatic(files: readonly string[]): string[] {
+  const problems: string[] = [];
 
 for (const relative of files) {
   const path = `.docs/${relative}`;
@@ -134,21 +168,27 @@ for (const relative of files) {
   }
 }
 
-if (problems.length > 0) {
-  console.error("verify:doc-frontmatter — agent docs cannot state what they are:\n");
-  for (const problem of problems) console.error(`  ${problem}`);
-  console.error(
-    `\n${problems.length} problem(s). Every live .docs doc needs frontmatter ` +
-      `(status + lastReviewed) and the L3 banner under its H1.`,
-  );
-  process.exit(1);
+  return problems;
+}
+
+function reportStaticProblems(files: readonly string[]): void {
+  const problems = checkStatic(files);
+  if (problems.length > 0) {
+    console.error("verify:doc-frontmatter — agent docs cannot state what they are:\n");
+    for (const problem of problems) console.error(`  ${problem}`);
+    console.error(
+      `\n${problems.length} problem(s). Every live .docs doc needs frontmatter ` +
+        `(status + lastReviewed) and the L3 banner under its H1.`,
+    );
+    process.exit(1);
+  }
 }
 
 /**
  * The freshness half runs inside a function so `SKIP_DOC_FRESHNESS` is read at
  * call time, not module load — same contract as the other env reads here.
  */
-function checkFreshness(): void {
+function checkFreshness(files: readonly string[]): void {
   if (process.env.SKIP_DOC_FRESHNESS === "1") {
     console.log(
       `verify:doc-frontmatter — ${files.length} docs scanned, all declare status and ` +
@@ -166,7 +206,7 @@ function checkFreshness(): void {
     return;
   }
 
-  const unreconciled = unreconciledSince(base);
+  const unreconciled = unreconciledSince(base, utcToday());
   if (unreconciled.length > 0) {
     console.error("verify:doc-frontmatter — changed without being reconciled:\n");
     for (const path of unreconciled) console.error(`  ${path}`);
@@ -185,4 +225,12 @@ function checkFreshness(): void {
   );
 }
 
-checkFreshness();
+function main(): void {
+  const files = liveDocs();
+  reportStaticProblems(files);
+  checkFreshness(files);
+}
+
+if (import.meta.main) {
+  main();
+}
