@@ -523,12 +523,12 @@ describe("resumable npm publication orchestration", () => {
     );
     expect(launcherWrite).toBeGreaterThan(lastPlatformRead);
     // The slowest platform package needs three reads; that costs two waits for
-    // the whole set, not two per laggard. The launcher then waits on its own.
+    // the whole set, not two per laggard. The launcher then waits on its own —
+    // in this layout it needs two reads, so one wait.
     expect(events.filter((event) => event.startsWith("wait"))).toEqual([
       "wait 3000",
       "wait 6000",
       "wait 3000",
-      "wait 6000",
     ]);
     // A package that was visible on the first read is not read again.
     expect(reads.get(platforms[0]!.name)).toBe(1);
