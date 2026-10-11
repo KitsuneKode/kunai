@@ -29,6 +29,45 @@ const output: PlaybackResolveCoordinatorOutput = {
 };
 
 describe("PlaybackResolveWorkService", () => {
+  test("the final departing consumer forwards its reason to physical work", async () => {
+    const caller = new AbortController();
+    const reason = new DOMException("playback-loading-esc", "AbortError");
+    let physicalSignal: AbortSignal | undefined;
+    let finish!: (value: PlaybackResolveCoordinatorOutput) => void;
+    let complete!: () => void;
+    const completed = new Promise<void>((resolve) => {
+      complete = resolve;
+    });
+    const service = new PlaybackResolveWorkService(
+      {
+        resolve: async (input) => {
+          physicalSignal = input.signal;
+          return new Promise<PlaybackResolveCoordinatorOutput>((resolve) => {
+            finish = resolve;
+          });
+        },
+      },
+      { onCompletedLedger: complete },
+    );
+    const pending = service.resolve(
+      { ...baseInput(), signal: caller.signal },
+      {
+        intentKind: "playback",
+        budgetLane: "user-blocking",
+      },
+    );
+    const rejected = pending.catch((error: Error) => error);
+    try {
+      caller.abort(reason);
+      expect(await rejected).toMatchObject({ name: "AbortError" });
+      expect(physicalSignal?.aborted).toBe(true);
+      expect(physicalSignal?.reason).toBe(reason);
+    } finally {
+      finish(output);
+      await completed;
+    }
+  });
+
   test("joins exact prefetch and foreground playback onto one physical resolve", async () => {
     let calls = 0;
     let release!: (result: PlaybackResolveCoordinatorOutput) => void;

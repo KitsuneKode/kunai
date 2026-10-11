@@ -210,7 +210,7 @@ export class PlaybackResolveService {
     private readonly deps: {
       readonly engine: ProviderEngine;
       readonly cacheStore: CacheStore;
-      readonly providerHealth?: ProviderHealthRepository;
+      readonly providerHealth?: Pick<ProviderHealthRepository, "get" | "set">;
       readonly streamHealth?: StreamHealthChecker;
       readonly streamHealthService?: StreamHealthService;
       readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete"> &
@@ -228,6 +228,8 @@ export class PlaybackResolveService {
       /** Test seam for compressing the total-resolve deadline; production always
        *  takes the `resolveProviderTotalDeadlineMs` fallback below. */
       readonly resolveTotalDeadlineMs?: (priority: StartupPriority) => number;
+      /** Inject the deadline boundary so tests can fire it without real timers. */
+      readonly deadlineSignal?: typeof withTimeoutSignal;
       /** Crosswalk lookup for cross-lane episode maps (ARM tmdb-season). */
       readonly catalogCrosswalk?: Pick<CatalogCrosswalkRepository, "get">;
     },
@@ -307,7 +309,7 @@ export class PlaybackResolveService {
     // inventory health probes below — so callers see one bound, not a budget
     // that starts only once the provider engine runs.
     const startupPriority = input.startupPriority ?? "balanced";
-    const resolveSignal = withTimeoutSignal(
+    const resolveSignal = (this.deps.deadlineSignal ?? withTimeoutSignal)(
       input.signal,
       this.deps.resolveTotalDeadlineMs?.(startupPriority) ??
         resolveProviderTotalDeadlineMs(startupPriority),
@@ -649,11 +651,10 @@ export class PlaybackResolveService {
       input.correlation,
     );
 
-    // Persist provider health deltas from all attempts — except on a cancelled
-    // resolve: a caller abort is a decision, not provider-health evidence, and
-    // an attempt that settled while the abort raced can still carry a stale
-    // healthDelta that would mark a healthy provider down.
-    if (!resolveSignal.aborted) {
+    // Caller cancellation is not provider-health evidence. The service's own
+    // deadline is different: completed attempts may carry genuine timeout
+    // evidence, which must survive the combined deadline signal's abort.
+    if (!input.signal.aborted) {
       for (const attempt of engineResult.attempts) {
         if (
           attempt.result?.healthDelta &&

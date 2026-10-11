@@ -56,7 +56,7 @@ describe("ResolveResultCommitPolicy", () => {
 });
 
 describe("cancellationReasonFromSignal", () => {
-  function abortedSignal(reason: unknown): AbortSignal {
+  function abortedSignal(reason: string | DOMException): AbortSignal {
     const controller = new AbortController();
     controller.abort(reason);
     return controller.signal;
