@@ -2182,7 +2182,8 @@ missing_dependencies() {
 install_optional_deps() {
 	[[ "$SKIP_DEPS" == 1 ]] && return 0
 	# Android players are Android apps, not package-manager installs.
-	[[ "$HOST_OS" == android ]] && return 0
+	# HOST_OS is set at script start; the default keeps eval'd function tests safe.
+	[[ "${HOST_OS:-linux}" == android ]] && return 0
 
 	local command line
 	# `local -a missing=()` is the bash 3.2 + `set -u` form: a bare
