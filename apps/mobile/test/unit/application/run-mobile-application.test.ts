@@ -18,6 +18,56 @@ function run(fake: FakeMobileEnvironment, argv: readonly string[] = HOST_PROOF_A
 }
 
 describe("runMobileApplication", () => {
+  test("records session cancellation during HTTP without launching the player", async () => {
+    const fake = new FakeMobileEnvironment();
+    const controller = new AbortController();
+    fake.initialState = { schemaVersion: 1, hostProofRuns: 4 };
+    fake.choices.push({ kind: "selected", value: "continue" });
+    const result = await runMobileApplication({
+      argv: HOST_PROOF_ARGS,
+      version: "test",
+      environment: {
+        ...fake.environment,
+        signal: controller.signal,
+        http: {
+          async request() {
+            controller.abort();
+            throw new Error("aborted");
+          },
+        },
+      },
+    });
+    expect(result).toEqual({ code: 0, reason: "cancelled" });
+    expect(fake.playerRequests).toEqual([]);
+    expect(fake.committedStates).toEqual([
+      { schemaVersion: 1, hostProofRuns: 5, lastResult: "cancelled" },
+    ]);
+    expect(fake.rendered.join("\n")).not.toContain("failed");
+  });
+
+  test("stops a cancelled session after HTTP resolves before a player handoff", async () => {
+    const fake = new FakeMobileEnvironment();
+    const controller = new AbortController();
+    fake.choices.push({ kind: "selected", value: "continue" });
+    const result = await runMobileApplication({
+      argv: HOST_PROOF_ARGS,
+      version: "test",
+      environment: {
+        ...fake.environment,
+        signal: controller.signal,
+        http: {
+          async request() {
+            controller.abort();
+            return { status: 204, bytes: 0 };
+          },
+        },
+      },
+    });
+    expect(result).toEqual({ code: 0, reason: "cancelled" });
+    expect(fake.playerRequests).toEqual([]);
+    expect(fake.committedStates.at(-1)?.lastResult).toBe("cancelled");
+  });
+
   test("renders help and version without loading state or contacting adapters", async () => {
     for (const [argv, copy] of [
       [["--help"], "Usage: kunai-mobile"],

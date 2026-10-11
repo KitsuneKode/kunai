@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+
+const subscribe = () => () => {};
+const getServerSnapshot = () => null;
 
 function formatInViewerZone(date: Date): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
@@ -28,8 +31,8 @@ export function formatLocalTimestamp(
  * Renders a UTC timestamp on the server and upgrades it to the viewer's own
  * clock after mount.
  *
- * The swap happens in an effect rather than during render, so the server HTML
- * and the first client render are identical and hydration does not mismatch.
+ * The server snapshot also supplies the first hydration render, so the server
+ * HTML and the first client render are identical without an effect update.
  * Without JavaScript the UTC text simply stays.
  *
  * `iso` is already strict ISO 8601 — `parseDocsAnalyticsMetrics` normalises the
@@ -41,11 +44,7 @@ export function formatLocalTimestamp(
  * individual pings, which are never stored.
  */
 export function LocalTime({ iso, utcLabel }: { readonly iso: string; readonly utcLabel: string }) {
-  const [local, setLocal] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLocal(formatLocalTimestamp(iso));
-  }, [iso]);
+  const local = useSyncExternalStore(subscribe, () => formatLocalTimestamp(iso), getServerSnapshot);
 
   return <time dateTime={iso}>{local ?? utcLabel}</time>;
 }

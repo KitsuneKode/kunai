@@ -1,5 +1,4 @@
-// =============================================================================
-// history-bucket.ts — single authority for the /history tab a title belongs in.
+// Single authority for the /history tab a title belongs in.
 //
 // Replaces the corrupted classification that ran off `reconcileContinueHistory`'s
 // OPTIMISTIC fallback (which fabricated a `new-episode` whenever release data was
@@ -20,7 +19,6 @@
 //     (downloaded / confirmed released next)               → continue
 //   • Finished series + caught-up / upcoming / no evidence
 //     (nothing confirmed to watch right now)               → completed
-// =============================================================================
 
 import {
   anchorEpisodeRef,

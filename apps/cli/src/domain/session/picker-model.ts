@@ -107,3 +107,23 @@ function clampIndex(index: number, length: number): number {
 function wrapIndex(index: number, length: number): number {
   return ((index % length) + length) % length;
 }
+
+/**
+ * Where a picker's cursor starts: the option equal to `target`, else the
+ * nearest one (the later on a tie — the next episode is the likelier intent),
+ * else -1 for an empty list. A picker that opened on nothing made Enter a
+ * silent no-op until the user pressed ↓; starting on the nearest option, not
+ * row zero, keeps a far-away episode from being one Enter away.
+ */
+export function nearestOptionIndex(values: readonly number[], target: number): number {
+  let best = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const [index, value] of values.entries()) {
+    const distance = Math.abs(value - target);
+    if (distance < bestDistance || (distance === bestDistance && value > target)) {
+      best = index;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}

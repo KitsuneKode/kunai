@@ -266,4 +266,52 @@ describe("playback problem model", () => {
 
     expect(problem.cause).toBe("provider-timeout");
   });
+
+  test("a geo-blocked allanime failure suggests the metadata relay", () => {
+    // The one production reader of detectGeoBlockedProviderResponse: a blocked
+    // provider with a geo-block signature earns a relay hint. Hint only — the
+    // relay stays metadata-only, no media route is implied.
+    const problem = buildProviderResolveProblem({
+      attempts: [
+        {
+          failure: {
+            providerId: "allanime",
+            code: "blocked",
+            message: "AllAnime API refused: NEED_CAPTCHA",
+          },
+        },
+      ],
+    });
+
+    expect(problem.cause).toBe("provider-access");
+    expect(problem.userMessage).toContain("regional blocking");
+    expect(problem.userMessage).toContain("metadata relay");
+  });
+
+  test("a geo-blocked non-relay provider names the block without suggesting relay", () => {
+    const problem = buildProviderResolveProblem({
+      attempts: [
+        {
+          failure: {
+            providerId: "miruro",
+            code: "blocked",
+            message: "upstream challenge: cf-turnstile",
+          },
+        },
+      ],
+    });
+
+    expect(problem.cause).toBe("provider-access");
+    expect(problem.userMessage).toContain("regional blocking");
+    expect(problem.userMessage).not.toContain("metadata relay");
+  });
+
+  test("an ordinary blocked failure carries no geo-block hint", () => {
+    const problem = buildProviderResolveProblem({
+      attempts: [{ failure: { providerId: "vidlink", message: "403 forbidden" } }],
+    });
+
+    expect(problem.cause).toBe("provider-access");
+    expect(problem.userMessage).not.toContain("regional blocking");
+  });
 });

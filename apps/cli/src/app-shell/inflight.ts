@@ -55,11 +55,11 @@ export function createKeyedInflight(): Inflight {
       void task.then(
         (value) => {
           signal.removeEventListener("abort", onAbort);
-          resolve(value);
+          return resolve(value);
         },
         () => {
           signal.removeEventListener("abort", onAbort);
-          resolve(null);
+          return resolve(null);
         },
       );
     });

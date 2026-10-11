@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveVideasyClientProfile } from "../src/videasy/direct";
+import { resolveVideasyClientProfile, VIDEASY_MEDIA_ORIGIN } from "../src/videasy/direct";
 
 const runtimeContext = { now: () => new Date().toISOString() };
 
@@ -43,8 +43,10 @@ describe("resolveVideasyClientProfile", () => {
     const vidking = resolveVideasyClientProfile(enemy, runtimeContext, { appId: "vidking" });
 
     expect(cineby.origin).toBe("https://www.cineby.at");
-    expect(cineby.streamOrigin).toBe("https://www.vidking.net");
-    expect(vidking.streamOrigin).toBe("https://www.vidking.net");
+    expect(vidking.origin).not.toBe(cineby.origin);
+    // The stream's Origin is one constant for every profile: the CDN answers
+    // 403 to the cineby.at API origin on media requests.
+    expect(VIDEASY_MEDIA_ORIGIN).toBe("https://www.vidking.net");
   });
 
   test("bc-frontend uses cineby.at movie referer", () => {

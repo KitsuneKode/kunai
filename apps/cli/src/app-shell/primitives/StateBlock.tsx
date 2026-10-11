@@ -14,7 +14,7 @@ import {
 } from "./StateBlock.model";
 
 function colorForTone(tone: StateBlockTone): string {
-  if (tone === "danger") return palette.danger;
+  if (tone === "danger") return palette.dangerText;
   if (tone === "success") return palette.ok;
   if (tone === "info") return semanticToneColor("info");
   return palette.dim;

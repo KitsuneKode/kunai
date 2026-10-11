@@ -117,6 +117,7 @@ See [Media selection](/docs/users/media-selection) for how profiles flow into re
 | `quitNearEndBehavior` | What happens when you quit mpv near the natural end |
 | `quitNearEndThresholdMode` | When "near the end" starts: `credits-or-90-percent` (default), or a fixed percentage |
 | `continueSourcePreference` | Where Continue Watching resumes from: `auto` (default), `local`, `stream`, or `ask` |
+| `prePlayConfirm` | Open the Tracks sheet before launch: `off` (default), `when-choices`, or `always` |
 
 ### Shell density and chrome
 
@@ -131,7 +132,17 @@ See [Media selection](/docs/users/media-selection) for how profiles flow into re
 | `powerSaverMode` | Suppress background network and speculative work |
 | `recommendationRailEnabled` | Show the recommendation rail after playback (default `true`) |
 
-Kunai ships with the Sakura design system baked into the terminal UI. There is no separate theme picker today; density modes (`zen`, `minimal`) are how you reduce visual chrome.
+Kunai ships the Ember Dusk brand theme plus seven alternates: Kitsunebi, Nord, Tokyo Night, Catppuccin Mocha, Dracula, Rosé Pine, and Gruvbox. Pick one with `/theme` or in **Settings › Appearance › Theme** (it repaints immediately and persists), set `"theme"` in `config.json`, or override per run with `KUNAI_THEME=nord`. Themes recolor the whole shell; density modes (`zen`, `minimal`) still control how much chrome shows.
+
+### Motion and decoration overrides
+
+These are environment variables, not `config.json` keys, so they apply to one run:
+
+| Variable | Effect |
+| --- | --- |
+| `KUNAI_REDUCED_MOTION=1` or `NO_MOTION=1` | Stops the animated petal and spinner glyphs. Messages, progress and timers still update. `0` and `false` leave motion on. |
+| `KUNAI_PET=glyph` or `KUNAI_PET=off` | Keep the Kanna companion as the `🦊` glyph only, or retire her entirely. See [Kanna](/docs/users/kanna). |
+| `KUNAI_POSTER=0` | Turn off poster images. The glyph companion stays. |
 
 ### Downloads and offline
 

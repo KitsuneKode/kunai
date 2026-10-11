@@ -37,12 +37,32 @@ export function resolveRelayDevelopmentPolicy(
   };
 }
 
-/** Comma-separated origin allowlist; absent/empty means CORS is off entirely. */
+/**
+ * Comma-separated origin allowlist; absent/empty means CORS is off entirely.
+ * Entries must be bare origins — a path or typo would otherwise never match
+ * and fail closed without telling the operator why.
+ */
 function resolveCorsOrigins(value: string | undefined): readonly string[] {
-  return (value ?? "")
+  const origins = (value ?? "")
     .split(",")
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
+  for (const origin of origins) {
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new Error(
+        `RELAY_CORS_ORIGINS entries must be origins like https://app.example; received ${origin}`,
+      );
+    }
+    if (parsed.origin !== origin) {
+      throw new Error(
+        `RELAY_CORS_ORIGINS entries must be bare origins (scheme://host[:port]); received ${origin}`,
+      );
+    }
+  }
+  return origins;
 }
 
 export function createRelayDevServerOptions(policy: RelayDevelopmentPolicy) {

@@ -71,7 +71,7 @@ export function CopyButton({ text, label = "copy", className, children }: CopyBu
                     className="relative inline-flex h-4 min-w-10 items-center justify-center gap-1 text-[var(--kunai-ok)] tabular-nums"
                   >
                     <IconCheck className="size-3" stroke={1.5} data-icon="inline-start" />
-                    <span className="text-[10px]">Copied</span>
+                    <span className="text-xs">Copied</span>
                   </m.span>
                 ) : (
                   <m.span
@@ -83,7 +83,7 @@ export function CopyButton({ text, label = "copy", className, children }: CopyBu
                     className="relative inline-flex h-4 min-w-10 items-center justify-center gap-1 tabular-nums"
                   >
                     <IconCopy className="size-3" stroke={1.5} data-icon="inline-start" />
-                    <span className="text-[10px]">Copy</span>
+                    <span className="text-xs">Copy</span>
                   </m.span>
                 ))}
             </AnimatePresence>

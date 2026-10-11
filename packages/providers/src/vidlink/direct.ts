@@ -25,10 +25,22 @@ import {
   looksLikeHlsMasterUrl,
 } from "../shared/hls-ladder";
 import { readJsonObjectBody } from "../shared/json-body";
+import { sleepAbortable } from "../shared/timeout-signal";
 import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
 
 export { VIDLINK_PROVIDER_ID };
 
+/**
+ * Third-party single point of failure: VidLink cannot build a source path
+ * without an enc-dec.app encryption, and there is no local equivalent — the
+ * scheme is theirs, so Kunai must not invent one. The outage fallback is the
+ * memo below, not a second encryptor: enc-dec output is a deterministic
+ * function of the tmdb id, so a value cached inside its own 30-minute TTL
+ * keeps resolving through an enc-dec.app outage with no new network
+ * dependency. Past the TTL the lane fails with a structured `enc-dec` error
+ * naming enc-dec.app (see `encryptTmdbId`) so the outage reads as a
+ * third-party dependency, never as a title miss.
+ */
 const ENC_DEC_BASE = "https://enc-dec.app/api";
 /** Playback environment VidLink maps to its DASH + signed-cookie delivery path. */
 const VIDLINK_PLAYBACK_ENVIRONMENT = "webkit";
@@ -58,35 +70,13 @@ const encDecCache = new Map<number, { result: string; expiresAt: number }>();
 const VIDLINK_API_ENDPOINT = "vidlink.pro";
 const ENC_DEC_ENDPOINT = "enc-dec.app";
 
-/**
- * Abortable retry sleep (mirrors the miruro/allmanga helpers): the raw
- * `setTimeout` promise it replaces kept burning the full backoff after the
- * caller walked away, delaying fallback and shutdown. Resolves early on
- * abort; every call site re-checks the signal before the next fetch.
- */
-function vidlinkAbortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal || signal.aborted) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-let vidlinkRetrySleepImpl: (ms: number, signal?: AbortSignal) => Promise<void> =
-  vidlinkAbortableSleep;
+let vidlinkRetrySleepImpl: (ms: number, signal?: AbortSignal) => Promise<void> = sleepAbortable;
 const vidlinkRetrySleep = (ms: number, signal?: AbortSignal): Promise<void> =>
   vidlinkRetrySleepImpl(ms, signal);
 
 /** Test seam: replace the retry sleep (restore with the default afterwards). */
 export function setVidlinkRetrySleepForTest(sleep: typeof vidlinkRetrySleepImpl | null): void {
-  vidlinkRetrySleepImpl = sleep ?? vidlinkAbortableSleep;
+  vidlinkRetrySleepImpl = sleep ?? sleepAbortable;
 }
 
 /**
@@ -480,5 +470,17 @@ async function encryptTmdbId(
       }
     }
   }
-  throw lastError ?? new Error("enc-dec.app encryption failed after retries");
+  // A classified upstream error keeps its own code (5xx → provider-unavailable,
+  // which already fed the endpoint quarantine above). Anything else is wrapped
+  // so the failure names the third-party dependency that actually failed —
+  // without this the lane would report a bare network-error and read as a
+  // title miss.
+  if (lastError instanceof ProviderHttpError) throw lastError;
+  throw new ProviderHttpError({
+    providerId: VIDLINK_PROVIDER_ID,
+    stage: "enc-dec",
+    message: `third-party enc-dec.app encryption failed after retries: ${lastError?.message ?? "unknown error"}`,
+    code: "network-error",
+    retryable: true,
+  });
 }

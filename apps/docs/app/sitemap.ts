@@ -44,6 +44,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: `${docsSiteUrl}/feedback`,
     },
     {
+      url: `${docsSiteUrl}/support`,
+    },
+    {
       url: `${docsSiteUrl}/analytics`,
       lastModified: contentLastModified,
     },

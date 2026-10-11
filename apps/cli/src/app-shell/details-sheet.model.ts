@@ -1,11 +1,9 @@
-// =============================================================================
-// details-sheet.model.ts — pure view-model for the rich details sheet
+// Pure view-model for the rich details sheet
 //
 // Merges an instant SEED (already-loaded SearchResult fields — header + synopsis
 // with no network) with the optional fetched TitleDetail (gap-fill: studio, cast,
 // seasons, trailer, links), plus history + availability, into typed sections each
 // carrying a `loading` flag so the renderer can skeleton only the unresolved parts.
-// =============================================================================
 
 import type { TitleDetail, TitleLink } from "@/domain/catalog/title-detail";
 import { sanitizeTerminalText } from "@/domain/text-display";
@@ -104,7 +102,7 @@ export function buildDetailsSheet(input: {
   const typeLabel = seed.type === "movie" ? "Movie" : "Series";
   const metaLine = [
     typeLabel,
-    seed.year,
+    seed.year !== undefined ? sanitizeTerminalText(seed.year) : undefined,
     typeof score === "number" ? `★${score.toFixed(1)}` : undefined,
     status,
   ]
@@ -160,6 +158,8 @@ export function buildDetailsSheet(input: {
     links: {
       items: (detail?.externalLinks ?? []).map((link) => ({
         ...link,
+        // The renderer displays only the label; the opener validates the raw
+        // target. Sanitizing a target can silently open a different URL.
         label: sanitizeTerminalText(link.label),
       })),
     },

@@ -1,9 +1,7 @@
-// =============================================================================
 // ActivePlaybackCheckpoint — session-scoped registry for exactly one active
 // playback checkpoint callback. PlaybackPhase registers the history-ledger
 // checkpoint while mpv runs; the shutdown coordinator flushes it before mpv
 // is released so the latest resume position always lands, even on Ctrl+C.
-// =============================================================================
 
 export class ActivePlaybackCheckpoint {
   private registration = 0;

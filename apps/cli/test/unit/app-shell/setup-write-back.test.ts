@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -542,11 +542,55 @@ describe("pre-setup restore point", () => {
     ).toBe(true);
     await pending;
 
-    expect(JSON.parse(await readFile(preSetupSnapshotPath(), "utf8"))).toEqual(before);
+    const stored = JSON.parse(await readFile(preSetupSnapshotPath(), "utf8"));
+    const {
+      analytics: _analytics,
+      analyticsNoticeShown: _notice,
+      installId: _installId,
+      lastAnalyticsPingAt: _pingAt,
+      analyticsRetryAfter: _retryAfter,
+      analyticsEndpoint: _endpoint,
+      ...restorableBefore
+    } = before;
+    expect(stored).toEqual(restorableBefore);
+    // Consent state and the install identifier never enter a restore point —
+    // restoring them could resurrect a revoked opt-in.
+    expect(stored.installId).toBeUndefined();
+    expect(stored.analytics).toBeUndefined();
     // And it is one file, not a history: a second run overwrites it in place.
-    expect(await readPreSetupSnapshot()).toEqual(before);
+    expect(await readPreSetupSnapshot()).toEqual(restorableBefore);
+  });
+
+  test("a snapshot written by an older build still cannot resurrect consent", async () => {
+    clearSnapshot();
+    // Old builds serialized the whole config — including the consent keys —
+    // into .pre-setup.bak. The read path strips them again so the file can
+    // carry them without the restore ever applying them.
+    await writePreSetupSnapshotFromLegacy();
+    const snapshot = await readPreSetupSnapshot();
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.analytics).toBeUndefined();
+    expect(snapshot?.installId).toBeUndefined();
+    expect(snapshot?.analyticsNoticeShown).toBeUndefined();
+    expect(snapshot?.sync).toEqual(DEFAULT_CONFIG.sync);
+    clearSnapshot();
   });
 });
+
+async function writePreSetupSnapshotFromLegacy(): Promise<void> {
+  await writeFile(
+    preSetupSnapshotPath(),
+    JSON.stringify({
+      ...DEFAULT_CONFIG,
+      analytics: "enabled",
+      installId: "revoked-install-id",
+      analyticsNoticeShown: true,
+      lastAnalyticsPingAt: 1_700_000_000_000,
+      analyticsRetryAfter: 1_700_000_100_000,
+      analyticsEndpoint: "https://analytics.example.test",
+    }),
+  );
+}
 
 describe("setupPatchIsRestorable", () => {
   test("tracks the settings a user would miss and ignores the bookkeeping", () => {

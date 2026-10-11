@@ -245,7 +245,7 @@ function Get-ReleaseAssetName {
 function Resolve-PublishedVersion {
   if ($DryRun -and $Version -eq 'latest') { return 'dry-run' }
   if ($Version -ne 'latest') { return (Get-NormalizedVersion $Version) }
-  $release = Invoke-RestMethod -Uri $ReleasesApi -Headers @{ 'user-agent' = 'kunai-installer' }
+  $release = Invoke-RestMethod -Uri $ReleasesApi -Headers @{ 'user-agent' = 'kunai-installer' } -TimeoutSec 30
   $tag = [string]$release.tag_name
   return (Get-NormalizedVersion $tag)
 }
@@ -2430,9 +2430,10 @@ switch ($Method) {
   }
 }
 
-if ($Method -eq 'binary') {
-  Install-OptionalDeps
-}
+# Every method, like install.sh: the portable helpers live in Kunai's data dir,
+# which an npm, bun or source install uses just the same — gating them on
+# -Method binary left those users without mpv guidance or curl-impersonate.
+Install-OptionalDeps
 
 Write-Host 'Done.' -ForegroundColor Green
 Write-Host 'Try:  kunai -S "Frieren" -a'

@@ -253,7 +253,13 @@ const cArray = [
   "rFRD5wlM",
 ];
 
-function generateSecretKey(e: string | number) {
+/**
+ * Exported for the rotation canary in `test/rivestream-secret-key.test.ts` —
+ * the pinned vector there fails fast in CI when the upstream `cArray` salt or
+ * hash rotates, instead of surfacing as 401 resolve failures. See
+ * `.docs/provider-dossiers/rivestream.md` (known failure modes).
+ */
+export function generateSecretKey(e: string | number) {
   if (e === undefined) return "rive";
   try {
     let t, n;

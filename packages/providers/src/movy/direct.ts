@@ -119,6 +119,20 @@ const seedCache = new Map<string, { seed: string; expiresAt: number }>();
 const SEED_CACHE_MAX = 64;
 const SEED_EXPIRY_HEADROOM_MS = 5_000;
 const MOVY_CANDIDATE_TIMEOUT_MS = 15_000;
+/** Mirrors the shared engine's probe cap: three candidates inside one budget. */
+const MOVY_RESOLVE_GATE_MAX_PROBES = 3;
+
+/**
+ * Keep only variants that still name a shipped stream — a variant whose rungs
+ * all sat on a refused host would offer a quality ladder that resolves nothing.
+ */
+function dropRefusedVariants(
+  variants: readonly ProviderVariantCandidate[],
+  shippedStreams: readonly StreamCandidate[],
+): ProviderVariantCandidate[] {
+  const shippedIds = new Set(shippedStreams.map((stream) => stream.id));
+  return variants.filter((variant) => (variant.streamIds ?? []).some((id) => shippedIds.has(id)));
+}
 
 async function fetchMovySeed(
   context: ProviderRuntimeContext,
@@ -704,7 +718,52 @@ export async function resolveMovyDirect(
     preferredStreamId: input.preferredStreamId,
     preferredSourceId: input.preferredSourceId,
   });
-  const selectedStream = selection.selected;
+
+  // Resolve gate: the chosen stream is probed with its own headers before any
+  // success is reported. A rejected candidate refuses its whole host, and the
+  // walk continues through the rank-ordered remainder — a dead CDN lane must
+  // end in an exhausted result, never a shipped "resolved".
+  const probeTimeoutMs = resolveGateBudgetMs(
+    providerCycleCandidateTimeoutMs(input.startupPriority ?? "balanced", MOVY_CANDIDATE_TIMEOUT_MS),
+  );
+  const gateOrder = [
+    selection.selected,
+    ...selectableStreams.filter((stream) => stream.id !== selection.selected.id),
+  ].slice(0, MOVY_RESOLVE_GATE_MAX_PROBES);
+  const gated = await selectVerifiedStream({
+    streams: gateOrder,
+    context,
+    signal: context.signal,
+    timeoutMs: probeTimeoutMs,
+  });
+
+  if (context.signal?.aborted) {
+    return createExhaustedResult(
+      input,
+      context,
+      MOVY_PROVIDER_ID,
+      { code: "cancelled", message: "Movy resolve-gate probe was cancelled", retryable: false },
+      { cachePolicy, events, failures, sources, startedAt },
+    );
+  }
+
+  if (!gated.accepted) {
+    const gateFailure: Omit<ProviderFailure, "providerId" | "at"> = {
+      code: "not-found",
+      message: `Movy selected stream is unreachable (${gated.reason})`,
+      retryable: true,
+    };
+    return createExhaustedResult(input, context, MOVY_PROVIDER_ID, gateFailure, {
+      cachePolicy,
+      events,
+      failures: [...failures, { providerId: MOVY_PROVIDER_ID, at: context.now(), ...gateFailure }],
+      sources,
+      startedAt,
+    });
+  }
+
+  const selectedStream = gated.stream;
+  const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
   const selectedSource = {
     ...createSourceCandidateFromStream({
       providerId: MOVY_PROVIDER_ID,
@@ -729,16 +788,16 @@ export async function resolveMovyDirect(
     status: "resolved",
     providerId: MOVY_PROVIDER_ID,
     selectedStreamId: selectedStream.id,
-    selectionDecision: selection.decision,
+    selectionDecision: { ...selection.decision, selectedQualityRank: selectedStream.qualityRank },
     sources: finalizeCycleSourceInventory({
       sources: sourceInventorySeeds,
       attempts: cycleResult.attempts,
       selectedSources: [selectedSource],
-      streams,
+      streams: shippedStreams,
       selectedStreamId: selectedStream.id,
     }),
-    streams,
-    variants,
+    streams: shippedStreams,
+    variants: dropRefusedVariants(variants, shippedStreams),
     subtitles,
     cachePolicy,
     trace: createResolveTrace({

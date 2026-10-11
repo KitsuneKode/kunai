@@ -21,6 +21,7 @@
     },
     "build": {
       "dependsOn": ["^typecheck", "generate", "typecheck:app"],
+      "env": ["$TURBO_EXTENDS$", "BUN_INSTALL_CACHE_DIR"],
       "outputs": [".next/**", "!.next/cache/**"]
     }
   }

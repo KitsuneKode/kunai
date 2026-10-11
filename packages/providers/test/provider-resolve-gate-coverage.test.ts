@@ -34,7 +34,7 @@ const PRODUCTION_PROVIDERS = PROBES.map((probe) =>
  * A provider may only appear here with a reason that is about the *runtime*,
  * not about effort.
  */
-const EXEMPT: Partial<Record<(typeof PRODUCTION_PROVIDERS)[number], string>> = {
+const EXEMPT = {
   // YouTube hands mpv a watch URL and lets ytdl resolve the media at play time.
   // There is no direct stream URL at resolve time to probe, and the smoke
   // asserts the watch-host contract instead.

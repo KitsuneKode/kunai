@@ -43,7 +43,7 @@
   background: color-mix(in oklab, var(--kunai-surface) 88%, transparent);
   padding: 0.5rem 0.75rem;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.6875rem;
+  font-size: var(--kunai-text-caption);
   color: color-mix(in oklab, var(--color-fd-foreground) 82%, transparent);
 }
 
@@ -79,14 +79,18 @@
   box-shadow: inset 0 1px 0 color-mix(in oklab, white 5%, transparent);
 }
 
-.kunai-fd-card:hover {
-  border-color: color-mix(in oklab, var(--kunai-accent) 32%, var(--kunai-line)) !important;
-  box-shadow: var(--kunai-shadow-diffuse), var(--kunai-shadow-sm) !important;
-  transform: translateY(-2px);
+@media (hover: hover) and (pointer: fine) {
+  .kunai-fd-card:hover {
+    border-color: color-mix(in oklab, var(--kunai-accent) 32%, var(--kunai-line)) !important;
+    box-shadow: var(--kunai-shadow-diffuse), var(--kunai-shadow-sm) !important;
+    transform: translateY(-2px);
+  }
 }
 
+/* Card-sized: 0.96 on a surface this wide shrinks it by ~28px, which reads as the
+   page lurching. Buttons keep 0.96; a card takes 0.99. */
 .kunai-fd-card:active {
-  transform: scale(0.96) translateY(0) !important;
+  transform: scale(0.99) !important;
 }
 
 .kunai-hero-glow {
@@ -102,8 +106,8 @@
 
 .kunai-step-label {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.625rem;
-  font-weight: 700;
+  font-size: var(--kunai-text-caption);
+  font-weight: var(--kunai-weight-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--kunai-accent);
@@ -111,8 +115,9 @@
 
 .kunai-step-meta {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.5625rem;
-  color: color-mix(in oklab, var(--color-fd-muted-foreground) 72%, transparent);
+  font-size: var(--kunai-text-caption);
+  /* The muted token itself. A 72% mix of it at 9px measured 3.5:1. */
+  color: var(--color-fd-muted-foreground);
 }
 
 .kunai-callout-warn {
@@ -120,8 +125,8 @@
   border: 1px solid color-mix(in oklab, var(--kunai-warning) 22%, transparent);
   background: color-mix(in oklab, var(--kunai-warning) 8%, transparent);
   padding: 0.625rem;
-  font-size: 0.625rem;
-  font-weight: 300;
+  font-size: var(--kunai-text-caption);
+  font-weight: var(--kunai-weight-regular);
   color: var(--kunai-warning);
 }
 

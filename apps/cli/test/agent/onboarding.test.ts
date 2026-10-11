@@ -41,7 +41,7 @@ describe("agent driver · fresh-profile onboarding", () => {
         await s.send("s");
         await s.waitFor((f) => f.includes("setup 2"), "setup step 2");
         await s.send("S");
-        await s.waitFor((f) => f.includes("setup 7"), "setup summary");
+        await s.waitFor((f) => f.includes("setup 6"), "setup summary");
         await s.send("\r");
         await s.waitFor((f) => f.includes("Search title"), "browse shell after wizard");
 

@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-10-02
+Last updated: 2026-10-04
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -43,25 +43,28 @@ archive and put only the residue here.
 | Terminal image protocol     | Flicker hardening and `ink-shell` split                   | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
 | Kanna character system      | `seek`/`peek` redraws, then tracing the four raster poses | [2026-08-31-kanna-character-system.md](./2026-08-31-kanna-character-system.md)         |
 | Kanna voice and presence    | Remaining voice moments, terminal reactions, pose map     | [kanna-mascot-personality.md](./kanna-mascot-personality.md)                           |
+| Competitive parity (shell)  | `/theme` command, saved idle row, mouse input, IPTV scope | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md)                 |
 
 ### Playback and providers
 
 | Track                        | Remaining                                                                                                          | Plan                                                                                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Mobile terminal runtime      | Node/a-Shell host proofs implemented; physical qualification, catalog/providers, installers, and publishing remain | [runtime](../.docs/mobile-terminal-runtime.md) · [device lab](../.docs/mobile-device-lab.md) · [mobile app design](./mobile-app-runtime.md) |
+| Queue and phone follow-up    | Truthful queue state; qualify real phone request profiles, offline durability, and no-store touch direction        | [decisions and evidence](2026-10-03-queue-mobile-followup.md)                                                                               |
 | Provider playback resilience | Miruro gate budget, scheduled crypto freshness check                                                               | [provider-playback-resilience.md](./provider-playback-resilience.md)                                                                        |
 | Provider resolve hardening   | Health recovery, latency ordering, and measured hedge-delay calibration                                            | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)                                                            |
 | Provider hardening           | Research and scraper capability roadmap                                                                            | [provider-hardening.md](./provider-hardening.md)                                                                                            |
 | Provider result contract     | Contract work before broad `@kunai/core` extraction                                                                | [provider-result-contract.md](./provider-result-contract.md)                                                                                |
 | Beta UI/provider hardening   | Tasks 8–10: input routing, subtitle calls, display honesty                                                         | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                                                            |
 | Resolve UX and Playwright    | Pick up during a browser/provider reliability pass                                                                 | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md)                                                          |
+| Manga reader lane            | `manga` lane scoped: `src/image` carries the render layer; slice 1 = MangaDex + reader surface                     | [manga-reader-lane.md](./manga-reader-lane.md)                                                                                              |
 
 ### Offline and release stability
 
 | Track                          | Remaining                                                                                            | Plan                                                                                                 |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | 0.3.0 merge train              | Merge order, chain-A publication, regression watch                                                   | [2026-08-24-0-3-0-merge-train.md](./2026-08-24-0-3-0-merge-train.md)                                 |
-| Provider-independent offline   | Keep downloads playable after provider retirement                                                    | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
+| Provider-independent offline   | Candidate fix: downloads survive provider retirement; merge and platform qualification pending       | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
 | Offline artwork cache          | Library previews                                                                                     | [offline-artwork-cache-and-library-previews.md](./offline-artwork-cache-and-library-previews.md)     |
 | Boundary + downloads           | Reviewed adaptive-download design, not started                                                       | [boundary-hardening-and-adaptive-downloads.md](./boundary-hardening-and-adaptive-downloads.md)       |
 | Poster release smokes          | Real-terminal Kitty, iTerm2, Sixel, and multiplexer pass                                             | [poster-protocol-release-smokes.md](./poster-protocol-release-smokes.md)                             |
@@ -80,6 +83,13 @@ archive and put only the residue here.
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
 | Analytics series + social cards | Serve the retained `daily_rollup` history, adoption/trend charts, per-share OG images                                                | [2026-08-26-analytics-series-and-social-cards.md](./2026-08-26-analytics-series-and-social-cards.md) |
 | User docs overhaul              | Accuracy/framing PR first; then first-run, debugging playbook, coverage, nav, agent-docs, deploy `apps/docs` to kunai.kitsunekode.in | [2026-08-18-user-docs-overhaul.md](./2026-08-18-user-docs-overhaul.md)                               |
+
+### Growth and distribution
+
+| Track                      | Remaining                                                                   | Plan                                                                   |
+| -------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Install channels           | Homebrew tap, AUR `kunai-bin`, Scoop bucket on top of the release pipeline  | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
+| Localization and community | Localized READMEs, community surface, topics + comparison-table positioning | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
 
 ### Verification and CI
 
@@ -231,6 +241,27 @@ Count: **17 fixed, 0 open**.
 The release PR is intentionally last: Changesets will keep updating it while
 stability fixes merge, and merging it early would version an incomplete
 candidate.
+
+### Delivery and follow-ups — 2026-10-02
+
+Proposed, not started. Written against `origin/main@e509732e7` and the open-PR
+state on 2026-10-02.
+
+| Plan                                                                                       | Remaining work                                                                                          | Status   |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------- |
+| [2026-10-02-pr-stack-consolidation.md](./2026-10-02-pr-stack-consolidation.md)             | 30 PRs landed 2026-10-07; re-implement the unmerged stacks' security, playback and UX residue           | PARTIAL  |
+| [2026-10-02-signed-provider-profile-feed.md](./2026-10-02-signed-provider-profile-feed.md) | Design spike: a signed, data-only feed so rotating provider constants ship without a release            | PROPOSED |
+| [2026-10-02-share-moment-discoverability.md](./2026-10-02-share-moment-discoverability.md) | Surface the existing `Ctrl+Shift+S` share-at-timestamp key in the playing legend, README and docs       | PROPOSED |
+| [2026-10-02-color-followups.md](./2026-10-02-color-followups.md)                           | After the APCA text-tier retune: remove the remaining `dimColor` double-dimming once the PR stacks land | PROPOSED |
+
+### Release readiness — 2026-10-08
+
+Verified against `integrate/backlog-20261007@f840fe511` after three external
+audits. Gate 0 lands the integration on `main`; Phase 1 is release-blocking.
+
+| Plan                                                                 | Remaining work                                                                               | Status |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------ |
+| [2026-10-08-release-readiness.md](./2026-10-08-release-readiness.md) | Land the integration, then downloads, playback, consent, sanitizer, shell and relay blockers | TODO   |
 
 ## Rules
 

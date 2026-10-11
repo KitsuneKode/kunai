@@ -60,19 +60,21 @@ export function claimQueuePlaybackLaunch(
 
 /**
  * Enter-on-row play path: claim first; only resolve+close when claim succeeds.
- * Failed CAS leaves the overlay open (caller must not close).
+ * Failed CAS leaves the overlay open (caller must not close). The launch is
+ * returned so a caller with no bridge waiter — the overlay opened inline from
+ * another overlay — can hand it to the phase loop instead of dropping it.
  */
 export function resolveQueueRowPlaySelection(
   queueService: QueueClaimPort,
   queueEntryId: string,
   resolve: (value: QueuePlaybackLaunch) => void,
   closeOverlay: () => void,
-): "claimed" | "failed" {
+): { status: "claimed"; launch: QueuePlaybackLaunch } | { status: "failed" } {
   const launch = claimQueuePlaybackLaunch(queueService, queueEntryId);
-  if (!launch) return "failed";
+  if (!launch) return { status: "failed" };
   resolve(launch);
   closeOverlay();
-  return "claimed";
+  return { status: "claimed", launch };
 }
 
 export function titleInfoFromQueuePlaybackLaunch(launch: QueuePlaybackLaunch): TitleInfo {

@@ -20,6 +20,9 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "details",
   "setup",
   "settings",
+  "image-pane",
+  "pet",
+  "theme",
   "trending",
   "random",
   "surprise",
@@ -31,6 +34,7 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "reset-provider-health",
   "clear-cache",
   "help",
+  "guide",
   "menu",
   "quit",
 ] as const satisfies readonly AppCommandId[];

@@ -56,6 +56,36 @@ describe("playback-watchdog", () => {
     timers = [];
   });
 
+  test.each([false, true])("cache-idle recovery respects explicit user pause=%s", (paused) => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      networkReadDeadAfterMs: 1_000,
+      cacheStallAfterMs: 2_000,
+    });
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 0,
+      positionSeconds: 30,
+      durationSeconds: 100,
+      paused,
+      coreIdle: true,
+      pausedForCache: true,
+      demuxerViaNetwork: true,
+      demuxerCacheUnderrun: true,
+      demuxerRawInputRate: 0,
+    });
+    runTimers();
+    nowMs = 1_100;
+    runTimers();
+    const stalls = events.filter((event) => event.type === "stream-stalled");
+    expect(stalls).toHaveLength(paused ? 0 : 1);
+    if (!paused) expect(stalls[0]).toMatchObject({ stallKind: "network-read-dead" });
+    nowMs = 1_200;
+    runTimers();
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(paused ? 0 : 1);
+    watchdog.stop();
+  });
+
   test("does not emit stream-stalled after long user pause then resume", () => {
     const events: PlayerPlaybackEvent[] = [];
     const watchdog = createPlaybackWatchdog(

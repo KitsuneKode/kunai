@@ -1,5 +1,4 @@
-// =============================================================================
-// MediaPanel.tsx — renders a MediaPanelModel for Now Playing and Post-play
+// Renders a MediaPanelModel for Now Playing and Post-play
 //
 // One Sakura sectioned panel for every content kind (movie/series/anime/video):
 //   poster → header (title + badge + secondary) → ── details ── facts
@@ -9,7 +8,6 @@
 // post-play (and up-next during Now Playing). Empty poster/thumb slots show the
 // ❀ petal placeholder rather than initials or blank space. Sections use light
 // rose-dim ── label ── rules instead of one long left border.
-// =============================================================================
 
 import { Box, Text } from "ink";
 import React from "react";

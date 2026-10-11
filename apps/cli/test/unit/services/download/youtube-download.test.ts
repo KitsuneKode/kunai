@@ -9,8 +9,6 @@ import * as youtubeProviders from "@kunai/providers/youtube";
 import { configureYoutubeProvider, type RunYtDlpProcessOptions } from "@kunai/providers/youtube";
 import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
-import { waitUntil } from "../../../support/wait-until";
-
 describe("DownloadService youtube argv contract", () => {
   let tempDir: string;
   let db: ReturnType<typeof openKunaiDatabase>;
@@ -25,14 +23,23 @@ describe("DownloadService youtube argv contract", () => {
     runMigrations(db, "data");
     repo = new DownloadJobsRepository(db);
     spawnSpy = spyOn(Bun, "spawn");
+    spawnSpy.mockImplementation((command: string[]) => {
+      throw new Error(
+        `YouTube download unit tests must stub yt-dlp; refusing ${String(command[0] ?? "unknown")}`,
+      );
+    });
     whichSpy = spyOn(Bun, "which");
-    configureYoutubeProvider({
+    const youtubeRuntime = {
       cookiesFromBrowser: "firefox",
       cookiesFile: "/tmp/cookies.txt",
       extractorArgs: "youtube:player_client=android",
       poToken: "android.gvs+DOWNLOAD_TOKEN",
       sponsorblockRemove: "sponsor",
-    });
+    };
+    configureYoutubeProvider(youtubeRuntime);
+    // Pin the runtime read DownloadService actually makes, so a parallel file
+    // calling configureYoutubeProvider({}) cannot drop the PO token.
+    spyOn(youtubeProviders, "getYoutubeProviderConfig").mockImplementation(() => youtubeRuntime);
     runYtDlpSpy = spyOn(youtubeProviders, "runYtDlpProcess");
   });
 
@@ -300,6 +307,7 @@ function buildYoutubeService({
       cookiesFromBrowser: "firefox",
       cookiesFile: "/tmp/cookies.txt",
       extractorArgs: "youtube:player_client=android",
+      poToken: "android.gvs+DOWNLOAD_TOKEN",
       sponsorblockRemove: "sponsor",
       instanceUrl: "",
       pipedApiUrl: "",
