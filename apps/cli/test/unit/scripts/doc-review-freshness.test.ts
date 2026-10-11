@@ -3,6 +3,8 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { storageRootEnv } from "../../helpers/storage-env";
+
 const verifier = resolve(import.meta.dir, "../../../../../scripts/verify-doc-frontmatter.ts");
 
 function doc(reviewed: string, body: string): string {
@@ -43,6 +45,12 @@ for (const scenario of [
 ]) {
   test(scenario.name, () => {
     const root = mkdtempSync(join(tmpdir(), "kunai-doc-freshness-"));
+    const env = {
+      ...process.env,
+      ...storageRootEnv(root),
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: join(root, "gitconfig"),
+    };
     try {
       mkdirSync(join(root, "scripts"));
       mkdirSync(join(root, ".docs"));
@@ -52,6 +60,7 @@ for (const scenario of [
       const git = (...args: string[]) => {
         const result = Bun.spawnSync(["git", ...args], {
           cwd: root,
+          env,
           stdout: "pipe",
           stderr: "pipe",
         });
@@ -82,7 +91,7 @@ for (const scenario of [
       commit("after");
       const result = Bun.spawnSync([process.execPath, "scripts/verify-doc-frontmatter.ts"], {
         cwd: root,
-        env: { ...process.env, DOC_FRESHNESS_BASE: base, SKIP_DOC_FRESHNESS: "0" },
+        env: { ...env, DOC_FRESHNESS_BASE: base, SKIP_DOC_FRESHNESS: "0" },
         stdout: "pipe",
         stderr: "pipe",
       });
