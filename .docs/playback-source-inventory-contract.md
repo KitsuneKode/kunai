@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T13:15:00Z"
+lastReviewed: "2026-10-12T13:45:00Z"
 ---
 
 # Playback Source Inventory Contract
@@ -139,6 +139,10 @@ Source and quality pickers must read from cached inventory.
   chooses the exact rung.
 - Quality change: select the chosen stream or variant without recomputing inventory.
 - Subtitle change: select from `subtitles` or a separately cached subtitle list; do not refetch unrelated streams.
+- Tracks merges session-attached `subtitleList` tracks into the view alongside provider
+  subtitles, deduplicating attached URLs against provider and other attached rows.
+  Selecting Off keeps the choices available. Session attachments do not alter the
+  persisted provider inventory or claim provider extraction evidence.
 - During live playback, the Tracks subtitle section (including `/subtitle` and
   the player picker request) applies external tracks and Off through
   `selectCurrentSubtitle`. Update the selected row only after the player accepts
