@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12"
+lastReviewed: "2026-10-12T14:50:24Z"
 ---
 
 # Terminal pointer controls
@@ -26,7 +26,9 @@ Clicks on usage analytics only focus the row and explain the Enter requirement;
 no mouse path grants keystroke-gated analytics consent or creates an install ID.
 
 Wheel movement focuses the pane beneath the pointer, clamps at its edges and
-moves subtitles by the renderer's grid columns. It never selects a fallback stream
+moves subtitles by the renderer's grid columns, or one row in the narrow stacked
+layout. Busy Settings actions also freeze keyboard navigation while retaining
+Escape/q cancellation for cancellable actions. It never selects a fallback stream
 or changes a setting. Unknown or vanished identities are ignored; selection and
 activation are separate transitions. This supplements the existing keyboard path.
 

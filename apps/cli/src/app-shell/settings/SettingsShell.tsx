@@ -216,9 +216,13 @@ export function SettingsShell({
   useInput(
     (input, key) => {
       if (commandMode) return;
-      if (state.busy && (key.escape || input.toLowerCase() === "q")) {
+      if (state.busy) {
         const activeDef = state.activeActionId ? page.defById.get(state.activeActionId) : null;
-        if (activeDef?.kind === "action" && activeDef.cancellable) {
+        if (
+          (key.escape || input.toLowerCase() === "q") &&
+          activeDef?.kind === "action" &&
+          activeDef.cancellable
+        ) {
           actionAbortRef.current?.abort();
           onStatus("Cancelling…");
           onRedraw();

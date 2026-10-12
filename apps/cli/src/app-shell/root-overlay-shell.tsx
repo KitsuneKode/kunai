@@ -211,7 +211,7 @@ import { useShellInput } from "./shell-command-input";
 import { CommandPalette } from "./shell-command-ui";
 import { ContextStrip, ShellFooter, ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
-import { subtitleGridColumns, tracksOptionsPaneWidth } from "./tracks-panel-layout";
+import { tracksNavigationColumns } from "./tracks-panel-layout";
 import {
   createInitialTracksNav,
   tracksPanelNavReducer,
@@ -1562,10 +1562,7 @@ export function RootOverlayShell({
       const navCtx = {
         sectionCount: trackGroups.length,
         optionCount: focusedGroup?.rows.length ?? 0,
-        gridColumns:
-          focusedGroup?.section === "subtitle"
-            ? subtitleGridColumns(tracksOptionsPaneWidth(overlayLayout.contentColumns))
-            : 1,
+        gridColumns: tracksNavigationColumns(overlayLayout.contentColumns, focusedGroup?.section),
       };
       const inSubtitleGrid = tracksNav.focusedPane === "options" && navCtx.gridColumns > 1;
 
@@ -2524,12 +2521,10 @@ export function RootOverlayShell({
                     const context = {
                       sectionCount: trackGroups.length,
                       optionCount: rows.length,
-                      gridColumns:
-                        group?.section === "subtitle"
-                          ? subtitleGridColumns(
-                              tracksOptionsPaneWidth(overlayLayout.contentColumns),
-                            )
-                          : 1,
+                      gridColumns: tracksNavigationColumns(
+                        overlayLayout.contentColumns,
+                        group?.section,
+                      ),
                     };
                     setTracksNav((current) =>
                       tracksPanelNavReducer(
