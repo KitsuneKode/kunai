@@ -2,6 +2,7 @@ import type { Container } from "@/container";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
 import { probeInvidiousHealth } from "@/services/youtube/invidious-health";
 import { probeYtDlpAsync, probeYtDlpPlugins } from "@/services/ytdlp/YtDlpService";
+import { describeStaleYtDlp } from "@kunai/providers/youtube";
 
 export type YoutubeDiagnosticsProbe = {
   readonly ytDlp: { readonly available: boolean; readonly version?: string };
@@ -105,8 +106,9 @@ export function formatYoutubeDiagnosticsDetail(probe: YoutubeDiagnosticsProbe): 
   const poTokenNote = probe.poToken.provider
     ? " · PO Token provider ready"
     : " · no PO Token provider (YouTube may 403)";
+  const stale = probe.ytDlp.available ? describeStaleYtDlp(probe.ytDlp.version) : null;
   const tooling = probe.ytDlp.available
-    ? `yt-dlp ${probe.ytDlp.version ?? "ready"}${poTokenNote}`
+    ? `yt-dlp ${probe.ytDlp.version ?? "ready"}${stale ? ` · ${stale.daysOld}d old — update` : ""}${poTokenNote}`
     : "yt-dlp missing (required for YouTube playback quality + downloads)";
   const invidious = probe.invidious.ok
     ? `${probe.invidious.instance ?? "instance"} · ${probe.invidious.latencyMs ?? "?"}ms · ${probe.invidious.instanceCount ?? 1} available`
@@ -114,7 +116,7 @@ export function formatYoutubeDiagnosticsDetail(probe: YoutubeDiagnosticsProbe): 
   return {
     tooling,
     invidious,
-    toolingTone: probe.ytDlp.available ? "success" : "warning",
+    toolingTone: !probe.ytDlp.available || stale ? "warning" : "success",
     invidiousTone: probe.invidious.ok ? "success" : "warning",
   };
 }
