@@ -32,6 +32,7 @@ function createConfig(): ConfigService {
     update: async () => undefined,
     applySessionOverrides: () => undefined,
     save: async () => undefined,
+    recordAnalyticsPing: async () => false,
     flushPending: async () => undefined,
     reset: async () => undefined,
   };
