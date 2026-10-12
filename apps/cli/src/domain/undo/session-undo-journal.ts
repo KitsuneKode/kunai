@@ -1,3 +1,4 @@
+import { isJsonObject } from "@kunai/types";
 /**
  * Session undo journal — lazygit's `z`, scoped to Kunai's reversible mutations.
  *
@@ -48,22 +49,22 @@ export type SessionUndoOutcome =
  * columns), object keys sort so field order can't create false drift, and
  * array order is significant (queue position is order).
  */
-export function stableUndoJson(value: unknown): string {
+export function stableUndoJson<T>(value: T): string {
+  if (Array.isArray(value)) return `[${value.map(stableUndoJson).join(",")}]`;
+  if (value !== null && isJsonObject(value)) {
+    const entries = Object.entries(value)
+      .filter(([, field]) => field !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+    return `{${entries
+      .map(([key, field]) => `${JSON.stringify(key)}:${stableUndoJson(field)}`)
+      .join(",")}}`;
+  }
   // `undefined` gets its own token: `JSON.stringify(undefined)` returns
   // `undefined`, which would otherwise collide with literal `null`.
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value) ?? '"\u0000undefined"';
-  }
-  if (Array.isArray(value)) return `[${value.map(stableUndoJson).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, field]) => field !== undefined)
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-  return `{${entries
-    .map(([key, field]) => `${JSON.stringify(key)}:${stableUndoJson(field)}`)
-    .join(",")}}`;
+  return JSON.stringify(value) ?? '"\u0000undefined"';
 }
 
-export function sameUndoSnapshot(left: unknown, right: unknown): boolean {
+export function sameUndoSnapshot<T>(left: T, right: T): boolean {
   return stableUndoJson(left) === stableUndoJson(right);
 }
 

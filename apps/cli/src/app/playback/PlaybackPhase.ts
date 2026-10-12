@@ -2318,9 +2318,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     value: {
                       type: "history_entry",
                       title: titleSwitchSelection.title,
-                      ...(titleSwitchSelection.episode
-                        ? { episode: titleSwitchSelection.episode }
-                        : {}),
+                      episode: titleSwitchSelection.episode,
                     },
                   };
                 }
@@ -2995,7 +2993,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 value: {
                   type: "history_entry",
                   title: titleSelection.title,
-                  ...(titleSelection.episode ? { episode: titleSelection.episode } : {}),
+                  episode: titleSelection.episode,
                 },
               };
             }

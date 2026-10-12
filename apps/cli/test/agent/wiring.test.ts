@@ -12,6 +12,8 @@ import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 
+import type { JsonObject } from "@kunai/types";
+
 import { createAgentSession, type AgentSession } from "./agent-driver";
 import { K } from "./keys";
 import { onboardedConfig } from "./seed";
@@ -248,7 +250,7 @@ describe("agent wiring · notifications inbox", () => {
       readonly dedupKey: string;
       readonly title: string;
       readonly body: string;
-      readonly item: Record<string, unknown>;
+      readonly item: JsonObject;
     },
   ): void {
     const db = new Database(join(session.profile.paths.dataDir, "kunai-data.sqlite"));

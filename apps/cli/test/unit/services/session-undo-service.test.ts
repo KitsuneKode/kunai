@@ -32,7 +32,7 @@ function makeStack(now?: () => number) {
     listRepository,
     followedTitleRepository,
     historyRepository,
-    ...(now ? { now } : {}),
+    now,
   });
   return {
     db,

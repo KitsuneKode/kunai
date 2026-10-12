@@ -9,13 +9,15 @@ import {
 import type { LocalTitleMatch } from "@/domain/palette/local-title-index";
 
 function cmd(id: string, aliases: readonly string[] = [id]): ResolvedAppCommand {
+  // SAFETY: minimal command stub — the union model only reads id, label,
+  // aliases and enabled from ResolvedAppCommand rows.
   return {
     id,
     label: id,
     aliases,
     description: id,
     enabled: true,
-  } as unknown as ResolvedAppCommand;
+  } as never;
 }
 
 function titleMatch(titleId: string, title = titleId): LocalTitleMatch {

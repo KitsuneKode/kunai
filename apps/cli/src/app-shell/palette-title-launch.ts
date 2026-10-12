@@ -120,7 +120,7 @@ export async function resolvePaletteTitleLaunch(
       const title = titleInfoFromQueuePlaybackLaunch(launch);
       alignPaletteTitleSession(container, entry, title);
       const episode = episodeInfoFromQueuePlaybackLaunch(launch);
-      return { title, ...(episode ? { episode } : {}) };
+      return { title, episode };
     }
     // Claim failed — the row went in-flight or was played between index build
     // and Enter. Fall through to the plain identity path so the pick still
@@ -129,19 +129,19 @@ export async function resolvePaletteTitleLaunch(
 
   const identity: MediaItemIdentity = {
     mediaKind: entry.mediaKind,
-    ...(entry.contentType ? { contentType: entry.contentType } : {}),
+    contentType: entry.contentType,
     titleId: entry.titleId,
     title: entry.title,
-    ...(entry.season !== undefined ? { season: entry.season } : {}),
-    ...(entry.episode !== undefined ? { episode: entry.episode } : {}),
-    ...(entry.absoluteEpisode !== undefined ? { absoluteEpisode: entry.absoluteEpisode } : {}),
-    ...(entry.providerId ? { providerHints: [{ providerId: entry.providerId }] } : {}),
-    ...(entry.externalIds ? { externalIds: entry.externalIds } : {}),
+    season: entry.season,
+    episode: entry.episode,
+    absoluteEpisode: entry.absoluteEpisode,
+    providerHints: entry.providerId ? [{ providerId: entry.providerId }] : undefined,
+    externalIds: entry.externalIds,
   };
 
   let title: TitleInfo = {
     ...titleInfoFromMediaItemIdentity(identity),
-    ...(entry.externalIds ? { externalIds: entry.externalIds } : {}),
+    externalIds: entry.externalIds,
     launchSource: "search",
   };
   const mode = alignPaletteTitleSession(container, entry, title);
@@ -154,7 +154,7 @@ export async function resolvePaletteTitleLaunch(
     title = await enrichSelectedTitleIdentity(container.catalogIdentityService, title, mode);
   }
 
-  return { title, ...(episode ? { episode } : {}) };
+  return { title, episode };
 }
 
 // --- delivery -----------------------------------------------------------------
@@ -191,7 +191,7 @@ export function launchPaletteTitle(container: Container, launch: PaletteTitleLau
       forceCloseRootContent<PlaybackShellResult>({
         type: "history-entry",
         title: launch.title,
-        ...(launch.episode ? { episode: launch.episode } : {}),
+        episode: launch.episode,
       })
     ) {
       return;
@@ -220,10 +220,10 @@ export function pickPaletteTitle(container: Container, entry: LocalTitleEntry): 
       if (launch) launchPaletteTitle(container, launch);
       return undefined;
     })
-    .catch((error: unknown) => {
+    .catch((cause: unknown) => {
       container.logger.warn("Palette title launch failed", {
         titleId: entry.titleId,
-        error: error instanceof Error ? error.message : String(error),
+        error: cause instanceof Error ? cause.message : String(cause),
       });
     });
 }

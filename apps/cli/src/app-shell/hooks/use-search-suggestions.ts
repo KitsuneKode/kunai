@@ -17,16 +17,24 @@ import { createLatestRequestGate } from "../browse-async";
 /** Catalog round-trip budget for a keystroke-driven lookup — tune here. */
 export const SUGGESTION_DEBOUNCE_MS = 300;
 
+/** The handle a `SuggestionTimers.set` hands back — opaque to the hook. */
+export type SuggestionTimerHandle = ReturnType<typeof setTimeout> | number;
+
 /** Injectable clock seam — tests pass a manual scheduler; production uses the defaults. */
 export interface SuggestionTimers {
-  readonly set: (callback: () => void, delayMs: number) => unknown;
-  readonly clear: (handle: unknown) => void;
+  readonly set: (callback: () => void, delayMs: number) => SuggestionTimerHandle;
+  readonly clear: (handle: SuggestionTimerHandle) => void;
 }
 
 const REAL_TIMERS: SuggestionTimers = {
   set: (cb, ms) => setTimeout(cb, ms),
-  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  clear: (handle) => clearTimeout(handle),
 };
+
+export interface SearchSuggestionsState<TValue> {
+  readonly suggestions: readonly SearchSuggestion<TValue>[];
+  readonly pending: boolean;
+}
 
 export function useSearchSuggestions<TValue>(input: {
   readonly query: string;
@@ -37,10 +45,7 @@ export function useSearchSuggestions<TValue>(input: {
   ) => Promise<readonly SearchSuggestion<TValue>[]>;
   readonly debounceMs?: number;
   readonly timers?: SuggestionTimers;
-}): {
-  readonly suggestions: readonly SearchSuggestion<TValue>[];
-  readonly pending: boolean;
-} {
+}): SearchSuggestionsState<TValue> {
   const { query, enabled } = input;
   const debounceMs = input.debounceMs ?? SUGGESTION_DEBOUNCE_MS;
   const timers = input.timers ?? REAL_TIMERS;

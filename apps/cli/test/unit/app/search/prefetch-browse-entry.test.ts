@@ -11,8 +11,10 @@ import { describe, expect, test } from "bun:test";
 import {
   prefetchBrowseEntrySelection,
   type BrowseEntryPrefetchContainer,
+  type BrowseEntryPrefetchLoaders,
 } from "@/app/search/prefetch-browse-entry";
 import type { SearchResult, TitleInfo } from "@/domain/types";
+import type { ProviderEpisodeOption } from "@kunai/types";
 
 function searchResult(overrides: Partial<SearchResult> = {}): SearchResult {
   return {
@@ -23,13 +25,13 @@ function searchResult(overrides: Partial<SearchResult> = {}): SearchResult {
     overview: "",
     posterPath: null,
     ...overrides,
-  } as SearchResult;
+  };
 }
 
 function makeContainer(args: {
   readonly online?: boolean;
   readonly historySeason?: number;
-  readonly onListEpisodes?: (title: TitleInfo) => Promise<unknown>;
+  readonly onListEpisodes?: (title: TitleInfo) => Promise<readonly ProviderEpisodeOption[] | null>;
 }): BrowseEntryPrefetchContainer {
   const listCalls: TitleInfo[] = [];
   const onListEpisodes = args.onListEpisodes;
@@ -42,6 +44,8 @@ function makeContainer(args: {
         }
       : undefined,
   };
+  // SAFETY: deliberately partial stub — prefetch reads only the members
+  // defined here; the rest of the container is unused in these tests.
   return {
     connectivity: { isOnline: () => args.online !== false },
     config: {
@@ -57,24 +61,36 @@ function makeContainer(args: {
       getLatestForTitleIdentity: () =>
         args.historySeason !== undefined ? { season: args.historySeason } : undefined,
     },
-  } as unknown as BrowseEntryPrefetchContainer;
+  } as never;
 }
 
 function noopLoaders() {
-  const calls = {
+  type PrefetchCalls = {
+    mapAnime: number;
+    enrich: number;
+    fetchDetail: { id: string; type: string }[];
+    fetchSeries: { id: string; season?: number }[];
+  };
+  const calls: PrefetchCalls = {
     mapAnime: 0,
     enrich: 0,
-    fetchDetail: [] as { id: string; type: string }[],
-    fetchSeries: [] as { id: string; season?: number }[],
+    fetchDetail: [],
+    fetchSeries: [],
   };
   return {
     calls,
+    // SAFETY: call-counting stubs — each loader is cast to the real
+    // signature via `never` so the stubs stay minimal; the prefetch path
+    // only checks they ran.
     loaders: {
       mapAnime: (async (result: SearchResult) => {
         calls.mapAnime += 1;
         return result;
       }) as never,
-      enrich: (async (_svc: unknown, title: TitleInfo) => {
+      enrich: (async (
+        _svc: Parameters<BrowseEntryPrefetchLoaders["enrich"]>[0],
+        title: TitleInfo,
+      ) => {
         calls.enrich += 1;
         return title;
       }) as never,
@@ -205,6 +221,8 @@ describe("prefetchBrowseEntrySelection", () => {
 
   test("loader failures never surface — the warm is silent by contract", async () => {
     const { loaders } = noopLoaders();
+    // SAFETY: the rejection stub is cast to the real loader signature — the
+    // test only asserts the failure path runs.
     loaders.fetchDetail = (() => Promise.reject(new Error("tmdb down"))) as never;
     await expect(
       prefetchBrowseEntrySelection({

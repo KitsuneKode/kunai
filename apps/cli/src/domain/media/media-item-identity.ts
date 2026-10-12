@@ -84,9 +84,7 @@ export function mediaItemHasPlayableTarget(item: MediaItemIdentity): boolean {
   if (item.contentType === "movie") return true;
   if (item.mediaKind === "movie" || item.mediaKind === "video") return true;
   return (
-    typeof item.season === "number" ||
-    typeof item.episode === "number" ||
-    typeof item.absoluteEpisode === "number"
+    item.season !== undefined || item.episode !== undefined || item.absoluteEpisode !== undefined
   );
 }
 

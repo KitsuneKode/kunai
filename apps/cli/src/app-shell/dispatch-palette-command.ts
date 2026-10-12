@@ -107,7 +107,7 @@ async function routeNotificationsInbox(
     return {
       type: "history-entry",
       title: outcome.title,
-      ...(outcome.episode ? { episode: outcome.episode } : {}),
+      episode: outcome.episode,
     };
   }
   // "details" outcomes are already staged for browse-shell's subscriber by the

@@ -42,6 +42,8 @@ async function drainMicrotasks(): Promise<void> {
 
 function createStateManager(): SessionStateManagerImpl {
   return new SessionStateManagerImpl({
+    // SAFETY: stub logger — the state manager under test only calls these
+    // four methods; the real Logger surface is larger.
     logger: {
       debug: () => {},
       info: () => {},
@@ -59,17 +61,19 @@ async function createContainer(store: MemoryConfigStore): Promise<{
   const config = await ConfigServiceImpl.load(store);
   const stateManager = createStateManager();
   return {
-    container: { config, stateManager } as unknown as Container,
+    // SAFETY: deliberately minimal container — the tips wiring reads only
+    // config and stateManager from it.
+    container: { config, stateManager } as never,
     config,
     stateManager,
   };
 }
 
-const PALETTE_LISTS: Record<ContextualTipSurface, readonly string[]> = {
+const PALETTE_LISTS = {
   browse: SEARCH_BROWSE_COMMAND_IDS,
   activePlayback: COMMAND_CONTEXTS.activePlayback,
   postPlayback: COMMAND_CONTEXTS.postPlayback,
-};
+} satisfies Record<ContextualTipSurface, readonly string[]>;
 
 describe("the tip map", () => {
   test("every tip's command is actually pickable on every surface it declares", () => {
@@ -78,7 +82,7 @@ describe("the tip map", () => {
     for (const tip of CONTEXTUAL_TIPS) {
       for (const surface of tip.surfaces) {
         expect(
-          PALETTE_LISTS[surface].includes(tip.commandId),
+          (PALETTE_LISTS[surface] as readonly AppCommandId[]).includes(tip.commandId),
           `${tip.id}: ${tip.commandId} not in the ${surface} palette`,
         ).toBe(true);
       }
@@ -191,7 +195,8 @@ describe("notePaletteCommand", () => {
     // Restart: a fresh ConfigService over the same store still knows.
     const reloaded = await ConfigServiceImpl.load(store);
     const restarted = {
-      container: { config: reloaded, stateManager: createStateManager() } as unknown as Container,
+      // SAFETY: deliberately minimal container — same as above.
+      container: { config: reloaded, stateManager: createStateManager() } as never,
     };
     notePaletteCommand(restarted.container, "browse", "up-next");
     await drainMicrotasks();
@@ -249,7 +254,11 @@ describe("notePaletteCommand", () => {
     const lines: string[] = [];
     setContextualTipListener((line) => lines.push(line));
 
+    // SAFETY: string literal asserted as AppCommandId — the test deliberately
+    // feeds an id outside the picker lists to exercise the boundary.
     notePaletteCommand(container, "postPlayback", "up-next" as AppCommandId);
+    // SAFETY: string literal asserted as AppCommandId — the test deliberately
+    // feeds an id outside the picker lists to exercise the boundary.
     notePaletteCommand(container, "browse", "settings" as AppCommandId);
     await drainMicrotasks();
 

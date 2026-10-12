@@ -221,7 +221,7 @@ export async function runPostPlaybackMenu(
         value: {
           type: "history_entry",
           title: pendingTitleSwitch.title,
-          ...(pendingTitleSwitch.episode ? { episode: pendingTitleSwitch.episode } : {}),
+          episode: pendingTitleSwitch.episode,
         },
       },
     };
@@ -402,7 +402,7 @@ export async function runPostPlaybackMenu(
               name: topRecAdvance.title,
               type: topRec?.type === "movie" ? "movie" : "series",
               posterUrl: topRec?.posterPath ?? undefined,
-              ...(topRec?.externalIds ? { externalIds: topRec.externalIds } : {}),
+              externalIds: topRec?.externalIds,
             },
             mode,
           },
@@ -454,7 +454,7 @@ export async function runPostPlaybackMenu(
       postAction = {
         type: "history-entry",
         title: stagedPaletteLaunch.title,
-        ...(stagedPaletteLaunch.episode ? { episode: stagedPaletteLaunch.episode } : {}),
+        episode: stagedPaletteLaunch.episode,
       };
     }
 
@@ -583,6 +583,9 @@ export async function runPostPlaybackMenu(
         const exitOutcome = resolvePostPlaybackExitOutcome(postAction);
         if (exitOutcome) {
           await deps.teardownPlaybackForPostPlayExit();
+          // SAFETY: resolvePostPlaybackExitOutcome builds the post-play exit
+          // result shape; its launch-playback branch returns the same
+          // PhaseResult<PlaybackOutcome> the loop's other exits produce.
           return { kind: "exit", result: exitOutcome as PhaseResult<PlaybackOutcome> };
         }
         continue postPlayback;
@@ -599,7 +602,7 @@ export async function runPostPlaybackMenu(
             value: {
               type: "history_entry",
               title: postAction.launch.title,
-              ...(postAction.launch.episode ? { episode: postAction.launch.episode } : {}),
+              episode: postAction.launch.episode,
             },
           },
         };

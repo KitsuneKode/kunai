@@ -222,7 +222,10 @@ function parseMediaItem(notification: NotificationRecord): MediaItemIdentity | n
       ? (parsed.providerHints as MediaItemIdentity["providerHints"])
       : undefined,
     externalIds: isRecord(parsed.externalIds)
-      ? (parsed.externalIds as MediaItemIdentity["externalIds"])
+      ? // SAFETY: persisted item_json stores the identity's externalIds bag
+        // verbatim; the isRecord guard confirms an object shape and the value
+        // contract is MediaItemIdentity's own id map.
+        (parsed.externalIds as MediaItemIdentity["externalIds"])
       : undefined,
   };
 }

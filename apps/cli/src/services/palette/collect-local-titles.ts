@@ -26,6 +26,11 @@ import type {
 } from "@kunai/storage";
 import type { MediaKind } from "@kunai/types";
 
+// SAFETY: storage rows persist the provider's media-kind vocabulary verbatim;
+// the corpus feeds display rows, not provider routing, so a value outside the
+// union passes through unchanged rather than throwing on stale data.
+const toEntryMediaKind = (mediaKind: string): MediaKind => mediaKind as MediaKind;
+
 export type LocalTitleRepos = {
   readonly historyRepository: Pick<HistoryRepository, "listLatestByTitle">;
   readonly followedTitleRepository: Pick<FollowedTitleRepository, "listByPreference">;
@@ -45,11 +50,11 @@ const seasonEpisodeDetail = (
   episode?: number,
   absoluteEpisode?: number,
 ): string | null => {
-  if (typeof season === "number" && typeof episode === "number") {
+  if (season !== undefined && episode !== undefined) {
     return `S${season} E${episode}`;
   }
-  if (typeof episode === "number") return `E${episode}`;
-  if (typeof absoluteEpisode === "number") return `E${absoluteEpisode}`;
+  if (episode !== undefined) return `E${episode}`;
+  if (absoluteEpisode !== undefined) return `E${absoluteEpisode}`;
   return null;
 };
 
@@ -65,11 +70,11 @@ export function collectLocalTitleEntries(repos: LocalTitleRepos): LocalTitleEntr
       contentType,
       title: row.title,
       source: "history",
-      ...(row.providerId ? { providerId: row.providerId } : {}),
-      ...(row.externalIds ? { externalIds: row.externalIds } : {}),
-      ...(row.season !== undefined ? { season: row.season } : {}),
-      ...(row.episode !== undefined ? { episode: row.episode } : {}),
-      ...(row.absoluteEpisode !== undefined ? { absoluteEpisode: row.absoluteEpisode } : {}),
+      providerId: row.providerId,
+      externalIds: row.externalIds,
+      season: row.season,
+      episode: row.episode,
+      absoluteEpisode: row.absoluteEpisode,
       historyEntry: row,
       recency: toMillis(row.lastWatchedAt ?? row.updatedAt),
       detail: [historyEpisodeLabel(row), "history"].filter(Boolean).join(" · "),
@@ -84,14 +89,14 @@ export function collectLocalTitleEntries(repos: LocalTitleRepos): LocalTitleEntr
         : null;
     entries.push({
       titleId: entry.titleId,
-      mediaKind: entry.mediaKind as MediaKind,
-      ...(entry.contentType ? { contentType: entry.contentType } : {}),
+      mediaKind: toEntryMediaKind(entry.mediaKind),
+      contentType: entry.contentType,
       title: entry.title,
       source: "queue",
-      ...(entry.externalIds ? { externalIds: entry.externalIds } : {}),
-      ...(entry.season !== undefined ? { season: entry.season } : {}),
-      ...(entry.episode !== undefined ? { episode: entry.episode } : {}),
-      ...(entry.absoluteEpisode !== undefined ? { absoluteEpisode: entry.absoluteEpisode } : {}),
+      externalIds: entry.externalIds,
+      season: entry.season,
+      episode: entry.episode,
+      absoluteEpisode: entry.absoluteEpisode,
       queueEntryId: entry.id,
       recency: toMillis(entry.addedAt),
       detail: [episodePart, "queued"].filter(Boolean).join(" · "),
@@ -103,7 +108,7 @@ export function collectLocalTitleEntries(repos: LocalTitleRepos): LocalTitleEntr
       if (isPlaceholderTitleName(record.title, record.titleId)) continue;
       entries.push({
         titleId: record.titleId,
-        mediaKind: record.mediaKind as MediaKind,
+        mediaKind: toEntryMediaKind(record.mediaKind),
         title: record.title,
         source: "followed",
         recency: toMillis(record.updatedAt),
@@ -119,13 +124,13 @@ export function collectLocalTitleEntries(repos: LocalTitleRepos): LocalTitleEntr
         item.contentType !== "movie" ? seasonEpisodeDetail(item.season, item.episode) : null;
       entries.push({
         titleId: item.titleId,
-        mediaKind: item.mediaKind as MediaKind,
-        ...(item.contentType ? { contentType: item.contentType } : {}),
+        mediaKind: toEntryMediaKind(item.mediaKind),
+        contentType: item.contentType,
         title: item.title,
         source: "list",
-        ...(item.externalIds ? { externalIds: item.externalIds } : {}),
-        ...(item.season !== undefined ? { season: item.season } : {}),
-        ...(item.episode !== undefined ? { episode: item.episode } : {}),
+        externalIds: item.externalIds,
+        season: item.season,
+        episode: item.episode,
         recency: toMillis(item.addedAt),
         detail: [episodePart, list.name].filter(Boolean).join(" · "),
       });
@@ -141,14 +146,14 @@ export function collectLocalTitleEntries(repos: LocalTitleRepos): LocalTitleEntr
           : null;
       entries.push({
         titleId: item.titleId,
-        mediaKind: item.mediaKind as MediaKind,
-        ...(item.contentType ? { contentType: item.contentType } : {}),
+        mediaKind: toEntryMediaKind(item.mediaKind),
+        contentType: item.contentType,
         title: item.title,
         source: "playlist",
-        ...(item.externalIds ? { externalIds: item.externalIds } : {}),
-        ...(item.season !== undefined ? { season: item.season } : {}),
-        ...(item.episode !== undefined ? { episode: item.episode } : {}),
-        ...(item.absoluteEpisode !== undefined ? { absoluteEpisode: item.absoluteEpisode } : {}),
+        externalIds: item.externalIds,
+        season: item.season,
+        episode: item.episode,
+        absoluteEpisode: item.absoluteEpisode,
         recency: toMillis(item.addedAt),
         detail: [episodePart, playlist.name].filter(Boolean).join(" · "),
       });

@@ -1,4 +1,5 @@
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
+import { isJsonObject, type JsonValue } from "@kunai/types";
 
 import type { ShellAction } from "./types";
 
@@ -41,7 +42,7 @@ export type ActivePlaybackCommandDispatchDeps = {
     readonly switchToTitlePlayback: (
       selection: TitleSwitchSelection,
       reason: string,
-    ) => Promise<unknown> | unknown;
+    ) => Promise<boolean>;
     readonly signalTitleSwitch: (selection: TitleSwitchSelection) => void;
     readonly updateCurrentPlaybackAutoSkipEnabled?: (enabled: boolean, reason: string) => void;
   };
@@ -237,7 +238,7 @@ export async function dispatchActivePlaybackCommand(
     // stop the current file so the phase loop exits to the new title.
     const selection = {
       title: routed.title,
-      ...(routed.episode ? { episode: routed.episode } : {}),
+      episode: routed.episode,
     };
     const cancelledWork = deps.workControl.cancelActive("playback-loading-command-switch-title");
     if (cancelledWork) {
@@ -252,14 +253,8 @@ export async function dispatchActivePlaybackCommand(
   return "handled";
 }
 
-function isRoutedHistoryEntry(
-  value: unknown,
-): value is { readonly title: TitleInfo; readonly episode?: EpisodeInfo } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { type?: unknown }).type === "history-entry" &&
-    typeof (value as { title?: unknown }).title === "object" &&
-    (value as { title?: unknown }).title !== null
-  );
+function isRoutedHistoryEntry<T>(
+  value: T,
+): value is T & { readonly title: TitleInfo; readonly episode?: EpisodeInfo } {
+  return isJsonObject(value) && value.type === "history-entry" && isJsonObject(value.title);
 }

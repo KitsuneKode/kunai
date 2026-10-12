@@ -42,7 +42,7 @@ export async function deliverNotificationPlayback(
       type: "launch-playback",
       launch: {
         title: intent.title,
-        ...(intent.episode ? { episode: intent.episode } : {}),
+        episode: intent.episode,
       },
     };
     if (forceCloseRootContent(launch)) {
@@ -65,7 +65,7 @@ export async function deliverNotificationPlayback(
 
   const selection = {
     title: intent.title,
-    ...(intent.episode ? { episode: intent.episode } : {}),
+    episode: intent.episode,
   };
   // A resolve in flight owns no player to stop — abort it and arm the intent
   // for the aborted-resolve tail. Otherwise stop the file; the file-stop

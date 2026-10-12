@@ -3,8 +3,9 @@ import { describe, expect, test } from "bun:test";
 import { deliverNotificationPlayback } from "@/app-shell/notification-playback-delivery";
 import { forceSettleAllRootContent, mountRootContent } from "@/app-shell/root-content-state";
 import type { BrowseShellResult, PlaybackShellResult } from "@/app-shell/types";
-import type { Container } from "@/container";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
+import type { PlaybackTitleSelection } from "@/infra/player/PlayerControlService";
+import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-event";
 
 const TITLE: TitleInfo = { id: "tmdb:1", type: "series", name: "Notified" };
 const EPISODE: EpisodeInfo = { season: 1, episode: 4 };
@@ -21,13 +22,15 @@ function containerStub({
 } = {}) {
   const events: string[] = [];
   const dispatched: Array<{ type: string; note?: string | null }> = [];
+  // SAFETY: deliberately partial container — delivery reads only
+  // playerControl, workControl, stateManager and diagnosticsService.
   const container = {
     playerControl: {
-      signalTitleSwitch(selection: unknown) {
+      signalTitleSwitch(selection: PlaybackTitleSelection) {
         events.push("signal-title-switch");
         void selection;
       },
-      async switchToTitlePlayback(selection: unknown, _reason?: string) {
+      async switchToTitlePlayback(selection: PlaybackTitleSelection, _reason?: string) {
         events.push("switch-to-title");
         void selection;
         return switchDelivered;
@@ -48,14 +51,13 @@ function containerStub({
       },
     },
     diagnosticsService: {
-      record(_entry: unknown) {
+      record(_entry: DiagnosticEventInput) {
         events.push("diagnostic");
       },
     },
-  } as unknown as Pick<
-    Container,
-    "playerControl" | "workControl" | "stateManager" | "diagnosticsService"
-  >;
+    // SAFETY: deliberately partial container — delivery reads only
+    // playerControl, workControl, stateManager and diagnosticsService.
+  } as never;
   return { container, events, dispatched };
 }
 

@@ -1,4 +1,5 @@
 import type { EpisodePrefetchHandle } from "@/app/playback/episode-prefetch";
+import type { PlaybackTitleSelection } from "@/infra/player/PlayerControlService";
 type PlaybackPostPlayContainer = {
   readonly player: {
     releasePersistentSession(): Promise<void>;
@@ -7,7 +8,7 @@ type PlaybackPostPlayContainer = {
     consumeLastAction(): unknown;
     consumePendingStreamSelection(): unknown;
     consumePendingEpisodeSelection(): unknown;
-    consumePendingTitleSelection(): unknown;
+    consumePendingTitleSelection(): PlaybackTitleSelection | null;
   };
   readonly stateManager: {
     dispatch(action: { readonly type: "SET_PLAYBACK_STATUS"; readonly status: "idle" }): void;

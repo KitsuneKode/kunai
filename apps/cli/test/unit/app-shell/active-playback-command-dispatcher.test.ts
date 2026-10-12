@@ -378,6 +378,7 @@ function createDeps(
       },
       switchToTitlePlayback: async (selection, reason) => {
         calls.push(`switch-title:${selection.title.name}:${reason}`);
+        return true;
       },
       signalTitleSwitch: (selection) => {
         calls.push(`signal-switch:${selection.title.name}`);

@@ -19,13 +19,13 @@ import type { MediaKind, ProviderExternalIds } from "@kunai/types";
 /** Where a palette title row came from — also the dedupe precedence order. */
 export type LocalTitleSource = "history" | "queue" | "followed" | "list" | "playlist";
 
-const SOURCE_PRECEDENCE: Record<LocalTitleSource, number> = {
+const SOURCE_PRECEDENCE = {
   history: 0,
   queue: 1,
   followed: 2,
   list: 3,
   playlist: 4,
-};
+} satisfies Record<LocalTitleSource, number>;
 
 export interface LocalTitleEntry {
   readonly titleId: string;
