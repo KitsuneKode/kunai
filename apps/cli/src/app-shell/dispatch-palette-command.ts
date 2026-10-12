@@ -102,14 +102,16 @@ async function routeNotificationsInbox(
     });
     return "handled";
   }
-  const { playback } = await workflows.openNotifications(container);
-  if (playback) {
+  const { outcome } = await workflows.openNotifications(container);
+  if (outcome?.kind === "playback") {
     return {
       type: "history-entry",
-      title: playback.title,
-      episode: playback.episode,
+      title: outcome.title,
+      episode: outcome.episode,
     };
   }
+  // "details" outcomes are already staged for browse-shell's subscriber by the
+  // row executor; there is nothing left for this route to do.
   return "handled";
 }
 

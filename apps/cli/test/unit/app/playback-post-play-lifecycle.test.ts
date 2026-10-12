@@ -25,7 +25,7 @@ describe("playback post-play lifecycle", () => {
     ]);
   });
 
-  test("teardownPlaybackForPostPlayExit prepares the surface before releasing mpv", async () => {
+  test("teardownPlaybackForPostPlayExit prepares the surface, drains title switch, then releases mpv", async () => {
     const events: string[] = [];
     await teardownPlaybackForPostPlayExit(
       createContainer(events),
@@ -33,6 +33,12 @@ describe("playback post-play lifecycle", () => {
       new AbortController(),
     );
 
+    // The title-selection drain is teardown-only — preparePostPlaybackSurface
+    // must not consume it ahead of the post-play menu's entry check, so it has
+    // to land after the prepare block's own drains.
+    const titleDrain = events.indexOf("control:consume-title");
+    expect(titleDrain).toBeGreaterThan(events.indexOf("control:consume-episode"));
+    expect(events.at(-2)).toBe("control:consume-title");
     expect(events.at(-1)).toBe("player:release");
   });
 });
@@ -55,6 +61,10 @@ function createContainer(events: string[]) {
       },
       consumePendingEpisodeSelection() {
         events.push("control:consume-episode");
+        return null;
+      },
+      consumePendingTitleSelection() {
+        events.push("control:consume-title");
         return null;
       },
     },

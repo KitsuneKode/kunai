@@ -56,6 +56,10 @@ export function titleInfoFromMediaItemIdentity(item: MediaItemIdentity): TitleIn
       (item.mediaKind === "movie" || item.mediaKind === "video" ? "movie" : "series"),
     name: item.title,
     ...(item.mediaKind === "anime" ? { isAnime: true } : {}),
+    // Same parity as titleInfoFromQueueEntry: a notification announcing an
+    // anime episode is the only place downstream resolvers can still see the
+    // AniList/TMDB pair, so it cannot be dropped on the launch path.
+    externalIds: item.externalIds,
   };
 }
 

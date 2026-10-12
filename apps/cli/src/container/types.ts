@@ -72,6 +72,7 @@ import type { ReleaseProgressWriter } from "../services/release-reconciliation/R
 import type { ReleaseReconciliationService } from "../services/release-reconciliation/ReleaseReconciliationService";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
 import type { SearchServiceDefinition } from "../services/search/SearchService";
+import type { SessionUndoService } from "../services/session-undo/session-undo-service";
 import type { SyncAuthAvailability } from "../services/sync/auth-contract";
 import type { SyncService } from "../services/sync/SyncService";
 import type { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
@@ -174,6 +175,8 @@ export interface Container {
   readonly durablePlaylistService: DurablePlaylistService;
   readonly listService: ListService;
   readonly queueService: QueueService;
+  /** In-session undo journal (`z` in the shell). Not persisted. */
+  readonly sessionUndo: SessionUndoService;
   readonly statsService: StatsService;
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;

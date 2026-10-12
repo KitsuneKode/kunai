@@ -59,7 +59,9 @@ function mediaItemShellMode(item: MediaItemIdentity): ShellMode {
 
 export function playbackIntentFromMediaItem(item: MediaItemIdentity) {
   return {
-    title: titleInfoFromMediaItemIdentity(item),
+    // "notification" marks the launch as an explicit episode pick — the entry
+    // policy auto-plays it instead of deferring to the starting-point menu.
+    title: { ...titleInfoFromMediaItemIdentity(item), launchSource: "notification" as const },
     episode: episodeInfoFromMediaItemIdentity(item),
   };
 }

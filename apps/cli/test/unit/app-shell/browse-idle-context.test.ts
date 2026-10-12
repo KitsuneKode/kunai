@@ -31,6 +31,12 @@ describe("buildBrowseIdleContext", () => {
       historyRepository: {
         listLatestByTitle: () => [],
       },
+      config: {
+        lastCalendarVisitAt: 0,
+      },
+      followedTitleRepository: {
+        listByPreference: () => [],
+      },
       listService: {
         getWatchlist: () => [
           {

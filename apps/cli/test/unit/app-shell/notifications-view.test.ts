@@ -272,7 +272,20 @@ describe("buildNotificationsView pagination and selection", () => {
 describe("buildNotificationsView projection", () => {
   it("projects actionable rows through the shared presentation", () => {
     const projected = view({
-      records: [rec({ dedupKey: "a", updatedAt: "2026-07-16T10:00:00.000Z" })],
+      records: [
+        rec({
+          dedupKey: "a",
+          updatedAt: "2026-07-16T10:00:00.000Z",
+          // A playable identity — episode coords — is what earns play-now.
+          itemJson: JSON.stringify({
+            titleId: "tt-frieren",
+            title: "Frieren",
+            mediaKind: "series",
+            season: 1,
+            episode: 13,
+          }),
+        }),
+      ],
     });
     const row = projected.rows[0];
 

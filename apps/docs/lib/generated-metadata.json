@@ -1,7 +1,7 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "8a905f085fb67275e6f6f5045dd811323223cbb9d063a5460dbb5d080c0bfcfc",
+  "cliSourceFingerprint": "70234e37693663704d559d3bd2fdf7889af82d4747c223a9b48c7ae4aa967d79",
   "docsContentFingerprint": "69caeac111e8e1d3b5aadad5629c85b7572634a93034dd363a17cfdc85165e2d",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 85,
@@ -1238,7 +1238,7 @@
       "scope": "browse",
       "group": "While browsing",
       "keys": "m",
-      "label": "Open starting-point menu for the highlighted title (same as Enter)",
+      "label": "Open starting-point menu for the highlighted title (Enter plays through)",
       "tier": "surface",
       "order": 280
     },

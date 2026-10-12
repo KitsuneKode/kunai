@@ -2,6 +2,7 @@ import type { ShellPickerOption, ShellStatusTone } from "@/app-shell/types";
 import {
   isNotificationActionId,
   parseNotificationActionIds,
+  parseNotificationMediaItem,
   type NotificationActionId,
 } from "@/services/notifications/NotificationActionRouter";
 import {
@@ -88,7 +89,7 @@ export function getExecutableNotificationActions(
   const source = KNOWN_NOTIFICATION_KINDS.has(notification.kind)
     ? defaultNotificationActionIds({
         kind: notification.kind,
-        hasItem: Boolean(notification.itemJson),
+        item: parseNotificationMediaItem(notification) ?? undefined,
       }).filter(isNotificationActionId)
     : parseNotificationActionIds(notification);
 

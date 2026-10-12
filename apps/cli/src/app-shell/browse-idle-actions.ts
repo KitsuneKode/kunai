@@ -1,4 +1,5 @@
 import {
+  formatNewSinceVisitLine,
   formatReadyForYouNowMeta,
   RETURN_LOOP_FOR_YOU_NOW_HEADING,
   RETURN_LOOP_NAV_HINT,
@@ -30,6 +31,10 @@ export function resolveIdleRowAction(
       return idleContext.savedNext?.titleId ? "watchlist" : null;
     case "ready-now":
       return (idleContext.todayReleaseCount ?? 0) > 0 ? "notifications" : null;
+    case "new-since-visit":
+      // Lands on Tracked — the same tab the calendar-nudge row opens, because
+      // both rows count tracked titles, not the unfiltered All schedule.
+      return (idleContext.newSinceVisit?.episodeCount ?? 0) > 0 ? "tracked-calendar" : null;
     case "calendar-nudge":
       // Opens the calendar already on Tracked. This row counts *tracked* titles
       // airing, so landing on the unfiltered All tab made the number look wrong
@@ -71,6 +76,8 @@ function idleRowHint(rowId: string, focused: boolean): string | undefined {
       return "↵ open watchlist";
     case "ready-now":
       return "↵ open notices";
+    case "new-since-visit":
+      return "↵ open schedule";
     case "calendar-nudge":
       return "↵ open schedule";
     case "trending":
@@ -92,10 +99,31 @@ export function buildBrowseIdleReturnLoopModel(
      * otherwise the row flickers in and out during the lazy read.
      */
     readonly showDiscoveryRowWhenEmpty?: boolean;
+    /** Injectable clock for the since-label — tests never read the wall clock. */
+    readonly nowMs?: number;
   },
 ): BrowseIdleReturnLoopModel | null {
   const selectedIndex = Math.max(0, options.selectedIndex ?? 0);
   const rows: BrowseIdleReturnLoopRow[] = [];
+
+  // "New since you left" leads the strip: it answers the question users open
+  // the home screen with, and it sits above Continue Watching by design.
+  if (idleContext?.newSinceVisit && idleContext.newSinceVisit.episodeCount > 0) {
+    const rowIndex = rows.length;
+    rows.push({
+      id: "new-since-visit",
+      glyph: "●",
+      glyphColor: palette.ok,
+      title: formatNewSinceVisitLine(
+        idleContext.newSinceVisit.episodeCount,
+        idleContext.newSinceVisit.sinceMs,
+        options.nowMs ?? Date.now(),
+      ),
+      hint: idleRowHint("new-since-visit", options.idleFocused && selectedIndex === rowIndex),
+      focused: options.idleFocused && selectedIndex === rowIndex,
+      actionable: true,
+    });
+  }
 
   if (idleContext?.continueWatching) {
     const cw = idleContext.continueWatching;
