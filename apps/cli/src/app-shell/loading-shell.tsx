@@ -679,6 +679,8 @@ export const LoadingShell = React.memo(function LoadingShell({
         }
         state.onCommandAction?.(action);
       }}
+      localTitles={state.paletteTitleSource}
+      onTitlePick={state.onPaletteTitlePick}
     >
       <PlaybackShellInput
         input={playbackInput}

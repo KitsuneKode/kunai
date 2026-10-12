@@ -8,6 +8,7 @@ import { useLineEditor } from "@/app-shell/line-editor";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
+import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
 import type { FilterStateKey } from "@/domain/search/SearchIntent";
 import {
   buildSuggestionBand,
@@ -121,6 +122,7 @@ import {
 } from "./layout-policy";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
+import { takePaletteTitleLaunch } from "./palette-title-launch";
 import { suppressPosterWhileNavigating } from "./poster-types";
 import { computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
@@ -143,7 +145,9 @@ import { SakuraLoader } from "./SakuraLoader";
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
-  getHighlightedCommand,
+  movePaletteSelection,
+  paletteSelectableCount,
+  resolveHighlightedPaletteRow,
 } from "./shell-command-model";
 import { CommandPalette } from "./shell-command-ui";
 import { getCommandLabel, InputField } from "./shell-frame";
@@ -202,6 +206,8 @@ function browseFilterPlaceholder(mode: ShellMode): string {
 
 type BrowseQueryDraft = { value: string; mode: ShellMode };
 
+const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
+
 export function BrowseShell<T>({
   mode,
   provider,
@@ -231,6 +237,7 @@ export function BrowseShell<T>({
   onPlayTrailer,
   onOpenLink,
   onResolve,
+  onTitlePick,
   onSubmit,
   onCancel,
   onPrefetchOption,
@@ -239,6 +246,7 @@ export function BrowseShell<T>({
   onSuggest,
   loadLocalSuggestions,
   suggestionDebounceMs,
+  localTitles,
 }: {
   mode: ShellMode;
   provider: string;
@@ -278,6 +286,8 @@ export function BrowseShell<T>({
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
   onResolve: (action: ShellAction, value?: T) => void;
+  /** Enter landed on a JUMP TO title row. */
+  onTitlePick?: (entry: LocalTitleEntry) => void;
   onSubmit: (value: T) => void;
   onCancel: () => void;
   /**
@@ -297,6 +307,8 @@ export function BrowseShell<T>({
   loadLocalSuggestions?: () => readonly SearchSuggestion<T>[];
   /** Test seam: keystroke → catalog-fetch debounce. Defaults to the standard delay. */
   suggestionDebounceMs?: number;
+  /** Local title source — consulted once per palette open for the JUMP TO section. */
+  localTitles?: () => readonly LocalTitleEntry[];
 }) {
   recordRender("browse");
   const viewport = useDebouncedViewportPolicy("browse", {
@@ -317,6 +329,11 @@ export function BrowseShell<T>({
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const [titleEntries, setTitleEntries] = useState<readonly LocalTitleEntry[]>([]);
+  const titleMatches = useMemo(
+    () => matchLocalTitles(titleEntries, commandInput),
+    [titleEntries, commandInput],
+  );
   // Transient confirmation for row actions (follow / queue / download) — without it,
   // following a title looked like a no-op even though it persisted.
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
@@ -580,6 +597,14 @@ export function BrowseShell<T>({
     leaveCalendarSurface();
   }, [leaveCalendarSurface]);
 
+  // Snapshot title entries once per open — the matcher stays a pure in-memory
+  // index against this list, so a keystroke never hits storage.
+  const openPalette = useCallback(() => {
+    setTitleEntries(localTitles?.() ?? EMPTY_TITLE_ENTRIES);
+    setCommandMode(true);
+    setHighlightedCommandIndex(0);
+  }, [localTitles]);
+
   const updateQuery = useCallback(
     (nextValue: string) => {
       const normalized = normalizeBrowseCommandInput(nextValue);
@@ -588,15 +613,13 @@ export function BrowseShell<T>({
       // A new draft invalidates the band highlight — never the dismissal.
       setSuggestionIndex(-1);
       if (normalized.openCommandPalette) {
-        setCommandMode(true);
-        setCommandInput("");
-        setHighlightedCommandIndex(0);
+        openPalette();
       }
       // Emptying the draft is not a gesture — backspacing to retype must not
       // fire a discovery reload or move focus. Restoring trending is deliberate
       // and lives on the Esc ladder (query → clear text, results → clearResults).
     },
-    [setQuery],
+    [openPalette, setQuery],
   );
 
   const runSearch = useCallback(
@@ -1463,18 +1486,31 @@ export function BrowseShell<T>({
       const matches = getCommandMatches(commandInput, commands);
 
       if (key.escape) {
+        // Close only — the draft survives so a `/` reopen resumes the query,
+        // matching the shared palette contract.
         setCommandMode(false);
-        setCommandInput("");
         setHighlightedCommandIndex(0);
         return;
       }
       if (key.return) {
-        const resolved = getHighlightedCommand(commandInput, commands, highlightedCommandIndex);
-        if (resolved?.enabled) {
-          const action = toShellAction(resolved.id);
+        const row = resolveHighlightedPaletteRow(
+          commandInput,
+          commands,
+          titleMatches,
+          highlightedCommandIndex,
+        );
+        if (row?.kind === "command" && row.command.enabled) {
+          const action = toShellAction(row.command.id);
+          setCommandInput("");
           if (!handleLocalAction(action)) {
             onResolve(action);
           }
+        }
+        if (row?.kind === "title") {
+          setCommandMode(false);
+          setCommandInput("");
+          setHighlightedCommandIndex(0);
+          onTitlePick?.(row.match.entry);
         }
         return;
       }
@@ -1491,16 +1527,13 @@ export function BrowseShell<T>({
         }
         return;
       }
+      const selectable = paletteSelectableCount(commandInput, commands, titleMatches);
       if (key.upArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current - 1 + matches.length) % matches.length);
-        }
+        setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, -1));
         return;
       }
       if (key.downArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current + 1) % matches.length);
-        }
+        setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, 1));
         return;
       }
       if (commandEditor.handleInput(input, key)) {
@@ -1510,9 +1543,7 @@ export function BrowseShell<T>({
     }
 
     if (input === "/") {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      openPalette();
       return;
     }
 
@@ -2435,6 +2466,7 @@ export function BrowseShell<T>({
           cursor={commandEditor.cursor}
           commands={commands}
           highlightedIndex={highlightedCommandIndex}
+          titleMatches={titleMatches}
           maxVisible={getBrowseCommandPaletteMaxVisible(
             viewport.rows,
             Boolean(resultSubtitle && !viewport.ultraCompact),
@@ -2591,6 +2623,8 @@ export function openBrowseShell<T>({
   onSuggest,
   loadLocalSuggestions,
   suggestionDebounceMs,
+  localTitles,
+  onTitlePick,
 }: {
   mode: ShellMode;
   provider: string;
@@ -2631,7 +2665,17 @@ export function openBrowseShell<T>({
   onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
   loadLocalSuggestions?: () => readonly SearchSuggestion<T>[];
   suggestionDebounceMs?: number;
+  /** Local title source — consulted once per palette open for the JUMP TO section. */
+  localTitles?: () => readonly LocalTitleEntry[];
+  /** Enter landed on a JUMP TO title row. */
+  onTitlePick?: (entry: LocalTitleEntry) => void;
 }): Promise<BrowseShellResult<T>> {
+  // A title picked from another surface (picker, loading) parks its launch
+  // here; the next browse mount resolves it instead of rendering.
+  const stagedLaunch = takePaletteTitleLaunch();
+  if (stagedLaunch) {
+    return Promise.resolve({ type: "launch-playback", launch: stagedLaunch });
+  }
   const queryDraft = sharedQueryDraft ?? { value: initialQuery ?? "", mode };
   if (queryDraft.mode !== mode) {
     queryDraft.value = initialQuery ?? "";
@@ -2674,6 +2718,8 @@ export function openBrowseShell<T>({
         onSuggest={onSuggest}
         loadLocalSuggestions={loadLocalSuggestions}
         suggestionDebounceMs={suggestionDebounceMs}
+        localTitles={localTitles}
+        onTitlePick={onTitlePick}
         onResolve={(action, value) =>
           finish(
             value !== undefined ? { type: "action", action, value } : { type: "action", action },
