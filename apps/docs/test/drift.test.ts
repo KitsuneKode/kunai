@@ -202,10 +202,10 @@ describe("docs codegen drift", () => {
     // every pair of PRs conflict on generated-metadata.json. They now live in
     // the gitignored provenance sidecar; if one comes back, the conflict churn
     // comes back with it.
-    const committed = codeMetadata as unknown as Record<string, unknown>;
-    expect(committed).not.toHaveProperty("cliSourceFingerprint");
-    expect(committed).not.toHaveProperty("docsContentFingerprint");
-    expect(committed).not.toHaveProperty("featureStatusRevision");
+    const committedKeys = Object.keys(codeMetadata);
+    expect(committedKeys).not.toContain("cliSourceFingerprint");
+    expect(committedKeys).not.toContain("docsContentFingerprint");
+    expect(committedKeys).not.toContain("featureStatusRevision");
   });
 
   test("the freshness gate passes on the committed payload", () => {
@@ -223,11 +223,11 @@ describe("docs codegen drift", () => {
   test("tampering with real content changes the identity the gate compares", () => {
     // metadataIdentity is the whole-payload JSON string; a content change must
     // move it, which is what makes a stale committed file fail the gate.
-    const tampered = { ...(codeMetadata as unknown as Record<string, unknown>) };
-    tampered.providerIds = [...(tampered.providerIds as string[]), "phantom"];
-    expect(JSON.stringify(tampered)).not.toBe(
-      JSON.stringify(codeMetadata as unknown as Record<string, unknown>),
-    );
+    const tampered = {
+      ...codeMetadata,
+      providerIds: [...codeMetadata.providerIds, "phantom"],
+    };
+    expect(JSON.stringify(tampered)).not.toBe(JSON.stringify(codeMetadata));
   });
 
   test("a fresh build emits no fingerprint keys either", () => {
