@@ -185,8 +185,6 @@ export function useMouseRegion(
   options: { readonly active?: boolean } = {},
 ): void {
   const dispatcher = useContext(MouseDispatchContext);
-  const handlersRef = useRef(handlers);
-  handlersRef.current = handlers;
   const suspended = useRootContentSuspended();
   const active = options.active !== false && !suspended;
 
@@ -208,7 +206,7 @@ export function useMouseRegion(
     dispatcher.register(
       id,
       { x: layout.x + 1, y: layout.y + 1, width: layout.width, height: layout.height },
-      handlersRef.current,
+      handlers,
     );
   });
 }
