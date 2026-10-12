@@ -4,7 +4,7 @@
   General   Appearance  Discover  Providers  Provider relay  YouTube › Tab / Shift+Tab
 
 
- GENERAL ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ GENERAL ────────────────────────────────────────────────────────────────────────────────────────
  Launch mode and how much shortcut help the shell shows
    ▸ Default startup mode ·  Series mode
    ▸ Footer hints ·  Detailed

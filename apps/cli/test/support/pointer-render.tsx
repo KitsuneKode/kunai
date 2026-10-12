@@ -26,6 +26,10 @@ export function renderWithPointer(node: ReactElement, options: CaptureOptions = 
   return {
     ...handle,
     dispatcher,
+    rerender: (next: ReactElement) =>
+      handle.rerender(
+        <MouseDispatchProvider dispatcher={dispatcher}>{next}</MouseDispatchProvider>,
+      ),
     click: (id: string) =>
       act(() => {
         send(id, { kind: "press", button: "left" });

@@ -12,7 +12,11 @@ import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-name";
-import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
+import {
+  encodeTrackSelection,
+  type TrackCapability,
+  type TrackCapabilitySection,
+} from "@/domain/playback/track-capabilities";
 import {
   providerMetadataMatchesLane,
   providerPickerLanesForTitle,
@@ -23,7 +27,7 @@ import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
 import { restoreQueueSessionWithResume } from "@/domain/queue/restore-queue-session";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import { isPlaybackSessionActive, type SessionState } from "@/domain/session/SessionState";
-import { countLabel } from "@/domain/text-display";
+import { countLabel, truncateLine } from "@/domain/text-display";
 import type { SearchResult } from "@/domain/types";
 import { openExternalUrlAndWait } from "@/infra/shell/open-external-url";
 import { projectionFromViewDecision } from "@/services/continuation/continuation-policy";
@@ -1416,6 +1420,41 @@ export function RootOverlayShell({
     })();
   };
 
+  const sortedTrackRows = (section: TrackCapabilitySection) => {
+    const group = trackGroups.find((group) => group.section === section);
+    return group?.section === "source"
+      ? sortByFavorites(group.rows, tracksFavorites, (row) => row.label)
+      : (group?.rows ?? []);
+  };
+  const activateTrack = (row: TrackCapability) => {
+    if (overlay.type !== "tracks_panel" || Date.now() < tracksFrozenUntil) return;
+    if (!row.enabled) {
+      setOverlayStatus(
+        row.reason ?? (row.selected ? "Already on this stream" : "This option cannot be switched"),
+      );
+      return;
+    }
+    container.stateManager.dispatch({
+      type: "RESOLVE_PICKER",
+      id: overlay.id,
+      value: encodeTrackSelection(row.section, row.value),
+    });
+  };
+  const selectTrackOption = (section: TrackCapabilitySection, value: string) => {
+    const sectionIndex = trackGroups.findIndex((group) => group.section === section);
+    const rows = sortedTrackRows(section);
+    const optionIndex = rows.findIndex((row) => row.value === value);
+    const row = rows[optionIndex];
+    if (sectionIndex < 0 || !row) return;
+    if (
+      tracksNav.focusedPane !== "options" ||
+      sectionIndex !== tracksNav.sectionIndex ||
+      optionIndex !== tracksNav.optionIndex
+    ) {
+      setTracksNav({ focusedPane: "options", sectionIndex, optionIndex });
+    } else activateTrack(row);
+  };
+
   const activateQueueRow = (row: QueueViewRow) => {
     if (row.state === "played" || row.state === "starting") {
       setOverlayStatus(
@@ -1601,18 +1640,7 @@ export function RootOverlayShell({
         );
         const row = sorted[safeOptionIndex];
         if (!focusedGroup || !row) return;
-        if (!row.enabled) {
-          setOverlayStatus(
-            row.reason ??
-              (row.selected ? "Already on this stream" : "This option cannot be switched"),
-          );
-          return;
-        }
-        container.stateManager.dispatch({
-          type: "RESOLVE_PICKER",
-          id: overlay.id,
-          value: encodeTrackSelection(row.section, row.value),
-        });
+        activateTrack(row);
         return;
       }
       return;
@@ -2173,10 +2201,13 @@ export function RootOverlayShell({
     return wrapOverlayLayout(
       overlayLayout,
       <Box flexDirection="column" flexGrow={1}>
+        {overlayStatus ? (
+          <Text color={palette.textDim}>{truncateLine(overlayStatus, overlayLayout.contentColumns)}</Text>
+        ) : null}
         <SettingsShell
           container={container}
           width={overlayLayout.contentColumns}
-          maxRows={maxLines}
+          maxRows={Math.max(1, maxLines - (overlayStatus ? 1 : 0))}
           commandMode={commandMode}
           initialSectionId={overlay.initialSectionId}
           onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
@@ -2466,6 +2497,51 @@ export function RootOverlayShell({
         <TracksPanelShell
           groups={trackGroups}
           nav={tracksNav}
+          pointer={
+            commandMode
+              ? undefined
+              : {
+                  section: (section) => {
+                    const sectionIndex = trackGroups.findIndex(
+                      (group) => group.section === section,
+                    );
+                    if (sectionIndex >= 0)
+                      setTracksNav({ focusedPane: "options", sectionIndex, optionIndex: 0 });
+                  },
+                  option: selectTrackOption,
+                  scroll: (section, direction) => {
+                    const sectionIndex = trackGroups.findIndex(
+                      (group) => group.section === section,
+                    );
+                    if (sectionIndex < 0) return;
+                    const group = trackGroups[sectionIndex];
+                    const rows = sortedTrackRows(section);
+                    const context = {
+                      sectionCount: trackGroups.length,
+                      optionCount: rows.length,
+                      gridColumns:
+                        group?.section === "subtitle"
+                          ? subtitleGridColumns(
+                              tracksOptionsPaneWidth(overlayLayout.contentColumns),
+                            )
+                          : 1,
+                    };
+                    setTracksNav((current) =>
+                      tracksPanelNavReducer(
+                        {
+                          ...current,
+                          focusedPane: "options",
+                          sectionIndex,
+                          optionIndex:
+                            current.sectionIndex === sectionIndex ? current.optionIndex : 0,
+                        },
+                        { type: direction === "up" ? "up" : "down" },
+                        context,
+                      ),
+                    );
+                  },
+                }
+          }
           favorites={tracksFavorites}
           providerLabel={overlay.type === "tracks_panel" ? overlay.providerLabel : undefined}
           width={overlayLayout.contentColumns}
