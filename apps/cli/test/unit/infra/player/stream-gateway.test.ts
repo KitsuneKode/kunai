@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import crypto from "node:crypto";
 
 import {
   createStreamGateway,
@@ -240,6 +241,107 @@ describe("android stream gateway", () => {
     expect(scheduled).toHaveLength(1);
     scheduled[0]?.();
     expect(gw.isStopped()).toBe(true);
+  });
+
+  test("a 10 MiB progressive MP4 streams fully on /media with no buffering cap", async () => {
+    const big = crypto.getRandomValues(new Uint8Array(10 * 1024 * 1024));
+    const gw = start({
+      fetchImpl: async () => new Response(new Uint8Array(big), { status: 200 }),
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/movie.mp4",
+        headers: {},
+      });
+      const res = await fetch(session.mediaUrl);
+      expect(res.status).toBe(200);
+      const received = new Uint8Array(await res.arrayBuffer());
+      expect(received.byteLength).toBe(big.byteLength);
+      expect(Buffer.from(received).equals(Buffer.from(big))).toBe(true);
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("an octet-stream HLS playlist at a non-.m3u8 URL is still rewritten", async () => {
+    const sneaky = [
+      "#EXTM3U",
+      "#EXT-X-VERSION:3",
+      "#EXTINF:6.0,",
+      "https://seg.example.com/a.ts",
+      "#EXT-X-ENDLIST",
+    ].join("\n");
+    const gw = start({
+      fetchImpl: async () =>
+        new Response(sneaky, {
+          status: 200,
+          headers: { "content-type": "application/octet-stream" },
+        }),
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/load?id=1", // no .m3u8, generic content-type
+        headers: {},
+      });
+      const res = await fetch(session.mediaUrl);
+      const text = await res.text();
+      expect(text).toContain("/f/");
+      expect(text).not.toContain("https://seg.example.com/a.ts");
+      // And the rewritten segment actually fetches through the gateway.
+      const segUrl = text.match(/https?:\/\/[^\s]+/u)?.[0];
+      expect(segUrl).toBeDefined();
+      const segRes = await fetch(segUrl ?? "");
+      expect([403, 404, 502, 200]).toContain(segRes.status); // fetched, not bypassed
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("a BOM-prefixed playlist is detected and rewritten", async () => {
+    const gw = start({
+      fetchImpl: async () =>
+        new Response("\uFEFF#EXTM3U\n#EXT-X-ENDLIST\n", {
+          status: 200,
+          headers: { "content-type": "text/plain" },
+        }),
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/play",
+        headers: {},
+      });
+      const res = await fetch(session.mediaUrl);
+      expect(res.headers.get("content-type")).toBe("application/vnd.apple.mpegurl");
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("a body whose first chunk is binary passes through byte-identical", async () => {
+    const binary = crypto.getRandomValues(new Uint8Array(2 * 1024 * 1024));
+    const gw = start({
+      fetchImpl: async () =>
+        new Response(binary, {
+          status: 206,
+          headers: {
+            "content-range": "bytes 0-2097151/2097151",
+            "accept-ranges": "bytes",
+          },
+        }),
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/chunk.ts",
+        headers: {},
+      });
+      const res = await fetch(session.mediaUrl, { headers: { Range: "bytes=0-" } });
+      expect(res.status).toBe(206);
+      expect(res.headers.get("content-range")).toBe("bytes 0-2097151/2097151");
+      const received = Buffer.from(await res.arrayBuffer());
+      expect(received.equals(Buffer.from(binary))).toBe(true);
+    } finally {
+      gw.stop();
+    }
   });
 
   test("a second registration revokes the first token", async () => {

@@ -9,7 +9,7 @@ import {
 } from "@kunai/core";
 import type { Server } from "bun";
 
-import { fromB64Url, looksLikeHlsPlaylist, toB64Url } from "./hls-relay";
+import { fromB64Url, toB64Url } from "./hls-relay";
 import {
   normalizeStreamHttpHeaders,
   type NormalizedStreamHttpHeaders,
@@ -42,6 +42,31 @@ import {
 const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60_000;
 /** Playlists and MPDs are small; a hostile body is not allowed to be a movie. */
 const MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
+/**
+ * `#EXTM3U` tolerant of a UTF-8 BOM or stray leading whitespace — some CDNs
+ * prefix the magic, and an exact-offset match would stream the playlist
+ * through unrewritten with its URIs bypassing the gateway.
+ */
+function looksLikePlaylistHead(chunk: Buffer): boolean {
+  let offset = 0;
+  if (chunk.byteLength >= 3 && chunk[0] === 0xef && chunk[1] === 0xbb && chunk[2] === 0xbf) {
+    offset = 3;
+  }
+  while (
+    offset < chunk.byteLength &&
+    (chunk[offset] === 0x20 ||
+      chunk[offset] === 0x09 ||
+      chunk[offset] === 0x0a ||
+      chunk[offset] === 0x0d)
+  ) {
+    offset += 1;
+  }
+  return chunk.subarray(offset, offset + 7).equals(HLS_PLAYLIST_MAGIC);
+}
+
+/** `#EXTM3U`, as bytes — the same magic hls-relay sniffs. */
+const HLS_PLAYLIST_MAGIC = Buffer.from("#EXTM3U", "latin1");
+
 const SUBTITLE_ROUTE = /^\/g\/([0-9a-f]{32})\/sub\/(\d+)$/;
 const FETCH_ROUTE = /^\/g\/([0-9a-f]{32})\/f\/([A-Za-z0-9_-]+=*)$/;
 const MEDIA_ROUTE = /^\/g\/([0-9a-f]{32})\/media$/;
@@ -197,31 +222,6 @@ export function rewriteDocumentForGateway(
   });
 }
 
-async function readBoundedBody(
-  body: ReadableStream<Uint8Array> | null,
-  cap: number,
-): Promise<Buffer> {
-  if (!body) return Buffer.alloc(0);
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value?.byteLength ?? 0;
-      if (total > cap) {
-        await reader.cancel("over-cap").catch(() => {});
-        throw new Error("upstream body exceeded playlist cap");
-      }
-      if (value) chunks.push(value);
-    }
-    return Buffer.concat(chunks.map((c) => Buffer.from(c)));
-  } finally {
-    reader.releaseLock();
-  }
-}
-
 /** Headers a media consumer may legitimately forward: range requests for seeking. */
 function passthroughRequestHeaders(req: Request): Headers {
   const out = new Headers();
@@ -267,22 +267,26 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
     cancelIdle = timers.schedule(() => stop(), idleTimeoutMs);
   };
 
+  type UpstreamResult =
+    | { readonly kind: "response"; readonly response: Response; readonly finalUrl: string }
+    | { readonly kind: "refused" | "timeout" };
+
   async function upstreamFetch(
     session: LiveSession,
     url: string,
     extra: Headers,
     signal?: AbortSignal,
-  ): Promise<Response> {
+  ): Promise<UpstreamResult> {
     const blocked = blockedLiteralTargetReason(url);
-    if (blocked) return new Response("upstream refused", { status: 403 });
+    if (blocked) return { kind: "refused" };
     let origin: string;
     try {
       origin = new URL(url).origin;
     } catch {
-      return new Response("upstream refused", { status: 403 });
+      return { kind: "refused" };
     }
     if (!session.allowedOrigins.has(origin)) {
-      return new Response("upstream not allowlisted", { status: 403 });
+      return { kind: "refused" };
     }
     const headers = new Headers(session.headers);
     extra.forEach((value, name) => headers.set(name, value));
@@ -292,37 +296,134 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
       init: { headers },
       signal,
     });
-    if (outcome.kind === "blocked") {
-      return new Response("upstream refused", { status: 403 });
-    }
-    if (outcome.kind === "timeout") {
-      return new Response("upstream timeout", { status: 504 });
-    }
-    return outcome.response;
+    if (outcome.kind === "blocked") return { kind: "refused" };
+    if (outcome.kind === "timeout") return { kind: "timeout" };
+    return { kind: "response", response: outcome.response, finalUrl: outcome.finalUrl };
   }
 
-  /** Buffer, detect, and rewrite a playlist body — or hand back raw bytes. */
-  async function playlistOrBody(
+  function refusedOrTimeout(result: UpstreamResult): Response {
+    return result.kind === "refused"
+      ? new Response("upstream refused", { status: 403 })
+      : new Response("upstream timeout", { status: 504 });
+  }
+
+  /** Read the rest of an already-peeked body, bounded — for the playlist path. */
+  async function readRestFromReader(
+    reader: {
+      read: () => Promise<{ done: boolean; value?: Uint8Array }>;
+      cancel: (reason?: string) => Promise<void> | void;
+    },
+    firstChunk: Buffer | null,
+    cap: number,
+  ): Promise<Buffer> {
+    const chunks: Uint8Array[] = firstChunk ? [new Uint8Array(firstChunk)] : [];
+    let total = firstChunk?.byteLength ?? 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value?.byteLength ?? 0;
+      if (total > cap) {
+        await Promise.resolve(reader.cancel("over-cap")).catch(() => {});
+        throw new Error("upstream body exceeded playlist cap");
+      }
+      if (value) chunks.push(value);
+    }
+    return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  }
+
+  /**
+   * Serve one upstream media response.
+   *
+   * Playlist vs passthrough is decided by the URL hint or the content-type
+   * (mpegurl/dash+xml), then by peeking the FIRST chunk for `#EXTM3U` — a
+   * playlist served as application/octet-stream from a URL without .m3u8 is
+   * still rewritten, and a multi-megabyte MP4 never buffers. A non-playlist
+   * body streams: the peeked chunk re-emits ahead of the untouched remainder.
+   */
+  async function serveUpstreamMedia(
     session: LiveSession,
-    upstream: Response,
-    effectiveUrl: string,
+    result: Extract<UpstreamResult, { kind: "response" }>,
     baseGateway: string,
   ): Promise<Response> {
-    let body: Buffer;
+    const upstream = result.response;
+    const finalUrl = result.finalUrl;
+    const status = upstream.status;
+    const headers = passthroughResponseHeaders(upstream);
+    const contentType = upstream.headers.get("content-type") ?? "";
+    const hlsHint = isHlsPlaylistUrl(finalUrl) || /mpegurl/i.test(contentType);
+    const dashHint = /\.mpd(?:[?#]|$)/i.test(finalUrl) || /dash\+xml/i.test(contentType);
+
+    if (!upstream.body) return new Response(null, { status, headers });
+
+    const reader = upstream.body.getReader();
+    let first: { done: boolean; value?: Uint8Array };
     try {
-      body = await readBoundedBody(upstream.body, MAX_PLAYLIST_BYTES);
+      first = await reader.read();
+    } catch (error) {
+      reader.releaseLock();
+      throw error;
+    }
+    const head = first.done || !first.value ? null : Buffer.from(first.value);
+
+    // One chunk is all we look at before deciding — a segment never waits on
+    // a second read, and a playlist header is always inside the first chunk.
+    const sniffedPlaylist = !dashHint && !hlsHint && head !== null && looksLikePlaylistHead(head);
+
+    if (!dashHint && !hlsHint && !sniffedPlaylist) {
+      // Binary or text passthrough: re-emit the peeked chunk, then stream.
+      const peeked = head;
+      const streamed = new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (peeked) controller.enqueue(new Uint8Array(peeked));
+        },
+        async pull(controller) {
+          try {
+            const { done, value } = await reader.read();
+            if (done) {
+              controller.close();
+            } else if (value) {
+              controller.enqueue(value);
+            }
+          } catch (error) {
+            controller.error(error);
+          }
+        },
+        cancel() {
+          void reader.cancel().catch(() => {});
+        },
+      });
+      return new Response(streamed, { status, headers });
+    }
+
+    let full: Buffer;
+    try {
+      full = await readRestFromReader(reader, head, MAX_PLAYLIST_BYTES);
     } catch {
+      reader.releaseLock();
       return new Response("upstream body too large", { status: 502 });
     }
-    if (!looksLikeHlsPlaylist(body)) {
-      return new Response(body, {
-        status: upstream.status,
-        headers: passthroughResponseHeaders(upstream),
+    reader.releaseLock();
+
+    if (dashHint) {
+      const rewritten = rewriteDocumentForGateway(
+        full.toString("utf-8"),
+        baseGateway,
+        session.token,
+        session.allowedOrigins,
+      );
+      return new Response(rewritten, {
+        status: 200,
+        headers: { "content-type": "application/dash+xml" },
       });
     }
+    if (!looksLikePlaylistHead(full)) {
+      // Hinted as a playlist but the bytes say otherwise — hand back what the
+      // upstream sent rather than manufacturing a broken manifest.
+      return new Response(full, { status, headers });
+    }
     const rewritten = rewritePlaylistForGateway(
-      body.toString("utf-8"),
-      effectiveUrl,
+      full.toString("utf-8"),
+      finalUrl,
       baseGateway,
       session.token,
       session.allowedOrigins,
@@ -371,10 +472,11 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
           const index = Number(match[2]);
           const url = session.subtitles[index];
           if (!url) return new Response("not found", { status: 404 });
-          const upstream = await upstreamFetch(session, url, new Headers());
-          return new Response(upstream.body, {
-            status: upstream.status,
-            headers: passthroughResponseHeaders(upstream),
+          const upstream = await upstreamFetch(session, url, new Headers(), req.signal);
+          if (upstream.kind !== "response") return refusedOrTimeout(upstream);
+          return new Response(upstream.response.body, {
+            status: upstream.response.status,
+            headers: passthroughResponseHeaders(upstream.response),
           });
         }
 
@@ -392,25 +494,8 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
             passthroughRequestHeaders(req),
             req.signal,
           );
-          if (!upstream.ok) {
-            return new Response(`upstream ${upstream.status}`, {
-              status: upstream.status,
-            });
-          }
-          // A fetch route can still deliver a playlist (a segment URL whose
-          // type was not in the name) — sniff by hint or magic bytes.
-          if (
-            isHlsPlaylistUrl(url) ||
-            upstream.headers.get("content-type")?.includes("mpegurl") === true
-          ) {
-            return playlistOrBody(session, upstream, url, baseGateway);
-          }
-          // Everything else streams through untouched: segments, keys, and
-          // ranged MP4 chunks pass without whole-file buffering.
-          return new Response(upstream.body, {
-            status: upstream.status,
-            headers: passthroughResponseHeaders(upstream),
-          });
+          if (upstream.kind !== "response") return refusedOrTimeout(upstream);
+          return serveUpstreamMedia(session, upstream, baseGateway);
         }
 
         // /media — the registered entry URL.
@@ -421,10 +506,8 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
           passthroughRequestHeaders(req),
           req.signal,
         );
-        if (!upstream.ok) {
-          return new Response(`upstream ${upstream.status}`, { status: upstream.status });
-        }
-        return playlistOrBody(session, upstream, session.url, baseGateway);
+        if (upstream.kind !== "response") return refusedOrTimeout(upstream);
+        return serveUpstreamMedia(session, upstream, baseGateway);
       } catch {
         // Never leak upstream error text (it can carry the private URL)
         // into a response the player surfaces.

@@ -140,7 +140,13 @@ async function resolveHostAddresses(host: string): Promise<string[]> {
 }
 
 export type ProbeFetchOutcome =
-  | { readonly kind: "response"; readonly response: Response }
+  | {
+      readonly kind: "response";
+      readonly response: Response;
+      /** The URL the last hop actually fetched — redirect targets change the
+       *  base that relative playlist URIs resolve against. */
+      readonly finalUrl: string;
+    }
   | { readonly kind: "blocked"; readonly reason: string }
   | { readonly kind: "timeout" };
 
@@ -212,12 +218,12 @@ export async function fetchProbeTarget(options: {
           target = next.toString();
         } catch {
           // A Location we cannot parse is a response, not a redirect.
-          return { kind: "response", response };
+          return { kind: "response", response, finalUrl: target };
         }
         continue;
       }
     }
-    return { kind: "response", response };
+    return { kind: "response", response, finalUrl: target };
   }
 }
 
