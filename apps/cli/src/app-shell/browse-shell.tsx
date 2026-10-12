@@ -1053,7 +1053,8 @@ export function BrowseShell<T>({
 
   const mouseEnabled = useMouseEnabled();
   const resultsMouseRef = useRef<DOMElement | null>(null);
-  const pointerActive = !activeOverlay && !commandMode && !viewport.tooSmall;
+  const pointerActive =
+    !rootContentSuspended && !activeOverlay && !commandMode && !viewport.tooSmall;
   const priorPointerSelection = useRef<{ index: number; value: T } | null>(null);
   useEffect(() => {
     const prior = priorPointerSelection.current;

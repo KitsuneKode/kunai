@@ -450,7 +450,7 @@ describe("MouseDispatcher", () => {
 describe("BrowseShell mouse rows", () => {
   function mountBrowse() {
     const submitted: string[] = [];
-    const handle = mountWithMouse(
+    const content = (
       <BrowseShell
         mode="series"
         provider="vidking"
@@ -465,9 +465,17 @@ describe("BrowseShell mouse rows", () => {
         onResolve={() => {}}
         onSubmit={(value) => submitted.push(value)}
         onCancel={() => {}}
-      />,
+      />
     );
-    return { ...handle, submitted };
+    const setSuspendedNode = (suspended: boolean) => (
+      <RootContentSuspension suspended={suspended}>{content}</RootContentSuspension>
+    );
+    const handle = mountWithMouse(setSuspendedNode(false));
+    return {
+      ...handle,
+      submitted,
+      suspend: (value: boolean) => handle.rerender(setSuspendedNode(value)),
+    };
   }
 
   function rowCenter(dispatcher: MouseDispatcher, index: number) {
@@ -503,6 +511,24 @@ describe("BrowseShell mouse rows", () => {
       expect(handle.submitted).toEqual([]);
       act(() => handle.source.feed("\x1b[B"));
       act(() => handle.source.feed("\x1b[A"));
+      cell = rowCenter(handle.dispatcher, 0);
+      handle.click(cell.x, cell.y);
+      expect(handle.submitted).toEqual([]);
+      handle.click(cell.x, cell.y);
+      expect(handle.submitted).toEqual(["first"]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("retained Browse clears pointer intent while a root overlay owns input", () => {
+    const handle = mountBrowse();
+    try {
+      let cell = rowCenter(handle.dispatcher, 0);
+      handle.click(cell.x, cell.y);
+      handle.suspend(true);
+      expect(handle.dispatcher.size).toBe(0);
+      handle.suspend(false);
       cell = rowCenter(handle.dispatcher, 0);
       handle.click(cell.x, cell.y);
       expect(handle.submitted).toEqual([]);
