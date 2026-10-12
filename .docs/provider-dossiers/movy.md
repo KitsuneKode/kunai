@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-21"
+lastReviewed: "2026-10-13"
 ---
 
 # Provider: Movy
@@ -14,10 +14,14 @@ lastReviewed: "2026-09-21"
 - **Media kinds:** Movies, TV series. Anime lane exists (`anikoto/sources-id`) but is unwired.
 - **Search support:** No. Resolver-only — catalog identity comes from TMDB.
 - **Stream resolve support:** Yes. Multi-lane aggregator: each named lane
-  (`denver`, `atlanta`, `phoenix`, `portland`, `seattle`, `miami`, `boise`,
-  `paris`, `cancun`, `austin`, `dallas`, `delhi`, `munich`, `orlando`, `tampa`,
+  (`miami`, `boise`, `atlanta`, `phoenix`, `munich`, `seattle`, `portland`,
+  `paris`, `cancun`, `austin`, `dallas`, `delhi`, `orlando`, `tampa`,
   `berlin`) wraps a different upstream scraper (stillhaven, vidzy,
   Cloudflare-worker proxies, ridomovies, idlix, moflix, kinoger, …).
+  Ladder-first roster since 2026-10-13 (live-verified on TMDB 550 with the
+  module's own decrypt: miami/boise carry 1080p/720p/480p/2160p, atlanta
+  1080p/720p/360p); `denver` was removed upstream (404 "Route
+  GET:/denver/… not found") and dropped from the roster.
 - **Server/source model:** 16 lanes surface as individual sources — server
   switching and cycle failover work per lane. Dead upstreams return per-lane
   HTTP 500s with the scraper name in the message

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-13"
 ---
 
 # Provider: VidRock
@@ -40,9 +40,21 @@ lastReviewed: "2026-10-11"
 | Server switch         |       yes | per-lane stream rows                       | Nova, Atlas, Luna, Orion, Astra.                              |
 | Quality switch        |   partial | JSON playlist `resolution` → `qualityHint` | Only lanes exposing the playlist service have explicit rungs. |
 | Audio language switch |       yes | `language`/`flag` lane fields              | `audioLanguages` per row.                                     |
-| Direct mpv playback   |       yes | verified `movie/550` + `tv/1396/1/1`       | Requires the `User-Agent: " "` header trick — see below.      |
+| Direct mpv playback   |       yes | verified `movie/550` + `tv/1396/1/1`       | Requires browser UA + vidrock Referer/Origin — see below.     |
 
-## The `User-Agent: " "` contract (why streams carry a space)
+## Stream-host headers (contract flipped 2026-10-13)
+
+The old `User-Agent: " "` contract below is retired. Live-verified per lane
+(Nova/Atlas/Luna/Orion, TMDB 550): the CDN hosts now 403/404, serve a
+Cloudflare challenge, or return wrong-content bytes to the space UA, and
+return valid `application/vnd.apple.mpegurl` to a current-Chrome UA
+(Chrome/126; Chrome/124 is challenged — even the minor version matters) plus
+`Referer: https://vidrock.net/` and `Origin: https://vidrock.net`. The module
+ships those headers on every playlist/segment request and the mpv handoff, so
+probe and playback stay identical. If resolves go hollow again, re-probe both
+header sets before assuming key rotation.
+
+## The old `User-Agent: " "` contract (retired 2026-10-13, kept for history)
 
 The ngcorp segment hosts (`p16-sg.tiktokcdn.com` et al.) drop any HTTP request
 that carries a **real** User-Agent — curl with `Mozilla/5.0`, `Lavf/*`, or any
@@ -67,7 +79,9 @@ browser-only lanes.
 - **Key rotation:** `decryptVidrockStreamUrl` throws; the lane is skipped, not
   fatal. If every lane throws, the scheme rotated — recover the new hex
   constant from the site's `index-*.js` (search `AES-GCM`/`importKey`).
-- **Empty lane map:** some titles return all-null lanes (brand-new releases).
+- **Empty lane map:** some titles return all-null lanes (brand-new releases —
+  and, seen 2026-10-13, upstream-wide outages where every probed title goes
+  null at once). Reads as a title miss (`not-found`), never the rotation alarm.
 
 ## History
 
