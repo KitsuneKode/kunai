@@ -386,6 +386,9 @@ Short-lived playback feedback should use mpv OSD plus shell status text for non-
 ## Settings Behavior
 
 - settings apply immediately after a row interaction commits
+- A rejected settings save reports its error in the shelf and diagnostics.
+  Immediate, debounced, and final-on-close saves share one rejection boundary;
+  a final save after the shelf closes records diagnostics without updating it.
 - `Esc` cancels active text input, backs out of submenus, or closes the
   settings shelf; it does not roll back values already applied to config
 - label settings by effect timing:
@@ -509,3 +512,11 @@ belong to it; closing the palette restores playback shortcuts. On a cancellable
 resolve, the first Escape closes the palette and a subsequent Escape cancels
 the resolve. The regression suite delivers Ink's pending-Escape callback
 explicitly instead of waiting for its timer.
+
+### Multilingual terminal text
+
+Display helpers sanitize provider text before measuring it with Bun's terminal-cell
+width calculation. Truncation walks complete grapheme clusters, so combining
+accents, flags and joined emoji stay intact. Padding and ellipsis placement use
+the same cell budget as CJK titles. Surfaces reuse
+`apps/cli/src/domain/text-display.ts` rather than counting code points or UTF-16 units.

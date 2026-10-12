@@ -927,23 +927,24 @@ describe("AllManga provider evidence fixtures", () => {
     using fetchMock = await mockAllMangaFetch({ liveCrypto: true, catalogGate });
 
     const resolvePromise = resolveEvidenceEpisode();
-    const waitForStart = async (name: string): Promise<boolean> => {
-      const deadline = Date.now() + 1_000;
-      while (Date.now() < deadline) {
-        if (fetchMock.startedRequests.includes(name)) return true;
-        await Bun.sleep(5);
-      }
-      return fetchMock.startedRequests.includes(name);
-    };
-    expect(await waitForStart("catalog")).toBe(true);
-    // The bootstrap lane must start while the catalog lane is still gated —
-    // bounded poll on the same observable, not a fixed settle.
-    const overlapped = await waitForStart("bootstrap");
-    releaseCatalog();
-    const result = await resolvePromise;
+    let result: ProviderResolveResult;
+    try {
+      // Both requests must start while the catalog response remains withheld.
+      // Join the actual fixture events, not real-clock scheduling luck.
+      await Promise.race([
+        Promise.all([fetchMock.catalogStarted, fetchMock.bootstrapStarted]),
+        resolvePromise.then(() => {
+          throw new Error("Resolution finished before both cold requests started");
+        }),
+      ]);
+    } finally {
+      // Even an early failure releases the gated work and joins its owner before
+      // the fetch fixture is disposed, so the next test cannot inherit it.
+      releaseCatalog();
+      result = await resolvePromise;
+    }
 
     expect(result.status).toBe("resolved");
-    expect(overlapped).toBe(true);
     const preparationEvent = result.trace.events?.find(
       (event) => event.sourceId === "source:allanime:cold-preparation",
     );
@@ -1860,7 +1861,8 @@ async function mockAllMangaFetch(
 ): Promise<
   Disposable & {
     readonly calls: readonly string[];
-    readonly startedRequests: readonly string[];
+    readonly catalogStarted: Promise<void>;
+    readonly bootstrapStarted: Promise<void>;
     readonly abortedAkRequests: number;
     readonly abortedBaselineRequests: number;
     readonly requestedEpisodeStrings: readonly string[];
@@ -1873,7 +1875,8 @@ async function mockAllMangaFetch(
   if (!options.liveCrypto) setAllMangaCryptoMaterialForTest(BUNDLED_ALLMANGA_CRYPTO);
   const originalFetch = globalThis.fetch;
   const calls: string[] = [];
-  const startedRequests: string[] = [];
+  const catalogStarted = Promise.withResolvers<void>();
+  const bootstrapStarted = Promise.withResolvers<void>();
   const requestedEpisodeStrings: string[] = [];
   let abortedAkRequests = 0;
   let abortedBaselineRequests = 0;
@@ -1958,7 +1961,7 @@ async function mockAllMangaFetch(
     const url = String(input);
     calls.push(url);
     if (url.includes("/client-crypto/v1/bootstrap")) {
-      startedRequests.push("bootstrap");
+      bootstrapStarted.resolve();
       return jsonResponse({
         epoch: 6900,
         partB: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
@@ -2048,7 +2051,7 @@ async function mockAllMangaFetch(
       return jsonResponse(fixtures.search);
     }
     if (bodyText.includes("show(_id:$id)")) {
-      startedRequests.push("catalog");
+      catalogStarted.resolve();
       await options.catalogGate;
       if (catalogEpisodes) {
         fixtures.catalog.data.show.availableEpisodesDetail.sub = [...catalogEpisodes];
@@ -2067,7 +2070,8 @@ async function mockAllMangaFetch(
 
   return {
     calls,
-    startedRequests,
+    catalogStarted: catalogStarted.promise,
+    bootstrapStarted: bootstrapStarted.promise,
     get abortedAkRequests() {
       return abortedAkRequests;
     },

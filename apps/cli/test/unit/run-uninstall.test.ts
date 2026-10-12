@@ -361,3 +361,24 @@ test("runUninstall native path preserves config/history/cache/downloads by defau
   expect(existsSync(cacheDb)).toBe(true);
   expect(existsSync(downloads)).toBe(true);
 });
+
+test("homebrew channel plans manual removal guidance and never deletes the binary", () => {
+  const p = planUninstall({ channel: "homebrew", binPath: "/opt/homebrew/bin/kunai" });
+  expect(p.kind).toBe("manual");
+  if (p.kind === "manual") expect(p.message).toContain("brew uninstall kunai");
+});
+
+test("scoop channel plans manual removal guidance and never deletes the binary", () => {
+  const p = planUninstall({
+    channel: "scoop",
+    binPath: "C:\\Users\\k\\scoop\\apps\\kunai\\current\\kunai.exe",
+  });
+  expect(p.kind).toBe("manual");
+  if (p.kind === "manual") expect(p.message).toContain("scoop uninstall kunai");
+});
+
+test("system-package channel plans manual removal guidance and never deletes the binary", () => {
+  const p = planUninstall({ channel: "system-package", binPath: "/usr/bin/kunai" });
+  expect(p.kind).toBe("manual");
+  if (p.kind === "manual") expect(p.message).toContain("pacman -R kunai-bin");
+});

@@ -320,10 +320,10 @@ export async function probeCapabilities(
 
 export async function checkDeps(
   appVersion = "0.1.0",
-  options: { silent?: boolean; requireYtDlp?: boolean } = {},
+  options: NonNullable<Parameters<typeof probeCapabilities>[0]> & { silent?: boolean } = {},
 ): Promise<CapabilitySnapshot> {
   const silent = options.silent ?? false;
-  const snapshot = await probeCapabilities({ requireYtDlp: options.requireYtDlp });
+  const snapshot = await probeCapabilities(options);
 
   const fingerprint = capabilityFingerprint(snapshot);
   const previous = await loadCapabilityNoticeState();

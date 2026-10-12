@@ -35,6 +35,12 @@ export interface KitsuneConfig extends BaseKitsuneConfig {
   tuningOverrides?: Partial<TuningConfig>;
 }
 
+export type AnalyticsPingCompletion = {
+  readonly installId: string;
+  readonly analyticsRetryAfter: number;
+  readonly lastAnalyticsPingAt?: number;
+};
+
 export interface ConfigService extends KitsuneConfig {
   /** Fully-resolved tuning values (defaults < config override < env). */
   readonly tuning: TuningConfig;
@@ -48,6 +54,8 @@ export interface ConfigService extends KitsuneConfig {
    */
   applySessionOverrides(partial: Partial<KitsuneConfig>): void;
   save(): Promise<void>;
+  /** Apply bookkeeping only if persisted consent and identity still match. */
+  recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean>;
   /** Persist any debounced pending save immediately (shutdown path). */
   flushPending(): Promise<void>;
   reset(): Promise<void>;

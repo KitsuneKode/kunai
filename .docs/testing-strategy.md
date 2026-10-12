@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-12"
 ---
 
 # Kunai — Testing Strategy
@@ -699,6 +699,13 @@ Opt-in release-candidate smoke, run only when provider traffic is acceptable:
 - Source refresh tests must prove that voluntary refresh cooldown does not block broken-stream recovery, and that a failed fresh lookup can keep the current cached stream instead of stalling playback.
 - Storage maintenance tests must seed durable user tables and disposable cache tables together, then prove automatic maintenance only prunes cache-class rows.
 - Fake mpv IPC lifecycle tests cover app-side orchestration only; keep one manual real-mpv smoke for release candidates that touch playback.
+- The opt-in real-player tier (`KUNAI_REAL_MPV=1 bun run test:cli:file real-mpv.test.ts`)
+  drives the real CLI in tmux, observes advancing mpv IPC time, and checks the
+  same profile's history row. The media/profile remains under the isolated
+  storage roots; IPC uses a separate, uniquely created 0700 sandbox under
+  `/tmp` on Linux/macOS so nested CI or macOS temp paths cannot exceed the Unix
+  socket path limit. Both normal shutdown and failed startup remove only that
+  owned IPC sandbox. This fixture proof does not qualify live providers or devices.
 - Live provider and Discord smokes are opt-in and must not be added to `bun run test`, CI, or Husky.
 
 ## Manual Smoke Matrix
@@ -783,6 +790,10 @@ via harness scripts such as `bun run --cwd apps/cli capture:settings`.
   `node` symlink to Bun; under that shim `require.resolve` finds the optional
   `@kitsunekode/kunai-<target>` package and the tests spawn the compiled app
   instead of the vendor stand-in. Skip when `node` is Bun; CI installs Node.
+- Capability-notice persistence tests pass the dependency probe's lookup and
+  filesystem seams through `checkDeps`; they never execute host curl or replace
+  the shared mpv-discovery export. Dedicated probe/discovery tests own those
+  executable checks.
 - Use `simulateTicks` from the render harness instead of real timers in unit tests.
 - TDD on rewrite: write the new behavior test first, then delete brittle guards.
 

@@ -33,7 +33,7 @@ export type {
   HistoryProgressWatchState,
   HistoryTitleLookup,
 } from "./repositories/history";
-export { HISTORY_FINISHED_RATIO, isHistoryProgressFinished } from "./repositories/history";
+export { isHistoryProgressFinished } from "./repositories/history";
 export {
   externalIdsToAliases,
   HistoryTitleAliasRepository,

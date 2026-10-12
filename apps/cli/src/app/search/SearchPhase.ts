@@ -117,7 +117,7 @@ function spawnTrailerMpv(argv: readonly string[], target: string): boolean {
       // Already gone between the liveness check and the kill.
     }
   }
-  const proc = Bun.spawn([...argv, target], {
+  const proc = Bun.spawn([...argv, "--", target], {
     stdout: "ignore",
     stderr: "ignore",
     stdin: "ignore",
