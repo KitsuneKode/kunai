@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-12T10:44:04Z"
 ---
 
 # Kunai — UX Architecture

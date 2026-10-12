@@ -81,6 +81,22 @@ export function planUpgrade(input: PlanUpgradeInput): UpgradePlan {
         binPath: input.binPath,
       };
     }
+    case "homebrew":
+      return {
+        kind: "manual",
+        message: "Homebrew install detected. Update with `brew upgrade kunai`.",
+      };
+    case "scoop":
+      return {
+        kind: "manual",
+        message: "Scoop install detected. Update with `scoop update kunai`.",
+      };
+    case "system-package":
+      return {
+        kind: "manual",
+        message:
+          "Installed by your system package manager — update with it (Arch: `yay -Syu kunai-bin` or your AUR helper).",
+      };
     default:
       return { kind: "manual", message: "Unknown install method; upgrade manually." };
   }
