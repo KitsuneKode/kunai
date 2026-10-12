@@ -7,13 +7,22 @@ import {
   normalizePlatformOs,
   releaseAssetName,
   releaseAssetSupported,
+  resolvePlatformLibc,
   resolveHostReleaseBinaryTarget,
   resolveReleaseBinaryTarget,
 } from "@/services/update/platform-assets";
 
 describe("platform release assets", () => {
+  test("selects Bionic for Android without falling through to GNU", () => {
+    expect(resolvePlatformLibc("android", false)).toBe("bionic");
+    expect(resolvePlatformLibc("linux", false)).toBe("gnu");
+    expect(resolvePlatformLibc("linux", true)).toBe("musl");
+    expect(resolvePlatformLibc("darwin", false)).toBe("gnu");
+  });
+
   test("maps unix and node platform identifiers", () => {
     expect(normalizePlatformOs("linux")).toBe("linux");
+    expect(normalizePlatformOs("android")).toBe("android");
     expect(normalizePlatformOs("win32")).toBe("windows");
     expect(normalizePlatformArch("aarch64")).toBe("arm64");
     expect(normalizePlatformArch("amd64")).toBe("x64");
@@ -68,6 +77,22 @@ describe("platform release assets", () => {
         archive: "kunai-linux-arm64-musl.tar.gz",
         format: "tar.gz",
         entry: "kunai-linux-arm64-musl",
+        mode: 0o755,
+      },
+      {
+        id: "android-arm64",
+        raw: "kunai-android-arm64",
+        archive: "kunai-android-arm64.tar.gz",
+        format: "tar.gz",
+        entry: "kunai-android-arm64",
+        mode: 0o755,
+      },
+      {
+        id: "android-x64",
+        raw: "kunai-android-x64",
+        archive: "kunai-android-x64.tar.gz",
+        format: "tar.gz",
+        entry: "kunai-android-x64",
         mode: 0o755,
       },
       {
@@ -133,6 +158,35 @@ describe("platform release assets", () => {
     expect(resolveReleaseBinaryTarget("linux", "x64", "musl")?.id).toBe("linux-x64-musl");
     expect(resolveReleaseBinaryTarget("darwin", "arm64")?.id).toBe("darwin-arm64");
     expect(resolveReleaseBinaryTarget("windows", "x64")?.id).toBe("windows-x64");
+    expect(resolveReleaseBinaryTarget("android", "arm64", "bionic")?.triple).toBe(
+      "bun-linux-arm64-android",
+    );
+    expect(resolveReleaseBinaryTarget("android", "x64", "bionic")?.out).toBe("kunai-android-x64");
+    expect(resolveReleaseBinaryTarget("linux", "arm64", "bionic")).toBeUndefined();
+  });
+
+  test("detects Android as Bionic rather than generic Linux", () => {
+    expect(detectPlatform("android", "aarch64")).toEqual({
+      os: "android",
+      arch: "arm64",
+      libc: "bionic",
+    });
+    expect(detectPlatform("linux", "aarch64", "gnu", { TERMUX_VERSION: "0.119.0" })).toEqual({
+      os: "android",
+      arch: "arm64",
+      libc: "bionic",
+    });
+    expect(releaseAssetName("android", "arm64", "bionic")).toBe("kunai-android-arm64");
+  });
+
+  test("resolves the Android updater asset from Termux runtime markers", () => {
+    expect(
+      resolveHostReleaseBinaryTarget({
+        platform: "linux",
+        arch: "arm64",
+        env: { PREFIX: "/data/data/com.termux/files/usr" },
+      }).id,
+    ).toBe("android-arm64");
   });
 
   test("resolves the host release binary target for the current runtime", () => {

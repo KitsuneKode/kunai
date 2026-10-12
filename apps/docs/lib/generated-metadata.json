@@ -877,6 +877,11 @@
     },
     {
       "short": "",
+      "long": "--player",
+      "description": "Player backend (auto chooses for this platform)"
+    },
+    {
+      "short": "",
       "long": "--mpv-debug",
       "description": "Verbose mpv logging"
     },

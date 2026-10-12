@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T13:21:05Z"
+lastReviewed: "2026-10-12T13:42:27Z"
 ---
 
 # Kunai — Testing Strategy
@@ -463,7 +463,7 @@ Local equivalent: `KUNAI_INSTALLER_DOCKER=1 bun run test:installer:docker`
   `Run this to install them:` once and never `This will run` — that verb is
   reserved for the TTY prompt that actually offers to spawn the package manager
 
-**Full cross-compile (all 8 targets)** — not on every PR (too slow). Use:
+**Full cross-compile (all 10 targets)** — not on every PR (too slow). Use:
 
 - **Release** workflow `binaries` job after a real npm publish (authoritative)
 - **`.github/workflows/build-binaries.yml`** — weekly cron + `workflow_dispatch` + pushes that touch build scripts
@@ -514,6 +514,22 @@ mpv playback is tracked in [release-reliability-gate.md](./release-reliability-g
 Do not loop live smokes while iterating on a provider. Use fixture payloads, mocked fetch ports,
 and provider contract tests for repeated runs, then perform one focused live smoke when the
 deterministic seam is already green.
+
+Android handoff has its own physical-device smoke and is likewise opt-in:
+
+```sh
+KUNAI_ANDROID_HANDOFF_PLAYER=vlc \
+KUNAI_ANDROID_HANDOFF_URL="<direct-test-media-url>" \
+KUNAI_ANDROID_HANDOFF_BINARY="$(realpath ./apps/cli/dist/bin/kunai-android-arm64)" \
+bun run test:live:android-handoff
+```
+
+Run it only inside Android/Termux. The harness creates an isolated temporary
+HOME/XDG profile, requires an explicit compiled binary path, refuses desktop
+hosts and roots inside the real profile, and prints compiled entrypoint,
+binary/runtime, TTY, SQLite WAL/reopen, player, and launcher evidence. A green
+launcher smoke proves only that Android accepted the intent; provider playback
+qualification is a separate, device-level record.
 
 ### 7. Agent verification loop (`apps/cli/test/agent/`)
 

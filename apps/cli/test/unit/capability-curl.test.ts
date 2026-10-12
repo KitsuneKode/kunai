@@ -39,6 +39,13 @@ function windowsPathWith(...commands: readonly string[]) {
 }
 
 describe("probeCapabilities — curl for the default anime provider", () => {
+  test("does not report desktop mpv as required for detached playback", async () => {
+    const snapshot = await probeCapabilities({ ...pathWith("curl"), requireMpv: false });
+
+    expect(snapshot.mpv).toBe(false);
+    expect(snapshot.issues.map((issue) => issue.id)).not.toContain("mpv-missing");
+  });
+
   test("reports plain curl as present but not impersonating", async () => {
     const snapshot = await probeCapabilities(pathWith("curl"));
 

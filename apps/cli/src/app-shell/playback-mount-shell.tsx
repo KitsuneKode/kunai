@@ -223,6 +223,7 @@ export function buildPlaybackRootLoadingShellState(
       : undefined,
     playbackKeysHint: isActivePlayback
       ? formatPlaybackSessionKeysHint({
+          capabilities: container.player.capabilities,
           stream: state.stream,
           autoplayPaused: state.autoplaySessionPaused,
           autoskipPaused: state.autoskipSessionPaused,

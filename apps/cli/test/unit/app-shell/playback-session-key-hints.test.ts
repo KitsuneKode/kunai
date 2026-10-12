@@ -5,6 +5,10 @@ import {
   formatPlaybackSessionKeysHint,
   type PlaybackSessionKeysInput,
 } from "@/app-shell/playback-session-key-hints";
+import {
+  DETACHED_HANDOFF_CAPABILITIES,
+  MANAGED_MPV_CAPABILITIES,
+} from "@/domain/playback/player-capabilities";
 import type { StreamInfo } from "@/domain/types";
 
 const streamWithCandidates: StreamInfo = {
@@ -97,9 +101,21 @@ function sessionInput(overrides: Partial<PlaybackSessionKeysInput> = {}): Playba
     hasPreviousEpisode: false,
     isSeries: true,
     stopAfterCurrent: false,
+    capabilities: MANAGED_MPV_CAPABILITIES,
     ...overrides,
   };
 }
+
+test("formatPlaybackSessionKeysHint hides managed controls for detached playback", () => {
+  const hint = formatPlaybackSessionKeysHint(
+    sessionInput({ capabilities: DETACHED_HANDOFF_CAPABILITIES }),
+  );
+
+  expect(hint).toBe("opened externally · controls are in the Android player");
+  expect(hint).not.toContain("autoskip");
+  expect(hint).not.toContain("source");
+  expect(hint).not.toContain("quality");
+});
 
 test("formatPlaybackSessionKeysHint lists session state and only available nav keys", () => {
   const hint = formatPlaybackSessionKeysHint(sessionInput());

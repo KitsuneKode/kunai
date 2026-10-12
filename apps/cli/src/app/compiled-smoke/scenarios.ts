@@ -6,7 +6,8 @@ export type CompiledSmokeScenarioId =
   | "auto-next"
   | "failed-handoff"
   | "shutdown-restore"
-  | "return-to-shell";
+  | "return-to-shell"
+  | "android-handoff";
 
 export const COMPILED_SMOKE_SCENARIO_IDS = [
   "movie",
@@ -17,6 +18,7 @@ export const COMPILED_SMOKE_SCENARIO_IDS = [
   "failed-handoff",
   "shutdown-restore",
   "return-to-shell",
+  "android-handoff",
 ] as const satisfies readonly CompiledSmokeScenarioId[];
 
 export function isCompiledSmokeScenarioId(value: string): value is CompiledSmokeScenarioId {

@@ -1,3 +1,4 @@
+import type { PlayerCapabilities } from "@/domain/playback/player-capabilities";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import { isJsonObject, type JsonValue } from "@kunai/types";
 
@@ -84,6 +85,7 @@ export type ActivePlaybackCommandDispatchDeps = {
 
 export type ActivePlaybackCommandDispatchInput = {
   readonly deps: ActivePlaybackCommandDispatchDeps;
+  readonly capabilities: PlayerCapabilities;
   readonly canGoNext: boolean;
   readonly canGoPrevious: boolean;
   readonly canToggleAutoplay: boolean;
@@ -95,7 +97,7 @@ export async function dispatchActivePlaybackCommand(
   action: ShellAction,
   input: ActivePlaybackCommandDispatchInput,
 ): Promise<ActivePlaybackCommandDispatchResult> {
-  const { deps, canGoNext, canGoPrevious, canToggleAutoplay } = input;
+  const { deps, capabilities, canGoNext, canGoPrevious, canToggleAutoplay } = input;
 
   if (action === "command-mode") return "ignored";
   if (action === "next") {
@@ -117,6 +119,7 @@ export async function dispatchActivePlaybackCommand(
     return "handled";
   }
   if (action === "toggle-autoskip") {
+    if (!capabilities.autoSkip) return "ignored";
     const paused = !deps.stateManager.getState().autoskipSessionPaused;
     deps.stateManager.dispatch({
       type: "SET_SESSION_AUTOSKIP_PAUSED",
@@ -187,6 +190,7 @@ export async function dispatchActivePlaybackCommand(
     action === "source" ||
     action === "quality"
   ) {
+    if (!capabilities.trackControl) return "ignored";
     await deps.openStreamSelectionPicker(deps, action, `playback-loading-command-${action}`);
     return "handled";
   }

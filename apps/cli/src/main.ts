@@ -58,6 +58,7 @@ import {
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
 import { buildCliHelpText, CliUsageError, parseCliArgs, type CliArgs } from "@/cli-args";
 import { createContainer, disposeContainer } from "@/container";
+import { detectPlayerPlatform, resolvePlayerMode } from "@/domain/playback/player-choice";
 import {
   parseKunaiShareUrl,
   type KunaiShareAction,
@@ -856,8 +857,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // afterwards would have every report claim the pre-probe fallback.
   await graphicsProbeReady;
 
+  const startupPlayerMode = resolvePlayerMode({
+    choice: args.player,
+    platform: detectPlayerPlatform(),
+  });
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
+    requireMpv: startupPlayerMode.kind === "managed-mpv",
     requireYtDlp: !args.offline && (args.youtube || configJson.defaultMode === "youtube"),
   });
 
@@ -874,6 +880,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     debugJson: args.debugJson,
     debugSession: args.debugSession,
     mpv: args.mpv,
+    playerChoice: args.player,
     shellChrome: args.shellChrome,
     capabilitySnapshot,
     appVersion: KUNAI_VERSION,
@@ -1197,7 +1204,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   // Missing mpv no longer aborts startup — setup and non-playback surfaces stay
   // usable. PlaybackPhase gates dynamically before provider/history work.
-  if (!capabilitySnapshot.mpv) {
+  if (startupPlayerMode.kind === "managed-mpv" && !capabilitySnapshot.mpv) {
     container.diagnosticsService.record({
       category: "session",
       operation: "startup.capability.mpv-missing",

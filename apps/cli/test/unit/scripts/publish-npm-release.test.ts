@@ -19,6 +19,8 @@ const PLATFORM_IDS = [
   "linux-x64-musl",
   "linux-arm64",
   "linux-arm64-musl",
+  "android-arm64",
+  "android-x64",
   "darwin-x64",
   "darwin-arm64",
   "windows-x64",
@@ -140,9 +142,13 @@ describe("local npm publication candidates", () => {
         "launcher" as const,
       ];
       expect(result.map((candidate) => candidate.role)).toEqual(expectedRoles);
-      expect(commands.slice(0, 8).every((invocation) => invocation[0] === "npm")).toBe(true);
       expect(
-        commands.slice(0, 8).every((invocation) => invocation.includes("--pack-destination")),
+        commands.slice(0, PLATFORM_IDS.length).every((invocation) => invocation[0] === "npm"),
+      ).toBe(true);
+      expect(
+        commands
+          .slice(0, PLATFORM_IDS.length)
+          .every((invocation) => invocation.includes("--pack-destination")),
       ).toBe(true);
       expect(commands.at(-1)).toEqual([
         "npm",
@@ -202,8 +208,8 @@ describe("local npm publication candidates", () => {
         platformTarballMode: "inspect",
       });
 
-      expect(result).toHaveLength(9);
-      expect(commands).toHaveLength(9);
+      expect(result).toHaveLength(PLATFORM_IDS.length + 1);
+      expect(commands).toHaveLength(PLATFORM_IDS.length + 1);
       expect(commands.every((invocation) => invocation.includes("--dry-run"))).toBe(true);
       expect(commands.every((invocation) => !invocation.includes("--pack-destination"))).toBe(true);
       for (const id of PLATFORM_IDS) {
@@ -517,12 +523,12 @@ describe("resumable npm publication orchestration", () => {
     );
     expect(launcherWrite).toBeGreaterThan(lastPlatformRead);
     // The slowest platform package needs three reads; that costs two waits for
-    // the whole set, not two per laggard. The launcher then waits on its own.
+    // the whole set, not two per laggard. The launcher then waits on its own —
+    // in this layout it needs two reads, so one wait.
     expect(events.filter((event) => event.startsWith("wait"))).toEqual([
       "wait 3000",
       "wait 6000",
       "wait 3000",
-      "wait 6000",
     ]);
     // A package that was visible on the first read is not read again.
     expect(reads.get(platforms[0]!.name)).toBe(1);
@@ -771,7 +777,7 @@ describe("resumable npm publication orchestration", () => {
       },
     });
 
-    expect(result).toHaveLength(9);
+    expect(result).toHaveLength(PLATFORM_IDS.length + 1);
     expect(result.every((decision) => decision.action === "publish")).toBe(true);
     expect(commands).toEqual([]);
   });

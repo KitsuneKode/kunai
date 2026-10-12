@@ -34,7 +34,6 @@ KUNAI_REPO="${KUNAI_REPO:-https://github.com/KitsuneKode/kunai.git}"
 KUNAI_PACKAGE="${KUNAI_PACKAGE:-@kitsunekode/kunai}"
 KUNAI_DL_BASE="${KUNAI_DL_BASE:-https://github.com/KitsuneKode/kunai/releases}"
 KUNAI_RELEASES_API="${KUNAI_RELEASES_API:-https://api.github.com/repos/KitsuneKode/kunai/releases/latest}"
-BIN_DIR="${KUNAI_BIN_DIR:-$HOME/.local/bin}"
 SOURCE_DIR="${KUNAI_SOURCE_DIR:-${KUNAI_INSTALL_DIR:-$HOME/.local/src/kunai}}"
 
 # Bounded download policy (mirrors DEFAULT_BINARY_DOWNLOAD_POLICY).
@@ -73,11 +72,29 @@ LAUNCHER_SNAPSHOT_TARGET=""
 LAUNCHER_SNAPSHOT_BACKUP=""
 BOUNDED_DOWNLOAD_HTTP_STATUS=""
 
+is_android_host() {
+	[[ -n "${TERMUX_VERSION:-}" || -n "${ANDROID_ROOT:-}" || "${PREFIX:-}" == *com.termux* ]]
+}
+
 case "$(uname -s)" in
 Darwin) HOST_OS="darwin" ;;
-Linux) HOST_OS="linux" ;;
+Linux)
+	if is_android_host; then
+		HOST_OS="android"
+	else
+		HOST_OS="linux"
+	fi
+	;;
 *) HOST_OS="unknown" ;;
 esac
+
+if [[ -n "${KUNAI_BIN_DIR:-}" ]]; then
+	BIN_DIR="$KUNAI_BIN_DIR"
+elif [[ "$HOST_OS" == android && -n "${PREFIX:-}" ]]; then
+	BIN_DIR="$PREFIX/bin"
+else
+	BIN_DIR="$HOME/.local/bin"
+fi
 
 [[ "$ACTIVATION_LOCK_TIMEOUT_MS" =~ ^[0-9]+$ ]] || ACTIVATION_LOCK_TIMEOUT_MS=10000
 [[ "$ACTIVATION_LOCK_POLL_MS" =~ ^[0-9]+$ ]] || ACTIVATION_LOCK_POLL_MS=50
@@ -184,11 +201,7 @@ canonical_path() {
 }
 
 detect_os() {
-	case "$(uname -s)" in
-	Linux) echo linux ;;
-	Darwin) echo darwin ;;
-	*) echo unknown ;;
-	esac
+	echo "$HOST_OS"
 }
 
 detect_arch() {
@@ -1595,10 +1608,13 @@ install_binary() {
 	fi
 	if [[ "$os" == unknown || "$arch" == unknown ]]; then
 		err "No prebuilt binary for this OS/arch ($(uname -s)/$(uname -m))."
-		err "Supported: linux|darwin x x64|arm64. Try --method npm or --method source."
+		err "Supported: android|linux|darwin x x64|arm64. Try --method npm or --method source."
 		exit 1
 	fi
-	if [[ "$os" == linux ]] && detect_musl; then
+	if [[ "$os" == android ]]; then
+		asset="kunai-android-${arch}"
+		target="android-${arch}-bionic"
+	elif [[ "$os" == linux ]] && detect_musl; then
 		asset="kunai-linux-${arch}-musl"
 		target="linux-${arch}-musl"
 	else
@@ -2124,6 +2140,15 @@ dependency_install_command() {
 	fi
 }
 
+print_android_player_guidance() {
+	[[ "$HOST_OS" == android ]] || return 0
+	info "Android playback opens qualified direct streams in VLC or mpv-android."
+	info "Install VLC (org.videolan.vlc), mpv-android (is.xyz.mpv), or use the Android chooser."
+	if ! have termux-am && ! have am && ! have termux-open && ! have termux-open-url; then
+		warn "No Android intent launcher found. Run 'pkg install termux-am' (it provides am)."
+	fi
+}
+
 # Which of the optional dependencies this machine is actually missing.
 #
 # Checked before anything is offered: the previous flow prompted — and
@@ -2157,6 +2182,9 @@ missing_dependencies() {
 # none.
 install_optional_deps() {
 	[[ "$SKIP_DEPS" == 1 ]] && return 0
+	# Android players are Android apps, not package-manager installs.
+	# HOST_OS is set at script start; the default keeps eval'd function tests safe.
+	[[ "${HOST_OS:-linux}" == android ]] && return 0
 
 	local command line
 	# `local -a missing=()` is the bash 3.2 + `set -u` form: a bare
@@ -2321,6 +2349,7 @@ main() {
 		;;
 	esac
 
+	print_android_player_guidance
 	install_optional_deps
 
 	bold "Done."

@@ -12,7 +12,7 @@ import { getInstallDiagnostics } from "./native-installer/install-diagnostic";
 import { installLatest } from "./native-installer/install-latest";
 import { migrateFlatInstall } from "./native-installer/migrate-flat-install";
 import { isMuslEnvironmentSync } from "./native-installer/musl";
-import { detectPlatform } from "./platform-assets";
+import { detectPlatform, resolvePlatformLibc } from "./platform-assets";
 import { resolveLatestVersion } from "./resolve-latest-version";
 import { inspectPackageInstall, type PackageInstallEvidence } from "./run-install";
 import { planUpgrade } from "./upgrade-planner";
@@ -77,7 +77,7 @@ export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
   }
 
   const { os, arch } = detectPlatform();
-  const libc = os === "linux" && isMuslEnvironmentSync() ? "musl" : "gnu";
+  const libc = resolvePlatformLibc(os, os === "linux" && isMuslEnvironmentSync());
   const plan = planUpgrade({
     channel,
     currentVersion: opts.currentVersion,
