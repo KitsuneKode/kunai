@@ -6,6 +6,7 @@ import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import React, { act } from "react";
 
 import { render, stripAnsi } from "../../harness/render-capture";
+import { renderWithPointer } from "../../support/pointer-render";
 import { waitUntil } from "../../support/wait-until";
 
 type FixtureOptions = {
@@ -573,6 +574,66 @@ describe("library input ownership", () => {
       await waitForFrame(handle, "No downloads queued");
       await pressEscape(handle);
       expect(closeCount).toBe(1);
+    } finally {
+      handle.unmount();
+    }
+  });
+});
+
+describe("library pointer ownership", () => {
+  test("click selects a title, second click opens its detail without deleting", async () => {
+    const deletes: string[] = [];
+    const handle = renderWithPointer(
+      <LibraryShell
+        container={fixture({
+          deletes,
+          entries: [
+            offlineEntry(),
+            offlineEntry({ id: "job-2", titleId: "title-2", titleName: "Frieren" }),
+          ],
+        })}
+        onClose={() => {}}
+      />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const rows = handle.dispatcher.debugRegions().filter((r) => r.id.startsWith("library:row:"));
+      expect(rows).toHaveLength(2);
+      const target = rows[1];
+      if (!target) throw new Error("Expected second library title");
+      handle.click(target.id);
+      expect(stripAnsi(handle.lastFrame())).not.toContain("Continue this title online");
+      handle.click(target.id);
+      expect(stripAnsi(handle.lastFrame())).toContain("Continue this title online");
+      expect(deletes).toEqual([]);
+      expect(
+        handle.dispatcher.debugRegions().filter((r) => r.id.startsWith("library:row:")),
+      ).toEqual([]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("tab clicks navigate both ways, including a filtered shelf", async () => {
+    const handle = renderWithPointer(<LibraryShell container={fixture()} onClose={() => {}} />, {
+      columns: 100,
+      rows: 40,
+    });
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      handle.stdin.enqueue("missing");
+      handle.click("library:tab:1");
+      expect(stripAnsi(handle.lastFrame())).toContain("No downloads queued");
+      handle.click("library:tab:0");
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(stripAnsi(handle.lastFrame())).toContain("Dune");
     } finally {
       handle.unmount();
     }

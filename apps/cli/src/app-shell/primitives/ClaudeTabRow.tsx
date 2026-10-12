@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { windowedSegmentGeometry } from "../format/segmented";
+import { MouseTarget } from "../mouse/MouseRegions";
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 
@@ -15,12 +16,14 @@ export const ClaudeTabRow = React.memo(function ClaudeTabRow({
   hint,
   maxWidth,
   dense = false,
+  pointer,
 }: {
   readonly labels: readonly string[];
   readonly activeIndex: number;
   readonly hint?: string;
   readonly maxWidth?: number;
   readonly dense?: boolean;
+  readonly pointer?: { readonly id: string; readonly select: (index: number) => void };
 }) {
   const tabBudget =
     maxWidth === undefined ? Number.POSITIVE_INFINITY : maxWidth - (hint ? HINT_RESERVE : 0);
@@ -48,15 +51,21 @@ export const ClaudeTabRow = React.memo(function ClaudeTabRow({
           {i > 0 ? <Text color={palette.dim}>{"  "}</Text> : null}
           {/* Never shrink: a squeezed tab strip renders section names as
               unreadable stumps rather than dropping the ones that do not fit. */}
-          <Box flexShrink={0}>
-            <Text
-              bold={seg.active}
-              color={seg.active ? palette.text : palette.textDim}
-              backgroundColor={seg.active ? palette.accentFill : undefined}
-            >
-              {seg.text}
-            </Text>
-          </Box>
+          <MouseTarget
+            id={`${pointer?.id}:tab:${hiddenBefore + i}`}
+            active={Boolean(pointer)}
+            onClick={() => pointer?.select(hiddenBefore + i)}
+          >
+            <Box flexShrink={0}>
+              <Text
+                bold={seg.active}
+                color={seg.active ? palette.text : palette.textDim}
+                backgroundColor={seg.active ? palette.accentFill : undefined}
+              >
+                {seg.text}
+              </Text>
+            </Box>
+          </MouseTarget>
         </React.Fragment>
       ))}
       {hiddenAfter > 0 ? (

@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-12"
 ---
 
 # Kunai CLI Keybindings
@@ -68,7 +68,13 @@ In a compatible terminal, click a result to select it, then click the selected
 result again to open it. Click the search field to resume typing. Scrolling
 stops at the list boundaries; keyboard arrows still wrap. Covered results do
 not accept clicks while an overlay or command palette owns focus. This does
-not imply click support for other surfaces.
+not imply click support for every surface.
+
+Library and Up Next use the same select-then-open gesture. Library tabs switch
+views directly. Mouse selection and wheel movement never delete files or remove
+queue entries; their existing keyboard confirmation rules remain in effect.
+Up Next uses the same exact-row claim as Enter and refuses items already starting
+or played. Large queues keep only the selected window on screen.
 
 Set `KUNAI_NO_MOUSE=1` before launching to retain ordinary terminal mouse
 behavior. Mouse tracking is disabled automatically for piped input/output and

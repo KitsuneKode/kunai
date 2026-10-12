@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-12"
 ---
 
 # Kunai — UX Architecture
@@ -103,6 +103,13 @@ same stationary region and button; dragging cancels activation. Unrelated
 renders preserve a pending click. Re-measurement uses Ink layout coordinates
 plus one terminal cell; this assumes the fullscreen shell renders no `Static`
 output above the live region.
+
+Library and Up Next rows also use select-then-activate. Library tabs use absolute
+indices in a windowed strip, and selecting a title clears pending deletion.
+Queue rows carry stable IDs through the shared Enter/mouse activation path; only
+the visible queue window renders and registers. The command palette removes
+queue pointer ownership. Starting/played entries give feedback without claiming
+or closing the overlay.
 
 Other surfaces currently receive unhandled vertical wheel reports as arrow
 keys. That is a keyboard fallback, not complete pointer support for their

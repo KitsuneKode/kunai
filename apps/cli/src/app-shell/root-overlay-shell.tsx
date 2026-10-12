@@ -168,6 +168,7 @@ import {
 } from "./panel-data";
 import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
+import type { QueueViewRow } from "./queue-view";
 import { buildQueueView } from "./queue-view";
 import {
   hasPendingRootHistorySelection,
@@ -1415,6 +1416,61 @@ export function RootOverlayShell({
     })();
   };
 
+  const activateQueueRow = (row: QueueViewRow) => {
+    if (row.state === "played" || row.state === "starting") {
+      setOverlayStatus(
+        row.state === "starting"
+          ? "This item is already starting"
+          : "This queue item was already played",
+      );
+      return;
+    }
+    // Claim exact row before handoff; failed CAS keeps the overlay open.
+    const awaited = hasPendingRootQueueSelection();
+    const mountedKind = getRootContentSession()?.kind;
+    if (!awaited && mountedKind === "post-playback") {
+      // Post-play owns this handoff natively — its own queue rail resolves
+      // the same result, and the phase loop claims the row itself. Claiming
+      // here first would make that CAS fail and drop the launch.
+      container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+      forceCloseRootContent<PlaybackShellResult>({
+        type: "play-queue-entry",
+        queueEntryId: row.id,
+      });
+      return;
+    }
+    if (!awaited && mountedKind !== "browse") {
+      // launch-playback only resolves on browse — on active playback, a
+      // picker, or an idle slot nobody consumes it, so claiming would leave
+      // the row in-flight forever. Keep it pending and say where it plays.
+      setOverlayStatus("Queue play from the search screen or the post-play menu");
+      return;
+    }
+    const played = resolveQueueRowPlaySelection(
+      container.queueService,
+      row.id,
+      resolveRootQueueSelection,
+      () => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" }),
+    );
+    // The palette route awaits this through openRootQueueSelection. Opened
+    // directly from another overlay there is no resolver — the claim above
+    // would close the overlay and drop a launch nothing consumed. Fall back
+    // to the same finish channel the history path uses.
+    if (played.status === "failed") {
+      setOverlayStatus("This item is no longer pending; choose another queued title");
+      return;
+    }
+    if (played.status === "claimed" && !awaited) {
+      const episode = episodeInfoFromQueuePlaybackLaunch(played.launch);
+      const launchTitle = titleInfoFromQueuePlaybackLaunch(played.launch);
+      forceCloseRootContent<BrowseShellResult<SearchResult>>(
+        episode
+          ? { type: "launch-playback", launch: { title: launchTitle, episode } }
+          : { type: "launch-playback", launch: { title: launchTitle } },
+      );
+    }
+  };
+
   useInput((input, key) => {
     if (commandMode) {
       return;
@@ -1699,46 +1755,7 @@ export function RootOverlayShell({
       const sel = queueRows.length === 0 ? -1 : Math.min(selectedIndex, queueRows.length - 1);
       const row = sel >= 0 ? queueRows[sel] : undefined;
       if (key.return && row) {
-        // Claim exact row before handoff; failed CAS keeps the overlay open.
-        const awaited = hasPendingRootQueueSelection();
-        const mountedKind = getRootContentSession()?.kind;
-        if (!awaited && mountedKind === "post-playback") {
-          // Post-play owns this handoff natively — its own queue rail resolves
-          // the same result, and the phase loop claims the row itself. Claiming
-          // here first would make that CAS fail and drop the launch.
-          container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-          forceCloseRootContent<PlaybackShellResult>({
-            type: "play-queue-entry",
-            queueEntryId: row.id,
-          });
-          return;
-        }
-        if (!awaited && mountedKind !== "browse") {
-          // launch-playback only resolves on browse — on active playback, a
-          // picker, or an idle slot nobody consumes it, so claiming would leave
-          // the row in-flight forever. Keep it pending and say where it plays.
-          setOverlayStatus("Queue play from the search screen or the post-play menu");
-          return;
-        }
-        const played = resolveQueueRowPlaySelection(
-          container.queueService,
-          row.id,
-          resolveRootQueueSelection,
-          () => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" }),
-        );
-        // The palette route awaits this through openRootQueueSelection. Opened
-        // directly from another overlay there is no resolver — the claim above
-        // would close the overlay and drop a launch nothing consumed. Fall back
-        // to the same finish channel the history path uses.
-        if (played.status === "claimed" && !awaited) {
-          const episode = episodeInfoFromQueuePlaybackLaunch(played.launch);
-          const launchTitle = titleInfoFromQueuePlaybackLaunch(played.launch);
-          forceCloseRootContent<BrowseShellResult<SearchResult>>(
-            episode
-              ? { type: "launch-playback", launch: { title: launchTitle, episode } }
-              : { type: "launch-playback", launch: { title: launchTitle } },
-          );
-        }
+        activateQueueRow(row);
         return;
       }
       if (input === "J" && row) {
@@ -2254,6 +2271,29 @@ export function RootOverlayShell({
         />
         <QueueShell
           view={queueViewForRender}
+          maxRows={Math.max(1, overlayLayout.contentRows - 6)}
+          onRowClick={
+            commandMode
+              ? undefined
+              : (id) => {
+                  const index = queueView.rows.findIndex((row) => row.id === id);
+                  const row = queueView.rows[index];
+                  if (!row) return;
+                  if (index !== qSelected) setSelectedIndex(index);
+                  else activateQueueRow(row);
+                }
+          }
+          onWheel={
+            commandMode
+              ? undefined
+              : (direction) =>
+                  setSelectedIndex((current) =>
+                    Math.max(
+                      0,
+                      Math.min(queueView.rows.length - 1, current + (direction === "up" ? -1 : 1)),
+                    ),
+                  )
+          }
           columns={overlayLayout.contentColumns}
           listWidth={listWidth}
           rowWidth={rowWidth}

@@ -10,6 +10,7 @@ import {
   type LibraryShelfSection,
 } from "@/app-shell/library-shelf-model";
 import { LibraryTitleDetail } from "@/app-shell/library-title-detail";
+import { MouseTarget } from "@/app-shell/mouse/MouseRegions";
 import {
   libraryFooterActions,
   downloadQueueFooterActions,
@@ -104,6 +105,7 @@ export function LibraryShell({
         labels={["Library", "Downloads"]}
         activeIndex={tab === "library" ? 0 : 1}
         hint="Tab switch"
+        pointer={{ id: "library", select: (index) => setTab(index === 0 ? "library" : "queue") }}
       />
       <Text color={palette.dim} dimColor>
         {downloadsEnabled ? "downloads on" : "downloads off"} · runway: title opt-in
@@ -257,6 +259,18 @@ function LibraryTab({
     })();
   };
 
+  const openTitle = (group: OfflineLibraryShelfGroup) => {
+    setConfirmDeleteKey(null);
+    setDetailGroup(group);
+    setLibraryView("title-detail");
+  };
+  const scrollTitles = (direction: "up" | "down") => {
+    setConfirmDeleteKey(null);
+    setSelectedIndex((current) =>
+      Math.max(0, Math.min(totalRows - 1, current + (direction === "up" ? -1 : 1))),
+    );
+  };
+
   useInput(
     (input, key) => {
       // Esc cancels an armed delete-confirm first (web-routing back: undo the
@@ -349,8 +363,7 @@ function LibraryTab({
       }
       if (key.return) {
         if (!selectedOfflineGroup) return;
-        setDetailGroup(selectedOfflineGroup);
-        setLibraryView("title-detail");
+        openTitle(selectedOfflineGroup);
         return;
       }
       if (confirmDeleteKey !== null) {
@@ -477,20 +490,30 @@ function LibraryTab({
         const ep = formatLibrarySeasonCode(row.group);
         const status = formatLibraryStatus(row, historyMap);
         return (
-          <ListRow
+          <MouseTarget
             key={row.group.key}
-            selected={selected}
-            rowWidth={rowWidth}
-            flexColumnIndex={rowLayout.flexColumnIndex}
-            columns={buildMediaListRowColumns({
-              title,
-              episodeCode: ep,
-              statusLabel: status.label,
-              statusColor: status.color,
-              statusDim: status.dim,
-              layout: rowLayout,
-            })}
-          />
+            id={`library:row:${row.group.key}`}
+            onWheel={scrollTitles}
+            onClick={() => {
+              setConfirmDeleteKey(null);
+              if (item.flatIndex !== safeIndex) setSelectedIndex(item.flatIndex);
+              else openTitle(row.group);
+            }}
+          >
+            <ListRow
+              selected={selected}
+              rowWidth={rowWidth}
+              flexColumnIndex={rowLayout.flexColumnIndex}
+              columns={buildMediaListRowColumns({
+                title,
+                episodeCode: ep,
+                statusLabel: status.label,
+                statusColor: status.color,
+                statusDim: status.dim,
+                layout: rowLayout,
+              })}
+            />
+          </MouseTarget>
         );
       })}
       {showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}
