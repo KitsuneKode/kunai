@@ -42,16 +42,18 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 
 ## Shell (Ink)
 
-| Feature                                                       | Owned by                                                                          | Docs                                                                  |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Command palette, `/` commands                                 | `apps/cli/src/domain/session/command-registry.ts`                                 | [ux-architecture.md](./ux-architecture.md)                            |
-| `/guide` discovery overlay                                    | `apps/cli/src/app-shell/guide-model.ts`, `apps/cli/src/app-shell/guide-shell.tsx` | [ux-architecture.md](./ux-architecture.md)                            |
-| Keybindings                                                   | `apps/cli/src/app-shell/keybindings.ts`                                           | [keybindings.md](./keybindings.md)                                    |
-| Shell host, overlays, footer                                  | `apps/cli/src/app-shell/*`                                                        | [ux-architecture.md](./ux-architecture.md)                            |
-| Pickers (episode, provider, source, quality, audio, subtitle) | `apps/cli/src/app-shell/pickers/*`                                                | [runtime-boundary-map.md](./runtime-boundary-map.md#picker-ownership) |
-| Settings overlay                                              | `apps/cli/src/app-shell/settings/*`                                               | [ux-architecture.md](./ux-architecture.md)                            |
-| Theme + design tokens                                         | `packages/design`                                                                 | [design-system.md](./design-system.md)                                |
-| Poster previews (Kitty / iTerm2 / sixel / half-block)         | `apps/cli/src/image/*`                                                            | [poster-image-rendering.md](./poster-image-rendering.md)              |
+| Feature                                                          | Owned by                                                                                                 | Docs                                                                  |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Command palette, `/` commands                                    | `apps/cli/src/domain/session/command-registry.ts`                                                        | [ux-architecture.md](./ux-architecture.md)                            |
+| `/guide` discovery overlay                                       | `apps/cli/src/app-shell/guide-model.ts`, `apps/cli/src/app-shell/guide-shell.tsx`                        | [ux-architecture.md](./ux-architecture.md)                            |
+| Keybindings                                                      | `apps/cli/src/app-shell/keybindings.ts`                                                                  | [keybindings.md](./keybindings.md)                                    |
+| Shell host, overlays, footer                                     | `apps/cli/src/app-shell/*`                                                                               | [ux-architecture.md](./ux-architecture.md)                            |
+| Pickers (episode, provider, source, quality, audio, subtitle)    | `apps/cli/src/app-shell/pickers/*`                                                                       | [runtime-boundary-map.md](./runtime-boundary-map.md#picker-ownership) |
+| Settings overlay                                                 | `apps/cli/src/app-shell/settings/*`                                                                      | [ux-architecture.md](./ux-architecture.md)                            |
+| Theme + design tokens                                            | `packages/design`                                                                                        | [design-system.md](./design-system.md)                                |
+| Poster previews (Kitty / iTerm2 / sixel / half-block)            | `apps/cli/src/image/*`                                                                                   | [poster-image-rendering.md](./poster-image-rendering.md)              |
+| Browse home return-loop rows (continue, new-since-visit, nudges) | `apps/cli/src/app-shell/browse-idle-{context,actions}.ts`, `return-loop-copy.ts`                         | [ux-architecture.md](./ux-architecture.md)                            |
+| Rested-row Enter prefetch                                        | `apps/cli/src/app-shell/hooks/use-dwell-prefetch.ts`, `apps/cli/src/app/search/prefetch-browse-entry.ts` | [ux-architecture.md](./ux-architecture.md)                            |
 
 ## Search and catalog
 
@@ -95,6 +97,7 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | Post-playback actions                      | `apps/cli/src/app/post-play/*`                                                                                  | [ux-architecture.md](./ux-architecture.md)                                       |
 | Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — progress/completion policy, problem classification, local streams            | [architecture.md](./architecture.md)                                             |
 | Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                         | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
+| Entry auto-play decision (Enter vs menu)   | `apps/cli/src/app-shell/title-control/smart-auto-launch.ts`                                                     | [ux-architecture.md](./ux-architecture.md)                                       |
 
 ## Library and personal state
 

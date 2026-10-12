@@ -277,6 +277,44 @@ row-scoped actions through `MediaActionRouter` with that row's media item. The
 `history` allow-list is therefore deliberately narrow: it carries only actions
 that can be aimed at a row.
 
+### Enter on a rested title plays; menus stay one key away
+
+Plain Enter on a browse result is the play key, not the menu key. The contract
+lives in `apps/cli/src/app-shell/title-control/smart-auto-launch.ts` and is
+resolved once per entry in `PlaybackPhase`:
+
+- a live resume position plays in place — no second prompt;
+- a finished last episode plays the next unwatched episode when one is known,
+  resolved through the same loader the starting menu would have run;
+- a partially-watched movie resumes the same way;
+- everything ambiguous — first watch, no saved position, a failed provider, an
+  explicit `m` — opens the starting-point menu. `m` always opens it: that is
+  the documented way out of auto-entry, carried on the title as
+  `forceStartingMenu` so a plain Enter one key later still auto-plays.
+
+Dwell prefetch (`app-shell/hooks/use-dwell-prefetch.ts` →
+`app/search/prefetch-browse-entry.ts`) exists to keep that Enter cheap: ~500ms
+after a result row stops moving it warms the exact chain select+playback pays —
+provider-native mapping, identity enrich, title detail, and the episode catalog
+(provider `listEpisodes` for anime, `fetchSeriesData` for TMDB series). It is
+latest-wins (a moved cursor aborts the in-flight warm), silent on every
+failure, session-deduped per result, a hard no-op while offline or on YouTube
+rows, and it never fires mid-navigation. It writes no session state — it only
+fills caches the real path already reads.
+
+### The browse home return loop
+
+An empty query is the home screen, and `browse-idle-context.ts` +
+`browse-idle-actions.ts` own its strip of local shortcut rows. "New since you
+left" leads it — above Continue Watching — when the attention system's
+`release_progress_cache` holds provider-confirmed releases newer than
+`lastCalendarVisitAt` (the same anchor the calendar's own newness marker uses,
+so a first-ever visit claims nothing). Muted titles never count. It is one `●`
+row — `3 new episodes since Tuesday` — Enter opens the schedule already on the
+Tracked tab, and the row is absent entirely when nothing qualifies: never an
+empty strip. Every row in the strip renders instantly; high-frequency paths
+get no decorative animation.
+
 ## Picker Filtering
 
 - filterable pickers are the default for season, episode, provider, subtitle, history, and settings flows

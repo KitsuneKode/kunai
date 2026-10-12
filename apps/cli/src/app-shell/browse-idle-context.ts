@@ -17,6 +17,8 @@ type IdleContextContainer = Pick<
   | "offlineAssetService"
   | "historyRepository"
   | "listService"
+  | "followedTitleRepository"
+  | "config"
 >;
 
 export async function buildBrowseIdleContext(
@@ -36,6 +38,7 @@ export async function buildBrowseIdleContext(
   let offlineReadyNext: BrowseIdleContext["offlineReadyNext"];
   let savedNext: BrowseIdleContext["savedNext"];
   let calendarNudge: BrowseIdleContext["calendarNudge"];
+  let newSinceVisit: BrowseIdleContext["newSinceVisit"];
 
   try {
     const allHistory =
@@ -106,6 +109,28 @@ export async function buildBrowseIdleContext(
       calendarNudge = { airingTodayCount };
     }
 
+    // "New since you left": releases the attention system confirmed after the
+    // last calendar visit. The `lastCalendarVisitAt <= 0` guard mirrors the
+    // calendar's own newness rule — a first-ever visit must not flood the home
+    // screen with the entire backlog. Muted titles stay silent even though
+    // history-backed rows may still carry projections for them.
+    const lastCalendarVisitAt = container.config.lastCalendarVisitAt;
+    if (lastCalendarVisitAt > 0) {
+      const muted = new Set(
+        container.followedTitleRepository.listByPreference("muted").map((record) => record.titleId),
+      );
+      const fresh = container.releaseProgressCache
+        .listNewSince(new Date(lastCalendarVisitAt).toISOString())
+        .filter((projection) => !muted.has(projection.titleId));
+      if (fresh.length > 0) {
+        newSinceVisit = {
+          episodeCount: fresh.reduce((count, row) => count + row.newEpisodeCount, 0),
+          titleCount: fresh.length,
+          sinceMs: lastCalendarVisitAt,
+        };
+      }
+    }
+
     const watchlist = container.listService.getWatchlist();
     const topSaved = watchlist[0];
     if (topSaved) {
@@ -125,7 +150,8 @@ export async function buildBrowseIdleContext(
     offlineReadyNext ||
     savedNext ||
     releaseSummary.episodeCount > 0 ||
-    calendarNudge
+    calendarNudge ||
+    newSinceVisit
       ? {
           playlistNext: playlistNextItem
             ? {
@@ -148,6 +174,7 @@ export async function buildBrowseIdleContext(
           savedNext,
           todayReleaseCount: releaseSummary.episodeCount,
           todayReleaseTitleCount: releaseSummary.titleCount,
+          newSinceVisit,
           calendarNudge,
         }
       : undefined;

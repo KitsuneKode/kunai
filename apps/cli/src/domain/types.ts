@@ -79,6 +79,12 @@ export interface TitleInfo {
   readonly isAnime?: boolean;
   readonly episodeCount?: number;
   readonly launchSource?: "search" | "history" | "continue" | "offline-library";
+  /**
+   * `m` (starting-point menu) was pressed for this title. Enter on a rested
+   * result auto-resumes or auto-advances; this flag is what keeps the menu one
+   * key away instead of unreachable.
+   */
+  readonly forceStartingMenu?: boolean;
   /** Exact queue handoff identity when playback was claimed from the Up Next queue. */
   readonly queuePlaybackIntent?: QueuePlaybackIntent;
 }

@@ -2,6 +2,7 @@ import { createLatestRequestGate, runBrowseMutation } from "@/app-shell/browse-a
 import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-item";
 import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-trace";
 import { useCalendarNow } from "@/app-shell/hooks/use-calendar-now";
+import { useDwellPrefetch } from "@/app-shell/hooks/use-dwell-prefetch";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
@@ -232,6 +233,7 @@ export function BrowseShell<T>({
   onResolve,
   onSubmit,
   onCancel,
+  onPrefetchOption,
   idleContext,
   loadIdleContext,
   onSuggest,
@@ -278,6 +280,12 @@ export function BrowseShell<T>({
   onResolve: (action: ShellAction, value?: T) => void;
   onSubmit: (value: T) => void;
   onCancel: () => void;
+  /**
+   * Dwell prefetch: fired ~500ms after a result row stops moving, warming what
+   * Enter would pay (identity, detail, episode catalogs). Abortable via the
+   * passed signal; silent by contract.
+   */
+  onPrefetchOption?: (value: T, signal: AbortSignal) => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
   /**
@@ -846,6 +854,13 @@ export function BrowseShell<T>({
   // navigating. Used to suppress the heavy poster block from intermediate frames.
   const navigating = selectedOption !== settledOption;
 
+  // Dwell prefetch: a row rested on ~500ms warms the catalog/provider work
+  // Enter would pay, so a rested Enter resolves from warm caches. The hook is
+  // timer-only — no state, no render — and aborts the in-flight warm the moment
+  // the highlight moves (latest-wins). Ready-state only: idle/loading/error
+  // surfaces have no launchable selection.
+  useDwellPrefetch(searchState === "ready" ? selectedOption?.value : undefined, onPrefetchOption);
+
   const openDetailsOverlay = useCallback(
     (option?: BrowseShellOption<T>) => {
       const resolved = option ?? selectedOption;
@@ -1048,16 +1063,14 @@ export function BrowseShell<T>({
 
   const localSuggestionCorpus = useMemo<readonly SearchSuggestion<T>[]>(() => {
     if (!suggestionBandVisible) return [];
-    const history = getSearchHistory().map(
-      (entry, index): SearchSuggestion<T> => ({
-        id: `history:${index}:${entry}`,
-        title: entry,
-        source: "query-history",
-        commitQuery: entry,
-        // History order IS recency — index 0 is the freshest search.
-        recencyMs: -index,
-      }),
-    );
+    const history = getSearchHistory().map((entry, index): SearchSuggestion<T> => ({
+      id: `history:${index}:${entry}`,
+      title: entry,
+      source: "query-history",
+      commitQuery: entry,
+      // History order IS recency — index 0 is the freshest search.
+      recencyMs: -index,
+    }));
     try {
       return [...history, ...(loadLocalSuggestions?.() ?? [])];
     } catch {
@@ -2572,6 +2585,7 @@ export function openBrowseShell<T>({
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
+  onPrefetchOption,
   idleContext,
   loadIdleContext,
   onSuggest,
@@ -2611,6 +2625,7 @@ export function openBrowseShell<T>({
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
+  onPrefetchOption?: (value: T, signal: AbortSignal) => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
   onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
@@ -2653,6 +2668,7 @@ export function openBrowseShell<T>({
         onFollowSelected={onFollowSelected}
         onPlayTrailer={onPlayTrailer}
         onOpenLink={onOpenLink}
+        onPrefetchOption={onPrefetchOption}
         idleContext={idleContext}
         loadIdleContext={loadIdleContext}
         onSuggest={onSuggest}
