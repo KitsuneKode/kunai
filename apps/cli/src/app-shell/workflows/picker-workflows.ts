@@ -15,6 +15,7 @@ import {
   type DecodedTrackSelection,
   type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
+import { nearestOptionIndex } from "@/domain/session/picker-model";
 import type { EpisodePickerOption, StreamInfo } from "@/domain/types";
 import { scheduleVideasyLazySourceProbesFromContainer } from "@/services/playback/schedule-videasy-lazy-probes";
 import { fetchEpisodes, fetchSeasonSummaries, type EpisodeInfo } from "@/tmdb";
@@ -26,6 +27,7 @@ import {
   parsePickerValue,
   waitForSessionPicker,
 } from "../session-picker";
+import { persistSettingsDraft } from "../settings/persist";
 
 export async function openProviderPicker({
   currentProvider,
@@ -209,7 +211,7 @@ export async function openAnimeEpisodePicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: currentEpisode >= 1 && currentEpisode <= count ? currentEpisode - 1 : -1,
+      initialIndex: nearestOptionIndex(episodes, currentEpisode),
       options: episodes.map((episode) => ({
         value: String(episode),
         label: `Episode ${episode}`,
@@ -242,7 +244,10 @@ export async function openAnimeEpisodeListPicker(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season: 1,
-      initialIndex: episodes.findIndex((episode) => episode.index === currentEpisode),
+      initialIndex: nearestOptionIndex(
+        episodes.map((episode) => episode.index),
+        currentEpisode,
+      ),
       options: episodes.map((episode) => ({
         value: String(episode.index),
         label: episode.label,
@@ -279,4 +284,38 @@ export function openPlaybackEpisodePicker(
     options: picker.options,
     initialIndex: picker.initialIndex,
   });
+}
+
+/**
+ * `/theme` palette entry — the same write path as Settings › Appearance
+ * (`persistSettingsDraft` → `applySettingsToRuntime`), so a pick here repaints
+ * and persists exactly like a pick inside the settings overlay. A set
+ * `KUNAI_THEME` is surfaced rather than silently fought: the pick still
+ * applies for this run and persists, but the env wins again next launch.
+ */
+export async function openThemePicker(
+  container: Container,
+  actionContext?: ListShellActionContext,
+): Promise<void> {
+  const { isThemeName, listThemes, setDesignTheme } = await import("@kunai/design");
+  const envTheme = process.env.KUNAI_THEME;
+  const config = container.config.getRaw();
+  const active = envTheme ?? config.theme;
+  const picked = await chooseFromListShell<string>({
+    title: "Theme",
+    subtitle: envTheme
+      ? `KUNAI_THEME=${envTheme} overrides on launch — a pick still applies now`
+      : "Applies instantly — saved for next launch",
+    actionContext,
+    options: listThemes().map((theme) => ({
+      value: theme.name,
+      label: markCurrentLabel(theme.label, theme.name === active),
+      detail: theme.detail,
+    })),
+  });
+  if (!picked || !isThemeName(picked) || picked === active) return;
+  await persistSettingsDraft(container, { ...config, theme: picked });
+  // persist is a no-op when the pick already equals config.theme (env mask),
+  // so repaint explicitly — an explicit pick wins over the env for this run.
+  if (picked === config.theme) setDesignTheme(picked);
 }

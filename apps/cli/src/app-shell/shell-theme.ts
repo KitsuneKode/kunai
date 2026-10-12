@@ -5,52 +5,133 @@ import type { ShellStatus } from "./types";
 // palette maps token values to the semantic property names used throughout
 // app-shell (accent / ok / danger / line / …). Color encodes state or focus,
 // never identity — see .docs/design-system.md.
+//
+// Entries are getters, not snapshots: `tokens` is a live view that
+// `setDesignTheme` rewrites in place, so every render-time read picks up the
+// active theme on the next Ink frame. Nothing in app-shell may hold a color
+// at module scope — read palette.* inside render or helpers, like this file.
 export const palette = {
   // ---- surfaces ----
-  bg: tokens.bg,
-  surface: tokens.surface,
-  surfaceElevated: tokens.surfaceElevated,
-  surfaceActive: tokens.surfaceActive,
-  scrim: tokens.scrim,
-  raised: tokens.raised,
-  line: tokens.line,
-  lineSoft: tokens.lineSoft,
-  lineStrong: tokens.lineStrong,
+  get bg() {
+    return tokens.bg;
+  },
+  get surface() {
+    return tokens.surface;
+  },
+  get surfaceElevated() {
+    return tokens.surfaceElevated;
+  },
+  get surfaceActive() {
+    return tokens.surfaceActive;
+  },
+  get scrim() {
+    return tokens.scrim;
+  },
+  get raised() {
+    return tokens.raised;
+  },
+  get line() {
+    return tokens.line;
+  },
+  get lineSoft() {
+    return tokens.lineSoft;
+  },
+  get lineStrong() {
+    return tokens.lineStrong;
+  },
 
   // ---- semantic accents (prefer these) ----
-  accent: tokens.accent, // focus · selection · brand · in-progress
-  accentSoft: tokens.accentSoft,
-  accentDeep: tokens.accentDeep, // progress fill
-  accentDim: tokens.accentDim,
-  accentFill: tokens.accentFill,
-  ok: tokens.ok, // ready · complete · available
-  okDim: tokens.okDim,
-  okFill: tokens.okFill,
-  warn: tokens.warn, // caution · in-flight · aired-not-confirmed
-  warnDim: tokens.warnDim,
-  warnFill: tokens.warnFill,
-  danger: tokens.danger, // borders and art only: Lc 46 on the canvas is too dark to read as text
-  dangerDim: tokens.dangerDim,
-  dangerFill: tokens.dangerFill,
-  dangerText: tokens.dangerText, // real, actionable error, as text
-  info: tokens.info, // neutral-positive signal · cool counterweight
-  infoDim: tokens.infoDim,
-  infoFill: tokens.infoFill,
-  milestone: tokens.milestone, // series-complete glyph and fill; Lc 40 on the canvas, not for text
-  milestoneDim: tokens.milestoneDim,
-  milestoneText: tokens.milestoneText, // series-complete, as text
+  get accent() {
+    return tokens.accent;
+  }, // focus · selection · brand · in-progress
+  get accentSoft() {
+    return tokens.accentSoft;
+  },
+  get accentDeep() {
+    return tokens.accentDeep;
+  }, // progress fill
+  get accentDim() {
+    return tokens.accentDim;
+  },
+  get accentFill() {
+    return tokens.accentFill;
+  },
+  get ok() {
+    return tokens.ok;
+  }, // ready · complete · available
+  get okDim() {
+    return tokens.okDim;
+  },
+  get okFill() {
+    return tokens.okFill;
+  },
+  get warn() {
+    return tokens.warn;
+  }, // caution · in-flight · aired-not-confirmed
+  get warnDim() {
+    return tokens.warnDim;
+  },
+  get warnFill() {
+    return tokens.warnFill;
+  },
+  get danger() {
+    return tokens.danger;
+  }, // borders and art only: Lc 46 on the canvas is too dark to read as text
+  get dangerDim() {
+    return tokens.dangerDim;
+  },
+  get dangerFill() {
+    return tokens.dangerFill;
+  },
+  get dangerText() {
+    return tokens.dangerText;
+  }, // real, actionable error, as text
+  get info() {
+    return tokens.info;
+  }, // neutral-positive signal · cool counterweight
+  get infoDim() {
+    return tokens.infoDim;
+  },
+  get infoFill() {
+    return tokens.infoFill;
+  },
+  get milestone() {
+    return tokens.milestone;
+  }, // series-complete glyph and fill; Lc 40 on the canvas, not for text
+  get milestoneDim() {
+    return tokens.milestoneDim;
+  },
+  get milestoneText() {
+    return tokens.milestoneText;
+  }, // series-complete, as text
 
   // ---- media-type hues (Stats surface only) ----
-  typeAnime: tokens.typeAnime,
-  typeSeries: tokens.typeSeries,
-  typeMovie: tokens.typeMovie,
-  typeMixed: tokens.typeMixed,
+  get typeAnime() {
+    return tokens.typeAnime;
+  },
+  get typeSeries() {
+    return tokens.typeSeries;
+  },
+  get typeMovie() {
+    return tokens.typeMovie;
+  },
+  get typeMixed() {
+    return tokens.typeMixed;
+  },
 
   // ---- text ramp ----
-  text: tokens.text,
-  textDim: tokens.textDim,
-  muted: tokens.muted,
-  dim: tokens.dim,
+  get text() {
+    return tokens.text;
+  },
+  get textDim() {
+    return tokens.textDim;
+  },
+  get muted() {
+    return tokens.muted;
+  },
+  get dim() {
+    return tokens.dim;
+  },
 } as const;
 
 /**

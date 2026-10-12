@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 
-import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
+import {
+  buildShareRefFromTitleContext,
+  describeKunaiHandoffLaunch,
+} from "@/app/bootstrap/share-ref-from-context";
 
 test("buildShareRefFromTitleContext encodes youtube catalog anchors", () => {
   const ref = buildShareRefFromTitleContext({
@@ -22,4 +25,19 @@ test("buildShareRefFromTitleContext encodes youtube catalog anchors", () => {
     title: "Never Gonna Give You Up",
     hint: { providerId: "youtube" },
   });
+});
+
+test("describeKunaiHandoffLaunch strips terminal escapes from search queries", () => {
+  // The query arrives in a kunai:// URL and is shown pre-confirm, so an OSC
+  // hyperlink smuggled into it must not reach the terminal.
+  const description = describeKunaiHandoffLaunch({
+    action: "play",
+    ref: {
+      anchor: { by: "search", query: "Dune\x1b]8;;https://evil.example\x07: Part Two" },
+      kind: "movie",
+    },
+    requiresConfirmation: true,
+  });
+  expect(description).toBe('Open playback for search "Dune: Part Two" in default mode');
+  expect(description).not.toContain("\x1b");
 });

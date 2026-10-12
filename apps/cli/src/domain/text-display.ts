@@ -16,48 +16,23 @@ export function sanitizeTerminalText(value: string): string {
   return value.replace(ANSI_SEQUENCE, "").replace(UNSAFE_CHAR, "");
 }
 
-function isCombiningMark(codePoint: number): boolean {
-  return (
-    (codePoint >= 0x0300 && codePoint <= 0x036f) ||
-    (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
-    (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
-    (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||
-    (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
-  );
-}
-
-function isWideCodePoint(codePoint: number): boolean {
-  return (
-    codePoint >= 0x1100 &&
-    (codePoint <= 0x115f ||
-      codePoint === 0x2329 ||
-      codePoint === 0x232a ||
-      (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) ||
-      (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
-      (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
-      (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
-      (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
-      (codePoint >= 0xff00 && codePoint <= 0xff60) ||
-      (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
-      (codePoint >= 0x1f300 && codePoint <= 0x1faff))
-  );
-}
-
-function charColumns(char: string): number {
-  const codePoint = char.codePointAt(0) ?? 0;
-  if (codePoint === 0 || codePoint < 0x20 || (codePoint >= 0x7f && codePoint < 0xa0)) {
-    return 0;
-  }
-  if (isCombiningMark(codePoint)) return 0;
-  return isWideCodePoint(codePoint) ? 2 : 1;
-}
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export function measureColumns(value: string): number {
+  return Bun.stringWidth(sanitizeTerminalText(value));
+}
+
+/** Take complete user-visible characters within a terminal-cell budget. */
+function takeColumns(clean: string, budget: number): string {
   let columns = 0;
-  for (const char of sanitizeTerminalText(value)) {
-    columns += charColumns(char);
+  let output = "";
+  for (const { segment } of graphemes.segment(clean)) {
+    const width = Bun.stringWidth(segment);
+    if (columns + width > budget) break;
+    output += segment;
+    columns += width;
   }
-  return columns;
+  return output;
 }
 
 export function padColumnsEnd(value: string, targetColumns: number): string {
@@ -76,18 +51,7 @@ export function truncateLine(value: string, maxLength: number): string {
   if (measureColumns(clean) <= maxLength) return clean;
   if (maxLength <= 1) return ELLIPSIS;
 
-  const budget = maxLength - 1;
-  let columns = 0;
-  let output = "";
-
-  for (const char of clean) {
-    const width = charColumns(char);
-    if (columns + width > budget) break;
-    output += char;
-    columns += width;
-  }
-
-  return `${output}${ELLIPSIS}`;
+  return `${takeColumns(clean, maxLength - 1)}${ELLIPSIS}`;
 }
 
 const PLACEHOLDER_EPISODE_NAME = /^(?:tba|untitled|n\/a|none)$/i;
@@ -114,18 +78,7 @@ export function truncateAtWord(value: string, maxLength: number): string {
   if (measureColumns(clean) <= maxLength) return clean;
   if (maxLength <= 1) return ELLIPSIS;
 
-  // The budget is in terminal columns, so the cut must walk columns too:
-  // `value.slice(0, budget)` counts UTF-16 code units, which lets CJK emit up
-  // to twice the budget's width and can split a surrogate pair mid-character.
-  const budget = maxLength - 1;
-  let columns = 0;
-  let output = "";
-  for (const char of clean) {
-    const width = charColumns(char);
-    if (columns + width > budget) break;
-    output += char;
-    columns += width;
-  }
+  const output = takeColumns(clean, maxLength - 1);
 
   // Stopped exactly at a word boundary — nothing to back off to.
   if (clean[output.length] === " ") return `${output.trimEnd()}${ELLIPSIS}`;
@@ -175,4 +128,9 @@ export function getWindowStart(selectedIndex: number, total: number, windowSize:
   if (start < 0) start = 0;
   if (start + windowSize > total) start = total - windowSize;
   return start;
+}
+
+/** "1 result", "3 results" — a count with the noun it agrees with. */
+export function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }

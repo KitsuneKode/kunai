@@ -76,6 +76,7 @@ import {
 } from "./StorageBudgetPolicy";
 import { buildDownloadStreamPolicy } from "./stream-policy";
 import { resolveSubtitleArtifactPath } from "./subtitle-artifact-path";
+import { parseYtDlpProgressLine } from "./ytdlp-progress";
 
 const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -194,7 +195,15 @@ export type DownloadResolveResult = {
 
 export type DownloadEvent =
   | { type: "enqueued"; job: DownloadJobRecord }
-  | { type: "progress"; jobId: string; percent: number }
+  | {
+      type: "progress";
+      jobId: string;
+      percent: number;
+      /** Transient yt-dlp progress detail — live rows only, never persisted. */
+      sizeLabel?: string;
+      speedLabel?: string;
+      etaLabel?: string;
+    }
   | { type: "complete"; jobId: string }
   | { type: "failed"; jobId: string; error: string }
   | { type: "aborted"; jobId: string }
@@ -1545,13 +1554,25 @@ export class DownloadService {
     let lastProgressPersistAt = 0;
     let lastPersistedPercent = 0;
 
-    const persistProgress = (percent: number) => {
+    const persistProgress = (progress: {
+      readonly percent: number;
+      readonly sizeLabel?: string;
+      readonly speedLabel?: string;
+      readonly etaLabel?: string;
+    }) => {
       const now = Date.now();
-      const clamped = Math.round(Math.max(0, Math.min(99, percent)));
+      const clamped = Math.round(Math.max(0, Math.min(99, progress.percent)));
       if (clamped === lastPersistedPercent) return;
       if (now - lastProgressPersistAt < 1000) return;
       if (!this.deps.repo.updateProgress(job.id, clamped, new Date().toISOString(), claim)) return;
-      this.emit({ type: "progress", jobId: job.id, percent: clamped });
+      this.emit({
+        type: "progress",
+        jobId: job.id,
+        percent: clamped,
+        sizeLabel: progress.sizeLabel,
+        speedLabel: progress.speedLabel,
+        etaLabel: progress.etaLabel,
+      });
       lastProgressPersistAt = now;
       lastPersistedPercent = clamped;
     };
@@ -1563,15 +1584,12 @@ export class DownloadService {
         args,
         maxStderrBytes: STDERR_MAX_BYTES,
         onStdoutLine: (line) => {
-          const match = line.match(/\[download\]\s+([\d.]+)%/);
-          if (match && match[1]) {
-            const percent = Number.parseFloat(match[1]);
-            if (Number.isFinite(percent)) {
-              persistProgress(percent);
-            }
+          const progress = parseYtDlpProgressLine(line);
+          if (progress) {
+            persistProgress(progress);
           }
           if (line.includes("100%") || line.includes("has already been downloaded")) {
-            persistProgress(99);
+            persistProgress({ percent: 99 });
           }
         },
       });

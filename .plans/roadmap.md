@@ -43,6 +43,7 @@ archive and put only the residue here.
 | Terminal image protocol     | Flicker hardening and `ink-shell` split                   | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
 | Kanna character system      | `seek`/`peek` redraws, then tracing the four raster poses | [2026-08-31-kanna-character-system.md](./2026-08-31-kanna-character-system.md)         |
 | Kanna voice and presence    | Remaining voice moments, terminal reactions, pose map     | [kanna-mascot-personality.md](./kanna-mascot-personality.md)                           |
+| Competitive parity (shell)  | `/theme` command, saved idle row, mouse input, IPTV scope | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md)                 |
 
 ### Playback and providers
 
@@ -56,6 +57,7 @@ archive and put only the residue here.
 | Provider result contract     | Contract work before broad `@kunai/core` extraction                                                                | [provider-result-contract.md](./provider-result-contract.md)                                                                                |
 | Beta UI/provider hardening   | Tasks 8–10: input routing, subtitle calls, display honesty                                                         | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                                                            |
 | Resolve UX and Playwright    | Pick up during a browser/provider reliability pass                                                                 | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md)                                                          |
+| Manga reader lane            | `manga` lane scoped: `src/image` carries the render layer; slice 1 = MangaDex + reader surface                     | [manga-reader-lane.md](./manga-reader-lane.md)                                                                                              |
 
 ### Offline and release stability
 
@@ -81,6 +83,13 @@ archive and put only the residue here.
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
 | Analytics series + social cards | Serve the retained `daily_rollup` history, adoption/trend charts, per-share OG images                                                | [2026-08-26-analytics-series-and-social-cards.md](./2026-08-26-analytics-series-and-social-cards.md) |
 | User docs overhaul              | Accuracy/framing PR first; then first-run, debugging playbook, coverage, nav, agent-docs, deploy `apps/docs` to kunai.kitsunekode.in | [2026-08-18-user-docs-overhaul.md](./2026-08-18-user-docs-overhaul.md)                               |
+
+### Growth and distribution
+
+| Track                      | Remaining                                                                   | Plan                                                                   |
+| -------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Install channels           | Homebrew tap, AUR `kunai-bin`, Scoop bucket on top of the release pipeline  | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
+| Localization and community | Localized READMEs, community surface, topics + comparison-table positioning | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
 
 ### Verification and CI
 

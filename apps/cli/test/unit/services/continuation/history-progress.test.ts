@@ -36,9 +36,9 @@ test("isFinished with duration 0 and no completed flag is not finished", () => {
   expect(isFinished(row({ completed: false, durationSeconds: undefined }))).toBe(false);
 });
 
-test("isFinished falls back to the 95% ratio only when duration is positive", () => {
+test("isFinished never infers completion from near-end progress", () => {
   expect(isFinished(row({ completed: false, durationSeconds: 1000, positionSeconds: 960 }))).toBe(
-    true,
+    false,
   );
   expect(isFinished(row({ completed: false, durationSeconds: 1000, positionSeconds: 500 }))).toBe(
     false,

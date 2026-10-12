@@ -918,6 +918,7 @@ function parseProviderNativeIds(
 function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
   if (!value) return undefined;
   try {
+    // SAFETY: each returned ID is checked below; invalid shapes throw into this catch.
     const parsed = JSON.parse(value) as Partial<ProviderExternalIds>;
     const providerNativeIds = parseProviderNativeIds(parsed.providerNativeIds);
     const externalIds: ProviderExternalIds = {
@@ -944,18 +945,7 @@ function parseExternalIds(value: string | null): ProviderExternalIds | undefined
   }
 }
 
-/**
- * Ratio of duration watched past which an entry counts as finished.
- * Kept beside `HistoryProgress` rather than in the services layer: it is a pure
- * predicate over this row type, and putting it above the type forced consumers
- * in lower layers (domain/queue) into an upward import the boundary test
- * rejects.
- */
-export const HISTORY_FINISHED_RATIO = 0.95;
-
+/** Persisted completion is the authority; progress alone never proves an episode finished. */
 export function isHistoryProgressFinished(progress: HistoryProgress): boolean {
-  if (progress.completed) return true;
-  const duration = progress.durationSeconds ?? 0;
-  if (duration <= 0) return false;
-  return progress.positionSeconds / duration >= HISTORY_FINISHED_RATIO;
+  return progress.completed;
 }
