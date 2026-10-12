@@ -24,6 +24,12 @@ import type {
 } from "./PlaybackSourceInventoryView";
 
 export type PlaybackSourceInventoryProjectionOptions = {
+  /** Session-attached external tracks; never persisted as provider resolve evidence. */
+  readonly attachedSubtitles?: readonly {
+    readonly url: string;
+    readonly language?: string;
+    readonly display?: string;
+  }[];
   readonly selectedStreamId?: string;
   readonly selectedSourceId?: string;
   readonly selectedSubtitleUrl?: string;
@@ -108,7 +114,12 @@ export function projectPlaybackSourceInventory(
     sourceGroups: projectSourceGroups(result, selectedSourceId),
     languageOptions: projectLanguageOptions(result, selectedStream),
     qualityOptions: projectQualityOptions(result, selectedStream),
-    subtitleOptions: projectSubtitleOptions(result, selectedStream, options.selectedSubtitleUrl),
+    subtitleOptions: projectSubtitleOptions(
+      result,
+      selectedStream,
+      options.selectedSubtitleUrl,
+      options.attachedSubtitles,
+    ),
     recoveryActions: projectRecoveryActions(result, selectedSourceId),
     warnings: projectWarnings(result),
     traceSummary: projectTraceSummary(result),
@@ -612,6 +623,9 @@ function projectSubtitleOptions(
   result: ProviderResolveResult,
   selectedStream: StreamCandidate | undefined,
   selectedSubtitleUrl?: string,
+  attachedSubtitles: NonNullable<
+    PlaybackSourceInventoryProjectionOptions["attachedSubtitles"]
+  > = [],
 ): readonly PlaybackSubtitleOptionView[] {
   const options: PlaybackSubtitleOptionView[] = [
     {
@@ -671,6 +685,26 @@ function projectSubtitleOptions(
     candidateCount: 1,
     restartRequired: false,
   }));
+
+  const knownUrls = new Set(externalOptions.map((option) => option.subtitleUrl));
+  for (const track of attachedSubtitles) {
+    if (!track.url || knownUrls.has(track.url)) continue;
+    knownUrls.add(track.url);
+    externalOptions.push({
+      id: `subtitle:attached:${track.url}`,
+      label: track.display ?? `Subtitle ${formatLanguageLabel(track.language)}`,
+      state: track.url === selectedSubtitleUrl ? "selected" : "available",
+      delivery: "external",
+      subtitleUrl: track.url,
+      language: track.language,
+      nativeLabels: uniqueStrings([track.display]),
+      sourceIds: [],
+      streamIds: selectedStream ? [selectedStream.id] : [],
+      subtitleIds: [],
+      candidateCount: 1,
+      restartRequired: false,
+    });
+  }
 
   return [...options, ...hardSubOptions, ...streamSubtitleOptions, ...externalOptions].sort(
     sortByStateThenLabel,

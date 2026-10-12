@@ -12,19 +12,29 @@ function createContext(
     providerId: "vidlink",
     now: () => new Date().toISOString(),
     signal,
-    fetch: { runtime: "direct-http", fetch: fetchImpl },
-  } as unknown as ProviderRuntimeContext;
+    fetch: {
+      runtime: "direct-http",
+      fetch: (input, init) =>
+        fetchImpl(input instanceof Request ? input.url : String(input), init ?? {}),
+    },
+  };
 }
 
 function createInput(overrides: Partial<ProviderResolveInput> = {}): ProviderResolveInput {
   return {
     mediaKind: "movie",
-    title: { id: "tmdb:27205", title: "Inception", externalIds: { tmdbId: 27205 } },
+    intent: "play",
+    title: {
+      id: "tmdb:27205",
+      kind: overrides.mediaKind ?? "movie",
+      title: "Inception",
+      externalIds: { tmdbId: "27205" },
+    },
     allowedRuntimes: ["direct-http"],
     qualityPreference: "best",
     startupPriority: "balanced",
     ...overrides,
-  } as ProviderResolveInput;
+  };
 }
 
 const THREE_STREAMS = {
@@ -124,6 +134,29 @@ describe("direct stream resolve gate", () => {
     expect(result.status).toBe("exhausted");
   });
 
+  test("a probed-and-refused stream is dropped from the shipped inventory", async () => {
+    // Leaving the rejected rung in `streams` lets a later quality switch select
+    // the exact stream the gate refused. Same-host siblings stay — a per-object
+    // refusal is not evidence the host itself is down.
+    const result = await resolveDirectStreamSource({
+      providerId: "vidlink",
+      host: "vidlink.pro",
+      label: "VidLink",
+      input: createInput(),
+      context: createContext(async (url) =>
+        url.includes("1080") ? new Response("gone", { status: 404 }) : new Response("ok"),
+      ),
+      fetchPayload: async () => THREE_STREAMS,
+      resolveGateProbe: true,
+    });
+
+    expect(result.status).toBe("resolved");
+    const urls = result.streams?.map((stream) => stream.url) ?? [];
+    expect(urls).not.toContain("https://cdn.example/1080.mp4");
+    expect(urls).toContain("https://cdn.example/720.mp4");
+    expect(urls).toContain("https://cdn.example/480.mp4");
+  });
+
   test("caps the probe walk instead of paying for every candidate", async () => {
     let probes = 0;
     await resolveDirectStreamSource({
@@ -214,7 +247,7 @@ describe("direct stream resolve gate", () => {
       input: createInput({
         mediaKind: "series",
         episode: { season: 0, episode: 1 },
-      } as Partial<ProviderResolveInput>),
+      }),
       context: createContext(async () => new Response("ok")),
       fetchPayload: async () => THREE_STREAMS,
     });
@@ -224,7 +257,7 @@ describe("direct stream resolve gate", () => {
       providerId: "vidlink",
       host: "vidlink.pro",
       label: "VidLink",
-      input: createInput({ mediaKind: "series" } as Partial<ProviderResolveInput>),
+      input: createInput({ mediaKind: "series" }),
       context: createContext(async () => new Response("ok")),
       fetchPayload: async () => THREE_STREAMS,
     });
