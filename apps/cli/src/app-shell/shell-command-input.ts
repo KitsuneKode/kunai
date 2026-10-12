@@ -3,7 +3,7 @@ import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-t
 import { useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 
-import type { ResolvedAppCommand } from "./commands";
+import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { recordInputDrop } from "./diagnostics/render-trace";
 import { routeShellInput } from "./input-router";
 import {
@@ -26,6 +26,7 @@ export function useShellInput({
   onResolve,
   localTitles,
   onTitlePick,
+  onPaletteCommand,
 }: {
   footerActions: readonly FooterAction[];
   commands: readonly ResolvedAppCommand[];
@@ -42,6 +43,8 @@ export function useShellInput({
   localTitles?: () => readonly LocalTitleEntry[];
   /** Enter landed on a JUMP TO title row. */
   onTitlePick?: (entry: LocalTitleEntry) => void;
+  /** Fires only when a command is picked from the palette — the "long way" signal tips key off. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
 }) {
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
@@ -102,10 +105,13 @@ export function useShellInput({
           titleMatches,
           highlightedIndex,
         );
+        // Commands keep precedence over JUMP TO title rows: a palette Enter on
+        // a command is also the "long way" signal contextual tips key off.
         if (row?.kind === "command" && row.command.enabled) {
           setCommandMode(false);
           setCommandInput("");
           setHighlightedIndex(0);
+          onPaletteCommand?.(row.command.id);
           onResolve(toShellAction(row.command.id));
           return;
         }

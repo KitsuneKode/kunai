@@ -1,9 +1,11 @@
 import { createLatestRequestGate, runBrowseMutation } from "@/app-shell/browse-async";
 import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-item";
+import { companionMode } from "@/app-shell/companion-policy";
 import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-trace";
 import { useCalendarNow } from "@/app-shell/hooks/use-calendar-now";
 import { useDwellPrefetch } from "@/app-shell/hooks/use-dwell-prefetch";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
+import { kannaDoneText, type KannaDoneKind } from "@/app-shell/kanna-voice";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
@@ -96,9 +98,8 @@ import {
   type CalendarTypeTab,
 } from "./calendar-ui.model";
 import { sortCalendarOptions } from "./calendar-view";
-import type { ResolvedAppCommand } from "./commands";
+import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { momentForBrowseEmpty } from "./companion-moment";
-import { companionMode } from "./companion-policy";
 import { CompanionHost } from "./CompanionHost";
 import { DetailsSheetUI } from "./details-pane-ui";
 import {
@@ -242,6 +243,7 @@ export function BrowseShell<T>({
   onCancel,
   onPrefetchOption,
   onUndo,
+  onPaletteCommand,
   idleContext,
   loadIdleContext,
   onSuggest,
@@ -303,6 +305,8 @@ export function BrowseShell<T>({
    * the callback itself no-ops when nothing is journaled.
    */
   onUndo?: () => void;
+  /** Fires when a command is picked from this shell's `/` palette. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
   /**
@@ -957,10 +961,15 @@ export function BrowseShell<T>({
       operation: () => Promise<string | void> | string | void,
       successMessage: string,
       failurePrefix: string,
+      doneKind?: KannaDoneKind,
     ) => {
       void runBrowseMutation(operation).then((result) => {
         flashActionFeedback(
-          result.ok ? (result.note ?? successMessage) : `${failurePrefix}: ${result.message}`,
+          result.ok
+            ? (result.note ??
+                (doneKind ? kannaDoneText(doneKind, companionMode()) : undefined) ??
+                successMessage)
+            : `${failurePrefix}: ${result.message}`,
         );
         return undefined;
       });
@@ -1470,6 +1479,7 @@ export function BrowseShell<T>({
             () => onQueueSelected(selectedOption.value),
             `Queued ${selectedOption.label}`,
             "Could not queue",
+            "queued",
           );
           return;
         }
@@ -1514,6 +1524,7 @@ export function BrowseShell<T>({
           highlightedCommandIndex,
         );
         if (row?.kind === "command" && row.command.enabled) {
+          onPaletteCommand?.(row.command.id);
           const action = toShellAction(row.command.id);
           setCommandInput("");
           if (!handleLocalAction(action)) {
@@ -1669,6 +1680,7 @@ export function BrowseShell<T>({
             () => onQueueSelected(selectedOption.value),
             `Added ${selectedOption.label} to Up Next`,
             "Could not queue",
+            "queued",
           );
           return;
         }
@@ -2640,6 +2652,7 @@ export function openBrowseShell<T>({
   onOpenLink,
   onPrefetchOption,
   onUndo,
+  onPaletteCommand,
   idleContext,
   loadIdleContext,
   onSuggest,
@@ -2683,6 +2696,8 @@ export function openBrowseShell<T>({
   onOpenLink?: (url: string) => void;
   onPrefetchOption?: (value: T, signal: AbortSignal) => void;
   onUndo?: () => void;
+  /** Fires when a command is picked from this shell's `/` palette. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
   onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
@@ -2737,6 +2752,7 @@ export function openBrowseShell<T>({
         onOpenLink={onOpenLink}
         onPrefetchOption={onPrefetchOption}
         onUndo={onUndo}
+        onPaletteCommand={onPaletteCommand}
         idleContext={idleContext}
         loadIdleContext={loadIdleContext}
         onSuggest={onSuggest}

@@ -3,6 +3,7 @@ import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
+import type { AppCommandId } from "./commands";
 import { momentForLoading } from "./companion-moment";
 import { CompanionHost } from "./CompanionHost";
 import { usePlaybackPosterSurfaceCleanup } from "./image-pane";
@@ -400,6 +401,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   isFavorite,
   onFallback,
   onUndo,
+  onPaletteCommand,
 }: {
   state: LoadingShellState;
   onCancel?: () => void;
@@ -424,6 +426,8 @@ export const LoadingShell = React.memo(function LoadingShell({
   onFallback?: () => void;
   /** `z` while an undo strip is live; a silent no-op when nothing is journaled. */
   onUndo?: () => void;
+  /** Fires when a command is picked from this surface's `/` palette. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
 }) {
   const [memoryPanelVisible, setMemoryPanelVisible] = React.useState(false);
   // Forces a frame after a toggle: `isFavorite` reads through to the list, so
@@ -692,6 +696,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       }}
       localTitles={state.paletteTitleSource}
       onTitlePick={state.onPaletteTitlePick}
+      onPaletteCommand={onPaletteCommand}
     >
       <PlaybackShellInput
         input={playbackInput}

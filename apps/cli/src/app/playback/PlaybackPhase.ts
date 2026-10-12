@@ -1,3 +1,11 @@
+// =============================================================================
+// Playback Phase
+//
+// Handles episode selection → stream resolve → MPV playback → post-playback.
+// Returns when user wants to go back to search or switch mode.
+// =============================================================================
+import { companionMode } from "@/app-shell/companion-policy";
+import { kannaDoneKindForSkipKind, kannaDoneText } from "@/app-shell/kanna-voice";
 import { capturePlaybackShellError } from "@/app-shell/playback-shell-error-capture";
 import {
   openTracksPanel,
@@ -5,12 +13,6 @@ import {
   buildPickerActionContext,
   openSubtitlePicker,
 } from "@/app-shell/workflows";
-// =============================================================================
-// Playback Phase
-//
-// Handles episode selection → stream resolve → MPV playback → post-playback.
-// Returns when user wants to go back to search or switch mode.
-// =============================================================================
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { consumeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
@@ -24,7 +26,10 @@ import {
   type EpisodePrefetchProgress,
   type EpisodePrefetchTarget,
 } from "@/app/playback/episode-prefetch";
-import { describeMpvPlayerEvent } from "@/app/playback/mpv-playback-event-copy";
+import {
+  describeMpvPlayerEvent,
+  type MpvPlaybackFeedback,
+} from "@/app/playback/mpv-playback-event-copy";
 import {
   dismissMpvTransitionOverlay,
   MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
@@ -358,14 +363,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   private playbackLedger: PlaybackHistoryLedger | null = null;
   private unregisterActiveCheckpoint: (() => void) | null = null;
 
-  private updatePlaybackFeedback(
-    context: PhaseContext,
-    feedback: { detail?: string | null; note?: string | null },
-  ) {
+  private updatePlaybackFeedback(context: PhaseContext, feedback: MpvPlaybackFeedback) {
+    // A successful skip is the companion's moment: when she is enabled the
+    // factual "Intro skipped" sentence becomes her line in the same slot. Off
+    // keeps the factual note, so the state surface never loses the event.
+    const note =
+      feedback.skipKind !== undefined
+        ? (kannaDoneText(kannaDoneKindForSkipKind(feedback.skipKind), companionMode()) ??
+          feedback.note)
+        : feedback.note;
     context.container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       detail: feedback.detail,
-      note: feedback.note,
+      note,
     });
   }
 

@@ -36,6 +36,7 @@ import type { ProviderId } from "@kunai/types";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
+import { notePaletteCommand } from "./contextual-tips";
 import { usePosterSurfaceBoundaryCleanup } from "./image-pane";
 import { LoadingShell } from "./loading-shell";
 import { pickPaletteTitle } from "./palette-title-launch";
@@ -389,6 +390,13 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
       onToggleFavorite={favoriteTitle ? toggleFavorite : undefined}
       isFavorite={favoriteTitle ? isFavorite : undefined}
       onUndo={() => input.container.sessionUndo?.undoLatest()}
+      onPaletteCommand={(commandId) => {
+        // Bootstrap shares this surface with the player, but its keys are not
+        // live until playback is — a tip armed mid-resolve would teach a chord
+        // that currently does nothing.
+        if (!playbackIsActive) return;
+        notePaletteCommand(input.container, "activePlayback", commandId);
+      }}
     />
   );
 }
@@ -634,6 +642,7 @@ function PlaybackShell({
         onResolve(resolved.result);
       }}
       onResolve={resolvePostPlayAction}
+      onPaletteCommand={(commandId) => notePaletteCommand(container, "postPlayback", commandId)}
     >
       {playbackViewport.tooSmall ? (
         <ResizeBlocker

@@ -50,6 +50,7 @@ export function ShellFrame({
   onResolve,
   localTitles,
   onTitlePick,
+  onPaletteCommand,
   children,
   terminalWidth: terminalWidthProp,
   terminalRows: terminalRowsProp,
@@ -73,6 +74,8 @@ export function ShellFrame({
   /** Local title source — consulted once per palette open for the JUMP TO section. */
   localTitles?: () => readonly LocalTitleEntry[];
   onTitlePick?: (entry: LocalTitleEntry) => void;
+  /** Fires only when a command is picked from the palette — bound with the surface's tip surface. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
   children: React.ReactNode;
   terminalWidth?: number;
   terminalRows?: number;
@@ -97,6 +100,7 @@ export function ShellFrame({
       onResolve,
       localTitles,
       onTitlePick,
+      onPaletteCommand,
     });
 
   useInput((input, key) => {
