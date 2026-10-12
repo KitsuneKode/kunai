@@ -9,6 +9,8 @@ import {
   runPostPlaybackMenu,
   type PostPlaybackMenuDeps,
 } from "@/app/playback/run-post-playback-menu";
+import { applyTrackPickRestart } from "@/app/playback/track-pick-restart";
+import type { TracksPanelPickResult } from "@/app/playback/tracks-panel-pick";
 import type { Container } from "@/container";
 import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
 import type { EpisodeInfo, PlaybackResult, StreamInfo, TitleInfo } from "@/domain/types";
@@ -86,6 +88,7 @@ function createDeps(overrides: Partial<PostPlaybackMenuDeps> = {}): TestDeps {
       logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
       config: { autoplayRecommendations: true, showWatchTimeStats: false },
       queueService: { peekNext: () => null },
+      playerControl: { consumePendingTitleSelection: () => null },
       stateManager: {
         getState: () => ({
           mode: "series",
@@ -165,6 +168,55 @@ function createDeps(overrides: Partial<PostPlaybackMenuDeps> = {}): TestDeps {
 }
 
 describe("runPostPlaybackMenu", () => {
+  test.each<TracksPanelPickResult>([
+    { kind: "noop" },
+    { kind: "stale-pick", section: "subtitle", reason: "Subtitle list changed." },
+    { kind: "subtitle-switch", applied: false, label: "French" },
+    { kind: "subtitle-switch", applied: true, label: "French" },
+  ])("a non-restarting track outcome keeps the post-play menu open: %j", async (resolved) => {
+    const run = createRun();
+    const originalStart = run.pendingStart;
+    const iteration = createBaseIteration();
+    let shellCalls = 0;
+    const effects: string[] = [];
+    const deps = createDeps({
+      openPlaybackShell: async () => {
+        shellCalls += 1;
+        return shellCalls === 1
+          ? { type: "track-selection", pick: { section: "subtitle", value: "off" } }
+          : "quit";
+      },
+      completeSourceTrackPick: async () => {
+        const outcome = await applyTrackPickRestart({
+          resolved,
+          currentProviderId: "vidlink",
+          episode: currentEpisode,
+          resumeSeconds: 33,
+          effects: {
+            applyManualSourcePick: async () => {
+              effects.push("manual");
+            },
+            applyEpisodeSelection: async () => {
+              effects.push("selection");
+            },
+            invalidateRecentEpisodeStream: () => {
+              effects.push("invalidate");
+            },
+            prepareStreamSwitchRestart: async () => {
+              effects.push("restart");
+            },
+          },
+        });
+        return outcome.startIntent;
+      },
+    });
+    const result = await runPostPlaybackMenu(run, iteration, deps);
+    expect(result).toEqual({ kind: "exit", result: { status: "quit" } });
+    expect(shellCalls).toBe(2);
+    expect(run.pendingStart).toBe(originalStart);
+    expect(effects).toEqual([]);
+  });
+
   test("season progress reads history AFTER the episode played, and one total feeds both lines", async () => {
     // Reproduces the post-play screen showing "E08 of 200" beside "0 / 201 · 0%":
     // the count came from a pre-playback snapshot (empty on a first watch) and the
@@ -431,6 +483,7 @@ describe("runPostPlaybackMenu", () => {
           },
           getAll: () => [reorderedHead, advertised],
         },
+        playerControl: { consumePendingTitleSelection: () => null },
         stateManager: {
           getState: () => ({
             mode: "series",

@@ -428,6 +428,57 @@ export class QueueRepository {
       .run(sessionId);
   }
 
+  /**
+   * Write rows captured earlier, verbatim — every column including id,
+   * status, positions, and failure context. Session-undo restore path: a
+   * plain `enqueue` would mint a new id and append at the tail, which is not
+   * the state the user had. `INSERT OR REPLACE` covers both shapes the caller
+   * hands down: a row the forward mutation deleted, and a row it only
+   * modified (id still occupied — the caller verified the occupant is the
+   * post-mutation state before calling).
+   */
+  restoreEntries(entries: readonly QueueEntry[]): void {
+    this.db.transaction(() => {
+      const insert = this.db.query(
+        `INSERT OR REPLACE INTO playlist_queue
+           (id, title, media_kind, content_type, external_ids_json, title_id, season, episode, absolute_episode,
+            priority, source, added_at, played_at, session_id, status, queue_position, completed_at, in_flight_at, last_failure_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      let latestActivity: string | undefined;
+      for (const entry of entries) {
+        insert.run(
+          entry.id,
+          entry.title,
+          entry.mediaKind,
+          entry.contentType ?? null,
+          serializeExternalIds(entry.externalIds),
+          entry.titleId,
+          entry.season ?? null,
+          entry.episode ?? null,
+          entry.absoluteEpisode ?? null,
+          entry.priority,
+          entry.source,
+          entry.addedAt,
+          entry.playedAt ?? null,
+          entry.sessionId,
+          entry.status,
+          entry.queuePosition ?? null,
+          entry.completedAt ?? null,
+          entry.inFlightAt ?? null,
+          entry.lastFailure ? JSON.stringify(entry.lastFailure) : null,
+        );
+        if (latestActivity === undefined || entry.addedAt > latestActivity) {
+          latestActivity = entry.addedAt;
+        }
+      }
+      const sessions = new Set(entries.map((entry) => entry.sessionId));
+      for (const sessionId of sessions) {
+        this.touchSessionActivity(sessionId, latestActivity ?? new Date().toISOString());
+      }
+    })();
+  }
+
   countUnplayed(sessionId: string): number {
     const row = this.db
       .query<{ count: number }, [string]>(

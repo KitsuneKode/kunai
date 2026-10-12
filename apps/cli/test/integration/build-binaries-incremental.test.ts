@@ -73,7 +73,7 @@ describe("build-binaries incremental subprocess", () => {
       const incremental = runFakeBuild(preload, outputDirectory, "only", ["--only", "linux-x64"]);
       expect(incremental.exitCode, incremental.stderr?.toString() ?? "").toBe(0);
       expect(incremental.stdout?.toString() ?? "").toContain(
-        "wrote 1 binaries; reconciled 8 archive/raw target pairs + 2 manifests",
+        "wrote 1 binaries; reconciled 10 archive/raw target pairs + 2 manifests",
       );
 
       expect(readdirSync(outputDirectory).sort()).toEqual(

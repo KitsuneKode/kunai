@@ -317,6 +317,8 @@ export function getBrowseChromeRows(flags: {
   readonly hasContextStrip: boolean;
   readonly hasQueryDirtyHint: boolean;
   readonly commandMode: boolean;
+  /** Rendered rows of the type-ahead suggestion band (headers + items + skeletons). */
+  readonly suggestionBandRows?: number;
 }): number {
   let rows = BROWSE_BASE_CHROME_ROWS;
   if (flags.hasResultSubtitle) rows += 1;
@@ -326,6 +328,7 @@ export function getBrowseChromeRows(flags: {
   if (flags.hasContextStrip) rows += 1;
   if (flags.hasQueryDirtyHint) rows += 1;
   if (flags.commandMode) rows += 4;
+  rows += flags.suggestionBandRows ?? 0;
   return rows;
 }
 

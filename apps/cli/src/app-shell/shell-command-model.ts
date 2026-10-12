@@ -1,3 +1,4 @@
+import type { LocalTitleMatch } from "@/domain/palette/local-title-index";
 import { buildPickerModel, movePickerModelSelection } from "@/domain/session/picker-model";
 
 import { COMMANDS, type AppCommandId, type ResolvedAppCommand } from "./commands";
@@ -45,6 +46,49 @@ export function getHighlightedCommand(
   // like "c" overriding a row you navigated to).
   const model = buildCommandPickerModel(input, commands, highlightedIndex);
   return commands.find((command) => command.id === model.selectedOption?.value) ?? null;
+}
+
+export type PaletteRowSelection =
+  | { readonly kind: "command"; readonly command: ResolvedAppCommand }
+  | { readonly kind: "title"; readonly match: LocalTitleMatch };
+
+/**
+ * Total navigable palette rows: visible commands [0, C) then title matches
+ * [C, C+T) — the same absolute index space the palette renderer uses.
+ */
+export function paletteSelectableCount(
+  input: string,
+  commands: readonly ResolvedAppCommand[],
+  titleMatches: readonly LocalTitleMatch[],
+): number {
+  return buildCommandPickerModel(input, commands, 0).options.length + titleMatches.length;
+}
+
+/** Wrap-around selection over the union of command + title rows. */
+export function movePaletteSelection(count: number, current: number, delta: number): number {
+  if (count <= 0) return 0;
+  return (current + delta + count) % count;
+}
+
+/**
+ * Resolve the row Enter would run. Commands always outrank titles — they hold
+ * indices [0, C), so an exact `/trending` command match (or any navigated
+ * command row) wins over every title row. Shares `getHighlightedCommand`'s
+ * invariant: resolve from the SAME model the palette renders.
+ */
+export function resolveHighlightedPaletteRow(
+  input: string,
+  commands: readonly ResolvedAppCommand[],
+  titleMatches: readonly LocalTitleMatch[],
+  highlightedIndex: number,
+): PaletteRowSelection | null {
+  const model = buildCommandPickerModel(input, commands, highlightedIndex);
+  if (highlightedIndex < model.options.length) {
+    const command = commands.find((candidate) => candidate.id === model.selectedOption?.value);
+    return command ? { kind: "command", command } : null;
+  }
+  const match = titleMatches[highlightedIndex - model.options.length];
+  return match ? { kind: "title", match } : null;
 }
 
 export function getCommandAutocompleteTarget(

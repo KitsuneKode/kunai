@@ -103,6 +103,7 @@ describe("playback provider fallback", () => {
       titleProviderHealth: { clear: () => {} },
       providerRegistry: {
         getCompatible: () => [{ metadata: { id: "vidking" } }, { metadata: { id: "rivestream" } }],
+        getManifest: () => undefined,
       },
       diagnosticsService: { record: () => {} },
     } as never;

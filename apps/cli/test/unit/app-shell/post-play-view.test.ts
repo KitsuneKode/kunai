@@ -3,6 +3,22 @@ import { describe, expect, it } from "bun:test";
 import { KEYBINDINGS, type KeyBinding } from "@/app-shell/keybindings";
 import { buildPostPlayView } from "@/app-shell/post-play-view";
 
+describe("external handoff", () => {
+  it("states that the player opened without claiming playback or completion", () => {
+    const view = buildPostPlayView({
+      title: "Show",
+      episodeLabel: "S01 E01",
+      postPlayState: { kind: "external-handoff", player: "vlc", launcher: "termux-am" },
+    });
+
+    expect(view.heroKind).toBe("external-handoff");
+    expect(view.heroLabel).toContain("opened in VLC");
+    expect(view.heroSub).toContain("progress and completion are not tracked");
+    expect(view.heroLabel).not.toContain("complete");
+    expect(view.actions.some((action) => action.id === "try-again")).toBe(true);
+  });
+});
+
 describe("buildDiscovery posters", () => {
   it("resolves a TMDB posterUrl from posterPath", () => {
     const view = buildPostPlayView({

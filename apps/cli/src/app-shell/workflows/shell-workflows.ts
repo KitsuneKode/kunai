@@ -8,6 +8,10 @@ import {
   type ListShellActionContext,
   type ShellOption,
 } from "@/app-shell/pickers";
+import {
+  deleteDownloads,
+  formatDownloadRemovalFeedback,
+} from "@/services/download/download-removal";
 
 export { buildPickerActionContext };
 import { companionFallbackGlyph, companionToggleable } from "@/app-shell/companion-policy";
@@ -465,15 +469,16 @@ export async function openOfflineLibraryGroupPicker(
         ],
       });
       if (!confirmed) continue;
-      await Promise.all(
-        entries.map((entry) =>
-          container.downloadService.deleteJob(entry.job.id, { deleteArtifact: true }),
-        ),
+      const summary = await deleteDownloads(
+        container.downloadService,
+        entries.map((entry) => entry.job.id),
+        true,
       );
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
-        note: `Deleted offline title: ${first.titleName}`,
+        note: formatDownloadRemovalFeedback(summary),
       });
+      if (summary.retained.length > 0) continue;
       return;
     }
     const job = container.downloadService.getJob(picked.id);
@@ -615,12 +620,14 @@ export async function openOfflineLibraryGroupPicker(
       container.downloadService.kickQueue("download-manager");
       continue;
     }
-    await container.downloadService.deleteJob(job.id, {
-      deleteArtifact: action === "delete-artifact",
-    });
+    const summary = await deleteDownloads(
+      container.downloadService,
+      [job.id],
+      action === "delete-artifact",
+    );
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: action === "delete-artifact" ? "Download artifact deleted" : "Download job deleted",
+      note: formatDownloadRemovalFeedback(summary),
     });
   }
 }
@@ -1354,7 +1361,13 @@ async function handleClearHistory(container: Container): Promise<"handled"> {
     ],
   });
   if (confirm) {
-    container.historyRepository.clear();
+    if (container.sessionUndo) {
+      container.sessionUndo.withHistory("cleared watch history", "history clear", () =>
+        container.historyRepository.clear(),
+      );
+    } else {
+      container.historyRepository.clear();
+    }
     container.diagnosticsService.record(
       buildDiagnosticEvent({
         category: "session",
@@ -2496,7 +2509,15 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
         ],
       });
       if (confirm) {
+        const undoBefore = container.sessionUndo?.captureListItem("watchlist", picked.titleId);
         listService.removeFromWatchlist(picked.titleId);
+        container.sessionUndo?.recordListItem(
+          "watchlist",
+          picked.titleId,
+          "removed from watchlist",
+          "watchlist remove",
+          undoBefore,
+        );
         await mirrorListMembershipChange(
           container,
           {
@@ -2545,7 +2566,15 @@ async function handleFavorites(container: Container): Promise<"handled"> {
 
     if (!picked || picked.type === "back") return "handled";
 
+    const undoBefore = container.sessionUndo?.captureListItem("favorites", picked.titleId);
     listService.removeFromFavorites(picked.titleId);
+    container.sessionUndo?.recordListItem(
+      "favorites",
+      picked.titleId,
+      "removed from favorites",
+      "favorite remove",
+      undoBefore,
+    );
     await mirrorListMembershipChange(
       container,
       {
@@ -2844,7 +2873,13 @@ async function handleUpNext(container: Container): Promise<ShellWorkflowResult> 
     if (!picked || picked.type === "back") return "handled";
 
     if (picked.type === "refill") {
+      const undoBefore = container.sessionUndo?.captureQueue();
       const added = queueService.refillFromWatchlist(listService);
+      container.sessionUndo?.recordQueueChange(
+        "refilled queue from watchlist",
+        "queue refill",
+        undoBefore ?? [],
+      );
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
         note: added > 0 ? `Added ${added} titles from watchlist.` : "Nothing new to add.",
@@ -2908,7 +2943,13 @@ async function handleUpNext(container: Container): Promise<ShellWorkflowResult> 
       });
       if (!selectedPlaylist) continue;
 
+      const undoBefore = container.sessionUndo?.captureQueue();
       const loaded = container.durablePlaylistService.loadIntoQueue(queueService, selectedPlaylist);
+      container.sessionUndo?.recordQueueChange(
+        "loaded playlist into queue",
+        "playlist load",
+        undoBefore ?? [],
+      );
       const playlist = playlists.find((item) => item.id === selectedPlaylist);
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
@@ -2921,21 +2962,31 @@ async function handleUpNext(container: Container): Promise<ShellWorkflowResult> 
     }
 
     if (picked.type === "clear-played") {
+      const undoBefore = container.sessionUndo?.captureQueue();
       queueService.clearPlayed();
+      container.sessionUndo?.recordQueueChange(
+        "cleared played items",
+        "played clear",
+        undoBefore ?? [],
+      );
       continue;
     }
 
     if (picked.type === "clear-all") {
       const confirm = await chooseFromListShell({
         title: "Clear entire queue?",
-        subtitle: "This cannot be undone",
+        subtitle: "Clears every queued item (z restores it briefly after)",
         actionContext,
         options: [
           { value: true, label: "Yes, clear all" },
           { value: false, label: "Cancel" },
         ],
       });
-      if (confirm) queueService.clear();
+      if (confirm) {
+        const undoBefore = container.sessionUndo?.captureQueue();
+        queueService.clear();
+        container.sessionUndo?.recordQueueChange("cleared queue", "queue clear", undoBefore ?? []);
+      }
       continue;
     }
 
@@ -2990,12 +3041,30 @@ async function handleUpNext(container: Container): Promise<ShellWorkflowResult> 
         ],
       });
       if (itemAction === "remove") {
+        const undoBefore = container.sessionUndo?.captureQueue();
         queueService.remove(picked.id);
+        container.sessionUndo?.recordQueueChange(
+          "removed from queue",
+          "queue remove",
+          undoBefore ?? [],
+        );
       } else if (itemAction === "move-up") {
+        const undoBefore = container.sessionUndo?.captureQueue();
         queueService.moveUpInQueue(picked.id);
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         continue;
       } else if (itemAction === "move-down") {
+        const undoBefore = container.sessionUndo?.captureQueue();
         queueService.moveDownInQueue(picked.id);
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         continue;
       } else if (itemAction === "play") {
         return {
@@ -3131,18 +3200,24 @@ async function handlePlaylistAdd(container: Container): Promise<"handled"> {
     return "handled";
   }
 
-  queueService.enqueueMediaItem(
-    {
-      title: title.name,
-      mediaKind: resolveCurrentMediaKind(state),
-      contentType: title.type,
-      externalIds: title.externalIds,
-      titleId: title.id,
-      season: state.currentEpisode?.season,
-      episode: state.currentEpisode?.episode,
-    },
-    { placement: "end", source: "manual" },
-  );
+  const enqueue = () =>
+    queueService.enqueueMediaItem(
+      {
+        title: title.name,
+        mediaKind: resolveCurrentMediaKind(state),
+        contentType: title.type,
+        externalIds: title.externalIds,
+        titleId: title.id,
+        season: state.currentEpisode?.season,
+        episode: state.currentEpisode?.episode,
+      },
+      { placement: "end", source: "manual" },
+    );
+  if (container.sessionUndo) {
+    container.sessionUndo.withQueueChange("added to queue", "queue add", enqueue);
+  } else {
+    enqueue();
+  }
 
   stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
@@ -3181,15 +3256,26 @@ async function handleQueueSeason(container: Container): Promise<"handled"> {
   }
 
   const mediaKind = resolveCurrentMediaKind(state);
-  for (const episode of plan.episodes) {
-    queueService.enqueue({
-      title: title.name,
-      mediaKind,
-      titleId: title.id,
-      season: episode.season,
-      episode: episode.episode,
-      source: "queue-season",
-    });
+  const enqueueSeason = () => {
+    for (const episode of plan.episodes) {
+      queueService.enqueue({
+        title: title.name,
+        mediaKind,
+        titleId: title.id,
+        season: episode.season,
+        episode: episode.episode,
+        source: "queue-season",
+      });
+    }
+  };
+  if (container.sessionUndo) {
+    container.sessionUndo.withQueueChange(
+      `queued ${plan.episodes.length} episode(s)`,
+      "season queue",
+      enqueueSeason,
+    );
+  } else {
+    enqueueSeason();
   }
 
   stateManager.dispatch({

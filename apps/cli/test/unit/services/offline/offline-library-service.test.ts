@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { PlaybackResult } from "@/domain/types";
+import type { ManagedPlaybackResult, PlaybackResult } from "@/domain/types";
 import type { DownloadService } from "@/services/download/DownloadService";
 import { shouldAutoCleanupOfflineJob } from "@/services/offline/offline-sync-policy";
 import { OfflineLibraryService } from "@/services/offline/OfflineLibraryService";
@@ -31,7 +31,7 @@ function job(patch: Partial<DownloadJobRecord> = {}): DownloadJobRecord {
   };
 }
 
-function result(patch: Partial<PlaybackResult> = {}): PlaybackResult {
+function result(patch: Partial<ManagedPlaybackResult> = {}): PlaybackResult {
   return {
     watchedSeconds: 600,
     duration: 1_200,

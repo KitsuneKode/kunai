@@ -11,6 +11,7 @@ import type {
   SourceInventoryCacheInput,
   SourceInventoryService,
 } from "@/services/playback/SourceInventoryService";
+import type { CoreProviderManifest } from "@kunai/core";
 
 export function buildSourceInventoryCacheInput(
   providerId: string,
@@ -39,6 +40,12 @@ export async function invalidateEpisodePlaybackCaches(input: {
   readonly cacheStore: CacheStore;
   readonly sourceInventory: Pick<SourceInventoryService, "delete">;
   readonly providerId: string;
+  /**
+   * The provider's manifest decides the resolve-cache key shape — six anime
+   * providers key without `season`, so falling back to the default token list
+   * computes a key that was never written and the stale row survives.
+   */
+  readonly providerManifest?: CoreProviderManifest;
   readonly title: TitleInfo;
   readonly episode: EpisodeInfo;
   readonly mode: ShellMode;
@@ -53,6 +60,7 @@ export async function invalidateEpisodePlaybackCaches(input: {
   };
   const cacheKeyBase = {
     providerId: input.providerId,
+    providerManifest: input.providerManifest,
     title: input.title,
     episode: input.episode,
     mode: input.mode,
@@ -63,6 +71,7 @@ export async function invalidateEpisodePlaybackCaches(input: {
   } as const;
   const cacheKeys = new Set([
     buildApiStreamResolveCacheKey(cacheKeyBase),
+
     ...(input.selectedSourceId || input.selectedStreamId
       ? [
           buildApiStreamResolveCacheKey({

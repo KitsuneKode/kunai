@@ -24,6 +24,7 @@ import {
 import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
+import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
 import { decodeEpisodeSelectionValue } from "@/domain/playback/episode-selection";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
@@ -42,6 +43,7 @@ import {
 import { useBrowseDestinationLabel } from "./browse-destination";
 import { CapabilityIssueStrip } from "./CapabilityIssueStrip";
 import { dispatchAppCommand } from "./command-router";
+import { setContextualTipListener } from "./contextual-tips";
 import { recordRender } from "./diagnostics/render-trace";
 import { createDismissTimerRegistry } from "./dismiss-timer-registry";
 import { startDownloadStatusMonitor } from "./download-status-monitor";
@@ -92,8 +94,10 @@ import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "./session-picke
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
-  getHighlightedCommand,
   getListShellCommandPaletteMaxVisible,
+  movePaletteSelection,
+  paletteSelectableCount,
+  resolveHighlightedPaletteRow,
   shouldHideCompanionForCommandPalette,
 } from "./shell-command-model";
 import { CommandPalette } from "./shell-command-ui";
@@ -204,7 +208,7 @@ export function clearShellScreen() {
   clearShellScreenArtifacts();
 }
 
-async function openPlaybackStreamSelectionPicker(
+export async function openPlaybackStreamSelectionPicker(
   container: Container,
   action: "source" | "quality" | "audio" | "subtitle" | "provider",
   reason: string,
@@ -227,7 +231,7 @@ async function openPlaybackStreamSelectionPicker(
   const { openTracksPanel } = await import("./workflows");
   const picked = await openTracksPanel(stream, { initialSection }, container);
   if (!picked) return;
-  const selection = streamSelectionFromTrackPick(picked);
+  let selection = streamSelectionFromTrackPick(picked);
   if (!selection && picked.section !== "subtitle") return;
   if (selection && isCurrentStreamSelection(container.stateManager.getState().stream, selection)) {
     return;
@@ -236,6 +240,32 @@ async function openPlaybackStreamSelectionPicker(
   const sessionState = container.stateManager.getState();
   const title = sessionState.currentTitle;
   const episode = sessionState.currentEpisode;
+  if (picked.section === "subtitle") {
+    if (!title || !episode) return;
+    const { resolveTracksPanelPick } = await import("@/app/playback/tracks-panel-pick");
+    const resolved = await resolveTracksPanelPick(picked, selection, {
+      container,
+      title,
+      episode,
+      currentProviderId: sessionState.provider,
+      resumeSeconds: 0,
+      reason,
+    });
+    if (resolved.kind === "subtitle-switch" || resolved.kind === "stale-pick") {
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note:
+          resolved.kind === "stale-pick"
+            ? resolved.reason
+            : resolved.applied
+              ? `Subtitles: ${resolved.label}`
+              : "Subtitles could not be changed. Try again while the player is running.",
+      });
+      return;
+    }
+    if (resolved.kind !== "stream-selection") return;
+    selection = resolved.selection;
+  }
   if (
     title &&
     episode &&
@@ -505,11 +535,62 @@ export function AppRoot({ container }: { container: Container }) {
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
   const [notificationToastPriority, setNotificationToastPriority] =
     useState<NotificationPriority | null>(null);
+
+  // Session-undo strip — "added to queue · z undo" / the undo outcome. The
+  // journal notifies on record/undo; expiry is time-based, so each peek also
+  // schedules the repaint that hides the line at `expiresAt`.
+  const [undoLine, setUndoLine] = useState<{
+    readonly text: string;
+    readonly tone: ShellStatusTone;
+  } | null>(null);
+  const undoLineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const refreshUndoLine = () => {
+      const strip = container.sessionUndo?.peekStrip(Date.now()) ?? null;
+      setUndoLine(strip ? { text: strip.text, tone: strip.tone } : null);
+      if (undoLineTimerRef.current) {
+        clearTimeout(undoLineTimerRef.current);
+        undoLineTimerRef.current = null;
+      }
+      if (strip) {
+        undoLineTimerRef.current = setTimeout(
+          refreshUndoLine,
+          Math.max(0, strip.expiresAt - Date.now()),
+        );
+      }
+    };
+    refreshUndoLine();
+    const unsubscribe = container.sessionUndo?.subscribe(refreshUndoLine);
+    return () => {
+      unsubscribe?.();
+      if (undoLineTimerRef.current) {
+        clearTimeout(undoLineTimerRef.current);
+        undoLineTimerRef.current = null;
+      }
+    };
+  }, [container.sessionUndo]);
   const notificationSeenKeysRef = useRef<ReadonlySet<string>>(new Set());
   const notificationQueueRef = useRef(createNotificationQueueState());
   const notificationQueueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [weeklyDigestLine, setWeeklyDigestLine] = useState<string | null>(null);
+
+  // Once-ever shortcut coaching: surfaces arm a tip when the user takes the
+  // long way through the palette; the line itself lives on the transient row
+  // for a few seconds, lowest priority, so it can never cover a real alert.
+  const [tipLine, setTipLine] = useState<string | null>(null);
+  const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    setContextualTipListener((line) => {
+      setTipLine(line);
+      if (tipTimerRef.current) clearTimeout(tipTimerRef.current);
+      tipTimerRef.current = setTimeout(() => setTipLine(null), 10_000);
+    });
+    return () => {
+      setContextualTipListener(null);
+      if (tipTimerRef.current) clearTimeout(tipTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     /** Auto-dismiss handles for the streak alerts, cleared on unmount. */
@@ -1008,6 +1089,7 @@ export function AppRoot({ container }: { container: Container }) {
           action,
           source: "runtime",
           activePlayback: {
+            capabilities: container.player.capabilities,
             deps: {
               playerControl: container.playerControl,
               workControl: container.workControl,
@@ -1262,10 +1344,12 @@ export function AppRoot({ container }: { container: Container }) {
             alert: rootStatusSummary.alert ?? null,
             notificationToast,
             notificationToastPriority,
+            undoLine,
             streakMilestoneAlert,
             presenceBootLine: visiblePresenceBootLine,
             streakAtRiskAlert,
             weeklyDigestLine,
+            tipLine,
           });
           if (!transient) return null;
           return (
@@ -1404,6 +1488,8 @@ type ListShellSubmitResult<T> =
   | { type: "cancelled" }
   | ListShellActionResult;
 
+const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
+
 function normalizeReservedCommandInput(nextValue: string): {
   value: string;
   openCommandPalette: boolean;
@@ -1445,6 +1531,11 @@ function ListShell<T>({
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const [titleEntries, setTitleEntries] = useState<readonly LocalTitleEntry[]>([]);
+  const titleMatches = useMemo(
+    () => matchLocalTitles(titleEntries, commandInput),
+    [titleEntries, commandInput],
+  );
   const viewport = useDebouncedViewportPolicy("picker");
   const normalizedFilter = filterQuery.trim().toLowerCase();
   const filteredOptions = useMemo(() => {
@@ -1522,13 +1613,20 @@ function ListShell<T>({
   const effectiveFooterMode: ShellFooterMode = "minimal";
   const footerActions = LIST_SHELL_FOOTER_ACTIONS;
 
+  // Snapshot title entries once per open — the matcher is a pure in-memory
+  // index against this list, so a keystroke never hits storage.
+  const openPalette = () => {
+    setTitleEntries(actionContext?.localTitles?.() ?? EMPTY_TITLE_ENTRIES);
+    setCommandMode(true);
+    setHighlightedCommandIndex(0);
+    // commandInput deliberately survives close/reopen — `/` keeps the draft.
+  };
+
   const updateFilterQuery = (nextValue: string) => {
     const normalized = normalizeReservedCommandInput(nextValue);
     setFilterQuery(normalized.value);
     if (normalized.openCommandPalette && actionContext) {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      openPalette();
     }
   };
   const commandEditor = useLineEditor({
@@ -1548,24 +1646,32 @@ function ListShell<T>({
       const matches = getCommandMatches(commandInput, actionContext?.commands ?? []);
 
       if (key.escape) {
+        // Close only — the draft survives so a `/` reopen resumes the query.
         setCommandMode(false);
-        setCommandInput("");
         setHighlightedCommandIndex(0);
         return;
       }
       if (key.return) {
-        const resolved = getHighlightedCommand(
+        const row = resolveHighlightedPaletteRow(
           commandInput,
           actionContext?.commands ?? [],
+          titleMatches,
           highlightedCommandIndex,
         );
-        if (resolved?.enabled) {
+        if (row?.kind === "command" && row.command.enabled) {
+          setCommandInput("");
           onAction?.({
             type: "action",
-            action: toShellAction(resolved.id),
+            action: toShellAction(row.command.id),
             filterQuery,
             selectedIndex: index,
           });
+        }
+        if (row?.kind === "title") {
+          setCommandMode(false);
+          setCommandInput("");
+          setHighlightedCommandIndex(0);
+          actionContext?.onTitlePick?.(row.match.entry);
         }
         return;
       }
@@ -1582,16 +1688,17 @@ function ListShell<T>({
         }
         return;
       }
+      const selectable = paletteSelectableCount(
+        commandInput,
+        actionContext?.commands ?? [],
+        titleMatches,
+      );
       if (key.upArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current - 1 + matches.length) % matches.length);
-        }
+        setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, -1));
         return;
       }
       if (key.downArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current + 1) % matches.length);
-        }
+        setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, 1));
         return;
       }
       if (commandEditor.handleInput(input, key)) {
@@ -1601,9 +1708,7 @@ function ListShell<T>({
     }
 
     if (input === "/" && actionContext) {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      openPalette();
       return;
     }
 
@@ -1767,6 +1872,7 @@ function ListShell<T>({
           cursor={commandEditor.cursor}
           commands={actionContext.commands}
           highlightedIndex={highlightedCommandIndex}
+          titleMatches={titleMatches}
           maxVisible={getListShellCommandPaletteMaxVisible(
             viewport.rows,
             subtitle.split("\n").length,

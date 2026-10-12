@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-05-17"
+lastReviewed: "2026-10-12"
 ---
 
 # New Episode Tracking
@@ -14,6 +14,15 @@ New episode tracking separates three facts:
 - a provider has confirmed a playable stream
 
 Only provider-confirmed playable releases create playable notifications. Aired but unconfirmed episodes can appear as shelf/context state later, but should not pretend playback is available.
+
+## Surfaces that read release state
+
+- The calendar marks unseen releases against `settings.lastCalendarVisitAt`.
+- Browse home reads the same projections through
+  `ReleaseProgressCacheRepository.listNewSince(lastCalendarVisitAt)` and shows a
+  single "N new since {day}" idle row (`browse-idle-actions.ts`). It follows the
+  same rules: provider-confirmed only, muted titles excluded, stale or
+  upcoming projections never count, and no visit stamp means no strip.
 
 ## Sync Policy
 

@@ -196,6 +196,30 @@ export class ReleaseProgressCacheRepository {
       .map(mapReleaseProgressRow);
   }
 
+  /**
+   * Active "new episodes" projections whose latest known release is newer than
+   * `sinceIso` — the rows a "new since you left" strip may claim. Callers apply
+   * follow/mute policy; this only answers the time question.
+   */
+  listNewSince(
+    sinceIso: string,
+    nowIso = new Date().toISOString(),
+  ): readonly ReleaseProgressProjection[] {
+    return this.db
+      .query<ReleaseProgressRow, [string, string]>(
+        `
+          SELECT * FROM release_progress_cache
+          WHERE status = 'new-episodes'
+            AND new_episode_count > 0
+            AND stale_after_at > ?
+            AND latest_known_release_at > ?
+          ORDER BY latest_known_release_at DESC
+        `,
+      )
+      .all(nowIso, sinceIso)
+      .map(mapReleaseProgressRow);
+  }
+
   summarizeActive(nowIso = new Date().toISOString()): ReleaseProgressSummary {
     const row = this.db
       .query<ReleaseProgressSummaryRow, [string]>(

@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { createQueuePlaybackAttempt } from "@/app/playback/queue-playback-attempt";
 import type { Container } from "@/container";
 import { restoreQueueSessionWithResume } from "@/domain/queue/restore-queue-session";
-import type { StreamInfo } from "@/domain/types";
+import { isDetachedHandoffResult, type StreamInfo } from "@/domain/types";
 
 import {
   COMPILED_SMOKE_FIXTURES,
@@ -331,6 +331,36 @@ async function runReturnToShell(container: Container): Promise<number> {
   return 0;
 }
 
+async function runAndroidHandoff(container: Container): Promise<number> {
+  const url = process.env.KUNAI_ANDROID_HANDOFF_URL?.trim() ?? "";
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    appendRuntimeEvidence({ type: "android-handoff-invalid-url" });
+    return 1;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    appendRuntimeEvidence({ type: "android-handoff-invalid-url" });
+    return 1;
+  }
+
+  const result = await container.player.play(
+    { url: parsed.toString(), headers: {}, timestamp: Date.now() },
+    { url: parsed.toString(), displayTitle: "Kunai Android handoff smoke" },
+  );
+  if (!isDetachedHandoffResult(result)) {
+    appendRuntimeEvidence({ type: "android-handoff-managed-result" });
+    return 1;
+  }
+  appendRuntimeEvidence({
+    type: "android-handoff-accepted",
+    player: result.handoff.player,
+    launcher: result.handoff.launcher,
+  });
+  return 0;
+}
+
 export async function runCompiledSmoke(container: Container): Promise<number> {
   const scenarioRaw = process.env.KUNAI_COMPILED_SMOKE_SCENARIO?.trim() ?? "";
   if (!isCompiledSmokeScenarioId(scenarioRaw)) {
@@ -362,6 +392,8 @@ export async function runCompiledSmoke(container: Container): Promise<number> {
         return await runShutdownRestore(container);
       case "return-to-shell":
         return await runReturnToShell(container);
+      case "android-handoff":
+        return await runAndroidHandoff(container);
       default: {
         const _exhaustive: never = scenario;
         void _exhaustive;

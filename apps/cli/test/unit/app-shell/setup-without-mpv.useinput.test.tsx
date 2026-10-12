@@ -13,6 +13,7 @@ import { render } from "../../harness/render-capture";
 
 const MISSING_MPV: CapabilitySnapshot = {
   mpv: false,
+  mpvRequired: true,
   ffprobe: false,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },

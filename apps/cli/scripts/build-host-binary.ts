@@ -2,7 +2,7 @@
 // Build a single release binary for the current machine only.
 //
 // Faster than `build:binaries` when you want to compile and smoke-test locally
-// without cross-compiling all eight release targets.
+// without cross-compiling all ten release targets.
 //
 // Usage:
 //   bun run scripts/build-host-binary.ts

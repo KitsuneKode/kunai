@@ -3,6 +3,7 @@ import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
+import type { AppCommandId } from "./commands";
 import { momentForLoading } from "./companion-moment";
 import { CompanionHost } from "./CompanionHost";
 import { usePlaybackPosterSurfaceCleanup } from "./image-pane";
@@ -146,10 +147,12 @@ function useRuntimeHealthLine(
 function PlaybackShellInput({
   input,
   onCancel,
+  onUndo,
   onToggleMemory,
 }: {
   readonly input: PlaybackShellInputContext;
   readonly onCancel?: () => void;
+  readonly onUndo?: () => void;
   readonly onToggleMemory: () => void;
 }) {
   const commandModeOpen = useShellCommandModeOpen();
@@ -162,6 +165,12 @@ function PlaybackShellInput({
     }
     if (modifiers.escape && input.cancellable && onCancel) {
       onCancel();
+      return;
+    }
+    // `z` is unbound on loading/playing surfaces otherwise, so it can claim
+    // the live undo entry unconditionally — the service no-ops when empty.
+    if (key === "z" && !modifiers.ctrl && !modifiers.meta && onUndo) {
+      onUndo();
       return;
     }
 
@@ -391,6 +400,8 @@ export const LoadingShell = React.memo(function LoadingShell({
   onToggleFavorite,
   isFavorite,
   onFallback,
+  onUndo,
+  onPaletteCommand,
 }: {
   state: LoadingShellState;
   onCancel?: () => void;
@@ -413,6 +424,10 @@ export const LoadingShell = React.memo(function LoadingShell({
   /** Read at render, so the marker follows the list rather than a local copy. */
   isFavorite?: () => boolean;
   onFallback?: () => void;
+  /** `z` while an undo strip is live; a silent no-op when nothing is journaled. */
+  onUndo?: () => void;
+  /** Fires when a command is picked from this surface's `/` palette. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
 }) {
   const [memoryPanelVisible, setMemoryPanelVisible] = React.useState(false);
   // Forces a frame after a toggle: `isFavorite` reads through to the list, so
@@ -679,10 +694,14 @@ export const LoadingShell = React.memo(function LoadingShell({
         }
         state.onCommandAction?.(action);
       }}
+      localTitles={state.paletteTitleSource}
+      onTitlePick={state.onPaletteTitlePick}
+      onPaletteCommand={onPaletteCommand}
     >
       <PlaybackShellInput
         input={playbackInput}
         onCancel={onCancel}
+        onUndo={onUndo}
         onToggleMemory={() => setMemoryPanelVisible((visible) => !visible)}
       />
       <Box flexDirection="column" justifyContent="space-between" flexGrow={1}>

@@ -148,6 +148,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   downloadPath: "",
   downloadOnboardingDismissed: false,
   playbackKeysSessionsSeen: 0,
+  tipsEnabled: true,
+  seenTips: [],
   analytics: "unset",
   analyticsNoticeShown: false,
   installId: "",

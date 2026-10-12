@@ -2,9 +2,10 @@
 # Pre-push verification.
 #
 # 1. Generated docs metadata freshness first — a committed
-#    generated-metadata.json fingerprint that drifted after an amend was a
-#    repeated docs-build failure class; this check is ~200ms and fails fast
-#    with the regenerate instruction instead of surfacing in CI minutes later.
+#    generated-metadata.json that drifted after an amend was a repeated
+#    docs-build failure class; the check compares the committed payload
+#    against a fresh build (source fingerprints live in the gitignored
+#    provenance sidecar) and fails fast with the regenerate instruction.
 # 2. Pushes to main run the full suite; branch pushes run the same affected
 #    scope the PR jobs use — turbo's dependency graph still covers every
 #    package that transitively imports the touched ones, so the guarantee is

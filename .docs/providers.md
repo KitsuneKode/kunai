@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-12T13:17:48Z"
 ---
 
 # Kunai — Provider Guide
@@ -49,7 +49,7 @@ apps/cli shell
   -> ProviderEngine (retry, timeout, fallback, abort)
   -> CoreProviderModule.resolve(input, context) -> ProviderResolveResult
   -> provider-result-adapter -> StreamInfo
-  -> mpv
+  -> PlayerService (managed mpv or qualified Android handoff)
 ```
 
 ### Package Ownership
@@ -73,8 +73,24 @@ User selects title + episode
   -> providerResolveResultToStreamInfo(result, title, subtitlePreference)
   -> StreamInfo { url, headers, subtitles, providerResolveResult }
   -> providerHealth.set(healthDelta)  [persist health for adaptive fallback]
-  -> mpv
+  -> PlayerService
 ```
+
+### Android stream qualification
+
+Android support does not label whole providers mobile-compatible. Every final
+`StreamInfo` is checked at the player boundary. The initial detached handoff
+accepts only absolute HTTP(S) media URLs with empty headers and no cookies,
+yt-dlp requirement, unresolved locator, local source, or external subtitle.
+Anything else fails visibly before Android is launched; Kunai does not proxy or
+rewrite media to make a candidate fit.
+
+Production providers and fallback order remain exactly those loaded by
+`loadProductionProviderModules()`. Provider-side curl or yt-dlp subprocesses may
+still participate in resolution when available in Termux, but a final stream
+that needs player-side yt-dlp or request headers is not handoff-safe. Qualifying
+anime and TMDB lanes must be proven separately on a physical device before a
+provider is reported as working on Android.
 
 ### Fallback Layers
 
@@ -180,7 +196,12 @@ the stream _plays_, not merely that a probe passed.
 probes up to `RESOLVE_GATE_MAX_PROBES` ranked candidates and takes the first that
 answers, so one dead or hotlink-protected URL no longer condemns its working
 siblings. It stops immediately when `context.signal` aborts — a cancelled resolve
-keeps its selection rather than recording a stream failure.
+returns cancellation rather than handing off a selection or recording a stream
+failure. Definitively refused stream requests are removed before constructing
+selectable variants; a refusal on one URL does not remove healthy paths on the
+same CDN. `not-found` remains in the trace for title-level recovery, but carries
+no provider availability failure delta. Transport, timeout and server failures
+continue to report provider health evidence.
 
 ### Persistent provider cache (`context.cache`)
 
@@ -331,14 +352,14 @@ Playback selection and language policy:
 - **Favorites vs title default:** favorites remain global config bias; a manual source pick on one title writes the title default and wins over favorites for that title until changed.
 - **Language seam:** `mediaLanguageProfileFor` (via `playback-profile-context`) supplies audio/subtitle/quality for resolve, prefetch, cache keys, and mpv handoff. Anime audio intent uses `resolveAnimeAudioIntent` (`original`/`ja` → sub catalog, `en`/`dub` → dub catalog). Miruro walks its fallback audio when the requested one has no working server; that downgrade now emits an `audio:fallback` trace event (requested vs resolved) so the shell can surface it, rather than silently swapping a dub for a sub. AniDB keeps its documented no-fallback contract — it fails closed on the requested mode.
 - **Prefetch/cache:** subtitle preference mismatch may soft-reuse prepared video; sub↔dub audio mode change is a hard miss and must re-resolve. Audio-mode switches invalidate episode caches but keep the title source default.
-- **Tracks sub/dub rows:** only when provider trace emits `inventory:audio-modes` with both modes confirmed (AllManga and Miruro emit this when the episode catalog exposes sub and/or dub).
+- **Tracks sub/dub rows:** only when provider trace emits `inventory:audio-modes` with both modes confirmed. Every anime-lane provider emits this where the episode catalog exposes the modes: AllManga, AniDB, AnimeGG, HiAnime, KickAssAnime, and Miruro.
 
 Source inventory and language normalization:
 
 - Use `packages/providers/src/shared/source-inventory.ts` for stable source,
   stream, and variant IDs, quality normalization/ranking, source evidence, and
   stream-to-source/variant projection.
-- Use `packages/providers/src/shared/hls-ladder.ts` (`expandHlsMasterPlaylist`) to
+- Use `packages/providers/src/shared/hls-ladder.ts` (`expandHlsMasterInventory`) to
   expand lone HLS master playlists into ranked quality candidates for Tracks
   `/quality`. Wired for Miruro masters, AllManga `master.m3u8` links, Vidlink
   playlists, HiAnime and AniDB ladders. The `auto` fallback row only exists for
@@ -461,7 +482,8 @@ Provider-specific secret material belongs behind runtime ports, not in
 the CLI can use a user-provided Videasy browser session from `/settings` or
 `KUNAI_VIDEASY_SESSION_TOKEN` without threading the token through cache keys,
 mpv, support bundles, or generic provider request state. `videasyAppId` defaults
-to `vidking`; use `bc-frontend` only for Bitcine-minted sessions. This is an
+to `bc-frontend` (the Cineplay/Bitcine client profile); set `vidking` only for
+vidking.net embeds. This is an
 attended session handoff only; do not add code that bypasses Turnstile or
 silently harvests browser tokens.
 
@@ -624,11 +646,15 @@ on for other hosts or change the existing one-shot exception. A native mpv 0.41 
 test observes effective options at `file-loaded` with local transport substituted:
 it proves option lifetime, not a live certificate attack or other platform behavior.
 
-| Field                   | Meaning                                                      |
-| ----------------------- | ------------------------------------------------------------ |
-| `isAnimeProvider: true` | Include provider in anime mode                               |
-| `needsClick: true`      | Scraper performs an activation click after navigation        |
-| `searchBackend`         | Documents which search backend currently feeds this provider |
+| Field                   | Meaning                                                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| `mediaKinds: ["anime"]` | Puts the provider on the anime lane — `isAnimeProvider` is derived from this                             |
+| `mediaKinds: ["video"]` | Puts the provider on the YouTube lane                                                                    |
+| `relayProfile`          | Declares the provider relayable; must also be registered in `apps/relay-server/src/provider-registry.ts` |
+| `capabilities`          | Provider capabilities the shell may reason about                                                         |
+| `runtimePorts`          | Runtime ports the module requests (relay fetch, auth, …)                                                 |
+| `recommended`           | Surfaces the provider in recommended lists                                                               |
+| `aliases`               | Legacy ids still accepted in config and cache keys                                                       |
 
 ## Active Beta Providers
 

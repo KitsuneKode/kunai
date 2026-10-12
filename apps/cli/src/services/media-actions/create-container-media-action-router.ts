@@ -125,7 +125,14 @@ export function createContainerMediaActionRouter(
   return new MediaActionRouter({
     queue: {
       enqueueMediaItem: (item, placement) => {
-        container.queueService.enqueueMediaItem(item, placement);
+        // Explicit fallback: `sessionUndo?.` would skip the enqueue itself on
+        // containers built without the service (partial test stubs).
+        const enqueue = () => void container.queueService.enqueueMediaItem(item, placement);
+        if (container.sessionUndo) {
+          container.sessionUndo.withQueueChange("added to queue", "queue add", enqueue);
+        } else {
+          enqueue();
+        }
       },
     },
     downloads: options.downloads ?? {
@@ -136,6 +143,7 @@ export function createContainerMediaActionRouter(
     },
     watchlist: {
       addToWatchlist: async (item) => {
+        const undoBefore = container.sessionUndo?.captureListItem("watchlist", item.titleId);
         container.listService.addToWatchlist({
           titleId: item.titleId,
           mediaKind: item.mediaKind,
@@ -145,11 +153,19 @@ export function createContainerMediaActionRouter(
           episode: item.episode,
           externalIds: item.externalIds,
         });
+        container.sessionUndo?.recordListItem(
+          "watchlist",
+          item.titleId,
+          undoBefore ? "updated watchlist" : "added to watchlist",
+          "watchlist save",
+          undoBefore,
+        );
         await mirrorListMembershipChange(container, item, { list: "watchlist", present: true });
       },
     },
     favorites: {
       toggleFavorite: async (item) => {
+        const undoBefore = container.sessionUndo?.captureListItem("favorites", item.titleId);
         const outcome = container.listService.toggleFavorites({
           titleId: item.titleId,
           mediaKind: item.mediaKind,
@@ -159,6 +175,13 @@ export function createContainerMediaActionRouter(
           episode: item.episode,
           externalIds: item.externalIds,
         });
+        container.sessionUndo?.recordListItem(
+          "favorites",
+          item.titleId,
+          outcome === "added" ? "added to favorites" : "removed from favorites",
+          outcome === "added" ? "favorite add" : "favorite remove",
+          undoBefore,
+        );
         // The local list is the source of truth, and the tracker is told the
         // resulting *state* rather than "toggle" — so a redelivery converges
         // instead of undoing what the user just did.
@@ -171,16 +194,28 @@ export function createContainerMediaActionRouter(
     },
     attention: {
       follow: (item) => {
-        upsertAttentionPreference(container, item, "following");
+        upsertAttentionPreference(container, item, "following", {
+          label: "followed title",
+          undoNoun: "follow",
+        });
       },
       unfollow: (item) => {
-        upsertAttentionPreference(container, item, "implicit");
+        upsertAttentionPreference(container, item, "implicit", {
+          label: "unfollowed title",
+          undoNoun: "unfollow",
+        });
       },
       unmute: (item) => {
-        upsertAttentionPreference(container, item, "implicit");
+        upsertAttentionPreference(container, item, "implicit", {
+          label: "unmuted title",
+          undoNoun: "unmute",
+        });
       },
       mute: (item) => {
-        upsertAttentionPreference(container, item, "muted");
+        upsertAttentionPreference(container, item, "muted", {
+          label: "muted title",
+          undoNoun: "mute",
+        });
       },
     },
     playlists: options.playlists ?? {
@@ -256,7 +291,14 @@ export function markMediaItemWatched(
   item: MediaItemIdentity,
   completed: boolean,
 ): void {
-  const saved = persistMediaItemWatched(container, item, completed);
+  const mark = () => persistMediaItemWatched(container, item, completed);
+  const saved = container.sessionUndo
+    ? container.sessionUndo.withHistory(
+        completed ? "marked watched" : "marked unwatched",
+        completed ? "watched mark" : "unwatched mark",
+        mark,
+      )
+    : mark();
   queueHistoryMirror(container, item.titleId, saved);
 }
 
@@ -272,10 +314,20 @@ export function markSeasonThroughMediaItemWatched(
   throughEpisode: number,
 ): number {
   const maximum = Math.max(1, Math.floor(throughEpisode));
-  let latest: ReturnType<Container["historyRepository"]["getLatestForTitle"]>;
-  for (let episode = 1; episode <= maximum; episode += 1) {
-    latest = persistMediaItemWatched(container, { ...item, season, episode }, true);
-  }
+  const markAll = () => {
+    let latest: ReturnType<Container["historyRepository"]["getLatestForTitle"]>;
+    for (let episode = 1; episode <= maximum; episode += 1) {
+      latest = persistMediaItemWatched(container, { ...item, season, episode }, true);
+    }
+    return latest;
+  };
+  const latest = container.sessionUndo
+    ? container.sessionUndo.withHistory(
+        `marked ${maximum} episode(s) watched`,
+        "season watched mark",
+        markAll,
+      )
+    : markAll();
   queueHistoryMirror(container, item.titleId, latest);
   return maximum;
 }
@@ -340,14 +392,23 @@ function upsertAttentionPreference(
   container: Container,
   item: MediaItemIdentity,
   preference: "implicit" | "following" | "muted",
+  undo: { readonly label: string; readonly undoNoun: string },
 ): void {
-  container.followedTitleRepository.upsert({
-    titleId: item.titleId,
-    mediaKind: normalizeMediaKind(item.mediaKind),
-    title: item.title,
-    preference,
-    updatedAt: new Date().toISOString(),
-  });
+  const write = () =>
+    container.followedTitleRepository.upsert({
+      titleId: item.titleId,
+      mediaKind: normalizeMediaKind(item.mediaKind),
+      title: item.title,
+      preference,
+      updatedAt: new Date().toISOString(),
+    });
+  // Explicit fallback: `sessionUndo?.` would skip the upsert entirely on
+  // containers built without the service (partial test stubs).
+  if (container.sessionUndo) {
+    container.sessionUndo.withFollowed(item.titleId, undo.label, undo.undoNoun, write);
+  } else {
+    write();
+  }
 }
 
 /** Watchlist rows only distinguish title-level from episodic content. */
