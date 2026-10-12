@@ -51,6 +51,7 @@ import {
   shouldDeferBrowseIdleContext,
   type SearchStartupRoute,
 } from "@/app/search/search-startup-policy";
+import { loadLocalSuggestionCorpus, toCatalogSuggestions } from "@/app/search/search-suggestions";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import {
@@ -81,6 +82,7 @@ import {
   collectReleaseReconciliationRows,
 } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { searchTitles, type SearchFilterEvidence } from "@/services/search/SearchRoutingService";
+import { suggestCatalogTitles } from "@/services/search/suggest-titles";
 import { describeMirrorTargets, resolveMirrorTargets } from "@/services/sync/mirror-targets";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
@@ -714,6 +716,30 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }),
           idleContext: latestIdleContext,
           loadIdleContext,
+          // Type-ahead band sources. Remote is ONE fast registry call — never
+          // the provider-lane `searchTitles` walk — and local is a synchronous
+          // snapshot of the user's own titles. Both die quietly: the band is an
+          // enhancement surface, not an error surface.
+          onSuggest: async (query, signal) => {
+            const liveState = stateManager.getState();
+            const suggestIntent = createSearchIntentEngine().fromText(query, {
+              currentMode: liveState.mode,
+            });
+            const outcome = await suggestCatalogTitles({
+              query: suggestIntent.intent.query,
+              mode: liveState.mode,
+              providerId: liveState.provider,
+              providerCatalogIdentity: providerRegistry.get(liveState.provider)?.metadata
+                .catalogIdentity,
+              searchRegistry,
+              signal,
+            });
+            return toCatalogSuggestions(
+              outcome?.results ?? [],
+              container.config.animeTitlePreference,
+            );
+          },
+          loadLocalSuggestions: () => loadLocalSuggestionCorpus(container),
           onQueueSelected: async (result) => {
             const router = createContainerMediaActionRouter(container);
             await router.run({

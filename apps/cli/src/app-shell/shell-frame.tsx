@@ -171,6 +171,8 @@ export function InputField({
   onRedraw,
   terminalWidth: terminalWidthProp,
   ignoreInput,
+  ghostSuffix,
+  cursorRef,
 }: {
   label: string;
   value: string;
@@ -184,6 +186,10 @@ export function InputField({
   terminalWidth?: number;
   /** When true, skip line-editor handling (parent surface owns the chord). */
   ignoreInput?: (input: string, key: LineEditorKey) => boolean;
+  /** Dim type-ahead completion rendered after an end-of-line cursor. */
+  ghostSuffix?: string;
+  /** Latest editor cursor written here so the parent can test end-of-line. */
+  cursorRef?: { current: number };
 }) {
   const { cols } = useShellDimensions();
   const fieldWidth = Math.max(20, maxWidth ?? (terminalWidthProp ?? cols) - 8);
@@ -196,6 +202,7 @@ export function InputField({
     onRedraw,
     focus,
   });
+  if (cursorRef) cursorRef.current = editor.cursor;
   const rootContentSuspended = useRootContentSuspended();
 
   useInput((input, key) => {
@@ -231,6 +238,7 @@ export function InputField({
             focused={focus}
             placeholder={placeholder}
             maxWidth={textWidth}
+            ghostSuffix={ghostSuffix}
           />
         </Box>
         <Box>
