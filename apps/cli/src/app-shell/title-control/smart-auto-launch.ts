@@ -69,14 +69,16 @@ function isPlaybackFinished(history: PlaybackHistorySnapshot): boolean {
  */
 export function shouldAutoLaunchPlayback(ctx: PlaybackEpisodeEntryContext): boolean {
   if (ctx.titleType !== "series") return false;
+  if (ctx.flags.season || ctx.flags.episode) return true;
+  // `m` is the user's own request for the menu — it outranks every auto-entry
+  // path, including launches that carry an exact episode identity.
+  if (ctx.forceMenu) return false;
   // Notification play-now and offline-library both name an exact episode —
   // the identity IS the selection, so a missing history row must not defer to
   // the "Where to start?" menu.
   if (ctx.launchSource === "offline-library" || ctx.launchSource === "notification") {
     return Boolean(ctx.preselectedEpisode);
   }
-  if (ctx.flags.season || ctx.flags.episode) return true;
-  if (ctx.forceMenu) return false;
   if (ctx.failedProvider) return false;
   if (!ctx.preselectedEpisode) {
     // No explicit pick (one-key play): derive the entry from watch history.
