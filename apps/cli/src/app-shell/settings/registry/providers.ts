@@ -26,6 +26,37 @@ function providerEnumOptions(ctx: SettingsRegistryContext, kind: "series" | "ani
   }));
 }
 
+function providerToggleRows(
+  ctx: SettingsRegistryContext,
+  kind: "series" | "anime" | "youtube",
+): SettingRowDef[] {
+  const options =
+    kind === "series"
+      ? ctx.seriesProviderOptions
+      : kind === "anime"
+        ? ctx.animeProviderOptions
+        : ctx.youtubeProviderOptions;
+  return options.map((option): SettingRowDef => ({
+    kind: "boolean",
+    id: `provider:enabled:${option.value}`,
+    label: `Enable ${stripCurrentLabel(option.label)}`,
+    detail:
+      kind === "series"
+        ? "Movies and series: off removes it from resolve and fallback"
+        : kind === "anime"
+          ? "Anime: off removes it from resolve and fallback"
+          : "YouTube: off removes it from resolve and fallback",
+    read: (config) => !config.disabledProviders.some((entry) => entry === option.value),
+    write: (config, value) => {
+      const disabled = config.disabledProviders.filter((entry) => entry !== option.value);
+      return {
+        ...config,
+        disabledProviders: value ? disabled : [...disabled, option.value],
+      };
+    },
+  }));
+}
+
 export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
     {
@@ -91,6 +122,17 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       applyOrder: applyYoutubeProviderOrder,
       providerOptions: (orderCtx) => orderCtx.youtubeProviderOptions,
     },
+    {
+      kind: "section",
+      id: "section:provider-toggles",
+      label: "Provider switches",
+      detail:
+        "Turn providers off to skip them in resolve and fallback — a lane with everything off fails open",
+      configKeys: ["disabledProviders"],
+    },
+    ...providerToggleRows(ctx, "series"),
+    ...providerToggleRows(ctx, "anime"),
+    ...providerToggleRows(ctx, "youtube"),
     {
       kind: "text",
       id: "videasySessionToken",

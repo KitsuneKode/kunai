@@ -2,6 +2,7 @@ import {
   createProviderEngine,
   isVideasyFamilyProvider,
   orderProviderModulesByPriority,
+  resolveProviderLaneFromModule,
   type CoreProviderModule,
   type ProviderEngine,
   type ProviderPriorityInput,
@@ -148,7 +149,10 @@ export async function bootstrapProviders(
     },
   });
 
-  const providerRegistry = createProviderRegistry(engine, providerPriority);
+  const providerRegistry = createProviderRegistry(engine, {
+    ...providerPriority,
+    disabledProviderIds: [...config.disabledProviders],
+  });
 
   // The module ordering is a pure function of the priority lists, which change
   // only via config edits — memoize on the joined lists rather than re-sorting
@@ -159,16 +163,36 @@ export async function bootstrapProviders(
     return () => {
       const priority = createProviderPrioritySnapshot(config);
       const raw = config.getRaw();
+      const disabled = [...config.disabledProviders];
+      const filterModules = (modules: readonly CoreProviderModule[]) => {
+        if (disabled.length === 0) return modules;
+        const isDisabled = (module: CoreProviderModule) =>
+          disabled.some((entry) => entry.trim().toLowerCase() === module.providerId.toLowerCase());
+        // Fail-open per lane, matching the registry: a lane whose every
+        // module is disabled keeps its modules.
+        const lanes = new Map<string, CoreProviderModule[]>();
+        for (const module of modules) {
+          const lane = resolveProviderLaneFromModule(module);
+          const list = lanes.get(lane) ?? [];
+          list.push(module);
+          lanes.set(lane, list);
+        }
+        return [...lanes.values()].flatMap((laneModules) => {
+          const kept = laneModules.filter((module) => !isDisabled(module));
+          return kept.length > 0 ? kept : laneModules;
+        });
+      };
       const key = [
         priority.providerPriority.join(","),
         priority.animeProviderPriority.join(","),
         (priority.youtubeProviderPriority ?? []).join(","),
         raw.providerRelay?.enabled ? "relay-on" : "relay-off",
         JSON.stringify(raw.providerRelay?.providers ?? {}),
+        disabled.join(","),
       ].join("|");
       if (key !== cacheKey) {
         cacheKey = key;
-        ordered = orderProviderModulesByPriority(providerModules, priority);
+        ordered = filterModules(orderProviderModulesByPriority(providerModules, priority));
       }
       return ordered;
     };

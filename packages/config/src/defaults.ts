@@ -60,24 +60,30 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // holds the *rest* of the order — not the lane default. Rivestream leads the
   // rest (eleven-service local cycle behind the shared resolve gate, so one
   // dead mirror costs a candidate, not the lane); VidRock follows (multi-lane
-  // AES-GCM payloads behind the direct-stream gate). Videasy is named
-  // explicitly to pin it last rather than float among unlisted providers: its
-  // session/turnstile path and rotted `videasy.to` domain make it the
-  // fallback, not the lead — registered, not removed.
-  providerPriority: ["rivestream", "vidrock", "videasy"],
+  // AES-GCM payloads behind the direct-stream gate). Movy is named explicitly
+  // ahead of Videasy: unlisted it floated to the very end, behind a provider
+  // whose upstream is gone, while its own aggregator still resolves. Videasy
+  // stays named and last rather than floating: its session/turnstile path and
+  // rotted `videasy.to` domain make it the fallback, not the lead — registered,
+  // not removed.
+  providerPriority: ["rivestream", "vidrock", "movy", "videasy"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
-  // holds the *rest* of the order and must not repeat the lane default. Miruro
-  // is first of the rest: it aggregates roughly a dozen backends behind one
-  // AniList-keyed pipe, so one upstream going dark costs a server rather than
-  // the lane. KickAssAnime and AnimeGG share nothing with Miruro — own
-  // catalog, own site, own CDN — and KickAssAnime can take over a title Miruro
-  // found. AniDB follows for when it returns, then AllAnime for the ani-cli
-  // parity path.
-  animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb", "allanime"],
+  // holds the *rest* of the order and must not repeat the lane default.
+  // KickAssAnime leads the rest (own catalog, own site, own CDN, soft VTT
+  // subs); AnimeGG follows (multi-rung MP4, hardsubbed). AllAnime precedes
+  // the dead pair: anidb.app redirects to an unrelated landing page and the
+  // miruro `/api/secure/pipe` route is gone from their shipped bundle
+  // (2026-10-13) — both stay registered at the tail for a zero-cost revival.
+  animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro", "anidb"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
-  providerDefaultsRevision: 3,
+  // Revision 4 reorders dead/degraded tails: Movy is named before Videasy in
+  // the series lane and AllAnime precedes AniDB in the anime lane.
+  // Revision 5 demotes the dead anime pair: Miruro's pipe API was removed
+  // upstream and AniDB's domain was repurposed, so both move behind AllAnime.
+  providerDefaultsRevision: 5,
+  disabledProviders: [],
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },

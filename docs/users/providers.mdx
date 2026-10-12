@@ -286,15 +286,20 @@ Configure order in `/settings` or `~/.config/kunai/config.json`:
 ```json
 {
   "provider": "vidlink",
-  "providerPriority": ["rivestream", "vidrock", "videasy"],
+  "providerPriority": ["rivestream", "vidrock", "movy", "videasy"],
   "animeProvider": "hianime",
-  "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
+  "animeProviderPriority": ["kickassanime", "animegg", "allanime", "miruro", "anidb"],
+  "disabledProviders": ["videasy"]
 }
 ```
 
 The anime client shows as **AllManga** in the UI; the config id remains `allanime`. Every
 registered anime provider is tried automatically when the selected one fails. The priority list
-sets the order, it does not decide who is included.
+sets the order, it does not decide who is included. To remove a provider from resolve and
+fallback entirely, use `/providers` → "Turn providers on/off" for this session, or
+persistently `/settings` → Providers → "Provider switches", or edit
+`disabledProviders` above. A lane with every provider switched off fails open, so a mode can
+never strand itself with zero resolvers.
 
 If you saved settings while AniDB was the default, Kunai moves that inherited default to the order
 above once, on the first launch after updating. It only does this when your anime settings are

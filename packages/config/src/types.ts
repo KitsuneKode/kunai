@@ -54,6 +54,13 @@ export interface KitsuneConfig {
   animeProviderPriority: readonly string[];
   youtubeProviderPriority: readonly string[];
   /**
+   * Provider ids the user switched off. Order-only everywhere else: priority
+   * lists sort, this list filters. Empty by default; a lane whose every
+   * provider is disabled fails open (the disables are ignored for that lane)
+   * so a misclick can never strand a mode with zero resolvers.
+   */
+  disabledProviders: readonly string[];
+  /**
    * Which revision of the shipped provider defaults this config has been
    * reconciled against. The whole merged config is written on every save, so an
    * old default sits on disk looking exactly like a choice; bumping this when a

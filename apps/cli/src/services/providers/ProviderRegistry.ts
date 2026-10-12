@@ -11,12 +11,19 @@ import type { MediaKind } from "@kunai/types";
 
 import { createProviderFromModule, type Provider } from "./Provider";
 import { providerLaneMatchesMode, shellModeToProviderLane } from "./provider-lane";
+import { isProviderEnabled } from "./provider-priority";
 import { titleToCoreIdentity } from "./stream-request-adapter";
 
 export interface ProviderRegistry {
   get(id: string): Provider | undefined;
   getManifest(id: string): CoreProviderManifest | undefined;
   getAll(): Provider[];
+  /**
+   * Every registered provider, including user-disabled ones. Settings and
+   * diagnostics use this so a switched-off provider stays visible and
+   * re-enableable; resolve/search/pickers use the filtered `getAll`.
+   */
+  getAllRegistered(): Provider[];
   getAllIds(): string[];
   getCompatible(title: TitleInfo, mode?: ShellMode): Provider[];
   getDefault(isAnime: boolean): Provider;
@@ -29,6 +36,12 @@ export interface ProviderRegistryOptions {
   readonly providerPriority?: readonly string[];
   readonly animeProviderPriority?: readonly string[];
   readonly youtubeProviderPriority?: readonly string[];
+  /**
+   * Provider ids the user switched off. Filtering is fail-open per lane: if
+   * every provider in a lane is disabled, the disables are ignored for that
+   * lane so a mode can never strand itself with zero resolvers.
+   */
+  readonly disabledProviderIds?: readonly string[];
 }
 
 export class ProviderRegistryImpl implements ProviderRegistry {
@@ -158,6 +171,22 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 
   getAll(): Provider[] {
+    const sorted = this.sortByPriority([...this.providersById.values()]);
+    const disabled = this.options.disabledProviderIds;
+    if (!disabled || disabled.length === 0) return sorted;
+    // Fail-open is per lane: a lane whose every provider is disabled keeps
+    // its providers rather than stranding the mode with zero resolvers.
+    const lanes = new Map<string, Provider[]>();
+    for (const provider of sorted) {
+      const lane = provider.metadata.providerLane;
+      const list = lanes.get(lane) ?? [];
+      list.push(provider);
+      lanes.set(lane, list);
+    }
+    return [...lanes.values()].flatMap((laneProviders) => this.enabledInLane(laneProviders));
+  }
+
+  getAllRegistered(): Provider[] {
     return this.sortByPriority([...this.providersById.values()]);
   }
 
@@ -180,13 +209,23 @@ export class ProviderRegistryImpl implements ProviderRegistry {
 
   getDefaultForMode(mode: ShellMode): Provider {
     const lane = shellModeToProviderLane(mode);
+    const laneProviders = this.enabledInLane(
+      this.sortByPriority(
+        [...this.providersById.values()].filter(
+          (provider) => provider.metadata.providerLane === lane,
+        ),
+      ),
+    );
     const preferred = this.getPriorityForLane(lane)
       .map((providerId) => this.providersById.get(resolveProviderId(providerId)))
-      .find((provider) => provider && provider.metadata.providerLane === lane);
+      .find(
+        (provider) =>
+          provider && provider.metadata.providerLane === lane && laneProviders.includes(provider),
+      );
 
     if (preferred) return preferred;
 
-    const fallback = this.getAll().find((provider) => provider.metadata.providerLane === lane);
+    const fallback = laneProviders[0];
     if (!fallback) {
       throw new Error(`No providers available for mode: ${mode}`);
     }
@@ -203,8 +242,20 @@ export class ProviderRegistryImpl implements ProviderRegistry {
       animeProviderPriority: options.animeProviderPriority ?? this.options.animeProviderPriority,
       youtubeProviderPriority:
         options.youtubeProviderPriority ?? this.options.youtubeProviderPriority,
+      disabledProviderIds: options.disabledProviderIds ?? this.options.disabledProviderIds,
     };
     this.rebuildPriorityRanks();
+  }
+
+  /**
+   * Fail-open lane filter: disabled ids drop out, unless that would empty the
+   * lane — then the disables are ignored so a mode always has a resolver.
+   */
+  private enabledInLane(providers: readonly Provider[]): Provider[] {
+    const disabled = this.options.disabledProviderIds;
+    if (!disabled || disabled.length === 0) return [...providers];
+    const kept = providers.filter((provider) => isProviderEnabled(disabled, provider.metadata.id));
+    return kept.length > 0 ? kept : [...providers];
   }
 
   private sortByPriority(providers: readonly Provider[]): Provider[] {
