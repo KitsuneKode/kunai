@@ -182,6 +182,10 @@ describe("agent wiring · session undo", () => {
       s.press("Q");
       await s.waitForFrame((f) => f.includes("UP NEXT"), "up-next surface");
       await s.waitSettled();
+      // Destructive remove is two-press: first x arms the row-keyed confirm,
+      // the second executes and is what the undo journal must capture.
+      s.press("x");
+      await s.waitForFrame((f) => f.includes("again to remove"), "remove armed");
       s.press("x");
       await s.waitForBackend((i) => i.queue().length === 0, "x removed the row");
 
