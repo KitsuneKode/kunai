@@ -35,11 +35,6 @@ export const relayProviderModules = [
   animeggProviderModule,
   kickassanimeProviderModule,
   miruroProviderModule,
-  hianimeProviderModule,
-  animeggProviderModule,
-  kickassanimeProviderModule,
-  vidrockProviderModule,
-  movyProviderModule,
 ] as const;
 
 export const relayRegistry = buildProviderRelayRegistry(relayProviderModules);
