@@ -163,9 +163,8 @@ function upstreamGatewayUrl(baseUrl: string, token: string, fullUrl: string): st
 
 /**
  * Rewrite an HLS playlist so every media/key/map URI flows through `/f/`.
- * URIs that fail the target guard keep their literal text and are NOT added
- * to the allowlist — a playlist naming `169.254.169.254` leaves the player
- * holding a string the gateway will refuse, not a fetched private body.
+ * Blocked URIs point at a local 404 route. Leaving them literal would let the
+ * external player bypass the gateway and fetch a private address itself.
  */
 export function rewritePlaylistForGateway(
   text: string,
@@ -176,12 +175,12 @@ export function rewritePlaylistForGateway(
 ): string {
   const rewrite = (uri: string): string => {
     const full = resolveHlsSegmentUrl(baseUrl, uri);
-    if (blockedLiteralTargetReason(full) !== null) return uri;
+    if (blockedLiteralTargetReason(full) !== null) return `${baseGateway}/g/${token}/blocked`;
     let origin: string;
     try {
       origin = new URL(full).origin;
     } catch {
-      return uri;
+      return `${baseGateway}/g/${token}/blocked`;
     }
     allowedOrigins.add(origin);
     return upstreamGatewayUrl(baseGateway, token, full);
@@ -212,11 +211,12 @@ export function rewriteDocumentForGateway(
 ): string {
   return text.replace(/<BaseURL>([^<]+)<\/BaseURL>/g, (_m: string, raw: string) => {
     const url = raw.replace(/&amp;/g, "&");
-    if (blockedLiteralTargetReason(url) !== null) return `<BaseURL>${raw}</BaseURL>`;
+    const refused = `<BaseURL>${baseGateway}/g/${token}/blocked</BaseURL>`;
+    if (blockedLiteralTargetReason(url) !== null) return refused;
     try {
       allowedOrigins.add(new URL(url).origin);
     } catch {
-      return `<BaseURL>${raw}</BaseURL>`;
+      return refused;
     }
     return `<BaseURL>${upstreamGatewayUrl(baseGateway, token, url)}</BaseURL>`;
   });
@@ -260,12 +260,55 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
   const sessions = new Map<string, LiveSession>();
   let stopped = false;
   let cancelIdle: (() => void) | null = null;
+  let activeRequests = 0;
+  let activeBodies = 0;
 
   const resetIdle = () => {
     if (stopped) return;
     cancelIdle?.();
-    cancelIdle = timers.schedule(() => stop(), idleTimeoutMs);
+    cancelIdle = timers.schedule(() => {
+      cancelIdle = null;
+      if (activeRequests === 0 && activeBodies === 0) stop();
+    }, idleTimeoutMs);
   };
+
+  function keepAlive(response: Response): Response {
+    if (!response.body) return response;
+    const reader = response.body.getReader();
+    activeBodies++;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      reader.releaseLock();
+      activeBodies--;
+      resetIdle();
+    };
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            finish();
+            controller.close();
+          } else {
+            controller.enqueue(value);
+          }
+        } catch (error) {
+          finish();
+          controller.error(error);
+        }
+      },
+      async cancel(reason) {
+        try {
+          await reader.cancel(reason);
+        } finally {
+          finish();
+        }
+      },
+    });
+    return new Response(body, { status: response.status, headers: response.headers });
+  }
 
   type UpstreamResult =
     | { readonly kind: "response"; readonly response: Response; readonly finalUrl: string }
@@ -318,6 +361,10 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
   ): Promise<Buffer> {
     const chunks: Uint8Array[] = firstChunk ? [new Uint8Array(firstChunk)] : [];
     let total = firstChunk?.byteLength ?? 0;
+    if (total > cap) {
+      await Promise.resolve(reader.cancel("over-cap")).catch(() => {});
+      throw new Error("upstream body exceeded playlist cap");
+    }
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -434,84 +481,94 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
     });
   }
 
-  const server: Server<undefined> = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    async fetch(req) {
-      if (stopped) return new Response("gateway stopped", { status: 503 });
-      resetIdle();
-      const path = new URL(req.url).pathname;
-      const baseGateway = `http://127.0.0.1:${server.port}`;
+  async function handleRequest(req: Request): Promise<Response> {
+    if (stopped) return new Response("gateway stopped", { status: 503 });
+    const path = new URL(req.url).pathname;
+    const baseGateway = `http://127.0.0.1:${server.port}`;
 
-      const match =
-        path.match(MEDIA_ROUTE) ??
-        path.match(FETCH_ROUTE) ??
-        path.match(SUBTITLE_ROUTE) ??
-        path.match(DOC_ROUTE);
-      // The same 404 whether the path is unknown or the token is wrong: a
-      // probe must never learn whether a token exists.
-      if (!match) return new Response("not found", { status: 404 });
-      const session = sessions.get(match[1] ?? "");
-      if (!session) return new Response("not found", { status: 404 });
+    const match =
+      path.match(MEDIA_ROUTE) ??
+      path.match(FETCH_ROUTE) ??
+      path.match(SUBTITLE_ROUTE) ??
+      path.match(DOC_ROUTE);
+    // The same 404 whether the path is unknown or the token is wrong: a
+    // probe must never learn whether a token exists.
+    if (!match) return new Response("not found", { status: 404 });
+    const session = sessions.get(match[1] ?? "");
+    if (!session) return new Response("not found", { status: 404 });
 
-      try {
-        if (DOC_ROUTE.test(path)) {
-          if (!session.document) return new Response("not found", { status: 404 });
-          const rewritten = rewriteDocumentForGateway(
-            session.document.text,
-            baseGateway,
-            session.token,
-            session.allowedOrigins,
-          );
-          return new Response(rewritten, {
-            headers: { "content-type": session.document.contentType },
-          });
+    try {
+      if (DOC_ROUTE.test(path)) {
+        if (!session.document) return new Response("not found", { status: 404 });
+        const rewritten = rewriteDocumentForGateway(
+          session.document.text,
+          baseGateway,
+          session.token,
+          session.allowedOrigins,
+        );
+        return new Response(rewritten, {
+          headers: { "content-type": session.document.contentType },
+        });
+      }
+
+      if (SUBTITLE_ROUTE.test(path)) {
+        const index = Number(match[2]);
+        const url = session.subtitles[index];
+        if (!url) return new Response("not found", { status: 404 });
+        const upstream = await upstreamFetch(session, url, new Headers(), req.signal);
+        if (upstream.kind !== "response") return refusedOrTimeout(upstream);
+        return new Response(upstream.response.body, {
+          status: upstream.response.status,
+          headers: passthroughResponseHeaders(upstream.response),
+        });
+      }
+
+      if (FETCH_ROUTE.test(path)) {
+        let url: string;
+        try {
+          const parsed = new URL(fromB64Url(match[2] ?? ""));
+          url = parsed.href;
+        } catch {
+          return new Response("not found", { status: 404 });
         }
-
-        if (SUBTITLE_ROUTE.test(path)) {
-          const index = Number(match[2]);
-          const url = session.subtitles[index];
-          if (!url) return new Response("not found", { status: 404 });
-          const upstream = await upstreamFetch(session, url, new Headers(), req.signal);
-          if (upstream.kind !== "response") return refusedOrTimeout(upstream);
-          return new Response(upstream.response.body, {
-            status: upstream.response.status,
-            headers: passthroughResponseHeaders(upstream.response),
-          });
-        }
-
-        if (FETCH_ROUTE.test(path)) {
-          let url: string;
-          try {
-            const parsed = new URL(fromB64Url(match[2] ?? ""));
-            url = parsed.href;
-          } catch {
-            return new Response("not found", { status: 404 });
-          }
-          const upstream = await upstreamFetch(
-            session,
-            url,
-            passthroughRequestHeaders(req),
-            req.signal,
-          );
-          if (upstream.kind !== "response") return refusedOrTimeout(upstream);
-          return serveUpstreamMedia(session, upstream, baseGateway);
-        }
-
-        // /media — the registered entry URL.
-        if (!session.url) return new Response("not found", { status: 404 });
         const upstream = await upstreamFetch(
           session,
-          session.url,
+          url,
           passthroughRequestHeaders(req),
           req.signal,
         );
         if (upstream.kind !== "response") return refusedOrTimeout(upstream);
         return serveUpstreamMedia(session, upstream, baseGateway);
-      } catch {
-        // Never leak upstream error text (it can carry the private URL)
-        // into a response the player surfaces.
-        return new Response("upstream fetch failed", { status: 502 });
+      }
+
+      // /media — the registered entry URL.
+      if (!session.url) return new Response("not found", { status: 404 });
+      const upstream = await upstreamFetch(
+        session,
+        session.url,
+        passthroughRequestHeaders(req),
+        req.signal,
+      );
+      if (upstream.kind !== "response") return refusedOrTimeout(upstream);
+      return serveUpstreamMedia(session, upstream, baseGateway);
+    } catch {
+      // Never leak upstream error text (it can carry the private URL)
+      // into a response the player surfaces.
+      return new Response("upstream fetch failed", { status: 502 });
+    }
+  }
+
+  const server: Server<undefined> = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(req) {
+      activeRequests++;
+      resetIdle();
+      try {
+        return keepAlive(await handleRequest(req));
+      } finally {
+        activeRequests--;
+        resetIdle();
       }
     },
   });

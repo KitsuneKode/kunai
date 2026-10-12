@@ -113,7 +113,7 @@ export class HandoffPlayerService implements PlayerService {
       gateway: needsGateway
         ? {
             serveHeaders: true,
-            serveExternalSubtitles: true,
+            serveExternalSubtitles: this.target !== "chooser",
             serveDocument: Boolean(document),
           }
         : undefined,

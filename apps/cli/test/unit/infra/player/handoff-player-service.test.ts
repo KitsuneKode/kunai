@@ -108,6 +108,37 @@ describe("HandoffPlayerService", () => {
     expect(argv).toContain(STREAM.url);
   });
 
+  test("chooser rejects external subtitles instead of silently dropping them", async () => {
+    let spawned = false;
+    const player = new HandoffPlayerService({
+      target: "chooser",
+      runtime: {
+        ...runtime(),
+        spawn: () => {
+          spawned = true;
+          return { exited: Promise.resolve(0) };
+        },
+      },
+    });
+    try {
+      await expect(
+        player.play(
+          { ...STREAM, subtitle: "https://subs.example/a.vtt" },
+          {
+            url: STREAM.url,
+            displayTitle: "Example",
+          },
+        ),
+      ).rejects.toMatchObject({
+        reason: "unsupported-stream",
+        blockers: ["external-subtitle-unsupported"],
+      });
+      expect(spawned).toBe(false);
+    } finally {
+      stopSharedStreamGateway();
+    }
+  });
+
   test("a deferred locator is served through the gateway document route", async () => {
     const locator = registerAllMangaAkDeferredDescriptor({
       duration: 100,

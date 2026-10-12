@@ -55,6 +55,16 @@ physical-device checklist from #287 is published as an issue for a tester.
 
 ## M2 — Android stream gateway
 
+PR #629 remains in review. The continuation on 2026-10-12 reproduced and
+fixed idle shutdown during progressive responses, chooser subtitle loss,
+blocked playlist/MPD targets escaping to the external player, and a first-chunk
+playlist size-limit bypass. Upstream DASH rewriting still needs qualification:
+the current rewriter covers absolute `BaseURL` values but does not resolve
+relative BaseURLs or rewrite `SegmentTemplate` references. Keep M2 unmerged
+until those forms are supported or refused honestly. Generated deferred MPDs
+use absolute BaseURLs and are a separate covered path. Physical-device proof
+remains outstanding for both M1 and M2; M3 and M4 have not started.
+
 Generalize `hls-relay.ts` into a handoff gateway used when the player cannot
 take headers (Android intents; any future launch-only player):
 

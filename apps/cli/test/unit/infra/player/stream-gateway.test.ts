@@ -150,7 +150,7 @@ describe("android stream gateway", () => {
     }
   });
 
-  test("a playlist URI to a private or unhandled host is left unrewritten and refused", async () => {
+  test("a blocked playlist URI cannot escape to the external player", async () => {
     const evilPlaylist = [
       "#EXTM3U",
       "#EXTINF:6.0,",
@@ -164,8 +164,10 @@ describe("android stream gateway", () => {
       const session = gw.registerSession({ url: MASTER_URL, headers: {} });
       const res = await fetch(session.mediaUrl);
       const text = await res.text();
-      // The private URI stays literal — it never became a gateway path.
-      expect(text).toContain("http://169.254.169.254/latest/meta-data");
+      expect(text).not.toContain("http://169.254.169.254/latest/meta-data");
+      const blockedUrl = text.split("\n").find((line) => line.startsWith("http"));
+      expect(blockedUrl).toStartWith(gw.baseUrl);
+      expect((await fetch(blockedUrl ?? "")).status).toBe(404);
       // Crafted fetch for a never-allowlisted host refuses.
       const crafted = `${gw.baseUrl}/g/${session.mediaUrl.split("/g/")[1]?.split("/")[0]}/f/${Buffer.from("https://evil.example.com/x.ts").toString("base64url")}`;
       const refused = await fetch(crafted);
@@ -241,6 +243,87 @@ describe("android stream gateway", () => {
     expect(scheduled).toHaveLength(1);
     scheduled[0]?.();
     expect(gw.isStopped()).toBe(true);
+  });
+
+  test("idle shutdown cannot interrupt an active progressive response", async () => {
+    const scheduled: Array<() => void> = [];
+    let finishBody: (() => void) | undefined;
+    const gw = start({
+      fetchImpl: async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("video-start"));
+              finishBody = () => {
+                controller.enqueue(new TextEncoder().encode("video-end"));
+                controller.close();
+              };
+            },
+          }),
+        ),
+      timers: {
+        schedule: (cb) => {
+          scheduled.push(cb);
+          return () => {};
+        },
+      },
+    });
+    try {
+      const session = gw.registerSession({ url: "https://cdn.example.com/movie.mp4", headers: {} });
+      const response = await fetch(session.mediaUrl);
+      scheduled.at(-1)?.();
+      expect(gw.isStopped()).toBe(false);
+      finishBody?.();
+      expect(await response.text()).toBe("video-startvideo-end");
+      scheduled.at(-1)?.();
+      expect(gw.isStopped()).toBe(true);
+    } finally {
+      finishBody = undefined;
+      gw.stop();
+    }
+  });
+
+  test("a single playlist chunk above 4 MiB is refused", async () => {
+    const gw = start({
+      fetchImpl: async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode("#EXTM3U\n" + " ".repeat(4 * 1024 * 1024)),
+              );
+              controller.close();
+            },
+          }),
+        ),
+    });
+    try {
+      const session = gw.registerSession({ url: MASTER_URL, headers: {} });
+      expect((await fetch(session.mediaUrl)).status).toBe(502);
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("a blocked MPD BaseURL cannot escape to the external player", async () => {
+    const gw = start({ fetchImpl: recordingFetch({}).fetchImpl });
+    try {
+      const session = gw.registerSession({
+        headers: {},
+        document: {
+          text: "<MPD><BaseURL>http://127.0.0.1/private.mp4</BaseURL></MPD>",
+          contentType: "application/dash+xml",
+          remoteUrls: [],
+        },
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      expect(text).not.toContain("http://127.0.0.1/private.mp4");
+      const blockedUrl = text.match(/<BaseURL>([^<]+)<\/BaseURL>/)?.[1];
+      expect(blockedUrl).toStartWith(gw.baseUrl);
+      expect((await fetch(blockedUrl ?? "")).status).toBe(404);
+    } finally {
+      gw.stop();
+    }
   });
 
   test("a 10 MiB progressive MP4 streams fully on /media with no buffering cap", async () => {

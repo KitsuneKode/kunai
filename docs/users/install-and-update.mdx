@@ -85,8 +85,11 @@ unguessable token path and injects the provider's headers upstream, so VLC or
 mpv-android sees a plain localhost URL. HLS playlists are rewritten through it,
 external subtitles ride the gateway and arrive as `subtitles_location` (VLC) or
 `subs` (mpv-android) extras, and deferred locators materialize into a served
-manifest. The gateway stops on idle timeout or shell exit and never accepts a
-route outside its token.
+manifest. Select `--player vlc` or `--player mpv` for external subtitles;
+the Android chooser cannot pass them and Kunai refuses that combination.
+Idle shutdown waits for an active stream to finish. Shell exit stops the gateway.
+Blocked playlist URLs stay on a local refusal route, and every route requires
+the session token.
 
 Still refused, with an explanation instead of a broken launch: yt-dlp-only
 streams, local files, and non-HTTP schemes. Headered, subtitled, and deferred

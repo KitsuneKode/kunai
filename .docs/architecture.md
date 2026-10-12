@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T14:12:23Z"
+lastReviewed: "2026-10-12T15:32:03Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -170,7 +170,12 @@ per-playback loopback server on 127.0.0.1 under a 128-bit token path that
 injects the candidate's normalized headers, rewrites HLS playlists and DASH
 manifest BaseURLs, follows redirects only to public targets (the shared
 `@kunai/core` DNS/private-address guards), and passes Range through for
-seeking. It stops on idle timeout or shell shutdown. yt-dlp-only streams,
+seeking. Blocked playlist and generated MPD targets become local 404 URLs,
+so the external player cannot bypass the target guard. Playlists are bounded
+to 4 MiB, including the first chunk. Idle shutdown waits for requests and
+response bodies to finish; shell shutdown stops the gateway immediately.
+The chooser refuses external subtitles because it has no subtitle extras;
+explicit VLC and mpv-android targets carry them. yt-dlp-only streams,
 local files, and non-HTTP schemes still refuse. The intent launcher constructs
 an argv array for `am`/Termux launchers, passes subtitles as `subs` /
 `subtitles_location` extras, scrubs the child environment, and never
