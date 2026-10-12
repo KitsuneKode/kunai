@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11T12:09:28Z"
+lastReviewed: "2026-10-11T12:50:56Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -94,10 +94,11 @@ Windows (`windows-cli`) and macOS (`macos-cli`) legs.
 
 ### Checkout is caller-owned
 
-`CI ready` is the aggregate merge check. It runs with `always()` after every
+`CI ready` is the aggregate merge check. It runs with `!cancelled()` after every
 CI job and executes `scripts/ci-ready.mjs` using the runner's Node, without a
-workspace install. It rejects missing dependencies, failures, cancellations,
-invalid filter outputs and unexpected skips. Only jobs whose path conditions
+workspace install. A cancelled workflow stops the aggregate instead of publishing
+a failure from a superseded run. On active workflows it rejects missing dependencies,
+failures, cancelled dependency jobs, invalid filter outputs and unexpected skips. Only jobs whose path conditions
 are false may skip. Update the policy and its routing fixtures when changing
 job conditions. Release Guard runs on every PR so docs-only changes also emit
 `Version ↔ changelog guard`; a required workflow must not disappear behind a

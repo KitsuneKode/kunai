@@ -4,11 +4,11 @@ import {
   animeggProviderModule,
   hianimeProviderModule,
   kickassanimeProviderModule,
+  vidrockProviderModule,
   miruroProviderModule,
   rivestreamProviderModule,
   videasyProviderModule,
   vidlinkProviderModule,
-  vidrockProviderModule,
 } from "@kunai/providers";
 // Movy ships behind its own subpath — it is deliberately absent from the
 // package barrel.

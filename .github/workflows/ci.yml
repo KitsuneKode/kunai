@@ -867,7 +867,8 @@ jobs:
 
   ci-ready:
     name: CI ready
-    if: ${{ always() }}
+    # Evaluate failures on active runs; a superseded workflow cannot certify readiness.
+    if: ${{ !cancelled() }}
     needs:
       [
         changes,
