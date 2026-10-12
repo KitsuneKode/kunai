@@ -1,0 +1,141 @@
+name: Package channels
+
+# Render and publish the Homebrew formula, Scoop manifest, and AUR kunai-bin
+# package from the published GitHub Release. Every renderer is pure: it reads
+# the release tag plus SHA256SUMS.archives and writes deterministic channel
+# files, so the artifact uploaded below can be diffed against a local render.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to package (e.g. v0.3.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package-channels:
+    name: Render and publish package channels
+    runs-on: ubuntu-latest
+    if: github.event_name != 'release' || !github.event.release.prerelease
+    env:
+      TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
+
+      - uses: ./.github/actions/setup-bun-monorepo
+
+      - name: Fetch release checksums and license
+        run: |
+          set -euo pipefail
+          mkdir -p .channels-src
+          gh release download "$TAG" \
+            --pattern 'SHA256SUMS.archives' \
+            --dir .channels-src \
+            --clobber
+          curl -fsSL "https://raw.githubusercontent.com/KitsuneKode/kunai/${TAG}/LICENSE" \
+            -o .channels-src/LICENSE
+
+      - name: Assert release publishes every expected archive
+        run: bun run scripts/verify-github-release-assets.ts "$TAG"
+
+      - name: Render channel files
+        run: |
+          bun run scripts/packaging/render-channels.ts \
+            --version "${TAG#v}" \
+            --sums .channels-src/SHA256SUMS.archives \
+            --license .channels-src/LICENSE \
+            --out dist/channels
+          find dist/channels -type f -print | sort
+
+      - name: Upload rendered channels
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
+        with:
+          name: package-channels-$TAG
+          if-no-files-found: error
+          path: dist/channels/
+
+      - name: Homebrew/Scoop publish skipped — no token
+        if: ${{ env.PACKAGE_CHANNELS_TOKEN == '' }}
+        env:
+          PACKAGE_CHANNELS_TOKEN: ${{ secrets.PACKAGE_CHANNELS_TOKEN }}
+        run: echo "::notice::PACKAGE_CHANNELS_TOKEN is not set; skipping homebrew-tap and scoop-bucket publishing."
+
+      - name: Publish Homebrew formula
+        if: ${{ env.PACKAGE_CHANNELS_TOKEN != '' }}
+        env:
+          PACKAGE_CHANNELS_TOKEN: ${{ secrets.PACKAGE_CHANNELS_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf .channels-push/homebrew-tap
+          git clone --depth 1 "https://x-access-token:${PACKAGE_CHANNELS_TOKEN}@github.com/KitsuneKode/homebrew-tap.git" .channels-push/homebrew-tap
+          mkdir -p .channels-push/homebrew-tap/Formula
+          cp dist/channels/Formula/kunai.rb .channels-push/homebrew-tap/Formula/kunai.rb
+          cd .channels-push/homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "::notice::homebrew-tap already carries kunai ${TAG}; nothing to push."
+            exit 0
+          fi
+          git add Formula/kunai.rb
+          git commit -m "kunai ${TAG}"
+          git push origin HEAD
+
+      - name: Publish Scoop manifest
+        if: ${{ env.PACKAGE_CHANNELS_TOKEN != '' }}
+        env:
+          PACKAGE_CHANNELS_TOKEN: ${{ secrets.PACKAGE_CHANNELS_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf .channels-push/scoop-bucket
+          git clone --depth 1 "https://x-access-token:${PACKAGE_CHANNELS_TOKEN}@github.com/KitsuneKode/scoop-bucket.git" .channels-push/scoop-bucket
+          mkdir -p .channels-push/scoop-bucket/bucket
+          cp dist/channels/bucket/kunai.json .channels-push/scoop-bucket/bucket/kunai.json
+          cd .channels-push/scoop-bucket
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "::notice::scoop-bucket already carries kunai ${TAG}; nothing to push."
+            exit 0
+          fi
+          git add bucket/kunai.json
+          git commit -m "kunai ${TAG}"
+          git push origin HEAD
+
+      - name: AUR publish skipped — no SSH key
+        if: ${{ env.AUR_SSH_PRIVATE_KEY == '' }}
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: echo "::notice::AUR_SSH_PRIVATE_KEY is not set; skipping kunai-bin AUR publishing."
+
+      - name: Publish AUR kunai-bin
+        if: ${{ env.AUR_SSH_PRIVATE_KEY != '' }}
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$HOME/.ssh/aur_deploy_key"
+          chmod 600 "$HOME/.ssh/aur_deploy_key"
+          ssh-keyscan -H aur.archlinux.org >> "$HOME/.ssh/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur_deploy_key -o IdentitiesOnly=yes"
+          rm -rf .channels-push/kunai-bin
+          git clone ssh://aur@aur.archlinux.org/kunai-bin.git .channels-push/kunai-bin
+          cp dist/channels/aur/kunai-bin/PKGBUILD dist/channels/aur/kunai-bin/.SRCINFO .channels-push/kunai-bin/
+          cd .channels-push/kunai-bin
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "::notice::kunai-bin already carries ${TAG}; nothing to push."
+            exit 0
+          fi
+          git add PKGBUILD .SRCINFO
+          git commit -m "kunai ${TAG}"
+          git push origin HEAD

@@ -274,6 +274,37 @@ export class ListRepository {
     })(listId, titleId);
   }
 
+  /**
+   * Re-insert a captured row verbatim — id, sort_order, added_at and all. The
+   * session-undo restore path: {@link addItem} intentionally normalizes (new
+   * id on fresh insert, appended sort order, now() timestamps), which would
+   * reorder the user's list instead of restoring it. Callers must have
+   * verified the `(list_id, title_id)` row is absent.
+   */
+  restoreItem(item: ListItem): void {
+    const now = new Date().toISOString();
+    this.db
+      .query(
+        `INSERT INTO list_items (id, list_id, title_id, media_kind, content_type, title, season, episode, notes, external_ids_json, added_at, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        item.id,
+        item.listId,
+        item.titleId,
+        item.mediaKind,
+        item.contentType ?? null,
+        item.title,
+        item.season ?? null,
+        item.episode ?? null,
+        item.notes ?? null,
+        serializeExternalIds(item.externalIds),
+        item.addedAt,
+        item.sortOrder,
+      );
+    this.recordListReconciliation(item, true, now);
+  }
+
   /** The stored item for a title in a list, or undefined. */
   getItemByTitle(listId: string, titleId: string): ListItem | undefined {
     const row = this.db

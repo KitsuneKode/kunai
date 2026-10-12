@@ -161,7 +161,7 @@ export async function resolveDirectStreamSource(
       context,
     });
 
-    const streams = payload
+    let streams = payload
       ? normalizeStreams(payload, providerId, sourceId, label, cachePolicy)
       : [];
     let selectedStream = streams[0];
@@ -183,9 +183,10 @@ export async function resolveDirectStreamSource(
     }
 
     let streamReachabilityVerified: boolean | undefined;
+    const refusedStreamIds = new Set<string>();
     if (resolveGateProbe) {
       let gateFailure: ProviderFailure | undefined;
-
+      const refusedStreamIds = new Set<string>();
       let cancelled = false;
 
       for (const candidate of streams.slice(0, RESOLVE_GATE_MAX_PROBES)) {
@@ -224,8 +225,15 @@ export async function resolveDirectStreamSource(
           break;
         }
 
+        refusedStreamIds.add(candidate.id);
         const probe = verdict.probe;
         const reason = verdict.reason;
+        // The gate refused this candidate definitively — drop it from the
+        // shipped inventory below so selection cannot hand mpv the exact
+        // stream the probe just rejected. Same-host siblings stay: a per-object
+        // refusal (expired transcode, missing file) is not evidence the host
+        // itself is down, and unprobed rungs were always shipped unprobed.
+        refusedStreamIds.add(candidate.id);
         // Keep the first rejection: it is the highest-ranked candidate, so it
         // describes the failure the user would otherwise have seen.
         gateFailure ??= {
@@ -247,9 +255,8 @@ export async function resolveDirectStreamSource(
 
       // Cancellation outranks a partial gate failure. If the caller aborted, any
       // rejection collected before the abort describes a probe the user no
-      // longer cares about, and `not-found` is not health-neutral — reporting it
-      // would penalise the provider for the user backing out. `cancelled` does
-      // not, so it is the honest outcome.
+      // longer cares about. Return cancellation rather than handing off a
+      // selection from an abandoned resolve.
       if (cancelled && !streamReachabilityVerified) {
         return createExhaustedResult(
           input,
@@ -273,6 +280,10 @@ export async function resolveDirectStreamSource(
           startedAt,
         });
       }
+      // A refusal belongs to the probed request, not every URL on its host:
+      // one quality path can be gone while a lower rung on the same CDN works.
+      // Remove refused choices before building variants and shipping inventory.
+      streams = streams.filter((stream) => !refusedStreamIds.has(stream.id));
     }
 
     emitTraceEvent(events, context, {
@@ -284,13 +295,17 @@ export async function resolveDirectStreamSource(
       attributes: { streams: streams.length },
     });
 
+    // Ship the inventory without the rungs the gate refused — leaving them in
+    // lets a later quality/source pick select the exact stream the probe
+    // rejected.
+    const liveStreams = streams.filter((stream) => !refusedStreamIds.has(stream.id));
     const subtitles = normalizeSubtitles(
       payload?.subtitles ?? [],
       providerId,
       sourceId,
       cachePolicy,
     );
-    const variants = streams.map<ProviderVariantCandidate>((stream) => ({
+    const variants = liveStreams.map<ProviderVariantCandidate>((stream) => ({
       id: stream.variantId ?? stream.id,
       providerId,
       sourceId,
@@ -335,7 +350,7 @@ export async function resolveDirectStreamSource(
           cachePolicy,
         },
       ],
-      streams,
+      streams: liveStreams,
       variants,
       subtitles,
       cachePolicy,

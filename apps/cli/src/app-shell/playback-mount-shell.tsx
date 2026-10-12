@@ -31,12 +31,15 @@ import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { isEpisodeDownloaded } from "@/services/offline/offline-episode-index";
+import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
 import type { ProviderId } from "@kunai/types";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
+import { notePaletteCommand } from "./contextual-tips";
 import { usePosterSurfaceBoundaryCleanup } from "./image-pane";
 import { LoadingShell } from "./loading-shell";
+import { pickPaletteTitle } from "./palette-title-launch";
 import { PLAYBACK_KEYS_PANEL_SESSIONS } from "./playback-keys-panel";
 import { formatPlaybackSessionKeysHint } from "./playback-session-key-hints";
 import { buildPostPlayFooterActions } from "./post-play-footer-actions";
@@ -266,6 +269,8 @@ export function buildPlaybackRootLoadingShellState(
     titleType: state.currentTitle?.type,
     videoMeta: state.videoMeta,
     onCommandAction: handlers.onCommandAction,
+    paletteTitleSource: () => collectLocalTitleEntries(container),
+    onPaletteTitlePick: (entry) => pickPaletteTitle(container, entry),
   };
 }
 
@@ -384,6 +389,14 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
       onReturnToSearch={handlers.onReturnToSearch}
       onToggleFavorite={favoriteTitle ? toggleFavorite : undefined}
       isFavorite={favoriteTitle ? isFavorite : undefined}
+      onUndo={() => input.container.sessionUndo?.undoLatest()}
+      onPaletteCommand={(commandId) => {
+        // Bootstrap shares this surface with the player, but its keys are not
+        // live until playback is — a tip armed mid-resolve would teach a chord
+        // that currently does nothing.
+        if (!playbackIsActive) return;
+        notePaletteCommand(input.container, "activePlayback", commandId);
+      }}
     />
   );
 }
@@ -577,6 +590,8 @@ function PlaybackShell({
       footerMode="minimal"
       commands={commands}
       inputLocked={overlayBlocksInput}
+      localTitles={() => collectLocalTitleEntries(container)}
+      onTitlePick={(entry) => pickPaletteTitle(container, entry)}
       escapeAction="back-to-results"
       onUnhandledInput={(input, key) => {
         if (key.upArrow || input === "k") {
@@ -587,6 +602,12 @@ function PlaybackShell({
           setSelectedActionIndex((index) =>
             Math.min(Math.max(0, postPlayView.actions.length - 1), index + 1),
           );
+          return;
+        }
+        // `z` pops the live undo entry — queue/watchlist actions fired from
+        // post-play are journaled, so the strip's undo works here too.
+        if (input === "z" && !key.ctrl && !key.meta && container.sessionUndo?.hasLiveUndo()) {
+          container.sessionUndo.undoLatest();
           return;
         }
         const resolved = resolvePostPlayUnhandledInput(input, key, {
@@ -621,6 +642,7 @@ function PlaybackShell({
         onResolve(resolved.result);
       }}
       onResolve={resolvePostPlayAction}
+      onPaletteCommand={(commandId) => notePaletteCommand(container, "postPlayback", commandId)}
     >
       {playbackViewport.tooSmall ? (
         <ResizeBlocker

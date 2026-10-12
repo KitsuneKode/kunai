@@ -42,6 +42,10 @@ import {
   isFinished,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
+import {
+  deleteDownloads,
+  formatDownloadRemovalFeedback,
+} from "@/services/download/download-removal";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
@@ -280,6 +284,12 @@ function LibraryTab({
         return;
       }
       if (input === "\u001b") return;
+      // `z` pops the live undo entry; with nothing undoable it stays a filter
+      // character like any other letter.
+      if (input === "z" && container.sessionUndo?.hasLiveUndo()) {
+        container.sessionUndo.undoLatest();
+        return;
+      }
       if (
         input.length === 1 &&
         !key.ctrl &&
@@ -313,13 +323,16 @@ function LibraryTab({
         if (confirmDeleteKey === selectedOfflineGroup.key) {
           setConfirmDeleteKey(null);
           const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
-          const groupEntryIdSet = offlineGroupJobIdSet(selectedOfflineGroup);
-          for (const jobId of groupEntryIds) {
-            container.downloadService.deleteJob(jobId, { deleteArtifact: true });
-          }
-          setEntries((prev) =>
-            prev ? prev.filter((entry) => !groupEntryIdSet.has(entry.job.id)) : null,
-          );
+          void deleteDownloads(container.downloadService, groupEntryIds, true).then((summary) => {
+            const removed = new Set(summary.removedJobIds);
+            setEntries((prev) =>
+              prev ? prev.filter((entry) => !removed.has(entry.job.id)) : null,
+            );
+            return container.stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: formatDownloadRemovalFeedback(summary),
+            });
+          });
         } else {
           setConfirmDeleteKey(selectedOfflineGroup.key);
         }

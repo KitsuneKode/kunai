@@ -187,6 +187,7 @@ export async function applyUserProviderSwitch(input: {
           cacheStore,
           sourceInventory,
           providerId,
+          providerManifest: providerRegistry.getManifest(providerId),
           title,
           episode,
           mode,

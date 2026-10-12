@@ -82,6 +82,100 @@ test("NotificationService only stores notification actions the root overlay can 
   db.close();
 });
 
+test("NotificationService persists playable identity through a storage read round-trip", async () => {
+  const { parseNotificationMediaItem } =
+    await import("@/services/notifications/NotificationActionRouter");
+  const { episodeInfoFromMediaItemIdentity, titleInfoFromMediaItemIdentity } =
+    await import("@/domain/media/media-item-adapters");
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const service = new NotificationService({
+    repo: new NotificationRepository(db),
+    getMutedTitleIds: () => new Set(),
+  });
+
+  service.recordSignals(
+    [
+      {
+        type: "new-playable-episode",
+        titleId: "tmdb:42",
+        mediaKind: "series",
+        contentType: "series",
+        title: "Series Example",
+        season: 2,
+        episode: 7,
+        sourceId: "tmdb",
+        externalIds: { tmdbId: "42" },
+        providerId: "vidking",
+        catalogSource: "tmdb",
+        availableAt: "2026-05-17T00:00:00.000Z",
+      },
+      {
+        type: "new-playable-episode",
+        titleId: "anilist:9",
+        mediaKind: "anime",
+        title: "Anime Example",
+        absoluteEpisode: 13,
+        sourceId: "anilist",
+        externalIds: { anilistId: "9", tmdbId: "77" },
+        providerId: "allmanga",
+        catalogSource: "anilist",
+        availableAt: "2026-05-17T00:00:00.000Z",
+      },
+    ],
+    "2026-05-17T00:01:00.000Z",
+  );
+
+  const rows = service.listActive();
+  expect(rows).toHaveLength(2);
+
+  const series = parseNotificationMediaItem(rows.find((row) => row.itemJson?.includes("tmdb:42"))!);
+  expect(series).toMatchObject({
+    mediaKind: "series",
+    contentType: "series",
+    titleId: "tmdb:42",
+    season: 2,
+    episode: 7,
+    sourceId: "tmdb",
+  });
+  expect(series?.externalIds).toEqual({ tmdbId: "42" });
+  expect(episodeInfoFromMediaItemIdentity(series!)).toEqual({
+    season: 2,
+    episode: 7,
+    absoluteEpisode: undefined,
+  });
+  expect(titleInfoFromMediaItemIdentity(series!)).toMatchObject({
+    id: "tmdb:42",
+    type: "series",
+    externalIds: { tmdbId: "42" },
+  });
+
+  const anime = parseNotificationMediaItem(
+    rows.find((row) => row.itemJson?.includes("anilist:9"))!,
+  );
+  expect(anime).toMatchObject({
+    mediaKind: "anime",
+    titleId: "anilist:9",
+    absoluteEpisode: 13,
+  });
+  expect(anime?.externalIds).toEqual({ anilistId: "9", tmdbId: "77" });
+  // The anime lane resolves on the absolute number; the launch intent must
+  // carry it or the wrong episode plays.
+  expect(episodeInfoFromMediaItemIdentity(anime!)).toEqual({
+    season: 1,
+    episode: 13,
+    absoluteEpisode: 13,
+  });
+  expect(titleInfoFromMediaItemIdentity(anime!)).toMatchObject({
+    id: "anilist:9",
+    type: "series",
+    isAnime: true,
+    externalIds: { anilistId: "9", tmdbId: "77" },
+  });
+
+  db.close();
+});
+
 test("delete is sticky: a re-emitted signal does not resurrect a deleted notification", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");

@@ -59,6 +59,7 @@ import { ReleaseReconciliationService } from "../services/release-reconciliation
 import { SEARCH_SERVICE_DEFINITIONS } from "../services/search/definitions";
 import { SearchRegistryImpl } from "../services/search/SearchRegistry";
 import { searchTitles } from "../services/search/SearchRoutingService";
+import { SessionUndoService } from "../services/session-undo/session-undo-service";
 import { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
 import { readInstallManifest } from "../services/update/install-manifest";
 import { detectInstallMethod } from "../services/update/install-method";
@@ -203,9 +204,15 @@ export function bootstrapServices(input: {
             type: "download-complete",
             titleId: asset.titleId,
             mediaKind: asset.mediaKind,
+            contentType: job.contentType,
             title: asset.titleName,
-            season: asset.season,
-            episode: asset.episode,
+            // Anime jobs store the absolute number in `episode` (see
+            // offline-sync-policy); the launch intent needs it back as
+            // absoluteEpisode or the anime lane resolves the wrong episode.
+            season: job.mediaKind === "anime" ? undefined : asset.season,
+            episode: job.mediaKind === "anime" ? undefined : asset.episode,
+            absoluteEpisode: job.mediaKind === "anime" ? asset.episode : undefined,
+            externalIds: job.externalIds,
           },
         ],
         asset.updatedAt,
@@ -217,9 +224,12 @@ export function bootstrapServices(input: {
           type: "download-failed",
           titleId: job.titleId,
           mediaKind: job.mediaKind,
+          contentType: job.contentType,
           title: job.titleName,
-          season: job.season,
-          episode: job.episode,
+          season: job.mediaKind === "anime" ? undefined : job.season,
+          episode: job.mediaKind === "anime" ? undefined : job.episode,
+          absoluteEpisode: job.mediaKind === "anime" ? job.episode : undefined,
+          externalIds: job.externalIds,
           error,
         },
       ]);
@@ -271,10 +281,7 @@ export function bootstrapServices(input: {
     historyRepository,
     offlineAssetService,
   });
-  downloadService.onEvent((event) => {
-    if (event.type === "deleted") offlineAssetService.removeForJob(event.jobId);
-  });
-  // Repairs libraries damaged before deleteJob emitted ahead of the row delete.
+  // Repairs libraries damaged before job and asset deletion shared a transaction.
   // Ownerless assets still read `ready`, so the library advertises titles it
   // cannot play, and nothing job-driven can reach them. No-op once healthy.
   const purgedOrphanCount = offlineAssetService.purgeOrphanedAssets();
@@ -561,6 +568,13 @@ export function bootstrapServices(input: {
     durablePlaylistService,
     listService,
     queueService,
+    sessionUndo: new SessionUndoService({
+      queueRepository,
+      queueSessionId: sessionId,
+      listRepository,
+      followedTitleRepository,
+      historyRepository,
+    }),
     statsService,
     statsFormatter,
     syncTokenStore,

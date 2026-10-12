@@ -4,6 +4,8 @@ import {
   buildSourceInventoryCacheInput,
   invalidateEpisodePlaybackCaches,
 } from "@/app/playback/playback-source-cache-invalidation";
+import { loadProductionProviderModules } from "@/container/bootstrap-providers";
+import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import type { ProviderEpisodeIdentity } from "@kunai/types";
@@ -27,6 +29,50 @@ function cacheStoreWithDelete(deleteEntry: CacheStore["delete"]): CacheStore {
 }
 
 describe("playback-source-cache-invalidation", () => {
+  test("recovery removes the writer's base and pinned keys for every production manifest", async () => {
+    const modules = await loadProductionProviderModules({
+      providerPriority: [],
+      animeProviderPriority: [],
+    });
+    for (const module of modules) {
+      const anime = module.manifest.mediaKinds.includes("anime");
+      const input = {
+        providerId: module.providerId,
+        providerManifest: module.manifest,
+        title: { id: anime ? "anilist:1" : "1396", type: "series", name: "Recovery" },
+        episode: { season: 2, episode: 5 },
+        mode: anime ? "anime" : "series",
+        config,
+        selectedSourceId: "source:mirror",
+        selectedStreamId: "stream:mirror:720",
+      } as const;
+      const keyInput = {
+        ...input,
+        audioPreference: "original",
+        subtitlePreference: anime ? "en" : "none",
+        qualityPreference: anime ? "auto" : "720p",
+        startupPriority: config.startupPriority,
+      };
+      const stored = new Set([
+        buildApiStreamResolveCacheKey({
+          ...keyInput,
+          selectedSourceId: undefined,
+          selectedStreamId: undefined,
+        }),
+        buildApiStreamResolveCacheKey(keyInput),
+        "unrelated-title",
+      ]);
+      await invalidateEpisodePlaybackCaches({
+        ...input,
+        cacheStore: cacheStoreWithDelete(async (key) => {
+          stored.delete(key);
+        }),
+        sourceInventory: { delete: async () => {} },
+      });
+      expect([...stored], module.providerId).toEqual(["unrelated-title"]);
+    }
+  });
+
   test("buildSourceInventoryCacheInput maps series mode from title type", () => {
     const inventoryInput = buildSourceInventoryCacheInput(
       "vidking",

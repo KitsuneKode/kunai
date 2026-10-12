@@ -204,6 +204,52 @@ describe("choosePlaybackSubtitle", () => {
 });
 
 describe("shouldAttemptLateSubtitleLookup", () => {
+  test("an attached English fallback does not satisfy the configured French preference", async () => {
+    const stream = { ...BASE_STREAM, subtitle: undefined };
+    const selected = await choosePlaybackSubtitle({
+      stream,
+      subLang: "fr",
+      pickSubtitle: async () => null,
+    });
+    expect(selected.subtitle).toBe("https://cdn.example/en.vtt");
+    expect(
+      shouldAttemptLateSubtitleLookup({
+        stream: { ...stream, subtitle: selected.subtitle ?? undefined },
+        requestedSubLang: "fr",
+        hasTmdbId: true,
+      }),
+    ).toMatchObject({ attempt: true, reason: "needs-lookup" });
+  });
+
+  test("preserves an explicit interactive selection and an attached track of unknown language", () => {
+    for (const requestedSubLang of ["interactive", "fzf", "fr"]) {
+      expect(
+        shouldAttemptLateSubtitleLookup({
+          stream:
+            requestedSubLang === "fr"
+              ? BASE_STREAM
+              : { ...BASE_STREAM, subtitle: "https://cdn.example/ar.vtt" },
+          requestedSubLang,
+          hasTmdbId: true,
+        }),
+      ).toMatchObject({ attempt: false, reason: "attached" });
+    }
+  });
+
+  test("recognizes three-letter language codes in provider inventory", () => {
+    expect(
+      shouldAttemptLateSubtitleLookup({
+        stream: {
+          ...BASE_STREAM,
+          subtitle: undefined,
+          subtitleList: [{ url: "https://cdn.example/fr.vtt", language: "fra" }],
+        },
+        requestedSubLang: "fr",
+        hasTmdbId: true,
+      }),
+    ).toMatchObject({ attempt: false, reason: "inventory-satisfied" });
+  });
+
   test("never starts a remote subtitle lookup while offline", () => {
     const decision = shouldAttemptLateSubtitleLookup({
       stream: {
@@ -260,6 +306,34 @@ describe("shouldAttemptLateSubtitleLookup", () => {
         hasTmdbId: true,
       }).attempt,
     ).toBe(false);
+  });
+
+  test("an attached fallback that does not match the request still looks up", () => {
+    // Provider attached its English default while "fr" was asked — the bare
+    // `stream.subtitle` check used to report "attached" and skip Wyzie.
+    const decision = shouldAttemptLateSubtitleLookup({
+      stream: {
+        ...BASE_STREAM,
+        subtitle: "https://cdn.example/en.vtt",
+      },
+      requestedSubLang: "fr",
+      hasTmdbId: true,
+    });
+    expect(decision.attempt).toBe(true);
+    expect(decision.reason).toBe("needs-lookup");
+  });
+
+  test("an attached track whose provenance is unknown still settles the request", () => {
+    const decision = shouldAttemptLateSubtitleLookup({
+      stream: {
+        ...BASE_STREAM,
+        subtitle: "https://cdn.example/from-elsewhere.vtt",
+      },
+      requestedSubLang: "fr",
+      hasTmdbId: true,
+    });
+    expect(decision.attempt).toBe(false);
+    expect(decision.reason).toBe("attached");
   });
 
   test("skips late lookup without a proven TMDB id", () => {

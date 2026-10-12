@@ -1,5 +1,6 @@
 import type { ResolvedAppCommand } from "@/app-shell/commands";
 import type { ShellAction } from "@/app-shell/types";
+import type { LocalTitleEntry } from "@/domain/palette/local-title-index";
 
 /** Context passed into `openListShell` / `chooseFromListShell` for command-palette integration in pickers. */
 export type ListShellActionContext = {
@@ -7,6 +8,14 @@ export type ListShellActionContext = {
   readonly onAction: (
     action: ShellAction,
   ) => Promise<"handled" | "quit" | "unhandled"> | "handled" | "quit" | "unhandled";
+  /**
+   * Local title source consulted ONCE when the palette opens — a cheap
+   * synchronous read over an already-built index, never a query per keystroke.
+   * Omit to keep the palette command-only on this surface.
+   */
+  readonly localTitles?: () => readonly LocalTitleEntry[];
+  /** Enter landed on a JUMP TO title row. */
+  readonly onTitlePick?: (entry: LocalTitleEntry) => void;
   readonly taskLabel?: string;
   readonly footerMode?: "detailed" | "minimal";
 };

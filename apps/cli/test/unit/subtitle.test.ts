@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import {
   fetchSubtitlesFromWyzie,
+  langMatches,
   mergeSubtitleTracks,
   parseWyzieSubtitleList,
   rankSubtitleCandidates,
@@ -72,7 +73,39 @@ describe("parseWyzieSubtitleList", () => {
   });
 });
 
+describe("langMatches", () => {
+  test.each([
+    ["eng", "en"],
+    ["fra", "fr"],
+    ["fre", "fr"],
+    ["en-US", "en"],
+    ["English", "en"],
+  ] as const)("normalizes %s to match preferred %s", (entryLang, preferred) => {
+    expect(langMatches(entryLang, preferred)).toBe(true);
+  });
+
+  test("does not match unrelated languages", () => {
+    expect(langMatches("ara", "en")).toBe(false);
+    expect(langMatches("ar", "fr")).toBe(false);
+  });
+});
+
 describe("selectAutomaticSubtitle", () => {
+  test.each([
+    ["eng", "en"],
+    ["en", "eng"],
+    ["fra", "fr"],
+    ["fre", "fr"],
+    ["deu", "de"],
+    ["ger", "de"],
+    ["por", "pt-BR"],
+  ])("selects a %s track for the %s preference without fallback", (language, preference) => {
+    const track = { url: "https://cdn.example/selected.vtt", language };
+    expect(selectAutomaticSubtitle([ARABIC, track], preference, { fallbackLang: null })).toBe(
+      track,
+    );
+  });
+
   test("automatic selection rejects unrelated languages", () => {
     expect(selectAutomaticSubtitle([ARABIC], "fr")).toBeNull();
   });

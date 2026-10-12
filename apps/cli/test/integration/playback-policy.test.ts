@@ -579,7 +579,7 @@ describe("completion thresholds", () => {
     ).toBe(false);
   });
 
-  test("marks a voluntary quit in the credits as completed", () => {
+  test("keeps a voluntary quit in the credits resumable", () => {
     expect(
       shouldMarkEpisodeCompleted({
         watchedSeconds: 1499,
@@ -589,7 +589,7 @@ describe("completion thresholds", () => {
         playerExitSignal: null,
         lastTrustedProgressSeconds: 1499,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test("keeps an early voluntary quit resumable", () => {

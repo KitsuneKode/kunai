@@ -63,6 +63,9 @@ describe("notification-media-session", () => {
       id: "tmdb:42",
       type: "series",
       name: "Example Series",
+      // Marks the launch as an explicit episode pick so the entry policy
+      // auto-plays instead of deferring to the starting-point menu.
+      launchSource: "notification",
     });
     expect(intent.episode).toEqual({ season: 2, episode: 4 });
   });

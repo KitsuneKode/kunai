@@ -24,7 +24,7 @@ describe("playback-history", () => {
     ).toBe(true);
   });
 
-  test("persists completed playback even when watched seconds are missing", () => {
+  test("does not fabricate a position when EOF has no progress evidence", () => {
     const result = {
       watchedSeconds: 0,
       duration: 1440,
@@ -32,7 +32,7 @@ describe("playback-history", () => {
     };
 
     expect(shouldPersistHistory(result)).toBe(true);
-    expect(toHistoryTimestamp(result)).toBe(1440);
+    expect(toHistoryTimestamp(result)).toBe(0);
   });
 
   test("does not persist very short partial playback", () => {
@@ -67,7 +67,7 @@ describe("playback-history", () => {
     ).toBe(420);
   });
 
-  test("treats playback as complete once credits timing is reached", () => {
+  test("preserves the quit position after credits timing is reached", () => {
     const result = {
       watchedSeconds: 1201,
       duration: 1500,
@@ -75,7 +75,7 @@ describe("playback-history", () => {
     };
 
     expect(shouldPersistHistory(result, creditsTiming)).toBe(true);
-    expect(toHistoryTimestamp(result, creditsTiming)).toBe(1500);
+    expect(toHistoryTimestamp(result, creditsTiming)).toBe(1201);
   });
 
   test("does not complete a network-style eof jump beyond trusted progress", () => {

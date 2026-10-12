@@ -2269,6 +2269,54 @@ test("PlaybackResolveService records no provider health from a cancelled resolve
   expect(titleFailures).toEqual([]);
 });
 
+test("PlaybackResolveService persists timeout evidence when its total deadline expires", async () => {
+  const caller = new AbortController();
+  const deadline = new AbortController();
+  const providerHealth = createMemoryProviderHealth();
+  const providerId: ProviderId = "primary";
+  const engine = createMockEngine({ result: null, providerId: null, attempts: [] });
+  engine.resolveWithFallback = async () => {
+    deadline.abort(new DOMException("The operation timed out", "TimeoutError"));
+    return {
+      result: null,
+      providerId: null,
+      attempts: [
+        {
+          providerId,
+          result: {
+            ...createEmptyProviderResult(providerId),
+            healthDelta: {
+              providerId,
+              outcome: "failure",
+              resolveMs: 500,
+              at: new Date().toISOString(),
+            },
+          },
+        },
+      ],
+    };
+  };
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    providerHealth,
+    deadlineSignal: (signal) =>
+      AbortSignal.any(signal ? [signal, deadline.signal] : [deadline.signal]),
+  });
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId,
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: caller.signal,
+  });
+  expect(result.stream).toBeNull();
+  expect(caller.signal.aborted).toBe(false);
+  expect(providerHealth.get(providerId)?.consecutiveFailures).toBe(1);
+});
+
 test("PlaybackResolveService passes abort signal into stale cache health checks", async () => {
   const staleStream = {
     ...stream,
@@ -2307,6 +2355,11 @@ test("PlaybackResolveService passes abort signal into stale cache health checks"
 
 test("PlaybackResolveService stops a stalling provider fan-out at its total deadline", async () => {
   const controller = new AbortController();
+  const deadline = new AbortController();
+  let announceStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    announceStarted = resolve;
+  });
   let observedSignal: AbortSignal | undefined;
   // SAFETY: the engine stub truncates ProviderEngine to the members this test drives.
   const engine = {
@@ -2326,6 +2379,7 @@ test("PlaybackResolveService stops a stalling provider fan-out at its total dead
       signal?: AbortSignal,
     ): Promise<ProviderEngineResolveOutput> => {
       observedSignal = signal;
+      announceStarted();
       if (!signal?.aborted) {
         await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
       }
@@ -2335,7 +2389,8 @@ test("PlaybackResolveService stops a stalling provider fan-out at its total dead
   const service = new PlaybackResolveService({
     engine,
     cacheStore: createMemoryCache(null),
-    resolveTotalDeadlineMs: () => 5,
+    deadlineSignal: (signal) =>
+      AbortSignal.any(signal ? [signal, deadline.signal] : [deadline.signal]),
   });
 
   const pending = service.resolve({
@@ -2347,15 +2402,13 @@ test("PlaybackResolveService stops a stalling provider fan-out at its total dead
     subtitlePreference: "none",
     signal: controller.signal,
   });
-  const outcome = await Promise.race([pending, Bun.sleep(2_000).then(() => "hung" as const)]);
-  if (outcome === "hung") {
-    controller.abort();
-    await pending;
-  }
-
-  expect(outcome).not.toBe("hung");
+  await started;
+  deadline.abort(new DOMException("The operation timed out", "TimeoutError"));
+  const outcome = await pending;
   expect(observedSignal).not.toBe(controller.signal);
-  if (outcome !== "hung") expect(outcome.stream).toBeNull();
+  expect(controller.signal.aborted).toBe(false);
+  expect(observedSignal?.reason).toBe(deadline.signal.reason);
+  expect(outcome.stream).toBeNull();
 });
 
 test("PlaybackResolveService routes AniDB identity and absolute episode into the production engine", async () => {

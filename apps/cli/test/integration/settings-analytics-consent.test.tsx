@@ -121,6 +121,10 @@ test("Settings enable and an unrelated save preserve one install id on disk", as
   );
 
   try {
+    // Down×4: startup mode → footer hints → shortcut tips → every tip →
+    // usage analytics. Row order is the contract this test navigates by.
+    handle.stdin.enqueue("\x1b[B");
+    handle.stdin.enqueue("\x1b[B");
     handle.stdin.enqueue("\x1b[B");
     handle.stdin.enqueue("\x1b[B");
     handle.stdin.enqueue("\r");
@@ -140,7 +144,10 @@ test("Settings enable and an unrelated save preserve one install id on disk", as
 
     // Change Footer hints through the same mounted SettingsShell. Its draft was
     // created before analytics minted the id, so this also covers a stale,
-    // unrelated whole-draft save after explicit consent.
+    // unrelated whole-draft save after explicit consent. Up×3 walks back past
+    // the two tip rows and startup mode to footer hints.
+    handle.stdin.enqueue("\x1b[A");
+    handle.stdin.enqueue("\x1b[A");
     handle.stdin.enqueue("\x1b[A");
     handle.stdin.enqueue("\r");
     handle.stdin.enqueue("\x1b[B");

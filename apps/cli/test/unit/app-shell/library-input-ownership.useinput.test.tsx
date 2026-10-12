@@ -13,6 +13,8 @@ type FixtureOptions = {
   readonly deletes?: string[];
   readonly metadataRepairs?: string[][];
   readonly protectedDownloadJobIds?: readonly string[];
+  readonly retainedJobs?: readonly string[];
+  readonly notes?: string[];
   readonly initialView?: "library" | "queue";
   readonly entries?: readonly OfflineLibraryEntry[];
   readonly entryResponses?: readonly (readonly OfflineLibraryEntry[])[];
@@ -65,8 +67,11 @@ function fixture(options: FixtureOptions = {}): Container {
       listCompleted: () => [],
       listFailed: () => [],
       onEvent: () => () => undefined,
-      deleteJob: (jobId: string) => {
+      deleteJob: async (jobId: string) => {
         options.deletes?.push(jobId);
+        return options.retainedJobs?.includes(jobId)
+          ? { status: "retained", jobId, reason: "File is in use." }
+          : { status: "deleted", jobId };
       },
       abort: async () => undefined,
       retry: async () => undefined,
@@ -99,7 +104,9 @@ function fixture(options: FixtureOptions = {}): Container {
       get: () => null,
     },
     stateManager: {
-      dispatch: () => undefined,
+      dispatch: (action: { note?: string }) => {
+        if (action.note) options.notes?.push(action.note);
+      },
     },
     connectivity: {
       isOnline: () => true,
@@ -577,4 +584,36 @@ describe("library input ownership", () => {
       handle.unmount();
     }
   });
+});
+
+test("Library keeps retained entries visible after partial title removal", async () => {
+  const notes: string[] = [];
+  const handle = render(
+    <LibraryShell
+      container={fixture({
+        notes,
+        retainedJobs: ["kept"],
+        entries: [
+          offlineEntry({ id: "removed", episode: 1 }),
+          offlineEntry({ id: "kept", episode: 2 }),
+        ],
+      })}
+      onClose={() => undefined}
+    />,
+    { columns: 100, rows: 40 },
+  );
+  try {
+    await act(async () => {});
+    expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Dune");
+    await act(async () => {
+      handle.stdin.enqueue("x");
+    });
+    await act(async () => {
+      handle.stdin.enqueue("x");
+    });
+    expect(notes).toContain("Removed 1; kept 1. File is in use.");
+    expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Dune");
+  } finally {
+    handle.unmount();
+  }
 });
