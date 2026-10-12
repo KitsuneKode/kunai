@@ -28,8 +28,10 @@ Sleep 600ms
 Show
 
 Sleep 1500ms
+# Type three letters; the debounced type-ahead band + ghost completion appear
+# before the real search runs. Hold a beat so the frame clearly shows it.
 Type "Sin"
-Sleep 600ms
+Sleep 3200ms
 Enter
 Wait+Screen@10s /3 titles/
 Sleep 1600ms
