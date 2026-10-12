@@ -50,6 +50,39 @@ const RESULTS: readonly SearchResult[] = [
   },
 ];
 
+import type { SearchSuggestion } from "@/domain/search/suggestion-engine";
+
+const DEMO_SUGGESTION_FETCH_MS = 160;
+
+/** Type-ahead catalog rows — same fixtures the results list uses, one hop. */
+export async function catalogSuggestions(
+  query: string,
+): Promise<readonly SearchSuggestion<SearchResult>[]> {
+  await Bun.sleep(DEMO_SUGGESTION_FETCH_MS);
+  const needle = query.trim().toLowerCase();
+  return RESULTS.filter((result) => result.title.toLowerCase().includes(needle)).map((result) => ({
+    id: `catalog:${result.id}`,
+    title: result.title,
+    source: "catalog" as const,
+    meta: `${result.year} · Movie`,
+    value: result,
+  }));
+}
+
+/** Local corpus rows — the suggestion band shows "yours first". */
+export function localSuggestions(): readonly SearchSuggestion<SearchResult>[] {
+  return [
+    {
+      id: "watched:demo:sintel",
+      title: "Sintel",
+      source: "watched" as const,
+      badge: "watched",
+      meta: "Movie",
+      value: RESULTS[0],
+    },
+  ];
+}
+
 /** Rank fixture rows so the typed query sits first, then the rest of the catalog. */
 export function searchResults(query: string): readonly BrowseShellOption<SearchResult>[] {
   const all = RESULTS.map((result) => toBrowseResultOption(result));

@@ -232,7 +232,7 @@ export function Footer({
                 <Text bold={role === "primary"} color={keyColor}>
                   {hotkeyLabel(keyDisplay)}
                 </Text>
-                <Text color={labelColor}> {truncateLine(action.label, 18)}</Text>
+                <Text color={labelColor}> {truncateLine(action.label, 28)}</Text>
               </Box>
             );
           })}

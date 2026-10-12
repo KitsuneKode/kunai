@@ -2,16 +2,17 @@
 # Network-free: the real shells over open-movie fixtures (test/harness/ui-demo-*).
 # Run from apps/cli:  vhs test/vhs/ui-demo.tape
 # The README assets are this recording cropped to the UI area, e.g.
-#   ffmpeg -ss 0.3 -t 19.7 -i test/vhs/golden/ui-demo.mp4 -vf "crop=1080:1020:0:0" \
+#   ffmpeg -ss 0.3 -t 19.7 -i test/vhs/golden/ui-demo.mp4 -vf "crop=1200:1020:0:0" \
 #     -c:v libx264 -crf 20 -pix_fmt yuv420p -movflags +faststart demo-ui-walkthrough.mp4
 # (the GIF is the same crop at 12 fps, scaled to 880 px wide, with a generated palette).
-# 1080 px wide at 26 px type is a 66-column terminal, which the UI supports.
+# 1200 px wide at 20 px type is a ~95-column terminal — wide enough that the
+# footer and hint lines never truncate in the recording.
 Output test/vhs/golden/ui-demo.mp4
 
 Set Shell "bash"
 Set FontFamily "JetBrainsMono Nerd Font Mono"
-Set FontSize 26
-Set Width 1080
+Set FontSize 20
+Set Width 1200
 Set Height 1100
 Set Padding 24
 Set Margin 0
@@ -28,8 +29,10 @@ Sleep 600ms
 Show
 
 Sleep 1500ms
+# Type three letters; the debounced type-ahead band + ghost completion appear
+# before the real search runs. Hold a beat so the frame clearly shows it.
 Type "Sin"
-Sleep 600ms
+Sleep 3200ms
 Enter
 Wait+Screen@10s /3 titles/
 Sleep 1600ms
