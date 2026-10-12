@@ -90,6 +90,7 @@ mpvTest("real mpv reuses one process across two local loadfile transitions", asy
 
   const children: Array<ReturnType<typeof Bun.spawn>> = [];
   let ipc: MpvIpcSession | undefined;
+  const pausedReady = Promise.withResolvers<void>();
   const runtime: PersistentMpvSessionRuntime = {
     which: () => MPV_BIN,
     spawn(command, options) {
@@ -115,7 +116,13 @@ mpvTest("real mpv reuses one process across two local loadfile transitions", asy
     },
     openIpcSession: async (options) => {
       const { openMpvIpcSession } = await import("@/infra/player/mpv-ipc");
-      ipc = await openMpvIpcSession(options);
+      ipc = await openMpvIpcSession({
+        ...options,
+        onPropertyUpdate(update) {
+          options.onPropertyUpdate(update);
+          if (update.name === "pause" && update.value === true) pausedReady.resolve();
+        },
+      });
       return ipc;
     },
   };
@@ -144,6 +151,10 @@ mpvTest("real mpv reuses one process across two local loadfile transitions", asy
     });
 
     const initialPlayback = session.waitForCurrentPlayback();
+    // A connected pipe does not prove that cold-start mpv has processed its
+    // subscriptions. Wait for its actual paused state before issuing unpause;
+    // keep the ordinary IPC command deadline and native boundary timeout.
+    await withTimeout(pausedReady.promise, "initial paused state");
     const unpause = await ipc!.send(["set_property", "pause", false]);
     expect(unpause).toMatchObject({ ok: true });
     const first = await withTimeout(initialPlayback, "first local playback");
