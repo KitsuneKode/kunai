@@ -11,7 +11,7 @@ import {
   getPlaybackCommandPaletteMaxVisible,
   resolveCommandPaletteWidth,
 } from "./shell-command-model";
-import { getWindowStart, padColumnsEnd, truncateLine } from "./shell-text";
+import { getWindowStart, measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import { useShellDimensions } from "./use-viewport-policy";
 
@@ -21,12 +21,15 @@ export function LineEditorText({
   focused,
   placeholder,
   maxWidth,
+  ghostSuffix,
 }: {
   value: string;
   cursor: number;
   focused: boolean;
   placeholder?: string;
   maxWidth?: number;
+  /** Dim type-ahead completion rendered after the cursor at end-of-line. */
+  ghostSuffix?: string;
 }) {
   const viewport = getLineEditorViewport(value, cursor, maxWidth);
   const visiblePlaceholder =
@@ -55,6 +58,13 @@ export function LineEditorText({
 
   const { before, cursorChar, after } = splitCursor(viewport.value, viewport.cursor);
   const visibleCursor = cursorChar.length > 0 ? cursorChar : " ";
+  // Ghost completion only trails an end-of-line cursor — never mid-text.
+  const atEnd = after.length === 0 && cursorChar.length === 0;
+  const ghostWidth =
+    maxWidth === undefined ? undefined : Math.max(0, maxWidth - measureColumns(before) - 1);
+  const ghost = atEnd && ghostSuffix ? ghostSuffix : "";
+  const visibleGhost =
+    ghostWidth === undefined ? ghost : truncateLine(ghost, Math.max(0, ghostWidth));
 
   return (
     <>
@@ -63,6 +73,7 @@ export function LineEditorText({
         {visibleCursor}
       </Text>
       <Text color={palette.text}>{after}</Text>
+      {visibleGhost ? <Text color={palette.dim}>{visibleGhost}</Text> : null}
     </>
   );
 }

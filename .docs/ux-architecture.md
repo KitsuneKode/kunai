@@ -179,6 +179,72 @@ implementation:
   route as well as the calendar UI state, so a settled route can never keep rendering ordinary
   results through calendar chrome.
 
+### Search type-ahead suggestion band
+
+The browse shell owns a Spotlight-style suggestion band anchored between the query field and the
+divider (`app-shell/suggestion-band-ui.tsx`). Streaming-app search feel: it answers after ~2
+typed characters, before Enter.
+
+Sources and async contract:
+
+- Two layers merge into one ranked band — pure logic in
+  `domain/search/suggestion-engine.ts`: prefix match > word-boundary > subsequence, recency as
+  the tiebreak, catalog rows deduped against shown local titles.
+- Local layer is synchronous and free: past submitted searches, watched titles, followed titles,
+  and list/playlist rows (`app/search/search-suggestions.ts` materializes them as
+  `SearchSuggestion<SearchResult>` — every row's `value` is a real SearchResult).
+- Remote layer is ONE call into the fast registry catalog for the lane — `services/search/
+suggest-titles.ts` resolves `getForProvider(provider)` first (AniList for anime providers,
+  same as `searchTitles`), then the registry default (TMDB). It never runs the provider-lane
+  search walk, never enriches, never resolves a provider or probes a stream. YouTube mode has
+  no registry catalog, so the band shows local rows only — provider-native search is too heavy
+  per keystroke.
+- `app-shell/hooks/use-search-suggestions.ts` debounces ~300ms, aborts the superseded request,
+  and gates commits by request id — a stale response can never overwrite a newer draft's rows.
+  Local rows paint in the same frame as the keystroke; while the catalog call is in flight the
+  catalog section shows dim `░` skeleton rows.
+- Zero remote hits leave local rows plus a `keep typing · ↵ search anyway` hint; a catalog
+  failure settles silently to local-only. The band is an enhancement, never an error surface.
+
+Keyboard contract:
+
+- The band never steals focus — it is not a focus zone. Typing always edits the draft; the
+  query field keeps its cursor.
+- `↓` from the query highlights the first suggestion; `↑`/`↓` move inside it. `↓` past the last
+  row exits the band and continues the normal path (results → list, empty → idle rows / query
+  history). `↑` above the first row drops back to plain typing.
+- `Enter` on a highlighted suggestion commits it through the exact pipeline a results-list row
+  uses — `onSubmit(value)` for title rows (session routing, episode flow unchanged) or a real
+  `runSearch(commitQuery)` for history/query rows. Plain `Enter` with nothing highlighted still
+  runs the submitted search. `Ctrl+O`/`Shift+Enter` open the details sheet for the highlighted
+  suggestion, same as a list row.
+- `Esc` dismisses the band for the current draft first; the next `Esc` resumes the existing
+  ladder (narrow filter → chips → clear query → cancel). The next keystroke reopens it.
+- A dim ghost completion trails the cursor at end-of-line from the top suggestion; `→` or `Tab`
+  accepts it. Mid-text `→`/`Tab` behave exactly as before.
+
+Suppression — the band simply does not exist:
+
+- command mode, calendar view, any open overlay, loading/searching states, and playback or
+  post-play surfaces (the band lives inside browse only).
+- blocked/ultra-compact terminals — same `<60 cols / <20 rows` threshold as `viewport.ultraCompact`.
+- a draft below 2 chars, a draft equal to the submitted query (bootstrap `-S` results and
+  preserved-search remounts land here — the band stays quiet until the user edits).
+
+Mode and lifecycle seams:
+
+- Series and anime both use the fast registry contract; the provider's catalog identity picks
+  TMDB vs AniList, and a picked suggestion's `resolvedLane` stamps the same way committed
+  results do, so a watched anime row picked in series mode still replays in anime mode.
+- `/search` resolves through command mode first — the band is suppressed while the palette is
+  open and resumes on the resolved query's next edit.
+- `KUNAI_REDUCED_MOTION` / `NO_MOTION`: the band renders in the keystroke's frame and the
+  catalog debounce drops to zero — no staged animation exists and none is simulated; the
+  request gate still coalesces superseded drafts.
+- No 1-9 quick-pick: the band only exists while the draft is non-empty, so digits are query
+  characters, not shortcuts. The existing 1-9 chip-clear (which fires on the empty query) is
+  untouched by construction.
+
 ### Title control is the one action policy
 
 `app-shell/title-control/title-control-actions.ts` is the single source of
