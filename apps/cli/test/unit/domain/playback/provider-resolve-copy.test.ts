@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  describeProviderHedgeDetail,
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
   describeProviderResolveProviderNote,
@@ -35,5 +36,14 @@ describe("provider resolve copy", () => {
       "Recoverable provider failures retry before fallback.",
     );
     expect(describeProviderResolveProviderNote(true)).toBe("Trying the next provider.");
+  });
+
+  test("names the parallel provider when hedging starts", () => {
+    // The detail slot must move off the previous fallback sentence once a
+    // hedged provider becomes the live attempt — otherwise the screen says
+    // "trying Y" while the provider line already says the hedged provider.
+    expect(describeProviderHedgeDetail({ toProviderName: "VidLink" })).toBe(
+      "Trying VidLink in parallel",
+    );
   });
 });

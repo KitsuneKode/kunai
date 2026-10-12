@@ -1,6 +1,7 @@
 import { classifyProviderResolveUserState } from "@/app/playback/provider-resolve-user-state";
 import type { PlaybackProblem } from "@/domain/playback/playback-problem";
 
+import { sanitizeTerminalText } from "./shell-text";
 import type { LoadingShellStage, LoadingShellState, ShellStatusTone } from "./types";
 
 export type LoadingShellTimerPolicy = {
@@ -290,7 +291,10 @@ export function normalizeLoadingIssue(issue: string | null | undefined): string 
 export function normalizeProviderDetail(detail: string | null | undefined): string | null {
   const trimmed = detail?.trim();
   if (!trimmed) return null;
-  return trimmed.replace(/^provider:\s*/i, "");
+  // Provider-supplied detail can carry ANSI colors, newlines, or control
+  // characters that shatter the loading shell's one-line slots — strip them
+  // at this boundary so every consumer stays terminal-safe.
+  return sanitizeTerminalText(trimmed.replace(/^provider:\s*/i, ""));
 }
 
 // ── Progressive disclosure for loading shell ─────────────────────────────

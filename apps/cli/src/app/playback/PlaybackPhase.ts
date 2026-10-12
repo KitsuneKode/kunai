@@ -202,6 +202,7 @@ import {
   describeProviderFallbackDetail,
   describeProviderFallbackHaltedDetail,
   describeProviderFallbackHaltedNote,
+  describeProviderHedgeDetail,
   describeProviderHedgeNote,
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
@@ -1930,6 +1931,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                         });
                       } else if (engineEvent.type === "provider-hedge-started") {
                         this.updatePlaybackFeedback(context, {
+                          // Name the parallel provider in the detail slot: the
+                          // previous fallback sentence ("X did not resolve —
+                          // trying Y") would otherwise sit stale on screen
+                          // while the hedged provider is the live attempt.
+                          detail: describeProviderHedgeDetail({
+                            toProviderName: engineProviderName(engineEvent.toProviderId),
+                          }),
                           note: describeProviderHedgeNote({
                             toProviderName: engineProviderName(engineEvent.toProviderId),
                           }),
