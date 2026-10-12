@@ -115,7 +115,7 @@ export async function resolvePaletteTitleLaunch(
   }
 
   if (entry.queueEntryId) {
-    const launch = claimQueuePlaybackLaunch(container.queueService, entry.queueEntryId, "queue");
+    const launch = claimQueuePlaybackLaunch(container.queueService, entry.queueEntryId);
     if (launch) {
       const title = titleInfoFromQueuePlaybackLaunch(launch);
       alignPaletteTitleSession(container, entry, title);

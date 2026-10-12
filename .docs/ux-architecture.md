@@ -80,6 +80,16 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 - if an action is unavailable, show why instead of silently ignoring the input
 - mode actions should be phrased by destination, like `Anime mode` or `Series mode`, instead of generic toggle wording
 
+### Session undo (`z`)
+
+- `z` is contextual the way lazygit's is: it exists only while an undo strip is live, and the strip itself is what advertises the key (`added to queue · z undo`). There is no standing `z` footer entry — the footer rule (show only currently usable actions) is kept by not claiming one.
+- the strip lives in the single transient row at shell root, so it renders identically across browse, post-play, playback, and overlays. It expires after ~8s and never steals focus.
+- undo is in-session and local-only: it restores the local SQLite state the action changed — queue rows (ids + positions), list membership, followed-title preference, history rows — to exactly the pre-mutation state. Side effects that already escaped (flushed tracker sync, queued downloads, mpv progress writes) are out of scope; the strip never claims to undo them.
+- only actions with a clean inverse are journaled. A fake undo is worse than none — ops like queue-session restore across sessions are deliberately not undoable.
+- `z` loses to every text-input owner: while a filter field, the command palette, or a picker list owns printable input, `z` types. On non-typing surfaces it pops the newest live journal entry; with nothing live it is a silent no-op.
+- if the entity changed elsewhere after the action (a row was played, re-followed, re-queued), undo does not overwrite the newer state — it pops the entry and says why (`can't undo queue add — queue changed since then`).
+- the confirmation line (`undid queue add`) is itself not undoable — undo is never journaled.
+
 ## Selection Over Freeform Input
 
 If the app already knows the valid options, the UI should present those options instead of asking the user to type raw values.

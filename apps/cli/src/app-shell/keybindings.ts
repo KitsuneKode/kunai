@@ -154,6 +154,18 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     footerPriority: 50,
     docs: { tier: "core", order: 100 },
   },
+  {
+    // Contextual: only live while a session-undo strip is showing. Each
+    // surface resolves `z` through the journal's `hasLiveUndo()` gate, so the
+    // registry documents the key but never matches it here.
+    id: "session-undo",
+    chord: { input: "z" },
+    label: "Undo the action named on the strip (while it shows)",
+    hintLabel: "undo",
+    scope: "global",
+    group: "Global",
+    helpOnly: true,
+  },
 
   // ── Editing — handled by the line editor; documented here, not matched ──
   {

@@ -506,6 +506,40 @@ export function AppRoot({ container }: { container: Container }) {
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
   const [notificationToastPriority, setNotificationToastPriority] =
     useState<NotificationPriority | null>(null);
+
+  // Session-undo strip — "added to queue · z undo" / the undo outcome. The
+  // journal notifies on record/undo; expiry is time-based, so each peek also
+  // schedules the repaint that hides the line at `expiresAt`.
+  const [undoLine, setUndoLine] = useState<{
+    readonly text: string;
+    readonly tone: ShellStatusTone;
+  } | null>(null);
+  const undoLineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const refreshUndoLine = () => {
+      const strip = container.sessionUndo?.peekStrip(Date.now()) ?? null;
+      setUndoLine(strip ? { text: strip.text, tone: strip.tone } : null);
+      if (undoLineTimerRef.current) {
+        clearTimeout(undoLineTimerRef.current);
+        undoLineTimerRef.current = null;
+      }
+      if (strip) {
+        undoLineTimerRef.current = setTimeout(
+          refreshUndoLine,
+          Math.max(0, strip.expiresAt - Date.now()),
+        );
+      }
+    };
+    refreshUndoLine();
+    const unsubscribe = container.sessionUndo?.subscribe(refreshUndoLine);
+    return () => {
+      unsubscribe?.();
+      if (undoLineTimerRef.current) {
+        clearTimeout(undoLineTimerRef.current);
+        undoLineTimerRef.current = null;
+      }
+    };
+  }, [container.sessionUndo]);
   const notificationSeenKeysRef = useRef<ReadonlySet<string>>(new Set());
   const notificationQueueRef = useRef(createNotificationQueueState());
   const notificationQueueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1263,6 +1297,7 @@ export function AppRoot({ container }: { container: Container }) {
             alert: rootStatusSummary.alert ?? null,
             notificationToast,
             notificationToastPriority,
+            undoLine,
             streakMilestoneAlert,
             presenceBootLine: visiblePresenceBootLine,
             streakAtRiskAlert,

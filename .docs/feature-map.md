@@ -116,6 +116,7 @@ Do not reuse these nouns for anything else.
 | Notifications inbox            | `packages/storage` `notifications`; `services/notifications/*`                                                                                       | [features/notifications.md](./features/notifications.md)                               |
 | Watch stats                    | `packages/storage` `watch-stats`                                                                                                                     | [features/privacy-and-storage.md](./features/privacy-and-storage.md)                   |
 | Lists and stats domain         | `apps/cli/src/domain/lists/*` — `ListService`, `StatsService`, genre stats, formatting                                                               | [features/playlists.md](./features/playlists.md)                                       |
+| Session undo (`z`)             | `apps/cli/src/domain/undo/session-undo-journal.ts` (bounded LIFO + expiry), `apps/cli/src/services/session-undo/*` (capture/revert via repos)        | [ux-architecture.md](./ux-architecture.md)                                             |
 
 ## Offline and downloads
 

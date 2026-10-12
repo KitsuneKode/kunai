@@ -120,6 +120,7 @@ import {
   getBrowseCommandPaletteMaxVisible,
   getBrowseListMaxVisible,
 } from "./layout-policy";
+import { reducedMotionEnabled } from "./motion-policy";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { takePaletteTitleLaunch } from "./palette-title-launch";
@@ -133,7 +134,6 @@ import {
 } from "./primitives/ListRow.model";
 import { PreviewRail } from "./primitives/PreviewRail";
 import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
-import { reducedMotionEnabled } from "./primitives/SakuraPetal";
 import { StateBlock } from "./primitives/StateBlock";
 import { mountRootContent } from "./root-content-state";
 import {
@@ -241,6 +241,7 @@ export function BrowseShell<T>({
   onSubmit,
   onCancel,
   onPrefetchOption,
+  onUndo,
   idleContext,
   loadIdleContext,
   onSuggest,
@@ -296,6 +297,12 @@ export function BrowseShell<T>({
    * passed signal; silent by contract.
    */
   onPrefetchOption?: (value: T, signal: AbortSignal) => void;
+  /**
+   * `z` while a session-undo entry is live. Routed here (not the keybinding
+   * registry) so overlays, command mode, and text focus each decide first —
+   * the callback itself no-ops when nothing is journaled.
+   */
+  onUndo?: () => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
   /**
@@ -1408,6 +1415,13 @@ export function BrowseShell<T>({
         return;
       }
 
+      // `z` undoes the action named on the strip — sheet keys (w/q/d above)
+      // are journaled, so undo works with the details sheet open too.
+      if (input === "z" && !key.ctrl && !key.meta && onUndo) {
+        onUndo();
+        return;
+      }
+
       if (key.escape) {
         closeOverlay();
         return;
@@ -1615,6 +1629,13 @@ export function BrowseShell<T>({
         setSuggestionIndex(boundedSuggestionIndex - 1);
         return;
       }
+    }
+
+    // `z` claims the live undo entry on non-typing browse surfaces — the
+    // suppression check above already returned while a text zone has focus.
+    if (input === "z" && !key.ctrl && !key.meta && onUndo) {
+      onUndo();
+      return;
     }
 
     if (!commandMode && !resultFilterFocused && !filterModeOpen && listFocused) {
@@ -2618,6 +2639,7 @@ export function openBrowseShell<T>({
   onPlayTrailer,
   onOpenLink,
   onPrefetchOption,
+  onUndo,
   idleContext,
   loadIdleContext,
   onSuggest,
@@ -2660,6 +2682,7 @@ export function openBrowseShell<T>({
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
   onPrefetchOption?: (value: T, signal: AbortSignal) => void;
+  onUndo?: () => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
   onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
@@ -2713,6 +2736,7 @@ export function openBrowseShell<T>({
         onPlayTrailer={onPlayTrailer}
         onOpenLink={onOpenLink}
         onPrefetchOption={onPrefetchOption}
+        onUndo={onUndo}
         idleContext={idleContext}
         loadIdleContext={loadIdleContext}
         onSuggest={onSuggest}

@@ -1756,41 +1756,86 @@ export function RootOverlayShell({
         return;
       }
       if (input === "J" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
         if (container.queueService.moveDown(row.id))
           setSelectedIndex((c) => Math.min(c + 1, queueRows.length - 1));
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input === "K" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
         if (container.queueService.moveUp(row.id)) setSelectedIndex((c) => Math.max(c - 1, 0));
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input === "g" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
         container.queueService.moveToTop(row.id);
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input === "G" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
         container.queueService.moveToBottom(row.id);
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input.toLowerCase() === "x" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
         container.queueService.remove(row.id);
+        container.sessionUndo?.recordQueueChange(
+          "removed from queue",
+          "queue remove",
+          undoBefore ?? [],
+        );
         setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
         refresh();
         return;
       }
       if (input === "C") {
+        const undoBefore = container.sessionUndo?.captureQueue();
         container.queueService.clearPlayed();
+        container.sessionUndo?.recordQueueChange(
+          "cleared played items",
+          "played clear",
+          undoBefore ?? [],
+        );
         setSelectedIndex(0);
         refresh();
         return;
       }
       if (input === "c" && !key.ctrl) {
+        const undoBefore = container.sessionUndo?.captureQueue();
         container.queueService.clear();
+        container.sessionUndo?.recordQueueChange("cleared queue", "queue clear", undoBefore ?? []);
         setSelectedIndex(0);
+        refresh();
+        return;
+      }
+      // `z` undoes the latest journal entry while one is live; with nothing to
+      // undo it falls through to the choice-overlay filter like any letter.
+      if (input === "z" && container.sessionUndo?.hasLiveUndo()) {
+        container.sessionUndo?.undoLatest();
         refresh();
         return;
       }
@@ -2035,6 +2080,12 @@ export function RootOverlayShell({
           id: overlay.id,
           value: EPISODE_PICKER_SWITCH_SEASON,
         });
+        return;
+      }
+      // `z` pops the live undo entry on every choice surface; when nothing is
+      // undoable it still reaches the filter editor as ordinary text.
+      if (input === "z" && !key.ctrl && !key.meta && container.sessionUndo?.hasLiveUndo()) {
+        container.sessionUndo?.undoLatest();
         return;
       }
       if (
@@ -2419,6 +2470,7 @@ export function RootOverlayShell({
         statusNote={overlayStatus}
         onActivate={activateGuideRow}
       />,
+      titleMatches,
     );
   }
 

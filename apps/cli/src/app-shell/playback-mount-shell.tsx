@@ -388,6 +388,7 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
       onReturnToSearch={handlers.onReturnToSearch}
       onToggleFavorite={favoriteTitle ? toggleFavorite : undefined}
       isFavorite={favoriteTitle ? isFavorite : undefined}
+      onUndo={() => input.container.sessionUndo?.undoLatest()}
     />
   );
 }
@@ -593,6 +594,12 @@ function PlaybackShell({
           setSelectedActionIndex((index) =>
             Math.min(Math.max(0, postPlayView.actions.length - 1), index + 1),
           );
+          return;
+        }
+        // `z` pops the live undo entry — queue/watchlist actions fired from
+        // post-play are journaled, so the strip's undo works here too.
+        if (input === "z" && !key.ctrl && !key.meta && container.sessionUndo?.hasLiveUndo()) {
+          container.sessionUndo.undoLatest();
           return;
         }
         const resolved = resolvePostPlayUnhandledInput(input, key, {

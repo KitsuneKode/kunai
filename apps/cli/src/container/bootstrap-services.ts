@@ -59,6 +59,7 @@ import { ReleaseReconciliationService } from "../services/release-reconciliation
 import { SEARCH_SERVICE_DEFINITIONS } from "../services/search/definitions";
 import { SearchRegistryImpl } from "../services/search/SearchRegistry";
 import { searchTitles } from "../services/search/SearchRoutingService";
+import { SessionUndoService } from "../services/session-undo/session-undo-service";
 import { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
 import { readInstallManifest } from "../services/update/install-manifest";
 import { detectInstallMethod } from "../services/update/install-method";
@@ -561,6 +562,13 @@ export function bootstrapServices(input: {
     durablePlaylistService,
     listService,
     queueService,
+    sessionUndo: new SessionUndoService({
+      queueRepository,
+      queueSessionId: sessionId,
+      listRepository,
+      followedTitleRepository,
+      historyRepository,
+    }),
     statsService,
     statsFormatter,
     syncTokenStore,

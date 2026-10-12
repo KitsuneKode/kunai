@@ -69,6 +69,13 @@ export function handleNotificationsOverlayInput(
 ): NotificationsOverlayInputResult {
   const selectedKey = ctx.view.selectedRow?.dedupKey ?? null;
 
+  // `z` pops the live undo entry — the rail's own actions (watchlist, queue)
+  // are journaled, so undo works from the inbox too. No live entry = unhandled.
+  if (input === "z" && !key.ctrl && !key.meta && ctx.container.sessionUndo?.hasLiveUndo()) {
+    ctx.container.sessionUndo.undoLatest();
+    return "handled";
+  }
+
   if (key.tab) {
     ctx.setState((state) => ({
       ...state,
