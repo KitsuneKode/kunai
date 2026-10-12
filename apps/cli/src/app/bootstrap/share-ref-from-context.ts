@@ -7,6 +7,7 @@ import {
   type ShareAnchor,
 } from "@/domain/share/playback-target-ref";
 import { buildShareRefFromTitleContext } from "@/domain/share/share-ref-from-title-context";
+import { sanitizeTerminalText } from "@/domain/text-display";
 import type { ShellMode, TitleInfo } from "@/domain/types";
 
 export { buildShareRefFromTitleContext } from "@/domain/share/share-ref-from-title-context";
@@ -58,7 +59,10 @@ export function describeKunaiHandoffLaunch(handoff: KunaiHandoffLaunch): string 
 }
 
 function describeShareAnchor(anchor: ShareAnchor, kind: PlaybackTargetRef["kind"]): string {
-  if (anchor.by === "search") return `search "${anchor.query}"`;
+  // The query comes from a kunai:// URL, so it is untrusted remote text shown
+  // in the pre-confirm handoff dialog — strip terminal escapes here so every
+  // consumer (dialog, logs) gets the safe form.
+  if (anchor.by === "search") return `search "${sanitizeTerminalText(anchor.query)}"`;
   return `${kind} ${anchor.ns}:${anchor.id}`;
 }
 

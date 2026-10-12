@@ -244,6 +244,9 @@ Short-lived playback feedback should use mpv OSD plus shell status text for non-
 ## Settings Behavior
 
 - settings apply immediately after a row interaction commits
+- A rejected settings save reports its error in the shelf and diagnostics.
+  Immediate, debounced, and final-on-close saves share one rejection boundary;
+  a final save after the shelf closes records diagnostics without updating it.
 - `Esc` cancels active text input, backs out of submenus, or closes the
   settings shelf; it does not roll back values already applied to config
 - label settings by effect timing:
