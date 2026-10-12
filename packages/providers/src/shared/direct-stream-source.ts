@@ -161,7 +161,7 @@ export async function resolveDirectStreamSource(
       context,
     });
 
-    const streams = payload
+    let streams = payload
       ? normalizeStreams(payload, providerId, sourceId, label, cachePolicy)
       : [];
     let selectedStream = streams[0];
@@ -185,7 +185,7 @@ export async function resolveDirectStreamSource(
     let streamReachabilityVerified: boolean | undefined;
     if (resolveGateProbe) {
       let gateFailure: ProviderFailure | undefined;
-
+      const refusedStreamIds = new Set<string>();
       let cancelled = false;
 
       for (const candidate of streams.slice(0, RESOLVE_GATE_MAX_PROBES)) {
@@ -224,6 +224,7 @@ export async function resolveDirectStreamSource(
           break;
         }
 
+        refusedStreamIds.add(candidate.id);
         const probe = verdict.probe;
         const reason = verdict.reason;
         // Keep the first rejection: it is the highest-ranked candidate, so it
@@ -247,9 +248,8 @@ export async function resolveDirectStreamSource(
 
       // Cancellation outranks a partial gate failure. If the caller aborted, any
       // rejection collected before the abort describes a probe the user no
-      // longer cares about, and `not-found` is not health-neutral — reporting it
-      // would penalise the provider for the user backing out. `cancelled` does
-      // not, so it is the honest outcome.
+      // longer cares about. Return cancellation rather than handing off a
+      // selection from an abandoned resolve.
       if (cancelled && !streamReachabilityVerified) {
         return createExhaustedResult(
           input,
@@ -273,6 +273,10 @@ export async function resolveDirectStreamSource(
           startedAt,
         });
       }
+      // A refusal belongs to the probed request, not every URL on its host:
+      // one quality path can be gone while a lower rung on the same CDN works.
+      // Remove refused choices before building variants and shipping inventory.
+      streams = streams.filter((stream) => !refusedStreamIds.has(stream.id));
     }
 
     emitTraceEvent(events, context, {

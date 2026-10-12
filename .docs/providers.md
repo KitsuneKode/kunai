@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-11T12:21:48Z"
 ---
 
 # Kunai — Provider Guide
@@ -180,7 +180,12 @@ the stream _plays_, not merely that a probe passed.
 probes up to `RESOLVE_GATE_MAX_PROBES` ranked candidates and takes the first that
 answers, so one dead or hotlink-protected URL no longer condemns its working
 siblings. It stops immediately when `context.signal` aborts — a cancelled resolve
-keeps its selection rather than recording a stream failure.
+returns cancellation rather than handing off a selection or recording a stream
+failure. Definitively refused stream requests are removed before constructing
+selectable variants; a refusal on one URL does not remove healthy paths on the
+same CDN. `not-found` remains in the trace for title-level recovery, but carries
+no provider availability failure delta. Transport, timeout and server failures
+continue to report provider health evidence.
 
 ### Persistent provider cache (`context.cache`)
 
