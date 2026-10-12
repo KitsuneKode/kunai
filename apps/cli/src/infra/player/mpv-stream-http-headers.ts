@@ -53,6 +53,14 @@ export type NormalizedStreamHttpHeaders = {
    * cookie still failed at the player.
    */
   readonly extraFields: readonly string[];
+  /**
+   * Header names that reached mpv's request in name only: values containing
+   * mpv's list separator or names outside the RFC 7230 token set. The
+   * resolve gate probes the full header map, so a drop here is exactly the
+   * probed-vs-shipped divergence — surfaced so a player-side 403 names its
+   * cause instead of looking like a dead stream.
+   */
+  readonly droppedFields: readonly string[];
 };
 
 /** Headers mpv sets through dedicated options rather than the header list. */
@@ -101,27 +109,39 @@ export function normalizeStreamHttpHeaders(
     const sanitized = value.trim().replace(pattern, "");
     return sanitized.length > 0 ? sanitized : undefined;
   };
-  // A whitespace-only User-Agent is load-bearing: vidrock's ngcorp stream
-  // hosts drop any real UA and only accept an effectively-empty one, spelled
-  // " " because ffmpeg cannot express an absent header. The shared sanitizer
-  // would trim it to nothing and silently delete the header, so the UA strips
-  // only CR/LF and preserves an all-whitespace value.
+  // The whitespace-only User-Agent below is a retired contract, kept as the
+  // sanitizer's regression case: until 2026-10-13 vidrock's CDN hosts dropped
+  // any real UA and only accepted an effectively-empty one, spelled " "
+  // because ffmpeg cannot express an absent header. The hosts flipped to
+  // requiring a current-Chrome UA plus Referer/Origin, and providers now ship
+  // real UAs — but the sanitizer must still preserve an all-whitespace value
+  // (trimming it to nothing would silently delete the header) while stripping
+  // CR/LF.
   const sanitizeUserAgent = (value: string | undefined): string | undefined => {
     if (value === undefined) return undefined;
     const sanitized = value.replace(/[\r\n]/g, "");
     return sanitized.length > 0 ? sanitized : undefined;
   };
   const extraFields: string[] = [];
+  const droppedFields: string[] = [];
   for (const [rawName, value] of Object.entries(source)) {
     const name = rawName.trim();
     if (DEDICATED_HEADER_NAMES.has(name.toLowerCase())) continue;
-    if (!HEADER_NAME_PATTERN.test(name)) continue;
+    if (!HEADER_NAME_PATTERN.test(name)) {
+      droppedFields.push(name);
+      continue;
+    }
     const cleaned = sanitize(value, /[\r\n]/g);
     if (!cleaned) continue;
     // mpv separates this list on commas and offers no escape, so a value
     // containing one cannot be represented. Dropping the header is honest;
-    // stripping the comma would corrupt a signature or cookie silently.
-    if (cleaned.includes(",")) continue;
+    // stripping the comma would corrupt a signature or cookie silently. The
+    // name is reported via droppedFields so the player-side request stays
+    // auditable against what the resolve gate probed.
+    if (cleaned.includes(",")) {
+      droppedFields.push(name);
+      continue;
+    }
     extraFields.push(`${name}: ${cleaned}`);
   }
 
@@ -130,6 +150,7 @@ export function normalizeStreamHttpHeaders(
     userAgent: sanitizeUserAgent(userAgent),
     origin: sanitize(origin, /[\r\n,]/g),
     extraFields,
+    droppedFields,
   };
 }
 

@@ -111,6 +111,11 @@ describe("panel-data", () => {
   });
 
   test("buildDiagnosticsPanelLines surfaces YouTube probe rows", () => {
+    // Freshness is date-relative: pin the fixture version to 30 days ago so
+    // the tooling tone stays success no matter when this runs (the stale path
+    // is pinned separately in version-freshness.test.ts).
+    const recent = new Date(Date.now() - 30 * 86_400_000);
+    const freshVersion = `${recent.getUTCFullYear()}.${String(recent.getUTCMonth() + 1).padStart(2, "0")}.${String(recent.getUTCDate()).padStart(2, "0")}`;
     const state = createInitialState("youtube", "youtube", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "en" },
@@ -120,7 +125,7 @@ describe("panel-data", () => {
       state,
       recentEvents: [],
       youtubeProbe: {
-        ytDlp: { available: true, version: "2024.10.07" },
+        ytDlp: { available: true, version: freshVersion },
         invidious: {
           ok: true,
           instance: "https://yewtu.be",
