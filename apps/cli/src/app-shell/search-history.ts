@@ -27,34 +27,63 @@ function historyFile(): string {
 const MAX_HISTORY = 50;
 
 let _cache: string[] | null = null;
+let pendingWrite: Promise<void> = Promise.resolve();
 
 function load(): string[] {
   if (_cache !== null) return _cache;
-  try {
-    const raw = readFileSync(historyFile(), "utf-8");
-    const parsed = JSON.parse(raw);
-    _cache = Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    _cache = [];
-  }
+  _cache = readHistoryFile();
   return _cache;
 }
 
+function readHistoryFile(): string[] {
+  try {
+    const raw = readFileSync(historyFile(), "utf-8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function persist(history: string[]): void {
-  writeAtomicJson(historyFile(), history).catch(() => {
-    // best-effort; don't break the session if the write fails
-  });
+  // Serialize writes: rapid successive adds must land in call order, not
+  // finish order — otherwise the last write to finish (not the last query)
+  // wins the file.
+  pendingWrite = pendingWrite
+    .then(() => writeAtomicJson(historyFile(), history))
+    .catch(() => {
+      // best-effort; don't break the session if the write fails
+    });
+}
+
+/** Test seam — the cache is module state and must not leak between cases. */
+export function clearSearchHistoryCacheForTest(): void {
+  _cache = null;
+}
+
+/** Test seam — await the fire-and-forget persist instead of sleeping. */
+export function flushSearchHistoryForTest(): Promise<void> {
+  return pendingWrite;
 }
 
 export function getSearchHistory(): readonly string[] {
-  return load();
+  return [...load()];
 }
 
 export function addSearchQuery(query: string): void {
   const trimmed = query.trim();
   if (!trimmed) return;
-  const current = load();
-  const deduped = [trimmed, ...current.filter((q) => q !== trimmed)].slice(0, MAX_HISTORY);
-  _cache = deduped;
-  persist(deduped);
+  // Merge the in-memory cache over a fresh disk read. The cache carries this
+  // session's writes that may not have flushed yet (persist is fire-and-forget);
+  // the disk read carries other sessions' appends. Either source alone loses
+  // writes — together, last-write-wins only reorders.
+  const seen = new Set([trimmed]);
+  const merged = [trimmed];
+  for (const q of [...load(), ...readHistoryFile()]) {
+    if (seen.has(q)) continue;
+    seen.add(q);
+    merged.push(q);
+  }
+  _cache = merged.slice(0, MAX_HISTORY);
+  persist(_cache);
 }

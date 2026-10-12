@@ -19,6 +19,7 @@ import { openBrowseShell } from "@/app-shell/ink-shell";
 import { pickPaletteTitle } from "@/app-shell/palette-title-launch";
 import { chooseFromListShell } from "@/app-shell/pickers";
 import { getRootContentSession, waitForRootContentSlot } from "@/app-shell/root-content-state";
+import { addSearchQuery } from "@/app-shell/search-history";
 import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
 import {
   applyHistorySelectionProvider,
@@ -464,6 +465,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           initialSearchError = undefined;
           const results = search.results;
           this.warmAnimeEpisodesForResults(context, results);
+          // Bootstrap searches (-S, initial query, auto-search) never pass the
+          // browse submit that records history — record here. Dedupe in
+          // addSearchQuery makes a later interactive repeat idempotent.
+          addSearchQuery(searchIntent.intent.query);
           pendingSearchEvidence = search.evidence;
           pendingSearchWarnings = searchIntent.warnings;
           pendingSearchEmptyMessage =
@@ -904,6 +909,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             initialSearchError = undefined;
             const results = search.results;
             this.warmAnimeEpisodesForResults(context, results);
+            // Follow-up programmatic searches resolve here rather than in the
+            // browse submit — record so history reflects every completed query.
+            addSearchQuery(query);
 
             logger.info("Search complete", {
               query,
