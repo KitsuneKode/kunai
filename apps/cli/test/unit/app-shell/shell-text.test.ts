@@ -62,6 +62,29 @@ describe("truncateAtWord", () => {
 });
 
 describe("terminal column text helpers", () => {
+  test.each([
+    ["👩🏽‍💻", 2],
+    ["🇯🇵", 2],
+    ["1️⃣", 2],
+    ["e\u0301", 1],
+    ["映画", 4],
+  ] as const)("measures the complete grapheme %s as %i terminal cells", (value, width) => {
+    expect(measureColumns(value)).toBe(width);
+  });
+
+  test("padding aligns joined emoji with ordinary titles", () => {
+    expect(padColumnsEnd("👩🏽‍💻", 6)).toBe("👩🏽‍💻    ");
+    expect(padColumnsStart("🇯🇵", 6)).toBe("    🇯🇵");
+  });
+
+  test("truncation keeps the complete emoji or omits it", () => {
+    expect(truncateLine("👩🏽‍💻 report", 3)).toBe("👩🏽‍💻…");
+    expect(truncateLine("🇯🇵 report", 2)).toBe("…");
+    expect(truncateLine("1️⃣ report", 2)).toBe("…");
+    expect(truncateAtWord("👩🏽‍💻Workflows", 3)).toBe("👩🏽‍💻…");
+    expect(truncateLine("e\u0301clair", 2)).toBe("e\u0301…");
+  });
+
   test("truncates CJK titles by display columns instead of UTF-16 length", () => {
     const truncated = truncateLine("葬送のフリーレン season finale", 12);
 

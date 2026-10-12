@@ -23,12 +23,8 @@
       "resolveStatus": "resolved",
       "resolveMs": 693,
       "streams": 1,
-      "qualities": [
-        "720p"
-      ],
-      "servers": [
-        "VidLink"
-      ],
+      "qualities": ["720p"],
+      "servers": ["VidLink"],
       "audioLanguages": [],
       "subtitleLanes": 15,
       "effectiveStatus": "healthy",
@@ -41,16 +37,9 @@
       "resolveStatus": "resolved",
       "resolveMs": 1797,
       "streams": 2,
-      "qualities": [
-        "tcloud",
-        "dcloud"
-      ],
-      "servers": [
-        "PrimeVids · EN"
-      ],
-      "audioLanguages": [
-        "en"
-      ],
+      "qualities": ["tcloud", "dcloud"],
+      "servers": ["PrimeVids · EN"],
+      "audioLanguages": ["en"],
       "subtitleLanes": 0,
       "effectiveStatus": "healthy",
       "note": "Apogee: HTTP 403"
@@ -76,15 +65,8 @@
       "resolveStatus": "resolved",
       "resolveMs": 6207,
       "streams": 4,
-      "qualities": [
-        "2160p",
-        "1080p",
-        "720p",
-        "480p"
-      ],
-      "servers": [
-        "Movy miami"
-      ],
+      "qualities": ["2160p", "1080p", "720p", "480p"],
+      "servers": ["Movy miami"],
       "audioLanguages": [],
       "subtitleLanes": 0,
       "effectiveStatus": "healthy",
@@ -97,17 +79,9 @@
       "resolveStatus": "resolved",
       "resolveMs": 1620,
       "streams": 3,
-      "qualities": [
-        "1080p",
-        "720p",
-        "480p"
-      ],
-      "servers": [
-        "Default"
-      ],
-      "audioLanguages": [
-        "ja"
-      ],
+      "qualities": ["1080p", "720p", "480p"],
+      "servers": ["Default"],
+      "audioLanguages": ["ja"],
       "subtitleLanes": 3,
       "effectiveStatus": "healthy",
       "note": ""
@@ -133,15 +107,9 @@
       "resolveStatus": "resolved",
       "resolveMs": 1573,
       "streams": 1,
-      "qualities": [
-        "1080p"
-      ],
-      "servers": [
-        "ZokoAnime"
-      ],
-      "audioLanguages": [
-        "ja"
-      ],
+      "qualities": ["1080p"],
+      "servers": ["ZokoAnime"],
+      "audioLanguages": ["ja"],
       "subtitleLanes": 1,
       "effectiveStatus": "healthy",
       "note": ""
@@ -167,18 +135,9 @@
       "resolveStatus": "resolved",
       "resolveMs": 1796,
       "streams": 4,
-      "qualities": [
-        "360p",
-        "480p",
-        "720p",
-        "1080p"
-      ],
-      "servers": [
-        "Animegg"
-      ],
-      "audioLanguages": [
-        "ja"
-      ],
+      "qualities": ["360p", "480p", "720p", "1080p"],
+      "servers": ["Animegg"],
+      "audioLanguages": ["ja"],
       "subtitleLanes": 0,
       "effectiveStatus": "healthy",
       "note": ""
