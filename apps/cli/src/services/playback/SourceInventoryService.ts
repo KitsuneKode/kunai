@@ -112,6 +112,11 @@ export class SourceInventoryService {
     const key = buildSourceInventoryCacheKey(input);
     try {
       this.repository.delete(key);
+      // `get` reads a legacy `vidking` alias row for videasy; leaving it on
+      // delete resurrects a stale inventory the invalidation meant to clear.
+      if (input.providerId === "videasy") {
+        this.repository.delete(buildSourceInventoryCacheKey({ ...input, providerId: "vidking" }));
+      }
       this.recordCacheDecision("source-inventory.cache.invalidated", input, {
         keyHash: cacheKeyHash(key),
         reason: "manual-delete",

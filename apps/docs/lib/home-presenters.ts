@@ -59,14 +59,13 @@ export function commandsForPalette(
 
 export type ProviderSummary = {
   readonly count: number;
-  readonly recommended: readonly string[];
+  /** Display names of every registered provider — not just recommended ones. */
+  readonly names: readonly string[];
 };
 
 export function summarizeProviders(providers: readonly HomeProviderMetadata[]): ProviderSummary {
   return {
     count: providers.length,
-    recommended: providers
-      .filter((provider) => provider.recommended)
-      .map((provider) => provider.displayName),
+    names: providers.map((provider) => provider.displayName),
   };
 }

@@ -28,7 +28,9 @@ touches; do not read `.docs/` end to end. Vocabulary lives in
 2. **Believing a green gate.** A passing root `bun run typecheck` / `test` can be
    a turbo cache replay — re-run with `--force` or per-package before claiming
    green. Pwsh-gated installer tests land in the "N skip" line, not the failure
-   count, and `verify:doc-coverage` does not run locally at all.
+   count. `verify:doc-coverage` runs locally and in CI, but its CI job only
+   fires on pushes or diffs that touch code areas it covers — a green PR does
+   not prove it ran.
 3. **Enabling analytics by accident.** Only an explicit keystroke may turn it on.
    A skip, an accept-all-defaults, or any non-interactive path that creates an
    `installId` or permits a send is a contract breach, not a bug.

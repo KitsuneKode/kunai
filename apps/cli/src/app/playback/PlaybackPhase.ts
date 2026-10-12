@@ -258,6 +258,7 @@ import {
   type PlaybackStartupStage,
   summarizeStartupPhases,
 } from "@/services/playback/playback-startup-timeline";
+import { endpointCandidatesForPinnedSource } from "@/services/playback/PlaybackResolveService";
 import {
   isProviderFallbackEligible,
   resolveEffectiveProviderHealth,
@@ -662,6 +663,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       titleId: title.id,
       episodePlaybackSelection: container.episodePlaybackSelection,
       titlePlaybackSource: container.titlePlaybackSource,
+      isSourceQuarantined: (providerId, sourceId) =>
+        endpointCandidatesForPinnedSource(providerId, sourceId).some((endpoint) =>
+          // SAFETY: this coordinator receives IDs from the production registry.
+          container.endpointHealth.isQuarantined(providerId as ProviderId, endpoint),
+        ),
     });
     const getPreferredStreamSelection = (
       providerId: string,
@@ -1817,6 +1823,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   cacheStore,
                   sourceInventory: container.sourceInventory,
                   providerId: sourceProviderId,
+                  providerManifest: container.providerRegistry.getManifest(sourceProviderId),
                   title,
                   episode: currentEpisode,
                   mode: stateManager.getState().mode,
@@ -2921,6 +2928,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               cacheStore,
               sourceInventory: container.sourceInventory,
               providerId: invalidateProviderId,
+              providerManifest: container.providerRegistry.getManifest(invalidateProviderId),
               title,
               episode: currentEpisode,
               mode: stateManager.getState().mode,
@@ -3510,7 +3518,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               container,
             );
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-            if (picked && selection) {
+            if (picked && (selection || picked.section === "subtitle")) {
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
@@ -3525,7 +3533,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               if (trackStart) {
                 run.pendingStart = trackStart;
-                recordTrackOverrideSelected(picked, selection);
+                if (selection) recordTrackOverrideSelected(picked, selection);
                 continue;
               }
             }
@@ -3546,7 +3554,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
             const picked = await openTracksPanel(preparedStream, {}, container);
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-            if (picked && selection) {
+            if (picked && (selection || picked.section === "subtitle")) {
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
@@ -3561,7 +3569,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               if (trackStart) {
                 run.pendingStart = trackStart;
-                recordTrackOverrideSelected(picked, selection);
+                if (selection) recordTrackOverrideSelected(picked, selection);
                 continue;
               }
             }
@@ -3586,7 +3594,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               container,
             );
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-            if (picked && selection) {
+            if (picked && (selection || picked.section === "subtitle")) {
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
@@ -3601,7 +3609,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               if (trackStart) {
                 run.pendingStart = trackStart;
-                recordTrackOverrideSelected(picked, selection);
+                if (selection) recordTrackOverrideSelected(picked, selection);
                 continue;
               }
             }
@@ -3890,7 +3898,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     name: topRecAdvance.title,
                     type: topRec?.type === "movie" ? "movie" : "series",
                     posterUrl: topRec?.posterPath ?? undefined,
-                    ...(topRec?.externalIds ? { externalIds: topRec.externalIds } : {}),
+                    externalIds: topRec?.externalIds,
                   },
                   mode: stateManager.getState().mode,
                 },
