@@ -19,15 +19,64 @@ export type RootOwnedOverlay = Extract<
   }
 >;
 
-export type NotificationPlaybackIntent = {
-  readonly title: TitleInfo;
-  readonly episode?: EpisodeInfo;
-};
+/**
+ * What Enter on an inbox row produced.
+ *
+ * `playback` carries the playable target the row advertised; `details` carries
+ * the identity for the details/search fallback. The overlay resolves this
+ * through `resolveNotificationSelection` so EVERY open path — the awaited
+ * `openNotificationsOverlay()` call and a direct `OPEN_OVERLAY` dispatch —
+ * produces exactly one consumed outcome. The staged module-global it replaces
+ * was read by only the awaited route, so the other route silently dropped the
+ * intent and a stale one could later fire against an unrelated session.
+ */
+export type NotificationOverlayOutcome =
+  | {
+      readonly kind: "playback";
+      readonly title: TitleInfo;
+      readonly episode?: EpisodeInfo;
+    }
+  | {
+      readonly kind: "details";
+      readonly item: MediaItemIdentity;
+    };
 
-let pendingPlaybackIntent: NotificationPlaybackIntent | null = null;
+type NotificationResolver = (value: NotificationOverlayOutcome | null) => void;
+
+let pendingNotificationResolver: NotificationResolver | null = null;
+
+/**
+ * Register the inbox outcome awaiter. Call BEFORE dispatching OPEN_OVERLAY —
+ * mirroring `waitForRootQueueSelection` — so a selection cannot arrive before
+ * anyone is listening. A leaked earlier awaiter is released with null instead
+ * of holding two opens hostage to one resolution.
+ */
+export function waitForNotificationSelection(): Promise<NotificationOverlayOutcome | null> {
+  pendingNotificationResolver?.(null);
+  return new Promise<NotificationOverlayOutcome | null>((resolve) => {
+    pendingNotificationResolver = resolve;
+  });
+}
+
+export function resolveNotificationSelection(value: NotificationOverlayOutcome | null): void {
+  const resolve = pendingNotificationResolver;
+  pendingNotificationResolver = null;
+  resolve?.(value);
+}
+
+/**
+ * True while an awaited inbox open is listening. Row executors use this to pick
+ * their delivery: pending → resolve the bridge and let the opener consume the
+ * outcome; none → the row delivers the outcome itself (root-content handoff or
+ * the player-control title switch), because nobody will ever read a bridge
+ * resolution on that path.
+ */
+export function hasPendingNotificationSelection(): boolean {
+  return pendingNotificationResolver !== null;
+}
+
 let pendingDetailsItem: MediaItemIdentity | null = null;
 const detailsListeners = new Set<() => void>();
-const playbackListeners = new Set<() => void>();
 
 export function subscribeNotificationDetails(listener: () => void): () => void {
   detailsListeners.add(listener);
@@ -38,52 +87,6 @@ export function subscribeNotificationDetails(listener: () => void): () => void {
 
 export function getNotificationDetailsPending(): boolean {
   return pendingDetailsItem !== null;
-}
-
-/**
- * Notify on stage, exactly as the details intent does.
- *
- * Without this, consuming the intent depended on *how* the overlay was opened:
- * `openNotificationsOverlay` reads it on close, but the overlay is also opened
- * by a direct `OPEN_OVERLAY` dispatch (root-overlay-shell), and on that path
- * "play now" staged an intent that nobody ever read — so playback silently did
- * nothing, and the stale intent then fired against the *next* session.
- */
-export function subscribeNotificationPlayback(listener: () => void): () => void {
-  playbackListeners.add(listener);
-  return () => {
-    playbackListeners.delete(listener);
-  };
-}
-
-export function getNotificationPlaybackPending(): boolean {
-  return pendingPlaybackIntent !== null;
-}
-
-export function stageNotificationPlaybackIntent(intent: NotificationPlaybackIntent): void {
-  pendingPlaybackIntent = intent;
-  for (const listener of playbackListeners) {
-    listener();
-  }
-}
-
-/**
- * Drop an intent that was staged but never consumed.
- *
- * Must be called when the inbox *opens*, never when it closes: the palette
- * route deliberately reads the intent after the overlay has closed, so clearing
- * on close would break the one path that works. Clearing on open bounds the
- * lifetime of a dropped hand-off to a single session, so a stale intent can no
- * longer fire against a later, unrelated one.
- */
-export function clearNotificationPlaybackIntent(): void {
-  pendingPlaybackIntent = null;
-}
-
-export function takeNotificationPlaybackIntent(): NotificationPlaybackIntent | null {
-  const intent = pendingPlaybackIntent;
-  pendingPlaybackIntent = null;
-  return intent;
 }
 
 export function stageNotificationDetailsItem(item: MediaItemIdentity): void {
@@ -165,13 +168,15 @@ export async function openDiagnosticsOverlay(
 }
 
 export async function openNotificationsOverlay(container: Container): Promise<{
-  readonly playback: NotificationPlaybackIntent | null;
+  readonly outcome: NotificationOverlayOutcome | null;
 }> {
   // Unread state is cleared explicitly inside the surface (r / A), not on open —
   // so the unread dots stay visible and the manual keys do something. The bell
   // hides once countUnread hits zero.
+  const selection = waitForNotificationSelection();
   await openRootOwnedOverlay(container, { type: "notifications" });
-  return {
-    playback: takeNotificationPlaybackIntent(),
-  };
+  // Any close path that never produced an outcome (Esc, an overlay replacing
+  // this one, teardown) still releases the awaiter.
+  resolveNotificationSelection(null);
+  return { outcome: await selection };
 }

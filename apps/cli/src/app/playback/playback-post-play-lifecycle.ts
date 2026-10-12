@@ -7,6 +7,7 @@ type PlaybackPostPlayContainer = {
     consumeLastAction(): unknown;
     consumePendingStreamSelection(): unknown;
     consumePendingEpisodeSelection(): unknown;
+    consumePendingTitleSelection(): unknown;
   };
   readonly stateManager: {
     dispatch(action: { readonly type: "SET_PLAYBACK_STATUS"; readonly status: "idle" }): void;
@@ -33,5 +34,10 @@ export async function teardownPlaybackForPostPlayExit(
   playbackIterationAbort: AbortController,
 ): Promise<void> {
   preparePostPlaybackSurface(container, episodePrefetch, playbackIterationAbort);
+  // The title-switch payload is deliberately not drained by
+  // preparePostPlaybackSurface: one armed during the file-stop window has to
+  // survive until the post-play menu entry can honour it. Drain whatever is
+  // left on the way out instead so it cannot replay against a later session.
+  container.playerControl.consumePendingTitleSelection();
   await container.player.releasePersistentSession();
 }

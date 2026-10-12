@@ -1,5 +1,5 @@
 import type { PlaybackStatsSnapshot } from "@/domain/playback/playback-stats-snapshot";
-import type { EpisodeInfo, PlaybackTimingMetadata, SubtitleTrack } from "@/domain/types";
+import type { EpisodeInfo, PlaybackTimingMetadata, SubtitleTrack, TitleInfo } from "@/domain/types";
 
 import type { SubtitleAttachmentResult } from "./persistent-subtitle-manager";
 import type { LateSubtitleAttachment } from "./PlayerService";
@@ -14,6 +14,7 @@ export type PlaybackControlAction =
   | "pick-source"
   | "pick-quality"
   | "pick-episode"
+  | "switch-title"
   | "reload-subtitles"
   | "select-subtitle"
   | "next"
@@ -46,6 +47,17 @@ export type PlaybackStreamSelection = {
 };
 
 export type EpisodePlaybackSourceKind = "local" | "online";
+
+/**
+ * Target of a `switch-title` intent: leave the current title's session and play
+ * this one instead. Carried alongside the action the way `pick-episode` carries
+ * its `EpisodeInfo` — armed before the stop lands, consumed by the phase loop
+ * after it does.
+ */
+export type PlaybackTitleSelection = {
+  readonly title: TitleInfo;
+  readonly episode?: EpisodeInfo;
+};
 
 export type PlaybackSubtitleSelection = {
   readonly subtitleUrl: string | null;
@@ -96,6 +108,7 @@ export interface PlayerControlService {
   consumePendingStreamSelection(): PlaybackStreamSelection | null;
   consumePendingEpisodeSelection(): EpisodeInfo | null;
   consumePendingEpisodeSourceOverride(): EpisodePlaybackSourceKind | null;
+  consumePendingTitleSelection(): PlaybackTitleSelection | null;
   selectCurrentPlaybackStream(
     action: PlaybackPickerAction,
     selection: PlaybackStreamSelection,
@@ -120,6 +133,19 @@ export interface PlayerControlService {
   nextCurrentPlayback(reason?: string): Promise<boolean>;
   previousCurrentPlayback(reason?: string): Promise<boolean>;
   returnToSearchFromPlayback(reason?: string): Promise<boolean>;
+  /**
+   * Replace the playing title with a different one (e.g. a notification row's
+   * "Play now"). Stop-backed like `next`/`previous`: arms the intent, stops the
+   * current file, and lets the phase loop consume the payload and exit with a
+   * `history_entry` outcome for the new title.
+   */
+  switchToTitlePlayback(selection: PlaybackTitleSelection, reason?: string): Promise<boolean>;
+  /**
+   * Arm `switch-title` without stopping anything — for the caller that already
+   * aborted the in-flight resolve via workControl. The aborted-resolve tail in
+   * PlaybackPhase consumes the payload and exits to the new title.
+   */
+  signalTitleSwitch(selection: PlaybackTitleSelection): void;
   updateCurrentPlaybackTiming(timing: PlaybackTimingMetadata | null, reason?: string): void;
   updateCurrentPlaybackAutoSkipEnabled(enabled: boolean, reason?: string): void;
   getStatsSnapshot(): PlaybackStatsSnapshot | null;

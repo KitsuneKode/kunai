@@ -135,6 +135,7 @@ export function resolvePlaybackResultDecision({
     controlAction === "next" ||
     controlAction === "previous" ||
     controlAction === "pick-episode" ||
+    controlAction === "switch-title" ||
     controlAction === "back-to-search" ||
     controlAction === "refresh" ||
     controlAction === "recover" ||

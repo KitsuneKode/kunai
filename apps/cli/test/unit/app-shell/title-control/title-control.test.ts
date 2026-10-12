@@ -258,6 +258,35 @@ describe("smart auto-launch", () => {
     });
     expect(shouldAutoLaunchPlayback(ctx)).toBe(false);
   });
+
+  test("a notification launch auto-plays its announced episode on first watch", () => {
+    // The inbox's play-now names an exact episode — that identity is the
+    // selection. With no history row and no CLI flags, a plain preselected
+    // launch would defer to the "Where to start?" menu; the launchSource is
+    // what keeps the notice's promise.
+    const ctx = playbackCtx({
+      launchSource: "notification",
+      history: null,
+      preselectedEpisode: { season: 2, episode: 7 },
+      seasonCount: 4,
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(true);
+    const entry = resolvePlaybackEpisodeEntry(ctx);
+    expect(entry).toEqual({
+      kind: "auto",
+      selection: { season: 2, episode: 7 },
+    });
+  });
+
+  test("a notification launch without episode identity still defers to the menu", () => {
+    const ctx = playbackCtx({
+      launchSource: "notification",
+      history: null,
+      preselectedEpisode: undefined,
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(false);
+    expect(resolvePlaybackEpisodeEntry(ctx).kind).toBe("menu");
+  });
 });
 
 describe("smart auto-launch — plain Enter (no preselected episode)", () => {

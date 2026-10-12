@@ -204,9 +204,15 @@ export function bootstrapServices(input: {
             type: "download-complete",
             titleId: asset.titleId,
             mediaKind: asset.mediaKind,
+            contentType: job.contentType,
             title: asset.titleName,
-            season: asset.season,
-            episode: asset.episode,
+            // Anime jobs store the absolute number in `episode` (see
+            // offline-sync-policy); the launch intent needs it back as
+            // absoluteEpisode or the anime lane resolves the wrong episode.
+            season: job.mediaKind === "anime" ? undefined : asset.season,
+            episode: job.mediaKind === "anime" ? undefined : asset.episode,
+            absoluteEpisode: job.mediaKind === "anime" ? asset.episode : undefined,
+            externalIds: job.externalIds,
           },
         ],
         asset.updatedAt,
@@ -218,9 +224,12 @@ export function bootstrapServices(input: {
           type: "download-failed",
           titleId: job.titleId,
           mediaKind: job.mediaKind,
+          contentType: job.contentType,
           title: job.titleName,
-          season: job.season,
-          episode: job.episode,
+          season: job.mediaKind === "anime" ? undefined : job.season,
+          episode: job.mediaKind === "anime" ? undefined : job.episode,
+          absoluteEpisode: job.mediaKind === "anime" ? job.episode : undefined,
+          externalIds: job.externalIds,
           error,
         },
       ]);

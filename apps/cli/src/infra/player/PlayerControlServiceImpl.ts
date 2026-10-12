@@ -13,6 +13,7 @@ import type {
   PlaybackPickerAction,
   PlaybackSubtitleSelection,
   PlaybackStreamSelection,
+  PlaybackTitleSelection,
   PlayerControlService,
 } from "./PlayerControlService";
 import type { LateSubtitleAttachment } from "./PlayerService";
@@ -25,6 +26,7 @@ type PlaybackIntentPayload = {
   readonly streamSelection?: PlaybackStreamSelection;
   readonly episodeSelection?: EpisodeInfo;
   readonly episodeSourceOverride?: EpisodePlaybackSourceKind;
+  readonly titleSelection?: PlaybackTitleSelection;
 };
 
 type StopBackedIntentOptions = PlaybackIntentPayload & {
@@ -57,6 +59,8 @@ function episodeTransitionLoadingLabel(action: PlaybackControlAction): string | 
       return "Kunai · Cycling server / source…";
     case "cycle-audio":
       return "Kunai · Toggling Sub / Dub…";
+    case "switch-title":
+      return "Kunai · Switching title…";
     default:
       return null;
   }
@@ -68,6 +72,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   private pendingStreamSelection: PlaybackStreamSelection | null = null;
   private pendingEpisodeSelection: EpisodeInfo | null = null;
   private pendingEpisodeSourceOverride: EpisodePlaybackSourceKind | null = null;
+  private pendingTitleSelection: PlaybackTitleSelection | null = null;
   private commandQueue: Promise<unknown> = Promise.resolve();
   private waitsForActive: ActiveWait[] = [];
   private pickerRequestListeners = new Set<(action: PlaybackPickerAction) => void>();
@@ -171,6 +176,12 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     const override = this.pendingEpisodeSourceOverride;
     this.pendingEpisodeSourceOverride = null;
     return override;
+  }
+
+  consumePendingTitleSelection(): PlaybackTitleSelection | null {
+    const selection = this.pendingTitleSelection;
+    this.pendingTitleSelection = null;
+    return selection;
   }
 
   async selectCurrentPlaybackStream(
@@ -474,6 +485,25 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     return await this.deliverStopBackedIntent("back-to-search", reason);
   }
 
+  async switchToTitlePlayback(
+    selection: PlaybackTitleSelection,
+    reason = "user-requested",
+  ): Promise<boolean> {
+    return await this.deliverStopBackedIntent("switch-title", reason, {
+      stopCurrentFile: true,
+      titleSelection: selection,
+    });
+  }
+
+  signalTitleSwitch(selection: PlaybackTitleSelection): void {
+    this.beginPlaybackIntent("switch-title", { titleSelection: selection });
+    this.deps.diagnostics.record({
+      category: "playback",
+      message: "Title switch armed for aborted resolve",
+      context: { titleId: selection.title.id },
+    });
+  }
+
   updateCurrentPlaybackTiming(
     timing: PlaybackTimingMetadata | null,
     reason = "background-fetch",
@@ -512,6 +542,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     this.pendingStreamSelection = payload.streamSelection ?? null;
     this.pendingEpisodeSelection = payload.episodeSelection ?? null;
     this.pendingEpisodeSourceOverride = payload.episodeSourceOverride ?? null;
+    this.pendingTitleSelection = payload.titleSelection ?? null;
     return this.playbackIntentGeneration;
   }
 
@@ -521,6 +552,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     this.pendingStreamSelection = null;
     this.pendingEpisodeSelection = null;
     this.pendingEpisodeSourceOverride = null;
+    this.pendingTitleSelection = null;
   }
 
   private async deliverStopBackedIntent(

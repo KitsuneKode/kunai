@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test";
 
+import { cancelRootOverlay } from "@/app-shell/cancel-root-overlay";
 import {
-  clearNotificationPlaybackIntent,
   getNotificationDetailsPending,
-  getNotificationPlaybackPending,
+  hasPendingNotificationSelection,
   openNotificationsOverlay,
+  resolveNotificationSelection,
   stageNotificationDetailsItem,
-  stageNotificationPlaybackIntent,
   subscribeNotificationDetails,
-  subscribeNotificationPlayback,
   takeNotificationDetailsItem,
-  takeNotificationPlaybackIntent,
+  waitForNotificationSelection,
+  type NotificationOverlayOutcome,
 } from "@/app-shell/root-overlay-bridge";
 import type { Container } from "@/container";
 
@@ -43,56 +43,64 @@ function createOverlayContainer(): Container {
   return { stateManager } as unknown as Container;
 }
 
-describe("root-overlay-bridge notification intents", () => {
-  test("playback intent round-trips once", () => {
-    stageNotificationPlaybackIntent({
-      title: { id: "tmdb:1", type: "series", name: "Example" },
-      episode: { season: 1, episode: 2 },
-    });
-    expect(takeNotificationPlaybackIntent()?.title.name).toBe("Example");
-    expect(takeNotificationPlaybackIntent()).toBeNull();
+const playbackOutcome: NotificationOverlayOutcome = {
+  kind: "playback",
+  title: { id: "tmdb:1", type: "series", name: "Playback Target" },
+  episode: { season: 1, episode: 1 },
+};
+
+describe("root-overlay-bridge notification selection", () => {
+  test("playback outcome round-trips through the bridge", async () => {
+    expect(hasPendingNotificationSelection()).toBe(false);
+    const selection = waitForNotificationSelection();
+    expect(hasPendingNotificationSelection()).toBe(true);
+
+    resolveNotificationSelection(playbackOutcome);
+
+    expect(hasPendingNotificationSelection()).toBe(false);
+    await expect(selection).resolves.toEqual(playbackOutcome);
   });
 
-  test("playback intent notifies subscribers, matching the details intent", () => {
-    // The two intents behaved differently: details notified, playback did not,
-    // so consuming the playback intent depended on how the inbox was opened.
-    let pending = false;
-    const unsubscribe = subscribeNotificationPlayback(() => {
-      pending = getNotificationPlaybackPending();
-    });
-
-    stageNotificationPlaybackIntent({
-      title: { id: "tmdb:2", type: "series", name: "Notified" },
-    });
-    expect(pending).toBe(true);
-
-    unsubscribe();
-    expect(takeNotificationPlaybackIntent()?.title.name).toBe("Notified");
+  test("details outcome round-trips through the bridge", async () => {
+    const outcome: NotificationOverlayOutcome = {
+      kind: "details",
+      item: {
+        mediaKind: "series",
+        titleId: "tmdb:9",
+        title: "Details Target",
+      },
+    };
+    const selection = waitForNotificationSelection();
+    resolveNotificationSelection(outcome);
+    await expect(selection).resolves.toEqual(outcome);
   });
 
-  test("a stranded intent is dropped on clear, not replayed later", () => {
-    // Reproduces the wrong-title bug: an inbox opened by direct dispatch strands
-    // an intent nobody reads, which then fired against the next session.
-    stageNotificationPlaybackIntent({
-      title: { id: "tmdb:stranded", type: "series", name: "Stranded" },
-    });
-    expect(getNotificationPlaybackPending()).toBe(true);
-
-    clearNotificationPlaybackIntent();
-
-    expect(getNotificationPlaybackPending()).toBe(false);
-    expect(takeNotificationPlaybackIntent()).toBeNull();
+  test("a null resolution releases the awaiter with no outcome", async () => {
+    const selection = waitForNotificationSelection();
+    resolveNotificationSelection(null);
+    await expect(selection).resolves.toBeNull();
   });
 
-  test("clearing on open still lets the palette route read after close", () => {
-    // Ordering contract: the inbox clears on open, then the user stages, then
-    // openNotificationsOverlay reads after close. Clearing on *close* instead
-    // would break the one path that works today.
-    clearNotificationPlaybackIntent();
-    stageNotificationPlaybackIntent({
-      title: { id: "tmdb:3", type: "series", name: "Survives" },
-    });
-    expect(takeNotificationPlaybackIntent()?.title.name).toBe("Survives");
+  test("registering a new awaiter releases a leaked earlier one", async () => {
+    const leaked = waitForNotificationSelection();
+    const fresh = waitForNotificationSelection();
+
+    await expect(leaked).resolves.toBeNull();
+    expect(hasPendingNotificationSelection()).toBe(true);
+
+    resolveNotificationSelection(playbackOutcome);
+    await expect(fresh).resolves.toEqual(playbackOutcome);
+  });
+
+  test("cancelRootOverlay releases a pending inbox awaiter with null", async () => {
+    const selection = waitForNotificationSelection();
+    const container = createOverlayContainer();
+
+    cancelRootOverlay({ type: "notifications" }, container.stateManager);
+
+    await expect(selection).resolves.toBeNull();
+    expect(hasPendingNotificationSelection()).toBe(false);
+    expect(container.stateManager.getState().activeModals).toEqual([]);
   });
 
   test("details intent notifies subscribers and clears on take", () => {
@@ -115,26 +123,49 @@ describe("root-overlay-bridge notification intents", () => {
     unsubscribe();
   });
 
-  test("openNotificationsOverlay returns playback intent but leaves details for browse-shell", async () => {
-    stageNotificationPlaybackIntent({
-      title: { id: "tmdb:1", type: "series", name: "Playback Target" },
-      episode: { season: 1, episode: 1 },
-    });
+  test("openNotificationsOverlay returns the row's outcome and leaves details staged", async () => {
+    const container = createOverlayContainer();
+    const resultPromise = openNotificationsOverlay(container);
+    await Promise.resolve();
+
     stageNotificationDetailsItem({
       mediaKind: "series",
       titleId: "tmdb:2",
       title: "Details Target",
     });
+    resolveNotificationSelection(playbackOutcome);
+    container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
 
+    const result = await resultPromise;
+    expect(result.outcome).toEqual(playbackOutcome);
+    // The details item is consumed by browse-shell's subscriber, not the bridge.
+    expect(getNotificationDetailsPending()).toBe(true);
+    expect(takeNotificationDetailsItem()?.title).toBe("Details Target");
+  });
+
+  test("openNotificationsOverlay resolves null when the inbox closes with no selection", async () => {
     const container = createOverlayContainer();
     const resultPromise = openNotificationsOverlay(container);
     await Promise.resolve();
+
     container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
     const result = await resultPromise;
+    expect(result.outcome).toBeNull();
+    expect(hasPendingNotificationSelection()).toBe(false);
+  });
 
-    expect(result.playback?.title.name).toBe("Playback Target");
-    expect(getNotificationDetailsPending()).toBe(true);
-    expect(takeNotificationDetailsItem()?.title).toBe("Details Target");
+  test("a selection resolved before close survives the close-time null release", async () => {
+    // Ordering contract: the row executor resolves the bridge, THEN closes the
+    // overlay. openNotificationsOverlay's post-close null release must not
+    // overwrite an outcome that already landed.
+    const container = createOverlayContainer();
+    const resultPromise = openNotificationsOverlay(container);
+    await Promise.resolve();
+
+    resolveNotificationSelection(playbackOutcome);
+    container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+
+    await expect(resultPromise).resolves.toEqual({ outcome: playbackOutcome });
   });
 
   test("openRootOwnedOverlay pushes a different overlay type on top of an open modal", async () => {
