@@ -204,6 +204,25 @@ export async function runPostPlaybackMenu(
   const { title, currentEpisode, episodeAvailability, result, preparedStream } = iteration;
   let resolvedProviderId = iteration.resolvedProviderId;
 
+  // A title switch armed while a countdown or teardown was in flight has no
+  // file left to stop — the session is already over. Honour it now instead of
+  // showing a menu for a title the user just asked to leave.
+  const pendingTitleSwitch = container.playerControl.consumePendingTitleSelection();
+  if (pendingTitleSwitch) {
+    await deps.teardownPlaybackForPostPlayExit();
+    return {
+      kind: "exit",
+      result: {
+        status: "success",
+        value: {
+          type: "history_entry",
+          title: pendingTitleSwitch.title,
+          ...(pendingTitleSwitch.episode ? { episode: pendingTitleSwitch.episode } : {}),
+        },
+      },
+    };
+  }
+
   postPlayback: while (true) {
     const resumeSeconds = toHistoryTimestamp(
       result,
@@ -532,6 +551,23 @@ export async function runPostPlaybackMenu(
     }
 
     if (typeof postAction === "object" && postAction !== null && "type" in postAction) {
+      if (postAction.type === "launch-playback") {
+        // The inbox's "Play now" (and any other launch-bearing overlay) settles
+        // this mounted post-play session with a launch intent — exit so the
+        // phase loop hands the session to the new title.
+        await deps.teardownPlaybackForPostPlayExit();
+        return {
+          kind: "exit",
+          result: {
+            status: "success",
+            value: {
+              type: "history_entry",
+              title: postAction.launch.title,
+              ...(postAction.launch.episode ? { episode: postAction.launch.episode } : {}),
+            },
+          },
+        };
+      }
       if (postAction.type === "track-selection") {
         const picked = postAction.pick;
         const selection = streamSelectionFromTrackPick(picked);

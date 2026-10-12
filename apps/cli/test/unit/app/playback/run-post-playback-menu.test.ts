@@ -86,6 +86,7 @@ function createDeps(overrides: Partial<PostPlaybackMenuDeps> = {}): TestDeps {
       logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
       config: { autoplayRecommendations: true, showWatchTimeStats: false },
       queueService: { peekNext: () => null },
+      playerControl: { consumePendingTitleSelection: () => null },
       stateManager: {
         getState: () => ({
           mode: "series",
@@ -432,6 +433,7 @@ describe("runPostPlaybackMenu", () => {
           },
           getAll: () => [reorderedHead, advertised],
         },
+        playerControl: { consumePendingTitleSelection: () => null },
         stateManager: {
           getState: () => ({
             mode: "series",

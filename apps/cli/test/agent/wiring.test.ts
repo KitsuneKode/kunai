@@ -8,7 +8,9 @@
  * One session per test — sessions share process env, so they are sequential,
  * never concurrent (the driver enforces this with a throwing guard).
  */
+import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
+import { join } from "node:path";
 
 import { createAgentSession, type AgentSession } from "./agent-driver";
 import { K } from "./keys";
@@ -138,6 +140,148 @@ describe("agent wiring · post-play history", () => {
       );
     });
   }, 45_000);
+});
+
+describe("agent wiring · notifications inbox", () => {
+  /**
+   * The harness has no signal producer wired to the fixture catalog, so the
+   * notice is written the way NotificationService persists it — a row in the
+   * notifications table with the full media identity in item_json. Reads are
+   * live (NotificationService.listActive queries per open), so a post-boot
+   * insert surfaces like a real notice.
+   */
+  function seedEpisodeNotification(
+    session: AgentSession,
+    notice: {
+      readonly dedupKey: string;
+      readonly title: string;
+      readonly body: string;
+      readonly item: Record<string, unknown>;
+    },
+  ): void {
+    const db = new Database(join(session.profile.paths.dataDir, "kunai-data.sqlite"));
+    try {
+      const now = new Date().toISOString();
+      db.query(
+        `INSERT INTO notifications
+           (id, dedup_key, kind, title, body, item_json, action_json, created_at, updated_at)
+         VALUES (?, ?, 'new-episode', ?, ?, ?, '["dismiss"]', ?, ?)`,
+      ).run(
+        `seed-${notice.dedupKey}`,
+        notice.dedupKey,
+        notice.title,
+        notice.body,
+        JSON.stringify(notice.item),
+        now,
+        now,
+      );
+    } finally {
+      db.close();
+    }
+  }
+
+  it("Enter on an episode notice plays it through the awaited inbox route", async () => {
+    await withSession("wiring-inbox-play", { mpv: "fake" }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      seedEpisodeNotification(s, {
+        dedupKey: "wiring:smoke-series-s1e2",
+        title: "Smoke Series S01E02 available",
+        body: "episode 2 just landed",
+        item: {
+          mediaKind: "series",
+          contentType: "series",
+          titleId: "tmdb:smoke-series-1",
+          title: "Smoke Series",
+          season: 1,
+          episode: 2,
+        },
+      });
+
+      // Awaited route: the browse palette's /notifications awaits the outcome
+      // bridge — Enter resolves a playback outcome into a history-entry.
+      s.press("/");
+      await s.waitForFrame((f) => f.includes("command"), "command palette");
+      s.press("notifications", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Series S01E02"), "inbox row");
+      await s.waitSettled();
+
+      s.press(K.enter);
+      await s.waitForFrame((f) => f.includes("Post-play"), "post-play surface", 30_000);
+
+      await s.waitForBackend(
+        (i) =>
+          i
+            .history()
+            .some(
+              (row) =>
+                row.title_id === "tmdb:smoke-series-1" && row.season === 1 && row.episode === 2,
+            ),
+        "history_progress contains the announced episode",
+      );
+    });
+  }, 45_000);
+
+  it("Enter self-delivers a title switch while playback is live", async () => {
+    // `hold` keeps the fake mpv alive so the notifications overlay can open
+    // over a genuinely-playing session — the direct-dispatch delivery target.
+    await withSession(
+      "wiring-inbox-play-direct",
+      { mpv: "fake", fakeMpvMode: "hold" },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        seedEpisodeNotification(s, {
+          dedupKey: "wiring:smoke-anime-ep7",
+          title: "Smoke Anime ep 7 available",
+          body: "absolute episode 7 just landed",
+          item: {
+            mediaKind: "anime",
+            titleId: "anilist:smoke-anime-1",
+            title: "Smoke Anime",
+            absoluteEpisode: 7,
+          },
+        });
+
+        // Start live playback of the smoke movie — it holds instead of ending.
+        s.press("movie", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("Now Playing"), "playback live", 30_000);
+
+        // Direct route: /history opens a root overlay over the live playback
+        // mount; the overlay's own / palette then dispatches OPEN_OVERLAY with
+        // no bridge awaiter, so the row must self-deliver a switch-title.
+        s.press("/");
+        await s.waitForFrame((f) => f.includes("command"), "command palette");
+        s.press("history", K.enter);
+        await s.waitForFrame((f) => f.includes("History"), "history overlay");
+        await s.waitSettled();
+
+        s.press("/");
+        await s.waitForFrame((f) => f.includes("command"), "overlay command palette");
+        s.press("notifications", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Anime ep 7"), "inbox row (direct)");
+        await s.waitSettled();
+
+        // Live playback gates play-now behind "Switch playback?" first.
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("Switch playback"), "switch confirmation");
+        await s.waitSettled();
+        s.press(K.enter);
+
+        // Proof the announced title actually launched: the resolve/startup
+        // diagnostics carry the title id — a frame claim alone would also
+        // match the lingering inbox toast.
+        await s.waitForBackend(
+          (i) =>
+            i
+              .tableRows("cache.diagnostic_events")
+              .some((row) => row.includes("anilist:smoke-anime-1")),
+          "playback startup diagnostics for the announced anime title",
+          30_000,
+        );
+      },
+    );
+  }, 60_000);
 });
 
 describe("agent wiring · offline mode", () => {

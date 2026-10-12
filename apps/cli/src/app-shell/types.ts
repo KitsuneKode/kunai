@@ -413,6 +413,15 @@ export type BrowseShellResult<T> =
 export type PlaybackShellResult =
   | ShellAction
   | {
+      /**
+       * An overlay (e.g. the notifications inbox) settled this mounted session
+       * with a direct "play this" intent. The post-play menu translates it to a
+       * `history_entry` outcome.
+       */
+      readonly type: "launch-playback";
+      readonly launch: { readonly title: TitleInfo; readonly episode?: EpisodeInfo };
+    }
+  | {
       readonly type: "track-selection";
       readonly pick: import("@/domain/playback/track-capabilities").DecodedTrackSelection;
     }

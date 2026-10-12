@@ -322,22 +322,29 @@ Autoplay and next/previous actions should follow real episode availability from 
 
 The Ink shell hands playback intents to the app phase loop through a **promise
 bridge**: `waitForRootQueueSelection()` / `resolveRootQueueSelection()` in
-`apps/cli/src/app-shell/root-queue-bridge.ts`, and the same shape in
-`root-history-bridge.ts`. The route awaits the bridge and returns a result the
-phase loop plays. Queue and history use it.
+`apps/cli/src/app-shell/root-queue-bridge.ts`, the same shape in
+`root-history-bridge.ts`, and `waitForNotificationSelection()` /
+`resolveNotificationSelection()` / `hasPendingNotificationSelection()` in
+`root-overlay-bridge.ts`. The route awaits the bridge and returns a result the
+phase loop plays.
 
 **Use the promise bridge for any new intent. Do not add a staged module
 global.** A staged global is read by exactly one route, but overlays open from
 more than one place — the notifications inbox is opened both by
 `openNotificationsOverlay()` and by a direct `OPEN_OVERLAY` dispatch in
-`root-overlay-shell.tsx`. On the route that never read the staged value, "play
-now" silently did nothing, and the stranded intent later fired against an
-unrelated session and played the wrong title. Subscribe/notify plus
-clear-on-open bounded that damage; it did not remove the second pattern.
+`root-overlay-shell.tsx`. Under the old staged global, the route that never
+read the value made "play now" silently do nothing, and the stranded intent
+later fired against an unrelated session.
 
-Migrating notifications onto the promise bridge is the outstanding
-single-source-of-truth fix. Whatever the mechanism, an intent has to work on
-every path that can open the surface.
+Notifications cover both directions now. On the awaited route the row
+resolves the bridge and the opener returns a `history-entry` result. On the
+direct route there is no awaiter, so the row executor self-delivers through
+`notification-playback-delivery.ts`: a retained browse or post-play session
+settles with `launch-playback`, and live or resolving playback receives a
+stop-backed `switch-title` intent that the phase loop consumes after the
+stop/resolve abort. Nothing to deliver to reports feedback instead of
+dropping the intent. Whatever the mechanism, an intent has to work on every
+path that can open the surface.
 
 ## Anti-Patterns
 

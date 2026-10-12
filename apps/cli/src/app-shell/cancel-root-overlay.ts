@@ -1,6 +1,10 @@
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 
 import { hasPendingRootHistorySelection, resolveRootHistorySelection } from "./root-history-bridge";
+import {
+  hasPendingNotificationSelection,
+  resolveNotificationSelection,
+} from "./root-overlay-bridge";
 import { isRootMediaPickerOverlay } from "./root-overlay-model";
 import { hasPendingRootQueueSelection, resolveRootQueueSelection } from "./root-queue-bridge";
 import type { RootOwnedOverlay } from "./root-shell-state";
@@ -26,6 +30,9 @@ export function cancelRootOverlay(
   }
   if (overlay.type === "queue" && hasPendingRootQueueSelection()) {
     resolveRootQueueSelection(null);
+  }
+  if (overlay.type === "notifications" && hasPendingNotificationSelection()) {
+    resolveNotificationSelection(null);
   }
   stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
 }

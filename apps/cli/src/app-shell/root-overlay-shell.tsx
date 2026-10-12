@@ -97,6 +97,7 @@ import {
   getSelectedNotificationActionId,
   selectNotificationPickerOptions,
 } from "./notification-overlay-model";
+import { deliverNotificationPlayback } from "./notification-playback-delivery";
 import { NotificationsShell } from "./notifications-shell";
 import { buildNotificationsView, nearestNotificationDedupKey } from "./notifications-view";
 import { resolveOverlayBackStack } from "./overlay-back-stack";
@@ -131,10 +132,10 @@ import {
   type RootHistorySelection,
 } from "./root-history-bridge";
 import {
-  clearNotificationPlaybackIntent,
+  hasPendingNotificationSelection,
   openDiagnosticsOverlay,
+  resolveNotificationSelection,
   stageNotificationDetailsItem,
-  stageNotificationPlaybackIntent,
 } from "./root-overlay-bridge";
 import {
   buildRootGenericPickerOptions,
@@ -1072,15 +1073,6 @@ export function RootOverlayShell({
     setHistoryPendingDelete(null);
   }, [historyTab, overlay.type]);
 
-  // Discard any play-now intent left staged by an earlier inbox session.
-  // Only the palette route consumes the intent (it reads after close), so an
-  // inbox opened by direct dispatch can strand one; without this it would fire
-  // against the next palette-opened session and play the wrong title.
-  useEffect(() => {
-    if (overlay.type !== "notifications") return;
-    clearNotificationPlaybackIntent();
-  }, [overlay.type]);
-
   useEffect(() => {
     if (overlay.type !== "history") {
       return;
@@ -1159,32 +1151,29 @@ export function RootOverlayShell({
           playNow: async (item) => {
             applyMediaItemSessionRouting(container, item);
             const intent = playbackIntentFromMediaItem(item);
-            container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-
-            // Two routes open this inbox and only one used to consume the
-            // intent, so "Play now" from inside another overlay reported
-            // success and played nothing.
-            //
-            // Settling the retained browse session is the one channel that
-            // reaches the phase loop from inside an overlay (the same one
-            // offline playback uses). It succeeds exactly when browse is still
-            // mounted — the direct OPEN_OVERLAY route. On the palette route
-            // browse has already resolved, so this returns false and the intent
-            // is staged for `openNotificationsOverlay` to take on close. The two
-            // cases are mutually exclusive, so playback can never start twice.
-            const delivered = forceCloseRootContent<BrowseShellResult<SearchResult>>({
-              type: "launch-playback",
-              launch: {
+            // The inbox has two open paths and the outcome channel differs per
+            // path. The awaited route (openNotificationsOverlay) is listening
+            // on the bridge — resolve it and the opener turns the outcome into
+            // a history-entry result. The direct route (a bare OPEN_OVERLAY)
+            // has nobody listening, so the row delivers the launch itself:
+            // settle a mounted browse/post-play session or arm a switch-title
+            // intent against live playback.
+            const bridged = hasPendingNotificationSelection();
+            if (bridged) {
+              resolveNotificationSelection({
+                kind: "playback",
                 title: intent.title,
                 ...(intent.episode ? { episode: intent.episode } : {}),
-              },
-            });
-            if (!delivered) stageNotificationPlaybackIntent(intent);
+              });
+            }
+            container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+            if (!bridged) await deliverNotificationPlayback(container, intent);
           },
         },
         details: {
           open: async (item) => {
             stageNotificationDetailsItem(item);
+            resolveNotificationSelection({ kind: "details", item });
             container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
           },
         },

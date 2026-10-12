@@ -420,7 +420,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const action = playerControl.consumeLastAction();
         if (!action) return false;
         if (action === "next") return true;
-        if (action === "stop" || action === "back-to-search" || action === "previous") {
+        if (
+          action === "stop" ||
+          action === "back-to-search" ||
+          action === "previous" ||
+          action === "switch-title"
+        ) {
           cancelledByAction = true;
         }
         return false;
@@ -866,13 +871,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         });
 
         if (episodeEntry.kind === "auto") {
-          episode = episodeInfoFromSelection({
-            season: episodeEntry.selection.season,
-            episode: episodeEntry.selection.episode,
-            isAnime: usesNativeEpisodes,
-            titleId: title.id,
-            animeEpisodes: initialAnimeEpisodes,
-          });
+          episode = {
+            ...episodeInfoFromSelection({
+              season: episodeEntry.selection.season,
+              episode: episodeEntry.selection.episode,
+              isAnime: usesNativeEpisodes,
+              titleId: title.id,
+              animeEpisodes: initialAnimeEpisodes,
+            }),
+            // A notification/queue launch names the absolute episode — keep it
+            // so the history row records the identity it actually played.
+            ...(preselectedEpisode?.absoluteEpisode !== undefined
+              ? { absoluteEpisode: preselectedEpisode.absoluteEpisode }
+              : {}),
+          };
           run.pendingStart =
             episodeEntry.selection.startAt !== undefined ||
             episodeEntry.selection.suppressResumePrompt
@@ -2044,6 +2056,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               streamSwitchAction === "pick-quality"
                 ? playerControl.consumePendingStreamSelection()
                 : null;
+            const titleSwitchSelection =
+              streamSwitchAction === "switch-title"
+                ? playerControl.consumePendingTitleSelection()
+                : null;
             // Health-aware and tried-aware: a provider marked down or already
             // attempted in this cycle is not a viable fallback target even
             // though it stays selectable explicitly.
@@ -2195,6 +2211,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               stateManager.dispatch({ type: "SET_STREAM", stream: null });
               this.updatePlaybackFeedback(context, { detail: null, note: null });
               await dismissMpvTransitionOverlay(playerControl);
+              if (titleSwitchSelection) {
+                return {
+                  status: "success",
+                  value: {
+                    type: "history_entry",
+                    title: titleSwitchSelection.title,
+                    ...(titleSwitchSelection.episode
+                      ? { episode: titleSwitchSelection.episode }
+                      : {}),
+                  },
+                };
+              }
             } else {
               stateManager.dispatch({ type: "SET_STREAM", stream: null });
             }
@@ -2790,6 +2818,30 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             playbackControlAction === "pick-episode"
               ? playerControl.consumePendingEpisodeSelection()
               : null;
+          if (playbackControlAction === "switch-title") {
+            // A notification (or other handoff) asked to leave this title's
+            // session entirely: the file stop already landed, so exit with the
+            // target and let SessionController re-enter playback for it.
+            const titleSelection = playerControl.consumePendingTitleSelection();
+            if (titleSelection) {
+              diagnosticsService.record({
+                category: "playback",
+                message: "Switching to a different title from active playback",
+                context: {
+                  fromTitleId: title.id,
+                  toTitleId: titleSelection.title.id,
+                },
+              });
+              return {
+                status: "success",
+                value: {
+                  type: "history_entry",
+                  title: titleSelection.title,
+                  ...(titleSelection.episode ? { episode: titleSelection.episode } : {}),
+                },
+              };
+            }
+          }
           run.playbackSession = syncPlaybackSessionState(run.playbackSession, {
             autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
             stopAfterCurrent: stateManager.getState().stopAfterCurrent,

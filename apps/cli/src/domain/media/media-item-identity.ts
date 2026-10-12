@@ -70,6 +70,26 @@ export function getEpisodeIdentityKey(item: EpisodeIdentity): string {
   ].join(":");
 }
 
+/**
+ * Does this identity resolve to a playable target?
+ *
+ * A movie/video is playable at title level — its launch intent selects the
+ * title and the phase loop resolves the single stream. An episodic item needs
+ * at least one episode coordinate, otherwise the launch would land on the
+ * title with nothing to play; those identities should offer a details/browse
+ * action instead of a dead "Play now". This mirrors exactly the shapes
+ * `episodeInfoFromMediaItemIdentity` can convert.
+ */
+export function mediaItemHasPlayableTarget(item: MediaItemIdentity): boolean {
+  if (item.contentType === "movie") return true;
+  if (item.mediaKind === "movie" || item.mediaKind === "video") return true;
+  return (
+    typeof item.season === "number" ||
+    typeof item.episode === "number" ||
+    typeof item.absoluteEpisode === "number"
+  );
+}
+
 export function sanitizeProviderHints(
   hints: readonly (MediaProviderHint | (MediaProviderHint & Record<string, unknown>))[] | undefined,
 ): readonly MediaProviderHint[] {

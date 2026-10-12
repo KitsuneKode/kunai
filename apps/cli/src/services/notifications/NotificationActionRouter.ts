@@ -207,6 +207,10 @@ function parseMediaItem(notification: NotificationRecord): MediaItemIdentity | n
 
   return {
     mediaKind: normalizeMediaKind(parsed.mediaKind),
+    contentType:
+      parsed.contentType === "movie" || parsed.contentType === "series"
+        ? parsed.contentType
+        : undefined,
     sourceId: typeof parsed.sourceId === "string" ? parsed.sourceId : undefined,
     titleId: parsed.titleId,
     title: parsed.title,
@@ -216,6 +220,9 @@ function parseMediaItem(notification: NotificationRecord): MediaItemIdentity | n
       typeof parsed.absoluteEpisode === "number" ? parsed.absoluteEpisode : undefined,
     providerHints: Array.isArray(parsed.providerHints)
       ? (parsed.providerHints as MediaItemIdentity["providerHints"])
+      : undefined,
+    externalIds: isRecord(parsed.externalIds)
+      ? (parsed.externalIds as MediaItemIdentity["externalIds"])
       : undefined,
   };
 }
