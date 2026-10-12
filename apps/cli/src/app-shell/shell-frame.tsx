@@ -1,5 +1,6 @@
 import { useLineEditor, type LineEditorKey } from "@/app-shell/line-editor";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
+import type { LocalTitleEntry } from "@/domain/palette/local-title-index";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
@@ -47,6 +48,8 @@ export function ShellFrame({
   escapeAction,
   onUnhandledInput,
   onResolve,
+  localTitles,
+  onTitlePick,
   children,
   terminalWidth: terminalWidthProp,
   terminalRows: terminalRowsProp,
@@ -67,6 +70,9 @@ export function ShellFrame({
   escapeAction?: ShellAction | null;
   onUnhandledInput?: (input: string, key: ShellFrameInputKey) => void;
   onResolve: (action: ShellAction) => void;
+  /** Local title source — consulted once per palette open for the JUMP TO section. */
+  localTitles?: () => readonly LocalTitleEntry[];
+  onTitlePick?: (entry: LocalTitleEntry) => void;
   children: React.ReactNode;
   terminalWidth?: number;
   terminalRows?: number;
@@ -81,14 +87,17 @@ export function ShellFrame({
     }
   });
 
-  const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
-    footerActions,
-    commands,
-    disabled: inputDisabled,
-    letterKeysHandledExternally,
-    escapeAction,
-    onResolve,
-  });
+  const { commandMode, commandInput, commandCursor, highlightedIndex, titleMatches } =
+    useShellInput({
+      footerActions,
+      commands,
+      disabled: inputDisabled,
+      letterKeysHandledExternally,
+      escapeAction,
+      onResolve,
+      localTitles,
+      onTitlePick,
+    });
 
   useInput((input, key) => {
     if (inputDisabled || commandMode) return;
@@ -141,6 +150,7 @@ export function ShellFrame({
             input={commandInput}
             cursor={commandCursor}
             commands={commands}
+            titleMatches={titleMatches}
             highlightedIndex={highlightedIndex}
             maxVisible={getPlaybackCommandPaletteMaxVisible(rows)}
             width={commandWidth}

@@ -66,6 +66,7 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 - command palettes should open with an immediately highlighted default action and still support zero-typing keyboard browsing
 - command palettes should group actions by `Global` and `Context` rather than by implementation source
 - command palettes should imply the recommended action through default highlight rather than extra “recommended” noise in every row
+- command palettes should also match locally-known titles (`JUMP TO`) once the input is at least two characters — titles are read from local state only (history, queue, followed, lists, playlists), never the network; commands keep precedence over title rows; the title section collapses on empty input; a title pick lands on the same title→episode flow a browse selection uses
 
 ### Hotkey philosophy
 

@@ -59,6 +59,9 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
     "apps/cli/src/app/playback/run-post-playback-menu.ts",
     [
       "@/app-shell/commands",
+      // Palette JUMP TO launches staged during active playback are consumed at
+      // post-play re-entry through the same history-entry channel.
+      "@/app-shell/palette-title-launch",
       // DEBT (2026-07-21): queue-launch handoff lives in app-shell; the bridge
       // belongs below app-shell so app/ can claim a launch without inverting.
       "@/app-shell/root-queue-bridge",
@@ -101,6 +104,10 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
       // `external-open-fallback` is presentation copy; `root-queue-bridge` is the
       // queue-launch handoff. Both should move below app-shell.
       "@/app-shell/external-open-fallback",
+      // Palette JUMP TO rows resolve+deliver a launch through the same
+      // launch-playback channel a browse pick uses; the resolver/deliverer
+      // lives in app-shell beside the other bridge modules.
+      "@/app-shell/palette-title-launch",
       "@/app-shell/root-queue-bridge",
       "@/app-shell/ink-shell",
       "@/app-shell/pickers",

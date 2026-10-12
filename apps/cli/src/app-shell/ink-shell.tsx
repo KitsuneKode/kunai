@@ -24,6 +24,7 @@ import {
 import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
+import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { EpisodeInfo } from "@/domain/types";
 import { isKittyCompatible } from "@/image";
@@ -84,8 +85,10 @@ import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "./session-picke
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
-  getHighlightedCommand,
   getListShellCommandPaletteMaxVisible,
+  movePaletteSelection,
+  paletteSelectableCount,
+  resolveHighlightedPaletteRow,
   shouldHideCompanionForCommandPalette,
 } from "./shell-command-model";
 import { CommandPalette } from "./shell-command-ui";
@@ -1316,6 +1319,8 @@ type ListShellSubmitResult<T> =
   | { type: "cancelled" }
   | ListShellActionResult;
 
+const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
+
 function normalizeReservedCommandInput(nextValue: string): {
   value: string;
   openCommandPalette: boolean;
@@ -1375,6 +1380,11 @@ function ListShell<T>({
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const [titleEntries, setTitleEntries] = useState<readonly LocalTitleEntry[]>([]);
+  const titleMatches = useMemo(
+    () => matchLocalTitles(titleEntries, commandInput),
+    [titleEntries, commandInput],
+  );
   const viewport = useDebouncedViewportPolicy("picker");
   const normalizedFilter = filterQuery.trim().toLowerCase();
   const filteredOptions = useMemo(() => {
@@ -1452,13 +1462,20 @@ function ListShell<T>({
   const effectiveFooterMode: ShellFooterMode = "minimal";
   const footerActions = LIST_SHELL_FOOTER_ACTIONS;
 
+  // Snapshot title entries once per open — the matcher is a pure in-memory
+  // index against this list, so a keystroke never hits storage.
+  const openPalette = () => {
+    setTitleEntries(actionContext?.localTitles?.() ?? EMPTY_TITLE_ENTRIES);
+    setCommandMode(true);
+    setHighlightedCommandIndex(0);
+    // commandInput deliberately survives close/reopen — `/` keeps the draft.
+  };
+
   const updateFilterQuery = (nextValue: string) => {
     const normalized = normalizeReservedCommandInput(nextValue);
     setFilterQuery(normalized.value);
     if (normalized.openCommandPalette && actionContext) {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      openPalette();
     }
   };
   const commandEditor = useLineEditor({
@@ -1478,24 +1495,32 @@ function ListShell<T>({
       const matches = getCommandMatches(commandInput, actionContext?.commands ?? []);
 
       if (key.escape) {
+        // Close only — the draft survives so a `/` reopen resumes the query.
         setCommandMode(false);
-        setCommandInput("");
         setHighlightedCommandIndex(0);
         return;
       }
       if (key.return) {
-        const resolved = getHighlightedCommand(
+        const row = resolveHighlightedPaletteRow(
           commandInput,
           actionContext?.commands ?? [],
+          titleMatches,
           highlightedCommandIndex,
         );
-        if (resolved?.enabled) {
+        if (row?.kind === "command" && row.command.enabled) {
+          setCommandInput("");
           onAction?.({
             type: "action",
-            action: toShellAction(resolved.id),
+            action: toShellAction(row.command.id),
             filterQuery,
             selectedIndex: index,
           });
+        }
+        if (row?.kind === "title") {
+          setCommandMode(false);
+          setCommandInput("");
+          setHighlightedCommandIndex(0);
+          actionContext?.onTitlePick?.(row.match.entry);
         }
         return;
       }
@@ -1512,16 +1537,17 @@ function ListShell<T>({
         }
         return;
       }
+      const selectable = paletteSelectableCount(
+        commandInput,
+        actionContext?.commands ?? [],
+        titleMatches,
+      );
       if (key.upArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current - 1 + matches.length) % matches.length);
-        }
+        setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, -1));
         return;
       }
       if (key.downArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current + 1) % matches.length);
-        }
+        setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, 1));
         return;
       }
       if (commandEditor.handleInput(input, key)) {
@@ -1531,9 +1557,7 @@ function ListShell<T>({
     }
 
     if (input === "/" && actionContext) {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      openPalette();
       return;
     }
 
@@ -1697,6 +1721,7 @@ function ListShell<T>({
           cursor={commandEditor.cursor}
           commands={actionContext.commands}
           highlightedIndex={highlightedCommandIndex}
+          titleMatches={titleMatches}
           maxVisible={getListShellCommandPaletteMaxVisible(
             viewport.rows,
             subtitle.split("\n").length,

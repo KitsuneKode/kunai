@@ -15,6 +15,7 @@ import { resolveCommands } from "@/app-shell/commands";
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import type { CalendarRouteRequest } from "@/app-shell/hooks/use-calendar-route";
 import { openBrowseShell } from "@/app-shell/ink-shell";
+import { pickPaletteTitle } from "@/app-shell/palette-title-launch";
 import { chooseFromListShell } from "@/app-shell/pickers";
 import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
 import {
@@ -73,6 +74,7 @@ import { buildSearchDiagnosticEvent } from "@/services/diagnostics/diagnostic-ev
 import { seedCaughtUpReleaseProgressFromCatalogCount } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { observeOnline } from "@/services/network/network-observation";
+import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
 import {
   enqueueReleaseReconciliation,
   collectReleaseReconciliationRows,
@@ -665,6 +667,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           commands: resolveCommands(syncedState, SEARCH_BROWSE_COMMAND_IDS, {
             excludeGroups: ["Experimental"],
           }),
+          localTitles: () => collectLocalTitleEntries(container),
+          onTitlePick: (entry) => pickPaletteTitle(container, entry),
           idleContext: latestIdleContext,
           loadIdleContext,
           onQueueSelected: async (result) => {

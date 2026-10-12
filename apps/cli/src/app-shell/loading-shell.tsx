@@ -656,6 +656,8 @@ export const LoadingShell = React.memo(function LoadingShell({
         }
         state.onCommandAction?.(action);
       }}
+      localTitles={state.paletteTitleSource}
+      onTitlePick={state.onPaletteTitlePick}
     >
       <Box flexDirection="column" justifyContent="space-between" flexGrow={1}>
         <Box flexDirection="column" flexGrow={1} width="100%">

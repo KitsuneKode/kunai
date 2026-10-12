@@ -11,6 +11,7 @@ import { applyProviderPickerSelection } from "@/app/playback/playback-provider-s
 import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
+import type { LocalTitleMatch } from "@/domain/palette/local-title-index";
 import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-name";
 import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
 import {
@@ -40,6 +41,7 @@ import {
   NotificationActionRouter,
   type NotificationActionId,
 } from "@/services/notifications/NotificationActionRouter";
+import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import type { InstallMethodKind } from "@/services/update/install-method";
 import { resolveNotificationUpdateAction } from "@/services/update/notification-update-action";
@@ -112,6 +114,7 @@ import {
 } from "./overlay-input-safety";
 import { OverlayLayoutProvider, type OverlayLayoutValue } from "./overlay-layout-context";
 import { type BrowseOverlay, OverlayPanel } from "./overlay-panel";
+import { pickPaletteTitle } from "./palette-title-launch";
 import {
   buildAboutPanelLines,
   buildDiagnosticsPanelLines,
@@ -150,7 +153,7 @@ import { runRootWorkflowSafely } from "./root-workflow-dispatch";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
 import { SettingsShell } from "./settings/SettingsShell";
 import { useShellInput } from "./shell-command-input";
-import { CommandPalette } from "./shell-command-ui";
+import { CommandPalette, PaletteTitleMatchesProvider } from "./shell-command-ui";
 import { ContextStrip, ShellFooter, ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import { subtitleGridColumns, tracksOptionsPaneWidth } from "./tracks-panel-layout";
@@ -244,12 +247,18 @@ export function buildHelpTabRows(tab: string): readonly { key: string; desc: str
   return helpTabRows(tab);
 }
 
-function wrapOverlayLayout(layout: OverlayLayoutValue, node: ReactNode) {
+function wrapOverlayLayout(
+  layout: OverlayLayoutValue,
+  node: ReactNode,
+  titleMatches: readonly LocalTitleMatch[],
+) {
   return (
     <OverlayLayoutProvider value={layout}>
-      <ViewportResizeGate kind="picker" message="Resize terminal to use this panel">
-        {node}
-      </ViewportResizeGate>
+      <PaletteTitleMatchesProvider matches={titleMatches}>
+        <ViewportResizeGate kind="picker" message="Resize terminal to use this panel">
+          {node}
+        </ViewportResizeGate>
+      </PaletteTitleMatchesProvider>
     </OverlayLayoutProvider>
   );
 }
@@ -826,79 +835,85 @@ export function RootOverlayShell({
     { key: "/", label: "commands", action: "command-mode" },
     { key: "esc", label: "close", action: "quit" },
   ];
-  const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
-    footerActions,
-    commands,
-    escapeAction: null,
-    onResolve: (action) => {
-      if (
-        action === "settings" ||
-        action === "presence" ||
-        action === "help" ||
-        action === "about" ||
-        action === "diagnostics" ||
-        action === "downloads" ||
-        action === "notifications" ||
-        action === "continue" ||
-        action === "history" ||
-        action === "provider"
-      ) {
-        if (action === "notifications" && !container.featureFlags.attentionInbox) {
-          container.stateManager.dispatch({
-            type: "SET_PLAYBACK_FEEDBACK",
-            note: "Attention inbox is disabled.",
-          });
-          return;
-        }
-        if (action === "diagnostics") {
+  const { commandMode, commandInput, commandCursor, highlightedIndex, titleMatches } =
+    useShellInput({
+      footerActions,
+      commands,
+      escapeAction: null,
+      localTitles: () => collectLocalTitleEntries(container),
+      onTitlePick: (entry) => pickPaletteTitle(container, entry),
+      onResolve: (action) => {
+        if (
+          action === "settings" ||
+          action === "presence" ||
+          action === "help" ||
+          action === "about" ||
+          action === "diagnostics" ||
+          action === "downloads" ||
+          action === "notifications" ||
+          action === "continue" ||
+          action === "history" ||
+          action === "provider"
+        ) {
+          if (action === "notifications" && !container.featureFlags.attentionInbox) {
+            container.stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: "Attention inbox is disabled.",
+            });
+            return;
+          }
+          if (action === "diagnostics") {
+            if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+              container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+            }
+            void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
+            return;
+          }
+          const nextOverlay =
+            action === "provider"
+              ? {
+                  type: "provider_picker" as const,
+                  currentProvider: state.provider,
+                  lane: shellModeToProviderLane(state.mode),
+                }
+              : action === "history" || action === "continue"
+                ? { type: "history" as const, initialFilterMode: "watching" as const }
+                : action === "notifications"
+                  ? { type: "notifications" as const }
+                  : action === "downloads"
+                    ? { type: "downloads" as const }
+                    : action === "settings" || action === "presence"
+                      ? { type: "settings" as const }
+                      : { type: action };
           if (isRootMediaPickerOverlay(overlay) && overlay.id) {
             container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
           }
-          void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
+          container.stateManager.dispatch({
+            type: "OPEN_OVERLAY",
+            overlay: nextOverlay,
+          });
           return;
         }
-        const nextOverlay =
-          action === "provider"
-            ? {
-                type: "provider_picker" as const,
-                currentProvider: state.provider,
-                lane: shellModeToProviderLane(state.mode),
-              }
-            : action === "history" || action === "continue"
-              ? { type: "history" as const, initialFilterMode: "watching" as const }
-              : action === "notifications"
-                ? { type: "notifications" as const }
-                : action === "downloads"
-                  ? { type: "downloads" as const }
-                  : action === "settings" || action === "presence"
-                    ? { type: "settings" as const }
-                    : { type: action };
-        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
-          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+        if (action === "library") {
+          const nextOverlay = { type: "library" as const, view: "library" as const };
+          if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+            container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+          }
+          container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
+          return;
         }
-        container.stateManager.dispatch({
-          type: "OPEN_OVERLAY",
-          overlay: nextOverlay,
-        });
-        return;
-      }
-      if (action === "library") {
-        const nextOverlay = { type: "library" as const, view: "library" as const };
-        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
-          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+        if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
+          void runRootWorkflowSafely({
+            container,
+            action,
+            cancelPickerId:
+              isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
+          });
         }
-        container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
-        return;
-      }
-      if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
-        void runRootWorkflowSafely({
-          container,
-          action,
-          cancelPickerId: isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
-        });
-      }
-    },
-  });
+      },
+    });
+
+  const wrapWithLayout = (node: ReactNode) => wrapOverlayLayout(overlayLayout, node, titleMatches);
 
   const overlayPanelKind = resolveOverlayPanelKind(overlay.type);
   const overlayDedicatedShell =
@@ -1976,8 +1991,7 @@ export function RootOverlayShell({
                 };
 
   if (overlay.type === "downloads") {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <DownloadManagerContent
           container={container}
@@ -2002,8 +2016,7 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "library") {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <LibraryShell
           container={container}
@@ -2023,8 +2036,7 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "settings") {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <SettingsShell
           container={container}
@@ -2050,8 +2062,7 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "notifications" && !notificationActionDedupKey && !notificationPlayConfirm) {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <NotificationsShell
           view={notificationsView}
@@ -2109,8 +2120,7 @@ export function RootOverlayShell({
         : null,
     };
 
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <ContextStrip
           items={[
@@ -2153,8 +2163,7 @@ export function RootOverlayShell({
     } = getPickerLayout(overlayLayout.contentColumns, overlayLayout.contentRows);
     const listWidth = pickerListWidth ?? innerWidth;
 
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <ContextStrip
           items={[
@@ -2215,8 +2224,7 @@ export function RootOverlayShell({
       commandItems.length > 0
         ? [...scopeSections, { group: "Commands", items: commandItems }]
         : scopeSections;
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <HelpShell
         sections={helpScopeSections}
         scopeLabel={HELP_SCOPE_LABELS[helpScope]}
@@ -2233,8 +2241,7 @@ export function RootOverlayShell({
 
   if (overlay.type === "tracks_panel") {
     const tracksHasSwitchable = trackGroups.some((group) => group.rows.some((row) => row.enabled));
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         {effectiveSubtitle.trim() ? (
           <ContextStrip items={[{ label: effectiveSubtitle, tone: "neutral" }]} />
@@ -2273,8 +2280,7 @@ export function RootOverlayShell({
     );
   }
 
-  return wrapOverlayLayout(
-    overlayLayout,
+  return wrapWithLayout(
     <Box flexDirection="column" flexGrow={1}>
       <ContextStrip
         items={

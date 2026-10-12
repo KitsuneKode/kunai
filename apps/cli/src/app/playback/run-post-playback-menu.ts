@@ -1,6 +1,7 @@
 // Post-playback menu inner loop — extracted from PlaybackPhase.execute() so the
 // outer episode loop can call a single function and act on its directive.
 import { resolveCommandContext } from "@/app-shell/commands";
+import { takePaletteTitleLaunch } from "@/app-shell/palette-title-launch";
 import { claimQueuePlaybackLaunch } from "@/app-shell/root-queue-bridge";
 import type { PlaybackShellResult, PlaybackShellState, ShellAction } from "@/app-shell/types";
 import {
@@ -421,6 +422,18 @@ export async function runPostPlaybackMenu(
     // looked random. `m` still opens the title-control menu on demand here.
     let postAction: PlaybackShellResult | ShellAction | undefined;
 
+    // A JUMP TO pick during active playback parks its launch here: the picker
+    // stopped mpv, post-play opens, and the staged value arrives through the
+    // same history-entry channel a mounted post-play session would settle with.
+    const stagedPaletteLaunch = takePaletteTitleLaunch();
+    if (stagedPaletteLaunch) {
+      postAction = {
+        type: "history-entry",
+        title: stagedPaletteLaunch.title,
+        ...(stagedPaletteLaunch.episode ? { episode: stagedPaletteLaunch.episode } : {}),
+      };
+    }
+
     if (postAction === undefined) {
       const upcomingEpisode = episodeAvailability.nextEpisode;
       const nextEpisodePickerOption = upcomingEpisode
@@ -532,6 +545,17 @@ export async function runPostPlaybackMenu(
     }
 
     if (typeof postAction === "object" && postAction !== null && "type" in postAction) {
+      if (postAction.type === "history-entry") {
+        // Palette JUMP TO / routed title launch — same exit the routed-action
+        // path below produces; handled here because the shell can resolve it
+        // directly as a result object rather than a ShellAction string.
+        const exitOutcome = resolvePostPlaybackExitOutcome(postAction);
+        if (exitOutcome) {
+          await deps.teardownPlaybackForPostPlayExit();
+          return { kind: "exit", result: exitOutcome as PhaseResult<PlaybackOutcome> };
+        }
+        continue postPlayback;
+      }
       if (postAction.type === "track-selection") {
         const picked = postAction.pick;
         const selection = streamSelectionFromTrackPick(picked);

@@ -85,6 +85,22 @@ export function forceCloseRootContent<TResult>(value: TResult): boolean {
   return true;
 }
 
+/**
+ * Settle the mounted session with its own fallback value — the polite close
+ * for sessions whose result type the caller does not know (a picker displaced
+ * by a palette launch resolves "cancelled", browse resolves "cancelled",
+ * post-play resolves "quit"). Returns false when nothing is mounted.
+ */
+export function settleRootContentSessionWithFallback(): boolean {
+  if (!rootContentSession) return false;
+  const mount = [...pendingRootContentMounts].find(
+    (candidate) => candidate.sessionId === rootContentSession?.id,
+  );
+  if (!mount) return false;
+  mount.settle(mount.fallbackValue);
+  return true;
+}
+
 export type ResolvedRootContent =
   | { readonly kind: "idle" }
   | { readonly kind: "error" }

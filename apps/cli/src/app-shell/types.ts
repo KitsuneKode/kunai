@@ -291,6 +291,12 @@ export type LoadingShellState = {
   videoMeta?: import("@/domain/types").VideoMeta | null;
   onCommandAction?: (action: ShellAction) => void;
   commands?: readonly ResolvedAppCommand[];
+  /** Local title source for the palette's JUMP TO section — read once per open. */
+  paletteTitleSource?: () => readonly import("@/domain/palette/local-title-index").LocalTitleEntry[];
+  /** Enter landed on a JUMP TO title row. */
+  onPaletteTitlePick?: (
+    entry: import("@/domain/palette/local-title-index").LocalTitleEntry,
+  ) => void;
   footerMode?: ShellFooterMode;
   /** Playbacks that have already shown the on-screen key card; it retires past a few. */
   playbackKeysSessionsSeen?: number;
@@ -431,6 +437,17 @@ export type PlaybackShellResult =
   | {
       readonly type: "play-queue-entry";
       readonly queueEntryId: string;
+    }
+  /**
+   * Launch a different title — same shape `routeShellAction` produces for a
+   * history-overlay pick and the same exit `resolvePostPlaybackExitOutcome`
+   * understands. The palette's JUMP TO rows deliver through this channel.
+   */
+  | {
+      readonly type: "history-entry";
+      readonly title: TitleInfo;
+      readonly episode?: EpisodeInfo;
+      readonly startSeconds?: number;
     };
 
 export function toShellAction(commandId: AppCommandId): ShellAction {
