@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T13:05:00Z"
+lastReviewed: "2026-10-12T13:21:05Z"
 ---
 
 # Kunai — Testing Strategy
@@ -562,6 +562,12 @@ line. The same Test job runs `bun run test:agent` on PRs — L2 is in-process,
 no external tools needed. `onboarding.test.ts` drives the real setup wizard
 over tmux (fresh seed → s → S → Enter → `onboardingVersion` committed,
 `analytics` still `unset`) and self-gates on `Bun.which("tmux")`.
+
+The real-mpv local-transition test waits for the subscribed `pause=true`
+property before issuing its first unpause command. An open IPC pipe alone
+does not establish that cold-start mpv has processed its subscriptions. Keep
+the normal IPC command deadline; native readiness is an event boundary,
+not a sleep or an enlarged command timeout.
 
 Rules that make the loop trustworthy:
 
