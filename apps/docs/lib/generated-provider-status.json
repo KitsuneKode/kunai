@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-11T13:05:46.508Z",
+  "generatedAt": "2026-10-12T15:44:32.247Z",
   "schemaVersion": 1,
   "providers": [
     {
@@ -7,7 +7,7 @@
       "upstreamHttp": null,
       "upstreamReachable": false,
       "resolveStatus": "exhausted",
-      "resolveMs": 2644,
+      "resolveMs": 4075,
       "streams": 0,
       "qualities": [],
       "servers": [],
@@ -21,10 +21,14 @@
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "resolved",
-      "resolveMs": 693,
+      "resolveMs": 983,
       "streams": 1,
-      "qualities": ["720p"],
-      "servers": ["VidLink"],
+      "qualities": [
+        "720p"
+      ],
+      "servers": [
+        "VidLink"
+      ],
       "audioLanguages": [],
       "subtitleLanes": 15,
       "effectiveStatus": "healthy",
@@ -35,12 +39,19 @@
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "resolved",
-      "resolveMs": 1797,
+      "resolveMs": 6349,
       "streams": 2,
-      "qualities": ["tcloud", "dcloud"],
-      "servers": ["PrimeVids · EN"],
-      "audioLanguages": ["en"],
-      "subtitleLanes": 0,
+      "qualities": [
+        "720p",
+        "480p"
+      ],
+      "servers": [
+        "Citadel"
+      ],
+      "audioLanguages": [
+        "en"
+      ],
+      "subtitleLanes": 26,
       "effectiveStatus": "healthy",
       "note": "Apogee: HTTP 403"
     },
@@ -49,7 +60,7 @@
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
-      "resolveMs": 14,
+      "resolveMs": 57,
       "streams": 0,
       "qualities": [],
       "servers": [],
@@ -63,10 +74,14 @@
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "resolved",
-      "resolveMs": 6207,
-      "streams": 4,
-      "qualities": ["2160p", "1080p", "720p", "480p"],
-      "servers": ["Movy miami"],
+      "resolveMs": 24828,
+      "streams": 1,
+      "qualities": [
+        "auto"
+      ],
+      "servers": [
+        "Movy portland"
+      ],
       "audioLanguages": [],
       "subtitleLanes": 0,
       "effectiveStatus": "healthy",
@@ -76,22 +91,22 @@
       "id": "allanime",
       "upstreamHttp": 404,
       "upstreamReachable": true,
-      "resolveStatus": "resolved",
-      "resolveMs": 1620,
-      "streams": 3,
-      "qualities": ["1080p", "720p", "480p"],
-      "servers": ["Default"],
-      "audioLanguages": ["ja"],
-      "subtitleLanes": 3,
-      "effectiveStatus": "healthy",
-      "note": ""
+      "resolveStatus": "exhausted",
+      "resolveMs": 1975,
+      "streams": 0,
+      "qualities": [],
+      "servers": [],
+      "audioLanguages": [],
+      "subtitleLanes": 0,
+      "effectiveStatus": "degraded",
+      "note": "upstream up but resolve exhausted"
     },
     {
       "id": "anidb",
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
-      "resolveMs": 906,
+      "resolveMs": 1718,
       "streams": 0,
       "qualities": [],
       "servers": [],
@@ -105,11 +120,17 @@
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "resolved",
-      "resolveMs": 1573,
+      "resolveMs": 6147,
       "streams": 1,
-      "qualities": ["1080p"],
-      "servers": ["ZokoAnime"],
-      "audioLanguages": ["ja"],
+      "qualities": [
+        "1080p"
+      ],
+      "servers": [
+        "ZokoAnime"
+      ],
+      "audioLanguages": [
+        "ja"
+      ],
       "subtitleLanes": 1,
       "effectiveStatus": "healthy",
       "note": ""
@@ -119,7 +140,7 @@
       "upstreamHttp": 403,
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
-      "resolveMs": 652,
+      "resolveMs": 1128,
       "streams": 0,
       "qualities": [],
       "servers": [],
@@ -133,11 +154,20 @@
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "resolved",
-      "resolveMs": 1796,
+      "resolveMs": 1751,
       "streams": 4,
-      "qualities": ["360p", "480p", "720p", "1080p"],
-      "servers": ["Animegg"],
-      "audioLanguages": ["ja"],
+      "qualities": [
+        "360p",
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "servers": [
+        "Animegg"
+      ],
+      "audioLanguages": [
+        "ja"
+      ],
       "subtitleLanes": 0,
       "effectiveStatus": "healthy",
       "note": ""
@@ -147,14 +177,14 @@
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
-      "resolveMs": 19,
+      "resolveMs": 47,
       "streams": 0,
       "qualities": [],
       "servers": [],
       "audioLanguages": [],
       "subtitleLanes": 0,
-      "effectiveStatus": "degraded",
-      "note": "upstream up but resolve exhausted"
+      "effectiveStatus": "blocked",
+      "note": "upstream challenges this network (WAF/captcha); relay in an ungated region bypasses"
     },
     {
       "id": "youtube",
