@@ -158,7 +158,9 @@ test("offline onSuggest returns no catalog rows and never calls the registry, wh
         },
       ],
     },
-  } as unknown as Container;
+    // SAFETY: deliberately partial container — the phase only reads the
+    // members stubbed above during an offline bootstrap into browse.
+  } as never;
 
   await phase.execute(
     { initialQuery: "local" },
