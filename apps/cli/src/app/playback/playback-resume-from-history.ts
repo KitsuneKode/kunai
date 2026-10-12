@@ -1,4 +1,3 @@
-import type { QuitNearEndThresholdMode } from "@/domain/playback/playback-policy";
 import { resumeSecondsFromProgressPoint } from "@/domain/playback/playback-progress-policy";
 import type { EpisodeInfo } from "@/domain/types";
 import { isFinished } from "@/services/continuation/history-progress";
@@ -7,7 +6,7 @@ import type { EpisodeIdentity } from "@kunai/types";
 
 /**
  * Seconds to resume at for a specific episode from SQLite history, or 0 when we should
- * start from the beginning (no row, finished, too short, or near natural end).
+ * start from the beginning (no row, explicitly finished, or too short).
  */
 export function resolveBootstrapStartSeconds(input: {
   readonly sharedStartSeconds?: number;
@@ -49,7 +48,7 @@ export function createBootstrapResumeResolver(input: {
 
 /**
  * Seconds to resume at for a specific episode from SQLite history, or 0 when we should
- * start from the beginning (no row, finished, too short, or near natural end).
+ * start from the beginning (no row, explicitly finished, or too short).
  *
  * Uses exact episode identity only — never inherits a sibling episode's position.
  */
@@ -57,17 +56,16 @@ export function resumeSecondsFromHistoryForEpisode(
   historyRepository: HistoryRepository,
   title: HistoryTitleLookup,
   episode: EpisodeInfo,
-  quitNearEndThresholdMode: QuitNearEndThresholdMode,
 ): number {
   for (const episodeIdentity of candidateResumeEpisodeIdentities(episode)) {
     const entry = historyRepository.getProgressForTitleIdentity(title, episodeIdentity);
     if (!entry) continue;
     if (isFinished(entry)) return 0;
 
-    return resumeSecondsFromProgressPoint(
-      { positionSeconds: entry.positionSeconds, durationSeconds: entry.durationSeconds ?? 0 },
-      quitNearEndThresholdMode,
-    );
+    return resumeSecondsFromProgressPoint({
+      positionSeconds: entry.positionSeconds,
+      durationSeconds: entry.durationSeconds ?? 0,
+    });
   }
   return 0;
 }

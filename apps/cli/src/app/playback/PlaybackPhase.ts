@@ -712,12 +712,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       const resolveTargetResumeSeconds = createBootstrapResumeResolver({
         sharedStartSeconds: bootstrapStartSeconds,
         resumeFromHistory: (target: EpisodeInfo) =>
-          resumeSecondsFromHistoryForEpisode(
-            historyRepository,
-            historyTitleLookup,
-            target,
-            config.quitNearEndThresholdMode,
-          ),
+          resumeSecondsFromHistoryForEpisode(historyRepository, historyTitleLookup, target),
       });
       const startNavigationToEpisode = async (target: EpisodeInfo) =>
         startEpisodeNavigation({
@@ -2681,8 +2676,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               quitThresholdMode,
             );
             // History durability: completed:true is forever — it clears the
-            // resume point. A clean EOF or a credits quit sets it; a kill,
-            // crash, timeout, or keep-open no-end-file outcome stays resumable
+            // resume point. Only a clean natural EOF sets it; voluntary quit,
+            // kill, crash, timeout, or keep-open no-end-file stays resumable
             // even past the threshold.
             const shouldMarkCompleted = shouldMarkEpisodeCompleted(
               result,
