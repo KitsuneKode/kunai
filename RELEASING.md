@@ -282,6 +282,41 @@ bun run scripts/set-release-status.ts <version> published <UTC-ISO>
 
 Then focused release-artifact tests and `release:notes:check` run before a narrow PR containing `.release/kunai-v<version>.json` is opened against main. The branch is keyed by version and workflow run ID, so retrying the metadata job reuses its review branch. Main is updated only through review and required checks. GitHub may require a maintainer to approve workflow runs for this bot-created PR.
 
+## Package channels (Homebrew, Scoop, AUR)
+
+`.github/workflows/package-channels.yml` runs automatically when a release is
+**published** (prereleases are skipped) and can also be dispatched by hand with
+a `tag` input for backfills. It:
+
+1. Downloads `SHA256SUMS.archives` and the tag's `LICENSE`, then asserts the
+   release publishes every expected archive
+   (`scripts/verify-github-release-assets.ts`).
+2. Renders the channel files deterministically with
+   `bun run scripts/packaging/render-channels.ts --version <x.y.z> --sums
+<path> --license <path> --out dist/channels` and uploads them as the
+   `package-channels-<tag>` artifact for review.
+3. Publishes, when credentials exist — each publish step prints a `::notice::`
+   and is skipped when its secret is absent:
+   - `Formula/kunai.rb` → `KitsuneKode/homebrew-tap` and `bucket/kunai.json` →
+     `KitsuneKode/scoop-bucket`, via `https` clone with secret
+     `PACKAGE_CHANNELS_TOKEN` (a PAT with `contents:write` on both repos).
+     Commit message: `kunai <version>`; a no-change render is a no-op push.
+   - `PKGBUILD` + `.SRCINFO` → `ssh://aur@aur.archlinux.org/kunai-bin.git` via
+     secret `AUR_SSH_PRIVATE_KEY` (deploy key registered as the AUR package's
+     co-maintainer; `ssh-keyscan` pins `aur.archlinux.org` at publish time).
+
+One-time owner setup:
+
+- Create the `KitsuneKode/homebrew-tap` and `KitsuneKode/scoop-bucket` repos
+  (a `Formula/` and `bucket/` directory respectively are created by the first
+  publish).
+- Create the `kunai-bin` package on AUR and register the deploy key as a
+  (co-)maintainer.
+- Add repository secrets `PACKAGE_CHANNELS_TOKEN` and `AUR_SSH_PRIVATE_KEY`.
+
+None of this is a publish blocker: release assets are self-contained, and each
+channel step degrades to a notice when its secret is missing.
+
 ## npm publication recovery
 
 If publication stops partway through the nine-package set, rerun the same

@@ -13,7 +13,7 @@ Kunai supports **zero-prerequisite compiled binaries** (default), global package
 
 ## Install paths
 
-<Tabs items={["Linux / macOS", "Windows", "Bun global", "npm global", "Source"]}>
+<Tabs items={["Linux / macOS", "Windows", "Homebrew", "Scoop", "AUR", "Bun global", "npm global", "Source"]}>
 <Tab value="Linux / macOS">
 
 Default: downloads a verified release binary into a versioned store and links `~/.local/bin/kunai`:
@@ -80,6 +80,53 @@ Bun, pnpm, Yarn, Scoop, Chocolatey, or WinGet), it lists each competing path
 and the command that removes it, and does not delete those installs itself.
 
 Supported binary targets: `windows-x64`, `windows-arm64`.
+
+</Tab>
+<Tab value="Homebrew">
+
+For macOS and Linuxbrew users, from `KitsuneKode/homebrew-tap`:
+
+```sh
+brew install kitsunekode/tap/kunai
+```
+
+The formula fetches the same signed-checksum release archives as the installer
+and installs the binary as `kunai`. `mpv` is your own install (`brew install
+mpv`). Kunai needs it for playback but the formula does not force it as a
+dependency. `kunai upgrade` detects the Cellar path and prints `brew upgrade
+kunai` instead of touching the file; `kunai uninstall` prints `brew uninstall
+kunai` and leaves the binary to Homebrew.
+
+</Tab>
+<Tab value="Scoop">
+
+For Windows users, from `KitsuneKode/scoop-bucket`:
+
+```powershell
+scoop bucket add kitsunekode https://github.com/KitsuneKode/scoop-bucket
+scoop install kunai
+```
+
+The manifest fetches the same `kunai-windows-*.zip` release archives and shims
+the exe as `kunai`. Scoop suggests `extras/mpv` for playback. `kunai upgrade`
+detects the `scoop\apps\kunai` path and prints `scoop update kunai`;
+`kunai uninstall` prints `scoop uninstall kunai`.
+
+</Tab>
+<Tab value="AUR">
+
+For Arch Linux, the `kunai-bin` package (binary `-bin` package, built from the
+published release archives):
+
+```sh
+yay -S kunai-bin
+```
+
+`mpv` is a hard dependency; `yt-dlp`, `ffmpeg`, and `curl` are optional
+dependencies for extra sources and downloads. `kunai upgrade` detects
+`/usr/bin/kunai` and prints your package-manager update path (`yay -Syu
+kunai-bin` or your AUR helper); `kunai uninstall` prints `sudo pacman -R
+kunai-bin`.
 
 </Tab>
 <Tab value="Bun global">
@@ -277,8 +324,9 @@ Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade 
 
 `kunai --version` prints `kunai <version> (<channel>)`. `install.json` is
 authoritative when present; otherwise Kunai detects the channel from the
-checkout or launcher (`source`, `binary`, `npm-global`, `bun-global`, or `dev`
-when it cannot tell).
+checkout, launcher, or executable path (`source`, `binary`, `npm-global`,
+`bun-global`, `homebrew`, `scoop`, `system-package`, or `dev` when it cannot
+tell).
 
 ## Update checks
 
@@ -288,6 +336,7 @@ endpoint cannot leave startup checks or `kunai upgrade` waiting indefinitely.
 
 - **Binary installs:** when `autoApplyBinaryUpdates` is enabled (default), Kunai downloads and stages the new version under `versions/` automatically. Restart Kunai to run the new binary. Toggle this from `/update`.
 - **npm/bun/source:** notify-only; run `kunai upgrade` or your package manager manually.
+- **Homebrew/Scoop/AUR:** `kunai upgrade` never self-replaces a package-manager-owned file; it prints your package manager's update command.
 - **Turning it off:** set `updateChecksEnabled` to `false` in `config.json` (default `true`) and Kunai stops checking entirely: no background request, and no update notice.
 
 Manual check from the shell:
@@ -304,6 +353,9 @@ The update panel shows install-method-aware guidance:
 | Source checkout  | Pull the repository, refresh dependencies/build as needed     |
 | Bun global       | `bun update --global @kitsunekode/kunai` or `kunai upgrade`   |
 | npm global       | `npm install -g @kitsunekode/kunai` or `kunai upgrade`        |
+| Homebrew         | `brew upgrade kunai`                                          |
+| Scoop            | `scoop update kunai`                                          |
+| AUR (system pkg) | `yay -Syu kunai-bin` (or your AUR helper)                     |
 
 You can snooze automatic checks for seven days or disable them from the update panel. Manual `/update` always remains available.
 
