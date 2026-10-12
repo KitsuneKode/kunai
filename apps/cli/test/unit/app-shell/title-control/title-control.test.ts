@@ -414,6 +414,25 @@ describe("smart auto-launch — plain Enter (no preselected episode)", () => {
     expect(resolvePlaybackEpisodeEntry(ctx).kind).toBe("menu");
   });
 
+  test("undoing launch intent: explicit menu request beats a notification pick", () => {
+    // `m` is the user's own "show me the menu" — it outranks even a
+    // launchSource that carries an exact episode identity.
+    const ctx = enterCtx({
+      forceMenu: true,
+      launchSource: "notification",
+      preselectedEpisode: { season: 2, episode: 7 },
+      history: {
+        positionSeconds: 600,
+        durationSeconds: 1200,
+        completed: false,
+        season: 2,
+        episode: 4,
+      },
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(false);
+    expect(resolvePlaybackEpisodeEntry(ctx).kind).toBe("menu");
+  });
+
   test("failed provider still defers to the menu on plain Enter", () => {
     const ctx = enterCtx({
       failedProvider: true,
