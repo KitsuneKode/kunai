@@ -12,9 +12,11 @@ import {
 import type { CalendarTypeTab } from "@/app-shell/calendar-ui.model";
 import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
+import { notePaletteCommand } from "@/app-shell/contextual-tips";
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import type { CalendarRouteRequest } from "@/app-shell/hooks/use-calendar-route";
 import { openBrowseShell } from "@/app-shell/ink-shell";
+import { pickPaletteTitle } from "@/app-shell/palette-title-launch";
 import { chooseFromListShell } from "@/app-shell/pickers";
 import { getRootContentSession, waitForRootContentSlot } from "@/app-shell/root-content-state";
 import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
@@ -41,6 +43,7 @@ import { launchCalendarContinue } from "@/app/search/calendar-continue-launch";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calendar-results";
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
+import { prefetchBrowseEntrySelection } from "@/app/search/prefetch-browse-entry";
 import {
   buildSearchFailureNote,
   shouldRunBootstrapSearch,
@@ -51,6 +54,7 @@ import {
   shouldDeferBrowseIdleContext,
   type SearchStartupRoute,
 } from "@/app/search/search-startup-policy";
+import { loadLocalSuggestionCorpus, toCatalogSuggestions } from "@/app/search/search-suggestions";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import {
@@ -76,11 +80,13 @@ import { buildSearchDiagnosticEvent } from "@/services/diagnostics/diagnostic-ev
 import { seedCaughtUpReleaseProgressFromCatalogCount } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { observeOnline } from "@/services/network/network-observation";
+import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
 import {
   enqueueReleaseReconciliation,
   collectReleaseReconciliationRows,
 } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { searchTitles, type SearchFilterEvidence } from "@/services/search/SearchRoutingService";
+import { suggestCatalogTitles } from "@/services/search/suggest-titles";
 import { describeMirrorTargets, resolveMirrorTargets } from "@/services/sync/mirror-targets";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
@@ -111,7 +117,7 @@ function spawnTrailerMpv(argv: readonly string[], target: string): boolean {
       // Already gone between the liveness check and the kill.
     }
   }
-  const proc = Bun.spawn([...argv, target], {
+  const proc = Bun.spawn([...argv, "--", target], {
     stdout: "ignore",
     stderr: "ignore",
     stdin: "ignore",
@@ -176,6 +182,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
   private hasHealedHistoryMetadata = false;
   /** Titles already warmed this session, so a search never re-fetches one. */
   private readonly warmedAnimeEpisodeCaches = new Set<string>();
+  /** Result ids whose Enter-path prefetch already ran this session. */
+  private readonly dwellPrefetchedResultIds = new Set<string>();
 
   /**
    * Warm the top anime result's episode catalog in the background so the
@@ -637,6 +645,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           mode: syncedState.mode,
           provider: syncedState.provider,
           settings: container.config.getRaw(),
+          onPaletteCommand: (commandId) => notePaletteCommand(container, "browse", commandId),
           initialCalendarTypeTab,
           initialCalendarRoute: openedCalendarRoute,
           initialErrorMessage: initialSearchError,
@@ -712,8 +721,60 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           commands: resolveCommands(syncedState, SEARCH_BROWSE_COMMAND_IDS, {
             excludeGroups: ["Experimental"],
           }),
+          localTitles: () => collectLocalTitleEntries(container),
+          onTitlePick: (entry) => pickPaletteTitle(container, entry),
           idleContext: latestIdleContext,
           loadIdleContext,
+          // Type-ahead band sources. Remote is ONE fast registry call — never
+          // the provider-lane `searchTitles` walk — and local is a synchronous
+          // snapshot of the user's own titles. Both die quietly: the band is an
+          // enhancement surface, not an error surface.
+          onSuggest: async (query, signal) => {
+            // Catalog suggestions are a network hop (TMDB/AniList through the
+            // registry). Offline sessions keep local rows only — the same gate
+            // dwell prefetch uses.
+            if (!container.connectivity.isOnline()) return [];
+            const liveState = stateManager.getState();
+            const suggestIntent = createSearchIntentEngine().fromText(query, {
+              currentMode: liveState.mode,
+            });
+            const outcome = await suggestCatalogTitles({
+              query: suggestIntent.intent.query,
+              mode: liveState.mode,
+              providerId: liveState.provider,
+              providerCatalogIdentity: providerRegistry.get(liveState.provider)?.metadata
+                .catalogIdentity,
+              searchRegistry,
+              signal,
+            });
+            return toCatalogSuggestions(
+              outcome?.results ?? [],
+              container.config.animeTitlePreference,
+            );
+          },
+          loadLocalSuggestions: () => loadLocalSuggestionCorpus(container),
+          // Dwell prefetch (~500ms on a rested row): warms exactly what the
+          // select path below pays — provider mapping, identity enrich, title
+          // detail, and the episode catalog — so Enter resolves from cache.
+          // Dedupe per result: re-resting on a row the session already warmed
+          // must not re-pay the Cloudflare-gated anime fetch.
+          onPrefetchOption: (result, signal) => {
+            if (this.dwellPrefetchedResultIds.has(result.id)) return;
+            this.dwellPrefetchedResultIds.add(result.id);
+            void prefetchBrowseEntrySelection({
+              container,
+              result,
+              fallbackMode: stateManager.getState().mode,
+              providerId: stateManager.getState().provider,
+              signal,
+              warmedAnimeEpisodeCaches: this.warmedAnimeEpisodeCaches,
+            });
+          },
+          // `z` on the browse surface pops the session journal — the router
+          // callbacks below are what journaled those entries in the first place.
+          onUndo: () => {
+            container.sessionUndo?.undoLatest();
+          },
           onQueueSelected: async (result) => {
             const router = createContainerMediaActionRouter(container);
             await router.run({
@@ -1111,12 +1172,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 selectionMode,
                 context.signal,
               );
+              const menuTitle = { ...title, forceStartingMenu: true };
               stateManager.dispatch({
                 type: "SELECT_TITLE",
-                title,
+                title: menuTitle,
                 videoMeta: videoMetaFromSearchResult(selected),
               });
-              return { status: "success", value: title };
+              return { status: "success", value: menuTitle };
             }
 
             // Idle continue / queue: prime the title without locking an episode so
@@ -1129,7 +1191,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   titleFromHistorySelection(continueWatchingSelection),
                   continueWatchingSelection.entry,
                 );
-                stateManager.dispatch({ type: "SELECT_TITLE", title });
+                stateManager.dispatch({
+                  type: "SELECT_TITLE",
+                  title: { ...title, forceStartingMenu: true },
+                });
               } else {
                 const queueNext = container.queueService.peekNext();
                 if (queueNext && latestIdleContext?.playlistNext?.titleId === queueNext.titleId) {
@@ -1140,7 +1205,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   if (launch) {
                     stateManager.dispatch({
                       type: "SELECT_TITLE",
-                      title: titleInfoFromQueuePlaybackLaunch(launch),
+                      title: {
+                        ...titleInfoFromQueuePlaybackLaunch(launch),
+                        forceStartingMenu: true,
+                      },
                     });
                   } else {
                     logger.info("Idle playlist-next claim failed; priming without queue intent", {
@@ -1148,14 +1216,20 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                     });
                     const { queuePlaybackIntent: _unclaimed, ...title } =
                       titleInfoFromQueueEntry(queueNext);
-                    stateManager.dispatch({ type: "SELECT_TITLE", title });
+                    stateManager.dispatch({
+                      type: "SELECT_TITLE",
+                      title: { ...title, forceStartingMenu: true },
+                    });
                   }
                 }
               }
             } else {
               const existing = stateManager.getState().currentTitle;
               if (existing) {
-                stateManager.dispatch({ type: "SELECT_TITLE", title: existing });
+                stateManager.dispatch({
+                  type: "SELECT_TITLE",
+                  title: { ...existing, forceStartingMenu: true },
+                });
               }
             }
 

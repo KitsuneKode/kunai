@@ -55,7 +55,16 @@ export function shouldAttemptLateSubtitleLookup({
     return { attempt: false, reason: "hardsub-satisfied", availableTracks };
   }
   if (stream.subtitle) {
-    return { attempt: false, reason: "attached", availableTracks };
+    const attachedTrack = stream.subtitleList?.find((track) => track.url === stream.subtitle);
+    const attachedLanguage = attachedTrack?.language ?? attachedTrack?.display;
+    if (
+      requestedSubLang === "interactive" ||
+      requestedSubLang === "fzf" ||
+      !attachedLanguage ||
+      langMatches(attachedLanguage, requestedSubLang)
+    ) {
+      return { attempt: false, reason: "attached", availableTracks };
+    }
   }
   if (availableTracks > 0) {
     const hasRequestedTrack = stream.subtitleList?.some((track) =>
@@ -63,6 +72,19 @@ export function shouldAttemptLateSubtitleLookup({
     );
     if (hasRequestedTrack) {
       return { attempt: false, reason: "inventory-satisfied", availableTracks };
+    }
+  }
+  if (stream.subtitle) {
+    // A track is attached — but it may be a fallback that does not satisfy the
+    // request (provider default "en" attached while "fr" was asked). Only a
+    // satisfying attachment, or one whose provenance is unknown, settles the
+    // request; a known non-match still needs the external lookup.
+    const attachedTrack = stream.subtitleList?.find((track) => track.url === stream.subtitle);
+    if (
+      !attachedTrack ||
+      langMatches(attachedTrack.language ?? attachedTrack.display ?? "", requestedSubLang)
+    ) {
+      return { attempt: false, reason: "attached", availableTracks };
     }
   }
   return { attempt: true, reason: "needs-lookup", availableTracks };

@@ -11,6 +11,7 @@ import { applyProviderPickerSelection } from "@/app/playback/playback-provider-s
 import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
+import type { LocalTitleMatch } from "@/domain/palette/local-title-index";
 import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-name";
 import {
   encodeTrackSelection,
@@ -45,6 +46,7 @@ import {
   NotificationActionRouter,
   type NotificationActionId,
 } from "@/services/notifications/NotificationActionRouter";
+import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import type { InstallMethodKind } from "@/services/update/install-method";
 import { resolveNotificationUpdateAction } from "@/services/update/notification-update-action";
@@ -146,6 +148,7 @@ import {
   getSelectedNotificationActionId,
   selectNotificationPickerOptions,
 } from "./notification-overlay-model";
+import { deliverNotificationPlayback } from "./notification-playback-delivery";
 import { NotificationsShell } from "./notifications-shell";
 import { buildNotificationsView, nearestNotificationDedupKey } from "./notifications-view";
 import { resolveOverlayBackStack } from "./overlay-back-stack";
@@ -161,6 +164,7 @@ import {
 } from "./overlay-input-safety";
 import { OverlayLayoutProvider, type OverlayLayoutValue } from "./overlay-layout-context";
 import { type BrowseOverlay, OverlayPanel } from "./overlay-panel";
+import { pickPaletteTitle } from "./palette-title-launch";
 import {
   buildAboutPanelLines,
   buildDiagnosticsPanelLines,
@@ -181,10 +185,10 @@ import {
   type RootHistorySelection,
 } from "./root-history-bridge";
 import {
-  clearNotificationPlaybackIntent,
+  hasPendingNotificationSelection,
   openDiagnosticsOverlay,
+  resolveNotificationSelection,
   stageNotificationDetailsItem,
-  stageNotificationPlaybackIntent,
 } from "./root-overlay-bridge";
 import {
   buildRootGenericPickerOptions,
@@ -208,7 +212,7 @@ import { SEARCH_BROWSE_COMMAND_IDS } from "./search-browse-command-ids";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
 import { SettingsShell } from "./settings/SettingsShell";
 import { useShellInput } from "./shell-command-input";
-import { CommandPalette } from "./shell-command-ui";
+import { CommandPalette, PaletteTitleMatchesProvider } from "./shell-command-ui";
 import { ContextStrip, ShellFooter, ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import { tracksNavigationColumns } from "./tracks-panel-layout";
@@ -309,12 +313,18 @@ export function buildHelpTabRows(tab: string): readonly { key: string; desc: str
   return helpTabRows(tab);
 }
 
-function wrapOverlayLayout(layout: OverlayLayoutValue, node: ReactNode) {
+function wrapOverlayLayout(
+  layout: OverlayLayoutValue,
+  node: ReactNode,
+  titleMatches: readonly LocalTitleMatch[],
+) {
   return (
     <OverlayLayoutProvider value={layout}>
-      <ViewportResizeGate kind="picker" message="Resize terminal to use this panel">
-        {node}
-      </ViewportResizeGate>
+      <PaletteTitleMatchesProvider matches={titleMatches}>
+        <ViewportResizeGate kind="picker" message="Resize terminal to use this panel">
+          {node}
+        </ViewportResizeGate>
+      </PaletteTitleMatchesProvider>
     </OverlayLayoutProvider>
   );
 }
@@ -864,6 +874,12 @@ export function RootOverlayShell({
   // Up Next queue: bumping the tick after a mutation (reorder/remove/clear/restore)
   // recomputes the view from the service's fresh getAll().
   const [queueTick, setQueueTick] = useState(0);
+  // Armed destructive queue action. First press arms and the prompt stays
+  // visible in the footer until the second press mutates (or something
+  // disarms it) — unlike overlayStatus, which self-clears after 2.5s while an
+  // arm would silently survive. Keyed by row id for removes so a resort
+  // between presses cannot retarget the confirm (library-shell convention).
+  const [queueConfirm, setQueueConfirm] = useState<{ key: string; prompt: string } | null>(null);
   const queuePosterResolver = useMemo(() => {
     const map = new Map<string, string>();
     for (const { titleId, entry } of historySelections) {
@@ -977,17 +993,22 @@ export function RootOverlayShell({
       });
     }
   };
-  const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
-    footerActions,
-    commands,
-    // The settings surface owns `/` itself — its footer advertises it as
-    // search. Without disabling here, one keystroke opened the palette AND
-    // armed the settings filter (both handlers see commandMode=false on the
-    // same event), and closing the palette left a phantom focused search.
-    disabled: overlay.type === "settings",
-    escapeAction: null,
-    onResolve: resolveOverlayPaletteAction,
-  });
+  const { commandMode, commandInput, commandCursor, highlightedIndex, titleMatches } =
+    useShellInput({
+      footerActions,
+      commands,
+      // The settings surface owns `/` itself — its footer advertises it as
+      // search. Without disabling here, one keystroke opened the palette AND
+      // armed the settings filter (both handlers see commandMode=false on the
+      // same event), and closing the palette left a phantom focused search.
+      disabled: overlay.type === "settings",
+      escapeAction: null,
+      localTitles: () => collectLocalTitleEntries(container),
+      onTitlePick: (entry) => pickPaletteTitle(container, entry),
+      onResolve: resolveOverlayPaletteAction,
+    });
+
+  const wrapWithLayout = (node: ReactNode) => wrapOverlayLayout(overlayLayout, node, titleMatches);
 
   const overlayPanelKind = resolveOverlayPanelKind(overlay.type);
   const overlayDedicatedShell =
@@ -1161,15 +1182,16 @@ export function RootOverlayShell({
     setHistoryPendingDelete(null);
   }, [historyTab, overlay.type]);
 
+  // An armed queue destroy must not survive leaving the queue: without this,
+  // returning later and pressing the same key once would mutate.
+  useEffect(() => {
+    setQueueConfirm(null);
+  }, [overlay.type]);
+
   // Discard any play-now intent left staged by an earlier inbox session.
   // Only the palette route consumes the intent (it reads after close), so an
   // inbox opened by direct dispatch can strand one; without this it would fire
   // against the next palette-opened session and play the wrong title.
-  useEffect(() => {
-    if (overlay.type !== "notifications") return;
-    clearNotificationPlaybackIntent();
-  }, [overlay.type]);
-
   useEffect(() => {
     if (overlay.type !== "history") {
       return;
@@ -1248,32 +1270,29 @@ export function RootOverlayShell({
           playNow: async (item) => {
             applyMediaItemSessionRouting(container, item);
             const intent = playbackIntentFromMediaItem(item);
-            container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-
-            // Two routes open this inbox and only one used to consume the
-            // intent, so "Play now" from inside another overlay reported
-            // success and played nothing.
-            //
-            // Settling the retained browse session is the one channel that
-            // reaches the phase loop from inside an overlay (the same one
-            // offline playback uses). It succeeds exactly when browse is still
-            // mounted — the direct OPEN_OVERLAY route. On the palette route
-            // browse has already resolved, so this returns false and the intent
-            // is staged for `openNotificationsOverlay` to take on close. The two
-            // cases are mutually exclusive, so playback can never start twice.
-            const delivered = forceCloseRootContent<BrowseShellResult<SearchResult>>({
-              type: "launch-playback",
-              launch: {
+            // The inbox has two open paths and the outcome channel differs per
+            // path. The awaited route (openNotificationsOverlay) is listening
+            // on the bridge — resolve it and the opener turns the outcome into
+            // a history-entry result. The direct route (a bare OPEN_OVERLAY)
+            // has nobody listening, so the row delivers the launch itself:
+            // settle a mounted browse/post-play session or arm a switch-title
+            // intent against live playback.
+            const bridged = hasPendingNotificationSelection();
+            if (bridged) {
+              resolveNotificationSelection({
+                kind: "playback",
                 title: intent.title,
                 ...(intent.episode ? { episode: intent.episode } : {}),
-              },
-            });
-            if (!delivered) stageNotificationPlaybackIntent(intent);
+              });
+            }
+            container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+            if (!bridged) await deliverNotificationPlayback(container, intent);
           },
         },
         details: {
           open: async (item) => {
             stageNotificationDetailsItem(item);
+            resolveNotificationSelection({ kind: "details", item });
             container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
           },
         },
@@ -1457,6 +1476,7 @@ export function RootOverlayShell({
   };
 
   const activateQueueRow = (row: QueueViewRow) => {
+    setQueueConfirm(null);
     if (row.state === "played" || row.state === "starting") {
       setOverlayStatus(
         row.state === "starting"
@@ -1785,45 +1805,140 @@ export function RootOverlayShell({
         return;
       }
       if (input === "J" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
+        setQueueConfirm(null);
         if (container.queueService.moveDown(row.id))
           setSelectedIndex((c) => Math.min(c + 1, queueRows.length - 1));
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input === "K" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
+        setQueueConfirm(null);
         if (container.queueService.moveUp(row.id)) setSelectedIndex((c) => Math.max(c - 1, 0));
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input === "g" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
+        setQueueConfirm(null);
         container.queueService.moveToTop(row.id);
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input === "G" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
+        setQueueConfirm(null);
         container.queueService.moveToBottom(row.id);
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input.toLowerCase() === "x" && row) {
-        container.queueService.remove(row.id);
-        setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
-        refresh();
+        // Destructive, adjacent to Ctrl+C, and one press away from an
+        // accident: arm on first press, remove on the second. Keyed by row id
+        // so a resort between presses cannot retarget the confirm —
+        // same convention as library-shell.
+        const confirmKey = `remove:${row.id}`;
+        if (queueConfirm?.key === confirmKey) {
+          setQueueConfirm(null);
+          const undoBefore = container.sessionUndo?.captureQueue();
+          container.queueService.remove(row.id);
+          container.sessionUndo?.recordQueueChange(
+            "removed from queue",
+            "queue remove",
+            undoBefore ?? [],
+          );
+          setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
+          setOverlayStatus(`Removed ${row.title} from Up Next`);
+          refresh();
+        } else {
+          setQueueConfirm({ key: confirmKey, prompt: `Press x again to remove ${row.title}` });
+        }
         return;
       }
       if (input === "C") {
-        container.queueService.clearPlayed();
-        setSelectedIndex(0);
-        refresh();
+        const playedCount = queueRows.filter((candidate) => candidate.state === "played").length;
+        if (playedCount === 0) {
+          setQueueConfirm(null);
+          setOverlayStatus("No played items to clear");
+          return;
+        }
+        if (queueConfirm?.key === "clear-played") {
+          setQueueConfirm(null);
+          const undoBefore = container.sessionUndo?.captureQueue();
+          container.queueService.clearPlayed();
+          container.sessionUndo?.recordQueueChange(
+            "cleared played items",
+            "played clear",
+            undoBefore ?? [],
+          );
+          setSelectedIndex(0);
+          setOverlayStatus(`Cleared ${playedCount} played ${playedCount === 1 ? "item" : "items"}`);
+          refresh();
+        } else {
+          setQueueConfirm({
+            key: "clear-played",
+            prompt: `Press C again to clear ${playedCount} played ${playedCount === 1 ? "item" : "items"}`,
+          });
+        }
         return;
       }
       if (input === "c" && !key.ctrl) {
-        container.queueService.clear();
-        setSelectedIndex(0);
+        if (queueRows.length === 0) {
+          setQueueConfirm(null);
+          setOverlayStatus("Up Next is already empty");
+          return;
+        }
+        if (queueConfirm?.key === "clear-all") {
+          const cleared = queueRows.length;
+          setQueueConfirm(null);
+          const undoBefore = container.sessionUndo?.captureQueue();
+          container.queueService.clear();
+          container.sessionUndo?.recordQueueChange(
+            "cleared queue",
+            "queue clear",
+            undoBefore ?? [],
+          );
+          setSelectedIndex(0);
+          setOverlayStatus(`Cleared ${cleared} ${cleared === 1 ? "item" : "items"} from Up Next`);
+          refresh();
+        } else {
+          setQueueConfirm({
+            key: "clear-all",
+            prompt: `Press c again to clear all ${queueRows.length} ${queueRows.length === 1 ? "item" : "items"}`,
+          });
+        }
+        return;
+      }
+      // `z` undoes the latest journal entry while one is live; with nothing to
+      // undo it falls through to the choice-overlay filter like any letter.
+      if (input === "z" && container.sessionUndo?.hasLiveUndo()) {
+        container.sessionUndo?.undoLatest();
         refresh();
         return;
       }
       if (input.toLowerCase() === "r") {
+        setQueueConfirm(null);
         const sessions = container.queueService.listRecoverableSessions();
         // Sessions come back most-recent-first; naming the target in the status
         // line is what makes this restore explicit rather than a silent guess.
@@ -1840,6 +1955,11 @@ export function RootOverlayShell({
         refresh();
         return;
       }
+      // Arrows + filtering fall through to the generic handlers below. An
+      // armed confirm names one row: moving the selection must disarm it, or
+      // a later press on the original row would delete with no prompt visible
+      // (the status line self-clears after 2.5s while the arm would survive).
+      if ((key.upArrow || key.downArrow) && queueConfirm) setQueueConfirm(null);
       // No early return — arrows + filtering fall through.
     }
     if (
@@ -2066,6 +2186,12 @@ export function RootOverlayShell({
         });
         return;
       }
+      // `z` pops the live undo entry on every choice surface; when nothing is
+      // undoable it still reaches the filter editor as ordinary text.
+      if (input === "z" && !key.ctrl && !key.meta && container.sessionUndo?.hasLiveUndo()) {
+        container.sessionUndo?.undoLatest();
+        return;
+      }
       if (
         shouldHistoryOverlayAcceptFilterInput({
           overlayType: overlay.type,
@@ -2148,8 +2274,7 @@ export function RootOverlayShell({
                 };
 
   if (overlay.type === "downloads") {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <DownloadManagerContent
           container={container}
@@ -2175,8 +2300,7 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "library") {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <RootContentSuspension suspended={commandMode}>
           <LibraryShell
@@ -2198,8 +2322,7 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "settings") {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         {overlayStatus ? (
           <Text color={palette.textDim}>
@@ -2230,8 +2353,7 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "notifications" && !notificationActionDedupKey && !notificationPlayConfirm) {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <NotificationsShell
           view={notificationsView}
@@ -2290,8 +2412,7 @@ export function RootOverlayShell({
         : null,
     };
 
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <ContextStrip
           items={[
@@ -2308,24 +2429,27 @@ export function RootOverlayShell({
           onRowClick={
             commandMode
               ? undefined
-              : (id) => {
+              : (id, activate) => {
+                  setQueueConfirm(null);
                   const index = queueView.rows.findIndex((row) => row.id === id);
                   const row = queueView.rows[index];
                   if (!row) return;
-                  if (index !== qSelected) setSelectedIndex(index);
+                  if (!activate || index !== qSelected) setSelectedIndex(index);
                   else activateQueueRow(row);
                 }
           }
           onWheel={
             commandMode
               ? undefined
-              : (direction) =>
+              : (direction) => {
+                  setQueueConfirm(null);
                   setSelectedIndex((current) =>
                     Math.max(
                       0,
                       Math.min(queueView.rows.length - 1, current + (direction === "up" ? -1 : 1)),
                     ),
-                  )
+                  );
+                }
           }
           columns={overlayLayout.contentColumns}
           listWidth={listWidth}
@@ -2340,7 +2464,10 @@ export function RootOverlayShell({
           />
         ) : null}
         <ShellFooter
-          taskLabel="Up Next"
+          // An armed confirm prompt lives here (not only in overlayStatus,
+          // which self-clears after 2.5s) so it stays visible until the second
+          // press or a disarm — notifications-footer pattern.
+          taskLabel={queueConfirm?.prompt ?? overlayStatus ?? "Up Next"}
           actions={queueFooterActions()}
           mode="detailed"
           commandMode={commandMode}
@@ -2359,8 +2486,7 @@ export function RootOverlayShell({
     } = getPickerLayout(overlayLayout.contentColumns, overlayLayout.contentRows);
     const listWidth = pickerListWidth ?? innerWidth;
 
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <ContextStrip
           items={[
@@ -2423,8 +2549,7 @@ export function RootOverlayShell({
       commandItems.length > 0
         ? [...scopeSections, { group: "Commands", items: commandItems }]
         : scopeSections;
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <HelpShell
         sections={helpScopeSections}
         scopeLabel={HELP_SCOPE_LABELS[helpScope]}
@@ -2485,13 +2610,13 @@ export function RootOverlayShell({
         statusNote={overlayStatus}
         onActivate={activateGuideRow}
       />,
+      titleMatches,
     );
   }
 
   if (overlay.type === "tracks_panel") {
     const tracksHasSwitchable = trackGroups.some((group) => group.rows.some((row) => row.enabled));
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         {effectiveSubtitle.trim() ? (
           <ContextStrip items={[{ label: effectiveSubtitle, tone: "neutral" }]} />
@@ -2574,8 +2699,7 @@ export function RootOverlayShell({
     );
   }
 
-  return wrapOverlayLayout(
-    overlayLayout,
+  return wrapWithLayout(
     <Box flexDirection="column" flexGrow={1}>
       <ContextStrip
         items={

@@ -1,4 +1,5 @@
 import { getLineEditorViewport, splitCursor } from "@/app-shell/line-editor";
+import type { LocalTitleMatch } from "@/domain/palette/local-title-index";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -11,7 +12,7 @@ import {
   getPlaybackCommandPaletteMaxVisible,
   resolveCommandPaletteWidth,
 } from "./shell-command-model";
-import { getWindowStart, padColumnsEnd, truncateLine } from "./shell-text";
+import { getWindowStart, measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import { useShellDimensions } from "./use-viewport-policy";
 
@@ -21,12 +22,15 @@ export function LineEditorText({
   focused,
   placeholder,
   maxWidth,
+  ghostSuffix,
 }: {
   value: string;
   cursor: number;
   focused: boolean;
   placeholder?: string;
   maxWidth?: number;
+  /** Dim type-ahead completion rendered after the cursor at end-of-line. */
+  ghostSuffix?: string;
 }) {
   const viewport = getLineEditorViewport(value, cursor, maxWidth);
   const visiblePlaceholder =
@@ -55,6 +59,13 @@ export function LineEditorText({
 
   const { before, cursorChar, after } = splitCursor(viewport.value, viewport.cursor);
   const visibleCursor = cursorChar.length > 0 ? cursorChar : " ";
+  // Ghost completion only trails an end-of-line cursor — never mid-text.
+  const atEnd = after.length === 0 && cursorChar.length === 0;
+  const ghostWidth =
+    maxWidth === undefined ? undefined : Math.max(0, maxWidth - measureColumns(before) - 1);
+  const ghost = atEnd && ghostSuffix ? ghostSuffix : "";
+  const visibleGhost =
+    ghostWidth === undefined ? ghost : truncateLine(ghost, Math.max(0, ghostWidth));
 
   return (
     <>
@@ -63,7 +74,70 @@ export function LineEditorText({
         {visibleCursor}
       </Text>
       <Text color={palette.text}>{after}</Text>
+      {visibleGhost ? <Text color={palette.dim}>{visibleGhost}</Text> : null}
     </>
+  );
+}
+
+const TITLE_SECTION_LABEL = "JUMP TO";
+
+/**
+ * Overlay shells render CommandPalette through ~10 per-overlay call sites that
+ * all share one useShellInput — this context hands titleMatches to every site
+ * without threading a prop through each overlay component. An explicit prop
+ * wins over the context value.
+ */
+const PaletteTitleMatchesContext = React.createContext<readonly LocalTitleMatch[] | null>(null);
+
+export function PaletteTitleMatchesProvider({
+  matches,
+  children,
+}: {
+  readonly matches: readonly LocalTitleMatch[];
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <PaletteTitleMatchesContext.Provider value={matches}>
+      {children}
+    </PaletteTitleMatchesContext.Provider>
+  );
+}
+
+function AccentTitleLabel({
+  title,
+  ranges,
+  width,
+}: {
+  title: string;
+  ranges: readonly [number, number][];
+  width: number;
+}) {
+  const visible = truncateLine(title, width);
+  const clipped = ranges
+    .map(([start, end]): [number, number] => [start, Math.min(end, visible.length)])
+    .filter(([start, end]) => end > start);
+  const nodes: { start: number; text: string; accent: boolean }[] = [];
+  let cursor = 0;
+  for (const [start, end] of clipped) {
+    if (start > cursor)
+      nodes.push({ start: cursor, text: visible.slice(cursor, start), accent: false });
+    nodes.push({ start, text: visible.slice(start, end), accent: true });
+    cursor = end;
+  }
+  if (cursor < visible.length)
+    nodes.push({ start: cursor, text: visible.slice(cursor), accent: false });
+  return (
+    <Text wrap="truncate">
+      {nodes.map((node) => (
+        <Text
+          key={`${node.start}:${node.accent ? "m" : "t"}`}
+          color={node.accent ? palette.accent : palette.text}
+          bold={node.accent}
+        >
+          {node.text}
+        </Text>
+      ))}
+    </Text>
   );
 }
 
@@ -71,6 +145,7 @@ export function CommandPalette({
   input,
   cursor = input.length,
   commands,
+  titleMatches: titleMatchesProp,
   highlightedIndex,
   maxVisible: maxVisibleProp,
   width,
@@ -78,10 +153,14 @@ export function CommandPalette({
   input: string;
   cursor?: number;
   commands: readonly ResolvedAppCommand[];
+  /** Local title matches — rendered as a capped JUMP TO section under commands. */
+  titleMatches?: readonly LocalTitleMatch[];
   highlightedIndex: number;
   maxVisible?: number;
   width?: number;
 }) {
+  const contextTitleMatches = React.useContext(PaletteTitleMatchesContext);
+  const titleMatches = titleMatchesProp ?? contextTitleMatches ?? [];
   const { cols: shellColumns, rows: terminalRows } = useShellDimensions();
   const shellWidth = Math.max(28, width ?? shellColumns);
   const maxVisible = maxVisibleProp ?? getPlaybackCommandPaletteMaxVisible(terminalRows);
@@ -101,7 +180,9 @@ export function CommandPalette({
   const contentWidth = resolveCommandPaletteWidth(Math.min(shellWidth, shellColumns));
 
   const renderCommand = (command: ResolvedAppCommand, absoluteIndex: number) => {
-    const selected = absoluteIndex === model.selectedIndex;
+    // Compare against the raw highlighted index — model.selectedIndex is clamped
+    // to command rows, so a highlighted title row must deselect every command.
+    const selected = absoluteIndex === highlightedIndex;
     const alias = `/${command.aliases[0]}`;
     const aliasWidth = Math.min(20, Math.max(10, Math.floor(contentWidth * 0.28)));
     const detailWidth = Math.max(10, contentWidth - aliasWidth - 7);
@@ -197,6 +278,42 @@ export function CommandPalette({
           <Text color={palette.dim}>No matching commands</Text>
         )}
       </Box>
+      {titleMatches.length > 0 ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={palette.dim} dimColor>
+            {TITLE_SECTION_LABEL}
+          </Text>
+          {titleMatches.map((match, index) => {
+            const absoluteIndex = matches.length + index;
+            const selected = absoluteIndex === highlightedIndex;
+            const aliasWidth = Math.min(20, Math.max(10, Math.floor(contentWidth * 0.28)));
+            const titleWidth = Math.max(12, contentWidth - aliasWidth - 7);
+            const detail = padColumnsEnd(truncateLine(match.entry.detail, aliasWidth), aliasWidth);
+            return (
+              <Box
+                key={`title:${match.entry.source}:${match.entry.titleId}`}
+                width={contentWidth + 4}
+                backgroundColor={selected ? palette.accentFill : undefined}
+              >
+                <Text color={selected ? palette.accent : palette.dim}>
+                  {selected ? "▌ " : "  "}
+                </Text>
+                <Box width={titleWidth}>
+                  <AccentTitleLabel
+                    title={match.entry.title}
+                    ranges={match.ranges}
+                    width={titleWidth}
+                  />
+                </Box>
+                <Text color={palette.dim}> </Text>
+                <Text wrap="truncate" color={selected ? palette.text : palette.muted}>
+                  {detail}
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
+      ) : null}
     </Box>
   );
 }

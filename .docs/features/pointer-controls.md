@@ -7,8 +7,9 @@ lastReviewed: "2026-10-12T14:50:24Z"
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
-Browse, Library and Up Next rows use one click to select and another click on the
-visibly selected row to activate. Tabs navigate immediately. Pointer navigation
+Browse and Up Next require a prior click on the same selected row before starting
+playback, including initially preselected rows. Library clicks select a different
+row or open the visibly selected title detail. Tabs navigate immediately. Pointer navigation
 never implies deletion, queue clearing, consent, or playback completion.
 
 Tracks and Settings use the same focus-before-activation rule. Tracks pass stable
@@ -36,3 +37,17 @@ These controls depend on the session-owned mouse facade and suspension-aware
 registry in `apps/cli/src/app-shell/mouse/`. They require a compatible TTY and
 respect `KUNAI_NO_MOUSE=1`. Screen readers, physical terminal emulators, mobile
 touch gestures and player-window controls need separate qualification.
+
+## Remaining qualification and scope
+
+The implemented slice covers Browse search/results, Library titles/tabs, Up Next,
+Tracks and Settings. Downloads inside Library release input when covered, but
+this does not add click controls to every download action. Calendar, history,
+notifications, onboarding and player-window controls retain their existing input
+contracts and need separate pointer work before claiming parity.
+
+The isolated terminal fixture runs prove routing and persisted state. Physical
+Windows/macOS terminal emulators, multiplexers, accessibility and Android touch
+are separate acceptance checks. Android detached handoff does not prove playback
+completion or watch progress; gateway/native-device qualification belongs to its
+own release lane. This terminal UX slice does not qualify live providers.

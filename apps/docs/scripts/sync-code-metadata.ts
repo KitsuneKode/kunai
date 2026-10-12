@@ -83,10 +83,12 @@ function readExistingMetadata(filePath: string): Record<string, unknown> | null 
  *
  * Provenance (`syncedAt`, `cliSourceRevision`) used to live in this file and
  * moved on every regeneration and every commit while saying nothing about
- * whether the docs content changed. That guaranteed a conflict between any two
- * branches that both regenerated, which is exactly what happened on four
- * consecutive PRs. They now live in a gitignored sidecar, so this file changes
- * only when its content does and the identity is simply the whole payload.
+ * whether the docs content changed; the input fingerprints moved for the same
+ * reason, re-hashing on every unrelated source or docs-tree edit. That
+ * guaranteed a conflict between any two branches that both regenerated, which
+ * is exactly what happened on four consecutive PRs. They now live in a
+ * gitignored sidecar, so this file changes only when its content does and the
+ * identity is simply the whole payload.
  *
  * Exported because `check-codegen-freshness.ts` must ask the identical question.
  */
@@ -360,9 +362,6 @@ export function buildMetadata(): Record<string, unknown> {
   return {
     version,
     cliVersion: version,
-    cliSourceFingerprint: computeCliSourceFingerprint(ROOT_DIR),
-    docsContentFingerprint: computeDocsContentFingerprint(ROOT_DIR),
-    featureStatusRevision: computeFeatureStatusRevision(ROOT_DIR),
     commandCount: commands.length,
     providerIds: providers.map((p) => p.id),
     providers,
@@ -394,11 +393,15 @@ function main() {
 }
 
 /**
- * When this ran and against which revision — written every time, never committed.
+ * When this ran, against which revision, and the input fingerprints — written
+ * every time, never committed.
  *
- * Kept out of `generated-metadata.json` because both values change on every
- * regeneration regardless of whether anything about the docs changed, so
- * committing them made every pair of docs branches conflict on this file.
+ * Kept out of `generated-metadata.json` because these values change on every
+ * regeneration, every commit, and every unrelated source or docs-tree edit
+ * regardless of whether the docs content changed, so committing them made
+ * every pair of docs branches conflict on this file. The freshness gate asks
+ * whether the committed payload matches a fresh build, so the fingerprints
+ * recorded here are diagnostic only.
  */
 function writeProvenance(): void {
   const provenancePath = path.join(DOCS_LIB_DIR, "generated-provenance.json");
@@ -408,6 +411,9 @@ function writeProvenance(): void {
       {
         syncedAt: new Date().toISOString(),
         cliSourceRevision: resolveCliSourceRevision(ROOT_DIR),
+        cliSourceFingerprint: computeCliSourceFingerprint(ROOT_DIR),
+        docsContentFingerprint: computeDocsContentFingerprint(ROOT_DIR),
+        featureStatusRevision: computeFeatureStatusRevision(ROOT_DIR),
       },
       null,
       2,

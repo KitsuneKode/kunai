@@ -82,7 +82,7 @@ describeBinary("compiled linux binary smoke", () => {
   });
 
   test.skipIf(!fullReleaseSet())(
-    "dist/bin satisfies the exact 18-file release asset contract",
+    "dist/bin satisfies the exact 22-file release asset contract",
     () => {
       assertCompleteReleaseAssetSet(listRegularReleaseFiles(BIN_DIR));
     },
@@ -231,6 +231,7 @@ describeBinary("compiled linux binary smoke", () => {
       "failed-handoff",
       "shutdown-restore",
       "return-to-shell",
+      "android-handoff",
     ];
     expect([...COMPILED_SMOKE_SCENARIO_IDS].sort()).toEqual([...covered].sort());
   });

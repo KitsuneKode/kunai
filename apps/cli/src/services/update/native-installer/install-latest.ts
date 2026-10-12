@@ -8,6 +8,7 @@ import { fetchLatestVersion } from "../latest-version";
 import {
   detectPlatform,
   releaseAssetName,
+  resolvePlatformLibc,
   resolveReleaseBinaryTarget,
   type PlatformLibc,
 } from "../platform-assets";
@@ -96,7 +97,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
     return { status: "failed", error: "Could not detect OS/arch." };
   }
 
-  const libc = options.libc ?? (os === "linux" && isMuslEnvironmentSync() ? "musl" : "gnu");
+  const libc = options.libc ?? resolvePlatformLibc(os, os === "linux" && isMuslEnvironmentSync());
   const assetName = releaseAssetName(os, arch, libc);
   const releaseTarget = resolveReleaseBinaryTarget(os, arch, libc);
   const tag = `v${resolved}`;

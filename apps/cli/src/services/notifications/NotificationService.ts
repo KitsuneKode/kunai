@@ -1,3 +1,7 @@
+import {
+  mediaItemHasPlayableTarget,
+  type MediaItemIdentity,
+} from "@/domain/media/media-item-identity";
 import type { NotificationRepository, NotificationRecord } from "@kunai/storage";
 
 import {
@@ -70,7 +74,7 @@ export class NotificationService {
         actionJson: JSON.stringify(
           defaultNotificationActionIds({
             kind: notification.kind,
-            hasItem: Boolean(notification.item),
+            item: notification.item,
           }),
         ),
         createdAt: notification.createdAt,
@@ -191,7 +195,7 @@ export const KNOWN_NOTIFICATION_KINDS: ReadonlySet<string> = new Set([
 
 export function defaultNotificationActionIds(input: {
   readonly kind: string;
-  readonly hasItem: boolean;
+  readonly item?: MediaItemIdentity;
 }): readonly string[] {
   if (input.kind === "queue-recovery") return ["restore-queue", "dismiss"];
   if (input.kind === "app-update") return ["update-app", "dismiss"];
@@ -199,18 +203,23 @@ export function defaultNotificationActionIds(input: {
   // performs outside the app. Offering "update" here would re-run a no-op.
   if (input.kind === "app-restart-required") return ["dismiss"];
 
+  const item = input.item;
+  const hasItem = item !== undefined;
+  const playable = item !== undefined && mediaItemHasPlayableTarget(item);
+
   if (input.kind === "download-failed") {
-    return input.hasItem
-      ? ["retry-download", "open-details", "dismiss"]
-      : ["retry-download", "dismiss"];
+    return hasItem ? ["retry-download", "open-details", "dismiss"] : ["retry-download", "dismiss"];
   }
 
-  if (!input.hasItem) return ["dismiss"];
+  if (!hasItem) return ["dismiss"];
 
   if (input.kind === "download-complete") {
-    return ["play-now", "open-details", "dismiss"];
+    return playable ? ["play-now", "open-details", "dismiss"] : ["open-details", "dismiss"];
   }
 
-  // new-episode and anything else title-shaped.
-  return ["play-now", "open-details", "add-to-up-next", "queue-end", "mute", "dismiss"];
+  // new-episode and anything else title-shaped. A title-level identity (no
+  // episode) is not playable — offering it would dead-end, so the row's
+  // primary action falls back to details instead.
+  const leading = playable ? (["play-now"] as const) : ([] as const);
+  return [...leading, "open-details", "add-to-up-next", "queue-end", "mute", "dismiss"];
 }

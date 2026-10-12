@@ -74,6 +74,7 @@ function createSettingsContainer(config: ConfigService): Container {
     },
     connectivity: { notifyIntentChanged: () => undefined },
     featureFlags: {},
+    diagnosticsService: { record: () => undefined },
   } as unknown as Container;
 }
 
@@ -126,6 +127,10 @@ test("Settings enable and an unrelated save preserve one install id on disk", as
   );
 
   try {
+    // Down×4: startup mode → footer hints → shortcut tips → every tip →
+    // usage analytics. Row order is the contract this test navigates by.
+    handle.stdin.enqueue("\x1b[B");
+    handle.stdin.enqueue("\x1b[B");
     handle.stdin.enqueue("\x1b[B");
     handle.stdin.enqueue("\x1b[B");
     handle.stdin.enqueue("\r");
@@ -145,7 +150,10 @@ test("Settings enable and an unrelated save preserve one install id on disk", as
 
     // Change Footer hints through the same mounted SettingsShell. Its draft was
     // created before analytics minted the id, so this also covers a stale,
-    // unrelated whole-draft save after explicit consent.
+    // unrelated whole-draft save after explicit consent. Up×3 walks back past
+    // the two tip rows and startup mode to footer hints.
+    handle.stdin.enqueue("\x1b[A");
+    handle.stdin.enqueue("\x1b[A");
     handle.stdin.enqueue("\x1b[A");
     handle.stdin.enqueue("\r");
     handle.stdin.enqueue("\x1b[B");
@@ -384,6 +392,44 @@ test("an unfinished settings action freezes keyboard and pointer navigation", as
     expect(handle.dispatcher.size).toBeGreaterThan(0);
   } finally {
     deferred.resolve(snapshot);
+    handle.unmount();
+    await config.flushPending();
+    await rm(profile.directory, { recursive: true, force: true });
+  }
+});
+
+test("mouse settings save failures retain visible feedback and diagnostics", async () => {
+  const profile = await createTemporaryProfile();
+  const config = await profile.loadConfig();
+  const container = createSettingsContainer(config);
+  const notes: string[] = [];
+  container.diagnosticsService.record = (event) => {
+    notes.push(event.message);
+  };
+  config.update = async () => {
+    throw new Error("fixture disk unavailable");
+  };
+  const handle = renderWithPointer(
+    <SettingsShell
+      container={container}
+      width={100}
+      maxRows={20}
+      commandMode={false}
+      onClose={() => {}}
+      onStatus={() => {}}
+      onRedraw={() => {}}
+    />,
+  );
+  try {
+    handle.click("settings:row:defaultMode");
+    handle.click("settings:choice:anime");
+    await act(async () => {
+      handle.click("settings:choice:anime");
+    });
+    expect(handle.lastFrame()).toContain("Couldn't save settings: fixture disk unavailable");
+    expect(notes).toContain("Settings persist failed");
+    expect(config.defaultMode).toBe("series");
+  } finally {
     handle.unmount();
     await config.flushPending();
     await rm(profile.directory, { recursive: true, force: true });

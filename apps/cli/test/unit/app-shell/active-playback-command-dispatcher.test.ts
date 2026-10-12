@@ -5,6 +5,10 @@ import {
   type ActivePlaybackCommandDispatchDeps,
 } from "@/app-shell/active-playback-command-dispatcher";
 import type { ShellAction } from "@/app-shell/types";
+import {
+  DETACHED_HANDOFF_CAPABILITIES,
+  MANAGED_MPV_CAPABILITIES,
+} from "@/domain/playback/player-capabilities";
 
 describe("dispatchActivePlaybackCommand", () => {
   test("fallback cancels active work before asking player control to fallback", async () => {
@@ -20,6 +24,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("fallback", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -41,6 +46,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("fallback", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -65,6 +71,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("recover", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -89,6 +96,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("recompute", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -103,12 +111,14 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("recover", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
     });
     await dispatchActivePlaybackCommand("recompute", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -129,6 +139,7 @@ describe("dispatchActivePlaybackCommand", () => {
     for (const action of ["provider", "source", "quality", "audio", "subtitle"] as const) {
       await dispatchActivePlaybackCommand(action, {
         deps,
+        capabilities: MANAGED_MPV_CAPABILITIES,
         canGoNext: false,
         canGoPrevious: false,
         canToggleAutoplay: false,
@@ -150,6 +161,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     const result = await dispatchActivePlaybackCommand("next", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -165,18 +177,21 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("next", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: true,
       canGoPrevious: false,
       canToggleAutoplay: false,
     });
     await dispatchActivePlaybackCommand("previous", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: true,
       canToggleAutoplay: false,
     });
     await dispatchActivePlaybackCommand("quit", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -203,6 +218,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("quit", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -227,6 +243,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("search", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -236,6 +253,87 @@ describe("dispatchActivePlaybackCommand", () => {
       "cancel:playback-loading-command-search",
       "search:playback-loading-command-search",
     ]);
+  });
+
+  test("a routed history-entry during an in-flight resolve arms a title switch on the abort tail", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls, {
+      workControl: {
+        cancelActive: (reason) => {
+          calls.push(`cancel:${reason}`);
+          return true;
+        },
+      },
+      routeSearchShellAction: async (action: ShellAction) => {
+        calls.push(`route:${action}`);
+        return {
+          type: "history-entry",
+          title: { id: "tmdb:7", type: "series", name: "Switched" },
+          episode: { season: 1, episode: 3 },
+        };
+      },
+    });
+
+    const result = await dispatchActivePlaybackCommand("notifications", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+      capabilities: MANAGED_MPV_CAPABILITIES,
+    });
+
+    // No player exists mid-resolve — the selection rides the aborted-resolve
+    // tail via signalTitleSwitch rather than a stop-backed switch.
+    expect(result).toBe("handled");
+    expect(calls).toEqual([
+      "route:notifications",
+      "cancel:playback-loading-command-switch-title",
+      "signal-switch:Switched",
+    ]);
+  });
+
+  test("a routed history-entry with a live player uses the stop-backed title switch", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls, {
+      routeSearchShellAction: async (action: ShellAction) => {
+        calls.push(`route:${action}`);
+        return {
+          type: "history-entry",
+          title: { id: "tmdb:8", type: "movie", name: "Switched Movie" },
+        };
+      },
+    });
+
+    await dispatchActivePlaybackCommand("notifications", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+      capabilities: MANAGED_MPV_CAPABILITIES,
+    });
+
+    expect(calls).toEqual([
+      "route:notifications",
+      "cancel:playback-loading-command-switch-title",
+      "switch-title:Switched Movie:playback-loading-command-switch-title",
+    ]);
+  });
+
+  test("a routed history-entry still marks the session exiting when it also quits", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls, {
+      routeSearchShellAction: async () => "quit",
+    });
+
+    await dispatchActivePlaybackCommand("notifications", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+      capabilities: MANAGED_MPV_CAPABILITIES,
+    });
+
+    expect(calls).toEqual(["exiting:true"]);
   });
 
   test("autoskip toggle updates the active player policy as well as session state", async () => {
@@ -251,6 +349,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("toggle-autoskip", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -260,6 +359,24 @@ describe("dispatchActivePlaybackCommand", () => {
       "dispatch:SET_SESSION_AUTOSKIP_PAUSED",
       "autoskip:false:playback-loading-command-autoskip",
     ]);
+  });
+
+  test("detached playback rejects managed controls before dispatch", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls);
+
+    for (const action of ["toggle-autoskip", "quality", "audio", "subtitle"] as const) {
+      const result = await dispatchActivePlaybackCommand(action, {
+        deps,
+        capabilities: DETACHED_HANDOFF_CAPABILITIES,
+        canGoNext: false,
+        canGoPrevious: false,
+        canToggleAutoplay: false,
+      });
+      expect(result).toBe("ignored");
+    }
+
+    expect(calls).toEqual([]);
   });
 });
 
@@ -297,6 +414,13 @@ function createDeps(
       },
       stopCurrentPlayback: async (reason) => {
         calls.push(`stop:${reason}`);
+      },
+      switchToTitlePlayback: async (selection, reason) => {
+        calls.push(`switch-title:${selection.title.name}:${reason}`);
+        return true;
+      },
+      signalTitleSwitch: (selection) => {
+        calls.push(`signal-switch:${selection.title.name}`);
       },
     },
     workControl: {

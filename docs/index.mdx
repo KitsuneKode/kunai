@@ -58,3 +58,15 @@ Press `Ctrl+K` (`Cmd+K` on macOS) or use the sidebar search box to search every 
 - [User guides](/docs/users) - install, shell, recovery, offline, privacy
 - [Developer](/docs/developer) - contribute, debug, docs maintenance
 - [Supported and Unsupported](/docs/users/supported-and-unsupported) - product boundaries and scope
+
+## Standing on the shoulders
+
+Kunai does not work without the tools that did this first:
+
+- [ani-cli](https://github.com/pystardust/ani-cli): proved that fast, shell-native playback can be joyful. The AllManga decoder in `packages/providers/src/allmanga` is checked for parity against it.
+- [mpv](https://mpv.io): the player. Kunai finds a stream and gets out of the way; everything you actually watch, you watch in mpv.
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp): extraction and offline downloads.
+- [AniSkip](https://aniskip.com): the community skip-times database behind auto-skip.
+- [VLC](https://www.videolan.org/vlc/): two decades of proving a media player can be free, universal, and answer to nobody.
+
+The goal is not to clone them, but to bring that same daily-driver confidence into a deterministic CLI workflow.

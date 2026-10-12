@@ -6,10 +6,6 @@ import { provenance } from "@/lib/provenance";
 
 import { codeMetadata } from "../lib/code-metadata";
 import { docNavEntries } from "../lib/doc-navigation";
-import {
-  computeCliSourceFingerprint,
-  computeDocsContentFingerprint,
-} from "../lib/metadata-fingerprints";
 import { source } from "../lib/source";
 
 const ROOT = path.resolve(import.meta.dir, "../../..");
@@ -200,12 +196,65 @@ describe("docs codegen drift", () => {
     expect(download?.description.toLowerCase()).not.toContain("open the download queue");
   });
 
-  test("cli source fingerprint matches live CLI inputs", () => {
-    expect(codeMetadata.cliSourceFingerprint).toBe(computeCliSourceFingerprint(ROOT));
+  test("the committed payload carries no churn keys", () => {
+    // cliSourceFingerprint, docsContentFingerprint and featureStatusRevision
+    // re-hashed on every unrelated source or docs-tree edit, which is what made
+    // every pair of PRs conflict on generated-metadata.json. They now live in
+    // the gitignored provenance sidecar; if one comes back, the conflict churn
+    // comes back with it.
+    const committedKeys = Object.keys(codeMetadata);
+    expect(committedKeys).not.toContain("cliSourceFingerprint");
+    expect(committedKeys).not.toContain("docsContentFingerprint");
+    expect(committedKeys).not.toContain("featureStatusRevision");
   });
 
-  test("docs content fingerprint matches published docs tree", () => {
-    expect(codeMetadata.docsContentFingerprint).toBe(computeDocsContentFingerprint(ROOT));
+  test("the freshness gate passes on the committed payload", () => {
+    // Run the real CI command rather than reimplementing its comparison: a file
+    // that drifted from its real inputs (providers, commands, flags, versions)
+    // must exit non-zero here.
+    const result = Bun.spawnSync(["bun", "run", "apps/docs/scripts/check-codegen-freshness.ts"], {
+      cwd: ROOT,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("tampering with real content changes the identity the gate compares", () => {
+    // metadataIdentity is the whole-payload JSON string; a content change must
+    // move it, which is what makes a stale committed file fail the gate.
+    const tampered = {
+      ...codeMetadata,
+      providerIds: [...codeMetadata.providerIds, "phantom"],
+    };
+    expect(JSON.stringify(tampered)).not.toBe(JSON.stringify(codeMetadata));
+  });
+
+  test("a fresh build emits no fingerprint keys either", () => {
+    // Proving at the writer, not just the file: an unrelated CLI source edit
+    // cannot change the committed payload through these fields any more.
+    const result = Bun.spawnSync(
+      [
+        "bun",
+        "-e",
+        'import { buildMetadata } from "./apps/docs/scripts/sync-code-metadata.ts"; console.log(Object.keys(buildMetadata()).join(","));',
+      ],
+      { cwd: ROOT, stdout: "pipe", stderr: "pipe" },
+    );
+    if (result.exitCode !== 0) console.log(new TextDecoder().decode(result.stderr));
+    expect(result.exitCode).toBe(0);
+    const keys = new TextDecoder().decode(result.stdout);
+    expect(keys).not.toContain("cliSourceFingerprint");
+    expect(keys).not.toContain("docsContentFingerprint");
+    expect(keys).not.toContain("featureStatusRevision");
+  });
+
+  test("the moved fingerprints still land in the provenance sidecar", () => {
+    // Diagnostics keep their view of what the inputs hashed to; nothing
+    // reads these for freshness anymore.
+    expect(provenance.cliSourceFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(provenance.docsContentFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(provenance.featureStatusRevision).toMatch(/^[0-9a-f]{64}$/);
   });
 
   test("cliSourceRevision is a short sha or unknown", () => {

@@ -37,6 +37,42 @@ function describeSelection(selection: StreamSelectionIntent): string {
 }
 
 describe("track pick restart policy", () => {
+  test("an unchanged pick cannot restart playback", async () => {
+    const { calls, effects } = createEffects();
+    const result = await applyTrackPickRestart({
+      resolved: { kind: "noop" },
+      currentProviderId: "vidlink",
+      episode,
+      resumeSeconds: 33,
+      effects,
+    });
+    expect(result.startIntent).toBeNull();
+    expect(result.requiresFreshResolve).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  test.each([true, false])(
+    "live subtitle acknowledgement %s does not restart playback",
+    async (applied) => {
+      const { calls, effects } = createEffects();
+      const result = await applyTrackPickRestart({
+        resolved: { kind: "subtitle-switch", applied, label: "French" },
+        currentProviderId: "vidlink",
+        episode,
+        resumeSeconds: 33,
+        effects,
+      });
+      expect(result.startIntent).toBeNull();
+      expect(result.requiresFreshResolve).toBe(false);
+      expect(result.notice).toBe(
+        applied
+          ? "Subtitles: French"
+          : "Couldn't switch subtitles — the player rejected the track.",
+      );
+      expect(calls).toEqual([]);
+    },
+  );
+
   test("provider switch invalidates and asks for a fresh episode resolve", async () => {
     const { calls, effects } = createEffects();
 
@@ -123,7 +159,7 @@ describe("track pick restart policy", () => {
     expect(calls).toEqual(["episode:vidking:1:4:1080p"]);
   });
 
-  test("stale pick resumes in place with a notice instead of applying", async () => {
+  test("stale pick stays in place with a notice and no restart intent", async () => {
     const { calls, effects } = createEffects();
 
     const result = await applyTrackPickRestart({
@@ -139,7 +175,7 @@ describe("track pick restart policy", () => {
     });
 
     expect(result).toEqual({
-      startIntent: { startAt: 33, resumePromptAt: 0, suppressResumePrompt: true },
+      startIntent: null,
       resolvedProviderId: "vidking",
       requiresFreshResolve: false,
       notice: "That stream is no longer available.",

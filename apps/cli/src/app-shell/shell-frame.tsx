@@ -1,5 +1,6 @@
 import { useLineEditor, type LineEditorKey } from "@/app-shell/line-editor";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
+import type { LocalTitleEntry } from "@/domain/palette/local-title-index";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
@@ -47,6 +48,9 @@ export function ShellFrame({
   escapeAction,
   onUnhandledInput,
   onResolve,
+  localTitles,
+  onTitlePick,
+  onPaletteCommand,
   children,
   terminalWidth: terminalWidthProp,
   terminalRows: terminalRowsProp,
@@ -67,6 +71,11 @@ export function ShellFrame({
   escapeAction?: ShellAction | null;
   onUnhandledInput?: (input: string, key: ShellFrameInputKey) => void;
   onResolve: (action: ShellAction) => void;
+  /** Local title source — consulted once per palette open for the JUMP TO section. */
+  localTitles?: () => readonly LocalTitleEntry[];
+  onTitlePick?: (entry: LocalTitleEntry) => void;
+  /** Fires only when a command is picked from the palette — bound with the surface's tip surface. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
   children: React.ReactNode;
   terminalWidth?: number;
   terminalRows?: number;
@@ -81,14 +90,18 @@ export function ShellFrame({
     }
   });
 
-  const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
-    footerActions,
-    commands,
-    disabled: inputDisabled,
-    letterKeysHandledExternally,
-    escapeAction,
-    onResolve,
-  });
+  const { commandMode, commandInput, commandCursor, highlightedIndex, titleMatches } =
+    useShellInput({
+      footerActions,
+      commands,
+      disabled: inputDisabled,
+      letterKeysHandledExternally,
+      escapeAction,
+      onResolve,
+      localTitles,
+      onTitlePick,
+      onPaletteCommand,
+    });
 
   useInput((input, key) => {
     if (inputDisabled || commandMode) return;
@@ -141,6 +154,7 @@ export function ShellFrame({
             input={commandInput}
             cursor={commandCursor}
             commands={commands}
+            titleMatches={titleMatches}
             highlightedIndex={highlightedIndex}
             maxVisible={getPlaybackCommandPaletteMaxVisible(rows)}
             width={commandWidth}
@@ -171,6 +185,8 @@ export function InputField({
   onRedraw,
   terminalWidth: terminalWidthProp,
   ignoreInput,
+  ghostSuffix,
+  cursorRef,
 }: {
   label: string;
   value: string;
@@ -184,6 +200,10 @@ export function InputField({
   terminalWidth?: number;
   /** When true, skip line-editor handling (parent surface owns the chord). */
   ignoreInput?: (input: string, key: LineEditorKey) => boolean;
+  /** Dim type-ahead completion rendered after an end-of-line cursor. */
+  ghostSuffix?: string;
+  /** Latest editor cursor written here so the parent can test end-of-line. */
+  cursorRef?: { current: number };
 }) {
   const { cols } = useShellDimensions();
   const fieldWidth = Math.max(20, maxWidth ?? (terminalWidthProp ?? cols) - 8);
@@ -196,6 +216,7 @@ export function InputField({
     onRedraw,
     focus,
   });
+  if (cursorRef) cursorRef.current = editor.cursor;
   const rootContentSuspended = useRootContentSuspended();
 
   useInput((input, key) => {
@@ -231,6 +252,7 @@ export function InputField({
             focused={focus}
             placeholder={placeholder}
             maxWidth={textWidth}
+            ghostSuffix={ghostSuffix}
           />
         </Box>
         <Box>

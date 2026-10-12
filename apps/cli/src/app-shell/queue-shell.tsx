@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import React from "react";
+import React, { useEffect, useRef } from "react";
 
 import { useRailPoster } from "./hooks/use-rail-poster";
 import { MouseTarget } from "./mouse/MouseRegions";
@@ -70,10 +70,19 @@ export function QueueShell({
   readonly columns: number;
   readonly listWidth: number;
   readonly rowWidth: number;
-  readonly onRowClick?: (id: string) => void;
+  readonly onRowClick?: (id: string, activate: boolean) => void;
   readonly onWheel?: (direction: "up" | "down") => void;
   readonly maxRows?: number;
 }) {
+  const priorPointerId = useRef<string | null>(null);
+  const selectedId = view.rows[view.selectedIndex]?.id;
+  useEffect(() => {
+    if (!onRowClick || priorPointerId.current !== selectedId) priorPointerId.current = null;
+  }, [onRowClick, selectedId]);
+  const scroll = (direction: "up" | "down") => {
+    priorPointerId.current = null;
+    onWheel?.(direction);
+  };
   const visibleCount = Math.max(1, maxRows ?? view.rows.length);
   const start = getWindowStart(view.selectedIndex, view.rows.length, visibleCount);
   // Single Kitty hero for the selected item (same mechanism as history's rail).
@@ -104,8 +113,12 @@ export function QueueShell({
               key={row.id}
               id={`queue:row:${row.id}`}
               active={Boolean(onRowClick)}
-              onClick={() => onRowClick?.(row.id)}
-              onWheel={onWheel}
+              onClick={() => {
+                const activate = priorPointerId.current === row.id && selectedId === row.id;
+                priorPointerId.current = activate ? null : row.id;
+                onRowClick?.(row.id, activate);
+              }}
+              onWheel={onWheel ? scroll : undefined}
             >
               <QueueRow
                 row={row}

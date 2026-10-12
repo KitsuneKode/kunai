@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12"
+lastReviewed: "2026-10-12T15:08:14Z"
 ---
 
 # Feature Map
@@ -42,28 +42,34 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 
 ## Shell (Ink)
 
-| Feature                                                       | Owned by                                                                          | Docs                                                                  |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Command palette, `/` commands                                 | `apps/cli/src/domain/session/command-registry.ts`                                 | [ux-architecture.md](./ux-architecture.md)                            |
-| `/guide` discovery overlay                                    | `apps/cli/src/app-shell/guide-model.ts`, `apps/cli/src/app-shell/guide-shell.tsx` | [ux-architecture.md](./ux-architecture.md)                            |
-| Keybindings                                                   | `apps/cli/src/app-shell/keybindings.ts`                                           | [keybindings.md](./keybindings.md)                                    |
-| Shell host, overlays, footer                                  | `apps/cli/src/app-shell/*`                                                        | [ux-architecture.md](./ux-architecture.md)                            |
-| Pickers (episode, provider, source, quality, audio, subtitle) | `apps/cli/src/app-shell/pickers/*`                                                | [runtime-boundary-map.md](./runtime-boundary-map.md#picker-ownership) |
-| Settings overlay                                              | `apps/cli/src/app-shell/settings/*`                                               | [ux-architecture.md](./ux-architecture.md)                            |
-| Theme + design tokens                                         | `packages/design`                                                                 | [design-system.md](./design-system.md)                                |
-| Poster previews (Kitty / iTerm2 / sixel / half-block)         | `apps/cli/src/image/*`                                                            | [poster-image-rendering.md](./poster-image-rendering.md)              |
+| Feature                                                          | Owned by                                                                                                             | Docs                                                                  |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Command palette, `/` commands                                    | `apps/cli/src/domain/session/command-registry.ts`                                                                    | [ux-architecture.md](./ux-architecture.md)                            |
+| `/guide` discovery overlay                                       | `apps/cli/src/app-shell/guide-model.ts`, `apps/cli/src/app-shell/guide-shell.tsx`                                    | [ux-architecture.md](./ux-architecture.md)                            |
+| Keybindings                                                      | `apps/cli/src/app-shell/keybindings.ts`                                                                              | [keybindings.md](./keybindings.md)                                    |
+| Shell host, overlays, footer                                     | `apps/cli/src/app-shell/*`                                                                                           | [ux-architecture.md](./ux-architecture.md)                            |
+| Pickers (episode, provider, source, quality, audio, subtitle)    | `apps/cli/src/app-shell/pickers/*`                                                                                   | [runtime-boundary-map.md](./runtime-boundary-map.md#picker-ownership) |
+| Settings overlay                                                 | `apps/cli/src/app-shell/settings/*`                                                                                  | [ux-architecture.md](./ux-architecture.md)                            |
+| Theme + design tokens                                            | `packages/design`                                                                                                    | [design-system.md](./design-system.md)                                |
+| Poster previews (Kitty / iTerm2 / sixel / half-block)            | `apps/cli/src/image/*`                                                                                               | [poster-image-rendering.md](./poster-image-rendering.md)              |
+| Browse home return-loop rows (continue, new-since-visit, nudges) | `apps/cli/src/app-shell/browse-idle-{context,actions}.ts`, `return-loop-copy.ts`                                     | [ux-architecture.md](./ux-architecture.md)                            |
+| Rested-row Enter prefetch                                        | `apps/cli/src/app-shell/hooks/use-dwell-prefetch.ts`, `apps/cli/src/app/search/prefetch-browse-entry.ts`             | [ux-architecture.md](./ux-architecture.md)                            |
+| Palette local-title `JUMP TO` rows                               | `apps/cli/src/domain/palette/*`, `apps/cli/src/services/palette/*`, `apps/cli/src/app-shell/palette-title-launch.ts` | [ux-architecture.md](./ux-architecture.md#command-philosophy)         |
+| Companion voice (kanna)                                          | `apps/cli/src/app-shell/kanna-voice.ts`                                                                              | [ux-architecture.md](./ux-architecture.md)                            |
+| Once-ever contextual tips                                        | `apps/cli/src/domain/session/contextual-tips.ts`, `apps/cli/src/app-shell/contextual-tips.ts`                        | [ux-architecture.md](./ux-architecture.md#contextual-tips)            |
 
 ## Search and catalog
 
-| Feature                               | Owned by                                                                                                        | Docs                                                                 |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Search routing and backends           | `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*`                                                   | [.plans/search-service.md](../.plans/search-service.md)              |
-| Search intent parsing                 | `apps/cli/src/domain/search/*` — `SearchIntentParser` / `SearchIntentEngine` turn raw input into a typed intent | [.plans/search-service.md](../.plans/search-service.md)              |
-| TMDB season/episode metadata          | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                                                       | [architecture.md](./architecture.md)                                 |
-| Anime identity / title reconciliation | `apps/cli/src/domain/catalog/*`, `packages/storage` `catalog-crosswalk`                                         | [architecture.md](./architecture.md)                                 |
-| `/discover`, `/trending`, `/random`   | `apps/cli/src/app/discover/*`, `services/recommendations/*`                                                     | [recommendations-and-discover.md](./recommendations-and-discover.md) |
-| `/calendar`, release schedules        | `apps/cli/src/domain/calendar/*`, `services/release-reconciliation/*`                                           | [recommendations-and-discover.md](./recommendations-and-discover.md) |
-| AniList / TMDB account sync           | `apps/cli/src/services/sync/*`                                                                                  | `docs/users/reliability-and-privacy.mdx`                             |
+| Feature                               | Owned by                                                                                                                                                                                                    | Docs                                                                         |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Search routing and backends           | `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*`                                                                                                                                               | [.plans/search-service.md](../.plans/search-service.md)                      |
+| Type-ahead suggestion band            | `apps/cli/src/domain/search/suggestion-engine.ts`, `services/search/suggest-titles.ts`, `app/search/search-suggestions.ts`, `app-shell/suggestion-band-ui.tsx`, `app-shell/hooks/use-search-suggestions.ts` | [ux-architecture.md](./ux-architecture.md#search-type-ahead-suggestion-band) |
+| Search intent parsing                 | `apps/cli/src/domain/search/*` — `SearchIntentParser` / `SearchIntentEngine` turn raw input into a typed intent                                                                                             | [.plans/search-service.md](../.plans/search-service.md)                      |
+| TMDB season/episode metadata          | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                                                                                                                                                   | [architecture.md](./architecture.md)                                         |
+| Anime identity / title reconciliation | `apps/cli/src/domain/catalog/*`, `packages/storage` `catalog-crosswalk`                                                                                                                                     | [architecture.md](./architecture.md)                                         |
+| `/discover`, `/trending`, `/random`   | `apps/cli/src/app/discover/*`, `services/recommendations/*`                                                                                                                                                 | [recommendations-and-discover.md](./recommendations-and-discover.md)         |
+| `/calendar`, release schedules        | `apps/cli/src/domain/calendar/*`, `services/release-reconciliation/*`                                                                                                                                       | [recommendations-and-discover.md](./recommendations-and-discover.md)         |
+| AniList / TMDB account sync           | `apps/cli/src/services/sync/*`                                                                                                                                                                              | `docs/users/reliability-and-privacy.mdx`                                     |
 
 ## Providers and resolution
 
@@ -98,6 +104,7 @@ callbacks. See [features/pointer-controls.md](./features/pointer-controls.md).
 | Post-playback actions                      | `apps/cli/src/app/post-play/*`                                                                                  | [ux-architecture.md](./ux-architecture.md)                                       |
 | Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — progress/completion policy, problem classification, local streams            | [architecture.md](./architecture.md)                                             |
 | Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                         | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
+| Entry auto-play decision (Enter vs menu)   | `apps/cli/src/app-shell/title-control/smart-auto-launch.ts`                                                     | [ux-architecture.md](./ux-architecture.md)                                       |
 
 ## Library and personal state
 
@@ -115,6 +122,7 @@ Do not reuse these nouns for anything else.
 | Notifications inbox            | `packages/storage` `notifications`; `services/notifications/*`                                                                                       | [features/notifications.md](./features/notifications.md)                               |
 | Watch stats                    | `packages/storage` `watch-stats`                                                                                                                     | [features/privacy-and-storage.md](./features/privacy-and-storage.md)                   |
 | Lists and stats domain         | `apps/cli/src/domain/lists/*` — `ListService`, `StatsService`, genre stats, formatting                                                               | [features/playlists.md](./features/playlists.md)                                       |
+| Session undo (`z`)             | `apps/cli/src/domain/undo/session-undo-journal.ts` (bounded LIFO + expiry), `apps/cli/src/services/session-undo/*` (capture/revert via repos)        | [ux-architecture.md](./ux-architecture.md)                                             |
 
 ## Offline and downloads
 
@@ -123,6 +131,8 @@ Do not reuse these nouns for anything else.
 | Download jobs                 | `apps/cli/src/services/download/*`, `services/ytdlp/*`                                                                            | [download-offline-onboarding.md](./download-offline-onboarding.md) |
 | Offline library + assets      | `apps/cli/src/services/offline/*`, `app/offline/*`, `domain/offline/OfflineLibraryEngine.ts`, `packages/storage` `offline-assets` | [download-offline-onboarding.md](./download-offline-onboarding.md) |
 | Network status / offline mode | `apps/cli/src/services/network/*`                                                                                                 | [download-offline-onboarding.md](./download-offline-onboarding.md) |
+
+Download removal and retained-file feedback: [features/download-removal.md](./features/download-removal.md).
 
 ## Diagnostics, privacy, distribution
 

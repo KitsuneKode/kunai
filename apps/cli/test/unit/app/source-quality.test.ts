@@ -7,6 +7,7 @@ import {
   buildQualityPickerOptions,
   buildSourcePickerOptions,
   buildStreamPickerOptions,
+  buildStreamInventoryView,
   decodeMediaTrackPickerSelection,
   formatPlaybackSessionFactsStrip,
   isCurrentStreamSelection,
@@ -615,4 +616,46 @@ test("shouldOfferPrePlayConfirm skips inventories with nothing switchable", () =
       showMediaTrackControl: false,
     }),
   ).toBe(true);
+});
+
+test("late attached subtitles reach the Tracks view without rewriting provider inventory", () => {
+  const providerResult = streamWithSubtitles.providerResolveResult!;
+  const before = JSON.stringify(providerResult);
+  const url = "https://wyzie.example/es.vtt";
+  const view = buildStreamInventoryView({
+    ...streamWithSubtitles,
+    subtitle: url,
+    subtitleList: [
+      { url, language: "es", display: "Spanish · search" },
+      { url, language: "es", display: "Duplicate search row" },
+      { url: "https://subs.example/en.vtt", language: "en" },
+    ],
+  });
+  const attached = view?.subtitleOptions.filter((option) => option.subtitleUrl === url);
+  expect(attached).toHaveLength(1);
+  expect(attached?.[0]).toMatchObject({
+    label: "Spanish · search",
+    state: "selected",
+    delivery: "external",
+    restartRequired: false,
+  });
+  expect(
+    view?.subtitleOptions.filter((option) => option.subtitleUrl === "https://subs.example/en.vtt"),
+  ).toHaveLength(1);
+  expect(
+    view?.subtitleOptions.find((option) => option.subtitleUrl === "https://subs.example/fr.vtt"),
+  ).toBeDefined();
+  expect(JSON.stringify(providerResult)).toBe(before);
+});
+
+test("late subtitle view can select Off without losing attached track choices", () => {
+  const view = buildStreamInventoryView({
+    ...streamWithCandidates,
+    subtitle: undefined,
+    subtitleList: [{ url: "https://wyzie.example/es.vtt", language: "es" }],
+  });
+  expect(view?.subtitleOptions.find((option) => option.delivery === "off")?.state).toBe("selected");
+  expect(
+    view?.subtitleOptions.find((option) => option.subtitleUrl === "https://wyzie.example/es.vtt"),
+  ).toMatchObject({ state: "available", restartRequired: false });
 });

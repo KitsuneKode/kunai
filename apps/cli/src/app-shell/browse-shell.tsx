@@ -1,13 +1,24 @@
 import { createLatestRequestGate, runBrowseMutation } from "@/app-shell/browse-async";
 import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-item";
+import { companionMode } from "@/app-shell/companion-policy";
 import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-trace";
 import { useCalendarNow } from "@/app-shell/hooks/use-calendar-now";
+import { useDwellPrefetch } from "@/app-shell/hooks/use-dwell-prefetch";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
+import { kannaDoneText, type KannaDoneKind } from "@/app-shell/kanna-voice";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
+import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
 import type { FilterStateKey } from "@/domain/search/SearchIntent";
+import {
+  buildSuggestionBand,
+  ghostCompletionSuffix,
+  shouldShowSuggestionBand,
+  type ScoredSuggestion,
+  type SearchSuggestion,
+} from "@/domain/search/suggestion-engine";
 import type { SearchResult, ShellMode } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -43,6 +54,7 @@ import {
   isBrowseFilterFocused,
   isBrowseIdleFocused,
   isBrowseListFocused,
+  isBrowseQueryFocused,
   isReservedBrowseSurfaceChord,
   shouldSuppressBrowseLetterHotkeys,
   type BrowseFocusZone,
@@ -86,9 +98,8 @@ import {
   type CalendarTypeTab,
 } from "./calendar-ui.model";
 import { sortCalendarOptions } from "./calendar-view";
-import type { ResolvedAppCommand } from "./commands";
+import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { momentForBrowseEmpty } from "./companion-moment";
-import { companionMode } from "./companion-policy";
 import { CompanionHost } from "./CompanionHost";
 import { DetailsSheetUI } from "./details-pane-ui";
 import {
@@ -101,6 +112,7 @@ import {
 import { buildDetailsSheet } from "./details-sheet.model";
 import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
+import { SUGGESTION_DEBOUNCE_MS, useSearchSuggestions } from "./hooks/use-search-suggestions";
 import { undisplayPlacementsKeepCache } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
 import { buildFooterActionsFromBindings } from "./keybindings";
@@ -109,9 +121,11 @@ import {
   getBrowseCommandPaletteMaxVisible,
   getBrowseListMaxVisible,
 } from "./layout-policy";
+import { reducedMotionEnabled } from "./motion-policy";
 import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
+import { takePaletteTitleLaunch } from "./palette-title-launch";
 import { suppressPosterWhileNavigating } from "./poster-types";
 import { computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
@@ -133,13 +147,16 @@ import { SakuraLoader } from "./SakuraLoader";
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
-  getHighlightedCommand,
+  movePaletteSelection,
+  paletteSelectableCount,
+  resolveHighlightedPaletteRow,
 } from "./shell-command-model";
 import { CommandPalette } from "./shell-command-ui";
 import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
 import { getWindowStart, measureColumns, sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
+import { SearchSuggestionBand } from "./suggestion-band-ui";
 import {
   toShellAction,
   type FooterAction,
@@ -191,6 +208,8 @@ function browseFilterPlaceholder(mode: ShellMode): string {
 
 type BrowseQueryDraft = { value: string; mode: ShellMode };
 
+const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
+
 export function BrowseShell<T>({
   mode,
   provider,
@@ -220,10 +239,18 @@ export function BrowseShell<T>({
   onPlayTrailer,
   onOpenLink,
   onResolve,
+  onTitlePick,
   onSubmit,
   onCancel,
+  onPrefetchOption,
+  onUndo,
+  onPaletteCommand,
   idleContext,
   loadIdleContext,
+  onSuggest,
+  loadLocalSuggestions,
+  suggestionDebounceMs,
+  localTitles,
 }: {
   mode: ShellMode;
   provider: string;
@@ -263,10 +290,37 @@ export function BrowseShell<T>({
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
   onResolve: (action: ShellAction, value?: T) => void;
+  /** Enter landed on a JUMP TO title row. */
+  onTitlePick?: (entry: LocalTitleEntry) => void;
   onSubmit: (value: T) => void;
   onCancel: () => void;
+  /**
+   * Dwell prefetch: fired ~500ms after a result row stops moving, warming what
+   * Enter would pay (identity, detail, episode catalogs). Abortable via the
+   * passed signal; silent by contract.
+   */
+  onPrefetchOption?: (value: T, signal: AbortSignal) => void;
+  /**
+   * `z` while a session-undo entry is live. Routed here (not the keybinding
+   * registry) so overlays, command mode, and text focus each decide first —
+   * the callback itself no-ops when nothing is journaled.
+   */
+  onUndo?: () => void;
+  /** Fires when a command is picked from this shell's `/` palette. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
+  /**
+   * Fast catalog suggest for the type-ahead band — one registry-service call,
+   * abortable; never the provider-lane search. Absent → local-only band.
+   */
+  onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
+  /** Sync local corpus read (watched / followed / lists / playlists). */
+  loadLocalSuggestions?: () => readonly SearchSuggestion<T>[];
+  /** Test seam: keystroke → catalog-fetch debounce. Defaults to the standard delay. */
+  suggestionDebounceMs?: number;
+  /** Local title source — consulted once per palette open for the JUMP TO section. */
+  localTitles?: () => readonly LocalTitleEntry[];
 }) {
   recordRender("browse");
   const viewport = useDebouncedViewportPolicy("browse", {
@@ -287,6 +341,11 @@ export function BrowseShell<T>({
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const [titleEntries, setTitleEntries] = useState<readonly LocalTitleEntry[]>([]);
+  const titleMatches = useMemo(
+    () => matchLocalTitles(titleEntries, commandInput),
+    [titleEntries, commandInput],
+  );
   // Transient confirmation for row actions (follow / queue / download) — without it,
   // following a title looked like a no-op even though it persisted.
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
@@ -322,6 +381,13 @@ export function BrowseShell<T>({
   );
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftQuery, setDraftQuery] = useState("");
+  // Suggestion band (type-ahead dropdown under the query field): the highlight
+  // is band-local state, never a focus zone — typing keeps editing the draft.
+  // Esc sets `suggestionDismissedQuery` to the draft it closed on; the next
+  // keystroke changes the draft and the band returns.
+  const [suggestionIndex, setSuggestionIndex] = useState(-1);
+  const [suggestionDismissedQuery, setSuggestionDismissedQuery] = useState<string | null>(null);
+  const queryCursorRef = useRef(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(initialErrorMessage ?? null);
   const [emptyMessage, setEmptyMessage] = useState(
     () => initialEmptyMessage ?? browseIdleHint(mode),
@@ -543,21 +609,29 @@ export function BrowseShell<T>({
     leaveCalendarSurface();
   }, [leaveCalendarSurface]);
 
+  // Snapshot title entries once per open — the matcher stays a pure in-memory
+  // index against this list, so a keystroke never hits storage.
+  const openPalette = useCallback(() => {
+    setTitleEntries(localTitles?.() ?? EMPTY_TITLE_ENTRIES);
+    setCommandMode(true);
+    setHighlightedCommandIndex(0);
+  }, [localTitles]);
+
   const updateQuery = useCallback(
     (nextValue: string) => {
       const normalized = normalizeBrowseCommandInput(nextValue);
       setQuery(normalized.value);
       setHistoryIndex(-1);
+      // A new draft invalidates the band highlight — never the dismissal.
+      setSuggestionIndex(-1);
       if (normalized.openCommandPalette) {
-        setCommandMode(true);
-        setCommandInput("");
-        setHighlightedCommandIndex(0);
+        openPalette();
       }
       // Emptying the draft is not a gesture — backspacing to retype must not
       // fire a discovery reload or move focus. Restoring trending is deliberate
       // and lives on the Esc ladder (query → clear text, results → clearResults).
     },
-    [setQuery],
+    [openPalette, setQuery],
   );
 
   const runSearch = useCallback(
@@ -815,6 +889,13 @@ export function BrowseShell<T>({
   // navigating. Used to suppress the heavy poster block from intermediate frames.
   const navigating = selectedOption !== settledOption;
 
+  // Dwell prefetch: a row rested on ~500ms warms the catalog/provider work
+  // Enter would pay, so a rested Enter resolves from warm caches. The hook is
+  // timer-only — no state, no render — and aborts the in-flight warm the moment
+  // the highlight moves (latest-wins). Ready-state only: idle/loading/error
+  // surfaces have no launchable selection.
+  useDwellPrefetch(searchState === "ready" ? selectedOption?.value : undefined, onPrefetchOption);
+
   const openDetailsOverlay = useCallback(
     (option?: BrowseShellOption<T>) => {
       const resolved = option ?? selectedOption;
@@ -881,10 +962,15 @@ export function BrowseShell<T>({
       operation: () => Promise<string | void> | string | void,
       successMessage: string,
       failurePrefix: string,
+      doneKind?: KannaDoneKind,
     ) => {
       void runBrowseMutation(operation).then((result) => {
         flashActionFeedback(
-          result.ok ? (result.note ?? successMessage) : `${failurePrefix}: ${result.message}`,
+          result.ok
+            ? (result.note ??
+                (doneKind ? kannaDoneText(doneKind, companionMode()) : undefined) ??
+                successMessage)
+            : `${failurePrefix}: ${result.message}`,
         );
         return undefined;
       });
@@ -967,8 +1053,21 @@ export function BrowseShell<T>({
 
   const mouseEnabled = useMouseEnabled();
   const resultsMouseRef = useRef<DOMElement | null>(null);
-  const pointerActive = !activeOverlay && !commandMode && !viewport.tooSmall;
+  const pointerActive =
+    !rootContentSuspended && !activeOverlay && !commandMode && !viewport.tooSmall;
+  const priorPointerSelection = useRef<{ index: number; value: T } | null>(null);
+  useEffect(() => {
+    const prior = priorPointerSelection.current;
+    if (
+      !pointerActive ||
+      !listFocused ||
+      prior?.index !== boundedSelectedIndex ||
+      prior.value !== displayOptions[boundedSelectedIndex]?.value
+    )
+      priorPointerSelection.current = null;
+  }, [pointerActive, listFocused, boundedSelectedIndex, displayOptions]);
   const scrollResults = (direction: "up" | "down") => {
+    priorPointerSelection.current = null;
     dispatchFocusZone({ type: "focus-list" });
     setSelectedIndex((current) =>
       Math.max(0, Math.min(displayOptions.length - 1, current + (direction === "up" ? -1 : 1))),
@@ -1007,6 +1106,93 @@ export function BrowseShell<T>({
     hasFilterBar: showResultFilterBar,
     canFocusIdle: canFocusIdleRows,
   };
+
+  // ── Type-ahead suggestion band ───────────────────────────────────────────
+  // Anchored under the query field: local rows score instantly, the fast
+  // catalog lane answers after a debounce, and stale responses can never
+  // overwrite a newer keystroke (request gate + abort in the hook).
+  const suggestionBandVisible = shouldShowSuggestionBand({
+    query,
+    submittedQuery: lastSearchedQuery,
+    commandMode,
+    calendarView: isCalendarView,
+    ultraCompact: viewport.ultraCompact,
+    overlayActive: Boolean(activeOverlay),
+    searching: searchState === "loading",
+    dismissedForQuery: suggestionDismissedQuery,
+  });
+
+  const { suggestions: catalogSuggestions, pending: suggestionsPending } = useSearchSuggestions<T>({
+    query,
+    enabled: suggestionBandVisible,
+    onSuggest,
+    // Reduced motion = no keystroke latency: local rows already render in the
+    // same frame; the catalog call also fires immediately (the gate + abort
+    // still coalesce real traffic for superseded drafts).
+    debounceMs: suggestionDebounceMs ?? (reducedMotionEnabled() ? 0 : SUGGESTION_DEBOUNCE_MS),
+  });
+
+  const localSuggestionCorpus = useMemo<readonly SearchSuggestion<T>[]>(() => {
+    if (!suggestionBandVisible) return [];
+    const history = getSearchHistory().map((entry, index): SearchSuggestion<T> => ({
+      id: `history:${index}:${entry}`,
+      title: entry,
+      source: "query-history",
+      commitQuery: entry,
+      // History order IS recency — index 0 is the freshest search.
+      recencyMs: -index,
+    }));
+    try {
+      return [...history, ...(loadLocalSuggestions?.() ?? [])];
+    } catch {
+      return history;
+    }
+    // The corpus is a snapshot per band-open, not per keystroke — re-reading
+    // SQLite on every character is wasted work the scorer never sees.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestionBandVisible, loadLocalSuggestions]);
+
+  const suggestionBandModel = useMemo(
+    () =>
+      buildSuggestionBand<T>({
+        query,
+        local: localSuggestionCorpus,
+        remote: catalogSuggestions,
+        remotePending: suggestionsPending,
+      }),
+    [query, localSuggestionCorpus, catalogSuggestions, suggestionsPending],
+  );
+
+  const boundedSuggestionIndex =
+    suggestionIndex < 0
+      ? -1
+      : Math.min(suggestionIndex, Math.max(0, suggestionBandModel.items.length - 1));
+
+  const suggestionGhost = useMemo(() => {
+    if (!suggestionBandVisible) return undefined;
+    const top = suggestionBandModel.items[0]?.suggestion;
+    if (!top) return undefined;
+    const suffix = ghostCompletionSuffix(query, top.title);
+    if (!suffix) return undefined;
+    return { suffix, full: top.commitQuery ?? top.title };
+  }, [suggestionBandVisible, suggestionBandModel, query]);
+
+  const commitSuggestion = useCallback(
+    (entry: ScoredSuggestion<T>) => {
+      const suggestion = entry.suggestion;
+      setSuggestionIndex(-1);
+      if (suggestion.value !== undefined) {
+        // Title row — identical to Enter on the matching results-list row.
+        onSubmit(suggestion.value);
+        return;
+      }
+      const nextQuery = suggestion.commitQuery ?? suggestion.title;
+      setQuery(nextQuery);
+      setHistoryIndex(-1);
+      void runSearch(nextQuery);
+    },
+    [onSubmit, runSearch, setQuery],
+  );
 
   // Never strand focus on a list that has emptied — hand focus back to query.
   // Calendar is the exception: it has no search box, and an empty day (←/→ onto
@@ -1199,6 +1385,12 @@ export function BrowseShell<T>({
     hasQueryDirtyHint:
       queryDirty && displayOptions.length > 0 && !ultraCompact && !commandMode && !isCalendarView,
     commandMode,
+    // The band occupies real rows between the field and the divider — the
+    // results window must shrink or rows bleed into the footer.
+    suggestionBandRows:
+      suggestionBandVisible && suggestionBandModel.rows.length > 0
+        ? suggestionBandModel.rows.length
+        : 0,
   });
   const maxVisible = getBrowseListMaxVisible(viewport.rows, browseChromeRows);
   // The card follows the selected row at once; enriched details arrive when the
@@ -1253,6 +1445,7 @@ export function BrowseShell<T>({
   const visibleCalendarRows = calendarRenderRows.slice(calendarWindow.start, calendarWindow.end);
 
   useInput((input, key) => {
+    priorPointerSelection.current = null;
     if (rootContentSuspended) return;
     recordKeystroke("browse", key.upArrow ? "up" : key.downArrow ? "down" : input);
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -1261,6 +1454,13 @@ export function BrowseShell<T>({
 
     if (activeOverlay) {
       if (input === "/") {
+        return;
+      }
+
+      // `z` undoes the action named on the strip — sheet keys (w/q/d above)
+      // are journaled, so undo works with the details sheet open too.
+      if (input === "z" && !key.ctrl && !key.meta && onUndo) {
+        onUndo();
         return;
       }
 
@@ -1312,6 +1512,7 @@ export function BrowseShell<T>({
             () => onQueueSelected(selectedOption.value),
             `Queued ${selectedOption.label}`,
             "Could not queue",
+            "queued",
           );
           return;
         }
@@ -1342,18 +1543,32 @@ export function BrowseShell<T>({
       const matches = getCommandMatches(commandInput, commands);
 
       if (key.escape) {
+        // Close only — the draft survives so a `/` reopen resumes the query,
+        // matching the shared palette contract.
         setCommandMode(false);
-        setCommandInput("");
         setHighlightedCommandIndex(0);
         return;
       }
       if (key.return) {
-        const resolved = getHighlightedCommand(commandInput, commands, highlightedCommandIndex);
-        if (resolved?.enabled) {
-          const action = toShellAction(resolved.id);
+        const row = resolveHighlightedPaletteRow(
+          commandInput,
+          commands,
+          titleMatches,
+          highlightedCommandIndex,
+        );
+        if (row?.kind === "command" && row.command.enabled) {
+          onPaletteCommand?.(row.command.id);
+          const action = toShellAction(row.command.id);
+          setCommandInput("");
           if (!handleLocalAction(action)) {
             onResolve(action);
           }
+        }
+        if (row?.kind === "title") {
+          setCommandMode(false);
+          setCommandInput("");
+          setHighlightedCommandIndex(0);
+          onTitlePick?.(row.match.entry);
         }
         return;
       }
@@ -1370,16 +1585,13 @@ export function BrowseShell<T>({
         }
         return;
       }
+      const selectable = paletteSelectableCount(commandInput, commands, titleMatches);
       if (key.upArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current - 1 + matches.length) % matches.length);
-        }
+        setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, -1));
         return;
       }
       if (key.downArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current + 1) % matches.length);
-        }
+        setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, 1));
         return;
       }
       if (commandEditor.handleInput(input, key)) {
@@ -1389,9 +1601,7 @@ export function BrowseShell<T>({
     }
 
     if (input === "/") {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      openPalette();
       return;
     }
 
@@ -1407,6 +1617,68 @@ export function BrowseShell<T>({
       isBareBrowseLetterHotkey(input, key) &&
       !isReservedBrowseSurfaceChord(input, key)
     ) {
+      return;
+    }
+
+    // ── Suggestion band ──────────────────────────────────────────────────────
+    // Sits between the query field and the results zone: ↓ enters it, ↑ at the
+    // top row exits back to plain typing, ↓ at the bottom row falls through to
+    // the normal results/idle/history path below. Esc dismisses the band for
+    // the current draft before the usual ladder resumes. Because this only runs
+    // in the query zone, the field's own Enter→submit below still owns a plain
+    // Enter — the band only swallows it when a row is highlighted.
+    if (suggestionBandVisible && isBrowseQueryFocused(focusZone)) {
+      const highlightedSuggestion =
+        boundedSuggestionIndex >= 0 ? suggestionBandModel.items[boundedSuggestionIndex] : undefined;
+
+      if (key.escape) {
+        setSuggestionDismissedQuery(query);
+        setSuggestionIndex(-1);
+        return;
+      }
+      // Tab accepts the ghost completion at end-of-line (→ is handled through
+      // the field's ignoreInput). Otherwise Tab keeps toggling modes.
+      if (key.tab && !key.shift && suggestionGhost && queryCursorRef.current >= query.length) {
+        setQuery(suggestionGhost.full);
+        return;
+      }
+      // Details on the highlighted suggestion ride the same chords the results
+      // zone uses (Ctrl+O, Shift+Enter) — the row carries a real SearchResult
+      // option so the sheet renders identically to a list-row open.
+      if (
+        ((input === "o" && key.ctrl) || input === "\x0f" || (key.return && key.shift)) &&
+        highlightedSuggestion?.suggestion.value !== undefined
+      ) {
+        openDetailsOverlay({
+          value: highlightedSuggestion.suggestion.value,
+          label: highlightedSuggestion.suggestion.title,
+          detail: highlightedSuggestion.suggestion.meta,
+        });
+        return;
+      }
+      if (key.return && !key.shift && highlightedSuggestion) {
+        commitSuggestion(highlightedSuggestion);
+        return;
+      }
+      if (key.downArrow && suggestionBandModel.items.length > 0) {
+        if (boundedSuggestionIndex < suggestionBandModel.items.length - 1) {
+          setSuggestionIndex(boundedSuggestionIndex + 1);
+          return;
+        }
+        // Bottom edge: leave the band and let the normal ↓ path continue
+        // (results → arrow-down, empty → idle rows / query history).
+        setSuggestionIndex(-1);
+      }
+      if (key.upArrow && boundedSuggestionIndex >= 0) {
+        setSuggestionIndex(boundedSuggestionIndex - 1);
+        return;
+      }
+    }
+
+    // `z` claims the live undo entry on non-typing browse surfaces — the
+    // suppression check above already returned while a text zone has focus.
+    if (input === "z" && !key.ctrl && !key.meta && onUndo) {
+      onUndo();
       return;
     }
 
@@ -1441,6 +1713,7 @@ export function BrowseShell<T>({
             () => onQueueSelected(selectedOption.value),
             `Added ${selectedOption.label} to Up Next`,
             "Could not queue",
+            "queued",
           );
           return;
         }
@@ -1869,16 +2142,20 @@ export function BrowseShell<T>({
                 onSubmit={handleQuerySubmit}
                 placeholder={placeholder}
                 focus={!commandMode && !resultFilterFocused && !listFocused && !idleFocused}
+                ghostSuffix={suggestionGhost?.suffix}
+                cursorRef={queryCursorRef}
                 hint={
                   commandMode
                     ? undefined
-                    : displayOptions.length === 0
-                      ? canFocusIdleRows
-                        ? "Type a title · ↓ for you now · / commands"
-                        : "Type a title · / commands · /guide tour · /filters guided search"
-                      : listFocused
-                        ? undefined
-                        : "↓ results · / commands"
+                    : suggestionBandVisible && suggestionBandModel.rows.length > 0
+                      ? "↓ suggestions · → complete · esc dismiss · ↵ search"
+                      : displayOptions.length === 0
+                        ? canFocusIdleRows
+                          ? "Type a title · ↓ for you now · / commands"
+                          : "Type a title · / commands · /guide tour · /filters guided search"
+                        : listFocused
+                          ? undefined
+                          : "↓ results · / commands"
                 }
                 maxWidth={innerWidth}
                 onRedraw={clearShellScreen}
@@ -1903,10 +2180,31 @@ export function BrowseShell<T>({
                     }
                     return true;
                   }
+                  // Ink fires every useInput — nothing stops propagation between
+                  // this field and the shell handler. While a band row is
+                  // highlighted the parent owns Enter; the field must not also
+                  // submit the raw draft as a second, competing search.
+                  if (key.return && suggestionBandVisible && boundedSuggestionIndex >= 0) {
+                    return true;
+                  }
+                  // Band open: → at end-of-line accepts the ghost completion
+                  // instead of the editor's no-op cursor move. (Tab is reserved
+                  // by the parent handler, which owns the mode toggle.)
+                  if (key.rightArrow && suggestionGhost && queryCursorRef.current >= query.length) {
+                    setQuery(suggestionGhost.full);
+                    return true;
+                  }
                   return false;
                 }}
               />
             </MouseTarget>
+            {suggestionBandVisible && suggestionBandModel.rows.length > 0 ? (
+              <SearchSuggestionBand
+                model={suggestionBandModel}
+                selectedIndex={boundedSuggestionIndex}
+                width={innerWidth}
+              />
+            ) : null}
           </>
         )}
 
@@ -2049,7 +2347,7 @@ export function BrowseShell<T>({
                     }
                     return (
                       // Mouse: click a row to select it (same as arrowing to
-                      // it); click the already-selected row to submit — the
+                      // it); click the same row again to submit — the
                       // terminal-safe "click to open" without timing games.
                       // Deactivated while an overlay is up so a click on an
                       // uncovered row can't slip under it.
@@ -2059,15 +2357,22 @@ export function BrowseShell<T>({
                         active={pointerActive}
                         onWheel={scrollResults}
                         onClick={() => {
-                          if (!listFocused) {
+                          const prior = priorPointerSelection.current;
+                          if (
+                            !listFocused ||
+                            optionIndex !== boundedSelectedIndex ||
+                            prior?.index !== optionIndex ||
+                            prior.value !== option.value
+                          ) {
+                            priorPointerSelection.current = {
+                              index: optionIndex,
+                              value: option.value,
+                            };
                             dispatchFocusZone({ type: "focus-list" });
                             setSelectedIndex(optionIndex);
                             return;
                           }
-                          if (optionIndex !== boundedSelectedIndex) {
-                            setSelectedIndex(optionIndex);
-                            return;
-                          }
+                          priorPointerSelection.current = null;
                           if (searchState === "ready") onSubmit(option.value);
                         }}
                       >
@@ -2267,6 +2572,7 @@ export function BrowseShell<T>({
           cursor={commandEditor.cursor}
           commands={commands}
           highlightedIndex={highlightedCommandIndex}
+          titleMatches={titleMatches}
           maxVisible={getBrowseCommandPaletteMaxVisible(
             viewport.rows,
             Boolean(resultSubtitle && !viewport.ultraCompact),
@@ -2421,8 +2727,16 @@ export function openBrowseShell<T>({
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
+  onPrefetchOption,
+  onUndo,
+  onPaletteCommand,
   idleContext,
   loadIdleContext,
+  onSuggest,
+  loadLocalSuggestions,
+  suggestionDebounceMs,
+  localTitles,
+  onTitlePick,
 }: {
   mode: ShellMode;
   provider: string;
@@ -2457,9 +2771,26 @@ export function openBrowseShell<T>({
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
+  onPrefetchOption?: (value: T, signal: AbortSignal) => void;
+  onUndo?: () => void;
+  /** Fires when a command is picked from this shell's `/` palette. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
+  onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
+  loadLocalSuggestions?: () => readonly SearchSuggestion<T>[];
+  suggestionDebounceMs?: number;
+  /** Local title source — consulted once per palette open for the JUMP TO section. */
+  localTitles?: () => readonly LocalTitleEntry[];
+  /** Enter landed on a JUMP TO title row. */
+  onTitlePick?: (entry: LocalTitleEntry) => void;
 }): Promise<BrowseShellResult<T>> {
+  // A title picked from another surface (picker, loading) parks its launch
+  // here; the next browse mount resolves it instead of rendering.
+  const stagedLaunch = takePaletteTitleLaunch();
+  if (stagedLaunch) {
+    return Promise.resolve({ type: "launch-playback", launch: stagedLaunch });
+  }
   const queryDraft = sharedQueryDraft ?? { value: initialQuery ?? "", mode };
   if (queryDraft.mode !== mode) {
     queryDraft.value = initialQuery ?? "";
@@ -2496,8 +2827,16 @@ export function openBrowseShell<T>({
         onFollowSelected={onFollowSelected}
         onPlayTrailer={onPlayTrailer}
         onOpenLink={onOpenLink}
+        onPrefetchOption={onPrefetchOption}
+        onUndo={onUndo}
+        onPaletteCommand={onPaletteCommand}
         idleContext={idleContext}
         loadIdleContext={loadIdleContext}
+        onSuggest={onSuggest}
+        loadLocalSuggestions={loadLocalSuggestions}
+        suggestionDebounceMs={suggestionDebounceMs}
+        localTitles={localTitles}
+        onTitlePick={onTitlePick}
         onResolve={(action, value) =>
           finish(
             value !== undefined ? { type: "action", action, value } : { type: "action", action },
