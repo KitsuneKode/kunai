@@ -29,22 +29,13 @@ export function cancellationReasonFromSignal(
   signal: AbortSignal,
 ): ResolveCancellationReason | undefined {
   if (!signal.aborted) return undefined;
+  // Producers use strings, Error, or DOMException. Arbitrary objects passed to
+  // AbortController do not establish a cancellation policy. DOMException is
+  // checked explicitly because it is not an Error subclass in every runtime.
   const raw: unknown = signal.reason;
-  // DOMException (the reason for a bare abort() and for fetch-safe AbortError
-  // reasons) is not an Error subclass in every runtime — read any message.
-  const text =
-    typeof raw === "string"
-      ? raw
-      : typeof raw === "object" &&
-          raw !== null &&
-          "message" in raw &&
-          typeof raw.message === "string"
-        ? raw.message
-        : undefined;
-  const name =
-    typeof raw === "object" && raw !== null && "name" in raw && typeof raw.name === "string"
-      ? raw.name
-      : undefined;
+  const error = raw instanceof Error || raw instanceof DOMException ? raw : undefined;
+  const text = error?.message ?? (typeof raw === "string" ? raw : undefined);
+  const name = error?.name;
   // `AbortSignal.timeout()` rejects with a DOMException named "TimeoutError"
   // whose message is "The operation timed out" — no "timeout" substring — so
   // the deadline can only be caught by name, before the text gates.

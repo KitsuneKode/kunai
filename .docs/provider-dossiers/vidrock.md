@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-21"
+lastReviewed: "2026-10-11"
 ---
 
 # Provider: VidRock
@@ -25,22 +25,22 @@ lastReviewed: "2026-09-21"
 - **Server/source model:** ~5 named lanes per title — Nova/Atlas
   (`cdn*.ngcorp.dad`), Luna (`*.workers.dev`), Orion (rotating `.lol`/`.site`
   hosts), Astra (usually null). Each lane is a switchable source.
-- **Quality model:** the API exposes no per-lane quality label, but each lane's
-  HLS master playlist is fetched and expanded (`qualityHint: item.resolution`),
-  so the inventory carries real per-rendition quality rows.
+- **Quality model:** `/playlist/` lanes return JSON entries with `url` and
+  `resolution`; these become quality rows through `qualityHint`. Other lanes
+  remain a single stream. The adapter does not expand HLS master renditions.
 - **Known failure modes:** AES key rotation on deploy (decrypt throws → lane
   skipped); gated lanes that only serve real browsers — see below.
 
 ## User-Facing Capabilities
 
-| Capability            | Supported | Evidence                             | Notes                                                    |
-| --------------------- | --------: | ------------------------------------ | -------------------------------------------------------- |
-| Search                |        no | n/a                                  | Resolve-only; TMDB id is the lookup key.                 |
-| Episode list          |        no | n/a                                  |                                                          |
-| Server switch         |       yes | per-lane stream rows                 | Nova, Atlas, Luna, Orion, Astra.                         |
-| Quality switch        |       yes | playlist expansion → `qualityHint`   | Per-rendition rows from each lane's HLS master.          |
-| Audio language switch |       yes | `language`/`flag` lane fields        | `audioLanguages` per row.                                |
-| Direct mpv playback   |       yes | verified `movie/550` + `tv/1396/1/1` | Requires the `User-Agent: " "` header trick — see below. |
+| Capability            | Supported | Evidence                                   | Notes                                                         |
+| --------------------- | --------: | ------------------------------------------ | ------------------------------------------------------------- |
+| Search                |        no | n/a                                        | Resolve-only; TMDB id is the lookup key.                      |
+| Episode list          |        no | n/a                                        |                                                               |
+| Server switch         |       yes | per-lane stream rows                       | Nova, Atlas, Luna, Orion, Astra.                              |
+| Quality switch        |   partial | JSON playlist `resolution` → `qualityHint` | Only lanes exposing the playlist service have explicit rungs. |
+| Audio language switch |       yes | `language`/`flag` lane fields              | `audioLanguages` per row.                                     |
+| Direct mpv playback   |       yes | verified `movie/550` + `tv/1396/1/1`       | Requires the `User-Agent: " "` header trick — see below.      |
 
 ## The `User-Agent: " "` contract (why streams carry a space)
 
