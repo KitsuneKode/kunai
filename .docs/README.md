@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-01"
+lastReviewed: "2026-10-08"
 ---
 
 # Kunai internal docs
@@ -47,6 +47,8 @@ end to end.
 | Discord presence and social status                   | [presence-integrations.md](./presence-integrations.md)                                                                                                   |
 | Download, offline library, onboarding                | [download-offline-onboarding.md](./download-offline-onboarding.md)                                                                                       |
 | AniList/TMDB sync, the outbox, tracker auth          | [tracker-sync.md](./tracker-sync.md)                                                                                                                     |
+
+Download removal receipts and caller behavior: [features/download-removal.md](./features/download-removal.md).
 
 ## Contracts and policy
 
