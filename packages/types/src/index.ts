@@ -627,6 +627,75 @@ export type RelayErrorCode =
   | "upstream-error"
   | "bad-request";
 
+const RELAY_ERROR_CODES: readonly RelayErrorCode[] = [
+  "unknown-provider",
+  "provider-not-relayable",
+  "host-not-allowed",
+  "protocol-not-allowed",
+  "method-not-allowed",
+  "headers-rejected",
+  "body-too-large",
+  "response-too-large",
+  "redirect-not-allowed",
+  "relay-not-configured",
+  "unauthorized",
+  "upstream-timeout",
+  "upstream-error",
+  "bad-request",
+];
+
+/**
+ * Header the relay sets on responses it generated itself — refusals like
+ * `unknown-provider`/`host-not-allowed` and verdicts like `upstream-error`.
+ * An upstream answer proxied by the relay does NOT carry it, so on a relayed
+ * response this header is the discriminator between "the relay refused" and
+ * "upstream answered".
+ */
+export const RELAY_ERROR_CODE_HEADER = "X-Kunai-Relay-Error-Code";
+
+/**
+ * The relay's own error code from its response headers, or null when the
+ * response carries no code (a relayed upstream verdict — or a response that
+ * never touched the relay). Unrecognized values normalize to null rather than
+ * being trusted verbatim.
+ */
+export function relayErrorCodeFromResponse(response: Response): RelayErrorCode | null {
+  const code = response.headers.get(RELAY_ERROR_CODE_HEADER);
+  return code && (RELAY_ERROR_CODES as readonly string[]).includes(code)
+    ? (code as RelayErrorCode)
+    : null;
+}
+
+/**
+ * Extract a relay error code from a parsed refusal body of shape
+ * `{ error: { code } }`. Values outside the known code list normalize to null.
+ */
+export function relayErrorCodeFromBody(body: unknown): RelayErrorCode | null {
+  const code = (body as { error?: { code?: unknown } } | null)?.error?.code;
+  return typeof code === "string" && (RELAY_ERROR_CODES as readonly string[]).includes(code)
+    ? (code as RelayErrorCode)
+    : null;
+}
+
+/**
+ * Header first, then — for relayed non-OK responses only — the refusal body.
+ * Relays deployed before the header existed carry the code solely in
+ * `{ error: { code } }`; missing that case is how a stale deployment's
+ * `unknown-provider` 404 was read as an upstream "title missing". The body is
+ * sniffed on a clone and only when the relayed marker is present, so an
+ * unmarked upstream body can never be reinterpreted as a relay refusal.
+ */
+export async function relayLocalErrorCode(response: Response): Promise<RelayErrorCode | null> {
+  const header = relayErrorCodeFromResponse(response);
+  if (header) return header;
+  if (!response.headers.get(RELAYED_RESPONSE_HEADER) || response.ok) return null;
+  try {
+    return relayErrorCodeFromBody(await response.clone().json());
+  } catch {
+    return null;
+  }
+}
+
 export interface RelayProfile {
   readonly upstreamHosts: readonly string[];
   readonly maxRequestBodyBytes?: number;

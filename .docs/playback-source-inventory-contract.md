@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-08"
+lastReviewed: "2026-10-12T13:45:00Z"
 ---
 
 # Playback Source Inventory Contract
@@ -139,6 +139,18 @@ Source and quality pickers must read from cached inventory.
   chooses the exact rung.
 - Quality change: select the chosen stream or variant without recomputing inventory.
 - Subtitle change: select from `subtitles` or a separately cached subtitle list; do not refetch unrelated streams.
+- Tracks merges session-attached `subtitleList` tracks into the view alongside provider
+  subtitles, deduplicating attached URLs against provider and other attached rows.
+  Selecting Off keeps the choices available. Session attachments do not alter the
+  persisted provider inventory or claim provider extraction evidence.
+- During live playback, the Tracks subtitle section (including `/subtitle` and
+  the player picker request) applies external tracks and Off through
+  `selectCurrentSubtitle`. Update the selected row only after the player accepts
+  the choice, and never overwrite a stream replaced during that acknowledgement.
+  Embedded tracks that require a restart follow the stream-selection path.
+- Unchanged or stale picks and live subtitle acknowledgements return no restart
+  intent. Pre-play continues to launch the resolved stream; post-play stays on its
+  menu. A player rejection reports feedback without replaying the unchanged stream.
 - Audio/sub-dub change: reuse cached inventory only if that audio mode was included in the inventory. Otherwise resolve a separate inventory key for the requested mode.
 
 Never let one selected source overwrite another source's inventory. Store the full normalized result, then store user selection as separate playback intent.

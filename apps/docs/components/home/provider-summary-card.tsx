@@ -7,8 +7,8 @@ type ProviderSummaryCardProps = {
 };
 
 export function ProviderSummaryCard({ summary }: ProviderSummaryCardProps) {
-  const recommended =
-    summary.recommended.length > 0 ? summary.recommended.join(", ") : "See the provider table";
+  const providerNames =
+    summary.names.length > 0 ? summary.names.join(", ") : "See the provider table";
 
   return (
     <div className="kunai-surface-shell">
@@ -19,7 +19,7 @@ export function ProviderSummaryCard({ summary }: ProviderSummaryCardProps) {
           </p>
           <p className="kunai-type-body text-fd-muted-foreground mt-3 text-sm leading-relaxed">
             Kunai talks to third-party adapters on your machine. Registered adapters today:{" "}
-            {recommended}. They are unaffiliated and may break or disappear.
+            {providerNames}. They are unaffiliated and may break or disappear.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">

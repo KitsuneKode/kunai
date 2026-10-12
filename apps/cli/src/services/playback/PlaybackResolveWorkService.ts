@@ -187,7 +187,11 @@ export class PlaybackResolveWorkService {
       };
       const onAbort = () => {
         detach();
-        if (entry.consumers.size === 0) entry.abortController.abort();
+        // Forward the consumer's reason: the commit policy reads it off the
+        // shared signal to tell "user backed out, keep the warm result" from
+        // "deadline/fallback, discard". A bare abort would land as
+        // `aborted:unknown` and discard every cancel.
+        if (entry.consumers.size === 0) entry.abortController.abort(signal.reason);
         reject(abortError());
       };
       if (signal.aborted) {

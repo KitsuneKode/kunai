@@ -8,6 +8,10 @@ import {
   type ListShellActionContext,
   type ShellOption,
 } from "@/app-shell/pickers";
+import {
+  deleteDownloads,
+  formatDownloadRemovalFeedback,
+} from "@/services/download/download-removal";
 
 export { buildPickerActionContext };
 import { companionFallbackGlyph, companionToggleable } from "@/app-shell/companion-policy";
@@ -465,15 +469,16 @@ export async function openOfflineLibraryGroupPicker(
         ],
       });
       if (!confirmed) continue;
-      await Promise.all(
-        entries.map((entry) =>
-          container.downloadService.deleteJob(entry.job.id, { deleteArtifact: true }),
-        ),
+      const summary = await deleteDownloads(
+        container.downloadService,
+        entries.map((entry) => entry.job.id),
+        true,
       );
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
-        note: `Deleted offline title: ${first.titleName}`,
+        note: formatDownloadRemovalFeedback(summary),
       });
+      if (summary.retained.length > 0) continue;
       return;
     }
     const job = container.downloadService.getJob(picked.id);
@@ -615,12 +620,14 @@ export async function openOfflineLibraryGroupPicker(
       container.downloadService.kickQueue("download-manager");
       continue;
     }
-    await container.downloadService.deleteJob(job.id, {
-      deleteArtifact: action === "delete-artifact",
-    });
+    const summary = await deleteDownloads(
+      container.downloadService,
+      [job.id],
+      action === "delete-artifact",
+    );
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: action === "delete-artifact" ? "Download artifact deleted" : "Download job deleted",
+      note: formatDownloadRemovalFeedback(summary),
     });
   }
 }

@@ -1600,19 +1600,23 @@ function Request-OptionalInstall {
     return
   }
 
+  # -Yes is consent to install Kunai, not consent to accept a third party's
+  # licence agreements. Redirected input takes the same path, so `irm … | iex`
+  # in CI reports what is missing rather than installing it.
+  #
+  # Print the command once, with a verb that matches whether this process will
+  # run it. "This will run" before the console check made piped installs look
+  # like they were about to escalate, then print the same command as homework.
+  if ($Yes -or $DryRun -or [Console]::IsInputRedirected) {
+    Write-Info 'Run this to install them:'
+    foreach ($command in $commands) { Write-Host "    $command" }
+    return
+  }
+
   Write-Host ''
   Write-Host '  This will run:'
   foreach ($command in $commands) { Write-Host "    $command" }
   Write-Host ''
-
-  # -Yes is consent to install Kunai, not consent to accept a third party's
-  # licence agreements. Redirected input takes the same path, so `irm … | iex`
-  # in CI reports what is missing rather than installing it.
-  if ($Yes -or $DryRun -or [Console]::IsInputRedirected) {
-    Write-Info 'Install them with:'
-    foreach ($command in $commands) { Write-Host "    $command" }
-    return
-  }
 
   $reply = Read-Host 'Run it now? [y/N]'
   if ($reply -notmatch '^[Yy]') {
