@@ -968,7 +968,19 @@ export function BrowseShell<T>({
   const mouseEnabled = useMouseEnabled();
   const resultsMouseRef = useRef<DOMElement | null>(null);
   const pointerActive = !activeOverlay && !commandMode && !viewport.tooSmall;
+  const priorPointerSelection = useRef<{ index: number; value: T } | null>(null);
+  useEffect(() => {
+    const prior = priorPointerSelection.current;
+    if (
+      !pointerActive ||
+      !listFocused ||
+      prior?.index !== boundedSelectedIndex ||
+      prior.value !== displayOptions[boundedSelectedIndex]?.value
+    )
+      priorPointerSelection.current = null;
+  }, [pointerActive, listFocused, boundedSelectedIndex, displayOptions]);
   const scrollResults = (direction: "up" | "down") => {
+    priorPointerSelection.current = null;
     dispatchFocusZone({ type: "focus-list" });
     setSelectedIndex((current) =>
       Math.max(0, Math.min(displayOptions.length - 1, current + (direction === "up" ? -1 : 1))),
@@ -1253,6 +1265,7 @@ export function BrowseShell<T>({
   const visibleCalendarRows = calendarRenderRows.slice(calendarWindow.start, calendarWindow.end);
 
   useInput((input, key) => {
+    priorPointerSelection.current = null;
     if (rootContentSuspended) return;
     recordKeystroke("browse", key.upArrow ? "up" : key.downArrow ? "down" : input);
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -2049,7 +2062,7 @@ export function BrowseShell<T>({
                     }
                     return (
                       // Mouse: click a row to select it (same as arrowing to
-                      // it); click the already-selected row to submit — the
+                      // it); click the same row again to submit — the
                       // terminal-safe "click to open" without timing games.
                       // Deactivated while an overlay is up so a click on an
                       // uncovered row can't slip under it.
@@ -2059,15 +2072,22 @@ export function BrowseShell<T>({
                         active={pointerActive}
                         onWheel={scrollResults}
                         onClick={() => {
-                          if (!listFocused) {
+                          const prior = priorPointerSelection.current;
+                          if (
+                            !listFocused ||
+                            optionIndex !== boundedSelectedIndex ||
+                            prior?.index !== optionIndex ||
+                            prior.value !== option.value
+                          ) {
+                            priorPointerSelection.current = {
+                              index: optionIndex,
+                              value: option.value,
+                            };
                             dispatchFocusZone({ type: "focus-list" });
                             setSelectedIndex(optionIndex);
                             return;
                           }
-                          if (optionIndex !== boundedSelectedIndex) {
-                            setSelectedIndex(optionIndex);
-                            return;
-                          }
+                          priorPointerSelection.current = null;
                           if (searchState === "ready") onSubmit(option.value);
                         }}
                       >

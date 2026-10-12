@@ -495,6 +495,24 @@ describe("BrowseShell mouse rows", () => {
     unmount();
   });
 
+  test("the preselected first row needs a prior click, cleared by keyboard navigation", () => {
+    const handle = mountBrowse();
+    try {
+      let cell = rowCenter(handle.dispatcher, 0);
+      handle.click(cell.x, cell.y);
+      expect(handle.submitted).toEqual([]);
+      act(() => handle.source.feed("\x1b[B"));
+      act(() => handle.source.feed("\x1b[A"));
+      cell = rowCenter(handle.dispatcher, 0);
+      handle.click(cell.x, cell.y);
+      expect(handle.submitted).toEqual([]);
+      handle.click(cell.x, cell.y);
+      expect(handle.submitted).toEqual(["first"]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("wheel ticks over the list move the selection (arrow fallback)", () => {
     const { source, lastFrame, unmount } = mountBrowse();
     expect(lastFrame()).toContain("▌ Alpha One");
