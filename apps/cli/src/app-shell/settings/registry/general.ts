@@ -1,3 +1,4 @@
+import { contextualTipCatalog } from "@/app-shell/contextual-tips";
 import { rotateInstallId } from "@/services/analytics/install-id";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
@@ -85,6 +86,41 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
         value === "minimal"
           ? { ...config, footerHints: "minimal" }
           : { ...config, footerHints: "detailed" },
+    },
+    {
+      kind: "boolean",
+      id: "tipsEnabled",
+      label: "Shortcut tips",
+      detail:
+        "One-line hints that teach the direct key after you reach something through the palette — each shows once, ever",
+      read: (config) => config.tipsEnabled,
+      write: (config, value) => ({ ...config, tipsEnabled: value }),
+    },
+    {
+      kind: "submenu",
+      id: "seeAllTips",
+      label: "Every shortcut tip",
+      detail: "The full list of once-ever tips; picking one already shown lets it teach once more",
+      summarize: (config) => {
+        const catalog = contextualTipCatalog(config.seenTips);
+        const shown = catalog.filter((entry) => entry.seen).length;
+        return `${shown} of ${catalog.length} shown`;
+      },
+      buildChoices: (rowCtx) =>
+        contextualTipCatalog(rowCtx.config.seenTips).map((entry) => ({
+          value: entry.id,
+          label: entry.line,
+          detail: entry.seen ? "shown — pick to let it teach once more" : "not shown yet",
+        })),
+      onPick: (config, value) => {
+        // Re-arm a shown tip: a user who forgot the key can ask for the lesson
+        // back without resetting anything else. Unshown tips need no write.
+        if (!config.seenTips.includes(value)) return config;
+        return {
+          next: { ...config, seenTips: config.seenTips.filter((id) => id !== value) },
+          stay: true,
+        };
+      },
     },
     {
       kind: "boolean",

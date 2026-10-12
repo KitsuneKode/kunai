@@ -1,3 +1,11 @@
+// =============================================================================
+// Playback Phase
+//
+// Handles episode selection → stream resolve → MPV playback → post-playback.
+// Returns when user wants to go back to search or switch mode.
+// =============================================================================
+import { companionMode } from "@/app-shell/companion-policy";
+import { kannaDoneKindForSkipKind, kannaDoneText } from "@/app-shell/kanna-voice";
 import { capturePlaybackShellError } from "@/app-shell/playback-shell-error-capture";
 import {
   openTracksPanel,
@@ -5,12 +13,6 @@ import {
   buildPickerActionContext,
   openSubtitlePicker,
 } from "@/app-shell/workflows";
-// =============================================================================
-// Playback Phase
-//
-// Handles episode selection → stream resolve → MPV playback → post-playback.
-// Returns when user wants to go back to search or switch mode.
-// =============================================================================
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { consumeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
@@ -24,7 +26,10 @@ import {
   type EpisodePrefetchProgress,
   type EpisodePrefetchTarget,
 } from "@/app/playback/episode-prefetch";
-import { describeMpvPlayerEvent } from "@/app/playback/mpv-playback-event-copy";
+import {
+  describeMpvPlayerEvent,
+  type MpvPlaybackFeedback,
+} from "@/app/playback/mpv-playback-event-copy";
 import {
   dismissMpvTransitionOverlay,
   MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
@@ -228,6 +233,7 @@ import {
   type PlaybackTimingSourceOutcome,
 } from "@/infra/timing";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
+import { isFinished } from "@/services/continuation/history-progress";
 import { PlaybackHistoryLedger } from "@/services/continuation/playback-history-ledger";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import {
@@ -357,14 +363,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   private playbackLedger: PlaybackHistoryLedger | null = null;
   private unregisterActiveCheckpoint: (() => void) | null = null;
 
-  private updatePlaybackFeedback(
-    context: PhaseContext,
-    feedback: { detail?: string | null; note?: string | null },
-  ) {
+  private updatePlaybackFeedback(context: PhaseContext, feedback: MpvPlaybackFeedback) {
+    // A successful skip is the companion's moment: when she is enabled the
+    // factual "Intro skipped" sentence becomes her line in the same slot. Off
+    // keeps the factual note, so the state surface never loses the event.
+    const note =
+      feedback.skipKind !== undefined
+        ? (kannaDoneText(kannaDoneKindForSkipKind(feedback.skipKind), companionMode()) ??
+          feedback.note)
+        : feedback.note;
     context.container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       detail: feedback.detail,
-      note: feedback.note,
+      note,
     });
   }
 
@@ -427,7 +438,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const action = playerControl.consumeLastAction();
         if (!action) return false;
         if (action === "next") return true;
-        if (action === "stop" || action === "back-to-search" || action === "previous") {
+        if (
+          action === "stop" ||
+          action === "back-to-search" ||
+          action === "previous" ||
+          action === "switch-title"
+        ) {
           cancelledByAction = true;
         }
         return false;
@@ -887,6 +903,25 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           : usesNativeEpisodes
             ? (title.episodeCount ?? initialAnimeEpisodes?.length)
             : ((await fetchSeasons(title.id).catch(() => null))?.length ?? undefined);
+
+        // The Enter contract resolves "next unwatched" only when it decides
+        // something: a finished last episode and no explicit pick. It runs the
+        // same loader the starting menu would, so this adds no fetch the menu
+        // path wasn't already paying — it just answers before opening one.
+        const nextEpisode =
+          !isOfflineLaunch && !preselectedEpisode && history && isFinished(history)
+            ? await (async () => {
+                const { resolveNextHistoryEpisode } = await import("@/session-flow");
+                return resolveNextHistoryEpisode({
+                  currentId: title.id,
+                  isAnime: usesNativeEpisodes,
+                  history,
+                  animeEpisodeCount: title.episodeCount,
+                  animeEpisodes: initialAnimeEpisodes,
+                }).catch(() => null);
+              })()
+            : null;
+
         const episodeEntry = resolvePlaybackEpisodeEntry({
           titleId: title.id,
           titleType: title.type,
@@ -894,8 +929,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           launchSource: title.launchSource,
           preselectedEpisode: preselectedEpisode ?? undefined,
           history,
+          nextEpisode: nextEpisode ?? undefined,
           seasonCount,
           failedProvider,
+          forceMenu: title.forceStartingMenu === true,
           flags: requestFlags,
         });
 
@@ -910,6 +947,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               ? undefined
               : preselectedCurrentEpisode?.providerEpisodeIdentity,
           });
+          // A notification/queue launch names the absolute episode — keep it
+          // so the history row records the identity it actually played.
+          if (preselectedCurrentEpisode?.absoluteEpisode !== undefined) {
+            episode = { ...episode, absoluteEpisode: preselectedCurrentEpisode.absoluteEpisode };
+          }
           run.pendingStart =
             episodeEntry.selection.startAt !== undefined ||
             episodeEntry.selection.suppressResumePrompt
@@ -981,8 +1023,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             kind: historyTitleLookup.kind,
             externalIds: historyTitleLookup.externalIds,
           }) ?? null;
-        const { chooseMovieStartingPoint } = await import("@/session-flow");
-        const selection = await chooseMovieStartingPoint({ history: movieHistory, container });
+        const { chooseMovieStartingPoint, resolveMovieStartingChoice } =
+          await import("@/session-flow");
+        // Enter resumes a live position directly — the same answer the
+        // Resume/Restart picker leads with. `m` (forceStartingMenu) still
+        // opens that picker so restarting stays one key away.
+        const selection =
+          movieHistory &&
+          !isFinished(movieHistory) &&
+          movieHistory.positionSeconds > 0 &&
+          !title.forceStartingMenu
+            ? resolveMovieStartingChoice("resume", movieHistory)
+            : await chooseMovieStartingPoint({ history: movieHistory, container });
         if (!selection) {
           logger.info("Movie starting point cancelled before playback", { titleId: title.id });
           return {
@@ -2095,6 +2147,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 streamSwitchAction === "pick-quality"
                   ? playerControl.consumePendingStreamSelection()
                   : null;
+              const titleSwitchSelection =
+                streamSwitchAction === "switch-title"
+                  ? playerControl.consumePendingTitleSelection()
+                  : null;
               // Health-aware and tried-aware: a provider marked down or already
               // attempted in this cycle is not a viable fallback target even
               // though it stays selectable explicitly.
@@ -2251,6 +2307,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stateManager.dispatch({ type: "SET_STREAM", stream: null });
                 this.updatePlaybackFeedback(context, { detail: null, note: null });
                 await dismissMpvTransitionOverlay(playerControl);
+                if (titleSwitchSelection) {
+                  return {
+                    status: "success",
+                    value: {
+                      type: "history_entry",
+                      title: titleSwitchSelection.title,
+                      episode: titleSwitchSelection.episode,
+                    },
+                  };
+                }
               } else {
                 stateManager.dispatch({ type: "SET_STREAM", stream: null });
               }
@@ -2903,6 +2969,30 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             playbackControlAction === "pick-episode"
               ? playerControl.consumePendingEpisodeSelection()
               : null;
+          if (playbackControlAction === "switch-title") {
+            // A notification (or other handoff) asked to leave this title's
+            // session entirely: the file stop already landed, so exit with the
+            // target and let SessionController re-enter playback for it.
+            const titleSelection = playerControl.consumePendingTitleSelection();
+            if (titleSelection) {
+              diagnosticsService.record({
+                category: "playback",
+                message: "Switching to a different title from active playback",
+                context: {
+                  fromTitleId: title.id,
+                  toTitleId: titleSelection.title.id,
+                },
+              });
+              return {
+                status: "success",
+                value: {
+                  type: "history_entry",
+                  title: titleSelection.title,
+                  episode: titleSelection.episode,
+                },
+              };
+            }
+          }
           run.playbackSession = syncPlaybackSessionState(run.playbackSession, {
             autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
             stopAfterCurrent: stateManager.getState().stopAfterCurrent,

@@ -303,6 +303,10 @@ export class ConfigServiceImpl implements ConfigService {
       titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
       analytics: normalizedAnalytics,
       analyticsNoticeShown: loaded.analyticsNoticeShown === true,
+      // Anything but an explicit `false` keeps tips on — a hand-edited `0` or
+      // `"no"` must not silently opt a user out of a feature they never saw.
+      tipsEnabled: loaded.tipsEnabled !== false,
+      seenTips: normalizeStringList(loaded.seenTips),
       installId: normalizedInstallId,
       lastAnalyticsPingAt:
         typeof loaded.lastAnalyticsPingAt === "number" &&
@@ -822,6 +826,14 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.playbackKeysSessionsSeen;
   }
 
+  get tipsEnabled(): boolean {
+    return this.config.tipsEnabled;
+  }
+
+  get seenTips(): readonly string[] {
+    return this.config.seenTips;
+  }
+
   get analytics(): KitsuneConfig["analytics"] {
     return this.config.analytics;
   }
@@ -981,6 +993,9 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
       ...(partial.protectedDownloadJobIds !== undefined
         ? { protectedDownloadJobIds: normalizeStringList(partial.protectedDownloadJobIds) }
+        : null),
+      ...(partial.seenTips !== undefined
+        ? { seenTips: normalizeStringList(partial.seenTips) }
         : null),
       ...(partial.recoveryMode !== undefined
         ? { recoveryMode: normalizeRecoveryMode(partial.recoveryMode) }

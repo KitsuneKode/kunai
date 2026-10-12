@@ -1,3 +1,5 @@
+import { companionMode, type CompanionMode } from "./companion-policy";
+import { kannaDoneText } from "./kanna-voice";
 import { notificationKindGlyph, notificationKindLabel } from "./notification-kinds";
 
 export type NotificationPriority = "immediate" | "high" | "medium" | "low";
@@ -54,7 +56,14 @@ export function defaultPriorityForKind(kind: string): NotificationPriority {
 
 export function formatNotificationToast(
   item: Pick<NotificationQueueItem, "kind" | "title">,
+  mode: CompanionMode = companionMode(),
 ): string {
+  // A finished download is the companion's beat; every other kind keeps the
+  // notification system's own label so the toast still names what happened.
+  if (item.kind === "download-complete") {
+    const done = kannaDoneText("downloaded", mode);
+    if (done !== null) return `${done} — ${item.title}`;
+  }
   return `${notificationKindGlyph(item.kind)} ${notificationKindLabel(item.kind)} — ${item.title}`;
 }
 

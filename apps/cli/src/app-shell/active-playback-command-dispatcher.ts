@@ -1,4 +1,12 @@
+import type { EpisodeInfo, TitleInfo } from "@/domain/types";
+import { isJsonObject, type JsonValue } from "@kunai/types";
+
 import type { ShellAction } from "./types";
+
+type TitleSwitchSelection = {
+  readonly title: TitleInfo;
+  readonly episode?: EpisodeInfo;
+};
 
 export type ActivePlaybackStreamPickerAction =
   | "source"
@@ -31,6 +39,11 @@ export type ActivePlaybackCommandDispatchDeps = {
       reason: string,
     ) => Promise<unknown> | unknown;
     readonly stopCurrentPlayback: (reason: string) => Promise<unknown> | unknown;
+    readonly switchToTitlePlayback: (
+      selection: TitleSwitchSelection,
+      reason: string,
+    ) => Promise<boolean>;
+    readonly signalTitleSwitch: (selection: TitleSwitchSelection) => void;
     readonly updateCurrentPlaybackAutoSkipEnabled?: (enabled: boolean, reason: string) => void;
   };
   readonly workControl: {
@@ -218,5 +231,30 @@ export async function dispatchActivePlaybackCommand(
   if (routed === "quit") {
     deps.setExiting(true);
   }
+  if (isRoutedHistoryEntry(routed)) {
+    // A workflow (notifications play-now, queue/history launch) resolved to a
+    // different title while playback is live. Deliver it as a title switch:
+    // cancel an in-flight resolve and arm the intent for the abort tail, or
+    // stop the current file so the phase loop exits to the new title.
+    const selection = {
+      title: routed.title,
+      episode: routed.episode,
+    };
+    const cancelledWork = deps.workControl.cancelActive("playback-loading-command-switch-title");
+    if (cancelledWork) {
+      deps.playerControl.signalTitleSwitch(selection);
+    } else {
+      await deps.playerControl.switchToTitlePlayback(
+        selection,
+        "playback-loading-command-switch-title",
+      );
+    }
+  }
   return "handled";
+}
+
+function isRoutedHistoryEntry<T>(
+  value: T,
+): value is T & { readonly title: TitleInfo; readonly episode?: EpisodeInfo } {
+  return isJsonObject(value) && value.type === "history-entry" && isJsonObject(value.title);
 }

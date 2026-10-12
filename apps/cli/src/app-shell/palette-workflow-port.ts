@@ -1,6 +1,6 @@
 import type { Container } from "@/container";
 
-import type { NotificationPlaybackIntent, RootOwnedOverlay } from "./root-overlay-bridge";
+import type { NotificationOverlayOutcome, RootOwnedOverlay } from "./root-overlay-bridge";
 import type { QueuePlaybackLaunch } from "./root-queue-bridge";
 import type { ShellAction } from "./types";
 import type { ShellWorkflowResult } from "./workflows/shell-workflows";
@@ -51,7 +51,7 @@ export interface PaletteWorkflowPort {
   openOverlay(container: Container, overlay: RootOwnedOverlay): Promise<void>;
   openDiagnostics(container: Container, source: string): Promise<void>;
   openNotifications(container: Container): Promise<{
-    readonly playback: NotificationPlaybackIntent | null;
+    readonly outcome: NotificationOverlayOutcome | null;
   }>;
   waitForQueueSelection(): Promise<QueuePlaybackLaunch | null>;
 }
