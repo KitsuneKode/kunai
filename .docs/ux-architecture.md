@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T15:02:10Z"
+lastReviewed: "2026-10-12T20:00:26Z"
 ---
 
 # Kunai — UX Architecture
@@ -67,6 +67,11 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 - command palettes should group actions by `Global` and `Context` rather than by implementation source
 - command palettes should imply the recommended action through default highlight rather than extra “recommended” noise in every row
 - command palettes should also match locally-known titles (`JUMP TO`) once the input is at least two characters — titles are read from local state only (history, queue, followed, lists, playlists), never the network; commands keep precedence over title rows; the title section collapses on empty input; a title pick lands on the same title→episode flow a browse selection uses
+
+Search and palette Enter submit the editor's current input draft even when text
+and Enter arrive before React commits a frame. Pending palette text resets the
+selection to the first match; it must never execute a command from the previous
+query. This applies to Browse and the shared picker/post-play input hook.
 
 ### Hotkey philosophy
 
