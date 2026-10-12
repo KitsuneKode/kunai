@@ -16,6 +16,11 @@ An ani-cli alternative with source failover, offline downloads and resume.
 
 [Watch the sharper MP4](.reference/design/brand/demo-ui-walkthrough.mp4)
 
+```bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
+kunai --setup && kunai -S "Dune"
+```
+
 </div>
 
 One fullscreen, keyboard-driven session: search a title, pick a third-party
