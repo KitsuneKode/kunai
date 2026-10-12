@@ -111,6 +111,12 @@ describe("agent wiring · queue", () => {
       s.press("Q");
       await s.waitForFrame((f) => f.includes("UP NEXT"), "up-next surface");
       await s.waitSettled();
+      // `x` arms on first press (prompt names the row in the footer) and
+      // removes on the second — single-press removal would be one key away
+      // from an accident next to Ctrl+C.
+      s.press("x");
+      await s.waitForFrame((f) => f.includes("Press x again"), "remove confirm prompt");
+      await s.waitSettled();
       s.press("x");
       await s.waitForBackend(
         (i) => i.queue().length === before,

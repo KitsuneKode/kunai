@@ -74,6 +74,13 @@ marks every relayed response with `X-Kunai-Relay-Hop` and refuses to treat a
 status that arrived over a hop as the upstream's own answer, but the relay still
 has to be redeployed to actually serve the provider.
 
+The registry includes every production provider that declares a metadata relay
+profile (11 today); YouTube has none. The CLI bootstrap contract tests compare
+this server registry with the actual production modules, and exercise each
+manifest's metadata host allowlist. Adding a desktop provider without the
+matching relay registration therefore fails CI instead of shipping
+`unknown-provider` responses. This does not add media relay routes.
+
 **Redeploy after provider manifest host changes.** The RPC registry is built
 from `@kunai/providers` manifests at deploy time. If a provider's
 `relayProfile.upstreamHosts` changes upstream, an already-deployed relay keeps
