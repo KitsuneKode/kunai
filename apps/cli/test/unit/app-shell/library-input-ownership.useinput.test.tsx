@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { LibraryShell } from "@/app-shell/library-shell";
+import { RootContentSuspension } from "@/app-shell/RootContentSuspension";
 import type { Container } from "@/container";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import React, { act } from "react";
@@ -638,4 +639,37 @@ describe("library pointer ownership", () => {
       handle.unmount();
     }
   });
+});
+
+test("covered Library and Downloads release both pointer and keyboard ownership", async () => {
+  for (const initialView of ["library", "queue"] as const) {
+    let closed = 0;
+    const handle = renderWithPointer(
+      <RootContentSuspension suspended={true}>
+        <LibraryShell
+          container={fixture()}
+          initialView={initialView}
+          onClose={() => {
+            closed += 1;
+          }}
+        />
+      </RootContentSuspension>,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(handle.dispatcher.size).toBe(0);
+      handle.stdin.enqueue("d");
+      handle.stdin.enqueue("\t");
+      expect(closed).toBe(0);
+      if (initialView === "library") {
+        expect(handle.lastFrame()).not.toContain("Filter: d");
+        expect(handle.lastFrame()).not.toContain("No downloads queued");
+      } else expect(handle.lastFrame()).toContain("No downloads queued");
+    } finally {
+      handle.unmount();
+    }
+  }
 });

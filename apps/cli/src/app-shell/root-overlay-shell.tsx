@@ -199,6 +199,7 @@ import {
 } from "./root-queue-bridge";
 import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
 import { runRootWorkflowSafely } from "./root-workflow-dispatch";
+import { RootContentSuspension } from "./RootContentSuspension";
 import { SEARCH_BROWSE_COMMAND_IDS } from "./search-browse-command-ids";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
 import { SettingsShell } from "./settings/SettingsShell";
@@ -2152,11 +2153,13 @@ export function RootOverlayShell({
     return wrapOverlayLayout(
       overlayLayout,
       <Box flexDirection="column" flexGrow={1}>
-        <LibraryShell
-          container={container}
-          onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
-          initialView={overlay.view ?? "library"}
-        />
+        <RootContentSuspension suspended={commandMode}>
+          <LibraryShell
+            container={container}
+            onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+            initialView={overlay.view ?? "library"}
+          />
+        </RootContentSuspension>
         {commandMode ? (
           <CommandPalette
             input={commandInput}
