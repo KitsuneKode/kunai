@@ -16,6 +16,9 @@ import provenanceJson from "./generated-provenance.json";
 export type Provenance = {
   readonly syncedAt: string;
   readonly cliSourceRevision: string;
+  readonly cliSourceFingerprint?: string;
+  readonly docsContentFingerprint?: string;
+  readonly featureStatusRevision?: string;
 };
 
 export const provenance: Provenance = provenanceJson as Provenance;
