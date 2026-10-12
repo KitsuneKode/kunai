@@ -12,6 +12,8 @@ export type TransientRowInput = {
   readonly presenceBootLine: TransientToneLine | null;
   readonly streakAtRiskAlert: string | null;
   readonly weeklyDigestLine: string | null;
+  /** Once-ever shortcut coaching — yields to everything else on the row. */
+  readonly tipLine?: string | null;
 };
 
 export type TransientRowLine = {
@@ -25,8 +27,10 @@ export type TransientRowLine = {
 
 // The shell reserves ONE transient row; exactly one line wins, by priority:
 // genuine alert → notification arrival toast → streak milestone → presence boot →
-// streak-at-risk → weekly digest. Arrivals render bright; calm infos dim. Keeping
-// this pure makes the priority testable without mounting the whole shell.
+// streak-at-risk → weekly digest → contextual tip. Arrivals render bright; calm
+// infos dim. The tip sits last on purpose: a coaching line must never displace
+// feedback about something that actually just happened. Keeping this pure makes
+// the priority testable without mounting the whole shell.
 export function selectTransientRow(input: TransientRowInput): TransientRowLine | null {
   if (input.notificationToast && input.notificationToastPriority === "immediate") {
     return { text: input.notificationToast, tone: "info", accent: true, dim: false };
@@ -55,6 +59,9 @@ export function selectTransientRow(input: TransientRowInput): TransientRowLine |
   }
   if (input.weeklyDigestLine) {
     return { text: input.weeklyDigestLine, tone: "info", accent: false, dim: true };
+  }
+  if (input.tipLine) {
+    return { text: input.tipLine, tone: "info", accent: false, dim: true };
   }
   return null;
 }

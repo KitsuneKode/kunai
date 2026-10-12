@@ -1,6 +1,8 @@
 // Post-playback menu inner loop — extracted from PlaybackPhase.execute() so the
 // outer episode loop can call a single function and act on its directive.
 import { resolveCommandContext } from "@/app-shell/commands";
+import { companionMode } from "@/app-shell/companion-policy";
+import { kannaDoneText } from "@/app-shell/kanna-voice";
 import { claimQueuePlaybackLaunch } from "@/app-shell/root-queue-bridge";
 import type { PlaybackShellResult, PlaybackShellState, ShellAction } from "@/app-shell/types";
 import {
@@ -498,7 +500,14 @@ export async function runPostPlaybackMenu(
           episodeDurationSeconds: result.duration,
           status: iteration.catalogAutoplayEndBanner
             ? { label: iteration.catalogAutoplayEndBanner, tone: "neutral" }
-            : { label: "Ready for next action", tone: "success" },
+            : {
+                // A resumable position means the progress write already landed;
+                // the status row is where that save announces itself.
+                label:
+                  (canResumePlayback ? kannaDoneText("saved", companionMode()) : undefined) ??
+                  "Ready for next action",
+                tone: "success",
+              },
           footerMode: "minimal",
           postPlayState,
           episodeLabel: buildPostPlayEpisodeLabel(title, currentEpisode, seasonEpisodeTotal),

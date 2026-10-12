@@ -137,6 +137,17 @@ export interface KitsuneConfig {
    * becoming permanent furniture for someone who already knows them.
    */
   playbackKeysSessionsSeen: number;
+  /**
+   * Whether the one-line contextual shortcut hints may appear at all. Disabling
+   * is the way out of the feature entirely — the seen set is kept so turning
+   * tips back on does not re-teach what was already shown.
+   */
+  tipsEnabled: boolean;
+  /**
+   * Ids of every contextual tip that has already rendered. A tip is once-ever:
+   * once its id lands here it never displays again, including across restarts.
+   */
+  seenTips: readonly string[];
   /** Optional usage ping. Fresh installs are off until explicitly enabled. */
   analytics: AnalyticsPreference;
   /** Whether the one-time recommendation notice for an existing install was shown. */

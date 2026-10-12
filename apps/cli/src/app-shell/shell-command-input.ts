@@ -3,7 +3,7 @@ import { movePickerModelSelection } from "@/domain/session/picker-model";
 import { useInput } from "ink";
 import { useEffect, useState } from "react";
 
-import type { ResolvedAppCommand } from "./commands";
+import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { recordInputDrop } from "./diagnostics/render-trace";
 import { routeShellInput } from "./input-router";
 import {
@@ -20,6 +20,7 @@ export function useShellInput({
   letterKeysHandledExternally = false,
   escapeAction = "quit",
   onResolve,
+  onPaletteCommand,
 }: {
   footerActions: readonly FooterAction[];
   commands: readonly ResolvedAppCommand[];
@@ -28,6 +29,8 @@ export function useShellInput({
   letterKeysHandledExternally?: boolean;
   escapeAction?: ShellAction | null;
   onResolve: (action: ShellAction) => void;
+  /** Fires only when a command is picked from the palette — the "long way" signal tips key off. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
 }) {
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
@@ -73,6 +76,7 @@ export function useShellInput({
       if (key.return) {
         const resolved = getHighlightedCommand(commandInput, commands, highlightedIndex);
         if (resolved?.enabled) {
+          onPaletteCommand?.(resolved.id);
           onResolve(toShellAction(resolved.id));
           return;
         }

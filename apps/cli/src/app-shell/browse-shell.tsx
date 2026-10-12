@@ -1,8 +1,10 @@
 import { createLatestRequestGate, runBrowseMutation } from "@/app-shell/browse-async";
 import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-item";
+import { companionMode } from "@/app-shell/companion-policy";
 import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-trace";
 import { useCalendarNow } from "@/app-shell/hooks/use-calendar-now";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
+import { kannaDoneText, type KannaDoneKind } from "@/app-shell/kanna-voice";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
@@ -86,7 +88,7 @@ import {
   type CalendarTypeTab,
 } from "./calendar-ui.model";
 import { sortCalendarOptions } from "./calendar-view";
-import type { ResolvedAppCommand } from "./commands";
+import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { DetailsSheetUI } from "./details-pane-ui";
 import {
   buildBrowseDetailsPanel,
@@ -215,6 +217,7 @@ export function BrowseShell<T>({
   onResolve,
   onSubmit,
   onCancel,
+  onPaletteCommand,
   idleContext,
   loadIdleContext,
 }: {
@@ -258,6 +261,8 @@ export function BrowseShell<T>({
   onResolve: (action: ShellAction, value?: T) => void;
   onSubmit: (value: T) => void;
   onCancel: () => void;
+  /** Fires when a command is picked from this shell's `/` palette. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
 }) {
@@ -874,10 +879,15 @@ export function BrowseShell<T>({
       operation: () => Promise<string | void> | string | void,
       successMessage: string,
       failurePrefix: string,
+      doneKind?: KannaDoneKind,
     ) => {
       void runBrowseMutation(operation).then((result) => {
         flashActionFeedback(
-          result.ok ? (result.note ?? successMessage) : `${failurePrefix}: ${result.message}`,
+          result.ok
+            ? (result.note ??
+                (doneKind ? kannaDoneText(doneKind, companionMode()) : undefined) ??
+                successMessage)
+            : `${failurePrefix}: ${result.message}`,
         );
         return undefined;
       });
@@ -1279,6 +1289,7 @@ export function BrowseShell<T>({
             () => onQueueSelected(selectedOption.value),
             `Queued ${selectedOption.label}`,
             "Could not queue",
+            "queued",
           );
           return;
         }
@@ -1317,6 +1328,7 @@ export function BrowseShell<T>({
       if (key.return) {
         const resolved = getHighlightedCommand(commandInput, commands, highlightedCommandIndex);
         if (resolved?.enabled) {
+          onPaletteCommand?.(resolved.id);
           const action = toShellAction(resolved.id);
           if (!handleLocalAction(action)) {
             onResolve(action);
@@ -1408,6 +1420,7 @@ export function BrowseShell<T>({
             () => onQueueSelected(selectedOption.value),
             `Added ${selectedOption.label} to Up Next`,
             "Could not queue",
+            "queued",
           );
           return;
         }
@@ -2307,6 +2320,7 @@ export function openBrowseShell<T>({
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
+  onPaletteCommand,
   idleContext,
   loadIdleContext,
 }: {
@@ -2343,6 +2357,8 @@ export function openBrowseShell<T>({
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
+  /** Fires when a command is picked from this shell's `/` palette. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
 }): Promise<BrowseShellResult<T>> {
@@ -2382,6 +2398,7 @@ export function openBrowseShell<T>({
         onFollowSelected={onFollowSelected}
         onPlayTrailer={onPlayTrailer}
         onOpenLink={onOpenLink}
+        onPaletteCommand={onPaletteCommand}
         idleContext={idleContext}
         loadIdleContext={loadIdleContext}
         onResolve={(action, value) =>

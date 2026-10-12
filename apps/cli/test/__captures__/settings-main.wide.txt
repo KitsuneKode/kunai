@@ -8,4 +8,6 @@
  Launch mode and how much shortcut help the shell shows
    ▸ Default startup mode ·  Series mode
    ▸ Footer hints ·  Detailed
+   ● on    Shortcut tips
+   ▸ Every shortcut tip ·  0 of 8 shown
    ○ off   Usage analytics

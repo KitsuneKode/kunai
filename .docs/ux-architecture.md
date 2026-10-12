@@ -79,6 +79,33 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 - if an action is unavailable, show why instead of silently ignoring the input
 - mode actions should be phrased by destination, like `Anime mode` or `Series mode`, instead of generic toggle wording
 
+### Contextual tips
+
+Shortcut coaching is earned, not ambient. A tip fires only after the user did
+the thing the long way — picked a command out of the `/` palette that a plain
+keypress would have reached — and only on a surface where that key is actually
+live. The contract:
+
+- **once-ever.** Each tip id shows at most once, then never again. The seen
+  set lives in `config.json` (`seenTips`, next to `tipsEnabled`), persisted
+  before the line renders so a crash can only cost a tip, never repeat one.
+- **dismissible.** The Settings → "Shortcut tips" boolean turns the feature
+  off entirely without burning the seen set; "Every shortcut tip" lists the
+  whole catalog, marks what already showed, and lets a shown tip be re-armed
+  deliberately.
+- **lowest priority.** Tips render on the same transient row as alerts,
+  toasts, streaks, and digest — last in line, so a coaching line can never
+  displace feedback about something that just happened.
+- **never under focus.** A tip does not fire while an overlay or picker owns
+  the screen. Root-owned overlays therefore do not wire the trigger at all.
+- **honest.** Copy resolves the real chord from the keybinding registry at
+  render time (`bindingId → glyph`), so a rebound key can never drift the
+  text. A candidate tip whose key is not bound on that surface — or whose
+  command is not in that surface's palette — is not a tip and does not ship.
+
+Map: `apps/cli/src/domain/session/contextual-tips.ts`; copy, arming, and
+catalog: `apps/cli/src/app-shell/contextual-tips.ts`.
+
 ## Selection Over Freeform Input
 
 If the app already knows the valid options, the UI should present those options instead of asking the user to type raw values.

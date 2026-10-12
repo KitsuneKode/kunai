@@ -3,6 +3,7 @@ import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
+import type { AppCommandId } from "./commands";
 import { momentForLoading } from "./companion-moment";
 import { CompanionHost } from "./CompanionHost";
 import { usePlaybackPosterSurfaceCleanup } from "./image-pane";
@@ -349,6 +350,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   onToggleFavorite,
   isFavorite,
   onFallback,
+  onPaletteCommand,
 }: {
   state: LoadingShellState;
   onCancel?: () => void;
@@ -371,6 +373,8 @@ export const LoadingShell = React.memo(function LoadingShell({
   /** Read at render, so the marker follows the list rather than a local copy. */
   isFavorite?: () => boolean;
   onFallback?: () => void;
+  /** Fires when a command is picked from this surface's `/` palette. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
 }) {
   const [memoryPanelVisible, setMemoryPanelVisible] = React.useState(false);
   // Forces a frame after a toggle: `isFavorite` reads through to the list, so
@@ -656,6 +660,7 @@ export const LoadingShell = React.memo(function LoadingShell({
         }
         state.onCommandAction?.(action);
       }}
+      onPaletteCommand={onPaletteCommand}
     >
       <Box flexDirection="column" justifyContent="space-between" flexGrow={1}>
         <Box flexDirection="column" flexGrow={1} width="100%">

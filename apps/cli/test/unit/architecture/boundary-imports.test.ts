@@ -59,6 +59,10 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
     "apps/cli/src/app/playback/run-post-playback-menu.ts",
     [
       "@/app-shell/commands",
+      // The companion voice is shell-owned copy; app/ names the moment, the
+      // shell owns what it sounds like.
+      "@/app-shell/companion-policy",
+      "@/app-shell/kanna-voice",
       // DEBT (2026-07-21): queue-launch handoff lives in app-shell; the bridge
       // belongs below app-shell so app/ can claim a launch without inverting.
       "@/app-shell/root-queue-bridge",
@@ -80,6 +84,10 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
   [
     "apps/cli/src/app/playback/PlaybackPhase.ts",
     [
+      // Same voice seam as run-post-playback-menu: the skip confirmation is
+      // the companion's moment, and copy lives where the rest of her does.
+      "@/app-shell/companion-policy",
+      "@/app-shell/kanna-voice",
       "@/app-shell/playback-shell-error-capture",
       "@/app-shell/workflows",
       "@/app-shell/title-control/smart-auto-launch",
@@ -97,6 +105,9 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
       // identity and the acceptance commit; the shell owns its state machine.
       "@/app-shell/hooks/use-calendar-route",
       "@/app-shell/commands",
+      // Tip arming needs the shell half: binding-aware copy, the listener the
+      // root shell registers, and the seen-set write through ConfigService.
+      "@/app-shell/contextual-tips",
       // DEBT (2026-07-21): both are shell-owned helpers that app/ reaches up for.
       // `external-open-fallback` is presentation copy; `root-queue-bridge` is the
       // queue-launch handoff. Both should move below app-shell.

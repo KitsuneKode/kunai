@@ -47,6 +47,7 @@ export function ShellFrame({
   escapeAction,
   onUnhandledInput,
   onResolve,
+  onPaletteCommand,
   children,
   terminalWidth: terminalWidthProp,
   terminalRows: terminalRowsProp,
@@ -67,6 +68,8 @@ export function ShellFrame({
   escapeAction?: ShellAction | null;
   onUnhandledInput?: (input: string, key: ShellFrameInputKey) => void;
   onResolve: (action: ShellAction) => void;
+  /** Fires only when a command is picked from the palette — bound with the surface's tip surface. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
   children: React.ReactNode;
   terminalWidth?: number;
   terminalRows?: number;
@@ -88,6 +91,7 @@ export function ShellFrame({
     letterKeysHandledExternally,
     escapeAction,
     onResolve,
+    onPaletteCommand,
   });
 
   useInput((input, key) => {

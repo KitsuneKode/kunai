@@ -41,6 +41,7 @@ import {
 import { useBrowseDestinationLabel } from "./browse-destination";
 import { CapabilityIssueStrip } from "./CapabilityIssueStrip";
 import { dispatchAppCommand } from "./command-router";
+import { setContextualTipListener } from "./contextual-tips";
 import { recordRender } from "./diagnostics/render-trace";
 import { createDismissTimerRegistry } from "./dismiss-timer-registry";
 import { startDownloadStatusMonitor } from "./download-status-monitor";
@@ -454,6 +455,23 @@ export function AppRoot({ container }: { container: Container }) {
   const notificationQueueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [weeklyDigestLine, setWeeklyDigestLine] = useState<string | null>(null);
+
+  // Once-ever shortcut coaching: surfaces arm a tip when the user takes the
+  // long way through the palette; the line itself lives on the transient row
+  // for a few seconds, lowest priority, so it can never cover a real alert.
+  const [tipLine, setTipLine] = useState<string | null>(null);
+  const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    setContextualTipListener((line) => {
+      setTipLine(line);
+      if (tipTimerRef.current) clearTimeout(tipTimerRef.current);
+      tipTimerRef.current = setTimeout(() => setTipLine(null), 10_000);
+    });
+    return () => {
+      setContextualTipListener(null);
+      if (tipTimerRef.current) clearTimeout(tipTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     /** Auto-dismiss handles for the streak alerts, cleared on unmount. */
@@ -1214,6 +1232,7 @@ export function AppRoot({ container }: { container: Container }) {
             presenceBootLine: visiblePresenceBootLine,
             streakAtRiskAlert,
             weeklyDigestLine,
+            tipLine,
           });
           if (!transient) return null;
           return (

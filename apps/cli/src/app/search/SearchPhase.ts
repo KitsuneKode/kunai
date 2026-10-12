@@ -12,6 +12,7 @@ import {
 import type { CalendarTypeTab } from "@/app-shell/calendar-ui.model";
 import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
+import { notePaletteCommand } from "@/app-shell/contextual-tips";
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import type { CalendarRouteRequest } from "@/app-shell/hooks/use-calendar-route";
 import { openBrowseShell } from "@/app-shell/ink-shell";
@@ -590,6 +591,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           mode: syncedState.mode,
           provider: syncedState.provider,
           settings: container.config.getRaw(),
+          onPaletteCommand: (commandId) => notePaletteCommand(container, "browse", commandId),
           initialCalendarTypeTab,
           initialCalendarRoute: openedCalendarRoute,
           initialErrorMessage: initialSearchError,
