@@ -81,6 +81,9 @@ describe("the tip map", () => {
     // copy. This is the check that keeps the map honest as palettes change.
     for (const tip of CONTEXTUAL_TIPS) {
       for (const surface of tip.surfaces) {
+        // SAFETY: the satisfies'd list values widen to their element unions;
+        // reading them back as AppCommandId rows is the same contract the
+        // annotation previously declared.
         expect(
           (PALETTE_LISTS[surface] as readonly AppCommandId[]).includes(tip.commandId),
           `${tip.id}: ${tip.commandId} not in the ${surface} palette`,

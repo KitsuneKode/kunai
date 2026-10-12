@@ -67,7 +67,9 @@ function normalizeSuggestionText(value: string): string {
  * whitespace-collapsed — while recording which original code point each kept
  * char came from, so `matchIndices` land on the displayable string.
  */
-function normalizeWithIndexMap(title: string): { chars: string[]; origIndex: number[] } {
+type NormalizedIndexMap = { readonly chars: string[]; readonly origIndex: number[] };
+
+function normalizeWithIndexMap(title: string): NormalizedIndexMap {
   const chars: string[] = [];
   const origIndex: number[] = [];
   let pendingSpace = false;
