@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T14:54:52Z"
+lastReviewed: "2026-10-12T14:56:23Z"
 ---
 
 # Kunai — UX Architecture
@@ -410,3 +410,7 @@ the same cell budget as CJK titles. Surfaces reuse
 
 Up Next also requires a prior mouse click on the same selected row before
 launching playback. Scrolling and disabling its pointer owner clear that intent.
+
+Browse requires a prior pointer click on the same selected title before opening
+it. Preselected rows, keyboard navigation, scrolling and covered content do not
+authorize pointer activation.
