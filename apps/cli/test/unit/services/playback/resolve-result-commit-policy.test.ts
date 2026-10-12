@@ -84,6 +84,15 @@ describe("cancellationReasonFromSignal", () => {
     expect(cancellationReasonFromSignal(signal)).toBe("user-navigation");
   });
 
+  test("an AbortSignal.timeout() TimeoutError classifies as timeout-budget, not navigation", () => {
+    // AbortSignal.timeout() aborts with a DOMException named "TimeoutError"
+    // whose message is "The operation timed out" — no "timeout" substring, so a
+    // message-only classifier files it as user-navigation and persist-only's
+    // only producer becomes the deadline instead of the user.
+    const signal = abortedSignal(new DOMException("The operation timed out", "TimeoutError"));
+    expect(cancellationReasonFromSignal(signal)).toBe("timeout-budget");
+  });
+
   test("returns undefined when the signal aborted without a usable reason", () => {
     const controller = new AbortController();
     controller.abort();

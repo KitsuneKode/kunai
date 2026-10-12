@@ -25,8 +25,9 @@ lastReviewed: "2026-09-21"
 - **Server/source model:** ~5 named lanes per title — Nova/Atlas
   (`cdn*.ngcorp.dad`), Luna (`*.workers.dev`), Orion (rotating `.lol`/`.site`
   hosts), Astra (usually null). Each lane is a switchable source.
-- **Quality model:** HLS ladders on the playlist side; the API exposes no
-  per-lane quality label, so rows are one-per-lane and mpv picks rendition.
+- **Quality model:** the API exposes no per-lane quality label, but each lane's
+  HLS master playlist is fetched and expanded (`qualityHint: item.resolution`),
+  so the inventory carries real per-rendition quality rows.
 - **Known failure modes:** AES key rotation on deploy (decrypt throws → lane
   skipped); gated lanes that only serve real browsers — see below.
 
@@ -37,7 +38,7 @@ lastReviewed: "2026-09-21"
 | Search                |        no | n/a                                  | Resolve-only; TMDB id is the lookup key.                 |
 | Episode list          |        no | n/a                                  |                                                          |
 | Server switch         |       yes | per-lane stream rows                 | Nova, Atlas, Luna, Orion, Astra.                         |
-| Quality switch        |        no | API gives no quality labels          | HLS master internals only.                               |
+| Quality switch        |       yes | playlist expansion → `qualityHint`   | Per-rendition rows from each lane's HLS master.          |
 | Audio language switch |       yes | `language`/`flag` lane fields        | `audioLanguages` per row.                                |
 | Direct mpv playback   |       yes | verified `movie/550` + `tv/1396/1/1` | Requires the `User-Agent: " "` header trick — see below. |
 

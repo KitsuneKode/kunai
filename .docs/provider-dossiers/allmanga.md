@@ -18,7 +18,7 @@ lastReviewed: "2026-08-17"
 
 ### Search and catalog
 
-- `searchAllManga()` uses the `shows` GraphQL query against `https://api.allanime.day/api`.
+- `searchAllManga()` uses the `shows` GraphQL query against `https://api.mkissa.net/api`.
 - `loadShowCatalogInfo()` uses a show GraphQL query and caches `availableEpisodesDetail`, `episodeCount`, AniList/MAL IDs, and thumbnail data for 45 seconds.
 - Browser harvest on 2026-05-25 confirmed AllAnime GraphQL works with the `https://youtu-chan.com` referer.
 - The benchmark for `solo leveling` must pin Season 1. Broad search currently returns Season 2 at index `0`; Season 1 is index `1` with AniList `151807` and AllManga id `B6AMhLy6EQHDgYgBF`.
@@ -179,14 +179,12 @@ around.
 
 ## Recommended Fix Shape
 
-### P0: Promote the proven `Ak` DASH shape behind tests
+### ~~P0: Promote the proven `Ak` DASH shape behind tests~~ — landed
 
-The Solo Leveling proof confirms generated MPD playback with audio. Production work can now proceed behind fixtures and tests:
-
-- Add an AllManga source adapter for `Ak`.
-- Emit a `dash` stream with a generated local MPD/deferred locator, or extend the provider result contract if local MPD ownership belongs outside provider parsing.
-- Preserve subtitles from the `Ak` payload.
-- Add fixture tests for the `Ak` payload and selected stream mapping.
+`Ak` shipped: `allmanga/direct.ts` runs an ak-only fallback lane (with its own
+abort cap so a hung Ak can't stall the next provider) and the manifest's source
+inventory lists `Ak` alongside Default/Yt-mp4/S-mp4/Mp4/Luf-Mp4. The items below
+remain as standing guidance, not open work.
 
 ### P1: Expand the proof matrix
 

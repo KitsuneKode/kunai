@@ -287,10 +287,10 @@ The app records subtitle availability and late attachment without blocking the
 first playable stream. A late subtitle outcome is useful evidence, not proof
 that provider resolve was slow.
 
-To test Vidking without the Ink shell, run the live provider smoke test:
+To test Videasy without the Ink shell, run the live provider smoke test:
 
 ```sh
-KITSUNE_CLEAR_CACHE=1 KITSUNE_DEBUG=1 bun run test:live:vidking 1 2 2> debug.log
+KITSUNE_CLEAR_CACHE=1 KITSUNE_DEBUG=1 bun run test:live:videasy 1 2 2> debug.log
 ```
 
 This currently targets Bloodhounds (`tmdb:127529`) and prints a JSON summary with stream, subtitle, cache, and evidence fields. Use it when the shell UI is getting in the way of provider debugging.

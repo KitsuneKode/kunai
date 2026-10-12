@@ -41,11 +41,20 @@ export function cancellationReasonFromSignal(
           typeof raw.message === "string"
         ? raw.message
         : undefined;
+  const name =
+    typeof raw === "object" && raw !== null && "name" in raw && typeof raw.name === "string"
+      ? raw.name
+      : undefined;
+  // `AbortSignal.timeout()` rejects with a DOMException named "TimeoutError"
+  // whose message is "The operation timed out" — no "timeout" substring — so
+  // the deadline can only be caught by name, before the text gates.
+  if (name === "TimeoutError") return "timeout-budget";
   if (!text || /operation w?a?s? ?aborted/i.test(text)) return undefined;
   if (text.includes("fallback")) return "provider-fallback";
   if (text.includes("shutdown") || text.includes("app-exit")) return "user-shutdown";
   if (text.includes("prefetch")) return "superseded-prefetch";
-  if (text.includes("timeout") || text.includes("deadline")) return "timeout-budget";
+  if (text.includes("timeout") || text.includes("timed out") || text.includes("deadline"))
+    return "timeout-budget";
   if (text.includes("offline")) return "network-offline";
   return "user-navigation";
 }

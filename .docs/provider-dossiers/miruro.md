@@ -11,7 +11,9 @@ lastReviewed: "2026-09-11"
 
 - **Runtime class:** Direct HTTP pipe API by AniList ID, with browser harvest as research tooling.
 - **Production module:** `packages/providers/src/miruro/*`.
-- **Current status (2026-09-11):** **default anime provider.** Searches and resolves
+- **Current status (2026-09-11):** **second in the anime lane** — HiAnime is the
+  lane default (`animeProvider: "hianime"`, provider-defaults revision 3); Miruro
+  leads the rest of `animeProviderPriority`. Searches and resolves
   through its own pipe, with no dependency on AniList's API or on AniDB; see the
   2026-09-11 section. The older sections below are history and say otherwise.
 
@@ -54,7 +56,7 @@ and `videasy` / `allmanga` / `direct-stream-source` each keep a near-duplicate f
 helper. Consolidating those onto the shared `inferSubtitleFormat()` was left out of
 this change to keep the release-hardening branches independently mergeable.
 
-## Production status (2026-09-11) — default anime provider
+## Production status (2026-09-11) — second in the anime lane
 
 - **Promoted to default at revision 1–2, then moved second at revision 3** (`animeProvider: "hianime"`; Miruro now leads the rest of the order, ahead of KickAssAnime, AnimeGG, AniDB and AllAnime;
   provider-defaults revision 1). This supersedes the "keep demoted" disposition
@@ -318,13 +320,11 @@ Miruro resolves entirely through `GET /api/secure/pipe?e=…` on `www.miruro.bz`
 `www.miruro.ru`. `packages/providers/src/miruro/direct.ts` owns the whole path.
 
 - **Server order has one authority.** `MIRURO_SERVER_TRY_ORDER` in
-  `packages/providers/src/miruro/manifest.ts` is the only list: `kiwi`, `pewe`, `bee`,
-  `hop`, `moo`, `dune`, `ANIMEKAI`, `ANIMEZ`, `ZORO`, `ally`, `bonk`. Discovery
+  `packages/providers/src/miruro/manifest.ts` is the only list: `pewe`, `moo`,
+  `bee`, `ally`, `bonk`, `dune`, `ANIMEKAI`, `ANIMEZ`, `ZORO`, `kiwi`, `hop`. Discovery
   ranking, fallback construction when the pipe returns no provider map, and the
-  known-catalog placeholder rows all read it. `kiwi` leads because its uwucdn/owocdn
-  CDN serves real video; `bonk` is last because its `ibyteimg.com` CDN returns PNG
-  placeholders for segments. Unknown discovered servers keep their source order
-  behind every known one.
+  known-catalog placeholder rows all read it. Unknown discovered servers keep
+  their source order behind every known one.
 - **Identity is strict.** `resolveMiruroAnilistId()` is the single reader for both
   `listEpisodes()` and `resolve()`. It accepts an explicit `title.anilistId` or an
   exact `anilist:` prefix, each of which must be a complete positive decimal. Bare

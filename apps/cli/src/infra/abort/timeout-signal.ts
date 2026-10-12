@@ -8,7 +8,10 @@ export function withTimeoutSignal(signal: AbortSignal | undefined, timeoutMs: nu
   if (abortSignal.any) return abortSignal.any([signal, timeoutSignal]);
 
   const controller = new AbortController();
-  const abort = () => controller.abort();
+  // Forward whichever reason fired — a bare abort() would lose the caller's
+  // cancel reason AND the TimeoutError, both of which the resolve commit
+  // policy reads off the signal.
+  const abort = () => controller.abort(signal.aborted ? signal.reason : timeoutSignal.reason);
   if (signal.aborted || timeoutSignal.aborted) {
     abort();
     return controller.signal;
