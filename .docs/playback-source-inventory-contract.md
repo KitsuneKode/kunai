@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-04"
+lastReviewed: "2026-10-08"
 ---
 
 # Playback Source Inventory Contract
@@ -27,6 +27,17 @@ provider module
   -> playback resolve service cache + fallback policy
   -> UI source, quality, subtitle, audio, and diagnostics views
 ```
+
+## Tracks selections against warm inventory
+
+An exact stream choice must still exist in cached `streams`. A source choice
+may exist either on a stream or in declared `sources`: cycle providers defer
+non-winning mirrors until the user requests them. A source with no streams yet
+must reach the provider's preferred-source resolve path, rather than being
+rejected as stale by the shell. A known inventory that no longer contains the
+chosen source or stream rejects the pick with visible recovery feedback;
+a missing/unknown cache row permits a fresh resolve. Declarations never make a
+missing exact stream valid and never attest playback reachability.
 
 ## Provider Responsibilities
 
