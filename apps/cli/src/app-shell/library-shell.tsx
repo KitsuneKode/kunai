@@ -47,6 +47,8 @@ import type { HistoryProgress } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
 
+import { useRootContentSuspended } from "./RootContentSuspension";
+
 type TabId = "library" | "queue";
 
 type LibraryRenderItem =
@@ -168,6 +170,7 @@ function LibraryTab({
   onClose: () => void;
   onNavigateToQueue: () => void;
 }) {
+  const suspended = useRootContentSuspended();
   const [libraryView, setLibraryView] = useState<LibraryView>("titles");
   const [detailGroup, setDetailGroup] = useState<OfflineLibraryShelfGroup | null>(null);
   const [entries, setEntries] = useState<
@@ -370,7 +373,7 @@ function LibraryTab({
         setConfirmDeleteKey(null);
       }
     },
-    { isActive: titlesActive },
+    { isActive: titlesActive && !suspended },
   );
 
   const railPosterUrl =

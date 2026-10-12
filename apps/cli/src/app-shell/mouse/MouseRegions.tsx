@@ -185,8 +185,6 @@ export function useMouseRegion(
   options: { readonly active?: boolean } = {},
 ): void {
   const dispatcher = useContext(MouseDispatchContext);
-  const handlersRef = useRef(handlers);
-  handlersRef.current = handlers;
   const suspended = useRootContentSuspended();
   const active = options.active !== false && !suspended;
 
@@ -208,7 +206,7 @@ export function useMouseRegion(
     dispatcher.register(
       id,
       { x: layout.x + 1, y: layout.y + 1, width: layout.width, height: layout.height },
-      handlersRef.current,
+      handlers,
     );
   });
 }
@@ -224,6 +222,7 @@ export function MouseTarget(props: {
   readonly onWheel?: (direction: "up" | "down", event: MouseEvent) => void;
   readonly onRightClick?: (event: MouseEvent) => void;
   readonly active?: boolean;
+  readonly flexShrink?: number;
   readonly children: ReactNode;
 }) {
   const ref = useRef<InkBoxRef | null>(null);
@@ -233,5 +232,9 @@ export function MouseTarget(props: {
     { onClick: props.onClick, onWheel: props.onWheel, onRightClick: props.onRightClick },
     { active: props.active },
   );
-  return <Box ref={ref}>{props.children}</Box>;
+  return (
+    <Box ref={ref} flexShrink={props.flexShrink}>
+      {props.children}
+    </Box>
+  );
 }

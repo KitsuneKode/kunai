@@ -54,6 +54,7 @@ export const ClaudeTabRow = React.memo(function ClaudeTabRow({
           <MouseTarget
             id={`${pointer?.id}:tab:${hiddenBefore + i}`}
             active={Boolean(pointer)}
+            flexShrink={0}
             onClick={() => pointer?.select(hiddenBefore + i)}
           >
             <Box flexShrink={0}>
