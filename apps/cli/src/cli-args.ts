@@ -1,4 +1,9 @@
 import type { ShellChrome } from "@/container";
+import {
+  AUDIO_PREFERENCE_OPTIONS,
+  PROVIDER_QUALITY_PREFERENCE_OPTIONS,
+  SUBTITLE_PREFERENCE_OPTIONS,
+} from "@/domain/media/media-preferences";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { Command } from "commander";
 
@@ -31,6 +36,11 @@ export type CliArgs = {
   minimal: boolean;
   quick: boolean;
   jump?: number;
+  episode?: number;
+  season?: number;
+  quality?: string;
+  audio?: string;
+  subtitle?: string;
   setup: boolean;
   offline: boolean;
   history: boolean;
@@ -81,6 +91,14 @@ DISPLAY
   -z, --zen                  Zen mode (bare, ani-cli-style)
   -q, --quick                Quick layout
       --jump <n>             Auto-pick the n-th search result (1-based, with -S)
+
+PLAYBACK PICKS (this run only — config.json untouched)
+  -e, --episode <n>        Start at episode n (anime: absolute; series: S1)
+      --season <n>         Season for --episode (series only)
+      --quality <q>        Stream quality: best | 1080p | 720p | 480p
+      --audio <lang>       Audio track: original | en | ja | dub
+      --sub <lang>         Subtitles: en | interactive | none | ar | de | es | fr | ja
+      --dub                Shortcut for --audio dub
 
 mpv
       --mpv-debug            Verbose mpv logging
@@ -160,6 +178,13 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "-q",
   "--quick",
   "--jump",
+  "-e",
+  "--episode",
+  "--season",
+  "--quality",
+  "--audio",
+  "--sub",
+  "--dub",
   "--debug",
   "--debug-json",
   "--debug-session",
@@ -201,6 +226,12 @@ export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "-t",
   "--type",
   "--jump",
+  "-e",
+  "--episode",
+  "--season",
+  "--quality",
+  "--audio",
+  "--sub",
   "--download-path",
   "--open",
   "--handoff-url",
@@ -218,6 +249,12 @@ type CommanderCliOptions = {
   readonly zen?: boolean;
   readonly quick?: boolean;
   readonly jump?: string;
+  readonly episode?: string;
+  readonly season?: string;
+  readonly quality?: string;
+  readonly audio?: string;
+  readonly sub?: string;
+  readonly dub?: boolean;
   readonly debug?: boolean;
   readonly debugJson?: boolean;
   readonly debugSession?: boolean;
@@ -266,6 +303,12 @@ function createCliCommand(): Command {
     .option("-z, --zen")
     .option("-q, --quick")
     .option("--jump <n>")
+    .option("-e, --episode <n>")
+    .option("--season <n>")
+    .option("--quality <q>")
+    .option("--audio <lang>")
+    .option("--sub <lang>")
+    .option("--dub")
     .option("--debug")
     .option("--debug-json")
     .option("--debug-session")
@@ -456,6 +499,67 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     args.jump = parsedJump;
   } else if (options.jump !== undefined) {
     warnings.push("--jump expects a positive result index; ignoring");
+  }
+
+  if (options.episode !== undefined) {
+    if (!/^[1-9]\d*$/.test(options.episode)) {
+      throw new CliUsageError(
+        `invalid -e/--episode "${options.episode}" — expected a positive episode number`,
+      );
+    }
+    args.episode = Number.parseInt(options.episode, 10);
+  }
+  if (options.season !== undefined) {
+    if (!/^[1-9]\d*$/.test(options.season)) {
+      throw new CliUsageError(
+        `invalid --season "${options.season}" — expected a positive season number`,
+      );
+    }
+    if (args.episode === undefined) {
+      // `--season 2` alone is ambiguous (S2E1? "browse season 2"?) and silently
+      // guessing is the house failure mode — make the user say which episode.
+      throw new CliUsageError("--season requires --episode");
+    }
+    args.season = Number.parseInt(options.season, 10);
+  }
+
+  if (options.quality !== undefined) {
+    // Forgiving about the "p" — `--quality 1080` and `--quality 1080p` mean the
+    // same thing — but an unknown value shapes which stream plays, so it is a
+    // usage error, not a warn-and-ignore.
+    const quality = /^\d+$/.test(options.quality)
+      ? `${options.quality}p`
+      : options.quality.toLowerCase();
+    if (!PROVIDER_QUALITY_PREFERENCE_OPTIONS.some((o) => o.value === quality)) {
+      throw new CliUsageError(
+        `invalid --quality "${options.quality}" — one of: ${PROVIDER_QUALITY_PREFERENCE_OPTIONS.map((o) => o.value).join(", ")}`,
+      );
+    }
+    args.quality = quality;
+  }
+  if (options.dub) {
+    if (options.audio !== undefined) {
+      throw new CliUsageError("--dub and --audio are mutually exclusive");
+    }
+    args.audio = "dub";
+  }
+  if (options.audio !== undefined) {
+    const audio = options.audio.toLowerCase();
+    if (!AUDIO_PREFERENCE_OPTIONS.some((o) => o.value === audio)) {
+      throw new CliUsageError(
+        `invalid --audio "${options.audio}" — one of: ${AUDIO_PREFERENCE_OPTIONS.map((o) => o.value).join(", ")}`,
+      );
+    }
+    args.audio = audio;
+  }
+  if (options.sub !== undefined) {
+    const subtitle = options.sub.toLowerCase();
+    if (!SUBTITLE_PREFERENCE_OPTIONS.some((o) => o.value === subtitle)) {
+      throw new CliUsageError(
+        `invalid --sub "${options.sub}" — one of: ${SUBTITLE_PREFERENCE_OPTIONS.map((o) => o.value).join(", ")}`,
+      );
+    }
+    args.subtitle = subtitle;
   }
 
   args.debug = Boolean(options.debug || options.debugJson || options.debugSession);

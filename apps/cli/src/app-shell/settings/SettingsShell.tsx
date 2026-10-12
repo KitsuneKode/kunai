@@ -1,12 +1,14 @@
 import type { Container } from "@/container";
+import { getDesignThemeName, setDesignTheme } from "@kunai/design";
 import { useInput } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { buildSettingsPage } from "./build-page";
+import { buildSettingsSubmenuView } from "./build-submenu";
 import { SettingsFooter } from "./components/SettingsFooter";
 import { handleSettingsKey } from "./controller";
 import { isSettingVisible } from "./gates";
-import { firstSelectableRowIndex } from "./navigation";
+import { clampSelectedIndex, firstSelectableRowIndex } from "./navigation";
 import { persistSettingsDraft } from "./persist";
 import { buildSettingsRegistry } from "./registry";
 import { buildSettingsRegistryContext } from "./registry-context";
@@ -132,31 +134,61 @@ export function SettingsShell({
     [container, onStatus, page.defById, registryCtx],
   );
 
-  useEffect(() => {
-    if (settingsEqual(state.draft, container.config.getRaw())) return;
-    const next = state.draft;
-    const timer = setTimeout(() => {
-      void persistSettingsDraft(container, next);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [state.draft, container]);
+  // A failed save must reach the user and the support bundle, not vanish into
+  // a void promise: settings silently not sticking is otherwise undiagnosable.
+  const saveDraft = useCallback(
+    async (draft: SettingsUiState["draft"], phase: "editing" | "closing") => {
+      try {
+        await persistSettingsDraft(container, draft);
+      } catch (error) {
+        // Normalize a rejection at the persistence boundary; rendering and
+        // diagnostics consume the message rather than arbitrary throw values.
+        const detail = error instanceof Error ? error.message : String(error);
+        container.diagnosticsService.record({
+          category: "session",
+          message:
+            phase === "closing"
+              ? "Settings draft lost on close: final persist failed"
+              : "Settings persist failed",
+          context: { error: detail },
+        });
+        if (phase === "editing") {
+          setState((current) => ({ ...current, error: `Couldn't save settings: ${detail}` }));
+        }
+      }
+    },
+    [container],
+  );
 
-  // The debounce above clears its timer on unmount, which used to discard a
-  // reorder made within 300ms of Esc — the UI showed a change that never
-  // reached disk. Flush whatever is pending instead. Runs after the debounce
-  // effect's cleanup (declaration order), so a fired timer is not re-written.
+  // The debounced save below dies with the shell: exiting settings within
+  // 300ms of the last edit silently dropped the draft. Flush best-effort on
+  // unmount; persistSettingsDraft no-ops when nothing changed.
   const draftRef = useRef(state.draft);
+  /** Theme active before a submenu preview began — restored on Esc/unmount. */
+  const themePreviewOriginRef = useRef<string | null>(null);
   useEffect(() => {
     draftRef.current = state.draft;
   }, [state.draft]);
   useEffect(
     () => () => {
-      if (!settingsEqual(draftRef.current, container.config.getRaw())) {
-        void persistSettingsDraft(container, draftRef.current);
+      void saveDraft(draftRef.current, "closing");
+      // Preview is transient; only a confirmed choice persists the theme.
+      if (themePreviewOriginRef.current !== null) {
+        setDesignTheme(themePreviewOriginRef.current);
+        themePreviewOriginRef.current = null;
       }
     },
-    [container],
+    [saveDraft],
   );
+
+  useEffect(() => {
+    if (settingsEqual(state.draft, container.config.getRaw())) return;
+    const next = state.draft;
+    const timer = setTimeout(() => {
+      void saveDraft(next, "editing");
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [state.draft, container, saveDraft]);
 
   useEffect(() => () => actionAbortRef.current?.abort(), []);
 
@@ -175,6 +207,28 @@ export function SettingsShell({
       const result = handleSettingsKey(input, key, state, { container, registryCtx });
       if (!result.handled) return;
 
+      // Theme live preview: while the theme enum submenu is open, repaint on
+      // highlight so the whole shell shows the palette, not a swatch. On
+      // close, Enter's persist applies the pick; Esc restores the theme that
+      // was active before previewing — `KUNAI_THEME`'s mask included.
+      if (result.state.submenuId === "theme") {
+        const submenu = buildSettingsSubmenuView("theme", registryCtx, page.defById);
+        const choice =
+          submenu?.choices[clampSelectedIndex(result.state.selectedIndex, submenu.choices.length)];
+        if (choice && choice.value !== getDesignThemeName()) {
+          if (themePreviewOriginRef.current === null) {
+            themePreviewOriginRef.current = getDesignThemeName();
+          }
+          setDesignTheme(choice.value);
+        }
+      } else if (state.submenuId === "theme") {
+        const origin = themePreviewOriginRef.current;
+        themePreviewOriginRef.current = null;
+        setDesignTheme(
+          result.persist ? result.state.draft.theme : (origin ?? result.state.draft.theme),
+        );
+      }
+
       setState(result.state);
       if (result.statusMessage !== undefined) {
         onStatus(result.statusMessage);
@@ -184,7 +238,7 @@ export function SettingsShell({
         return;
       }
       if (result.persist === "immediate") {
-        void persistSettingsDraft(container, result.state.draft);
+        void saveDraft(result.state.draft, "editing");
       }
       if (result.runActionId) {
         void runAction(result.runActionId);

@@ -111,6 +111,12 @@ describe("agent wiring · queue", () => {
       s.press("Q");
       await s.waitForFrame((f) => f.includes("UP NEXT"), "up-next surface");
       await s.waitSettled();
+      // `x` arms on first press (prompt names the row in the footer) and
+      // removes on the second — single-press removal would be one key away
+      // from an accident next to Ctrl+C.
+      s.press("x");
+      await s.waitForFrame((f) => f.includes("Press x again"), "remove confirm prompt");
+      await s.waitSettled();
       s.press("x");
       await s.waitForBackend(
         (i) => i.queue().length === before,
@@ -135,6 +141,34 @@ describe("agent wiring · post-play history", () => {
       await s.waitForBackend(
         (i) => i.history().some((row) => row.title_id === "tmdb:smoke-movie-1"),
         "history_progress contains the played title",
+      );
+    });
+  }, 45_000);
+});
+
+describe("agent wiring · anime episode picker", () => {
+  it("opens with the cursor on an episode, so one Enter plays it", async () => {
+    // The picker used to open on nothing when the current episode was not in
+    // the list (here: episode 1 of a title offering only 7), so Enter was a
+    // silent no-op until the user pressed ↓.
+    await withSession("wiring-anime-episode", { mpv: "fake" }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      s.press(K.tab);
+      await s.waitForFrame((f) => f.includes("anime"), "anime mode");
+      s.press("smoke", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Anime"), "anime fixture results");
+      s.press(K.enter);
+      await s.waitForFrame((f) => f.includes("▌ Episode 7"), "episode picker with a cursor");
+      await s.waitSettled();
+      s.press(K.enter);
+      await s.waitForFrame((f) => f.includes("Post-play"), "post-play surface", 30_000);
+
+      await s.waitForBackend(
+        (i) =>
+          i
+            .history()
+            .some((row) => row.title_id === "anilist:smoke-anime-1" && row.media_kind === "anime"),
+        "history_progress records the anime episode",
       );
     });
   }, 45_000);

@@ -95,7 +95,9 @@ export function GuideShell({
   let windowStart = Math.max(0, selectedLineIndex);
   let backfill = 0;
   while (windowStart > 0) {
-    const cost = lineCost(lines[windowStart]!, false);
+    const line = lines[windowStart];
+    if (line === undefined) break;
+    const cost = lineCost(line, false);
     if (backfill + cost > Math.floor(maxRows / 2)) break;
     backfill += cost;
     windowStart -= 1;
@@ -103,7 +105,9 @@ export function GuideShell({
   let usedRows = 0;
   let windowEnd = windowStart;
   while (windowEnd < lines.length) {
-    const cost = lineCost(lines[windowEnd]!, windowEnd === windowStart);
+    const line = lines[windowEnd];
+    if (line === undefined) break;
+    const cost = lineCost(line, windowEnd === windowStart);
     if (usedRows + cost > maxRows) break;
     usedRows += cost;
     windowEnd += 1;

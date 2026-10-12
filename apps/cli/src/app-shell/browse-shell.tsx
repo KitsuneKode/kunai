@@ -967,6 +967,7 @@ export function BrowseShell<T>({
   const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(activeIdleContext, {
     idleFocused,
     selectedIndex: idleSelectedIndex,
+    showDiscoveryRowWhenEmpty: idleContextStatus === "ready",
   });
   const canFocusIdleRows =
     options.length === 0 &&
@@ -1181,6 +1182,13 @@ export function BrowseShell<T>({
     commandMode,
   });
   const maxVisible = getBrowseListMaxVisible(viewport.rows, browseChromeRows);
+  // The card follows the selected row at once; enriched details arrive when the
+  // selection settles. Rendering only the settled data flashed "No selection"
+  // over a row that was plainly selected.
+  const companionView =
+    settledOption === selectedOption
+      ? companionDetails
+      : buildDetailsPanelDataFromBrowseOption(selectedOption);
   const windowStart = getWindowStart(boundedSelectedIndex, displayOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
   const visibleOptions = displayOptions.slice(windowStart, windowEnd);
@@ -2060,8 +2068,8 @@ export function BrowseShell<T>({
                   />
                 ) : (
                   <DetailsSheetUI
-                    data={companionDetails}
-                    lines={buildDetailsSheetLines(selectedOption, companionDetails.secondary)}
+                    data={companionView}
+                    lines={buildDetailsSheetLines(selectedOption, companionView.secondary)}
                     width={previewWidth}
                     scrollIndex={0}
                     maxVisibleLines={viewport.breakpoint === "wide" ? 14 : 10}

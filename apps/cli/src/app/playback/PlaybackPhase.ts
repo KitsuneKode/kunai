@@ -148,6 +148,8 @@ import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
 import { planEpisodeIterationDirective } from "@/app/playback/run-playback-episode-iteration";
 import {
   applyPreferredStreamSelection,
+  buildPlaybackControlSummary,
+  shouldOfferPrePlayConfirm,
   shouldSkipExternalSubtitleLookup,
   streamSelectionFromTrackPick,
   type StreamSelectionIntent,
@@ -169,6 +171,7 @@ import { applyCatalogDetailToTitle } from "@/domain/catalog/apply-title-detail";
 import { resolveProvenNumericTmdbId } from "@/domain/catalog/tmdb-identity";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
+import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import { usesProviderNativeEpisodeCatalog } from "@/domain/media/provider-native-episodes";
 import { enrichExternalIdsWithVideoMeta } from "@/domain/media/video-meta";
 import { decodeEpisodeSelectionValue } from "@/domain/playback/episode-selection";
@@ -201,6 +204,7 @@ import {
 import { decideSoftFallbackOnResolve } from "@/domain/playback/soft-fallback-preference-policy";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
+import { episodeRequestFlags } from "@/domain/session/SessionState";
 import type {
   TitleInfo,
   EpisodeInfo,
@@ -261,7 +265,6 @@ import {
 } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import type { ResolveAttempt } from "@kunai/core";
-import type { MediaKind } from "@kunai/types";
 import type { ProviderFailure, ProviderId } from "@kunai/types";
 
 // Re-exported for tests that import it from this module's public surface.
@@ -709,12 +712,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       const resolveTargetResumeSeconds = createBootstrapResumeResolver({
         sharedStartSeconds: bootstrapStartSeconds,
         resumeFromHistory: (target: EpisodeInfo) =>
-          resumeSecondsFromHistoryForEpisode(
-            historyRepository,
-            historyTitleLookup,
-            target,
-            config.quitNearEndThresholdMode,
-          ),
+          resumeSecondsFromHistoryForEpisode(historyRepository, historyTitleLookup, target),
       });
       const startNavigationToEpisode = async (target: EpisodeInfo) =>
         startEpisodeNavigation({
@@ -863,10 +861,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         // Session-flow owns the current season/episode selection rules until the
         // mounted root shell fully absorbs the picker stack.
-        const preselectedEpisode =
+        //
+        // A one-shot `-e/--episode` request folds into both the preselection
+        // and the `flags` the resolvers were built for: `resolvePlaybackEpisodeEntry`
+        // auto-plays it (flags are what let a no-history pick launch directly),
+        // and `chooseStartingEpisode` returns it as an immediate selection if
+        // the menu path still runs (offline-library, movie-gated, etc).
+        const episodeRequest = stateManager.getState().episodeRequest;
+        const requestFlags = episodeRequestFlags(episodeRequest, usesNativeEpisodes);
+        const preselectedCurrentEpisode =
           stateManager.getState().currentTitle?.id === title.id
             ? stateManager.getState().currentEpisode
             : undefined;
+        const preselectedEpisode = episodeRequest ?? preselectedCurrentEpisode;
 
         const { resolvePlaybackEpisodeEntry } =
           await import("@/app-shell/title-control/smart-auto-launch");
@@ -889,7 +896,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           history,
           seasonCount,
           failedProvider,
-          flags: {},
+          flags: requestFlags,
         });
 
         if (episodeEntry.kind === "auto") {
@@ -899,7 +906,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             isAnime: usesNativeEpisodes,
             titleId: title.id,
             animeEpisodes: initialAnimeEpisodes,
-            providerEpisodeIdentity: preselectedEpisode?.providerEpisodeIdentity,
+            providerEpisodeIdentity: episodeRequest
+              ? undefined
+              : preselectedCurrentEpisode?.providerEpisodeIdentity,
           });
           run.pendingStart =
             episodeEntry.selection.startAt !== undefined ||
@@ -913,7 +922,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             isAnime: usesNativeEpisodes,
             animeEpisodeCount: title.episodeCount,
             animeEpisodes: initialAnimeEpisodes,
-            flags: {},
+            flags: requestFlags,
             getHistoryEntry: () => Promise.resolve(history),
             container,
           });
@@ -1041,6 +1050,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       // loop advances to the next episode/retry/fallback, instead of leaking
       // into the new iteration and attaching to the wrong mpv session.
       let previousIterationAbort: AbortController | null = null;
+      // The pre-play Tracks sheet is offered once per launched session: the
+      // pick itself comes back as a restart intent through this same loop, and
+      // autoplay/episode-navigation restarts must never re-prompt.
+      let prePlayConfirmOffered = false;
       while (true) {
         if (context.signal.aborted) {
           stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
@@ -2396,6 +2409,37 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             },
           );
 
+          // Pre-play confirm: with `prePlayConfirm` armed, the resolved
+          // inventory opens in the Tracks sheet before mpv launches so the
+          // source/quality/track pick is deliberate, not auto-taken. The pick
+          // becomes a restart intent through the same machinery the post-play
+          // pick commands use; Esc falls through to the resolved default.
+          if (
+            !prePlayConfirmOffered &&
+            shouldOfferPrePlayConfirm(
+              config.prePlayConfirm,
+              buildPlaybackControlSummary(preparedStream),
+            )
+          ) {
+            prePlayConfirmOffered = true;
+            const picked = await openTracksPanel(preparedStream, {}, container);
+            const selection = picked ? streamSelectionFromTrackPick(picked) : null;
+            if (picked && (selection || picked.section === "subtitle")) {
+              const resumeSeconds = run.pendingStart.startAt || run.pendingStart.resumePromptAt;
+              const trackStart = await completeSourceTrackPick(
+                currentEpisode,
+                picked,
+                selection,
+                resumeSeconds,
+                "pre-play-confirm",
+              );
+              if (trackStart) {
+                run.pendingStart = trackStart;
+                continue;
+              }
+            }
+          }
+
           // Play in MPV — consume the pending resume position on the first play only.
           // Pass loading handle so playStream can update it in-place (no shell flicker).
           const startIntent = run.pendingStart;
@@ -2632,8 +2676,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               quitThresholdMode,
             );
             // History durability: completed:true is forever — it clears the
-            // resume point. A clean EOF or a credits quit sets it; a kill,
-            // crash, timeout, or keep-open no-end-file outcome stays resumable
+            // resume point. Only a clean natural EOF sets it; voluntary quit,
+            // kill, crash, timeout, or keep-open no-end-file stays resumable
             // even past the threshold.
             const shouldMarkCompleted = shouldMarkEpisodeCompleted(
               result,
@@ -3663,9 +3707,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             autoContinueIntoRecommendationPossible,
           });
           const topRec = recommendationRailItems[0];
-          const topRecommendation = topRec
+          const topRecommendation: MediaItemIdentity | null = topRec
             ? {
-                mediaKind: (topRec.type === "movie" ? "movie" : "series") as MediaKind,
+                mediaKind: topRec.type === "movie" ? "movie" : "series",
                 titleId: topRec.id,
                 title: topRec.title,
                 sourceId: topRec.sourceId,
@@ -4541,7 +4585,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       if (!PlaybackPhase.wyzieKeyNoticeShown) {
         PlaybackPhase.wyzieKeyNoticeShown = true;
         this.updatePlaybackFeedback(context, {
-          note: "No subtitles in this source. Add a Wyzie key in Settings › Language to search for them.",
+          note: "Preferred subtitles unavailable. Add a Wyzie key in Settings › Language to search for them.",
         });
       }
       return;
@@ -4650,12 +4694,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         if (!attached) return;
 
         // The attach is silent otherwise: subtitles appear mid-playback with no
-        // account of where they came from, and the alternates that came with
-        // them stay invisible even though the tracks panel can switch them live.
+        // account of where they came from or how many alternates were found.
         this.updatePlaybackFeedback(context, {
           note:
             mergedSubtitleList.length > 1
-              ? `Attached subtitles · ${mergedSubtitleList.length} tracks found, switchable from the tracks panel`
+              ? `Attached subtitles · ${mergedSubtitleList.length} tracks available in the player`
               : "Attached subtitles found by search",
         });
 

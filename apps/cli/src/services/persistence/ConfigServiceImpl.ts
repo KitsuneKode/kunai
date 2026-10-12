@@ -9,7 +9,11 @@ import {
   DEFAULT_OFFLINE_RUNWAY_TARGET,
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
-import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS, mergeKitsuneConfig } from "@kunai/config";
+import {
+  MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
+  mergeKitsuneConfig,
+  type PrePlayConfirmMode,
+} from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
 import {
@@ -20,6 +24,7 @@ import {
 } from "@kunai/types";
 
 import type {
+  AnalyticsPingCompletion,
   ConfigService,
   KitsuneConfig,
   QuitNearEndBehavior,
@@ -280,6 +285,7 @@ export class ConfigServiceImpl implements ConfigService {
       favoriteSources: normalizeStringList(loaded.favoriteSources),
       recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
+      prePlayConfirm: normalizePrePlayConfirm(loaded.prePlayConfirm),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
@@ -416,6 +422,50 @@ export class ConfigServiceImpl implements ConfigService {
     // inside persistConfigNow. Startup owns its initial read and migration,
     // and explicit native credential changes share that critical section.
     const run = this.persistChain.then(() => this.persistConfigNow());
+    this.persistChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean> {
+    const write = async (): Promise<boolean> => {
+      const complete = async (): Promise<boolean> => {
+        // Consent changes in this process can still be awaiting their save.
+        const matchesLocal = () =>
+          this.config.analytics === "enabled" && this.config.installId === completion.installId;
+        if (!matchesLocal()) return false;
+        const onDisk = await this.store.load();
+        if (!matchesLocal()) return false;
+        const matchesDisk =
+          onDisk.analytics === "enabled" && onDisk.installId === completion.installId;
+        const current = { ...DEFAULT_CONFIG, ...onDisk };
+        if (matchesDisk) {
+          current.analyticsRetryAfter = completion.analyticsRetryAfter;
+          if (completion.lastAnalyticsPingAt !== undefined)
+            current.lastAnalyticsPingAt = completion.lastAnalyticsPingAt;
+          // Never persist the pre-send identity: this write owns cadence only.
+          await this.store.save(current);
+        }
+        // A local consent/identity change may arrive during the async write.
+        // Its queued save wins next; do not refresh it with the old cadence.
+        if (!matchesLocal()) return false;
+        const analyticsKeys: readonly (keyof KitsuneConfig)[] = [
+          "analytics",
+          "installId",
+          "lastAnalyticsPingAt",
+          "analyticsRetryAfter",
+        ];
+        for (const key of analyticsKeys) {
+          if (!this.dirtyKeys.has(key)) Object.assign(this.config, { [key]: current[key] });
+        }
+        return matchesDisk;
+      };
+      return this.store.withLock ? this.store.withLock(complete) : complete();
+    };
+    // Share the save chain so completion cannot interleave its read/merge/write.
+    const run = this.persistChain.then(write);
     this.persistChain = run.then(
       () => undefined,
       () => undefined,
@@ -628,6 +678,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.companionPet;
   }
 
+  get theme(): string {
+    return this.config.theme;
+  }
+
   get quitNearEndBehavior(): QuitNearEndBehavior {
     return this.config.quitNearEndBehavior;
   }
@@ -714,6 +768,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get continueSourcePreference(): KitsuneConfig["continueSourcePreference"] {
     return this.config.continueSourcePreference;
+  }
+
+  get prePlayConfirm(): KitsuneConfig["prePlayConfirm"] {
+    return this.config.prePlayConfirm;
   }
 
   get startupPriority(): StartupPriority {
@@ -933,6 +991,9 @@ export class ConfigServiceImpl implements ConfigService {
               partial.continueSourcePreference,
             ),
           }
+        : null),
+      ...(partial.prePlayConfirm !== undefined
+        ? { prePlayConfirm: normalizePrePlayConfirm(partial.prePlayConfirm) }
         : null),
       ...(partial.startupPriority !== undefined
         ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
@@ -1236,6 +1297,10 @@ function normalizeContinueSourcePreference<T>(value: T): ContinueSourcePreferenc
       : value === "ask"
         ? "ask"
         : "auto";
+}
+
+function normalizePrePlayConfirm<T>(value: T): PrePlayConfirmMode {
+  return value === "when-choices" ? "when-choices" : value === "always" ? "always" : "off";
 }
 
 function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {

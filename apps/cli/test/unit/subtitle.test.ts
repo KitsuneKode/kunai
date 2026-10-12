@@ -73,6 +73,21 @@ describe("parseWyzieSubtitleList", () => {
 });
 
 describe("selectAutomaticSubtitle", () => {
+  test.each([
+    ["eng", "en"],
+    ["en", "eng"],
+    ["fra", "fr"],
+    ["fre", "fr"],
+    ["deu", "de"],
+    ["ger", "de"],
+    ["por", "pt-BR"],
+  ])("selects a %s track for the %s preference without fallback", (language, preference) => {
+    const track = { url: "https://cdn.example/selected.vtt", language };
+    expect(selectAutomaticSubtitle([ARABIC, track], preference, { fallbackLang: null })).toBe(
+      track,
+    );
+  });
+
   test("automatic selection rejects unrelated languages", () => {
     expect(selectAutomaticSubtitle([ARABIC], "fr")).toBeNull();
   });
