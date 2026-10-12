@@ -7,6 +7,7 @@ import { createProviderPrioritySnapshot } from "@/services/providers/provider-pr
 import { DEFAULT_CONFIG } from "@kunai/config";
 
 import { PROBES as STATUS_SWEEP_PROBES } from "../../../../../packages/providers/scripts/provider-status-sweep.ts";
+import { relayRegistry } from "../../../../relay-server/src/provider-registry";
 
 describe("production provider defaults", () => {
   test("every configured lane default is a registered production module", async () => {
@@ -83,6 +84,27 @@ describe("production provider defaults", () => {
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     expect(RELAY_CAPABLE_PROVIDER_OPTIONS.map((option) => option.value as string).sort()).toEqual(
       expected,
+    );
+  });
+
+  test("the deployed relay registers every relay-capable production module", async () => {
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    const capable = modules.filter((module) => module.manifest.relayProfile !== undefined);
+    expect(relayRegistry.providers.map((entry) => entry.providerId).sort()).toEqual(
+      capable.map((module) => module.providerId).sort(),
+    );
+    for (const module of capable) {
+      for (const host of module.manifest.relayProfile?.upstreamHosts ?? []) {
+        expect(relayRegistry.isHostAllowed(module.providerId, `https://${host}/`, "metadata")).toBe(
+          true,
+        );
+      }
+    }
+    expect(relayRegistry.get("youtube")).toBeUndefined();
+    expect(relayRegistry.isHostAllowed("hianime", "https://foreign.example/", "metadata")).toBe(
+      false,
     );
   });
 

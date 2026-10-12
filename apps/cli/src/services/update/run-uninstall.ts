@@ -35,6 +35,22 @@ export function planUninstall(input: {
       return { kind: "exec", command: ["npm", "uninstall", "-g", PKG] };
     case "bun-global":
       return { kind: "exec", command: ["bun", "uninstall", "-g", PKG] };
+    case "homebrew":
+      return {
+        kind: "manual",
+        message: "Homebrew install detected. Remove it with `brew uninstall kunai`.",
+      };
+    case "scoop":
+      return {
+        kind: "manual",
+        message: "Scoop install detected. Remove it with `scoop uninstall kunai`.",
+      };
+    case "system-package":
+      return {
+        kind: "manual",
+        message:
+          "Installed by your system package manager. Remove it with your package manager (Arch: `sudo pacman -R kunai-bin`).",
+      };
     case "binary":
       if (input.layout === "versioned") {
         const layout = getInstallLayoutPaths({ launcherPath: input.binPath });

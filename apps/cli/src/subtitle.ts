@@ -39,12 +39,15 @@ export function parseWyzieSubtitleList(payload: unknown): SubtitleEntry[] {
 }
 
 // True when an entry's language code matches the requested code.
-// Handles: exact match, locale variants (en === en-US), and full-name strings.
+// Handles exact matches, ISO 639-1/639-3 codes, locales, and full-name labels.
 export function langMatches(entryLang: string, preferred: string): boolean {
   const el = entryLang.toLowerCase().trim();
   const pl = preferred.toLowerCase().trim();
   if (!el || !pl) return false;
   if (el === pl || el.startsWith(pl + "-") || pl.startsWith(el + "-")) return true;
+  const entryCode = normalizeIsoLanguageCode(el);
+  const preferredCode = normalizeIsoLanguageCode(pl);
+  if (entryCode && preferredCode && entryCode === preferredCode) return true;
 
   // Downloaded sidecars and some provider tracks arrive as ISO-2 ("eng",
   // "fra") while the request is ISO-1 ("en", "fr") — normalize before the

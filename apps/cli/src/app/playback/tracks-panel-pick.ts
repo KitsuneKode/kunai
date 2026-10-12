@@ -233,10 +233,12 @@ export async function resolveTracksPanelPick(
 }
 
 /**
- * Null when the pick still names a live stream/source in the cached
+ * Null when the pick still names a stream or declared source in the cached
  * inventory, otherwise a human-readable reason. A missing cache row is not
  * staleness — without inventory there is nothing to contradict the pick, and
- * the apply path re-resolves from the provider.
+ * the apply path re-resolves from the provider. Deferred sources may have no
+ * streams yet; their declaration is enough to request resolution, while an
+ * exact stream pick must still exist in the stream inventory.
  */
 async function staleTrackSelectionReason(
   selection: StreamSelectionIntent,
@@ -346,23 +348,27 @@ export function matchTrackSelectionAgainstInventory(
     readonly sources?: readonly { readonly id: string }[];
   } | null,
 ): string | null {
-  if (!inventory || !Array.isArray(inventory.streams)) return null;
+  if (!inventory) return null;
   if (
     selection.streamId &&
+    Array.isArray(inventory.streams) &&
     !inventory.streams.some((candidate) => candidate.id === selection.streamId)
   ) {
     return "That stream is no longer available — the source list changed. Pick again from the refreshed list.";
   }
-  if (selection.sourceId) {
-    // A source row can be known without owning a stream yet — cycle providers
-    // list skipped/deferred sources that only resolve on demand. Checking only
-    // `streams` would brand those picks stale and drop them silently.
-    const known =
-      inventory.streams.some((candidate) => candidate.sourceId === selection.sourceId) ||
-      (inventory.sources?.some((source) => source.id === selection.sourceId) ?? false);
-    if (!known) {
-      return "That source is no longer available — the source list changed. Pick again from the refreshed list.";
-    }
+  if (
+    selection.sourceId &&
+    (Array.isArray(inventory.streams) || Array.isArray(inventory.sources)) &&
+    !(
+      Array.isArray(inventory.streams) &&
+      inventory.streams.some((candidate) => candidate.sourceId === selection.sourceId)
+    ) &&
+    !(
+      Array.isArray(inventory.sources) &&
+      inventory.sources.some((candidate) => candidate.id === selection.sourceId)
+    )
+  ) {
+    return "That source is no longer available — the source list changed. Pick again from the refreshed list.";
   }
   return null;
 }

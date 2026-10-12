@@ -101,7 +101,7 @@ test("main requires native, docs and analytics even without matching paths", () 
   expect(check(needs, "push").exitCode).toBe(0);
 });
 
-test("aggregate waits for every job and runs after upstream failures", async () => {
+test("aggregate waits for every job and evaluates failures without running after workflow cancellation", async () => {
   // SAFETY: parses the repo's own committed ci.yml; a shape change fails the
   // expectations below rather than corrupting state.
   const workflow = Bun.YAML.parse(
@@ -112,7 +112,7 @@ test("aggregate waits for every job and runs after upstream failures", async () 
       .filter((id) => id !== "ci-ready")
       .sort(),
   );
-  expect(workflow.jobs["ci-ready"]?.if).toContain("always()");
+  expect(workflow.jobs["ci-ready"]?.if).toBe("${{ !cancelled() }}");
 });
 
 for (const [path, expected] of [

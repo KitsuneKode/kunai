@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11T12:38:47Z"
+lastReviewed: "2026-10-12T13:15:00Z"
 ---
 
 # Playback Source Inventory Contract
@@ -27,6 +27,17 @@ provider module
   -> playback resolve service cache + fallback policy
   -> UI source, quality, subtitle, audio, and diagnostics views
 ```
+
+## Tracks selections against warm inventory
+
+An exact stream choice must still exist in cached `streams`. A source choice
+may exist either on a stream or in declared `sources`: cycle providers defer
+non-winning mirrors until the user requests them. A source with no streams yet
+must reach the provider's preferred-source resolve path, rather than being
+rejected as stale by the shell. A known inventory that no longer contains the
+chosen source or stream rejects the pick with visible recovery feedback;
+a missing/unknown cache row permits a fresh resolve. Declarations never make a
+missing exact stream valid and never attest playback reachability.
 
 ## Provider Responsibilities
 
@@ -225,6 +236,15 @@ Availability states:
 - `unknown`: provider does not expose it without resolving.
 
 Avoid implying soft subtitles when only hard-sub is available. Avoid calling external subtitle services when provider hard-sub satisfies the current mode and the user did not ask for soft subtitles.
+
+Automatic attachment matches ISO 639-1 and ISO 639-3 language codes through the
+shared provider language normalizer. English remains a temporary fallback when
+the preferred language is absent; an attached, identified English track must not
+suppress a late search for French or another configured language. Matching
+provider inventory satisfies the preference without that search. Preserve an
+explicit interactive selection and an attached track without language evidence.
+Late search still requires online playback, proven TMDB identity, and the user's
+Wyzie key; disabled subtitles and satisfying hard subtitles suppress it.
 
 ## Anime Title Aliases And Search Display
 
