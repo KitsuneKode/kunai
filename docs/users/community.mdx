@@ -1,0 +1,74 @@
+---
+title: Community
+description: What works right now, which providers shine at what, and how to request or build a provider.
+status: shipped
+---
+
+Kunai gets better every time someone reports a dead provider, shares a
+working one, or builds a new lane. This page is the meeting point: live
+health, an honest capability guide, and the paths to contribute.
+
+## What works right now
+
+A scheduled job resolves a known-good title through every production provider
+once a day from a clean network. Full detail lives on the
+[provider status](/docs/users/provider-status) page; the short version:
+
+<ProviderStatusBoard />
+
+Upstream health, not your network's view: a region-gated provider may work
+fine for you through a user-owned relay, and Kunai's automatic fallback
+already routes around failures while you watch.
+
+## Which provider shines at what
+
+No single lane is best at everything. Pick by what you care about tonight:
+
+| Lane                                                 | Quality switcher                             | Dub / sub                              | Servers                               | Subtitles                    |
+| ---------------------------------------------------- | -------------------------------------------- | -------------------------------------- | ------------------------------------- | ---------------------------- |
+| Movies & series (VidLink, Rivestream, Movy, VidRock) | Up to 4K ladders where the lane carries them | Original audio                         | Multi-server lanes on most providers  | Soft subtitles on most lanes |
+| Anime sub                                            | Full ladders                                 | Japanese + English dub where available | Server choice on supporting providers | Soft VTT/ASS tracks          |
+| Anime dub                                            | Full ladders                                 | English dub                            | Server choice on supporting providers | Soft subs alongside dub      |
+| YouTube                                              | Your quality preference, up to source max    | Original                               | Player-client failover lanes          | Auto-attached captions       |
+
+In the shell, `/providers` switches lanes, `o` switches sources, `k` switches
+quality, and the subtitle picker lists every track the lane resolved. If a
+provider is down for everyone, switch it off in `/providers` → "Turn
+providers on/off" and it stays out of your way until it recovers. See
+[providers](/docs/users/providers) for fallback and priority.
+
+## Request a provider
+
+Want a site supported? The most useful request includes evidence:
+
+1. Play something nearby and run `/diagnostics` → export the redacted bundle.
+2. Open an issue with the site URL, a sample title (one movie, one series
+   episode if supported), and whether you expect subs or dub.
+3. Note anything odd: login walls, click-to-play overlays, per-server
+   differences.
+
+A request with a diagnostics bundle gets researched first; a bare site name
+waits until someone reproduces it. What gets researched is tracked openly:
+dead ends (gated, down, or browser-only backends) are recorded too, so nobody
+repeats the work.
+
+## Build a provider
+
+Providers are standalone modules behind a stable contract: search, episode
+listing, and stream resolve with subtitles, quality, and audio evidence. A
+community plugin index is on the roadmap. Authors will scaffold from a
+template, run the same contract suite the built-in lanes pass (including the
+rule that a provider never reports success for a stream it has not probed),
+and submit with a short research dossier. Until the index opens, the path is:
+
+1. Read [contribute](/docs/developer/contribute) for workflow and standards.
+2. Prototype against the provider contract and the pinned-title smoke pattern.
+3. Open a PR with the module, fixtures, and dossier. Review covers the
+   contract, not your code style.
+
+## Share Kunai
+
+The fastest growth is a link that plays: `kunai://` share links open a title
+directly in someone else's client. See [share links](/docs/users/share-links).
+If Kunai just works for you, that link plus one sentence is the whole
+marketing department.

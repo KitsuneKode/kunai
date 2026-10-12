@@ -10,7 +10,7 @@ An ani-cli alternative with source failover, offline downloads and resume.
 &nbsp;![runtime](https://img.shields.io/badge/runtime-Bun%20%E2%89%A51.4.0-ff8fb0)
 &nbsp;![player](https://img.shields.io/badge/player-mpv-4fd1c5)
 &nbsp;![kinds](https://img.shields.io/badge/anime%20%C2%B7%20series%20%C2%B7%20movies-c98bff)
-&nbsp;[![license](https://img.shields.io/badge/license-MIT-968a98)](LICENSE)
+&nbsp;[![license](https://img.shields.io/badge/license-Apache--2.0-968a98)](LICENSE)
 
 ![Kunai: type-ahead suggestions, search, resolve, play, recover, post-play](.reference/design/brand/demo-ui-walkthrough.gif)
 
@@ -103,6 +103,8 @@ everything past anime.
 
 - **Type-ahead search** — your history and lists surface as you type, ghost completion included; `→` completes, `↓` jumps the band.
 - **Verified streams** — candidates are probed before `mpv` sees them; a dead provider falls back to the next one with `⇧F`.
+- **Provider switches** — turn any provider off in `/providers` or Settings; disabled lanes stay out of resolve and fallback, and a lane with everything off fails open.
+- **Live status board** — a daily sweep publishes per-provider health; the shell already routes around failures on its own.
 - **Up Next and queue** — build tonight's run order in-shell and undo slips with `z`.
 - **Offline downloads** — a persisted queue, speed and ETA rows, automatic resume after a restart, and a local library.
 - **Release calendar** — one window across anime, series, and movies, filtered by type or day.
@@ -129,6 +131,7 @@ Full registry: [commands and shortcuts](https://kunai.kitsunekode.in/docs/users/
 - [Install and update](https://kunai.kitsunekode.in/docs/users/install-and-update) · [Platforms](https://kunai.kitsunekode.in/docs/users/platforms)
 - [Commands and shortcuts](https://kunai.kitsunekode.in/docs/users/commands-and-shortcuts) · [Configuration](https://kunai.kitsunekode.in/docs/users/customization)
 - [Providers](https://kunai.kitsunekode.in/docs/users/providers) · [Troubleshooting](https://kunai.kitsunekode.in/docs/users/troubleshooting)
+- [Provider status](https://kunai.kitsunekode.in/docs/users/provider-status) · [Community](https://kunai.kitsunekode.in/docs/users/community)
 - [Downloads and offline](https://kunai.kitsunekode.in/docs/users/downloads-and-offline) · [Diagnostics](https://kunai.kitsunekode.in/docs/users/diagnostics-and-reporting)
 - [Uninstall](https://kunai.kitsunekode.in/docs/users/install-and-update#uninstall) · [FAQ / troubleshooting](https://kunai.kitsunekode.in/docs/users/troubleshooting)
 

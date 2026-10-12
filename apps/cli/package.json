@@ -19,7 +19,7 @@
   "bugs": {
     "url": "https://github.com/KitsuneKode/kunai/issues"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "kitsunekode",
   "repository": {
     "type": "git",

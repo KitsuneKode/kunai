@@ -169,6 +169,10 @@ Debug mpv for one run:
 kunai --mpv-debug --mpv-log-file /tmp/kunai-mpv.log -S "Title"
 ```
 
+`--mpv-debug` widens mpv's own verbosity. Its output lands either in the file
+given by `--mpv-log-file` or (without that flag) in the `--debug` log
+(`./logs.txt`), where each line is tagged `module: "mpv"`.
+
 See [CLI Reference](/docs/users/cli-reference#mpv-and-diagnostics).
 
 ## Post-playback behavior
