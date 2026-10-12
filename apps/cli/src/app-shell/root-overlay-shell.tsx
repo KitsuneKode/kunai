@@ -2278,11 +2278,11 @@ export function RootOverlayShell({
           onRowClick={
             commandMode
               ? undefined
-              : (id) => {
+              : (id, activate) => {
                   const index = queueView.rows.findIndex((row) => row.id === id);
                   const row = queueView.rows[index];
                   if (!row) return;
-                  if (index !== qSelected) setSelectedIndex(index);
+                  if (!activate || index !== qSelected) setSelectedIndex(index);
                   else activateQueueRow(row);
                 }
           }

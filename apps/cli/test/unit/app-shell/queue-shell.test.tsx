@@ -148,3 +148,33 @@ test("large queues render and register only their visible selection window", () 
     handle.unmount();
   }
 });
+
+test("preselected queue playback requires a prior click and wheel clears that intent", () => {
+  const view = buildQueueView({
+    entries: [entry("1", "Frieren", 1, 1)],
+    selectedId: "1",
+    resolvePoster: () => undefined,
+    recoverableSessions: 0,
+  });
+  const clicks: boolean[] = [];
+  const handle = renderWithPointer(
+    <QueueShell
+      view={view}
+      columns={100}
+      listWidth={92}
+      rowWidth={88}
+      onRowClick={(_id, activate) => clicks.push(activate)}
+      onWheel={() => {}}
+    />,
+  );
+  try {
+    handle.click("queue:row:1");
+    handle.click("queue:row:1");
+    handle.click("queue:row:1");
+    handle.wheel("queue:row:1", "up");
+    handle.click("queue:row:1");
+    expect(clicks).toEqual([false, true, false, false]);
+  } finally {
+    handle.unmount();
+  }
+});

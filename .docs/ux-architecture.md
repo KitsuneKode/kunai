@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T11:06:06Z"
+lastReviewed: "2026-10-12T14:54:52Z"
 ---
 
 # Kunai — UX Architecture
@@ -407,3 +407,6 @@ width calculation. Truncation walks complete grapheme clusters, so combining
 accents, flags and joined emoji stay intact. Padding and ellipsis placement use
 the same cell budget as CJK titles. Surfaces reuse
 `apps/cli/src/domain/text-display.ts` rather than counting code points or UTF-16 units.
+
+Up Next also requires a prior mouse click on the same selected row before
+launching playback. Scrolling and disabling its pointer owner clear that intent.
