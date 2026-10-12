@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-03"
+lastReviewed: "2026-10-08"
 ---
 
 # Mobile device lab
@@ -16,10 +16,23 @@ version. Evidence without this field must be recollected.
 
 Test two concurrent launches from the same installation. The second must fail
 without altering the first session's arguments or state. Normal cancellation
-must release `session.lock`. After a forced termination, first close every
-Kunai session, then remove only the empty lock directory with `rmdir`: Android
-uses the state directory's `session.lock`; iOS uses `.runtime/session.lock`.
-Never remove a lock while another session is running. Rerun to recover state.
+must release `session.lock`. Android records a unique owner generation, PID,
+and process start ticks when available. After a forced termination, relaunch
+without deleting the lock: a proven dead owner is recovered under the same
+transition protocol as acquisition and release. A live or uncertain owner is
+retained. A competing launch may report a busy transition; retry after the
+other launch finishes. Test both simultaneous starts and kill/relaunch on-device.
+
+Ownerless, corrupt, or unreadable Android ownership data requires explicit recovery. First
+close every Kunai session, then preserve the state directory's `session.lock`
+by moving it to a uniquely named recovery directory before relaunching. Keep
+`mobile-state.json` and its recovery copies intact. Do not move or remove a
+lock while any session is running. Close older Kunai processes before upgrading;
+they do not participate in the transition protocol.
+
+iOS retains explicit recovery: after closing every session, remove only the
+empty `.runtime/session.lock` with `rmdir`, then relaunch. Android's owner record
+makes its lock nonempty, so the iOS command is not an Android recovery command.
 
 Use one physical ARM64 Android phone and one physical iPhone. They are the
 minimum support-gating matrix. A desktop run, Android emulator, iOS Simulator,
@@ -35,6 +48,9 @@ Keep these observations separate:
 5. State replacement and recovery worked.
 6. The operating system accepted the VLC handoff.
 7. A human saw the tester-owned media begin in VLC.
+
+Local Node worker tests establish host concurrency behavior, not Android process,
+filesystem, or VLC qualification. Keep that distinction in the evidence matrix.
 
 Never turn observation 6 into observation 7.
 
