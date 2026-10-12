@@ -730,6 +730,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           // snapshot of the user's own titles. Both die quietly: the band is an
           // enhancement surface, not an error surface.
           onSuggest: async (query, signal) => {
+            // Catalog suggestions are a network hop (TMDB/AniList through the
+            // registry). Offline sessions keep local rows only — the same gate
+            // dwell prefetch uses.
+            if (!container.connectivity.isOnline()) return [];
             const liveState = stateManager.getState();
             const suggestIntent = createSearchIntentEngine().fromText(query, {
               currentMode: liveState.mode,
