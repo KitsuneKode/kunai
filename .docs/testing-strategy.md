@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11T12:20:35Z"
+lastReviewed: "2026-10-12"
 ---
 
 # Kunai — Testing Strategy
@@ -790,6 +790,10 @@ via harness scripts such as `bun run --cwd apps/cli capture:settings`.
   `node` symlink to Bun; under that shim `require.resolve` finds the optional
   `@kitsunekode/kunai-<target>` package and the tests spawn the compiled app
   instead of the vendor stand-in. Skip when `node` is Bun; CI installs Node.
+- Capability-notice persistence tests pass the dependency probe's lookup and
+  filesystem seams through `checkDeps`; they never execute host curl or replace
+  the shared mpv-discovery export. Dedicated probe/discovery tests own those
+  executable checks.
 - Use `simulateTicks` from the render harness instead of real timers in unit tests.
 - TDD on rewrite: write the new behavior test first, then delete brittle guards.
 

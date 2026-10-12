@@ -196,6 +196,17 @@ Keep it current with `kunai upgrade`; remove it with ownership-aware `kunai unin
 (add `--purge` to also delete config/history/cache and default downloaded videos;
 see [Uninstall](#uninstall) for paths and what is preserved).
 
+> **Package managers:** also on Homebrew, Scoop, and the AUR —
+>
+> ```bash
+> brew install kitsunekode/tap/kunai                    # macOS/Linuxbrew
+> scoop bucket add kitsunekode https://github.com/KitsuneKode/scoop-bucket && scoop install kunai
+> yay -S kunai-bin                                      # Arch Linux (AUR)
+> ```
+>
+> For these, `kunai upgrade` prints your package manager's update command rather
+> than replacing the file itself.
+>
 > **Alternatives:** the npm channel needs **Node** (the published bin is a Node launcher
 > that spawns a platform binary; you do not need Bun). `bun install -g` needs Bun.
 > Source checkout is contributor-oriented:
