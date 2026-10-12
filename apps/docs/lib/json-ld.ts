@@ -49,7 +49,7 @@ export function softwareApplicationJsonLd(input: {
     operatingSystem: "Linux, macOS, Windows",
     softwareVersion: input.version,
     softwareRequirements: "mpv",
-    downloadUrl: "https://www.npmjs.com/package/@kitsunekode/kunai",
+    downloadUrl: "https://github.com/KitsuneKode/kunai/releases/latest",
     license: "https://github.com/KitsuneKode/kunai/blob/main/LICENSE",
     isAccessibleForFree: true,
     offers: {

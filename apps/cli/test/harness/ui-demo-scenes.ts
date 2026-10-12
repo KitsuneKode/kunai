@@ -77,7 +77,7 @@ export function localSuggestions(): readonly SearchSuggestion<SearchResult>[] {
       title: "Sintel",
       source: "watched" as const,
       badge: "watched",
-      meta: "Movie · continue",
+      meta: "Movie",
       value: RESULTS[0],
     },
   ];

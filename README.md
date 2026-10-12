@@ -80,22 +80,24 @@ kunai --setup
 kunai -S "Dune"
 ```
 
-## Coming from ani-cli?
+## Kunai vs ani-cli
 
-|                      | Kunai                                   | ani-cli            |
-| -------------------- | --------------------------------------- | ------------------ |
-| Runtime              | self-contained binary, Bun embedded     | POSIX shell script |
-| Interface            | persistent fullscreen shell             | one-shot prompts   |
-| Coverage             | anime, series, movies, YouTube          | anime              |
-| Streams              | probed before mpv sees them             | as found           |
-| Between episodes     | Up Next, resume, continue watching      | relaunch           |
-| When a provider dies | `⇧F` fallback without leaving playback  | pick another link  |
-| Offline              | download queue + local library          | `-d` download flag |
-| Diagnostics          | `/diagnostics`, redacted export bundles | player logs        |
-| Updates              | `kunai upgrade` in place                | package script     |
+|                       | Kunai                                        | ani-cli                            |
+| --------------------- | -------------------------------------------- | ---------------------------------- |
+| Runtime and footprint | self-contained binary, Bun embedded (~88 MB) | small shell script, anywhere POSIX |
+| Interface             | persistent fullscreen shell                  | one-shot prompts                   |
+| Coverage              | anime, series, movies, YouTube               | anime                              |
+| Streams               | probed before mpv sees them                  | as found                           |
+| Between episodes      | Up Next, resume, continue watching           | relaunch                           |
+| When a provider dies  | `⇧F` fallback without leaving playback       | pick another link                  |
+| Offline               | download queue + local library               | `-d` download flag                 |
+| List sync             | AniList and TMDB progress                    | AniList                            |
+| Diagnostics           | `/diagnostics`, redacted export bundles      | player logs                        |
+| Updates               | `kunai upgrade` in place                     | `ani-cli -U`                       |
 
-ani-cli is excellent at its lane and Kunai borrows from it openly; Kunai's pitch
-is the persistent shell and everything past anime.
+ani-cli is excellent at its lane — small, POSIX-portable, scriptable anywhere —
+and Kunai borrows from it openly; Kunai's pitch is the persistent shell and
+everything past anime.
 
 ## Features
 
