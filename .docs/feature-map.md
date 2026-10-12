@@ -42,15 +42,17 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 
 ## Shell (Ink)
 
-| Feature                                                       | Owned by                                          | Docs                                                                  |
-| ------------------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------- |
-| Command palette, `/` commands                                 | `apps/cli/src/domain/session/command-registry.ts` | [ux-architecture.md](./ux-architecture.md)                            |
-| Keybindings                                                   | `apps/cli/src/app-shell/keybindings.ts`           | [keybindings.md](./keybindings.md)                                    |
-| Shell host, overlays, footer                                  | `apps/cli/src/app-shell/*`                        | [ux-architecture.md](./ux-architecture.md)                            |
-| Pickers (episode, provider, source, quality, audio, subtitle) | `apps/cli/src/app-shell/pickers/*`                | [runtime-boundary-map.md](./runtime-boundary-map.md#picker-ownership) |
-| Settings overlay                                              | `apps/cli/src/app-shell/settings/*`               | [ux-architecture.md](./ux-architecture.md)                            |
-| Theme + design tokens                                         | `packages/design`                                 | [design-system.md](./design-system.md)                                |
-| Poster previews (Kitty / iTerm2 / sixel / half-block)         | `apps/cli/src/image/*`                            | [poster-image-rendering.md](./poster-image-rendering.md)              |
+| Feature                                                          | Owned by                                                                                                 | Docs                                                                  |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Command palette, `/` commands                                    | `apps/cli/src/domain/session/command-registry.ts`                                                        | [ux-architecture.md](./ux-architecture.md)                            |
+| Keybindings                                                      | `apps/cli/src/app-shell/keybindings.ts`                                                                  | [keybindings.md](./keybindings.md)                                    |
+| Shell host, overlays, footer                                     | `apps/cli/src/app-shell/*`                                                                               | [ux-architecture.md](./ux-architecture.md)                            |
+| Pickers (episode, provider, source, quality, audio, subtitle)    | `apps/cli/src/app-shell/pickers/*`                                                                       | [runtime-boundary-map.md](./runtime-boundary-map.md#picker-ownership) |
+| Settings overlay                                                 | `apps/cli/src/app-shell/settings/*`                                                                      | [ux-architecture.md](./ux-architecture.md)                            |
+| Theme + design tokens                                            | `packages/design`                                                                                        | [design-system.md](./design-system.md)                                |
+| Poster previews (Kitty / iTerm2 / sixel / half-block)            | `apps/cli/src/image/*`                                                                                   | [poster-image-rendering.md](./poster-image-rendering.md)              |
+| Browse home return-loop rows (continue, new-since-visit, nudges) | `apps/cli/src/app-shell/browse-idle-{context,actions}.ts`, `return-loop-copy.ts`                         | [ux-architecture.md](./ux-architecture.md)                            |
+| Rested-row Enter prefetch                                        | `apps/cli/src/app-shell/hooks/use-dwell-prefetch.ts`, `apps/cli/src/app/search/prefetch-browse-entry.ts` | [ux-architecture.md](./ux-architecture.md)                            |
 
 ## Search and catalog
 
@@ -84,6 +86,7 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | Feature                                    | Owned by                                                                                                            | Docs                                                                             |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Playback state machine                     | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                                        | [architecture.md](./architecture.md)                                             |
+| Entry auto-play decision (Enter vs menu)   | `apps/cli/src/app-shell/title-control/smart-auto-launch.ts`                                                         | [ux-architecture.md](./ux-architecture.md)                                       |
 | mpv launch + IPC (socket / named pipe)     | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                                | [quickstart.md](./quickstart.md)                                                 |
 | Persistent session + autoplay              | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                                 | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
 | Intro/credits auto-skip (IntroDB, AniSkip) | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                                | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |

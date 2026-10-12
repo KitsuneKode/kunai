@@ -305,7 +305,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "browse-title-control-menu",
     chord: { input: "m" },
-    label: "Open starting-point menu for the highlighted title (same as Enter)",
+    label: "Open starting-point menu for the highlighted title (Enter plays through)",
     hintLabel: "menu",
     scope: "browse",
     group: "While browsing",

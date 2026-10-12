@@ -12,7 +12,12 @@ import { applyYoutubeHistoryEnrichment } from "@/services/youtube/youtube-histor
 
 type IdleContextContainer = Pick<
   Container,
-  "queueService" | "releaseProgressCache" | "offlineAssetService" | "historyRepository"
+  | "queueService"
+  | "releaseProgressCache"
+  | "offlineAssetService"
+  | "historyRepository"
+  | "followedTitleRepository"
+  | "config"
 >;
 
 export async function buildBrowseIdleContext(
@@ -31,6 +36,7 @@ export async function buildBrowseIdleContext(
   let continueWatchingSelection: ContinueWatchingSelection | null = null;
   let offlineReadyNext: BrowseIdleContext["offlineReadyNext"];
   let calendarNudge: BrowseIdleContext["calendarNudge"];
+  let newSinceVisit: BrowseIdleContext["newSinceVisit"];
 
   try {
     const allHistory =
@@ -100,6 +106,28 @@ export async function buildBrowseIdleContext(
     if (airingTodayCount > 0) {
       calendarNudge = { airingTodayCount };
     }
+
+    // "New since you left": releases the attention system confirmed after the
+    // last calendar visit. The `lastCalendarVisitAt <= 0` guard mirrors the
+    // calendar's own newness rule — a first-ever visit must not flood the home
+    // screen with the entire backlog. Muted titles stay silent even though
+    // history-backed rows may still carry projections for them.
+    const lastCalendarVisitAt = container.config.lastCalendarVisitAt;
+    if (lastCalendarVisitAt > 0) {
+      const muted = new Set(
+        container.followedTitleRepository.listByPreference("muted").map((record) => record.titleId),
+      );
+      const fresh = container.releaseProgressCache
+        .listNewSince(new Date(lastCalendarVisitAt).toISOString())
+        .filter((projection) => !muted.has(projection.titleId));
+      if (fresh.length > 0) {
+        newSinceVisit = {
+          episodeCount: fresh.reduce((count, row) => count + row.newEpisodeCount, 0),
+          titleCount: fresh.length,
+          sinceMs: lastCalendarVisitAt,
+        };
+      }
+    }
   } catch {
     // best-effort local reads only
   }
@@ -109,7 +137,8 @@ export async function buildBrowseIdleContext(
     continueWatching ||
     offlineReadyNext ||
     releaseSummary.episodeCount > 0 ||
-    calendarNudge
+    calendarNudge ||
+    newSinceVisit
       ? {
           playlistNext: playlistNextItem
             ? {
@@ -131,6 +160,7 @@ export async function buildBrowseIdleContext(
           offlineReadyNext,
           todayReleaseCount: releaseSummary.episodeCount,
           todayReleaseTitleCount: releaseSummary.titleCount,
+          newSinceVisit,
           calendarNudge,
         }
       : undefined;

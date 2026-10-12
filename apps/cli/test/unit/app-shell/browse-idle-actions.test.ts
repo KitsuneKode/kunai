@@ -90,3 +90,69 @@ describe("browse idle actions", () => {
     );
   });
 });
+
+describe("new-since-visit strip", () => {
+  // Anchored mid-week so the label lands on the weekday branch.
+  const nowMs = new Date(2026, 5, 10, 12, 0, 0).getTime(); // Wed Jun 10 2026
+  const sinceMonday = new Date(2026, 5, 8, 9, 0, 0).getTime(); // Mon Jun 8 2026
+  const sinceWeekday = new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(
+    new Date(sinceMonday),
+  );
+
+  test("leads the strip above Continue Watching with the terse count line", () => {
+    const model = buildBrowseIdleReturnLoopModel(
+      {
+        newSinceVisit: { episodeCount: 3, titleCount: 2, sinceMs: sinceMonday },
+        continueWatching: {
+          title: "In Progress",
+          ep: "S01E02",
+          titleId: "tmdb:1",
+          mediaKind: "series",
+        },
+      },
+      { idleFocused: true, selectedIndex: 0, nowMs },
+    );
+    expect(model?.rows[0]?.id).toBe("new-since-visit");
+    expect(model?.rows[0]?.glyph).toBe("●");
+    expect(model?.rows[0]?.title).toBe(`3 new episodes since ${sinceWeekday}`);
+    expect(model?.rows[0]?.hint).toBe("↵ open schedule");
+    expect(model?.rows[1]?.id).toBe("continue");
+  });
+
+  test("singular copy keeps the same shape", () => {
+    const model = buildBrowseIdleReturnLoopModel(
+      { newSinceVisit: { episodeCount: 1, titleCount: 1, sinceMs: sinceMonday } },
+      { idleFocused: false, nowMs },
+    );
+    expect(model?.rows[0]?.title).toBe(`1 new episode since ${sinceWeekday}`);
+  });
+
+  test("hidden entirely when there is nothing new — no empty strip", () => {
+    const model = buildBrowseIdleReturnLoopModel(
+      {
+        newSinceVisit: { episodeCount: 0, titleCount: 0, sinceMs: sinceMonday },
+        continueWatching: {
+          title: "In Progress",
+          ep: "S01E02",
+          titleId: "tmdb:1",
+          mediaKind: "series",
+        },
+      },
+      { idleFocused: false, nowMs },
+    );
+    expect(model?.rows.map((row) => row.id)).toEqual(["continue"]);
+  });
+
+  test("Enter routes to the tracked schedule, not the unfiltered calendar", () => {
+    expect(
+      resolveIdleRowAction("new-since-visit", {
+        newSinceVisit: { episodeCount: 3, titleCount: 2, sinceMs: sinceMonday },
+      }),
+    ).toBe("tracked-calendar");
+    expect(
+      resolveIdleRowAction("new-since-visit", {
+        newSinceVisit: { episodeCount: 0, titleCount: 0, sinceMs: sinceMonday },
+      }),
+    ).toBe(null);
+  });
+});

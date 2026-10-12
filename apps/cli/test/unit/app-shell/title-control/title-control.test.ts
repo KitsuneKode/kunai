@@ -230,3 +230,169 @@ describe("smart auto-launch", () => {
     expect(shouldAutoLaunchPlayback(ctx)).toBe(false);
   });
 });
+
+describe("smart auto-launch — plain Enter (no preselected episode)", () => {
+  function enterCtx(
+    overrides: Partial<PlaybackEpisodeEntryContext> = {},
+  ): PlaybackEpisodeEntryContext {
+    return playbackCtx({
+      preselectedEpisode: undefined,
+      history: null,
+      ...overrides,
+    });
+  }
+
+  test("resumes in place when a live position exists", () => {
+    const ctx = enterCtx({
+      history: {
+        positionSeconds: 600,
+        durationSeconds: 1200,
+        completed: false,
+        season: 2,
+        episode: 4,
+      },
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(true);
+    const entry = resolvePlaybackEpisodeEntry(ctx);
+    expect(entry.kind).toBe("auto");
+    if (entry.kind === "auto") {
+      expect(entry.selection.season).toBe(2);
+      expect(entry.selection.episode).toBe(4);
+      expect(entry.selection.startAt).toBe(600);
+      expect(entry.selection.suppressResumePrompt).toBe(true);
+    }
+  });
+
+  test("falls back to absoluteEpisode for the anime resume anchor", () => {
+    const ctx = enterCtx({
+      isAnime: true,
+      history: {
+        positionSeconds: 300,
+        durationSeconds: 1400,
+        completed: false,
+        absoluteEpisode: 7,
+      },
+    });
+    const entry = resolvePlaybackEpisodeEntry(ctx);
+    expect(entry.kind).toBe("auto");
+    if (entry.kind === "auto") {
+      expect(entry.selection.season).toBe(1);
+      expect(entry.selection.episode).toBe(7);
+    }
+  });
+
+  test("finished history launches the resolved next episode", () => {
+    const ctx = enterCtx({
+      history: {
+        positionSeconds: 1400,
+        durationSeconds: 1400,
+        completed: true,
+        season: 1,
+        episode: 8,
+      },
+      nextEpisode: { season: 1, episode: 9 },
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(true);
+    const entry = resolvePlaybackEpisodeEntry(ctx);
+    expect(entry.kind).toBe("auto");
+    if (entry.kind === "auto") {
+      expect(entry.selection.season).toBe(1);
+      expect(entry.selection.episode).toBe(9);
+      expect(entry.selection.startAt).toBeUndefined();
+    }
+  });
+
+  test("finished history without a known next episode still shows the menu", () => {
+    const ctx = enterCtx({
+      history: {
+        positionSeconds: 1400,
+        durationSeconds: 1400,
+        completed: true,
+      },
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(false);
+    expect(resolvePlaybackEpisodeEntry(ctx).kind).toBe("menu");
+  });
+
+  test("no history stays on the menu (first watch)", () => {
+    expect(shouldAutoLaunchPlayback(enterCtx())).toBe(false);
+  });
+
+  test("a saved zero position is not a resume point — menu", () => {
+    const ctx = enterCtx({
+      history: { positionSeconds: 0, completed: false, season: 1, episode: 3 },
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(false);
+  });
+
+  test("undoing launch intent: explicit menu request beats a live resume", () => {
+    const ctx = enterCtx({
+      forceMenu: true,
+      history: {
+        positionSeconds: 600,
+        durationSeconds: 1200,
+        completed: false,
+        season: 2,
+        episode: 4,
+      },
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(false);
+    expect(resolvePlaybackEpisodeEntry(ctx).kind).toBe("menu");
+  });
+
+  test("undoing launch intent: explicit menu request beats auto-advance", () => {
+    const ctx = enterCtx({
+      forceMenu: true,
+      history: {
+        positionSeconds: 1400,
+        durationSeconds: 1400,
+        completed: true,
+        season: 1,
+        episode: 8,
+      },
+      nextEpisode: { season: 1, episode: 9 },
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(false);
+    expect(resolvePlaybackEpisodeEntry(ctx).kind).toBe("menu");
+  });
+
+  test("failed provider still defers to the menu on plain Enter", () => {
+    const ctx = enterCtx({
+      failedProvider: true,
+      history: {
+        positionSeconds: 600,
+        durationSeconds: 1200,
+        completed: false,
+        season: 1,
+        episode: 4,
+      },
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(false);
+  });
+
+  test("offline-library without a preselected episode keeps its old contract", () => {
+    const ctx = enterCtx({
+      launchSource: "offline-library",
+      history: {
+        positionSeconds: 600,
+        durationSeconds: 1200,
+        completed: false,
+        season: 1,
+        episode: 4,
+      },
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(false);
+  });
+
+  test("movies never take the series auto-entry", () => {
+    const ctx = enterCtx({
+      titleType: "movie",
+      history: {
+        positionSeconds: 600,
+        durationSeconds: 1200,
+        completed: false,
+      },
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(false);
+  });
+});

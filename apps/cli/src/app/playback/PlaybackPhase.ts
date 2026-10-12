@@ -221,6 +221,7 @@ import {
   type PlaybackTimingSourceOutcome,
 } from "@/infra/timing";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
+import { isFinished } from "@/services/continuation/history-progress";
 import { PlaybackHistoryLedger } from "@/services/continuation/playback-history-ledger";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import {
@@ -853,6 +854,25 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           : usesNativeEpisodes
             ? (title.episodeCount ?? initialAnimeEpisodes?.length)
             : ((await fetchSeasons(title.id).catch(() => null))?.length ?? undefined);
+
+        // The Enter contract resolves "next unwatched" only when it decides
+        // something: a finished last episode and no explicit pick. It runs the
+        // same loader the starting menu would, so this adds no fetch the menu
+        // path wasn't already paying — it just answers before opening one.
+        const nextEpisode =
+          !isOfflineLaunch && !preselectedEpisode && history && isFinished(history)
+            ? await (async () => {
+                const { resolveNextHistoryEpisode } = await import("@/session-flow");
+                return resolveNextHistoryEpisode({
+                  currentId: title.id,
+                  isAnime: usesNativeEpisodes,
+                  history,
+                  animeEpisodeCount: title.episodeCount,
+                  animeEpisodes: initialAnimeEpisodes,
+                }).catch(() => null);
+              })()
+            : null;
+
         const episodeEntry = resolvePlaybackEpisodeEntry({
           titleId: title.id,
           titleType: title.type,
@@ -860,8 +880,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           launchSource: title.launchSource,
           preselectedEpisode: preselectedEpisode ?? undefined,
           history,
+          nextEpisode: nextEpisode ?? undefined,
           seasonCount,
           failedProvider,
+          forceMenu: title.forceStartingMenu === true,
           flags: {},
         });
 
@@ -939,8 +961,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             kind: historyTitleLookup.kind,
             externalIds: historyTitleLookup.externalIds,
           }) ?? null;
-        const { chooseMovieStartingPoint } = await import("@/session-flow");
-        const selection = await chooseMovieStartingPoint({ history: movieHistory, container });
+        const { chooseMovieStartingPoint, resolveMovieStartingChoice } =
+          await import("@/session-flow");
+        // Enter resumes a live position directly — the same answer the
+        // Resume/Restart picker leads with. `m` (forceStartingMenu) still
+        // opens that picker so restarting stays one key away.
+        const selection =
+          movieHistory &&
+          !isFinished(movieHistory) &&
+          movieHistory.positionSeconds > 0 &&
+          !title.forceStartingMenu
+            ? resolveMovieStartingChoice("resume", movieHistory)
+            : await chooseMovieStartingPoint({ history: movieHistory, container });
         if (!selection) {
           logger.info("Movie starting point cancelled before playback", { titleId: title.id });
           return {

@@ -13,6 +13,44 @@ export function formatReadyForYouNowMeta(episodeCount: number, titleCount: numbe
   return `${episodes}${shows}`;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function localDayStart(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/**
+ * "since Tuesday"-style anchor for the new-since-visit strip: today /
+ * yesterday / weekday inside the last week / short date beyond it.
+ * `nowMs` is injectable so the label never reads the wall clock in tests.
+ */
+export function formatSinceVisitDayLabel(sinceMs: number, nowMs: number): string {
+  const today = localDayStart(nowMs);
+  const day = localDayStart(sinceMs);
+  const deltaDays = Math.round((today - day) / DAY_MS);
+  if (deltaDays <= 0) return "since today";
+  if (deltaDays === 1) return "since yesterday";
+  if (deltaDays < 7) {
+    return `since ${new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(
+      new Date(sinceMs),
+    )}`;
+  }
+  return `since ${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(
+    new Date(sinceMs),
+  )}`;
+}
+
+/** The strip line itself — terse, no exclamation (kanna voice). */
+export function formatNewSinceVisitLine(
+  episodeCount: number,
+  sinceMs: number,
+  nowMs: number,
+): string {
+  const episodes = episodeCount === 1 ? "1 new episode" : `${episodeCount} new episodes`;
+  return `${episodes} ${formatSinceVisitDayLabel(sinceMs, nowMs)}`;
+}
+
 export const RETURN_LOOP_NAV_HINT = "/calendar for schedule · /history for shows";
 
 export const RETURN_LOOP_HISTORY_SUBTITLE = "Resume first, then picks ready for you now.";

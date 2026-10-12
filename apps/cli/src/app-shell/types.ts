@@ -321,6 +321,16 @@ export type BrowseIdleContext = {
   };
   todayReleaseCount?: number;
   todayReleaseTitleCount?: number;
+  /**
+   * "New since you left" — provider-confirmed releases newer than the last
+   * calendar visit, on titles the attention system tracks (muted excluded).
+   * `sinceMs` is the visit the counts are measured from.
+   */
+  newSinceVisit?: {
+    episodeCount: number;
+    titleCount: number;
+    sinceMs: number;
+  };
   calendarNudge?: {
     airingTodayCount: number;
   };

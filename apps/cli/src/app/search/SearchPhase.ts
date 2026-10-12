@@ -40,6 +40,7 @@ import { launchCalendarContinue } from "@/app/search/calendar-continue-launch";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calendar-results";
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
+import { prefetchBrowseEntrySelection } from "@/app/search/prefetch-browse-entry";
 import {
   buildSearchFailureNote,
   shouldRunBootstrapSearch,
@@ -146,6 +147,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
   private hasHealedHistoryMetadata = false;
   /** Titles already warmed this session, so a search never re-fetches one. */
   private readonly warmedAnimeEpisodeCaches = new Set<string>();
+  /** Result ids whose Enter-path prefetch already ran this session. */
+  private readonly dwellPrefetchedResultIds = new Set<string>();
 
   /**
    * Warm the top anime result's episode catalog in the background so the
@@ -667,6 +670,23 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }),
           idleContext: latestIdleContext,
           loadIdleContext,
+          // Dwell prefetch (~500ms on a rested row): warms exactly what the
+          // select path below pays — provider mapping, identity enrich, title
+          // detail, and the episode catalog — so Enter resolves from cache.
+          // Dedupe per result: re-resting on a row the session already warmed
+          // must not re-pay the Cloudflare-gated anime fetch.
+          onPrefetchOption: (result, signal) => {
+            if (this.dwellPrefetchedResultIds.has(result.id)) return;
+            this.dwellPrefetchedResultIds.add(result.id);
+            void prefetchBrowseEntrySelection({
+              container,
+              result,
+              fallbackMode: stateManager.getState().mode,
+              providerId: stateManager.getState().provider,
+              signal,
+              warmedAnimeEpisodeCaches: this.warmedAnimeEpisodeCaches,
+            });
+          },
           onQueueSelected: async (result) => {
             const router = createContainerMediaActionRouter(container);
             await router.run({
@@ -1043,12 +1063,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 selectionMode,
                 context.signal,
               );
+              const menuTitle = { ...title, forceStartingMenu: true };
               stateManager.dispatch({
                 type: "SELECT_TITLE",
-                title,
+                title: menuTitle,
                 videoMeta: videoMetaFromSearchResult(selected),
               });
-              return { status: "success", value: title };
+              return { status: "success", value: menuTitle };
             }
 
             // Idle continue / queue: prime the title without locking an episode so
@@ -1061,18 +1082,27 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   titleFromHistorySelection(continueWatchingSelection),
                   continueWatchingSelection.entry,
                 );
-                stateManager.dispatch({ type: "SELECT_TITLE", title });
+                stateManager.dispatch({
+                  type: "SELECT_TITLE",
+                  title: { ...title, forceStartingMenu: true },
+                });
               } else {
                 const queueNext = container.queueService.peekNext();
                 if (queueNext && latestIdleContext?.playlistNext?.titleId === queueNext.titleId) {
                   const title = titleInfoFromQueueEntry(queueNext);
-                  stateManager.dispatch({ type: "SELECT_TITLE", title });
+                  stateManager.dispatch({
+                    type: "SELECT_TITLE",
+                    title: { ...title, forceStartingMenu: true },
+                  });
                 }
               }
             } else {
               const existing = stateManager.getState().currentTitle;
               if (existing) {
-                stateManager.dispatch({ type: "SELECT_TITLE", title: existing });
+                stateManager.dispatch({
+                  type: "SELECT_TITLE",
+                  title: { ...existing, forceStartingMenu: true },
+                });
               }
             }
 
