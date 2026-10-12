@@ -604,6 +604,80 @@ export class HistoryRepository {
   }
 
   /**
+   * Re-insert a captured row verbatim — every column including key, created_at
+   * and updated_at. The session-undo restore path: `upsertProgress` merges and
+   * rewrites (COALESCE on poster, created_at stamped fresh, last_watched_at
+   * defaulted), which is the right behaviour for a write but wrong for a
+   * restore — undo must land the row exactly as it was. `INSERT OR REPLACE`
+   * covers both shapes the caller hands down: a row the forward mutation
+   * deleted outright, and a row it only modified (key still occupied — the
+   * caller verified the occupant is the post-mutation state before calling).
+   * Aliases and the sync reconciliation entry still record, same as any
+   * mutation.
+   */
+  restoreProgressRow(progress: HistoryProgress): void {
+    const now = new Date().toISOString();
+    this.db
+      .query(
+        `
+          INSERT OR REPLACE INTO history_progress (
+            key,
+            title_id,
+            media_kind,
+            title,
+            season,
+            episode,
+            absolute_episode,
+            position_seconds,
+            duration_seconds,
+            completed,
+            watched_seconds,
+            last_watched_at,
+            completed_at,
+            provider_id,
+            external_ids_json,
+            poster_url,
+            updated_at,
+            created_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        progress.key,
+        progress.titleId,
+        progress.mediaKind,
+        progress.title,
+        progress.season ?? null,
+        progress.episode ?? null,
+        progress.absoluteEpisode ?? null,
+        Math.max(0, Math.trunc(progress.positionSeconds)),
+        progress.durationSeconds === undefined
+          ? null
+          : Math.max(0, Math.trunc(progress.durationSeconds)),
+        progress.completed ? 1 : 0,
+        Math.max(0, Math.trunc(progress.watchedSeconds ?? 0)),
+        progress.lastWatchedAt ?? null,
+        progress.completedAt ?? null,
+        progress.providerId ?? null,
+        serializeExternalIds(progress.externalIds),
+        progress.posterUrl ?? null,
+        progress.updatedAt,
+        progress.createdAt,
+      );
+
+    this.titleAliases.upsertAliases(
+      progress.titleId,
+      externalIdsToAliases(progress.externalIds),
+      now,
+    );
+    this.syncReconciliation.record(
+      { kind: "history", historyKey: progress.key, localMutationId: crypto.randomUUID() },
+      new Date(now),
+    );
+  }
+
+  /**
    * Overwrite the watch state of one row.
    *
    * Consolidation merges two rows that turned out to be the same title, and the

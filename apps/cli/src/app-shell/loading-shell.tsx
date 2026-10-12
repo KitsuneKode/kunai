@@ -349,6 +349,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   onToggleFavorite,
   isFavorite,
   onFallback,
+  onUndo,
 }: {
   state: LoadingShellState;
   onCancel?: () => void;
@@ -371,6 +372,8 @@ export const LoadingShell = React.memo(function LoadingShell({
   /** Read at render, so the marker follows the list rather than a local copy. */
   isFavorite?: () => boolean;
   onFallback?: () => void;
+  /** `z` while an undo strip is live; a silent no-op when nothing is journaled. */
+  onUndo?: () => void;
 }) {
   const [memoryPanelVisible, setMemoryPanelVisible] = React.useState(false);
   // Forces a frame after a toggle: `isFavorite` reads through to the list, so
@@ -488,6 +491,12 @@ export const LoadingShell = React.memo(function LoadingShell({
     }
     if (key.escape && state.cancellable && onCancel) {
       onCancel();
+      return;
+    }
+    // `z` is unbound on loading/playing surfaces otherwise, so it can claim
+    // the live undo entry unconditionally — the service no-ops when empty.
+    if (input === "z" && !key.ctrl && !key.meta && onUndo) {
+      onUndo();
       return;
     }
 

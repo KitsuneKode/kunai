@@ -8,6 +8,8 @@ export type TransientRowInput = {
   readonly notificationToast: string | null;
   /** Immediate arrivals can briefly preempt standing playback alerts. */
   readonly notificationToastPriority?: NotificationPriority | null;
+  /** Session-undo line — "added to queue · z undo" or the undo outcome. */
+  readonly undoLine?: TransientToneLine | null;
   readonly streakMilestoneAlert: string | null;
   readonly presenceBootLine: TransientToneLine | null;
   readonly streakAtRiskAlert: string | null;
@@ -24,8 +26,11 @@ export type TransientRowLine = {
 };
 
 // The shell reserves ONE transient row; exactly one line wins, by priority:
-// genuine alert → notification arrival toast → streak milestone → presence boot →
-// streak-at-risk → weekly digest. Arrivals render bright; calm infos dim. Keeping
+// genuine alert → notification arrival toast → undo strip → streak milestone →
+// presence boot → streak-at-risk → weekly digest. Arrivals render bright; calm
+// infos dim. The undo strip outranks the standing decorations because it is the
+// only transient that offers a keypress (`z`), but it stays below genuine
+// alerts and fresh notification arrivals, which carry more urgency. Keeping
 // this pure makes the priority testable without mounting the whole shell.
 export function selectTransientRow(input: TransientRowInput): TransientRowLine | null {
   if (input.notificationToast && input.notificationToastPriority === "immediate") {
@@ -33,6 +38,9 @@ export function selectTransientRow(input: TransientRowInput): TransientRowLine |
   }
   if (input.alert) {
     return { text: input.alert.text, tone: input.alert.tone, accent: false, dim: true };
+  }
+  if (input.undoLine) {
+    return { text: input.undoLine.text, tone: input.undoLine.tone, accent: false, dim: false };
   }
   if (input.notificationToast) {
     return { text: input.notificationToast, tone: "info", accent: true, dim: false };

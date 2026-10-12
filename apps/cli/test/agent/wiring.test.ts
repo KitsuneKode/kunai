@@ -120,6 +120,70 @@ describe("agent wiring · queue", () => {
   }, 30_000);
 });
 
+describe("agent wiring · session undo", () => {
+  it("q → strip offers z → z restores playlist_queue exactly", async () => {
+    await withSession("wiring-undo-queue", {}, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+
+      s.press("movie", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+
+      const baseline = s.inspect().queue();
+      s.press("q");
+      await s.waitForBackend(
+        (i) => i.queue().length === baseline.length + 1,
+        "playlist_queue +1 after q",
+      );
+      // The affordance is a frame claim AND a DB fact: strip advertises z
+      // while the row sits committed underneath it.
+      await s.waitForFrame((f) => f.includes("added to queue · z undo"), "undo strip");
+
+      s.press("z");
+      await s.waitForFrame((f) => f.includes("undid queue add"), "undo outcome line");
+      await s.waitForBackend(
+        (i) => i.queue().length === baseline.length,
+        "playlist_queue back to baseline after z",
+      );
+
+      // The undo wrote nothing new to undo: a second z is a silent no-op —
+      // no error surface, no strip, no DB drift.
+      const frameAfterUndo = s.frame();
+      s.press("z");
+      await s.waitSettled();
+      expect(s.frame()).toBe(frameAfterUndo);
+      expect(s.inspect().queue().length).toBe(baseline.length);
+    });
+  }, 30_000);
+
+  it("x inside Up Next journals a removal that z reverses", async () => {
+    await withSession("wiring-undo-remove", {}, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+
+      s.press("movie", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+      s.press("q");
+      await s.waitForBackend((i) => i.queue().length === 1, "queued");
+      // Consume the add's undo affordance so the remove is what z pops.
+      s.press("z");
+      await s.waitForBackend((i) => i.queue().length === 0, "add undone");
+      s.press("q");
+      await s.waitForBackend((i) => i.queue().length === 1, "queued again");
+
+      s.press("Q");
+      await s.waitForFrame((f) => f.includes("UP NEXT"), "up-next surface");
+      await s.waitSettled();
+      s.press("x");
+      await s.waitForBackend((i) => i.queue().length === 0, "x removed the row");
+
+      s.press("z");
+      await s.waitForBackend(
+        (i) => i.queue().length === 1 && i.queue()[0]?.status === "pending",
+        "z restored the removed row",
+      );
+    });
+  }, 45_000);
+});
+
 describe("agent wiring · post-play history", () => {
   it("a played title lands in history_progress", async () => {
     await withSession("wiring-history", { mpv: "fake" }, async (s) => {

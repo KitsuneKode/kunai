@@ -667,6 +667,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }),
           idleContext: latestIdleContext,
           loadIdleContext,
+          // `z` on the browse surface pops the session journal — the router
+          // callbacks below are what journaled those entries in the first place.
+          onUndo: () => {
+            container.sessionUndo?.undoLatest();
+          },
           onQueueSelected: async (result) => {
             const router = createContainerMediaActionRouter(container);
             await router.run({

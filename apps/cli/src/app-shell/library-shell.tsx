@@ -275,6 +275,12 @@ function LibraryTab({
         return;
       }
       if (input === "\u001b") return;
+      // `z` pops the live undo entry; with nothing undoable it stays a filter
+      // character like any other letter.
+      if (input === "z" && container.sessionUndo?.hasLiveUndo()) {
+        container.sessionUndo.undoLatest();
+        return;
+      }
       if (
         input.length === 1 &&
         !key.ctrl &&

@@ -59,6 +59,16 @@ export class FollowedTitleRepository {
     return row;
   }
 
+  /**
+   * Remove the row outright. Session-undo restore of "title had no row":
+   * unfollow-by-upsert would leave an `implicit` row that never existed
+   * before, which reads as an unfollow signal to notification derivation —
+   * absence must restore as absence.
+   */
+  delete(titleId: string): void {
+    this.db.query("DELETE FROM followed_titles WHERE title_id = ?").run(titleId);
+  }
+
   get(titleId: string): FollowedTitleRecord | undefined {
     const row = this.db
       .query<FollowedTitleRow, [string]>("SELECT * FROM followed_titles WHERE title_id = ?")

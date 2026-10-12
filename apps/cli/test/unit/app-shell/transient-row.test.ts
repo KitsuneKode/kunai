@@ -79,4 +79,42 @@ describe("selectTransientRow", () => {
     ).toBe("risk");
     expect(selectTransientRow({ ...EMPTY, weeklyDigestLine: "digest" })?.text).toBe("digest");
   });
+
+  test("undo strip outranks a regular toast and the standing decorations", () => {
+    const row = selectTransientRow({
+      ...EMPTY,
+      notificationToast: "● New episode — X",
+      undoLine: { text: "added to queue · z undo", tone: "info" },
+      streakMilestoneAlert: "🔥 5-day streak!",
+    });
+    expect(row?.text).toBe("added to queue · z undo");
+    expect(row?.tone).toBe("info");
+    // Not an arrival — the line reads as an affordance, not a notification.
+    expect(row?.accent).toBe(false);
+  });
+
+  test("undo strip loses to alerts and immediate notification toasts", () => {
+    const alert = selectTransientRow({
+      ...EMPTY,
+      alert: { text: "playback failed", tone: "error" },
+      undoLine: { text: "undid queue add", tone: "success" },
+    });
+    expect(alert?.text).toBe("playback failed");
+
+    const immediate = selectTransientRow({
+      ...EMPTY,
+      notificationToast: "⚠ Download failed — Show",
+      notificationToastPriority: "immediate",
+      undoLine: { text: "undid queue add", tone: "success" },
+    });
+    expect(immediate?.text).toBe("⚠ Download failed — Show");
+  });
+
+  test("undo outcome tone is preserved for warning can't-undo copy", () => {
+    const row = selectTransientRow({
+      ...EMPTY,
+      undoLine: { text: "can't undo queue add — changed since then", tone: "warning" },
+    });
+    expect(row?.tone).toBe("warning");
+  });
 });

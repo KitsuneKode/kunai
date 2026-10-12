@@ -215,6 +215,7 @@ export function BrowseShell<T>({
   onResolve,
   onSubmit,
   onCancel,
+  onUndo,
   idleContext,
   loadIdleContext,
 }: {
@@ -258,6 +259,12 @@ export function BrowseShell<T>({
   onResolve: (action: ShellAction, value?: T) => void;
   onSubmit: (value: T) => void;
   onCancel: () => void;
+  /**
+   * `z` while a session-undo entry is live. Routed here (not the keybinding
+   * registry) so overlays, command mode, and text focus each decide first —
+   * the callback itself no-ops when nothing is journaled.
+   */
+  onUndo?: () => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
 }) {
@@ -1231,6 +1238,13 @@ export function BrowseShell<T>({
         return;
       }
 
+      // `z` undoes the action named on the strip — sheet keys (w/q/d above)
+      // are journaled, so undo works with the details sheet open too.
+      if (input === "z" && !key.ctrl && !key.meta && onUndo) {
+        onUndo();
+        return;
+      }
+
       if (key.escape) {
         closeOverlay();
         return;
@@ -1374,6 +1388,13 @@ export function BrowseShell<T>({
       isBareBrowseLetterHotkey(input, key) &&
       !isReservedBrowseSurfaceChord(input, key)
     ) {
+      return;
+    }
+
+    // `z` claims the live undo entry on non-typing browse surfaces — the
+    // suppression check above already returned while a text zone has focus.
+    if (input === "z" && !key.ctrl && !key.meta && onUndo) {
+      onUndo();
       return;
     }
 
@@ -2307,6 +2328,7 @@ export function openBrowseShell<T>({
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
+  onUndo,
   idleContext,
   loadIdleContext,
 }: {
@@ -2343,6 +2365,7 @@ export function openBrowseShell<T>({
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
+  onUndo?: () => void;
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
 }): Promise<BrowseShellResult<T>> {
@@ -2382,6 +2405,7 @@ export function openBrowseShell<T>({
         onFollowSelected={onFollowSelected}
         onPlayTrailer={onPlayTrailer}
         onOpenLink={onOpenLink}
+        onUndo={onUndo}
         idleContext={idleContext}
         loadIdleContext={loadIdleContext}
         onResolve={(action, value) =>
