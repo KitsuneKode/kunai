@@ -49,9 +49,6 @@ export type PublicShortcutMetadata = {
 export type CodeMetadata = {
   readonly version: string;
   readonly cliVersion: string;
-  readonly cliSourceFingerprint: string;
-  readonly docsContentFingerprint: string;
-  readonly featureStatusRevision: string;
   readonly commandCount: number;
   readonly providerIds: readonly string[];
   readonly providers: readonly ProviderMetadata[];
