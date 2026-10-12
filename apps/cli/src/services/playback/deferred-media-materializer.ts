@@ -15,6 +15,50 @@ export type MaterializedDeferredMedia = {
   readonly cleanup: () => Promise<void>;
 };
 
+export type MaterializedDeferredDocument = {
+  /** The MPD manifest text — servable in memory, no temp file needed. */
+  readonly text: string;
+  readonly contentType: "application/dash+xml";
+  /** Every remote URL the manifest references, for gateway allowlisting. */
+  readonly remoteUrls: readonly string[];
+  readonly cleanup: () => Promise<void>;
+};
+
+function resolveDeferredDocument(stream: StreamInfo) {
+  const locator = stream.deferredLocator ?? "";
+  if (locator.startsWith("allmanga-ak:")) {
+    const descriptor = resolveAllMangaAkDeferredLocator(locator);
+    if (!descriptor) {
+      throw new Error("Deferred AllManga Ak media expired before playback");
+    }
+    return {
+      text: buildAllMangaAkMpd(descriptor),
+      remoteUrls: [descriptor.video.url, descriptor.audio.url].filter(Boolean),
+    };
+  }
+  throw new Error(`Unsupported deferred media locator: ${locator.split(":")[0]}`);
+}
+
+/**
+ * The deferred locator as an in-memory manifest for runtimes that hand a URL
+ * to something else (the Android stream gateway). Releases the locator on
+ * cleanup exactly once, mirroring the file-based path.
+ */
+export async function materializeDeferredMediaDocument(
+  stream: StreamInfo,
+): Promise<MaterializedDeferredDocument> {
+  const { text, remoteUrls } = resolveDeferredDocument(stream);
+  const locator = stream.deferredLocator ?? "";
+  return {
+    text,
+    contentType: "application/dash+xml",
+    remoteUrls,
+    cleanup: async () => {
+      releaseAllMangaAkDeferredLocator(locator);
+    },
+  };
+}
+
 export async function materializeDeferredMediaForPlayback(
   stream: StreamInfo,
 ): Promise<MaterializedDeferredMedia> {

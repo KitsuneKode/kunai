@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12"
+lastReviewed: "2026-10-12T14:12:23Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -163,10 +163,18 @@ Contract proof (fake-player / render-capture, no live providers):
 
 On Android/Termux, `--player auto|mpv|vlc` composes
 `HandoffPlayerService` instead of `PlayerServiceImpl`. `auto` opens the Android
-chooser; explicit choices target mpv-android or VLC. The adapter accepts only a
-final absolute HTTP(S) URL with no custom headers/cookies, yt-dlp requirement,
-local file, deferred locator, or external subtitle. It constructs an argv array
-for `am`/Termux launchers and never interpolates a shell command.
+chooser; explicit choices target mpv-android or VLC. The adapter accepts a
+final absolute HTTP(S) URL directly and routes headered, cookie, external-
+subtitle, and deferred streams through `infra/player/stream-gateway.ts` — a
+per-playback loopback server on 127.0.0.1 under a 128-bit token path that
+injects the candidate's normalized headers, rewrites HLS playlists and DASH
+manifest BaseURLs, follows redirects only to public targets (the shared
+`@kunai/core` DNS/private-address guards), and passes Range through for
+seeking. It stops on idle timeout or shell shutdown. yt-dlp-only streams,
+local files, and non-HTTP schemes still refuse. The intent launcher constructs
+an argv array for `am`/Termux launchers, passes subtitles as `subs` /
+`subtitles_location` extras, scrubs the child environment, and never
+interpolates a shell command.
 
 An accepted `ACTION_VIEW` request is represented as detached handoff evidence,
 not playback evidence. The session emits no start/progress/completion event,

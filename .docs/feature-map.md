@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T13:50:00Z"
+lastReviewed: "2026-10-12T14:16:55Z"
 ---
 
 # Feature Map
@@ -92,6 +92,7 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Playback state machine                     | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                                    | [architecture.md](./architecture.md)                                             |
 | mpv launch + IPC (socket / named pipe)     | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                            | [quickstart.md](./quickstart.md)                                                 |
+| Android detached handoff + stream gateway  | `apps/cli/src/infra/player/handoff-player-service.ts`, `stream-gateway.ts`, `android-intent-launcher.ts`        | [architecture.md](./architecture.md)                                             |
 | Persistent session + autoplay              | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                             | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
 | Intro/credits auto-skip (IntroDB, AniSkip) | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                            | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
 | Timing sources and merge                   | `apps/cli/src/infra/timing/*` — `PlaybackTimingAggregator` merges IntroDB, AniSkip, and provider-native timings | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |

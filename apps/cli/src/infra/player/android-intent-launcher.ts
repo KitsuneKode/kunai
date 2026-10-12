@@ -41,6 +41,21 @@ const PLAYER_PACKAGES = {
 
 const MAX_DIAGNOSTIC_LENGTH = 2_048;
 
+/**
+ * Launcher children get a scrubbed environment: the process only needs PATH
+ * to find sibling Termux tools and HOME/PREFIX/TMPDIR for its own bookkeeping
+ * — never inherited secrets from the shell's environment. Built per-spawn so
+ * tests and the agent loop can still redirect the env.
+ */
+function scrubbedIntentEnv(): Record<string, string> {
+  return {
+    PATH: process.env.PATH ?? "/system/bin:/system/xbin",
+    HOME: process.env.HOME ?? "/data/data/com.termux/files/home",
+    PREFIX: process.env.PREFIX ?? "/data/data/com.termux/files/usr",
+    TMPDIR: process.env.TMPDIR ?? "/data/data/com.termux/files/usr/tmp",
+  };
+}
+
 export const defaultAndroidIntentRuntime: AndroidIntentRuntime = {
   which: (command) => Bun.which(command),
   spawn: (argv) =>
@@ -48,6 +63,7 @@ export const defaultAndroidIntentRuntime: AndroidIntentRuntime = {
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
+      env: scrubbedIntentEnv(),
     }),
 };
 
@@ -55,6 +71,7 @@ function actionViewArgv(
   executable: string,
   target: DetachedPlayerTarget,
   url: string,
+  subtitles: readonly string[],
 ): readonly string[] {
   const argv = [
     executable,
@@ -67,20 +84,31 @@ function actionViewArgv(
     "video/*",
   ];
   if (target !== "chooser") argv.push("-p", PLAYER_PACKAGES[target]);
+  // Subtitle extras are per-package: mpv-android reads a `subs` string list,
+  // VLC reads `subtitles_location`. Both are gateway URLs — the raw provider
+  // subtitle URL would land without the headers it needs.
+  if (target === "mpv" && subtitles.length > 0) {
+    argv.push("--esa", "subs", subtitles.join(","));
+  }
+  if (target === "vlc" && subtitles[0]) {
+    argv.push("--es", "subtitles_location", subtitles[0]);
+  }
   return argv;
 }
 
 export function resolveAndroidIntentCommand(input: {
   readonly target: DetachedPlayerTarget;
   readonly url: string;
+  readonly subtitles?: readonly string[];
   readonly runtime: AndroidIntentRuntime;
 }): AndroidIntentCommand {
+  const subtitles = input.subtitles ?? [];
   const termuxAm = input.runtime.which("termux-am");
   if (termuxAm) {
     return {
       ok: true,
       launcher: "termux-am",
-      argv: actionViewArgv(termuxAm, input.target, input.url),
+      argv: actionViewArgv(termuxAm, input.target, input.url, subtitles),
     };
   }
 
@@ -89,7 +117,7 @@ export function resolveAndroidIntentCommand(input: {
     return {
       ok: true,
       launcher: "am",
-      argv: actionViewArgv(am, input.target, input.url),
+      argv: actionViewArgv(am, input.target, input.url, subtitles),
     };
   }
 
@@ -149,6 +177,7 @@ function reportsMissingPlayer(detail: string): boolean {
 export async function launchAndroidIntent(input: {
   readonly target: DetachedPlayerTarget;
   readonly url: string;
+  readonly subtitles?: readonly string[];
   readonly runtime?: AndroidIntentRuntime;
 }): Promise<AndroidIntentLaunchResult> {
   const runtime = input.runtime ?? defaultAndroidIntentRuntime;

@@ -79,10 +79,19 @@ storage, not shared `/sdcard`. Install VLC or mpv-android separately as an
 Android app. Use `--player auto` for the chooser, `--player vlc`, or
 `--player mpv`.
 
-The preview supports only direct HTTP(S) streams without custom headers,
-cookies, player-side yt-dlp, local files, or external subtitles. These
-restrictions are checked per resolved stream and produce an explanation rather
-than a broken launch. iOS is not supported.
+Streams that need headers, cookies, or external subtitles play through a
+per-playback loopback gateway: Kunai serves the stream on `127.0.0.1` under an
+unguessable token path and injects the provider's headers upstream, so VLC or
+mpv-android sees a plain localhost URL. HLS playlists are rewritten through it,
+external subtitles ride the gateway and arrive as `subtitles_location` (VLC) or
+`subs` (mpv-android) extras, and deferred locators materialize into a served
+manifest. The gateway stops on idle timeout or shell exit and never accepts a
+route outside its token.
+
+Still refused, with an explanation instead of a broken launch: yt-dlp-only
+streams, local files, and non-HTTP schemes. Headered, subtitled, and deferred
+streams are covered by unit and contract tests but still need a physical-device
+pass before they graduate from preview. iOS is not supported.
 
 </Tab>
 <Tab value="Windows">

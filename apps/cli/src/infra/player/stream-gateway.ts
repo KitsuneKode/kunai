@@ -1,0 +1,516 @@
+import crypto from "node:crypto";
+
+import {
+  blockedLiteralTargetReason,
+  fetchGuardedStreamTarget,
+  isHlsPlaylistUrl,
+  resolveHlsSegmentUrl,
+  type StreamReachabilityFetch,
+} from "@kunai/core";
+import type { Server } from "bun";
+
+import { fromB64Url, looksLikeHlsPlaylist, toB64Url } from "./hls-relay";
+import {
+  normalizeStreamHttpHeaders,
+  type NormalizedStreamHttpHeaders,
+} from "./mpv-stream-http-headers";
+
+/**
+ * Loopback media gateway for launch-only players.
+ *
+ * Android player intents (`am start ... ACTION_VIEW`) hand VLC/mpv-android a
+ * URL and nothing else — no headers, no cookies, no subtitle plumbing that the
+ * managed mpv path takes for granted. This gateway sits between them: the
+ * player fetches `127.0.0.1` paths, and the gateway issues the real upstream
+ * request with exactly the candidate's normalized headers.
+ *
+ * Threat model, matching the plan text:
+ * - 127.0.0.1 only, ephemeral port, one instance per process.
+ * - Every route lives under an unguessable per-playback 128-bit token —
+ *   `/g/<token>/…`; anything else answers 404. The token is minted when a
+ *   handoff registers a stream, never logged, and revokes nothing else.
+ * - The upstream allowlist is the probed candidate's origin plus origins seen
+ *   in playlists/documents it serves. `/f/<b64>` refuses anything else, and a
+ *   URI that fails the target guard is never rewritten into a playlist.
+ * - Redirects are walked hop-by-hop by `fetchGuardedStreamTarget`: a hop to a
+ *   private address, a local name, or a non-http(s) scheme is refused. This is
+ *   the same DNS + literal-address guard the resolve probe uses, now shared
+ *   through `@kunai/core`.
+ */
+
+/** Safety net only — the caller owns stop() for real lifetime. */
+const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60_000;
+/** Playlists and MPDs are small; a hostile body is not allowed to be a movie. */
+const MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
+const SUBTITLE_ROUTE = /^\/g\/([0-9a-f]{32})\/sub\/(\d+)$/;
+const FETCH_ROUTE = /^\/g\/([0-9a-f]{32})\/f\/([A-Za-z0-9_-]+=*)$/;
+const MEDIA_ROUTE = /^\/g\/([0-9a-f]{32})\/media$/;
+const DOC_ROUTE = /^\/g\/([0-9a-f]{32})\/doc$/;
+
+export type GatewayHeaders = Readonly<Record<string, string>>;
+
+/**
+ * Timer injection without `unknown`: `schedule` returns the cancel thunk, so
+ * a test can capture the idle callback and fire it without sleeping.
+ */
+type GatewayTimers = {
+  readonly schedule: (callback: () => void, ms: number) => () => void;
+};
+
+export type StreamGatewayDocument = {
+  /** Generated manifest text (DASH MPD for deferred AllManga-Ak locators). */
+  readonly text: string;
+  readonly contentType: string;
+  /** Remote URLs the document references; their origins are allowlisted. */
+  readonly remoteUrls: readonly string[];
+};
+
+export type RegisterGatewaySessionInput = {
+  /** Direct stream URL for `/media`; omit when `document` is the entry. */
+  readonly url?: string;
+  /** Provider-attached headers, normalized before they ever reach a fetch. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** External subtitle URLs the player should be offered. */
+  readonly subtitles?: readonly string[];
+  /** In-memory manifest document served at `/doc` instead of `/media`. */
+  readonly document?: StreamGatewayDocument;
+};
+
+export type GatewaySession = {
+  readonly mediaUrl: string;
+  readonly subtitleUrls: readonly string[];
+  readonly stop: () => void;
+};
+
+type LiveSession = {
+  readonly token: string;
+  readonly url?: string;
+  readonly headers: Headers;
+  readonly subtitles: readonly string[];
+  readonly document?: StreamGatewayDocument;
+  readonly allowedOrigins: Set<string>;
+};
+
+export type StreamGatewayOptions = {
+  /** Injected for tests; the platform fetch gets DNS re-validation per hop. */
+  readonly fetchImpl?: StreamReachabilityFetch;
+  /** Injected for tests — a fake scheduler lets idle shutdown be asserted
+   *  without real sleeps. */
+  readonly timers?: GatewayTimers;
+  readonly idleTimeoutMs?: number;
+};
+
+export type StreamGateway = {
+  readonly baseUrl: string;
+  readonly isStopped: () => boolean;
+  readonly registerSession: (input: RegisterGatewaySessionInput) => GatewaySession;
+  readonly stop: () => void;
+};
+
+/**
+ * `normalizeStreamHttpHeaders` returns referer/user-agent/origin as fields and
+ * everything else as `Name: Value` strings for mpv's header list. For fetch we
+ * need the inverse fold, so extraFields are split back on their first colon —
+ * normalize already rejected names outside the RFC 7230 token set.
+ */
+function toFetchHeaders(normalized: NormalizedStreamHttpHeaders): Headers {
+  const headers = new Headers();
+  if (normalized.referer) headers.set("referer", normalized.referer);
+  if (normalized.userAgent) headers.set("user-agent", normalized.userAgent);
+  if (normalized.origin) headers.set("origin", normalized.origin);
+  for (const field of normalized.extraFields) {
+    const colon = field.indexOf(":");
+    if (colon <= 0) continue;
+    const name = field.slice(0, colon).trim().toLowerCase();
+    const value = field.slice(colon + 1).trim();
+    if (name && value) headers.set(name, value);
+  }
+  return headers;
+}
+
+function mintToken(): string {
+  return crypto.getRandomValues(new Uint8Array(16)).toHex();
+}
+
+function upstreamGatewayUrl(baseUrl: string, token: string, fullUrl: string): string {
+  return `${baseUrl}/g/${token}/f/${toB64Url(Buffer.from(fullUrl))}`;
+}
+
+/**
+ * Rewrite an HLS playlist so every media/key/map URI flows through `/f/`.
+ * URIs that fail the target guard keep their literal text and are NOT added
+ * to the allowlist — a playlist naming `169.254.169.254` leaves the player
+ * holding a string the gateway will refuse, not a fetched private body.
+ */
+export function rewritePlaylistForGateway(
+  text: string,
+  baseUrl: string,
+  baseGateway: string,
+  token: string,
+  allowedOrigins: Set<string>,
+): string {
+  const rewrite = (uri: string): string => {
+    const full = resolveHlsSegmentUrl(baseUrl, uri);
+    if (blockedLiteralTargetReason(full) !== null) return uri;
+    let origin: string;
+    try {
+      origin = new URL(full).origin;
+    } catch {
+      return uri;
+    }
+    allowedOrigins.add(origin);
+    return upstreamGatewayUrl(baseGateway, token, full);
+  };
+  return text
+    .split(/\r?\n/)
+    .map((line) => {
+      const t = line.trim();
+      if (!t) return line;
+      if (t.startsWith("#")) {
+        if (!/URI="/i.test(t)) return line;
+        return line.replace(
+          /URI="([^"]+)"/gi,
+          (_m: string, uri: string) => `URI="${rewrite(uri)}"`,
+        );
+      }
+      return rewrite(t);
+    })
+    .join("\n");
+}
+
+/** Rewrite every `<BaseURL>` in a generated MPD to a gateway `/f/` URL. */
+export function rewriteDocumentForGateway(
+  text: string,
+  baseGateway: string,
+  token: string,
+  allowedOrigins: Set<string>,
+): string {
+  return text.replace(/<BaseURL>([^<]+)<\/BaseURL>/g, (_m: string, raw: string) => {
+    const url = raw.replace(/&amp;/g, "&");
+    if (blockedLiteralTargetReason(url) !== null) return `<BaseURL>${raw}</BaseURL>`;
+    try {
+      allowedOrigins.add(new URL(url).origin);
+    } catch {
+      return `<BaseURL>${raw}</BaseURL>`;
+    }
+    return `<BaseURL>${upstreamGatewayUrl(baseGateway, token, url)}</BaseURL>`;
+  });
+}
+
+async function readBoundedBody(
+  body: ReadableStream<Uint8Array> | null,
+  cap: number,
+): Promise<Buffer> {
+  if (!body) return Buffer.alloc(0);
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value?.byteLength ?? 0;
+      if (total > cap) {
+        await reader.cancel("over-cap").catch(() => {});
+        throw new Error("upstream body exceeded playlist cap");
+      }
+      if (value) chunks.push(value);
+    }
+    return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/** Headers a media consumer may legitimately forward: range requests for seeking. */
+function passthroughRequestHeaders(req: Request): Headers {
+  const out = new Headers();
+  for (const name of ["range", "if-range"]) {
+    const value = req.headers.get(name);
+    if (value) out.set(name, value);
+  }
+  return out;
+}
+
+/** Response headers the player needs for seeking and content handling. */
+function passthroughResponseHeaders(upstream: Response, contentType?: string): Headers {
+  const out = new Headers();
+  const keep = ["content-length", "accept-ranges", "content-range", "etag", "last-modified"];
+  for (const name of keep) {
+    const value = upstream.headers.get(name);
+    if (value) out.set(name, value);
+  }
+  out.set(
+    "content-type",
+    contentType ?? upstream.headers.get("content-type") ?? "application/octet-stream",
+  );
+  return out;
+}
+
+export function createStreamGateway(options: StreamGatewayOptions = {}): StreamGateway {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const timers: GatewayTimers = options.timers ?? {
+    schedule: (cb, ms) => {
+      const handle = setTimeout(cb, ms);
+      return () => clearTimeout(handle);
+    },
+  };
+  const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+
+  const sessions = new Map<string, LiveSession>();
+  let stopped = false;
+  let cancelIdle: (() => void) | null = null;
+
+  const resetIdle = () => {
+    if (stopped) return;
+    cancelIdle?.();
+    cancelIdle = timers.schedule(() => stop(), idleTimeoutMs);
+  };
+
+  async function upstreamFetch(
+    session: LiveSession,
+    url: string,
+    extra: Headers,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const blocked = blockedLiteralTargetReason(url);
+    if (blocked) return new Response("upstream refused", { status: 403 });
+    let origin: string;
+    try {
+      origin = new URL(url).origin;
+    } catch {
+      return new Response("upstream refused", { status: 403 });
+    }
+    if (!session.allowedOrigins.has(origin)) {
+      return new Response("upstream not allowlisted", { status: 403 });
+    }
+    const headers = new Headers(session.headers);
+    extra.forEach((value, name) => headers.set(name, value));
+    const outcome = await fetchGuardedStreamTarget({
+      fetchImpl,
+      url,
+      init: { headers },
+      signal,
+    });
+    if (outcome.kind === "blocked") {
+      return new Response("upstream refused", { status: 403 });
+    }
+    if (outcome.kind === "timeout") {
+      return new Response("upstream timeout", { status: 504 });
+    }
+    return outcome.response;
+  }
+
+  /** Buffer, detect, and rewrite a playlist body — or hand back raw bytes. */
+  async function playlistOrBody(
+    session: LiveSession,
+    upstream: Response,
+    effectiveUrl: string,
+    baseGateway: string,
+  ): Promise<Response> {
+    let body: Buffer;
+    try {
+      body = await readBoundedBody(upstream.body, MAX_PLAYLIST_BYTES);
+    } catch {
+      return new Response("upstream body too large", { status: 502 });
+    }
+    if (!looksLikeHlsPlaylist(body)) {
+      return new Response(body, {
+        status: upstream.status,
+        headers: passthroughResponseHeaders(upstream),
+      });
+    }
+    const rewritten = rewritePlaylistForGateway(
+      body.toString("utf-8"),
+      effectiveUrl,
+      baseGateway,
+      session.token,
+      session.allowedOrigins,
+    );
+    return new Response(rewritten, {
+      status: 200,
+      headers: { "content-type": "application/vnd.apple.mpegurl" },
+    });
+  }
+
+  const server: Server<undefined> = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(req) {
+      if (stopped) return new Response("gateway stopped", { status: 503 });
+      resetIdle();
+      const path = new URL(req.url).pathname;
+      const baseGateway = `http://127.0.0.1:${server.port}`;
+
+      const match =
+        path.match(MEDIA_ROUTE) ??
+        path.match(FETCH_ROUTE) ??
+        path.match(SUBTITLE_ROUTE) ??
+        path.match(DOC_ROUTE);
+      // The same 404 whether the path is unknown or the token is wrong: a
+      // probe must never learn whether a token exists.
+      if (!match) return new Response("not found", { status: 404 });
+      const session = sessions.get(match[1] ?? "");
+      if (!session) return new Response("not found", { status: 404 });
+
+      try {
+        if (DOC_ROUTE.test(path)) {
+          if (!session.document) return new Response("not found", { status: 404 });
+          const rewritten = rewriteDocumentForGateway(
+            session.document.text,
+            baseGateway,
+            session.token,
+            session.allowedOrigins,
+          );
+          return new Response(rewritten, {
+            headers: { "content-type": session.document.contentType },
+          });
+        }
+
+        if (SUBTITLE_ROUTE.test(path)) {
+          const index = Number(match[2]);
+          const url = session.subtitles[index];
+          if (!url) return new Response("not found", { status: 404 });
+          const upstream = await upstreamFetch(session, url, new Headers());
+          return new Response(upstream.body, {
+            status: upstream.status,
+            headers: passthroughResponseHeaders(upstream),
+          });
+        }
+
+        if (FETCH_ROUTE.test(path)) {
+          let url: string;
+          try {
+            const parsed = new URL(fromB64Url(match[2] ?? ""));
+            url = parsed.href;
+          } catch {
+            return new Response("not found", { status: 404 });
+          }
+          const upstream = await upstreamFetch(
+            session,
+            url,
+            passthroughRequestHeaders(req),
+            req.signal,
+          );
+          if (!upstream.ok) {
+            return new Response(`upstream ${upstream.status}`, {
+              status: upstream.status,
+            });
+          }
+          // A fetch route can still deliver a playlist (a segment URL whose
+          // type was not in the name) — sniff by hint or magic bytes.
+          if (
+            isHlsPlaylistUrl(url) ||
+            upstream.headers.get("content-type")?.includes("mpegurl") === true
+          ) {
+            return playlistOrBody(session, upstream, url, baseGateway);
+          }
+          // Everything else streams through untouched: segments, keys, and
+          // ranged MP4 chunks pass without whole-file buffering.
+          return new Response(upstream.body, {
+            status: upstream.status,
+            headers: passthroughResponseHeaders(upstream),
+          });
+        }
+
+        // /media — the registered entry URL.
+        if (!session.url) return new Response("not found", { status: 404 });
+        const upstream = await upstreamFetch(
+          session,
+          session.url,
+          passthroughRequestHeaders(req),
+          req.signal,
+        );
+        if (!upstream.ok) {
+          return new Response(`upstream ${upstream.status}`, { status: upstream.status });
+        }
+        return playlistOrBody(session, upstream, session.url, baseGateway);
+      } catch {
+        // Never leak upstream error text (it can carry the private URL)
+        // into a response the player surfaces.
+        return new Response("upstream fetch failed", { status: 502 });
+      }
+    },
+  });
+
+  function stop() {
+    if (stopped) return;
+    stopped = true;
+    cancelIdle?.();
+    cancelIdle = null;
+    sessions.clear();
+    server.stop(true);
+  }
+
+  const gateway: StreamGateway = {
+    baseUrl: `http://127.0.0.1:${server.port}`,
+    isStopped: () => stopped,
+    registerSession(input) {
+      if (stopped) throw new Error("stream gateway is stopped");
+      // One playback at a time: a new handoff revokes every prior token so a
+      // stale player cannot keep pulling streams after the user moved on.
+      sessions.clear();
+      const token = mintToken();
+      const normalized = normalizeStreamHttpHeaders({ ...input.headers });
+      const allowedOrigins = new Set<string>();
+      const addOrigin = (raw: string) => {
+        try {
+          const parsed = new URL(raw);
+          if (blockedLiteralTargetReason(raw) === null) allowedOrigins.add(parsed.origin);
+        } catch {
+          // Non-URL entries never join the allowlist.
+        }
+      };
+      if (input.url) addOrigin(input.url);
+      const subtitles = (input.subtitles ?? []).filter((subtitle) => {
+        addOrigin(subtitle);
+        try {
+          const parsed = new URL(subtitle);
+          return (
+            blockedLiteralTargetReason(subtitle) === null && parsed.protocol.startsWith("http")
+          );
+        } catch {
+          return false;
+        }
+      });
+      for (const remote of input.document?.remoteUrls ?? []) addOrigin(remote);
+      const session: LiveSession = {
+        token,
+        url: input.url,
+        headers: toFetchHeaders(normalized),
+        subtitles,
+        document: input.document,
+        allowedOrigins,
+      };
+      sessions.set(token, session);
+      const base = gateway.baseUrl;
+      return {
+        mediaUrl: input.document ? `${base}/g/${token}/doc` : `${base}/g/${token}/media`,
+        subtitleUrls: subtitles.map((_, i) => `${base}/g/${token}/sub/${i}`),
+        stop,
+      };
+    },
+    stop,
+  };
+
+  resetIdle();
+  return gateway;
+}
+
+/**
+ * The process-wide gateway. Playback handoff owns it: one instance serves every
+ * session, and registering a new session revokes earlier tokens.
+ */
+let sharedGateway: StreamGateway | null = null;
+
+export function getSharedStreamGateway(options?: StreamGatewayOptions): StreamGateway {
+  if (sharedGateway && !sharedGateway.isStopped()) return sharedGateway;
+  sharedGateway = createStreamGateway(options);
+  return sharedGateway;
+}
+
+/** Test and shutdown hook — real lifetime is owned by the handoff caller. */
+export function stopSharedStreamGateway(): void {
+  sharedGateway?.stop();
+  sharedGateway = null;
+}
