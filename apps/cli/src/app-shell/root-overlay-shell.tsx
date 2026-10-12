@@ -1187,11 +1187,6 @@ export function RootOverlayShell({
   // inbox opened by direct dispatch can strand one; without this it would fire
   // against the next palette-opened session and play the wrong title.
   useEffect(() => {
-    if (overlay.type !== "notifications") return;
-    clearNotificationPlaybackIntent();
-  }, [overlay.type]);
-
-  useEffect(() => {
     if (overlay.type !== "history") {
       return;
     }
