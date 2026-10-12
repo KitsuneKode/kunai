@@ -94,10 +94,11 @@ Windows (`windows-cli`) and macOS (`macos-cli`) legs.
 
 ### Checkout is caller-owned
 
-`CI ready` is the aggregate merge check. It runs with `always()` after every
+`CI ready` is the aggregate merge check. It runs with `!cancelled()` after every
 CI job and executes `scripts/ci-ready.mjs` using the runner's Node, without a
-workspace install. It rejects missing dependencies, failures, cancellations,
-invalid filter outputs and unexpected skips. Only jobs whose path conditions
+workspace install. A cancelled workflow stops the aggregate instead of publishing
+a failure from a superseded run. On active workflows it rejects missing dependencies,
+failures, cancelled dependency jobs, invalid filter outputs and unexpected skips. Only jobs whose path conditions
 are false may skip. Update the policy and its routing fixtures when changing
 job conditions. Release Guard runs on every PR so docs-only changes also emit
 `Version ↔ changelog guard`; a required workflow must not disappear behind a
@@ -177,7 +178,9 @@ static: every live `.docs` doc declares `status`, an ISO `lastReviewed`, and the
 L3 banner. The second compares the change set against `origin/main` and fails
 when a doc's body moved but its `lastReviewed` did not — the field only means
 something if editing a doc forces you to answer for it. Set `lastReviewed` to
-the day you actually re-read the doc against the tree; for a mechanical sweep
+the day you actually re-read the doc against the tree, or a UTC ISO timestamp
+(`YYYY-MM-DDTHH:mm:ssZ`) for a second review on the same day. Unchanged dates
+and timestamps still fail when the body changes. For a mechanical sweep
 that cannot change meaning, re-run with `SKIP_DOC_FRESHNESS=1`. Both halves need
 history, which is why every `checkout` in the workflow pins `fetch-depth: 0`; on
 a checkout without the base ref the freshness half skips with a notice rather

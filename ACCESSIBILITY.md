@@ -34,8 +34,11 @@ plain non-interactive output instead of the shell.
 - **Color contrast.** The palette is fixed by the app theme rather than
   reading terminal color preferences, and low-vision contrast has not been
   formally audited.
-- **Motion.** Progress spinners and shimmer placeholders animate while work
-  runs; there is no reduced-motion switch yet.
+- **Motion.** The companion petals honor reduced motion: setting
+  `KUNAI_REDUCED_MOTION=1` (or `NO_MOTION=1`) renders a static mark instead of
+  the animated petals. Progress spinners, shimmer placeholders, and progress
+  bars do not read those variables yet, so motion-sensitive users may still see
+  animation elsewhere — that gap is tracked, not denied.
 - **mpv playback** happens in an external window controlled by mpv's own
   keybindings, which are outside this application's accessibility surface.
 

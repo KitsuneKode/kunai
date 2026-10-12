@@ -1,5 +1,5 @@
 import {
-  didPlaybackReachCompletionThreshold,
+  shouldMarkEpisodeCompleted,
   type QuitNearEndThresholdMode,
 } from "@/domain/playback/playback-policy";
 import { PERSIST_RESUME_SECONDS } from "@/domain/playback/progress-engage-policy";
@@ -10,46 +10,13 @@ export type PlaybackProgressPoint = {
   readonly durationSeconds: number;
 };
 
-export function playbackResultFromProgressPoint(point: PlaybackProgressPoint): PlaybackResult {
-  return {
-    watchedSeconds: point.positionSeconds,
-    duration: point.durationSeconds,
-    endReason: "quit",
-    lastNonZeroPositionSeconds: point.positionSeconds,
-    lastNonZeroDurationSeconds: point.durationSeconds,
-    lastReliableProgressSeconds: point.positionSeconds,
-  };
+/** A stored unfinished point stays resumable regardless of credits or duration ratio. */
+export function isResumeProgressPoint(point: PlaybackProgressPoint): boolean {
+  return Number.isFinite(point.positionSeconds) && point.positionSeconds > PERSIST_RESUME_SECONDS;
 }
 
-export function isResumeProgressPoint(
-  point: PlaybackProgressPoint,
-  thresholdMode: QuitNearEndThresholdMode,
-  timing?: PlaybackTimingMetadata | null,
-): boolean {
-  if (point.positionSeconds <= PERSIST_RESUME_SECONDS) return false;
-  if (
-    point.durationSeconds > 0 &&
-    point.positionSeconds >= Math.max(0, point.durationSeconds - 5)
-  ) {
-    return false;
-  }
-
-  return !(
-    point.durationSeconds > 0 &&
-    didPlaybackReachCompletionThreshold(
-      playbackResultFromProgressPoint(point),
-      timing,
-      thresholdMode,
-    )
-  );
-}
-
-export function resumeSecondsFromProgressPoint(
-  point: PlaybackProgressPoint,
-  thresholdMode: QuitNearEndThresholdMode,
-  timing?: PlaybackTimingMetadata | null,
-): number {
-  return isResumeProgressPoint(point, thresholdMode, timing) ? point.positionSeconds : 0;
+export function resumeSecondsFromProgressPoint(point: PlaybackProgressPoint): number {
+  return isResumeProgressPoint(point) ? point.positionSeconds : 0;
 }
 
 export function toHistoryTimestamp(
@@ -58,14 +25,7 @@ export function toHistoryTimestamp(
   thresholdMode: QuitNearEndThresholdMode = "credits-or-90-percent",
 ): number {
   const trusted = result.lastTrustedProgressSeconds ?? 0;
-  if (
-    (didPlaybackReachCompletionThreshold(result, timing, thresholdMode) ||
-      (result.endReason === "eof" &&
-        result.duration > 0 &&
-        trusted <= 0 &&
-        result.suspectedDeadStream !== true)) &&
-    result.duration > 0
-  ) {
+  if (shouldMarkEpisodeCompleted(result, timing, thresholdMode) && result.duration > 0) {
     return Math.max(result.watchedSeconds, result.duration);
   }
 
