@@ -23,6 +23,17 @@ const base: NotificationRecord = {
   updatedAt: "2026-05-17T00:00:00.000Z",
 };
 
+// A real playable identity: the policy keys off episode coordinates, not the
+// mere presence of itemJson.
+const PLAYABLE_ITEM_JSON = JSON.stringify({
+  mediaKind: "series",
+  contentType: "series",
+  titleId: "tt1",
+  title: "Show",
+  season: 1,
+  episode: 2,
+});
+
 test("notification picker exposes actionable queue recovery rows", () => {
   const options = buildNotificationPickerOptions([base]);
 
@@ -45,9 +56,23 @@ test("primary action prefers the first actionable notification action", () => {
     getNotificationPrimaryAction({
       ...base,
       kind: "new-episode",
-      itemJson: JSON.stringify({ titleId: "tt1", title: "Show" }),
+      itemJson: PLAYABLE_ITEM_JSON,
     }),
   ).toBe("play-now");
+  // A title-only identity cannot name an episode, so Enter falls back to the
+  // details/search path instead of a dead play.
+  expect(
+    getNotificationPrimaryAction({
+      ...base,
+      kind: "new-episode",
+      itemJson: JSON.stringify({
+        mediaKind: "series",
+        contentType: "series",
+        titleId: "tt9",
+        title: "Title Only",
+      }),
+    }),
+  ).toBe("open-details");
   // Without a media identity there is nothing to play, so only dismiss remains.
   expect(getNotificationPrimaryAction({ ...base, kind: "new-episode" })).toBe("dismiss");
 });
@@ -58,7 +83,7 @@ test("known kinds derive actions from policy, ignoring a stale stored list", () 
   const staleRow: NotificationRecord = {
     ...base,
     kind: "new-episode",
-    itemJson: JSON.stringify({ titleId: "tt1", title: "Show" }),
+    itemJson: PLAYABLE_ITEM_JSON,
     actionJson: JSON.stringify(["queue-next", "queue-end", "dismiss"]),
   };
 
@@ -189,7 +214,7 @@ test("notification action menu exposes actions the root overlay can execute", ()
   const notice = {
     ...base,
     kind: "new-episode",
-    itemJson: JSON.stringify({ titleId: "tt1", title: "Show" }),
+    itemJson: PLAYABLE_ITEM_JSON,
   };
 
   // Playback leads, queueing follows, and every id offered must be one the root

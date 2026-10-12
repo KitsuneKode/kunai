@@ -83,6 +83,7 @@ describe("playback provider switch", () => {
           { metadata: { id: "rivestream" } },
           { metadata: { id: "vidlink" } },
         ],
+        getManifest: () => undefined,
       },
       diagnosticsService: { record: () => {} },
     } as never;
@@ -304,6 +305,7 @@ describe("playback provider switch", () => {
           { metadata: { id: "rivestream" } },
           { metadata: { id: "vidlink" } },
         ],
+        getManifest: () => undefined,
       },
       diagnosticsService: { record: () => {} },
       workControl: {

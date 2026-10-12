@@ -78,7 +78,13 @@ export interface TitleInfo {
   /** Deterministic anime detection carried from the TMDB classifier — for the persisted content kind only (never routing). */
   readonly isAnime?: boolean;
   readonly episodeCount?: number;
-  readonly launchSource?: "search" | "history" | "continue" | "offline-library";
+  readonly launchSource?: "search" | "history" | "continue" | "offline-library" | "notification";
+  /**
+   * `m` (starting-point menu) was pressed for this title. Enter on a rested
+   * result auto-resumes or auto-advances; this flag is what keeps the menu one
+   * key away instead of unreachable.
+   */
+  readonly forceStartingMenu?: boolean;
   /** Exact queue handoff identity when playback was claimed from the Up Next queue. */
   readonly queuePlaybackIntent?: QueuePlaybackIntent;
 }
@@ -211,13 +217,18 @@ export interface TitleAlias {
 }
 
 export type EndReason = "eof" | "quit" | "error" | "unknown";
-export type PlaybackStatsSource = "ipc" | "unknown";
+export type PlaybackStatsSource = "ipc" | "unknown" | "handoff";
 
-export interface PlaybackResult {
+export interface PlaybackHandoffEvidence {
+  readonly accepted: true;
+  readonly player: "chooser" | "vlc" | "mpv";
+  readonly launcher: string;
+}
+
+interface PlaybackResultBase {
   readonly watchedSeconds: number;
   readonly duration: number;
   readonly endReason: EndReason;
-  readonly resultSource?: PlaybackStatsSource;
   readonly playerExitedCleanly?: boolean;
   readonly playerExitCode?: number | null;
   readonly playerExitSignal?: string | null;
@@ -233,6 +244,24 @@ export interface PlaybackResult {
   readonly suspectedDeadStream?: boolean;
   /** True when a terminal manifest response rejected this stream before mpv was launched. */
   readonly streamRejectedBeforePlayerLaunch?: boolean;
+}
+
+export type ManagedPlaybackResult = PlaybackResultBase & {
+  readonly resultSource?: Exclude<PlaybackStatsSource, "handoff">;
+  readonly handoff?: never;
+};
+
+export type DetachedHandoffPlaybackResult = PlaybackResultBase & {
+  readonly resultSource: "handoff";
+  readonly handoff: PlaybackHandoffEvidence;
+};
+
+export type PlaybackResult = ManagedPlaybackResult | DetachedHandoffPlaybackResult;
+
+export function isDetachedHandoffResult(
+  result: PlaybackResult,
+): result is DetachedHandoffPlaybackResult {
+  return result.resultSource === "handoff" && result.handoff?.accepted === true;
 }
 
 export interface PlaybackTimingSegment {

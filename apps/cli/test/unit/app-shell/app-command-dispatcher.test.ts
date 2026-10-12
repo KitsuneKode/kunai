@@ -3,6 +3,10 @@ import { describe, expect, test } from "bun:test";
 import type { ActivePlaybackCommandDispatchDeps } from "@/app-shell/active-playback-command-dispatcher";
 import { dispatchAppCommand } from "@/app-shell/command-router";
 import type { ShellAction } from "@/app-shell/types";
+import {
+  DETACHED_HANDOFF_CAPABILITIES,
+  MANAGED_MPV_CAPABILITIES,
+} from "@/domain/playback/player-capabilities";
 
 describe("dispatchAppCommand", () => {
   test("routes active playback commands through the shared app dispatcher seam", async () => {
@@ -12,6 +16,7 @@ describe("dispatchAppCommand", () => {
       action: "fallback",
       source: "hotkey",
       activePlayback: {
+        capabilities: MANAGED_MPV_CAPABILITIES,
         deps: createDeps(calls),
         canGoNext: false,
         canGoPrevious: false,
@@ -35,6 +40,7 @@ describe("dispatchAppCommand", () => {
       action: "next",
       source: "hotkey",
       activePlayback: {
+        capabilities: MANAGED_MPV_CAPABILITIES,
         deps: createDeps([]),
         canGoNext: false,
         canGoPrevious: false,
@@ -46,6 +52,26 @@ describe("dispatchAppCommand", () => {
       status: "ignored",
       surface: "active-playback",
       reason: "No next episode available",
+    });
+  });
+
+  test("explains managed-only controls for detached playback", async () => {
+    const result = await dispatchAppCommand({
+      action: "quality",
+      source: "palette",
+      activePlayback: {
+        capabilities: DETACHED_HANDOFF_CAPABILITIES,
+        deps: createDeps([]),
+        canGoNext: false,
+        canGoPrevious: false,
+        canToggleAutoplay: false,
+      },
+    });
+
+    expect(result).toEqual({
+      status: "ignored",
+      surface: "active-playback",
+      reason: "Track controls are available in managed mpv playback only",
     });
   });
 });
@@ -61,6 +87,11 @@ function createDeps(calls: string[]): ActivePlaybackCommandDispatchDeps {
       fallbackCurrentPlayback: async (reason) => calls.push(`fallback:${reason}`),
       switchEpisodePlaybackSource: async (kind, reason) => calls.push(`source:${kind}:${reason}`),
       stopCurrentPlayback: async (reason) => calls.push(`stop:${reason}`),
+      switchToTitlePlayback: async (selection, reason) => {
+        calls.push(`switch-title:${selection.title.name}:${reason}`);
+        return true;
+      },
+      signalTitleSwitch: (selection) => calls.push(`signal-switch:${selection.title.name}`),
     },
     workControl: {
       cancelActive: (reason) => {

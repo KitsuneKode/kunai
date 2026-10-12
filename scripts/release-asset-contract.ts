@@ -3,7 +3,7 @@
  *
  * Shared by:
  *   - scripts/verify-github-release-assets.ts (live gh release view / download)
- *   - scripts/verify-release-artifact-directory.ts (local 18-file verification)
+ *   - scripts/verify-release-artifact-directory.ts (local 22-file verification)
  *   - apps/cli/test/unit/scripts/distribution-contract.test.ts (workflow lock)
  */
 
@@ -45,7 +45,7 @@ export function assertRequiredReleaseAssets(actualNames: readonly string[]): voi
 }
 
 /**
- * Exact 18-file bridge set: eight archives + eight raw binaries + two manifests.
+ * Exact 22-file bridge set: ten archives + ten raw binaries + two manifests.
  * Rejects missing, duplicate, unexpected, and zero-byte assets.
  */
 export function assertCompleteReleaseAssetSet(assets: readonly ReleaseAssetDescriptor[]): void {

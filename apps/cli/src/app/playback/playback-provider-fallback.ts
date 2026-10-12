@@ -105,6 +105,7 @@ export async function switchPlaybackProviderFallback(input: {
         cacheStore,
         sourceInventory,
         providerId,
+        providerManifest: providerRegistry.getManifest(providerId),
         title,
         episode,
         mode,

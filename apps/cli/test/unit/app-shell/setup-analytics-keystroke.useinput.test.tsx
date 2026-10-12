@@ -32,6 +32,7 @@ import { render, stripAnsi } from "../../harness/render-capture";
 
 const READY: CapabilitySnapshot = {
   mpv: true,
+  mpvRequired: true,
   ffprobe: true,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },

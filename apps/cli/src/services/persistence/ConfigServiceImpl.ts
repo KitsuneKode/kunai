@@ -24,6 +24,7 @@ import {
 } from "@kunai/types";
 
 import type {
+  AnalyticsPingCompletion,
   ConfigService,
   KitsuneConfig,
   QuitNearEndBehavior,
@@ -302,6 +303,10 @@ export class ConfigServiceImpl implements ConfigService {
       titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
       analytics: normalizedAnalytics,
       analyticsNoticeShown: loaded.analyticsNoticeShown === true,
+      // Anything but an explicit `false` keeps tips on — a hand-edited `0` or
+      // `"no"` must not silently opt a user out of a feature they never saw.
+      tipsEnabled: loaded.tipsEnabled !== false,
+      seenTips: normalizeStringList(loaded.seenTips),
       installId: normalizedInstallId,
       lastAnalyticsPingAt:
         typeof loaded.lastAnalyticsPingAt === "number" &&
@@ -421,6 +426,50 @@ export class ConfigServiceImpl implements ConfigService {
     // inside persistConfigNow. Startup owns its initial read and migration,
     // and explicit native credential changes share that critical section.
     const run = this.persistChain.then(() => this.persistConfigNow());
+    this.persistChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean> {
+    const write = async (): Promise<boolean> => {
+      const complete = async (): Promise<boolean> => {
+        // Consent changes in this process can still be awaiting their save.
+        const matchesLocal = () =>
+          this.config.analytics === "enabled" && this.config.installId === completion.installId;
+        if (!matchesLocal()) return false;
+        const onDisk = await this.store.load();
+        if (!matchesLocal()) return false;
+        const matchesDisk =
+          onDisk.analytics === "enabled" && onDisk.installId === completion.installId;
+        const current = { ...DEFAULT_CONFIG, ...onDisk };
+        if (matchesDisk) {
+          current.analyticsRetryAfter = completion.analyticsRetryAfter;
+          if (completion.lastAnalyticsPingAt !== undefined)
+            current.lastAnalyticsPingAt = completion.lastAnalyticsPingAt;
+          // Never persist the pre-send identity: this write owns cadence only.
+          await this.store.save(current);
+        }
+        // A local consent/identity change may arrive during the async write.
+        // Its queued save wins next; do not refresh it with the old cadence.
+        if (!matchesLocal()) return false;
+        const analyticsKeys: readonly (keyof KitsuneConfig)[] = [
+          "analytics",
+          "installId",
+          "lastAnalyticsPingAt",
+          "analyticsRetryAfter",
+        ];
+        for (const key of analyticsKeys) {
+          if (!this.dirtyKeys.has(key)) Object.assign(this.config, { [key]: current[key] });
+        }
+        return matchesDisk;
+      };
+      return this.store.withLock ? this.store.withLock(complete) : complete();
+    };
+    // Share the save chain so completion cannot interleave its read/merge/write.
+    const run = this.persistChain.then(write);
     this.persistChain = run.then(
       () => undefined,
       () => undefined,
@@ -777,6 +826,14 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.playbackKeysSessionsSeen;
   }
 
+  get tipsEnabled(): boolean {
+    return this.config.tipsEnabled;
+  }
+
+  get seenTips(): readonly string[] {
+    return this.config.seenTips;
+  }
+
   get analytics(): KitsuneConfig["analytics"] {
     return this.config.analytics;
   }
@@ -936,6 +993,9 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
       ...(partial.protectedDownloadJobIds !== undefined
         ? { protectedDownloadJobIds: normalizeStringList(partial.protectedDownloadJobIds) }
+        : null),
+      ...(partial.seenTips !== undefined
+        ? { seenTips: normalizeStringList(partial.seenTips) }
         : null),
       ...(partial.recoveryMode !== undefined
         ? { recoveryMode: normalizeRecoveryMode(partial.recoveryMode) }

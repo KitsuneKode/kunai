@@ -26,6 +26,7 @@ import {
 } from "@/app/playback/playback-status-policy";
 import { createQueuePlaybackAttempt } from "@/app/playback/queue-playback-attempt";
 import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
+import { MANAGED_MPV_CAPABILITIES } from "@/domain/playback/player-capabilities";
 import { QueueService } from "@/domain/queue/QueueService";
 import { restoreQueueSessionWithResume } from "@/domain/queue/restore-queue-session";
 import type { EpisodeInfo, PlaybackResult, StreamInfo, TitleInfo } from "@/domain/types";
@@ -108,6 +109,7 @@ const FAKE_GENERATION = { process: 1, cycle: 1 } as const;
 
 function fakePlayer(events: readonly PlayerPlaybackEvent[]): PlayerService {
   return {
+    capabilities: MANAGED_MPV_CAPABILITIES,
     play: async (_stream, playOptions: PlayerOptions) => {
       playOptions.onGenerationActivated?.(FAKE_GENERATION);
       for (const event of events) {

@@ -21,6 +21,7 @@ import type {
   PlaybackTimingMetadata,
   TitleInfo,
 } from "@/domain/types";
+import { isDetachedHandoffResult } from "@/domain/types";
 import type { PlaybackControlAction } from "@/infra/player/PlayerControlService";
 
 export type AutoAdvanceBlockReason =
@@ -81,6 +82,7 @@ export function didPlaybackStart(result: PlaybackResult): boolean {
 }
 
 export function didPlaybackFailToStart(result: PlaybackResult): boolean {
+  if (isDetachedHandoffResult(result)) return false;
   if (result.endReason === "eof" || result.endReason === "quit") {
     return false;
   }
@@ -126,6 +128,16 @@ export function resolvePlaybackResultDecision({
   timing,
   endPolicy = DEFAULT_PLAYBACK_END_POLICY,
 }: PlaybackResultDecisionArgs): PlaybackResultDecision {
+  if (isDetachedHandoffResult(result)) {
+    const pauseReason = session.autoplayPauseReason === "user" ? "user" : "detached";
+    return {
+      session: withPauseReason(session, pauseReason),
+      shouldRefreshSource: false,
+      shouldFallbackProvider: false,
+      shouldTreatAsInterrupted: false,
+    };
+  }
+
   const nearNaturalEnd = didPlaybackEndNearNaturalEnd(
     result,
     timing,
@@ -135,6 +147,7 @@ export function resolvePlaybackResultDecision({
     controlAction === "next" ||
     controlAction === "previous" ||
     controlAction === "pick-episode" ||
+    controlAction === "switch-title" ||
     controlAction === "back-to-search" ||
     controlAction === "refresh" ||
     controlAction === "recover" ||

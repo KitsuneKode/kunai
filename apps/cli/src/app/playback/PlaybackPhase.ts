@@ -1,3 +1,11 @@
+// =============================================================================
+// Playback Phase
+//
+// Handles episode selection → stream resolve → MPV playback → post-playback.
+// Returns when user wants to go back to search or switch mode.
+// =============================================================================
+import { companionMode } from "@/app-shell/companion-policy";
+import { kannaDoneKindForSkipKind, kannaDoneText } from "@/app-shell/kanna-voice";
 import { capturePlaybackShellError } from "@/app-shell/playback-shell-error-capture";
 import {
   openTracksPanel,
@@ -5,12 +13,6 @@ import {
   buildPickerActionContext,
   openSubtitlePicker,
 } from "@/app-shell/workflows";
-// =============================================================================
-// Playback Phase
-//
-// Handles episode selection → stream resolve → MPV playback → post-playback.
-// Returns when user wants to go back to search or switch mode.
-// =============================================================================
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { consumeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
@@ -24,7 +26,10 @@ import {
   type EpisodePrefetchProgress,
   type EpisodePrefetchTarget,
 } from "@/app/playback/episode-prefetch";
-import { describeMpvPlayerEvent } from "@/app/playback/mpv-playback-event-copy";
+import {
+  describeMpvPlayerEvent,
+  type MpvPlaybackFeedback,
+} from "@/app/playback/mpv-playback-event-copy";
 import {
   dismissMpvTransitionOverlay,
   MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
@@ -144,8 +149,8 @@ import {
   createResolveTraceStub,
   finalizeResolveTrace,
 } from "@/app/playback/resolve-trace";
-import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
 import { planEpisodeIterationDirective } from "@/app/playback/run-playback-episode-iteration";
+import { runPlaybackSession } from "@/app/playback/run-playback-session";
 import {
   applyPreferredStreamSelection,
   buildPlaybackControlSummary,
@@ -215,6 +220,7 @@ import type {
   SubtitleTrack,
   SearchResult,
 } from "@/domain/types";
+import { isDetachedHandoffResult } from "@/domain/types";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import { classifyPlaybackFailureFromResult } from "@/infra/player/playback-failure-classifier";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
@@ -228,6 +234,7 @@ import {
   type PlaybackTimingSourceOutcome,
 } from "@/infra/timing";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
+import { isFinished } from "@/services/continuation/history-progress";
 import { PlaybackHistoryLedger } from "@/services/continuation/playback-history-ledger";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import {
@@ -252,6 +259,7 @@ import {
   type PlaybackStartupStage,
   summarizeStartupPhases,
 } from "@/services/playback/playback-startup-timeline";
+import { endpointCandidatesForPinnedSource } from "@/services/playback/PlaybackResolveService";
 import {
   isProviderFallbackEligible,
   resolveEffectiveProviderHealth,
@@ -357,14 +365,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   private playbackLedger: PlaybackHistoryLedger | null = null;
   private unregisterActiveCheckpoint: (() => void) | null = null;
 
-  private updatePlaybackFeedback(
-    context: PhaseContext,
-    feedback: { detail?: string | null; note?: string | null },
-  ) {
+  private updatePlaybackFeedback(context: PhaseContext, feedback: MpvPlaybackFeedback) {
+    // A successful skip is the companion's moment: when she is enabled the
+    // factual "Intro skipped" sentence becomes her line in the same slot. Off
+    // keeps the factual note, so the state surface never loses the event.
+    const note =
+      feedback.skipKind !== undefined
+        ? (kannaDoneText(kannaDoneKindForSkipKind(feedback.skipKind), companionMode()) ??
+          feedback.note)
+        : feedback.note;
     context.container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       detail: feedback.detail,
-      note: feedback.note,
+      note,
     });
   }
 
@@ -427,7 +440,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const action = playerControl.consumeLastAction();
         if (!action) return false;
         if (action === "next") return true;
-        if (action === "stop" || action === "back-to-search" || action === "previous") {
+        if (
+          action === "stop" ||
+          action === "back-to-search" ||
+          action === "previous" ||
+          action === "switch-title"
+        ) {
           cancelledByAction = true;
         }
         return false;
@@ -646,6 +664,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       titleId: title.id,
       episodePlaybackSelection: container.episodePlaybackSelection,
       titlePlaybackSource: container.titlePlaybackSource,
+      isSourceQuarantined: (providerId, sourceId) =>
+        endpointCandidatesForPinnedSource(providerId, sourceId).some((endpoint) =>
+          // SAFETY: this coordinator receives IDs from the production registry.
+          container.endpointHealth.isQuarantined(providerId as ProviderId, endpoint),
+        ),
     });
     const getPreferredStreamSelection = (
       providerId: string,
@@ -666,7 +689,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     try {
       // Gate before episode/provider/history work so finally still rolls back
       // unacknowledged queue claims when mpv (or other deps) are missing.
-      const dependencyGate = await gatePlaybackDependencies({ player });
+      const dependencyGate = await gatePlaybackDependencies({
+        player,
+        playerMode: container.playerMode,
+      });
       if (!dependencyGate.ok) {
         diagnosticsService.record({
           category: "playback",
@@ -712,12 +738,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       const resolveTargetResumeSeconds = createBootstrapResumeResolver({
         sharedStartSeconds: bootstrapStartSeconds,
         resumeFromHistory: (target: EpisodeInfo) =>
-          resumeSecondsFromHistoryForEpisode(
-            historyRepository,
-            historyTitleLookup,
-            target,
-            config.quitNearEndThresholdMode,
-          ),
+          resumeSecondsFromHistoryForEpisode(historyRepository, historyTitleLookup, target),
       });
       const startNavigationToEpisode = async (target: EpisodeInfo) =>
         startEpisodeNavigation({
@@ -892,6 +913,25 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           : usesNativeEpisodes
             ? (title.episodeCount ?? initialAnimeEpisodes?.length)
             : ((await fetchSeasons(title.id).catch(() => null))?.length ?? undefined);
+
+        // The Enter contract resolves "next unwatched" only when it decides
+        // something: a finished last episode and no explicit pick. It runs the
+        // same loader the starting menu would, so this adds no fetch the menu
+        // path wasn't already paying — it just answers before opening one.
+        const nextEpisode =
+          !isOfflineLaunch && !preselectedEpisode && history && isFinished(history)
+            ? await (async () => {
+                const { resolveNextHistoryEpisode } = await import("@/session-flow");
+                return resolveNextHistoryEpisode({
+                  currentId: title.id,
+                  isAnime: usesNativeEpisodes,
+                  history,
+                  animeEpisodeCount: title.episodeCount,
+                  animeEpisodes: initialAnimeEpisodes,
+                }).catch(() => null);
+              })()
+            : null;
+
         const episodeEntry = resolvePlaybackEpisodeEntry({
           titleId: title.id,
           titleType: title.type,
@@ -899,8 +939,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           launchSource: title.launchSource,
           preselectedEpisode: preselectedEpisode ?? undefined,
           history,
+          nextEpisode: nextEpisode ?? undefined,
           seasonCount,
           failedProvider,
+          forceMenu: title.forceStartingMenu === true,
           flags: requestFlags,
         });
 
@@ -915,6 +957,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               ? undefined
               : preselectedCurrentEpisode?.providerEpisodeIdentity,
           });
+          // A notification/queue launch names the absolute episode — keep it
+          // so the history row records the identity it actually played.
+          if (preselectedCurrentEpisode?.absoluteEpisode !== undefined) {
+            episode = { ...episode, absoluteEpisode: preselectedCurrentEpisode.absoluteEpisode };
+          }
           run.pendingStart =
             episodeEntry.selection.startAt !== undefined ||
             episodeEntry.selection.suppressResumePrompt
@@ -986,8 +1033,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             kind: historyTitleLookup.kind,
             externalIds: historyTitleLookup.externalIds,
           }) ?? null;
-        const { chooseMovieStartingPoint } = await import("@/session-flow");
-        const selection = await chooseMovieStartingPoint({ history: movieHistory, container });
+        const { chooseMovieStartingPoint, resolveMovieStartingChoice } =
+          await import("@/session-flow");
+        // Enter resumes a live position directly — the same answer the
+        // Resume/Restart picker leads with. `m` (forceStartingMenu) still
+        // opens that picker so restarting stays one key away.
+        const selection =
+          movieHistory &&
+          !isFinished(movieHistory) &&
+          movieHistory.positionSeconds > 0 &&
+          !title.forceStartingMenu
+            ? resolveMovieStartingChoice("resume", movieHistory)
+            : await chooseMovieStartingPoint({ history: movieHistory, container });
         if (!selection) {
           logger.info("Movie starting point cancelled before playback", { titleId: title.id });
           return {
@@ -1770,6 +1827,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   cacheStore,
                   sourceInventory: container.sourceInventory,
                   providerId: sourceProviderId,
+                  providerManifest: container.providerRegistry.getManifest(sourceProviderId),
                   title,
                   episode: currentEpisode,
                   mode: stateManager.getState().mode,
@@ -2100,6 +2158,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 streamSwitchAction === "pick-quality"
                   ? playerControl.consumePendingStreamSelection()
                   : null;
+              const titleSwitchSelection =
+                streamSwitchAction === "switch-title"
+                  ? playerControl.consumePendingTitleSelection()
+                  : null;
               // Health-aware and tried-aware: a provider marked down or already
               // attempted in this cycle is not a viable fallback target even
               // though it stays selectable explicitly.
@@ -2256,6 +2318,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stateManager.dispatch({ type: "SET_STREAM", stream: null });
                 this.updatePlaybackFeedback(context, { detail: null, note: null });
                 await dismissMpvTransitionOverlay(playerControl);
+                if (titleSwitchSelection) {
+                  return {
+                    status: "success",
+                    value: {
+                      type: "history_entry",
+                      title: titleSwitchSelection.title,
+                      episode: titleSwitchSelection.episode,
+                    },
+                  };
+                }
               } else {
                 stateManager.dispatch({ type: "SET_STREAM", stream: null });
               }
@@ -2636,6 +2708,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               },
               run.localPlaybackSource ?? undefined,
             );
+            if (isDetachedHandoffResult(result)) {
+              queueAttempt?.rollbackIfUnacknowledged(
+                "playback-aborted",
+                "external handoff is not observable",
+              );
+            }
           } catch (error) {
             run.pendingStart = startIntent;
             if (error instanceof PlaybackAbortedError || context.signal.aborted) {
@@ -2674,15 +2752,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Save history — use effectiveTiming.current so that a background retry
           // that completed during playback is reflected in completion status.
           const quitThresholdMode = config.quitNearEndThresholdMode;
-          if (shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode)) {
+          if (
+            container.player.capabilities.completion &&
+            shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode)
+          ) {
             const didComplete = didPlaybackReachCompletionThreshold(
               result,
               effectiveTiming.current,
               quitThresholdMode,
             );
             // History durability: completed:true is forever — it clears the
-            // resume point. A clean EOF or a credits quit sets it; a kill,
-            // crash, timeout, or keep-open no-end-file outcome stays resumable
+            // resume point. Only a clean natural EOF sets it; voluntary quit,
+            // kill, crash, timeout, or keep-open no-end-file stays resumable
             // even past the threshold.
             const shouldMarkCompleted = shouldMarkEpisodeCompleted(
               result,
@@ -2860,6 +2941,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               cacheStore,
               sourceInventory: container.sourceInventory,
               providerId: invalidateProviderId,
+              providerManifest: container.providerRegistry.getManifest(invalidateProviderId),
               title,
               episode: currentEpisode,
               mode: stateManager.getState().mode,
@@ -2908,6 +2990,30 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             playbackControlAction === "pick-episode"
               ? playerControl.consumePendingEpisodeSelection()
               : null;
+          if (playbackControlAction === "switch-title") {
+            // A notification (or other handoff) asked to leave this title's
+            // session entirely: the file stop already landed, so exit with the
+            // target and let SessionController re-enter playback for it.
+            const titleSelection = playerControl.consumePendingTitleSelection();
+            if (titleSelection) {
+              diagnosticsService.record({
+                category: "playback",
+                message: "Switching to a different title from active playback",
+                context: {
+                  fromTitleId: title.id,
+                  toTitleId: titleSelection.title.id,
+                },
+              });
+              return {
+                status: "success",
+                value: {
+                  type: "history_entry",
+                  title: titleSelection.title,
+                  episode: titleSelection.episode,
+                },
+              };
+            }
+          }
           run.playbackSession = syncPlaybackSessionState(run.playbackSession, {
             autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
             stopAfterCurrent: stateManager.getState().stopAfterCurrent,
@@ -3425,7 +3531,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               container,
             );
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-            if (picked && selection) {
+            if (picked && (selection || picked.section === "subtitle")) {
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
@@ -3440,7 +3546,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               if (trackStart) {
                 run.pendingStart = trackStart;
-                recordTrackOverrideSelected(picked, selection);
+                if (selection) recordTrackOverrideSelected(picked, selection);
                 continue;
               }
             }
@@ -3461,7 +3567,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
             const picked = await openTracksPanel(preparedStream, {}, container);
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-            if (picked && selection) {
+            if (picked && (selection || picked.section === "subtitle")) {
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
@@ -3476,7 +3582,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               if (trackStart) {
                 run.pendingStart = trackStart;
-                recordTrackOverrideSelected(picked, selection);
+                if (selection) recordTrackOverrideSelected(picked, selection);
                 continue;
               }
             }
@@ -3501,7 +3607,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               container,
             );
             const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-            if (picked && selection) {
+            if (picked && (selection || picked.section === "subtitle")) {
               const restartResume = toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
@@ -3516,7 +3622,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               if (trackStart) {
                 run.pendingStart = trackStart;
-                recordTrackOverrideSelected(picked, selection);
+                if (selection) recordTrackOverrideSelected(picked, selection);
                 continue;
               }
             }
@@ -3805,7 +3911,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     name: topRecAdvance.title,
                     type: topRec?.type === "movie" ? "movie" : "series",
                     posterUrl: topRec?.posterPath ?? undefined,
-                    ...(topRec?.externalIds ? { externalIds: topRec.externalIds } : {}),
+                    externalIds: topRec?.externalIds,
                   },
                   mode: stateManager.getState().mode,
                 },
@@ -4253,7 +4359,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       }),
     );
 
-    if (!localPlaybackSource)
+    if (player.capabilities.externalSubtitles && !localPlaybackSource)
       this.startLateSubtitleResolver({
         stream,
         title,
@@ -4279,43 +4385,45 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const persistedKind = classifyPersistedKind(title, stateManager.getState().mode, {
       providerId: ledgerProviderId,
     });
-    this.playbackLedger = new PlaybackHistoryLedger(
-      historyRepository,
-      playbackEventRepository,
-      (error) =>
-        context.container.diagnosticsService.record({
-          category: "playback",
-          operation: "playback.history.persist",
-          level: "warn",
-          message: "Playback history write dropped after a persistence failure",
-          context: { error: error instanceof Error ? error.message : String(error) },
-        }),
-    );
-    // Shutdown flushes this before releasing mpv, so the latest resume
-    // position survives a Ctrl+C mid-playback. Null-safe once finalized.
-    this.unregisterActiveCheckpoint = context.container.activePlaybackCheckpoint.register(() => {
-      this.playbackLedger?.checkpoint();
-    });
-    this.playbackLedger.start(
-      {
-        title: {
-          id: title.id,
-          kind: persistedKind,
-          title: title.name,
-          externalIds: enrichExternalIdsWithVideoMeta(
-            title.externalIds,
-            stateManager.getState().videoMeta,
-          ),
+    if (player.capabilities.progressEvents) {
+      this.playbackLedger = new PlaybackHistoryLedger(
+        historyRepository,
+        playbackEventRepository,
+        (error) =>
+          context.container.diagnosticsService.record({
+            category: "playback",
+            operation: "playback.history.persist",
+            level: "warn",
+            message: "Playback history write dropped after a persistence failure",
+            context: { error: error instanceof Error ? error.message : String(error) },
+          }),
+      );
+      // Shutdown flushes this before releasing mpv, so the latest resume
+      // position survives a Ctrl+C mid-playback. Null-safe once finalized.
+      this.unregisterActiveCheckpoint = context.container.activePlaybackCheckpoint.register(() => {
+        this.playbackLedger?.checkpoint();
+      });
+      this.playbackLedger.start(
+        {
+          title: {
+            id: title.id,
+            kind: persistedKind,
+            title: title.name,
+            externalIds: enrichExternalIdsWithVideoMeta(
+              title.externalIds,
+              stateManager.getState().videoMeta,
+            ),
+          },
+          episode: episodeIdentityForHistory(title, episode),
+          providerId: ledgerProviderId,
+          posterUrl: title.posterUrl,
+          mediaKind: persistedKind,
         },
-        episode: episodeIdentityForHistory(title, episode),
-        providerId: ledgerProviderId,
-        posterUrl: title.posterUrl,
-        mediaKind: persistedKind,
-      },
-      startAt,
-    );
+        startAt,
+      );
+    }
 
-    return runMpvPlaybackSession({
+    return runPlaybackSession({
       stream,
       title,
       episode,

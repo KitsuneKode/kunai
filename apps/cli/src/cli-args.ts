@@ -4,6 +4,7 @@ import {
   PROVIDER_QUALITY_PREFERENCE_OPTIONS,
   SUBTITLE_PREFERENCE_OPTIONS,
 } from "@/domain/media/media-preferences";
+import { parsePlayerChoice, type PlayerChoice } from "@/domain/playback/player-choice";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { Command } from "commander";
 
@@ -33,6 +34,7 @@ export type CliArgs = {
   supportBundle: boolean;
   zen: boolean;
   mpv: MpvRuntimeOptions;
+  player: PlayerChoice;
   minimal: boolean;
   quick: boolean;
   jump?: number;
@@ -99,6 +101,9 @@ PLAYBACK PICKS (this run only — config.json untouched)
       --audio <lang>       Audio track: original | en | ja | dub
       --sub <lang>         Subtitles: en | interactive | none | ar | de | es | fr | ja
       --dub                Shortcut for --audio dub
+
+PLAYER
+      --player <auto|mpv|vlc>  Player backend (auto chooses for this platform)
 
 mpv
       --mpv-debug            Verbose mpv logging
@@ -207,6 +212,7 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--mpv-clean",
   "--no-user-mpv-config",
   "--mpv-log-file",
+  "--player",
   "-h",
   "--help",
   "-v",
@@ -236,6 +242,7 @@ export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "--open",
   "--handoff-url",
   "--mpv-log-file",
+  "--player",
   "--to",
 ]);
 
@@ -283,6 +290,7 @@ type CommanderCliOptions = {
    */
   readonly userMpvConfig?: boolean;
   readonly mpvLogFile?: string;
+  readonly player?: string;
   readonly help?: boolean;
   readonly version?: boolean;
 };
@@ -331,6 +339,7 @@ function createCliCommand(): Command {
     .option("--mpv-clean")
     .option("--no-user-mpv-config")
     .option("--mpv-log-file <path>")
+    .option("--player <player>")
     .option("-h, --help")
     .option("-v, --version")
     .argument("[query...]");
@@ -437,6 +446,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     supportBundle: false,
     zen: false,
     mpv: {},
+    player: "auto",
     minimal: false,
     quick: false,
     setup: false,
@@ -600,6 +610,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     ...(options.userMpvConfig === false ? { noUserConfig: true } : {}),
     ...(options.mpvLogFile ? { logFile: options.mpvLogFile } : {}),
   };
+  args.player = parsePlayerChoice(options.player);
   args.help = Boolean(options.help);
   args.version = Boolean(options.version);
 

@@ -4,8 +4,10 @@ import {
   buildPlaybackControlSummary,
   type PlaybackSessionControlInput,
 } from "@/app/playback/source-quality";
+import type { PlayerCapabilities } from "@/domain/playback/player-capabilities";
 
 export type PlaybackSessionKeysInput = PlaybackSessionControlInput & {
+  readonly capabilities: PlayerCapabilities;
   readonly hasNextEpisode: boolean;
   readonly hasPreviousEpisode: boolean;
 };
@@ -60,6 +62,10 @@ export function formatPlaybackSessionKeysHint(
   input: PlaybackSessionKeysInput,
   bindings: readonly KeyBinding[] = KEYBINDINGS,
 ): string {
+  if (input.capabilities.observation === "detached") {
+    return "opened externally · controls are in the Android player";
+  }
+
   const control = buildPlaybackControlSummary(input.stream);
   const parts: string[] = [];
 

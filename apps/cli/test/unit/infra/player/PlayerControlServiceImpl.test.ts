@@ -63,6 +63,13 @@ test("PlayerControlServiceImpl clears every stop-backed intent rejected before d
       async (service) => await service.selectCurrentPlaybackEpisode({ season: 2, episode: 4 }),
     ],
     ["episode-source", async (service) => await service.switchEpisodePlaybackSource("local")],
+    [
+      "switch-title",
+      async (service) =>
+        await service.switchToTitlePlayback({
+          title: { id: "tmdb:1", type: "series", name: "Switch Target" },
+        }),
+    ],
   ];
 
   for (const [name, request] of requests) {
@@ -73,6 +80,7 @@ test("PlayerControlServiceImpl clears every stop-backed intent rejected before d
     expect(service.consumePendingStreamSelection(), name).toBeNull();
     expect(service.consumePendingEpisodeSelection(), name).toBeNull();
     expect(service.consumePendingEpisodeSourceOverride(), name).toBeNull();
+    expect(service.consumePendingTitleSelection(), name).toBeNull();
   }
 });
 
@@ -739,6 +747,88 @@ test("PlayerControlServiceImpl keeps the command queue usable after a queued com
   await expect(service.reloadCurrentSubtitles("reload")).rejects.toThrow("reload failed");
   await expect(service.skipCurrentSegment("skip")).resolves.toBe(true);
   expect(ordering).toEqual(["reload:fail", "skip"]);
+});
+
+test("PlayerControlServiceImpl delivers a title switch through a file stop", async () => {
+  const stoppedCurrentReasons: string[] = [];
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {
+      throw new Error("stop should not be called");
+    },
+    async stopCurrentFile(reason) {
+      stoppedCurrentReasons.push(reason ?? "");
+    },
+  });
+
+  expect(
+    await service.switchToTitlePlayback(
+      {
+        title: { id: "anilist:5", type: "series", name: "Switch Target", isAnime: true },
+        episode: { season: 1, episode: 12, absoluteEpisode: 12 },
+      },
+      "notifications-play-now",
+    ),
+  ).toBe(true);
+  expect(service.consumeLastAction()).toBe("switch-title");
+  expect(service.consumePendingTitleSelection()).toEqual({
+    title: { id: "anilist:5", type: "series", name: "Switch Target", isAnime: true },
+    episode: { season: 1, episode: 12, absoluteEpisode: 12 },
+  });
+  expect(service.consumePendingTitleSelection()).toBeNull();
+  expect(stoppedCurrentReasons).toEqual(["notifications-play-now"]);
+});
+
+test("PlayerControlServiceImpl signalTitleSwitch arms the intent without stopping anything", async () => {
+  const service = makeService();
+
+  // No active player: the caller already aborted the in-flight resolve, so the
+  // intent only has to reach the aborted-resolve tail.
+  service.signalTitleSwitch({
+    title: { id: "tmdb:9", type: "movie", name: "Signalled" },
+  });
+
+  expect(service.consumeLastAction()).toBe("switch-title");
+  expect(service.consumePendingTitleSelection()).toEqual({
+    title: { id: "tmdb:9", type: "movie", name: "Signalled" },
+  });
+});
+
+test("PlayerControlServiceImpl clears an armed title switch when the file stop fails", async () => {
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {},
+    async stopCurrentFile() {
+      throw new Error("switch delivery failed");
+    },
+  });
+
+  await expect(
+    service.switchToTitlePlayback(
+      { title: { id: "tmdb:2", type: "series", name: "Undelivered" } },
+      "switch-key",
+    ),
+  ).rejects.toThrow("switch delivery failed");
+  expect(service.consumeLastAction()).toBeNull();
+  expect(service.consumePendingTitleSelection()).toBeNull();
+});
+
+test("PlayerControlServiceImpl a newer intent replaces an armed title selection", async () => {
+  const service = makeService();
+
+  service.signalTitleSwitch({
+    title: { id: "tmdb:stale", type: "series", name: "Stale Switch" },
+  });
+  service.signalPlaybackAction("next");
+
+  // The payload never outlives its action — a new intent resets every pending
+  // selection so a stale switch cannot replay after the action was consumed.
+  expect(service.consumeLastAction()).toBe("next");
+  expect(service.consumePendingTitleSelection()).toBeNull();
 });
 
 test("PlayerControlServiceImpl waitForActivePlayer resolves immediately when active", async () => {
