@@ -51,11 +51,15 @@ describeWithNode("npm pack guard with binaries on disk", () => {
 
       const manifest = JSON.parse(readFileSync(join(NPM_PUBLISH_ROOT, "package.json"), "utf8"));
       expect(manifest).toMatchObject({
-        license: "MIT",
+        license: "MIT OR Apache-2.0",
         publishConfig: { access: "public", provenance: true },
         files: ["dist/npm-launcher.mjs", "LICENSE", "README.md"],
       });
       expect(existsSync(join(NPM_PUBLISH_ROOT, "LICENSE"))).toBe(true);
+      const combinedLicense = readFileSync(join(NPM_PUBLISH_ROOT, "LICENSE"), "utf8");
+      expect(combinedLicense).toContain("MIT OR Apache-2.0");
+      expect(combinedLicense).toContain("Permission is hereby granted");
+      expect(combinedLicense).toContain("Version 2.0, January 2004");
       expect(readFileSync(join(NPM_PUBLISH_ROOT, "LICENSE"), "utf8")).toBe(
         readFileSync(join(REPO_ROOT, "LICENSE"), "utf8"),
       );

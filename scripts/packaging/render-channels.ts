@@ -1,3 +1,4 @@
+import { PROJECT_LICENSE } from "./license-policy";
 /**
  * Pure package-channel renderers: Homebrew formula, Scoop manifest, and the
  * AUR `kunai-bin` PKGBUILD + .SRCINFO, all derived from a release tag and the
@@ -92,7 +93,7 @@ class Kunai < Formula
   desc "${DESCRIPTION}"
   homepage "${HOMEPAGE}"
   version "${channel.version}"
-  license "MIT"
+  license any_of: ["MIT", "Apache-2.0"]
 
   on_macos do
 ${block("macos", "arm", darwinArm64.archiveName)}${block("macos", "intel", darwinX64.archiveName)}  end
@@ -126,7 +127,7 @@ export function renderScoopManifest(channel: ChannelVersion, sums: SumsMap): str
     version: channel.version,
     description: DESCRIPTION,
     homepage: HOMEPAGE,
-    license: "MIT",
+    license: PROJECT_LICENSE.replaceAll(" OR ", " | "),
     architecture: {
       "64bit": {
         url: assetUrl(channel, windowsX64.archiveName),
@@ -192,7 +193,7 @@ pkgrel=1
 pkgdesc="${DESCRIPTION}"
 arch=('x86_64' 'aarch64')
 url="${HOMEPAGE}"
-license=('MIT')
+license=('${PROJECT_LICENSE}')
 provides=('kunai')
 conflicts=('kunai')
 depends=('mpv')
@@ -224,7 +225,7 @@ export function renderSrcinfo(input: AurRenderInput): string {
     `\turl = ${HOMEPAGE}`,
     "\tarch = x86_64",
     "\tarch = aarch64",
-    "\tlicense = MIT",
+    `\tlicense = ${PROJECT_LICENSE}`,
     "\tdepends = mpv",
     ...AUR_OPTDEPENDS.map((d) => `\toptdepends = ${d}`),
     "\tprovides = kunai",
