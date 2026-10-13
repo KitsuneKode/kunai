@@ -29,6 +29,8 @@ import {
   RESOLVE_DURATION_MS,
   SEARCH_DELAY_MS,
   TITLE,
+  catalogSuggestions,
+  localSuggestions,
   playingState,
   postPlayProps,
   resolvingState,
@@ -158,6 +160,8 @@ export function UiDemoApp() {
       placeholder="Search movies and series"
       commands={BROWSE_COMMANDS}
       onSearch={runSearch}
+      onSuggest={(query) => catalogSuggestions(query)}
+      loadLocalSuggestions={localSuggestions}
       onResolve={noop}
       onSubmit={() => goPhase("resolving")}
       onCancel={noop}
