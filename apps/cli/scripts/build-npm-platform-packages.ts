@@ -19,6 +19,7 @@ import { existsSync } from "node:fs";
 import { chmod, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { PROJECT_LICENSE } from "../../../scripts/packaging/license-policy";
 import { RELEASE_BINARY_TARGETS } from "../src/services/update/platform-assets";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -40,6 +41,8 @@ function npmOs(os: string): string {
 
 async function main(): Promise<void> {
   const cli = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8")) as CliPackageJson;
+  if (cli.license !== PROJECT_LICENSE)
+    throw new Error("Platform package license must be MIT OR Apache-2.0.");
   // Every published package carries the license text so each tarball is
   // self-describing, same as the launcher's dist/npm/LICENSE.
   const licenseText = await readFile(join(ROOT, "../../LICENSE"), "utf8");
@@ -71,7 +74,7 @@ async function main(): Promise<void> {
       name: packageName,
       version: cli.version,
       description: `Kunai prebuilt binary for ${target.id}.`,
-      license: cli.license ?? "MIT",
+      license: PROJECT_LICENSE,
       ...(cli.repository ? { repository: cli.repository } : {}),
       ...(cli.homepage ? { homepage: cli.homepage } : {}),
       ...(cli.author ? { author: cli.author } : {}),

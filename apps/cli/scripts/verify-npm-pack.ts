@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-// Verify the published npm tarball stays small and never includes compiled binaries.
-
 import {
   existsSync,
   mkdtempSync,
@@ -10,10 +8,12 @@ import {
   rmSync,
   statSync,
 } from "node:fs";
+// Verify the published npm tarball stays small and never includes compiled binaries.
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { gunzipSync } from "node:zlib";
 
+import { PROJECT_LICENSE } from "../../../scripts/packaging/license-policy";
 import { RELEASE_BINARY_TARGETS } from "../src/services/update/platform-assets";
 import {
   assertNpmPackBudgets,
@@ -108,8 +108,8 @@ export function assertNpmPublishManifest(
       "[pkg:check] npm publish manifest must include only dist/npm-launcher.mjs, LICENSE, and README.md.",
     );
   }
-  if (manifest.license !== "MIT") {
-    throw new Error("[pkg:check] npm publish manifest license must be MIT.");
+  if (manifest.license !== PROJECT_LICENSE) {
+    throw new Error("[pkg:check] npm publish manifest license must be MIT OR Apache-2.0.");
   }
   if (manifest.publishConfig?.access !== "public") {
     throw new Error("[pkg:check] npm publish manifest access must be public.");

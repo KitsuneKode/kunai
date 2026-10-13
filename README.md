@@ -10,7 +10,7 @@ An ani-cli alternative with source failover, offline downloads and resume.
 &nbsp;![runtime](https://img.shields.io/badge/runtime-Bun%20%E2%89%A51.4.0-ff8fb0)
 &nbsp;![player](https://img.shields.io/badge/player-mpv-4fd1c5)
 &nbsp;![kinds](https://img.shields.io/badge/anime%20%C2%B7%20series%20%C2%B7%20movies-c98bff)
-&nbsp;[![license](https://img.shields.io/badge/license-Apache--2.0-968a98)](LICENSE)
+&nbsp;[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-968a98)](LICENSE)
 
 ![Kunai: type-ahead suggestions, search, resolve, play, recover, post-play](.reference/design/brand/demo-ui-walkthrough.gif)
 
@@ -154,3 +154,9 @@ Kunai is a client-side playback tool. It does not host, upload, mirror, seed, or
 distribute video content. Streams and related assets are served by non-affiliated
 third-party providers. Use responsibly and in accordance with applicable laws and
 service terms.
+
+## License
+
+Kunai is licensed under **MIT OR Apache-2.0**, at your option. See [LICENSE](LICENSE)
+for both complete texts. Separately identified third-party components retain their
+own license terms and notices. Published releases keep their original licensing.
