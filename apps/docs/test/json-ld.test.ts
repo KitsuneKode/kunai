@@ -31,6 +31,17 @@ describe("softwareApplicationJsonLd", () => {
     expect(JSON.stringify(app)).not.toContain("aggregateRating");
     expect(JSON.stringify(app)).not.toContain("review");
   });
+
+  test("names the app category, OS set, version, and download channel", () => {
+    expect(app.applicationCategory).toBe("MultimediaApplication");
+    expect(app.operatingSystem).toBe("Linux, macOS, Windows");
+    expect(app.softwareVersion).toBe("1.2.3");
+    expect(app.downloadUrl).toBe("https://github.com/KitsuneKode/kunai/releases/latest");
+  });
+
+  test("carries no SearchAction — the site has no HTML search endpoint", () => {
+    expect(JSON.stringify(app)).not.toContain("SearchAction");
+  });
 });
 
 describe("buildPageMetadata social images", () => {

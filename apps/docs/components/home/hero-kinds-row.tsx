@@ -3,8 +3,8 @@ import { homeHero } from "@/lib/home-content";
 /**
  * What Kunai plays, stated as text in the server-rendered HTML.
  *
- * Deliberately not links: all four modes are documented on the same providers
- * page, and four identical hrefs would be navigation theatre. The trailing hint
+ * Deliberately not links: all three modes are documented on the same providers
+ * page, and three identical hrefs would be navigation theatre. The trailing hint
  * carries a real hotkey, which is what keeps this row from being an eyebrow.
  */
 export function HeroKindsRow() {

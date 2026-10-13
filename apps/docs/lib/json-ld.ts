@@ -9,6 +9,9 @@ export function serializeJsonLd<T>(data: T): string {
   return JSON.stringify(data).replace(/</g, "\\u003c");
 }
 
+// No SearchAction potentialAction: the target would be /api/search, a JSON
+// endpoint — schema.org expects an HTML results page, and Google retired the
+// sitelinks search box the action fed anyway.
 export function websiteJsonLd() {
   return {
     "@context": "https://schema.org",
@@ -16,11 +19,6 @@ export function websiteJsonLd() {
     name: "Kunai Docs",
     url: docsSiteUrl,
     description: "Guides for Kunai playback, recovery, offline use, diagnostics, and reliability.",
-    potentialAction: {
-      "@type": "SearchAction",
-      target: `${docsSiteUrl}/api/search?q={search_term_string}`,
-      "query-input": "required name=search_term_string",
-    },
   };
 }
 
@@ -51,7 +49,7 @@ export function softwareApplicationJsonLd(input: {
     operatingSystem: "Linux, macOS, Windows",
     softwareVersion: input.version,
     softwareRequirements: "mpv",
-    downloadUrl: "https://www.npmjs.com/package/@kitsunekode/kunai",
+    downloadUrl: "https://github.com/KitsuneKode/kunai/releases/latest",
     license: "https://github.com/KitsuneKode/kunai/blob/main/LICENSE",
     isAccessibleForFree: true,
     offers: {

@@ -23,6 +23,7 @@ export const metadata: Metadata = buildPageMetadata({
     "Report a Kunai bug, a broken third-party provider, or a feature idea through the GitHub issue templates, and see what to attach so the report can be acted on.",
   socialDescription:
     "Report bugs, provider issues, or feature ideas for Kunai via GitHub issue templates.",
+  noindex: true,
   path: "/feedback",
 });
 

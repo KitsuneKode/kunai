@@ -16,6 +16,7 @@ export const metadata: Metadata = buildPageMetadata({
     "Kunai’s public usage pulse: aggregate install counts by version, OS, and architecture, the exact opt-in ping payload, and the privacy limits that bound it.",
   socialDescription:
     "Public aggregate counts only: never titles, queries, or install UUIDs on this page.",
+  noindex: true,
   path: "/analytics",
 });
 
