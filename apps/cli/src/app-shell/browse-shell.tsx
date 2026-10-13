@@ -8,7 +8,6 @@ import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import { kannaDoneText, type KannaDoneKind } from "@/app-shell/kanna-voice";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
-import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
 import type { FilterStateKey } from "@/domain/search/SearchIntent";
@@ -22,6 +21,7 @@ import {
 import type { SearchResult, ShellMode } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { addSearchQuery, getSearchHistory } from "@/services/persistence/search-history";
 import { Box, Text, useInput } from "ink";
 import React, {
   useCallback,

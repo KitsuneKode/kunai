@@ -122,10 +122,6 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
       "@/app-shell/root-queue-bridge",
       "@/app-shell/ink-shell",
       "@/app-shell/pickers",
-      // Search completion is recorded to history at the phase level because
-      // bootstrap (-S) and follow-up programmatic searches never pass the
-      // browse submit that records it; the store is a plain module, not UI.
-      "@/app-shell/search-history",
       // The remount gate parks browse while a detached overlay workflow's
       // picker owns the content slot — without it a browse mount evicts the
       // live picker (or is evicted and stranded, the old bug).

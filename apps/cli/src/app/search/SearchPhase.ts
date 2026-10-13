@@ -19,7 +19,6 @@ import { openBrowseShell } from "@/app-shell/ink-shell";
 import { pickPaletteTitle } from "@/app-shell/palette-title-launch";
 import { chooseFromListShell } from "@/app-shell/pickers";
 import { getRootContentSession, waitForRootContentSlot } from "@/app-shell/root-content-state";
-import { addSearchQuery } from "@/app-shell/search-history";
 import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
 import {
   applyHistorySelectionProvider,
@@ -82,6 +81,7 @@ import { seedCaughtUpReleaseProgressFromCatalogCount } from "@/services/history-
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { observeOnline } from "@/services/network/network-observation";
 import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
+import { addSearchQuery } from "@/services/persistence/search-history";
 import {
   enqueueReleaseReconciliation,
   collectReleaseReconciliationRows,
