@@ -613,3 +613,16 @@ describe("donutSlices", () => {
     expect(donutSlices(counts({}), order)).toEqual([]);
   });
 });
+
+describe("the page revalidate literal", () => {
+  test("matches STATUS_REVALIDATE_SECONDS — the two must tick together", async () => {
+    const { STATUS_REVALIDATE_SECONDS } = await import("../lib/provider-status-live");
+    const source = fs.readFileSync(path.join(import.meta.dir, "../app/status/page.tsx"), "utf8");
+    const match = source.match(/export const revalidate = (\d+);/);
+    // Next statically extracts segment config: an imported identifier fails the
+    // build, so the page carries a literal. This test is what keeps the literal
+    // honest.
+    expect(match).not.toBeNull();
+    expect(Number(match![1])).toBe(STATUS_REVALIDATE_SECONDS);
+  });
+});

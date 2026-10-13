@@ -1,11 +1,13 @@
 import { ProviderStatusPanel } from "@/components/status/provider-status-panel";
 import { buildPageMetadata } from "@/lib/page-metadata";
-import { STATUS_REVALIDATE_SECONDS } from "@/lib/provider-status-live";
 import type { Metadata } from "next";
 
 // The data is fetched live and cached for this long; the page regenerates on the same
 // beat, so a new daily result or a posted notice shows within minutes with no deploy.
-export const revalidate = STATUS_REVALIDATE_SECONDS;
+// This must stay a literal: Next statically extracts segment config and an imported
+// identifier fails the build. STATUS_REVALIDATE_SECONDS in lib/provider-status-live.ts
+// is the fetch-side twin — provider-status.test.ts pins them equal.
+export const revalidate = 600;
 
 export const metadata: Metadata = buildPageMetadata({
   title: "Kunai provider status: which providers are working today",
