@@ -58,7 +58,20 @@ describe("torrent engine over a loopback swarm", () => {
     expect(seederPort).toBeGreaterThan(0);
 
     try {
-      const engine = createTorrentEngine();
+      const engine = createTorrentEngine(
+        {},
+        {
+          createClient: async () =>
+            new WebTorrent({
+              torrentPort: 0,
+              dht: false,
+              tracker: false,
+              lsd: false,
+              utp: false,
+              natUpnp: false,
+            }),
+        },
+      );
       engines.push(engine);
       const torrent = await engine.addMagnet(seeded.magnetURI, {
         peers: [`127.0.0.1:${seederPort}`],

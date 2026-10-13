@@ -1,21 +1,9 @@
 import type { Server } from "bun";
 
-import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
-
 /**
- * Local media gateway: one 127.0.0.1 server that hands mpv (and VLC intents,
- * which cannot carry headers) URLs it can actually play.
- *
- * Two routes, both behind a per-gateway token and a stop lifecycle mirroring
- * the HLS relay:
- *
- * - `/h/<token>/<b64url>` — header-injection proxy. Fetches an https URL with
- *   the stream's headers (Range forwarded, streamed back unbuffered) for
- *   players that cannot attach headers themselves. Upstream hosts must be
- *   allowlisted per gateway; the loopback bind keeps this local-only.
- * - `/t/<token>/<mount>/<path>` — torrent file serving with full Range/206
- *   support, backed by a mounted sequential reader. mpv seeks via Range, so
- *   unlike the HLS relay (whole-body buffer) nothing here is buffered.
+ * Local torrent file serving, bound to 127.0.0.1 and a per-session token.
+ * This gateway never fetches provider targets or accepts upstream credentials.
+ * Header-bearing provider media belongs to the separate Android stream gateway.
  */
 
 export type LocalMediaGatewayStopReason = "playback-end" | "session-release" | "idle" | "error";
@@ -23,15 +11,8 @@ export type LocalMediaGatewayStopReason = "playback-end" | "session-release" | "
 export interface LocalMediaGatewayHandle {
   readonly origin: string;
   readonly stop: (reason?: LocalMediaGatewayStopReason) => void;
-  readonly allowUpstreamHost: (hostname: string) => void;
   readonly mountTorrentFile: (mount: GatewayTorrentMount) => string;
   readonly unmountTorrentFile: (mountId: string) => void;
-  /**
-   * Bind an upstream URL with its headers and receive a player-ready local
-   * URL. Headers live server-side: external players (VLC intents especially)
-   * cannot attach custom headers per request, so the mount carries them.
-   */
-  readonly mountHeaderProxy: (upstreamUrl: string, headers: Record<string, string>) => string;
 }
 
 export interface GatewayTorrentMount {
@@ -91,12 +72,7 @@ export function startLocalMediaGateway(
   options: StartLocalMediaGatewayOptions = {},
 ): LocalMediaGatewayHandle {
   const token = crypto.randomUUID().replace(/-/g, "");
-  const allowedHosts = new Set<string>();
   const mounts = new Map<string, GatewayTorrentMount>();
-  const headerProxies = new Map<
-    string,
-    { readonly url: string; readonly headers: Record<string, string> }
-  >();
   let stopped = false;
   let idleTimer: Timer | null = null;
   let closeGateway: ((reason: LocalMediaGatewayStopReason) => void) | null = null;
@@ -109,7 +85,7 @@ export function startLocalMediaGateway(
   }
 
   function tokenOk(path: string): boolean {
-    return path.startsWith(`/h/${token}/`) || path.startsWith(`/t/${token}/`);
+    return path.startsWith(`/t/${token}/`);
   }
 
   async function iterableToResponse(
@@ -181,50 +157,6 @@ export function startLocalMediaGateway(
         }
       }
 
-      // ── Header-injection proxy ────────────────────────────────────
-      if (url.pathname.startsWith(`/h/${token}/`)) {
-        const key = url.pathname.slice(`/h/${token}/`.length);
-        const proxy = headerProxies.get(key);
-        if (!proxy) return new Response("unknown proxy mount", { status: 404 });
-        let target: URL;
-        try {
-          target = new URL(proxy.url);
-        } catch {
-          return new Response("bad upstream URL", { status: 400 });
-        }
-        if (target.protocol !== "https:" || !allowedHosts.has(target.hostname)) {
-          return new Response("upstream not allowlisted", { status: 403 });
-        }
-        const normalized = normalizeStreamHttpHeaders(proxy.headers);
-        const forward: Record<string, string> = {};
-        if (normalized.userAgent) forward["user-agent"] = normalized.userAgent;
-        if (normalized.referer) forward["referer"] = normalized.referer;
-        if (normalized.origin) forward["origin"] = normalized.origin;
-        for (const field of normalized.extraFields) {
-          const colon = field.indexOf(":");
-          if (colon > 0) forward[field.slice(0, colon).trim()] = field.slice(colon + 1).trim();
-        }
-        const range = req.headers.get("range");
-        if (range) forward["range"] = range;
-        try {
-          const upstreamResponse = await fetch(target.href, { headers: forward });
-          const responseHeaders = new Headers();
-          const contentType = upstreamResponse.headers.get("content-type");
-          if (contentType) responseHeaders.set("Content-Type", contentType);
-          const contentRange = upstreamResponse.headers.get("content-range");
-          if (contentRange) responseHeaders.set("Content-Range", contentRange);
-          const contentLength = upstreamResponse.headers.get("content-length");
-          if (contentLength) responseHeaders.set("Content-Length", contentLength);
-          responseHeaders.set("Accept-Ranges", "bytes");
-          return new Response(upstreamResponse.body, {
-            status: upstreamResponse.status,
-            headers: responseHeaders,
-          });
-        } catch {
-          return new Response("upstream fetch failed", { status: 502 });
-        }
-      }
-
       return new Response("unknown route", { status: 404 });
     },
   });
@@ -238,7 +170,6 @@ export function startLocalMediaGateway(
       idleTimer = null;
     }
     mounts.clear();
-    headerProxies.clear();
     server.stop(true);
     options.onStopped?.(reason);
   };
@@ -248,23 +179,12 @@ export function startLocalMediaGateway(
   return {
     origin,
     stop,
-    allowUpstreamHost: (hostname: string) => {
-      allowedHosts.add(hostname.toLowerCase());
-    },
     mountTorrentFile: (mount: GatewayTorrentMount) => {
       mounts.set(mount.mountId, mount);
       return `${origin}/t/${token}/${mount.mountId}/${encodeURIComponent("stream")}`;
     },
     unmountTorrentFile: (mountId: string) => {
       mounts.delete(mountId);
-    },
-    mountHeaderProxy: (upstreamUrl: string, headers: Record<string, string>) => {
-      const target = new URL(upstreamUrl);
-      if (target.protocol !== "https:") throw new Error("header proxy requires https");
-      allowedHosts.add(target.hostname.toLowerCase());
-      const key = crypto.randomUUID().replace(/-/g, "");
-      headerProxies.set(key, { url: upstreamUrl, headers: { ...headers } });
-      return `${origin}/h/${token}/${key}`;
     },
   };
 }

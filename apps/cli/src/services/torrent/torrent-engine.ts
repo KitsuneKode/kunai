@@ -1,3 +1,4 @@
+import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 import type { DiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
 import { assessTorrentReadiness, pickVideoFile } from "@/services/torrent/readiness";
 import type { WebTorrentFile, WebTorrentTorrent } from "webtorrent";
@@ -92,26 +93,37 @@ function waitFor(
   });
 }
 
-export function createTorrentEngine(events: TorrentEngineEvents = {}): TorrentEngine {
+type TorrentClient = Pick<import("webtorrent").default, "add" | "destroy">;
+
+export type TorrentEngineDeps = {
+  readonly createClient?: () => Promise<TorrentClient>;
+};
+
+export function createTorrentEngine(
+  events: TorrentEngineEvents = {},
+  deps: TorrentEngineDeps = {},
+): TorrentEngine {
   // One client per engine: DHT, trackers, and LSD fan out per torrent, and a
   // shared client would let one stalled magnet hold the swarm ports of others.
   // The client is created lazily on first use so importing this module costs
   // nothing for non-torrent sessions.
-  let clientPromise: Promise<import("webtorrent").default> | null = null;
-  const client = (): Promise<import("webtorrent").default> => {
-    clientPromise ??= loadWebTorrent().then(
-      ({ default: WebTorrent }) =>
-        new WebTorrent({
-          torrentPort: 0,
-          dht: true,
-          tracker: true,
-          lsd: true,
-          // No WebRTC peers (stubbed out at build; see torrent-native-stubs)
-          // and no µTP (native addon Bun cannot run): TCP swarm only.
-          utp: false,
-          natUpnp: false,
-        }),
-    );
+  let clientPromise: Promise<TorrentClient> | null = null;
+  const client = (): Promise<TorrentClient> => {
+    clientPromise ??= deps.createClient
+      ? deps.createClient()
+      : loadWebTorrent().then(
+          ({ default: WebTorrent }) =>
+            new WebTorrent({
+              torrentPort: 0,
+              dht: true,
+              tracker: true,
+              lsd: true,
+              // No WebRTC peers (stubbed out at build; see torrent-native-stubs)
+              // and no µTP (native addon Bun cannot run): TCP swarm only.
+              utp: false,
+              natUpnp: false,
+            }),
+        );
     return clientPromise;
   };
 
@@ -129,7 +141,12 @@ export function createTorrentEngine(events: TorrentEngineEvents = {}): TorrentEn
   return {
     async addMagnet(magnet: string, opts: { peers?: readonly string[] } = {}) {
       const instance = await client();
-      const torrent = instance.add(magnet, { destroyStoreOnDestroy: true });
+      // WebTorrent's default /tmp/webtorrent store is shared by filename.
+      // Destroying a colliding attempt would delete a sibling's live files.
+      // A fresh owner-only directory fences every attempt, including same-hash
+      // sessions; deselect prevents downloading an entire pack before selection.
+      const path = await createPrivateTempDir("torrent");
+      const torrent = instance.add(magnet, { path, deselect: true, destroyStoreOnDestroy: true });
       // infoHash parses locally from the magnet — no swarm round trip — so
       // explicit peers (tests, manual peer hints) attach before metadata.
       torrent.on("infoHash", () => {

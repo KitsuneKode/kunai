@@ -1,7 +1,7 @@
 ---
 title: Torrents
 description: Stream magnet links directly with a local swarm engine, plus the experimental debrid lane.
-status: shipped
+status: experimental
 ---
 
 `/torrent` plays a magnet link without leaving Kunai: paste it when prompted,
@@ -42,7 +42,9 @@ to Real-Debrid's API. There is no other provider, no shared credential.
 - Embedded subtitles only (mpv reads them from the file); no external
   subtitle lookup.
 - Downloads capture HTTP(S) streams only; torrent pieces are streamed, not
-  stored: when the session ends, nothing is kept.
+  kept as offline downloads: pieces are written into a private attempt directory
+  and deleted by the torrent store on graceful shutdown. A crash can leave residue
+  that requires ownership-safe cleanup.
 
 See [downloads and offline](/docs/users/downloads-and-offline) for the
 download queue and [providers](/docs/users/providers) for switching lanes.

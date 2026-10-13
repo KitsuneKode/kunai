@@ -76,25 +76,20 @@ describe("local media gateway", () => {
     }
   });
 
-  test("header proxy binds headers server-side and gates hosts", async () => {
+  test("never exposes an upstream proxy route", async () => {
     const gateway = startLocalMediaGateway();
     try {
-      // Loopback target keeps the test hermetic: a local Bun server stands in
-      // for the upstream CDN. https is required, so this asserts the gate,
-      // not a live fetch.
-      expect(() =>
-        gateway.mountHeaderProxy("http://127.0.0.1:1/x", { "user-agent": "kunai" }),
-      ).toThrow("header proxy requires https");
-      const proxyUrl = gateway.mountHeaderProxy("https://cdn.example/x.m3u8", {
-        "user-agent": "kunai",
+      const url = gateway.mountTorrentFile({
+        mountId: "fixture",
+        fileName: "video.mp4",
+        fileLength: 4,
+        contentType: "video/mp4",
+        readRange: () => byteSource(4).readRange(0, 3),
       });
-      const denied = await fetch(proxyUrl);
-      // Host allowlisted at mount, but nothing answers there — the gate
-      // passes and the fetch fails closed. Either 403 (blocked) or 502
-      // (fetch failed) proves routing, never an open proxy.
-      expect([403, 502]).toContain(denied.status);
+      const legacyProxyUrl = url.replace("/t/", "/h/");
+      expect((await fetch(legacyProxyUrl)).status).toBe(403);
     } finally {
-      gateway.stop("playback-end");
+      gateway.stop();
     }
   });
 });
