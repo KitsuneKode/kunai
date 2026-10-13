@@ -85,6 +85,16 @@ bun run --cwd apps/docs lighthouse:docs
 
 Not gated in CI. Set `DOCS_SITE_URL` to production when auditing canonical URLs before deploy.
 
+### Search and optional Ask AI
+
+Default search is the static Orama index served at `/api/search` — matched in the browser, no query leaves the device. Hosted "Ask AI" answers are opt-in and only appear when all of these are set at build time:
+
+- `NEXT_PUBLIC_ASK_AI_ENDPOINT` — the provider's HTTPS endpoint (required)
+- `NEXT_PUBLIC_ASK_AI_PUBLIC_KEY` — the provider's public, index-scoped search key (required)
+- `NEXT_PUBLIC_ASK_AI_PROVIDER` — display name used in the disclosure line (optional, defaults to `Orama`)
+
+The client and its `@oramacloud/client` dependency lazy-load only after a visitor opens the panel; telemetry and answer caching are disabled in `apps/docs/lib/ask-ai.ts` / `components/search/ask-ai-panel.tsx`. Without both required variables the dialog renders no Ask-AI affordance at all.
+
 ## Hub pages
 
 | Route             | File                       | Purpose                               |
