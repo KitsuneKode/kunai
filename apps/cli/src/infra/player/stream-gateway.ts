@@ -9,7 +9,15 @@ import {
 } from "@kunai/core";
 import type { Server } from "bun";
 
+import {
+  parseDashTemplate,
+  rewriteDashManifest,
+  substituteDashTemplate,
+  UnsupportedDashManifestError,
+  type DashTemplate,
+} from "./dash-gateway-manifest";
 import { fromB64Url, toB64Url } from "./hls-relay";
+import { classifyManifestPrefix } from "./manifest-prefix";
 import {
   normalizeStreamHttpHeaders,
   type NormalizedStreamHttpHeaders,
@@ -42,6 +50,7 @@ import {
 const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60_000;
 /** Playlists and MPDs are small; a hostile body is not allowed to be a movie. */
 const MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
+const MAX_SNIFF_BYTES = 16 * 1024;
 /**
  * `#EXTM3U` tolerant of a UTF-8 BOM or stray leading whitespace — some CDNs
  * prefix the magic, and an exact-offset match would stream the playlist
@@ -71,6 +80,7 @@ const SUBTITLE_ROUTE = /^\/g\/([0-9a-f]{32})\/sub\/(\d+)$/;
 const FETCH_ROUTE = /^\/g\/([0-9a-f]{32})\/f\/([A-Za-z0-9_-]+=*)$/;
 const MEDIA_ROUTE = /^\/g\/([0-9a-f]{32})\/media$/;
 const DOC_ROUTE = /^\/g\/([0-9a-f]{32})\/doc$/;
+const DASH_ROUTE = /^\/g\/([0-9a-f]{32})\/dash\/(\d{1,4})(?:\/(.*))?$/;
 
 export type GatewayHeaders = Readonly<Record<string, string>>;
 
@@ -114,6 +124,8 @@ type LiveSession = {
   readonly subtitles: readonly string[];
   readonly document?: StreamGatewayDocument;
   readonly allowedOrigins: Set<string>;
+  readonly dashTemplates: Map<string, DashTemplate>;
+  readonly dashTemplateIds: Map<string, string>;
 };
 
 export type StreamGatewayOptions = {
@@ -202,23 +214,30 @@ export function rewritePlaylistForGateway(
     .join("\n");
 }
 
-/** Rewrite every `<BaseURL>` in a generated MPD to a gateway `/f/` URL. */
+/** Rewrite DASH addressing through guarded static or registered template routes. */
 export function rewriteDocumentForGateway(
   text: string,
   baseGateway: string,
   token: string,
   allowedOrigins: Set<string>,
+  options?: {
+    readonly manifestUrl?: string;
+    readonly registerTemplate: (template: DashTemplate) => string;
+  },
 ): string {
-  return text.replace(/<BaseURL>([^<]+)<\/BaseURL>/g, (_m: string, raw: string) => {
-    const url = raw.replace(/&amp;/g, "&");
-    const refused = `<BaseURL>${baseGateway}/g/${token}/blocked</BaseURL>`;
-    if (blockedLiteralTargetReason(url) !== null) return refused;
-    try {
+  return rewriteDashManifest({
+    text,
+    manifestUrl: options?.manifestUrl,
+    rewriteUrl(url) {
+      if (blockedLiteralTargetReason(url) !== null) return `${baseGateway}/g/${token}/blocked`;
+      const template = parseDashTemplate(url);
       allowedOrigins.add(new URL(url).origin);
-    } catch {
-      return refused;
-    }
-    return `<BaseURL>${upstreamGatewayUrl(baseGateway, token, url)}</BaseURL>`;
+      if (template.variables.length > 0) {
+        if (!options) throw new UnsupportedDashManifestError();
+        return options.registerTemplate(template);
+      }
+      return upstreamGatewayUrl(baseGateway, token, url.replaceAll("$$", "$"));
+    },
   });
 }
 
@@ -314,6 +333,24 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
     | { readonly kind: "response"; readonly response: Response; readonly finalUrl: string }
     | { readonly kind: "refused" | "timeout" };
 
+  function documentOptions(session: LiveSession, baseGateway: string, manifestUrl?: string) {
+    return {
+      manifestUrl,
+      registerTemplate(template: DashTemplate) {
+        const existing = session.dashTemplateIds.get(template.url);
+        if (existing) return templateUrl(existing, template);
+        if (session.dashTemplates.size >= 1024) throw new UnsupportedDashManifestError();
+        const id = String(session.dashTemplates.size + 1);
+        session.dashTemplates.set(id, template);
+        session.dashTemplateIds.set(template.url, id);
+        return templateUrl(id, template);
+      },
+    };
+    function templateUrl(id: string, template: DashTemplate) {
+      return `${baseGateway}/g/${session.token}/dash/${id}${template.variables.map((variable) => `/${variable.token}`).join("")}`;
+    }
+  }
+
   async function upstreamFetch(
     session: LiveSession,
     url: string,
@@ -398,7 +435,7 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
     const headers = passthroughResponseHeaders(upstream);
     const contentType = upstream.headers.get("content-type") ?? "";
     const hlsHint = isHlsPlaylistUrl(finalUrl) || /mpegurl/i.test(contentType);
-    const dashHint = /\.mpd(?:[?#]|$)/i.test(finalUrl) || /dash\+xml/i.test(contentType);
+    let dashHint = /\.mpd(?:[?#]|$)/i.test(finalUrl) || /dash\+xml/i.test(contentType);
 
     if (!upstream.body) return new Response(null, { status, headers });
 
@@ -410,11 +447,34 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
       reader.releaseLock();
       throw error;
     }
-    const head = first.done || !first.value ? null : Buffer.from(first.value);
+    let head = first.done || !first.value ? null : Buffer.from(first.value);
+    let sniffed = head ? classifyManifestPrefix(head.subarray(0, MAX_SNIFF_BYTES)) : "media";
+    if (!dashHint && !hlsHint) {
+      try {
+        while (sniffed === "incomplete" && !first.done) {
+          if ((head?.byteLength ?? 0) >= MAX_SNIFF_BYTES) throw new UnsupportedDashManifestError();
+          first = await reader.read();
+          if (first.done) break;
+          if (first.value)
+            head = head ? Buffer.concat([head, first.value]) : Buffer.from(first.value);
+          sniffed = head ? classifyManifestPrefix(head.subarray(0, MAX_SNIFF_BYTES)) : "media";
+        }
+      } catch (error) {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
+        throw error;
+      }
+      if (sniffed === "incomplete") {
+        // EOF without a complete manifest marker is opaque data. A valid
+        // one-byte range can be whitespace or '<'; preserve its bytes/status.
+        sniffed = "media";
+      }
+      dashHint = sniffed === "dash";
+    }
 
-    // One chunk is all we look at before deciding — a segment never waits on
-    // a second read, and a playlist header is always inside the first chunk.
-    const sniffedPlaylist = !dashHint && !hlsHint && head !== null && looksLikePlaylistHead(head);
+    // Progressive bytes pass through as soon as their prefix rules out a
+    // manifest. Only an ambiguous text prefix waits for another bounded read.
+    const sniffedPlaylist = !dashHint && !hlsHint && sniffed === "hls";
 
     if (!dashHint && !hlsHint && !sniffedPlaylist) {
       // Binary or text passthrough: re-emit the peeked chunk, then stream.
@@ -457,6 +517,7 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
         baseGateway,
         session.token,
         session.allowedOrigins,
+        documentOptions(session, baseGateway, finalUrl),
       );
       return new Response(rewritten, {
         status: 200,
@@ -490,6 +551,7 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
       path.match(MEDIA_ROUTE) ??
       path.match(FETCH_ROUTE) ??
       path.match(SUBTITLE_ROUTE) ??
+      path.match(DASH_ROUTE) ??
       path.match(DOC_ROUTE);
     // The same 404 whether the path is unknown or the token is wrong: a
     // probe must never learn whether a token exists.
@@ -505,10 +567,32 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
           baseGateway,
           session.token,
           session.allowedOrigins,
+          documentOptions(session, baseGateway),
         );
         return new Response(rewritten, {
           headers: { "content-type": session.document.contentType },
         });
+      }
+
+      if (DASH_ROUTE.test(path)) {
+        const template = session.dashTemplates.get(match[2] ?? "");
+        if (!template) return new Response("not found", { status: 404 });
+        let values: string[];
+        try {
+          values = match[3] ? match[3].split("/").map(decodeURIComponent) : [];
+        } catch {
+          return new Response("not found", { status: 404 });
+        }
+        const url = substituteDashTemplate(template, values);
+        if (!url) return new Response("upstream refused", { status: 403 });
+        const upstream = await upstreamFetch(
+          session,
+          url,
+          passthroughRequestHeaders(req),
+          req.signal,
+        );
+        if (upstream.kind !== "response") return refusedOrTimeout(upstream);
+        return await serveUpstreamMedia(session, upstream, baseGateway);
       }
 
       if (SUBTITLE_ROUTE.test(path)) {
@@ -538,7 +622,7 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
           req.signal,
         );
         if (upstream.kind !== "response") return refusedOrTimeout(upstream);
-        return serveUpstreamMedia(session, upstream, baseGateway);
+        return await serveUpstreamMedia(session, upstream, baseGateway);
       }
 
       // /media — the registered entry URL.
@@ -550,8 +634,10 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
         req.signal,
       );
       if (upstream.kind !== "response") return refusedOrTimeout(upstream);
-      return serveUpstreamMedia(session, upstream, baseGateway);
-    } catch {
+      return await serveUpstreamMedia(session, upstream, baseGateway);
+    } catch (error) {
+      if (error instanceof UnsupportedDashManifestError)
+        return new Response("unsupported DASH manifest", { status: 422 });
       // Never leak upstream error text (it can carry the private URL)
       // into a response the player surfaces.
       return new Response("upstream fetch failed", { status: 502 });
@@ -621,6 +707,8 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
         subtitles,
         document: input.document,
         allowedOrigins,
+        dashTemplates: new Map(),
+        dashTemplateIds: new Map(),
       };
       sessions.set(token, session);
       const base = gateway.baseUrl;

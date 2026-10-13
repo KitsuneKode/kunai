@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T15:32:03Z"
+lastReviewed: "2026-10-12T20:05:59Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -168,7 +168,7 @@ final absolute HTTP(S) URL directly and routes headered, cookie, external-
 subtitle, and deferred streams through `infra/player/stream-gateway.ts` — a
 per-playback loopback server on 127.0.0.1 under a 128-bit token path that
 injects the candidate's normalized headers, rewrites HLS playlists and DASH
-manifest BaseURLs, follows redirects only to public targets (the shared
+segment addressing, follows redirects only to public targets (the shared
 `@kunai/core` DNS/private-address guards), and passes Range through for
 seeking. Blocked playlist and generated MPD targets become local 404 URLs,
 so the external player cannot bypass the target guard. Playlists are bounded
@@ -180,6 +180,26 @@ local files, and non-HTTP schemes still refuse. The intent launcher constructs
 an argv array for `am`/Termux launchers, passes subtitles as `subs` /
 `subtitles_location` extras, scrubs the child environment, and never
 interpolates a shell command.
+
+DASH rewriting lives in `infra/player/dash-gateway-manifest.ts`. It parses
+MPDs with `@xmldom/xmldom`, resolves hierarchical BaseURLs against the final
+upstream URL, flattens inherited SegmentBase/List/Template addressing at each
+Representation, and rewrites initialization, media, and index URLs. Standard
+`Number`, `Time`, `Bandwidth`, and `RepresentationID` substitutions use
+registered session routes, with bounded validated values and fixed upstream
+origins. Repeat MPD loads reuse template routes; new registrations revoke
+the old session. Generated deferred MPDs use the same rewriter.
+
+DTD/entities, malformed XML, ContentProtection, xlink resources, external
+UTCTiming, PatchLocation, alternative BaseURLs, and unknown template variables
+are outside this preview contract and return a sanitized 422. The parser walk
+is bounded to 20,000 elements; each session admits at most 1,024 distinct
+templates. Unhinted manifests are recognized across transport chunks, XML
+prologs, and comments within a 16 KiB prefix; ambiguous prefixes above that
+bound refuse. Opaque partial-media bytes at EOF preserve their status and Range
+metadata. This is an on-device loopback gateway; the shared relay stays
+metadata-only. Android intent extras and actual playback still need physical
+device qualification.
 
 An accepted `ACTION_VIEW` request is represented as detached handoff evidence,
 not playback evidence. The session emits no start/progress/completion event,

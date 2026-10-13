@@ -83,7 +83,9 @@ Streams that need headers, cookies, or external subtitles play through a
 per-playback loopback gateway: Kunai serves the stream on `127.0.0.1` under an
 unguessable token path and injects the provider's headers upstream, so VLC or
 mpv-android sees a plain localhost URL. HLS playlists are rewritten through it,
-external subtitles ride the gateway and arrive as `subtitles_location` (VLC) or
+and DASH BaseURLs, segment lists, and standard segment templates use the same
+guarded connection, including redirects and range requests.
+External subtitles ride the gateway and arrive as `subtitles_location` (VLC) or
 `subs` (mpv-android) extras, and deferred locators materialize into a served
 manifest. Select `--player vlc` or `--player mpv` for external subtitles;
 the Android chooser cannot pass them and Kunai refuses that combination.
@@ -92,8 +94,11 @@ Blocked playlist URLs stay on a local refusal route, and every route requires
 the session token.
 
 Still refused, with an explanation instead of a broken launch: yt-dlp-only
-streams, local files, and non-HTTP schemes. Headered, subtitled, and deferred
-streams are covered by unit and contract tests but still need a physical-device
+streams, local files, and non-HTTP schemes. DRM, malformed DASH, alternative
+BaseURLs, unknown segment variables, and external DASH resources are not
+supported; the gateway returns a short refusal instead of forwarding them.
+Headered, subtitled, and deferred streams are covered by unit and contract tests
+but still need a physical-device
 pass before they graduate from preview. iOS is not supported.
 
 </Tab>

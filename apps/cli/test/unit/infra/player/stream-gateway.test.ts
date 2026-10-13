@@ -42,6 +42,286 @@ const PLAYLIST_BODY = [
 ].join("\n");
 
 describe("android stream gateway", () => {
+  test.each([0x20, 0x3c])("opaque Range byte %s keeps its 206 response", async (byte) => {
+    const gw = start({
+      fetchImpl: async () =>
+        new Response(new Uint8Array([byte]), {
+          status: 206,
+          headers: { "content-type": "video/mp4", "content-range": "bytes 20-20/100" },
+        }),
+    });
+    try {
+      const session = gw.registerSession({ url: "https://cdn.example.com/movie.mp4", headers: {} });
+      const response = await fetch(session.mediaUrl, { headers: { Range: "bytes=20-20" } });
+      expect(response.status).toBe(206);
+      expect(response.headers.get("content-range")).toBe("bytes 20-20/100");
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([byte]));
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test.each([
+    { own: ' xml:base="updates/"', expected: "https://other.example/dir/updates/next.mpd" },
+    { own: "", expected: "https://other.example/dir/next.mpd" },
+  ])(
+    "DASH Location retains inherited XML base independently of media BaseURL: %s",
+    async ({ own, expected }) => {
+      const calls: string[] = [];
+      const mpd = `<MPD xml:base="https://other.example/dir/"><BaseURL>media/</BaseURL><Location${own}>next.mpd</Location><Period><AdaptationSet><Representation><BaseURL>video.mp4</BaseURL></Representation></AdaptationSet></Period></MPD>`;
+      const gw = start({
+        fetchImpl: async (url) => {
+          calls.push(url);
+          return url === "https://cdn.example.com/master.mpd"
+            ? new Response(mpd, { headers: { "content-type": "application/dash+xml" } })
+            : new Response("<MPD/>");
+        },
+      });
+      try {
+        const session = gw.registerSession({
+          url: "https://cdn.example.com/master.mpd",
+          headers: {},
+        });
+        const text = await (await fetch(session.mediaUrl)).text();
+        const location = text.match(/<Location[^>]*>([^<]+)<\/Location>/)?.[1] ?? "";
+        expect(await (await fetch(location)).text()).toBe("<MPD/>");
+        expect(calls.at(-1)).toBe(expected);
+      } finally {
+        gw.stop();
+      }
+    },
+  );
+  test.each([
+    { chunks: ["<!-- CDN metadata -->", "<MPD><BaseURL>http://127.0.0.1/private</BaseURL></MPD>"] },
+    { chunks: ["<MP", "D><BaseURL>http://127.0.0.1/private</BaseURL></MPD>"] },
+  ])(
+    "extensionless DASH cannot escape the guard behind comments or split magic: %s",
+    async ({ chunks }) => {
+      const gw = start({
+        fetchImpl: async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+                controller.close();
+              },
+            }),
+            { headers: { "content-type": "application/octet-stream" } },
+          ),
+      });
+      try {
+        const session = gw.registerSession({ url: "https://cdn.example.com/load", headers: {} });
+        const text = await (await fetch(session.mediaUrl)).text();
+        expect(text).not.toContain("http://127.0.0.1/private");
+        expect(text).toContain(`${gw.baseUrl}/g/`);
+      } finally {
+        gw.stop();
+      }
+    },
+  );
+
+  test("BaseURL xml:base controls the upstream request before rewriting", async () => {
+    const calls: string[] = [];
+    const mpd =
+      '<MPD><Period><AdaptationSet><Representation><BaseURL xml:base="https://other.example/">clip.mp4</BaseURL><SegmentBase/></Representation></AdaptationSet></Period></MPD>';
+    const gw = start({
+      fetchImpl: async (url) => {
+        calls.push(url);
+        return url.endsWith(".mpd")
+          ? new Response(mpd, { headers: { "content-type": "application/dash+xml" } })
+          : new Response("video");
+      },
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/master.mpd",
+        headers: {},
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      const media = text.match(/<BaseURL[^>]*>([^<]+)<\/BaseURL>/)?.[1] ?? "";
+      expect(await (await fetch(media)).text()).toBe("video");
+      expect(calls.at(-1)).toBe("https://other.example/clip.mp4");
+      expect(text).not.toContain("xml:base");
+    } finally {
+      gw.stop();
+    }
+  });
+  test("upstream DASH inherits relative bases and templates without bypassing provider headers", async () => {
+    const calls: RecordedCall[] = [];
+    const mpd = `<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"><BaseURL>media/</BaseURL><Period><AdaptationSet><SegmentTemplate initialization="init-$RepresentationID$.mp4" media="chunk-$Number%05d$.m4s?sig=a&amp;b=c"/><Representation id="main" bandwidth="500"><BaseURL>video/</BaseURL></Representation></AdaptationSet></Period></MPD>`;
+    const gw = start({
+      fetchImpl: async (url, init) => {
+        calls.push({ url, headers: Object.fromEntries(new Headers(init.headers)) });
+        if (url === "https://cdn.example.com/start.mpd")
+          return new Response(null, { status: 302, headers: { location: "/dash/master.mpd" } });
+        if (url === "https://cdn.example.com/dash/master.mpd")
+          return new Response(mpd, { headers: { "content-type": "application/dash+xml" } });
+        if (url === "https://cdn.example.com/dash/media/video/init-main.mp4")
+          return new Response("initialization");
+        if (url === "https://cdn.example.com/dash/media/video/chunk-00001.m4s?sig=a&b=c")
+          return new Response("segment");
+        return new Response("unexpected target", { status: 404 });
+      },
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/start.mpd",
+        headers: { Cookie: "fixture=only" },
+      });
+      const response = await fetch(session.mediaUrl);
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      const initialization = text
+        .match(/initialization="([^"]+)"/)?.[1]
+        ?.replaceAll("$RepresentationID$", "main");
+      const segment = text.match(/media="([^"]+)"/)?.[1]?.replaceAll("$Number%05d$", "00001");
+      expect(initialization).toStartWith(gw.baseUrl);
+      expect(segment).toStartWith(gw.baseUrl);
+      expect(await (await fetch(initialization ?? "")).text()).toBe("initialization");
+      expect(await (await fetch(segment ?? "")).text()).toBe("segment");
+      expect(calls.at(-1)).toEqual({
+        url: "https://cdn.example.com/dash/media/video/chunk-00001.m4s?sig=a&b=c",
+        headers: { cookie: "fixture=only" },
+      });
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("upstream DASH SegmentList URLs use the final public base and preserve Range", async () => {
+    const mpd = `<MPD><Period><AdaptationSet><Representation><BaseURL>media/</BaseURL><SegmentList><Initialization sourceURL="init.mp4"/><SegmentURL media="seg.m4s" index="index.bin"/></SegmentList></Representation></AdaptationSet></Period></MPD>`;
+    const calls: RecordedCall[] = [];
+    const gw = start({
+      fetchImpl: async (url, init) => {
+        calls.push({ url, headers: Object.fromEntries(new Headers(init.headers)) });
+        if (url.endsWith(".mpd"))
+          return new Response(mpd, { headers: { "content-type": "application/dash+xml" } });
+        return new Response("part", { status: 206, headers: { "content-range": "bytes 0-3/100" } });
+      },
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/dash/master.mpd",
+        headers: { Referer: "https://provider.example/" },
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      const segment = text.match(/<SegmentURL[^>]*media="([^"]+)"/)?.[1];
+      expect(segment).toStartWith(gw.baseUrl);
+      const response = await fetch(segment ?? "", { headers: { Range: "bytes=0-3" } });
+      expect(response.status).toBe(206);
+      expect(response.headers.get("content-range")).toBe("bytes 0-3/100");
+      expect(calls.at(-1)).toEqual({
+        url: "https://cdn.example.com/dash/media/seg.m4s",
+        headers: { referer: "https://provider.example/", range: "bytes=0-3" },
+      });
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("DASH template substitutions cannot change the registered target or survive revocation", async () => {
+    const calls: string[] = [];
+    const mpd =
+      '<MPD><Period><AdaptationSet><Representation><SegmentTemplate media="chunk-$Number$.m4s"/></Representation></AdaptationSet></Period></MPD>';
+    const gw = start({
+      fetchImpl: async (url) => {
+        calls.push(url);
+        return new Response(mpd, { headers: { "content-type": "application/dash+xml" } });
+      },
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/master.mpd",
+        headers: {},
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      const template = text.match(/media="([^"]+)"/)?.[1] ?? "";
+      expect(template).toStartWith(gw.baseUrl);
+      expect((await fetch(template.replace("$Number$", "https%3A%2F%2F127.0.0.1"))).status).toBe(
+        403,
+      );
+      expect(calls).toEqual(["https://cdn.example.com/master.mpd"]);
+      gw.registerSession({ url: "https://cdn.example.com/other.mp4", headers: {} });
+      expect((await fetch(template.replace("$Number$", "1"))).status).toBe(404);
+      expect(calls).toHaveLength(1);
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("repeated DASH manifests reuse their registered template routes", async () => {
+    const mpd =
+      '<MPD><Period><AdaptationSet><Representation><SegmentTemplate media="chunk-$Time$.m4s"/></Representation></AdaptationSet></Period></MPD>';
+    const gw = start({
+      fetchImpl: async () =>
+        new Response(mpd, { headers: { "content-type": "application/dash+xml" } }),
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/master.mpd",
+        headers: {},
+      });
+      const first = await (await fetch(session.mediaUrl)).text();
+      const second = await (await fetch(session.mediaUrl)).text();
+      expect(second).toBe(first);
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test.each([
+    '<!DOCTYPE MPD [<!ENTITY url SYSTEM "http://127.0.0.1/private">]><MPD><BaseURL>&url;</BaseURL></MPD>',
+    '<MPD><Period><ContentProtection schemeIdUri="urn:drm"/></Period></MPD>',
+    '<MPD xmlns:xlink="http://www.w3.org/1999/xlink"><Period xlink:href="http://127.0.0.1/private"/></MPD>',
+    "<MPD><BaseURL>https://a.example/</BaseURL><BaseURL>https://b.example/</BaseURL></MPD>",
+    '<MPD><Period><AdaptationSet><Representation><SegmentTemplate media="chunk-$Unknown$.m4s"/></Representation></AdaptationSet></Period></MPD>',
+    '<MPD><Period><AdaptationSet><Representation><SegmentTemplate media="chunk-$Number%040d$.m4s"/></Representation></AdaptationSet></Period></MPD>',
+    '<MPD xmlns:xlink="http://www.w3.org/1999/xlink"><BaseURL xlink:href="http://127.0.0.1/private">https://cdn.example.com/movie.mp4</BaseURL></MPD>',
+    '<MPD xmlns:xlink="http://www.w3.org/1999/xlink"><Location xlink:href="http://127.0.0.1/private">https://cdn.example.com/master.mpd</Location></MPD>',
+    "<MPD><Period></MPD>",
+  ])("unsupported DASH manifests fail closed without disclosing upstream XML: %s", async (mpd) => {
+    const gw = start({
+      fetchImpl: async () =>
+        new Response(mpd, { headers: { "content-type": "application/dash+xml" } }),
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/master.mpd",
+        headers: {},
+      });
+      const response = await fetch(session.mediaUrl);
+      expect(response.status).toBe(422);
+      expect(await response.text()).toBe("unsupported DASH manifest");
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("a DASH manifest with a private segment template stays on a local refusal route", async () => {
+    const mpd =
+      '<MPD><Period><AdaptationSet><Representation><SegmentTemplate media="http://127.0.0.1/chunk-$Number$.m4s"/></Representation></AdaptationSet></Period></MPD>';
+    const calls: string[] = [];
+    const gw = start({
+      fetchImpl: async (url) => {
+        calls.push(url);
+        return new Response(mpd, { headers: { "content-type": "application/dash+xml" } });
+      },
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/master.mpd",
+        headers: {},
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      expect(text).not.toContain("http://127.0.0.1/chunk");
+      const segment = text.match(/media="([^"]+)"/)?.[1] ?? "";
+      expect(segment).toStartWith(gw.baseUrl);
+      expect((await fetch(segment)).status).toBe(404);
+      expect(calls).toHaveLength(1);
+    } finally {
+      gw.stop();
+    }
+  });
   test("requests without a session token get 404", async () => {
     const gw = start({ fetchImpl: async () => new Response("x") });
     try {
