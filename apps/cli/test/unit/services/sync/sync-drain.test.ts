@@ -53,10 +53,14 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function outbox() {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-sync-drain-"));
-  dirs.push(dir);
-  const db = openKunaiDatabase(join(dir, "data.sqlite"));
+function outbox(storage: "file" | "memory" = "file") {
+  let databasePath = ":memory:";
+  if (storage === "file") {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-sync-drain-"));
+    dirs.push(dir);
+    databasePath = join(dir, "data.sqlite");
+  }
+  const db = openKunaiDatabase(databasePath);
   openDatabases.push(db);
   runMigrations(db, "data");
   return new SyncOutboxRepository(db);
@@ -266,7 +270,10 @@ describe("SyncService drain", () => {
   });
 
   test("an uninjected service uses the production drain budget, not a test-sized one", async () => {
-    const repo = outbox();
+    // This asserts default service wiring, not filesystem throughput. Keep the
+    // real repository and schema without WAL/file contention from parallel CI.
+    // The remaining drain cases retain the file-backed fixture by default.
+    const repo = outbox("memory");
     const anilist = adapter("anilist");
     // No `maxOperationsPerPass`: this is the wiring the app actually gets.
     const service = createSyncService({

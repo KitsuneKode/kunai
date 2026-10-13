@@ -40,7 +40,7 @@ export function SettingsShell({
   readonly onStatus: (message: string | null) => void;
   readonly onRedraw: () => void;
 }) {
-  const actionAbortRef = useRef<AbortController | null>(null);
+  const activeActionRef = useRef<{ id: string; controller: AbortController } | null>(null);
   const [state, setState] = useState<SettingsUiState>(() => {
     const base = createSettingsUiState(container.config.getRaw());
     const ctx = buildSettingsRegistryContext(container, base.draft);
@@ -88,13 +88,16 @@ export function SettingsShell({
 
   const runAction = useCallback(
     async (actionId: string) => {
+      if (activeActionRef.current) return;
       const def = page.defById.get(actionId);
       if (!def || def.kind !== "action") {
         setState((current) => ({ ...current, busy: false, activeActionId: null }));
         return;
       }
       const controller = new AbortController();
-      actionAbortRef.current = controller;
+      // Input can arrive again before React commits the busy render.
+      const activeAction = { id: actionId, controller };
+      activeActionRef.current = activeAction;
       try {
         const message = await def.run(registryCtx, {
           signal: controller.signal,
@@ -129,7 +132,7 @@ export function SettingsShell({
           error: `Action failed: ${String(error)}`,
         }));
       } finally {
-        if (actionAbortRef.current === controller) actionAbortRef.current = null;
+        if (activeActionRef.current === activeAction) activeActionRef.current = null;
       }
     },
     [container, onStatus, page.defById, registryCtx],
@@ -191,10 +194,10 @@ export function SettingsShell({
     return () => clearTimeout(timer);
   }, [state.draft, container, saveDraft]);
 
-  useEffect(() => () => actionAbortRef.current?.abort(), []);
+  useEffect(() => () => activeActionRef.current?.controller.abort(), []);
 
   const applyResult = (result: SettingsKeyResult) => {
-    if (!result.handled) return;
+    if (!result.handled || activeActionRef.current) return;
     // Theme live preview: while the theme enum submenu is open, repaint on
     // highlight so the whole shell shows the palette, not a swatch. On
     // close, Enter's persist applies the pick; Esc restores the theme that
@@ -237,14 +240,15 @@ export function SettingsShell({
   useInput(
     (input, key) => {
       if (commandMode) return;
-      if (state.busy) {
-        const activeDef = state.activeActionId ? page.defById.get(state.activeActionId) : null;
+      const activeActionId = activeActionRef.current?.id ?? state.activeActionId;
+      if (state.busy || activeActionRef.current) {
+        const activeDef = activeActionId ? page.defById.get(activeActionId) : null;
         if (
           (key.escape || input.toLowerCase() === "q") &&
           activeDef?.kind === "action" &&
           activeDef.cancellable
         ) {
-          actionAbortRef.current?.abort();
+          activeActionRef.current?.controller.abort();
           onStatus("Cancelling…");
           onRedraw();
         }

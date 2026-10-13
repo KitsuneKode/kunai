@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T20:00:26Z"
+lastReviewed: "2026-10-13"
 ---
 
 # Kunai — UX Architecture
@@ -88,7 +88,9 @@ query. This applies to Browse and the shared picker/post-play input hook.
 ### Optional terminal mouse input
 
 The Ink shell owns one paused-mode stdin facade in `app-shell/mouse/`.
-It separates mouse reports before Ink parses keyboard input; it never adds
+It preserves wire order: Ink receives preceding keyboard bytes before a later
+mouse report is dispatched, including reports in the same chunk or queued
+under one readable event. It never adds
 another `data` listener to the real TTY. Tracking requires both stdin and
 stdout to be TTYs, excludes `TERM=dumb`, and can be disabled with
 `KUNAI_NO_MOUSE=1`. Session disposal releases subscriptions, hit regions,
@@ -566,7 +568,7 @@ the same cell budget as CJK titles. Surfaces reuse
 `apps/cli/src/domain/text-display.ts` rather than counting code points or UTF-16 units.
 
 Up Next also requires a prior mouse click on the same selected row before
-launching playback. Scrolling and disabling its pointer owner clear that intent.
+launching playback. Keyboard input, including navigation that leaves the same row selected, scrolling and disabling its pointer owner clear that intent.
 
 Browse requires a prior pointer click on the same selected title before opening
 it. Preselected rows, keyboard navigation, scrolling and covered content do not
