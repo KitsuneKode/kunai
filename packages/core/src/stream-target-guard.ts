@@ -12,7 +12,7 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  *
  * `blockedLiteralTargetReason` is the synchronous half — scheme, host shape,
  * and literal ranges, no DNS — so an injected fetch sees no extra microtask.
- * `resolvedAddressBlockReason` adds DNS answer validation for the real path.
+ * The network path validates DNS answers and connects only to a vetted IP.
  */
 export function blockedLiteralTargetReason(url: string): string | null {
   let parsed: URL;
@@ -40,16 +40,6 @@ export function blockedLiteralTargetReason(url: string): string | null {
   // A single-label name is an intranet name; public DNS names always carry a dot.
   if (!host.includes(".") && !host.includes(":")) {
     return `single-label host ${host}`;
-  }
-  return null;
-}
-
-async function resolvedAddressBlockReason(url: string): Promise<string | null> {
-  const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  const resolved = await resolveHostAddresses(host);
-  for (const address of resolved) {
-    const reason = isPrivateLiteralAddress(address);
-    if (reason) return `${reason} (DNS answer for ${host})`;
   }
   return null;
 }
@@ -128,13 +118,13 @@ function isPrivateLiteralAddress(host: string): string | null {
 }
 
 async function resolveHostAddresses(host: string): Promise<string[]> {
-  if (parseIpv4(host) || host.includes(":")) return [];
+  if (parseIpv4(host) || host.includes(":")) return [host];
   try {
     const { lookup } = await import("node:dns/promises");
     const answers = await lookup(host, { all: true });
     return answers.map((a) => a.address);
   } catch {
-    // An unresolvable name fails in the fetch anyway — don't pre-empt its error.
+    // Never fall back to an unchecked second resolver on lookup failure.
     return [];
   }
 }
@@ -180,6 +170,8 @@ export async function fetchProbeTarget(options: {
   readonly remaining: () => number;
   readonly parentSignal?: AbortSignal;
   readonly resolveNamesFor: (url: string) => boolean;
+  /** Resolver seam; production uses the system resolver and pins its answer. */
+  readonly resolveAddresses?: (host: string) => Promise<readonly string[]>;
 }): Promise<ProbeFetchOutcome> {
   let target = options.url;
   let init = options.init;
@@ -188,21 +180,43 @@ export async function fetchProbeTarget(options: {
     if (literalBlocked) {
       return { kind: "blocked", reason: `${target} -> ${literalBlocked}` };
     }
-    // DNS once the literals pass — skipped when the caller already aborted so
-    // a cancelled probe does not sit on a resolver round-trip.
+    let requestTarget = target;
+    let requestInit: RequestInit & { proxy?: false; tls?: { serverName: string } } = init;
+    // The transport must use the address we checked, not resolve the hostname
+    // again. Keep the logical URL for redirect bases and credential boundaries.
     if (options.resolveNamesFor(target) && !options.parentSignal?.aborted) {
-      const resolvedBlocked = await resolvedAddressBlockReason(target);
-      if (resolvedBlocked) {
-        return { kind: "blocked", reason: `${target} -> ${resolvedBlocked}` };
+      const parsed = new URL(target);
+      const host = parsed.hostname.replace(/^\[|\]$/g, "");
+      const addresses = await (options.resolveAddresses ?? resolveHostAddresses)(host);
+      if (addresses.length === 0) {
+        return { kind: "blocked", reason: `No vetted DNS address for ${host}` };
       }
+      for (const address of addresses) {
+        const reason = isPrivateLiteralAddress(address);
+        if (reason) return { kind: "blocked", reason: `${reason} (DNS answer for ${host})` };
+      }
+      const address = addresses[0];
+      if (!address) return { kind: "blocked", reason: `No vetted DNS address for ${host}` };
+      const pinned = new URL(target);
+      pinned.hostname = address.includes(":") ? `[${address}]` : address;
+      const headers = new Headers(init.headers);
+      headers.set("Host", parsed.host);
+      requestTarget = pinned.toString();
+      requestInit = {
+        ...init,
+        headers,
+        // Environment proxies would resolve the hostname outside this guard.
+        proxy: false,
+        ...(parsed.protocol === "https:" ? { tls: { serverName: host } } : {}),
+      };
     }
     if (options.remaining() <= 0) {
       return { kind: "timeout" };
     }
     // The fetch impl is invoked even on an aborted signal: abort is delivered
     // through the signal itself, which is also what injected test fetches see.
-    const response = await options.fetchImpl(target, {
-      ...init,
+    const response = await options.fetchImpl(requestTarget, {
+      ...requestInit,
       redirect: "manual",
     });
     if (REDIRECT_STATUSES.has(response.status)) {

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T20:05:59Z"
+lastReviewed: "2026-10-13T11:22:36Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -169,7 +169,10 @@ subtitle, and deferred streams through `infra/player/stream-gateway.ts` — a
 per-playback loopback server on 127.0.0.1 under a 128-bit token path that
 injects the candidate's normalized headers, rewrites HLS playlists and DASH
 segment addressing, follows redirects only to public targets (the shared
-`@kunai/core` DNS/private-address guards), and passes Range through for
+`@kunai/core` DNS/private-address guards). Each real fetch connects to the
+validated IP with the original Host and TLS server name; every redirect is
+validated and pinned again, and ambient proxies cannot bypass that binding.
+The gateway passes Range through for
 seeking. Blocked playlist and generated MPD targets become local 404 URLs,
 so the external player cannot bypass the target guard. Playlists are bounded
 to 4 MiB, including the first chunk. Idle shutdown waits for requests and
