@@ -61,6 +61,8 @@ import {
   getPickerListMaxVisible,
   ROOT_HORIZONTAL_PADDING,
 } from "./layout-policy";
+import { startMouseSession } from "./mouse/mouse-session";
+import { MouseDispatchProvider } from "./mouse/MouseRegions";
 import {
   createNotificationQueueState,
   NOTIFICATION_TOAST_TTL_MS,
@@ -1401,25 +1403,61 @@ export async function launchSessionApp(container: Container) {
   markInteractiveShellMounted();
   clearShellScreen();
 
-  rootShellInk = render(<AppRoot container={container} />, {
-    exitOnCtrlC: false,
-    alternateScreen: true,
-    // Ink invokes this before writing the frame. The manager defers its paint
-    // to the next task, so sixel lands after the frame rather than inside it.
-    onRender: () => sixelOverlayManager.afterInkRender(),
-  });
-  rootShellExitPromise = rootShellInk.waitUntilExit();
+  // Mouse support: a stdin facade sits between the real TTY and Ink. It pumps
+  // real stdin itself (so Ink's readable/read loop is untouched by a second
+  // consumer), splits SGR mouse reports out before Ink's keypress parser can
+  // see them, and dispatches them as semantic pointer events. Keyboard bytes
+  // pass through untouched. Opt-out: KUNAI_NO_MOUSE=1, or any non-TTY/dumb
+  // terminal.
+  let mouseSession: ReturnType<typeof startMouseSession> = null;
+  try {
+    mouseSession = startMouseSession({
+      stdin: process.stdin,
+      stdout: process.stdout,
+      host: process,
+      disabled: process.env.KUNAI_NO_MOUSE === "1",
+      term: process.env.TERM,
+    });
+    rootShellInk = render(
+      mouseSession ? (
+        <MouseDispatchProvider dispatcher={mouseSession.dispatcher}>
+          <AppRoot container={container} />
+        </MouseDispatchProvider>
+      ) : (
+        <AppRoot container={container} />
+      ),
+      {
+        exitOnCtrlC: false,
+        alternateScreen: true,
+        // SAFETY: MouseSplitStdin implements the readable/read/setRawMode/isTTY
+        // subset Ink's stdin contract calls — verified against ink 7.x source.
+        stdin: (mouseSession?.stdin ?? process.stdin) as NodeJS.ReadStream,
+        // Ink invokes this before writing the frame. The manager defers its paint
+        // to the next task, so sixel lands after the frame rather than inside it.
+        onRender: () => sixelOverlayManager.afterInkRender(),
+      },
+    );
+  } catch (error) {
+    mouseSession?.dispose();
+    clearInteractiveShellMounted();
+    stdinManager.exitShell();
+    throw error;
+  }
+  const exitPromise = rootShellInk.waitUntilExit();
+  rootShellExitPromise = exitPromise;
 
-  void (async () => {
-    await rootShellExitPromise;
+  const releaseShell = () => {
+    mouseSession?.dispose();
     rootShellInk = null;
     rootShellExitPromise = null;
     clearRootContentSession();
     clearInteractiveShellMounted();
     stdinManager.exitShell();
-  })();
+  };
+  // Preserve the returned rejection, while releasing ownership on both paths.
+  void exitPromise.then(releaseShell, releaseShell);
 
-  return rootShellExitPromise;
+  return exitPromise;
 }
 
 export async function shutdownSessionApp(): Promise<void> {

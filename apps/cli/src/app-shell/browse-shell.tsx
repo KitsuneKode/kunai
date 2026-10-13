@@ -8,7 +8,6 @@ import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import { kannaDoneText, type KannaDoneKind } from "@/app-shell/kanna-voice";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
-import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
 import type { FilterStateKey } from "@/domain/search/SearchIntent";
@@ -22,7 +21,8 @@ import {
 import type { SearchResult, ShellMode } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import { Box, Text, useInput } from "ink";
+import { addSearchQuery, getSearchHistory } from "@/services/persistence/search-history";
+import { Box, Text, useInput, type DOMElement } from "ink";
 import React, {
   useCallback,
   useEffect,
@@ -122,6 +122,7 @@ import {
   getBrowseListMaxVisible,
 } from "./layout-policy";
 import { reducedMotionEnabled } from "./motion-policy";
+import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { takePaletteTitleLaunch } from "./palette-title-launch";
@@ -1050,6 +1051,37 @@ export function BrowseShell<T>({
     setFocusZone((current) => browseFocusZoneReducer(current, event, focusZoneContextRef.current));
   }, []);
 
+  const mouseEnabled = useMouseEnabled();
+  const resultsMouseRef = useRef<DOMElement | null>(null);
+  const pointerActive =
+    !rootContentSuspended && !activeOverlay && !commandMode && !viewport.tooSmall;
+  const priorPointerSelection = useRef<{ index: number; value: T } | null>(null);
+  useEffect(() => {
+    const prior = priorPointerSelection.current;
+    if (
+      !pointerActive ||
+      !listFocused ||
+      prior?.index !== boundedSelectedIndex ||
+      prior.value !== displayOptions[boundedSelectedIndex]?.value
+    )
+      priorPointerSelection.current = null;
+  }, [pointerActive, listFocused, boundedSelectedIndex, displayOptions]);
+  const scrollResults = (direction: "up" | "down") => {
+    priorPointerSelection.current = null;
+    dispatchFocusZone({ type: "focus-list" });
+    setSelectedIndex((current) =>
+      Math.max(0, Math.min(displayOptions.length - 1, current + (direction === "up" ? -1 : 1))),
+    );
+  };
+  useMouseRegion(
+    resultsMouseRef,
+    "browse:results",
+    {
+      onWheel: scrollResults,
+    },
+    { active: pointerActive && !isCalendarView && displayOptions.length > 0 },
+  );
+
   const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(activeIdleContext, {
     idleFocused,
     selectedIndex: idleSelectedIndex,
@@ -1413,6 +1445,7 @@ export function BrowseShell<T>({
   const visibleCalendarRows = calendarRenderRows.slice(calendarWindow.start, calendarWindow.end);
 
   useInput((input, key) => {
+    priorPointerSelection.current = null;
     if (rootContentSuspended) return;
     recordKeystroke("browse", key.upArrow ? "up" : key.downArrow ? "down" : input);
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -2097,68 +2130,74 @@ export function BrowseShell<T>({
                 </Text>
               </Box>
             ) : null}
-            <InputField
-              label="Search title"
-              value={query}
-              onChange={updateQuery}
-              onSubmit={handleQuerySubmit}
-              placeholder={placeholder}
-              focus={!commandMode && !resultFilterFocused && !listFocused && !idleFocused}
-              ghostSuffix={suggestionGhost?.suffix}
-              cursorRef={queryCursorRef}
-              hint={
-                commandMode
-                  ? undefined
-                  : suggestionBandVisible && suggestionBandModel.rows.length > 0
-                    ? "↓ suggestions · → complete · esc dismiss · ↵ search"
-                    : displayOptions.length === 0
-                      ? canFocusIdleRows
-                        ? "Type a title · ↓ for you now · / commands"
-                        : "Type a title · / commands · /guide tour · /filters guided search"
-                      : listFocused
-                        ? undefined
-                        : "↓ results · / commands"
-              }
-              maxWidth={innerWidth}
-              onRedraw={clearShellScreen}
-              ignoreInput={(input, key) => {
-                if (
-                  /^[1-9]$/.test(input) &&
-                  query.length === 0 &&
-                  structuredFilterChips.length > 0
-                ) {
-                  const chip = structuredFilterChips[Number(input) - 1];
-                  if (chip) {
-                    clearStructuredFilterChip(chip.key);
+            <MouseTarget
+              id="browse:search"
+              active={pointerActive}
+              onClick={() => dispatchFocusZone({ type: "focus-query" })}
+            >
+              <InputField
+                label="Search title"
+                value={query}
+                onChange={updateQuery}
+                onSubmit={handleQuerySubmit}
+                placeholder={placeholder}
+                focus={!commandMode && !resultFilterFocused && !listFocused && !idleFocused}
+                ghostSuffix={suggestionGhost?.suffix}
+                cursorRef={queryCursorRef}
+                hint={
+                  commandMode
+                    ? undefined
+                    : suggestionBandVisible && suggestionBandModel.rows.length > 0
+                      ? "↓ suggestions · → complete · esc dismiss · ↵ search"
+                      : displayOptions.length === 0
+                        ? canFocusIdleRows
+                          ? "Type a title · ↓ for you now · / commands"
+                          : "Type a title · / commands · /guide tour · /filters guided search"
+                        : listFocused
+                          ? undefined
+                          : "↓ results · / commands"
+                }
+                maxWidth={innerWidth}
+                onRedraw={clearShellScreen}
+                ignoreInput={(input, key) => {
+                  if (
+                    /^[1-9]$/.test(input) &&
+                    query.length === 0 &&
+                    structuredFilterChips.length > 0
+                  ) {
+                    const chip = structuredFilterChips[Number(input) - 1];
+                    if (chip) {
+                      clearStructuredFilterChip(chip.key);
+                    }
+                    return true;
                   }
-                  return true;
-                }
-                if (key.backspace && query.length === 0 && structuredFilterChips.length > 0) {
-                  const lastKey = getLastFilterStateKey(
-                    parseBrowseFilterQuery(query).filters.state,
-                  );
-                  if (lastKey) {
-                    clearStructuredFilterChip(lastKey);
+                  if (key.backspace && query.length === 0 && structuredFilterChips.length > 0) {
+                    const lastKey = getLastFilterStateKey(
+                      parseBrowseFilterQuery(query).filters.state,
+                    );
+                    if (lastKey) {
+                      clearStructuredFilterChip(lastKey);
+                    }
+                    return true;
                   }
-                  return true;
-                }
-                // Ink fires every useInput — nothing stops propagation between
-                // this field and the shell handler. While a band row is
-                // highlighted the parent owns Enter; the field must not also
-                // submit the raw draft as a second, competing search.
-                if (key.return && suggestionBandVisible && boundedSuggestionIndex >= 0) {
-                  return true;
-                }
-                // Band open: → at end-of-line accepts the ghost completion
-                // instead of the editor's no-op cursor move. (Tab is reserved
-                // by the parent handler, which owns the mode toggle.)
-                if (key.rightArrow && suggestionGhost && queryCursorRef.current >= query.length) {
-                  setQuery(suggestionGhost.full);
-                  return true;
-                }
-                return false;
-              }}
-            />
+                  // Ink fires every useInput — nothing stops propagation between
+                  // this field and the shell handler. While a band row is
+                  // highlighted the parent owns Enter; the field must not also
+                  // submit the raw draft as a second, competing search.
+                  if (key.return && suggestionBandVisible && boundedSuggestionIndex >= 0) {
+                    return true;
+                  }
+                  // Band open: → at end-of-line accepts the ghost completion
+                  // instead of the editor's no-op cursor move. (Tab is reserved
+                  // by the parent handler, which owns the mode toggle.)
+                  if (key.rightArrow && suggestionGhost && queryCursorRef.current >= query.length) {
+                    setQuery(suggestionGhost.full);
+                    return true;
+                  }
+                  return false;
+                }}
+              />
+            </MouseTarget>
             {suggestionBandVisible && suggestionBandModel.rows.length > 0 ? (
               <SearchSuggestionBand
                 model={suggestionBandModel}
@@ -2248,7 +2287,11 @@ export function BrowseShell<T>({
             flexGrow={1}
           >
             {/* Result list */}
-            <Box flexDirection="column" width={companionBesideList ? listWidth : undefined}>
+            <Box
+              ref={resultsMouseRef}
+              flexDirection="column"
+              width={companionBesideList ? listWidth : undefined}
+            >
               {(isCalendarView ? calendarWindow.start : windowStart) > 0 ? (
                 <Text color={palette.dim}> ▲ ...</Text>
               ) : null}
@@ -2303,13 +2346,43 @@ export function BrowseShell<T>({
                       columns.push(listRowStatusColumn("♥", 2, palette.accent));
                     }
                     return (
-                      <ListRow
+                      // Mouse: click a row to select it (same as arrowing to
+                      // it); click the same row again to submit — the
+                      // terminal-safe "click to open" without timing games.
+                      // Deactivated while an overlay is up so a click on an
+                      // uncovered row can't slip under it.
+                      <MouseTarget
                         key={`${option.label}-${option.detail ?? ""}`}
-                        selected={selected && listFocused}
-                        rowWidth={rowWidth}
-                        flexColumnIndex={browseRowLayout.flexColumnIndex}
-                        columns={columns}
-                      />
+                        id={`browse:row:${optionIndex}`}
+                        active={pointerActive}
+                        onWheel={scrollResults}
+                        onClick={() => {
+                          const prior = priorPointerSelection.current;
+                          if (
+                            !listFocused ||
+                            optionIndex !== boundedSelectedIndex ||
+                            prior?.index !== optionIndex ||
+                            prior.value !== option.value
+                          ) {
+                            priorPointerSelection.current = {
+                              index: optionIndex,
+                              value: option.value,
+                            };
+                            dispatchFocusZone({ type: "focus-list" });
+                            setSelectedIndex(optionIndex);
+                            return;
+                          }
+                          priorPointerSelection.current = null;
+                          if (searchState === "ready") onSubmit(option.value);
+                        }}
+                      >
+                        <ListRow
+                          selected={selected && listFocused}
+                          rowWidth={rowWidth}
+                          flexColumnIndex={browseRowLayout.flexColumnIndex}
+                          columns={columns}
+                        />
+                      </MouseTarget>
                     );
                   })}
               {(
@@ -2608,7 +2681,11 @@ export function BrowseShell<T>({
         });
         return (
           <ShellFooter
-            taskLabel={browseTaskLabel}
+            taskLabel={
+              mouseEnabled && pointerActive && !isCalendarView && displayOptions.length > 0
+                ? "Click to select · click selection to open"
+                : browseTaskLabel
+            }
             mode={effectiveFooterMode}
             commandMode={commandMode}
             actions={visibleBrowseFooterActions}
