@@ -41,6 +41,7 @@ import type { StreamHealthPhase } from "@kunai/providers";
 import type { CatalogCrosswalkRepository, ProviderHealthRepository } from "@kunai/storage";
 import type {
   MediaKind,
+  ProviderId,
   ProviderHealthDelta,
   ProviderResolveInput,
   ProviderResolveResult,
@@ -291,13 +292,12 @@ export class PlaybackResolveService {
 
     // A cached URL is still a provider result. Manual exclusions must apply
     // before replay or any health probe, not only to fresh engine attempts.
-    const providerAdmitted =
-      !this.deps.getOrderedModules ||
-      this.deps
-        .getOrderedModules()
-        .some(
-          (module) => resolveProviderId(module.providerId) === resolveProviderId(input.providerId),
-        );
+    const admittedIds = this.deps.getOrderedModules
+      ? new Set(this.deps.getOrderedModules().map((module) => resolveProviderId(module.providerId)))
+      : null;
+    const isAdmitted = (providerId: ProviderId) =>
+      !admittedIds || admittedIds.has(resolveProviderId(providerId));
+    const providerAdmitted = isAdmitted(input.providerId);
 
     if (providerAdmitted && input.prefetchedStream) {
       const prefetched = input.prefetchedStream;
@@ -586,11 +586,19 @@ export class PlaybackResolveService {
       });
     }
 
-    const compatibleIds = [...candidatePlan.candidateIds];
+    // The planner deliberately prepends the selected provider, including when
+    // absent from its module list. Enforce manual admission at the dispatch
+    // boundary too; the engine still owns all registered modules.
+    const compatibleIds = candidatePlan.candidateIds.filter(isAdmitted);
 
     input.onFeedback?.({
-      detail: `Resolving via ${providerName}`,
-      note: describeProviderResolveProviderNote(false),
+      detail: compatibleIds[0]
+        ? `Resolving via ${this.deps.engine.getManifest(compatibleIds[0])?.displayName ?? compatibleIds[0]}`
+        : "No enabled providers available",
+      note:
+        compatibleIds.length > 0
+          ? describeProviderResolveProviderNote(false)
+          : "Enable a provider in Settings to retry.",
     });
     input.onEvent?.({
       type: "provider-resolve-started",
