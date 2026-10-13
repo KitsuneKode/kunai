@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T15:02:10Z"
+lastReviewed: "2026-10-13"
 ---
 
 # Kunai — UX Architecture
@@ -561,7 +561,7 @@ the same cell budget as CJK titles. Surfaces reuse
 `apps/cli/src/domain/text-display.ts` rather than counting code points or UTF-16 units.
 
 Up Next also requires a prior mouse click on the same selected row before
-launching playback. Scrolling and disabling its pointer owner clear that intent.
+launching playback. Keyboard input, including navigation that leaves the same row selected, scrolling and disabling its pointer owner clear that intent.
 
 Browse requires a prior pointer click on the same selected title before opening
 it. Preselected rows, keyboard navigation, scrolling and covered content do not

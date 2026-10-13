@@ -1,4 +1,4 @@
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
 import React, { useEffect, useRef } from "react";
 
 import { useRailPoster } from "./hooks/use-rail-poster";
@@ -75,6 +75,14 @@ export function QueueShell({
   readonly maxRows?: number;
 }) {
   const priorPointerId = useRef<string | null>(null);
+  // Keyboard input owns the next decision even if a clamped/wrapped selection
+  // stays on the same ID (for example, a one-row queue).
+  useInput(
+    () => {
+      priorPointerId.current = null;
+    },
+    { isActive: Boolean(onRowClick) },
+  );
   const selectedId = view.rows[view.selectedIndex]?.id;
   useEffect(() => {
     if (!onRowClick || priorPointerId.current !== selectedId) priorPointerId.current = null;
