@@ -298,3 +298,50 @@ describe("MouseSplitStdin", () => {
     expect(proxy.isTTY).toBe(true);
   });
 });
+
+test.each(["same chunk", "queued chunks"])(
+  "keyboard and mouse are delivered in wire order: %s",
+  (mode) => {
+    const { source, proxy, dispatcher } = harness();
+    let delivered = "";
+    dispatcher.register(
+      "row",
+      { x: 1, y: 1, width: 10, height: 3 },
+      {
+        onClick: () => {
+          delivered += "<click>";
+        },
+      },
+    );
+    const report = "\x1b[<0;5;2M\x1b[<0;5;2m";
+    if (mode === "same chunk") source.feed("before" + report + "after");
+    else {
+      source.feed("before");
+      source.feed(report);
+      source.feed("after");
+    }
+    let input: string | null;
+    while ((input = proxy.read()) !== null) delivered += input;
+    expect(delivered).toBe("before<click>after");
+    proxy.detach();
+  },
+);
+
+test("unhandled wheel fallback stays between the surrounding keyboard and mouse input", () => {
+  const { source, proxy, dispatcher } = harness();
+  let delivered = "";
+  dispatcher.register(
+    "row",
+    { x: 1, y: 1, width: 10, height: 3 },
+    {
+      onClick: () => {
+        delivered += "<click>";
+      },
+    },
+  );
+  source.feed("before\x1b[<64;50;50Mafter\x1b[<0;5;2M\x1b[<0;5;2m");
+  let input: string | null;
+  while ((input = proxy.read()) !== null) delivered += input;
+  expect(delivered).toBe("before\x1b[Aafter<click>");
+  proxy.detach();
+});
