@@ -12,7 +12,7 @@ playback, including initially preselected rows. Library clicks select a differen
 row or open the visibly selected title detail. Tabs navigate immediately. Pointer navigation
 never implies deletion, queue clearing, consent, or playback completion.
 
-Tracks and Settings use the same focus-before-activation rule. Tracks pass stable
+Tracks and Settings activate the visibly focused choice; keyboard focus can authorize a click. Tracks pass stable
 section and value identities from the rendered row/grid cell to the owner. Mouse
 and Enter share availability checks and the picker resolution path. A disabled
 option provides its reason; it does not resolve a different option. Narrow Tracks
@@ -22,7 +22,9 @@ Settings own semantic row, choice, section, search and scroll events in
 `apps/cli/src/app-shell/settings/pointer.ts`. The controller's activation functions
 are shared with Enter. Every result follows the same theme preview, persistence,
 action and status handling in `SettingsShell.tsx`. Busy actions, text editing and
-the command palette disable pointer mutation. Section/status rows are not actions.
+the command palette disable pointer mutation. An action owns a synchronous lock
+until it settles, so multiple clicks or keys before the busy render cannot start
+it twice or overwrite its busy state. Section/status rows are not actions.
 Clicks on usage analytics only focus the row and explain the Enter requirement;
 no mouse path grants keystroke-gated analytics consent or creates an install ID.
 

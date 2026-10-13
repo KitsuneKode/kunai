@@ -343,60 +343,78 @@ test.each(["busy", "editing"] as const)(
   },
 );
 
-test("an unfinished settings action freezes keyboard and pointer navigation", async () => {
-  const profile = await createTemporaryProfile();
-  const config = await profile.loadConfig();
-  await config.update({ presenceProvider: "discord" });
-  const container = createSettingsContainer(config);
-  const snapshot: PresenceSnapshot = {
-    provider: "discord",
-    status: "ready",
-    privacy: "full",
-    clientIdSource: "default",
-    canConnect: true,
-    detail: "Connected fixture",
-  };
-  const deferred = Promise.withResolvers<PresenceSnapshot>();
-  container.presence.getSnapshot = () => snapshot;
-  container.presence.disconnect = () => deferred.promise;
-  let closed = 0;
-  const handle = renderWithPointer(
-    <SettingsShell
-      container={container}
-      width={100}
-      maxRows={20}
-      commandMode={false}
-      initialSectionId="section:presence"
-      onClose={() => {
-        closed += 1;
-      }}
-      onStatus={() => {}}
-      onRedraw={() => {}}
-    />,
-    { columns: 100, rows: 30 },
-  );
-  try {
-    handle.click("settings:row:presenceConnection");
-    handle.click("settings:row:presenceConnection");
-    expect(handle.dispatcher.size).toBe(0);
-    const busyFrame = handle.lastFrame();
-    for (const key of ["\x1b[B", "\t", "/", "q", "\x1b"]) {
-      handle.stdin.enqueue(key);
-      expect(handle.lastFrame()).toBe(busyFrame);
-    }
-    expect(closed).toBe(0);
-    await act(async () => {
+test.each(["separate", "batched"] as const)(
+  "%s settings clicks start only one action and freeze navigation",
+  async (delivery) => {
+    const profile = await createTemporaryProfile();
+    const config = await profile.loadConfig();
+    await config.update({ presenceProvider: "discord" });
+    const container = createSettingsContainer(config);
+    const snapshot: PresenceSnapshot = {
+      provider: "discord",
+      status: "ready",
+      privacy: "full",
+      clientIdSource: "default",
+      canConnect: true,
+      detail: "Connected fixture",
+    };
+    const deferred = Promise.withResolvers<PresenceSnapshot>();
+    container.presence.getSnapshot = () => snapshot;
+    let actionCalls = 0;
+    container.presence.disconnect = () => {
+      actionCalls += 1;
+      return deferred.promise;
+    };
+    let closed = 0;
+    const handle = renderWithPointer(
+      <SettingsShell
+        container={container}
+        width={100}
+        maxRows={20}
+        commandMode={false}
+        initialSectionId="section:presence"
+        onClose={() => {
+          closed += 1;
+        }}
+        onStatus={() => {}}
+        onRedraw={() => {}}
+      />,
+      { columns: 100, rows: 30 },
+    );
+    try {
+      handle.click("settings:row:presenceConnection");
+      if (delivery === "batched") {
+        // Both clicks reach the current render before React commits the busy state.
+        act(() => {
+          handle.click("settings:row:presenceConnection");
+          handle.click("settings:row:presenceConnection");
+        });
+      } else {
+        handle.click("settings:row:presenceConnection");
+      }
+      expect(actionCalls).toBe(1);
+      expect(handle.dispatcher.size).toBe(0);
+      const busyFrame = handle.lastFrame();
+      for (const key of ["\x1b[B", "\t", "/", "q", "\x1b"]) {
+        handle.stdin.enqueue(key);
+        expect(handle.lastFrame()).toBe(busyFrame);
+      }
+      expect(closed).toBe(0);
+      await act(async () => {
+        deferred.resolve(snapshot);
+        await deferred.promise;
+      });
+      expect(handle.dispatcher.size).toBeGreaterThan(0);
+      handle.click("settings:row:presenceConnection");
+      expect(actionCalls).toBe(2);
+    } finally {
       deferred.resolve(snapshot);
-      await deferred.promise;
-    });
-    expect(handle.dispatcher.size).toBeGreaterThan(0);
-  } finally {
-    deferred.resolve(snapshot);
-    handle.unmount();
-    await config.flushPending();
-    await rm(profile.directory, { recursive: true, force: true });
-  }
-});
+      handle.unmount();
+      await config.flushPending();
+      await rm(profile.directory, { recursive: true, force: true });
+    }
+  },
+);
 
 test("mouse settings save failures retain visible feedback and diagnostics", async () => {
   const profile = await createTemporaryProfile();
