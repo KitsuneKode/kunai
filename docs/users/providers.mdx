@@ -444,3 +444,10 @@ Before playback starts:
 - `/source` or `/tracks` during playback when inventory supports switching without full re-resolve.
 
 After explicit pick, Kunai stores per-title preference for future resume.
+
+### Manual provider switches
+
+An off provider is excluded from new resolves, fallbacks and catalog requests.
+Switching every provider in a mode off does not enable them again automatically.
+Use Settings → Providers to enable one before searching or resolving in that mode.
+Existing playback and downloaded files remain available.

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { isProviderEnabled } from "@/services/providers/provider-priority";
+import {
+  filterEnabledProviderModules,
+  isProviderEnabled,
+} from "@/services/providers/provider-priority";
 import { ProviderRegistryImpl } from "@/services/providers/ProviderRegistry";
 import { createProviderEngine, defineProviderManifest, type CoreProviderModule } from "@kunai/core";
 
@@ -65,15 +68,15 @@ describe("provider disable switches", () => {
     expect(registry.getDefaultForMode("series").metadata.id).toBe("s2");
   });
 
-  test("disabling a whole lane fails open instead of stranding the mode", () => {
+  test("disabling a whole lane never re-enables providers implicitly", () => {
     const registry = createRegistry(["a1", "a2"]);
     expect(
       registry
         .getCompatible(ANIME_TITLE, "anime")
         .map((p) => p.metadata.id)
         .sort(),
-    ).toEqual(["a1", "a2"]);
-    expect(registry.getDefaultForMode("anime").metadata.id).toBe("a1");
+    ).toEqual([]);
+    expect(() => registry.getDefaultForMode("anime")).toThrow("No providers available");
   });
 
   test("matching ignores case and surrounding whitespace", () => {
@@ -95,5 +98,35 @@ describe("provider disable switches", () => {
     expect(isProviderEnabled([], "s1")).toBe(true);
     expect(isProviderEnabled(["s1"], "S1")).toBe(false);
     expect(isProviderEnabled(["s1"], "s2")).toBe(true);
+  });
+  test("a retained provider handle cannot make catalog calls after disabling", async () => {
+    let calls = 0;
+    const module: CoreProviderModule = {
+      ...createModule("s1", ["movie", "series"]),
+      async search() {
+        calls += 1;
+        return [];
+      },
+      async listEpisodes() {
+        calls += 1;
+        return [];
+      },
+    };
+    const registry = new ProviderRegistryImpl(createProviderEngine({ modules: [module] }));
+    const retained = registry.get("s1");
+    registry.setPriority({ disabledProviderIds: ["s1"] });
+    expect(
+      await retained?.search?.("query", { audioPreference: "en", subtitlePreference: "en" }),
+    ).toBeNull();
+    expect(await retained?.listEpisodes?.({ title: MOVIE_TITLE })).toBeNull();
+    expect(calls).toBe(0);
+    expect(registry.getAllRegistered().map((provider) => provider.metadata.id)).toEqual(["s1"]);
+  });
+
+  test("resolve admission never restores an entirely disabled lane", () => {
+    const anime = createModule("a1", ["anime"]);
+    const movie = createModule("s1", ["movie", "series"]);
+    expect(filterEnabledProviderModules([anime, movie], ["a1"])).toEqual([movie]);
+    expect(filterEnabledProviderModules([anime, movie], ["a1", "s1"])).toEqual([]);
   });
 });

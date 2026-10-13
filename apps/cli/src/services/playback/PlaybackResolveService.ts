@@ -26,6 +26,7 @@ import { streamRequestToResolveInput } from "@/services/providers/stream-request
 import { isVideasyFamilyProvider } from "@kunai/core";
 import {
   resolveProviderCatalogIdentity,
+  resolveProviderId,
   type ProviderEngine,
   type CoreProviderModule,
   type ProviderEngineEvent,
@@ -288,7 +289,17 @@ export class PlaybackResolveService {
     const providerName = manifest?.displayName ?? input.providerId;
     const catalogIdentity = manifest ? resolveProviderCatalogIdentity(manifest) : undefined;
 
-    if (input.prefetchedStream) {
+    // A cached URL is still a provider result. Manual exclusions must apply
+    // before replay or any health probe, not only to fresh engine attempts.
+    const providerAdmitted =
+      !this.deps.getOrderedModules ||
+      this.deps
+        .getOrderedModules()
+        .some(
+          (module) => resolveProviderId(module.providerId) === resolveProviderId(input.providerId),
+        );
+
+    if (providerAdmitted && input.prefetchedStream) {
       const prefetched = input.prefetchedStream;
       const blocked = isBlockedStreamUrl(prefetched.url, input.blockedStreamUrls);
       const stale = !isStreamTimestampFresh(prefetched);
@@ -317,7 +328,7 @@ export class PlaybackResolveService {
     const cacheKey = this.buildCacheKey(input, input.providerId);
     // Cache reads are best-effort: a failing store (disk full, corrupt DB) must
     // degrade to a live resolve rather than take the whole playback down.
-    let cachedStream = await this.readCachedStream(input, cacheKey);
+    let cachedStream = providerAdmitted ? await this.readCachedStream(input, cacheKey) : null;
     let cacheBecameStale = false;
     if (cachedStream?.deferredLocator) {
       await this.deleteCachedStream(cacheKey);
@@ -400,7 +411,7 @@ export class PlaybackResolveService {
       qualityPreference: input.qualityPreference,
       startupPriority: input.startupPriority,
     };
-    const inventoryEntry = await this.readSourceInventory(inventoryInput);
+    const inventoryEntry = providerAdmitted ? await this.readSourceInventory(inventoryInput) : null;
     const inventoryResult = inventoryEntry?.inventory ?? null;
     if (inventoryResult && inventoryMatchesSelection(inventoryResult, input)) {
       if (

@@ -19,7 +19,10 @@ import {
 } from "../services/playback/provider-resolve-budget-policy";
 import { StreamHealthService } from "../services/playback/StreamHealthService";
 import { createProviderCachePort } from "../services/providers/provider-cache-port";
-import { createProviderPrioritySnapshot } from "../services/providers/provider-priority";
+import {
+  createProviderPrioritySnapshot,
+  filterEnabledProviderModules,
+} from "../services/providers/provider-priority";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
 import { createProviderRegistry } from "../services/providers/ProviderRegistry";
 import type { PersistenceBootstrap } from "./bootstrap-persistence";
@@ -164,24 +167,6 @@ export async function bootstrapProviders(
       const priority = createProviderPrioritySnapshot(config);
       const raw = config.getRaw();
       const disabled = [...config.disabledProviders];
-      const filterModules = (modules: readonly CoreProviderModule[]) => {
-        if (disabled.length === 0) return modules;
-        const isDisabled = (module: CoreProviderModule) =>
-          disabled.some((entry) => entry.trim().toLowerCase() === module.providerId.toLowerCase());
-        // Fail-open per lane, matching the registry: a lane whose every
-        // module is disabled keeps its modules.
-        const lanes = new Map<string, CoreProviderModule[]>();
-        for (const module of modules) {
-          const lane = resolveProviderLaneFromModule(module);
-          const list = lanes.get(lane) ?? [];
-          list.push(module);
-          lanes.set(lane, list);
-        }
-        return [...lanes.values()].flatMap((laneModules) => {
-          const kept = laneModules.filter((module) => !isDisabled(module));
-          return kept.length > 0 ? kept : laneModules;
-        });
-      };
       const key = [
         priority.providerPriority.join(","),
         priority.animeProviderPriority.join(","),
@@ -192,7 +177,10 @@ export async function bootstrapProviders(
       ].join("|");
       if (key !== cacheKey) {
         cacheKey = key;
-        ordered = filterModules(orderProviderModulesByPriority(providerModules, priority));
+        ordered = filterEnabledProviderModules(
+          orderProviderModulesByPriority(providerModules, priority),
+          disabled,
+        );
       }
       return ordered;
     };

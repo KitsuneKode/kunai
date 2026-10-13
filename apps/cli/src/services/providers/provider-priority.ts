@@ -1,5 +1,5 @@
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import type { ProviderPriorityInput } from "@kunai/core";
+import type { CoreProviderModule, ProviderPriorityInput } from "@kunai/core";
 
 export function createProviderPrioritySnapshot(config: KitsuneConfig): ProviderPriorityInput {
   return {
@@ -21,4 +21,12 @@ export function isProviderEnabled(
   if (!disabledProviders || disabledProviders.length === 0) return true;
   const normalized = normalizeDisabledId(providerId);
   return !disabledProviders.some((entry) => normalizeDisabledId(entry) === normalized);
+}
+
+/** Resolve admission shares the same manual-exclusion policy as catalog readers. */
+export function filterEnabledProviderModules(
+  modules: readonly CoreProviderModule[],
+  disabledProviders: readonly string[],
+): readonly CoreProviderModule[] {
+  return modules.filter((module) => isProviderEnabled(disabledProviders, module.providerId));
 }

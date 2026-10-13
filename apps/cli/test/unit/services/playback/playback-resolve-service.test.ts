@@ -2589,3 +2589,26 @@ test("PlaybackResolveService adopts fresh prefetched streams without provider re
   expect(result.cacheProvenance).toBe("prefetched");
   expect(result.stream?.url).toBe(prefetchedUrl);
 });
+
+for (const replay of ["cache", "prefetch"] as const) {
+  test(`PlaybackResolveService excludes disabled providers before ${replay} replay`, async () => {
+    const engine = createMockEngine({ result: null, providerId: null, attempts: [] });
+    const service = new PlaybackResolveService({
+      engine,
+      cacheStore: createMemoryCache(stream),
+      getOrderedModules: () => [],
+    });
+    const result = await service.resolve({
+      title,
+      episode: { season: 1, episode: 2 },
+      mode: "series",
+      providerId: "vidking",
+      audioPreference: "original",
+      subtitlePreference: "none",
+      signal: new AbortController().signal,
+      ...(replay === "prefetch" ? { prefetchedStream: stream } : {}),
+    });
+    expect(result.stream).toBeNull();
+    expect(result.cacheStatus).toBe("miss");
+  });
+}
