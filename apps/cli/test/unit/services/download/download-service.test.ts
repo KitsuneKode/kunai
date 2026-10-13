@@ -1419,6 +1419,12 @@ describe("DownloadService", () => {
       stream: { url: "https://example.com/two.mp4", headers: {}, timestamp: 0 },
       providerId: "vidking",
     });
+    // This contract covers registration failure, not equal-timestamp UUID order.
+    // Make the intended first job older than both records without a real sleep.
+    const earlier = new Date(
+      Math.min(Date.parse(job.createdAt), Date.parse(next.createdAt)) - 1,
+    ).toISOString();
+    db.run("UPDATE download_jobs SET created_at = ? WHERE id = ?", [earlier, job.id]);
     await expect(service.processQueue()).rejects.toBe(registrationError);
     expect(repo.get(job.id)?.status).toBe("completed");
     expect(repo.get(job.id)?.claimGeneration).toBe(1);
