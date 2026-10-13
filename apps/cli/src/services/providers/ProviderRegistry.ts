@@ -11,12 +11,19 @@ import type { MediaKind } from "@kunai/types";
 
 import { createProviderFromModule, type Provider } from "./Provider";
 import { providerLaneMatchesMode, shellModeToProviderLane } from "./provider-lane";
+import { isProviderEnabled } from "./provider-priority";
 import { titleToCoreIdentity } from "./stream-request-adapter";
 
 export interface ProviderRegistry {
   get(id: string): Provider | undefined;
   getManifest(id: string): CoreProviderManifest | undefined;
   getAll(): Provider[];
+  /**
+   * Every registered provider, including user-disabled ones. Settings and
+   * diagnostics use this so a switched-off provider stays visible and
+   * re-enableable; resolve/search/pickers use the filtered `getAll`.
+   */
+  getAllRegistered(): Provider[];
   getAllIds(): string[];
   getCompatible(title: TitleInfo, mode?: ShellMode): Provider[];
   getDefault(isAnime: boolean): Provider;
@@ -29,6 +36,11 @@ export interface ProviderRegistryOptions {
   readonly providerPriority?: readonly string[];
   readonly animeProviderPriority?: readonly string[];
   readonly youtubeProviderPriority?: readonly string[];
+  /**
+   * Provider ids the user switched off. Manual exclusions are never ignored,
+   * including when no enabled provider remains in a lane.
+   */
+  readonly disabledProviderIds?: readonly string[];
 }
 
 export class ProviderRegistryImpl implements ProviderRegistry {
@@ -50,6 +62,8 @@ export class ProviderRegistryImpl implements ProviderRegistry {
         mode: shellMode,
         search: module.search
           ? async (query, opts, signal?) => {
+              if (!isProviderEnabled(this.options.disabledProviderIds, module.providerId))
+                return null;
               const results = await module.search?.(
                 {
                   query,
@@ -99,6 +113,8 @@ export class ProviderRegistryImpl implements ProviderRegistry {
           : undefined,
         listEpisodes: module.listEpisodes
           ? async (request, signal?) => {
+              if (!isProviderEnabled(this.options.disabledProviderIds, module.providerId))
+                return null;
               // Build the title exactly as `resolve` does. Hand-rolling
               // `{id, kind, title}` here dropped externalIds/anilistId/tmdbId, so
               // AllAnime's AniList->native bridge and Miruro's numeric-id lookup
@@ -158,6 +174,13 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 
   getAll(): Provider[] {
+    const sorted = this.sortByPriority([...this.providersById.values()]);
+    const disabled = this.options.disabledProviderIds;
+    if (!disabled || disabled.length === 0) return sorted;
+    return this.enabledInLane(sorted);
+  }
+
+  getAllRegistered(): Provider[] {
     return this.sortByPriority([...this.providersById.values()]);
   }
 
@@ -180,13 +203,23 @@ export class ProviderRegistryImpl implements ProviderRegistry {
 
   getDefaultForMode(mode: ShellMode): Provider {
     const lane = shellModeToProviderLane(mode);
+    const laneProviders = this.enabledInLane(
+      this.sortByPriority(
+        [...this.providersById.values()].filter(
+          (provider) => provider.metadata.providerLane === lane,
+        ),
+      ),
+    );
     const preferred = this.getPriorityForLane(lane)
       .map((providerId) => this.providersById.get(resolveProviderId(providerId)))
-      .find((provider) => provider && provider.metadata.providerLane === lane);
+      .find(
+        (provider) =>
+          provider && provider.metadata.providerLane === lane && laneProviders.includes(provider),
+      );
 
     if (preferred) return preferred;
 
-    const fallback = this.getAll().find((provider) => provider.metadata.providerLane === lane);
+    const fallback = laneProviders[0];
     if (!fallback) {
       throw new Error(`No providers available for mode: ${mode}`);
     }
@@ -203,8 +236,17 @@ export class ProviderRegistryImpl implements ProviderRegistry {
       animeProviderPriority: options.animeProviderPriority ?? this.options.animeProviderPriority,
       youtubeProviderPriority:
         options.youtubeProviderPriority ?? this.options.youtubeProviderPriority,
+      disabledProviderIds: options.disabledProviderIds ?? this.options.disabledProviderIds,
     };
     this.rebuildPriorityRanks();
+  }
+
+  /** Manual switches remain authoritative even when a lane becomes empty. */
+  private enabledInLane(providers: readonly Provider[]): Provider[] {
+    const disabled = this.options.disabledProviderIds;
+    if (!disabled || disabled.length === 0) return [...providers];
+    const kept = providers.filter((provider) => isProviderEnabled(disabled, provider.metadata.id));
+    return kept;
   }
 
   private sortByPriority(providers: readonly Provider[]): Provider[] {

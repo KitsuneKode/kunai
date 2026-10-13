@@ -104,23 +104,24 @@ describe("@kunai/config parse boundary", () => {
 
   test("defaults put VidLink first in the series automatic lane", () => {
     expect(DEFAULT_CONFIG.provider).toBe("vidlink");
-    expect(DEFAULT_CONFIG.providerPriority).toEqual(["rivestream", "vidrock", "videasy"]);
+    expect(DEFAULT_CONFIG.providerPriority).toEqual(["rivestream", "vidrock", "movy", "videasy"]);
   });
 
   test("anime lane leads with a provider that answers and keeps the rest of the order behind it", () => {
-    // HiAnime leads because search only queries the configured default, and
-    // anidb.app answers 503 at the origin. Miruro is first of the rest: one
-    // aggregated pipe behind the lead. AniDB stays late — it still carries the
-    // only verified AID cross-link and XML episode titles.
+    // HiAnime leads because search only queries the configured default.
+    // KickAssAnime leads the rest (own stack, soft subs); AllAnime precedes
+    // the dead pair — Miruro's pipe route is gone from their bundle and
+    // anidb.app was repurposed (2026-10-13), so both wait at the tail for a
+    // revival while healthy resolvers attempt first.
     expect(DEFAULT_CONFIG.animeProvider).toBe("hianime");
     // The array holds the rest of the order — `createProviderPrioritySnapshot`
     // prepends the lane default — so it must not repeat it.
     expect(DEFAULT_CONFIG.animeProviderPriority).toEqual([
-      "miruro",
       "kickassanime",
       "animegg",
-      "anidb",
       "allanime",
+      "miruro",
+      "anidb",
     ]);
     expect(DEFAULT_CONFIG.animeProviderPriority).not.toContain(DEFAULT_CONFIG.animeProvider);
   });
@@ -129,7 +130,11 @@ describe("@kunai/config parse boundary", () => {
     // Load migrates an inherited old default only when the on-disk revision is
     // behind this one. Changing a default without bumping it strands every user
     // who saved a setting on the previous default.
-    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(3);
+    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(5);
+  });
+
+  test("no providers are disabled by default", () => {
+    expect(DEFAULT_CONFIG.disabledProviders).toEqual([]);
   });
 });
 
