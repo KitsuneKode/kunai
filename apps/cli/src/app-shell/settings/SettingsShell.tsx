@@ -261,7 +261,9 @@ export function SettingsShell({
   const footerMode = state.inputMode.active
     ? "input"
     : state.submenuId
-      ? "submenu"
+      ? page.defById.get(state.submenuId)?.kind === "reorder"
+        ? "reorder"
+        : "submenu"
       : state.searchFocused
         ? "search"
         : "main";

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T14:50:24Z"
+lastReviewed: "2026-10-12T20:10:11Z"
 ---
 
 # Terminal pointer controls
@@ -51,3 +51,12 @@ Windows/macOS terminal emulators, multiplexers, accessibility and Android touch
 are separate acceptance checks. Android detached handoff does not prove playback
 completion or watch progress; gateway/native-device qualification belongs to its
 own release lane. This terminal UX slice does not qualify live providers.
+
+Provider settings hide YouTube provider selection and fallback order while the
+registered YouTube lane has one provider. YouTube mode and its playback settings
+remain available. With multiple registered choices, both controls return.
+Provider pickers list registered lane providers; reorder screens list the
+configured default plus fallbacks, rather than the whole roster. Their footer
+advertises selection and movement, while ordinary pickers advertise Enter.
+Videasy session credentials still reach the direct resolver; the session-source
+labels use the current site name while retaining persisted API identifiers.
