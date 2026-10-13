@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { QueueShell } from "@/app-shell/queue-shell";
 import { buildQueueView } from "@/app-shell/queue-view";
 import type { QueueEntry } from "@kunai/storage";
-import React from "react";
+import React, { act } from "react";
 
 import { captureFrame } from "../../harness/render-capture";
 import { renderWithPointer } from "../../support/pointer-render";
@@ -178,3 +178,35 @@ test("preselected queue playback requires a prior click and wheel clears that in
     handle.unmount();
   }
 });
+
+test.each(["up", "down"])(
+  "keyboard navigation clears queue click intent even when its selected row cannot change (%s)",
+  (direction) => {
+    const clicks: boolean[] = [];
+    const view = buildQueueView({
+      entries: [entry("1", "Frieren", 1, 1)],
+      selectedId: "1",
+      resolvePoster: () => undefined,
+      recoverableSessions: 0,
+    });
+    const handle = renderWithPointer(
+      <QueueShell
+        view={view}
+        columns={100}
+        listWidth={92}
+        rowWidth={88}
+        onRowClick={(_id, activate) => clicks.push(activate)}
+      />,
+    );
+    try {
+      handle.click("queue:row:1");
+      act(() => handle.stdin.enqueue(String.fromCharCode(27) + (direction === "up" ? "[A" : "[B")));
+      handle.click("queue:row:1");
+      expect(clicks).toEqual([false, false]);
+      handle.click("queue:row:1");
+      expect(clicks).toEqual([false, false, true]);
+    } finally {
+      handle.unmount();
+    }
+  },
+);
