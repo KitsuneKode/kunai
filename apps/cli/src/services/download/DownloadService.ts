@@ -81,6 +81,20 @@ import { parseYtDlpProgressLine } from "./ytdlp-progress";
 const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STALLED_HEARTBEAT_MS = 90_000;
+// Queue order is `created_at`, but two enqueues in the same millisecond are
+// indistinguishable to SQLite — and UUID tiebreaks are random per run, so a
+// fast double-enqueue picked its winner by luck (flaky FIFO in tests, wrong
+// order in production). Clamp stamps monotonically so insertion order is total.
+let lastEnqueueTimestampMs = 0;
+function monotonicEnqueueIso(): string {
+  const now = Date.now();
+  lastEnqueueTimestampMs = Math.max(now, lastEnqueueTimestampMs + 1);
+  return new Date(lastEnqueueTimestampMs).toISOString();
+}
+/** Test seam — enqueue timestamps are module state shared across cases. */
+export function resetDownloadEnqueueClockForTest(): void {
+  lastEnqueueTimestampMs = 0;
+}
 const STDERR_MAX_BYTES = 64_000;
 // A subtitle is a text sidecar — a few hundred KB at most. Anything beyond this
 // is a mis-labelled or hostile body, not a subtitle.
@@ -450,7 +464,7 @@ export class DownloadService {
         "A playable or active offline copy already exists for this episode.",
       );
     }
-    const now = new Date().toISOString();
+    const now = monotonicEnqueueIso();
     const id = crypto.randomUUID();
     const outputPath = this.resolveOutputPath(input);
     // A full-length output component cannot also fit an appended UUID.
