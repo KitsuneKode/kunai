@@ -14,15 +14,20 @@ the ADR is amended before any loader code.
 
 ## Phase 1 — Loader prototype
 
-- Scan `~/.config/kunai/providers/<id>/`, read `kunai-plugin.json`,
+- Use `getKunaiPaths().configDir` for provider packages on every supported OS.
+  Load only reviewed bundled packages in this first phase. Read `kunai-plugin.json`,
   validate the manifest against `@kunai/schemas`, check `engineCompat`,
-  `import()` the entry, register into the engine + registry + ordering +
-  toggles. Load failures quarantine with named errors, never crashes.
+  canonicalize the entry, reject escapes/duplicate ids/built-in replacement,
+  then register into engine + registry + ordering + toggles. Installation does
+  not enable a package. Load failures quarantine with a visible recovery action.
+  An in-process module is full-trust code; import lint and host ports are not
+  sandbox enforcement.
 - Migrate ONE bundled provider (movy: smallest surface, best fixtures)
   onto the loader while still shipping it bundled.
-- Guardrails: manifest schema test, boundary test extended to plugin
-  entries (no `@/app*`, no `process.env`/fs/Bun imports), quarantine test,
-  doc-paths + frontmatter clean.
+- Guardrails: manifest/module identity parity, provider-scoped secrets,
+  no `@/app*` imports, host-enforced resolve gates, duplicate/escape rejection,
+  deadline/cancellation and quarantine tests. Qualify external dependencies
+  outside the workspace and every release runtime before moving bundled modules.
 
 ## Phase 2 — `provider check` kit
 
@@ -35,14 +40,25 @@ prefilled dossier.
 - Guardrail: the kit must pass the migrated movy plugin and fail a
   deliberately-broken fixture plugin.
 
-## Phase 3 — URL install MVP (no registry yet)
+## Phase 3 — Trust and execution gate, then URL install (no registry yet)
 
-`kunai plugin install <url>`, `remove`, `info`: download, checksum-pin
-against the manifest signature, validate, run `check`, register. Updates
-re-validate and re-run `check` before swapping.
+Before accepting third-party code, choose and prove either an enforceable
+isolated protocol or an explicitly full-trust developer-only mode. A plain
+worker/subprocess is insufficient to claim restricted filesystem/network access.
+The checker must not execute unapproved code during manifest inspection.
 
-- Guardrails: checksum mismatch refuses with reason; downgrade warns;
-  install surfaces the plugin's `permissions.hosts` for explicit consent.
+`kunai plugin install <url>`, `remove`, `info`: bounded download and archive
+inspection, verify against an approved signing identity, validate compatibility,
+then execute checks only under the selected trust policy. Stage privately and
+activate atomically with an ownership fence and last-known-good rollback.
+Updates retire old work and namespace caches by revision; permission/publisher
+changes require a new decision. Removal retains media and personal history.
+
+- Guardrails: signature/checksum mismatch, traversal/symlink/oversize archives,
+  simultaneous installs and interrupted activation refuse safely. Show publisher,
+  revision and whether declared hosts are enforced or advisory. No install hooks.
+  Downgrades and permission expansion are explicit; disable/quarantine remains
+  effective even when all other providers are unavailable.
 
 ## Phase 4 — Registry index + hub + blocklist
 
@@ -56,5 +72,5 @@ in index entries — dossier-first stays enforced.
 
 ## Residue (not this plan)
 
-Worker/subprocess isolation (v2, on earned distrust), paid/DRM lanes,
+Third-party execution remains blocked until phase 3's trust gate; paid/DRM lanes,
 browser-automation plugins (refused by policy), third-party default indexes.

@@ -1,13 +1,13 @@
 ---
 status: current
-lastReviewed: "2026-10-13"
+lastReviewed: "2026-10-13T06:43:52Z"
 ---
 
 # ADR 0007 — Pluggable Provider System
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
-- Status: accepted (prototype-gated — see Consequences)
+- Status: proposed (prototype and trust-model gates remain)
 - Date: 2026-10-13
 - Context: provider intake, lane strategy, FMHY round 2
   (`.docs/provider-dossiers/fmhy-round2-blocked.md`)
@@ -17,9 +17,12 @@ lastReviewed: "2026-10-13"
 Provider modules become loadable plugins behind the interface that already
 exists (`ProviderModule` in `packages/types/src/index.ts`,
 `CoreProviderModule` + manifest in `packages/core/src/provider-sdk.ts`).
-Third-party providers load from a user-owned directory, run with the same
-`ProviderRuntimeContext` ports (and nothing else), and pass the same gates as
-bundled providers. Bundled providers migrate onto the same loader.
+The first loader handles reviewed bundled providers through
+`ProviderRuntimeContext` ports. Third-party installation remains gated on an
+explicit trust model and execution protocol. An in-process JavaScript module
+has Bun/Node globals and the application's OS permissions: passing ports and
+banning imports does not remove that access. Bundled providers may dogfood the
+loader after existing release targets and offline behavior are qualified.
 
 ## Why
 
@@ -30,10 +33,11 @@ bundled providers. Bundled providers migrate onto the same loader.
   blocked upstream in one round, while healthy lanes need parity work. A
   plugin index lets independent authors carry lanes without core review of
   every scraper line.
-- The trust machinery already exists and is proven: resolve-gate coverage,
-  contract conformance, relay host allowlists, per-provider toggles,
-  quarantine canary. Plugins inherit all of it instead of inventing new
-  safety.
+- Existing built-in safeguards include resolve-gate coverage, contract
+  conformance, relay host allowlists and endpoint-health quarantine. Manual
+  provider switches are a separate unmerged change; no automatic quarantine
+  canary is wired in the current cycle. A plugin loader must explicitly integrate
+  reviewed safeguards rather than claim that an imported module inherits them.
 
 ## Contract (what "a plugin" means)
 
@@ -41,13 +45,21 @@ bundled providers. Bundled providers migrate onto the same loader.
    (`id`, `pluginVersion`, `engineCompat`, `author`, `entry`,
    `permissions.hosts`, `signature`) plus the module entry exporting a
    `CoreProviderModule`.
-2. **Runtime**: the module receives `ProviderRuntimeContext` ports only — no
-   `process.env`, no fs, no Bun APIs, no `@/app*` imports. Fetch is gated by
-   `permissions.hosts`; undeclared hosts are blocked and reported.
-3. **Gates** (same as bundled, no exceptions): manifest schema validation,
-   `verifyCandidateStream` resolve gate, capability honesty (declared caps
-   exercised by fixtures), forbidden-import boundary test, live smoke on
-   pinned titles.
+2. **Runtime**: reviewed modules use provider-scoped context ports; no
+   `@/app*` imports or access to another provider's credentials. Import rules
+   are conventions checked by the contract kit, not a security sandbox.
+   The fetch port validates approved hosts, redirects and resolved addresses;
+   a full-trust in-process module can bypass that port through globals.
+   The UI and documentation must disclose that distinction. Third-party
+   execution needs a constrained protocol and an enforceable isolation policy
+   before it can claim host-only access.
+3. **Gates**: manifest schema validation, capability fixtures, bounded
+   cancellation/deadline behavior and live qualification through the production
+   engine. A plugin's success claim is not proof of stream reachability. The
+   host must enforce the resolve gate on the candidate it will publish;
+   runtime exemptions require reviewed host policy, never a plugin-supplied
+   assertion or an imported-but-unused marker. The kit itself executes code
+   only after its trust decision.
 4. **Versioning**: `engineCompat` semver against the engine's
    `engineApiVersion`. Mismatch refuses with upgrade guidance. Updates
    re-validate and re-run the contract suite before swapping.
@@ -60,8 +72,44 @@ bundled providers. Bundled providers migrate onto the same loader.
   store policy).
 - Paid/DRM/key-escrow plugins in the default index; third-party indexes
   allowed, never default.
-- Subprocess/worker isolation in v1 — explicit-install trust, same as
-  `install.sh`. Revisit when a plugin earns distrust, not before.
+- Automatic third-party installation or unattended plugin updates in v1.
+  A worker or ordinary child process is crash isolation, not an OS security
+  boundary; a constrained child still needs restricted credentials, bounded
+  IPC and an enforceable filesystem/network policy.
+
+## Identity, installation and recovery
+
+- Discover under `getKunaiPaths().configDir`, not a Linux-only hardcoded path.
+  Reject entry paths outside the canonical plugin directory, symlink escapes,
+  duplicate ids and built-in provider replacement. Package id and module id
+  must match. Installed is distinct from enabled.
+- Bind compatibility to a defined, exported SDK API version. Test dependencies
+  from a plugin outside the repo so workspace resolution cannot hide a missing
+  public SDK. Mobile receives an explicit supported/unsupported result; neither
+  entrypoint imports the other.
+- Include plugin revision/digest in provider caches, health evidence and support
+  bundles. Updates retire old resolve work and invalidate its inventory; rollback
+  restores the last verified revision. Removing or disabling a plugin must not
+  delete downloaded media or watched history.
+- A checksum served beside an archive is not independent authentication.
+  Signatures require an approved publisher key/index trust root and key-rotation
+  policy. Permission or publisher changes need an explicit new decision.
+- Installation validates bounded archive sizes/file counts, canonical paths,
+  symlinks and platform names before extraction. Stage privately, verify, then
+  atomically activate under ownership fencing; retain the previous revision on
+  failure. Never execute install hooks or a plugin while merely inspecting it.
+- A blocklist needs offline/stale/invalid-signature behavior. Show the reason
+  and recovery action; do not silently re-enable a disabled provider or route
+  through it when other providers are unavailable.
+
+## Prototype evidence
+
+A Linux x64 probe with Bun 1.4.2 successfully imported an external `.mjs` from a
+compiled host. The same probe confirmed access to `globalThis.Bun.write` and
+`globalThis.process.env` despite receiving only a fetch context. This qualifies
+neither a sandbox nor Windows/macOS/mobile nor an external SDK dependency graph.
+[Bun's executable documentation](https://bun.com/docs/bundler/executables)
+explicitly retains Bun and Node runtime APIs in compiled executables.
 
 ## Consequences (prototype-gated)
 
