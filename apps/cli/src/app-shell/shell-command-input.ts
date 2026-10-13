@@ -99,11 +99,16 @@ export function useShellInput({
 
     if (commandMode) {
       if (key.return) {
+        const submittedInput = commandEditor.getValue();
+        const submittedTitles =
+          submittedInput === commandInput
+            ? titleMatches
+            : matchLocalTitles(titleEntries, submittedInput);
         const row = resolveHighlightedPaletteRow(
-          commandInput,
+          submittedInput,
           commands,
-          titleMatches,
-          highlightedIndex,
+          submittedTitles,
+          submittedInput === commandInput ? highlightedIndex : 0,
         );
         // Commands keep precedence over JUMP TO title rows: a palette Enter on
         // a command is also the "long way" signal contextual tips key off.

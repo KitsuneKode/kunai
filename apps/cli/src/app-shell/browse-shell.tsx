@@ -706,11 +706,14 @@ export function BrowseShell<T>({
     [lastSearchedQuery, query, runSearch, searchState, setQuery],
   );
 
-  const handleQuerySubmit = useCallback(() => {
-    // Query zone Enter always searches — never plays the highlighted companion
-    // row. List/idle own play/act via their own Enter handlers.
-    void runSearch();
-  }, [runSearch]);
+  const handleQuerySubmit = useCallback(
+    (submittedQuery: string) => {
+      // Query zone Enter always searches — never plays the highlighted companion
+      // row. List/idle own play/act via their own Enter handlers.
+      void runSearch(submittedQuery);
+    },
+    [runSearch],
+  );
 
   const loadDiscovery = async () => {
     if (!onLoadDiscovery) return;
@@ -1550,11 +1553,16 @@ export function BrowseShell<T>({
         return;
       }
       if (key.return) {
+        const submittedInput = commandEditor.getValue();
+        const submittedTitles =
+          submittedInput === commandInput
+            ? titleMatches
+            : matchLocalTitles(titleEntries, submittedInput);
         const row = resolveHighlightedPaletteRow(
-          commandInput,
+          submittedInput,
           commands,
-          titleMatches,
-          highlightedCommandIndex,
+          submittedTitles,
+          submittedInput === commandInput ? highlightedCommandIndex : 0,
         );
         if (row?.kind === "command" && row.command.enabled) {
           onPaletteCommand?.(row.command.id);
