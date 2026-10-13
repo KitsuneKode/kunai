@@ -1,8 +1,13 @@
 import type { Container } from "@/container";
-import type { StreamInfo } from "@/domain/types";
+import { shouldPersistHistory, toHistoryTimestamp } from "@/domain/playback/playback-history";
+import { shouldMarkEpisodeCompleted } from "@/domain/playback/playback-policy";
+import { PERSIST_RESUME_SECONDS } from "@/domain/playback/progress-engage-policy";
+import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import { gatewayContentType, startLocalMediaGateway } from "@/infra/player/local-media-gateway";
+import type { PlayerOptions } from "@/infra/player/PlayerService";
 import { createRealDebridPort } from "@/services/debrid/realdebrid";
 import { createTorrentEngine } from "@/services/torrent/torrent-engine";
+import type { TitleIdentity } from "@kunai/types";
 import parseTorrent from "parse-torrent";
 
 export type TorrentPlaybackOutcome =
@@ -28,6 +33,58 @@ function feedback(container: Container, note: string): void {
   container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note });
 }
 
+/** History identity for a swarm file: the infohash is the only stable key. */
+function torrentHistoryTitle(infoHash: string, fileName: string): TitleIdentity {
+  return { id: `torrent:${infoHash}`, kind: "movie", title: fileName };
+}
+
+/** Resume point for a replay, or undefined to start over. Never blocks play. */
+export function readTorrentResumeSeconds(
+  container: Container,
+  title: TitleIdentity,
+): number | undefined {
+  try {
+    const existing = container.historyRepository.getProgress(title, undefined);
+    if (existing && !existing.completed && existing.positionSeconds > PERSIST_RESUME_SECONDS) {
+      return existing.positionSeconds;
+    }
+  } catch (error) {
+    diagnose(container, "torrent.history.read-failed", "Torrent resume lookup failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return undefined;
+}
+
+/** Checkpoint an engaged watch under the torrent identity. Never blocks teardown. */
+export function writeTorrentHistory(
+  container: Container,
+  title: TitleIdentity,
+  result: PlaybackResult,
+): void {
+  if (!shouldPersistHistory(result)) return;
+  const completed = shouldMarkEpisodeCompleted(result);
+  const positionSeconds = toHistoryTimestamp(result);
+  const now = new Date().toISOString();
+  try {
+    container.historyRepository.upsertProgress({
+      title,
+      episode: undefined,
+      positionSeconds,
+      durationSeconds: result.duration,
+      completed,
+      watchedSeconds: completed ? result.duration : positionSeconds,
+      lastWatchedAt: now,
+      completedAt: completed ? now : null,
+      updatedAt: now,
+    });
+  } catch (error) {
+    diagnose(container, "torrent.history.write-failed", "Torrent history write failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 function diagnose(
   container: Container,
   operation: string,
@@ -48,9 +105,14 @@ function diagnose(
  * gateway URL → mpv. The engine seeds while watching and everything is torn
  * down when playback ends.
  *
- * v1 limits (documented, not silent): no resume/history/post-play integration
- * — those ride PlaybackPhase, which this path deliberately bypasses — and no
- * external subtitle lookup (embedded tracks only, via mpv).
+ * History and resume ride the same policy as catalog playback
+ * (`shouldPersistHistory` / `toHistoryTimestamp` /
+ * `shouldMarkEpisodeCompleted`): an engaged watch checkpoints under
+ * `torrent:<infohash>` and a replay resumes past it, while only a clean
+ * natural EOF clears the resume point. v1 limits (documented, not silent):
+ * no post-play integration — that rides PlaybackPhase, which this path
+ * deliberately bypasses — and no external subtitle lookup (embedded tracks
+ * only, via mpv).
  */
 export async function playTorrentMagnet(
   container: Container,
@@ -133,13 +195,13 @@ export async function playTorrentMagnet(
       diagnose(container, "torrent.debrid.fallback", "Falling back to debrid", {});
       try {
         const directUrl = await createRealDebridPort(token).unrestrict(magnet.trim(), signal);
-        return await playDirectUrl(container, directUrl, fileName, cleanup, signal);
+        return await playDirectUrl(container, directUrl, fileName, infoHash, cleanup, signal);
       } catch (debridError) {
         throw debridError instanceof Error ? debridError : error;
       }
     }
 
-    return await playDirectUrl(container, mountUrl, fileName, cleanup, signal);
+    return await playDirectUrl(container, mountUrl, fileName, infoHash, cleanup, signal);
   } catch (error) {
     if (signal?.aborted) return { status: "cancelled" };
     const message = error instanceof Error ? error.message : String(error);
@@ -154,6 +216,7 @@ async function playDirectUrl(
   container: Container,
   url: string,
   fileName: string,
+  infoHash: string,
   cleanup: (reason: "playback-end" | "session-release") => void,
   signal?: AbortSignal,
 ): Promise<TorrentPlaybackOutcome> {
@@ -163,14 +226,23 @@ async function playDirectUrl(
     title: fileName,
     timestamp: Date.now(),
   };
-  feedback(container, `Playing ${fileName} — seeding while watching.`);
+  const historyTitle = torrentHistoryTitle(infoHash, fileName);
+  const resumeAt = readTorrentResumeSeconds(container, historyTitle);
+  if (resumeAt !== undefined) {
+    feedback(container, `Resuming ${fileName} where you left off — seeding while watching.`);
+  } else {
+    feedback(container, `Playing ${fileName} — seeding while watching.`);
+  }
   try {
-    const result = await container.player.play(stream, {
+    const playOptions: PlayerOptions = {
       url,
       displayTitle: fileName,
       playbackMode: "manual",
       abortSignal: signal,
-    });
+    };
+    if (resumeAt !== undefined) playOptions.startAt = resumeAt;
+    const result = await container.player.play(stream, playOptions);
+    writeTorrentHistory(container, historyTitle, result);
     return { status: "played", endReason: result.endReason };
   } finally {
     cleanup("playback-end");
