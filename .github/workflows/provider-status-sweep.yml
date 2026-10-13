@@ -44,5 +44,10 @@ jobs:
         working-directory: packages/providers
         run: bun run scripts/provider-status-sweep.ts
 
+      # The producer writes JSON, while oxfmt owns the committed representation.
+      # Format before taking the publisher's snapshot so daily bot commits pass CI.
+      - name: Format the observed status
+        run: bun x oxfmt --write apps/docs/lib/generated-provider-status.json
+
       - name: Commit the status file if it changed
         run: bash .github/scripts/publish-provider-status.sh
