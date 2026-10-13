@@ -35,6 +35,11 @@ export async function GET() {
     `- [Usage analytics](${docsSiteUrl}/analytics): Public usage pulse and opt-in rules`,
     `- [Privacy](${docsSiteUrl}/privacy): What leaves your machine, site telemetry, and third parties`,
     "",
+    "## Optional",
+    "",
+    `- [Full documentation](${docsSiteUrl}/llms-full.txt): every page as a single Markdown document`,
+    `- Per-page Markdown: ${docsSiteUrl}/llms.mdx/<page> mirrors every /docs/<page> URL, e.g. ${docsSiteUrl}/llms.mdx/users/getting-started`,
+    "",
   ];
 
   return new Response(lines.join("\n"), {
