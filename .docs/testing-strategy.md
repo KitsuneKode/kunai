@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T13:42:27Z"
+lastReviewed: "2026-10-12T15:30:46Z"
 ---
 
 # Kunai — Testing Strategy
@@ -840,3 +840,13 @@ A successful bot status is not evidence of a completed review: inspect the revie
 or walkthrough for skipped-review and configuration warnings. Draft and explicitly
 excluded-title rules still apply. This configuration enables reviews; it does not
 make them required by branch protection or prove that a hosted review ran.
+
+### Sync default-budget wiring
+
+The default-budget case in
+`apps/cli/test/unit/services/sync/sync-drain.test.ts` uses a real migrated
+in-memory SQLite outbox. It retains the production service defaults and checks
+that one pass claims the expected rows and clears the queue. That assertion does
+not require disk durability or WAL contention; the other drain cases continue
+using file-backed databases. Keep native filesystem/lifecycle qualification in
+its owning tests rather than relying on a wiring test's wall-clock budget.
