@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-08-18"
+lastReviewed: "2026-10-11"
 ---
 
 # Kunai CLI Keybindings
@@ -61,6 +61,19 @@ visibly different.
 | `Esc`      | Clear/back depending on focused state                                             |
 
 Use `/provider` from browse or playback command surfaces to change provider. Provider switching should stay explicit; opening the provider picker does not change provider until a row is confirmed.
+
+## Mouse in browse results
+
+In a compatible terminal, click a result to select it, then click the selected
+result again to open it. Click the search field to resume typing. Scrolling
+stops at the list boundaries; keyboard arrows still wrap. Covered results do
+not accept clicks while an overlay or command palette owns focus. This does
+not imply click support for other surfaces.
+
+Set `KUNAI_NO_MOUSE=1` before launching to retain ordinary terminal mouse
+behavior. Mouse tracking is disabled automatically for piped input/output and
+`TERM=dumb`. Terminal selection shortcuts vary by emulator; use the opt-out
+when its modifier gesture does not permit selecting or copying text.
 
 ## Setup Wizard
 
