@@ -58,4 +58,11 @@ describe("compact nav stylesheet", () => {
     // Shrinking the header would pull the page up under it on every scroll.
     expect(css).not.toMatch(/#nd-home-layout #nd-nav \{[^}]*\n\s*height:/);
   });
+
+  test("the pill is content-sized, so the fold visibly narrows the bar", () => {
+    // Without this the glass `> div` stays a full-width block and the fold only
+    // empties a still full-width bar — and the whole strip stays a hover
+    // surface that opens on any crossing.
+    expect(css).toMatch(/#nd-home-layout #nd-nav > div \{[^}]*width: fit-content;/);
+  });
 });

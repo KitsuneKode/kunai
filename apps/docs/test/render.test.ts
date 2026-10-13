@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { isValidElement } from "react";
 
-import { baseOptions } from "../lib/layout.shared";
+import { baseOptions, docsOptions } from "../lib/layout.shared";
 
 /**
  * Exact host match, not a substring. `url.includes("github.com")` also matches
@@ -72,10 +72,22 @@ describe("docs shell", () => {
    * the fold. Only destinations the tree does not contain may appear there.
    */
   test("the docs sidebar carries only destinations outside the page tree", () => {
-    const sidebarLinks = (baseOptions().links ?? [])
+    const sidebarLinks = (docsOptions().links ?? [])
       .filter((link) => !("on" in link) || link.on !== "nav")
       .map((link) => ("text" in link ? link.text : null));
 
     expect(sidebarLinks).toEqual(["Releases", "Analytics"]);
+  });
+
+  /**
+   * The same `menuItems` bucket feeds the home layout's mobile menu — on a
+   * phone it is the only way to reach a destination. `on: "nav"` in the shared
+   * options would strip a link from it, so base options mark nothing nav-only;
+   * the sidebar restriction is applied by `docsOptions()` instead.
+   */
+  test("every top-bar link also reaches the home mobile menu", () => {
+    const navOnly = (baseOptions().links ?? []).filter((link) => "on" in link && link.on === "nav");
+
+    expect(navOnly).toEqual([]);
   });
 });
