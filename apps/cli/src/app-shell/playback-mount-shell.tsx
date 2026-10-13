@@ -151,7 +151,8 @@ export function buildPlaybackRootLoadingShellState(
     details: state.playbackDetail ?? `Provider: ${state.provider}`,
     providerName: activeProvider?.metadata.name ?? state.provider,
     providerId: state.provider,
-    subtitleStatus: isActivePlayback ? playbackSubtitleStatus : undefined,
+    // Bootstrap subtitle row lives in the !isPlaying branch — gate would starve it.
+    subtitleStatus: playbackSubtitleStatus ?? undefined,
     downloadStatus: downloadStatus ?? undefined,
     cancellable: playbackCanCancel,
     trace: playbackTrace,

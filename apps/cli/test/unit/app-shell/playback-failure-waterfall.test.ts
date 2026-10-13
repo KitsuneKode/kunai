@@ -121,4 +121,21 @@ describe("buildPlaybackFailureWaterfall", () => {
 
     expect(model).toBeNull();
   });
+
+  test("clamps maxRows=0 to one row instead of an empty titled model", () => {
+    const model = buildPlaybackFailureWaterfall({
+      state: playbackState(),
+      recentEvents: [
+        timelineEvent({
+          sourceAttempts: [
+            { type: "source:failed", serverId: "a" },
+            { type: "source:failed", serverId: "b" },
+          ],
+        }),
+      ],
+      maxRows: 0,
+    });
+
+    expect(model?.rows.length).toBe(1);
+  });
 });

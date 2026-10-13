@@ -134,7 +134,7 @@ describe("buildRootStatusSummary", () => {
       rootStatus: "searching",
     });
 
-    expect(summary.header.label).toBe("searching");
+    expect(summary.header.label).toBe("Searching…");
     expect(summary.header.tone).toBe("warning");
     // Idle: crumb is just mode · provider, no title or episode
     expect(summary.crumb).toBe("series · vidking");

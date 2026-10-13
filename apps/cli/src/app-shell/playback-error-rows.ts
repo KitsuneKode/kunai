@@ -9,7 +9,7 @@ import type { ErrorScenario } from "@/domain/playback/playback-problem";
 
 import type { ErrorDebugExcerpt } from "./error-debug-excerpt";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
-import { sanitizeTerminalText, wrapText } from "./shell-text";
+import { sanitizeTerminalText, truncateLine, wrapText } from "./shell-text";
 
 export type ErrorRowTone = "danger-strong" | "danger" | "accent" | "text" | "ok" | "muted" | "dim";
 
@@ -53,7 +53,7 @@ function scenarioRows(scenario: ErrorScenario): readonly ErrorRow[] {
       ];
     case "title-unavailable":
       return [
-        row(`◌  ${scenario.title} not found`, "dim"),
+        row(`◌  ${scenario.title?.trim() ? scenario.title.trim() : "This title"} not found`, "dim"),
         row("r retry · /watchlist to save for later", "dim"),
       ];
   }
@@ -67,11 +67,16 @@ function waterfallRows(model: PlaybackFailureWaterfallModel): readonly ErrorRow[
     const marker = entry.status === "succeeded" ? "✓" : entry.status === "failed" ? "x" : "·";
     const tone: ErrorRowTone =
       entry.status === "succeeded" ? "ok" : entry.status === "failed" ? "danger" : "dim";
+    // SAFETY: serverId/message are provider-controlled and unwrapped — truncate
+    // so long unbreakable tokens clip at a word edge instead of mid-panel.
     const segments: ErrorRowSegment[] = [
-      { text: `${marker} ${sanitizeTerminalText(entry.label)}`, tone },
+      { text: `${marker} ${sanitizeTerminalText(truncateLine(entry.label, 60))}`, tone },
     ];
     if (entry.detail)
-      segments.push({ text: `  ·  ${sanitizeTerminalText(entry.detail)}`, tone: "dim" });
+      segments.push({
+        text: `  ·  ${sanitizeTerminalText(truncateLine(entry.detail, 100))}`,
+        tone: "dim",
+      });
     rows.push({ segments });
   }
 
