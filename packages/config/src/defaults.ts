@@ -122,6 +122,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   presenceDiscordClientId: "",
   presenceDiscordOpenUrl: "",
   videasySessionToken: "",
+  debridApiKey: "",
   providerRelay: {
     enabled: true,
     baseUrl: "",

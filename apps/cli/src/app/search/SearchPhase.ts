@@ -57,6 +57,7 @@ import {
 } from "@/app/search/search-startup-policy";
 import { loadLocalSuggestionCorpus, toCatalogSuggestions } from "@/app/search/search-suggestions";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
+import { isTorrentMagnetLink, playTorrentMagnet } from "@/app/torrent/torrent-playback";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import {
   mediaItemFromSearchResult,
@@ -881,6 +882,23 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           },
           onSearch: async (query) => {
             ensureSessionProviderMatchesLane(stateManager, providerRegistry);
+            // Magnet links route to the torrent flow, not title search — the
+            // workflow owns progress, playback, and cleanup; search shows an
+            // empty tray with the outcome note.
+            if (isTorrentMagnetLink(query)) {
+              stateManager.dispatch({ type: "SET_SEARCH_QUERY", query });
+              stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "ready" });
+              await playTorrentMagnet(container, query);
+              return {
+                options: [],
+                subtitle: "torrent",
+                upstreamFilterBadges: [],
+                localFilterBadges: [],
+                unsupportedFilterBadges: [],
+                warnings: [],
+                emptyMessage: "Torrent handed to the player — see the status line.",
+              };
+            }
             const searchIntent = createSearchIntentEngine().fromText(query, {
               currentMode: stateManager.getState().mode,
             });

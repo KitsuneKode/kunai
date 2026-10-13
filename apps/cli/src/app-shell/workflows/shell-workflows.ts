@@ -922,6 +922,7 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   "mark-season-watched": (c) => handleMarkSeasonWatched(c),
   "mark-up-to-episode": (c) => handleMarkUpToEpisode(c),
   watch: (c) => handleWatch(c),
+  torrent: (c) => handleTorrent(c),
   watchlist: (c) => handleWatchlist(c),
   favorites: (c) => handleFavorites(c),
   playlists: (c) => handlePlaylists(c),
@@ -2298,6 +2299,33 @@ async function handleWatch(container: Container): Promise<ShellWorkflowResult> {
     episode: resolved.episode,
     ...(resolved.startSeconds !== undefined ? { startSeconds: resolved.startSeconds } : {}),
   };
+}
+
+async function handleTorrent(container: Container): Promise<"handled"> {
+  const { chooseTextInputShell } = await import("@/app-shell/pickers/choose-text-input-shell");
+  const { isTorrentMagnetLink, playTorrentMagnet } = await import("@/app/torrent/torrent-playback");
+  const magnet = await chooseTextInputShell({
+    title: "Play a torrent",
+    subtitle: "Paste a magnet link — local swarm first, seeding while watching",
+    placeholder: "magnet:?xt=urn:btih:…",
+    label: "Magnet",
+  });
+  if (!magnet) return "handled";
+  if (!isTorrentMagnetLink(magnet)) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "That is not a magnet link (expected magnet:?xt=urn:btih:…).",
+    });
+    return "handled";
+  }
+  const outcome = await playTorrentMagnet(container, magnet);
+  if (outcome.status === "failed") {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: outcome.message,
+    });
+  }
+  return "handled";
 }
 
 async function handleWatchlist(container: Container): Promise<"handled"> {

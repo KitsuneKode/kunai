@@ -122,11 +122,13 @@ Do not reuse these nouns for anything else.
 
 ## Offline and downloads
 
-| Feature                       | Owned by                                                                                                                          | Docs                                                               |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Download jobs                 | `apps/cli/src/services/download/*`, `services/ytdlp/*`                                                                            | [download-offline-onboarding.md](./download-offline-onboarding.md) |
-| Offline library + assets      | `apps/cli/src/services/offline/*`, `app/offline/*`, `domain/offline/OfflineLibraryEngine.ts`, `packages/storage` `offline-assets` | [download-offline-onboarding.md](./download-offline-onboarding.md) |
-| Network status / offline mode | `apps/cli/src/services/network/*`                                                                                                 | [download-offline-onboarding.md](./download-offline-onboarding.md) |
+| Feature                          | Owned by                                                                                                                             | Docs                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Download jobs                    | `apps/cli/src/services/download/*`, `services/ytdlp/*`                                                                               | [download-offline-onboarding.md](./download-offline-onboarding.md) |
+| Offline library + assets         | `apps/cli/src/services/offline/*`, `app/offline/*`, `domain/offline/OfflineLibraryEngine.ts`, `packages/storage` `offline-assets`    | [download-offline-onboarding.md](./download-offline-onboarding.md) |
+| Torrent streaming (local)        | `apps/cli/src/services/torrent/*` (engine, readiness gate, stubs), `app/torrent/*` (workflow), `infra/player/local-media-gateway.ts` | `docs/users/torrent.mdx` (user-facing)                             |
+| Debrid unrestrict (experimental) | `apps/cli/src/services/debrid/*`                                                                                                     | `docs/users/torrent.mdx` (user-facing)                             |
+| Network status / offline mode    | `apps/cli/src/services/network/*`                                                                                                    | [download-offline-onboarding.md](./download-offline-onboarding.md) |
 
 Download removal and retained-file feedback: [features/download-removal.md](./features/download-removal.md).
 

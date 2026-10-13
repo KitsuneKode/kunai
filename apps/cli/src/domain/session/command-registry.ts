@@ -55,6 +55,7 @@ export type AppCommandId =
   | "share"
   | "share-qr"
   | "watch"
+  | "torrent"
   | "bookmark"
   | "follow"
   | "unfollow"
@@ -116,6 +117,7 @@ export const COMMAND_CONTEXTS = {
     "notifications",
     "history",
     "clear-history",
+    "torrent",
     // Title-scoped queue mutations belong beside the queue view: they show
     // their "select a title/episode first" reason when nothing is selected,
     // which is better discovery than not listing them at all.
@@ -713,6 +715,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Watch a Shared Code",
     aliases: ["watch", "open-share", "open-link"],
     description: "Open a kunai:// share link from your clipboard",
+  },
+  {
+    id: "torrent",
+    label: "Play a Torrent",
+    aliases: ["torrent", "magnet", "play-magnet"],
+    description: "Stream a magnet link directly (local swarm first, experimental debrid fallback)",
   },
   {
     id: "pick-episode",
@@ -1408,6 +1416,9 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
           };
 
     case "watch":
+      return { enabled: true };
+
+    case "torrent":
       return { enabled: true };
 
     case "download":
