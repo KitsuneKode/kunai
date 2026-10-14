@@ -2589,3 +2589,57 @@ test("PlaybackResolveService adopts fresh prefetched streams without provider re
   expect(result.cacheProvenance).toBe("prefetched");
   expect(result.stream?.url).toBe(prefetchedUrl);
 });
+
+for (const replay of ["cache", "prefetch"] as const) {
+  test(`PlaybackResolveService excludes disabled providers before ${replay} replay`, async () => {
+    const engine = createMockEngine(
+      { result: null, providerId: null, attempts: [] },
+      {
+        onCandidateIds: (ids) => expect(ids).toEqual([]),
+      },
+    );
+    const service = new PlaybackResolveService({
+      engine,
+      cacheStore: createMemoryCache(stream),
+      getOrderedModules: () => [],
+    });
+    const result = await service.resolve({
+      title,
+      episode: { season: 1, episode: 2 },
+      mode: "series",
+      providerId: "vidking",
+      audioPreference: "original",
+      subtitlePreference: "none",
+      signal: new AbortController().signal,
+      ...(replay === "prefetch" ? { prefetchedStream: stream } : {}),
+    });
+    expect(result.stream).toBeNull();
+    expect(result.cacheStatus).toBe("miss");
+  });
+}
+
+test("a disabled preferred provider falls through only to admitted alternatives", async () => {
+  const engine = createMockEngine(createResolvedEngineOutput("fallback"), {
+    modules: [
+      { providerId: "primary", manifest: createManifest("primary", ["movie"]) },
+      { providerId: "fallback", manifest: createManifest("fallback", ["movie"]) },
+    ],
+    onCandidateIds: (ids) => expect(ids).toEqual(["fallback"]),
+  });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(stream),
+    getOrderedModules: () => engine.modules.filter((module) => module.providerId !== "primary"),
+  });
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+  expect(result.providerId).toBe("fallback");
+  expect(result.stream?.url).toBe("https://fallback.example/stream.m3u8");
+});

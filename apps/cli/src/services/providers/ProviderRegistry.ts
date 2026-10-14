@@ -37,9 +37,8 @@ export interface ProviderRegistryOptions {
   readonly animeProviderPriority?: readonly string[];
   readonly youtubeProviderPriority?: readonly string[];
   /**
-   * Provider ids the user switched off. Filtering is fail-open per lane: if
-   * every provider in a lane is disabled, the disables are ignored for that
-   * lane so a mode can never strand itself with zero resolvers.
+   * Provider ids the user switched off. Manual exclusions are never ignored,
+   * including when no enabled provider remains in a lane.
    */
   readonly disabledProviderIds?: readonly string[];
 }
@@ -63,6 +62,8 @@ export class ProviderRegistryImpl implements ProviderRegistry {
         mode: shellMode,
         search: module.search
           ? async (query, opts, signal?) => {
+              if (!isProviderEnabled(this.options.disabledProviderIds, module.providerId))
+                return null;
               const results = await module.search?.(
                 {
                   query,
@@ -112,6 +113,8 @@ export class ProviderRegistryImpl implements ProviderRegistry {
           : undefined,
         listEpisodes: module.listEpisodes
           ? async (request, signal?) => {
+              if (!isProviderEnabled(this.options.disabledProviderIds, module.providerId))
+                return null;
               // Build the title exactly as `resolve` does. Hand-rolling
               // `{id, kind, title}` here dropped externalIds/anilistId/tmdbId, so
               // AllAnime's AniList->native bridge and Miruro's numeric-id lookup
@@ -174,16 +177,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
     const sorted = this.sortByPriority([...this.providersById.values()]);
     const disabled = this.options.disabledProviderIds;
     if (!disabled || disabled.length === 0) return sorted;
-    // Fail-open is per lane: a lane whose every provider is disabled keeps
-    // its providers rather than stranding the mode with zero resolvers.
-    const lanes = new Map<string, Provider[]>();
-    for (const provider of sorted) {
-      const lane = provider.metadata.providerLane;
-      const list = lanes.get(lane) ?? [];
-      list.push(provider);
-      lanes.set(lane, list);
-    }
-    return [...lanes.values()].flatMap((laneProviders) => this.enabledInLane(laneProviders));
+    return this.enabledInLane(sorted);
   }
 
   getAllRegistered(): Provider[] {
@@ -247,15 +241,12 @@ export class ProviderRegistryImpl implements ProviderRegistry {
     this.rebuildPriorityRanks();
   }
 
-  /**
-   * Fail-open lane filter: disabled ids drop out, unless that would empty the
-   * lane — then the disables are ignored so a mode always has a resolver.
-   */
+  /** Manual switches remain authoritative even when a lane becomes empty. */
   private enabledInLane(providers: readonly Provider[]): Provider[] {
     const disabled = this.options.disabledProviderIds;
     if (!disabled || disabled.length === 0) return [...providers];
     const kept = providers.filter((provider) => isProviderEnabled(disabled, provider.metadata.id));
-    return kept.length > 0 ? kept : [...providers];
+    return kept;
   }
 
   private sortByPriority(providers: readonly Provider[]): Provider[] {

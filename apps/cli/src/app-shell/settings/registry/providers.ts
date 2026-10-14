@@ -126,8 +126,7 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       kind: "section",
       id: "section:provider-toggles",
       label: "Provider switches",
-      detail:
-        "Turn providers off to skip them in resolve and fallback — a lane with everything off fails open",
+      detail: "Off providers stay off; enable a provider to restore an empty lane",
       configKeys: ["disabledProviders"],
     },
     ...providerToggleRows(ctx, "series"),

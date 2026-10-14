@@ -49,7 +49,6 @@
 
     "docs/users/customization.mdx",
     "docs/users/troubleshooting.mdx",
-    "apps/docs/lib/generated-*.json",
     ".plans/044-namespace-mal-history-keys.md",
 
     "**/*.min.js",

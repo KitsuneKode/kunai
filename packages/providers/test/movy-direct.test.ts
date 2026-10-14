@@ -205,10 +205,8 @@ describe("resolveMovyDirect", () => {
   });
 
   test("reports quarantine honestly when every lane is skipped", async () => {
-    // `stopReason: "all-quarantined"` spends one bounded canary probe on the
-    // preferred lane — the pool is otherwise unreachable and cannot lift its
-    // own quarantine. The failure must still name the quarantine and now also
-    // carries the probe's own evidence.
+    // Endpoint quarantine refuses every lane. No automatic canary is wired
+    // in the production cycle: preserve the refusal and report its reason.
     let fetches = 0;
     const endpointHealth: EndpointHealthPort = {
       shouldTry: () => false,
@@ -225,14 +223,9 @@ describe("resolveMovyDirect", () => {
 
     const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
     expect(result.status).toBe("exhausted");
-    // One canary probe, not a walk: a single candidate is asked (seed fetch
-    // here), the rest of the skipped pool still costs nothing.
-    expect(fetches).toBeGreaterThan(0);
-    expect(fetches).toBeLessThanOrEqual(2);
-    // The head failure is the probe's own evidence, and the exhausted trace
-    // event still names the quarantine so the report is not just "we did not try".
-    expect(result.failures?.[0]?.code).toBe("network-error");
-    expect(result.failures?.[0]?.message).toContain("seed request failed");
+    expect(fetches).toBe(0);
+    expect(result.failures?.[0]?.code).toBe("provider-unavailable");
+    expect(result.failures?.[0]?.message).toContain("quarantined");
     expect(
       result.trace.events?.some(
         (event) => event.type === "provider:exhausted" && event.message.includes("quarantined"),
@@ -240,11 +233,10 @@ describe("resolveMovyDirect", () => {
     ).toBe(true);
   });
 
-  test("a canary probe that wins resolves out of a fully quarantined pool", async () => {
-    // The quarantine trap: every lane skipped means recordSuccess can never
-    // fire, so a recovered upstream stayed dead until the penalty deadline.
+  test("lanes become resolvable again when endpoint health readmits them", async () => {
+    let allowed = false;
     const endpointHealth: EndpointHealthPort = {
-      shouldTry: () => false,
+      shouldTry: () => allowed,
       recordSuccess: () => {},
       recordFailure: () => {},
     };
@@ -263,6 +255,8 @@ describe("resolveMovyDirect", () => {
       endpointHealth,
     };
 
+    expect((await movyProviderModule.resolve(MOVIE_INPUT, ctx)).status).toBe("exhausted");
+    allowed = true;
     const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
     expect(result.status).toBe("resolved");
   });
