@@ -16,7 +16,7 @@ import {
   type SharedProps,
 } from "fumadocs-ui/components/dialog/search";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { KunaiSearchEmpty, KunaiSearchLoading, SEARCH_FALLBACK_LINKS } from "./kunai-search-empty";
 
@@ -59,6 +59,13 @@ export function KunaiSearchDialog({
   );
 
   const [asking, setAsking] = useState(false);
+
+  // The dialog stays mounted between opens (see lazy-search-dialog), so this
+  // state would otherwise survive close+reopen and Ctrl+K would land back in
+  // the AI panel instead of search.
+  useEffect(() => {
+    if (!props.open) setAsking(false);
+  }, [props.open]);
 
   const listItems =
     query.data && query.data !== "empty"
