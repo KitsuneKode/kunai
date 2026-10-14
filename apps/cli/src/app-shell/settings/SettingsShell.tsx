@@ -136,26 +136,33 @@ export function SettingsShell({
 
   // A failed save must reach the user and the support bundle, not vanish into
   // a void promise: settings silently not sticking is otherwise undiagnosable.
+  const persistedDraftRef = useRef(state.draft);
+  const persistChainRef = useRef<Promise<void> | null>(null);
   const saveDraft = useCallback(
-    async (draft: SettingsUiState["draft"], phase: "editing" | "closing") => {
-      try {
-        await persistSettingsDraft(container, draft);
-      } catch (error) {
-        // Normalize a rejection at the persistence boundary; rendering and
-        // diagnostics consume the message rather than arbitrary throw values.
-        const detail = error instanceof Error ? error.message : String(error);
-        container.diagnosticsService.record({
-          category: "session",
-          message:
-            phase === "closing"
-              ? "Settings draft lost on close: final persist failed"
-              : "Settings persist failed",
-          context: { error: detail },
-        });
-        if (phase === "editing") {
-          setState((current) => ({ ...current, error: `Couldn't save settings: ${detail}` }));
+    (draft: SettingsUiState["draft"], phase: "editing" | "closing") => {
+      const write = (persistChainRef.current ?? Promise.resolve()).then(async () => {
+        try {
+          await persistSettingsDraft(container, draft, persistedDraftRef.current);
+          persistedDraftRef.current = draft;
+        } catch (error) {
+          // Normalize a rejection at the persistence boundary; rendering and
+          // diagnostics consume the message rather than arbitrary throw values.
+          const detail = error instanceof Error ? error.message : String(error);
+          container.diagnosticsService.record({
+            category: "session",
+            message:
+              phase === "closing"
+                ? "Settings draft lost on close: final persist failed"
+                : "Settings persist failed",
+            context: { error: detail },
+          });
+          if (phase === "editing") {
+            setState((current) => ({ ...current, error: `Couldn't save settings: ${detail}` }));
+          }
         }
-      }
+      });
+      persistChainRef.current = write;
+      return write;
     },
     [container],
   );
