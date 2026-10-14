@@ -68,7 +68,14 @@ describe("local media gateway", () => {
       expect(body[0]).toBe(100);
       expect(body[99]).toBe(199);
 
-      expect((await fetch(url)).status).toBe(416);
+      const full = await fetch(url);
+      expect(full.status).toBe(200);
+      expect((await full.arrayBuffer()).byteLength).toBe(10_000);
+      const head = await fetch(url, { method: "HEAD" });
+      expect(head.status).toBe(200);
+      expect(head.headers.get("content-length")).toBe("10000");
+      expect((await head.arrayBuffer()).byteLength).toBe(0);
+      expect((await fetch(url, { method: "POST" })).status).toBe(405);
       expect((await fetch(`${gateway.origin}/t/wrong-token/m1/stream`)).status).toBe(403);
       expect((await fetch(`${gateway.origin}/t/${"0".repeat(32)}/nope/stream`)).status).toBe(403);
     } finally {
@@ -92,4 +99,78 @@ describe("local media gateway", () => {
       gateway.stop();
     }
   });
+});
+
+test("a queued idle timer cannot interrupt an active torrent response", async () => {
+  const tasks: (() => void)[] = [];
+  const reasons: string[] = [];
+  let release!: () => void;
+  const resume = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const gateway = startLocalMediaGateway({
+    scheduleIdle(task) {
+      tasks.push(task);
+      return () => {};
+    },
+    onStopped(reason) {
+      reasons.push(reason);
+    },
+  });
+  try {
+    const url = gateway.mountTorrentFile({
+      mountId: "active",
+      fileName: "video.mp4",
+      fileLength: 8,
+      contentType: "video/mp4",
+      async *readRange() {
+        yield new Uint8Array(4);
+        await resume;
+        yield new Uint8Array(4);
+      },
+    });
+    const response = await fetch(url);
+    tasks[0]?.();
+    expect(reasons).toEqual([]);
+    release();
+    expect((await response.arrayBuffer()).byteLength).toBe(8);
+    gateway.stop();
+    expect(reasons).toEqual(["playback-end"]);
+  } finally {
+    release();
+    gateway.stop();
+  }
+});
+
+test("HEAD never opens a torrent file stream and mount admission is bounded", async () => {
+  const gateway = startLocalMediaGateway();
+  let reads = 0;
+  const mount = {
+    fileName: "video.mp4",
+    fileLength: 4,
+    contentType: "video/mp4",
+    async *readRange() {
+      reads++;
+      yield new Uint8Array(4);
+    },
+  };
+  try {
+    const url = gateway.mountTorrentFile({ ...mount, mountId: "head" });
+    const response = await fetch(url, { method: "HEAD", headers: { range: "bytes=1-2" } });
+    expect(response.status).toBe(206);
+    expect(response.headers.get("content-range")).toBe("bytes 1-2/4");
+    expect(reads).toBe(0);
+    for (let index = 1; index < 16; index++)
+      gateway.mountTorrentFile({ ...mount, mountId: `m${index}` });
+    expect(() => gateway.mountTorrentFile({ ...mount, mountId: "overflow" })).toThrow(
+      "too many torrent mounts",
+    );
+    gateway.unmountTorrentFile("head");
+    expect(() => gateway.mountTorrentFile({ ...mount, mountId: "replacement" })).not.toThrow();
+    expect(() => gateway.mountTorrentFile({ ...mount, mountId: "../escape" })).toThrow(
+      "invalid torrent mount",
+    );
+  } finally {
+    gateway.stop();
+  }
 });

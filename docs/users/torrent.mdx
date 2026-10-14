@@ -15,10 +15,14 @@ the torrent flow instead of title search.
 2. **Largest video file wins.** Season packs and sidecars are skipped; the
    biggest video file is selected and prioritized head-first.
 3. **Readiness gate.** Playback starts only after the file head proves a
-   container mpv can demux (MP4 moov box or Matroska EBML head). A stalled
+   recognizable container header (complete MP4 moov box or Matroska EBML marker).
+   Unknown bytes and MP4 files without moov are refused, even when fully downloaded.
+   This checks header evidence; mpv still determines whether decoding succeeds. A stalled
    swarm fails honestly instead of handing mpv dead bytes.
 4. **Local gateway.** The file is served over `127.0.0.1` with full seeking,
-   and mpv plays the local URL.
+   and mpv plays the local URL. GET, HEAD, and single byte ranges are supported;
+   active reads keep the gateway alive. Admission is capped at four concurrent
+   reads and sixteen mounted files per session.
 5. **Seed while watching.** Upload runs to the swarm during playback and stops
    when playback ends. There is no background seeding unless you ask for it.
 
@@ -27,7 +31,11 @@ implementation bundled, the second needs a native module Bun cannot run.
 
 ## When the swarm stalls
 
-If no playable head arrives in time and you configured a debrid token
+Cancelling stops the swarm and gateway and never contacts debrid. Metadata waits,
+file reads, and readiness retries are cancellable; a stalled head read cannot
+outlive its readiness deadline.
+
+If no recognizable playable head arrives in time and you configured a debrid token
 (`debridApiKey` in `config.json`, experimental), Kunai unrestricts the magnet
 through Real-Debrid once and plays the direct URL. Without a token, the
 attempt ends with the reason, usually too few seeders.

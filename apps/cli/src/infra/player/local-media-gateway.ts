@@ -66,6 +66,7 @@ const IDLE_TIMEOUT_MS = 15 * 60_000;
 
 export type StartLocalMediaGatewayOptions = {
   readonly onStopped?: (reason: LocalMediaGatewayStopReason) => void;
+  readonly scheduleIdle?: (task: () => void, delayMs: number) => () => void;
 };
 
 export function startLocalMediaGateway(
@@ -74,38 +75,68 @@ export function startLocalMediaGateway(
   const token = crypto.randomUUID().replace(/-/g, "");
   const mounts = new Map<string, GatewayTorrentMount>();
   let stopped = false;
-  let idleTimer: Timer | null = null;
+  let cancelIdle: (() => void) | null = null;
+  const activeReads = new Set<AbortController>();
+  const scheduleIdle =
+    options.scheduleIdle ??
+    ((task: () => void, delayMs: number) => {
+      const timer = setTimeout(task, delayMs);
+      return () => clearTimeout(timer);
+    });
   let closeGateway: ((reason: LocalMediaGatewayStopReason) => void) | null = null;
 
   function resetIdleTimer() {
-    if (idleTimer) clearTimeout(idleTimer);
+    cancelIdle?.();
+    cancelIdle = null;
     const closer = closeGateway;
-    if (!closer || stopped) return;
-    idleTimer = setTimeout(() => closer("idle"), IDLE_TIMEOUT_MS);
+    if (!closer || stopped || activeReads.size > 0) return;
+    cancelIdle = scheduleIdle(() => {
+      // A captured timer may already be queued when a read begins.
+      if (activeReads.size === 0) closer("idle");
+    }, IDLE_TIMEOUT_MS);
   }
 
   function tokenOk(path: string): boolean {
     return path.startsWith(`/t/${token}/`);
   }
 
-  async function iterableToResponse(
+  function iterableToResponse(
     source: AsyncIterable<Uint8Array>,
-    onCancel: () => void,
-  ): Promise<ReadableStream<Uint8Array>> {
+    controller: AbortController,
+    requestSignal: AbortSignal,
+  ): ReadableStream<Uint8Array> {
     const iterator = source[Symbol.asyncIterator]();
+    let finished = false;
+    const onRequestAbort = () => controller.abort();
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      requestSignal.removeEventListener("abort", onRequestAbort);
+      activeReads.delete(controller);
+      resetIdleTimer();
+    };
+    requestSignal.addEventListener("abort", onRequestAbort, { once: true });
+    controller.signal.addEventListener("abort", finish, { once: true });
+    if (requestSignal.aborted) controller.abort();
     return new ReadableStream<Uint8Array>({
-      async pull(controller) {
+      async pull(stream) {
         try {
+          controller.signal.throwIfAborted();
           const next = await iterator.next();
-          if (next.done) controller.close();
-          else controller.enqueue(next.value);
+          controller.signal.throwIfAborted();
+          if (next.done) {
+            finish();
+            stream.close();
+          } else stream.enqueue(next.value);
         } catch (error) {
-          controller.error(error);
+          finish();
+          stream.error(error);
         }
       },
-      cancel() {
-        onCancel();
-        void iterator.return?.();
+      async cancel() {
+        controller.abort();
+        finish();
+        await iterator.return?.();
       },
     });
   }
@@ -115,9 +146,12 @@ export function startLocalMediaGateway(
     port: 0,
     async fetch(req) {
       if (stopped) return new Response("gateway stopped", { status: 503 });
-      resetIdleTimer();
       const url = new URL(req.url);
       if (!tokenOk(url.pathname)) return new Response("forbidden", { status: 403 });
+
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        return new Response("method not allowed", { status: 405, headers: { Allow: "GET, HEAD" } });
+      }
 
       // ── Torrent file serving ──────────────────────────────────────
       if (url.pathname.startsWith(`/t/${token}/`)) {
@@ -127,32 +161,43 @@ export function startLocalMediaGateway(
         const mount = mounts.get(mountId);
         if (!mount) return new Response("unknown torrent mount", { status: 404 });
         const total = mount.fileLength;
-        const parsed = parseGatewayRange(req.headers.get("range"), total);
+        resetIdleTimer();
+        const rangeHeader = req.headers.get("range");
+        const parsed =
+          rangeHeader === null
+            ? { ok: true as const, range: { start: 0, end: total - 1 } }
+            : parseGatewayRange(rangeHeader, total);
         if (!parsed.ok) {
-          return new Response("range required", {
+          return new Response("invalid range", {
             status: 416,
             headers: { "Accept-Ranges": "bytes", "Content-Range": `bytes */${total}` },
           });
         }
         const { start, end } = parsed.range;
         const length = end - start + 1;
+        const headers: Record<string, string> = {
+          "Content-Type": mount.contentType,
+          "Content-Length": String(length),
+          "Accept-Ranges": "bytes",
+        };
+        if (rangeHeader !== null) headers["Content-Range"] = `bytes ${start}-${end}/${total}`;
+        const status = rangeHeader === null ? 200 : 206;
+        if (req.method === "HEAD") return new Response(null, { status, headers });
+        if (activeReads.size >= 4) return new Response("too many active reads", { status: 503 });
         const controller = new AbortController();
-        req.signal.addEventListener("abort", () => controller.abort(), { once: true });
+        activeReads.add(controller);
+        resetIdleTimer();
         try {
-          const body = await iterableToResponse(
+          const body = iterableToResponse(
             mount.readRange(start, end, controller.signal),
-            () => controller.abort(),
+            controller,
+            req.signal,
           );
-          return new Response(body, {
-            status: 206,
-            headers: {
-              "Content-Type": mount.contentType,
-              "Content-Length": String(length),
-              "Content-Range": `bytes ${start}-${end}/${total}`,
-              "Accept-Ranges": "bytes",
-            },
-          });
+          return new Response(body, { status, headers });
         } catch {
+          controller.abort();
+          activeReads.delete(controller);
+          resetIdleTimer();
           return new Response("torrent read failed", { status: 502 });
         }
       }
@@ -165,10 +210,10 @@ export function startLocalMediaGateway(
   const stop = (reason: LocalMediaGatewayStopReason = "playback-end") => {
     if (stopped) return;
     stopped = true;
-    if (idleTimer) {
-      clearTimeout(idleTimer);
-      idleTimer = null;
-    }
+    cancelIdle?.();
+    cancelIdle = null;
+    for (const controller of activeReads) controller.abort();
+    activeReads.clear();
     mounts.clear();
     server.stop(true);
     options.onStopped?.(reason);
@@ -180,6 +225,16 @@ export function startLocalMediaGateway(
     origin,
     stop,
     mountTorrentFile: (mount: GatewayTorrentMount) => {
+      if (stopped) throw new Error("gateway stopped");
+      if (
+        !/^[a-zA-Z0-9_-]+$/.test(mount.mountId) ||
+        !Number.isSafeInteger(mount.fileLength) ||
+        mount.fileLength <= 0
+      ) {
+        throw new Error("invalid torrent mount");
+      }
+      if (!mounts.has(mount.mountId) && mounts.size >= 16)
+        throw new Error("too many torrent mounts");
       mounts.set(mount.mountId, mount);
       return `${origin}/t/${token}/${mount.mountId}/${encodeURIComponent("stream")}`;
     },
