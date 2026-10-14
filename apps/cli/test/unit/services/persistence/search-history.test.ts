@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,6 +9,7 @@ import {
   createSearchHistoryStore,
   flushSearchHistory,
   getSearchHistory,
+  refreshSearchHistory,
 } from "@/services/persistence/search-history";
 
 import { applyStorageRootEnv } from "../../../helpers/storage-env";
@@ -49,7 +50,10 @@ describe("search history persistence", () => {
   test("survives a restart by reloading from disk", async () => {
     addSearchQuery("Frieren");
     await flushSearchHistory();
-    expect(getSearchHistory()).toEqual(["Frieren"]);
+    const restarted = createSearchHistoryStore(() => historyFile());
+    expect(restarted.get()).toEqual([]);
+    await restarted.refresh();
+    expect(restarted.get()).toEqual(["Frieren"]);
   });
 
   test("a second session's appends merge instead of overwriting", async () => {
@@ -94,6 +98,8 @@ describe("search history persistence", () => {
     addSearchQuery("old");
     await flushSearchHistory();
     writeFileSync(historyFile(), JSON.stringify(["other-session", "old"]));
+    expect(getSearchHistory()).toEqual(["old"]);
+    await refreshSearchHistory();
     expect(getSearchHistory()).toEqual(["other-session", "old"]);
   });
 
@@ -104,8 +110,35 @@ describe("search history persistence", () => {
     first.add("first-session");
     second.add("second-session");
     await Promise.all([first.flush(), second.flush()]);
+    await first.refresh();
     expect([...first.get()].sort()).toEqual(["first-session", "second-session"]);
     expect(readDisk().sort()).toEqual(["first-session", "second-session"]);
+  });
+
+  test("reads return snapshots without accessing a deleted file until refresh", async () => {
+    const file = historyFile();
+    const store = createSearchHistoryStore(() => file);
+    store.add("cached");
+    await store.flush();
+    rmSync(file);
+    expect(store.get()).toEqual(["cached"]);
+    await store.refresh();
+    expect(store.get()).toEqual([]);
+  });
+
+  test("a refresh notifies an active reader about sibling appends", async () => {
+    const store = createSearchHistoryStore(() => historyFile());
+    let notices = 0;
+    const unsubscribe = store.subscribe(() => notices++);
+    const parent = join(historyFile(), "..");
+    mkdirSync(parent, { recursive: true });
+    writeFileSync(historyFile(), JSON.stringify(["sibling"]));
+    await store.refresh();
+    expect(store.get()).toEqual(["sibling"]);
+    expect(notices).toBe(1);
+    unsubscribe();
+    await store.refresh();
+    expect(notices).toBe(1);
   });
 
   test("a malformed history is preserved rather than overwritten", async () => {

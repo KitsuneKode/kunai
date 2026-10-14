@@ -21,7 +21,12 @@ import {
 import type { SearchResult, ShellMode } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import { addSearchQuery, getSearchHistory } from "@/services/persistence/search-history";
+import {
+  addSearchQuery,
+  getSearchHistory,
+  refreshSearchHistory,
+  subscribeSearchHistory,
+} from "@/services/persistence/search-history";
 import { Box, Text, useInput, type DOMElement } from "ink";
 import React, {
   useCallback,
@@ -380,6 +385,12 @@ export function BrowseShell<T>({
     initialResults && initialResults.length > 0 ? (initialQuery ?? "") : "",
   );
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  useEffect(() => {
+    const unsubscribe = subscribeSearchHistory(() => setHistoryRevision((value) => value + 1));
+    void refreshSearchHistory();
+    return unsubscribe;
+  }, []);
   const [draftQuery, setDraftQuery] = useState("");
   // Suggestion band (type-ahead dropdown under the query field): the highlight
   // is band-local state, never a focus zone — typing keeps editing the draft.
@@ -1122,6 +1133,10 @@ export function BrowseShell<T>({
     dismissedForQuery: suggestionDismissedQuery,
   });
 
+  useEffect(() => {
+    if (suggestionBandVisible) void refreshSearchHistory();
+  }, [suggestionBandVisible]);
+
   const { suggestions: catalogSuggestions, pending: suggestionsPending } = useSearchSuggestions<T>({
     query,
     enabled: suggestionBandVisible,
@@ -1150,7 +1165,7 @@ export function BrowseShell<T>({
     // The corpus is a snapshot per band-open, not per keystroke — re-reading
     // SQLite on every character is wasted work the scorer never sees.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [suggestionBandVisible, loadLocalSuggestions]);
+  }, [suggestionBandVisible, loadLocalSuggestions, historyRevision]);
 
   const suggestionBandModel = useMemo(
     () =>
