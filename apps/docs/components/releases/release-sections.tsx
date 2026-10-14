@@ -33,9 +33,9 @@ export function ReleaseSectionList({ sections }: ReleaseSectionListProps) {
             className="border-fd-border rounded-lg border p-6"
             aria-labelledby={`release-section-${section.title}`}
           >
-            <h3 id={`release-section-${section.title}`} className="kunai-type-title text-xl">
+            <h2 id={`release-section-${section.title}`} className="kunai-type-title text-xl">
               {section.title}
-            </h3>
+            </h2>
             <div className="text-fd-muted-foreground mt-4 flex flex-col gap-2 text-sm leading-6 [&>ul]:mt-0">
               <MarkdownText>{markdown}</MarkdownText>
             </div>
