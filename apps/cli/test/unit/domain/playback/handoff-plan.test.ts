@@ -22,6 +22,20 @@ function plan(overrides: Partial<StreamInfo> = {}, localSource = false) {
   });
 }
 
+function gatewayPlan(overrides: Partial<StreamInfo> = {}, serveDocument = false) {
+  return createHandoffPlan({
+    stream: stream(overrides),
+    player: "vlc",
+    capabilities: DETACHED_HANDOFF_CAPABILITIES,
+    localSource: false,
+    gateway: {
+      serveHeaders: true,
+      serveExternalSubtitles: true,
+      serveDocument,
+    },
+  });
+}
+
 describe("detached handoff plan", () => {
   test.each(["http://media.example/video.mp4", "https://media.example/episode.m3u8"])(
     "accepts an absolute headerless URL: %s",
@@ -84,6 +98,44 @@ describe("detached handoff plan", () => {
       ok: false,
       blockers: ["external-subtitle-unsupported"],
     });
+  });
+
+  test("the stream gateway lifts headers, cookies, and subtitle blockers", () => {
+    const url = "https://media.example/episode.m3u8";
+    expect(
+      gatewayPlan({
+        headers: { Referer: "https://provider.example/", Cookie: "s=1" },
+        subtitle: "https://subs.example/episode.vtt",
+      }),
+    ).toEqual({ ok: true, url, player: "vlc" });
+  });
+
+  test("the gateway only lifts a deferred locator once the document exists", () => {
+    expect(gatewayPlan({ deferredLocator: "allmanga-ak:x" }, false)).toEqual({
+      ok: false,
+      blockers: ["deferred-source"],
+    });
+    expect(gatewayPlan({ deferredLocator: "allmanga-ak:x", url: "" }, true)).toEqual({
+      ok: true,
+      url: "",
+      player: "vlc",
+    });
+  });
+
+  test("the gateway never lifts yt-dlp or local-file blockers", () => {
+    expect(gatewayPlan({ requiresYtdl: true })).toEqual({
+      ok: false,
+      blockers: ["yt-dlp-required"],
+    });
+    expect(
+      createHandoffPlan({
+        stream: stream({}),
+        player: "vlc",
+        capabilities: DETACHED_HANDOFF_CAPABILITIES,
+        localSource: true,
+        gateway: { serveHeaders: true, serveExternalSubtitles: true, serveDocument: true },
+      }),
+    ).toEqual({ ok: false, blockers: ["local-source-unsupported"] });
   });
 
   test("rejects local playback until a player contract is proven", () => {

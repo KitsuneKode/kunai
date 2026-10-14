@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12"
+lastReviewed: "2026-10-13T11:22:36Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -163,10 +163,46 @@ Contract proof (fake-player / render-capture, no live providers):
 
 On Android/Termux, `--player auto|mpv|vlc` composes
 `HandoffPlayerService` instead of `PlayerServiceImpl`. `auto` opens the Android
-chooser; explicit choices target mpv-android or VLC. The adapter accepts only a
-final absolute HTTP(S) URL with no custom headers/cookies, yt-dlp requirement,
-local file, deferred locator, or external subtitle. It constructs an argv array
-for `am`/Termux launchers and never interpolates a shell command.
+chooser; explicit choices target mpv-android or VLC. The adapter accepts a
+final absolute HTTP(S) URL directly and routes headered, cookie, external-
+subtitle, and deferred streams through `infra/player/stream-gateway.ts` — a
+per-playback loopback server on 127.0.0.1 under a 128-bit token path that
+injects the candidate's normalized headers, rewrites HLS playlists and DASH
+segment addressing, follows redirects only to public targets (the shared
+`@kunai/core` DNS/private-address guards). Each real fetch connects to the
+validated IP with the original Host and TLS server name; every redirect is
+validated and pinned again, and ambient proxies cannot bypass that binding.
+The gateway passes Range through for
+seeking. Blocked playlist and generated MPD targets become local 404 URLs,
+so the external player cannot bypass the target guard. Playlists are bounded
+to 4 MiB, including the first chunk. Idle shutdown waits for requests and
+response bodies to finish; shell shutdown stops the gateway immediately.
+The chooser refuses external subtitles because it has no subtitle extras;
+explicit VLC and mpv-android targets carry them. yt-dlp-only streams,
+local files, and non-HTTP schemes still refuse. The intent launcher constructs
+an argv array for `am`/Termux launchers, passes subtitles as `subs` /
+`subtitles_location` extras, scrubs the child environment, and never
+interpolates a shell command.
+
+DASH rewriting lives in `infra/player/dash-gateway-manifest.ts`. It parses
+MPDs with `@xmldom/xmldom`, resolves hierarchical BaseURLs against the final
+upstream URL, flattens inherited SegmentBase/List/Template addressing at each
+Representation, and rewrites initialization, media, and index URLs. Standard
+`Number`, `Time`, `Bandwidth`, and `RepresentationID` substitutions use
+registered session routes, with bounded validated values and fixed upstream
+origins. Repeat MPD loads reuse template routes; new registrations revoke
+the old session. Generated deferred MPDs use the same rewriter.
+
+DTD/entities, malformed XML, ContentProtection, xlink resources, external
+UTCTiming, PatchLocation, alternative BaseURLs, and unknown template variables
+are outside this preview contract and return a sanitized 422. The parser walk
+is bounded to 20,000 elements; each session admits at most 1,024 distinct
+templates. Unhinted manifests are recognized across transport chunks, XML
+prologs, and comments within a 16 KiB prefix; ambiguous prefixes above that
+bound refuse. Opaque partial-media bytes at EOF preserve their status and Range
+metadata. This is an on-device loopback gateway; the shared relay stays
+metadata-only. Android intent extras and actual playback still need physical
+device qualification.
 
 An accepted `ACTION_VIEW` request is represented as detached handoff evidence,
 not playback evidence. The session emits no start/progress/completion event,
