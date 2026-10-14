@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-04"
+lastReviewed: "2026-10-14"
 ---
 
 # Provider: VidLink (`vidlink`)
@@ -31,8 +31,11 @@ lastReviewed: "2026-10-04"
   "simplify" to it.
 - Payload carries `stream.qualities` (per-rendition URLs), `captions`
   (provider subtitles), and `playbackMetadata` (codec/resolution hints).
-- 20 s per-request timeout, 2 attempts with 500 ms backoff (5xx only sleeps
-  inside the try; any error retries once via the catch).
+- 20 s per-request timeout, 2 attempts. A 429 sleeps out its `Retry-After`
+  (delta-seconds or HTTP-date, capped at 10 s; fixed 500 ms without a usable
+  header) BEFORE the endpoint quarantine is recorded and the retry fires, so
+  the second attempt lands past the throttle window instead of inside it. 5xx
+  keeps the fixed 500 ms sleep; other statuses throw after recording.
 
 ## Failure honesty (post-2026-09-29)
 
