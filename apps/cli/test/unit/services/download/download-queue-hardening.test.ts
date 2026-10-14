@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-event";
 import { DownloadService } from "@/services/download/DownloadService";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
@@ -53,6 +54,7 @@ describe("DownloadService queue hardening", () => {
     overrides: {
       downloadPath?: string;
       statfs?: () => Promise<{ bavail: number; bsize: number }>;
+      diagnostics?: ConstructorParameters<typeof DownloadService>[0]["diagnostics"];
     } = {},
   ): DownloadService {
     // SAFETY: test stub — supplies only the surface this suite exercises.
@@ -80,6 +82,7 @@ describe("DownloadService queue hardening", () => {
         },
       },
       statfs: overrides.statfs ?? (async () => ({ bavail: 2 ** 40 / 4096, bsize: 4096 })),
+      diagnostics: overrides.diagnostics,
     });
   }
 
@@ -134,6 +137,49 @@ describe("DownloadService queue hardening", () => {
     expect(blockedRow?.status).toBe("queued");
     expect(blockedRow?.nextRetryAt).toBeDefined();
     expect(healthy?.status).toBe("completed");
+  });
+
+  test("a coalesced pass cannot erase the failed pass's worker and job diagnostics", async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const followup = Promise.withResolvers<void>();
+    const reported = Promise.withResolvers<DiagnosticEventInput>();
+    const service = buildService({
+      diagnostics: {
+        record: (event) => {
+          if (event.operation === "download.queue.pass.failed") reported.resolve(event);
+        },
+      },
+    });
+    let calls = 0;
+    const worker = spyOn(service, "processNextQueued").mockImplementation(async (context) => {
+      calls++;
+      if (calls !== 1) {
+        followup.resolve();
+        return null;
+      }
+      if (context) context.jobId = "fixture-failed-job";
+      entered.resolve();
+      await release.promise;
+      throw new Error("fixture-claim-failure");
+    });
+    try {
+      service.kickQueue("download-manager");
+      await entered.promise;
+      service.kickQueue("download-manager");
+      release.resolve();
+      const event = await reported.promise;
+      await followup.promise;
+      service.beginShutdown();
+      expect(event.context).toMatchObject({
+        source: "download-manager",
+        stage: "worker",
+        workerIndex: 0,
+        jobId: "fixture-failed-job",
+      });
+    } finally {
+      worker.mockRestore();
+    }
   });
 
   test("a kick that lands mid-pass runs a follow-up pass instead of being dropped", async () => {

@@ -357,7 +357,6 @@ export class DownloadService {
   // this, a job enqueued after workers paged past it sat invisible until the
   // next external kick. Coalesced into one follow-up pass in the finally below.
   private pendingKick = false;
-  private lastQueuePassFailureContext: DownloadQueueFailureContext | undefined;
   private reconciledStartupJobs = false;
   private shutdownRequested = false;
   private readonly cancellationRequests = new Map<
@@ -1078,17 +1077,26 @@ export class DownloadService {
       this.pendingKick = true;
       return;
     }
-    void this.processQueue().catch((error: unknown) => {
-      this.reportQueuePassFailure(source, error);
+    let failureContext: DownloadQueueFailureContext | undefined;
+    void this.processQueuePass((context) => {
+      failureContext = context;
+    }).catch((error: unknown) => {
+      this.reportQueuePassFailure(source, error, failureContext);
     });
   }
 
   async processQueue(): Promise<void> {
+    return this.processQueuePass();
+  }
+
+  private async processQueuePass(
+    onFailure?: (context: DownloadQueueFailureContext) => void,
+  ): Promise<void> {
     if (this.queueWorkerRunning || this.shutdownRequested) {
       return;
     }
     this.queueWorkerRunning = true;
-    this.lastQueuePassFailureContext = undefined;
+    let failureContext: DownloadQueueFailureContext | undefined;
     let stage: DownloadQueuePassStage = "resume-paused";
     try {
       if (!this.reconciledStartupJobs) {
@@ -1128,7 +1136,7 @@ export class DownloadService {
       if (failures.length === 1) {
         const [failure] = failures;
         if (failure) {
-          this.lastQueuePassFailureContext = {
+          failureContext = {
             stage: "worker",
             workerIndex: failure.context.workerIndex,
             jobId: failure.context.jobId,
@@ -1141,14 +1149,14 @@ export class DownloadService {
           failures.map((failure) => failure.reason),
           buildDownloadQueueAggregateMessage(failures.map((failure) => failure.reason)),
         );
-        this.lastQueuePassFailureContext = {
+        failureContext = {
           stage: "worker",
           workerFailures: failures.length,
         };
         throw aggregate;
       }
     } catch (error) {
-      this.lastQueuePassFailureContext ??= { stage };
+      onFailure?.(failureContext ?? { stage });
       throw error;
     } finally {
       this.queueWorkerRunning = false;
@@ -1159,9 +1167,11 @@ export class DownloadService {
     }
   }
 
-  private reportQueuePassFailure(source: DownloadQueueKickSource, error: unknown): void {
-    const failureContext = this.lastQueuePassFailureContext ?? { stage: "worker" as const };
-    this.lastQueuePassFailureContext = undefined;
+  private reportQueuePassFailure(
+    source: DownloadQueueKickSource,
+    error: unknown,
+    failureContext: DownloadQueueFailureContext = { stage: "worker" },
+  ): void {
     let event: ReturnType<typeof buildDownloadDiagnosticEvent>;
     try {
       event = buildDownloadDiagnosticEvent({
