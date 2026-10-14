@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-06-03"
+lastReviewed: "2026-10-14"
 ---
 
 # Provider: Rivestream
@@ -18,6 +18,7 @@ lastReviewed: "2026-06-03"
 - **Quality model:** Standard HLS and direct `.mp4`.
 - **Thumbnail/poster support:** Yes. Backend fetch provides VTT/BIF files for the player seek-bar.
 - **Known failure modes:** `cArray` salt rotation breaks the MurmurHash `secretKey` generation, resulting in 401 Unauthorized errors.
+- **Demoted backends (2026-10-14):** `savannah`, `prometheus`, `quasar`, and `solstice` return no sources for titles other mirrors serve, and `primevids` answers 403. They trail the service cycle as a last resort (`RIVESTREAM_DEMOTED_BACKENDS`) and are skipped by prefetch — the cycle stops at the first working mirror (e.g. citadel) without spending an attempt on them. Nothing is dropped: a recovered backend still resolves when everything ahead fails.
 
 ## User-Facing Capabilities
 
