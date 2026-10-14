@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T14:05:00Z"
+lastReviewed: "2026-10-13T16:53:36Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -382,3 +382,14 @@ dependency links.
 The root `test:live:allmanga-crypto` command forwards to the CLI's existing
 metadata-only freshness probe; it does not resolve or play a video. It is an
 opt-in live command, outside default unit/integration CI.
+
+### Release license consistency
+
+New project artifacts use `MIT OR Apache-2.0`. The root `LICENSE` includes both
+complete texts so the launcher and every platform package keep their existing
+single-license-file packaging contract. Source copies are `LICENSE-MIT` and
+`LICENSE-APACHE`; separately identified third-party notices retain their terms.
+The publish-manifest and npm-pack guards require the exact project expression,
+including for platform packages. Channel rendering uses Homebrew `any_of`,
+Scoop's pipe notation, and SPDX `OR` for Arch. Existing published artifacts and
+historical channel manifests are immutable; do not rewrite them on this change.

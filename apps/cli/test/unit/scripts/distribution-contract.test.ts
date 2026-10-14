@@ -676,7 +676,7 @@ describe("release:pack script contract", () => {
       keywords: ["cli", "mpv"],
       homepage: "https://github.com/KitsuneKode/kunai#readme",
       bugs: { url: "https://github.com/KitsuneKode/kunai/issues" },
-      license: "MIT",
+      license: "MIT OR Apache-2.0",
       author: "kitsunekode",
       repository: { type: "git", url: "https://github.com/KitsuneKode/kunai" },
       publishConfig: { access: "public", provenance: true } as const,
@@ -695,11 +695,11 @@ describe("release:pack script contract", () => {
     });
   });
 
-  test("buildNpmPublishManifest rejects non-MIT or non-public source policy", () => {
+  test("buildNpmPublishManifest rejects mismatched licensing or non-public source policy", () => {
     const validSource = {
       name: "@kitsunekode/kunai",
       version: "9.8.7",
-      license: "MIT",
+      license: "MIT OR Apache-2.0",
       publishConfig: { access: "public", provenance: true } as const,
     };
 

@@ -66,8 +66,8 @@ describe("renderHomebrewFormula", () => {
     }
   });
 
-  test("declares the formula shape: MIT, mpv caveat, version test", () => {
-    expect(formula).toContain('license "MIT"');
+  test("declares the formula shape: license choice, mpv caveat, version test", () => {
+    expect(formula).toContain('license any_of: ["MIT", "Apache-2.0"]');
     expect(formula).toContain("brew install mpv");
     expect(formula).not.toContain('depends_on "mpv"');
     expect(formula).toContain('assert_match version.to_s, shell_output("#{bin}/kunai --version")');
@@ -85,7 +85,7 @@ describe("renderScoopManifest", () => {
       architecture: Record<string, { url: string; hash: string; bin: string[][] }>;
     };
     expect(m.version).toBe("0.3.0");
-    expect(m.license).toBe("MIT");
+    expect(m.license).toBe("MIT | Apache-2.0");
     expect(m.architecture["64bit"]?.url).toBe(`${DL}/kunai-windows-x64.zip`);
     expect(m.architecture["64bit"]?.hash).toBe(
       "b857e3c28c4bffffdf75a1250a0d343fc4a4c703469ce6b94c79b2429d2ad0aa",
@@ -120,6 +120,7 @@ describe("renderPkgbuild + renderSrcinfo", () => {
   const srcinfo = renderSrcinfo(input);
 
   test("PKGBUILD carries per-arch sources, real sums, and the license fetch", () => {
+    expect(pkgbuild).toContain("license=('MIT OR Apache-2.0')");
     expect(pkgbuild).toContain("pkgname=kunai-bin");
     expect(pkgbuild).toContain("pkgver=0.3.0");
     expect(pkgbuild).toContain("depends=('mpv')");
@@ -137,6 +138,7 @@ describe("renderPkgbuild + renderSrcinfo", () => {
 
   test(".SRCINFO mirrors the same fields deterministically", () => {
     expect(srcinfo).toContain("pkgbase = kunai-bin");
+    expect(srcinfo).toContain("\tlicense = MIT OR Apache-2.0");
     expect(srcinfo).toContain("\tpkgver = 0.3.0");
     expect(srcinfo).toContain("\tarch = x86_64");
     expect(srcinfo).toContain("\tarch = aarch64");

@@ -91,7 +91,7 @@ function minimalManifest(overrides: Partial<NpmPublishManifest> = {}): NpmPublis
     bin: { kunai: "dist/npm-launcher.mjs" },
     files: ["dist/npm-launcher.mjs", "LICENSE", "README.md"],
     engines: { node: ">=18.17" },
-    license: "MIT",
+    license: "MIT OR Apache-2.0",
     optionalDependencies: Object.fromEntries(
       RELEASE_BINARY_TARGETS.map((target) => [`@kitsunekode/kunai-${target.id}`, TEST_VERSION]),
     ),
