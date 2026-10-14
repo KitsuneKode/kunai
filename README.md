@@ -103,7 +103,7 @@ everything past anime.
 
 - **Type-ahead search** — your history and lists surface as you type, ghost completion included; `→` completes, `↓` jumps the band.
 - **Verified streams** — candidates are probed before `mpv` sees them; a dead provider falls back to the next one with `⇧F`.
-- **Provider switches** — turn any provider off in `/providers` or Settings; disabled lanes stay out of resolve and fallback, and a lane with everything off fails open.
+- **Provider switches** — turn any provider off in `/providers` or Settings; disabled providers stay out of resolve and fallback, including when every provider in a lane is disabled.
 - **Live status board** — a daily sweep publishes per-provider health; the shell already routes around failures on its own.
 - **Up Next and queue** — build tonight's run order in-shell and undo slips with `z`.
 - **Offline downloads** — a persisted queue, speed and ETA rows, automatic resume after a restart, and a local library.

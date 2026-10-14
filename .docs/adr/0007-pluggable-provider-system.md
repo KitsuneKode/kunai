@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-13T06:43:52Z"
+lastReviewed: "2026-10-14T02:08:00Z"
 ---
 
 # ADR 0007 — Pluggable Provider System
@@ -60,6 +60,16 @@ loader after existing release targets and offline behavior are qualified.
    runtime exemptions require reviewed host policy, never a plugin-supplied
    assertion or an imported-but-unused marker. The kit itself executes code
    only after its trust decision.
+   Every `resolve`, `search`, and `listEpisodes` call has a host-owned deadline
+   and terminal timeout/cancellation outcome. The host retires the call's
+   ownership token, rejects late results and prevents later cache, health or
+   event writes. It closes owned requests, streams, files and temporary work.
+   Cooperative signals alone do not qualify this contract: tests must include
+   ignored signals, never-settling promises and non-yielding execution. An
+   in-process timeout cannot interrupt a blocking loop; external code needs
+   independently supervised execution with bounded termination of the worker
+   and its descendants before this guarantee can be claimed. That lifecycle
+   boundary still requires the separate OS security policy described above.
 4. **Versioning**: `engineCompat` semver against the engine's
    `engineApiVersion`. Mismatch refuses with upgrade guidance. Updates
    re-validate and re-run the contract suite before swapping.

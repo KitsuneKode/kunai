@@ -1,5 +1,7 @@
 # Plugin Provider System — Build Plan
 
+**Status: PROPOSED** — compiled Linux import evidence exists; loader implementation and external execution/trust gates remain unqualified.
+
 Tracks ADR [0007](../.docs/adr/0007-pluggable-provider-system.md). Phases run
 in order; each phase's guardrails land WITH the phase, never after.
 
@@ -26,7 +28,11 @@ the ADR is amended before any loader code.
   onto the loader while still shipping it bundled.
 - Guardrails: manifest/module identity parity, provider-scoped secrets,
   no `@/app*` imports, host-enforced resolve gates, duplicate/escape rejection,
-  deadline/cancellation and quarantine tests. Qualify external dependencies
+  host-owned bounds for every `resolve`, `search`, and `listEpisodes` call,
+  terminal timeout/cancel results, rejection of late publications and owned
+  resource cleanup. Test ignored signals, never-settling promises and blocking
+  loops in independently supervised execution; a cooperative signal or promise
+  race does not prove termination. Qualify external dependencies
   outside the workspace and every release runtime before moving bundled modules.
 
 ## Phase 2 — `provider check` kit
