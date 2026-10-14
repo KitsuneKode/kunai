@@ -81,6 +81,7 @@ import { seedCaughtUpReleaseProgressFromCatalogCount } from "@/services/history-
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { observeOnline } from "@/services/network/network-observation";
 import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
+import { addSearchQuery } from "@/services/persistence/search-history";
 import {
   enqueueReleaseReconciliation,
   collectReleaseReconciliationRows,
@@ -464,6 +465,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           initialSearchError = undefined;
           const results = search.results;
           this.warmAnimeEpisodesForResults(context, results);
+          // Bootstrap searches (-S, initial query, auto-search) never pass the
+          // browse submit that records history — record here. Dedupe in
+          // addSearchQuery makes a later interactive repeat idempotent.
+          addSearchQuery(searchIntent.intent.query);
           pendingSearchEvidence = search.evidence;
           pendingSearchWarnings = searchIntent.warnings;
           pendingSearchEmptyMessage =
@@ -904,6 +909,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             initialSearchError = undefined;
             const results = search.results;
             this.warmAnimeEpisodesForResults(context, results);
+            // Follow-up programmatic searches resolve here rather than in the
+            // browse submit — record so history reflects every completed query.
+            addSearchQuery(query);
 
             logger.info("Search complete", {
               query,

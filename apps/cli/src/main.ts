@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { existsSync } from "node:fs";
 // =============================================================================
 // Kunai - Canonical Runtime Entry Point
 //
@@ -21,8 +22,6 @@
 // entrypoint. Keep new architecture work here.
 // (The old `apps/cli/index.ts` compatibility shim was removed in c1d48ffb.)
 // =============================================================================
-
-import { existsSync } from "node:fs";
 
 import { applyShareRefLaunch } from "@/app/bootstrap/apply-resolved-share-target";
 import {
@@ -77,6 +76,7 @@ import {
   selectDownloadCleanupCandidates,
 } from "@/services/download/download-cleanup-policy";
 import { updateSignalFromCheck } from "@/services/notifications/notification-update-signal";
+import { flushSearchHistory } from "@/services/persistence/search-history";
 import { checkDeps } from "@/ui";
 import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage";
 
@@ -169,6 +169,7 @@ export function createMainShutdownRuntime(deps: MainShutdownDeps): ShutdownRunti
       await Promise.allSettled([
         Promise.resolve().then(() => container.activePlaybackCheckpoint.flush()),
         container.config.flushPending(),
+        flushSearchHistory(),
         container.downloadService.pauseActiveJobsForShutdown("download paused by shutdown", {
           gracefulWaitMs: shutdownWaitBudgetMs,
           forceWaitMs: shutdownWaitBudgetMs,
