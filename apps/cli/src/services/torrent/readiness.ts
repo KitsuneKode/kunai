@@ -32,11 +32,10 @@ export function scanMp4Boxes(prefix: Uint8Array): Mp4BoxScan {
       prefix[offset + 6] ?? 0,
       prefix[offset + 7] ?? 0,
     );
+    if (size < 8 || size > prefix.length - offset) break;
     if (type === "ftyp") hasFtyp = true;
     if (type === "moov" && moovOffset === null) moovOffset = offset;
     if (type === "mdat") hasMdat = true;
-    if (size < 8) break;
-    if (size === 1) break;
     offset += size;
   }
   return { hasFtyp, moovOffset, hasMdat };
@@ -89,12 +88,7 @@ export function assessTorrentReadiness(
         reason: `moov at offset ${moovOffset}`,
       };
     }
-    // Fast-start files put moov first; others append it at the end, which a
-    // partial download may never have. Without moov, mpv cannot seek — wait
-    // for more head unless the file is nearly whole.
-    if (prefix.length >= totalLength) {
-      return { ready: true, container, headBytes: prefix.length, reason: "file complete" };
-    }
+    // Completing the download does not replace the missing demux header.
     return {
       ready: false,
       container,
@@ -104,7 +98,7 @@ export function assessTorrentReadiness(
   }
   if (prefix.length >= minHeadBytes || prefix.length >= totalLength) {
     return {
-      ready: prefix.length > 0,
+      ready: false,
       container,
       headBytes: prefix.length,
       reason: "head window complete, container unrecognized",

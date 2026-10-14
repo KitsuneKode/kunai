@@ -45,17 +45,24 @@ describe("torrent readiness gate", () => {
     expect(assessment.reason).toContain("moov");
   });
 
+  test("complete or truncated MP4 data without a complete moov does not pass", () => {
+    const missing = mp4Box("ftyp", 16);
+    expect(assessTorrentReadiness(missing, missing.length).ready).toBe(false);
+    const truncated = concat(missing, mp4Box("moov", 64).subarray(0, 8));
+    expect(assessTorrentReadiness(truncated, 1000).ready).toBe(false);
+  });
+
   test("matroska is ready on the EBML head alone", () => {
     const prefix = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x02, 0x03]);
     expect(classifyContainer(prefix)).toBe("matroska");
     expect(assessTorrentReadiness(prefix, 500_000_000).ready).toBe(true);
   });
 
-  test("unrecognized bytes wait for the head window", () => {
+  test("unrecognized bytes never count as a proven container", () => {
     const prefix = new Uint8Array(100);
     expect(assessTorrentReadiness(prefix, 100_000_000).ready).toBe(false);
-    // A tiny file cannot grow a header it does not have — fail open.
-    expect(assessTorrentReadiness(prefix, 100).ready).toBe(true);
+    expect(assessTorrentReadiness(prefix, 100).ready).toBe(false);
+    expect(assessTorrentReadiness(new Uint8Array(2_097_152), 100_000_000).ready).toBe(false);
   });
 
   test("scanMp4Boxes finds moov offsets and mdat presence", () => {
