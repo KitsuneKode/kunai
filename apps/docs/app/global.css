@@ -40,6 +40,11 @@ body {
   letter-spacing: -0.01em;
   background-color: var(--kunai-bg);
   color: var(--color-fd-foreground);
+  /* Nothing on this site is meant to scroll sideways. `clip`, not `hidden`:
+     clipping creates no scroll container, so a `position: sticky` child (the
+     floating nav) keeps working — `overflow-x: hidden` on a scroll ancestor
+     would confine it. */
+  overflow-x: clip;
 }
 
 /* The display serif is for headings big enough to carry it. h3 and below are

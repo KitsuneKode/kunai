@@ -2,6 +2,7 @@ import { KannaRestoreButton } from "@/components/brand/kanna-restore-button";
 import { DocsSidebarBanner } from "@/components/layout/docs-sidebar-banner";
 import { GithubStarCta } from "@/components/layout/github-star-cta";
 import { NavTitle } from "@/components/layout/nav-title";
+import { ThemeCycler } from "@/components/theme/theme-cycler";
 import { SUPPORT_PATH } from "@/lib/support";
 import {
   IconBook,
@@ -23,7 +24,11 @@ export function baseOptions(): BaseLayoutProps {
       transparentMode: "top",
     },
     themeSwitch: {
-      enabled: false,
+      // Not a light/dark switch — the site is dark-only. The slot carries the
+      // coat cycler instead: an accent-theme orb in the home nav's trailing
+      // controls and the docs sidebar footer.
+      enabled: true,
+      component: <ThemeCycler />,
     },
     searchToggle: {
       enabled: true,

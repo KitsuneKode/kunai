@@ -54,6 +54,60 @@ export function BackToTop() {
     document.querySelector<HTMLElement>("#nd-nav a")?.focus({ preventScroll: true });
   };
 
+  /*
+   * Drag-to-scrub, skiper89 style: pressing the ring and dragging vertically
+   * moves the page, so the progress ring doubles as a scrollbar thumb. A
+   * drag is distinguished from a click by movement past a small threshold —
+   * past it the click is swallowed and the pointer's travel scrubs scrollTop
+   * against the page's full scrollable range. On touch the gesture would
+   * otherwise fight native scrolling, so the button opts out of touch-action.
+   */
+  const dragRef = useRef<{ startY: number; startScroll: number; moved: boolean } | null>(null);
+
+  const onPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    dragRef.current = {
+      startY: event.clientY,
+      startScroll: window.scrollY,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const dy = drag.startY - event.clientY;
+    if (!drag.moved && Math.abs(dy) < 6) return;
+    drag.moved = true;
+    const range = document.documentElement.scrollHeight - window.innerHeight;
+    if (range <= 0) return;
+    // One viewport of drag covers the whole document — same feel as a
+    // scrollbar thumb the page's height maps onto.
+    window.scrollTo({ top: drag.startScroll + (dy / window.innerHeight) * range });
+  };
+
+  // The click that follows a drag is the tail of the gesture, not a press —
+  // swallow exactly one so the page does not jump to top after a scrub.
+  const suppressNextClick = useRef(false);
+
+  const endDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    suppressNextClick.current = drag?.moved === true;
+  };
+
+  const onPress = () => {
+    if (suppressNextClick.current) {
+      suppressNextClick.current = false;
+      return;
+    }
+    goToTop();
+  };
+
   return (
     <>
       <div
@@ -71,9 +125,14 @@ export function BackToTop() {
       >
         <button
           type="button"
-          onClick={goToTop}
+          onClick={onPress}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
           aria-label="Back to top"
-          title="Back to top"
+          title="Back to top · drag to scrub the page"
+          style={{ touchAction: "none" }}
           className="focus-visible:ring-ring relative flex size-11 items-center justify-center rounded-full border border-[var(--kunai-line)] bg-[color-mix(in_oklab,var(--kunai-surface)_88%,transparent)] text-[var(--kunai-accent)] shadow-[var(--kunai-shadow-md)] backdrop-blur-md transition-[transform,border-color,color] duration-150 ease-[var(--ease-out)] outline-none hover:-translate-y-0.5 hover:border-[var(--kunai-accent-deep)] hover:text-[var(--kunai-accent-soft)] focus-visible:ring-2 active:scale-[0.94]"
         >
           <svg

@@ -4,6 +4,7 @@ import { PrivacyAnalytics } from "@/components/analytics/privacy-analytics";
 import { PrivacySpeedInsights } from "@/components/analytics/privacy-speed-insights";
 import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
 import { BackToTop } from "@/components/layout/back-to-top";
+import { HashScrollFix } from "@/components/layout/hash-scroll-fix";
 import { NavCompact } from "@/components/layout/nav-compact";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { MotionProvider } from "@/components/providers/motion-provider";
@@ -12,6 +13,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { fontClassNames } from "@/lib/fonts";
 /* eslint-enable import/no-unassigned-import */
 import { docsSiteUrl } from "@/lib/site";
+import { themeBootScript } from "@/lib/themes";
 import { RootProvider } from "fumadocs-ui/provider/next";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
@@ -37,6 +39,9 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
   return (
     <html lang="en" suppressHydrationWarning className={`dark ${fontClassNames}`}>
       <body className="bg-fd-background text-fd-foreground flex min-h-screen flex-col antialiased">
+        {/* Applies a stored coat before first paint so the accent never flashes
+            Sakura and swaps — inline and sync so it runs during parse. */}
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
         <RootProvider
           search={{
             SearchDialog: LazySearchDialog,
@@ -76,6 +81,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
             Living in the root layout also means she survives route changes
             rather than remounting — she keeps walking while you navigate. */}
         <NavCompact />
+        <HashScrollFix />
         <BackToTop />
         <KunaiFoxRoamer />
         <PrivacyAnalytics />

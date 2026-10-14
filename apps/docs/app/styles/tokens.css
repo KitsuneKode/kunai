@@ -48,7 +48,8 @@
   --kunai-accent: var(--color-fd-primary);
   --kunai-accent-deep: #d85f86;
   --kunai-accent-soft: #ffc6d8;
-  --kunai-accent-glow: rgba(255, 143, 176, 0.1);
+  /* colour-mix, not rgba: the glow follows the coat instead of staying rose. */
+  --kunai-accent-glow: color-mix(in oklab, var(--kunai-accent) 10%, transparent);
   --kunai-ok: #54d6a0;
   --kunai-warning: #f59a3c;
   --kunai-danger: #ff5d5d;
@@ -129,4 +130,90 @@
     --kunai-duration-fast: 0ms;
     --kunai-duration-ui: 0ms;
   }
+}
+
+/* ── Kanna's coats ──────────────────────────────────────────────────────────
+   Accent-only themes, toggled by `data-theme` on <html> (see lib/themes.ts —
+   the hexes there and here are kept equal by test/theme.test.ts). Only the
+   accent family moves: the Ember Dusk ground, surfaces, lines and the status
+   palette are all tuned around it and stay put.
+
+   Registered custom properties make the swap a crossfade, not a cut: a
+   <color>-typed property interpolates when `data-theme` changes it, so every
+   `var(--color-fd-primary)` and `color-mix` downstream glides. Browsers that
+   cannot register properties (and the reduced-motion duration of 0ms) fall
+   back to an instant swap. The click itself can also seed a view-transition
+   circle reveal on top of this (theme-cycler.tsx). */
+
+@property --color-fd-primary {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ff8fb0;
+}
+
+@property --kunai-accent-deep {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #d85f86;
+}
+
+@property --kunai-accent-soft {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffc6d8;
+}
+
+@property --color-fd-ring {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ff8fb0;
+}
+
+html {
+  transition:
+    --color-fd-primary var(--dur-panel) var(--ease-out),
+    --kunai-accent-deep var(--dur-panel) var(--ease-out),
+    --kunai-accent-soft var(--dur-panel) var(--ease-out),
+    --color-fd-ring var(--dur-panel) var(--ease-out);
+}
+
+html[data-theme="matcha"] {
+  --color-fd-primary: #a3d9a5;
+  --kunai-accent-deep: #72b27a;
+  --kunai-accent-soft: #d6efdb;
+  --color-fd-ring: #a3d9a5;
+}
+
+html[data-theme="indigo"] {
+  --color-fd-primary: #a9b8f5;
+  --kunai-accent-deep: #8293e0;
+  --kunai-accent-soft: #d8e0fb;
+  --color-fd-ring: #a9b8f5;
+}
+
+html[data-theme="ember"] {
+  --color-fd-primary: #f2b268;
+  --kunai-accent-deep: #d18a45;
+  --kunai-accent-soft: #f8d8ad;
+  --color-fd-ring: #f2b268;
+}
+
+html[data-theme="violet"] {
+  --color-fd-primary: #c9a6f2;
+  --kunai-accent-deep: #a57fd4;
+  --kunai-accent-soft: #e3d2f9;
+  --color-fd-ring: #c9a6f2;
+}
+
+/* The coat cycler's circle reveal: the new snapshot grows out of the button
+   via a WAAPI clip-path, so the default crossfade between the snapshots would
+   double-apply. Turn it off and let the clip do the work. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: -1;
 }
