@@ -183,3 +183,29 @@ describe("the pull cord", () => {
     expect(pullCord).toContain("focus:not-sr-only");
   });
 });
+
+describe("the aurora backdrop", () => {
+  const chrome = fs.readFileSync(path.join(DOCS_APP_ROOT, "app/styles/docs-chrome.css"), "utf-8");
+
+  test("ribbons paint from the coat tokens and drift under no-preference only", () => {
+    const start = chrome.indexOf(".kunai-aurora");
+    const block = chrome.slice(start, chrome.indexOf(".kunai-grain", start));
+    expect(block).toContain("var(--kunai-accent)");
+    expect(block).toContain("var(--kunai-accent-deep)");
+    expect(block).toContain("var(--kunai-accent-soft)");
+    expect(block).toContain("z-index: -1");
+    expect(block).toContain("overflow: clip");
+    const motion = chrome.indexOf("@media (prefers-reduced-motion: no-preference)", start);
+    expect(chrome.slice(motion, motion + 700)).toContain("kunai-aurora-");
+    expect(layoutTsx).toContain('className="kunai-aurora"');
+  });
+
+  test("the grain is a static inline noise field under the chrome", () => {
+    const start = chrome.indexOf(".kunai-grain");
+    const block = chrome.slice(start, chrome.indexOf("}", start) + 1);
+    expect(block).toContain("feTurbulence");
+    expect(block).toContain("pointer-events: none");
+    expect(block).toContain("z-index: 2");
+    expect(layoutTsx).toContain('className="kunai-grain"');
+  });
+});

@@ -320,6 +320,104 @@
 }
 
 /*
+ * Kanna's aurora — the painterly backdrop, after FeralUI's gradient builder.
+ * Three ribbons painted from the coat's tokens, so every coat re-paints the
+ * sky and the whole layer crossfades inside the theme view-transition. The
+ * ribbons are oversized fixed elements whose transforms drift on long
+ * periods — that is all the motion: no scripting, and nothing under reduced
+ * motion where the field hangs still. z-index: -1 keeps it under in-flow
+ * content but above body's paint, which is the plain --kunai-bg.
+ */
+.kunai-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: clip;
+  pointer-events: none;
+}
+.kunai-aurora i {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  filter: blur(64px);
+  will-change: transform;
+}
+.kunai-aurora i:nth-child(1) {
+  inset-block-start: -18vmax;
+  inset-inline-start: -14vmax;
+  width: 62vmax;
+  height: 44vmax;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in oklab, var(--kunai-accent) 16%, transparent),
+    transparent 66%
+  );
+}
+.kunai-aurora i:nth-child(2) {
+  inset-block-start: 8vmax;
+  inset-inline-end: -20vmax;
+  width: 56vmax;
+  height: 52vmax;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in oklab, var(--kunai-accent-deep) 13%, transparent),
+    transparent 62%
+  );
+}
+.kunai-aurora i:nth-child(3) {
+  inset-block-end: -24vmax;
+  inset-inline-start: 22vmax;
+  width: 66vmax;
+  height: 46vmax;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in oklab, var(--kunai-accent-soft) 8%, transparent),
+    transparent 64%
+  );
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kunai-aurora i:nth-child(1) {
+    animation: kunai-aurora-a 54s ease-in-out infinite alternate;
+  }
+  .kunai-aurora i:nth-child(2) {
+    animation: kunai-aurora-b 68s ease-in-out infinite alternate;
+  }
+  .kunai-aurora i:nth-child(3) {
+    animation: kunai-aurora-c 61s ease-in-out infinite alternate;
+  }
+}
+@keyframes kunai-aurora-a {
+  to {
+    transform: translate(9vmax, 6vmax) rotate(14deg) scale(1.12);
+  }
+}
+@keyframes kunai-aurora-b {
+  to {
+    transform: translate(-8vmax, 10vmax) rotate(-11deg) scale(1.08);
+  }
+}
+@keyframes kunai-aurora-c {
+  to {
+    transform: translate(-10vmax, -7vmax) rotate(9deg) scale(1.14);
+  }
+}
+
+/*
+ * The grain — a static fractal-noise field at 4% over the page, the film
+ * finish that keeps the painterly gradients from reading as flat CSS. One
+ * inline SVG turbulence, no request, no script. It stays under the chrome so
+ * the nav glass and edge fade sit clean on top of it.
+ */
+.kunai-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.86' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/*
  * Desktop and up: the floating nav hugs its contents. Fumadocs renders the
  * glass `> div` as a full-width block with `nav` at `w-full`, so left alone the
  * bar is ~92rem wide forever — the compact fold would empty a still full-width

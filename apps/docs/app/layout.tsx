@@ -81,6 +81,15 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
 
             Living in the root layout also means she survives route changes
             rather than remounting — she keeps walking while you navigate. */}
+        {/* Kanna's aurora + grain — the painterly backdrop. The ribbons read
+            the coat tokens, so every coat re-paints the sky and the layer
+            crossfades inside the theme view-transition. */}
+        <div className="kunai-aurora" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </div>
+        <div className="kunai-grain" aria-hidden="true" />
         {/* Progressive-blur band under the top chrome — content scrolling
             under the nav dissolves instead of clipping. CSS-only. */}
         <div className="kunai-edge-fade" aria-hidden="true" />
