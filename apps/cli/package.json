@@ -114,6 +114,7 @@
     "test:live:mpv": "bun test/live/mpv-playback.smoke.ts"
   },
   "dependencies": {
+    "@xmldom/xmldom": "0.9.12",
     "commander": "catalog:cli",
     "ink": "catalog:cli",
     "react": "catalog:"

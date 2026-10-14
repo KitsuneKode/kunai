@@ -301,6 +301,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * ratchet was superseded by main's independently justified 3_048 KiB cap, so
  * the Android slice does not raise the ratchet again.
  *
+ * Raised from 3_048 to 3_096 on 2026-10-13 for the Android DASH gateway.
+ * Identical minified build options with only stream-gateway.ts overridden to
+ * 7b16a00eb measured 3,050,925 bytes; the XML parser, DASH addressing and
+ * template routes, and bounded manifest-prefix detection measured 3,151,920
+ * bytes (+100,995, 98.6 KiB). The new cap leaves 18 KiB of headroom. The
+ * public npm launcher pack budgets below are unchanged.
+ *
  * Worth restating because it is what makes this safe: this number guards
  * `dist/kunai.js`, which is published nowhere and is not the source of the
  * compiled binaries either -- `compileBinaryBuildOptions` compiles from
@@ -309,7 +316,7 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * change does not touch and which the exact-tarball verification added in #166
  * has since made stricter.
  */
-export const NPM_BUNDLE_BUDGET_KB = 3_048;
+export const NPM_BUNDLE_BUDGET_KB = 3_096;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

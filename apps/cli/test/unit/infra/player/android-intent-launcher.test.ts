@@ -211,4 +211,42 @@ describe("Android intent launch", () => {
       detail: "spawn failed",
     });
   });
+
+  test("subtitle extras land per player: --esa subs for mpv, --es subtitles_location for vlc", () => {
+    const rt = {
+      which: (c: string) => (c === "termux-am" ? "/usr/bin/termux-am" : null),
+      spawn: () => ({ exited: Promise.resolve(0) }),
+    };
+    const mpv = resolveAndroidIntentCommand({
+      target: "mpv",
+      url: "http://127.0.0.1:1/g/t/media",
+      subtitles: ["http://127.0.0.1:1/g/t/sub/0", "http://127.0.0.1:1/g/t/sub/1"],
+      runtime: rt,
+    });
+    expect(mpv.ok).toBe(true);
+    if (mpv.ok) {
+      const i = mpv.argv.indexOf("--esa");
+      expect(mpv.argv[i + 1]).toBe("subs");
+      expect(mpv.argv[i + 2]).toBe("http://127.0.0.1:1/g/t/sub/0,http://127.0.0.1:1/g/t/sub/1");
+    }
+    const vlc = resolveAndroidIntentCommand({
+      target: "vlc",
+      url: "http://127.0.0.1:1/g/t/media",
+      subtitles: ["http://127.0.0.1:1/g/t/sub/0"],
+      runtime: rt,
+    });
+    if (vlc.ok) {
+      const i = vlc.argv.indexOf("--es");
+      expect(vlc.argv[i + 1]).toBe("subtitles_location");
+      expect(vlc.argv[i + 2]).toBe("http://127.0.0.1:1/g/t/sub/0");
+    }
+    // Chooser cannot target a package, so it carries no extras.
+    const chooser = resolveAndroidIntentCommand({
+      target: "chooser",
+      url: "http://127.0.0.1:1/g/t/media",
+      subtitles: ["http://127.0.0.1:1/g/t/sub/0"],
+      runtime: rt,
+    });
+    if (chooser.ok) expect(chooser.argv.join(" ")).not.toContain("subs");
+  });
 });
