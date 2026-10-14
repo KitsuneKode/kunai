@@ -41,11 +41,14 @@ export function HashScrollFix() {
     const anchor = () => document.getElementById(hash)?.scrollIntoView();
     const frame = requestAnimationFrame(anchor);
     let cancelled = false;
-    document.fonts?.ready
-      .then(() => {
+    void (async () => {
+      try {
+        await document.fonts?.ready;
         if (!cancelled) anchor();
-      })
-      .catch(() => {});
+      } catch {
+        // A font that never resolves is not a reason to skip the anchor.
+      }
+    })();
 
     return () => {
       cancelled = true;
