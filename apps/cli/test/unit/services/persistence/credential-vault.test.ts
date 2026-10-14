@@ -210,6 +210,23 @@ describe("createCredentialVault backend selection", () => {
     expect(fallbacks[0]).toContain("secret-service");
   });
 
+  test("stalled secret-tool probe falls back to file fast (races the probe timeout)", async () => {
+    // SAFETY: the never-resolving probe models a missing daemon with a present
+    // CLI — the old serial await would block the full 3s probe timeout here.
+    const spawn: CredentialSpawn = () => new Promise(() => undefined);
+    const startedAt = Date.now();
+    const vault = await createCredentialVault({
+      paths: fakePaths(dir),
+      platform: "linux",
+      env: {},
+      which: (cmd) => (cmd === "secret-tool" ? "/usr/bin/secret-tool" : null),
+      spawn,
+    });
+    expect(vault.backend).toBe("file");
+    // The 3s probe timeout stays the spawn's kill backstop; we only wait ~300ms.
+    expect(Date.now() - startedAt).toBeLessThan(3_000);
+  });
+
   test("file backend round-trips through an owner-only file", async () => {
     const vault = await createCredentialVault({
       paths: fakePaths(dir),

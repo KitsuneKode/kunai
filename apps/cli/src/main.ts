@@ -275,7 +275,11 @@ async function maybeResolveContinueTitle(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<StartupHistoryTarget | null> {
   if (!args.continuePlayback) return null;
-  const recentEntries = container.historyRepository.listRecent(500);
+  // Only the head of the recency scan feeds startup: the continuation anchor
+  // is the newest row's title (always row 0), and the batch reads below are
+  // keyed by title. 100 rows keeps every plausible anchor plus prefetch
+  // margin at a fifth of the old scan.
+  const recentEntries = container.historyRepository.listRecent(100);
   const titleIds = [...new Set(recentEntries.map((entry) => entry.titleId))];
   const releaseProgress = container.releaseProgressCache.getByTitleIds(titleIds);
   const offlinePolicies = new Map(
@@ -285,7 +289,9 @@ async function maybeResolveContinueTitle(
   );
   const nextReadyByTitle = readNextReadyOfflineEpisodes(recentEntries, container);
   const decision = container.continueWatchingService.startupCandidate({
-    scanLimit: 500,
+    // Limit-1 decision: the anchor is the newest row's title bucket, which a
+    // recency-ordered scan always yields first — 50 rows is margin, not need.
+    scanLimit: 50,
     signalsByTitle: (titleId) =>
       buildStartupContinuationSignals({
         releaseProgress: releaseProgress.get(titleId),
@@ -337,8 +343,16 @@ function readNextReadyOfflineEpisodes(
   entries: readonly HistoryProgress[],
   container: Awaited<ReturnType<typeof createContainer>>,
 ): ReadonlyMap<string, { season: number; episode: number; jobId?: string }> {
+  // Entries arrive newest-first, so the first cursor per title is the latest
+  // position — later duplicates only repeat the same asset lookup.
+  const seenTitles = new Set<string>();
   const cursors = entries
     .filter((entry) => entry.mediaKind !== "movie")
+    .filter((entry) => {
+      if (seenTitles.has(entry.titleId)) return false;
+      seenTitles.add(entry.titleId);
+      return true;
+    })
     .map((entry) => ({
       titleId: entry.titleId,
       season: entry.season ?? 1,
@@ -530,7 +544,7 @@ function searchResultFromTitle(title: TitleInfo): SearchResult {
 async function maybeRunAutoCleanupDownloads(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<void> {
-  const { config, downloadService, diagnosticsService, historyRepository, logger } = container;
+  const { config, downloadService, diagnosticsService, logger } = container;
   if (!config.autoCleanupWatched) return;
 
   const graceDays = Math.max(0, config.autoCleanupGraceDays);
@@ -538,9 +552,11 @@ async function maybeRunAutoCleanupDownloads(
   const jobs = downloadService.listCompleted(500);
   const titleIds = new Set(jobs.map((job) => job.titleId));
   const historyByTitle = new Map<string, import("@kunai/storage").HistoryProgress[]>();
+  // Targeted read: only completed-download titles need history, so push the
+  // predicate into SQLite instead of scanning 1000 recency rows in memory.
   const recentHistory = (() => {
     try {
-      return historyRepository.listRecent(1_000);
+      return container.historyRepository.listByTitleIds([...titleIds]);
     } catch {
       return [];
     }

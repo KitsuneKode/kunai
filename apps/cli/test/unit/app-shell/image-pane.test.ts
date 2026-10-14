@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   __testing as paneTesting,
@@ -8,11 +11,22 @@ import {
   resolvePosterUrl,
   undisplayRenderedPosterImages,
 } from "@/app-shell/image-pane";
+import { setPosterDiskCacheDir } from "@/app-shell/poster-disk-cache";
 import { __testing as posterRendererTesting } from "@/app-shell/poster-renderer";
 import { isKittyCompatible } from "@/image";
 import type { ImageCapability } from "@/image";
 
 import { makeRgbPng } from "../../support/image-fixtures";
+
+const tempDirs: string[] = [];
+
+beforeEach(() => {
+  // SAFETY: isolated tmp dir — fetchPoster reads through the poster disk lane,
+  // which must never touch the live profile cache or leak across tests.
+  const dir = mkdtempSync(join(tmpdir(), "kunai-image-pane-"));
+  tempDirs.push(dir);
+  setPosterDiskCacheDir(dir);
+});
 
 const originalFetch = globalThis.fetch;
 const originalPaneDetect = paneTesting.runtime.detectImageCapability;
@@ -91,10 +105,12 @@ function cap(renderer: ImageCapability["renderer"]): ImageCapability {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  setPosterDiskCacheDir(null);
   paneTesting.runtime.detectImageCapability = originalPaneDetect;
   posterRendererTesting.runtime.detectImageCapability = originalRendererDetect;
   process.stdout.write = originalStdoutWrite;
   clearRenderedPosterImages();
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 describe("app-shell image pane cache", () => {

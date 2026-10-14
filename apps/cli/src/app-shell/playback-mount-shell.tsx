@@ -285,6 +285,32 @@ function preloadTracksPanelModules(): void {
   void import("@/app/playback/tracks-panel-pick");
 }
 
+/** Flush cadence for progress React state (~4Hz). */
+const PLAYBACK_SNAPSHOT_FLUSH_MS = 250;
+
+/** Visible-field equality for stats snapshots. `updatedAt` is excluded — it
+ * changes on every build and would defeat the throttle. Position is quantized
+ * to the flush cadence for the same reason. */
+function isSamePlaybackSnapshot(
+  previous: PlaybackStatsSnapshot | null,
+  next: PlaybackStatsSnapshot | null,
+): boolean {
+  if (previous === next) return true;
+  if (!previous || !next) return false;
+  const quantize = (value: number | undefined) =>
+    value === undefined ? undefined : Math.round(value * (1_000 / PLAYBACK_SNAPSHOT_FLUSH_MS));
+  return (
+    quantize(previous.positionSeconds) === quantize(next.positionSeconds) &&
+    quantize(previous.durationSeconds) === quantize(next.durationSeconds) &&
+    quantize(previous.cacheAheadSeconds) === quantize(next.cacheAheadSeconds) &&
+    quantize(previous.cacheSpeedBytesPerSecond) === quantize(next.cacheSpeedBytesPerSecond) &&
+    quantize(previous.bufferingPercent) === quantize(next.bufferingPercent) &&
+    previous.seeking === next.seeking &&
+    previous.pausedForCache === next.pausedForCache &&
+    previous.voConfigured === next.voConfigured
+  );
+}
+
 export function PlaybackRootContent(input: PlaybackRootContentInput) {
   const { state, handlers, canGoNext, canGoPrevious, canToggleAutoplay, canStopAfterCurrent } =
     input;
@@ -305,11 +331,22 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
 
   useEffect(() => {
     if (!playbackIsActive) return undefined;
+    // Progress React state flushes at most ~4Hz, and only when a visible
+    // field actually changed: the raw IPC samples mutate continuously in
+    // infra (observed by the 2.5s stall watchdog, which this does not touch),
+    // while getStatsSnapshot() builds a fresh object per call — flushing it
+    // unconditionally re-rendered the playback tree even while paused.
+    // Position is quantized to the flush cadence so sub-frame jitter from
+    // time-pos events cannot defeat the change check.
+    let lastFlushed: PlaybackStatsSnapshot | null = null;
     const refreshSnapshot = () => {
-      setStatsSnapshot(input.container.playerControl.getStatsSnapshot());
+      const next = input.container.playerControl.getStatsSnapshot();
+      if (isSamePlaybackSnapshot(lastFlushed, next)) return;
+      lastFlushed = next;
+      setStatsSnapshot(next);
     };
     refreshSnapshot();
-    const timer = setInterval(refreshSnapshot, 1_000);
+    const timer = setInterval(refreshSnapshot, 250);
     return () => clearInterval(timer);
   }, [input.container.playerControl, playbackIsActive]);
 
