@@ -83,7 +83,7 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 ### Optional terminal mouse input
 
 The Ink shell owns one paused-mode stdin facade in `app-shell/mouse/`.
-It preserves wire order: Ink receives preceding keyboard bytes before a later
+It preserves wire order, including an expired incomplete-report tail: Ink receives preceding keyboard bytes before a later
 mouse report is dispatched, including reports in the same chunk or queued
 under one readable event. It never adds
 another `data` listener to the real TTY. Tracking requires both stdin and

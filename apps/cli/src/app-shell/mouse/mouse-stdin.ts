@@ -134,9 +134,17 @@ export class MouseSplitStdin extends EventEmitter {
         this.cancelTailFlush = this.scheduleTailFlush(() => {
           this.cancelTailFlush = null;
           if (this.detached || !this.pendingTail) return;
+          // A continuation may already be buffered behind earlier packets.
+          // Parse it before declaring the held prefix abandoned.
+          const chunk = this.source.read();
+          if (chunk !== null && chunk !== undefined) {
+            this.ingest(chunk);
+            this.emit("readable");
+            return;
+          }
           // Preserve bytes: an incomplete report is indistinguishable from
           // someone typing digits and semicolons after a damaged prefix.
-          this.buffer.push(this.pendingTail);
+          this.pendingInputs.push({ kind: "input", input: this.pendingTail });
           this.pendingTail = "";
           this.emit("readable");
         });
