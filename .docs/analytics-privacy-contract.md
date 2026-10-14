@@ -38,6 +38,10 @@ Read this before touching `apps/cli/src/services/analytics/`,
   under the same cross-process lock and save chain as settings writes. It updates
   cadence/retry fields only, never the identity. A rejected completion refreshes
   non-dirty local analytics fields from disk so a stale session stops sending.
+- Passive Settings saves preserve the current analytics preference and identity
+  unless the user explicitly changes the consent option. Connecting presence
+  applies only presence fields, so a stale pane cannot restore withdrawn consent
+  or overwrite unrelated preferences.
 - A missing or invalid persisted identity suppresses sends and payload previews.
   Only an explicit consent choice creates or repairs an identity; passive ping
   completion cannot silently mint one.
@@ -197,3 +201,5 @@ and database/platform budget alerts. Review their thresholds after a live smoke.
 
 Any payload, retention, suppression, secret, or cost-control change must update
 this contract and `docs/users/reliability-and-privacy.mdx` together.
+
+Passive settings persistence omits analytics preference, install identity and ping bookkeeping from its dirty patch. Copying an instance’s local values is insufficient: the locked config merge must retain consent withdrawn by a sibling instance.
