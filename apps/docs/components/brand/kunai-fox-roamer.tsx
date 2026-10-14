@@ -142,6 +142,13 @@ function bubbleSideFor(x: number): BubbleSide {
  * sleeping get their own short pools so an unprompted line always fits what she
  * is visibly doing.
  */
+const WELCOME_LINES = [
+  "oh. hi.",
+  "i live here now.",
+  "you found me. fair enough.",
+  "welcome in. mind the cord.",
+] as const;
+
 const RESTING_LINES = [
   // what it does
   "mpv does the hard part. i just find things.",
@@ -204,6 +211,33 @@ type GaitState = {
   settleMs: number;
 };
 
+/**
+ * The life layer — the spring that keeps her from reading as a cardboard
+ * cutout between the big motions. Five channels (lean, drift, squash) each
+ * under-damped so every impulse overshoots a little before it settles, the
+ * way a small animal actually moves. Targets come from where the pointer is
+ * (she glances at you), impulses come from what you did to her (poked,
+ * picked up, put down), and a fidget clock fires on irregular intervals
+ * because nothing alive twitches on a metronome.
+ */
+type LifeState = {
+  r: number;
+  tx: number;
+  sx: number;
+  sy: number;
+  vr: number;
+  vtx: number;
+  vsx: number;
+  vsy: number;
+  fidgetAt: number;
+};
+const LIFE_K = 150;
+const LIFE_C = 13;
+const LIFE_SPRING = (cur: number, vel: number, target: number, dt: number) => {
+  const v = vel + ((target - cur) * LIFE_K - vel * LIFE_C) * dt;
+  return [cur + v * dt, v] as const;
+};
+
 export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number }) {
   // Smaller on a touch screen, where she sits in a corner over the page instead of
   // trailing a pointer beside it, so she takes less of a small screen. Set once, on
@@ -223,6 +257,25 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
   // down she is. All three advance every frame, so none of them is React state.
   const walkerRef = useRef<FoxWalkerHandle | null>(null);
   const gait = useRef<GaitState>({ phase: 0, heading: 0, pose: STANDING_POSE, settleMs: 0 });
+  const lifeRef = useRef<HTMLSpanElement | null>(null);
+  const life = useRef<LifeState>({
+    r: 0,
+    tx: 0,
+    sx: 1,
+    sy: 1,
+    vr: 0,
+    vtx: 0,
+    vsx: 0,
+    vsy: 0,
+    fidgetAt: 0,
+  });
+  /** A squash impulse — compress vertically, bulge horizontally, let the
+   *  spring ring down on its own. Pokes, pickups and landings differ only in
+   *  strength. */
+  const thump = useCallback((power: number) => {
+    life.current.vsy -= 4.2 * power;
+    life.current.vsx += 2.6 * power;
+  }, []);
   const lastFrame = useRef(0);
   const seeded = useRef(false);
   // Where she has been told to be. While pinned she ignores the pointer and simply
@@ -400,6 +453,16 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
         seeded.current = true;
         const at = { x: event.clientX - 90, y: event.clientY + 50 };
         machine.current = { ...createRoamerState(at), phase: "sitting" };
+        // First sight of the session earns a hello — once, then she is
+        // background fauna like always.
+        try {
+          if (window.sessionStorage.getItem("kunai.roamer.greeted") !== "1") {
+            window.sessionStorage.setItem("kunai.roamer.greeted", "1");
+            say(WELCOME_LINES);
+          }
+        } catch {
+          // No store: she greets when she greets, or not.
+        }
       }
     }
 
@@ -506,6 +569,46 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
       if (next.facing !== before.facing) setFacing(next.facing);
 
       const pos = machine.current.pos;
+
+      // The life layer. She glances at the pointer while she is resting —
+      // a lean, not a stare, capped small so it reads as noticing, not as a
+      // widget tracking you. Sulking she pointedly ignores you. Fidgets land
+      // on irregular beats; asleep she only twitches, rarely.
+      const l = life.current;
+      const now = timestamp;
+      const resting =
+        (next.phase === "sitting" || next.phase === "idle") &&
+        !drag.current &&
+        moodOf(moodState.current, now) !== "sulking";
+      let targetR = 0;
+      let targetTx = 0;
+      if (resting && pointer.current) {
+        const dx = pointer.current.x - pos.x;
+        const near = Math.hypot(dx, pointer.current.y - pos.y);
+        if (near < 340) {
+          targetR = Math.min(6, Math.max(-6, dx * 0.016));
+          targetTx = Math.min(5, Math.max(-5, dx * 0.02));
+        }
+      }
+      if (now > l.fidgetAt) {
+        const asleep = next.phase === "asleep";
+        l.fidgetAt = now + (asleep ? 9000 + Math.random() * 6000 : 3500 + Math.random() * 4500);
+        if (resting) {
+          l.vr += (Math.random() - 0.5) * 4;
+          l.vsy -= 0.7 + Math.random() * 0.9;
+        } else if (asleep) {
+          // A sleeping ear-flick: small, sideways only.
+          l.vr += (Math.random() - 0.5) * 2.2;
+        }
+      }
+      [l.r, l.vr] = LIFE_SPRING(l.r, l.vr, targetR, dt);
+      [l.tx, l.vtx] = LIFE_SPRING(l.tx, l.vtx, targetTx, dt);
+      [l.sx, l.vsx] = LIFE_SPRING(l.sx, l.vsx, 1, dt);
+      [l.sy, l.vsy] = LIFE_SPRING(l.sy, l.vsy, 1, dt);
+      if (lifeRef.current) {
+        lifeRef.current.style.transform = `translate3d(${l.tx.toFixed(2)}px, 0, 0) rotate(${l.r.toFixed(2)}deg) scale(${l.sx.toFixed(3)}, ${l.sy.toFixed(3)})`;
+      }
+
       const side = bubbleSideFor(pos.x);
       if (side !== bubbleSideRef.current) {
         bubbleSideRef.current = side;
@@ -524,7 +627,7 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     };
-  }, [enabled, size, machine]);
+  }, [enabled, size, machine, say]);
 
   // The keys. Plain letters, so `commandForKey` is strict about where they count:
   // never with a modifier, never in a field, never in a dialog such as search.
@@ -627,6 +730,9 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
       held.moved = true;
       setCarried(true);
       setShowWalker(false);
+      // Scooped up: a stretch, the inverse of the landing squash.
+      life.current.vsy += 3.4;
+      life.current.vsx -= 1.6;
       respond("picked-up");
     }
     const pos = { x: event.clientX + held.dx, y: event.clientY + held.dy };
@@ -645,6 +751,8 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
     setCarried(false);
     pinned.current = true;
     machine.current = { ...machine.current, phase: "sitting", restMs: 0 };
+    // Put down: she lands with a squash, then springs back up.
+    thump(0.8);
     remember();
     respond("placed");
   };
@@ -658,6 +766,7 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
     pokes.current += 1;
     const here = machine.current;
     if (here.phase === "asleep") machine.current = { ...here, phase: "sitting", restMs: 0 };
+    thump(1);
     if (pokes.current === 2) {
       say([tipFor(!perched.current)]);
       return;
@@ -705,11 +814,13 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
         onPointerCancel={onFoxPointerUp}
         tabIndex={-1}
       >
-        {showWalker ? (
-          <KunaiFoxWalker ref={walkerRef} facing={facing} size={size} />
-        ) : (
-          <KunaiFox pose={pose} facing={facing} size={size} />
-        )}
+        <span ref={lifeRef} className="kunai-roamer__life">
+          {showWalker ? (
+            <KunaiFoxWalker ref={walkerRef} facing={facing} size={size} />
+          ) : (
+            <KunaiFox pose={pose} facing={facing} size={size} />
+          )}
+        </span>
       </button>
       <button type="button" className="kunai-roamer__close" onClick={dismiss} tabIndex={-1}>
         ×

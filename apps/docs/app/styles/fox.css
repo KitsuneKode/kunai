@@ -329,6 +329,15 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   color: inherit;
 }
 
+/* The life layer — the spring-driven glance/fidget/squash lives on this inner
+   span so it composes with the button's own transforms (breathe, carried,
+   hover) instead of fighting them. Origin at her feet so a squash plants her
+   instead of floating her. */
+.kunai-roamer__life {
+  display: block;
+  transform-origin: 50% 92%;
+}
+
 .kunai-roamer__fox {
   display: block;
   transform-origin: 50% 90%;

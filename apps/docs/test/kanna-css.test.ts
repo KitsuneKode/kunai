@@ -36,3 +36,40 @@ describe("Kanna's touch and carry styling", () => {
     );
   });
 });
+
+describe("her life layer", () => {
+  const source = fs.readFileSync(
+    path.resolve(import.meta.dir, "../components/brand/kunai-fox-roamer.tsx"),
+    "utf-8",
+  );
+
+  test("the spring rides an inner span so it composes with her CSS transforms", () => {
+    expect(source).toContain('className="kunai-roamer__life"');
+    expect(css).toMatch(/\.kunai-roamer__life \{[^}]*transform-origin/);
+  });
+
+  test("she glances at a near pointer but only while resting and never while sulking", () => {
+    expect(source).toContain('next.phase === "sitting"');
+    expect(source).toContain('"sulking"');
+    expect(source).toContain("targetR");
+    expect(source).toContain("near < 340");
+  });
+
+  test("fidgets are irregular and asleep gets only rare ear-flicks", () => {
+    expect(source).toContain("fidgetAt");
+    expect(source).toMatch(/fidgetAt = now \+ \(asleep/);
+    expect(source).toContain("Math.random()");
+  });
+
+  test("pokes squash her, pickups stretch her, landings squash her", () => {
+    expect(source).toContain("thump(1)");
+    expect(source).toContain("thump(0.8)");
+    expect(source).toContain("vsy += 3.4");
+  });
+
+  test("she greets the first pointer sighting of a session, once", () => {
+    expect(source).toContain("WELCOME_LINES");
+    expect(source).toContain("kunai.roamer.greeted");
+    expect(source).toContain("sessionStorage");
+  });
+});
