@@ -408,6 +408,29 @@
  * inline SVG turbulence, no request, no script. It stays under the chrome so
  * the nav glass and edge fade sit clean on top of it.
  */
+/*
+ * The cord's orbit label — a ring of type circling the knob. fill-box so the
+ * spin centres on the bead, never on the viewport. Still under reduced
+ * motion, where it stays readable as a halo rather than spinning.
+ */
+.kunai-cord-orbit {
+  transform-box: fill-box;
+  transform-origin: center;
+  font-family: var(--font-mono), monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kunai-cord-orbit {
+    animation: kunai-cord-orbit 9s linear infinite;
+  }
+}
+@keyframes kunai-cord-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .kunai-grain {
   position: fixed;
   inset: 0;

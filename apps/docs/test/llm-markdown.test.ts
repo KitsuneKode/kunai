@@ -132,6 +132,7 @@ describe("every JSX component used in docs/ is accounted for", () => {
     "ProviderStatusBoard",
     "QuickStartSteps",
     "DocsHubIntro",
+    "ResolveGateFigure",
   ]);
   // Components that only wrap prose — children-only is the right serialization.
   const PROSE_WRAPPERS = new Set([

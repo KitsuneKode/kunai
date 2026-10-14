@@ -1,0 +1,49 @@
+/*
+ * Re-tune the anatomy palette onto Kunai's tokens — the figure should read
+ * as Ember Dusk hardware, not a borrowed neutral-gray plate. `--anatomy-lit`
+ * (edge highlights, the token, the needle) follows the coat accent, so the
+ * figure re-paints with every theme the way the aurora does.
+ */
+.iso {
+  --anatomy-page: var(--kunai-bg);
+  --anatomy-card: var(--kunai-surface-elevated);
+  --anatomy-paper: var(--kunai-surface-elevated);
+  --anatomy-text: var(--color-fd-muted-foreground);
+  --anatomy-strong: var(--color-fd-foreground);
+  --anatomy-muted: var(--color-fd-muted-foreground);
+  --anatomy-face: color-mix(in oklch, var(--kunai-surface-elevated) 88%, black);
+  --anatomy-top: var(--kunai-surface-elevated);
+  --anatomy-shade-0: color-mix(in oklch, var(--kunai-surface-elevated) 42%, black);
+  --anatomy-shade-1: color-mix(in oklch, var(--kunai-surface-elevated) 56%, black);
+  --anatomy-shade-2: color-mix(in oklch, var(--kunai-surface-elevated) 70%, black);
+  --anatomy-shade-3: color-mix(in oklch, var(--kunai-surface-elevated) 80%, black);
+  --anatomy-hi: oklch(0.82 0.04 330);
+  --anatomy-mid: oklch(0.56 0.03 330);
+  --anatomy-lo: color-mix(in oklch, var(--kunai-line) 130%, white 0%);
+  --anatomy-faint: color-mix(in oklch, var(--kunai-line) 70%, transparent);
+  --anatomy-lit: var(--kunai-accent);
+  --anatomy-lit-top: color-mix(in oklch, var(--kunai-accent) 22%, var(--kunai-surface-elevated));
+  --anatomy-lit-shade: color-mix(in oklch, var(--kunai-accent) 12%, var(--kunai-surface-elevated));
+  --anatomy-red: var(--kunai-danger);
+  --anatomy-green: var(--kunai-ok);
+  --anatomy-mono: var(--font-mono), ui-monospace, monospace;
+}
+
+/* The mpv glass — opacity is driven by the live layer, transition eases the
+   edges so the light swells rather than blinking. */
+.rg-glow {
+  transition:
+    fill-opacity 0.28s ease-out,
+    stroke-opacity 0.28s ease-out;
+  stroke: var(--anatomy-green);
+  stroke-width: 0.7;
+}
+
+.rg-needle {
+  stroke-width: 1;
+  stroke-linecap: round;
+}
+
+.rg-spring {
+  stroke-width: 0.6;
+}

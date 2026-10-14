@@ -74,6 +74,10 @@
   ],
   "ignorePatterns": [
     ".reference/experiments/**",
+    "apps/docs/components/iso/iso-kit.ts",
+    "apps/docs/components/iso/react/**",
+    "components/iso/iso-kit.ts",
+    "components/iso/react/**",
     "apps/relay-server/api/**",
     "apps/cli/dist/**",
     "dist/**",

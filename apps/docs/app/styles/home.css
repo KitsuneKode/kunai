@@ -20,6 +20,94 @@
   position: relative;
 }
 
+/*
+ * Dot-grid spotlight (chanhdai): pin dots over the whole hero, plus an
+ * accent-tinted copy masked to a pool that tracks the pointer via --mx/--my.
+ * The lit layer only mounts for fine pointers; the base field is quiet
+ * enough to be texture, not noise.
+ */
+.kunai-dotgrid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, var(--kunai-line) 1px, transparent 1.5px);
+  background-size: 26px 26px;
+  opacity: 0.5;
+}
+.kunai-dotgrid--lit {
+  background-image: radial-gradient(
+    circle,
+    color-mix(in oklch, var(--kunai-accent) 60%, transparent) 1.2px,
+    transparent 1.8px
+  );
+  opacity: 1;
+  mask-image: radial-gradient(
+    220px circle at var(--mx, -400px) var(--my, -400px),
+    black,
+    transparent 75%
+  );
+  -webkit-mask-image: radial-gradient(
+    220px circle at var(--mx, -400px) var(--my, -400px),
+    black,
+    transparent 75%
+  );
+}
+
+/*
+ * Text flip (chanhdai): the hero's list word cycles — enter from below,
+ * hold, exit above. Each word's delay is its slot in the rotation. Under
+ * reduced motion the stack collapses to the first word only.
+ */
+.kunai-text-flip {
+  display: inline-grid;
+  height: 1.15em;
+  overflow: clip;
+  vertical-align: bottom;
+  color: var(--color-fd-primary);
+}
+.kunai-text-flip > span {
+  grid-area: 1 / 1;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kunai-text-flip > span {
+    animation: kunai-flip 12s cubic-bezier(0.2, 0.9, 0.3, 1) infinite;
+  }
+  .kunai-text-flip > span:nth-child(2) {
+    animation-delay: 3s;
+  }
+  .kunai-text-flip > span:nth-child(3) {
+    animation-delay: 6s;
+  }
+  .kunai-text-flip > span:nth-child(4) {
+    animation-delay: 9s;
+  }
+}
+@keyframes kunai-flip {
+  0% {
+    opacity: 0;
+    transform: translateY(110%);
+  }
+  4%,
+  23% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  26%,
+  100% {
+    opacity: 0;
+    transform: translateY(-110%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kunai-text-flip > span:not(:first-child) {
+    display: none;
+  }
+  .kunai-text-flip > span:first-child {
+    opacity: 1;
+  }
+}
+
 .kunai-home-install,
 .kunai-home-steps,
 .kunai-home-highlights,

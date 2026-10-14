@@ -16,3 +16,5 @@ yarn.lock
 
 **/*.min.js
 **/*.d.ts
+
+# Vendored anatomy kit — ignored per-app via apps/docs/.oxlintignore

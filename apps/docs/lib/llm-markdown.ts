@@ -217,6 +217,12 @@ function quickStartMarkdown(): string {
   ].join("\n");
 }
 
+function resolveGateMarkdown(): string {
+  return [
+    "**Fig 1 — The resolve gate.** Every stream a provider returns is a candidate, nothing more. Each one rides the rail to the gate; the plunger stamps it — a real probe of the URL — and the dial reads out the verdict. Pass and it parks at the mpv screen; fail and it drops straight into the dead hopper. A provider never reports success for a stream it has not probed: the gate is the only path to the screen.",
+  ].join("\n\n");
+}
+
 function docsHubIntroMarkdown(node: JsxFlowNode): string {
   const lead = attrValue(node, "lead") ?? "";
   const sublead = attrValue(node, "sublead");
@@ -273,6 +279,8 @@ export const llmsMarkdownOptions: LLMsOptions = {
         return quickStartMarkdown();
       case "DocsHubIntro":
         return docsHubIntroMarkdown(element);
+      case "ResolveGateFigure":
+        return resolveGateMarkdown();
       case "ProviderDocSection": {
         const title = attrValue(element, "title");
         const body = childrenOf(element, state, info);

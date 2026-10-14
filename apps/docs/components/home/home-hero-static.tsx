@@ -1,7 +1,9 @@
+import { HeroDotGrid } from "@/components/home/hero-dot-grid";
 import { HeroKindsRow } from "@/components/home/hero-kinds-row";
 import { HeroProofRow } from "@/components/home/hero-proof-row";
 import { HomeStarCta } from "@/components/home/home-star-cta";
 import { CopyButton } from "@/components/ui/copy-button";
+import { TextFlip } from "@/components/ui/text-flip";
 import { homeHero } from "@/lib/home-content";
 import { CANONICAL_INSTALL, NATIVE_INSTALL_PS1 } from "@/lib/install-commands";
 import { IconArrowRight } from "@tabler/icons-react";
@@ -16,11 +18,14 @@ export function HomeHeroStatic({ cliVersion, providerCount }: HomeHeroStaticProp
   const installCommand = homeHero.installCommands[0] ?? CANONICAL_INSTALL;
 
   return (
-    <section className="kunai-hero-static kunai-reveal flex flex-col justify-center">
+    <section className="kunai-hero-static kunai-reveal relative flex flex-col justify-center">
+      <HeroDotGrid />
       {/* The heading carries its own weight. The eyebrow that used to sit here
           read "Terminal-first playback" — a label restating the h1 in smaller
           type, above a page that never once said what Kunai actually plays. */}
-      <h1 className="kunai-display-title text-balance">{homeHero.title}</h1>
+      <h1 className="kunai-display-title text-balance">
+        Watch <TextFlip words={["anime", "series", "movies", "streams"]} /> from your terminal.
+      </h1>
       <p className="kunai-type-body text-fd-muted-foreground mt-4 max-w-2xl text-pretty">
         {homeHero.description}
       </p>

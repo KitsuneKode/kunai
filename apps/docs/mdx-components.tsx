@@ -5,6 +5,7 @@ import { DocsRootCards } from "@/components/docs/docs-root-cards";
 import { ProviderDocSection } from "@/components/docs/provider-doc-section";
 import { QuickStartSteps } from "@/components/docs/quick-start-steps";
 import { ScopeCallout } from "@/components/docs/scope-callout";
+import { ResolveGateFigure } from "@/components/iso/resolve-gate/figure";
 import { CliFlagsTable } from "@/components/reference/cli-flags-table";
 import { CommandReference } from "@/components/reference/command-reference";
 import { FeatureStatusTable } from "@/components/reference/feature-status-table";
@@ -40,6 +41,7 @@ const kunaiMdxComponents = {
   QuickStartSteps,
   ScopeCallout,
   ProviderDocSection,
+  ResolveGateFigure,
   KunaiFoxBanner,
 } satisfies MDXComponents;
 

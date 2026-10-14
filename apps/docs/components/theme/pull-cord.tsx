@@ -252,6 +252,17 @@ export function PullCord() {
           {/* Generous hit area — the grab target is bigger than the bead. */}
           <circle r="16" fill="transparent" />
           <circle r="7" fill="var(--color-fd-primary)" stroke="var(--kunai-bg)" strokeWidth="2" />
+          {/* The orbit label — a slow ring of type around the knob, after
+              chanhdai's spinning circular text. It rides inside the knob
+              group, so it swings with the rope. */}
+          <g className="kunai-cord-orbit" aria-hidden="true">
+            <defs>
+              <path id="kunai-cord-orbit-path" d="M -12 0 A 12 12 0 1 1 12 0 A 12 12 0 1 1 -12 0" />
+            </defs>
+            <text fontSize="4.6" fill="var(--color-fd-primary)" opacity="0.85">
+              <textPath href="#kunai-cord-orbit-path">pull me · pull me · </textPath>
+            </text>
+          </g>
         </g>
       </svg>
       <button
