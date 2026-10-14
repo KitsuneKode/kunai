@@ -47,3 +47,49 @@
 .rg-spring {
   stroke-width: 0.6;
 }
+
+/* Pause control — WCAG 2.2.2 wants a stop for content that moves on its own.
+   Sits in the plate's bottom padding band, centered (the four corners are
+   taken by fig/title/hint/readout), and wears the corner typography so it
+   reads as plate chrome, not a UI button. */
+.rg-live {
+  position: relative;
+}
+.rg-pause {
+  position: absolute;
+  inset-block-end: -36px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border: 1px solid var(--anatomy-mid);
+  border-radius: 3px;
+  background: var(--anatomy-card);
+  color: var(--anatomy-muted);
+  font-family: var(--anatomy-mono);
+  font-size: 10.5px;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.rg-pause[aria-pressed="true"] {
+  color: var(--anatomy-lit, var(--kunai-accent));
+  border-color: var(--anatomy-lit, var(--kunai-accent));
+}
+.rg-pause:focus-visible {
+  outline: 2px solid var(--kunai-accent);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .rg-pause:hover {
+    color: var(--anatomy-strong);
+    border-color: var(--anatomy-strong);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rg-pause {
+    transition:
+      color 160ms ease-out,
+      border-color 160ms ease-out;
+  }
+}

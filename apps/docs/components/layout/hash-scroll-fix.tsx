@@ -18,9 +18,21 @@ import { useEffect } from "react";
  * page both land correctly. `scrollIntoView` honours the element's
  * `scroll-margin` and `html`'s `scroll-padding`, so the heading still clears
  * the sticky nav. Smooth scrolling is the stylesheet's call.
+ *
+ * It also arms the skip link's target: `#nd-page` gets `tabindex="-1"` so
+ * "Skip to content" moves keyboard focus, not just the scroll position.
  */
 export function HashScrollFix() {
   const pathname = usePathname();
+
+  /* The skip link points at #nd-page on every layout. For keyboard focus to
+     actually follow the jump (Safari needs this; Chrome/Firefox move
+     sequential focus on their own) the target has to be focusable, so the
+     page body gets a programmatic-only tabindex. */
+  useEffect(() => {
+    const page = document.getElementById("nd-page");
+    if (page && !page.hasAttribute("tabindex")) page.setAttribute("tabindex", "-1");
+  }, [pathname]);
 
   useEffect(() => {
     const hash = decodeURIComponent(window.location.hash.slice(1));

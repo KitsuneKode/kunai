@@ -23,7 +23,7 @@ const ANSI_FALLBACKS: Partial<Record<TokenName, FallbackPair>> = {
   surfaceElevated: { ansi256: "#262626", ansi16: "black" },
   surfaceActive: { ansi256: "#3a2a32", ansi16: "black" },
   raised: { ansi256: "#3a3a3a", ansi16: "gray" },
-  line: { ansi256: "#5f5f5f", ansi16: "gray" },
+  line: { ansi256: "#5f5f87", ansi16: "gray" },
   lineSoft: { ansi256: "#303030", ansi16: "gray" },
   lineStrong: { ansi256: "#875f87", ansi16: "white" },
   lineControl: { ansi256: "#767676", ansi16: "gray" },

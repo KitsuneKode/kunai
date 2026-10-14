@@ -43,6 +43,12 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
         {/* Applies a stored coat before first paint so the accent never flashes
             Sakura and swaps — inline and sync so it runs during parse. */}
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+        {/* First focusable element on every page: the docs pages land on
+            fumadocs' #nd-page wrapper, the home-shell pages carry the same id
+            on their own <main> — one anchor covers both layouts. */}
+        <a href="#nd-page" className="kunai-skip">
+          Skip to content
+        </a>
         <RootProvider
           search={{
             SearchDialog: LazySearchDialog,

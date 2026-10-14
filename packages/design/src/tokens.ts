@@ -23,11 +23,11 @@ const surface = "#1c1620";
 const surfaceElevated = "#2a2030";
 const surfaceActive = "#3a2b40"; // selected band
 const raised = "#44354d";
-const line = "#473b51";
+const line = "#5d5069"; // ~2.3-2.6:1 — a divider you can actually see, still under the 3:1 control tier
 const lineSoft = "#281f2e";
 const lineStrong = "#62526c";
 // Border for things you operate (inputs, outlined buttons, toggles). `line` is a
-// decorative divider at 1.5-1.9:1; a control whose edge is the only thing
+// decorative divider at ~2.3-2.6:1; a control whose edge is the only thing
 // marking it needs 3:1 against the surface it sits on (WCAG 1.4.11).
 const lineControl = "#786782";
 

@@ -24,7 +24,12 @@ export function HomeHeroStatic({ cliVersion, providerCount }: HomeHeroStaticProp
           read "Terminal-first playback" — a label restating the h1 in smaller
           type, above a page that never once said what Kunai actually plays. */}
       <h1 className="kunai-display-title text-balance">
-        Watch <TextFlip words={["anime", "series", "movies", "streams"]} /> from your terminal.
+        <span aria-hidden="true">
+          Watch <TextFlip words={["anime", "series", "movies", "streams"]} /> from your terminal.
+        </span>
+        <span className="sr-only">
+          Watch anime, series, movies, and streams from your terminal.
+        </span>
       </h1>
       <p className="kunai-type-body text-fd-muted-foreground mt-4 max-w-2xl text-pretty">
         {homeHero.description}

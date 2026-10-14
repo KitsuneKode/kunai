@@ -3,7 +3,7 @@ export const kunaiBrand = {
   bg: "#100b0f",
   surface: "#1c1620",
   surfaceElevated: "#2a2030",
-  line: "#473b51",
+  line: "#5d5069",
   lineSoft: "#281f2e",
   text: "#f6eff4",
   textDim: "#cabfca",

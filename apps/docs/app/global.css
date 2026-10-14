@@ -178,7 +178,7 @@ pre,
   --radius-2xl: var(--kunai-radius-shell);
   --color-ring: var(--ring);
   /* Controls are drawn by their edge, so `border-input` is the 3:1 control border
-     and not the decorative divider (`--border`, 1.5-1.9:1). */
+     and not the decorative divider (`--border`, ~2.3:1). */
   --color-input: var(--kunai-line-control);
   --color-border: var(--border);
   --color-destructive: var(--kunai-danger);

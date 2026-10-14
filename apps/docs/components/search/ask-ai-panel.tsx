@@ -94,7 +94,7 @@ export function AskAiPanel({ initialQuery, onBack }: AskAiPanelProps) {
           }}
           placeholder="Ask the docs a question…"
           aria-label="Ask the docs a question"
-          className="border-fd-border bg-fd-background text-fd-foreground min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-2"
+          className="bg-fd-background text-fd-foreground border-input min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-2"
         />
         <button
           type="button"
@@ -106,29 +106,34 @@ export function AskAiPanel({ initialQuery, onBack }: AskAiPanelProps) {
         </button>
       </div>
 
-      {state.phase === "answered" && (
-        <div className="flex flex-col gap-2">
-          <p className="m-0 leading-relaxed whitespace-pre-wrap">{state.answer}</p>
-          {state.sources.length > 0 && (
-            <ul className="m-0 flex list-none flex-col gap-1 p-0">
-              {state.sources.map((source, index) => (
-                <li key={index} className="text-xs">
-                  {source.url ? (
-                    <a
-                      href={source.url}
-                      className="text-fd-primary underline-offset-4 hover:underline"
-                    >
-                      {source.title || source.url}
-                    </a>
-                  ) : (
-                    <span className="text-fd-muted-foreground">{source.title}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+      {/* aria-live is on the always-mounted wrapper: a region that appears
+          already filled is missed by some readers, one that fills after it
+          exists is announced every time. */}
+      <div aria-live="polite">
+        {state.phase === "answered" && (
+          <div className="flex flex-col gap-2">
+            <p className="m-0 leading-relaxed whitespace-pre-wrap">{state.answer}</p>
+            {state.sources.length > 0 && (
+              <ul className="m-0 flex list-none flex-col gap-1 p-0">
+                {state.sources.map((source) => (
+                  <li key={source.url ?? source.title} className="text-xs">
+                    {source.url ? (
+                      <a
+                        href={source.url}
+                        className="text-fd-primary underline-offset-4 hover:underline"
+                      >
+                        {source.title || source.url}
+                      </a>
+                    ) : (
+                      <span className="text-fd-muted-foreground">{source.title}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
 
       {state.phase === "error" && (
         <p className="text-fd-destructive m-0 text-xs" role="alert">

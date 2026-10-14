@@ -46,6 +46,10 @@ export function ResolveGateLive({ label, children, token, plunger }: Props) {
   const frame = React.useRef(0);
   const last = React.useRef(0);
   const [running, setRunning] = React.useState(false);
+  // The figure animates while it sits in view — WCAG 2.2.2 asks for a way to
+  // pause that, and this is it. Pausing freezes the loop mid-pose; the readout
+  // keeps the counts it had when the motion stopped.
+  const [paused, setPaused] = React.useState(false);
 
   const draw = React.useCallback(
     (calm: boolean) => {
@@ -99,12 +103,12 @@ export function ResolveGateLive({ label, children, token, plunger }: Props) {
   }, [stop]);
 
   React.useEffect(() => {
-    if (running) {
+    if (running && !paused) {
       run();
       return stop;
     }
     stop();
-  }, [running, run, stop]);
+  }, [running, paused, run, stop]);
 
   /* First paint before the loop starts: rest pose, zeroed counters. */
   React.useEffect(() => draw(false), [draw]);
@@ -158,6 +162,17 @@ export function ResolveGateLive({ label, children, token, plunger }: Props) {
           />
         </g>
       </IsoFigure>
+      <button
+        type="button"
+        className="rg-pause"
+        aria-pressed={paused}
+        aria-label={
+          paused ? "Resume the resolve gate animation" : "Pause the resolve gate animation"
+        }
+        onClick={() => setPaused((was) => !was)}
+      >
+        {paused ? "resume" : "pause"}
+      </button>
     </div>
   );
 }

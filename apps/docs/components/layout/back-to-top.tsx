@@ -108,6 +108,35 @@ export function BackToTop() {
     goToTop();
   };
 
+  /* Keyboard twin of the drag-scrub (WCAG 2.5.7's spirit — the gesture gets a
+     key path): arrows step a screenful, PageUp/PageDown fly, Home/End land on
+     the extremes. The ring's progress circle still tracks as it scrubs. */
+  const onKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const range = document.documentElement.scrollHeight - window.innerHeight;
+    if (range <= 0) return;
+    const step = window.innerHeight * 0.85;
+    const page = {
+      ArrowUp: -step,
+      ArrowDown: step,
+      PageUp: -step * 4,
+      PageDown: step * 4,
+    }[event.key];
+    if (event.key === "Home") {
+      event.preventDefault();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      window.scrollTo({ top: range, behavior: "smooth" });
+      return;
+    }
+    if (page !== undefined) {
+      event.preventDefault();
+      window.scrollTo({ top: window.scrollY + page, behavior: "smooth" });
+    }
+  };
+
   return (
     <>
       <div
@@ -126,12 +155,13 @@ export function BackToTop() {
         <button
           type="button"
           onClick={onPress}
+          onKeyDown={onKeyDown}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           aria-label="Back to top"
-          title="Back to top · drag to scrub the page"
+          title="Back to top · drag or arrow keys to scrub"
           style={{ touchAction: "none" }}
           className="focus-visible:ring-ring relative flex size-11 items-center justify-center rounded-full border border-[var(--kunai-line)] bg-[color-mix(in_oklab,var(--kunai-surface)_88%,transparent)] text-[var(--kunai-accent)] shadow-[var(--kunai-shadow-md)] backdrop-blur-md transition-[transform,border-color,color] duration-150 ease-[var(--ease-out)] outline-none hover:-translate-y-0.5 hover:border-[var(--kunai-accent-deep)] hover:text-[var(--kunai-accent-soft)] focus-visible:ring-2 active:scale-[0.94]"
         >

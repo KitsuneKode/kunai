@@ -58,7 +58,10 @@ export default function HomePageShell({
   usageLine,
 }: HomePageShellProps) {
   return (
-    <main className="kunai-home relative mx-auto min-h-[100dvh] w-[min(1400px,calc(100vw-32px))] overflow-x-hidden py-8 max-md:w-[min(760px,calc(100vw-20px))]">
+    <main
+      id="nd-page"
+      className="kunai-home relative mx-auto min-h-[100dvh] w-[min(1400px,calc(100vw-32px))] overflow-x-clip py-8 max-md:w-[min(760px,calc(100vw-20px))]"
+    >
       <section className="kunai-home-hero grid items-center gap-10 pb-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <HomeHeroStatic cliVersion={cliVersion} providerCount={providers.length} />
         {/* She sits on the top edge of the terminal, looking out at the page. That

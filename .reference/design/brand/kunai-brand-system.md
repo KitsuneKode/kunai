@@ -51,7 +51,7 @@ Rationale: the current Sakura ramp is all one rose-brown hue with tiny steps (no
 | surface         | `#1c1620`          | panels                |
 | surfaceElevated | `#2a2030`          | cards / raised        |
 | surfaceActive   | `#3a2b40`          | **selected row band** |
-| line            | `#473b51`          | borders               |
+| line            | `#5d5069`          | borders               |
 | lineSoft        | `#281f2e`          | hairline dividers     |
 | lineStrong      | `#62526c`          | strong dividers       |
 | lineControl     | `#786782`          | **control edge** (inputs, outlined buttons, toggles): 3:1 on every surface |
@@ -107,7 +107,7 @@ The brand, the surface ramp and the rose accent are unchanged. Every change belo
 | change | before | after | why |
 | --- | --- | --- | --- |
 | `muted` | `#968a98` | `#a195a3` | 3.99:1 on the selected-row band (`surfaceActive`), under the 4.5:1 body floor. Now 4.57:1 there and 5.4-6.8:1 elsewhere. |
-| `lineControl` (new) | n/a | `#786782` | `line` is a 1.5-1.9:1 divider. A control marked only by its edge needs 3:1 (WCAG 1.4.11). `border-input` in the docs now points here. |
+| `lineControl` (new) | n/a | `#786782` | `line` is a ~2.3-2.6:1 divider. A control marked only by its edge needs 3:1 (WCAG 1.4.11). `border-input` in the docs now points here. |
 | `milestone` family | hue 287 | hue 272 | 20° from the anime orchid, which read as one purple. Now 46° from it. |
 | `typeAnime` | hue 307 | hue 318 | Moves away from milestone; still orchid, still 44° from the brand rose. |
 | `typeMovie` | hue 84 | hue 92 | 22° from `warn`. Now 30°. |

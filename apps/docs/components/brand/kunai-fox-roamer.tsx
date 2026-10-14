@@ -808,6 +808,7 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
           !carried && mood === "sulking" ? " is-sulking" : ""
         }`}
         onClick={poke}
+        onMouseDown={(event) => event.preventDefault()}
         onPointerDown={onFoxPointerDown}
         onPointerMove={onFoxPointerMove}
         onPointerUp={onFoxPointerUp}
@@ -822,7 +823,13 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
           )}
         </span>
       </button>
-      <button type="button" className="kunai-roamer__close" onClick={dismiss} tabIndex={-1}>
+      <button
+        type="button"
+        className="kunai-roamer__close"
+        onClick={dismiss}
+        onMouseDown={(event) => event.preventDefault()}
+        tabIndex={-1}
+      >
         ×
       </button>
     </div>

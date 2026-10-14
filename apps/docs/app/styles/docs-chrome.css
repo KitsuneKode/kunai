@@ -465,6 +465,34 @@
   }
 }
 
+/* Skip link — the first focusable element on every page. Visually hidden
+   until it takes focus, then it sits above the nav chrome so the jump is
+   unmistakable. */
+.kunai-skip {
+  position: fixed;
+  inset-block-start: 0.75rem;
+  inset-inline-start: 0.75rem;
+  z-index: 100;
+  transform: translateY(-4rem);
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--kunai-line);
+  border-radius: 0.5rem;
+  background: var(--kunai-surface-elevated);
+  color: var(--color-fd-foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 8px 24px color-mix(in oklch, var(--kunai-bg) 70%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kunai-skip {
+    transition: transform 160ms var(--ease-out);
+  }
+}
+.kunai-skip:focus-visible {
+  transform: translateY(0);
+}
+
 /* Mobile: never force desktop sidebar/TOC column math */
 @media (max-width: 767.98px) {
   #nd-docs-layout {

@@ -36,7 +36,10 @@ export default async function AnalyticsPage() {
       breakpoint would flip a four-up row to two columns while the column
       itself never changed width.
     */
-    <main className="kunai-home @container/analytics relative mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center gap-8 px-6 py-14 md:px-10">
+    <main
+      id="nd-page"
+      className="kunai-home @container/analytics relative mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center gap-8 px-6 py-14 md:px-10"
+    >
       <header className="border-border flex flex-col gap-4 border-b pb-8">
         <p className="text-muted-foreground text-xs font-medium tracking-[0.16em] uppercase">
           Trust surface
