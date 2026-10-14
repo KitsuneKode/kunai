@@ -13,6 +13,7 @@ import { docsCanonicalUrl } from "@/lib/site";
 import { source } from "@/lib/source";
 import { troubleshootingFaqEntries } from "@/lib/troubleshooting-faq";
 import { useMDXComponents } from "@/mdx-components";
+import { findNeighbour } from "fumadocs-core/page-tree";
 import {
   DocsBody,
   DocsDescription,
@@ -78,6 +79,13 @@ export default async function Page({ params }: PageProps) {
     { name: "Kunai Docs", url: docsCanonicalUrl("/docs") },
     { name: page.data.title, url: docsCanonicalUrl(page.url) },
   ]);
+  // Sequential neighbours follow the meta.json page order — a reader who lands
+  // mid-guide gets the way forward and back, and every page earns two more
+  // internal links on top of the same-group related grid.
+  const neighbours = findNeighbour(source.getPageTree(), page.url);
+  // /docs/<section>/<page> → /docs/<section>; gives the breadcrumb root a real
+  // link instead of the plain section label it renders otherwise.
+  const sectionRootUrl = `/${page.url.split("/").slice(1, 3).join("/")}`;
   const faqJsonLd =
     page.data.info.path === "users/troubleshooting.mdx"
       ? faqPageJsonLd(troubleshootingFaqEntries)
@@ -102,6 +110,12 @@ export default async function Page({ params }: PageProps) {
       <DocsPage
         className={isIndexHub ? "kunai-docs-index" : undefined}
         toc={page.data.toc}
+        breadcrumb={{
+          enabled: true,
+          includePage: true,
+          includeRoot: { url: sectionRootUrl },
+        }}
+        footer={{ items: neighbours }}
         tableOfContent={{
           style: "clerk",
         }}

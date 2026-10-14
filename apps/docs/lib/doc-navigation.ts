@@ -91,6 +91,13 @@ export const docNavEntries: readonly DocNavEntry[] = [
     group: "setup",
     surfaces: ["hub"],
   },
+  {
+    title: "Kanna",
+    href: "/docs/users/kanna",
+    description: "Who the fox in your terminal is, what her poses mean, and how to turn her off.",
+    group: "setup",
+    surfaces: ["hub"],
+  },
   // Daily
   {
     title: "Share Links",
@@ -146,6 +153,14 @@ export const docNavEntries: readonly DocNavEntry[] = [
     href: "/docs/users/providers",
     description:
       "How provider fallback works, what retry means, and what Kunai does not guarantee.",
+    group: "daily",
+    surfaces: ["hub"],
+  },
+  {
+    title: "Provider status",
+    href: "/docs/users/provider-status",
+    description:
+      "The daily upstream-health sweep across every registered provider, and what its verdicts mean.",
     group: "daily",
     surfaces: ["hub"],
   },

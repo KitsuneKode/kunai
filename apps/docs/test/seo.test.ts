@@ -83,6 +83,23 @@ describe("docs SEO drift", () => {
     }
   });
 
+  test("every non-hub docs page belongs to a nav group", () => {
+    for (const page of source.getPages()) {
+      if (page.data.info.path.endsWith("index.mdx")) continue;
+      expect(navGroupForHref(page.url)).not.toBeNull();
+    }
+  });
+
+  test("docs page template wires sequential footer neighbours and breadcrumbs", () => {
+    const pageFile = fs.readFileSync(
+      path.join(DOCS_APP_ROOT, "app/docs/[[...slug]]/page.tsx"),
+      "utf-8",
+    );
+    expect(pageFile).toContain("findNeighbour(source.getPageTree()");
+    expect(pageFile).toContain("includeRoot: { url: sectionRootUrl }");
+    expect(pageFile).toContain("footer={{ items: neighbours }}");
+  });
+
   test("llms.txt route includes version stamps", () => {
     const routeFile = fs.readFileSync(path.join(DOCS_APP_ROOT, "app/llms.txt/route.ts"), "utf-8");
     expect(routeFile).toContain("@doc-version");
