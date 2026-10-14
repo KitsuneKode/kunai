@@ -111,7 +111,7 @@ export function AskAiPanel({ initialQuery, onBack }: AskAiPanelProps) {
           exists is announced every time. */}
       <div aria-live="polite">
         {state.phase === "answered" && (
-          <div className="flex flex-col gap-2">
+          <div className="kunai-answer-in flex flex-col gap-2">
             <p className="m-0 leading-relaxed whitespace-pre-wrap">{state.answer}</p>
             {state.sources.length > 0 && (
               <ul className="m-0 flex list-none flex-col gap-1 p-0">
@@ -136,7 +136,7 @@ export function AskAiPanel({ initialQuery, onBack }: AskAiPanelProps) {
       </div>
 
       {state.phase === "error" && (
-        <p className="text-fd-destructive m-0 text-xs" role="alert">
+        <p className="kunai-answer-in text-fd-destructive m-0 text-xs" role="alert">
           {state.message} Nothing was cached or retried — ask again if you want to retry.
         </p>
       )}

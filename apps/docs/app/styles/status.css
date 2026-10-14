@@ -113,3 +113,26 @@
 .kunai-status-row[open] > .kunai-status-detail {
   animation: kunai-bento-in var(--dur-panel) var(--ease-out) both;
 }
+
+/* …and the row's box grows to meet them rather than snapping the grid below
+   it. `::details-content` + `interpolate-size` is Chrome 123+/Safari 18.2+;
+   older engines keep the snap plus the content fade, which is the graceful
+   floor — the chevron already telegraphs the state change either way. */
+@supports (interpolate-size: allow-keywords) {
+  .kunai-status-row {
+    interpolate-size: allow-keywords;
+  }
+
+  .kunai-status-row::details-content {
+    overflow: clip;
+    block-size: 0;
+    transition:
+      block-size var(--dur-panel) var(--ease-drawer),
+      content-visibility var(--dur-panel) var(--ease-drawer);
+    transition-behavior: allow-discrete;
+  }
+
+  .kunai-status-row[open]::details-content {
+    block-size: auto;
+  }
+}
