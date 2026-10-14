@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-06"
+lastReviewed: "2026-10-14"
 ---
 
 # Tracker Sync
@@ -188,9 +188,12 @@ with no keyring — headless Linux without a Secret Service daemon — a `file`
 backend keeps the old guarantee: `configDir/secrets.json` written atomically
 with owner-only permissions. The first launch on a vault-capable machine
 migrates `sync-tokens.json` write → read-back → compare → delete, restart-safe
-and idempotent. Token-store mutations stay serialized so concurrent patches
-cannot erase each other, and a vault read that fails for anything but the
-backend's not-found signal aborts the write instead of reading as empty; the
+and idempotent. Token-store mutations stay serialized. Native vault patches
+write or delete only the explicitly targeted tracker key, without reading or
+rewriting the other tracker. Malformed or unavailable unrelated credentials
+therefore remain untouched during connect and disconnect. An explicit clear
+still removes both trackers. Full-set reads propagate vault access failures;
+the file backend retains its read/merge/write path. The
 same vault lane holds `videasy.sessionToken`,
 which is scrubbed from `config.json` at the persistence boundary while the
 in-memory config keeps serving it.
