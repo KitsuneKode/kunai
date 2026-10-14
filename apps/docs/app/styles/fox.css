@@ -342,8 +342,10 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   -webkit-touch-callout: none;
 }
 
-.kunai-roamer__fox:hover {
-  transform: scale(1.08);
+@media (hover: hover) and (pointer: fine) {
+  .kunai-roamer__fox:hover {
+    transform: scale(1.08);
+  }
 }
 
 /* While she walks, the legs are the animation: `KunaiFoxWalker` is posed every
@@ -355,8 +357,10 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   transition: none;
 }
 
-.kunai-roamer__fox.is-walking:hover {
-  transform: none;
+@media (hover: hover) and (pointer: fine) {
+  .kunai-roamer__fox.is-walking:hover {
+    transform: none;
+  }
 }
 
 /* Walking and resting are different drawings. A short fade from the one that
@@ -406,8 +410,10 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   animation: none;
 }
 
-.kunai-roamer__fox.is-carried:hover {
-  transform: scale(1.1) rotate(-5deg);
+@media (hover: hover) and (pointer: fine) {
+  .kunai-roamer__fox.is-carried:hover {
+    transform: scale(1.1) rotate(-5deg);
+  }
 }
 
 /* Sulking is quiet: a little muted. The flat ears are the pose; this only adds to it,
@@ -503,8 +509,10 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   transition: opacity 160ms ease-out;
 }
 
-.kunai-roamer:hover .kunai-roamer__close {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .kunai-roamer:hover .kunai-roamer__close {
+    opacity: 1;
+  }
 }
 
 /* A touch screen has no hover, so the dismiss control would never appear and she could
