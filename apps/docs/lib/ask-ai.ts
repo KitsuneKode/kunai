@@ -30,4 +30,12 @@ export function askAiConfigFrom(env: Record<string, string | undefined>): AskAiC
   };
 }
 
-export const askAi: AskAiConfig | null = askAiConfigFrom(process.env);
+// Each member must be named literally: `NEXT_PUBLIC_*` values reach the
+// client bundle through compile-time inlining of `process.env.NAME` member
+// access only — a bare `process.env` object is a dynamic lookup and stays
+// empty in the browser, which would silently disable the feature in prod.
+export const askAi: AskAiConfig | null = askAiConfigFrom({
+  NEXT_PUBLIC_ASK_AI_ENDPOINT: process.env.NEXT_PUBLIC_ASK_AI_ENDPOINT,
+  NEXT_PUBLIC_ASK_AI_PUBLIC_KEY: process.env.NEXT_PUBLIC_ASK_AI_PUBLIC_KEY,
+  NEXT_PUBLIC_ASK_AI_PROVIDER: process.env.NEXT_PUBLIC_ASK_AI_PROVIDER,
+});

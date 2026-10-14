@@ -73,6 +73,19 @@ describe("the third-party request boundary", () => {
   });
 });
 
+describe("env wiring", () => {
+  const source = fs.readFileSync(path.join(import.meta.dir, "../lib/ask-ai.ts"), "utf8");
+
+  test("reads NEXT_PUBLIC_* members individually — a bare process.env is never inlined", () => {
+    // This module is imported by client components, where bundlers replace
+    // `process.env.NAME` member access only; `askAiConfigFrom(process.env)`
+    // would evaluate `{}` in the browser and silently disable the feature.
+    expect(source).not.toMatch(/askAiConfigFrom\(\s*process\.env\s*\)/);
+    expect(source).toContain("process.env.NEXT_PUBLIC_ASK_AI_ENDPOINT");
+    expect(source).toContain("process.env.NEXT_PUBLIC_ASK_AI_PUBLIC_KEY");
+  });
+});
+
 describe("the Ask AI surface without a config", () => {
   // The dialog itself portals and needs a DOM; the panel is the part whose
   // contract matters — unconfigured, it renders literally nothing.
