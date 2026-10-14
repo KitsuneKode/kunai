@@ -48,9 +48,11 @@ const turbopackRoot = (() => {
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
-  // fumadocs-mdx loads source.config via dynamic import(url.href); keep it out of
-  // the server bundle so webpack cache analysis does not warn on that expression.
-  serverExternalPackages: ["fumadocs-mdx", "esbuild"],
+  // esbuild keeps native binaries out of the server bundle. fumadocs-mdx was
+  // here too, but under Turbopack its webpack/* loader paths are resolved as
+  // ESM and Next 16 warns it "can't be external"; the dynamic import(url.href)
+  // it used to shield is a webpack-mode cache-analysis concern, not Turbopack's.
+  serverExternalPackages: ["esbuild"],
   // Without this, Next infers the trace root from the nearest lockfile. On a
   // Vercel project whose Root Directory is `apps/docs` that inference can land
   // on the app instead of the workspace, and the workspace files the build
