@@ -747,9 +747,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                     {/* Provider context — revealed after 2s */}
                     {disclosure.showProvider && providerDetail && (
                       <Box marginTop={1}>
-                        <Text color={palette.dim} dimColor>
-                          {providerDetail}
-                        </Text>
+                        <Text color={palette.dim}>{providerDetail}</Text>
                       </Box>
                     )}
                     {/* Subtitle status — revealed after 2s */}
@@ -772,9 +770,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                       </Text>
                     )}
                     {shouldShowLoadingElapsed(state.operation, elapsed) && (
-                      <Text color={palette.dim} dimColor>
-                        {formatElapsed(elapsed)} elapsed
-                      </Text>
+                      <Text color={palette.dim}>{formatElapsed(elapsed)} elapsed</Text>
                     )}
                     {showStallPrompt && (
                       <Box flexDirection="column" marginTop={1}>

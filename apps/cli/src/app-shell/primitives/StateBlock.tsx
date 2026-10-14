@@ -1,4 +1,4 @@
-import { sanitizeTerminalText } from "@/domain/text-display";
+import { truncateLine, wrapText } from "@/domain/text-display";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -42,15 +42,22 @@ export function StateBlock({
   // resize) never re-rolls the line out from under the reader.
   const [pick] = React.useState(() => Math.floor(Math.random() * 997));
   const companion = companionLineFor(model.kind, companionMode(), pick);
+  // The width prop already budgets ActionList — title and detail get the same
+  // budget so a long error can never push siblings off the pane. Detail wraps
+  // to four lines; anything longer lives in /diagnostics.
+  const detailLines = model.detail ? wrapText(model.detail, Math.max(12, width), 4) : [];
 
   return (
     <Box flexDirection="column">
       <Text color={color} bold>
-        {getStateBlockGlyph(model.kind)} {sanitizeTerminalText(model.title)}
+        {getStateBlockGlyph(model.kind)} {truncateLine(model.title, Math.max(12, width))}
       </Text>
-      {model.detail ? (
-        <Text color={palette.muted}>{sanitizeTerminalText(model.detail)}</Text>
-      ) : null}
+      {detailLines.map((line, index) => (
+        // eslint-disable-next-line react/no-array-index-key
+        <Text key={index} color={palette.muted}>
+          {line}
+        </Text>
+      ))}
       {companion ? (
         <Text color={palette.dim}>
           {companionFallbackGlyph()} {companion}

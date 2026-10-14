@@ -15,7 +15,7 @@ import { SakuraPetal } from "./SakuraPetal";
 
 function factColor(tone: PreviewFact["tone"]): string {
   if (tone === "success") return palette.ok;
-  if (tone === "warning") return palette.accentDeep;
+  if (tone === "warning") return palette.warn;
   if (tone === "danger") return palette.dangerText;
   return palette.text;
 }

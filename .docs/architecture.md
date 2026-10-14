@@ -116,19 +116,17 @@ Identity (`ContentKind`: anime / series / movie / video) is the badge, history s
 - Episode numbering in the UI is always 1-based
 - `packages/providers/src/allmanga/api-client.ts` should stay aligned with the specific ani-cli/AllManga-inspired API assumptions it implements unless the codebase deliberately chooses a new contract
 
-### AllManga-Compatible API-client invariants
+### AllManga API-client invariants
 
-- `KNOWN_SOURCES = ["Default", "Yt-mp4", "S-mp4", "Luf-Mp4", "Fm-mp4", "Ak"]`
-- `hexDecode` mirrors ani-cli provider decoding logic
-- Episode source resolve uses persisted GET + `aaReq` AES-256-GCM attestation (`x-build-id`, epoch/build_id); missing `aaReq` yields `AA_CRYPTO_MISSING`
-- Response blob decrypt is `AES-256-CTR` with the ani-cli hex key (not SHA-256 of a passphrase)
-- The current blob layout is `1-byte version prefix + 12-byte IV + ciphertext + 16-byte footer`
-- IV is derived from bytes `1..12` of the provider blob
-- `counter[15] = 2`
-- `countryOrigin: "ALL"` is required for broad search coverage
-- `tobeparsed` stays out of the GraphQL selection set
-- `m3u8Referer` comes from the JSON response body, not the static config referer
-- Keep crypto constants aligned with ani-cli `origin/fix` (`get_aa_req`) when upstream rotates
+AllManga crypto has no reference implementation left: ani-cli v5 moved to
+anidb and deleted every AllAnime path, so `packages/providers/src/allmanga/`
+is checked against the **live mkissa chunk**, not against ani-cli (see
+AGENTS.md non-negotiables and
+`.docs/provider-dossiers/allmanga.md`, which carries the rotation-recovery
+procedure). Upstream rotates every derivation constant at once, roughly
+monthly — `bun run test:live:allmanga-crypto` reports which half is stale.
+Do not reintroduce ani-cli parity claims here; the tree follows the live
+chunk and this doc follows the tree.
 
 This parity policy only applies to the concrete AllAnime / AllManga-style API client and other deliberate compatibles. It is not a universal standard for every anime provider in the repo.
 

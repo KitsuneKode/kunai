@@ -2530,9 +2530,7 @@ export function BrowseShell<T>({
                 Loading your local shortcuts…
               </Text>
             ) : idleContextStatus === "error" ? (
-              <Text color={palette.dim} dimColor>
-                Local shortcuts unavailable · search is ready
-              </Text>
+              <Text color={palette.dim}>Local shortcuts unavailable · search is ready</Text>
             ) : null}
             {!commandMode &&
             idleReturnLoopModel &&

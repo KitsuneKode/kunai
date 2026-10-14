@@ -393,13 +393,13 @@ export const Badge = React.memo(function Badge({
     tone === "success"
       ? palette.ok
       : tone === "info"
-        ? palette.muted
+        ? palette.info
         : tone === "accent"
           ? palette.accentSoft
           : tone === "error"
             ? palette.dangerText
             : tone === "warning"
-              ? palette.accentDeep
+              ? palette.warn
               : palette.dim;
 
   return (
@@ -474,13 +474,13 @@ export const DetailRow = React.memo(function DetailRow({
     tone === "success"
       ? palette.ok
       : tone === "info"
-        ? palette.muted
+        ? palette.info
         : tone === "accent"
           ? palette.accentSoft
           : tone === "error"
             ? palette.dangerText
             : tone === "warning"
-              ? palette.accentDeep
+              ? palette.warn
               : palette.text;
   return (
     <Box>
