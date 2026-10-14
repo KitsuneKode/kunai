@@ -526,7 +526,7 @@ export const DetailLine = React.memo(function DetailLine({
     <Box>
       <Text color={palette.dim}>{sanitizeTerminalText(label)}</Text>
       <Text color={palette.dim}> · </Text>
-      <Text color={valueColor}>{sanitizeTerminalText(value)}</Text>
+      <Text color={valueColor}>{truncateLine(value, 80)}</Text>
     </Box>
   );
 });

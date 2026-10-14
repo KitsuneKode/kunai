@@ -48,10 +48,13 @@ function humanReadableRootStatus(raw: string): string {
       return "ready";
     case "resolving":
       return "Resolving…";
+    case "searching":
+      return "Searching…";
     case "paused":
       return "Paused";
     default:
-      return raw;
+      // SAFETY: unknown statuses leak snake_case internals into the header.
+      return "Loading…";
   }
 }
 

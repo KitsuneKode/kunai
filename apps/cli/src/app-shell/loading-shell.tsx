@@ -39,7 +39,7 @@ import { GlimmerLabel, SakuraBloom } from "./SakuraLoader";
 import { useShellCommandModeOpen } from "./shell-command-mode";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine } from "./shell-primitives";
-import { sanitizeTerminalText, truncateLine } from "./shell-text";
+import { padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { LoadingShellState, ShellPanelLine } from "./types";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
@@ -67,12 +67,16 @@ function useElapsed(active = true): number {
 }
 
 function formatElapsed(seconds: number): string {
+  // SAFETY: mpv stats can yield NaN/Infinity/negative before first progress.
+  if (!Number.isFinite(seconds) || seconds < 0) return "0s";
   const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
+  const s = Math.floor(seconds % 60);
   return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${String(s)}s`;
 }
 
 function formatTimestamp(seconds: number): string {
+  // SAFETY: same guard as formatElapsed — avoids "NaNs"/"NaN:NaN" rows.
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
@@ -231,14 +235,19 @@ const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
   const titleColor = isLiveFault ? palette.dangerText : palette.accentDeep;
   const glyph = isLiveFault ? "×" : "◐";
 
-  // Preserved-progress fact: show saved timestamp if we have it, else % if
-  // available. This is the key trust signal — progress is not lost.
-  const preservedFact: string | null =
-    state.currentPosition !== undefined && state.currentPosition > 0
-      ? `${formatTimestamp(state.currentPosition)} saved`
-      : state.progress !== undefined && state.progress > 0
-        ? `${Math.round(state.progress)}% saved`
-        : null;
+  // Preserved-progress fact: show saved timestamp if we have finite evidence,
+  // else % if available. Null means nothing saved — the fallback below says so.
+  const hasPosition =
+    state.currentPosition !== undefined &&
+    Number.isFinite(state.currentPosition) &&
+    state.currentPosition > 0;
+  const hasProgress =
+    state.progress !== undefined && Number.isFinite(state.progress) && state.progress > 0;
+  const preservedFact: string | null = hasPosition
+    ? `${formatTimestamp(state.currentPosition ?? 0)} saved`
+    : hasProgress
+      ? `${Math.round(state.progress ?? 0)}% saved`
+      : null;
 
   // Split actions: primary (recover), secondary (fallback, sources), diagnostic
   const primaryAction = block.actions?.find((a) => a.id === "recover");
@@ -265,7 +274,7 @@ const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
         </Box>
       ) : (
         <Box marginTop={1}>
-          <Text color={palette.ok}>progress preserved · not marked watched</Text>
+          <Text color={palette.muted}>starting fresh · nothing saved yet</Text>
         </Box>
       )}
 
@@ -276,7 +285,7 @@ const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
             {"▌ "}
           </Text>
           <Text color={palette.accent} bold>
-            {primaryAction.label.padEnd(16)}
+            {padColumnsEnd(primaryAction.label, 16)}
           </Text>
           <Text color={palette.muted}>{truncateLine(primaryAction.detail ?? "", detailWidth)}</Text>
           <Text color={palette.accent}>
@@ -291,7 +300,7 @@ const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
           {secondaryActions.map((action) => (
             <Box key={action.id}>
               <Text color={palette.dim}>{"  "}</Text>
-              <Text color={palette.textDim}>{action.label.padEnd(16)}</Text>
+              <Text color={palette.textDim}>{padColumnsEnd(action.label, 16)}</Text>
               <Text color={palette.dim}>{truncateLine(action.detail ?? "", detailWidth)}</Text>
               <Text color={palette.dim}>{action.shortcut ? `  ${action.shortcut}` : ""}</Text>
             </Box>
@@ -325,7 +334,10 @@ const PlaybackKeysCard = React.memo(function PlaybackKeysCard({
   if (!model.visible) return null;
   // Widest key in the card, so labels line up in one column across every group
   // rather than each group finding its own indent.
+  // SAFETY: flatMap over empty groups yields Math.max() = -Infinity, which
+  // throws in padEnd — clamp to 0 so an all-filtered card cannot crash.
   const keyColumn = Math.max(
+    0,
     ...model.groups.flatMap((group) => group.rows.map((row) => row.keys.length)),
   );
   return (
@@ -339,7 +351,7 @@ const PlaybackKeysCard = React.memo(function PlaybackKeysCard({
             {group.rows.map((row, index) => (
               <Text key={row.label}>
                 {index > 0 ? <Text color={palette.dim}>{"  "}</Text> : null}
-                <Text color={palette.accent}>{row.keys.padEnd(keyColumn)}</Text>
+                <Text color={palette.accent}>{padColumnsEnd(row.keys, keyColumn)}</Text>
                 <Text color={palette.dim}>{` ${row.label}`}</Text>
               </Text>
             ))}
@@ -725,7 +737,10 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Box>
                   <Box flexDirection="column" flexGrow={1}>
                     <GlimmerLabel
-                      label={state.stageDetail || stageLabel(activeStage)}
+                      label={truncateLine(
+                        state.stageDetail || stageLabel(activeStage),
+                        Math.max(12, infoWidth),
+                      )}
                       active={timerPolicy.animate && !timerPolicy.freezeWhenOffscreen}
                       stalled={showStallPrompt}
                     />
@@ -748,7 +763,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                     {disclosure.showProvider && providerDetail && (
                       <Box marginTop={1}>
                         <Text color={palette.dim} dimColor>
-                          {providerDetail}
+                          {truncateLine(providerDetail, Math.max(12, infoWidth))}
                         </Text>
                       </Box>
                     )}
@@ -756,7 +771,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                     {disclosure.showSubtitleStatus && state.subtitleStatus && (
                       <Box marginTop={1}>
                         <Text color={subtitleReady ? palette.ok : palette.accentDeep}>
-                          {state.subtitleStatus}
+                          {truncateLine(state.subtitleStatus, Math.max(12, infoWidth))}
                         </Text>
                       </Box>
                     )}
@@ -768,7 +783,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                   <Box flexDirection="column" marginTop={2}>
                     {state.trace && (
                       <Text color={palette.dim} dimColor>
-                        {state.trace}
+                        {truncateLine(state.trace, Math.max(12, infoWidth))}
                       </Text>
                     )}
                     {shouldShowLoadingElapsed(state.operation, elapsed) && (
@@ -810,7 +825,10 @@ export const LoadingShell = React.memo(function LoadingShell({
                 )}
 
                 {/* Progress bar or wait message */}
-                {disclosure.showProgress && state.progress !== undefined ? (
+                {/* SAFETY: provider garbage can yield NaN/Infinity progress. */}
+                {disclosure.showProgress &&
+                state.progress !== undefined &&
+                Number.isFinite(state.progress) ? (
                   <Box marginTop={1} flexDirection="row">
                     <ProgressBar value={state.progress} max={100} width={barWidth} />
                     <Text color={palette.accent}> {Math.round(state.progress)}%</Text>
@@ -818,7 +836,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 ) : disclosure.showElapsed ? (
                   <Box marginTop={1}>
                     <Text color={palette.dim} dimColor>
-                      {waitPresentation.message}
+                      {truncateLine(waitPresentation.message, Math.max(12, infoWidth))}
                     </Text>
                   </Box>
                 ) : null}
@@ -837,7 +855,9 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Box>
                 ) : disclosure.showIssue && loadingIssue ? (
                   <Box marginTop={1}>
-                    <Text color={palette.accentDeep}>⚠ {loadingIssue}</Text>
+                    <Text color={palette.accentDeep}>
+                      ⚠ {truncateLine(loadingIssue, Math.max(12, infoWidth - 2))}
+                    </Text>
                   </Box>
                 ) : null}
               </Box>
@@ -879,7 +899,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                       width={barWidth}
                     />
                     <Text color={palette.dim}> {formatTimestamp(state.duration)}</Text>
-                    {state.progress !== undefined ? (
+                    {state.progress !== undefined && Number.isFinite(state.progress) ? (
                       <Text color={palette.dim}>{`  ·  ${Math.round(state.progress)}%`}</Text>
                     ) : null}
                   </Box>
