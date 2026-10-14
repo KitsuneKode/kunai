@@ -7,6 +7,7 @@
  *   bun run test:live:mpv videasy
  *   bun run test:live:mpv rivestream
  *   bun run test:live:mpv vidlink
+ *   bun run test:live:mpv movy
  *   bun run test:live:mpv youtube
  *
  * Isolated temporary XDG profile (never touches live config/data/cache),
@@ -72,6 +73,13 @@ const FIXTURES = new Map<string, MpvFixture>([
     "vidlink",
     {
       title: { id: "27205", type: "movie", name: "Inception" },
+      mode: "series",
+    },
+  ],
+  [
+    "movy",
+    {
+      title: { id: "550", type: "movie", name: "Fight Club" },
       mode: "series",
     },
   ],
