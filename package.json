@@ -177,10 +177,10 @@
   "lint-staged": {
     "**/*.{ts,tsx}": [
       "oxlint",
-      "oxfmt --write"
+      "bun scripts/lint-staged-oxfmt.ts"
     ],
     "**/*.{json,md,mdx,yml,yaml,toml}": [
-      "oxfmt --write"
+      "bun scripts/lint-staged-oxfmt.ts"
     ],
     "apps/cli/package.json": [
       "bun run guard"
