@@ -227,7 +227,7 @@ export async function fetchProbeTarget(options: {
           // Match undici's own redirect hygiene: credentials do not cross
           // origins, even when every hop individually validates as public.
           if (next.origin !== new URL(target).origin && init.headers) {
-            init = { ...init, headers: stripCredentialHeaders(init.headers) };
+            init = { ...init, headers: filterCrossOriginStreamHeaders(init.headers) };
           }
           target = next.toString();
         } catch {
@@ -241,13 +241,23 @@ export async function fetchProbeTarget(options: {
   }
 }
 
-const CREDENTIAL_HEADERS = new Set(["authorization", "cookie", "proxy-authorization"]);
+const CROSS_ORIGIN_STREAM_HEADERS = new Set([
+  "accept",
+  "accept-language",
+  "origin",
+  "referer",
+  "user-agent",
+  "range",
+  "if-range",
+]);
 
-function stripCredentialHeaders(headers: RequestInit["headers"]): RequestInit["headers"] {
-  // `new Headers()` already accepts every legal headers init shape.
-  const clone = new Headers(headers);
-  for (const name of CREDENTIAL_HEADERS) clone.delete(name);
-  return clone;
+/** Only transport hints cross resource origins; unknown fields may be credentials. */
+export function filterCrossOriginStreamHeaders(headers: RequestInit["headers"]): Headers {
+  const filtered = new Headers();
+  new Headers(headers).forEach((value, name) => {
+    if (CROSS_ORIGIN_STREAM_HEADERS.has(name)) filtered.set(name, value);
+  });
+  return filtered;
 }
 
 /**

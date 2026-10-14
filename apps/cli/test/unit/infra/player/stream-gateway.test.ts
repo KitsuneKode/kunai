@@ -507,6 +507,90 @@ describe("android stream gateway", () => {
     }
   });
 
+  test("foreign subtitles do not receive media credentials or custom tokens", async () => {
+    const subtitleUrl = "https://subs.example.com/en.vtt";
+    const { calls, fetchImpl } = recordingFetch({ [subtitleUrl]: { body: "WEBVTT" } });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        url: MASTER_URL,
+        headers: {
+          authorization: "fixture",
+          cookie: "fixture=1",
+          "x-session-token": "fixture",
+          referer: "https://embed.example/",
+        },
+        subtitles: [subtitleUrl],
+      });
+      await (await fetch(session.subtitleUrls[0] ?? "")).text();
+      expect(calls[0]?.headers.authorization).toBeUndefined();
+      expect(calls[0]?.headers.cookie).toBeUndefined();
+      expect(calls[0]?.headers["x-session-token"]).toBeUndefined();
+      expect(calls[0]?.headers.referer).toBe("https://embed.example/");
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("DASH resources discovered on another origin do not receive custom tokens", async () => {
+    const foreignUrl = "https://other.example/video.mp4";
+    const manifest = `<MPD><Period><AdaptationSet><Representation><BaseURL>${foreignUrl}</BaseURL></Representation></AdaptationSet></Period></MPD>`;
+    const { calls, fetchImpl } = recordingFetch({
+      "https://cdn.example.com/master.mpd": { body: manifest, contentType: "application/dash+xml" },
+      [foreignUrl]: { body: "media" },
+    });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/master.mpd",
+        headers: { "x-api-key": "fixture" },
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      const resource = /<BaseURL>([^<]+)<\/BaseURL>/.exec(text)?.[1];
+      expect(resource).toStartWith(gw.baseUrl);
+      await (await fetch(resource ?? "")).text();
+      expect(calls[0]?.headers["x-api-key"]).toBe("fixture");
+      expect(calls[1]?.headers["x-api-key"]).toBeUndefined();
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("playlist destination admission does not authorize media credentials", async () => {
+    const { calls, fetchImpl } = recordingFetch({
+      [MASTER_URL]: { body: PLAYLIST_BODY, contentType: "application/vnd.apple.mpegurl" },
+      "https://cdn.example.com/seg-0.ts": { body: "media" },
+      "https://seg2.cdn.example.com/seg-1.ts": { body: "media" },
+      "https://keys.example.com/k.bin": { body: "key" },
+    });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        url: MASTER_URL,
+        headers: { cookie: "fixture=1", authorization: "fixture" },
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      const urls = [...text.matchAll(/URI="([^"]+)"/g)].map((match) => match[1] ?? "");
+      urls.push(...text.split("\n").filter((line) => line.startsWith(gw.baseUrl)));
+      for (const url of urls) await (await fetch(url)).text();
+      const sameOrigin = calls.filter(
+        (call) => new URL(call.url).origin === new URL(MASTER_URL).origin,
+      );
+      const foreign = calls.filter(
+        (call) => new URL(call.url).origin !== new URL(MASTER_URL).origin,
+      );
+      expect(sameOrigin).toHaveLength(2);
+      expect(foreign).toHaveLength(2);
+      for (const call of sameOrigin) expect(call.headers.cookie).toBe("fixture=1");
+      for (const call of foreign) {
+        expect(call.headers.cookie).toBeUndefined();
+        expect(call.headers.authorization).toBeUndefined();
+      }
+    } finally {
+      gw.stop();
+    }
+  });
+
   test("idle shutdown fires from the injected clock, not a sleep", async () => {
     const scheduled: Array<() => void> = [];
     const gw = start({
