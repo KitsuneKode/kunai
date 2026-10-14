@@ -34,7 +34,7 @@ No single lane is best at everything. Pick by what you care about tonight:
 In the shell, `/providers` switches lanes, `o` switches sources, `k` switches
 quality, and the subtitle picker lists every track the lane resolved. If a
 provider is down for everyone, switch it off in `/providers` → "Turn
-providers on/off" and it stays out of your way until it recovers. See
+providers on/off" and it stays off until you enable it again. See
 [providers](/docs/users/providers) for fallback and priority.
 
 ## Request a provider
@@ -59,7 +59,11 @@ listing, and stream resolve with subtitles, quality, and audio evidence. A
 community plugin index is on the roadmap. Authors will scaffold from a
 template, run the same contract suite the built-in lanes pass (including the
 rule that a provider never reports success for a stream it has not probed),
-and submit with a short research dossier. Until the index opens, the path is:
+and submit with a short research dossier. The third-party loader is still a
+proposal: an in-process JavaScript module has the application's OS permissions,
+so passing provider ports does not sandbox it. Third-party installation needs
+an explicit trust decision and an enforceable execution policy before shipping.
+Until the index opens, the path is:
 
 1. Read [contribute](/docs/developer/contribute) for workflow and standards.
 2. Prototype against the provider contract and the pinned-title smoke pattern.
