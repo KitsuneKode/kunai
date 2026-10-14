@@ -81,12 +81,18 @@ function sourceRowFromAttempt(attempt: unknown): PlaybackFailureWaterfallRow | n
   const failureClass = stringify(record.failureClass);
   const stage = stringify(record.stage);
   const message = stringify(record.message);
+  const core = failureClass ?? trimProviderMessage(message);
+  // The label already carries `server · stage`, so repeating the stage in the
+  // detail renders "wings-cdn · seed · seed · seed-unavailable" in the failure
+  // panel. Keep the stage in the detail only when the label has no server or
+  // source identity to anchor it.
+  const labelHasIdentity =
+    stringify(record.serverId) !== null || stringify(record.sourceId) !== null;
   if (type === "source:failed") {
     return {
       label,
       status: "failed",
-      detail:
-        [stage, failureClass ?? trimProviderMessage(message)].filter(Boolean).join(" · ") || null,
+      detail: labelHasIdentity ? core : [stage, core].filter(Boolean).join(" · ") || null,
     };
   }
   if (type === "source:success") {
@@ -99,7 +105,7 @@ function sourceRowFromAttempt(attempt: unknown): PlaybackFailureWaterfallRow | n
   return {
     label,
     status: "running",
-    detail: stage ? `${stage} · tried` : "tried",
+    detail: labelHasIdentity ? "tried" : stage ? `${stage} · tried` : "tried",
   };
 }
 

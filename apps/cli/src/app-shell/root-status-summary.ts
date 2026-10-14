@@ -148,13 +148,18 @@ export function buildRootStatusSummary({
     crumbParts.push("↓ offline");
   } else {
     // The lane describes the search context ("series" vs "anime"), which is the
-    // right crumb while browsing. Once a concrete title is playing, though, a
-    // movie opened from the series lane read "series" in the header while the
-    // rail beside it read "movie" — two panels contradicting each other about
-    // the same title. Correct only that case: the anime and YouTube lanes carry
-    // real meaning a title's own type would lose.
+    // right crumb while browsing. Once a concrete title is resolving or
+    // playing, though, a movie opened from the series lane read "series" in
+    // the header while the rail beside it read "movie" — two panels
+    // contradicting each other about the same title. Correct that case
+    // whenever a title is committed (bootstrap included), not only once the
+    // transport starts: idle/browse keeps the lane crumb because there is no
+    // single title to contradict. The anime and YouTube lanes carry real
+    // meaning a title's own type would lose.
+    const titleCommitted =
+      isActivePlayback || rootStatus === "loading" || rootStatus === "resolving";
     const laneCrumb =
-      isActivePlayback && state.currentTitle?.type === "movie"
+      titleCommitted && state.currentTitle?.type === "movie"
         ? "movie"
         : formatSessionLaneLabel(state.mode);
     crumbParts.push(laneCrumb, providerCrumb);

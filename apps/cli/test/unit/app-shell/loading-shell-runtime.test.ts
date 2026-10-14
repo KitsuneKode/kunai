@@ -197,6 +197,17 @@ describe("loading shell runtime policy", () => {
     expect(normalizeProviderDetail("vidking · direct-http")).toBe("vidking · direct-http");
   });
 
+  test("provider detail strips terminal escapes and control characters", () => {
+    // Provider-supplied text reaches this one-line slot raw; ANSI colors,
+    // newlines, or bidi controls must not shatter the loading shell layout.
+    expect(normalizeProviderDetail("Provider: \x1b[31mvidking\x1b[0m · slow\nretry")).toBe(
+      "vidking · slowretry",
+    );
+    expect(normalizeProviderDetail("a\u202eb\u200fz")).toBe("abz");
+    expect(normalizeProviderDetail("   ")).toBeNull();
+    expect(normalizeProviderDetail(null)).toBeNull();
+  });
+
   test("stall prompt mentions diagnostics only when command actions are available", () => {
     expect(stallRecoveryPromptDetail({ canOpenDiagnostics: true })).toContain("/diagnostics");
     expect(stallRecoveryPromptDetail({ canOpenDiagnostics: false })).not.toContain("/diagnostics");
