@@ -1,5 +1,4 @@
-import { readFileSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
@@ -14,10 +13,10 @@ import { isJsonString } from "@kunai/types";
 
 const MAX_HISTORY = 50;
 
-function readHistory(file: string): string[] {
+async function readHistory(file: string): Promise<string[]> {
   let raw: string;
   try {
-    raw = readFileSync(file, "utf8");
+    raw = await readFile(file, "utf8");
   } catch (error) {
     if (errorCode(error) === "ENOENT") return [];
     throw error;
@@ -41,15 +40,59 @@ export function createSearchHistoryStore(
   const pending: { file: string; query: string }[] = [];
   let queue: Promise<void> = Promise.resolve();
   let lastAttempt: Promise<void> = queue;
+  const snapshots = new Map<string, readonly string[]>();
+  const refreshing = new Map<string, Promise<void>>();
+  const revisions = new Map<string, number>();
+  const listeners = new Set<() => void>();
+  const publish = (file: string, history: readonly string[]) => {
+    const prior = snapshots.get(file);
+    if (prior?.length === history.length && prior.every((value, index) => value === history[index]))
+      return;
+    snapshots.delete(file);
+    snapshots.set(file, history);
+    // A running app uses one profile; bound snapshots across profile switches.
+    if (snapshots.size > 4) {
+      const oldest = snapshots.keys().next().value;
+      if (oldest !== undefined) {
+        snapshots.delete(oldest);
+        revisions.delete(oldest);
+      }
+    }
+    for (const listener of listeners) listener();
+  };
   return {
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    refresh(): Promise<void> {
+      const file = resolveFile();
+      const existing = refreshing.get(file);
+      if (existing) return existing;
+      const revision = revisions.get(file) ?? 0;
+      const work = queue
+        .then(async () => {
+          let history: string[];
+          try {
+            history = await readHistory(file);
+          } catch {
+            history = [];
+          } // A corrupt history cannot block search.
+          // A refresh that raced an accepted local query must not replace its
+          // durable snapshot with older bytes from before the write.
+          if ((revisions.get(file) ?? 0) === revision) publish(file, history);
+        })
+        .finally(() => {
+          refreshing.delete(file);
+        });
+      refreshing.set(file, work);
+      return work;
+    },
     get(): readonly string[] {
       const file = resolveFile();
-      let disk: string[];
-      try {
-        disk = readHistory(file);
-      } catch {
-        disk = [];
-      } // Broken history must not prevent searching.
+      const disk = snapshots.get(file) ?? [];
       const local = pending
         .filter((entry) => entry.file === file)
         .map((entry) => entry.query)
@@ -63,6 +106,8 @@ export function createSearchHistoryStore(
       // never redirect an already accepted query into another profile.
       const entry = { file: resolveFile(), query: trimmed };
       pending.push(entry);
+      revisions.set(entry.file, (revisions.get(entry.file) ?? 0) + 1);
+      for (const listener of listeners) listener();
       lastAttempt = queue
         .then(async () => {
           await mkdir(dirname(entry.file), { recursive: true });
@@ -73,9 +118,10 @@ export function createSearchHistoryStore(
             async () => {
               // The lock owns the read AND replacement. A per-process promise
               // chain or atomic rename alone cannot preserve sibling appends.
-              const disk = readHistory(entry.file);
+              const disk = await readHistory(entry.file);
               const merged = [...new Set([entry.query, ...disk])].slice(0, MAX_HISTORY);
               await writeAtomicJson(entry.file, merged);
+              publish(entry.file, merged);
             },
           );
         })
@@ -98,3 +144,6 @@ const store = createSearchHistoryStore();
 export const getSearchHistory = () => store.get();
 export const addSearchQuery = (query: string) => store.add(query);
 export const flushSearchHistory = () => store.flush();
+
+export const refreshSearchHistory = () => store.refresh();
+export const subscribeSearchHistory = (listener: () => void) => store.subscribe(listener);
