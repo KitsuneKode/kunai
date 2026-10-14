@@ -76,21 +76,26 @@ describe("Kanna's coats", () => {
     expect(layoutShared).toContain("enabled: true");
   });
 
-  test("the cycler does the orb eclipse and the view-transition circle reveal", () => {
+  test("the cycler does the orb eclipse and the hook the view-transition reveal", () => {
     const source = fs.readFileSync(
       path.join(DOCS_APP_ROOT, "components/theme/theme-cycler.tsx"),
       "utf-8",
     );
+    const hook = fs.readFileSync(
+      path.join(DOCS_APP_ROOT, "components/theme/use-coat-cycler.ts"),
+      "utf-8",
+    );
     expect(source).toContain("mask={`url(#");
-    expect(source).toContain("startViewTransition");
-    expect(source).toContain("::view-transition-new(root)");
-    expect(source).toContain("prefers-reduced-motion");
-    expect(source).toContain(THEME_STORAGE_KEY);
+    expect(source).toContain("useCoatCycler");
+    expect(hook).toContain("startViewTransition");
+    expect(hook).toContain("::view-transition-new(root)");
+    expect(hook).toContain("prefers-reduced-motion");
+    expect(hook).toContain("THEME_STORAGE_KEY");
   });
 
   test("every coat declares a reveal variant the keyframe builder covers", () => {
     const source = fs.readFileSync(
-      path.join(DOCS_APP_ROOT, "components/theme/theme-cycler.tsx"),
+      path.join(DOCS_APP_ROOT, "components/theme/use-coat-cycler.ts"),
       "utf-8",
     );
     const reveals = new Set(kunaiThemes.map((theme) => theme.reveal));
@@ -147,5 +152,34 @@ describe("scroll and anchor fixes", () => {
     expect(block).toContain("pointer-events: none");
     expect(block).toContain("z-index: 30");
     expect(layoutTsx).toContain('className="kunai-edge-fade"');
+  });
+});
+
+describe("the pull cord", () => {
+  const pullCord = fs.readFileSync(
+    path.join(DOCS_APP_ROOT, "components/theme/pull-cord.tsx"),
+    "utf-8",
+  );
+
+  test("is mounted on every route but renders only off the docs column", () => {
+    expect(layoutTsx).toContain("<PullCord />");
+    expect(pullCord).toContain('pathname?.startsWith("/docs")');
+    expect(pullCord).toContain("usePathname");
+  });
+
+  test("the rope is a real verlet sim that trips a detent mid-pull", () => {
+    expect(pullCord).toContain("Float64Array");
+    expect(pullCord).toContain("DETENT");
+    expect(pullCord).toContain("GRAVITY");
+    expect(pullCord).toContain("requestAnimationFrame");
+    expect(pullCord).toContain("armed");
+  });
+
+  test("it shares the coat cycler so a pull blooms like the orb", () => {
+    expect(pullCord).toContain("useCoatCycler");
+    expect(pullCord).toContain("prefers-reduced-motion");
+    expect(pullCord).toContain("pointer-events-none");
+    expect(pullCord).toContain("<button");
+    expect(pullCord).toContain("focus:not-sr-only");
   });
 });

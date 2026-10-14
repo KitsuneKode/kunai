@@ -280,9 +280,8 @@
  */
 .kunai-edge-fade {
   position: fixed;
-  top: 0;
-  right: 0;
-  left: 0;
+  inset-block-start: 0;
+  inset-inline: 0;
   height: 5.5rem;
   pointer-events: none;
   z-index: 30;
@@ -295,6 +294,29 @@
   -webkit-backdrop-filter: blur(5px);
   mask-image: linear-gradient(to bottom, black 30%, transparent);
   -webkit-mask-image: linear-gradient(to bottom, black 30%, transparent);
+}
+
+/*
+ * The coat cycler's interaction states — hover only where a precise pointer
+ * can hover, a press squash so it reads as a button, and a ring on keyboard
+ * focus. The squash transition is motion-gated; the state itself is not.
+ */
+@media (hover: hover) and (pointer: fine) {
+  .kunai-theme-cycler:hover {
+    color: var(--color-fd-foreground);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kunai-theme-cycler {
+    transition: transform 160ms var(--ease-drawer);
+  }
+}
+.kunai-theme-cycler:active {
+  transform: scale(0.88);
+}
+.kunai-theme-cycler:focus-visible {
+  outline: 2px solid var(--color-fd-ring);
+  outline-offset: 2px;
 }
 
 /*

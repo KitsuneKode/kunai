@@ -9,6 +9,7 @@ import { NavCompact } from "@/components/layout/nav-compact";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { MotionProvider } from "@/components/providers/motion-provider";
 import { LazySearchDialog } from "@/components/search/lazy-search-dialog";
+import { PullCord } from "@/components/theme/pull-cord";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { fontClassNames } from "@/lib/fonts";
 /* eslint-enable import/no-unassigned-import */
@@ -84,6 +85,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
             under the nav dissolves instead of clipping. CSS-only. */}
         <div className="kunai-edge-fade" aria-hidden="true" />
         <NavCompact />
+        <PullCord />
         <HashScrollFix />
         <BackToTop />
         <KunaiFoxRoamer />

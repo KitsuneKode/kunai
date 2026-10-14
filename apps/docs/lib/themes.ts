@@ -30,7 +30,7 @@ export type KunaiTheme = {
  *  removes `data-theme` rather than setting it. */
 export const DEFAULT_THEME_ID = "sakura";
 
-export const kunaiThemes: readonly KunaiTheme[] = [
+export const kunaiThemes: readonly [KunaiTheme, ...KunaiTheme[]] = [
   {
     id: "sakura",
     label: "Sakura",
