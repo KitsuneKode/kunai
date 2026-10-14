@@ -72,6 +72,7 @@ export type ShellAction =
   | "mark-season-watched"
   | "mark-up-to-episode"
   | "watch"
+  | "torrent"
   | "download"
   | "downloads"
   | "library"
@@ -565,6 +566,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "mark-season-watched":
     case "mark-up-to-episode":
     case "watch":
+    case "torrent":
     case "continue":
     case "play-local":
     case "watch-online":

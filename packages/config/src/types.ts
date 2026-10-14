@@ -127,6 +127,13 @@ export interface KitsuneConfig {
   presenceDiscordClientId: string;
   presenceDiscordOpenUrl: string;
   videasySessionToken: string;
+  /**
+   * User-owned Real-Debrid API token for the experimental torrent unrestrict
+   * lane. Empty by default and never shipped with a value — same sensitivity
+   * rules as every other credential. With no token the debrid lane is
+   * skipped and only the local swarm engine runs.
+   */
+  debridApiKey: string;
   providerRelay: ProviderRelayConfig;
   videasySessionExpiresAt: number;
   videasyAppId: "vidking" | "bc-frontend";

@@ -1,0 +1,58 @@
+---
+title: Torrents
+description: Stream magnet links directly with a local swarm engine, plus the experimental debrid lane.
+status: experimental
+---
+
+`/torrent` plays a magnet link without leaving Kunai: paste it when prompted,
+or type it straight into search. Anything starting with `magnet:` routes to
+the torrent flow instead of title search.
+
+## How it plays
+
+1. **Metadata first.** Kunai joins the swarm (DHT, trackers, peer exchange)
+   and reads the torrent listing. No usable listing, no playback.
+2. **Largest video file wins.** Season packs and sidecars are skipped; the
+   biggest video file is selected and prioritized head-first.
+3. **Readiness gate.** Playback starts only after the file head proves a
+   recognizable container header (complete MP4 moov box or Matroska EBML marker).
+   Unknown bytes and MP4 files without moov are refused, even when fully downloaded.
+   This checks header evidence; mpv still determines whether decoding succeeds. A stalled
+   swarm fails honestly instead of handing mpv dead bytes.
+4. **Local gateway.** The file is served over `127.0.0.1` with full seeking,
+   and mpv plays the local URL. GET, HEAD, and single byte ranges are supported;
+   active reads keep the gateway alive. Admission is capped at four concurrent
+   reads and sixteen mounted files per session.
+5. **Seed while watching.** Upload runs to the swarm during playback and stops
+   when playback ends. There is no background seeding unless you ask for it.
+
+Only TCP swarms are used. WebRTC peers and µTP are disabled: the first has no
+implementation bundled, the second needs a native module Bun cannot run.
+
+## When the swarm stalls
+
+Cancelling stops the swarm and gateway and never contacts debrid. Metadata waits,
+file reads, and readiness retries are cancellable; a stalled head read cannot
+outlive its readiness deadline.
+
+If no recognizable playable head arrives in time and you configured a debrid token
+(`debridApiKey` in `config.json`, experimental), Kunai unrestricts the magnet
+through Real-Debrid once and plays the direct URL. Without a token, the
+attempt ends with the reason, usually too few seeders.
+
+The token belongs to you: it is never shipped, never logged, and sent only
+to Real-Debrid's API. There is no other provider, no shared credential.
+
+## Limits in v1
+
+- No resume, history, post-play, or autoplay integration: torrent plays are
+  instant sessions outside the title pipeline.
+- Embedded subtitles only (mpv reads them from the file); no external
+  subtitle lookup.
+- Downloads capture HTTP(S) streams only; torrent pieces are streamed, not
+  kept as offline downloads: pieces are written into a private attempt directory
+  and deleted by the torrent store on graceful shutdown. A crash can leave residue
+  that requires ownership-safe cleanup.
+
+See [downloads and offline](/docs/users/downloads-and-offline) for the
+download queue and [providers](/docs/users/providers) for switching lanes.

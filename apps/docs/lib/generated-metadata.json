@@ -1,7 +1,7 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "commandCount": 85,
+  "commandCount": 86,
   "providerIds": [
     "videasy",
     "vidlink",
@@ -632,6 +632,12 @@
       "label": "Watch a Shared Code",
       "aliases": ["watch", "open-share", "open-link"],
       "description": "Open a kunai:// share link from your clipboard"
+    },
+    {
+      "id": "torrent",
+      "label": "Play a Torrent",
+      "aliases": ["torrent", "magnet", "play-magnet"],
+      "description": "Stream a magnet link directly (local swarm first, experimental debrid fallback)"
     },
     {
       "id": "pick-episode",

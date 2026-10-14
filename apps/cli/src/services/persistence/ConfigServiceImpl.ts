@@ -291,6 +291,7 @@ export class ConfigServiceImpl implements ConfigService {
         loaded.mpvInProcessStreamReconnectMaxAttempts,
       ),
       videasySessionToken: normalizeOptionalSecret(loaded.videasySessionToken),
+      debridApiKey: normalizeOptionalSecret(loaded.debridApiKey),
       videasySessionExpiresAt: normalizeVideasySessionExpiresAt(
         loaded.videasySessionExpiresAt,
         loaded.videasySessionToken,
@@ -731,6 +732,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.videasySessionToken;
   }
 
+  get debridApiKey(): string {
+    return this.config.debridApiKey;
+  }
+
   get providerRelay(): ProviderRelayConfig {
     return {
       ...this.config.providerRelay,
@@ -1022,6 +1027,9 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
       ...(partial.videasySessionToken !== undefined
         ? { videasySessionToken: normalizeOptionalSecret(partial.videasySessionToken) }
+        : null),
+      ...(partial.debridApiKey !== undefined
+        ? { debridApiKey: normalizeOptionalSecret(partial.debridApiKey) }
         : null),
       ...(partial.providerRelay !== undefined
         ? { providerRelay: normalizeProviderRelayConfig(partial.providerRelay) }

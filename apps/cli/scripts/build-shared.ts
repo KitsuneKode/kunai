@@ -11,6 +11,8 @@ import { join } from "node:path";
 
 import type { BunPlugin } from "bun";
 
+import { torrentNativeStubPlugin } from "../src/services/torrent/torrent-native-stubs";
+
 export type BunBuildMetafile = NonNullable<Awaited<ReturnType<typeof Bun.build>>["metafile"]>;
 export type BunBuildOptions = NonNullable<Parameters<typeof Bun.build>[0]>;
 
@@ -85,7 +87,10 @@ export function releaseBuildBaseOptions(
     // Kunai reads KUNAI_* and other process.env at runtime — never inline the
     // build machine's environment into published artifacts.
     env: "disable",
-    plugins: [reactDevtoolsStubPlugin(root)],
+    plugins: [
+      reactDevtoolsStubPlugin(root),
+      torrentNativeStubPlugin(join(root, "src/services/torrent/stubs")),
+    ],
     metafile: true,
     tsconfig: join(root, "tsconfig.json"),
   };
@@ -308,8 +313,16 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * NPM_PACK_PACKED_BUDGET_BYTES / NPM_PACK_UNPACKED_BUDGET_BYTES, which this
  * change does not touch and which the exact-tarball verification added in #166
  * has since made stricter.
+ *
+ * Raised from 3_048 on 2026-10-13 for the torrent streaming engine: the
+ * webtorrent v3 dependency (DHT, trackers, wire protocol, sequential picker)
+ * is the first new runtime dependency since the budget began, and it measures
+ * 3,711,069 bytes against the 3,121,152-byte cap -- ~590 KiB of vendored
+ * swarm machinery with tree-shaking already applied (WebRTC/µTP/native
+ * helpers are stubbed out of the graph, not bundled). 3_680 leaves ~57 KiB
+ * of headroom, restoring real slack rather than clearing one change.
  */
-export const NPM_BUNDLE_BUDGET_KB = 3_048;
+export const NPM_BUNDLE_BUDGET_KB = 3_680;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

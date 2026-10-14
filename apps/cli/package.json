@@ -43,7 +43,7 @@
     "provenance": true
   },
   "scripts": {
-    "dev": "bun run src/main.ts",
+    "dev": "bun --preload ./src/services/torrent/preload.ts run src/main.ts",
     "profile:anime": "KUNAI_HEAP_PROFILE=1 KUNAI_HEAP_CAP_MB=2048 bun run src/main.ts -a --debug",
     "start": "bun run dist/kunai.js",
     "agent:drive": "bun test/agent/drive.ts",
@@ -116,7 +116,9 @@
   "dependencies": {
     "commander": "catalog:cli",
     "ink": "catalog:cli",
-    "react": "catalog:"
+    "parse-torrent": "^11.0.24",
+    "react": "catalog:",
+    "webtorrent": "^3.0.21"
   },
   "devDependencies": {
     "@kunai/config": "workspace:*",

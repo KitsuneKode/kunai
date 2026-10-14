@@ -75,6 +75,7 @@ export const PALETTE_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
   "stats",
   "menu",
   "download",
+  "torrent",
   "watchlist",
   "bookmark",
   "follow",
