@@ -51,6 +51,9 @@ function fixtureClient(options: WebTorrentAddOptions[]) {
       queueMicrotask(() => torrent.emit("ready"));
       return torrent;
     },
+    on() {
+      return this;
+    },
     destroy() {},
   };
 }

@@ -5,6 +5,19 @@ import { createRealDebridPort } from "@/services/debrid/realdebrid";
 import { createTorrentEngine } from "@/services/torrent/torrent-engine";
 import parseTorrent from "parse-torrent";
 
+export type TorrentPlaybackContext = {
+  readonly config: Pick<Container["config"], "debridApiKey">;
+  readonly stateManager: Pick<Container["stateManager"], "dispatch">;
+  readonly diagnosticsService: Pick<Container["diagnosticsService"], "record">;
+  readonly player: Pick<Container["player"], "play">;
+};
+
+export type TorrentPlaybackDeps = {
+  readonly createEngine?: typeof createTorrentEngine;
+  readonly createGateway?: typeof startLocalMediaGateway;
+  readonly createDebrid?: typeof createRealDebridPort;
+};
+
 export type TorrentPlaybackOutcome =
   | { readonly status: "played"; readonly endReason: string }
   | { readonly status: "failed"; readonly message: string }
@@ -24,12 +37,12 @@ export type TorrentDiagnosticContext = {
   readonly infoHash?: string;
 };
 
-function feedback(container: Container, note: string): void {
+function feedback(container: TorrentPlaybackContext, note: string): void {
   container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note });
 }
 
 function diagnose(
-  container: Container,
+  container: TorrentPlaybackContext,
   operation: string,
   message: string,
   context: TorrentDiagnosticContext,
@@ -53,11 +66,13 @@ function diagnose(
  * external subtitle lookup (embedded tracks only, via mpv).
  */
 export async function playTorrentMagnet(
-  container: Container,
+  container: TorrentPlaybackContext,
   magnet: string,
   options: { readonly signal?: AbortSignal } = {},
+  deps: TorrentPlaybackDeps = {},
 ): Promise<TorrentPlaybackOutcome> {
   const { signal } = options;
+  if (signal?.aborted) return { status: "cancelled" };
   let infoHash = "";
   try {
     const parsed = await parseTorrent(magnet.trim());
@@ -67,26 +82,29 @@ export async function playTorrentMagnet(
   }
   if (!infoHash) return { status: "failed", message: "That magnet link did not parse." };
 
-  const engine = createTorrentEngine({
+  const engine = (deps.createEngine ?? createTorrentEngine)({
     onEvent: (event) =>
       container.diagnosticsService.record({
         ...event,
         context: { ...event.context, infoHash: infoHash.slice(0, 12) },
       }),
   });
-  const gateway = startLocalMediaGateway({
+  const gateway = (deps.createGateway ?? startLocalMediaGateway)({
     onStopped: (reason) =>
       diagnose(container, "torrent.gateway.stopped", "Torrent gateway stopped", { reason }),
   });
 
+  let released = false;
   const cleanup = (reason: "playback-end" | "session-release") => {
+    if (released) return;
+    released = true;
     gateway.stop(reason);
     engine.destroy();
   };
 
   try {
     feedback(container, "Joining the swarm — fetching torrent metadata…");
-    const torrent = await engine.addMagnet(magnet.trim());
+    const torrent = await engine.addMagnet(magnet.trim(), { signal });
     feedback(container, "Waiting for a playable file head (peers joining)…");
     let fileName = "stream";
     let mountUrl: string;
@@ -125,6 +143,7 @@ export async function playTorrentMagnet(
         },
       });
     } catch (error) {
+      if (signal?.aborted) throw error;
       // Local swarm failed — the experimental debrid lane gets one chance
       // when the user configured a token, then the attempt ends honestly.
       const token = container.config.debridApiKey.trim();
@@ -132,7 +151,10 @@ export async function playTorrentMagnet(
       feedback(container, "Swarm stalled — trying debrid unrestrict (experimental)…");
       diagnose(container, "torrent.debrid.fallback", "Falling back to debrid", {});
       try {
-        const directUrl = await createRealDebridPort(token).unrestrict(magnet.trim(), signal);
+        const directUrl = await (deps.createDebrid ?? createRealDebridPort)(token).unrestrict(
+          magnet.trim(),
+          signal,
+        );
         return await playDirectUrl(container, directUrl, fileName, cleanup, signal);
       } catch (debridError) {
         throw debridError instanceof Error ? debridError : error;
@@ -145,13 +167,14 @@ export async function playTorrentMagnet(
     const message = error instanceof Error ? error.message : String(error);
     feedback(container, `Torrent failed: ${message}`);
     diagnose(container, "torrent.failed", "Torrent playback failed", { message });
-    cleanup("session-release");
     return { status: "failed", message };
+  } finally {
+    cleanup("session-release");
   }
 }
 
 async function playDirectUrl(
-  container: Container,
+  container: TorrentPlaybackContext,
   url: string,
   fileName: string,
   cleanup: (reason: "playback-end" | "session-release") => void,

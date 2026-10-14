@@ -39,6 +39,8 @@ declare module "webtorrent" {
     on(event: "done", listener: () => void): this;
     on(event: "wire", listener: (wire: WebTorrentWire) => void): this;
     on(event: "warning" | "error", listener: (err: Error) => void): this;
+    off(event: "metadata" | "ready" | "infoHash", listener: () => void): this;
+    off(event: "error", listener: (err: Error) => void): this;
     select(start: number, end: number, priority?: number): void;
     deselect(start: number, end: number, priority?: number): void;
     addPeer(peer: string): boolean;
