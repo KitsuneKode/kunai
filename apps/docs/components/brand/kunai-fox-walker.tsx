@@ -60,6 +60,18 @@ export const WALKER_PARTS = [
 ] as const;
 export type WalkerPart = (typeof WALKER_PARTS)[number];
 
+/** The eye's rest aperture — an open ellipse. `setFace` writes `ry` to blink. */
+const EYE_RY = 12.5;
+const EYE_RY_SHUT = 1.4;
+
+export type FoxFace = {
+  /** Pupil drift, in viewBox units. Positive x is towards her nose. */
+  readonly x: number;
+  readonly y: number;
+  /** Lid aperture, 0 shut to 1 open. Values between are a sleepy lid. */
+  readonly open: number;
+};
+
 function round(value: number): string {
   return value.toFixed(2);
 }
@@ -101,6 +113,12 @@ export function partTransforms(pose: FoxPose) {
 export type FoxWalkerHandle = {
   /** Hang a pose on the drawing. Cheap enough to call every animation frame. */
   readonly setPose: (pose: FoxPose) => void;
+  /**
+   * The face channel — where the eye looks and how open the lid is. Kept apart
+   * from `setPose` so a blink never disturbs the pose rig: the eye is the one
+   * part the gait knows nothing about.
+   */
+  readonly setFace: (face: FoxFace) => void;
 };
 
 type KunaiFoxWalkerProps = {
@@ -144,6 +162,7 @@ export const KunaiFoxWalker = forwardRef<FoxWalkerHandle, KunaiFoxWalkerProps>(
     // Resolved on first use and then held: a querySelector per part per frame
     // is a layout-free but needless cost at 60Hz.
     const partsRef = useRef<Map<WalkerPart, Element> | null>(null);
+    const eyeRef = useRef<SVGEllipseElement | null>(null);
     const transforms = partTransforms(STANDING_POSE);
 
     useImperativeHandle(
@@ -164,6 +183,15 @@ export const KunaiFoxWalker = forwardRef<FoxWalkerHandle, KunaiFoxWalkerProps>(
           for (const [part, element] of partsRef.current) {
             element.setAttribute("transform", next[part]);
           }
+        },
+        setFace(face) {
+          const eye =
+            eyeRef.current ??
+            (eyeRef.current =
+              svgRef.current?.querySelector<SVGEllipseElement>('[data-part="eye"]') ?? null);
+          if (!eye) return;
+          eye.setAttribute("transform", `translate(${round(face.x)} ${round(face.y)})`);
+          eye.setAttribute("ry", round(EYE_RY_SHUT + (EYE_RY - EYE_RY_SHUT) * face.open));
         },
       }),
       [],
@@ -228,7 +256,7 @@ export const KunaiFoxWalker = forwardRef<FoxWalkerHandle, KunaiFoxWalkerProps>(
               d="M204,174 C212,160 246,158 273,167 C275,190 258,208 232,208 C212,208 200,192 204,174 Z"
               fill={LIGHT}
             />
-            <ellipse cx={234} cy={150} rx={8} ry={12.5} fill={INK} />
+            <ellipse data-part="eye" cx={234} cy={150} rx={8} ry={EYE_RY} fill={INK} />
             <ellipse cx={272} cy={168} rx={7} ry={5.5} fill={INK} />
             {/* The kunai she carries: a ring at the mouth and a short blade. */}
             <circle cx={265} cy={196} r={5} fill="none" stroke={LIGHT} strokeWidth={3} />

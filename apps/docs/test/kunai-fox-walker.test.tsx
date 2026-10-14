@@ -43,4 +43,12 @@ describe("KunaiFoxWalker", () => {
     expect(left).toContain('data-facing="left"');
     expect(html).toContain('data-facing="right"');
   });
+
+  test("the eye is addressable and open, so setFace can blink and glance it", () => {
+    // The face channel is the one part outside WALKER_PARTS — the gait owns
+    // the body, `setFace` owns the eye. This pins that the element exists and
+    // starts awake rather than shut.
+    expect(html).toContain('data-part="eye"');
+    expect(html).toContain('ry="12.5"');
+  });
 });

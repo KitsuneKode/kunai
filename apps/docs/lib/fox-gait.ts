@@ -195,6 +195,29 @@ export function withHeading(pose: FoxPose, headingDeg: number): FoxPose {
 
 const PLANTED: LegAngles = { hip: 0, knee: KNEE_PLANTED / 2 };
 
+/**
+ * Her sit: haunches folded under, chest and head held up, tail plume lifted
+ * behind her — the alert, bushy sweep of a sitting fox.
+ *
+ * The torso tilt is modest on purpose — the rig rotates about the torso centre,
+ * so a steep sit would push her hindquarters below the ground line and lift her
+ * front feet off it. The sit reads mostly from the folded back legs, the raised
+ * tail, and a head held a little higher than the body.
+ */
+export const SIT_POSE: FoxPose = {
+  bodyY: 20,
+  bodyPitch: -8,
+  headY: -6,
+  headPitch: -14,
+  tail: 38,
+  earNear: -4,
+  earFar: -2,
+  frontNear: { hip: -6, knee: 5 },
+  frontFar: { hip: -6, knee: 5 },
+  backNear: { hip: 52, knee: 76 },
+  backFar: { hip: 52, knee: 76 },
+};
+
 /** All four feet under her, tail at rest. The pose she holds when she stops. */
 export const STANDING_POSE: FoxPose = {
   bodyY: 0,
@@ -209,6 +232,46 @@ export const STANDING_POSE: FoxPose = {
   backNear: PLANTED,
   backFar: PLANTED,
 };
+
+/**
+ * The living sit: `SIT_POSE` plus the small motions a resting animal never
+ * stops making.
+ *
+ * A slow breath through the torso, the head answering a beat later, the tail
+ * tip swaying, the near ear dipping and recovering on its own longer period —
+ * each channel on its own frequency so the pattern never visibly repeats, and
+ * every amplitude small enough that she still reads as settled, not restless.
+ * Deterministic in `t` so tests can pin it and the still frame (t=0) is a
+ * valid pose.
+ */
+export function settlePose(t: number): FoxPose {
+  const breath = Math.sin(t * 0.9);
+  const headLag = Math.sin(t * 0.9 - 0.55);
+  return {
+    ...SIT_POSE,
+    bodyY: SIT_POSE.bodyY - 1.4 * breath,
+    headY: SIT_POSE.headY + 1.1 * headLag,
+    tail: SIT_POSE.tail + 3.2 * Math.sin(t * 0.62),
+    earNear: SIT_POSE.earNear + 1.6 * Math.sin(t * 1.13),
+    earFar: SIT_POSE.earFar + 1.1 * Math.sin(t * 0.97 + 1.3),
+  };
+}
+
+/**
+ * Where the eye drifts, given the pointer's offset from her in screen pixels
+ * and which way she faces.
+ *
+ * Expressed in her drawing space — positive x is towards her nose, so the
+ * caller flips the pointer dx when she faces left. Biased forward: an animal's
+ * glance lands ahead of itself more often than behind. The clamp is small on
+ * purpose; the head pitch sells the look, the pupil only finishes it.
+ */
+export function eyeOffset(dx: number, dy: number): { readonly x: number; readonly y: number } {
+  return {
+    x: Math.min(4.5, Math.max(-3.2, dx * 0.02)),
+    y: Math.min(2.6, Math.max(-2.2, dy * 0.016)),
+  };
+}
 
 function lerpLeg(from: LegAngles, to: LegAngles, t: number): LegAngles {
   return { hip: lerp(from.hip, to.hip, t), knee: lerp(from.knee, to.knee, t) };

@@ -5,9 +5,11 @@ import { type FoxWalkerHandle, KunaiFoxWalker } from "@/components/brand/kunai-f
 import {
   advancePhase,
   blendPose,
+  eyeOffset,
   type FoxPose,
   gaitPose,
   headingFromMotion,
+  settlePose,
   smoothHeading,
   STANDING_POSE,
   withHeading,
@@ -29,6 +31,7 @@ import {
 import { parsePlace, PLACE_KEY, type Place, seedFor, toPlace } from "@/lib/kanna-place";
 import {
   createRoamerState,
+  IDLE_TO_SLEEP_MS,
   poseForPhase,
   stepRoamer,
   type RoamerPhase,
@@ -189,6 +192,12 @@ const SLEEPY_LINES = [
   "mm. filler episode.",
 ] as const;
 
+/** Poked once or twice while she is under: she stirs, but she does not get up. */
+const STIR_LINES = ["mm.", "hm?", "five more minutes.", "…what."] as const;
+
+/** The third poke while she sleeps is the one she actually gets up for. */
+const WOKEN_LINES = ["i'm up. i'm up.", "ok. what's on.", "wasn't even dreaming."] as const;
+
 /** The pool that matches what she is visibly doing, and how she feels about it. */
 function poolFor(phase: RoamerPhase, mood: Mood): readonly string[] {
   if (mood === "sulking") return SULKING_MUTTERS;
@@ -236,6 +245,30 @@ const LIFE_C = 13;
 const LIFE_SPRING = (cur: number, vel: number, target: number, dt: number) => {
   const v = vel + ((target - cur) * LIFE_K - vel * LIFE_C) * dt;
   return [cur + v * dt, v] as const;
+};
+
+/**
+ * The face layer — the lesson the jelly blob teaches: alive means the *face*
+ * reacts, not just the body. Everything in here is a timestamp on the rAF
+ * clock, so all of it is pauseable and none of it survives a hidden tab.
+ *
+ * - `nextBlinkAt` / `lidUntil` / `lidOpen`: the blink clock — irregular beats,
+ *   a double-blink every so often, and a longer, half-open lid as she drifts
+ *   towards sleep.
+ * - `secondBlinkAt`: the scheduled second half of a double-blink.
+ * - `pointerMovedAt`: stamped by the pointer handler; while it is fresh the
+ *   near ear perks and the eye tracks.
+ * - `nodAt`: when she last said something — the head bobs while a line is up.
+ * - `wagUntil`: a greeting or a happy "come" buys a short tail wag.
+ */
+type FaceState = {
+  nextBlinkAt: number;
+  secondBlinkAt: number;
+  lidUntil: number;
+  lidOpen: number;
+  pointerMovedAt: number;
+  nodAt: number;
+  wagUntil: number;
 };
 
 export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number }) {
@@ -292,15 +325,31 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
   } | null>(null);
   const suppressClick = useRef(false);
   const pokes = useRef(0);
+  // Pokes that landed while she was asleep. Three and she actually gets up;
+  // the counter resets next time she goes under.
+  const sleepPokes = useRef(0);
+  const face = useRef<FaceState>({
+    nextBlinkAt: 0,
+    secondBlinkAt: 0,
+    lidUntil: 0,
+    lidOpen: 1,
+    pointerMovedAt: 0,
+    nodAt: 0,
+    wagUntil: 0,
+  });
   const [mood, setMood] = useState<Mood>("content");
   const [carried, setCarried] = useState(false);
+  // Brief: a poked sleeper's startled face, worn for a beat before she
+  // settles back under. React state because it changes what is drawn.
+  const [startled, setStartled] = useState(false);
   const [bubbleSide, setBubbleSide] = useState<BubbleSide>("center");
   const bubbleSideRef = useRef<BubbleSide>("center");
 
   const [phase, setPhase] = useState<RoamerPhase>("sitting");
   const [facing, setFacing] = useState<"left" | "right">("right");
-  // True from the moment she starts walking until she has finished settling, so
-  // the vector drawing is on screen for exactly as long as it has legs to move.
+  // True whenever the vector drawing is on screen: every leg-moving stride,
+  // and every awake rest too — a sitting Kanna is `settlePose`, a pose that
+  // breathes, not a still. The stills are for sleep and the put-out face.
   const [showWalker, setShowWalker] = useState(false);
   const [line, setLine] = useState<string | null>(null);
   const [enabled, setEnabled] = useState(false);
@@ -364,6 +413,8 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
   }, [machine, fullSize]);
 
   const say = useCallback((pool: readonly string[]) => {
+    // A line on screen is a speaking line: the head bobs while it is up.
+    face.current.nodAt = performance.now();
     setLine((current) => pickLine(pool, current));
   }, []);
 
@@ -417,6 +468,8 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
         if (reaction.outcome === "refused") return;
         pinned.current = false;
         forget();
+        // Answering a call earns a wag — even a grudging one.
+        face.current.wagUntil = performance.now() + 1400;
         // Woken, if she was asleep, so she notices the pointer and walks to it.
         if (here.phase === "asleep") machine.current = { ...here, phase: "sitting", restMs: 0 };
         return;
@@ -428,6 +481,7 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
         phase: command === "nap" ? "asleep" : "sitting",
         restMs: 0,
       };
+      if (command === "nap") sleepPokes.current = 0;
       remember();
       respond(command === "nap" ? "nap" : "stay");
     },
@@ -447,6 +501,7 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
 
     function onMove(event: PointerEvent) {
       pointer.current = { x: event.clientX, y: event.clientY };
+      face.current.pointerMovedAt = performance.now();
       if (!seeded.current) {
         // Drop her in beside the pointer on first sight rather than marching
         // her across the whole viewport from wherever she was parked.
@@ -459,6 +514,7 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
           if (window.sessionStorage.getItem("kunai.roamer.greeted") !== "1") {
             window.sessionStorage.setItem("kunai.roamer.greeted", "1");
             say(WELCOME_LINES);
+            face.current.wagUntil = performance.now() + 1400;
           }
         } catch {
           // No store: she greets when she greets, or not.
@@ -540,6 +596,22 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
       const stepY = finalPos.y - before.pos.y;
       const travelled = Math.hypot(stepX, stepY);
       const stride = gait.current;
+      const f = face.current;
+      // Her mood on the wall clock, not the rAF clock: the mood state's `at` is
+      // a Date.now() epoch, and passing `timestamp` here would leave `now <= at`
+      // forever — `settle` could never decay a sulk. (That mix is exactly what
+      // the glance-suppression below used to suffer: a sulk that never lifted.)
+      const moodNow = moodOf(moodState.current, Date.now());
+      // Awake and not carried: the vector drawing. Travel gets the gait; every
+      // rest — sitting, idle, the noticing beat — gets `settlePose`, the sit
+      // that breathes. Asleep and scooped-up are the stills' job. The carry
+      // gate is `moved`, not the drag handle existing: a press that never
+      // crosses the drag threshold is a poke, not a pickup, and she must not
+      // flicker to the still for the two frames it is held.
+      const settling =
+        next.phase === "sitting" || next.phase === "idle" || next.phase === "noticing";
+      const carriedNow = drag.current?.moved === true;
+      const vector = next.phase === "walking" || (settling && !carriedNow);
       if (next.phase === "walking") {
         stride.settleMs = 0;
         // Start each walk level; the tilt then follows where she is actually going.
@@ -551,13 +623,58 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
         stride.phase = advancePhase(stride.phase, travelled, size);
         // Her path leans off horizontal: nose up to climb, nose down to descend.
         stride.pose = withHeading(gaitPose(stride.phase), stride.heading);
+        // A put-out fox walks with her ears back.
+        const droop = moodNow === "sulking" ? 9 : moodNow === "grumpy" ? 5 : 0;
+        if (droop > 0) {
+          stride.pose = {
+            ...stride.pose,
+            earNear: stride.pose.earNear + droop,
+            earFar: stride.pose.earFar + droop * 0.7,
+          };
+        }
         walkerRef.current?.setPose(stride.pose);
         if (before.phase !== "walking") setShowWalker(true);
-      } else if (showWalkerRef.current) {
+      } else if (settling && !carriedNow) {
+        // Settle into the sit once, then live in it: the target itself breathes,
+        // so blending towards it leaves her moving after the blend is done.
         stride.settleMs += dt * 1000;
-        const t = stride.settleMs / SETTLE_MS;
-        walkerRef.current?.setPose(blendPose(stride.pose, STANDING_POSE, t));
-        if (t >= 1) setShowWalker(false);
+        let pose = blendPose(
+          stride.pose,
+          settlePose(timestamp / 1000),
+          Math.min(1, stride.settleMs / SETTLE_MS),
+        );
+        // The face's moving parts, layered on the breathing sit: the near ear
+        // perks when the pointer stirs nearby, both ears flatten with her
+        // temper, the head nods along with a line on screen, and a greeting or
+        // an answered call buys a short tail wag.
+        const perk =
+          pointer.current &&
+          timestamp - f.pointerMovedAt < 450 &&
+          Math.hypot(pointer.current.x - finalPos.x, pointer.current.y - finalPos.y) < 480
+            ? -7 * (1 - (timestamp - f.pointerMovedAt) / 450)
+            : 0;
+        const droop = moodNow === "sulking" ? 9 : moodNow === "grumpy" ? 5 : 0;
+        const nodAge = (timestamp - f.nodAt) / 1000;
+        const nod = nodAge < 0.7 ? Math.sin(nodAge * 15) * (1 - nodAge / 0.7) * 3 : 0;
+        const wagLeft = (f.wagUntil - timestamp) / 1000;
+        const wag = wagLeft > 0 ? Math.sin(timestamp * 0.026) * 12 * Math.min(1, wagLeft / 0.8) : 0;
+        pose = {
+          ...pose,
+          earNear: pose.earNear + perk + droop,
+          earFar: pose.earFar + droop * 0.7,
+          headPitch: pose.headPitch + nod,
+          tail: pose.tail + wag,
+        };
+        stride.pose = pose;
+        walkerRef.current?.setPose(pose);
+        if (!showWalkerRef.current) setShowWalker(true);
+      } else if (showWalkerRef.current) {
+        // Asleep or scooped up: the vector drawing comes down until she is back
+        // on her feet. Park the stride at standing so the next settle blends
+        // from level instead of unfreezing mid-swing.
+        stride.pose = STANDING_POSE;
+        stride.settleMs = 0;
+        setShowWalker(false);
       }
 
       // React state only when it actually changed: this runs every frame, and
@@ -565,7 +682,12 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
       // Compared with what is drawn, not with the previous step: the phase is also
       // set from outside the step (a nap, being woken, being put down), and a
       // comparison with the previous step would never notice those.
-      if (machine.current.phase !== phaseRef.current) setPhase(machine.current.phase);
+      if (machine.current.phase !== phaseRef.current) {
+        setPhase(machine.current.phase);
+        // A fresh nap clears the sleep-poke count: three pokes wake her, but
+        // only three in a row.
+        if (machine.current.phase === "asleep") sleepPokes.current = 0;
+      }
       if (next.facing !== before.facing) setFacing(next.facing);
 
       const pos = machine.current.pos;
@@ -579,7 +701,7 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
       const resting =
         (next.phase === "sitting" || next.phase === "idle") &&
         !drag.current &&
-        moodOf(moodState.current, now) !== "sulking";
+        moodNow !== "sulking";
       let targetR = 0;
       let targetTx = 0;
       if (resting && pointer.current) {
@@ -607,6 +729,47 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
       [l.sy, l.vsy] = LIFE_SPRING(l.sy, l.vsy, 1, dt);
       if (lifeRef.current) {
         lifeRef.current.style.transform = `translate3d(${l.tx.toFixed(2)}px, 0, 0) rotate(${l.r.toFixed(2)}deg) scale(${l.sx.toFixed(3)}, ${l.sy.toFixed(3)})`;
+      }
+
+      // The face channel, on the vector drawing only — the nap and put-out
+      // stills carry their own painted expressions. The eye tracks the pointer
+      // in her own facing space (a leftward flip must not read backwards), and
+      // the lid blinks on an irregular clock: a double-blink every so often,
+      // and a slower, half-open lid as she drifts towards sleep — the blob's
+      // sleepy-eye, which is what "fighting a nap" looks like.
+      if (vector) {
+        let gx = 0;
+        let gy = 0;
+        if (settling && pointer.current && moodNow !== "sulking") {
+          const gazeX = pointer.current.x - pos.x;
+          const gazeY = pointer.current.y - pos.y;
+          // While she is noticing, the pointer is her whole attention; at rest
+          // it has to be near to be worth a look.
+          if (Math.hypot(gazeX, gazeY) < (next.phase === "noticing" ? 900 : 380)) {
+            const eye = eyeOffset(next.facing === "left" ? -gazeX : gazeX, gazeY);
+            gx = eye.x;
+            gy = eye.y;
+          }
+        }
+        const drowsy = next.phase === "idle" && next.restMs > IDLE_TO_SLEEP_MS * 0.55;
+        if (timestamp >= f.nextBlinkAt) {
+          const heavy = drowsy && Math.random() < 0.65;
+          f.lidUntil = timestamp + (heavy ? 340 : 115);
+          f.lidOpen = heavy ? 0.32 : 0;
+          f.nextBlinkAt =
+            timestamp + (drowsy ? 1600 : 2600) + Math.random() * (drowsy ? 1600 : 3200);
+          f.secondBlinkAt = !heavy && Math.random() < 0.2 ? timestamp + 290 : 0;
+        }
+        if (f.secondBlinkAt > 0 && timestamp >= f.secondBlinkAt) {
+          f.secondBlinkAt = 0;
+          f.lidUntil = timestamp + 105;
+          f.lidOpen = 0;
+        }
+        walkerRef.current?.setFace({
+          x: gx,
+          y: gy,
+          open: timestamp < f.lidUntil ? f.lidOpen : 1,
+        });
       }
 
       const side = bubbleSideFor(pos.x);
@@ -765,7 +928,26 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
     }
     pokes.current += 1;
     const here = machine.current;
-    if (here.phase === "asleep") machine.current = { ...here, phase: "sitting", restMs: 0 };
+    if (here.phase === "asleep") {
+      // A sleeper follows the blob rule: stir, stir, and only the third poke
+      // startles her properly awake. It still counts against her patience.
+      sleepPokes.current += 1;
+      feel("poked");
+      if (sleepPokes.current >= 3) {
+        sleepPokes.current = 0;
+        machine.current = { ...here, phase: "sitting", restMs: 0 };
+        setStartled(false);
+        thump(1.3);
+        say(WOKEN_LINES);
+      } else {
+        setStartled(true);
+        window.setTimeout(() => setStartled(false), 800);
+        thump(0.9);
+        say(STIR_LINES);
+      }
+      return;
+    }
+    sleepPokes.current = 0;
     thump(1);
     if (pokes.current === 2) {
       say([tipFor(!perched.current)]);
@@ -787,10 +969,11 @@ export function KunaiFoxRoamer({ size: fullSize = 58 }: { readonly size?: number
 
   if (!enabled) return null;
 
-  // Carried, or sulking while she rests, she wears the put-out face.
+  // Carried, startled out of a nap, or sulking while she rests: the put-out
+  // face. Everything else maps off the phase.
   const resting = phase !== "walking" && phase !== "asleep";
   const pose: KunaiFoxPose =
-    carried || (mood === "sulking" && resting) ? "oops" : poseForPhase(phase);
+    carried || startled || (mood === "sulking" && resting) ? "oops" : poseForPhase(phase);
 
   return (
     // Hidden from assistive tech, and out of the tab order, on purpose: she

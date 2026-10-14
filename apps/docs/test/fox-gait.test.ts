@@ -3,11 +3,14 @@ import { describe, expect, test } from "bun:test";
 import {
   advancePhase,
   blendPose,
+  eyeOffset,
   type FoxPose,
   gaitPose,
   headingFromMotion,
   legAngles,
   MAX_HEADING_PITCH,
+  settlePose,
+  SIT_POSE,
   smoothHeading,
   STANDING_POSE,
   strideLength,
@@ -199,5 +202,65 @@ describe("withHeading", () => {
     const b = withHeading(gaitPose(0.2), 30);
     expect(a).toEqual(b);
     expect(withHeading(gaitPose(0.2), 30).frontNear.knee).toBe(gaitPose(0.2).frontNear.knee);
+  });
+});
+
+describe("SIT_POSE", () => {
+  test("folds the haunches under and keeps the front legs planted", () => {
+    expect(SIT_POSE.backNear.hip).toBeGreaterThan(40);
+    expect(SIT_POSE.backNear.knee).toBeGreaterThan(60);
+    expect(SIT_POSE.backFar.knee).toBeGreaterThan(60);
+    // The front legs prop her chest up — near straight, never folded.
+    expect(Math.abs(SIT_POSE.frontNear.hip)).toBeLessThan(15);
+    expect(SIT_POSE.frontNear.knee).toBeLessThan(15);
+  });
+
+  test("sits low with the tail curled forward and the head held up", () => {
+    expect(SIT_POSE.bodyY).toBeGreaterThan(0);
+    expect(SIT_POSE.tail).toBeGreaterThan(STANDING_POSE.tail + 20);
+    // The torso tilts a little chest-up; the head corrects harder, which is
+    // what reads as sitting upright rather than leaning back.
+    expect(SIT_POSE.bodyPitch).toBeLessThan(0);
+    expect(SIT_POSE.headPitch).toBeLessThan(SIT_POSE.bodyPitch);
+  });
+});
+
+describe("settlePose", () => {
+  test("is deterministic, so the same frame always hangs the same pose", () => {
+    expect(settlePose(4.2)).toEqual(settlePose(4.2));
+  });
+
+  test("breathes: two moments in the sit are not the same pose", () => {
+    expect(settlePose(0.4).bodyY).not.toBe(settlePose(0.9).bodyY);
+    expect(settlePose(0.4).tail).not.toBe(settlePose(1.7).tail);
+  });
+
+  test("stays a sit — the living channels are small, never a second pose", () => {
+    for (let t = 0; t < 40; t += 0.37) {
+      const pose = settlePose(t);
+      expect(Math.abs(pose.bodyY - SIT_POSE.bodyY)).toBeLessThan(3);
+      expect(Math.abs(pose.tail - SIT_POSE.tail)).toBeLessThan(5);
+      expect(Math.abs(pose.earNear - SIT_POSE.earNear)).toBeLessThan(3);
+      // The haunches stay folded under whatever the breath is doing.
+      expect(pose.backNear.knee).toBeGreaterThan(60);
+      // And the sit never drifts her above the ground line.
+      expect(pose.bodyY).toBeGreaterThan(SIT_POSE.bodyY - 3);
+    }
+  });
+});
+
+describe("eyeOffset", () => {
+  test("zero displacement keeps the eye at rest", () => {
+    expect(eyeOffset(0, 0)).toEqual({ x: 0, y: 0 });
+  });
+
+  test("clamps, so a pointer across the room is a glance, not a crossed eye", () => {
+    const far = eyeOffset(10000, -8000);
+    expect(Math.abs(far.x)).toBeLessThanOrEqual(4.5);
+    expect(Math.abs(far.y)).toBeLessThanOrEqual(2.6);
+  });
+
+  test("looks further ahead than behind — a glance is biased to her nose", () => {
+    expect(eyeOffset(500, 0).x).toBeGreaterThan(Math.abs(eyeOffset(-500, 0).x));
   });
 });
