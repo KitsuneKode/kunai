@@ -344,8 +344,15 @@ describe("activation lock", () => {
           try {
             await mkdir(process.env.KUNAI_TEST_CRITICAL_PATH);
             ownsSentinel = true;
-          } catch {
-            await writeFile(process.env.KUNAI_TEST_VIOLATION_PATH, "overlap");
+            await writeFile(join(process.env.KUNAI_TEST_CRITICAL_PATH, "owner"), workerId);
+          } catch (error) {
+            // A permission/resource/missing-parent error is not evidence that
+            // two callbacks entered. Keep its original code and stack.
+            if (error?.code !== "EEXIST") throw error;
+            const previousOwner = await Bun.file(join(process.env.KUNAI_TEST_CRITICAL_PATH, "owner")).text().catch(() => "not yet published");
+            await writeFile(process.env.KUNAI_TEST_VIOLATION_PATH, JSON.stringify({
+              kind: "overlap", code: error.code, contender: workerId, previousOwner,
+            }));
           }
           await writeFile(enteredPath, "entered");
           const releaseDeadline = Date.now() + 15000;
@@ -428,7 +435,11 @@ describe("activation lock", () => {
         const released = new Set<string>();
         for (let enteredCount = 1; enteredCount <= CONTENTION_WORKERS; enteredCount += 1) {
           await waitForWorkerCount("activation-worker-entered-", enteredCount);
-          expect(existsSync(violationPath)).toBe(false);
+          if (existsSync(violationPath)) {
+            throw new Error(
+              `Activation critical-section overlap: ${await readFile(violationPath, "utf8")}`,
+            );
+          }
           const entered = (await readdir(layout.locksDir)).filter((name) =>
             name.startsWith("activation-worker-entered-"),
           );
@@ -440,7 +451,11 @@ describe("activation lock", () => {
         const statuses = await Promise.all(processes.map((process) => process.exited));
 
         expect(statuses).toEqual(Array.from({ length: CONTENTION_WORKERS }, () => 0));
-        expect(existsSync(violationPath)).toBe(false);
+        if (existsSync(violationPath)) {
+          throw new Error(
+            `Activation critical-section overlap: ${await readFile(violationPath, "utf8")}`,
+          );
+        }
       } finally {
         // Reap before afterEach removes the profile, including assertion and
         // handshake failures. Otherwise workers keep polling deleted paths.

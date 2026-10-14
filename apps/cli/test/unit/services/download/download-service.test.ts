@@ -1429,6 +1429,28 @@ describe("DownloadService", () => {
     expect(repo.get(next.id)?.status).toBe("completed");
   });
 
+  test("same-millisecond enqueues keep FIFO order", async () => {
+    // Regression: created_at ties fell back to UUID order, which is random
+    // per run — a fast double-enqueue picked its winner by luck.
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const first = await service.enqueue({
+      title: { id: "tmdb:fifo-1", type: "movie", name: "First" },
+      stream: { url: "https://example.com/1.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    const second = await service.enqueue({
+      title: { id: "tmdb:fifo-2", type: "movie", name: "Second" },
+      stream: { url: "https://example.com/2.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    expect(Date.parse(second.createdAt)).toBeGreaterThan(Date.parse(first.createdAt));
+  });
+
   test("persists artifact duration when ffprobe validation succeeds", async () => {
     const diagnostics: unknown[] = [];
     const service = buildService({

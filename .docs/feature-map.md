@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T13:50:00Z"
+lastReviewed: "2026-10-14T02:22:09Z"
 ---
 
 # Feature Map
@@ -62,6 +62,7 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 
 | Feature                               | Owned by                                                                                                                                                                                                    | Docs                                                                         |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Completed query history               | `apps/cli/src/services/persistence/search-history.ts`                                                                                                                                                       | [.docs/engineering-guide.md](./engineering-guide.md)                         |
 | Search routing and backends           | `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*`                                                                                                                                               | [.plans/search-service.md](../.plans/search-service.md)                      |
 | Type-ahead suggestion band            | `apps/cli/src/domain/search/suggestion-engine.ts`, `services/search/suggest-titles.ts`, `app/search/search-suggestions.ts`, `app-shell/suggestion-band-ui.tsx`, `app-shell/hooks/use-search-suggestions.ts` | [ux-architecture.md](./ux-architecture.md#search-type-ahead-suggestion-band) |
 | Search intent parsing                 | `apps/cli/src/domain/search/*` — `SearchIntentParser` / `SearchIntentEngine` turn raw input into a typed intent                                                                                             | [.plans/search-service.md](../.plans/search-service.md)                      |
@@ -92,6 +93,8 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Playback state machine                     | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                                    | [architecture.md](./architecture.md)                                             |
 | mpv launch + IPC (socket / named pipe)     | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                            | [quickstart.md](./quickstart.md)                                                 |
+| Android detached handoff + stream gateway  | `apps/cli/src/infra/player/handoff-player-service.ts`, `stream-gateway.ts`, `android-intent-launcher.ts`        | [architecture.md](./architecture.md)                                             |
+| DASH manifest + template routes            | `apps/cli/src/infra/player/dash-gateway-manifest.ts`, `manifest-prefix.ts`                                      | [architecture.md](./architecture.md)                                             |
 | Persistent session + autoplay              | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                             | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
 | Intro/credits auto-skip (IntroDB, AniSkip) | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                            | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
 | Timing sources and merge                   | `apps/cli/src/infra/timing/*` — `PlaybackTimingAggregator` merges IntroDB, AniSkip, and provider-native timings | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |

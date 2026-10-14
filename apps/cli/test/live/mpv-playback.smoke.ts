@@ -76,6 +76,13 @@ const FIXTURES = new Map<string, MpvFixture>([
     },
   ],
   [
+    "vidrock",
+    {
+      title: { id: "550", type: "movie", name: "Fight Club" },
+      mode: "series",
+    },
+  ],
+  [
     "youtube",
     {
       title: {

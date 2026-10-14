@@ -49,6 +49,17 @@ export function vaultSyncTokenFileIo(vault: CredentialVaultPort): SyncTokenFileI
       }
       await Promise.all(jobs);
     },
+    async patchTokens(_path, patch) {
+      for (const [slot, key] of [
+        ["anilist", CREDENTIAL_KEYS.anilistTokens],
+        ["tmdb", CREDENTIAL_KEYS.tmdbTokens],
+      ] as const) {
+        if (!Object.hasOwn(patch, slot)) continue;
+        const value = patch[slot];
+        if (value === undefined) await vault.delete(key);
+        else await vault.set(key, JSON.stringify(value));
+      }
+    },
   };
 }
 
