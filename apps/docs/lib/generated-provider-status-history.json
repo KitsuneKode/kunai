@@ -13,6 +13,23 @@
         "miruro": "blocked",
         "youtube": "healthy"
       }
+    },
+    {
+      "day": "2026-10-14",
+      "providers": {
+        "videasy": "dead",
+        "vidlink": "healthy",
+        "rivestream": "blocked",
+        "allanime": "blocked",
+        "anidb": "degraded",
+        "hianime": "healthy",
+        "miruro": "degraded",
+        "youtube": "healthy",
+        "vidrock": "healthy",
+        "movy": "healthy",
+        "animegg": "healthy",
+        "kickassanime": "degraded"
+      }
     }
   ]
 }

@@ -123,6 +123,15 @@ relay smoke is opt-in (see [.docs/testing-strategy.md](.docs/testing-strategy.md
 A test that needs a timeout or a real sleep to pass is wrong. Anchor injected
 clocks past the data they read, never to a hardcoded date.
 
+**Tool binaries vanish when the shared Bun store is wiped.** `bunfig.toml` sets
+`install.globalStore`, so every worktree's `node_modules/.bun` entries symlink
+into `~/.bun/install/cache/links/`. If that cache is deleted (`bun pm cache rm`,
+a disk cleaner, an interrupted install), every worktree loses its tool binaries
+at once — the symptom is `Executable not found in $PATH: "oxfmt"` (or oxlint,
+turbo, tsc) even though `node_modules` looks populated. The fix is additive and
+safe: run `bun install` in each affected worktree; it only creates the links its
+own manifest needs and never prunes another's.
+
 ## Bun-first runtime
 
 Prefer Bun APIs (`Bun.spawn`, `Bun.which`, `Bun.connect`, `Bun.sleep`,
