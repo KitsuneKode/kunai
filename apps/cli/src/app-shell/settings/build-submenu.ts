@@ -42,7 +42,7 @@ export function buildSettingsSubmenuView(
     const current = def.read(ctx.config);
     return {
       title: def.label,
-      subtitle: `Current ${current}`,
+      subtitle: `Current ${def.options.find((option) => option.value === current)?.label ?? current}`,
       choices: markCurrent(
         def.options.map((option) => ({
           value: option.value,
@@ -59,7 +59,7 @@ export function buildSettingsSubmenuView(
     const options = def.providerOptions(ctx);
     return {
       title: def.label,
-      subtitle: "Shift+↑/↓ or [ ] reorder  ·  first = default",
+      subtitle: "Your fallback order · first provider is the default",
       choices: order.map((providerId, index) => {
         const option = options.find((entry) => entry.value === providerId);
         const name = option ? stripCurrentLabel(option.label) : providerId;

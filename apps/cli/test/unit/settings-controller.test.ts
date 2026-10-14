@@ -335,3 +335,33 @@ test("Enter while filtering keeps the applied filter and leaves the field", () =
   expect(result.state.searchFocused).toBe(false);
   expect(result.state.searchQuery).toBe("relay");
 });
+
+test("single-provider YouTube keeps mode settings but hides provider controls", () => {
+  const config = baseConfig();
+  const ctx = {
+    ...mockRegistryCtx(config),
+    youtubeProviderOptions: [{ value: "youtube", label: "YouTube" }],
+  };
+  const page = buildSettingsPage(ctx, { searchQuery: "provider" });
+  expect(page.rowById.has("youtubeProvider")).toBe(false);
+  expect(page.rowById.has("youtubeProviderPriority")).toBe(false);
+  expect(config.youtubeProvider).toBe("youtube");
+  const youtube = buildSettingsPage(ctx, {
+    activeSectionIndex: listSettingsSectionLabels(ctx).indexOf("YouTube"),
+  });
+  expect(youtube.rows.length).toBeGreaterThan(1);
+});
+
+test("YouTube provider controls return when a second registered choice exists", () => {
+  const config = baseConfig();
+  const ctx = {
+    ...mockRegistryCtx(config),
+    youtubeProviderOptions: [
+      { value: "youtube", label: "YouTube" },
+      { value: "youtube-other", label: "Other" },
+    ],
+  };
+  const page = buildSettingsPage(ctx, { searchQuery: "provider" });
+  expect(page.rowById.has("youtubeProvider")).toBe(true);
+  expect(page.rowById.has("youtubeProviderPriority")).toBe(true);
+});
