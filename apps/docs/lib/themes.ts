@@ -12,12 +12,18 @@
  * pending computed custom properties mid-transition, so both sides keep the
  * hexes. `test/theme.test.ts` pins them equal.
  */
+/** How a coat enters the page when the cycler picks it — the skiper26 variants,
+ *  one per coat so cycling is a discovery sequence rather than the same wipe
+ *  five times. */
+export type ThemeReveal = "circle" | "circle-blur" | "rise" | "diagonal" | "unfold";
+
 export type KunaiTheme = {
   readonly id: string;
   readonly label: string;
   readonly accent: string;
   readonly deep: string;
   readonly soft: string;
+  readonly reveal: ThemeReveal;
 };
 
 /** The default coat. It is what `:root` already paints, so activating it
@@ -31,6 +37,7 @@ export const kunaiThemes: readonly KunaiTheme[] = [
     accent: "#ff8fb0",
     deep: "#d85f86",
     soft: "#ffc6d8",
+    reveal: "circle",
   },
   {
     id: "matcha",
@@ -38,6 +45,7 @@ export const kunaiThemes: readonly KunaiTheme[] = [
     accent: "#a3d9a5",
     deep: "#72b27a",
     soft: "#d6efdb",
+    reveal: "rise",
   },
   {
     id: "indigo",
@@ -45,6 +53,7 @@ export const kunaiThemes: readonly KunaiTheme[] = [
     accent: "#a9b8f5",
     deep: "#8293e0",
     soft: "#d8e0fb",
+    reveal: "diagonal",
   },
   {
     id: "ember",
@@ -52,6 +61,7 @@ export const kunaiThemes: readonly KunaiTheme[] = [
     accent: "#f2b268",
     deep: "#d18a45",
     soft: "#f8d8ad",
+    reveal: "circle-blur",
   },
   {
     id: "violet",
@@ -59,6 +69,7 @@ export const kunaiThemes: readonly KunaiTheme[] = [
     accent: "#c9a6f2",
     deep: "#a57fd4",
     soft: "#e3d2f9",
+    reveal: "unfold",
   },
 ] as const;
 

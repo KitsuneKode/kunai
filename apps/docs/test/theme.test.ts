@@ -87,6 +87,20 @@ describe("Kanna's coats", () => {
     expect(source).toContain("prefers-reduced-motion");
     expect(source).toContain(THEME_STORAGE_KEY);
   });
+
+  test("every coat declares a reveal variant the keyframe builder covers", () => {
+    const source = fs.readFileSync(
+      path.join(DOCS_APP_ROOT, "components/theme/theme-cycler.tsx"),
+      "utf-8",
+    );
+    const reveals = new Set(kunaiThemes.map((theme) => theme.reveal));
+    // The point of the registry field is variety: at least two distinct
+    // entrances or the field is ceremony.
+    expect(reveals.size).toBeGreaterThanOrEqual(2);
+    for (const reveal of reveals) {
+      expect(source).toContain(`case "${reveal}"`);
+    }
+  });
 });
 
 describe("scroll and anchor fixes", () => {

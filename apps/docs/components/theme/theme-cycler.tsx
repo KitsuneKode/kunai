@@ -1,16 +1,61 @@
 "use client";
 
-import { DEFAULT_THEME_ID, kunaiThemes, THEME_STORAGE_KEY } from "@/lib/themes";
+import { DEFAULT_THEME_ID, kunaiThemes, THEME_STORAGE_KEY, type ThemeReveal } from "@/lib/themes";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 /** The orb's eclipse sweep — close to `--dur-panel` so it lands with the
  *  @property crossfade rather than long after it. */
 const SWEEP_MS = 320;
-/** How long the whole-page circle reveal takes to cover the viewport. */
+/** How long the whole-page reveal takes to cover the viewport. */
 const REVEAL_MS = 640;
+const EASE_DRAWER = "cubic-bezier(0.32, 0.72, 0, 1)";
 
 function reducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/**
+ * The skiper26 reveal variants as WAAPI keyframes for `::view-transition-new`.
+ * `x`/`y` is the click point in viewport pixels; `w`/`h` the viewport. Every
+ * end state covers the full viewport so the new coat lands everywhere.
+ */
+function revealKeyframes(
+  reveal: ThemeReveal,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): PropertyIndexedKeyframes {
+  switch (reveal) {
+    case "circle": {
+      const radius = Math.hypot(Math.max(x, w - x), Math.max(y, h - y));
+      return {
+        clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`],
+      };
+    }
+    case "circle-blur": {
+      const radius = Math.hypot(Math.max(x, w - x), Math.max(y, h - y));
+      return {
+        clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`],
+        filter: ["blur(10px)", "blur(0px)"],
+      };
+    }
+    case "rise":
+      return {
+        clipPath: ["inset(100% 0% 0% 0%)", "inset(0% 0% 0% 0%)"],
+      };
+    case "diagonal":
+      return {
+        clipPath: [
+          "polygon(0% 0%, 0% 0%, -25% 100%, 0% 100%)",
+          "polygon(0% 0%, 125% 0%, 100% 100%, 0% 100%)",
+        ],
+      };
+    case "unfold":
+      return {
+        clipPath: [`inset(${y}px ${w - x}px ${h - y}px ${x}px)`, "inset(0px 0px 0px 0px)"],
+      };
+  }
 }
 
 /**
@@ -72,19 +117,14 @@ export function ThemeCycler({ className }: { readonly className?: string }) {
       const rect = buttonRef.current?.getBoundingClientRect();
       const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
       const y = rect ? rect.top + rect.height / 2 : 64;
-      const radius = Math.hypot(
-        Math.max(x, window.innerWidth - x),
-        Math.max(y, window.innerHeight - y),
-      );
+      const reveal = kunaiThemes[next]?.reveal ?? "circle";
       document.startViewTransition(apply).ready.then(
         () => {
           document.documentElement.animate(
-            {
-              clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`],
-            },
+            revealKeyframes(reveal, x, y, window.innerWidth, window.innerHeight),
             {
               duration: REVEAL_MS,
-              easing: "cubic-bezier(0.32, 0.72, 0, 1)",
+              easing: EASE_DRAWER,
               pseudoElement: "::view-transition-new(root)",
             },
           );
