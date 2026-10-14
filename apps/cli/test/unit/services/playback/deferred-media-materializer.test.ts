@@ -4,7 +4,10 @@ import { readFile, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { StreamInfo } from "@/domain/types";
-import { materializeDeferredMediaForPlayback } from "@/services/playback/deferred-media-materializer";
+import {
+  materializeDeferredMediaDocument,
+  materializeDeferredMediaForPlayback,
+} from "@/services/playback/deferred-media-materializer";
 import { registerAllMangaAkDeferredDescriptor } from "@kunai/providers";
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -67,5 +70,49 @@ describe("deferred media materializer", () => {
 
     await materialized.cleanup();
     expect(existsSync(materialized.stream.url)).toBe(false);
+  });
+
+  test("materializes an AllManga Ak locator as an in-memory document for the gateway", async () => {
+    const locator = registerAllMangaAkDeferredDescriptor({
+      duration: 120,
+      video: {
+        url: "https://ak-video.example/video.mp4?sig=test-video",
+        mimeType: "video/mp4",
+      },
+      audio: {
+        url: "https://ak-audio.example/audio.mp4?sig=test-audio",
+        mimeType: "audio/mp4",
+      },
+    });
+    const stream: StreamInfo = {
+      url: locator,
+      deferredLocator: locator,
+      headers: { Referer: "https://embed.example/" },
+      timestamp: Date.now(),
+    };
+
+    const doc = await materializeDeferredMediaDocument(stream);
+    cleanup.push(doc.cleanup);
+
+    expect(doc.contentType).toBe("application/dash+xml");
+    expect(doc.text).toContain("ak-video.example");
+    expect(doc.remoteUrls).toEqual([
+      "https://ak-video.example/video.mp4?sig=test-video",
+      "https://ak-audio.example/audio.mp4?sig=test-audio",
+    ]);
+
+    await doc.cleanup();
+    await expect(materializeDeferredMediaDocument(stream)).rejects.toThrow(/expired/);
+  });
+
+  test("an unknown locator scheme stays an error on both paths", async () => {
+    const stream: StreamInfo = {
+      url: "mystery:abc",
+      deferredLocator: "mystery:abc",
+      headers: {},
+      timestamp: Date.now(),
+    };
+    await expect(materializeDeferredMediaDocument(stream)).rejects.toThrow(/Unsupported/);
+    await expect(materializeDeferredMediaForPlayback(stream)).rejects.toThrow(/Unsupported/);
   });
 });

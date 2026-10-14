@@ -27,6 +27,18 @@ interface HandoffPlanInput {
   readonly player: DetachedPlayerTarget;
   readonly capabilities: PlayerCapabilities;
   readonly localSource: boolean;
+  /**
+   * The loopback stream gateway can carry exactly what an intent cannot:
+   * headers, cookies, an external subtitle, and a materialized deferred
+   * document. Set when the caller will route through it — the blockers it
+   * covers are lifted only for streams the gateway actually serves.
+   */
+  readonly gateway?: {
+    readonly serveHeaders?: boolean;
+    readonly serveExternalSubtitles?: boolean;
+    /** The deferred locator was materialized into a servable document. */
+    readonly serveDocument?: boolean;
+  };
 }
 
 function hasSupportedProtocol(value: string): boolean {
@@ -54,12 +66,23 @@ export function createHandoffPlan(input: HandoffPlanInput): HandoffPlan {
   const hasOtherHeaders = headerEntries.some(([name]) => name.toLowerCase() !== "cookie");
   const blockers: HandoffBlocker[] = [];
 
-  if (!capabilities.customHeaders && hasOtherHeaders) blockers.push("custom-headers-required");
-  if (!capabilities.customHeaders && hasCookies) blockers.push("cookies-required");
+  const canServeDocument = input.gateway?.serveDocument === true;
+  if (!capabilities.customHeaders && !input.gateway?.serveHeaders && hasOtherHeaders) {
+    blockers.push("custom-headers-required");
+  }
+  if (!capabilities.customHeaders && !input.gateway?.serveHeaders && hasCookies) {
+    blockers.push("cookies-required");
+  }
   if (stream.requiresYtdl === true) blockers.push("yt-dlp-required");
-  if (stream.deferredLocator?.trim()) blockers.push("deferred-source");
-  if (!hasSupportedProtocol(stream.url)) blockers.push("unsupported-scheme");
-  if (!capabilities.externalSubtitles && hasExternalSubtitle(stream)) {
+  if (stream.deferredLocator?.trim() && !canServeDocument) blockers.push("deferred-source");
+  if (!hasSupportedProtocol(stream.url) && !canServeDocument) {
+    blockers.push("unsupported-scheme");
+  }
+  if (
+    !capabilities.externalSubtitles &&
+    !input.gateway?.serveExternalSubtitles &&
+    hasExternalSubtitle(stream)
+  ) {
     blockers.push("external-subtitle-unsupported");
   }
   if (!capabilities.localFiles && input.localSource) blockers.push("local-source-unsupported");
