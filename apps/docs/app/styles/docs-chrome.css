@@ -272,6 +272,32 @@
 }
 
 /*
+ * Progressive blur under the top chrome (skiper41, CSS-only): a fixed band
+ * whose backdrop blur is strongest at the viewport edge and fades out over
+ * ~5rem via the mask, so a heading scrolling under the nav dissolves instead
+ * of clipping. It sits below the nav's z-40; it is only ever a blur of what
+ * already scrolled past, so it costs one composited layer and no script.
+ */
+.kunai-edge-fade {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 5.5rem;
+  pointer-events: none;
+  z-index: 30;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--kunai-bg) 72%, transparent),
+    transparent
+  );
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  mask-image: linear-gradient(to bottom, black 30%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black 30%, transparent);
+}
+
+/*
  * Desktop and up: the floating nav hugs its contents. Fumadocs renders the
  * glass `> div` as a full-width block with `nav` at `w-full`, so left alone the
  * bar is ~92rem wide forever — the compact fold would empty a still full-width

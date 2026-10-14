@@ -136,4 +136,16 @@ describe("scroll and anchor fixes", () => {
     expect(source).toContain("setPointerCapture");
     expect(source).toContain("suppressNextClick");
   });
+
+  test("the progressive-blur edge band is CSS-only, masked, and below the nav", () => {
+    const chrome = fs.readFileSync(path.join(DOCS_APP_ROOT, "app/styles/docs-chrome.css"), "utf-8");
+    const start = chrome.indexOf(".kunai-edge-fade");
+    const block = chrome.slice(start, chrome.indexOf("}", start));
+    expect(block).toContain("position: fixed");
+    expect(block).toContain("backdrop-filter: blur(5px)");
+    expect(block).toContain("mask-image: linear-gradient");
+    expect(block).toContain("pointer-events: none");
+    expect(block).toContain("z-index: 30");
+    expect(layoutTsx).toContain('className="kunai-edge-fade"');
+  });
 });
