@@ -18,6 +18,8 @@
 @import "./styles/timeline.css";
 @import "./styles/charts.css";
 @import "./styles/status.css";
+@import "../components/iso/iso.css";
+@import "../components/iso/resolve-gate/resolve-gate.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 

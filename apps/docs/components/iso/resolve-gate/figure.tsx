@@ -1,9 +1,6 @@
 import { Plate } from "../react/draw";
 import { ResolveGateArt } from "./art";
 
-import "../iso.css";
-import "./resolve-gate.css";
-
 export function ResolveGateFigure() {
   return (
     <div className="iso">
