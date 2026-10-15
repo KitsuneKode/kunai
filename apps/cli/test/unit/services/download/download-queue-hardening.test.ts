@@ -184,21 +184,26 @@ describe("DownloadService queue hardening", () => {
 
   test("a kick that lands mid-pass runs a follow-up pass instead of being dropped", async () => {
     const service = buildService();
-    let releaseFirst!: (code: number) => void;
+    const firstSpawned = Promise.withResolvers<void>();
+    const firstExit = Promise.withResolvers<number>();
+    const secondCompleted = Promise.withResolvers<void>();
+    let secondId: string | undefined;
+    const unsubscribe = service.onEvent((event) => {
+      if (event.type === "complete" && event.jobId === secondId) secondCompleted.resolve();
+    });
     let calls = 0;
     spawnSpy.mockImplementation((command: string[]) => {
       calls += 1;
       const outputPath = command[command.indexOf("-o") + 1]!;
       if (calls === 1) {
+        firstSpawned.resolve();
         // SAFETY: Bun.spawn is intercepted; hang is released deterministically below.
         return {
           stdout: streamOf(""),
           stderr: streamOf(""),
-          exited: new Promise<number>((resolve) => {
-            releaseFirst = (code: number) => {
-              writeFileSync(outputPath, "video-bytes-1");
-              resolve(code);
-            };
+          exited: firstExit.promise.then((code) => {
+            writeFileSync(outputPath, "video-bytes-1");
+            return code;
           }),
           kill() {},
         } as never;
@@ -215,18 +220,21 @@ describe("DownloadService queue hardening", () => {
 
     const firstId = await enqueueMovie(service, "first");
     const pass = service.processQueue();
-    await waitUntil(() => repo.get(firstId)?.status === "running", { label: "first job running" });
+    // Claiming the row precedes async preparation. Wait for the actual spawn
+    // boundary rather than assuming a running DB row has installed the handle.
+    await firstSpawned.promise;
 
     // Lands while the first pass is still holding the worker: without
     // coalescing this kick is silently dropped and the second job waits for
     // the next external nudge that may never come.
-    const secondId = await enqueueMovie(service, "second");
+    secondId = await enqueueMovie(service, "second");
     service.kickQueue("download-manager");
-    releaseFirst(0);
+    firstExit.resolve(0);
     await pass;
-    await waitUntil(() => repo.get(secondId)?.status === "completed", {
-      label: "second job completed via coalesced pass",
-    });
+    await secondCompleted.promise;
+    unsubscribe();
+    service.beginShutdown();
+    expect(repo.get(secondId)?.status).toBe("completed");
     expect(repo.get(firstId)?.status).toBe("completed");
   });
 
