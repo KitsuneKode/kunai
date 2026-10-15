@@ -84,16 +84,17 @@ export class PlaybackSelectionCoordinator {
   getEffective(providerId: string, episode: EpisodeInfo): StreamSelectionIntent {
     const episodeSelection = this.episodeByKey.get(this.episodeKey(providerId, episode));
     const titleSourceId = this.titleSourceByProvider.get(this.titleSourceKey(providerId));
+    const episodePin = episodeSelection?.sourceId ?? episodeSelection?.streamId;
+    const episodeQuarantined =
+      episodePin && this.deps.isSourceQuarantined?.(providerId, episodePin);
+    const titleQuarantined =
+      titleSourceId && this.deps.isSourceQuarantined?.(providerId, titleSourceId);
+    // Reject each layer before merging: a dead episode pin must not hide a
+    // healthy title default, and its stream id must not follow the fallback.
     const resolved = resolveEffectiveStreamSelection({
-      episode: episodeSelection
-        ? { sourceId: episodeSelection.sourceId, streamId: episodeSelection.streamId }
-        : null,
-      titleSourceId: titleSourceId && titleSourceId.length > 0 ? titleSourceId : null,
+      episode: episodeQuarantined ? null : episodeSelection,
+      titleSourceId: titleQuarantined ? null : titleSourceId,
     });
-    const pinnedId = resolved.sourceId ?? resolved.streamId;
-    if (pinnedId && this.deps.isSourceQuarantined?.(providerId, pinnedId)) {
-      return { sourceId: null, streamId: null };
-    }
     return {
       sourceId: resolved.sourceId,
       streamId: resolved.streamId,

@@ -128,6 +128,26 @@ describe("PlaybackSelectionCoordinator", () => {
     });
   });
 
+  test("a quarantined episode override falls back to a healthy title source", async () => {
+    dir = await mkdtemp(join(tmpdir(), "kunai-selection-"));
+    const coordinator = new PlaybackSelectionCoordinator({
+      titleId: "tmdb:99",
+      episodePlaybackSelection: new EpisodePlaybackSelectionService(join(dir, "episodes.json")),
+      titlePlaybackSource: new TitlePlaybackSourceService(join(dir, "titles.json")),
+      isSourceQuarantined: (_providerId, sourceId) => sourceId === "source:sick",
+    });
+    await coordinator.applyManualSourcePick("vidlink", ep, "source:well");
+    await coordinator.applyEpisodeSelection("vidlink", ep2, {
+      sourceId: "source:sick",
+      streamId: "stream:sick:720",
+    });
+
+    expect(coordinator.getEffective("vidlink", ep2)).toEqual({
+      sourceId: "source:well",
+      streamId: null,
+    });
+  });
+
   test("persisted episode overrides do not alias different provider-native episodes", async () => {
     dir = await mkdtemp(join(tmpdir(), "kunai-selection-"));
     const path = join(dir, "episode-playback-selections.json");

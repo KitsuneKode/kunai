@@ -37,7 +37,7 @@ export function buildSourceInventoryCacheInput(
 
 /** Drop persisted resolve + inventory entries so recover must hit the provider again. */
 export async function invalidateEpisodePlaybackCaches(input: {
-  readonly cacheStore: CacheStore;
+  readonly cacheStore: Pick<CacheStore, "delete">;
   readonly sourceInventory: Pick<SourceInventoryService, "delete">;
   readonly providerId: string;
   /**
