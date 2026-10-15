@@ -1,7 +1,7 @@
 import { resolveContentKind, showsEpisodeLabel } from "@/domain/media/content-kind";
 import type { ErrorScenario } from "@/domain/playback/playback-problem";
 import type { SessionState } from "@/domain/session/SessionState";
-import { measureColumns } from "@/domain/text-display";
+import { measureColumns, truncateLine } from "@/domain/text-display";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
@@ -36,7 +36,7 @@ export function RootIdleShell({ state }: { state: SessionState }) {
     return (
       <Box flexDirection="column" flexGrow={1}>
         <SakuraLoader
-          label={query.length > 0 ? `Searching ${query}…` : "Searching…"}
+          label={query.length > 0 ? `Searching ${truncateLine(query, 60)}…` : "Searching…"}
           sublabel="esc to cancel"
         />
       </Box>
@@ -52,10 +52,14 @@ export function RootIdleShell({ state }: { state: SessionState }) {
   // sign of work in flight — the same gap the search branch above closes, one
   // step later in the flow.
   if (currentTitle && state.view === "details") {
+    // SAFETY: provider names are unbounded — blank falls back, long truncates.
+    const titleName = currentTitle.name?.trim()
+      ? truncateLine(currentTitle.name.trim(), 60)
+      : "Unknown title";
     return (
       <Box flexDirection="column" flexGrow={1}>
         <SakuraLoader
-          label={`Preparing ${currentTitle.name}…`}
+          label={`Preparing ${titleName}…`}
           sublabel="Resolving sources · esc to cancel"
         />
       </Box>
@@ -77,7 +81,9 @@ export function RootIdleShell({ state }: { state: SessionState }) {
           <Box marginTop={1}>
             <Text color={palette.accent}>{"⏸  "}</Text>
             <Text color={palette.text} bold>
-              {currentTitle?.name ?? "Current session"}
+              {currentTitle?.name?.trim()
+                ? truncateLine(currentTitle.name.trim(), 60)
+                : "Current session"}
             </Text>
             {currentEpisode ? <Text color={palette.muted}>{`  ${currentEpisode}`}</Text> : null}
           </Box>

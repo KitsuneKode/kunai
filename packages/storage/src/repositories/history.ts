@@ -549,6 +549,29 @@ export class HistoryRepository {
   }
 
   /**
+   * Startup fast lane for the download auto-cleanup: it needs history rows only
+   * for completed-download titles, not a 1000-row recency scan filtered in
+   * memory. One IN query per chunk, recency-ordered like listRecent.
+   */
+  listByTitleIds(titleIds: readonly string[]): readonly HistoryProgress[] {
+    const unique = [...new Set(titleIds)];
+    if (unique.length === 0) return [];
+    const rows: HistoryProgressRow[] = [];
+    for (let offset = 0; offset < unique.length; offset += 200) {
+      const chunk = unique.slice(offset, offset + 200);
+      const placeholders = chunk.map(() => "?").join(", ");
+      rows.push(
+        ...this.db
+          .query<HistoryProgressRow, string[]>(
+            `SELECT * FROM history_progress WHERE title_id IN (${placeholders}) ORDER BY updated_at DESC`,
+          )
+          .all(...chunk),
+      );
+    }
+    return rows.map(mapHistoryRow);
+  }
+
+  /**
    * Episode rows for one season of a title. The episode picker opened this on
    * every render with a full-title scan plus an in-memory filter; pushing the
    * season predicate into SQLite keeps picker-open latency flat as series

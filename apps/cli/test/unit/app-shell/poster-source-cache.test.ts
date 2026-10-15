@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { setPosterDiskCacheDir } from "@/app-shell/poster-disk-cache";
 import {
   clearPosterSourceCache,
   fetchPosterSource,
+  flushPosterDiskWrites,
   isLocalImagePath,
   localPathFromImageRef,
   resolvePosterUrl,
@@ -15,8 +17,15 @@ import { MAX_POSTER_SOURCE_BYTES } from "@/image/native-image";
 const realFetch = globalThis.fetch;
 const tempDirs: string[] = [];
 
+beforeEach(() => {
+  // SAFETY: isolated tmp dir per test — the disk lane must never touch the
+  // live profile cache, and entries must not leak across tests.
+  setPosterDiskCacheDir(tempDir());
+});
+
 afterEach(() => {
   globalThis.fetch = realFetch;
+  setPosterDiskCacheDir(null);
   clearPosterSourceCache();
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -252,6 +261,27 @@ describe("fetchPosterSource — remote bounds", () => {
     // Identity has to be the resolved asset, not the caller's raw path: the
     // prepared cache keys off it, and w342 and w780 are different images.
     expect(source?.identity).toBe("https://image.tmdb.org/t/p/w342/poster.jpg");
+  });
+
+  test("disk lane serves a previous session's bytes without refetching", async () => {
+    let calls = 0;
+    stubFetch(async () => {
+      calls += 1;
+      return streamingResponse([bytesOf(32)], { contentLength: null });
+    });
+
+    const first = await fetchPosterSource("https://cdn.example.test/disk-hit.jpg");
+    expect(calls).toBe(1);
+    // The disk persist queues behind the render path — wait it out (no sleep:
+    // the flush resolves exactly the queued writes), then evict memory only.
+    await flushPosterDiskWrites();
+    // Evict memory only: the disk entry survives, modelling a relaunch (or a
+    // scroll past the 24-entry memory window).
+    clearPosterSourceCache();
+
+    const second = await fetchPosterSource("https://cdn.example.test/disk-hit.jpg");
+    expect(second?.bytes).toEqual(first?.bytes);
+    expect(calls).toBe(1);
   });
 });
 

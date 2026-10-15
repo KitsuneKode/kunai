@@ -76,6 +76,7 @@ import {
 } from "./StorageBudgetPolicy";
 import { buildDownloadStreamPolicy } from "./stream-policy";
 import { resolveSubtitleArtifactPath } from "./subtitle-artifact-path";
+import { createTranscodeSlotGate } from "./transcode-slots";
 import { parseYtDlpProgressLine } from "./ytdlp-progress";
 
 const DOWNLOAD_FILE_EXT = ".mp4";
@@ -370,6 +371,9 @@ export class DownloadService {
   // the window between `selectEligibleQueuedJob` and `markRunning` (an await).
   private readonly claimedJobIds = new Set<string>();
   private readonly eventListeners = new Set<DownloadEventListener>();
+  // CPU-bound finalization slots (ffprobe validation). Queue workers keep
+  // `maxConcurrentDownloads` parallelism; only finalization is capped.
+  private readonly transcodeSlots = createTranscodeSlotGate();
 
   onEvent(handler: DownloadEventListener): () => void {
     this.eventListeners.add(handler);
@@ -1928,6 +1932,21 @@ export class DownloadService {
   }
 
   private async validateCompletedArtifact(
+    outputPath: string,
+    ownedJobId?: string,
+  ): Promise<ArtifactValidationResult> {
+    // CPU-bound finalization gate: ffprobe decodes the artifact and yt-dlp's
+    // ffmpeg mux children overlap when downloads finish together — capped at
+    // MAX_PARALLEL_TRANSCODES while queue worker concurrency is untouched.
+    const releaseSlot = await this.transcodeSlots.acquire();
+    try {
+      return await this.validateCompletedArtifactInner(outputPath, ownedJobId);
+    } finally {
+      releaseSlot();
+    }
+  }
+
+  private async validateCompletedArtifactInner(
     outputPath: string,
     ownedJobId?: string,
   ): Promise<ArtifactValidationResult> {

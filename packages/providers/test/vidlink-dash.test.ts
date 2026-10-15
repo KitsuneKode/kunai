@@ -6,7 +6,12 @@ import type {
   ProviderRuntimeContext,
 } from "@kunai/types";
 
-import { clearVidlinkEncDecCacheForTest, resolveVidlinkDirect } from "../src/vidlink/direct";
+import {
+  clearVidlinkEncDecCacheForTest,
+  parseVidlinkRetryAfterMs,
+  resolveVidlinkDirect,
+  setVidlinkRetrySleepForTest,
+} from "../src/vidlink/direct";
 
 const COOKIE = "CloudFront-Policy=abc;CloudFront-Signature=def;CloudFront-Key-Pair-Id=ghi";
 
@@ -376,5 +381,133 @@ describe("vidlink enc-dec persistent cache (#205)", () => {
     expect(result.failures.map((failure) => failure.message).join(" ")).not.toContain(
       "is not an object",
     );
+  });
+});
+
+describe("vidlink 429 backoff", () => {
+  test("parseVidlinkRetryAfterMs reads delta-seconds, HTTP-dates, and caps", () => {
+    expect(parseVidlinkRetryAfterMs("2")).toBe(2000);
+    expect(parseVidlinkRetryAfterMs("0")).toBe(0);
+    expect(parseVidlinkRetryAfterMs(null)).toBe(0);
+    expect(parseVidlinkRetryAfterMs("   ")).toBe(0);
+    expect(parseVidlinkRetryAfterMs("garbage")).toBe(0);
+    // An unbounded sleep would hold the resolve past every attempt budget.
+    expect(parseVidlinkRetryAfterMs("120")).toBe(10_000);
+    const future = new Date(Date.now() + 3_000).toUTCString();
+    const parsed = parseVidlinkRetryAfterMs(future);
+    expect(parsed).toBeGreaterThan(0);
+    expect(parsed).toBeLessThanOrEqual(3_000);
+  });
+
+  test("a 429 with Retry-After waits out the window before quarantining/retrying", async () => {
+    const calls: Array<{ kind: string; ms?: number; endpoint?: string; cls?: string }> = [];
+    setVidlinkRetrySleepForTest(async (ms: number) => {
+      calls.push({ kind: "sleep", ms });
+    });
+    try {
+      let apiAttempts = 0;
+      const ctx: ProviderRuntimeContext = {
+        providerId: "vidlink",
+        now: () => new Date().toISOString(),
+        fetch: {
+          runtime: "direct-http",
+          fetch: async (url) => {
+            const target = String(url);
+            if (target.includes("enc-dec.app")) {
+              return new Response(JSON.stringify({ result: "ENCRYPTED429" }), { status: 200 });
+            }
+            if (target.includes("vidlink.pro/api/b")) {
+              apiAttempts += 1;
+              if (apiAttempts === 1) {
+                return new Response("slow down", {
+                  status: 429,
+                  headers: { "Retry-After": "2" },
+                });
+              }
+              return new Response(
+                JSON.stringify({
+                  stream: {
+                    type: "dash",
+                    playlist: "https://sacdn.example/x/index.mpd",
+                    playbackMetadata: { resolutions: ["1080"] },
+                    captions: [],
+                  },
+                }),
+                { status: 200 },
+              );
+            }
+            return new Response("ok", { status: 200 });
+          },
+        },
+        endpointHealth: {
+          shouldTry: () => true,
+          recordFailure: (_providerId, endpoint, info) => {
+            calls.push({ kind: "record", endpoint, cls: info.class });
+          },
+          recordSuccess: () => {},
+        },
+      };
+      const input: ProviderResolveInput = {
+        ...INPUT,
+        title: { id: "tmdb:910001", kind: "movie", title: "Backoff", tmdbId: "910001" },
+      };
+
+      const result = await resolveVidlinkDirect(input, ctx);
+
+      // The retry lands after the cooldown instead of inside it, so it succeeds.
+      expect(apiAttempts).toBe(2);
+      expect(result.status).toBe("resolved");
+      expect(result.streams[0]?.qualityLabel).toBe("1080p");
+      // The header is respected BEFORE the quarantine evidence is recorded.
+      const sleepIndex = calls.findIndex((call) => call.kind === "sleep");
+      const recordIndex = calls.findIndex((call) => call.kind === "record");
+      expect(calls[sleepIndex]?.ms).toBe(2000);
+      expect(recordIndex).toBeGreaterThan(sleepIndex);
+      expect(calls[recordIndex]?.endpoint).toBe("vidlink.pro");
+      expect(calls[recordIndex]?.cls).toBe("transient");
+    } finally {
+      setVidlinkRetrySleepForTest(null);
+    }
+  });
+
+  test("a persistent 429 without Retry-After spaces retries and still exhausts", async () => {
+    const sleeps: number[] = [];
+    setVidlinkRetrySleepForTest(async (ms: number) => {
+      sleeps.push(ms);
+    });
+    try {
+      let apiAttempts = 0;
+      const ctx: ProviderRuntimeContext = {
+        providerId: "vidlink",
+        now: () => new Date().toISOString(),
+        fetch: {
+          runtime: "direct-http",
+          fetch: async (url) => {
+            const target = String(url);
+            if (target.includes("enc-dec.app")) {
+              return new Response(JSON.stringify({ result: "ENCRYPTED429B" }), { status: 200 });
+            }
+            if (target.includes("vidlink.pro/api/b")) {
+              apiAttempts += 1;
+              return new Response("slow down", { status: 429 });
+            }
+            return new Response("ok", { status: 200 });
+          },
+        },
+      };
+      const input: ProviderResolveInput = {
+        ...INPUT,
+        title: { id: "tmdb:910002", kind: "movie", title: "Backoff Persistent", tmdbId: "910002" },
+      };
+
+      const result = await resolveVidlinkDirect(input, ctx);
+
+      expect(apiAttempts).toBe(2);
+      expect(result.status).toBe("exhausted");
+      expect(result.failures[0]?.code).toBe("rate-limited");
+      expect(sleeps).toEqual([500]);
+    } finally {
+      setVidlinkRetrySleepForTest(null);
+    }
   });
 });

@@ -482,6 +482,17 @@ export function useSessionState(stateManager: SessionStateManager) {
 }
 
 /**
+ * Cheap identity for a notification snapshot: length plus per-row
+ * (dedupKey, readAt). The bell only needs count/unread/kind, and rebuilding
+ * this string is far cheaper than a repo scan per render.
+ */
+function notificationSnapshotSig(
+  active: readonly { dedupKey: string; readAt?: string | null }[],
+): string {
+  return `${active.length}|${active.map((n) => `${n.dedupKey}@${n.readAt ?? ""}`).join(",")}`;
+}
+
+/**
  * Persistent root of the state-driven UI.
  * Holds the identity logo and renders the appropriate shell based on state.
  */
@@ -572,6 +583,19 @@ export function AppRoot({ container }: { container: Container }) {
   const notificationSeenKeysRef = useRef<ReadonlySet<string>>(new Set());
   const notificationQueueRef = useRef(createNotificationQueueState());
   const notificationQueueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Memoized bell snapshot: listActive hits the repo, so the bell must not
+  // scan per render. The subscription refreshes it on change; the 1Hz poll
+  // below is the backstop for changes that bypass notify (markRead etc.).
+  const notificationSnapshotSigRef = useRef<string | null>(null);
+  const [activeNotificationSnapshot, setActiveNotificationSnapshot] = useState<
+    ReturnType<Container["notificationService"]["listActive"]>
+  >(() => {
+    const active = container.notificationService.listActive(200, 0);
+    // Seed the poll signature from the same scan so the 1Hz backstop does
+    // not setState (and re-render) on its first tick with identical content.
+    notificationSnapshotSigRef.current = notificationSnapshotSig(active);
+    return active;
+  });
 
   const [weeklyDigestLine, setWeeklyDigestLine] = useState<string | null>(null);
 
@@ -684,6 +708,8 @@ export function AppRoot({ container }: { container: Container }) {
 
     const handleChange = () => {
       const active = container.notificationService.listActive(200, 0);
+      notificationSnapshotSigRef.current = notificationSnapshotSig(active);
+      setActiveNotificationSnapshot(active);
       const synced = syncNotificationQueueFromActive({
         state: notificationQueueRef.current,
         active,
@@ -700,8 +726,19 @@ export function AppRoot({ container }: { container: Container }) {
     };
 
     const unsubscribe = container.notificationService.subscribe(handleChange);
+    // Backstop poll at most 1Hz: some mutations (markRead from other surfaces)
+    // do not emit through subscribe, but the bell must still converge.
+    const pollTimer = setInterval(() => {
+      const active = container.notificationService.listActive(200, 0);
+      const sig = notificationSnapshotSig(active);
+      if (sig !== notificationSnapshotSigRef.current) {
+        notificationSnapshotSigRef.current = sig;
+        setActiveNotificationSnapshot(active);
+      }
+    }, 1_000);
     return () => {
       unsubscribe();
+      clearInterval(pollTimer);
       if (notificationQueueTimerRef.current) {
         clearTimeout(notificationQueueTimerRef.current);
       }
@@ -899,8 +936,9 @@ export function AppRoot({ container }: { container: Container }) {
     playbackActive: playbackIsActive,
   });
   // Bell reflects UNREAD notifications and hides at zero (root-status-summary only
-  // renders the bell when notificationCount > 0).
-  const activeNotifications = container.notificationService.listActive(200, 0);
+  // renders the bell when notificationCount > 0). Reads the memoized snapshot —
+  // never scans the repo per render (see the subscription effect above).
+  const activeNotifications = activeNotificationSnapshot;
   const unreadNotifications = activeNotifications.filter((notification) => !notification.readAt);
   const unreadNotificationCount = unreadNotifications.length;
   const newEpisodeNotificationCount = useMemo(

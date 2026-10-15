@@ -203,4 +203,31 @@ describe("buildErrorRows", () => {
     }
     expect(lines).toContain("x videasy  ·  token");
   });
+
+  test("blank title falls back instead of rendering an empty subject", () => {
+    const lines = linesOf({
+      ...base,
+      scenario: { kind: "title-unavailable", title: "   " },
+    });
+    expect(lines).toContain("◌  This title not found");
+  });
+
+  test("unbounded waterfall labels truncate instead of clipping mid-panel", () => {
+    const rows = buildErrorRows({
+      ...base,
+      waterfall: {
+        title: "Source attempts",
+        truncated: false,
+        rows: [
+          { label: `s${"o".repeat(200)}urce`, detail: `d${"e".repeat(200)}tail`, status: "failed" },
+        ],
+      },
+    });
+    const lines = rows.map(rowText);
+    const waterfallLine = lines.find((line) => line.startsWith("x s")) ?? "";
+    expect(waterfallLine).toContain("…");
+    for (const line of lines) {
+      expect(measureColumns(line)).toBeLessThanOrEqual(170);
+    }
+  });
 });
