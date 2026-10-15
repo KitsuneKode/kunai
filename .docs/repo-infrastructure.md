@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T14:05:00Z"
+lastReviewed: "2026-10-15"
 ---
 
 # Kunai — Repo Infrastructure
@@ -101,11 +101,19 @@ When release-related files change (`apps/cli/package.json`, `apps/cli/CHANGELOG.
 root `CHANGELOG.md`, or `.changeset/*.md`), lint-staged also runs `bun run guard` to
 catch version/changelog drift before commit.
 
-The pre-push hook runs the full workspace test command:
+The pre-push hook first verifies generated docs metadata. Main and tag pushes
+run `bun run ci`; branch pushes run `bun run ci:affected`, which includes
+preflight, typecheck, lint, formatting, and tests. A successful affected run can
+include cache replays, so final candidate verification still needs forced gates.
 
-```sh
-bun run test
-```
+The minified development bundle has its own measured size ratchet in
+`apps/cli/scripts/build-shared.ts`. It is not the public npm payload: the Node
+launcher retains separate 32 KiB packed / 64 KiB unpacked limits. Combined PRs
+can exceed the development ratchet even when each passed independently. Measure
+the same build options together, remove redundant code, and document any
+remaining intentional adjustment beside the constant. The October 15 review
+train removed duplicate subtitle checks before a 4 KiB development-only budget
+adjustment; public package limits remain unchanged.
 
 ## CI
 
