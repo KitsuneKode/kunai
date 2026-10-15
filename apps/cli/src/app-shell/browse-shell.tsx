@@ -131,6 +131,7 @@ import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegio
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { takePaletteTitleLaunch } from "./palette-title-launch";
+import { prefetchPosterSources } from "./poster-source-cache";
 import { suppressPosterWhileNavigating } from "./poster-types";
 import { computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
@@ -1368,6 +1369,18 @@ export function BrowseShell<T>({
     posterState: posterPreviewState,
     spinner: posterSpinner,
   });
+  // Neighbor prefetch: warm the rows around the live highlight so settling on
+  // an adjacent row lands on cached source bytes (memory or disk lane) instead
+  // of paying fetch + re-encode per scroll step. Keyed on the live highlight,
+  // not the settled one, so the cache is warm *before* the settle window ends.
+  useEffect(() => {
+    if (displayOptions.length === 0) return;
+    prefetchPosterSources(
+      displayOptions.map((option) => option.previewImageUrl),
+      boundedSelectedIndex,
+      { cols: Math.max(14, Math.min(20, previewWidth - 6)), variant: "detail" },
+    );
+  }, [displayOptions, boundedSelectedIndex, previewWidth]);
   const previewRailModel = isCalendarView
     ? buildCalendarPreviewRailModel(
         settledOption as BrowseShellOption<SearchResult> | undefined,

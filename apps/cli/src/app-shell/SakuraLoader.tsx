@@ -35,7 +35,11 @@ export function GlimmerLabel({
   readonly active: boolean;
   readonly stalled: boolean;
 }) {
-  const chars = [...label];
+  // SAFETY: [...label] splits ZWJ emoji/combining marks into fragments.
+  const segments = [
+    ...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(label),
+  ].map((part) => part.segment);
+  const chars = segments.length > 0 ? segments : [...label];
   const span = Math.max(1, chars.length);
   const tick = useFrameTick(active, SHIMMER_INTERVAL_MS);
   const animate = active && !reducedMotionEnabled();

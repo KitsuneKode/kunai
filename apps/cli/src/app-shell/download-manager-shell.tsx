@@ -11,6 +11,7 @@ import {
   ROOT_CHROME_ROWS,
 } from "@/app-shell/layout-policy";
 import { useOverlayOrTerminalSize } from "@/app-shell/overlay-layout-context";
+import { prefetchPosterSources } from "@/app-shell/poster-source-cache";
 import { computeQueueRowLayout } from "@/app-shell/primitives/list-row-layout";
 import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
 import { ProgressBar } from "@/app-shell/primitives/ProgressBar";
@@ -36,9 +37,12 @@ import { useRootContentSuspended } from "./RootContentSuspension";
 /** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
 
 function refreshJobLists(container: Container) {
+  // One scan, partitioned in memory: two listActive(50) calls doubled the
+  // repo read on every refresh (and refresh fires per progress event).
+  const active = container.downloadService.listActive(50);
   return {
-    activeJobs: container.downloadService.listActive(50).filter((j) => j.status === "running"),
-    queuedJobs: container.downloadService.listActive(50).filter((j) => j.status === "queued"),
+    activeJobs: active.filter((j) => j.status === "running"),
+    queuedJobs: active.filter((j) => j.status === "queued"),
     completedJobs: container.downloadService.listCompleted(5),
     failedJobs: container.downloadService.listFailed(10),
   };
@@ -278,6 +282,15 @@ export function DownloadManagerContent({
       ? "Press X again to remove record · local files kept"
       : "Press x or X again to remove record · local files kept";
   const settledPosterUrl = useSettledValue(selectedJob?.posterUrl);
+  // Neighbor prefetch so ↑/↓ across the queue lands on cached poster bytes.
+  useEffect(() => {
+    if (allJobs.length === 0) return;
+    prefetchPosterSources(
+      allJobs.map((job) => job.posterUrl),
+      selectedIndex,
+      { cols: 30, variant: "preview" },
+    );
+  }, [allJobs, selectedIndex]);
   const railPoster = useRailPoster(settledPosterUrl, {
     rows: 12,
     cols: 30,
