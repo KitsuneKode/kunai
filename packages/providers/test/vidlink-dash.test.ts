@@ -385,18 +385,16 @@ describe("vidlink enc-dec persistent cache (#205)", () => {
 });
 
 describe("vidlink 429 backoff", () => {
-  test("parseVidlinkRetryAfterMs reads delta-seconds, HTTP-dates, and caps", () => {
+  test("parseVidlinkRetryAfterMs preserves server windows and handles invalid values", () => {
     expect(parseVidlinkRetryAfterMs("2")).toBe(2000);
     expect(parseVidlinkRetryAfterMs("0")).toBe(0);
     expect(parseVidlinkRetryAfterMs(null)).toBe(0);
     expect(parseVidlinkRetryAfterMs("   ")).toBe(0);
     expect(parseVidlinkRetryAfterMs("garbage")).toBe(0);
-    // An unbounded sleep would hold the resolve past every attempt budget.
-    expect(parseVidlinkRetryAfterMs("120")).toBe(10_000);
-    const future = new Date(Date.now() + 3_000).toUTCString();
-    const parsed = parseVidlinkRetryAfterMs(future);
-    expect(parsed).toBeGreaterThan(0);
-    expect(parsed).toBeLessThanOrEqual(3_000);
+    expect(parseVidlinkRetryAfterMs("120")).toBe(120_000);
+    const now = Date.UTC(2026, 9, 15);
+    expect(parseVidlinkRetryAfterMs(new Date(now + 3_000).toUTCString(), now)).toBe(3_000);
+    expect(parseVidlinkRetryAfterMs(new Date(now - 3_000).toUTCString(), now)).toBe(0);
   });
 
   test("a 429 with Retry-After waits out the window before quarantining/retrying", async () => {
@@ -469,6 +467,51 @@ describe("vidlink 429 backoff", () => {
       setVidlinkRetrySleepForTest(null);
     }
   });
+
+  test.each(["enc-dec.app", "vidlink.pro/api/b"])(
+    "a long throttle window from %s yields to fallback without retrying early",
+    async (throttledHost) => {
+      clearVidlinkEncDecCacheForTest();
+      let throttledRequests = 0;
+      const sleeps: number[] = [];
+      const disposed: string[] = [];
+      setVidlinkRetrySleepForTest(async (ms) => {
+        sleeps.push(ms);
+      });
+      try {
+        const context: ProviderRuntimeContext = {
+          providerId: "vidlink",
+          now: () => new Date().toISOString(),
+          fetch: {
+            runtime: "direct-http",
+            fetch: async (url) => {
+              const target = String(url);
+              if (target.includes(throttledHost)) {
+                throttledRequests += 1;
+                return new Response(
+                  new ReadableStream({
+                    cancel: () => {
+                      disposed.push(throttledHost);
+                    },
+                  }),
+                  { status: 429, headers: { "retry-after": "120" } },
+                );
+              }
+              return new Response(JSON.stringify({ result: "THROTTLED" }), { status: 200 });
+            },
+          },
+        };
+        const result = await resolveVidlinkDirect(INPUT, context);
+        expect(result.status).toBe("exhausted");
+        expect(result.failures[0]?.code).toBe("rate-limited");
+        expect(throttledRequests).toBe(1);
+        expect(sleeps).toEqual([]);
+        expect(disposed).toEqual([throttledHost]);
+      } finally {
+        setVidlinkRetrySleepForTest(null);
+      }
+    },
+  );
 
   test("a persistent 429 without Retry-After spaces retries and still exhausts", async () => {
     const sleeps: number[] = [];
