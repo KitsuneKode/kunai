@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T14:57:13Z"
+lastReviewed: "2026-10-15"
 ---
 
 # Kunai — UX Architecture
@@ -8,6 +8,10 @@ lastReviewed: "2026-10-12T14:57:13Z"
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when designing terminal interactions, keybindings, panels, command flows, and validation behavior.
+
+The root status header maps both `idle` and `ready` to “ready”. Settled browse,
+picker, and post-play surfaces must not use the unknown-status “Loading…”
+fallback; searching and playback retain their own activity labels.
 
 ## Design Goals
 
