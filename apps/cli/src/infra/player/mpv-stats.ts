@@ -465,6 +465,16 @@ export function applyEndFileEvent(
   const base = state.latestIpcSample ?? state.lastNonZeroSample;
   const durationForGuard = observedDuration(state, base);
   let demotedPrematureEof = false;
+  if (
+    mapped === "eof" &&
+    (!Number.isFinite(state.maxTrustedProgressSeconds) || state.maxTrustedProgressSeconds <= 0)
+  ) {
+    // An EOF/duration observation is not playback progress. Do not inflate a
+    // duration-only result to a full watch, including for short clips.
+    mapped = "unknown";
+    demotedPrematureEof = true;
+    state.eofDemotedByPrematureGuard = true;
+  }
   if (mapped === "eof" && durationForGuard > 0) {
     if (
       shouldDemotePrematureEof(
