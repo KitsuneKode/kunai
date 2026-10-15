@@ -308,6 +308,15 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * bytes (+100,995, 98.6 KiB). The new cap leaves 18 KiB of headroom. The
  * public npm launcher pack budgets below are unchanged.
  *
+ * Raised from 3_096 to 3_100 on 2026-10-15 for the combined reviewed
+ * corrections (#622, #652, #659-#662) on main@beca2fb51. Identical minified
+ * options measured 3,171,033 bytes, 729 above the old limit. Removing the
+ * duplicated subtitle attachment and language-normalization branches reduced
+ * this to 3,170,828 bytes (-205); the remaining 524 bytes are distributed
+ * runtime changes, not a new dependency or asset. The 4 KiB adjustment leaves
+ * 3,572 bytes of headroom for that measured tree. Public npm pack budgets are
+ * unchanged; this ratchet still rejects the first byte beyond its new limit.
+ *
  * Worth restating because it is what makes this safe: this number guards
  * `dist/kunai.js`, which is published nowhere and is not the source of the
  * compiled binaries either -- `compileBinaryBuildOptions` compiles from
@@ -316,7 +325,7 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * change does not touch and which the exact-tarball verification added in #166
  * has since made stricter.
  */
-export const NPM_BUNDLE_BUDGET_KB = 3_096;
+export const NPM_BUNDLE_BUDGET_KB = 3_100;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
@@ -402,7 +411,7 @@ export function assertNpmBundleBudget(bytes: number): void {
   const budgetBytes = NPM_BUNDLE_BUDGET_KB * 1024;
   if (bytes <= budgetBytes) return;
   throw new Error(
-    `[build] dist/kunai.js is ${formatBuildSize(bytes)} (budget ${NPM_BUNDLE_BUDGET_KB} KiB). ` +
+    `[build] dist/kunai.js is ${formatBuildSize(bytes)} (${bytes} bytes; budget ${NPM_BUNDLE_BUDGET_KB} KiB, over by ${bytes - budgetBytes} bytes). ` +
       `Run KUNAI_BUILD_ANALYZE=1 bun run build to inspect top inputs.`,
   );
 }

@@ -49,13 +49,6 @@ export function langMatches(entryLang: string, preferred: string): boolean {
   const preferredCode = normalizeIsoLanguageCode(pl);
   if (entryCode && preferredCode && entryCode === preferredCode) return true;
 
-  // Downloaded sidecars and some provider tracks arrive as ISO-2 ("eng",
-  // "fra") while the request is ISO-1 ("en", "fr") — normalize before the
-  // remaining checks so those tracks aren't silently lost.
-  const elCode = normalizeIsoLanguageCode(el);
-  const plCode = normalizeIsoLanguageCode(pl);
-  if (elCode && plCode && elCode === plCode) return true;
-
   // ISO 639-1 codes ↔ English full names live in @kunai/providers'
   // subtitleLanguageDisplayName (ISO_2_LANGUAGE_NAME) — a second, smaller
   // private table here drifted (it lacked he/uk/el/bg/ca/sk/sl/hr/sr/ms/tl).
