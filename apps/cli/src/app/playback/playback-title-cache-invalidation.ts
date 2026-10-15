@@ -1,3 +1,4 @@
+import type { ResolvedStreamSelection } from "@/domain/playback/playback-selection-policy";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -8,7 +9,7 @@ import type { EpisodePrefetchHandle } from "./episode-prefetch";
 import { invalidateEpisodePlaybackCaches } from "./playback-source-cache-invalidation";
 
 export async function invalidateTitlePlaybackCaches(input: {
-  readonly cacheStore: CacheStore;
+  readonly cacheStore: Pick<CacheStore, "delete">;
   readonly sourceInventory: Pick<SourceInventoryService, "delete">;
   readonly providerId: string;
   /** Manifest-driven keyParts decide the resolve-cache key; without them the
@@ -19,14 +20,16 @@ export async function invalidateTitlePlaybackCaches(input: {
   readonly mode: ShellMode;
   readonly config: KitsuneConfig;
   readonly episodes: readonly EpisodeInfo[];
+  readonly selectionForEpisode?: (episode: EpisodeInfo) => ResolvedStreamSelection;
   readonly episodePrefetch?: EpisodePrefetchHandle;
   readonly cancelReason?: string;
 }): Promise<void> {
   input.episodePrefetch?.cancel(input.cancelReason ?? "title-playback-cache-invalidation");
 
   await Promise.all(
-    input.episodes.map((episode) =>
-      invalidateEpisodePlaybackCaches({
+    input.episodes.map((episode) => {
+      const selection = input.selectionForEpisode?.(episode);
+      return invalidateEpisodePlaybackCaches({
         cacheStore: input.cacheStore,
         sourceInventory: input.sourceInventory,
         providerId: input.providerId,
@@ -35,7 +38,9 @@ export async function invalidateTitlePlaybackCaches(input: {
         episode,
         mode: input.mode,
         config: input.config,
-      }),
-    ),
+        selectedSourceId: selection?.sourceId,
+        selectedStreamId: selection?.streamId,
+      });
+    }),
   );
 }
