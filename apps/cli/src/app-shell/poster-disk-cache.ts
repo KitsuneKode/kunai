@@ -87,8 +87,9 @@ async function pruneCache(dir: string): Promise<void> {
   }
   entries.sort((a, b) => a.mtimeMs - b.mtimeMs);
   let bytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+  let remainingEntries = entries.length;
   for (const entry of entries) {
-    if (entries.length <= MAX_POSTER_DISK_CACHE_ENTRIES && bytes <= MAX_POSTER_DISK_CACHE_BYTES) {
+    if (remainingEntries <= MAX_POSTER_DISK_CACHE_ENTRIES && bytes <= MAX_POSTER_DISK_CACHE_BYTES) {
       break;
     }
     try {
@@ -96,7 +97,7 @@ async function pruneCache(dir: string): Promise<void> {
     } catch {
       continue;
     }
-    entries.length -= 1;
+    remainingEntries -= 1;
     bytes -= entry.size;
   }
 }
