@@ -53,16 +53,14 @@ describe("production playback cache purge", () => {
           {
             season: 1,
             episode: 1,
-            ...(mode === "anime"
-              ? { providerEpisodeIdentity: { providerId: module.providerId, value: "0" } }
-              : {}),
+            providerEpisodeIdentity:
+              mode === "anime" ? { providerId: module.providerId, value: "0" } : undefined,
           },
           {
             season: 1,
             episode: mode === "anime" ? 1 : 2,
-            ...(mode === "anime"
-              ? { providerEpisodeIdentity: { providerId: module.providerId, value: "1" } }
-              : {}),
+            providerEpisodeIdentity:
+              mode === "anime" ? { providerId: module.providerId, value: "1" } : undefined,
           },
         ];
         const episodePlaybackSelection = new EpisodePlaybackSelectionService(
