@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -244,21 +244,68 @@ describe("createCredentialVault backend selection", () => {
     expect(fallbacks[0]).toContain("secret-service");
   });
 
-  test("stalled secret-tool probe falls back to file fast (races the probe timeout)", async () => {
-    // SAFETY: the never-resolving probe models a missing daemon with a present
-    // CLI — the old serial await would block the full 3s probe timeout here.
-    const spawn: CredentialSpawn = () => new Promise(() => undefined);
-    const startedAt = Date.now();
+  test("a slow successful probe keeps native credentials instead of selecting an empty file store", async () => {
+    const probe = Promise.withResolvers<Awaited<ReturnType<CredentialSpawn>>>();
+    const scheduled: (() => void)[] = [];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    // Drive premature fallback timers without waiting on wall-clock time.
+    const timerSpy = spyOn(globalThis, "setTimeout").mockImplementation(
+      Object.assign(
+        (...args: Parameters<typeof originalSetTimeout>) => {
+          const [callback, , ...callbackArgs] = args;
+          scheduled.push(() => callback(...callbackArgs));
+          const timer = originalSetTimeout(...args);
+          clearTimeout(timer);
+          timers.push(timer);
+          return timer;
+        },
+        { __promisify__: originalSetTimeout.__promisify__ },
+      ),
+    );
+    const fallbacks: string[] = [];
+    try {
+      const selection = createCredentialVault({
+        paths: fakePaths(dir),
+        platform: "linux",
+        env: {},
+        which: (cmd) => (cmd === "secret-tool" ? "/usr/bin/secret-tool" : null),
+        spawn: async (argv) =>
+          argv.includes("__probe__")
+            ? probe.promise
+            : {
+                exitCode: 0,
+                stdout: "fixture-existing-native-secret",
+                stderr: "",
+                timedOut: false,
+              },
+        onFallback: (backend) => fallbacks.push(backend),
+      });
+      for (const run of scheduled) run();
+      probe.resolve({ exitCode: 1, stdout: "", stderr: "", timedOut: false });
+      const vault = await selection;
+      expect(vault.backend).toBe("secret-service");
+      expect(await vault.get(CREDENTIAL_KEYS.anilistTokens)).toBe("fixture-existing-native-secret");
+      expect(fallbacks).toEqual([]);
+    } finally {
+      probe.resolve({ exitCode: 1, stdout: "", stderr: "", timedOut: false });
+      timerSpy.mockRestore();
+      for (const timer of timers) clearTimeout(timer);
+    }
+  });
+
+  test("a probe killed at its deadline selects file fallback with a notice", async () => {
+    const fallbacks: string[] = [];
     const vault = await createCredentialVault({
       paths: fakePaths(dir),
       platform: "linux",
       env: {},
       which: (cmd) => (cmd === "secret-tool" ? "/usr/bin/secret-tool" : null),
-      spawn,
+      spawn: async () => ({ exitCode: 143, stdout: "", stderr: "", timedOut: true }),
+      onFallback: (backend) => fallbacks.push(backend),
     });
     expect(vault.backend).toBe("file");
-    // The 3s probe timeout stays the spawn's kill backstop; we only wait ~300ms.
-    expect(Date.now() - startedAt).toBeLessThan(3_000);
+    expect(fallbacks).toEqual(["file"]);
   });
 
   test("file backend round-trips through an owner-only file", async () => {
