@@ -45,6 +45,7 @@ function humanReadableRootStatus(raw: string): string {
     case "error":
       return "Playback error";
     case "idle":
+    case "ready":
       return "ready";
     case "resolving":
       return "Resolving…";
