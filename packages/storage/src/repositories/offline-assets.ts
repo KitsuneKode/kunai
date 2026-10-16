@@ -171,7 +171,16 @@ export class OfflineAssetsRepository {
     return row ? mapAssetRow(row) : undefined;
   }
 
-  listTitleAssets(titleId: string, limit = 100): readonly OfflineAssetRecord[] {
+  /** Authority readers need every asset; display callers may request an explicit limit. */
+  listTitleAssets(titleId: string, limit?: number): readonly OfflineAssetRecord[] {
+    if (limit === undefined) {
+      return this.db
+        .query<OfflineAssetRow, [string]>(
+          "SELECT * FROM offline_assets WHERE title_id = ? ORDER BY season ASC, episode ASC, updated_at DESC",
+        )
+        .all(titleId)
+        .map(mapAssetRow);
+    }
     return this.db
       .query<OfflineAssetRow, [string, number]>(
         "SELECT * FROM offline_assets WHERE title_id = ? ORDER BY season ASC, episode ASC, updated_at DESC LIMIT ?",
