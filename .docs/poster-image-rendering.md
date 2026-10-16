@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-07"
+lastReviewed: "2026-10-15"
 ---
 
 # Poster and terminal image output
@@ -84,6 +84,15 @@ were retired, and `jpeg-js` is test-support only.
 - **`none`**: Silent skip; UI shows “Poster unavailable” when appropriate.
 
 In Ink, browse and playback companion panes both render `placeholder` for **`kitty`** and **`text`**; only **`none`** (or missing URL while loading) shows the unavailable copy.
+
+## Source disk cache
+
+Remote poster source bytes are cached under the platform cache directory in
+`poster-sources`, keyed by URL, fetch width, and protocol. The disk cache is
+best effort; corrupt or unreadable entries fall back to acquisition. Each write
+prunes oldest entries until both limits hold: 150 files and 64 MiB. Pruning
+counts successful removals without shortening the list being traversed, so it
+also recovers from a backlog left by another session.
 
 ## Offline thumbnails
 
