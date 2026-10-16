@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-14"
+lastReviewed: "2026-10-15"
 ---
 
 # Tracker Sync
@@ -186,7 +186,10 @@ Secret Service (`secret-tool`), probed once per launch in that order with
 (`anilist.tokens`, `tmdb.tokens`) holds the credential JSON blob. On machines
 with no keyring — headless Linux without a Secret Service daemon — a `file`
 backend keeps the old guarantee: `configDir/secrets.json` written atomically
-with owner-only permissions. The first launch on a vault-capable machine
+with owner-only permissions. Linux waits for the bounded Secret Service probe
+(up to three seconds) before selecting a backend. A separate short fallback
+timer must not redirect a slow but healthy keyring to a different credential
+store. The first launch on a vault-capable machine
 migrates `sync-tokens.json` write → read-back → compare → delete, restart-safe
 and idempotent. Token-store mutations stay serialized. Native vault patches
 write or delete only the explicitly targeted tracker key, without reading or
