@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-08"
+lastReviewed: "2026-10-14T16:40:31Z"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -206,6 +206,9 @@ accounts, usage ping, done. Implementation is
   and freeing disk space triggers nothing by itself. Paused-job messages
   therefore state the action to take rather than promising an automatic
   resume.
+- A queue kick received during an active pass coalesces into one follow-up
+  pass. Failure diagnostics retain the failed pass's stage, worker and job
+  attribution even when that follow-up has already started.
 - `resumeEligiblePausedJobs` is not the resume path and is not dead code: it
   exists solely to heal a corrupt `next_retry_at`, which SQL string-compares
   into `listPaused` while `selectEligibleQueuedJob` skips it forever.
