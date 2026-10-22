@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { persistSettingsDraft } from "@/app-shell/settings/persist";
+import { buildSettingsRegistryContext } from "@/app-shell/settings/registry-context";
+import { presenceSettingsRows } from "@/app-shell/settings/registry/presence";
 import { SettingsShell } from "@/app-shell/settings/SettingsShell";
 import type { Container } from "@/container";
 import { FileStorage } from "@/infra/storage/FileStorage";
@@ -11,6 +13,7 @@ import { UsageAnalyticsService } from "@/services/analytics/usage-analytics-serv
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { ConfigStoreImpl } from "@/services/persistence/ConfigStoreImpl";
+import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import React, { act } from "react";
 
 import { render } from "../harness/render-capture";
@@ -220,16 +223,112 @@ for (const analytics of ["unset", "disabled"] as const) {
     const container = createSettingsContainer(config);
 
     try {
-      await persistSettingsDraft(container, {
-        ...config.getRaw(),
-        analytics,
-        installId: "injected-install-id",
-      });
+      const baseline = config.getRaw();
+      await persistSettingsDraft(
+        container,
+        { ...baseline, analytics, installId: "injected-install-id" },
+        baseline,
+      );
 
       const reloaded = await profile.loadConfig();
       expect(reloaded.getRaw().analytics).toBe(analytics);
       expect(reloaded.getRaw().installId).toBe("");
     } finally {
+      await config.flushPending();
+      await rm(profile.directory, { recursive: true, force: true });
+    }
+  });
+}
+
+for (const withdrawalSource of ["same instance", "another instance"] as const) {
+  test(`connecting presence cannot restore consent withdrawn by ${withdrawalSource}`, async () => {
+    const profile = await createTemporaryProfile();
+    const config = await profile.loadConfig();
+    const container = createSettingsContainer(config);
+    const idle: PresenceSnapshot = {
+      provider: "discord",
+      status: "idle",
+      privacy: "full",
+      clientIdSource: "default",
+      canConnect: true,
+      detail: "Fixture disconnected",
+    };
+    let connected = 0;
+    container.presence.getSnapshot = () => idle;
+    container.presence.connect = async () => {
+      connected += 1;
+      return { ...idle, status: "ready" };
+    };
+    try {
+      await config.update({ presenceProvider: "discord" });
+      await container.usageAnalytics.setConsent("enabled");
+      const draft = config.getRaw();
+      const ctx = buildSettingsRegistryContext(container, draft);
+      const action = presenceSettingsRows(ctx).find((row) => row.id === "presenceConnection");
+      if (action?.kind !== "action") throw new Error("Missing presence action");
+      // Another explicit choice disables analytics after this pane took its snapshot.
+      const withdrawingContainer =
+        withdrawalSource === "same instance"
+          ? container
+          : createSettingsContainer(await profile.loadConfig());
+      await withdrawingContainer.usageAnalytics.setConsent("disabled");
+      await action.run(ctx, { signal: new AbortController().signal, onStatus: () => {} });
+      expect(connected).toBe(1);
+      if (withdrawalSource === "same instance") {
+        expect(config.analytics).toBe("disabled");
+        expect(config.installId).toBe("");
+      }
+      const reloaded = await profile.loadConfig();
+      expect(reloaded.analytics).toBe("disabled");
+      expect(reloaded.installId).toBe("");
+    } finally {
+      await config.flushPending();
+      await rm(profile.directory, { recursive: true, force: true });
+    }
+  });
+
+  test(`an unrelated Settings edit preserves consent withdrawn by ${withdrawalSource}`, async () => {
+    const profile = await createTemporaryProfile();
+    const config = await profile.loadConfig();
+    const container = createSettingsContainer(config);
+    await container.usageAnalytics.setConsent("enabled");
+    const handle = render(
+      <SettingsShell
+        container={container}
+        width={100}
+        maxRows={20}
+        commandMode={false}
+        onClose={() => {}}
+        onStatus={() => {}}
+        onRedraw={() => {}}
+      />,
+      { columns: 100, rows: 30 },
+    );
+    try {
+      const withdrawingContainer =
+        withdrawalSource === "same instance"
+          ? container
+          : createSettingsContainer(await profile.loadConfig());
+      await withdrawingContainer.usageAnalytics.setConsent("disabled");
+      handle.stdin.enqueue("\x1b[B");
+      handle.stdin.enqueue("\r");
+      handle.stdin.enqueue("\x1b[B");
+      handle.stdin.enqueue("\r");
+      await waitUntil(
+        () => config.getRaw().footerHints === "minimal",
+        "unrelated footer edit persisted",
+      );
+      if (withdrawalSource === "same instance") {
+        expect(config.analytics).toBe("disabled");
+        expect(config.installId).toBe("");
+      }
+      await config.flushPending();
+      const reloaded = await profile.loadConfig();
+      expect(reloaded.footerHints).toBe("minimal");
+      expect(reloaded.analytics).toBe("disabled");
+      expect(reloaded.installId).toBe("");
+    } finally {
+      handle.unmount();
       await config.flushPending();
       await rm(profile.directory, { recursive: true, force: true });
     }

@@ -9,7 +9,9 @@ import {
 
 type RecordedCall = { readonly url: string; readonly headers: Record<string, string> };
 
-function recordingFetch(bodies: Record<string, { body: string; contentType?: string }>) {
+function recordingFetch(
+  bodies: Record<string, { body: string; contentType?: string; redirectTo?: string }>,
+) {
   const calls: RecordedCall[] = [];
   const fetchImpl = async (url: string, init: RequestInit): Promise<Response> => {
     const headers: Record<string, string> = {};
@@ -19,6 +21,9 @@ function recordingFetch(bodies: Record<string, { body: string; contentType?: str
     calls.push({ url, headers });
     const fixture = bodies[url];
     if (!fixture) return new Response("missing", { status: 404 });
+    if (fixture.redirectTo) {
+      return new Response("", { status: 302, headers: { location: fixture.redirectTo } });
+    }
     return new Response(fixture.body, {
       headers: { "content-type": fixture.contentType ?? "application/octet-stream" },
     });
@@ -502,6 +507,250 @@ describe("android stream gateway", () => {
       expect(res.status).toBe(200);
       expect(await res.text()).toContain("WEBVTT");
       expect(calls[0]?.headers["referer"]).toBe("https://embed.example/");
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("foreign subtitles do not receive media credentials or custom tokens", async () => {
+    const subtitleUrl = "https://subs.example.com/en.vtt";
+    const { calls, fetchImpl } = recordingFetch({ [subtitleUrl]: { body: "WEBVTT" } });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        url: MASTER_URL,
+        headers: {
+          authorization: "fixture",
+          cookie: "fixture=1",
+          "x-session-token": "fixture",
+          referer: "https://embed.example/",
+        },
+        subtitles: [subtitleUrl],
+      });
+      await (await fetch(session.subtitleUrls[0] ?? "")).text();
+      expect(calls[0]?.headers.authorization).toBeUndefined();
+      expect(calls[0]?.headers.cookie).toBeUndefined();
+      expect(calls[0]?.headers["x-session-token"]).toBeUndefined();
+      expect(calls[0]?.headers.referer).toBe("https://embed.example/");
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("DASH resources discovered on another origin do not receive custom tokens", async () => {
+    const foreignUrl = "https://other.example/video.mp4";
+    const manifest = `<MPD><Period><AdaptationSet><Representation><BaseURL>${foreignUrl}</BaseURL></Representation></AdaptationSet></Period></MPD>`;
+    const { calls, fetchImpl } = recordingFetch({
+      "https://cdn.example.com/master.mpd": { body: manifest, contentType: "application/dash+xml" },
+      [foreignUrl]: { body: "media" },
+    });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/master.mpd",
+        headers: { "x-api-key": "fixture" },
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      const resource = /<BaseURL>([^<]+)<\/BaseURL>/.exec(text)?.[1];
+      expect(resource).toStartWith(gw.baseUrl);
+      await (await fetch(resource ?? "")).text();
+      expect(calls[0]?.headers["x-api-key"]).toBe("fixture");
+      expect(calls[1]?.headers["x-api-key"]).toBeUndefined();
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("playlist destination admission does not authorize media credentials", async () => {
+    const { calls, fetchImpl } = recordingFetch({
+      [MASTER_URL]: { body: PLAYLIST_BODY, contentType: "application/vnd.apple.mpegurl" },
+      "https://cdn.example.com/seg-0.ts": { body: "media" },
+      "https://seg2.cdn.example.com/seg-1.ts": { body: "media" },
+      "https://keys.example.com/k.bin": { body: "key" },
+    });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        url: MASTER_URL,
+        headers: { cookie: "fixture=1", authorization: "fixture" },
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      const urls = [...text.matchAll(/URI="([^"]+)"/g)].map((match) => match[1] ?? "");
+      urls.push(...text.split("\n").filter((line) => line.startsWith(gw.baseUrl)));
+      for (const url of urls) await (await fetch(url)).text();
+      const sameOrigin = calls.filter(
+        (call) => new URL(call.url).origin === new URL(MASTER_URL).origin,
+      );
+      const foreign = calls.filter(
+        (call) => new URL(call.url).origin !== new URL(MASTER_URL).origin,
+      );
+      expect(sameOrigin).toHaveLength(2);
+      expect(foreign).toHaveLength(2);
+      for (const call of sameOrigin) expect(call.headers.cookie).toBe("fixture=1");
+      for (const call of foreign) {
+        expect(call.headers.cookie).toBeUndefined();
+        expect(call.headers.authorization).toBeUndefined();
+      }
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("a subtitle on the media origin keeps the session credentials", async () => {
+    const subtitleUrl = "https://cdn.example.com/en.vtt";
+    const { calls, fetchImpl } = recordingFetch({ [subtitleUrl]: { body: "WEBVTT" } });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        url: MASTER_URL,
+        headers: { cookie: "fixture=1", "x-session-token": "fixture" },
+        subtitles: [subtitleUrl],
+      });
+      await (await fetch(session.subtitleUrls[0] ?? "")).text();
+      expect(calls[0]?.headers.cookie).toBe("fixture=1");
+      expect(calls[0]?.headers["x-session-token"]).toBe("fixture");
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("a media redirect to another origin drops credentials and keeps transport hints", async () => {
+    const { calls, fetchImpl } = recordingFetch({
+      "https://cdn.example.com/movie.mp4": {
+        body: "",
+        redirectTo: "https://other.example/movie.mp4",
+      },
+      "https://other.example/movie.mp4": { body: "video-bytes" },
+    });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/movie.mp4",
+        headers: {
+          authorization: "fixture",
+          cookie: "fixture=1",
+          "x-api-key": "fixture",
+          referer: "https://embed.example/",
+        },
+      });
+      expect(await (await fetch(session.mediaUrl)).text()).toBe("video-bytes");
+      expect(calls[0]?.headers["x-api-key"]).toBe("fixture");
+      expect(calls[1]?.url).toBe("https://other.example/movie.mp4");
+      expect(calls[1]?.headers.authorization).toBeUndefined();
+      expect(calls[1]?.headers.cookie).toBeUndefined();
+      expect(calls[1]?.headers["x-api-key"]).toBeUndefined();
+      expect(calls[1]?.headers.referer).toBe("https://embed.example/");
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("a same-origin redirect keeps the session credentials", async () => {
+    const { calls, fetchImpl } = recordingFetch({
+      "https://cdn.example.com/movie.mp4": {
+        body: "",
+        redirectTo: "https://cdn.example.com/final.mp4",
+      },
+      "https://cdn.example.com/final.mp4": { body: "video-bytes" },
+    });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/movie.mp4",
+        headers: { "x-api-key": "fixture" },
+      });
+      await (await fetch(session.mediaUrl)).text();
+      expect(calls[1]?.url).toBe("https://cdn.example.com/final.mp4");
+      expect(calls[1]?.headers["x-api-key"]).toBe("fixture");
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("an HLS segment that redirects off the media origin drops credentials", async () => {
+    const { calls, fetchImpl } = recordingFetch({
+      [MASTER_URL]: {
+        body: "#EXTM3U\n#EXTINF:6.0,\nseg-0.ts\n#EXT-X-ENDLIST",
+        contentType: "application/vnd.apple.mpegurl",
+      },
+      "https://cdn.example.com/seg-0.ts": { body: "", redirectTo: "https://edge.example/seg-0.ts" },
+      "https://edge.example/seg-0.ts": { body: "media" },
+    });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        url: MASTER_URL,
+        headers: { cookie: "fixture=1", "x-session-token": "fixture" },
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      const segment = text.split("\n").find((line) => line.startsWith(gw.baseUrl));
+      expect(await (await fetch(segment ?? "")).text()).toBe("media");
+      expect(calls[1]?.headers.cookie).toBe("fixture=1");
+      expect(calls[2]?.url).toBe("https://edge.example/seg-0.ts");
+      expect(calls[2]?.headers.cookie).toBeUndefined();
+      expect(calls[2]?.headers["x-session-token"]).toBeUndefined();
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("a DASH segment template keeps credentials only on the media origin", async () => {
+    const mpd = [
+      '<MPD><Period><AdaptationSet><Representation id="a">',
+      '<SegmentTemplate media="chunk-$Number$.m4s"/>',
+      "</Representation></AdaptationSet>",
+      '<AdaptationSet><Representation id="b"><BaseURL>https://other.example/</BaseURL>',
+      '<SegmentTemplate media="chunk-$Number$.m4s"/>',
+      "</Representation></AdaptationSet></Period></MPD>",
+    ].join("");
+    const { calls, fetchImpl } = recordingFetch({
+      "https://cdn.example.com/master.mpd": { body: mpd, contentType: "application/dash+xml" },
+      "https://cdn.example.com/chunk-1.m4s": { body: "own" },
+      "https://other.example/chunk-1.m4s": { body: "foreign" },
+    });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/master.mpd",
+        headers: { "x-api-key": "fixture" },
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      const templates = [...text.matchAll(/media="([^"]+)"/g)].map((match) => match[1] ?? "");
+      expect(templates).toHaveLength(2);
+      for (const template of templates)
+        await (await fetch(template.replace("$Number$", "1"))).text();
+      const own = calls.find((call) => call.url === "https://cdn.example.com/chunk-1.m4s");
+      const foreign = calls.find((call) => call.url === "https://other.example/chunk-1.m4s");
+      expect(own?.headers["x-api-key"]).toBe("fixture");
+      expect(foreign?.headers["x-api-key"]).toBeUndefined();
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("a generated document has no media origin, so every resource gets transport hints only", async () => {
+    const foreignUrl = "https://other.example/video.mp4";
+    const { calls, fetchImpl } = recordingFetch({ [foreignUrl]: { body: "media" } });
+    const gw = start({ fetchImpl });
+    try {
+      const session = gw.registerSession({
+        headers: {
+          authorization: "fixture",
+          "x-api-key": "fixture",
+          referer: "https://embed.example/",
+        },
+        document: {
+          text: `<MPD><BaseURL>${foreignUrl}</BaseURL></MPD>`,
+          contentType: "application/dash+xml",
+          remoteUrls: [foreignUrl],
+        },
+      });
+      const text = await (await fetch(session.mediaUrl)).text();
+      const resource = text.match(/<BaseURL>([^<]+)<\/BaseURL>/)?.[1];
+      expect(await (await fetch(resource ?? "")).text()).toBe("media");
+      expect(calls[0]?.headers.authorization).toBeUndefined();
+      expect(calls[0]?.headers["x-api-key"]).toBeUndefined();
+      expect(calls[0]?.headers.referer).toBe("https://embed.example/");
     } finally {
       gw.stop();
     }

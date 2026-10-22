@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-15"
+lastReviewed: "2026-10-22"
 ---
 
 # Kunai — Runtime Architecture
@@ -172,6 +172,12 @@ segment addressing, follows redirects only to public targets (the shared
 `@kunai/core` DNS/private-address guards). Each real fetch connects to the
 validated IP with the original Host and TLS server name; every redirect is
 validated and pinned again, and ambient proxies cannot bypass that binding.
+Credentials and custom header fields are scoped to the registered media entry's
+origin. Admitting a subtitle, HLS key/segment, or DASH resource destination does
+not authorize sending those credentials there. Other origins and cross-origin
+redirects receive only transport hints (Referer, Origin, User-Agent, Accept,
+language and Range fields). Generated documents with no media entry origin
+also use that restricted header set.
 The gateway passes Range through for
 seeking. Blocked playlist and generated MPD targets become local 404 URLs,
 so the external player cannot bypass the target guard. Playlists are bounded
