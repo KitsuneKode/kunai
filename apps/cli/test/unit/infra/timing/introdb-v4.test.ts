@@ -95,6 +95,46 @@ test("missing segment buckets are empty; invalid boundaries cannot become skip w
   });
 });
 
+test("v4 TV echo of season/episode is optional but never a different episode", async () => {
+  reply({ tvdb_id: 1, type: "tv", intro: [{ start_ms: 1, end_ms: 2 }] });
+  expect((await timing(tv)).metadata?.intro).toEqual([{ startMs: 1, endMs: 2 }]);
+  reply({ tvdb_id: 1, type: "tv", season: null, episode: null, intro: [] });
+  expect((await timing(tv)).failureClass).toBeNull();
+  reply({ tvdb_id: 1, type: "tv", season: 1, episode: 3 });
+  expect(await timing(tv)).toEqual({ metadata: null, failureClass: "http-error" });
+});
+
+test("end_ms 0 is the documented no-segment marker, not a skip window", async () => {
+  reply({
+    tvdb_id: 1,
+    type: "movie",
+    intro: [{ start_ms: null, end_ms: 0 }],
+    credits: [
+      { start_ms: 0, end_ms: 0 },
+      { start_ms: 5000, end_ms: null },
+    ],
+  });
+  expect((await timing({ ...tv, type: "movie" })).metadata).toMatchObject({
+    intro: [],
+    credits: [{ startMs: 5000, endMs: null }],
+  });
+});
+
+test("cancellation while the body is read is cancelled, not a malformed response", async () => {
+  const parent = new AbortController();
+  globalThis.fetch = (async () => ({
+    ok: true,
+    json: async () => {
+      parent.abort();
+      return { tvdb_id: 1, type: "tv", season: 1, episode: 2 };
+    },
+  })) as unknown as typeof fetch;
+  expect(await timing({ ...tv, signal: parent.signal, parentSignal: parent.signal })).toEqual({
+    metadata: null,
+    failureClass: "cancelled",
+  });
+});
+
 test("series without both coordinates never silently requests a movie", async () => {
   let fetched = false;
   globalThis.fetch = (async () => {

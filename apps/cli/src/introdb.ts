@@ -83,13 +83,17 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
     const payload = body as IntroDbPayload;
     // Raw v4 HTTP bodies have no SDK `kind` discriminator. Refuse the
     // versions/episodes alternatives and keep TVDB identity out of TMDB fields.
+    // `season`/`episode` echo the caller's own coordinates but the OpenAPI
+    // schema leaves them optional/nullable: absent is fine, a different
+    // episode is somebody else's skip window.
     if (
       !Number.isSafeInteger(payload.tvdb_id) ||
       payload.tvdb_id! <= 0 ||
       payload.type !== (type === "movie" ? "movie" : "tv") ||
       "versions" in body ||
       "episodes" in body ||
-      (type === "series" && (payload.season !== season || payload.episode !== episode))
+      (type === "series" &&
+        (!echoesCoordinate(payload.season, season) || !echoesCoordinate(payload.episode, episode)))
     ) {
       return { metadata: null, failureClass: "http-error" };
     }
@@ -114,6 +118,10 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
   }
 }
 
+function echoesCoordinate(echoed: unknown, requested: number | undefined): boolean {
+  return echoed === undefined || echoed === null || echoed === requested;
+}
+
 function isUsableTmdbId(id: string): boolean {
   return /^\d{1,12}$/.test(id);
 }
@@ -131,10 +139,12 @@ function normalizeSegment(value: unknown): PlaybackTimingSegment | null {
   const entry = value as Record<string, unknown>;
   const startMs = toOptionalInt(entry.start_ms);
   const endMs = toOptionalInt(entry.end_ms);
+  // v4 documents `end_ms: 0` as "no segment"; a segment ending at 0 is empty.
   if (
     (entry.start_ms != null && startMs === null) ||
     (entry.end_ms != null && endMs === null) ||
     (startMs === null && endMs === null) ||
+    endMs === 0 ||
     (startMs !== null && endMs !== null && endMs <= startMs)
   )
     return null;
