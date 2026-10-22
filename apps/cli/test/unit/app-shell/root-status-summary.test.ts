@@ -119,6 +119,21 @@ describe("buildRootStatusSummary", () => {
     expect(summary.crumb).toBe("anime · allanime");
   });
 
+  test("a settled shell reports ready instead of an endless loading state", () => {
+    const state = createInitialState("vidlink", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    // AppRoot emits ready after search/playback work has settled.
+    const summary = buildRootStatusSummary({
+      state,
+      currentViewLabel: "browse",
+      rootStatus: "ready",
+    });
+    expect(summary.header).toEqual({ label: "ready", tone: "success" });
+  });
+
   test("keeps idle search state compact when no title is selected", () => {
     const base = createInitialState("vidking", "hianime", {
       anime: { audio: "original", subtitle: "en" },
