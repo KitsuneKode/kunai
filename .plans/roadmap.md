@@ -29,6 +29,10 @@ so it is not re-derived — not because it is scheduled.
 
 ## Active tracks
 
+Current execution: [watching release candidate](./2026-10-22-watching-release-candidate.md)
+integrates the important safety, provider, timing, mouse and playback work;
+release qualification remains a separate gate.
+
 Every row has real remaining work. When a plan's core lands, move it to the
 archive and put only the residue here.
 
