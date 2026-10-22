@@ -80,6 +80,7 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return { metadata: null, failureClass: "http-error" };
     }
+    // SAFETY: body is a JSON object; identity and segments are validated below before use.
     const payload = body as IntroDbPayload;
     // Raw v4 HTTP bodies have no SDK `kind` discriminator. Refuse the
     // versions/episodes alternatives and keep TVDB identity out of TMDB fields.
@@ -118,7 +119,10 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
   }
 }
 
-function echoesCoordinate(echoed: unknown, requested: number | undefined): boolean {
+function echoesCoordinate(
+  echoed: IntroDbPayload["season"] | null,
+  requested: number | undefined,
+): boolean {
   return echoed === undefined || echoed === null || echoed === requested;
 }
 

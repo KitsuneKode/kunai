@@ -387,6 +387,7 @@ async function listYoutubeEpisodesViaYtdlp(
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
+        // SAFETY: yt-dlp emits playlist JSON; required identity fields are checked before use.
         const entry = JSON.parse(trimmed) as { id?: string; title?: string; duration?: number };
         if (!entry.id || !entry.title) continue;
         const index = episodes.length + 1;

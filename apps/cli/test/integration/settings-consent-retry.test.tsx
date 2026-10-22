@@ -18,7 +18,9 @@ import React, { act } from "react";
 import { render } from "../harness/render-capture";
 import { applyStorageRootEnv } from "../helpers/storage-env";
 import { waitUntil as sharedWaitUntil } from "../support/wait-until";
+import { createIsolatedContainer } from "./helpers/isolated-container";
 
+const disposals: (() => void)[] = [];
 let directory: string;
 let restoreEnv: () => void;
 beforeEach(async () => {
@@ -26,6 +28,7 @@ beforeEach(async () => {
   restoreEnv = applyStorageRootEnv(directory);
 });
 afterEach(async () => {
+  for (const dispose of disposals.splice(0).reverse()) dispose();
   restoreEnv();
   await rm(directory, { recursive: true, force: true });
 });
@@ -66,7 +69,10 @@ async function profile() {
     canConnect: true,
     detail: "fixture disconnected",
   };
-  const container = {
+  const isolated = await createIsolatedContainer("consent-retry-services");
+  disposals.push(isolated.dispose);
+  const container: Container = {
+    ...isolated.container,
     config,
     usageAnalytics: new UsageAnalyticsService({
       config,
@@ -74,31 +80,13 @@ async function profile() {
       endpoint: "",
       env: {},
     }),
-    providerRegistry: { getAll: () => [], getAllRegistered: () => [], setPriority: () => {} },
-    stateManager: { getState: () => ({ mode: "series" }), dispatch: () => {} },
-    connectivity: { notifyIntentChanged: () => {} },
-    presence: {
-      getSnapshot: () => idle,
-      connect: async () => {
-        await connectGate;
-        return { ...idle, status: "ready" } as PresenceSnapshot;
-      },
-      disconnect: async () => idle,
-    },
-    syncService: {
-      adapters: [],
-      getStatus: () => ({
-        connected: 0,
-        pending: 0,
-        needsReauth: 0,
-        deadLettered: 0,
-        health: "disconnected",
-      }),
-    },
-    syncAuthAvailability: {},
-    featureFlags: {},
-    diagnosticsService: { record: () => {} },
-  } as unknown as Container;
+  };
+  container.presence.getSnapshot = () => idle;
+  container.presence.connect = async () => {
+    await connectGate;
+    return { ...idle, status: "ready" };
+  };
+  container.presence.disconnect = async () => idle;
   return {
     config,
     container,

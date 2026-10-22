@@ -29,6 +29,7 @@ export function settingsDraftPatch(
   previous: KitsuneConfig,
 ): Partial<KitsuneConfig> {
   const patch: Partial<KitsuneConfig> = {};
+  // SAFETY: both snapshots are KitsuneConfig; their own enumerable keys are config fields.
   const keys = new Set([...Object.keys(previous), ...Object.keys(next)] as (keyof KitsuneConfig)[]);
   for (const key of keys) {
     if (JSON.stringify(next[key]) !== JSON.stringify(previous[key])) {
@@ -67,6 +68,7 @@ export function createSettingsDraftWriter(container: Container, initial: Kitsune
     const { applySettingsToRuntime } = await import("@/app/bootstrap/apply-settings-to-runtime");
     await applySettingsToRuntime({ container, next: batch });
     // A key edited again while the write ran keeps its newer value.
+    // SAFETY: batch contains only fields returned by settingsDraftPatch.
     for (const key of Object.keys(batch) as (keyof KitsuneConfig)[]) {
       if (revisions.get(key) === batchRevisions.get(key)) {
         delete pending[key];
@@ -79,6 +81,7 @@ export function createSettingsDraftWriter(container: Container, initial: Kitsune
       // Advance on the user's choice, even if disk rejects it. A later explicit
       // disable must supersede a failed enable rather than look like a no-op.
       const patch = settingsDraftPatch(next, submitted);
+      // SAFETY: settingsDraftPatch only copies keys from KitsuneConfig snapshots.
       for (const key of Object.keys(patch) as (keyof KitsuneConfig)[]) {
         revisions.set(key, ++revision);
       }

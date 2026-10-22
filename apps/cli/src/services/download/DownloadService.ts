@@ -124,9 +124,9 @@ const FILESYSTEM_UNAVAILABLE_CODES = new Set([
   "ENXIO",
 ]);
 
-function isFilesystemUnavailableError(error: unknown): boolean {
-  if (error instanceof Error) {
-    const code = (error as NodeJS.ErrnoException).code;
+function isFilesystemUnavailableError(cause: unknown): boolean {
+  if (cause instanceof Error) {
+    const code = (cause as NodeJS.ErrnoException).code;
     return typeof code === "string" && FILESYSTEM_UNAVAILABLE_CODES.has(code);
   }
   return false;
@@ -1084,8 +1084,8 @@ export class DownloadService {
     let failureContext: DownloadQueueFailureContext | undefined;
     void this.processQueuePass((context) => {
       failureContext = context;
-    }).catch((error: unknown) => {
-      this.reportQueuePassFailure(source, error, failureContext);
+    }).catch((cause: unknown) => {
+      this.reportQueuePassFailure(source, cause, failureContext);
     });
   }
 
@@ -1173,7 +1173,7 @@ export class DownloadService {
 
   private reportQueuePassFailure(
     source: DownloadQueueKickSource,
-    error: unknown,
+    cause: unknown,
     failureContext: DownloadQueueFailureContext = { stage: "worker" },
   ): void {
     let event: ReturnType<typeof buildDownloadDiagnosticEvent>;
@@ -1192,8 +1192,8 @@ export class DownloadService {
           workerIndex: failureContext.workerIndex,
           workerFailures: failureContext.workerFailures,
           jobId: failureContext.jobId,
-          errorName: error instanceof Error ? error.name : typeof error,
-          errorMessage: error instanceof Error ? error.message : String(error),
+          errorName: cause instanceof Error ? cause.name : typeof cause,
+          errorMessage: cause instanceof Error ? cause.message : String(cause),
         },
       });
     } catch {

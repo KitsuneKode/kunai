@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 
 import { fetchPlaybackTimingMetadataDetailed as timing } from "@/introdb";
+import type { JsonValue } from "@kunai/types";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -10,7 +11,7 @@ function setFetch(implementation: (...args: Parameters<typeof fetch>) => ReturnT
   globalThis.fetch = Object.assign(implementation, { preconnect: originalFetch.preconnect });
 }
 const tv = { tmdbId: "1396", type: "series" as const, season: 1, episode: 2 };
-function reply(body: unknown, status = 200) {
+function reply(body: JsonValue, status = 200) {
   setFetch(async () => Response.json(body, { status }));
 }
 
@@ -59,7 +60,7 @@ test("v4 movie omits TV coordinates and preserves movie identity", async () => {
   });
 });
 
-for (const body of [
+const malformedBodies: readonly JsonValue[] = [
   null,
   [],
   {},
@@ -68,7 +69,8 @@ for (const body of [
   { tvdb_id: 0, type: "tv" },
   { tvdb_id: 1, type: "movie" },
   { tvdb_id: 1, type: "tv", season: 2, episode: 2 },
-]) {
+];
+for (const body of malformedBodies) {
   test(`rejects malformed or non-timestamp TV response ${JSON.stringify(body)}`, async () => {
     reply(body);
     expect(await timing(tv)).toEqual({ metadata: null, failureClass: "http-error" });
