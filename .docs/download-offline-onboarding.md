@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-14T16:40:31Z"
+lastReviewed: "2026-10-22"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -345,6 +345,10 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
   position is used for instant entry only when its season and episode match the selected episode.
 - Active and post-play episode pickers list locally ready episodes across downloaded seasons,
   retaining provider-native episode identity. They never fetch a catalog during local playback.
+- Title-scoped asset readers return the complete recorded set. Playback lookup,
+  availability badges, counts and local episode pickers must not inherit a
+  display window such as the first 100 assets. Repository callers can request
+  an explicit limit when they need a bounded display page.
 - Local Tracks shows the downloaded source as a fact and delegates embedded audio/subtitle changes
   to the player. Provider, source, and acquisition audio-mode switches require opening the title
   online; stale track picks show feedback without changing preferences, invalidating caches, or
