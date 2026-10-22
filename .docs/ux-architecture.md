@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T14:57:13Z"
+lastReviewed: "2026-10-13"
 ---
 
 # Kunai — UX Architecture
@@ -68,6 +68,11 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 - command palettes should imply the recommended action through default highlight rather than extra “recommended” noise in every row
 - command palettes should also match locally-known titles (`JUMP TO`) once the input is at least two characters — titles are read from local state only (history, queue, followed, lists, playlists), never the network; commands keep precedence over title rows; the title section collapses on empty input; a title pick lands on the same title→episode flow a browse selection uses
 
+Search and palette Enter submit the editor's current input draft even when text
+and Enter arrive before React commits a frame. Pending palette text resets the
+selection to the first match; it must never execute a command from the previous
+query. This applies to Browse and the shared picker/post-play input hook.
+
 ### Hotkey philosophy
 
 - `Ctrl+C`, `/`, `Esc`, and `?` are always-global
@@ -83,7 +88,9 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 ### Optional terminal mouse input
 
 The Ink shell owns one paused-mode stdin facade in `app-shell/mouse/`.
-It separates mouse reports before Ink parses keyboard input; it never adds
+It preserves wire order, including an expired incomplete-report tail: Ink receives preceding keyboard bytes before a later
+mouse report is dispatched, including reports in the same chunk or queued
+under one readable event. It never adds
 another `data` listener to the real TTY. Tracking requires both stdin and
 stdout to be TTYs, excludes `TERM=dumb`, and can be disabled with
 `KUNAI_NO_MOUSE=1`. Session disposal releases subscriptions, hit regions,
@@ -104,6 +111,13 @@ same stationary region and button; dragging cancels activation. Unrelated
 renders preserve a pending click. Re-measurement uses Ink layout coordinates
 plus one terminal cell; this assumes the fullscreen shell renders no `Static`
 output above the live region.
+
+Library and Up Next rows also use select-then-activate. Library tabs use absolute
+indices in a windowed strip, and selecting a title clears pending deletion.
+Queue rows carry stable IDs through the shared Enter/mouse activation path; only
+the visible queue window renders and registers. The command palette removes
+queue pointer ownership. Starting/played entries give feedback without claiming
+or closing the overlay.
 
 Other surfaces currently receive unhandled vertical wheel reports as arrow
 keys. That is a keyboard fallback, not complete pointer support for their
@@ -552,6 +566,9 @@ width calculation. Truncation walks complete grapheme clusters, so combining
 accents, flags and joined emoji stay intact. Padding and ellipsis placement use
 the same cell budget as CJK titles. Surfaces reuse
 `apps/cli/src/domain/text-display.ts` rather than counting code points or UTF-16 units.
+
+Up Next also requires a prior mouse click on the same selected row before
+launching playback. Keyboard input, including navigation that leaves the same row selected, scrolling and disabling its pointer owner clear that intent.
 
 Browse requires a prior pointer click on the same selected title before opening
 it. Preselected rows, keyboard navigation, scrolling and covered content do not

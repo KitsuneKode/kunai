@@ -23,7 +23,8 @@ import type { MouseDispatcher } from "./MouseRegions";
 import {
   MOUSE_TRACKING_DISABLE,
   MOUSE_TRACKING_ENABLE,
-  splitMouseSequences,
+  splitOrderedMouseSequences,
+  type OrderedMouseInput,
 } from "./terminal-mouse";
 
 /** The byte shapes a Node readable stdin can hand us once encoding is off. */
@@ -59,6 +60,7 @@ function scheduleTailFlush(flush: () => void): () => void {
 
 export class MouseSplitStdin extends EventEmitter {
   private readonly buffer: string[] = [];
+  private readonly pendingInputs: OrderedMouseInput[] = [];
   private pendingTail = "";
   private readonly onSourceReadable: () => void;
   private tracking = false;
@@ -95,6 +97,7 @@ export class MouseSplitStdin extends EventEmitter {
     this.cancelTailFlush = null;
     this.pendingTail = "";
     this.buffer.length = 0;
+    this.pendingInputs.length = 0;
     this.source.removeListener("readable", this.onSourceReadable);
     this.disableTracking();
   }
@@ -117,16 +120,13 @@ export class MouseSplitStdin extends EventEmitter {
     this.cancelTailFlush?.();
     this.cancelTailFlush = null;
     const text = chunkToText(chunk);
-    const { input, events, pendingTail } = splitMouseSequences(this.pendingTail + text);
-    if (input.length > 0) {
-      this.buffer.push(input);
-      this.emit("data", input);
-    }
+    const { parts, pendingTail } = splitOrderedMouseSequences(this.pendingTail + text);
+    this.pendingInputs.push(...parts);
     if (pendingTail.length > PENDING_TAIL_LIMIT) {
       // Runaway partial (never-terminated `\x1b[<…`): release it as input
       // rather than eating bytes forever. `pendingTail` already absorbed the
       // carried-over prefix — it follows the clean input positionally.
-      this.buffer.push(pendingTail);
+      this.pendingInputs.push({ kind: "input", input: pendingTail });
       this.pendingTail = "";
     } else {
       this.pendingTail = pendingTail;
@@ -134,41 +134,48 @@ export class MouseSplitStdin extends EventEmitter {
         this.cancelTailFlush = this.scheduleTailFlush(() => {
           this.cancelTailFlush = null;
           if (this.detached || !this.pendingTail) return;
+          // A continuation may already be buffered behind earlier packets.
+          // Parse it before declaring the held prefix abandoned.
+          const chunk = this.source.read();
+          if (chunk !== null && chunk !== undefined) {
+            this.ingest(chunk);
+            this.emit("readable");
+            return;
+          }
           // Preserve bytes: an incomplete report is indistinguishable from
           // someone typing digits and semicolons after a damaged prefix.
-          this.buffer.push(this.pendingTail);
+          this.pendingInputs.push({ kind: "input", input: this.pendingTail });
           this.pendingTail = "";
           this.emit("readable");
         });
-      }
-    }
-    for (const event of events) {
-      const handled = this.dispatcher?.dispatch(event) === true;
-      // Fallback: a wheel tick over unregistered space scrolls whatever is
-      // focused — every list in the app gets wheel support without per-surface
-      // wiring. Regions can override with their own onWheel.
-      if (!handled && event.kind === "wheel") {
-        this.buffer.push(event.button === "wheel-up" ? "\x1b[A" : "\x1b[B");
       }
     }
   }
 
   // -- Ink-facing readable contract ------------------------------------------
 
-  /**
-   * Ink's drain loop calls this until null. Each call first drains the real
-   * stream (which is exactly what `readable` signalled), then returns the next
-   * clean chunk. An all-mouse chunk yields null — the loop just exits.
-   */
+  /** Yield preceding keyboard bytes before dispatching any later mouse event. */
   read(): string | null {
-    if (!this.detached) {
-      for (;;) {
-        const chunk = this.source.read();
-        if (chunk === null || chunk === undefined) break;
-        this.ingest(chunk);
+    for (;;) {
+      const queued = this.buffer.shift();
+      if (queued !== undefined) return queued;
+      const part = this.pendingInputs.shift();
+      if (part?.kind === "input") {
+        this.emit("data", part.input);
+        return part.input;
       }
+      if (part?.kind === "mouse") {
+        const handled = this.dispatcher?.dispatch(part.event) === true;
+        if (!handled && part.event.kind === "wheel") {
+          return part.event.button === "wheel-up" ? "\x1b[A" : "\x1b[B";
+        }
+        continue;
+      }
+      if (this.detached) return null;
+      const chunk = this.source.read();
+      if (chunk === null || chunk === undefined) return null;
+      this.ingest(chunk);
     }
-    return this.buffer.shift() ?? null;
   }
 
   /** Ink pushes bytes back (e.g. kitty-protocol leftovers). Re-queue them. */
