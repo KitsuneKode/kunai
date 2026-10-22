@@ -70,6 +70,13 @@ export function subtitleGridColumns(width: number): number {
   return Math.max(1, Math.floor(Math.max(0, width) / SUBTITLE_CELL_MIN_WIDTH));
 }
 
+/** Navigation follows the stacked list below the two-pane breakpoint. */
+export function tracksNavigationColumns(panelWidth: number, section: string | undefined): number {
+  return panelWidth >= TRACKS_TWO_PANE_MIN_WIDTH && section === "subtitle"
+    ? subtitleGridColumns(tracksOptionsPaneWidth(panelWidth))
+    : 1;
+}
+
 /** Wrap labels into rows of `columns` for the subtitle chip grid. `columns < 1` coerces to 1. */
 export function chunkSubtitleGrid<T>(labels: readonly T[], columns: number): T[][] {
   const cols = Math.max(1, Math.floor(columns));

@@ -32,6 +32,8 @@ import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useRootContentSuspended } from "./RootContentSuspension";
+
 /** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
 
 function refreshJobLists(container: Container) {
@@ -327,6 +329,7 @@ export function DownloadManagerContent({
     }
   }, [allJobs, selectedIndex]);
 
+  const suspended = useRootContentSuspended();
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -448,7 +451,7 @@ export function DownloadManagerContent({
         return;
       }
     },
-    { isActive: true },
+    { isActive: !suspended },
   );
 
   const { tooSmall, minColumns, minRows } = viewport;

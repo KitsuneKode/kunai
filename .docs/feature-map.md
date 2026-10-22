@@ -87,6 +87,10 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | Geo relay (user-owned)                       | `packages/relay/*`, `apps/relay-server`                                                                                                    | [runtime-boundary-map.md](./runtime-boundary-map.md#provider-relay-ownership)                          |
 | Provider research                            | `.reference/experiments/*`, `.docs/provider-dossiers/*`                                                                                    | [provider-intake.md](./provider-intake.md)                                                             |
 
+Pointer selection and activation across browse, Library, Up Next, Tracks and
+Settings are owned by `apps/cli/src/app-shell/mouse/` plus the surface/controller
+callbacks. See [features/pointer-controls.md](./features/pointer-controls.md).
+
 ## Playback
 
 | Feature                                    | Owned by                                                                                                        | Docs                                                                             |

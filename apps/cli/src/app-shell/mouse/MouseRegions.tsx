@@ -222,6 +222,7 @@ export function MouseTarget(props: {
   readonly onWheel?: (direction: "up" | "down", event: MouseEvent) => void;
   readonly onRightClick?: (event: MouseEvent) => void;
   readonly active?: boolean;
+  readonly flexShrink?: number;
   readonly children: ReactNode;
 }) {
   const ref = useRef<InkBoxRef | null>(null);
@@ -231,5 +232,9 @@ export function MouseTarget(props: {
     { onClick: props.onClick, onWheel: props.onWheel, onRightClick: props.onRightClick },
     { active: props.active },
   );
-  return <Box ref={ref}>{props.children}</Box>;
+  return (
+    <Box ref={ref} flexShrink={props.flexShrink}>
+      {props.children}
+    </Box>
+  );
 }

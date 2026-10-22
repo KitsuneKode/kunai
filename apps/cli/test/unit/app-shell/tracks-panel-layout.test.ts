@@ -6,6 +6,7 @@ import {
   subtitleGridColumns,
   subtitleGridWindow,
   tracksCountsHeader,
+  tracksNavigationColumns,
 } from "@/app-shell/tracks-panel-layout";
 
 describe("tracksCountsHeader", () => {
@@ -141,5 +142,20 @@ describe("subtitleGridColumns", () => {
   test("fits whole chips only", () => {
     expect(subtitleGridColumns(48)).toBe(3);
     expect(subtitleGridColumns(47)).toBe(2);
+  });
+});
+
+describe("tracksNavigationColumns", () => {
+  test("stacked subtitle rows move one item even when three chips could fit", () => {
+    expect(tracksNavigationColumns(50, "subtitle")).toBe(1);
+    expect(tracksNavigationColumns(55, "subtitle")).toBe(1);
+  });
+
+  test("two-pane subtitles use the rendered grid while other sections stay linear", () => {
+    expect(tracksNavigationColumns(56, "subtitle")).toBe(1);
+    expect(tracksNavigationColumns(80, "subtitle")).toBe(3);
+    expect(tracksNavigationColumns(140, "subtitle")).toBe(7);
+    expect(tracksNavigationColumns(140, "source")).toBe(1);
+    expect(tracksNavigationColumns(140, undefined)).toBe(1);
   });
 });

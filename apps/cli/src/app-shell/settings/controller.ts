@@ -206,6 +206,38 @@ function handleReorder(
   };
 }
 
+/** The activation policy shared by Enter and explicit pointer activation. */
+export function activateSettingsSelection(
+  state: SettingsUiState,
+  ctx: SettingsKeyContext,
+): SettingsKeyResult {
+  if (state.busy || state.inputMode.active) return { handled: true, state };
+  const page = pageFor(state, ctx);
+  const rowIndex = clampSelectedIndex(state.selectedIndex, page.rows.length);
+  const def = page.rows[rowIndex]?.def;
+  if (!def) return { handled: false, state };
+  if (def.kind === "boolean") return toggleBoolean(state, def);
+  if (def.kind === "action")
+    return {
+      handled: true,
+      state: { ...state, busy: true, activeActionId: def.id, error: null },
+      runActionId: def.id,
+    };
+  return openRow(state, def, rowIndex);
+}
+
+export function activateSettingsSubmenuSelection(
+  state: SettingsUiState,
+  ctx: SettingsKeyContext,
+): SettingsKeyResult {
+  const page = pageFor(state, ctx);
+  const def = page.defById.get(state.submenuId ?? "");
+  const submenu = buildSettingsSubmenuView(state.submenuId ?? "", ctx.registryCtx, page.defById);
+  if (!def || !submenu || def.kind === "reorder") return { handled: true, state };
+  const picked = submenu.choices[clampSelectedIndex(state.selectedIndex, submenu.choices.length)];
+  return picked ? applySubmenuPick(state, def, picked.value, ctx) : { handled: true, state };
+}
+
 export function handleSettingsKey(
   input: string,
   key: Key,
@@ -306,12 +338,7 @@ export function handleSettingsKey(
       };
     }
 
-    if (key.return && def && submenu) {
-      const picked =
-        submenu.choices[clampSelectedIndex(state.selectedIndex, submenu.choices.length)];
-      if (!picked) return { handled: true, state };
-      return applySubmenuPick(state, def, picked.value, ctx);
-    }
+    if (key.return && def && submenu) return activateSettingsSubmenuSelection(state, ctx);
 
     return { handled: true, state };
   }
@@ -427,18 +454,7 @@ export function handleSettingsKey(
     return cycleEnumSegment(state, def);
   }
 
-  if (key.return) {
-    if (def.kind === "action") {
-      if (state.busy) return { handled: true, state };
-      return {
-        handled: true,
-        state: { ...state, busy: true, activeActionId: def.id, error: null },
-        runActionId: def.id,
-      };
-    }
-    const rowIndex = page.rows.findIndex((row) => row.def.id === def.id);
-    return openRow(state, def, rowIndex >= 0 ? rowIndex : state.selectedIndex);
-  }
+  if (key.return) return activateSettingsSelection(state, ctx);
 
   if (input === " " && def.kind === "boolean") {
     return toggleBoolean(state, def);

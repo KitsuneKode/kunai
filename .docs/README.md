@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-08"
+lastReviewed: "2026-10-12T15:08:14Z"
 ---
 
 # Kunai internal docs
@@ -37,7 +37,7 @@ end to end.
 | Source, quality, audio, subtitle inventory           | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md)                                                                         |
 | IntroDB/AniSkip, MAL resolution, auto-skip           | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)                                                                                       |
 | mpv reconnect on the persistent session              | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                                                                                             |
-| Shell flow, hotkeys, overlays, setup UX              | [ux-architecture.md](./ux-architecture.md) · [keybindings.md](./keybindings.md)                                                                          |
+| Shell flow, hotkeys, overlays, setup UX              | [ux-architecture.md](./ux-architecture.md) · [keybindings.md](./keybindings.md) · [pointer controls](./features/pointer-controls.md)                     |
 | Terminal styling and interaction patterns            | [design-system.md](./design-system.md) · [ui-redesign-playbook.md](./ui-redesign-playbook.md)                                                            |
 | Poster previews, Kitty/iTerm2/Sixel                  | [poster-image-rendering.md](./poster-image-rendering.md)                                                                                                 |
 | Android/iOS terminal preview architecture            | [mobile-terminal-runtime.md](./mobile-terminal-runtime.md)                                                                                               |
