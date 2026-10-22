@@ -8,15 +8,6 @@ import type { CredentialSpawn, CredentialVaultDeps, CredentialVaultPort } from "
 const SPAWN_TIMEOUT_MS = 5_000;
 /** secret-tool can stall when the daemon is absent but the CLI exists. */
 const SECRET_SERVICE_PROBE_TIMEOUT_MS = 3_000;
-/**
- * Fast-fallback lane for the Secret Service probe. A live daemon answers a
- * lookup in milliseconds; waiting out the full 3s probe timeout on every
- * startup just to learn the daemon is absent serializes a stall into launch.
- * The probe still carries SECRET_SERVICE_PROBE_TIMEOUT_MS as its kill backstop
- * (the spawn below is untouched) — this race only decides how long *we* wait
- * before falling back to the file vault.
- */
-const SECRET_SERVICE_PROBE_RACE_MS = 300;
 // Service/resource label for every backend. Kept in one constant — an inline
 // 'kunai' literal next to RetrievePassword()/PasswordCredential trips generic
 // secret scanners even though it names the vault entry, not a credential.
@@ -239,27 +230,14 @@ async function probeBackend(
       if (!which("secret-tool")) return undefined;
       // A lookup on a nonexistent key exercises the daemon round-trip; exit 1
       // (not found) still proves the service answered. A killed spawn does not.
-      // Race the probe against the file-vault fallback: a missing daemon stalls
-      // to SECRET_SERVICE_PROBE_TIMEOUT_MS, and startup must not wait that out.
-      const probe = spawn(
+      // Backend selection must follow the bounded probe result. A separate
+      // short race can hide existing native entries behind an empty file vault
+      // when a healthy daemon is slow (for example while unlocking at login).
+      const out = await spawn(
         ["secret-tool", "lookup", ...SERVICE_ATTRS, "key", "__probe__"],
         "",
         SECRET_SERVICE_PROBE_TIMEOUT_MS,
       );
-      // The loser is intentionally left to settle: the spawn still carries its
-      // own kill timeout, and swallowing a late rejection avoids an unhandled
-      // rejection when the daemon answers after we already fell back.
-      probe.then(
-        () => undefined,
-        () => undefined,
-      );
-      const fastFallback = new Promise<undefined>((resolve) => {
-        const timer = setTimeout(() => resolve(undefined), SECRET_SERVICE_PROBE_RACE_MS);
-        // A stalled probe must not hold the process open on its own.
-        (timer as unknown as { unref?: () => void }).unref?.();
-      });
-      const out = await Promise.race([probe, fastFallback]);
-      if (out === undefined) return undefined;
       return out.exitCode <= 1 && !out.timedOut ? secretServiceVault(spawn) : undefined;
     }
     if (backend === "keychain") {
