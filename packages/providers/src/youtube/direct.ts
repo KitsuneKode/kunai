@@ -307,36 +307,104 @@ async function listYoutubeEpisodes(
 ): Promise<readonly ProviderEpisodeOption[] | null> {
   const parsed = parseYoutubeCatalogId(input.title.id);
   if (parsed.kind === "playlist") {
-    const playlist = await invidiousGetPlaylist(parsed.nativeId, {
-      preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
-      signal: context.signal,
-    });
-    return (playlist.videos ?? []).map((video, index) => ({
-      index: video.index ?? index + 1,
-      label: `#${video.index ?? index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
-      name: video.title,
-      detail: video.title,
-      totalEpisodeCount: playlist.videoCount ?? playlist.videos?.length,
-      externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
-    }));
+    try {
+      const playlist = await invidiousGetPlaylist(parsed.nativeId, {
+        preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
+        signal: context.signal,
+      });
+      return (playlist.videos ?? []).map((video, index) => ({
+        index: video.index ?? index + 1,
+        label: `#${video.index ?? index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
+        name: video.title,
+        detail: video.title,
+        totalEpisodeCount: playlist.videoCount ?? playlist.videos?.length,
+        externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
+      }));
+    } catch {
+      // The public instance pool is thin — fall through to local yt-dlp.
+    }
+    return listYoutubeEpisodesViaYtdlp(
+      `https://www.youtube.com/playlist?list=${encodeURIComponent(parsed.nativeId)}`,
+      context,
+    );
   }
 
   if (parsed.kind === "channel") {
-    const channel = await invidiousGetChannelVideos(parsed.nativeId, {
-      preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
-      signal: context.signal,
-    });
-    const channelVideos = channel.latestVideos ?? channel.videos ?? [];
-    return channelVideos.map((video, index) => ({
-      index: index + 1,
-      label: `#${index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
-      name: video.title,
-      detail: video.title,
-      externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
-    }));
+    try {
+      const channel = await invidiousGetChannelVideos(parsed.nativeId, {
+        preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
+        signal: context.signal,
+      });
+      const channelVideos = channel.latestVideos ?? channel.videos ?? [];
+      return channelVideos.map((video, index) => ({
+        index: index + 1,
+        label: `#${index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
+        name: video.title,
+        detail: video.title,
+        externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
+      }));
+    } catch {
+      // The public instance pool is thin — fall through to local yt-dlp.
+    }
+    return listYoutubeEpisodesViaYtdlp(
+      `https://www.youtube.com/channel/${encodeURIComponent(parsed.nativeId)}/videos`,
+      context,
+    );
   }
 
   return null;
+}
+
+const YTDLP_EPISODE_LIST_LIMIT = 50;
+
+/**
+ * Local yt-dlp fallback for playlist/channel episode listing when every
+ * Invidious instance is down. `--flat-playlist` keeps it to one fast pass
+ * with no media probing.
+ */
+async function listYoutubeEpisodesViaYtdlp(
+  pageUrl: string,
+  context: ProviderRuntimeContext,
+): Promise<readonly ProviderEpisodeOption[] | null> {
+  if (!Bun.which("yt-dlp", { PATH: process.env.PATH })) return null;
+  try {
+    const proc = await spawnYtDlpWithTimeout({
+      args: [
+        "--flat-playlist",
+        "--dump-json",
+        "--no-warnings",
+        "--playlist-end",
+        String(YTDLP_EPISODE_LIST_LIMIT),
+        "--",
+        pageUrl,
+      ],
+      signal: context.signal,
+      timeoutMs: 30_000,
+    });
+    if (proc.exitCode !== 0 || !proc.stdout.trim()) return null;
+    const episodes: ProviderEpisodeOption[] = [];
+    for (const line of proc.stdout.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const entry = JSON.parse(trimmed) as { id?: string; title?: string; duration?: number };
+        if (!entry.id || !entry.title) continue;
+        const index = episodes.length + 1;
+        episodes.push({
+          index,
+          label: `#${index}${entry.duration ? ` · ${formatDurationSeconds(entry.duration)}` : ""}`,
+          name: entry.title,
+          detail: entry.title,
+          externalIds: { youtubeId: entry.id },
+        });
+      } catch {
+        // skip malformed line
+      }
+    }
+    return episodes;
+  } catch {
+    return null;
+  }
 }
 
 async function loadYtDlpVideoInfo(

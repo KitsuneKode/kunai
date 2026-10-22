@@ -22,6 +22,7 @@ describe("normalizeStreamHttpHeaders", () => {
       userAgent: "kunai-test",
       origin: "https://www.cineplay.to",
       extraFields: [],
+      droppedFields: [],
     });
   });
 
@@ -41,6 +42,7 @@ describe("normalizeStreamHttpHeaders", () => {
       userAgent: "kunai-test",
       origin: "https://example.test",
       extraFields: [],
+      droppedFields: [],
     });
   });
 
@@ -83,15 +85,29 @@ describe("normalizeStreamHttpHeaders", () => {
   });
 
   test("drops empty header values", () => {
-    expect(normalizeStreamHttpHeaders({ referer: "  ", origin: "" })).toEqual({ extraFields: [] });
+    expect(normalizeStreamHttpHeaders({ referer: "  ", origin: "" })).toEqual({
+      extraFields: [],
+      droppedFields: [],
+    });
   });
 
-  test("preserves a whitespace-only user-agent — it is load-bearing for vidrock ngcorp hosts", () => {
-    // " " is the only ffmpeg-expressible spelling of an effectively-empty UA.
-    // Trimming it away leaves mpv sending its default Lavf UA, which the
-    // segment hosts drop — so this normalization must keep the value.
+  test("preserves a whitespace-only user-agent — retired vidrock contract, live sanitizer case", () => {
+    // Until 2026-10-13 this spelling was load-bearing for vidrock's CDN
+    // hosts; now it is only the sanitizer's regression case (a trim would
+    // silently delete the header). " " is preserved, "\n" strips to nothing.
     expect(normalizeStreamHttpHeaders({ "user-agent": " " }).userAgent).toBe(" ");
     expect(normalizeStreamHttpHeaders({ "user-agent": "\n" }).userAgent).toBeUndefined();
+  });
+
+  test("reports dropped header names so the player request stays auditable", () => {
+    // The resolve gate probes the full map; mpv cannot represent these, so
+    // the names ride along for diagnostics instead of vanishing.
+    expect(
+      normalizeStreamHttpHeaders({ Cookie: "a=1,b=2", "X-Bad,X-Injected": "x" }).droppedFields,
+    ).toEqual(["Cookie", "X-Bad,X-Injected"]);
+    expect(normalizeStreamHttpHeaders({ referer: "https://example.test/" }).droppedFields).toEqual(
+      [],
+    );
   });
 
   test("drops a header name that is not an RFC 7230 token", () => {

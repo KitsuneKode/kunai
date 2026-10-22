@@ -14,8 +14,10 @@ test("IntroDbTimingSource uses provider-native TMDB id for anime titles", async 
     calls.push(String(input));
     return new Response(
       JSON.stringify({
-        tmdb_id: 999,
-        type: "series",
+        tvdb_id: 123,
+        type: "tv",
+        season: 1,
+        episode: 7,
         credits: [{ start_ms: 1400000, end_ms: 1440000 }],
       }),
       {

@@ -1118,7 +1118,7 @@ async function handleProviderPicker(container: Container): Promise<"handled"> {
   return "handled";
 }
 
-type ProvidersHubChoice = "session" | "defaults";
+type ProvidersHubChoice = "session" | "defaults" | "toggle";
 
 /** Single entry for /providers: session switch vs sticky defaults. */
 async function handleProvidersHub(container: Container): Promise<"handled"> {
@@ -1127,10 +1127,11 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
     container.providerRegistry.get(state.provider)?.metadata.name ?? state.provider;
   const laneLabel =
     state.mode === "anime" ? "anime" : state.mode === "youtube" ? "YouTube" : "series";
+  const disabledCount = container.config.getRaw().disabledProviders.length;
 
   const choice = await chooseFromListShell<ProvidersHubChoice>({
     title: "Providers",
-    subtitle: `${currentName} · ${laneLabel} · session or defaults`,
+    subtitle: `${currentName} · ${laneLabel}${disabledCount > 0 ? ` · ${disabledCount} off` : ""} · session, defaults, or switches`,
     actionContext: buildPickerActionContext({
       container,
       taskLabel: "Choose provider action",
@@ -1147,6 +1148,11 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
         label: "Set defaults & priority",
         detail: "Sticky defaults and fallback order in settings",
       },
+      {
+        value: "toggle" as const,
+        label: "Turn providers on/off",
+        detail: "Enable or disable providers for resolve and fallback",
+      },
     ],
   });
 
@@ -1156,7 +1162,49 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
   if (choice === "defaults") {
     return handleSettings(container, { initialSectionId: "section:providers" });
   }
+  if (choice === "toggle") {
+    return handleProviderToggles(container);
+  }
   return "handled";
+}
+
+/** Loop a per-provider on/off checklist until dismissed. */
+async function handleProviderToggles(container: Container): Promise<"handled"> {
+  const state = container.stateManager.getState();
+  const lane = state.mode === "anime" ? "anime" : state.mode === "youtube" ? "youtube" : "series";
+  const laneIds = container.providerRegistry
+    .getAllIds()
+    .filter((id) => container.providerRegistry.getMetadata(id)?.providerLane === lane);
+  for (;;) {
+    const disabled = new Set(
+      container.config.getRaw().disabledProviders.map((entry) => entry.trim().toLowerCase()),
+    );
+    const picked = await chooseFromListShell<string>({
+      title: "Providers on/off",
+      subtitle: `${lane} lane · Enter toggles, Esc done`,
+      actionContext: buildPickerActionContext({
+        container,
+        taskLabel: "Toggle provider",
+        allowed: ["settings", "history", "diagnostics", "help", "about", "quit"],
+      }),
+      options: laneIds.map((id) => {
+        const name = container.providerRegistry.get(id)?.metadata.name ?? id;
+        const off = disabled.has(id.toLowerCase());
+        return {
+          value: id,
+          label: `${off ? "○" : "●"} ${name}`,
+          detail: off ? "Off — skipped in resolve and fallback" : "On",
+        };
+      }),
+    });
+    if (!picked) return "handled";
+    const next = container.config
+      .getRaw()
+      .disabledProviders.filter((entry) => entry.trim().toLowerCase() !== picked.toLowerCase());
+    await container.config.update({
+      disabledProviders: disabled.has(picked.toLowerCase()) ? next : [...next, picked],
+    });
+  }
 }
 
 async function handleSettings(

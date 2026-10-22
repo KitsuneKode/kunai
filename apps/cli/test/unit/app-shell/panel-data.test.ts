@@ -120,7 +120,10 @@ describe("panel-data", () => {
       state,
       recentEvents: [],
       youtubeProbe: {
-        ytDlp: { available: true, version: "2024.10.07" },
+        ytDlp: {
+          available: true,
+          version: new Date().toISOString().slice(0, 10).replaceAll("-", "."),
+        },
         invidious: {
           ok: true,
           instance: "https://yewtu.be",

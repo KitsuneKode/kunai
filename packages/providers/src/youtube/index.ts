@@ -16,3 +16,4 @@ export * from "./youtube-metadata-service";
 export * from "./subtitle-language";
 export * from "./metadata-failure";
 export * from "./quality-selection";
+export * from "./version-freshness";

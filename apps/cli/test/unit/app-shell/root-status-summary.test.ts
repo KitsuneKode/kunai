@@ -166,6 +166,34 @@ describe("buildRootStatusSummary", () => {
     expect(summary.crumb).not.toContain("series");
   });
 
+  test("a resolving movie reads as a movie, not as its lane", () => {
+    // The bootstrap variant of the playing-movie case: while the resolve is
+    // still running the header read "series" for a movie because the
+    // correction was gated on active transport. The rail already knows the
+    // title kind during bootstrap, so the header must agree with it.
+    const base = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    for (const rootStatus of ["loading", "resolving"] as const) {
+      const summary = buildRootStatusSummary({
+        state: {
+          ...base,
+          mode: "series",
+          provider: "vidlink",
+          view: "playback",
+          currentTitle: { id: "od", name: "The Odyssey", type: "movie" },
+        },
+        currentViewLabel: "playback",
+        rootStatus,
+      });
+
+      expect(summary.crumb).toContain("movie");
+      expect(summary.crumb).not.toContain("series");
+    }
+  });
+
   test("a playing series still reads as its lane", () => {
     // Only the movie case is corrected: the anime and YouTube lanes carry
     // meaning that a title's own "series" type would throw away.
