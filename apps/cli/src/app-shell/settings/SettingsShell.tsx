@@ -9,7 +9,7 @@ import { SettingsFooter } from "./components/SettingsFooter";
 import { handleSettingsKey } from "./controller";
 import { isSettingVisible } from "./gates";
 import { clampSelectedIndex, firstSelectableRowIndex } from "./navigation";
-import { persistSettingsDraft } from "./persist";
+import { createSettingsDraftWriter } from "./persist";
 import { buildSettingsRegistry } from "./registry";
 import { buildSettingsRegistryContext } from "./registry-context";
 import { settingsEqual } from "./settings-equal";
@@ -61,6 +61,12 @@ export function SettingsShell({
     };
   });
 
+  const persistence = useMemo(
+    () => createSettingsDraftWriter(container, container.config.getRaw()),
+    [container],
+  );
+  const draftRef = useRef(state.draft);
+
   /**
    * Actions change things the draft cannot see.
    *
@@ -95,16 +101,20 @@ export function SettingsShell({
       const controller = new AbortController();
       actionAbortRef.current = controller;
       try {
-        const message = await def.run(registryCtx, {
-          signal: controller.signal,
-          onStatus,
-        });
+        // Pending reorder edits and action refreshes share the same queue.
+        await persistence.save(draftRef.current);
+        const message = await persistence.action(
+          () => def.run(registryCtx, { signal: controller.signal, onStatus }),
+          (draft) => {
+            draftRef.current = draft;
+            setState((current) => ({ ...current, draft }));
+          },
+        );
         if (message) onStatus(message);
         // An action's message is its result, not a failure. Storing it in
         // `error` is what painted "Connected to AniList as @you." in red.
         setState((current) => ({
           ...current,
-          draft: container.config.getRaw(),
           busy: false,
           activeActionId: null,
           error: null,
@@ -131,46 +141,36 @@ export function SettingsShell({
         if (actionAbortRef.current === controller) actionAbortRef.current = null;
       }
     },
-    [container, onStatus, page.defById, registryCtx],
+    [onStatus, page.defById, persistence, registryCtx],
   );
 
   // A failed save must reach the user and the support bundle, not vanish into
   // a void promise: settings silently not sticking is otherwise undiagnosable.
-  const persistedDraftRef = useRef(state.draft);
-  const persistChainRef = useRef<Promise<void> | null>(null);
   const saveDraft = useCallback(
-    (draft: SettingsUiState["draft"], phase: "editing" | "closing") => {
-      const write = (persistChainRef.current ?? Promise.resolve()).then(async () => {
-        try {
-          await persistSettingsDraft(container, draft, persistedDraftRef.current);
-          persistedDraftRef.current = draft;
-        } catch (error) {
-          // Normalize a rejection at the persistence boundary; rendering and
-          // diagnostics consume the message rather than arbitrary throw values.
-          const detail = error instanceof Error ? error.message : String(error);
-          container.diagnosticsService.record({
-            category: "session",
-            message:
-              phase === "closing"
-                ? "Settings draft lost on close: final persist failed"
-                : "Settings persist failed",
-            context: { error: detail },
-          });
-          if (phase === "editing") {
-            setState((current) => ({ ...current, error: `Couldn't save settings: ${detail}` }));
-          }
+    async (draft: SettingsUiState["draft"], phase: "editing" | "closing") => {
+      try {
+        await persistence.save(draft);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        container.diagnosticsService.record({
+          category: "session",
+          message:
+            phase === "closing"
+              ? "Settings draft lost on close: final persist failed"
+              : "Settings persist failed",
+          context: { error: detail },
+        });
+        if (phase === "editing") {
+          setState((current) => ({ ...current, error: `Couldn't save settings: ${detail}` }));
         }
-      });
-      persistChainRef.current = write;
-      return write;
+      }
     },
-    [container],
+    [container, persistence],
   );
 
   // The debounced save below dies with the shell: exiting settings within
   // 300ms of the last edit silently dropped the draft. Flush best-effort on
   // unmount; persistSettingsDraft no-ops when nothing changed.
-  const draftRef = useRef(state.draft);
   /** Theme active before a submenu preview began — restored on Esc/unmount. */
   const themePreviewOriginRef = useRef<string | null>(null);
   useEffect(() => {

@@ -10,7 +10,7 @@ export async function applySettingsToRuntime({
   previous,
 }: {
   readonly container: Container;
-  readonly next: KitsuneConfig;
+  readonly next: Partial<KitsuneConfig>;
   readonly previous?: KitsuneConfig;
 }): Promise<void> {
   const { stateManager, config } = container;
@@ -19,20 +19,17 @@ export async function applySettingsToRuntime({
   // sole owner of what an enable/disable choice writes. In particular, enable
   // mints the id atomically with the preference and disable clears it.
   const patch: Partial<KitsuneConfig> = { ...requested };
-  if (requested.analytics !== before.analytics) {
+  // Identity and cadence belong to the consent service, never to a UI snapshot.
+  delete patch.installId;
+  delete patch.analyticsRetryAfter;
+  delete patch.lastAnalyticsPingAt;
+  if (requested.analytics !== undefined) {
     Object.assign(
       patch,
       requested.analytics === "unset"
         ? { analytics: "unset", installId: "" }
         : container.usageAnalytics.consentPatch(requested.analytics),
     );
-  } else {
-    // Omit analytics-owned keys from passive writes. Copying local values
-    // would mark them dirty and overwrite a sibling's newer disk consent.
-    delete patch.analytics;
-    delete patch.installId;
-    delete patch.analyticsRetryAfter;
-    delete patch.lastAnalyticsPingAt;
   }
 
   await config.update(patch);

@@ -1,6 +1,7 @@
 import { presenceStatusDetail } from "@/services/presence/presence-status-line";
 import type { PresenceSnapshot, PresenceStatus } from "@/services/presence/PresenceService";
 
+import { settingsDraftPatch } from "../persist";
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
 import {
   describeDiscordClientId,
@@ -144,17 +145,11 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
         const { applySettingsToRuntime } =
           await import("@/app/bootstrap/apply-settings-to-runtime");
         const current = actionCtx.container.config.getRaw();
-        await applySettingsToRuntime({
-          container: actionCtx.container,
-          next: {
-            ...current,
-            presenceProvider: actionCtx.config.presenceProvider,
-            presencePrivacy: actionCtx.config.presencePrivacy,
-            presenceDiscordClientId: actionCtx.config.presenceDiscordClientId,
-            presenceDiscordOpenUrl: actionCtx.config.presenceDiscordOpenUrl,
-          },
-          previous: current,
-        });
+        const changes = settingsDraftPatch(actionCtx.config, actionCtx.persistedConfig ?? current);
+        const presencePatch = Object.fromEntries(
+          Object.entries(changes).filter(([key]) => key.startsWith("presence")),
+        );
+        await applySettingsToRuntime({ container: actionCtx.container, next: presencePatch });
         const snapshot = await actionCtx.container.presence.connect();
         return `Discord presence: ${presenceStatusDetail(snapshot.status, snapshot.detail)}`;
       },

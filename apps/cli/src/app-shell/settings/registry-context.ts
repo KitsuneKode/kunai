@@ -49,6 +49,7 @@ export function buildSettingsRegistryContext(
 
   return {
     config,
+    persistedConfig: container.config.getRaw(),
     presenceSnapshot: container.presence.getSnapshot(),
     seriesProviderOptions: buildSettingsProviderOptions({
       providers: seriesProviderMetadata,
