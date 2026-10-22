@@ -1,6 +1,7 @@
 # Watching release candidate implementation plan
 
-Status: IN PROGRESS. Base: `8a86bf9dc`. This orders the authorized watching
+Status: IMPLEMENTED LOCALLY; release integration and external qualification pending.
+Base: `8a86bf9dc`. This orders the authorized watching
 work from the existing release-readiness and shell/provider plans; it does
 not replace their remaining release qualification requirements.
 
@@ -14,6 +15,12 @@ combined candidate. No new runtime abstraction or shell rewrite.
 
 **Spec:** The maintainer's October 22 authorization in this thread, the
 existing release-readiness plan, and the owning current feature docs.
+
+Local source candidate: `cf83c5405`, including review and packaging corrections.
+Verification and remaining gates are in
+[the candidate record](../.release/watching-candidate-2026-10-22.md). Tasks 1–4
+are implemented locally. Task 5 has a completed independent review with its cancellation finding fixed.
+Upstream/host/device qualification and release integration remain open; no remote PR has been merged.
 
 ## Global constraints
 

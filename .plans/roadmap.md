@@ -30,8 +30,10 @@ so it is not re-derived — not because it is scheduled.
 ## Active tracks
 
 Current execution: [watching release candidate](./2026-10-22-watching-release-candidate.md)
-integrates the important safety, provider, timing, mouse and playback work;
-release qualification remains a separate gate.
+has a local combined implementation of safety, provider, timing, mouse and playback work.
+Independent review found a cancellation race, now fixed locally. Release
+integration and external qualification remain open; see its
+[candidate evidence and remaining gates](../.release/watching-candidate-2026-10-22.md).
 
 Every row has real remaining work. When a plan's core lands, move it to the
 archive and put only the residue here.
