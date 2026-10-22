@@ -223,11 +223,12 @@ for (const analytics of ["unset", "disabled"] as const) {
     const container = createSettingsContainer(config);
 
     try {
-      await persistSettingsDraft(container, {
-        ...config.getRaw(),
-        analytics,
-        installId: "injected-install-id",
-      });
+      const baseline = config.getRaw();
+      await persistSettingsDraft(
+        container,
+        { ...baseline, analytics, installId: "injected-install-id" },
+        baseline,
+      );
 
       const reloaded = await profile.loadConfig();
       expect(reloaded.getRaw().analytics).toBe(analytics);

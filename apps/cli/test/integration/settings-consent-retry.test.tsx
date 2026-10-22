@@ -17,6 +17,7 @@ import React, { act } from "react";
 
 import { render } from "../harness/render-capture";
 import { applyStorageRootEnv } from "../helpers/storage-env";
+import { waitUntil as sharedWaitUntil } from "../support/wait-until";
 
 let directory: string;
 let restoreEnv: () => void;
@@ -33,6 +34,7 @@ async function profile() {
   const store = new ConfigStoreImpl(new FileStorage({ config: join(directory, "config.json") }));
   let failWrites = 0;
   let saved = Promise.withResolvers<void>();
+  let connectGate: Promise<void> | null = null;
   const config = await ConfigServiceImpl.load({
     load: () => store.load(),
     save: async (value) => {
@@ -77,7 +79,10 @@ async function profile() {
     connectivity: { notifyIntentChanged: () => {} },
     presence: {
       getSnapshot: () => idle,
-      connect: async () => ({ ...idle, status: "ready" }),
+      connect: async () => {
+        await connectGate;
+        return { ...idle, status: "ready" } as PresenceSnapshot;
+      },
       disconnect: async () => idle,
     },
     syncService: {
@@ -101,6 +106,15 @@ async function profile() {
       failWrites = count;
     },
     nextSave: () => saved.promise,
+    /** Hold presence connect open until the returned release is called. */
+    holdConnect: () => {
+      const gate = Promise.withResolvers<void>();
+      connectGate = gate.promise;
+      return () => {
+        connectGate = null;
+        gate.resolve();
+      };
+    },
     disk: () => store.load(),
     sibling: async () => {
       const sibling = await ConfigServiceImpl.load(store);
@@ -141,6 +155,16 @@ async function keys(handle: ReturnType<typeof mount>, ...input: string[]) {
       handle.stdin.enqueue(key);
     });
 }
+async function waitUntil(predicate: () => boolean, label: string) {
+  await sharedWaitUntil(predicate, {
+    label,
+    tick: async (ms) => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, ms));
+      });
+    },
+  });
+}
 const down = "\x1b[B";
 const up = "\x1b[A";
 const enter = "\r";
@@ -155,7 +179,7 @@ for (const caller of ["Settings", "theme picker"] as const) {
       analytics: "disabled",
       installId: "",
       tipsEnabled: false,
-      presencePrivacy: "title-only",
+      presencePrivacy: "private",
     });
     await sibling.save();
     const next =
@@ -167,7 +191,7 @@ for (const caller of ["Settings", "theme picker"] as const) {
     expect(disk.analytics).toBe("disabled");
     expect(disk.installId).toBe("");
     expect(disk.tipsEnabled).toBe(false);
-    expect(disk.presencePrivacy).toBe("title-only");
+    expect(disk.presencePrivacy).toBe("private");
     if (caller === "Settings") expect(disk.footerHints).toBe("minimal");
     else expect(disk.theme).toBe("sakura");
   });
@@ -179,7 +203,7 @@ test("presence applies only fields edited in its pane", async () => {
   await p.container.usageAnalytics.setConsent("enabled");
   const ctx = buildSettingsRegistryContext(p.container, {
     ...p.config.getRaw(),
-    presencePrivacy: "title-only",
+    presencePrivacy: "private",
   });
   const sibling = await p.sibling();
   await sibling.update({
@@ -193,7 +217,7 @@ test("presence applies only fields edited in its pane", async () => {
   if (action?.kind !== "action") throw new Error("Missing presence action");
   await action.run(ctx);
   const disk = await p.disk();
-  expect(disk.presencePrivacy).toBe("title-only");
+  expect(disk.presencePrivacy).toBe("private");
   expect(disk.presenceDiscordClientId).toBe("123456789012345678");
   expect(disk.footerHints).toBe("minimal");
   expect(disk.analytics).toBe("disabled");
@@ -297,4 +321,81 @@ test("action refresh rebases passive edits after same-process withdrawal", async
     });
     await p.config.flushPending();
   }
+});
+
+test("an edit made while an action runs survives the action refresh", async () => {
+  const p = await profile();
+  await p.config.update({ presenceProvider: "discord" });
+  await p.container.usageAnalytics.setConsent("enabled");
+  const release = p.holdConnect();
+  const completed = Promise.withResolvers<void>();
+  const handle = mount(p.container, "section:presence", (message) => {
+    if (message?.startsWith("Discord presence:")) completed.resolve();
+  });
+  try {
+    await keys(handle, down, down, down, down, enter);
+    // The action is parked inside connect(); the pane stays editable.
+    await keys(handle, up, up, up, enter, down, enter);
+    expect(handle.lastFrame()).toContain("Presence privacy ·  Private");
+    await act(async () => {
+      release();
+      await completed.promise;
+    });
+    // The refresh rebases onto the edit instead of painting the pre-edit
+    // value back, which the next autosave would then persist as a revert.
+    expect(handle.lastFrame()).toContain("Presence privacy ·  Private");
+    await waitUntil(
+      () => p.config.getRaw().presencePrivacy === "private",
+      "queued edit applied after the action",
+    );
+    await p.config.flushPending();
+    expect((await p.disk()).presencePrivacy).toBe("private");
+  } finally {
+    await act(async () => {
+      handle.unmount();
+    });
+    await p.config.flushPending();
+  }
+});
+
+test("a failed withdrawal is retried when the pane closes", async () => {
+  const p = await profile();
+  await p.container.usageAnalytics.setConsent("enabled");
+  const handle = mount(p.container);
+  try {
+    p.failNext();
+    const failed = p.nextSave();
+    await act(async () => {
+      await keys(handle, down, down, down, down, enter);
+      await failed;
+    });
+    expect((await p.disk()).analytics).toBe("enabled");
+    // No further edit: closing is the only chance to land the withdrawal.
+    const closing = p.nextSave();
+    await act(async () => {
+      handle.unmount();
+      await closing;
+    });
+    const disk = await p.disk();
+    expect(disk.analytics).toBe("disabled");
+    expect(disk.installId).toBe("");
+  } finally {
+    await p.config.flushPending();
+  }
+});
+
+test("connecting presence saves presence fields without the pane's other pending edits", async () => {
+  const p = await profile();
+  await p.config.update({ presenceProvider: "discord" });
+  const ctx = buildSettingsRegistryContext(p.container, {
+    ...p.config.getRaw(),
+    presencePrivacy: "private",
+    footerHints: "minimal",
+  });
+  const action = presenceSettingsRows(ctx).find((row) => row.id === "presenceConnection");
+  if (action?.kind !== "action") throw new Error("Missing presence action");
+  await action.run(ctx);
+  const disk = await p.disk();
+  expect(disk.presencePrivacy).toBe("private");
+  expect(disk.footerHints).not.toBe("minimal");
 });

@@ -7,14 +7,13 @@ import { providerForLane } from "./lane-settings-sync";
 export async function applySettingsToRuntime({
   container,
   next: requested,
-  previous,
 }: {
   readonly container: Container;
+  /** Only the fields to change; every other persisted key is left alone. */
   readonly next: Partial<KitsuneConfig>;
-  readonly previous?: KitsuneConfig;
 }): Promise<void> {
   const { stateManager, config } = container;
-  const before = previous ?? config.getRaw();
+  const before = config.getRaw();
   // Settings offers the visible control, but the analytics service remains the
   // sole owner of what an enable/disable choice writes. In particular, enable
   // mints the id atomically with the preference and disable clears it.

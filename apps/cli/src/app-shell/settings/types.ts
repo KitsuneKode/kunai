@@ -15,7 +15,7 @@ export type SettingGate = {
 };
 
 export type SettingsRegistryContext = {
-  /** Baseline captured with the pane, before any pending edits. */
+  /** Config as it was persisted when this context was built, before pending edits. */
   readonly persistedConfig?: KitsuneConfig;
   readonly config: KitsuneConfig;
   readonly presenceSnapshot: PresenceSnapshot | null;

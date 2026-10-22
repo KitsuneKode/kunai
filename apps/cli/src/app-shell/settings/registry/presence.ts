@@ -144,8 +144,10 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
 
         const { applySettingsToRuntime } =
           await import("@/app/bootstrap/apply-settings-to-runtime");
-        const current = actionCtx.container.config.getRaw();
-        const changes = settingsDraftPatch(actionCtx.config, actionCtx.persistedConfig ?? current);
+        const changes = settingsDraftPatch(
+          actionCtx.config,
+          actionCtx.persistedConfig ?? actionCtx.container.config.getRaw(),
+        );
         const presencePatch = Object.fromEntries(
           Object.entries(changes).filter(([key]) => key.startsWith("presence")),
         );
