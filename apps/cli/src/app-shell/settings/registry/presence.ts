@@ -1,6 +1,7 @@
 import { presenceStatusDetail } from "@/services/presence/presence-status-line";
 import type { PresenceSnapshot, PresenceStatus } from "@/services/presence/PresenceService";
 
+import { settingsDraftPatch } from "../persist";
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
 import {
   describeDiscordClientId,
@@ -37,7 +38,7 @@ function presenceConnectionDetail(
   if (status === "unavailable" || status === "error") {
     return "Retry local Discord IPC connection after a failed attempt";
   }
-  return "Save pending settings and verify local Discord IPC without starting playback";
+  return "Save pending presence settings and verify local Discord IPC without starting playback";
 }
 
 export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] {
@@ -143,11 +144,12 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
 
         const { applySettingsToRuntime } =
           await import("@/app/bootstrap/apply-settings-to-runtime");
-        await applySettingsToRuntime({
-          container: actionCtx.container,
-          next: actionCtx.config,
-          previous: actionCtx.container.config.getRaw(),
-        });
+        const current = actionCtx.container.config.getRaw();
+        const changes = settingsDraftPatch(actionCtx.config, actionCtx.persistedConfig ?? current);
+        const presencePatch = Object.fromEntries(
+          Object.entries(changes).filter(([key]) => key.startsWith("presence")),
+        );
+        await applySettingsToRuntime({ container: actionCtx.container, next: presencePatch });
         const snapshot = await actionCtx.container.presence.connect();
         return `Discord presence: ${presenceStatusDetail(snapshot.status, snapshot.detail)}`;
       },

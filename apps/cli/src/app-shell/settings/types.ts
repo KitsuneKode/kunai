@@ -15,6 +15,8 @@ export type SettingGate = {
 };
 
 export type SettingsRegistryContext = {
+  /** Baseline captured with the pane, before any pending edits. */
+  readonly persistedConfig?: KitsuneConfig;
   readonly config: KitsuneConfig;
   readonly presenceSnapshot: PresenceSnapshot | null;
   readonly seriesProviderOptions: readonly ShellPickerOption<string>[];
