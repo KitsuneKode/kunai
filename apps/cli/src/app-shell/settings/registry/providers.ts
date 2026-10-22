@@ -1,4 +1,5 @@
 import { stripCurrentLabel } from "@/domain/current-label";
+import { isProviderEnabled, setProviderEnabled } from "@/domain/provider/provider-switches";
 
 import {
   applyAnimeProviderOrder,
@@ -46,14 +47,11 @@ function providerToggleRows(
         : kind === "anime"
           ? "Anime: off removes it from resolve and fallback"
           : "YouTube: off removes it from resolve and fallback",
-    read: (config) => !config.disabledProviders.some((entry) => entry === option.value),
-    write: (config, value) => {
-      const disabled = config.disabledProviders.filter((entry) => entry !== option.value);
-      return {
-        ...config,
-        disabledProviders: value ? disabled : [...disabled, option.value],
-      };
-    },
+    read: (config) => isProviderEnabled(config.disabledProviders, option.value),
+    write: (config, value) => ({
+      ...config,
+      disabledProviders: setProviderEnabled(config.disabledProviders, option.value, value),
+    }),
   }));
 }
 

@@ -39,6 +39,7 @@ import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { isTitleLevelContent } from "@/domain/media/content-kind";
 import { normalizeMediaKind, presentMedia } from "@/domain/media/media-presentation";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
+import { toggleProviderSwitch } from "@/domain/provider/provider-switches";
 import { planEpisodeQueue } from "@/domain/queue/QueuePlanner";
 import type { SessionState } from "@/domain/session/SessionState";
 import { isPlaybackSessionActive } from "@/domain/session/SessionState";
@@ -92,6 +93,7 @@ import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
 
 import { cancelRootOverlay } from "../cancel-root-overlay";
+import { persistSettingsDraft } from "../settings/persist";
 import { openTrackerConnectShell } from "../tracker-connect-shell";
 import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
@@ -1198,11 +1200,13 @@ async function handleProviderToggles(container: Container): Promise<"handled"> {
       }),
     });
     if (!picked) return "handled";
-    const next = container.config
-      .getRaw()
-      .disabledProviders.filter((entry) => entry.trim().toLowerCase() !== picked.toLowerCase());
-    await container.config.update({
-      disabledProviders: disabled.has(picked.toLowerCase()) ? next : [...next, picked],
+    // Same write path as Settings (`persistSettingsDraft` →
+    // `applySettingsToRuntime`): a bare `config.update` would persist the
+    // switch but leave the live registry serving the old enabled set.
+    const config = container.config.getRaw();
+    await persistSettingsDraft(container, {
+      ...config,
+      disabledProviders: toggleProviderSwitch(config.disabledProviders, picked),
     });
   }
 }

@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  filterEnabledProviderModules,
   isProviderEnabled,
-} from "@/services/providers/provider-priority";
+  setProviderEnabled,
+  toggleProviderSwitch,
+} from "@/domain/provider/provider-switches";
+import { filterEnabledProviderModules } from "@/services/providers/provider-priority";
 import { ProviderRegistryImpl } from "@/services/providers/ProviderRegistry";
 import { createProviderEngine, defineProviderManifest, type CoreProviderModule } from "@kunai/core";
 
@@ -76,7 +78,33 @@ describe("provider disable switches", () => {
         .map((p) => p.metadata.id)
         .sort(),
     ).toEqual([]);
-    expect(() => registry.getDefaultForMode("anime")).toThrow("No providers available");
+    // The lane default is an inert identity (render path must not throw):
+    // the handle refuses catalog work and `getAll` still excludes it.
+    expect(registry.getDefaultForMode("anime").metadata.id).toBe("a1");
+    expect(registry.getAll().map((p) => p.metadata.id)).not.toContain("a1");
+  });
+
+  test("an all-disabled lane default is inert and re-enabling restores it", async () => {
+    let calls = 0;
+    const module: CoreProviderModule = {
+      ...createModule("a1", ["anime"]),
+      async search() {
+        calls += 1;
+        return [];
+      },
+    };
+    const registry = new ProviderRegistryImpl(createProviderEngine({ modules: [module] }), {
+      disabledProviderIds: ["a1"],
+    });
+    const identity = registry.getDefault(true);
+    expect(
+      await identity.search?.("q", { audioPreference: "en", subtitlePreference: "en" }),
+    ).toBeNull();
+    expect(calls).toBe(0);
+    registry.setPriority({ disabledProviderIds: [] });
+    expect(registry.getAll().map((p) => p.metadata.id)).toEqual(["a1"]);
+    await identity.search?.("q", { audioPreference: "en", subtitlePreference: "en" });
+    expect(calls).toBe(1);
   });
 
   test("matching ignores case and surrounding whitespace", () => {
@@ -99,6 +127,14 @@ describe("provider disable switches", () => {
     expect(isProviderEnabled(["s1"], "S1")).toBe(false);
     expect(isProviderEnabled(["s1"], "s2")).toBe(true);
   });
+  test("switch helpers are reversible and keep unrelated entries", () => {
+    expect(toggleProviderSwitch([], "s1")).toEqual(["s1"]);
+    expect(toggleProviderSwitch(["S1", "a2"], "s1")).toEqual(["a2"]);
+    expect(setProviderEnabled(["a2"], "s1", false)).toEqual(["a2", "s1"]);
+    expect(setProviderEnabled(["a2", "s1"], "S1", true)).toEqual(["a2"]);
+    expect(setProviderEnabled(["a2"], "a2", false)).toEqual(["a2"]);
+  });
+
   test("a retained provider handle cannot make catalog calls after disabling", async () => {
     let calls = 0;
     const module: CoreProviderModule = {

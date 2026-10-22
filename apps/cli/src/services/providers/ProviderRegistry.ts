@@ -1,3 +1,4 @@
+import { isProviderEnabled } from "@/domain/provider/provider-switches";
 import type { ProviderMetadata, ShellMode, TitleInfo } from "@/domain/types";
 import {
   buildFirstSeenRank,
@@ -11,7 +12,6 @@ import type { MediaKind } from "@kunai/types";
 
 import { createProviderFromModule, type Provider } from "./Provider";
 import { providerLaneMatchesMode, shellModeToProviderLane } from "./provider-lane";
-import { isProviderEnabled } from "./provider-priority";
 import { titleToCoreIdentity } from "./stream-request-adapter";
 
 export interface ProviderRegistry {
@@ -203,13 +203,12 @@ export class ProviderRegistryImpl implements ProviderRegistry {
 
   getDefaultForMode(mode: ShellMode): Provider {
     const lane = shellModeToProviderLane(mode);
-    const laneProviders = this.enabledInLane(
-      this.sortByPriority(
-        [...this.providersById.values()].filter(
-          (provider) => provider.metadata.providerLane === lane,
-        ),
+    const registeredInLane = this.sortByPriority(
+      [...this.providersById.values()].filter(
+        (provider) => provider.metadata.providerLane === lane,
       ),
     );
+    const laneProviders = this.enabledInLane(registeredInLane);
     const preferred = this.getPriorityForLane(lane)
       .map((providerId) => this.providersById.get(resolveProviderId(providerId)))
       .find(
@@ -219,7 +218,11 @@ export class ProviderRegistryImpl implements ProviderRegistry {
 
     if (preferred) return preferred;
 
-    const fallback = laneProviders[0];
+    // A lane the user switched off entirely still needs an identity for
+    // session labels, search routing and prefetch callers — they run on the
+    // render path and must not throw. The handle is inert: search/listEpisodes
+    // return null and resolve admission excludes it, so nothing is re-enabled.
+    const fallback = laneProviders[0] ?? registeredInLane[0];
     if (!fallback) {
       throw new Error(`No providers available for mode: ${mode}`);
     }
