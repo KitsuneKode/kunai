@@ -813,7 +813,8 @@ export class DownloadService {
       // completion through shutdown.
       if (this.shutdownRequested) {
         this.claimedJobIds.delete(next.id);
-        this.deps.repo.requeue(next.id, monotonicNowIso());
+        // No durable claim was taken. Preserve queued work and any cancellation
+        // or sibling update that landed while the storage probe was pending.
         return null;
       }
       let stopHeartbeat: () => void;

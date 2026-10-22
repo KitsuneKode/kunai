@@ -8,7 +8,7 @@
  * the default; only `--yes` may publish.
  */
 import { mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   type LocalPackageCandidate,
@@ -177,7 +177,17 @@ async function inspectTarball(
   await assertNonemptyTarball(tarballPath, context);
   const request: CommandRequest = {
     command: "npm",
-    args: ["pack", "--json", "--dry-run", "--ignore-scripts", tarballPath],
+    // Scope npm to the preserved artifact, not this Bun-only development root.
+    // npm 11 checks devEngines before pack/view/publish, including dry runs.
+    args: [
+      "pack",
+      "--prefix",
+      dirname(tarballPath),
+      "--json",
+      "--dry-run",
+      "--ignore-scripts",
+      tarballPath,
+    ],
     cwd: ROOT,
   };
   const result = await command(request);
@@ -218,6 +228,8 @@ export async function buildLocalPackageCandidates(
         command: "npm",
         args: [
           "pack",
+          "--prefix",
+          packageDirectory,
           "--json",
           "--ignore-scripts",
           "--pack-destination",
@@ -440,7 +452,14 @@ export function createNpmRegistryPort(command: CommandPort): RegistryPort {
   ): Promise<CommandResult | null> {
     const request: CommandRequest = {
       command: "npm",
-      args: ["view", `${candidate.name}@${candidate.version}`, ...fields, "--json"],
+      args: [
+        "view",
+        `${candidate.name}@${candidate.version}`,
+        ...fields,
+        "--json",
+        "--prefix",
+        dirname(candidate.tarballPath),
+      ],
       cwd: ROOT,
     };
     const result = await command(request);
@@ -499,7 +518,15 @@ async function publishOnce(
 ): Promise<void> {
   const request: CommandRequest = {
     command: "npm",
-    args: ["publish", candidate.tarballPath, "--access", "public", "--provenance"],
+    args: [
+      "publish",
+      candidate.tarballPath,
+      "--access",
+      "public",
+      "--provenance",
+      "--prefix",
+      dirname(candidate.tarballPath),
+    ],
     cwd: ROOT,
   };
   const result = await options.command(request);

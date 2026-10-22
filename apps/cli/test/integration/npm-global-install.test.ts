@@ -1,16 +1,29 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
+import {
+  buildLocalPackageCandidates,
+  type CommandPort,
+} from "../../../../scripts/publish-npm-release";
 import packageJson from "../../package.json" with { type: "json" };
 import { isMuslEnvironmentSync } from "../../src/services/update/native-installer/musl";
 import {
   RELEASE_BINARY_TARGETS,
   resolveHostReleaseBinaryTarget,
 } from "../../src/services/update/platform-assets";
+import { storageRootEnv } from "../helpers/storage-env";
 
 // This is intentionally an isolated, offline candidate gate. npm gets a
 // launcher tarball and the host platform tarball in the same command; it must
@@ -204,6 +217,71 @@ describeInstall("hermetic npm candidate install", () => {
 
   afterAll(async () => {
     if (workDir) await rm(workDir, { recursive: true, force: true });
+  });
+
+  test("npm candidate preparation and preserved inspection work under Bun-only repository policy", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-npm-tool-context-"));
+    const launcher = join(root, "launcher");
+    const platforms = join(root, "platforms");
+    const tarballs = join(root, "tarballs");
+    const env = {
+      ...process.env,
+      ...storageRootEnv(join(root, "home")),
+      npm_config_cache: join(root, "npm-cache"),
+      npm_config_registry: "http://127.0.0.1:9/",
+      npm_config_update_notifier: "false",
+      npm_config_audit: "false",
+      npm_config_fund: "false",
+    };
+    try {
+      mkdirSync(launcher, { recursive: true });
+      writeFileSync(
+        join(launcher, "package.json"),
+        JSON.stringify({ name: "@kitsunekode/kunai", version: "1.2.3" }),
+      );
+      for (const target of RELEASE_BINARY_TARGETS) {
+        const directory = join(platforms, target.id);
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(
+          join(directory, "package.json"),
+          JSON.stringify({ name: `@kitsunekode/kunai-${target.id}`, version: "1.2.3" }),
+        );
+      }
+      const initialPack = Bun.spawnSync(
+        ["npm", "pack", "--json", "--ignore-scripts", "--pack-destination", root],
+        { cwd: launcher, env },
+      );
+      expect(initialPack.exitCode).toBe(0);
+      const launcherTarballPath = join(root, "kitsunekode-kunai-1.2.3.tgz");
+      const command: CommandPort = async (request) => {
+        const result = Bun.spawnSync([request.command, ...request.args], {
+          cwd: request.cwd,
+          env,
+        });
+        return {
+          exitCode: result.exitCode,
+          stdout: result.stdout.toString(),
+          stderr: result.stderr.toString(),
+        };
+      };
+      const options = {
+        launcherManifestPath: join(launcher, "package.json"),
+        launcherTarballPath,
+        platformDirectory: platforms,
+        platformTarballDirectory: tarballs,
+        command,
+      };
+      const prepared = await buildLocalPackageCandidates(options);
+      const inspected = await buildLocalPackageCandidates({
+        ...options,
+        platformTarballMode: "inspect",
+      });
+      expect(prepared).toHaveLength(RELEASE_BINARY_TARGETS.length + 1);
+      expect(inspected).toEqual(prepared);
+      expect(prepared.every((candidate) => candidate.integrity.startsWith("sha512-"))).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("builds exact-version-pinned manifests and tarballs for all platform candidates", () => {

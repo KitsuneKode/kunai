@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import type { LocalPackageCandidate } from "../../../../../scripts/npm-publication-plan";
 import {
@@ -153,6 +153,8 @@ describe("local npm publication candidates", () => {
       expect(commands.at(-1)).toEqual([
         "npm",
         "pack",
+        "--prefix",
+        dirname(launcherTarballPath),
         "--json",
         "--dry-run",
         "--ignore-scripts",
@@ -268,7 +270,15 @@ describe("npm registry error classification", () => {
 
     expect(await registry.queryIntegrity(candidate)).toBeNull();
     expect(calls).toEqual([
-      ["npm", "view", "@kitsunekode/kunai-linux-x64@1.2.3", "dist.integrity", "--json"],
+      [
+        "npm",
+        "view",
+        "@kitsunekode/kunai-linux-x64@1.2.3",
+        "dist.integrity",
+        "--json",
+        "--prefix",
+        dirname(candidate.tarballPath),
+      ],
     ]);
   });
 
@@ -452,7 +462,13 @@ describe("resumable npm publication orchestration", () => {
     const command: CommandPort = async (request) => {
       expect(request.command).toBe("npm");
       expect(request.args.slice(0, 1)).toEqual(["publish"]);
-      expect(request.args.slice(2)).toEqual(["--access", "public", "--provenance"]);
+      expect(request.args.slice(2)).toEqual([
+        "--access",
+        "public",
+        "--provenance",
+        "--prefix",
+        dirname(request.args[1]!),
+      ]);
       const candidate = localCandidates.find((item) => item.tarballPath === request.args[1])!;
       published.push(candidate.name);
       registryState.set(candidate.name, metadata(candidate));

@@ -248,7 +248,7 @@ describe("DownloadService queue hardening", () => {
     expect(spawnSpy).not.toHaveBeenCalled();
   });
 
-  test("shutdown during the storage probe requeues instead of downloading", async () => {
+  test("shutdown during the storage probe leaves queued work untouched", async () => {
     let probeGate: (() => Promise<{ bavail: number; bsize: number }>) | null = null;
     const healthy = async () => ({ bavail: 2 ** 40 / 4096, bsize: 4096 });
     const service = buildService({
@@ -272,6 +272,34 @@ describe("DownloadService queue hardening", () => {
     expect(await pending).toBeNull();
     expect(repo.get(id)?.status).toBe("queued");
     expect(spawnSpy).not.toHaveBeenCalled();
+  });
+
+  test("shutdown cannot resurrect a cancellation made during the storage probe", async () => {
+    const reached = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<{ bavail: number; bsize: number }>();
+    let holdProbe = false;
+    const service = buildService({
+      statfs: async () => {
+        if (holdProbe) {
+          reached.resolve();
+          return release.promise;
+        }
+        return { bavail: 2 ** 40 / 4096, bsize: 4096 };
+      },
+    });
+    stubSuccessfulSpawn();
+    const id = await enqueueMovie(service, "cancel-probe-race");
+    holdProbe = true;
+    const pending = service.processNextQueued();
+    await reached.promise;
+    await service.abort(id);
+    expect(repo.get(id)?.status).toBe("aborted");
+    service.beginShutdown();
+    release.resolve({ bavail: 2 ** 40 / 4096, bsize: 4096 });
+    expect(await pending).toBeNull();
+    expect(repo.get(id)?.status).toBe("aborted");
+    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(repo.listQueued()).toHaveLength(0);
   });
 
   test("a lost first heartbeat skips the download instead of running leaseless", async () => {

@@ -187,6 +187,10 @@ accounts, usage ping, done. Implementation is
   bounded retry. This closes the unavoidable filesystem-rename/SQLite-commit crash window.
 - Abort terminates active download processes (`yt-dlp`), deletes temporary files, and persists an aborted job state.
 - App shutdown pauses active downloads, cleans temporary workers, and leaves jobs retryable.
+  If shutdown arrives during a queued job's storage probe, the worker releases
+  only its in-memory reservation. It has no durable running claim yet, so it
+  leaves the persisted state untouched, including an explicit cancellation
+  made while the probe was pending.
 - Abort or shutdown requested while stream resolution is pending prevents a later
   downloader launch and fresh-stream metadata writes. When resolution settles,
   the queue preserves the recorded abort/pause decision without consuming a

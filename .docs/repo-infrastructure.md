@@ -231,6 +231,17 @@ Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` cov
 `bun run build` at the repo root runs `build` + `build:binary:host` in parallel.
 Compiled binaries never ship on npm; `pkg:check` enforces an allowlist and size budget.
 
+Release preparation and publication scope each npm invocation with an explicit
+`--prefix` pointing to the platform package or preserved tarball directory.
+This keeps npm 11's development-engine checks on the artifact being handled;
+the repository itself deliberately requires Bun. It does not bypass engine
+checks with `--force` or alter the repository's package-manager policy. Preserved
+tarball inspection and registry/publish commands use the same artifact context;
+user/environment registry authentication still follows npm's normal resolution.
+The real-npm regression in
+`apps/cli/test/integration/npm-global-install.test.ts` packs tiny isolated
+candidates and verifies that inspection returns their exact preserved integrity.
+
 The 0.3.0 GitHub Release compatibility bridge is an exact 22-file set: ten
 canonical archives, the same ten raw standalone binaries, legacy
 `SHA256SUMS` for raw binaries, and `SHA256SUMS.archives` for archives. Keeping
