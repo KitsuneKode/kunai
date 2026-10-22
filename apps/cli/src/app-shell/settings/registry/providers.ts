@@ -32,12 +32,12 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       kind: "section",
       id: "section:providers",
       label: "Providers",
-      detail: "Default resolver used before per-title overrides",
+      detail: "Choose a default provider and order your automatic fallbacks",
     },
     {
       kind: "enum",
       id: "provider",
-      label: "Default provider",
+      label: "Movies and series provider",
       detail: "Movies and series: used on new searches until you pick another provider",
       options: providerEnumOptions(ctx, "series"),
       presentation: "submenu",
@@ -57,6 +57,7 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "enum",
       id: "youtubeProvider",
+      gate: { predicate: () => ctx.youtubeProviderOptions.length > 1 },
       label: "YouTube provider",
       detail: "YouTube mode default: used on new YouTube searches until changed in-session",
       options: providerEnumOptions(ctx, "youtube"),
@@ -77,7 +78,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       kind: "reorder",
       id: "animeProviderPriority",
       label: configLabel("animeProviderPriority"),
-      detail: "Try order for anime — first entry is default, rest are fallbacks",
+      detail:
+        "Your configured anime fallback order; the provider picker offers every available provider",
       resolveOrder: resolveAnimeProviderOrder,
       applyOrder: applyAnimeProviderOrder,
       providerOptions: (orderCtx) => orderCtx.animeProviderOptions,
@@ -85,6 +87,7 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "reorder",
       id: "youtubeProviderPriority",
+      gate: { predicate: () => ctx.youtubeProviderOptions.length > 1 },
       label: configLabel("youtubeProviderPriority"),
       detail: "Try order for YouTube — first entry is default, rest are fallbacks",
       resolveOrder: resolveYoutubeProviderOrder,
@@ -110,8 +113,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "enum",
       id: "videasyAppId",
-      label: "Videasy app id",
-      detail: `Current ${ctx.config.videasyAppId}  ·  choose token source compatibility`,
+      label: "Videasy session source",
+      detail: "Match the site where you created the optional session token",
       options: [
         {
           value: "vidking",
@@ -120,8 +123,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
         },
         {
           value: "bc-frontend",
-          label: "Cineplay / Bitcine",
-          detail: "Use sessions minted by cineplay.to (or legacy bitcine.tv) playback pages",
+          label: "Cineplay",
+          detail: "Use sessions created by Cineplay playback pages",
         },
       ],
       presentation: "submenu",

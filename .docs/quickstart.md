@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-22"
 ---
 
 # Kunai — Quickstart
@@ -200,8 +200,8 @@ VidKing may report `Videasy requires a valid browser session` when Videasy's
 guarded API requires a session created by the website. Kunai can use a token you
 explicitly provide through `/settings` or `KUNAI_VIDEASY_SESSION_TOKEN`; it does
 not try to bypass browser challenges or solve Turnstile automatically. Set
-`Videasy app id` to `vidking` for vidking.net sessions or `bc-frontend` for
-Bitcine sessions.
+`Videasy session source` to `vidking` for vidking.net sessions or `bc-frontend`
+(Cineplay) for Cineplay/Bitcine sessions.
 
 **Mint a session (one-time, then reuse across episodes)**
 
@@ -217,7 +217,7 @@ Or from DevTools while [bitcine.tv](https://www.bitcine.tv) playback works:
 
 1. Network → filter `auth/session` or `sources-with-title`
 2. Copy `token` from the **200** `POST https://api.videasy.net/auth/session` JSON body, **or** the `x-session-token` request header on `sources-with-title`
-3. `/settings` → **Videasy session token** → paste; **Videasy app id** → `bc-frontend` for Bitcine (or `vidking` for vidking.net)
+3. `/settings` → **Videasy session token** → paste; **Videasy session source** → `bc-frontend` for Cineplay/Bitcine (or `vidking` for vidking.net)
 
 Verify the API gate (no token → blocked):
 

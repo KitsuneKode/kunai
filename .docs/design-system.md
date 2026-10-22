@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-22"
 ---
 
 # Kunai — Terminal Design System (Sakura)
@@ -157,3 +157,18 @@ Color is always paired with a glyph or word (`✓ complete`, `✗ failed`, `● 
 ## Migration Note
 
 If future web/desktop surfaces consume this identity, keep the semantic layer intact: token naming, the one rule, spacing/box conventions, and fast-scan low-breakage behavior carry forward. See [.plans/sakura-rollout.md](../.plans/sakura-rollout.md) and [.plans/ink-migration.md](../.archive/plans/ink-migration.md).
+
+### Pointer controls
+
+Rows share a select-then-activate rule across browse, Library, Up Next, Tracks
+and Settings. Tabs and section controls navigate directly. Wheel movement stops
+at boundaries and never activates, claims or deletes an item. The command
+palette removes pointer ownership from covered controls.
+
+Tracks use semantic section/value identities, including subtitle grid cells;
+narrow layouts preserve visible focus and follow its window. Settings share
+activation and persistence with keyboard controls, preserve theme preview/escape
+restoration, and block pointer changes while busy or editing text. Usage analytics
+remains keystroke-gated: a click focuses the row and tells the user to press Enter.
+Detailed behavior and verification boundaries live in
+[features/pointer-controls.md](./features/pointer-controls.md).

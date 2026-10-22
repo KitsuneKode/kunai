@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-14T02:22:09Z"
+lastReviewed: "2026-10-22"
 ---
 
 # Feature Map
@@ -86,6 +86,10 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | Provider health + `/reset-provider-health`   | `packages/storage` `provider-health`, `title-provider-health`, `provider-endpoint-health`                                                  | [title-provider-health-and-cache-reset.md](./title-provider-health-and-cache-reset.md)                 |
 | Geo relay (user-owned)                       | `packages/relay/*`, `apps/relay-server`                                                                                                    | [runtime-boundary-map.md](./runtime-boundary-map.md#provider-relay-ownership)                          |
 | Provider research                            | `.reference/experiments/*`, `.docs/provider-dossiers/*`                                                                                    | [provider-intake.md](./provider-intake.md)                                                             |
+
+Pointer selection and activation across browse, Library, Up Next, Tracks and
+Settings are owned by `apps/cli/src/app-shell/mouse/` plus the surface/controller
+callbacks. See [features/pointer-controls.md](./features/pointer-controls.md).
 
 ## Playback
 

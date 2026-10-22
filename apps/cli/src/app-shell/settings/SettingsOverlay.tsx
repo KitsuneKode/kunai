@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { MouseTarget } from "../mouse/MouseRegions";
 import { PickerOptionRow } from "../overlay-picker-row";
 import { ClaudeTabRow } from "../primitives/ClaudeTabRow";
 import { StateBlock } from "../primitives/StateBlock";
@@ -16,6 +17,7 @@ import { SettingRowAction, SettingRowStatus, SettingSection } from "./components
 import { SettingsInputBanner } from "./components/SettingsInputBanner";
 import { SettingsSearchBar } from "./components/SettingsSearchBar";
 import { selectableSettingsRows, windowStart } from "./navigation";
+import type { SettingsPointerEvent } from "./pointer";
 import type { BuiltSettingsPage, SettingsRegistryContext, SettingsUiState } from "./types";
 
 function renderMainRow(
@@ -65,6 +67,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   maxRows,
   error,
   hideChromeTitle = false,
+  pointer,
 }: {
   readonly page: BuiltSettingsPage;
   readonly state: SettingsUiState;
@@ -73,6 +76,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   readonly maxRows: number;
   readonly error: string | null;
   readonly hideChromeTitle?: boolean;
+  readonly pointer?: (event: SettingsPointerEvent) => void;
 }) {
   const rowWidth = Math.max(24, width - 4);
   const sectionLabels = listSettingsSectionLabels(registryCtx);
@@ -105,38 +109,52 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     const start = windowStart(state.selectedIndex, submenu.choices.length, maxRows);
     const visible = submenu.choices.slice(start, start + maxRows);
     return (
-      <Box flexDirection="column" paddingX={1}>
-        <Text color={palette.text} bold>
-          {submenu.title}
-        </Text>
-        <Text color={palette.dim}>{submenu.subtitle}</Text>
-        <Box marginTop={1} flexDirection="column">
-          {start > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
-          {visible.map((choice, index) => {
-            const absolute = start + index;
-            const selected = absolute === state.selectedIndex;
-            return (
-              <Box key={choice.value} backgroundColor={selected ? palette.accentFill : undefined}>
-                <Text color={selected ? palette.accent : palette.dim}>
-                  {selected ? "▌ " : "  "}
-                </Text>
-                <PickerOptionRow
-                  label={choice.label}
-                  detail={choice.detail}
-                  width={rowWidth - 2}
-                  selected={selected}
-                  accentColor={null}
-                  pickerAccent={palette.accent}
-                />
-              </Box>
-            );
-          })}
-          {start + maxRows < submenu.choices.length ? (
-            <Text color={palette.dim}> ▼ ...</Text>
-          ) : null}
+      <MouseTarget
+        id="settings:submenu"
+        active={Boolean(pointer)}
+        onWheel={(direction) => pointer?.({ type: "scroll", direction })}
+      >
+        <Box flexDirection="column" paddingX={1}>
+          <Text color={palette.text} bold>
+            {submenu.title}
+          </Text>
+          <Text color={palette.dim}>{submenu.subtitle}</Text>
+          <Box marginTop={1} flexDirection="column">
+            {start > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
+            {visible.map((choice, index) => {
+              const absolute = start + index;
+              const selected = absolute === state.selectedIndex && !state.searchFocused;
+              return (
+                <MouseTarget
+                  key={choice.value}
+                  id={`settings:choice:${choice.value}`}
+                  active={Boolean(pointer)}
+                  onClick={() => pointer?.({ type: "choice", value: choice.value })}
+                  onWheel={(direction) => pointer?.({ type: "scroll", direction })}
+                >
+                  <Box backgroundColor={selected ? palette.accentFill : undefined}>
+                    <Text color={selected ? palette.accent : palette.dim}>
+                      {selected ? "▌ " : "  "}
+                    </Text>
+                    <PickerOptionRow
+                      label={choice.label}
+                      detail={choice.detail}
+                      width={rowWidth - 2}
+                      selected={selected}
+                      accentColor={null}
+                      pickerAccent={palette.accent}
+                    />
+                  </Box>
+                </MouseTarget>
+              );
+            })}
+            {start + maxRows < submenu.choices.length ? (
+              <Text color={palette.dim}> ▼ ...</Text>
+            ) : null}
+          </Box>
+          {error ? <Text color={palette.dangerText}>{error}</Text> : null}
         </Box>
-        {error ? <Text color={palette.dangerText}>{error}</Text> : null}
-      </Box>
+      </MouseTarget>
     );
   }
 
@@ -150,7 +168,13 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           </Text>
         )}
         <Text color={palette.dim}>{page.subtitle}</Text>
-        <SettingsSearchBar query={state.searchQuery} focused={state.searchFocused} />
+        <MouseTarget
+          id="settings:search"
+          active={Boolean(pointer)}
+          onClick={() => pointer?.({ type: "search" })}
+        >
+          <SettingsSearchBar query={state.searchQuery} focused={state.searchFocused} />
+        </MouseTarget>
         <Box marginTop={1}>
           <StateBlock
             model={{
@@ -170,48 +194,75 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   const visible = page.rows.slice(start, start + maxRows);
 
   return (
-    <Box flexDirection="column" paddingX={1}>
-      {hideChromeTitle ? null : (
-        <Text color={palette.text} bold>
-          {page.title}
-        </Text>
-      )}
-      <Text color={palette.dim}>{page.subtitle}</Text>
-      {showSectionTabs ? (
-        <ClaudeTabRow
-          labels={sectionLabels}
-          activeIndex={state.activeSectionIndex}
-          hint="Tab / Shift+Tab"
-          maxWidth={rowWidth}
-          dense
-        />
-      ) : null}
-      <SettingsSearchBar query={state.searchQuery} focused={state.searchFocused} />
-      <Box marginTop={1} flexDirection="column">
-        {start > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
-        {visible.map((row, index) => {
-          const absolute = start + index;
-          const selected = absolute === state.selectedIndex;
-          // Status rows render their own detail, with the tone colour that
-          // carries the meaning. Only sections need one added here.
-          if (row.def.kind === "section") {
+    <MouseTarget
+      id="settings:rows"
+      active={Boolean(pointer)}
+      onWheel={(direction) => pointer?.({ type: "scroll", direction })}
+    >
+      <Box flexDirection="column" paddingX={1}>
+        {hideChromeTitle ? null : (
+          <Text color={palette.text} bold>
+            {page.title}
+          </Text>
+        )}
+        <Text color={palette.dim}>{page.subtitle}</Text>
+        {showSectionTabs ? (
+          <ClaudeTabRow
+            labels={sectionLabels}
+            activeIndex={state.activeSectionIndex}
+            hint="Tab / Shift+Tab"
+            maxWidth={rowWidth}
+            dense
+            pointer={
+              pointer
+                ? { id: "settings", select: (index) => pointer({ type: "section", index }) }
+                : undefined
+            }
+          />
+        ) : null}
+        <MouseTarget
+          id="settings:search"
+          active={Boolean(pointer)}
+          onClick={() => pointer?.({ type: "search" })}
+        >
+          <SettingsSearchBar query={state.searchQuery} focused={state.searchFocused} />
+        </MouseTarget>
+        <Box marginTop={1} flexDirection="column">
+          {start > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
+          {visible.map((row, index) => {
+            const absolute = start + index;
+            const selected = absolute === state.selectedIndex && !state.searchFocused;
+            // Status rows render their own detail, with the tone colour that
+            // carries the meaning. Only sections need one added here.
+            if (row.def.kind === "section") {
+              return (
+                <Box key={row.def.id} flexDirection="column">
+                  {renderMainRow(row, false, rowWidth)}
+                  {row.detail ? <Text color={palette.dim}>{row.detail}</Text> : null}
+                </Box>
+              );
+            }
             return (
-              <Box key={row.def.id} flexDirection="column">
-                {renderMainRow(row, false, rowWidth)}
-                {row.detail ? <Text color={palette.dim}>{row.detail}</Text> : null}
-              </Box>
+              <MouseTarget
+                key={row.def.id}
+                id={`settings:row:${row.def.id}`}
+                active={Boolean(pointer) && row.def.kind !== "status"}
+                onClick={() => pointer?.({ type: "row", id: row.def.id })}
+                onWheel={(direction) => pointer?.({ type: "scroll", direction })}
+              >
+                <Box flexDirection="column">
+                  {renderMainRow(row, selected, rowWidth)}
+                  {selected && row.detail ? (
+                    <Text color={palette.dim}>{`  ${row.detail}`}</Text>
+                  ) : null}
+                </Box>
+              </MouseTarget>
             );
-          }
-          return (
-            <Box key={row.def.id} flexDirection="column">
-              {renderMainRow(row, selected, rowWidth)}
-              {selected && row.detail ? <Text color={palette.dim}>{`  ${row.detail}`}</Text> : null}
-            </Box>
-          );
-        })}
-        {start + maxRows < page.rows.length ? <Text color={palette.dim}> ▼ ...</Text> : null}
+          })}
+          {start + maxRows < page.rows.length ? <Text color={palette.dim}> ▼ ...</Text> : null}
+        </Box>
+        {error ? <Text color={palette.dangerText}>{error}</Text> : null}
       </Box>
-      {error ? <Text color={palette.dangerText}>{error}</Text> : null}
-    </Box>
+    </MouseTarget>
   );
 });

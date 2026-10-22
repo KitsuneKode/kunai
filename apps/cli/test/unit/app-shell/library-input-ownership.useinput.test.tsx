@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { LibraryShell } from "@/app-shell/library-shell";
+import { RootContentSuspension } from "@/app-shell/RootContentSuspension";
 import type { Container } from "@/container";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import React, { act } from "react";
 
 import { render, stripAnsi } from "../../harness/render-capture";
+import { renderWithPointer } from "../../support/pointer-render";
 import { waitUntil } from "../../support/wait-until";
 
 type FixtureOptions = {
@@ -584,6 +586,136 @@ describe("library input ownership", () => {
       handle.unmount();
     }
   });
+});
+
+describe("library pointer ownership", () => {
+  test.each([0, 1])(
+    "click selects title %s before opening its detail without deleting",
+    async (targetIndex) => {
+      const deletes: string[] = [];
+      const handle = renderWithPointer(
+        <LibraryShell
+          container={fixture({
+            deletes,
+            entries: [
+              offlineEntry(),
+              offlineEntry({ id: "job-2", titleId: "title-2", titleName: "Frieren" }),
+            ],
+          })}
+          onClose={() => {}}
+        />,
+        { columns: 100, rows: 40 },
+      );
+      try {
+        await act(async () => {
+          await Promise.resolve();
+        });
+        const rows = handle.dispatcher
+          .debugRegions()
+          .filter((r) => r.id.startsWith("library:row:"));
+        expect(rows).toHaveLength(2);
+        const target = rows[targetIndex];
+        if (!target) throw new Error("Expected second library title");
+        handle.click(target.id);
+        expect(stripAnsi(handle.lastFrame())).not.toContain("Continue this title online");
+        handle.click(target.id);
+        expect(stripAnsi(handle.lastFrame())).toContain("Continue this title online");
+        expect(deletes).toEqual([]);
+        expect(
+          handle.dispatcher.debugRegions().filter((r) => r.id.startsWith("library:row:")),
+        ).toEqual([]);
+      } finally {
+        handle.unmount();
+      }
+    },
+  );
+
+  test.each(["keyboard", "wheel"])(
+    "%s clears prior pointer intent on the same Library row",
+    async (owner) => {
+      const handle = renderWithPointer(<LibraryShell container={fixture()} onClose={() => {}} />, {
+        columns: 72,
+        rows: 30,
+      });
+      try {
+        await act(async () => {
+          await Promise.resolve();
+        });
+        const target = handle.dispatcher
+          .debugRegions()
+          .find((r) => r.id.startsWith("library:row:"));
+        if (!target) throw new Error("Expected library title");
+        handle.click(target.id);
+        if (owner === "keyboard") handle.stdin.enqueue("\x1b[A");
+        else handle.wheel(target.id, "up");
+        handle.click(target.id);
+        expect(handle.lastFrame()).not.toContain("Continue this title online");
+        handle.stdin.enqueue("\r");
+        expect(handle.lastFrame()).toContain("Continue this title online");
+        await pressEscape(handle);
+        expect(handle.dispatcher.debugRegions().some((r) => r.id === target.id)).toBe(true);
+        handle.click(target.id);
+        expect(handle.lastFrame()).not.toContain("Continue this title online");
+      } finally {
+        handle.unmount();
+      }
+    },
+  );
+
+  test("tab clicks navigate both ways, including a filtered shelf", async () => {
+    const handle = renderWithPointer(<LibraryShell container={fixture()} onClose={() => {}} />, {
+      columns: 100,
+      rows: 40,
+    });
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      handle.stdin.enqueue("missing");
+      handle.click("library:tab:1");
+      expect(stripAnsi(handle.lastFrame())).toContain("No downloads queued");
+      handle.click("library:tab:0");
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(stripAnsi(handle.lastFrame())).toContain("Dune");
+    } finally {
+      handle.unmount();
+    }
+  });
+});
+
+test("covered Library and Downloads release both pointer and keyboard ownership", async () => {
+  for (const initialView of ["library", "queue"] as const) {
+    let closed = 0;
+    const handle = renderWithPointer(
+      <RootContentSuspension suspended={true}>
+        <LibraryShell
+          container={fixture()}
+          initialView={initialView}
+          onClose={() => {
+            closed += 1;
+          }}
+        />
+      </RootContentSuspension>,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(handle.dispatcher.size).toBe(0);
+      handle.stdin.enqueue("d");
+      handle.stdin.enqueue("\t");
+      expect(closed).toBe(0);
+      if (initialView === "library") {
+        expect(handle.lastFrame()).not.toContain("Filter: d");
+        expect(handle.lastFrame()).not.toContain("No downloads queued");
+      } else expect(handle.lastFrame()).toContain("No downloads queued");
+    } finally {
+      handle.unmount();
+    }
+  }
 });
 
 test("Library keeps retained entries visible after partial title removal", async () => {

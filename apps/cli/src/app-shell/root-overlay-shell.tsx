@@ -13,7 +13,11 @@ import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket"
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import type { LocalTitleMatch } from "@/domain/palette/local-title-index";
 import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-name";
-import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
+import {
+  encodeTrackSelection,
+  type TrackCapability,
+  type TrackCapabilitySection,
+} from "@/domain/playback/track-capabilities";
 import {
   providerMetadataMatchesLane,
   providerPickerLanesForTitle,
@@ -24,7 +28,7 @@ import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
 import { restoreQueueSessionWithResume } from "@/domain/queue/restore-queue-session";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import { isPlaybackSessionActive, type SessionState } from "@/domain/session/SessionState";
-import { countLabel } from "@/domain/text-display";
+import { countLabel, truncateLine } from "@/domain/text-display";
 import type { SearchResult } from "@/domain/types";
 import { openExternalUrlAndWait } from "@/infra/shell/open-external-url";
 import { projectionFromViewDecision } from "@/services/continuation/continuation-policy";
@@ -172,6 +176,7 @@ import {
 } from "./panel-data";
 import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
+import type { QueueViewRow } from "./queue-view";
 import { buildQueueView } from "./queue-view";
 import {
   hasPendingRootHistorySelection,
@@ -202,6 +207,7 @@ import {
 } from "./root-queue-bridge";
 import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
 import { runRootWorkflowSafely } from "./root-workflow-dispatch";
+import { RootContentSuspension } from "./RootContentSuspension";
 import { SEARCH_BROWSE_COMMAND_IDS } from "./search-browse-command-ids";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
 import { SettingsShell } from "./settings/SettingsShell";
@@ -209,7 +215,7 @@ import { useShellInput } from "./shell-command-input";
 import { CommandPalette, PaletteTitleMatchesProvider } from "./shell-command-ui";
 import { ContextStrip, ShellFooter, ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
-import { subtitleGridColumns, tracksOptionsPaneWidth } from "./tracks-panel-layout";
+import { tracksNavigationColumns } from "./tracks-panel-layout";
 import {
   createInitialTracksNav,
   tracksPanelNavReducer,
@@ -1434,6 +1440,97 @@ export function RootOverlayShell({
     })();
   };
 
+  const sortedTrackRows = (section: TrackCapabilitySection) => {
+    const match = trackGroups.find((group) => group.section === section);
+    return match?.section === "source"
+      ? sortByFavorites(match.rows, tracksFavorites, (row) => row.label)
+      : (match?.rows ?? []);
+  };
+  const activateTrack = (row: TrackCapability) => {
+    if (overlay.type !== "tracks_panel" || Date.now() < tracksFrozenUntil) return;
+    if (!row.enabled) {
+      setOverlayStatus(
+        row.reason ?? (row.selected ? "Already on this stream" : "This option cannot be switched"),
+      );
+      return;
+    }
+    container.stateManager.dispatch({
+      type: "RESOLVE_PICKER",
+      id: overlay.id,
+      value: encodeTrackSelection(row.section, row.value),
+    });
+  };
+  const selectTrackOption = (section: TrackCapabilitySection, value: string) => {
+    const sectionIndex = trackGroups.findIndex((group) => group.section === section);
+    const sectionRows = sortedTrackRows(section);
+    const optionIndex = sectionRows.findIndex((candidate) => candidate.value === value);
+    const row = sectionRows[optionIndex];
+    if (sectionIndex < 0 || !row) return;
+    if (
+      tracksNav.focusedPane !== "options" ||
+      sectionIndex !== tracksNav.sectionIndex ||
+      optionIndex !== tracksNav.optionIndex
+    ) {
+      setTracksNav({ focusedPane: "options", sectionIndex, optionIndex });
+    } else activateTrack(row);
+  };
+
+  const activateQueueRow = (row: QueueViewRow) => {
+    setQueueConfirm(null);
+    if (row.state === "played" || row.state === "starting") {
+      setOverlayStatus(
+        row.state === "starting"
+          ? "This item is already starting"
+          : "This queue item was already played",
+      );
+      return;
+    }
+    // Claim exact row before handoff; failed CAS keeps the overlay open.
+    const awaited = hasPendingRootQueueSelection();
+    const mountedKind = getRootContentSession()?.kind;
+    if (!awaited && mountedKind === "post-playback") {
+      // Post-play owns this handoff natively — its own queue rail resolves
+      // the same result, and the phase loop claims the row itself. Claiming
+      // here first would make that CAS fail and drop the launch.
+      container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+      forceCloseRootContent<PlaybackShellResult>({
+        type: "play-queue-entry",
+        queueEntryId: row.id,
+      });
+      return;
+    }
+    if (!awaited && mountedKind !== "browse") {
+      // launch-playback only resolves on browse — on active playback, a
+      // picker, or an idle slot nobody consumes it, so claiming would leave
+      // the row in-flight forever. Keep it pending and say where it plays.
+      setOverlayStatus("Queue play from the search screen or the post-play menu");
+      return;
+    }
+    const played = resolveQueueRowPlaySelection(
+      container.queueService,
+      row.id,
+      resolveRootQueueSelection,
+      () => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" }),
+    );
+    // The palette route awaits this through openRootQueueSelection. Opened
+    // directly from another overlay there is no resolver — the claim above
+    // would close the overlay and drop a launch nothing consumed. Fall back
+    // to the same finish channel the history path uses.
+    if (played.status === "failed") {
+      setOverlayStatus("This item is no longer pending; choose another queued title");
+      return;
+    }
+    if (played.status === "claimed" && !awaited) {
+      const episode = episodeInfoFromQueuePlaybackLaunch(played.launch);
+      const launchTitle = titleInfoFromQueuePlaybackLaunch(played.launch);
+      forceCloseRootContent<BrowseShellResult<SearchResult>>(
+        episode
+          ? { type: "launch-playback", launch: { title: launchTitle, episode } }
+          : { type: "launch-playback", launch: { title: launchTitle } },
+      );
+    }
+  };
+
   useInput((input, key) => {
     if (commandMode) {
       return;
@@ -1485,10 +1582,7 @@ export function RootOverlayShell({
       const navCtx = {
         sectionCount: trackGroups.length,
         optionCount: focusedGroup?.rows.length ?? 0,
-        gridColumns:
-          focusedGroup?.section === "subtitle"
-            ? subtitleGridColumns(tracksOptionsPaneWidth(overlayLayout.contentColumns))
-            : 1,
+        gridColumns: tracksNavigationColumns(overlayLayout.contentColumns, focusedGroup?.section),
       };
       const inSubtitleGrid = tracksNav.focusedPane === "options" && navCtx.gridColumns > 1;
 
@@ -1564,18 +1658,7 @@ export function RootOverlayShell({
         );
         const row = sorted[safeOptionIndex];
         if (!focusedGroup || !row) return;
-        if (!row.enabled) {
-          setOverlayStatus(
-            row.reason ??
-              (row.selected ? "Already on this stream" : "This option cannot be switched"),
-          );
-          return;
-        }
-        container.stateManager.dispatch({
-          type: "RESOLVE_PICKER",
-          id: overlay.id,
-          value: encodeTrackSelection(row.section, row.value),
-        });
+        activateTrack(row);
         return;
       }
       return;
@@ -1718,47 +1801,7 @@ export function RootOverlayShell({
       const sel = queueRows.length === 0 ? -1 : Math.min(selectedIndex, queueRows.length - 1);
       const row = sel >= 0 ? queueRows[sel] : undefined;
       if (key.return && row) {
-        // Claim exact row before handoff; failed CAS keeps the overlay open.
-        setQueueConfirm(null);
-        const awaited = hasPendingRootQueueSelection();
-        const mountedKind = getRootContentSession()?.kind;
-        if (!awaited && mountedKind === "post-playback") {
-          // Post-play owns this handoff natively — its own queue rail resolves
-          // the same result, and the phase loop claims the row itself. Claiming
-          // here first would make that CAS fail and drop the launch.
-          container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-          forceCloseRootContent<PlaybackShellResult>({
-            type: "play-queue-entry",
-            queueEntryId: row.id,
-          });
-          return;
-        }
-        if (!awaited && mountedKind !== "browse") {
-          // launch-playback only resolves on browse — on active playback, a
-          // picker, or an idle slot nobody consumes it, so claiming would leave
-          // the row in-flight forever. Keep it pending and say where it plays.
-          setOverlayStatus("Queue play from the search screen or the post-play menu");
-          return;
-        }
-        const played = resolveQueueRowPlaySelection(
-          container.queueService,
-          row.id,
-          resolveRootQueueSelection,
-          () => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" }),
-        );
-        // The palette route awaits this through openRootQueueSelection. Opened
-        // directly from another overlay there is no resolver — the claim above
-        // would close the overlay and drop a launch nothing consumed. Fall back
-        // to the same finish channel the history path uses.
-        if (played.status === "claimed" && !awaited) {
-          const episode = episodeInfoFromQueuePlaybackLaunch(played.launch);
-          const launchTitle = titleInfoFromQueuePlaybackLaunch(played.launch);
-          forceCloseRootContent<BrowseShellResult<SearchResult>>(
-            episode
-              ? { type: "launch-playback", launch: { title: launchTitle, episode } }
-              : { type: "launch-playback", launch: { title: launchTitle } },
-          );
-        }
+        activateQueueRow(row);
         return;
       }
       if (input === "J" && row) {
@@ -2259,11 +2302,13 @@ export function RootOverlayShell({
   if (overlay.type === "library") {
     return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
-        <LibraryShell
-          container={container}
-          onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
-          initialView={overlay.view ?? "library"}
-        />
+        <RootContentSuspension suspended={commandMode}>
+          <LibraryShell
+            container={container}
+            onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+            initialView={overlay.view ?? "library"}
+          />
+        </RootContentSuspension>
         {commandMode ? (
           <CommandPalette
             input={commandInput}
@@ -2279,10 +2324,15 @@ export function RootOverlayShell({
   if (overlay.type === "settings") {
     return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
+        {overlayStatus ? (
+          <Text color={palette.textDim}>
+            {truncateLine(overlayStatus, overlayLayout.contentColumns)}
+          </Text>
+        ) : null}
         <SettingsShell
           container={container}
           width={overlayLayout.contentColumns}
-          maxRows={maxLines}
+          maxRows={Math.max(1, maxLines - (overlayStatus ? 1 : 0))}
           commandMode={commandMode}
           initialSectionId={overlay.initialSectionId}
           onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
@@ -2375,6 +2425,32 @@ export function RootOverlayShell({
         />
         <QueueShell
           view={queueViewForRender}
+          maxRows={Math.max(1, overlayLayout.contentRows - 6)}
+          onRowClick={
+            commandMode
+              ? undefined
+              : (id, activate) => {
+                  setQueueConfirm(null);
+                  const index = queueView.rows.findIndex((row) => row.id === id);
+                  const row = queueView.rows[index];
+                  if (!row) return;
+                  if (!activate || index !== qSelected) setSelectedIndex(index);
+                  else activateQueueRow(row);
+                }
+          }
+          onWheel={
+            commandMode
+              ? undefined
+              : (direction) => {
+                  setQueueConfirm(null);
+                  setSelectedIndex((current) =>
+                    Math.max(
+                      0,
+                      Math.min(queueView.rows.length - 1, current + (direction === "up" ? -1 : 1)),
+                    ),
+                  );
+                }
+          }
           columns={overlayLayout.contentColumns}
           listWidth={listWidth}
           rowWidth={rowWidth}
@@ -2548,6 +2624,49 @@ export function RootOverlayShell({
         <TracksPanelShell
           groups={trackGroups}
           nav={tracksNav}
+          pointer={
+            commandMode
+              ? undefined
+              : {
+                  section: (section) => {
+                    const sectionIndex = trackGroups.findIndex(
+                      (group) => group.section === section,
+                    );
+                    if (sectionIndex >= 0)
+                      setTracksNav({ focusedPane: "options", sectionIndex, optionIndex: 0 });
+                  },
+                  option: selectTrackOption,
+                  scroll: (section, direction) => {
+                    const sectionIndex = trackGroups.findIndex(
+                      (group) => group.section === section,
+                    );
+                    if (sectionIndex < 0) return;
+                    const group = trackGroups[sectionIndex];
+                    const sectionRows = sortedTrackRows(section);
+                    const context = {
+                      sectionCount: trackGroups.length,
+                      optionCount: sectionRows.length,
+                      gridColumns: tracksNavigationColumns(
+                        overlayLayout.contentColumns,
+                        group?.section,
+                      ),
+                    };
+                    setTracksNav((current) =>
+                      tracksPanelNavReducer(
+                        {
+                          ...current,
+                          focusedPane: "options",
+                          sectionIndex,
+                          optionIndex:
+                            current.sectionIndex === sectionIndex ? current.optionIndex : 0,
+                        },
+                        { type: direction === "up" ? "up" : "down" },
+                        context,
+                      ),
+                    );
+                  },
+                }
+          }
           favorites={tracksFavorites}
           providerLabel={overlay.type === "tracks_panel" ? overlay.providerLabel : undefined}
           width={overlayLayout.contentColumns}
