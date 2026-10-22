@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-14"
+lastReviewed: "2026-10-15"
 ---
 
 # Provider: VidLink (`vidlink`)
@@ -31,11 +31,16 @@ lastReviewed: "2026-10-14"
   "simplify" to it.
 - Payload carries `stream.qualities` (per-rendition URLs), `captions`
   (provider subtitles), and `playbackMetadata` (codec/resolution hints).
-- 20 s per-request timeout, 2 attempts. A 429 sleeps out its `Retry-After`
-  (delta-seconds or HTTP-date, capped at 10 s; fixed 500 ms without a usable
-  header) BEFORE the endpoint quarantine is recorded and the retry fires, so
-  the second attempt lands past the throttle window instead of inside it. 5xx
-  keeps the fixed 500 ms sleep; other statuses throw after recording.
+- 20 s per-request timeout, at most 2 attempts. A 429 `Retry-After` is
+  parsed as delta-seconds or an HTTP-date without shortening its window.
+  Windows up to 10 s are awaited before an inline retry; longer windows
+  immediately exhaust this resolve as `rate-limited` so provider fallback can
+  proceed without an early second request. A missing or invalid header keeps
+  the 500 ms retry spacing. Both API and enc-dec paths dispose rejected response
+  bodies before waiting or falling back. This bounds inline retries; it does
+  not establish a shared cooldown across independent resolve contexts.
+  5xx keeps the fixed 500 ms sleep; other statuses throw after recording.
+  HTTP semantics: [RFC 9110, Retry-After](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after).
 
 ## Failure honesty (post-2026-09-29)
 
@@ -44,9 +49,8 @@ lastReviewed: "2026-10-14"
   Before that, a plain `Error("HTTP N")` was flattened to `network-error` /
   `retryable: true` twice (once at throw, once in the shared catch), so a 404
   title and a dead host looked identical and every blip retried.
-- "enc-dec.app did not return an encrypted id" remains a generic error — the
-  upstream contract is `{result}` and nothing else distinguishes drift from a
-  bad id today.
+- A successful enc-dec response without `result` is `parse-failed`,
+  non-retryable response-shape drift, rather than a network fault.
 
 ## Known gaps
 
