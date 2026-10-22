@@ -709,7 +709,9 @@ export class PersistentMpvSession {
         void this.handleNetworkReadDeadReconnect();
       }
     };
-    this.watchdog = createPlaybackWatchdog(emitPlaybackEvent);
+    this.watchdog = (this.runtime.createPlaybackWatchdog ?? createPlaybackWatchdog)(
+      emitPlaybackEvent,
+    );
 
     const mpvInvocation = discoverMpvInvocation({
       which: this.runtime.which,
@@ -1557,6 +1559,21 @@ export class PersistentMpvSession {
   ): Promise<void> {
     const active = this.activeCycle;
     if (!active) return;
+
+    // The watchdog replaces a still-loaded file. mpv emits that old file's
+    // end-file(stop) before the replacement's file-loaded, so it must not
+    // retire the new load or resolve the watch cycle. Error/EOF reconnects
+    // already ended their old file; genuine reload errors and user close
+    // still follow normal teardown.
+    if (
+      reason === "stop" &&
+      !this.retired &&
+      this.reconnectInFlight &&
+      this.pendingInProcessReconnect?.trigger === "network-read-dead" &&
+      this.pendingFileLoad?.generation === this.cycleGeneration
+    ) {
+      return;
+    }
 
     // A reconnect's reload was still pending (loadfile ACKed, awaiting file-loaded)
     // but we got an end-file instead — the reload itself died (e.g. a dead CDN ACKs

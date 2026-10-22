@@ -6,14 +6,17 @@ const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
+function setFetch(implementation: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>) {
+  globalThis.fetch = Object.assign(implementation, { preconnect: originalFetch.preconnect });
+}
 const tv = { tmdbId: "1396", type: "series" as const, season: 1, episode: 2 };
 function reply(body: unknown, status = 200) {
-  globalThis.fetch = (async () => Response.json(body, { status })) as typeof fetch;
+  setFetch(async () => Response.json(body, { status }));
 }
 
 test("v4 TV response keeps requested TMDB identity and all segment buckets", async () => {
   let requested = "";
-  globalThis.fetch = (async (url) => {
+  setFetch(async (url) => {
     requested = String(url);
     return Response.json({
       tvdb_id: 81189,
@@ -25,7 +28,7 @@ test("v4 TV response keeps requested TMDB identity and all segment buckets", asy
       credits: [{ start_ms: 1400000, end_ms: null }],
       preview: [{ start_ms: 1300000, end_ms: 1350000 }],
     });
-  }) as typeof fetch;
+  });
   const result = await timing(tv);
   expect(requested).toBe("https://api.theintrodb.org/v4/media?tmdb_id=1396&season=1&episode=2");
   expect(result).toEqual({
@@ -43,10 +46,10 @@ test("v4 TV response keeps requested TMDB identity and all segment buckets", asy
 
 test("v4 movie omits TV coordinates and preserves movie identity", async () => {
   let requested = "";
-  globalThis.fetch = (async (url) => {
+  setFetch(async (url) => {
     requested = String(url);
     return Response.json({ tvdb_id: 169, type: "movie", intro: [{ start_ms: 0, end_ms: 20000 }] });
-  }) as typeof fetch;
+  });
   const result = await timing({ ...tv, tmdbId: "550", type: "movie" });
   expect(requested).toBe("https://api.theintrodb.org/v4/media?tmdb_id=550");
   expect(result.metadata).toMatchObject({
@@ -122,13 +125,14 @@ test("end_ms 0 is the documented no-segment marker, not a skip window", async ()
 
 test("cancellation while the body is read is cancelled, not a malformed response", async () => {
   const parent = new AbortController();
-  globalThis.fetch = (async () => ({
-    ok: true,
-    json: async () => {
-      parent.abort();
-      return { tvdb_id: 1, type: "tv", season: 1, episode: 2 };
-    },
-  })) as unknown as typeof fetch;
+  setFetch(async () => {
+    return Object.assign(Response.json({}), {
+      json: async () => {
+        parent.abort();
+        return { tvdb_id: 1, type: "tv", season: 1, episode: 2 };
+      },
+    });
+  });
   expect(await timing({ ...tv, signal: parent.signal, parentSignal: parent.signal })).toEqual({
     metadata: null,
     failureClass: "cancelled",
@@ -137,10 +141,10 @@ test("cancellation while the body is read is cancelled, not a malformed response
 
 test("series without both coordinates never silently requests a movie", async () => {
   let fetched = false;
-  globalThis.fetch = (async () => {
+  setFetch(async () => {
     fetched = true;
     return Response.json({});
-  }) as typeof fetch;
+  });
   expect(await timing({ ...tv, episode: undefined })).toEqual({
     metadata: null,
     failureClass: "identity-missing",
@@ -152,10 +156,10 @@ test("pre-cancelled request is cancelled before dispatch", async () => {
   const controller = new AbortController();
   controller.abort();
   let fetched = false;
-  globalThis.fetch = (async () => {
+  setFetch(async () => {
     fetched = true;
     return Response.json({});
-  }) as typeof fetch;
+  });
   expect(await timing({ ...tv, signal: controller.signal })).toEqual({
     metadata: null,
     failureClass: "cancelled",
@@ -165,10 +169,10 @@ test("pre-cancelled request is cancelled before dispatch", async () => {
 
 test("parent cancellation remains cancelled with a custom abort reason", async () => {
   const parent = new AbortController();
-  globalThis.fetch = (async () => {
+  setFetch(async () => {
     parent.abort(new Error("navigation changed"));
     throw parent.signal.reason;
-  }) as typeof fetch;
+  });
   expect(await timing({ ...tv, signal: parent.signal, parentSignal: parent.signal })).toEqual({
     metadata: null,
     failureClass: "cancelled",
@@ -191,9 +195,9 @@ for (const [error, failureClass] of [
   [new SyntaxError("invalid JSON"), "http-error"],
 ] as const) {
   test(`${error.name} is ${failureClass}`, async () => {
-    globalThis.fetch = (async () => {
+    setFetch(async () => {
       throw error;
-    }) as typeof fetch;
+    });
     expect((await timing(tv)).failureClass).toBe(failureClass);
   });
 }

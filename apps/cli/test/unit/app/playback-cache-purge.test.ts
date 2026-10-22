@@ -14,6 +14,8 @@ import { DEFAULT_CONFIG, type KitsuneConfig } from "@/services/persistence/Confi
 import { EpisodePlaybackSelectionService } from "@/services/playback/EpisodePlaybackSelectionService";
 import { TitlePlaybackSourceService } from "@/services/playback/TitlePlaybackSourceService";
 
+import { applyStorageRootEnv } from "../../helpers/storage-env";
+
 const config: KitsuneConfig = {
   ...DEFAULT_CONFIG,
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
@@ -24,7 +26,10 @@ const config: KitsuneConfig = {
 };
 
 let dir = "";
+let restoreEnv: (() => void) | undefined;
 afterEach(async () => {
+  restoreEnv?.();
+  restoreEnv = undefined;
   if (dir) await rm(dir, { recursive: true, force: true });
   dir = "";
 });
@@ -33,6 +38,7 @@ describe("production playback cache purge", () => {
   for (const scope of ["episode", "title"] as const) {
     test(`${scope} purge removes current pinned keys and preserves preferences for every provider`, async () => {
       dir = await mkdtemp(join(tmpdir(), "kunai-purge-"));
+      restoreEnv = applyStorageRootEnv(dir);
       const modules = await loadProductionProviderModules({
         providerPriority: [],
         animeProviderPriority: [],
@@ -82,6 +88,7 @@ describe("production playback cache purge", () => {
           streamId: "stream:override:720",
         });
         const stored = new Set<string>(["unrelated-title"]);
+        const survivors = new Set<string>(["unrelated-title"]);
         for (const [index, episode] of episodes.entries()) {
           const key = {
             providerId: module.providerId,
@@ -94,14 +101,23 @@ describe("production playback cache purge", () => {
             qualityPreference: "auto",
             startupPriority: config.startupPriority,
           };
-          stored.add(buildApiStreamResolveCacheKey(key));
-          stored.add(
-            buildApiStreamResolveCacheKey({
-              ...key,
-              selectedSourceId: index === 0 ? "source:override" : "source:default",
-              selectedStreamId: index === 0 ? "stream:override:720" : undefined,
-            }),
-          );
+          const baseKey = buildApiStreamResolveCacheKey(key);
+          const selectedKey = buildApiStreamResolveCacheKey({
+            ...key,
+            selectedSourceId: index === 0 ? "source:override" : "source:default",
+            selectedStreamId: index === 0 ? "stream:override:720" : undefined,
+          });
+          const alternativeKey = buildApiStreamResolveCacheKey({
+            ...key,
+            selectedSourceId: "source:alternative",
+            selectedStreamId: "stream:alternative:1080",
+          });
+          stored.add(baseKey);
+          stored.add(selectedKey);
+          if (alternativeKey !== baseKey && alternativeKey !== selectedKey) {
+            stored.add(alternativeKey);
+            survivors.add(alternativeKey);
+          }
         }
         const container = {
           stateManager: { getState: () => ({ provider: module.providerId, mode }) },
@@ -124,7 +140,7 @@ describe("production playback cache purge", () => {
         } else {
           await purgeTitlePlaybackCaches(container, title, episodes);
         }
-        expect([...stored], module.providerId).toEqual(["unrelated-title"]);
+        expect([...stored].sort(), module.providerId).toEqual([...survivors].sort());
         expect(
           (await titlePlaybackSource.get({ providerId: module.providerId, titleId: title.id }))
             ?.sourceId,

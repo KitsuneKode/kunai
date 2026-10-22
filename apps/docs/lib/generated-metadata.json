@@ -63,10 +63,12 @@
       "notes": [
         "Browserless fallback: GET vidrock.net/api/{movie|tv}/… returns a map of",
         "server lanes whose url fields are AES-256-GCM ciphertexts; each decrypts",
-        "to a direct HLS URL. Streams carry a single-space User-Agent — the ngcorp",
-        "segment hosts drop connections that send a real UA, and ' ' is the only",
-        "value ffmpeg can emit that passes. A resolve-gate probe filters TLS-gated",
-        "lanes (workers.dev, CF-challenged .lol/.site hosts) that mpv cannot play."
+        "to a direct HLS URL. Streams carry a current-Chrome User-Agent plus the",
+        "vidrock.net Referer and Origin — since 2026-10-13 the CDN hosts 403/404,",
+        "serve Cloudflare challenges, or return wrong content to the old",
+        "single-space UA. A resolve-gate probe filters lanes the headers cannot",
+        "save; an all-null lane map is an upstream outage (title miss), while",
+        "all-decrypt-failed is key rotation — the failure codes tell them apart."
       ]
     },
     {
@@ -88,7 +90,7 @@
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked", "multi-source"],
       "notes": [
-        "Browserless: TMDB id gets a short-lived seed from api.wecollege.net/seed, then each named lane (atlanta, denver, miami, …) answers an encrypted `/{lane}/sources` payload that the client XOR-decrypts into {sources, subtitles}.",
+        "Browserless: TMDB id gets a short-lived seed from api.wecollege.net/seed, then each named lane (atlanta, miami, boise, …) answers an encrypted `/{lane}/sources` payload that the client XOR-decrypts into {sources, subtitles}.",
         "Each lane is a distinct upstream scraper (stillhaven, vidzy, workers.dev proxies, multi-language mirrors); lanes surface as individual sources so server switching and fallback cycling apply per lane.",
         "Anime lane (anikoto/sources-id) is not wired yet — movies and series only.",
         "External dependency: api.wecollege.net is movy.sx's own backend; if it moves or rate-limits, resolve degrades to the next provider."
@@ -123,7 +125,7 @@
         "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
         "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
         "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
-        "2026-10: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171 → 177; 177 moved the boot payload to group/lane/host/buildId/epoch and added an env-gated mask XOR) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
+        "2026-10: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171 → 177 → 181; 177 moved the boot payload to group/lane/host/buildId/epoch and added an env-gated mask XOR; 181 moved it to buildId:group:host:epoch:lane and split the chunk into four string-table domains) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
       ]
     },
     {

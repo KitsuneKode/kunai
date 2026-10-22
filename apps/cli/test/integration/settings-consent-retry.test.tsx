@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { persistSettingsDraft } from "@/app-shell/settings/persist";
+import { createSettingsDraftWriter, persistSettingsDraft } from "@/app-shell/settings/persist";
 import { buildSettingsRegistryContext } from "@/app-shell/settings/registry-context";
 import { presenceSettingsRows } from "@/app-shell/settings/registry/presence";
 import { SettingsShell } from "@/app-shell/settings/SettingsShell";
@@ -74,7 +74,7 @@ async function profile() {
       endpoint: "",
       env: {},
     }),
-    providerRegistry: { getAll: () => [], setPriority: () => {} },
+    providerRegistry: { getAll: () => [], getAllRegistered: () => [], setPriority: () => {} },
     stateManager: { getState: () => ({ mode: "series" }), dispatch: () => {} },
     connectivity: { notifyIntentChanged: () => {} },
     presence: {
@@ -323,39 +323,64 @@ test("action refresh rebases passive edits after same-process withdrawal", async
   }
 });
 
-test("an edit made while an action runs survives the action refresh", async () => {
+test("an edit queued during an action survives its refreshed draft", async () => {
   const p = await profile();
-  await p.config.update({ presenceProvider: "discord" });
   await p.container.usageAnalytics.setConsent("enabled");
-  const release = p.holdConnect();
-  const completed = Promise.withResolvers<void>();
-  const handle = mount(p.container, "section:presence", (message) => {
-    if (message?.startsWith("Discord presence:")) completed.resolve();
-  });
-  try {
-    await keys(handle, down, down, down, down, enter);
-    // The action is parked inside connect(); the pane stays editable.
-    await keys(handle, up, up, up, enter, down, enter);
-    expect(handle.lastFrame()).toContain("Presence privacy ·  Private");
-    await act(async () => {
-      release();
-      await completed.promise;
-    });
-    // The refresh rebases onto the edit instead of painting the pre-edit
-    // value back, which the next autosave would then persist as a revert.
-    expect(handle.lastFrame()).toContain("Presence privacy ·  Private");
-    await waitUntil(
-      () => p.config.getRaw().presencePrivacy === "private",
-      "queued edit applied after the action",
-    );
-    await p.config.flushPending();
-    expect((await p.disk()).presencePrivacy).toBe("private");
-  } finally {
-    await act(async () => {
-      handle.unmount();
-    });
-    await p.config.flushPending();
-  }
+  const initial = p.config.getRaw();
+  const writer = createSettingsDraftWriter(p.container, initial);
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let refreshed = initial;
+  const action = writer.action(
+    async () => {
+      started.resolve();
+      await release.promise;
+      await p.container.usageAnalytics.setConsent("disabled");
+    },
+    (draft) => {
+      refreshed = draft;
+    },
+  );
+  await started.promise;
+  const saving = writer.save({ ...initial, presencePrivacy: "private" });
+  release.resolve();
+  await action;
+  await saving;
+  expect(refreshed.presencePrivacy).toBe("private");
+  expect(refreshed.analytics).toBe("disabled");
+  expect((await p.disk()).presencePrivacy).toBe("private");
+  expect((await p.disk()).analytics).toBe("disabled");
+});
+
+test("a later explicit enable survives equal-valued in-flight consent", async () => {
+  const p = await profile();
+  await p.container.usageAnalytics.setConsent("disabled");
+  const initial = p.config.getRaw();
+  const writer = createSettingsDraftWriter(p.container, initial);
+  const saved = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const save = p.config.save.bind(p.config);
+  let writes = 0;
+  p.config.save = async () => {
+    await save();
+    if (++writes === 1) {
+      saved.resolve();
+      await release.promise;
+    }
+  };
+  const first = writer.save({ ...initial, analytics: "enabled" });
+  await saved.promise;
+  const disable = writer.save({ ...initial, analytics: "disabled" });
+  const sibling = await p.sibling();
+  await sibling.update({ analytics: "disabled", installId: "" });
+  await sibling.save();
+  // This explicit choice is newer than the sibling's withdrawal, even though
+  // its value equals the earlier write still awaiting completion.
+  const enable = writer.save({ ...initial, analytics: "enabled" });
+  release.resolve();
+  await Promise.all([first, disable, enable]);
+  expect((await p.disk()).analytics).toBe("enabled");
+  expect((await p.disk()).installId).not.toBe("");
 });
 
 test("a failed withdrawal is retried when the pane closes", async () => {

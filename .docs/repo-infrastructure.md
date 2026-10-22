@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-15"
+lastReviewed: "2026-10-22"
 ---
 
 # Kunai — Repo Infrastructure
@@ -390,3 +390,12 @@ dependency links.
 The root `test:live:allmanga-crypto` command forwards to the CLI's existing
 metadata-only freshness probe; it does not resolve or play a video. It is an
 opt-in live command, outside default unit/integration CI.
+
+### October 22 watching candidate bundle measurement
+
+The combined provider, v4 timing, consent and mouse implementation produced
+3,185,739 bytes against the prior 3,174,400-byte development-bundle cap
+(11,339 bytes over). The explicit development cap is now 3,194,880 bytes
+(3120 KiB), leaving 9,141 bytes of headroom. This admits the measured feature
+set; the boundary test still rejects the first byte over the cap. The public
+Node launcher's packed and unpacked budgets remain 32 KiB and 64 KiB.

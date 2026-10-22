@@ -458,8 +458,10 @@ test.each(["separate", "batched"] as const)(
     const deferred = Promise.withResolvers<PresenceSnapshot>();
     container.presence.getSnapshot = () => snapshot;
     let actionCalls = 0;
+    const started = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
     container.presence.disconnect = () => {
       actionCalls += 1;
+      started[actionCalls - 1]?.resolve();
       return deferred.promise;
     };
     let closed = 0;
@@ -489,6 +491,9 @@ test.each(["separate", "batched"] as const)(
       } else {
         handle.click("settings:row:presenceConnection");
       }
+      await act(async () => {
+        await started[0]!.promise;
+      });
       expect(actionCalls).toBe(1);
       expect(handle.dispatcher.size).toBe(0);
       const busyFrame = handle.lastFrame();
@@ -503,6 +508,9 @@ test.each(["separate", "batched"] as const)(
       });
       expect(handle.dispatcher.size).toBeGreaterThan(0);
       handle.click("settings:row:presenceConnection");
+      await act(async () => {
+        await started[1]!.promise;
+      });
       expect(actionCalls).toBe(2);
     } finally {
       deferred.resolve(snapshot);

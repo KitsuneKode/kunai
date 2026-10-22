@@ -49,6 +49,8 @@ export function settingsDraftPatch(
 export function createSettingsDraftWriter(container: Container, initial: KitsuneConfig) {
   let submitted = initial;
   let pending: Partial<KitsuneConfig> = {};
+  let revision = 0;
+  const revisions = new Map<keyof KitsuneConfig, number>();
   let tail = Promise.resolve();
   function enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = tail.then(operation);
@@ -61,18 +63,26 @@ export function createSettingsDraftWriter(container: Container, initial: Kitsune
   async function flush() {
     const batch = pending;
     if (Object.keys(batch).length === 0) return;
+    const batchRevisions = new Map(revisions);
     const { applySettingsToRuntime } = await import("@/app/bootstrap/apply-settings-to-runtime");
     await applySettingsToRuntime({ container, next: batch });
     // A key edited again while the write ran keeps its newer value.
     for (const key of Object.keys(batch) as (keyof KitsuneConfig)[]) {
-      if (pending[key] === batch[key]) delete pending[key];
+      if (revisions.get(key) === batchRevisions.get(key)) {
+        delete pending[key];
+        revisions.delete(key);
+      }
     }
   }
   return {
     save(next: KitsuneConfig): Promise<void> {
       // Advance on the user's choice, even if disk rejects it. A later explicit
       // disable must supersede a failed enable rather than look like a no-op.
-      pending = { ...pending, ...settingsDraftPatch(next, submitted) };
+      const patch = settingsDraftPatch(next, submitted);
+      for (const key of Object.keys(patch) as (keyof KitsuneConfig)[]) {
+        revisions.set(key, ++revision);
+      }
+      pending = { ...pending, ...patch };
       submitted = next;
       return enqueue(flush);
     },

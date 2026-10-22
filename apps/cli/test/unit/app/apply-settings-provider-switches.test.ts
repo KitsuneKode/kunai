@@ -15,6 +15,7 @@ test("saved provider switches immediately fence and restore retained catalog han
       id: "switch-test",
       displayName: "Switch test",
       description: "Fixture",
+      recommended: false,
       domain: "example.test",
       mediaKinds: ["movie"],
       capabilities: ["search", "source-resolve"],

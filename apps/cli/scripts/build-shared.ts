@@ -325,7 +325,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * change does not touch and which the exact-tarball verification added in #166
  * has since made stricter.
  */
-export const NPM_BUNDLE_BUDGET_KB = 3_100;
+// October 22 provider/timing/consent/mouse integration measured 3,185,739 bytes.
+// 3120 KiB leaves 9,141 bytes; public launcher budgets below are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_120;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

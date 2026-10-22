@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T13:17:48Z"
+lastReviewed: "2026-10-22"
 ---
 
 # Kunai — Provider Guide
@@ -285,14 +285,20 @@ Provider priority is user-configurable:
 
 - `provider` / `animeProvider` remain the default provider for a new session mode.
 - `providerPriority` controls movie/series fallback and picker order.
-  The shipped default is `["rivestream", "vidrock", "videasy"]` behind the
+  The shipped default is `["rivestream", "vidrock", "movy", "videasy"]` behind the
   `vidlink` lane lead: Rivestream first (eleven-service local cycle behind the
   shared resolve gate), VidRock second (multi-lane AES-GCM payloads behind the
-  direct-stream gate), Videasy last and still loaded (session/turnstile-gated
+  direct-stream gate), Movy next (lane-local recovery), Videasy last and still loaded (session/turnstile-gated
   with a rotted `videasy.to` domain — a working fallback, not a removal).
-  Unlisted providers (e.g. `movy`, still `candidate` status) stay reachable
-  after configured entries.
+  Other unlisted providers stay reachable after configured entries unless
+  explicitly switched off.
 - `animeProviderPriority` controls anime fallback and picker order.
+- `disabledProviders` is a separate user-owned exclusion list, editable in
+  Settings or `/providers`. Disabled providers remain visible for re-enabling,
+  but catalog handles, fresh resolves, fallback, caches and prefetch cannot use
+  them. An all-disabled lane stays unavailable and explains how to enable one.
+  Changing a switch updates the live registry immediately and preserves other
+  settings; priority order alone never implies exclusion.
 - Priority lists are applied when the provider engine is built and read again
   during playback resolve, so settings changes affect fallback order without a
   restart.

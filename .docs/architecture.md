@@ -244,6 +244,12 @@ Production resolution is browserless by default:
   exact spawned child before provider fallback can create another player
 - keeps socket cleanup and final playback stats bounded after process exit
 
+Persistent watchdog reconnects replace a still-active file. mpv emits the old
+file's `end-file(stop)` before the replacement's `file-loaded`; Kunai retains
+the pending load and watch cycle across that specific stop, then restores seek
+and subtitles. Real reload errors, explicit quit, close and retired generations
+still end or cancel the appropriate cycle.
+
 This is part of the repo's reliability contract. Changes are fine, but recovery under kill signals, EOF, or expired stream URLs needs to remain solid.
 
 Observability matters here too: failures around stream resolution, cache reuse, or provider retries should leave enough logging context to explain what path the app took.

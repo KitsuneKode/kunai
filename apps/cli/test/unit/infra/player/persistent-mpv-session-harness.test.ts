@@ -5,6 +5,7 @@ import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc"
 import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
 import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
+import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 
 import { waitUntil } from "../../../support/wait-until";
 
@@ -299,6 +300,115 @@ describe("PersistentMpvSession deferred bootstrap resources", () => {
 });
 
 describe("PersistentMpvSession fake IPC lifecycle harness", () => {
+  test("watchdog replacement stop preserves the new load and restores playback", async () => {
+    const loadRequested = Promise.withResolvers<void>();
+    const completed = Promise.withResolvers<void>();
+    const harness = createHarness({
+      beforeSend(command) {
+        if (command[0] === "loadfile") loadRequested.resolve();
+      },
+    });
+    let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
+    harness.runtime.createPlaybackWatchdog = (emit) => {
+      emitWatchdog = emit;
+      return { observe() {}, stop() {} };
+    };
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: "https://subs.example/episode.vtt",
+        onPlaybackEvent(event) {
+          if (event.type === "mpv-in-process-reconnect" && event.phase === "complete")
+            completed.resolve();
+        },
+      },
+      // SAFETY: this fixture only supplies the reconnect and script options it exercises.
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady() {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 2 });
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 3 });
+      emitWatchdog({
+        type: "stream-stalled",
+        stallKind: "network-read-dead",
+        secondsWithoutProgress: 8,
+      });
+      await loadRequested.promise;
+      expect(pendingLoadOwners(session)).toBe(1);
+      // Real mpv ends the OLD file with stop before loading its replacement.
+      harness.callbacks().onEndFile({ reason: "stop", observedAt: 4 });
+      expect(pendingLoadOwners(session)).toBe(1);
+      harness.callbacks().onFileLoaded?.({ observedAt: 5 });
+      await completed.promise;
+      expect(harness.commands).toContainEqual(["seek", 100, "absolute"]);
+      expect(harness.commands).toContainEqual([
+        "sub-add",
+        "https://subs.example/episode.vtt",
+        "select",
+        "",
+        "",
+      ]);
+      const playback = session.waitForCurrentPlayback();
+      harness.callbacks().onEndFile({ reason: "quit", observedAt: 6 });
+      expect(await playback).toMatchObject({ endReason: "quit" });
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  for (const reason of ["error", "quit"] as const) {
+    test(`watchdog reconnect still ends on a real ${reason} before file-loaded`, async () => {
+      const loadRequested = Promise.withResolvers<void>();
+      const harness = createHarness({
+        beforeSend(command) {
+          if (command[0] === "loadfile") loadRequested.resolve();
+        },
+      });
+      let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
+      harness.runtime.createPlaybackWatchdog = (emit) => {
+        emitWatchdog = emit;
+        return { observe() {}, stop() {} };
+      };
+      const session = await PersistentMpvSession.create({
+        stream: createStream(),
+        options: { displayTitle: "Episode 1", primarySubtitle: null },
+        // SAFETY: partial config pins just the reconnect policy used by this fixture.
+        kitsuneConfig: {
+          mpvInProcessStreamReconnect: true,
+          mpvInProcessStreamReconnectMaxAttempts: 1,
+          mpvKunaiScriptOpts: "",
+        } as never,
+        onControlReady() {},
+        runtime: harness.runtime,
+      });
+      try {
+        harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+        const playback = session.waitForCurrentPlayback();
+        emitWatchdog({
+          type: "stream-stalled",
+          stallKind: "network-read-dead",
+          secondsWithoutProgress: 8,
+        });
+        await loadRequested.promise;
+        harness.callbacks().onEndFile({ reason, observedAt: 2 });
+        expect(await playback).toMatchObject({ endReason: reason });
+        expect(pendingLoadOwners(session)).toBe(0);
+      } finally {
+        harness.endProcess();
+        await session.close();
+      }
+    });
+  }
+
   test("updates autoskip policy during an active intro without leaving a stale automatic skip", async () => {
     const harness = createHarness();
     const partialTiming = {

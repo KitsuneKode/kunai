@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: 2026-10-08
+lastReviewed: "2026-10-22"
 ---
 
 # Analytics Privacy Contract
@@ -203,3 +203,9 @@ Any payload, retention, suppression, secret, or cost-control change must update
 this contract and `docs/users/reliability-and-privacy.mdx` together.
 
 Passive settings persistence omits analytics preference, install identity and ping bookkeeping from its dirty patch. Copying an instance’s local values is insufficient: the locked config merge must retain consent withdrawn by a sibling instance.
+
+Settings writes and action refreshes share one queue. Draft diffs retain only
+the user's edited fields; refreshes rebase onto pending edits. Failed
+withdrawals remain retryable on a later edit or close. Per-field revisions
+distinguish a later explicit choice from an equal-valued write already in
+flight, so enable → disable → enable cannot discard the final keystroke.

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-19"
+lastReviewed: "2026-10-22"
 ---
 
 # Provider: AllManga / AllAnime

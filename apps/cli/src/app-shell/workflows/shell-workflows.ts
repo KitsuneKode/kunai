@@ -1204,10 +1204,11 @@ async function handleProviderToggles(container: Container): Promise<"handled"> {
     // `applySettingsToRuntime`): a bare `config.update` would persist the
     // switch but leave the live registry serving the old enabled set.
     const config = container.config.getRaw();
-    await persistSettingsDraft(container, {
-      ...config,
-      disabledProviders: toggleProviderSwitch(config.disabledProviders, picked),
-    });
+    await persistSettingsDraft(
+      container,
+      { ...config, disabledProviders: toggleProviderSwitch(config.disabledProviders, picked) },
+      config,
+    );
   }
 }
 
