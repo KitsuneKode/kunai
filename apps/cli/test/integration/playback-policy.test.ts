@@ -553,6 +553,21 @@ describe("completion thresholds", () => {
     ).toBe(true);
   });
 
+  test.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "an EOF with invalid trusted progress %s cannot clear resume",
+    (trusted) => {
+      expect(
+        shouldMarkEpisodeCompleted({
+          watchedSeconds: 300,
+          duration: 300,
+          endReason: "eof",
+          playerExitCode: 0,
+          lastTrustedProgressSeconds: trusted,
+        }),
+      ).toBe(false);
+    },
+  );
+
   test("never marks a killed eof as completed", () => {
     expect(
       shouldMarkEpisodeCompleted({
