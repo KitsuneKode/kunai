@@ -136,9 +136,9 @@ export class MouseSplitStdin extends EventEmitter {
           if (this.detached || !this.pendingTail) return;
           // A continuation may already be buffered behind earlier packets.
           // Parse it before declaring the held prefix abandoned.
-          const chunk = this.source.read();
-          if (chunk !== null && chunk !== undefined) {
-            this.ingest(chunk);
+          const buffered = this.source.read();
+          if (buffered !== null && buffered !== undefined) {
+            this.ingest(buffered);
             this.emit("readable");
             return;
           }

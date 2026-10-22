@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-10-13"
+lastReviewed: "2026-10-22"
 ---
 
 # Kunai CLI Keybindings

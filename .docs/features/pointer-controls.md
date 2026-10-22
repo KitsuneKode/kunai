@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T20:10:11Z"
+lastReviewed: "2026-10-22"
 ---
 
 # Terminal pointer controls

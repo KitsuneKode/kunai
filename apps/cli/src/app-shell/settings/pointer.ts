@@ -84,7 +84,7 @@ export function handleSettingsPointer(
       : { handled: false, state };
   }
   if (event.type !== "row") return { handled: false, state };
-  const row = rows.find((row) => row.def.id === event.id);
+  const row = rows.find((candidate) => candidate.def.id === event.id);
   if (!row) return { handled: false, state };
   const index = page.rows.indexOf(row);
   const focused = { ...state, searchFocused: false, selectedIndex: index, error: null };

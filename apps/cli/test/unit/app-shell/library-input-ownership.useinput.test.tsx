@@ -652,7 +652,7 @@ describe("library pointer ownership", () => {
         expect(handle.lastFrame()).not.toContain("Continue this title online");
         handle.stdin.enqueue("\r");
         expect(handle.lastFrame()).toContain("Continue this title online");
-        handle.stdin.enqueue("\x1b");
+        await pressEscape(handle);
         expect(handle.dispatcher.debugRegions().some((r) => r.id === target.id)).toBe(true);
         handle.click(target.id);
         expect(handle.lastFrame()).not.toContain("Continue this title online");

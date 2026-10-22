@@ -1441,10 +1441,10 @@ export function RootOverlayShell({
   };
 
   const sortedTrackRows = (section: TrackCapabilitySection) => {
-    const group = trackGroups.find((group) => group.section === section);
-    return group?.section === "source"
-      ? sortByFavorites(group.rows, tracksFavorites, (row) => row.label)
-      : (group?.rows ?? []);
+    const match = trackGroups.find((group) => group.section === section);
+    return match?.section === "source"
+      ? sortByFavorites(match.rows, tracksFavorites, (row) => row.label)
+      : (match?.rows ?? []);
   };
   const activateTrack = (row: TrackCapability) => {
     if (overlay.type !== "tracks_panel" || Date.now() < tracksFrozenUntil) return;
@@ -1462,9 +1462,9 @@ export function RootOverlayShell({
   };
   const selectTrackOption = (section: TrackCapabilitySection, value: string) => {
     const sectionIndex = trackGroups.findIndex((group) => group.section === section);
-    const rows = sortedTrackRows(section);
-    const optionIndex = rows.findIndex((row) => row.value === value);
-    const row = rows[optionIndex];
+    const sectionRows = sortedTrackRows(section);
+    const optionIndex = sectionRows.findIndex((candidate) => candidate.value === value);
+    const row = sectionRows[optionIndex];
     if (sectionIndex < 0 || !row) return;
     if (
       tracksNav.focusedPane !== "options" ||
@@ -2642,10 +2642,10 @@ export function RootOverlayShell({
                     );
                     if (sectionIndex < 0) return;
                     const group = trackGroups[sectionIndex];
-                    const rows = sortedTrackRows(section);
+                    const sectionRows = sortedTrackRows(section);
                     const context = {
                       sectionCount: trackGroups.length,
-                      optionCount: rows.length,
+                      optionCount: sectionRows.length,
                       gridColumns: tracksNavigationColumns(
                         overlayLayout.contentColumns,
                         group?.section,
