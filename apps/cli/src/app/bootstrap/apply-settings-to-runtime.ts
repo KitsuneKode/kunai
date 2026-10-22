@@ -35,7 +35,10 @@ export async function applySettingsToRuntime({
     setDesignTheme(next.theme);
   }
 
-  container.providerRegistry.setPriority(createProviderPrioritySnapshot(next));
+  container.providerRegistry.setPriority({
+    ...createProviderPrioritySnapshot(next),
+    disabledProviderIds: next.disabledProviders,
+  });
 
   const state = stateManager.getState();
   for (const mode of ["series", "anime", "youtube"] as const) {

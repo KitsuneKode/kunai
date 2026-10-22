@@ -47,9 +47,11 @@ export const vidrockManifest = defineProviderManifest({
   notes: [
     "Browserless fallback: GET vidrock.net/api/{movie|tv}/… returns a map of",
     "server lanes whose url fields are AES-256-GCM ciphertexts; each decrypts",
-    "to a direct HLS URL. Streams carry a single-space User-Agent — the ngcorp",
-    "segment hosts drop connections that send a real UA, and ' ' is the only",
-    "value ffmpeg can emit that passes. A resolve-gate probe filters TLS-gated",
-    "lanes (workers.dev, CF-challenged .lol/.site hosts) that mpv cannot play.",
+    "to a direct HLS URL. Streams carry a current-Chrome User-Agent plus the",
+    "vidrock.net Referer and Origin — since 2026-10-13 the CDN hosts 403/404,",
+    "serve Cloudflare challenges, or return wrong content to the old",
+    "single-space UA. A resolve-gate probe filters lanes the headers cannot",
+    "save; an all-null lane map is an upstream outage (title miss), while",
+    "all-decrypt-failed is key rotation — the failure codes tell them apart.",
   ],
 });

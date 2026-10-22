@@ -293,6 +293,25 @@ describe("PlayerServiceImpl diagnostics", () => {
     expect(JSON.stringify(loggerEntries[0]?.context)).not.toContain("X-Amz-Signature=secret");
   });
 
+  test("launch diagnostics name headers mpv cannot represent", async () => {
+    // Probed-vs-shipped divergence: the resolve gate succeeds with the full
+    // map, but a comma-bearing value never reaches mpv. Names only, no values.
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events);
+    const result = createPlaybackResult();
+    (service as unknown as { playOneShotStream: () => Promise<PlaybackResult> }).playOneShotStream =
+      async () => result;
+
+    await service.play(
+      createStream({ headers: { Referer: "https://player.example", "X-Signed": "a=1,b=2" } }),
+      { url: "https://cdn.example/show/episode.mp4", displayTitle: "Episode 1" },
+    );
+
+    const launchEvent = events.find((event) => event.message === "Launching MPV");
+    expect(launchEvent?.context).toMatchObject({ droppedHeaderFields: ["X-Signed"] });
+    expect(JSON.stringify(launchEvent?.context)).not.toContain("a=1,b=2");
+  });
+
   test("releasePersistentSession does not block later play calls", async () => {
     const events: DiagnosticEventInput[] = [];
     const { service } = createService(events);

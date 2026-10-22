@@ -39,6 +39,7 @@ import { discoverMpvInvocation } from "./mpv-discovery";
 import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
+import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
 import { PersistentMpvSession } from "./PersistentMpvSession";
 import { PlaybackAbortedError } from "./playback-aborted";
 import {
@@ -303,6 +304,12 @@ export class PlayerServiceImpl implements PlayerService {
           deferredMedia: Boolean(stream.deferredLocator),
           materializedMedia: materialized.kind,
           hlsRelay: Boolean(this.activeHlsRelay),
+          // Names only, never values: a resolve-gate probe succeeds with the
+          // full header map, but mpv cannot represent comma-bearing values —
+          // when playback then 403s, this names the divergence instead of
+          // letting it read as a dead stream.
+          droppedHeaderFields: normalizeStreamHttpHeaders(playbackStream.headers ?? undefined)
+            .droppedFields,
         },
       }),
     );

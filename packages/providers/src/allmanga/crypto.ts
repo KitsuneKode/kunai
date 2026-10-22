@@ -11,7 +11,8 @@ import { readJsonObjectBody } from "../shared/json-body";
  * Upstream left the ani-cli `72d7f72` "no buildId / scrape epoch+partB from HTML"
  * path — and as of ani-cli `a6ac602` (v5) there is no upstream AllAnime path at
  * all to check parity against. Live mkissa:
- * - ships a rotating `buildId` (`81` → `119` → `140` → `166` → `171` → `177`)
+ * - ships a rotating `buildId` (`81` → `119` → `140` → `166` → `171` → `177`
+ *   → `181`)
  *   plus four base64 mask fragments in the app chunk
  * - boots keys via `GET /client-crypto/v1/bootstrap?buildId=&k=` with
  *   `x-build-id` + HMAC `x-aa-boot`
@@ -35,12 +36,19 @@ import { readJsonObjectBody } from "../shared/json-body";
  * The build-177 profile (extracted 2026-10-13, verified by a live bootstrap
  * 200 + `tobeparsed` round-trip decrypt) adds three fields to upstream's
  * config object: `v:1`, `omitEmptyLane:false`, and `envXor:223`. `envXor` is
- * XORed into every mask-key byte only when upstream's `Xk()` browser-env
- * probe passes — our requests take the non-browser path, so the raw mask is
+ * XORed into every mask-key byte only when upstream's browser-env probe
+ * passes — our requests take the non-browser path, so the raw mask is
  * correct here (probing with the XOR applied returns `invalid_boot_token`).
  * They are documented but deliberately not carried into the profile object:
  * nothing on our request path consumes them, and a field nothing reads is a
  * lie waiting for the next extractor to copy it.
+ *
+ * The build-181 profile (extracted 2026-10-19 from
+ * `chunks/Cs-j4hUW.js`, verified by a live bootstrap 200 + GraphQL episode
+ * round-trip) keeps the same wire scheme and re-rolls `envXor` to `82`;
+ * `v:1`/`omitEmptyLane:false` persist. The episode query template did not
+ * change this rotation, so {@link ALLMANGA_QUERY_HASH} carried over — verify
+ * that on the next rotation, do not assume it.
  *
  * Everything that rotates therefore lives in one {@link ALLMANGA_CRYPTO_PROFILE}
  * object, so the next rotation is a single replacement that cannot be applied
@@ -82,20 +90,20 @@ export type AllMangaCryptoProfile = {
 };
 
 /**
- * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/RD7DzHLl.js`
- * on 2026-10-13 and confirmed by a successful bootstrap (HTTP 200, epoch 2960)
- * plus a `tobeparsed` decrypt round-trip.
+ * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/Cs-j4hUW.js`
+ * on 2026-10-19 and confirmed by a successful bootstrap (HTTP 200, epoch 2963)
+ * plus a persisted-query episode round-trip (`aaReq` accepted).
  */
 export const ALLMANGA_CRYPTO_PROFILE: AllMangaCryptoProfile = {
-  buildId: "177",
-  saltMul: 20,
-  saltAdd: 73,
-  fragMul: 10,
-  fragAdd: 195,
-  bootPrefix: "I5AgJjIcVH:",
-  bootJoin: "/",
-  bootParts: ["group", "lane", "host", "buildId", "epoch"],
-  maskFragments: ["yWOoNgubFtM=", "KSFXIy3z700=", "wnO0Sm9WX3A=", "aFA1PCbg7Dg="],
+  buildId: "181",
+  saltMul: 60,
+  saltAdd: 175,
+  fragMul: 44,
+  fragAdd: 1,
+  bootPrefix: "UZQjku7:",
+  bootJoin: ":",
+  bootParts: ["buildId", "group", "host", "epoch", "lane"],
+  maskFragments: ["Yh7GkKY7p1E=", "GhmFaOUHEGk=", "prExpp5kt+4=", "FSm6Hdvb+S4="],
 };
 
 export const ALLMANGA_BUILD_ID = ALLMANGA_CRYPTO_PROFILE.buildId;
@@ -140,8 +148,8 @@ export type AllMangaCryptoMaterial = {
 };
 
 /**
- * Last-known-good material when bootstrap fails (epoch 2960, build 177),
- * captured from a live bootstrap on 2026-10-13. It must be derived under the
+ * Last-known-good material when bootstrap fails (epoch 2963, build 181),
+ * captured from a live bootstrap on 2026-10-19. It must be derived under the
  * same profile as {@link ALLMANGA_CRYPTO_PROFILE}: a key left over from an
  * older build is not a degraded fallback, it is a guaranteed decrypt failure.
  * `allmanga.test.ts` pins that relationship.
@@ -151,8 +159,8 @@ export type AllMangaCryptoMaterial = {
  * that quietly runs on a fallback two epochs old looks exactly like a dead
  * provider.
  */
-export const ALLMANGA_KEY_HEX = "64642f3d5c51401e26207d3649a6753fb4264069563b547270cb98cb051bd04a";
-export const ALLMANGA_EPOCH = 2960;
+export const ALLMANGA_KEY_HEX = "5ce91c85a5aa5a2a670c553daf07a8a5ab730508692106a9e7fbb519dd219ae1";
+export const ALLMANGA_EPOCH = 2963;
 
 export const BUNDLED_ALLMANGA_CRYPTO: AllMangaCryptoMaterial = {
   keyHex: ALLMANGA_KEY_HEX,

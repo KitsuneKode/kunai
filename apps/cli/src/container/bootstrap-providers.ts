@@ -18,7 +18,10 @@ import {
 } from "../services/playback/provider-resolve-budget-policy";
 import { StreamHealthService } from "../services/playback/StreamHealthService";
 import { createProviderCachePort } from "../services/providers/provider-cache-port";
-import { createProviderPrioritySnapshot } from "../services/providers/provider-priority";
+import {
+  createProviderPrioritySnapshot,
+  filterEnabledProviderModules,
+} from "../services/providers/provider-priority";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
 import { createProviderRegistry } from "../services/providers/ProviderRegistry";
 import type { PersistenceBootstrap } from "./bootstrap-persistence";
@@ -148,7 +151,10 @@ export async function bootstrapProviders(
     },
   });
 
-  const providerRegistry = createProviderRegistry(engine, providerPriority);
+  const providerRegistry = createProviderRegistry(engine, {
+    ...providerPriority,
+    disabledProviderIds: [...config.disabledProviders],
+  });
 
   // The module ordering is a pure function of the priority lists, which change
   // only via config edits — memoize on the joined lists rather than re-sorting
@@ -159,16 +165,21 @@ export async function bootstrapProviders(
     return () => {
       const priority = createProviderPrioritySnapshot(config);
       const raw = config.getRaw();
+      const disabled = [...config.disabledProviders];
       const key = [
         priority.providerPriority.join(","),
         priority.animeProviderPriority.join(","),
         (priority.youtubeProviderPriority ?? []).join(","),
         raw.providerRelay?.enabled ? "relay-on" : "relay-off",
         JSON.stringify(raw.providerRelay?.providers ?? {}),
+        disabled.join(","),
       ].join("|");
       if (key !== cacheKey) {
         cacheKey = key;
-        ordered = orderProviderModulesByPriority(providerModules, priority);
+        ordered = filterEnabledProviderModules(
+          orderProviderModulesByPriority(providerModules, priority),
+          disabled,
+        );
       }
       return ordered;
     };

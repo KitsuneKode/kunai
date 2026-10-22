@@ -253,6 +253,7 @@ export class ConfigServiceImpl implements ConfigService {
               DEFAULT_CONFIG.animeProviderPriority,
             ),
           }),
+      disabledProviders: normalizeProviderIdList(loaded.disabledProviders),
       providerDefaultsRevision: Math.max(
         readProviderDefaultsRevision(loaded),
         CURRENT_PROVIDER_DEFAULTS_REVISION,
@@ -618,6 +619,10 @@ export class ConfigServiceImpl implements ConfigService {
     return [...this.config.animeProviderPriority];
   }
 
+  get disabledProviders(): readonly string[] {
+    return [...this.config.disabledProviders];
+  }
+
   get wyzieApiKey(): string {
     return this.config.wyzieApiKey;
   }
@@ -963,6 +968,9 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.animeProviderPriority !== undefined
         ? { animeProviderPriority: normalizeProviderIdList(partial.animeProviderPriority) }
         : null),
+      ...(partial.disabledProviders !== undefined
+        ? { disabledProviders: normalizeProviderIdList(partial.disabledProviders) }
+        : null),
       ...(partial.animeLanguageProfile
         ? { animeLanguageProfile: normalizeLanguageProfile(partial.animeLanguageProfile) }
         : null),
@@ -1215,6 +1223,22 @@ const INHERITED_ANIME_DEFAULTS: readonly {
     animeProvider: "miruro",
     priorities: [["miruro", "kickassanime", "animegg", "anidb", "allanime"]],
   },
+  // Revision 3 moved the lane to HiAnime but kept the tail that puts a dead
+  // anidb.app ahead of AllAnime — anidb.app redirects to an unrelated landing
+  // page as of 2026-10-12. Revision 4 swaps the tail, not the lead.
+  {
+    revision: 3,
+    animeProvider: "hianime",
+    priorities: [["miruro", "kickassanime", "animegg", "anidb", "allanime"]],
+  },
+  // Revision 4 led the rest with Miruro, whose `/api/secure/pipe` route is
+  // gone from their shipped bundle as of 2026-10-13. Revision 5 moves the
+  // dead pair (Miruro, AniDB) behind AllAnime; the lane default is untouched.
+  {
+    revision: 4,
+    animeProvider: "hianime",
+    priorities: [["miruro", "kickassanime", "animegg", "allanime", "anidb"]],
+  },
 ];
 
 function shouldMigrateInheritedAnimeDefaults(loaded: Partial<KitsuneConfig>): boolean {
@@ -1258,6 +1282,27 @@ const SHIPPED_VIDEASY_DEFAULT_PRIORITIES: ReadonlyArray<readonly string[]> = [
 ];
 
 /**
+ * Non-Videasy series pairs a released binary shipped under a known revision.
+ * The exact-pair match is the closest honest signal that the user never
+ * touched the lane, same as the anime table: a picker write either reorders
+ * the priority or sets `provider` alone with the shipped list intact.
+ */
+const INHERITED_SERIES_DEFAULTS: readonly {
+  readonly revision: number;
+  readonly provider: string;
+  readonly priorities: readonly (readonly string[] | undefined)[];
+}[] = [
+  // Revision 3 led with VidLink and left Movy unlisted, so it floated to the
+  // end of the order — behind a Videasy whose upstream was already gone.
+  // Revision 4 names Movy ahead of Videasy.
+  {
+    revision: 3,
+    provider: "vidlink",
+    priorities: [["rivestream", "vidrock", "videasy"]],
+  },
+];
+
+/**
  * Configs stamped before `CURRENT_PROVIDER_DEFAULTS_REVISION` whose series pair
  * is exactly a pair a release once shipped are moved to `DEFAULT_CONFIG`'s
  * series defaults. Anything else — a reordered custom list or a non-Videasy
@@ -1266,17 +1311,25 @@ const SHIPPED_VIDEASY_DEFAULT_PRIORITIES: ReadonlyArray<readonly string[]> = [
  * no longer matches.
  */
 function shouldMigrateInheritedSeriesDefaults(loaded: Partial<KitsuneConfig>): boolean {
-  if (readProviderDefaultsRevision(loaded) >= CURRENT_PROVIDER_DEFAULTS_REVISION) return false;
+  const revision = readProviderDefaultsRevision(loaded);
+  if (revision >= CURRENT_PROVIDER_DEFAULTS_REVISION) return false;
   const provider = isJsonString(loaded.provider) ? loaded.provider.trim() : "";
-  if (migrateLegacyProviderId(provider) !== "videasy") return false;
   const priority = loaded.providerPriority;
-  // A missing or unreadable priority cannot carry a deliberate ordering —
-  // it normalizes to the shipped list below, so it must not shield the dead
-  // provider pick from migration either.
-  if (!Array.isArray(priority)) return true;
-  return SHIPPED_VIDEASY_DEFAULT_PRIORITIES.some(
-    (shipped) =>
-      shipped.length === priority.length && shipped.every((id, index) => id === priority[index]),
+  if (migrateLegacyProviderId(provider) === "videasy") {
+    // A missing or unreadable priority cannot carry a deliberate ordering —
+    // it normalizes to the shipped list below, so it must not shield the dead
+    // provider pick from migration either.
+    if (!Array.isArray(priority)) return true;
+    return SHIPPED_VIDEASY_DEFAULT_PRIORITIES.some(
+      (shipped) =>
+        shipped.length === priority.length && shipped.every((id, index) => id === priority[index]),
+    );
+  }
+  return INHERITED_SERIES_DEFAULTS.some(
+    (inherited) =>
+      inherited.revision === revision &&
+      provider === inherited.provider &&
+      inherited.priorities.some((list) => sameProviderList(list, priority)),
   );
 }
 

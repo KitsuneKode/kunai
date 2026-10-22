@@ -76,19 +76,23 @@ const USER_AGENT =
  * taking the whole provider down).
  */
 export const MOVY_LANES = [
-  "denver",
-  "atlanta",
-  "phoenix",
-  "portland",
-  "seattle",
+  // Ladder-first (live-verified 2026-10-13 on TMDB 550 with the module's own
+  // decrypt): miami/boise carry 1080p/720p/480p/2160p, atlanta 1080p/720p/360p.
+  // `denver` was removed here — upstream answers 404 "Route GET:/denver/…
+  // not found", so every resolve burned its first cycle on a dead route.
+  // Auto-only and flaky lanes keep their old relative order behind the ladders.
   "miami",
   "boise",
+  "atlanta",
+  "phoenix",
+  "munich",
+  "seattle",
+  "portland",
   "paris",
   "cancun",
   "austin",
   "dallas",
   "delhi",
-  "munich",
   "orlando",
   "tampa",
   "berlin",

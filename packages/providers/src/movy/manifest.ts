@@ -45,7 +45,7 @@ export const movyManifest = defineProviderManifest({
     upstreamHosts: ["api.wecollege.net"],
   },
   notes: [
-    "Browserless: TMDB id gets a short-lived seed from api.wecollege.net/seed, then each named lane (atlanta, denver, miami, …) answers an encrypted `/{lane}/sources` payload that the client XOR-decrypts into {sources, subtitles}.",
+    "Browserless: TMDB id gets a short-lived seed from api.wecollege.net/seed, then each named lane (atlanta, miami, boise, …) answers an encrypted `/{lane}/sources` payload that the client XOR-decrypts into {sources, subtitles}.",
     "Each lane is a distinct upstream scraper (stillhaven, vidzy, workers.dev proxies, multi-language mirrors); lanes surface as individual sources so server switching and fallback cycling apply per lane.",
     "Anime lane (anikoto/sources-id) is not wired yet — movies and series only.",
     "External dependency: api.wecollege.net is movy.sx's own backend; if it moves or rate-limits, resolve degrades to the next provider.",
