@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-10-11
+Last updated: 2026-10-22
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -240,7 +240,7 @@ Count: **17 fixed, 0 open**.
    are complete. Keep sync experimental until the disposable-account live smoke
    proves the production container → SQLite outbox → restart → remote mutation path.
 5. Run the deterministic release gate, provider signoff, real mpv playback,
-   and poster-protocol smokes. Only then merge version PR #31.
+   and poster-protocol smokes. Only then merge version PR #327.
 
 The release PR is intentionally last: Changesets will keep updating it while
 stability fixes merge, and merging it early would version an incomplete
@@ -260,12 +260,14 @@ state on 2026-10-02.
 
 ### Release readiness — 2026-10-08
 
-Verified against `integrate/backlog-20261007@f840fe511` after three external
-audits. Gate 0 lands the integration on `main`; Phase 1 is release-blocking.
+The October 8 audit used `integrate/backlog-20261007@f840fe511`. Gate 0 and
+its residue landed through #591 and #613. The October 22 watching candidate
+reconciles the remaining fixes against current main; Phase 1 and actual
+candidate qualification remain release-blocking.
 
-| Plan                                                                 | Remaining work                                                                               | Status |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------ |
-| [2026-10-08-release-readiness.md](./2026-10-08-release-readiness.md) | Land the integration, then downloads, playback, consent, sanitizer, shell and relay blockers | TODO   |
+| Plan                                                                 | Remaining work                                                                     | Status      |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------- |
+| [2026-10-08-release-readiness.md](./2026-10-08-release-readiness.md) | Reconcile remaining blockers and qualify the combined candidate; Gate 0 has landed | IN PROGRESS |
 
 ## Rules
 

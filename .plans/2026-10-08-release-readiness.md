@@ -8,7 +8,7 @@
 
 ## Status
 
-- **Status:** IN PROGRESS — Gate 0 is #578; Phase 1 rows sit on `release/p1-*` branches based on it, each opening as its own PR into Gate 0.
+- **Status:** IN PROGRESS — Gate 0 and its residue landed via #591 and #613. The October 22 watching candidate integrates remaining safety, provider, timing, playback and mouse fixes against current main. Rows below retain their original audit evidence and require a current-code drift check before implementation.
 - **Priority:** P1 for Gate 0 and Phase 1; P2 for Phase 2; P3 after release.
 - **Effort:** about 3–4 focused weeks for Gate 0 through Phase 2.
 - **Owns:** the merge order to a releasable `main`, and the verified residue of
