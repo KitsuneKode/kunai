@@ -49,6 +49,7 @@ function createSettingsContainer(config: ConfigService): Container {
     usageAnalytics,
     providerRegistry: {
       getAll: () => [],
+      getAllRegistered: () => [],
       setPriority: () => undefined,
     },
     presence: {

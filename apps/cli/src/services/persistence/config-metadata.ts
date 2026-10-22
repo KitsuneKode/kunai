@@ -212,6 +212,14 @@ export const CONFIG_METADATA = [
     editable: true,
   },
   {
+    key: "disabledProviders",
+    label: "Disabled providers",
+    section: "providers",
+    effect: "after-save",
+    privacy: "local",
+    editable: true,
+  },
+  {
     key: "videasySessionToken",
     label: "Videasy session token",
     section: "providers",

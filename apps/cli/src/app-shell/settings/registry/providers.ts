@@ -1,4 +1,5 @@
 import { stripCurrentLabel } from "@/domain/current-label";
+import { isProviderEnabled, setProviderEnabled } from "@/domain/provider/provider-switches";
 
 import {
   applyAnimeProviderOrder,
@@ -23,6 +24,34 @@ function providerEnumOptions(ctx: SettingsRegistryContext, kind: "series" | "ani
     value: option.value,
     label: stripCurrentLabel(option.label),
     detail: option.detail,
+  }));
+}
+
+function providerToggleRows(
+  ctx: SettingsRegistryContext,
+  kind: "series" | "anime" | "youtube",
+): SettingRowDef[] {
+  const options =
+    kind === "series"
+      ? ctx.seriesProviderOptions
+      : kind === "anime"
+        ? ctx.animeProviderOptions
+        : ctx.youtubeProviderOptions;
+  return options.map((option): SettingRowDef => ({
+    kind: "boolean",
+    id: `provider:enabled:${option.value}`,
+    label: `Enable ${stripCurrentLabel(option.label)}`,
+    detail:
+      kind === "series"
+        ? "Movies and series: off removes it from resolve and fallback"
+        : kind === "anime"
+          ? "Anime: off removes it from resolve and fallback"
+          : "YouTube: off removes it from resolve and fallback",
+    read: (config) => isProviderEnabled(config.disabledProviders, option.value),
+    write: (config, value) => ({
+      ...config,
+      disabledProviders: setProviderEnabled(config.disabledProviders, option.value, value),
+    }),
   }));
 }
 
@@ -94,6 +123,16 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       applyOrder: applyYoutubeProviderOrder,
       providerOptions: (orderCtx) => orderCtx.youtubeProviderOptions,
     },
+    {
+      kind: "section",
+      id: "section:provider-toggles",
+      label: "Provider switches",
+      detail: "Off providers stay off; enable a provider to restore an empty lane",
+      configKeys: ["disabledProviders"],
+    },
+    ...providerToggleRows(ctx, "series"),
+    ...providerToggleRows(ctx, "anime"),
+    ...providerToggleRows(ctx, "youtube"),
     {
       kind: "text",
       id: "videasySessionToken",

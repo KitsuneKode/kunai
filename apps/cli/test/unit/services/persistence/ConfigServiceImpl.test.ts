@@ -103,6 +103,22 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).animeProviderPriority).toEqual(["allanime", "miruro"]);
   });
 
+  test("normalizes the disabled-providers list on load and update", async () => {
+    const store = new MemoryConfigStore({
+      // SAFETY: deliberately poisoned JSON shape — validates the non-string guard.
+      disabledProviders: [" videasy ", "videasy", "", 42 as never],
+    });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.disabledProviders).toEqual(["videasy"]);
+    expect(service.getRaw().disabledProviders).toEqual(["videasy"]);
+
+    await service.update({ disabledProviders: [" miruro ", "anidb", "miruro"] });
+    await service.save();
+
+    expect((await store.load()).disabledProviders).toEqual(["miruro", "anidb"]);
+  });
+
   test("a null sync sub-object on disk cannot collapse the live config shape", async () => {
     // SAFETY: models a hand-edited config.json — `{"sync":{"anilist":null}}` is
     // valid JSON but violates the declared KitsuneConfig shape.
@@ -277,22 +293,22 @@ describe("ConfigServiceImpl", () => {
 
     expect(service.animeProvider).toBe("hianime");
     expect(service.animeProviderPriority).toEqual([
-      "miruro",
       "kickassanime",
       "animegg",
-      "anidb",
       "allanime",
+      "miruro",
+      "anidb",
     ]);
     const persisted = await store.load();
     expect(persisted.animeProvider).toBe("hianime");
     expect(persisted.animeProviderPriority).toEqual([
-      "miruro",
       "kickassanime",
       "animegg",
-      "anidb",
       "allanime",
+      "miruro",
+      "anidb",
     ]);
-    expect(persisted.providerDefaultsRevision).toBe(3);
+    expect(persisted.providerDefaultsRevision).toBe(5);
   });
 
   test("moves inherited Miruro defaults from revisions 1 and 2 to HiAnime", async () => {
@@ -313,13 +329,13 @@ describe("ConfigServiceImpl", () => {
 
       expect(service.animeProvider).toBe("hianime");
       expect(service.animeProviderPriority).toEqual([
-        "miruro",
         "kickassanime",
         "animegg",
-        "anidb",
         "allanime",
+        "miruro",
+        "anidb",
       ]);
-      expect((await store.load()).providerDefaultsRevision).toBe(3);
+      expect((await store.load()).providerDefaultsRevision).toBe(5);
     }
   });
 
@@ -354,11 +370,11 @@ describe("ConfigServiceImpl", () => {
 
     expect(service.animeProvider).toBe("hianime");
     expect(service.animeProviderPriority).toEqual([
-      "miruro",
       "kickassanime",
       "animegg",
-      "anidb",
       "allanime",
+      "miruro",
+      "anidb",
     ]);
   });
 
@@ -638,6 +654,63 @@ describe("ConfigServiceImpl", () => {
 
       expect(secondService.provider).toBe("rivestream");
       expect(secondService.animeProvider).toBe(DEFAULT_CONFIG.animeProvider);
+    });
+
+    test("moves a revision-3 VidLink series pair to the current defaults", async () => {
+      // Revision 3 shipped VidLink at the lead with Movy unlisted, so it
+      // floated behind a dead Videasy. The exact shipped pair is the honest
+      // "never touched the lane" signal — a custom list stays put.
+      const store = new MemoryConfigStore({
+        provider: "vidlink",
+        providerPriority: ["rivestream", "vidrock", "videasy"],
+        providerDefaultsRevision: 3,
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.provider).toBe(DEFAULT_CONFIG.provider);
+      expect(service.providerPriority).toEqual([...DEFAULT_CONFIG.providerPriority]);
+      const persisted = await store.load();
+      expect(persisted.providerDefaultsRevision).toBe(DEFAULT_CONFIG.providerDefaultsRevision);
+    });
+
+    test("leaves a revision-3 series list the user reordered alone", async () => {
+      const store = new MemoryConfigStore({
+        provider: "vidlink",
+        providerPriority: ["vidrock", "rivestream", "videasy"],
+        providerDefaultsRevision: 3,
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.provider).toBe("vidlink");
+      expect(service.providerPriority).toEqual(["vidrock", "rivestream", "videasy"]);
+    });
+
+    test("moves a revision-3 HiAnime anime pair to the current defaults", async () => {
+      // Revision 3's tail put a dead anidb.app ahead of AllAnime; revision 4
+      // swaps the tail. The shipped pair migrates; anything else stays put.
+      const store = new MemoryConfigStore({
+        animeProvider: "hianime",
+        animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb", "allanime"],
+        providerDefaultsRevision: 3,
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.animeProvider).toBe("hianime");
+      expect(service.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+    });
+
+    test("moves a revision-4 HiAnime anime pair to the current defaults", async () => {
+      // Revision 4 led the rest with Miruro; revision 5 demotes the dead pair
+      // (Miruro's pipe removed, AniDB repurposed) behind AllAnime.
+      const store = new MemoryConfigStore({
+        animeProvider: "hianime",
+        animeProviderPriority: ["miruro", "kickassanime", "animegg", "allanime", "anidb"],
+        providerDefaultsRevision: 4,
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.animeProvider).toBe("hianime");
+      expect(service.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
     });
   });
 });

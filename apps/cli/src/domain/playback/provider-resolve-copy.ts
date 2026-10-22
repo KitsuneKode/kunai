@@ -57,6 +57,14 @@ export function describeProviderHedgeNote({
   return `Also trying ${toProviderName} in parallel to speed this up.`;
 }
 
+export function describeProviderHedgeDetail({
+  toProviderName,
+}: {
+  readonly toProviderName: string;
+}): string {
+  return `Trying ${toProviderName} in parallel`;
+}
+
 export function describeProviderFallbackHaltedDetail(): string {
   return "Network looks offline — paused further provider fallback.";
 }

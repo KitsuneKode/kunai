@@ -138,4 +138,83 @@ describe("buildPlaybackFailureWaterfall", () => {
 
     expect(model?.rows.length).toBe(1);
   });
+
+  test("does not repeat the stage in the detail when the label carries it", () => {
+    // Regression: a wings-family seed failure rendered
+    // "x wings-cdn · seed · seed · seed-unavailable" — the stage appeared in
+    // both the label and the detail.
+    const model = buildPlaybackFailureWaterfall({
+      state: playbackState(),
+      recentEvents: [
+        timelineEvent({
+          sourceAttempts: [
+            {
+              type: "source:failed",
+              sourceId: "source:videasy:wings-cdn",
+              serverId: "wings-cdn",
+              stage: "seed",
+              failureClass: "seed-unavailable",
+              message: "Videasy seed unavailable",
+            },
+            {
+              type: "source:start",
+              sourceId: "source:videasy:wings-neon2",
+              serverId: "wings-neon2",
+              stage: "seed",
+            },
+          ],
+        }),
+      ],
+    });
+
+    expect(model).toMatchObject({
+      title: "Source attempts",
+      rows: [
+        { label: "wings-cdn · seed", status: "failed", detail: "seed-unavailable" },
+        { label: "wings-neon2 · seed", status: "running", detail: "tried" },
+      ],
+    });
+  });
+
+  test("keeps the stage in the detail when the label has no server identity", () => {
+    const model = buildPlaybackFailureWaterfall({
+      state: playbackState(),
+      recentEvents: [
+        timelineEvent({
+          sourceAttempts: [
+            {
+              type: "source:failed",
+              stage: "seed",
+              failureClass: "seed-unavailable",
+              message: "seed fetch failed",
+            },
+          ],
+        }),
+      ],
+    });
+
+    expect(model?.rows[0]).toMatchObject({
+      status: "failed",
+      detail: "seed · seed-unavailable",
+    });
+  });
+});
+
+test("source-only waterfall labels carry the stage once", () => {
+  const model = buildPlaybackFailureWaterfall({
+    state: playbackState(),
+    recentEvents: [
+      timelineEvent({
+        sourceAttempts: [
+          {
+            type: "source:failed",
+            sourceId: "source:videasy:solo",
+            stage: "seed",
+            failureClass: "unavailable",
+          },
+        ],
+      }),
+    ],
+  });
+  expect(model?.rows[0]?.detail).toBe("unavailable");
 });

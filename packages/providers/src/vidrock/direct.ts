@@ -22,7 +22,7 @@ const BASE_URL = "https://vidrock.net/api";
 const ORIGIN = "https://vidrock.net";
 const REFERER = "https://vidrock.net/";
 const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const VIDROCK_FETCH_TIMEOUT_MS = 20_000;
 
 /**
@@ -40,13 +40,18 @@ export const VIDROCK_KEY_HEX = "7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d
 const VIDROCK_GCM_IV_LENGTH = 12;
 
 /**
- * The stream hosts (cdn.ngcorp.*, the workers.dev lanes) drop any request that
- * carries a real User-Agent and accept requests whose UA header is a single
- * space — which is also what `mpv --user-agent=" "` sends to every playlist and
- * segment request. A real browser UA fails; an absent UA is not expressible in
- * ffmpeg, so the space is the working value.
+ * Stream-host headers (verified live 2026-10-13 on Nova/Atlas/Luna/Orion for
+ * TMDB 550). The CDN/commit hosts (boomchick, workers.dev, digitalmonarch)
+ * now REQUIRE a browser UA plus the vidrock.net Referer: the old single-space
+ * UA gets 403 on Atlas, 404 on Luna, a Cloudflare challenge page on Orion,
+ * and wrong-content bytes on Nova — while browser headers return valid
+ * `application/vnd.apple.mpegurl` on all four. The contract flipped upstream;
+ * if resolves go hollow again, re-probe both header sets before assuming key
+ * rotation (the GCM key is the other half of this provider's drift surface).
  */
-const STREAM_USER_AGENT = " ";
+const STREAM_USER_AGENT = USER_AGENT;
+const STREAM_REFERER = REFERER;
+const STREAM_ORIGIN = ORIGIN;
 
 interface VidrockServerEntry {
   readonly url?: string | null;
@@ -123,10 +128,14 @@ export function resolveVidrockDirect(
         if (url.includes("/playlist/")) {
           let playlist: Awaited<ReturnType<typeof fetchPlaylist>>;
           try {
-            // Playlist URLs live on the same ngcorp hosts as the streams:
-            // they require the single-space UA and die on a Referer.
+            // Playlist URLs live behind the same header gate as the segments:
+            // current-Chrome UA + vidrock.net Referer and Origin (verified
+            // 2026-10-13; even the UA minor version matters — Chrome/124 gets
+            // challenged where Chrome/126 is served).
             playlist = await fetchPlaylist(url, ctx, {
               "User-Agent": STREAM_USER_AGENT,
+              Referer: STREAM_REFERER,
+              Origin: STREAM_ORIGIN,
             });
           } catch (error) {
             if (ctx.signal?.aborted) throw error;
@@ -163,9 +172,16 @@ export function resolveVidrockDirect(
 
       const payload: DirectStreamPayload = {
         streams,
-        // No Referer: the ngcorp segment hosts stall connections that carry
-        // vidrock.net as referer; the playlist host itself needs no headers.
-        headers: { "user-agent": STREAM_USER_AGENT },
+        // current-Chrome UA + vidrock.net Referer and Origin on every playlist
+        // and segment request: the CDN hosts challenge (403/404/CF page) or
+        // serve wrong content without them (verified 2026-10-13). These headers
+        // also ride the mpv handoff, so the probed request and the shipped
+        // request stay identical per the resolve-gate contract.
+        headers: {
+          "user-agent": STREAM_USER_AGENT,
+          referer: STREAM_REFERER,
+          origin: STREAM_ORIGIN,
+        },
       };
       return payload;
     },
