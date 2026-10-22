@@ -99,3 +99,23 @@ bounded live-provider checks; report missing hardware/network access exactly.
 Reconcile roadmap claims touched by this change. Keep release PR 327 last,
 physical Android proof and unexplained installer contention issue 650 explicit.
 Record final SHA, artifact/evidence paths, green gates, failures and skips.
+
+## October 22 follow-up — finish the testable candidate
+
+The maintainer requested GPT 6.1 Sol for all further implementation/review.
+Continue from 375acdc35; preserve original checkout and existing candidate.
+
+6. Diagnose the outstanding Movy decode failure through the real production
+   provider/mpv path. Repair reproduced adapter/request defects, retain the
+   resolve probe gate, and make failures/fallback truthful. Bound live attempts;
+   CAPTCHA/upstream unavailability is not proof of a missing implementation.
+7. Reconcile installer issue650 with its actual captured error and current
+   fixtures. Implement only reproduced defects; preserve missing historical
+   evidence and do not close the issue or fabricate an attribution.
+8. Make the existing manual sandbox launcher safe and usable for maintainer
+   testing: redirect every profile root, force file credentials, validate
+   ownership before destructive work, preserve unrelated paths, and explain a
+   reliable test command. Test real shell invocation and profile isolation.
+9. Integrate/review changes using GPT 6.1 Sol, rerun appropriate uncached gates
+   and actual CLI/player checks, then provide exact instructions for trying it.
+   Release publication/remote merge and physical-device proof remain separate.
