@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-17"
+lastReviewed: "2026-10-19"
 ---
 
 # Provider: AllManga / AllAnime
@@ -102,16 +102,16 @@ The experiment generated a temporary MPD from one selected video representation 
 ## Recovering a build rotation
 
 Upstream rotates the client crypto roughly monthly
-(`81` → `119` → `140` → `166` → `171` → `177`). The _derivation_ constants
-move together — build id, salts, fragment offsets, mask fragments, key, epoch —
-and a partial update fails exactly like a total one, so recover those as a set.
-The persisted-query hash rotates on its own schedule and can be stale while the
-derivation set is current, or the reverse; either way every resolve returns
-zero streams, so check both. Done 2026-09-08 for `140` → `166`, and again
+(`81` → `119` → `140` → `166` → `171` → `177` → `181`). The _derivation_
+constants move together — build id, salts, fragment offsets, mask fragments,
+key, epoch — and a partial update fails exactly like a total one, so recover
+those as a set. The persisted-query hash rotates on its own schedule and can be
+stale while the derivation set is current, or the reverse; either way every
+resolve returns zero streams, so check both. Done 2026-09-08 for `140` → `166`,
 2026-10-13 for `171` → `177` (two intermediate builds `172`–`176` never made it
 into the tree — probing `166`–`174` returned `unknown_build_id` while `177`
 answered `invalid_boot_token`, bracketing the live generation before the chunk
-was read).
+was read), and 2026-10-19 for `177` → `181`.
 
 **Read the failure first — the endpoint says which half is stale.**
 
@@ -127,15 +127,16 @@ Scanning build ids until the answer flips from `unknown_build_id` to
 
 **Then re-extract from the crypto chunk.** It is the chunk under
 `cdn.mkissa.net/all/mk/_app/immutable/chunks/` containing both `buildId` and
-`client-crypto` (`BVxTyUEI.js` on 2026-09-08, `RD7DzHLl.js` on 2026-10-13);
-reach it by crawling `_app/immutable/entry/app.*.js`. Strings are 3-character
-fragments in a rotated table, so nothing greps out as a literal — and **every
-symbol name in this section rotates with the build**, so find them by shape,
-not by name. On build 177 the pieces were: `tu()` returns the string array;
-`Un(e) = tu()[e - 374]` is the accessor; `At`/`cr` are two-arg wrappers over
-`Un`; and a `push/shift` checksum IIFE `})(tu, N)` rotates the array in place —
-replay it verbatim in a JS engine before reading. The config object literal
-(`$f`, next to the `tu` table) then reads almost plainly:
+`client-crypto` (`BVxTyUEI.js` on 2026-09-08, `RD7DzHLl.js` on 2026-10-13,
+`Cs-j4hUW.js` on 2026-10-19); reach it by crawling `_app/immutable/entry/app.*.js`.
+Strings are 3-character fragments in a rotated table, so nothing greps out as a
+literal — and **every symbol name in this section rotates with the build**, so
+find them by shape, not by name. On build 177 the pieces were: `tu()` returns
+the string array; `Un(e) = tu()[e - 374]` is the accessor; `At`/`cr` are
+two-arg wrappers over `Un`; and a `push/shift` checksum IIFE `})(tu, N)`
+rotates the array in place — replay it verbatim in a JS engine before reading.
+The config object literal (`$f`, next to the `tu` table) then reads almost
+plainly:
 
 - `saltMul`, `saltAdd`, `fragMul`, `fragAdd` — literal numbers.
 - `bootPrefix`, `parts` — concatenated `At()`/`cr()` calls plus suffixes;
@@ -146,20 +147,40 @@ replay it verbatim in a JS engine before reading. The config object literal
   mask-key byte only when the `Xk()` browser-env probe passes; API requests
   accept the raw mask, so it is documented in `crypto.ts` but not ported.
 
+On build 181 the crypto moved to a **multi-domain** layout — the same chunk now
+carries several independent string tables, each with its own accessor and
+`push/shift` IIFE: `nu`/`ga` (offset 282) feeds the crypto cluster through
+shifted two-arg wrappers (`or`, `Tt`); `au`/`pr` (offset 425) feeds the
+`x-aa-boot` request builder; `ru`/`ma`/`jt` (offset 423) feeds the env probe
+`Qk`; `wu`/`dn` (offset 144) names the GraphQL request fields (`aaReq` at
+`dn(182)`). The config object `Df` still reads plainly once its wrappers are
+evaluated; the build id is `fd = Tt(642,518)` → `"181"`, reached indirectly via
+`Or = py() → fd`. A 7.7KB `const io=(function(){…})()` self-check + `eT()` call
+sits between the `nu` IIFE and the `nu` table — in a replay sandbox it must run
+(or be neutered) before the values read correctly, and it patches `console`, so
+snapshot `console.log` before evaluating the region. New on 181: `envXor`
+re-rolled to `82`; the `Qk()` env probe still gates whether it applies — the
+bootstrap accepts the **raw** mask only, same as 177. The signed payload field
+order moved to `buildId:group:host:epoch:lane` joined by `:`.
+
 Historic name map for orientation: 140/166 called the table `Xc`, the accessor
 `Vr`, the config `Rf`, the masks `mm`, and the build id `cd = fr(296)`. `parts`
 is the boot payload field order and rotates independently of the separator;
 build 140 signed `group.host.lane.buildId.epoch`, build 166 signed
-`group:lane:epoch:host:buildId`, build 177 signs `group/lane/host/buildId/epoch`.
+`group:lane:epoch:host:buildId`, build 177 signs `group/lane/host/buildId/epoch`,
+build 181 signs `buildId:group:host:epoch:lane` joined by `:`.
 
 **The persisted query hash rotates too**, and separately. It is a true persisted
 query — the document is never sent — so a stale hash returns
 `PersistedQueryNotFound` and every resolve yields zero streams. Rebuild it by
 expanding the episode query template — find the builder whose body contains
-`episode(` (named `iK` on 140, `Dj` on 177) and expand its fragments (`Oi`,
-`Kt`, `Zr()`, and their children `Hd`, `Hs`, `ku`→`Ka`→`fR`/`dp`→`mR`/`up`),
-then take `sha256` of the result with the mobile-only `$qat` lines omitted —
-the pinned hash is the desktop variant.
+`episode(` (named `iK` on 140, `Dj` on 177 and 181) and expand its fragments
+(`Oi`, `Kt`, `Zr()`, and their children `Hd`, `Hs`, `ku`→`Ka`→`fR`/`dp`→`mR`/`up`;
+on 181 the children are `St`, `Gt`, `GS`, `Qz`, `en`, `Eu` — conditionals take
+`[true,false]` argument sets), then take `sha256` of the result with the
+mobile-only `$qat` lines omitted — the pinned hash is the desktop variant.
+Build 181 kept the episode template byte-identical to 177, so the hash did not
+rotate; verify by resolving rather than assuming.
 
 Confirm the whole chain live before landing: bootstrap must answer `200` with a
 `partB`, the episode GET must return `"tobeparsed"` rather than an

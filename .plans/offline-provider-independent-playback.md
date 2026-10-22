@@ -4,6 +4,11 @@
 
 Status: **planned** — implement before retiring a production provider, or promote during a broader offline-durability pass.
 
+Promoted by the 2026-10-01 offline-durability handoff:
+[R04](./2026-10-01-r04-offline-authority.md) extends this plan with exact selected
+job/native identity and complete indexed library queries. Coordinate its source
+authority with R02 player ownership and R03 deletion/storage contracts.
+
 **Goal:** Keep a verified downloaded artifact playable even when the provider recorded on its download job is no longer registered.
 
 **Architecture:** Resolve playback source authority before requiring a provider module. Represent local and provider acquisition as a discriminated union, keep provider-only orchestration behind the provider arm, and send both arms through the existing unified player lifecycle. Do not model the local library as a fake provider.

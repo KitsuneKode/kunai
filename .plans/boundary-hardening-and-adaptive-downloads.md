@@ -2,6 +2,15 @@
 
 Status: reviewed design
 
+2026-10-01 execution addendum:
+[R03](./2026-10-01-r03-download-durability.md) owns current download
+characterization/extraction and [R09](./2026-10-01-r09-tail-performance.md)
+owns measured optimization. The sequential/16-fragment observations below
+predate current adaptive 1–5 workers and aggregate fragment bounds; do not
+reimplement landed concurrency. Current phase path is
+`apps/cli/src/app/playback/PlaybackPhase.ts`. Extract only after claim,
+publication and cleanup regressions pass.
+
 ## Goal
 
 Make Kunai's CLI/package boundaries, user-facing defaults, failure paths, and developer guardrails easier to reason about before the runtime grows into web, desktop, daemon, and batch download surfaces. This is not only a download plan. Downloads are the first obvious performance hotspot, but the pass must also cover setup/onboarding, subtitles, audio language, provider/source contracts, diagnostics, side-effect isolation, repeated code, naming, and tests that keep the shape from drifting.

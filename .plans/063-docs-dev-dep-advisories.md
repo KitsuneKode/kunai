@@ -1,5 +1,16 @@
 # Plan 063: Dependency hygiene — clear the advisories, floor the install, watch it weekly
 
+> **2026-10-01 reconciliation:** The advisory table and supply-chain observations
+> below are historical at `51f19b633`, not verified current vulnerability counts.
+> The user reported `bun audit --json` output `{}` on September 30; exit status
+> and lockfile fingerprint were not supplied. Current Bun is 1.4.2.
+> [R07.4](./2026-10-01-r07-build-and-analytics.md#r074--reconcile-dependency-owner-063)
+> owns current evidence and this plan's execution reconciliation. Capture the
+> exact tool version, lockfile hash, output and exit status on an authorized
+> runner; verify current commands/options and existing monitoring first.
+> Do not execute the older `bun audit fix` suggestion or add a release-age option
+> without confirming support in the installed Bun/official documentation.
+
 > **Drift check (run first):** `bun audit` — output changes as advisories land and deps bump. If the list is empty or grew, re-derive the "Current state" table instead of trusting it.
 > Also: `git diff --stat 51f19b633..HEAD -- bun.lock package.json apps/docs/package.json bunfig.toml .github/workflows/`
 
@@ -31,7 +42,7 @@ is buying: advisories get fixed once, then a weekly job surfaces new ones
 before they pile up, and a release-age floor blunts the fresh-publish attack
 window entirely.
 
-## Current state
+## Historical state — September 19
 
 | Package                  | Severity    | Fix version      | Reachable via                                                                      |
 | ------------------------ | ----------- | ---------------- | ---------------------------------------------------------------------------------- |

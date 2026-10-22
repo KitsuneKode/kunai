@@ -1,5 +1,11 @@
 # 022 — Shell interaction coherence: help, destructive actions, filters, errors
 
+Status: UNFINISHED RESIDUE. The 2026-10-01
+[R08 packet](./2026-10-01-r08-everyday-ux.md) is the current execution addendum:
+help-scope work has landed; confirmation defaults/entrypoint parity, filter
+focus and rejected save/export feedback remain. Older line numbers and guard
+tables below require drift checks; queue restoration already exists.
+
 - **Written against commit**: `01ab215b`
 - **Priority**: P2
 - **Effort**: L (five independent slices)

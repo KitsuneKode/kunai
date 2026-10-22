@@ -39,9 +39,7 @@ export async function loadProductionProviderModules(
   providerPriority: ProviderPriorityInput,
 ): Promise<readonly CoreProviderModule[]> {
   const [
-    { videasyProviderModule },
     { vidlinkProviderModule },
-    { vidrockProviderModule },
     { rivestreamProviderModule },
     { movyProviderModule },
     { allmangaProviderModule },
@@ -52,9 +50,7 @@ export async function loadProductionProviderModules(
     { miruroProviderModule },
     { youtubeProviderModule },
   ] = await Promise.all([
-    import("@kunai/providers/videasy"),
     import("@kunai/providers/vidlink"),
-    import("@kunai/providers/vidrock"),
     import("@kunai/providers/rivestream"),
     import("@kunai/providers/movy"),
     import("@kunai/providers/allmanga"),
@@ -68,9 +64,7 @@ export async function loadProductionProviderModules(
 
   return orderProviderModulesByPriority(
     [
-      videasyProviderModule,
       vidlinkProviderModule,
-      vidrockProviderModule,
       rivestreamProviderModule,
       movyProviderModule,
       anidbProviderModule,
