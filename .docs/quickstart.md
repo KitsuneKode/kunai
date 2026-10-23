@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-10-23"
 ---
 
 # Kunai — Quickstart
@@ -87,6 +87,31 @@ acknowledgement are disabled for that handoff. iOS is not supported by this
 runtime.
 
 Kunai is Bun-first in beta. A Node/npm-only source checkout is not supported because the CLI uses Bun runtime APIs directly. Packaged binaries are the preferred future path for users who should not need to install Bun manually.
+
+## Test this checkout with an isolated profile
+
+From the checkout you want to try, on Linux or macOS:
+
+```sh
+SANDBOX_DIR=/tmp/kunai-watching-preview KEEP=1 bun run sandbox
+```
+
+This starts the real interactive CLI from this checkout, retaining a separate
+profile across runs so resume, queue and Settings changes can be tested. It
+redirects all platform storage roots and forces file credentials; your installed
+Kunai profile and OS vault are untouched. Setup asks for the usual preferences.
+Analytics remains off unless you explicitly enable it.
+
+Use an unused path (or an empty directory you own) on the first run. The launcher
+marks initialized sandboxes and refuses symlinks, invalid markers and nonempty
+unmarked directories. A profile left by the old unmarked launcher is preserved;
+choose a new path rather than deleting it automatically.
+
+Omit `KEEP=1` to reset a sandbox this launcher initialized. The default path is
+`/tmp/kunai-sandbox`; `SANDBOX_DIR` selects a different one. Add CLI arguments
+after `sandbox`, for example `-S "Dune"` or `-a` for anime. These are real provider
+requests and real mpv playback, with provider availability depending on upstream.
+This preview command does not install or publish a release.
 
 ## Setup
 

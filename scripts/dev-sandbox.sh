@@ -23,37 +23,62 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SANDBOX="${SANDBOX_DIR:-${TMPDIR:-/tmp}/kunai-sandbox}"
+# A trailing slash must not conceal a symlink from the ownership check.
+while [[ "$SANDBOX" != "/" && "$SANDBOX" == */ ]]; do
+  SANDBOX="${SANDBOX%/}"
+done
 
-if [[ "${KEEP:-0}" != "1" ]]; then
-  rm -rf "$SANDBOX"
-fi
-
-# A retained or pre-existing sandbox is not automatically trustworthy. The
-# default lives in a world-writable /tmp, so anyone on the box can create it
-# first — as a symlink, or as a directory they own — and every storage root
-# below then redirects Kunai's writes wherever they pointed. That is the exact
-# failure this script exists to prevent, so refuse rather than repair: a
-# surprising path here is worth a stop, and `rm -rf` on someone else's
-# directory is not an improvement.
+# Refuse unrelated paths before any reset. An ownership marker grants this
+# script permission to reset only a directory it previously initialized.
+MARKER="$SANDBOX/.kunai-dev-sandbox"
+MARKER_CONTENT="kunai-dev-sandbox-v1"
+managed=0
 if [[ -L "$SANDBOX" ]]; then
   echo "refusing: $SANDBOX is a symlink" >&2
   exit 1
 fi
 if [[ -e "$SANDBOX" ]]; then
-  if [[ ! -d "$SANDBOX" ]]; then
-    echo "refusing: $SANDBOX exists and is not a directory" >&2
+  if [[ ! -d "$SANDBOX" || ! -O "$SANDBOX" ]]; then
+    echo "refusing: $SANDBOX must be a directory owned by you" >&2
     exit 1
   fi
-  # `-O` is "owned by the effective user", which is the check that matters.
-  if [[ ! -O "$SANDBOX" ]]; then
-    echo "refusing: $SANDBOX is not owned by you" >&2
-    exit 1
+  if [[ -e "$MARKER" || -L "$MARKER" ]]; then
+    marker_value=""
+    if [[ -L "$MARKER" || ! -f "$MARKER" || ! -O "$MARKER" ]] ||
+      ! IFS= read -r marker_value < "$MARKER" ||
+      [[ "$marker_value" != "$MARKER_CONTENT" ]]; then
+      echo "refusing: $SANDBOX has an invalid sandbox ownership marker" >&2
+      exit 1
+    fi
+    managed=1
+  else
+    shopt -s nullglob dotglob
+    entries=("$SANDBOX"/*)
+    shopt -u nullglob dotglob
+    if (( ${#entries[@]} > 0 )); then
+      echo "refusing: $SANDBOX is nonempty and is not a managed Kunai sandbox" >&2
+      echo "Choose an unused SANDBOX_DIR; existing files were left untouched." >&2
+      exit 1
+    fi
   fi
 fi
 
-mkdir -p "$SANDBOX"
-# Owner-only from the start: the profile holds tracker tokens once setup runs.
+if [[ "$managed" == "1" && "${KEEP:-0}" != "1" ]]; then
+  rm -rf -- "$SANDBOX"
+fi
+umask 077
+if [[ ! -d "$SANDBOX" ]]; then
+  # Atomic create refuses a path another process inserted after validation.
+  mkdir -m 700 -- "$SANDBOX"
+fi
+if [[ -L "$SANDBOX" || ! -O "$SANDBOX" ]]; then
+  echo "refusing: sandbox ownership changed during initialization" >&2
+  exit 1
+fi
 chmod 700 "$SANDBOX"
+if [[ ! -e "$MARKER" ]]; then
+  (set -o noclobber; printf '%s\n' "$MARKER_CONTENT" > "$MARKER")
+fi
 
 echo "kunai sandbox → $SANDBOX"
 echo "  real profile untouched; delete the directory to reset"
@@ -63,6 +88,7 @@ echo
 # TERM plus the terminal's own identifying variables to detect graphics support
 # at all. Only the storage roots are redirected.
 exec env \
+  KUNAI_CREDENTIAL_BACKEND=file \
   HOME="$SANDBOX" \
   USERPROFILE="$SANDBOX" \
   XDG_CONFIG_HOME="$SANDBOX" \
