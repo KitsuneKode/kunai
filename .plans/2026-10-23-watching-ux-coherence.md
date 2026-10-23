@@ -1,6 +1,6 @@
 # Watching UX coherence
 
-Status: IMPLEMENTED; final candidate qualification in progress. Baseline: f8e8de559. Scope: the user-reported first-run,
+Status: IMPLEMENTED; ready for local manual qualification. Baseline: f8e8de559. Scope: the user-reported first-run,
 browse/filter, resolve/start, now-playing, Tracks and share/back journey.
 
 ## Spec and direction
@@ -90,3 +90,10 @@ Final forced checks and review results belong in the candidate qualification
 record, not a duplicate implementation checklist here. Linux protocol registration
 already exists; no daemon or implicit OS registration was added. Live provider,
 physical-device and hosted-platform qualification remain separate release gates.
+
+The source is committed at `fc2f4604f`. Forced root tests pass (9458 pass, 62 skip),
+with types/lint/build/format/docs and host binary smoke passing. Fresh Sol review
+found no actionable findings; its independent tests and dependency limits are
+recorded in `.release/watching-candidate-2026-10-22.md`. Remaining work for this
+plan is manual acceptance of the user-reported watching journey and platform/live
+qualification before any merge/release decision.

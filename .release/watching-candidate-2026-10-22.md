@@ -5,7 +5,7 @@ on main **8a86bf9dc3d0e8315522624c939df807ea69e028**. This is a qualification
 record, not a published release or merge approval. Original dirty root checkout
 was preserved. The candidate is on `fix/watching-release-readiness-20261022`.
 
-Latest source follow-up: `ebb3a8a54`, including the safe manual launcher,
+Earlier source follow-up: `ebb3a8a54`, including the safe manual launcher,
 verification-copy correction and upstream status-board refresh. The October 23
 qualification and manual test command are recorded below.
 
@@ -223,3 +223,84 @@ This is ready for maintainer testing. Release sign-off still requires resolution
 or explicit acceptance of the remaining provider/installer evidence gaps,
 hosted/native-device qualification and approval of the actual release candidate.
 No PR was merged remotely and nothing was published.
+
+## October 23 watching UX pass
+
+Source: **fc2f4604f828a28b4f87746c1db25758616c0450**, compared with
+**5bfc0a4c6**. This is a local candidate; no remote merge or publication.
+
+- New-file watchdog state starts from that file's first sample. Startup
+  starvation says waiting/buffering; genuine established-stream failures retain
+  their recovery path and diagnostics. The startup rail follows the current cycle.
+- Tracks separates focus from applied selection, reserves label/value columns,
+  limits long source rows to one line, shows Auto and the actual resolution, puts
+  subtitle Off first, and removes repeated host/error/current/available prose.
+- Session subtitle and quality choices reach resolve, prefetch, mpv options,
+  source selection and inventory/recovery keys. Source switches preserve the
+  quality preference; Off clears provider-default external subtitles after a
+  resolve. Accepted live subtitle acknowledgements update only their still-current
+  stream. Saved per-media defaults stay separate.
+- Setup profile/language/toggle/footer controls and palette rows have measured
+  pointer targets. Back, Share and covered-input ownership use their real action
+  paths. Palette prefix filtering narrows `/fi` to Filters. Setup is legible at
+  72×24, including every library toggle and Back. Pointer input cannot enable
+  analytics. No navigation delays or simulated progress were added.
+- A single provider/poster/subtitle endpoint failure means limited connectivity;
+  explicit network outages/manual offline still stop online work. Other providers
+  remain usable after one CDN DNS failure.
+
+Checks run on that committed source:
+
+| Check                                  | Result                                                    |
+| -------------------------------------- | --------------------------------------------------------- |
+| Forced root typecheck                  | 15 tasks pass, zero cache                                 |
+| Forced root lint                       | 14 tasks pass, zero cache; existing warnings remain       |
+| Forced root tests                      | 26 tasks pass, zero cache; **9458 pass, 62 skip, 0 fail** |
+| CLI unit / integration                 | 6757 pass / 369 pass; 1 / 27 skips                        |
+| Forced build                           | 10 tasks pass, zero cache; Linux host binary rebuilt      |
+| Host checksum, version and help        | pass                                                      |
+| Host compiled-binary smoke             | 13 pass, 1 full-release-set skip, 0 fail                  |
+| Formatting, preflight and doc coverage | pass; anti-slop baseline unchanged                        |
+| Opt-in real mpv                        | 1 pass; advancing IPC position and SQLite history         |
+
+The build printed a Turbo output-discovery warning for the development bundle
+while the test suite also exercised release builds. The final host artifact exists,
+passes its checksum/version/help gate and passes compiled smoke. This was a host
+build; it does not replace fresh cross-compilation or hosted-platform qualification.
+
+Runtime witnesses use isolated storage roots and file credentials:
+
+- Real 72×24 PTY: all six setup screens, actual SGR mouse selection of Movies and
+  French, mouse Next, decline analytics, save and relaunch. The final
+  config has movie subtitle `fr`, other profiles unchanged, analytics `disabled`
+  and `installId` empty. Evidence: `/tmp/kunai-ux-setup-persisted` and
+  `/tmp/kunai-ux-setup-small`. The fixture Recommendations surface was briefly
+  unrecognized by doctor; one relaunch reached healthy Browse.
+- L2 replay: `Smoke Movie`, `subs off`, Share and the single
+  `[o] tracks  [k] quality  [q] stop  [/] commands` footer. Citation `subs off`
+  verified in `/tmp/kunai-ux-playing-final`. The L2 driver now hydrates profiles
+  like main instead of displaying its constructor's placeholder subtitle value.
+- Ink worst-case fixtures: long mirror labels/errors, CJK/Arabic text, 35 subtitle
+  options, Auto and one-quality cases at 48/72/100/140 columns. A 72-column fixture
+  first failed with 29 rows in a 20-row panel; it now fits. Captures are under
+  `/tmp/kunai-ux-frames`; regression tests are committed.
+- Only the six named PTYs created for this pass were stopped and their temporary
+  profiles removed. Captured evidence remains outside those profiles.
+
+Applicable seam audit: preference declaration-to-readers, Auto/numeric and
+subtitle-on/Off reverse states, browse/palette/player picker entrypoints, anime
+and TMDB profile selection, shared provider-shaped inventory behavior, and owning
+docs. Linux terminal behavior is exercised; macOS/Windows terminal hardware,
+screen readers, physical Android, live provider playback and hosted release checks
+remain separate gates. The existing Linux `--install-protocol-handler` owns URL
+registration; macOS/Windows need packaged associations. No daemon was needed or
+registered. Upstream provider rewrite work and issue 650 retain their earlier
+qualification boundaries. Fresh GPT 6.1 Sol review of `5bfc0a4c6..fc2f4604f` found no actionable
+findings after tracing all runtime edits and callers. It independently passed 30
+watchdog/network tests. Eight other targeted files could not load dependencies in
+its separate worktree; rendering, PTY, mpv and full checks above are controller-run
+evidence, not independently repeated by the reviewer. No reviewer source changes.
+
+This UX implementation is ready for local manual testing with the sandbox command
+above. Release publication, hosted platform gates, physical devices and sustained
+live-provider qualification remain outstanding; none is implied by local green.
