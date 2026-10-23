@@ -30,6 +30,8 @@ so it is not re-derived — not because it is scheduled.
 ## Active tracks
 
 Current execution: [watching release candidate](./2026-10-22-watching-release-candidate.md)
+
+Watching UX follow-up: [first-run, playback, Tracks and shell coherence](./2026-10-23-watching-ux-coherence.md).
 has a local combined implementation of safety, provider, timing, mouse and playback work.
 Independent review found a cancellation race, now fixed locally. Release
 integration and external qualification remain open; see its
