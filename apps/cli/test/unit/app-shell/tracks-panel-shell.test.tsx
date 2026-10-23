@@ -50,6 +50,52 @@ const groups: TrackCapabilityGroup[] = [
 ];
 
 describe("TracksPanelShell two-pane", () => {
+  test("keeps section values separated and hides repeated state/route diagnostics", () => {
+    const noisy: TrackCapabilityGroup[] = [
+      {
+        section: "subtitle",
+        title: "Subtitles",
+        selectable: true,
+        rows: [
+          {
+            section: "subtitle",
+            label: "English",
+            value: "en",
+            selected: true,
+            enabled: false,
+            risk: "normal",
+          },
+        ],
+      },
+      {
+        section: "source",
+        title: "Source",
+        selectable: true,
+        rows: [
+          {
+            section: "source",
+            label: "Citadel",
+            value: "citadel",
+            selected: true,
+            enabled: false,
+            risk: "normal",
+            detail: "playing · Rivestream · Citadel · selected · host rivestream.app",
+          },
+        ],
+      },
+    ];
+    const frame = captureFrame(
+      <TracksPanelShell
+        groups={noisy}
+        width={100}
+        nav={{ focusedPane: "options", sectionIndex: 1, optionIndex: 0 }}
+      />,
+      { columns: 100 },
+    );
+    expect(frame).toMatch(/Subtitles\s+English/);
+    expect(frame).not.toContain("host rivestream.app");
+    expect(frame).not.toContain("current");
+  });
   test("shows counts header and a ♥ on a favorited source", () => {
     const frame = captureFrame(
       <TracksPanelShell

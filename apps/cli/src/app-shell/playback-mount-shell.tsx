@@ -449,7 +449,10 @@ export function buildPlaybackSubtitleLine(state: SessionState): string | undefin
 }
 
 export function buildPlaybackSubtitleStatusLine(state: SessionState): string {
-  return describePlaybackSubtitleStatus(state.stream, mediaLanguageProfileFor(state).subtitle);
+  return describePlaybackSubtitleStatus(
+    state.stream,
+    state.playbackTrackPreferences?.subtitle ?? mediaLanguageProfileFor(state).subtitle,
+  );
 }
 
 function PlaybackShell({

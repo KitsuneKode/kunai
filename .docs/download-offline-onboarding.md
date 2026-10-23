@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-10-23"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -42,7 +42,7 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 
 ## Setup Wizard Behavior
 
-Seven screens, in order: dependencies, mode, language, playback, downloads &
+Six screens, in order: dependencies, mode, language, playback/downloads &
 accounts, usage ping, done. Implementation is
 `apps/cli/src/app-shell/setup-shell.tsx`; the write map is
 `runSetupWizard` in `apps/cli/src/app-shell/workflows/setup-workflows.ts`.
@@ -303,8 +303,10 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
 
 - No aggressive startup network probe.
 - Offline prompt appears only after a real network failure.
-- Runtime network status is **offline** (connect/DNS/unreachable — including Bun's
-  "Unable to connect" fetch string) or **limited** (timeouts). Confirmed offline is
+- Runtime network status is **offline** for a failed search/connectivity check
+  or an explicit system outage (`ENETUNREACH`), and **limited** for timeouts or
+  a single provider/poster/subtitle endpoint failure. One CDN DNS failure must
+  not disable every other provider or claim that the internet is unavailable. Confirmed offline is
   sticky until a later success: a TMDB/proxy fallback that only times out must not
   reclassify the session as flaky. Limited still counts as online for retries.
   A failed search keeps its query editable, marks search state as failed, and

@@ -212,7 +212,11 @@ import { SEARCH_BROWSE_COMMAND_IDS } from "./search-browse-command-ids";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
 import { SettingsShell } from "./settings/SettingsShell";
 import { useShellInput } from "./shell-command-input";
-import { CommandPalette, PaletteTitleMatchesProvider } from "./shell-command-ui";
+import {
+  CommandPalette,
+  PalettePointerContext,
+  PaletteTitleMatchesProvider,
+} from "./shell-command-ui";
 import { ContextStrip, ShellFooter, ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import { tracksNavigationColumns } from "./tracks-panel-layout";
@@ -993,22 +997,35 @@ export function RootOverlayShell({
       });
     }
   };
-  const { commandMode, commandInput, commandCursor, highlightedIndex, titleMatches } =
-    useShellInput({
-      footerActions,
-      commands,
-      // The settings surface owns `/` itself — its footer advertises it as
-      // search. Without disabling here, one keystroke opened the palette AND
-      // armed the settings filter (both handlers see commandMode=false on the
-      // same event), and closing the palette left a phantom focused search.
-      disabled: overlay.type === "settings",
-      escapeAction: null,
-      localTitles: () => collectLocalTitleEntries(container),
-      onTitlePick: (entry) => pickPaletteTitle(container, entry),
-      onResolve: resolveOverlayPaletteAction,
-    });
+  const {
+    commandMode,
+    commandInput,
+    commandCursor,
+    highlightedIndex,
+    titleMatches,
+    palettePointer,
+  } = useShellInput({
+    footerActions,
+    commands,
+    // The settings surface owns `/` itself — its footer advertises it as
+    // search. Without disabling here, one keystroke opened the palette AND
+    // armed the settings filter (both handlers see commandMode=false on the
+    // same event), and closing the palette left a phantom focused search.
+    disabled: overlay.type === "settings",
+    escapeAction: null,
+    localTitles: () => collectLocalTitleEntries(container),
+    onTitlePick: (entry) => pickPaletteTitle(container, entry),
+    onResolve: resolveOverlayPaletteAction,
+  });
 
-  const wrapWithLayout = (node: ReactNode) => wrapOverlayLayout(overlayLayout, node, titleMatches);
+  const wrapWithLayout = (node: ReactNode) =>
+    wrapOverlayLayout(
+      overlayLayout,
+      <PalettePointerContext.Provider value={palettePointer}>
+        {node}
+      </PalettePointerContext.Provider>,
+      titleMatches,
+    );
 
   const overlayPanelKind = resolveOverlayPanelKind(overlay.type);
   const overlayDedicatedShell =
@@ -1446,8 +1463,8 @@ export function RootOverlayShell({
       ? sortByFavorites(match.rows, tracksFavorites, (row) => row.label)
       : (match?.rows ?? []);
   };
-  const activateTrack = (row: TrackCapability) => {
-    if (overlay.type !== "tracks_panel" || Date.now() < tracksFrozenUntil) return;
+  const activateTrack = (row: TrackCapability, pointer = false) => {
+    if (overlay.type !== "tracks_panel" || (!pointer && Date.now() < tracksFrozenUntil)) return;
     if (!row.enabled) {
       setOverlayStatus(
         row.reason ?? (row.selected ? "Already on this stream" : "This option cannot be switched"),
@@ -1472,7 +1489,7 @@ export function RootOverlayShell({
       optionIndex !== tracksNav.optionIndex
     ) {
       setTracksNav({ focusedPane: "options", sectionIndex, optionIndex });
-    } else activateTrack(row);
+    } else activateTrack(row, true);
   };
 
   const activateQueueRow = (row: QueueViewRow) => {
@@ -2276,10 +2293,12 @@ export function RootOverlayShell({
   if (overlay.type === "downloads") {
     return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
-        <DownloadManagerContent
-          container={container}
-          onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
-        />
+        <RootContentSuspension suspended={commandMode}>
+          <DownloadManagerContent
+            container={container}
+            onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+          />
+        </RootContentSuspension>
         {commandMode ? (
           <CommandPalette
             input={commandInput}
@@ -2622,6 +2641,11 @@ export function RootOverlayShell({
           <ContextStrip items={[{ label: effectiveSubtitle, tone: "neutral" }]} />
         ) : null}
         <TracksPanelShell
+          onBack={
+            commandMode
+              ? undefined
+              : () => container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id })
+          }
           groups={trackGroups}
           nav={tracksNav}
           pointer={
@@ -2684,12 +2708,17 @@ export function RootOverlayShell({
           taskLabel="Tracks"
           actions={[
             { key: "↑↓", label: "choose", action: "details" as const },
-            { key: "→", label: "enter", action: "details" as const },
+            ...(tracksNav.focusedPane === "sections"
+              ? [{ key: "→", label: "options", action: "details" as const }]
+              : []),
             ...(tracksHasSwitchable
               ? [{ key: "enter", label: "switch", action: "details" as const, primary: true }]
               : []),
-            { key: "f", label: "favorite", action: "details" as const },
-            { key: "esc", label: "close", action: "quit" as const },
+            ...(trackGroups[tracksNav.sectionIndex]?.section === "source"
+              ? [{ key: "f", label: "favorite", action: "details" as const }]
+              : []),
+            { key: "/", label: "commands", action: "command-mode" as const },
+            { key: "esc", label: "back", action: "quit" as const },
           ]}
           mode="detailed"
           commandMode={commandMode}

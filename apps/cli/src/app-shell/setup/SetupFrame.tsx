@@ -16,7 +16,8 @@ import React from "react";
 
 import type { CompanionMoment } from "../companion-moment";
 import { CompanionHost } from "../CompanionHost";
-import { APP_LABEL, palette } from "../shell-theme";
+import { palette } from "../shell-theme";
+import { SetupTarget } from "./SetupPointer";
 
 export type FooterKey = { readonly key: string; readonly label: string };
 
@@ -82,12 +83,13 @@ function FrameBar({
 
 export function FooterKeys({ parts }: { readonly parts: readonly FooterKey[] }) {
   return (
-    <Box gap={1} flexWrap="wrap">
-      {parts.map(({ key, label }, i) => (
+    <Box columnGap={2} rowGap={0} flexWrap="wrap">
+      {parts.map(({ key, label }) => (
         <React.Fragment key={key}>
-          {i > 0 ? <Text color={palette.dim}> · </Text> : null}
-          <Text color={palette.accent}>[{key}]</Text>
-          <Text color={palette.muted}> {label}</Text>
+          <SetupTarget field="action" value={key}>
+            <Text color={palette.accent}>[{key}]</Text>
+            <Text color={palette.textDim}> {label}</Text>
+          </SetupTarget>
         </React.Fragment>
       ))}
     </Box>
@@ -141,10 +143,8 @@ export function SetupFrame({
         left={
           <Text>
             <Text color={palette.text} bold>
-              {APP_LABEL}
+              {context}
             </Text>
-            <Text color={palette.dim}>{" · "}</Text>
-            <Text color={palette.muted}>{context}</Text>
           </Text>
         }
         right={
@@ -161,7 +161,7 @@ export function SetupFrame({
       {/* flexGrow, never a fixed height — see the note on SetupFrame. Content
           sits a little above centre: dead-centre in a tall terminal leaves the
           top half looking abandoned, and the eye starts high. */}
-      <Box flexDirection="column" width={width} flexGrow={1} paddingX={gutter} paddingTop={2}>
+      <Box flexDirection="column" width={width} flexGrow={1} paddingX={gutter} paddingTop={1}>
         {/* One pose for the whole wizard. Flipping it on the last step meant a
             fresh placement upload on a step transition, which is the one moment
             the pane is already re-laying out.
@@ -255,14 +255,16 @@ export function ToggleRow({
     <Box backgroundColor={selected ? palette.accentFill : undefined}>
       <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
       <Text color={glyphColor}>{glyph}</Text>
-      <Box flexDirection="column">
+      <Box flexDirection="column" flexShrink={1}>
         <Text color={palette.text} bold={selected}>
           {label}
         </Text>
-        <Text color={selected ? palette.muted : palette.dim} dimColor={!selected}>
-          {"  "}
-          {disabledNote ?? detail}
-        </Text>
+        {selected ? (
+          <Text color={palette.muted} wrap="truncate">
+            {"  "}
+            {disabledNote ?? detail}
+          </Text>
+        ) : null}
       </Box>
     </Box>
   );

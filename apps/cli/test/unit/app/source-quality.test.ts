@@ -659,3 +659,37 @@ test("late subtitle view can select Off without losing attached track choices", 
     view?.subtitleOptions.find((option) => option.subtitleUrl === "https://wyzie.example/es.vtt"),
   ).toMatchObject({ state: "available", restartRequired: false });
 });
+
+test("a source switch retains the requested quality and Auto can reverse it", () => {
+  const selection = streamSelectionFromSource("source-a");
+  expect(
+    applyPreferredStreamSelection(streamWithCandidates, selection, "720p").providerResolveResult
+      ?.selectedStreamId,
+  ).toBe("stream-720");
+  expect(
+    applyPreferredStreamSelection(streamWithCandidates, selection, "best").providerResolveResult
+      ?.selectedStreamId,
+  ).toBe("stream-1080");
+  expect(
+    applyPreferredStreamSelection(
+      streamWithCandidates,
+      streamSelectionFromStream("stream-720"),
+      "best",
+    ).providerResolveResult?.selectedStreamId,
+  ).toBe("stream-720");
+  expect(streamSelectionFromTrackPick({ section: "quality", value: "quality:auto" })).toEqual({
+    sourceId: null,
+    streamId: null,
+    automaticQuality: true,
+  });
+});
+
+test("source switches respect a quality ceiling when the exact resolution is absent", () => {
+  expect(
+    applyPreferredStreamSelection(
+      streamWithCandidates,
+      streamSelectionFromSource("source-a"),
+      "900p",
+    ).providerResolveResult?.selectedStreamId,
+  ).toBe("stream-720");
+});

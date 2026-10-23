@@ -4,6 +4,8 @@ import type { PlayerPlaybackEvent } from "./PlayerService";
 export interface PlaybackWatchdog {
   observe(sample: PlayerStatsSample): void;
   stop(): void;
+  /** A new file owns fresh samples and progress clocks. */
+  reset(): void;
 }
 
 function isPlaybackInactive(sample: PlayerStatsSample): boolean {
@@ -33,6 +35,7 @@ export function createPlaybackWatchdog(
   const networkSampleEveryMs = options?.networkSampleEveryMs ?? 2_500;
   const slowNetworkAfterMs = options?.slowNetworkAfterMs ?? 6_000;
   let latest: PlayerStatsSample | null = null;
+  let hasProgress = false;
   let lastPosition = 0;
   let lastProgressAt = Date.now();
   let lastCacheAheadSeconds = 0;
@@ -113,6 +116,7 @@ export function createPlaybackWatchdog(
             type: "stream-stalled",
             secondsWithoutProgress: Math.round(deadForMs / 1000),
             stallKind: "network-read-dead",
+            duringStartup: !hasProgress,
           });
         }
       } else {
@@ -145,6 +149,7 @@ export function createPlaybackWatchdog(
         emit({
           type: "stream-stalled",
           secondsWithoutProgress: Math.round(cacheStalledForMs / 1000),
+          duringStartup: !hasProgress,
         });
       }
       return;
@@ -161,13 +166,16 @@ export function createPlaybackWatchdog(
       emit({
         type: "stream-stalled",
         secondsWithoutProgress: Math.round(stalledForMs / 1000),
+        duringStartup: !hasProgress,
       });
     }
   }, intervalMs);
 
   return {
     observe(sample) {
+      const firstSample = latest === null;
       const wasSeeking = Boolean(latest?.seeking);
+      if (firstSample) resetProgressClock(sample.observedAt, sample.positionSeconds);
       latest = sample;
       if (!wasSeeking && sample.seeking) {
         emittedStreamStall = false;
@@ -193,7 +201,8 @@ export function createPlaybackWatchdog(
         });
       }
 
-      if (sample.positionSeconds > lastPosition + 0.25) {
+      if (!firstSample && sample.positionSeconds > lastPosition + 0.25) {
+        hasProgress = true;
         lastPosition = sample.positionSeconds;
         lastProgressAt = sample.observedAt;
         lastCacheProgressAt = sample.observedAt;
@@ -233,6 +242,20 @@ export function createPlaybackWatchdog(
           cacheSpeed: sample.cacheSpeedBytesPerSecond,
         });
       }
+    },
+    reset() {
+      latest = null;
+      hasProgress = false;
+      resetProgressClock(Date.now(), 0);
+      lastCacheAheadSeconds = 0;
+      seekingSince = null;
+      emittedSeekStall = false;
+      pausedOrIdle = false;
+      networkReadDeadSince = null;
+      emittedNetworkReadDead = false;
+      bufferingSince = null;
+      emittedSlowNetwork = false;
+      lastNetworkSampleAt = 0;
     },
     stop() {
       clearInterval(timer);

@@ -1,7 +1,6 @@
 # setup-6-done · wide (140×34)
-   🦊 Kunai · ready                                                                                                             setup 6⁄6
+   ready                                                                                                                        setup 6⁄6
  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
 
                               ❀
                               You're all set
@@ -20,4 +19,4 @@
                                 type a title, or /discover · /calendar · /random
                                 press / any time for commands
  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   [enter]  start watching  ·  [b]  change something                                                                                Setup
+   [enter] start watching  [b] change something                                                                                     Setup

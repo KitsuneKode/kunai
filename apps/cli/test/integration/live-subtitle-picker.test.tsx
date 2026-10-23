@@ -128,10 +128,10 @@ test.each(["provider", "attached"] as const)(
       expect(selections).toHaveLength(1);
       expect(selections[0]?.subtitleUrl).toBe(subtitleUrl);
       expect(container.stateManager.getState().stream?.subtitle).toBe(subtitleUrl);
+      expect(container.stateManager.getState().playbackTrackPreferences.subtitle).toBe("fr");
       const second = await open();
       expect(handle.lastFrame()).toContain("✓ French");
-      handle.stdin.enqueue("\u001b[C");
-      await act(async () => {});
+      // Off is always first and receives initial focus in the subtitle pane.
       handle.stdin.enqueue("\r");
       let secondDone = false;
       void second.pending.then(
@@ -153,6 +153,8 @@ test.each(["provider", "attached"] as const)(
       expect(selections).toHaveLength(2);
       expect(selections[1]?.subtitleUrl).toBeNull();
       expect(container.stateManager.getState().stream?.subtitle).toBeUndefined();
+      expect(container.stateManager.getState().playbackTrackPreferences.subtitle).toBe("none");
+      expect(container.config.getRaw().movieLanguageProfile.subtitle).not.toBe("fr");
     } finally {
       clock.mockRestore();
       handle.unmount();
@@ -212,7 +214,125 @@ test("a late subtitle acknowledgement cannot overwrite a replacement stream", as
       reason: "test-navigation",
     });
     expect(container.stateManager.getState().stream).toBe(replacement);
+    expect(container.stateManager.getState().playbackTrackPreferences).toEqual({});
     expect(container.stateManager.getState().stream?.subtitle).toBeUndefined();
+  } finally {
+    await disposeContainer(container);
+    dispose();
+  }
+});
+
+test("a provider default subtitle is cleared before playback when this session chose Off", async () => {
+  const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
+  const { container, dispose } = await createIsolatedContainer("off-before-playback");
+  const savedProfile = { ...container.config.getRaw().movieLanguageProfile };
+  const phase = new PlaybackPhase();
+  // Exercise the preparation path that runs after every provider/source resolve.
+  const prepare = phase["preparePlaybackStream"].bind(phase);
+  try {
+    container.stateManager.dispatch({
+      type: "SET_SESSION_TRACK_PREFERENCES",
+      preferences: { subtitle: "none" },
+    });
+    const selected = { ...subtitleStream(), subtitle: subtitleUrl };
+    const prepared = await prepare(
+      selected,
+      { id: "tmdb:1", type: "movie", name: "Subtitle fixture" },
+      { season: 1, episode: 1 },
+      { container, signal: new AbortController().signal },
+    );
+    expect(prepared.subtitle).toBeUndefined();
+    expect(prepared.providerResolveResult?.subtitles).toHaveLength(1);
+    expect(container.config.getRaw().movieLanguageProfile).toEqual(savedProfile);
+  } finally {
+    await disposeContainer(container);
+    dispose();
+  }
+});
+
+test("Tracks quality and Auto are reversible session choices that preserve subtitles and saved defaults", async () => {
+  const { buildTracksPanelData } = await import("@/app-shell/tracks-panel-data");
+  const { applyPreferredStreamSelection, streamSelectionFromTrackPick } =
+    await import("@/app/playback/source-quality");
+  const { container, dispose } = await createIsolatedContainer("session-quality-auto");
+  const title = { id: "tmdb:1", type: "movie" as const, name: "Quality fixture" };
+  const episode = { season: 1, episode: 1 };
+  const base = subtitleStream();
+  const inventory = base.providerResolveResult;
+  if (!inventory) throw new Error("Fixture inventory missing");
+  const stream: StreamInfo = {
+    ...base,
+    providerResolveResult: {
+      ...inventory,
+      selectedStreamId: "1080",
+      sources: [
+        {
+          id: "source-a",
+          providerId: "vidlink",
+          kind: "mirror",
+          status: "selected",
+          confidence: 1,
+        },
+      ],
+      streams: [1080, 720].map((quality) => ({
+        id: String(quality),
+        providerId: "vidlink",
+        sourceId: "source-a",
+        protocol: "hls" as const,
+        qualityRank: quality,
+        qualityLabel: `${quality}p`,
+        url: `https://media.example/${quality}.m3u8`,
+        confidence: 1,
+        cachePolicy: {
+          ttlClass: "stream-manifest" as const,
+          scope: "local" as const,
+          keyParts: [],
+        },
+      })),
+    },
+  };
+  const saved = structuredClone(container.config.getRaw());
+  container.stateManager.dispatch({ type: "SELECT_TITLE", title });
+  container.stateManager.dispatch({ type: "SELECT_EPISODE", episode });
+  container.stateManager.dispatch({ type: "SET_STREAM", stream });
+  container.stateManager.dispatch({
+    type: "SET_SESSION_TRACK_PREFERENCES",
+    preferences: { subtitle: "none" },
+  });
+  const context = {
+    container,
+    title,
+    episode,
+    currentProviderId: "vidlink",
+    resumeSeconds: 17,
+    reason: "quality-test",
+  };
+  try {
+    const pick = { section: "quality" as const, value: "720" };
+    await resolveTracksPanelPick(pick, streamSelectionFromTrackPick(pick), context);
+    expect(container.stateManager.getState().playbackTrackPreferences).toEqual({
+      subtitle: "none",
+      quality: "720p",
+    });
+    const data = await buildTracksPanelData(stream, container);
+    expect(data.groups.find((group) => group.section === "quality")?.rows[0]).toMatchObject({
+      label: "Auto",
+      enabled: true,
+      selected: false,
+    });
+    const auto = { section: "quality" as const, value: "quality:auto" };
+    const result = await resolveTracksPanelPick(auto, streamSelectionFromTrackPick(auto), context);
+    expect(result.kind).toBe("stream-selection");
+    if (result.kind !== "stream-selection") throw new Error("Expected a real restart intent");
+    expect(
+      applyPreferredStreamSelection(stream, result.selection, "best").providerResolveResult
+        ?.selectedStreamId,
+    ).toBe("1080");
+    expect(container.stateManager.getState().playbackTrackPreferences).toEqual({
+      subtitle: "none",
+      quality: "best",
+    });
+    expect(container.config.getRaw()).toEqual(saved);
   } finally {
     await disposeContainer(container);
     dispose();

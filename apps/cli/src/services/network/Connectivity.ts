@@ -54,7 +54,16 @@ export class Connectivity {
   recordFailure(message: string, evidence: NetworkEvidence): void {
     if (this.getOfflineMode()) return;
     const classified = classifyNetworkFailure(message);
-    const observedStatus = classified === "unknown" ? "limited" : classified;
+    // A single upstream/CDN outage is not proof that the whole connection is down.
+    const endpointScoped =
+      evidence === "provider-error" || evidence === "poster-error" || evidence === "subtitle-error";
+    const systemOffline = /enetunreach|network is unreachable|err_internet_disconnected/i.test(
+      message,
+    );
+    const observedStatus =
+      classified === "unknown" || (endpointScoped && classified === "offline" && !systemOffline)
+        ? "limited"
+        : classified;
     this.snapshot = {
       status: this.snapshot.status === "offline" ? "offline" : observedStatus,
       checkedAt: Date.now(),

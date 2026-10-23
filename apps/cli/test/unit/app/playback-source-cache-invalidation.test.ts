@@ -181,3 +181,35 @@ describe("playback-source-cache-invalidation", () => {
     expect(deletedCacheKeys[1]).toContain(":balanced:source:zoro:stream:zoro:1080");
   });
 });
+
+test("inventory and recovery keys consume session track overrides without changing defaults", async () => {
+  const title = { id: "1396", type: "series" as const, name: "Series" };
+  const episode = { season: 1, episode: 1 };
+  const overrides = { subtitle: "fr", quality: "best" };
+  const expected = buildSourceInventoryCacheInput(
+    "vidlink",
+    title,
+    episode,
+    "series",
+    config,
+    overrides,
+  );
+  expect(expected).toMatchObject({ subtitleLanguage: "fr", qualityPreference: "best" });
+  const deleted: unknown[] = [];
+  await invalidateEpisodePlaybackCaches({
+    providerId: "vidlink",
+    title,
+    episode,
+    mode: "series",
+    config,
+    overrides,
+    cacheStore: cacheStoreWithDelete(async () => {}),
+    sourceInventory: {
+      delete: async (input) => {
+        deleted.push(input);
+      },
+    },
+  });
+  expect(deleted).toEqual([expected]);
+  expect(config.seriesLanguageProfile.subtitle).toBe("none");
+});

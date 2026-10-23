@@ -57,6 +57,8 @@ export type PlayerPlaybackEvent =
   | {
       type: "stream-stalled";
       secondsWithoutProgress: number;
+      /** No advancing time has been observed for this file yet. */
+      duringStartup?: boolean;
       /** When set, the stall matched demuxer/network starvation heuristics (see playback-watchdog). */
       stallKind?: "progress" | "network-read-dead";
     }

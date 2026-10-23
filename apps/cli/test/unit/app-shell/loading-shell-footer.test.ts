@@ -38,74 +38,58 @@ test("loading footer omits cancel when bootstrap is not cancellable", () => {
   expect(actions.find((action) => action.action === "quit")).toBeUndefined();
 });
 
-test("loading footer exposes autoplay controls for series playback even at episode boundaries", () => {
+test("bootstrap footer stays focused on cancellation and recovery", () => {
   const actions = buildLoadingFooterActions({
     title: "Bad Guys",
     operation: "loading",
+    cancellable: true,
     isSeriesPlayback: true,
-    autoplayPaused: true,
-    autoskipPaused: false,
+    fallbackAvailable: true,
+    hasStreamCandidates: true,
   });
-
-  expect(actions.map((action) => action.action)).toContain("toggle-autoplay");
-  expect(actions.map((action) => action.action)).toContain("toggle-autoskip");
-  expect(actions.map((action) => action.action)).toContain("stop-after-current");
-  expect(actions.find((action) => action.action === "toggle-autoplay")?.label).toBe(
-    "resume autoplay",
-  );
+  expect(actions.map((action) => action.action)).toEqual([
+    "quit",
+    "fallback",
+    "source",
+    "command-mode",
+  ]);
 });
 
-test("playing footer advertises command mode instead of space pause", () => {
+test("playing footer prioritizes Tracks and quality with one command entry", () => {
   const actions = buildLoadingFooterActions({
     title: "Bad Guys",
     operation: "playing",
     isSeriesPlayback: true,
+    hasNextEpisode: true,
     autoplayPaused: false,
     autoskipPaused: false,
   });
-
+  expect(actions.find((action) => action.action === "source")).toMatchObject({
+    key: "o",
+    label: "tracks",
+    primary: true,
+  });
+  expect(actions.find((action) => action.action === "quality")?.key).toBe("k");
   expect(actions.find((action) => action.action === "command-mode")).toMatchObject({
     key: "/",
     label: "commands",
-    primary: true,
   });
-  expect(actions.find((action) => action.key === "space")).toBeUndefined();
-  expect(actions.map((action) => action.action)).toContain("toggle-autoplay");
+  expect(actions.filter((action) => action.action === "command-mode")).toHaveLength(1);
+  expect(actions.map((action) => action.action)).toContain("pick-episode");
+  expect(actions.map((action) => action.action)).toContain("next");
+  expect(actions.length).toBeLessThanOrEqual(6);
 });
 
-test("playing footer advertises autoskip, the surface where skipping happens", () => {
-  // Autoskip was offered only by the bootstrap footer, so the key was invisible
-  // during playback itself — the one moment it matters.
-  const actions = buildLoadingFooterActions({
-    title: "Bad Guys",
-    operation: "playing",
-    isSeriesPlayback: true,
-    autoplayPaused: false,
-    autoskipPaused: false,
-  });
-
-  expect(actions.find((action) => action.action === "toggle-autoskip")).toMatchObject({
-    key: "u",
-    label: "pause autoskip",
-  });
-});
-
-test("playing footer keeps autoskip on a movie but drops autoplay", () => {
-  // Autoplay means "start the next episode", so a movie has nothing for it to
-  // do. Autoskip still applies, and a movie previously got neither.
+test("movie footer offers only applicable playback navigation", () => {
   const actions = buildLoadingFooterActions({
     title: "Fight Club",
     operation: "playing",
     isSeriesPlayback: false,
-    autoplayPaused: false,
-    autoskipPaused: true,
   });
-
-  const ids = actions.map((action) => action.action);
-  expect(ids).toContain("toggle-autoskip");
-  expect(ids).not.toContain("toggle-autoplay");
-  expect(ids).not.toContain("pick-episode");
-  expect(actions.find((action) => action.action === "toggle-autoskip")?.label).toBe(
-    "resume autoskip",
-  );
+  expect(actions.map((action) => action.action)).toEqual([
+    "source",
+    "quality",
+    "quit",
+    "command-mode",
+  ]);
 });

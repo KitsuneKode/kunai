@@ -108,6 +108,21 @@ export async function resolveTracksPanelPick(
     return { kind: "noop" };
   }
 
+  if (picked.section === "quality" && selection?.automaticQuality) {
+    const stream = container.stateManager.getState().stream;
+    const result = stream?.providerResolveResult;
+    const active = result?.streams.find((row) => row.id === result.selectedStreamId);
+    container.stateManager.dispatch({
+      type: "SET_SESSION_TRACK_PREFERENCES",
+      preferences: { quality: "best" },
+    });
+    return {
+      kind: "stream-selection",
+      section: "quality",
+      selection: { sourceId: active?.sourceId ?? null, streamId: null },
+    };
+  }
+
   if (picked.section === "provider" && selection?.providerId) {
     if (selection.providerId === currentProviderId) {
       return { kind: "noop" };
@@ -225,6 +240,17 @@ export async function resolveTracksPanelPick(
     if (stale) return { kind: "stale-pick", section: picked.section, reason: stale };
   }
 
+  if (picked.section === "quality" && selection.streamId) {
+    const stream = container.stateManager.getState().stream;
+    const candidate = stream?.providerResolveResult?.streams.find(
+      (row) => row.id === selection.streamId,
+    );
+    if (candidate?.qualityLabel)
+      container.stateManager.dispatch({
+        type: "SET_SESSION_TRACK_PREFERENCES",
+        preferences: { quality: candidate.qualityLabel },
+      });
+  }
   return {
     kind: "stream-selection",
     section: picked.section,
@@ -254,6 +280,7 @@ async function staleTrackSelectionReason(
         episode,
         mode,
         container.config.getRaw(),
+        container.stateManager.getState().playbackTrackPreferences,
       ),
     )
     .catch(() => null);
@@ -313,6 +340,12 @@ async function resolveSubtitleTrackPick(
   // The player acknowledgement can arrive after navigation replaces the
   // stream. Reflect the accepted choice only on the stream we controlled.
   if (applied && stream && container.stateManager.getState().stream === stream) {
+    container.stateManager.dispatch({
+      type: "SET_SESSION_TRACK_PREFERENCES",
+      preferences: {
+        subtitle: option.delivery === "off" ? "none" : (option.language ?? "interactive"),
+      },
+    });
     container.stateManager.dispatch({
       type: "SET_STREAM",
       stream: { ...stream, subtitle: option.subtitleUrl ?? undefined },

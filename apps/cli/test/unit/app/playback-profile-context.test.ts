@@ -24,6 +24,18 @@ const profiles: Pick<
 };
 
 describe("playback-profile-context", () => {
+  test("session track choices override only their own fields without changing saved defaults", () => {
+    const input = {
+      mode: "series" as const,
+      title: { type: "movie" as const },
+      config: profiles,
+      overrides: { subtitle: "none", quality: "auto" },
+    };
+    expect(playbackSubtitlePreference(input)).toBe("none");
+    expect(playbackQualityPreference(input)).toBe("auto");
+    expect(playbackAudioPreference(input)).toBe("en");
+    expect(profiles.movieLanguageProfile).toEqual({ audio: "en", subtitle: "en", quality: "4k" });
+  });
   test("selects anime profile in anime mode", () => {
     const input = { mode: "anime" as const, title: { type: "series" as const }, config: profiles };
     expect(playbackLanguageProfile(input)).toEqual(profiles.animeLanguageProfile);

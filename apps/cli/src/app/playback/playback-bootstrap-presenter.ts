@@ -46,10 +46,19 @@ export function latestPlaybackStartupStage(
 ): PlaybackStartupStage | null {
   let latest: PlaybackStartupStage | null = null;
   let latestIndex = -1;
+  let cycle: string | undefined;
   for (const event of recentEvents) {
     if (event.operation !== "playback.startup.timeline") continue;
     const stage = event.context?.stage;
     if (typeof stage !== "string") continue;
+    if (
+      stage === "episode-bootstrap-started" ||
+      (event.playbackCycleId && event.playbackCycleId !== cycle)
+    ) {
+      latest = null;
+      latestIndex = -1;
+    }
+    cycle = event.playbackCycleId ?? cycle;
     const index = STARTUP_STAGE_ORDER.indexOf(stage as PlaybackStartupStage);
     if (index > latestIndex) {
       latestIndex = index;
@@ -76,6 +85,7 @@ export function mapStartupStageToLoadingStage(
 
   switch (startupStage) {
     case "resolve-started":
+      return "finding-stream";
     case "resolve-complete":
       return "preparing-provider";
     case "timing-wait-started":

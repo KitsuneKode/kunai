@@ -12,8 +12,8 @@ import React from "react";
 
 import { MouseTarget } from "./mouse/MouseRegions";
 import { StateBlock } from "./primitives/StateBlock";
-import { getWindowStart, truncateLine } from "./shell-text";
-import { palette, APP_LABEL } from "./shell-theme";
+import { getWindowStart, measureColumns, truncateLine } from "./shell-text";
+import { palette } from "./shell-theme";
 import {
   chunkSubtitleGrid,
   disambiguateSubtitleLabels,
@@ -24,6 +24,7 @@ import {
   subtitleGridWindow,
   tracksPaneVisibleRows,
   tracksCountsHeader,
+  tracksOptionsPaneWidth,
 } from "./tracks-panel-layout";
 import { createInitialTracksNav, type TracksNavState } from "./tracks-panel-nav";
 
@@ -69,12 +70,13 @@ export type TracksPanelShellProps = {
   /** Inline nav hints — off when ShellFooter already owns the footer (root overlay). */
   showNavHint?: boolean;
   pointer?: TracksPointerActions;
+  onBack?: () => void;
 };
 
 function riskColor(risk: TrackCapabilityRisk): string {
   switch (risk) {
     case "failed":
-      return palette.dangerText;
+      return palette.muted;
     case "fallback":
       return palette.accentDeep;
     case "unavailable":
@@ -98,7 +100,7 @@ function rowStatusGlyph(
   capability: TrackCapability,
 ): { readonly glyph: string; readonly color: string } | null {
   if (capability.risk === "failed") {
-    return { glyph: "✕ ", color: palette.dangerText };
+    return { glyph: "× ", color: palette.muted };
   }
   if (capability.selected) {
     return { glyph: "✓ ", color: palette.ok };
@@ -108,16 +110,25 @@ function rowStatusGlyph(
 
 function rowTag(capability: TrackCapability): string | null {
   if (capability.selected && capability.risk === "failed") {
-    return capability.reason ?? "failed on last try";
+    return "Retry";
   }
   if (capability.risk === "failed") {
-    return capability.reason ?? "failed on last try";
+    return "Retry";
   }
-  if (capability.selected) return "current";
+  if (capability.selected) return null;
   if (capability.risk === "fallback") return "not tried";
   if (capability.risk === "unavailable") return "unavailable";
-  if (capability.enabled) return "available";
+  if (capability.enabled) return null;
   return null;
+}
+
+/** Ordinary rows show media facts; raw routes and failure traces stay in diagnostics. */
+function compactTrackDetail(detail: string | undefined): string | undefined {
+  if (!detail) return undefined;
+  const facts = detail.match(
+    /(?:\b(?:4K|\d{3,4}p)\b|\b\d+ subtitles?\b|\b(?:English|Japanese|Hindi|French|Spanish|German|Original) audio\b|\b(?:hardsub|soft subs)\b|Best available[^·]*|Currently[^·]*)/gi,
+  );
+  return facts ? [...new Set(facts)].join(" · ") : undefined;
 }
 
 function currentValue(group: TrackCapabilityGroup): string {
@@ -157,6 +168,7 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
   filterQuery = "",
   showNavHint = false,
   pointer,
+  onBack,
 }: TracksPanelShellProps) {
   if (groups.length === 0) {
     return (
@@ -181,16 +193,20 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
 
   const header = (
     <Box flexDirection="column" marginBottom={1}>
-      <Box>
-        <Text color={palette.accent} bold>
-          {APP_LABEL}
-          {"  "}
-        </Text>
-        <Text color={palette.textDim} bold>
-          Tracks
-        </Text>
+      <Box justifyContent="space-between" width={Math.max(1, width - 2)}>
+        {headerLine ? (
+          <Text color={palette.muted}>
+            {truncateLine(headerLine, Math.max(8, width - (onBack ? 18 : 2)))}
+          </Text>
+        ) : null}
+        {onBack ? (
+          <MouseTarget id="tracks:back" onClick={onBack}>
+            <Text color={palette.textDim}>
+              ← Back <Text color={palette.muted}>(Esc)</Text>
+            </Text>
+          </MouseTarget>
+        ) : null}
       </Box>
-      {headerLine ? <Text color={palette.dim}>{truncateLine(headerLine, width - 2)}</Text> : null}
       {filterQuery.trim() ? (
         <Text color={palette.accentSoft}>{truncateLine(`filter: ${filterQuery}`, width - 2)}</Text>
       ) : null}
@@ -222,7 +238,7 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
     );
   }
 
-  const rightWidth = width - SECTION_COL_WIDTH - 3;
+  const rightWidth = tracksOptionsPaneWidth(width);
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -240,11 +256,11 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
                 onClick={() => pointer?.section(group.section)}
                 onWheel={(direction) => pointer?.scroll(group.section, direction)}
               >
-                <Box>
+                <Box backgroundColor={active ? palette.accentFill : undefined}>
                   <Text color={focused ? palette.accent : palette.dim}>
                     {focused ? "▸ " : "  "}
                   </Text>
-                  <Box width={9}>
+                  <Box width={10} flexShrink={0}>
                     <Text
                       color={active ? palette.text : palette.muted}
                       bold={active}
@@ -254,7 +270,7 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
                     </Text>
                   </Box>
                   <Text color={palette.dim} wrap="truncate">
-                    {truncateLine(currentValue(group), SECTION_COL_WIDTH - 12)}
+                    {truncateLine(currentValue(group), SECTION_COL_WIDTH - 13)}
                   </Text>
                 </Box>
               </MouseTarget>
@@ -342,7 +358,10 @@ function OptionsPane({
                   capability={capability}
                   pointer={pointer}
                 >
-                  <Box width={cellWidth}>
+                  <Box
+                    width={cellWidth}
+                    backgroundColor={highlighted ? palette.accentFill : undefined}
+                  >
                     <Text
                       color={
                         highlighted
@@ -354,7 +373,8 @@ function OptionsPane({
                       bold={highlighted || capability.selected}
                       wrap="truncate"
                     >
-                      {capability.selected ? "✓ " : highlighted ? "▌ " : "  "}
+                      {highlighted ? "▌" : " "}
+                      {capability.selected ? "✓ " : "  "}
                       {sanitizeTerminalText(labels[flatIndex] ?? capability.label)}
                     </Text>
                   </Box>
@@ -396,13 +416,21 @@ function OptionsPane({
         const fav = group.section === "source" && isFavoriteSource(favorites, capability.label);
         const tag = rowTag(capability);
         const statusGlyph = rowStatusGlyph(capability);
+        const detail = [tag, compactTrackDetail(capability.detail)].filter(Boolean).join(" · ");
+        const prefixWidth = 2 + (fav ? 2 : 0) + (statusGlyph ? 2 : 0);
+        const detailWidth = detail ? Math.min(measureColumns(detail), Math.floor(width * 0.42)) : 0;
+        const labelWidth = Math.max(1, width - prefixWidth - (detailWidth ? detailWidth + 2 : 0));
         return (
           <TrackOptionTarget
             key={`opt-${capability.value}`}
             capability={capability}
             pointer={pointer}
           >
-            <Box flexDirection="row">
+            <Box
+              flexDirection="row"
+              width={width}
+              backgroundColor={highlighted ? palette.accentFill : undefined}
+            >
               <Text color={highlighted ? palette.accent : palette.dim}>
                 {highlighted ? "▌ " : capability.selected ? "› " : "  "}
               </Text>
@@ -417,18 +445,12 @@ function OptionsPane({
                 bold={highlighted || capability.selected}
                 wrap="truncate"
               >
-                {sanitizeTerminalText(capability.label)}
+                {truncateLine(sanitizeTerminalText(capability.label), labelWidth)}
               </Text>
-              {capability.detail || tag ? (
+              {detailWidth > 0 ? (
                 <Text color={highlighted ? palette.accentSoft : palette.dim}>
                   {"  "}
-                  {truncateLine(
-                    [tag, capability.detail].filter(Boolean).join(" · "),
-                    Math.max(
-                      8,
-                      width - capability.label.length - (fav ? 6 : 4) - (statusGlyph ? 2 : 0),
-                    ),
-                  )}
+                  {truncateLine(detail, detailWidth)}
                 </Text>
               ) : null}
             </Box>
@@ -515,8 +537,12 @@ function StackedView({
             capability={capability}
             pointer={pointer}
           >
-            <Box flexDirection="row">
-              <Text color={palette.dim}>
+            <Box
+              flexDirection="row"
+              width={Math.max(1, width - 2)}
+              backgroundColor={highlighted ? palette.accentFill : undefined}
+            >
+              <Text color={highlighted ? palette.accent : palette.dim}>
                 {highlighted ? "▌ " : capability.selected ? "› " : "  "}
               </Text>
               {fav ? <Text color={palette.accent}>♥ </Text> : null}

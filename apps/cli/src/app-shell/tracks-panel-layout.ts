@@ -42,7 +42,7 @@ export const TRACKS_SECTION_COL_WIDTH = 22;
 export function tracksOptionsPaneWidth(panelWidth: number): number {
   return panelWidth < TRACKS_TWO_PANE_MIN_WIDTH
     ? Math.max(12, panelWidth)
-    : Math.max(12, panelWidth - TRACKS_SECTION_COL_WIDTH - 3);
+    : Math.max(12, panelWidth - TRACKS_SECTION_COL_WIDTH - 4);
 }
 
 /**

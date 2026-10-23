@@ -78,6 +78,27 @@ export function useShellInput({
     // (Raycast-style); only a completed Enter clears it.
   };
 
+  const activatePaletteRow = (index: number) => {
+    const submittedInput = commandEditor.getValue();
+    const submittedTitles =
+      submittedInput === commandInput
+        ? titleMatches
+        : matchLocalTitles(titleEntries, submittedInput);
+    const row = resolveHighlightedPaletteRow(submittedInput, commands, submittedTitles, index);
+    if (row?.kind === "command" && row.command.enabled) {
+      setCommandMode(false);
+      setCommandInput("");
+      setHighlightedIndex(0);
+      onPaletteCommand?.(row.command.id);
+      onResolve(toShellAction(row.command.id));
+    } else if (row?.kind === "title") {
+      setCommandMode(false);
+      setCommandInput("");
+      setHighlightedIndex(0);
+      onTitlePick?.(row.match.entry);
+    }
+  };
+
   useInput((input, key) => {
     if (disabled) {
       recordInputDrop("shell-input", "input-locked", input);
@@ -99,34 +120,7 @@ export function useShellInput({
 
     if (commandMode) {
       if (key.return) {
-        const submittedInput = commandEditor.getValue();
-        const submittedTitles =
-          submittedInput === commandInput
-            ? titleMatches
-            : matchLocalTitles(titleEntries, submittedInput);
-        const row = resolveHighlightedPaletteRow(
-          submittedInput,
-          commands,
-          submittedTitles,
-          submittedInput === commandInput ? highlightedIndex : 0,
-        );
-        // Commands keep precedence over JUMP TO title rows: a palette Enter on
-        // a command is also the "long way" signal contextual tips key off.
-        if (row?.kind === "command" && row.command.enabled) {
-          setCommandMode(false);
-          setCommandInput("");
-          setHighlightedIndex(0);
-          onPaletteCommand?.(row.command.id);
-          onResolve(toShellAction(row.command.id));
-          return;
-        }
-        if (row?.kind === "title") {
-          setCommandMode(false);
-          setCommandInput("");
-          setHighlightedIndex(0);
-          onTitlePick?.(row.match.entry);
-          return;
-        }
+        activatePaletteRow(commandEditor.getValue() === commandInput ? highlightedIndex : 0);
         return;
       }
       if (key.tab) {
@@ -195,5 +189,13 @@ export function useShellInput({
     commandCursor: commandEditor.cursor,
     highlightedIndex,
     titleMatches,
+    palettePointer: {
+      select: setHighlightedIndex,
+      activate: activatePaletteRow,
+      close: () => {
+        setCommandMode(false);
+        setHighlightedIndex(0);
+      },
+    },
   };
 }

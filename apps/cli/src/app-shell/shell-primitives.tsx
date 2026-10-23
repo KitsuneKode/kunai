@@ -180,24 +180,8 @@ export function Footer({
     [actions, kannaHidden, mode, terminalWidth, maxVisible],
   );
 
-  if (commandMode) {
-    return (
-      <Box flexDirection="column" marginTop={1}>
-        <Text color={palette.text}>{truncateLine(taskLabel, taskWidth)}</Text>
-        <Box marginTop={1} flexDirection="column">
-          <Text bold color={palette.text}>
-            Command palette
-          </Text>
-          <Text color={palette.dim}>
-            {truncateLine(
-              "Type to search · Tab autocomplete · ↑↓ choose · Enter run · Esc close",
-              taskWidth,
-            )}
-          </Text>
-        </Box>
-      </Box>
-    );
-  }
+  // The palette owns its editor and navigation hints.
+  if (commandMode) return null;
 
   return (
     <Box flexDirection="column" marginTop={1}>

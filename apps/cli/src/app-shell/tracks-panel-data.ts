@@ -1,3 +1,4 @@
+import { playbackQualityPreference } from "@/app/playback/playback-profile-context";
 import { buildSourceInventoryCacheInput } from "@/app/playback/playback-source-cache-invalidation";
 import { buildStreamInventoryView } from "@/app/playback/source-quality";
 import type { Container } from "@/container";
@@ -6,6 +7,7 @@ import {
   type ProviderHealthHint,
 } from "@/domain/playback/provider-track-capabilities";
 import {
+  QUALITY_AUTO_VALUE,
   buildTrackCapabilities,
   composeTrackPanelGroups,
   encodeCrossProviderSourceValue,
@@ -75,7 +77,14 @@ async function appendCrossProviderSourceHints(
   const hintRows: TrackCapability[] = [];
   for (const provider of compatible) {
     const cached = await container.sourceInventory.get(
-      buildSourceInventoryCacheInput(provider.id, title, episode, mode, config),
+      buildSourceInventoryCacheInput(
+        provider.id,
+        title,
+        episode,
+        mode,
+        config,
+        state.playbackTrackPreferences,
+      ),
     );
     if (!cached?.sources?.length) continue;
     const selected = cached.streams.find((candidate) => candidate.id === cached.selectedStreamId);
@@ -116,7 +125,7 @@ export async function buildTracksPanelData(
     result?.trace.title.kind ?? (state.mode === "anime" ? "anime" : state.currentTitle?.type);
   const inventoryView = buildStreamInventoryView(stream);
   const audioModes = result ? availableAudioModesFromTrace(result) : [];
-  const inventoryGroups = buildTrackCapabilities(inventoryView, {
+  let inventoryGroups = buildTrackCapabilities(inventoryView, {
     mediaKind,
     availableAudioModes: audioModes.length > 0 ? audioModes : undefined,
     currentPresentation: currentPresentationFromStream(stream),
@@ -161,6 +170,40 @@ export async function buildTracksPanelData(
       ],
     };
   }
+
+  const preference = playbackQualityPreference({
+    mode: state.mode,
+    title: state.currentTitle,
+    config: container.config.getRaw(),
+    overrides: state.playbackTrackPreferences,
+  });
+  const automatic = !preference || preference === "auto" || preference === "best";
+  inventoryGroups = inventoryGroups.map((group) => {
+    if (group.section !== "quality" || group.rows.length === 0) return group;
+    const current = group.rows.find((row) => row.selected);
+    return {
+      ...group,
+      selectable: true,
+      rows: [
+        {
+          section: "quality" as const,
+          label: "Auto",
+          value: QUALITY_AUTO_VALUE,
+          selected: automatic,
+          enabled: !automatic,
+          detail: current
+            ? `Currently ${current.label} · Best available`
+            : "Best available from this source",
+          risk: "normal" as const,
+        },
+        ...group.rows.map((row) => ({
+          ...row,
+          selected: automatic ? false : row.selected,
+          enabled: automatic && row.selected ? true : row.enabled,
+        })),
+      ],
+    };
+  });
 
   const providers = container.providerRegistry.getAll().map((provider) => provider.metadata);
   // Same eligibility as the provider picker: a linked title can switch into

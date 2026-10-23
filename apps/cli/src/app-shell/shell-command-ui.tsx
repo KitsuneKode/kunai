@@ -5,6 +5,7 @@ import React from "react";
 
 import type { ResolvedAppCommand } from "./commands";
 import { getCommandPaletteVisibleCommandCount } from "./layout-policy";
+import { MouseTarget } from "./mouse/MouseRegions";
 import {
   COMMAND_GROUP_LABELS,
   CONTEXT_COMMAND_IDS,
@@ -141,8 +142,16 @@ function AccentTitleLabel({
   );
 }
 
+export type PalettePointerActions = {
+  readonly select: (index: number) => void;
+  readonly activate: (index: number) => void;
+  readonly close: () => void;
+};
+export const PalettePointerContext = React.createContext<PalettePointerActions | null>(null);
+
 export function CommandPalette({
   input,
+  pointer: pointerProp,
   cursor = input.length,
   commands,
   titleMatches: titleMatchesProp,
@@ -151,6 +160,7 @@ export function CommandPalette({
   width,
 }: {
   input: string;
+  pointer?: PalettePointerActions;
   cursor?: number;
   commands: readonly ResolvedAppCommand[];
   /** Local title matches — rendered as a capped JUMP TO section under commands. */
@@ -159,6 +169,8 @@ export function CommandPalette({
   maxVisible?: number;
   width?: number;
 }) {
+  const pointerContext = React.useContext(PalettePointerContext);
+  const pointer = pointerProp ?? pointerContext;
   const contextTitleMatches = React.useContext(PaletteTitleMatchesContext);
   const titleMatches = titleMatchesProp ?? contextTitleMatches ?? [];
   const { cols: shellColumns, rows: terminalRows } = useShellDimensions();
@@ -187,40 +199,68 @@ export function CommandPalette({
     const aliasWidth = Math.min(20, Math.max(10, Math.floor(contentWidth * 0.28)));
     const detailWidth = Math.max(10, contentWidth - aliasWidth - 7);
     const detail = padColumnsEnd(truncateLine(command.description, detailWidth), detailWidth);
-    const showReason = !command.enabled && (selected || command.reason);
+    const showReason = !command.enabled && selected;
     return (
-      <Box key={command.id} flexDirection="column" width={contentWidth + 4}>
-        <Box width={contentWidth + 4} backgroundColor={selected ? palette.accentFill : undefined}>
-          <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
-          <Text
-            color={!command.enabled ? palette.dim : selected ? palette.accent : palette.text}
-            bold={selected && command.enabled}
-            dimColor={!command.enabled}
-          >
-            {padColumnsEnd(truncateLine(alias, aliasWidth), aliasWidth)}
-          </Text>
-          <Text color={palette.dim}> </Text>
-          <Text
-            wrap="truncate"
-            color={command.enabled ? (selected ? palette.text : palette.muted) : palette.dim}
-            dimColor={!command.enabled}
-          >
-            {detail}
-          </Text>
-        </Box>
-        {showReason ? (
-          <Box paddingLeft={4}>
-            <Text color={palette.dim} dimColor>
-              {command.reason ?? "unavailable"}
+      <MouseTarget
+        key={command.id}
+        id={`palette:command:${command.id}`}
+        active={Boolean(pointer)}
+        onClick={() => {
+          if (selected && command.enabled) pointer?.activate(absoluteIndex);
+          else pointer?.select(absoluteIndex);
+        }}
+        onWheel={(direction) =>
+          pointer?.select(
+            Math.max(
+              0,
+              Math.min(
+                matches.length + titleMatches.length - 1,
+                highlightedIndex + (direction === "up" ? -1 : 1),
+              ),
+            ),
+          )
+        }
+      >
+        <Box flexDirection="column" width={contentWidth + 4}>
+          <Box width={contentWidth + 4} backgroundColor={selected ? palette.accentFill : undefined}>
+            <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+            <Text
+              color={!command.enabled ? palette.dim : selected ? palette.accent : palette.text}
+              bold={selected && command.enabled}
+              dimColor={!command.enabled}
+            >
+              {padColumnsEnd(truncateLine(alias, aliasWidth), aliasWidth)}
+            </Text>
+            <Text color={palette.dim}> </Text>
+            <Text
+              wrap="truncate"
+              color={command.enabled ? (selected ? palette.text : palette.muted) : palette.dim}
+              dimColor={!command.enabled}
+            >
+              {detail}
             </Text>
           </Box>
-        ) : null}
-      </Box>
+          {showReason ? (
+            <Box paddingLeft={4}>
+              <Text color={palette.dim} dimColor>
+                {command.reason ?? "unavailable"}
+              </Text>
+            </Box>
+          ) : null}
+        </Box>
+      </MouseTarget>
     );
   };
 
   return (
     <Box flexDirection="column" marginTop={1} width={shellWidth} flexShrink={0}>
+      {pointer ? (
+        <MouseTarget id="palette:back" onClick={pointer.close}>
+          <Text color={palette.textDim}>
+            ← Back <Text color={palette.muted}>(Esc)</Text>
+          </Text>
+        </MouseTarget>
+      ) : null}
       <Box marginTop={0}>
         <Text color={palette.accent}>/</Text>
         <LineEditorText
@@ -290,26 +330,34 @@ export function CommandPalette({
             const titleWidth = Math.max(12, contentWidth - aliasWidth - 7);
             const detail = padColumnsEnd(truncateLine(match.entry.detail, aliasWidth), aliasWidth);
             return (
-              <Box
+              <MouseTarget
                 key={`title:${match.entry.source}:${match.entry.titleId}`}
-                width={contentWidth + 4}
-                backgroundColor={selected ? palette.accentFill : undefined}
+                id={`palette:title:${match.entry.source}:${match.entry.titleId}`}
+                active={Boolean(pointer)}
+                onClick={() =>
+                  selected ? pointer?.activate(absoluteIndex) : pointer?.select(absoluteIndex)
+                }
               >
-                <Text color={selected ? palette.accent : palette.dim}>
-                  {selected ? "▌ " : "  "}
-                </Text>
-                <Box width={titleWidth}>
-                  <AccentTitleLabel
-                    title={match.entry.title}
-                    ranges={match.ranges}
-                    width={titleWidth}
-                  />
+                <Box
+                  width={contentWidth + 4}
+                  backgroundColor={selected ? palette.accentFill : undefined}
+                >
+                  <Text color={selected ? palette.accent : palette.dim}>
+                    {selected ? "▌ " : "  "}
+                  </Text>
+                  <Box width={titleWidth}>
+                    <AccentTitleLabel
+                      title={match.entry.title}
+                      ranges={match.ranges}
+                      width={titleWidth}
+                    />
+                  </Box>
+                  <Text color={palette.dim}> </Text>
+                  <Text wrap="truncate" color={selected ? palette.text : palette.muted}>
+                    {detail}
+                  </Text>
                 </Box>
-                <Text color={palette.dim}> </Text>
-                <Text wrap="truncate" color={selected ? palette.text : palette.muted}>
-                  {detail}
-                </Text>
-              </Box>
+              </MouseTarget>
             );
           })}
         </Box>

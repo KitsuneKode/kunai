@@ -176,6 +176,8 @@ export interface SessionState {
   readonly seriesLanguageProfile: import("../../services/persistence/ConfigService").MediaLanguageProfile;
   readonly movieLanguageProfile: import("../../services/persistence/ConfigService").MediaLanguageProfile;
 
+  /** Explicit Tracks choices for this title; never written to global defaults. */
+  readonly playbackTrackPreferences: { readonly subtitle?: string; readonly quality?: string };
   readonly currentTitle: TitleInfo | null;
   readonly currentEpisode: EpisodeInfo | null;
   /**
@@ -250,6 +252,7 @@ export type StateTransition =
   | { type: "SET_SEARCH_RESULTS"; results: SearchResult[] }
   | { type: "SET_SEARCH_STATE"; state: SearchStatus }
   | { type: "SELECT_RESULT"; index: number }
+  | { type: "SET_SESSION_TRACK_PREFERENCES"; preferences: SessionState["playbackTrackPreferences"] }
   | { type: "SELECT_TITLE"; title: TitleInfo; videoMeta?: VideoMeta | null }
   | {
       type: "SET_TITLE_DETAIL";
@@ -348,6 +351,7 @@ export function createInitialState(
     animeLanguageProfile: initialProfiles.anime,
     seriesLanguageProfile: initialProfiles.series,
     movieLanguageProfile: initialProfiles.movie,
+    playbackTrackPreferences: {},
     currentTitle: null,
     currentEpisode: null,
     episodeRequest: null,
@@ -472,11 +476,19 @@ export function reduceState(state: SessionState, transition: StateTransition): S
       };
     }
 
+    case "SET_SESSION_TRACK_PREFERENCES":
+      return {
+        ...state,
+        playbackTrackPreferences: { ...state.playbackTrackPreferences, ...transition.preferences },
+      };
+
     case "SELECT_TITLE":
       return {
         ...state,
         view: "details",
         currentTitle: transition.title,
+        playbackTrackPreferences:
+          state.currentTitle?.id === transition.title.id ? state.playbackTrackPreferences : {},
         currentEpisode: null,
         episodeRequest: null,
         currentAnimeEpisodes: null,

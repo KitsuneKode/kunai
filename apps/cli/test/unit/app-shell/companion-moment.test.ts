@@ -197,7 +197,7 @@ describe("single ownership", () => {
   });
 
   test("the setup frame stands down where the screen inside draws its own", () => {
-    expect(read("setup-shell.tsx")).toMatch(/companion=\{screen === "done" \? null : "setup"\}/u);
+    expect(read("setup-shell.tsx")).toMatch(/companion=\{screen === "deps" \? "setup" : null\}/u);
   });
 });
 

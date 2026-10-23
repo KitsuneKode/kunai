@@ -311,7 +311,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
     harness.runtime.createPlaybackWatchdog = (emit) => {
       emitWatchdog = emit;
-      return { observe() {}, stop() {} };
+      return { observe() {}, stop() {}, reset() {} };
     };
     const session = await PersistentMpvSession.create({
       stream: createStream(),
@@ -376,7 +376,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
       let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
       harness.runtime.createPlaybackWatchdog = (emit) => {
         emitWatchdog = emit;
-        return { observe() {}, stop() {} };
+        return { observe() {}, stop() {}, reset() {} };
       };
       const session = await PersistentMpvSession.create({
         stream: createStream(),

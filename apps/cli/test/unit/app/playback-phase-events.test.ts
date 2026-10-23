@@ -185,3 +185,13 @@ test("describePlayerEvent returns empty descriptors for silent stats", () => {
   const describe = describePlayerEventFor();
   expect(describe({ type: "network-sample" })).toEqual({});
 });
+
+test("startup starvation uses patient buffering copy while a genuine stall remains actionable", () => {
+  const describe = describePlayerEventFor();
+  expect(
+    describe({ type: "stream-stalled", secondsWithoutProgress: 9, duringStartup: true }).detail,
+  ).toBe("Waiting for the first frame");
+  expect(describe({ type: "stream-stalled", secondsWithoutProgress: 9 }).detail).toBe(
+    "Stream stalled",
+  );
+});

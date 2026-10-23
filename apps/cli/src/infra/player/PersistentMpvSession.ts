@@ -940,6 +940,7 @@ export class PersistentMpvSession {
   }
 
   private resetCycleState(): void {
+    this.watchdog?.reset();
     this.reconnectTryCount = 0;
     this.reconnectBackoffUntilMs = 0;
     this.reconnectInFlight = false;

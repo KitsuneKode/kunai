@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-10-23"
 ---
 
 # Kunai — UX Architecture
@@ -125,7 +125,7 @@ or closing the overlay.
 
 Other surfaces currently receive unhandled vertical wheel reports as arrow
 keys. That is a keyboard fallback, not complete pointer support for their
-controls. Calendar rows, settings, playback controls, and destructive menus
+controls. Calendar rows, player-window controls, and destructive menus
 must add their own tested pointer ownership before claiming click parity.
 Incomplete reports expire after 50 ms idle or 64 buffered bytes; expiry
 returns held bytes rather than silently swallowing later keystrokes.
@@ -577,3 +577,25 @@ launching playback. Keyboard input, including navigation that leaves the same ro
 Browse requires a prior pointer click on the same selected title before opening
 it. Preselected rows, keyboard navigation, scrolling and covered content do not
 authorize pointer activation.
+
+## Watching hierarchy and feedback
+
+Now Playing leads with title and episode, real progress, source name and media
+facts. One footer owns the immediate controls: Tracks (`o`), quality (`k`),
+applicable episode navigation, stop and commands. Autoplay/autoskip remain in the
+status and command/help surfaces. Provider selection lives in Tracks and
+`/provider`. Full host/error/retry evidence belongs to diagnostics, not every row.
+
+Tracks uses a rose band for focus and a checkmark for the applied option. Labels
+and values reserve separate cell budgets; subtitle Off is first. Quality Auto
+means best available from the selected source, not a claimed bandwidth measurement
+or adaptive bitrate guarantee. A session choice carries through stream changes
+without overwriting saved per-media defaults. New titles reset those overrides.
+
+Palette matching prioritizes command-name/alias prefixes; `/fi` narrows to
+Filters instead of matching incidental letters throughout descriptions. Fuzzy
+matching remains a fallback when no prefix matches. Disabled explanations appear
+only for the focused row. The palette replaces other footer hints while open.
+Startup rails follow the current playback cycle and never delay transitions to
+make a stage visible. Waiting for the first frame is buffering; recovery history
+remains available after playback resumes.

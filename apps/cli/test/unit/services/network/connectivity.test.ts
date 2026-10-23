@@ -3,6 +3,12 @@ import { describe, expect, test } from "bun:test";
 import { Connectivity } from "@/services/network/Connectivity";
 
 describe("Connectivity", () => {
+  test("one provider's DNS failure does not claim the internet is unavailable", () => {
+    const connectivity = new Connectivity(() => false);
+    connectivity.recordFailure("getaddrinfo ENOTFOUND cdn.example", "provider-error");
+    expect(connectivity.getSnapshot().status).toBe("limited");
+    expect(connectivity.isOnline()).toBe(true);
+  });
   test("isOnline reflects offline mode intent over network reality", () => {
     const online = new Connectivity(() => false);
     online.recordFailure("ENOTFOUND", "search-error");
@@ -70,4 +76,11 @@ describe("Connectivity", () => {
     connectivity.recordSuccess("search-error");
     expect(connectivity.isOnline()).toBe(true);
   });
+});
+
+test("an explicit system network outage still disables online work", () => {
+  const connectivity = new Connectivity(() => false);
+  connectivity.recordFailure("connect ENETUNREACH", "provider-error");
+  expect(connectivity.getSnapshot().status).toBe("offline");
+  expect(connectivity.isOnline()).toBe(false);
 });

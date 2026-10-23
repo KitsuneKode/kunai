@@ -336,6 +336,18 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       ]);
     }
     container = await createContainer({ providerModulesOverride, searchServiceDefinitions });
+    // Mirror main.ts: the rendered shell and the phase loop must read the same
+    // loaded profiles, rather than the state manager's constructor placeholders.
+    container.stateManager.initialize(
+      container.config.provider,
+      container.config.animeProvider,
+      {
+        anime: container.config.animeLanguageProfile,
+        series: container.config.seriesLanguageProfile,
+        movie: container.config.movieLanguageProfile,
+      },
+      container.config.youtubeProvider,
+    );
 
     const { AppRoot } = await import("@/app-shell/ink-shell");
     handle = render(createElement(AppRoot, { container }), { columns, rows });

@@ -1,4 +1,5 @@
 import {
+  type PlaybackProfileContextInput,
   playbackAudioPreference,
   playbackQualityPreference,
   playbackSubtitlePreference,
@@ -19,8 +20,9 @@ export function buildSourceInventoryCacheInput(
   episode: EpisodeInfo,
   mode: ShellMode,
   config: KitsuneConfig,
+  overrides?: PlaybackProfileContextInput["overrides"],
 ): SourceInventoryCacheInput {
-  const profileContext = { mode, title, config };
+  const profileContext = { mode, title, config, overrides };
   return {
     providerId,
     mediaKind: mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type,
@@ -50,6 +52,7 @@ export async function invalidateEpisodePlaybackCaches(input: {
   readonly episode: EpisodeInfo;
   readonly mode: ShellMode;
   readonly config: KitsuneConfig;
+  readonly overrides?: PlaybackProfileContextInput["overrides"];
   readonly selectedSourceId?: string | null;
   readonly selectedStreamId?: string | null;
 }): Promise<void> {
@@ -57,6 +60,7 @@ export async function invalidateEpisodePlaybackCaches(input: {
     mode: input.mode,
     title: input.title,
     config: input.config,
+    overrides: input.overrides,
   };
   const cacheKeyBase = {
     providerId: input.providerId,
@@ -99,6 +103,7 @@ export async function invalidateEpisodePlaybackCaches(input: {
         input.episode,
         input.mode,
         input.config,
+        input.overrides,
       ),
     );
   } catch {

@@ -1475,6 +1475,30 @@ export function BrowseShell<T>({
   calendarWindowStartRef.current = calendarWindow.start;
   const visibleCalendarRows = calendarRenderRows.slice(calendarWindow.start, calendarWindow.end);
 
+  function activateBrowsePalette(index: number) {
+    const submittedInput = commandEditor.getValue();
+    const submittedTitles =
+      submittedInput === commandInput
+        ? titleMatches
+        : matchLocalTitles(titleEntries, submittedInput);
+    const row = resolveHighlightedPaletteRow(submittedInput, commands, submittedTitles, index);
+    if (row?.kind === "command" && row.command.enabled) {
+      setCommandMode(false);
+      onPaletteCommand?.(row.command.id);
+      const action = toShellAction(row.command.id);
+      setCommandInput("");
+      if (!handleLocalAction(action)) {
+        onResolve(action);
+      }
+    }
+    if (row?.kind === "title") {
+      setCommandMode(false);
+      setCommandInput("");
+      setHighlightedCommandIndex(0);
+      onTitlePick?.(row.match.entry);
+    }
+  }
+
   useInput((input, key) => {
     priorPointerSelection.current = null;
     if (rootContentSuspended) return;
@@ -1581,31 +1605,9 @@ export function BrowseShell<T>({
         return;
       }
       if (key.return) {
-        const submittedInput = commandEditor.getValue();
-        const submittedTitles =
-          submittedInput === commandInput
-            ? titleMatches
-            : matchLocalTitles(titleEntries, submittedInput);
-        const row = resolveHighlightedPaletteRow(
-          submittedInput,
-          commands,
-          submittedTitles,
-          submittedInput === commandInput ? highlightedCommandIndex : 0,
+        activateBrowsePalette(
+          commandEditor.getValue() === commandInput ? highlightedCommandIndex : 0,
         );
-        if (row?.kind === "command" && row.command.enabled) {
-          onPaletteCommand?.(row.command.id);
-          const action = toShellAction(row.command.id);
-          setCommandInput("");
-          if (!handleLocalAction(action)) {
-            onResolve(action);
-          }
-        }
-        if (row?.kind === "title") {
-          setCommandMode(false);
-          setCommandInput("");
-          setHighlightedCommandIndex(0);
-          onTitlePick?.(row.match.entry);
-        }
         return;
       }
       if (key.tab) {
@@ -2604,6 +2606,14 @@ export function BrowseShell<T>({
 
       {commandMode ? (
         <CommandPalette
+          pointer={{
+            select: setHighlightedCommandIndex,
+            activate: activateBrowsePalette,
+            close: () => {
+              setCommandMode(false);
+              setHighlightedCommandIndex(0);
+            },
+          }}
           input={commandInput}
           cursor={commandEditor.cursor}
           commands={commands}

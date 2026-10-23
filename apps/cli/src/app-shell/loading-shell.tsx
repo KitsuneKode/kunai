@@ -1,3 +1,4 @@
+import { compactPlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput } from "ink";
@@ -26,8 +27,8 @@ import {
 import type { StageRailItem } from "./loading-shell-runtime";
 import { buildMediaPanel } from "./media-panel-model";
 import { MediaPanel } from "./MediaPanel";
+import { MouseTarget } from "./mouse/MouseRegions";
 import { OffscreenFreeze } from "./offscreen-freeze";
-import { buildPlaybackKeysPanel, type PlaybackKeysPanelModel } from "./playback-keys-panel";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import {
   applyPlaybackShellInputEffect,
@@ -45,13 +46,20 @@ import type { LoadingShellState, ShellPanelLine } from "./types";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
-// Matches getLoadingDisclosure's `showDiagnostics`/`showElapsed` gate: the
-// runtime health line only becomes visible once the diagnostics strip reveals.
-const LOADING_DIAGNOSTICS_REVEAL_SECONDS = 5;
 const PLAYER_FALLBACK_BINDING = KEYBINDINGS.find((binding) => binding.id === "player-fallback");
 const PLAYER_FALLBACK_KEY = PLAYER_FALLBACK_BINDING
   ? footerKeyFromBinding(PLAYER_FALLBACK_BINDING)
   : "⇧F";
+
+function PlaybackShareControl({ onShare }: { readonly onShare: () => void }) {
+  const commandModeOpen = useShellCommandModeOpen();
+  if (commandModeOpen) return null;
+  return (
+    <MouseTarget id="playback:share" onClick={onShare}>
+      <Text color={palette.textDim}>↗ Share</Text>
+    </MouseTarget>
+  );
+}
 
 function useElapsed(active = true): number {
   const [elapsed, setElapsed] = React.useState(0);
@@ -324,49 +332,6 @@ const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
  * The first-run key card. Renders nothing once the model retires it, so the
  * layout below is untouched from that playback onward.
  */
-const PlaybackKeysCard = React.memo(function PlaybackKeysCard({
-  model,
-  width,
-}: {
-  readonly model: PlaybackKeysPanelModel;
-  readonly width: number;
-}) {
-  if (!model.visible) return null;
-  // Widest key in the card, so labels line up in one column across every group
-  // rather than each group finding its own indent.
-  // SAFETY: flatMap over empty groups yields Math.max() = -Infinity, which
-  // throws in padEnd — clamp to 0 so an all-filtered card cannot crash.
-  const keyColumn = Math.max(
-    0,
-    ...model.groups.flatMap((group) => group.rows.map((row) => row.keys.length)),
-  );
-  return (
-    <Box marginTop={1} flexDirection="column">
-      {model.groups.map((group) => (
-        <Box key={group.title} flexDirection="row" marginTop={0}>
-          <Box width={9}>
-            <Text color={palette.muted}>{group.title}</Text>
-          </Box>
-          <Text>
-            {group.rows.map((row, index) => (
-              <Text key={row.label}>
-                {index > 0 ? <Text color={palette.dim}>{"  "}</Text> : null}
-                <Text color={palette.accent}>{padColumnsEnd(row.keys, keyColumn)}</Text>
-                <Text color={palette.dim}>{` ${row.label}`}</Text>
-              </Text>
-            ))}
-          </Text>
-        </Box>
-      ))}
-      <Box marginTop={1}>
-        <Text color={palette.dim} dimColor>
-          {truncateLine(model.footnote, Math.max(12, width - 2))}
-        </Text>
-      </Box>
-    </Box>
-  );
-});
-
 const BufferHealthBadge = React.memo(function BufferHealthBadge({
   health,
 }: {
@@ -450,15 +415,12 @@ export const LoadingShell = React.memo(function LoadingShell({
   usePlaybackPosterSurfaceCleanup(state.operation);
   const supervisingPlayback = isPlaybackSupervisionOperation(state.operation);
   const elapsed = useElapsed(!supervisingPlayback);
-  // Only poll runtime health when it is actually rendered: while supervising
-  // playback it rides the memory panel, and during bootstrap the diagnostics
-  // strip (and the health line with it) is gated to elapsed >= reveal seconds.
-  // Polling before that just churns re-renders behind a hidden strip.
+  // Runtime diagnostics are on demand, so hidden health data does not poll or
+  // repaint behind ordinary playback feedback.
   const timerPolicy = getLoadingShellTimerPolicy({
     operation: state.operation,
     memoryPanelVisible,
-    runtimeHealthVisible:
-      memoryPanelVisible || (!supervisingPlayback && elapsed >= LOADING_DIAGNOSTICS_REVEAL_SECONDS),
+    runtimeHealthVisible: memoryPanelVisible,
   });
   const memoryLine = useRuntimeMemoryLine(timerPolicy.memoryRefreshMs);
   const runtimeHealthLine = useRuntimeHealthLine(
@@ -639,7 +601,11 @@ export const LoadingShell = React.memo(function LoadingShell({
     ? [
         state.qualityLabel,
         state.audioTrack ? `audio ${state.audioTrack}` : undefined,
-        state.subtitleTrack ?? (subtitleReady ? "subs on" : undefined),
+        state.subtitleTrack
+          ? compactPlaybackSubtitleStatus(state.subtitleTrack)
+          : subtitleReady
+            ? "subs on"
+            : undefined,
       ]
         .filter((part): part is string => Boolean(part))
         .join("  ·  ")
@@ -718,6 +684,19 @@ export const LoadingShell = React.memo(function LoadingShell({
       />
       <Box flexDirection="column" justifyContent="space-between" flexGrow={1}>
         <Box flexDirection="column" flexGrow={1} width="100%">
+          <Box marginBottom={1} justifyContent="space-between">
+            <Box>
+              <Text bold color={palette.text}>
+                {truncateLine(state.title, Math.max(12, infoWidth - 18))}
+              </Text>
+              {state.subtitle ? <Text color={palette.muted}> {state.subtitle}</Text> : null}
+            </Box>
+            {isPlaying &&
+            state.commands?.some((command) => command.id === "share" && command.enabled) &&
+            state.onCommandAction ? (
+              <PlaybackShareControl onShare={() => state.onCommandAction?.("share")} />
+            ) : null}
+          </Box>
           {/* ── Resolving / Loading ───────────────────────────────────────── */}
           {!isPlaying && (
             <Box flexDirection="row" flexGrow={1}>
@@ -760,13 +739,15 @@ export const LoadingShell = React.memo(function LoadingShell({
                       </Text>
                     </Box>
                     {/* Provider context — revealed after 2s */}
-                    {disclosure.showProvider && providerDetail && (
-                      <Box marginTop={1}>
-                        <Text color={palette.dim} dimColor>
-                          {truncateLine(providerDetail, Math.max(12, infoWidth))}
-                        </Text>
-                      </Box>
-                    )}
+                    {disclosure.showProvider &&
+                      providerDetail &&
+                      providerDetail !== state.stageDetail && (
+                        <Box marginTop={1}>
+                          <Text color={palette.dim} dimColor>
+                            {truncateLine(providerDetail, Math.max(12, infoWidth))}
+                          </Text>
+                        </Box>
+                      )}
                     {/* Subtitle status — revealed after 2s */}
                     {disclosure.showSubtitleStatus && state.subtitleStatus && (
                       <Box marginTop={1}>
@@ -781,7 +762,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {/* Diagnostics strip — revealed after 5s */}
                 {disclosure.showDiagnostics && (
                   <Box flexDirection="column" marginTop={2}>
-                    {state.trace && (
+                    {memoryPanelVisible && state.trace && (
                       <Text color={palette.dim} dimColor>
                         {truncateLine(state.trace, Math.max(12, infoWidth))}
                       </Text>
@@ -808,7 +789,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                         Memory: {memoryLine}
                       </Text>
                     )}
-                    {runtimeHealthLine && (
+                    {memoryPanelVisible && runtimeHealthLine && (
                       <Text
                         color={
                           !runtimeHealthLine.tone || runtimeHealthLine.tone === "neutral"
@@ -949,57 +930,11 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Text>
                 </Box>
 
-                {/* GO — live key hints from session state or wired callbacks. */}
-                <Box>
-                  <Text color={palette.dim}>{"GO   "}</Text>
-                  <Text color={palette.textDim}>
-                    {truncateLine(
-                      state.playbackKeysHint ??
-                        [
-                          state.hasNextEpisode && onNext ? "n next" : null,
-                          state.hasPreviousEpisode && onPrevious ? "p prev" : null,
-                          // `b skip` is deliberately not advertised here: skip only
-                          // acts while a segment window is offered, which this
-                          // static fallback cannot know.
-                          canOpenSourcePicker ? "o source" : null,
-                          onPickQuality ? "k quality" : null,
-                          onPickEpisode ? "e episodes" : null,
-                          onToggleAutoplay ? "a autoplay" : null,
-                          onToggleAutoskip ? "u autoskip" : null,
-                          "q stop",
-                          "/ commands",
-                        ]
-                          .filter((part): part is string => Boolean(part))
-                          .join("  ·  "),
-                      infoWidth - 5,
-                    )}
-                  </Text>
-                </Box>
-
-                {/* mpv ownership hint — Kunai owns session, mpv owns the video.
-                    Deliberately names no keys: it used to spell out
-                    "n/p/e/o/k/u", duplicating the GO row directly above it and
-                    advertising episode keys even on a movie, which has none.
-                    The GO row is registry-derived and content-aware, so it is
-                    the one place keys are listed. */}
                 <Box marginTop={1}>
-                  <Text color={palette.dim} dimColor>
-                    Terminal or mpv — the keys above stay live · / for full commands
+                  <Text color={palette.muted}>
+                    Tracks and subtitles can also be changed in mpv · ? for all keys
                   </Text>
                 </Box>
-
-                {/* First-run key card. The GO row is a dense single line and `?`
-                    is invisible to someone who has never pressed it, so a new
-                    user had no way to learn these without the docs. Fills the
-                    space mpv leaves empty, then retires itself. */}
-                <PlaybackKeysCard
-                  model={buildPlaybackKeysPanel({
-                    contentKind: state.contentKind ?? (state.isSeriesPlayback ? "series" : "movie"),
-                    titleType: state.titleType,
-                    sessionsSeen: state.playbackKeysSessionsSeen ?? 0,
-                  })}
-                  width={infoWidth}
-                />
 
                 {/* Health/trouble only surfaces when there is something to act on. */}
                 {playbackTrouble ? (

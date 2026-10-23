@@ -1610,6 +1610,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           let consumedBundle: ReturnType<EpisodePrefetchHandle["takeReadyFor"]> = null;
           let prefetchWasPrepared = false;
           const profileContext = {
+            overrides: stateManager.getState().playbackTrackPreferences,
             mode: stateManager.getState().mode,
             title,
             config,
@@ -1833,6 +1834,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   episode: currentEpisode,
                   mode: stateManager.getState().mode,
                   config,
+                  overrides: stateManager.getState().playbackTrackPreferences,
                   selectedSourceId: currentPreferredStreamSelection.sourceId,
                   selectedStreamId: currentPreferredStreamSelection.streamId,
                 });
@@ -2365,6 +2367,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             stream = applyPreferredStreamSelection(
               stream,
               getPreferredStreamSelection(sourceProviderId, currentEpisode),
+              playbackQualityPreference(profileContext),
             );
           }
           if (!stream || resolveController.signal.aborted) {
@@ -2954,6 +2957,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               episode: currentEpisode,
               mode: stateManager.getState().mode,
               config,
+              overrides: stateManager.getState().playbackTrackPreferences,
               selectedSourceId: selectedResolveStream?.sourceId,
               selectedStreamId: preparedStream.providerResolveResult?.selectedStreamId,
             });
@@ -4182,7 +4186,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   ): Promise<EpisodePrefetchBundle | null> {
     const { config, stateManager, playbackResolveWork } = context.container;
     const mode = stateManager.getState().mode;
-    const profileCtx = { mode, title: input.title, config: config.getRaw() };
+    const profileCtx = {
+      mode,
+      title: input.title,
+      config: config.getRaw(),
+      overrides: stateManager.getState().playbackTrackPreferences,
+    };
     const subLang = playbackSubtitlePreference(profileCtx);
     const isInteractiveSubtitle = subLang === "interactive" || subLang === "fzf";
 
@@ -4251,6 +4260,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   ): Promise<StreamInfo> {
     const { stateManager, logger, config } = context.container;
     const subLang = playbackSubtitlePreference({
+      overrides: stateManager.getState().playbackTrackPreferences,
       mode: stateManager.getState().mode,
       title,
       config,
@@ -4263,7 +4273,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         requestedSubLang: subLang,
         reason: "hardsub-satisfied-or-disabled",
       });
-      return stream;
+      return subLang === "none" ? { ...stream, subtitle: undefined } : stream;
     }
 
     const subtitleDecision = await choosePlaybackSubtitle({
@@ -4361,6 +4371,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const subtitleStatus = describePlaybackSubtitleStatus(
       stream,
       playbackSubtitlePreference({
+        overrides: stateManager.getState().playbackTrackPreferences,
         mode: stateManager.getState().mode,
         title,
         config,
@@ -4455,16 +4466,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       playOptions: {
         abortSignal: context.signal,
         audioPreference: playbackAudioPreference({
+          overrides: stateManager.getState().playbackTrackPreferences,
           mode: stateManager.getState().mode,
           title,
           config,
         }),
         subtitlePreference: playbackSubtitlePreference({
+          overrides: stateManager.getState().playbackTrackPreferences,
           mode: stateManager.getState().mode,
           title,
           config,
         }),
         qualityPreference: playbackQualityPreference({
+          overrides: stateManager.getState().playbackTrackPreferences,
           mode: stateManager.getState().mode,
           title,
           config,
@@ -4632,6 +4646,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const { stateManager, diagnosticsService, logger } = context.container;
     const mode = stateManager.getState().mode;
     const requestedSubLang = playbackSubtitlePreference({
+      overrides: stateManager.getState().playbackTrackPreferences,
       mode,
       title,
       config: context.container.config,

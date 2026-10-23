@@ -109,17 +109,17 @@ describe("observeResolveNetworkOutcome", () => {
       provenance: "cache-hit",
       attempts: [],
     });
-    expect(connectivity.getSnapshot().status).toBe("offline");
+    expect(connectivity.getSnapshot().status).toBe("limited");
   });
 
-  test("no stream with connectivity failures marks offline", () => {
+  test("one provider DNS failure keeps other providers reachable", () => {
     const { container, connectivity } = makeObserver();
     observeResolveNetworkOutcome(container, {
       stream: null,
       provenance: "fresh",
       attempts: [{ failure: { message: "fetch failed: ENOTFOUND" } }],
     });
-    expect(connectivity.getSnapshot().status).toBe("offline");
+    expect(connectivity.getSnapshot().status).toBe("limited");
   });
 
   test("no stream with provider-only failures stays online", () => {

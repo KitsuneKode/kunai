@@ -76,6 +76,8 @@ export function trackSectionOrderForMediaKind(
   return mediaKind === "anime" ? SECTION_ORDER_ANIME : SECTION_ORDER_SERIES;
 }
 
+export const QUALITY_AUTO_VALUE = "quality:auto";
+
 export const AUDIO_MODE_VALUE_PREFIX = "audio-mode:";
 export const CROSS_PROVIDER_SOURCE_VALUE_PREFIX = "cross-provider:";
 
@@ -308,7 +310,10 @@ export function buildTrackCapabilities(
     push(row);
   }
 
-  for (const option of view.subtitleOptions) {
+  const subtitleOptions = [...view.subtitleOptions].sort(
+    (a, b) => Number(b.delivery === "off") - Number(a.delivery === "off"),
+  );
+  for (const option of subtitleOptions) {
     // External tracks and "off" switch live through mpv (`sub-add`/`sid`) — no
     // restart. Stream-embedded tracks (restartRequired) ride the stream switch.
     const preplayChoice = option.restartRequired && option.state === "available";

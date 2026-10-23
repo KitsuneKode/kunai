@@ -1,6 +1,6 @@
 # Watching UX coherence
 
-Status: IMPLEMENTING. Baseline: f8e8de559. Scope: the user-reported first-run,
+Status: IMPLEMENTED; final candidate qualification in progress. Baseline: f8e8de559. Scope: the user-reported first-run,
 browse/filter, resolve/start, now-playing, Tracks and share/back journey.
 
 ## Spec and direction
@@ -70,3 +70,23 @@ pointer/filter routing; inspect rendered frames at supported narrow/regular/wide
 sizes with long and non-Latin values. Per-package checks during work; final forced
 types/lint/tests/build plus fmt and doc paths/frontmatter/coverage. Record exact
 SHA, commands, evidence and platform/live-provider limits in the release report.
+
+## Local implementation evidence
+
+The source now resets watchdog state per file, treats initial starvation as
+buffering, preserves session subtitle/quality choices, exposes Auto, fixes Tracks
+cell budgets, wires setup/palette/Back/Share pointer targets and narrows palette
+prefix queries. The active Ink/theme stack is retained.
+
+Failing-first regressions cover watchdog startup/reset, palette prefixes, provider
+subtitle defaults despite Off, source quality preference, and long source rows
+exceeding their height at 72 columns. Pointer and integration tests cover consent,
+late acknowledgements and the reverse paths. All six setup screens were exercised
+in an isolated real 72×24 terminal. Movie-profile and French-subtitle pointer picks
+persisted only to the movie profile; analytics stayed disabled with an empty id.
+The real-mpv tier passed with advancing IPC position and SQLite history.
+
+Final forced checks and review results belong in the candidate qualification
+record, not a duplicate implementation checklist here. Linux protocol registration
+already exists; no daemon or implicit OS registration was added. Live provider,
+physical-device and hosted-platform qualification remain separate release gates.

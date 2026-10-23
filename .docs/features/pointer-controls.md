@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-10-23"
 ---
 
 # Terminal pointer controls
@@ -43,9 +43,9 @@ touch gestures and player-window controls need separate qualification.
 ## Remaining qualification and scope
 
 The implemented slice covers Browse search/results, Library titles/tabs, Up Next,
-Tracks and Settings. Downloads inside Library release input when covered, but
+Tracks, Settings, setup choices and command-palette rows. Downloads inside Library release input when covered, but
 this does not add click controls to every download action. Calendar, history,
-notifications, onboarding and player-window controls retain their existing input
+notifications and player-window controls retain their existing input
 contracts and need separate pointer work before claiming parity.
 
 The isolated terminal fixture runs prove routing and persisted state. Physical
@@ -62,3 +62,16 @@ configured default plus fallbacks, rather than the whole roster. Their footer
 advertises selection and movement, while ordinary pickers advertise Enter.
 Videasy session credentials still reach the direct resolver; the session-source
 labels use the current site name while retaining persisted API identifiers.
+
+## Setup, palette and navigation
+
+Setup mode, media-profile tabs, audio/subtitle choices and library toggles have
+measured targets. Back and footer decisions share the keyboard controller.
+Analytics opt-in still requires Enter on the consent screen; pointer confirmation
+cannot enable it. The language view and footer fit the supported 72×24 viewport.
+
+Palette rows focus on the first click and activate when already focused. Disabled
+rows only explain their reason. Wheel input clamps the highlight; Back closes the
+palette and restores the underlying input owner. Downloads also relinquish input
+while covered by the palette. Tracks exposes Back; Now Playing exposes Share
+through the existing share command. These do not register OS handlers implicitly.

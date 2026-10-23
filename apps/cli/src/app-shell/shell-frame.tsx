@@ -90,18 +90,24 @@ export function ShellFrame({
     }
   });
 
-  const { commandMode, commandInput, commandCursor, highlightedIndex, titleMatches } =
-    useShellInput({
-      footerActions,
-      commands,
-      disabled: inputDisabled,
-      letterKeysHandledExternally,
-      escapeAction,
-      onResolve,
-      localTitles,
-      onTitlePick,
-      onPaletteCommand,
-    });
+  const {
+    commandMode,
+    commandInput,
+    commandCursor,
+    highlightedIndex,
+    titleMatches,
+    palettePointer,
+  } = useShellInput({
+    footerActions,
+    commands,
+    disabled: inputDisabled,
+    letterKeysHandledExternally,
+    escapeAction,
+    onResolve,
+    localTitles,
+    onTitlePick,
+    onPaletteCommand,
+  });
 
   useInput((input, key) => {
     if (inputDisabled || commandMode) return;
@@ -151,6 +157,7 @@ export function ShellFrame({
       <Box flexDirection="column">
         {commandMode ? (
           <CommandPalette
+            pointer={palettePointer}
             input={commandInput}
             cursor={commandCursor}
             commands={commands}

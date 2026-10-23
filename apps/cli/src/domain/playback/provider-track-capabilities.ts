@@ -69,9 +69,7 @@ export function buildProviderTrackCapabilities(
       value: provider.id,
       selected,
       enabled: !selected,
-      detail:
-        [provider.description, healthDetail(provider.id, health)].filter(Boolean).join(" · ") ||
-        undefined,
+      detail: healthDetail(provider.id, health),
       risk: health?.errorClass ? "failed" : "normal",
       reason: selected ? "Current provider" : undefined,
     };

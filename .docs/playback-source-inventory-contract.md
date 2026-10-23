@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T13:45:00Z"
+lastReviewed: "2026-10-23"
 ---
 
 # Playback Source Inventory Contract
@@ -132,7 +132,7 @@ requires another call to materialize a specific quality.
 
 Source and quality pickers must read from cached inventory.
 
-- Source change: select the best stream from the chosen `sourceId`. A pin that already
+- Source change: select the best stream within the session quality preference from the chosen `sourceId`. A pin that already
   selected an audio/mirror lane must not become an explicit first-rung choice: HiAnime
   consumes its sub/dub pin before quality selection, and AnimeGG ignores the matching
   active-mirror pin when ranking that mirror's qualities. An explicit stream id still
@@ -261,3 +261,18 @@ Switching anime title display preference must be a pure projection over `SearchR
 The source checkout currently requires Bun for development and local source runs. The codebase uses Bun-first APIs and tooling (`Bun.spawn`, `Bun.which`, `Bun.file`, `Bun.connect`, `Bun.hash`, workspaces, lockfile behavior).
 
 For beta, prefer reducing onboarding friction through packaged binaries or installer checks over porting the runtime to Node/npm. A Node-only source path is possible later, but it would add compatibility work across process, socket, filesystem, bundling, and package scripts without improving playback reliability first.
+
+## Session track choices
+
+`SessionState.playbackTrackPreferences` overlays subtitle and quality choices on
+the active media profile. Resolve, prefetch, mpv options, inventory keys and
+recovery invalidation consume that same effective profile. Source/provider picks
+do not write these choices back to configuration. Auto clears an exact stream
+pick and uses best available quality in the active source; numeric picks carry
+their quality preference into later source switches.
+
+An accepted live external-subtitle choice updates the override only if its stream
+is still current. Rejected or superseded acknowledgements change no preference.
+Off clears a provider-default external subtitle during preparation after a new
+resolve, while keeping the inventory available for turning subtitles on again.
+Hardcoded subtitles remain a property of the video and cannot be removed by mpv.

@@ -78,7 +78,7 @@ test("projectPlaybackSubtitleState keeps disabled preference from hiding selecte
 
   expect(state).toMatchObject({
     kind: "selected",
-    label: "subtitle selected · preference off",
+    label: "subtitle selected",
     tone: "success",
   });
 });

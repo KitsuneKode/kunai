@@ -44,7 +44,7 @@ export function projectPlaybackSubtitleState(
   if (stream?.subtitle) {
     return {
       kind: "selected",
-      label: subLang === "none" ? "subtitle selected · preference off" : "subtitle selected",
+      label: "subtitle selected",
       tone: "success",
       detail: stream.subtitle,
     };
@@ -53,7 +53,7 @@ export function projectPlaybackSubtitleState(
   if (isYoutubePlaybackStream(stream)) {
     const plan = buildYoutubeSubtitlePreferencePlan(subLang);
     if (subLang === "none" || plan.mpvSlang === "no") {
-      return { kind: "disabled", label: "subtitles disabled", tone: "warning" };
+      return { kind: "disabled", label: "subtitles disabled", tone: "info" };
     }
     if (options.lateLookup === "failed") {
       return { kind: "lookup-failed", label: "subtitles not found", tone: "warning" };
@@ -74,7 +74,7 @@ export function projectPlaybackSubtitleState(
   }
 
   if (subLang === "none") {
-    return { kind: "disabled", label: "subtitles disabled", tone: "warning" };
+    return { kind: "disabled", label: "subtitles disabled", tone: "info" };
   }
 
   if (!stream) {

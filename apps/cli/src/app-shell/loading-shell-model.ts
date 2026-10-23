@@ -17,6 +17,7 @@ type LoadingFooterBindingId =
   | "player-fallback"
   | "player-next"
   | "player-previous"
+  | "player-quality"
   | "player-source"
   | "player-stop"
   | "player-stop-after-current";
@@ -33,7 +34,7 @@ function footerActionFromBinding(
 ): FooterAction {
   const binding = bindings.find((candidate) => candidate.id === id);
   return {
-    key: binding ? footerKeyFromBinding(binding) : "",
+    key: binding ? (footerKeyFromBinding(binding).split(" / ")[0] ?? "") : "",
     label: options.label ?? binding?.hintLabel ?? binding?.label ?? String(action),
     action,
     primary: options.primary,
@@ -101,73 +102,37 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
 
   if (state.operation === "playing") {
     const playingFooterActions: readonly FooterAction[] = [
-      footerActionFromBinding("command-palette", "command-mode", bindings, { primary: true }),
-      ...(state.hasNextEpisode ? [footerActionFromBinding("player-next", "next", bindings)] : []),
-      ...(state.hasPreviousEpisode
-        ? [footerActionFromBinding("player-previous", "previous", bindings)]
-        : []),
-      ...(isSeriesPlayback
-        ? [
-            footerActionFromBinding("player-episode", "pick-episode", bindings),
-            // Autoplay stays series-only: it means "start the next episode", so
-            // a movie has nothing for it to do.
-            footerActionFromBinding("player-autoplay", "toggle-autoplay", bindings, {
-              label: state.autoplayPaused ? "resume autoplay" : "pause autoplay",
-            }),
-          ]
-        : []),
-      // Autoskip was missing from the playing footer entirely — only the
-      // bootstrap footer offered it — so the one surface where skipping
-      // actually happens never advertised its key. Ungated, matching the GO
-      // line, which has always listed it for any content.
-      footerActionFromBinding("player-autoskip", "toggle-autoskip", bindings, {
-        label: state.autoskipPaused ? "resume autoskip" : "pause autoskip",
+      footerActionFromBinding("player-source", "source", bindings, {
+        label: "tracks",
+        primary: true,
       }),
-      footerActionFromBinding("player-source", "source", bindings),
+      footerActionFromBinding("player-quality", "quality", bindings),
+      ...(state.hasNextEpisode ? [footerActionFromBinding("player-next", "next", bindings)] : []),
+      ...(isSeriesPlayback
+        ? [footerActionFromBinding("player-episode", "pick-episode", bindings)]
+        : []),
       footerActionFromBinding("player-stop", "quit", bindings, { label: "stop" }),
+      footerActionFromBinding("command-palette", "command-mode", bindings),
     ];
     return selectFooterActions(playingFooterActions, state.footerMode ?? "detailed");
   }
 
   return [
-    footerActionFromBinding("command-palette", "command-mode", bindings),
-    footerActionFromBinding("loading-title-control-menu", "menu", bindings),
-    // Advertise cancel while bootstrap is abortable (Esc/q already work; footer
-    // makes the exit path discoverable and routes through the same quit action).
     ...(state.cancellable
       ? [
           footerActionFromBinding("player-stop", "quit", bindings, {
             label: "cancel → results",
+            primary: true,
           }),
         ]
-      : []),
-    ...(state.hasStreamCandidates
-      ? [footerActionFromBinding("player-source", "source", bindings)]
       : []),
     ...(state.fallbackAvailable
-      ? [
-          footerActionFromBinding("player-fallback", "fallback", bindings, {
-            label: fallbackLabel,
-          }),
-        ]
+      ? [footerActionFromBinding("player-fallback", "fallback", bindings, { label: fallbackLabel })]
       : []),
-    ...(isSeriesPlayback
-      ? [
-          footerActionFromBinding("player-autoplay", "toggle-autoplay", bindings, {
-            label: state.autoplayPaused ? "resume autoplay" : "pause autoplay",
-          }),
-          footerActionFromBinding("player-autoskip", "toggle-autoskip", bindings, {
-            label: state.autoskipPaused ? "resume autoskip" : "pause autoskip",
-          }),
-          footerActionFromBinding("player-stop-after-current", "stop-after-current", bindings, {
-            label: "stop after current",
-          }),
-        ]
+    ...(state.hasStreamCandidates
+      ? [footerActionFromBinding("player-source", "source", bindings, { label: "tracks" })]
       : []),
-    footerActionFromBinding("loading-settings", "settings", bindings),
-    footerActionFromBinding("loading-history", "history", bindings),
-    footerActionFromBinding("player-diagnostics", "diagnostics", bindings),
-    footerActionFromBinding("help", "help", bindings),
+    footerActionFromBinding("command-palette", "command-mode", bindings),
   ];
 }
 
