@@ -1,9 +1,13 @@
 # Watching candidate — October 22, 2026
 
-Local implementation candidate **cf83c54054007bc0b268026bae2004ad01e7e1cd**, based
+Initial runtime implementation **cf83c54054007bc0b268026bae2004ad01e7e1cd**, based
 on main **8a86bf9dc3d0e8315522624c939df807ea69e028**. This is a qualification
 record, not a published release or merge approval. Original dirty root checkout
 was preserved. The candidate is on `fix/watching-release-readiness-20261022`.
+
+Latest source follow-up: `ebb3a8a54`, including the safe manual launcher,
+verification-copy correction and upstream status-board refresh. The October 23
+qualification and manual test command are recorded below.
 
 ## Resulting behavior
 
@@ -149,3 +153,73 @@ These results are network-, fixture- and date-specific, not all-title guarantees
    Bun compilation and fixture tests do not replace those checks.
 5. Integrate chosen fixes, regenerate version PR **327**, then qualify its exact
    combined release artifacts and deployment statuses. No release was published.
+
+## October 23 follow-up — ready for local manual testing
+
+Use this exact checkout; the globally installed command and main checkout do
+not automatically include these local commits:
+
+```sh
+cd /home/kitsunekode/.t3/worktrees/kitsunesnipe/fix-watching-release-readiness-20261022
+SANDBOX_DIR=/tmp/kunai-watching-preview KEEP=1 bun run sandbox
+```
+
+An unused path or an empty directory you own is accepted on first use. Later
+runs with KEEP=1 retain this profile's queue, history and Settings. It redirects
+HOME/XDG/APPDATA/USERPROFILE and forces file credentials; your installed profile
+and account vault are untouched. A nonempty unmarked directory, symlink or
+invalid marker is refused before reset. Omit KEEP=1 only when you intend to reset
+a sandbox initialized by this launcher. Native Windows does not use this Bash
+source-checkout launcher.
+
+Try search → play → stop/resume, source/quality switching, and mouse selection
+in Library, Up Next, Tracks and Settings. Analytics stays off unless explicitly
+enabled by keyboard. Setup/preferences and tracker authentication belong to the
+isolated profile; real account tokens are not copied from your installed app.
+
+This follow-up used GPT 6.1 Sol. Two October 22 implementation delegations hit
+quota limits, so the controller continued on the requested model. A fresh
+October 23 Sol review completed with no actionable findings in the sandbox fix:
+six shell integration cases pass under Bash 5.3 and 3.2 on Linux, with syntax,
+ShellCheck and diff checks. Native macOS was not independently exercised.
+
+The launcher had two reproduced defects: a reset could delete an unrelated
+SANDBOX_DIR before validation, and a shadow HOME did not isolate the account
+credential vault. Four assertions failed before the fix; all six cases pass
+with the marker and forced file backend. Actual PTY proof reached setup and
+then Browse/recommendations, and a retained-profile relaunch skipped setup.
+Remaining-defaults selection left analytics unset and installId empty. The owned
+PTYs were stopped; their isolated proof profile remains outside the checkout.
+
+Fresh local checks on this source follow-up:
+
+- Forced root types 15/15, lint 14/14, tests 26/26 and build 10/10, zero cache.
+- 9427 tests pass, 62 skip, 0 fail; CLI integration is 367 pass/27 skip.
+- Real mpv: 1 pass; full-set compiled binary smoke: 14 pass.
+- Preserved Linux archive installer: 1 pass, verifying archive transport,
+  provenance, sandboxed launcher version/help and no raw fallback.
+- Current activation-lock suite: 37 pass, 1 Windows-only skip.
+- Upstream main advanced only by generated provider status (`b5f2b09b8`); it was
+  merged locally, then all 440 docs tests passed. No runtime changes came from it.
+- The rebuilt Linux binary is byte-identical to the preserved npm platform
+  binary; the cross-platform runtime graph is unchanged from the earlier build.
+
+Movy was checked three times with distinct bounded triggers. The standard
+30-frame smoke still timed out. A diagnostic through the same production
+engine/header builder decoded a 2160p HLS frame and exited 0; a requested1080p
+attempt then hit the existing 12-second provider-resolve deadline. This does
+not establish sustained playback or an adapter defect. Timeout copy now says
+that the frame budget was not confirmed, rather than asserting zero decode.
+No timeout, quality default or resolve gate was loosened.
+
+The original #650 failed-job log was recovered. It contains the boolean
+violation assertion and no underlying mkdir error, so historical attribution
+remains unavailable. The fresh lock and Linux installer passes above do not
+close that issue. Logs are retained as `/tmp/kunai-followup-650-failed.log`,
+`/tmp/kunai-followup-lock-tests.log` and
+`/tmp/kunai-followup-native-installer.log`.
+
+This is ready for maintainer testing. Release sign-off still requires resolution
+or explicit acceptance of the remaining provider/installer evidence gaps,
+hosted/native-device qualification and approval of the actual release candidate.
+No PR was merged remotely and nothing was published.

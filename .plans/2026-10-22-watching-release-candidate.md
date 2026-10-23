@@ -1,6 +1,6 @@
 # Watching release candidate implementation plan
 
-Status: IMPLEMENTED LOCALLY; release integration and external qualification pending.
+Status: READY FOR LOCAL MANUAL TESTING; release integration and external qualification pending.
 Base: `8a86bf9dc`. This orders the authorized watching
 work from the existing release-readiness and shell/provider plans; it does
 not replace their remaining release qualification requirements.
@@ -119,3 +119,12 @@ Continue from 375acdc35; preserve original checkout and existing candidate.
 9. Integrate/review changes using GPT 6.1 Sol, rerun appropriate uncached gates
    and actual CLI/player checks, then provide exact instructions for trying it.
    Release publication/remote merge and physical-device proof remain separate.
+
+Follow-up outcome (October 23): the safe launcher is implemented/reviewed in
+45fd633a9; a real retained-profile PTY run is usable. Provider checks distinguish
+partial Movy decode from complete frame-budget qualification. The recovered
+650 log lacks causal filesystem evidence, so no speculative protocol patch or
+issue closure was made. Local forced gates and Linux installer/player tests
+pass; maintainer testing can start with the command in the candidate record.
+Remaining work is the release gates in that record, not an unimplemented
+sandbox, mouse, timing or watching slice.
