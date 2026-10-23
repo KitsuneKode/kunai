@@ -724,6 +724,7 @@ Opt-in release-candidate smoke, run only when provider traffic is acceptable:
 - Source refresh tests must prove that voluntary refresh cooldown does not block broken-stream recovery, and that a failed fresh lookup can keep the current cached stream instead of stalling playback.
 - Storage maintenance tests must seed durable user tables and disposable cache tables together, then prove automatic maintenance only prunes cache-class rows.
 - Fake mpv IPC lifecycle tests cover app-side orchestration only; keep one manual real-mpv smoke for release candidates that touch playback.
+- A live mpv timeout fails the configured frame-budget check; it does not establish that zero frames decoded. Keep partial decode evidence separate from a completed playback qualification.
 - The opt-in real-player tier (`KUNAI_REAL_MPV=1 bun run test:cli:file real-mpv.test.ts`)
   drives the real CLI in tmux, observes advancing mpv IPC time, and checks the
   same profile's history row. The media/profile remains under the isolated
