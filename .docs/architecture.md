@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-13T11:22:36Z"
+lastReviewed: "2026-10-15"
 ---
 
 # Kunai — Runtime Architecture
@@ -266,7 +266,9 @@ while a slow keychain operation is running.
 **Watch ledger (2026-06):** `history_progress` is the single source of truth for resume position, completion, and engaged watch time. Columns `watched_seconds`, `last_watched_at`, and `completed_at` (migration `024`) back Stats and continuation. All mark-watched/unwatched surfaces write through `HistoryRepository.markWatched` / `markUnwatched` (preserve resume on unmark). `playback_events` receives fire-and-forget instrumentation from the mpv position tick via `PlaybackEventRepository`. Stats aggregation lives in `WatchStatsRepository` (`packages/storage`).
 
 Automatic local completion requires a natural `end-file` EOF and trusted progress
-past the completion threshold. A quit near the end can count as engaged viewing
+past the completion threshold. Native duration-only EOF events are demoted to
+unknown, suspected-dead results without inflating watched time; the history gate
+also rejects explicit zero, negative, or non-finite trusted progress. A quit near the end can count as engaged viewing
 for session policy while keeping its resume position; a kill, crash, timeout, or
 process exit without `end-file` must never clear that position. The last IPC
 `eof-reached` sample alone is insufficient. `shouldMarkEpisodeCompleted` owns

@@ -121,6 +121,15 @@ export function shouldMarkEpisodeCompleted(
 ): boolean {
   if (result.endReason !== "eof") return false;
   if (result.suspectedDeadStream) return false;
+  // Native finalization supplies this field even when progress was never
+  // observed. Its explicit zero/invalid evidence must not fall back to the
+  // duration-inflated watchedSeconds used by older result producers.
+  if (
+    result.lastTrustedProgressSeconds !== undefined &&
+    (!Number.isFinite(result.lastTrustedProgressSeconds) || result.lastTrustedProgressSeconds <= 0)
+  ) {
+    return false;
+  }
   if (result.playerExitSignal) return false;
   if (
     result.playerExitCode !== null &&
