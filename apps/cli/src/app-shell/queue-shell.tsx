@@ -1,7 +1,8 @@
-import { Box } from "ink";
-import React from "react";
+import { Box, Text, useInput } from "ink";
+import React, { useEffect, useRef } from "react";
 
 import { useRailPoster } from "./hooks/use-rail-poster";
+import { MouseTarget } from "./mouse/MouseRegions";
 import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
 import { MediaListShell } from "./primitives/MediaListShell";
@@ -9,6 +10,7 @@ import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import type { QueueView, QueueViewRow } from "./queue-view";
+import { getWindowStart } from "./shell-text";
 import { palette } from "./shell-theme";
 
 function QueueRow({
@@ -60,12 +62,37 @@ export function QueueShell({
   columns,
   listWidth,
   rowWidth,
+  onRowClick,
+  onWheel,
+  maxRows,
 }: {
   readonly view: QueueView;
   readonly columns: number;
   readonly listWidth: number;
   readonly rowWidth: number;
+  readonly onRowClick?: (id: string, activate: boolean) => void;
+  readonly onWheel?: (direction: "up" | "down") => void;
+  readonly maxRows?: number;
 }) {
+  const priorPointerId = useRef<string | null>(null);
+  // Keyboard input owns the next decision even if a clamped/wrapped selection
+  // stays on the same ID (for example, a one-row queue).
+  useInput(
+    () => {
+      priorPointerId.current = null;
+    },
+    { isActive: Boolean(onRowClick) },
+  );
+  const selectedId = view.rows[view.selectedIndex]?.id;
+  useEffect(() => {
+    if (!onRowClick || priorPointerId.current !== selectedId) priorPointerId.current = null;
+  }, [onRowClick, selectedId]);
+  const scroll = (direction: "up" | "down") => {
+    priorPointerId.current = null;
+    onWheel?.(direction);
+  };
+  const visibleCount = Math.max(1, maxRows ?? view.rows.length);
+  const start = getWindowStart(view.selectedIndex, view.rows.length, visibleCount);
   // Single Kitty hero for the selected item (same mechanism as history's rail).
   const { poster: railPoster } = useRailPoster(view.rail?.posterUrl, {
     rows: 12,
@@ -87,14 +114,29 @@ export function QueueShell({
           width={rowWidth}
         />
       ) : (
-        view.rows.map((row, index) => (
-          <QueueRow
-            key={row.id}
-            row={row}
-            selected={index === view.selectedIndex}
-            rowWidth={rowWidth}
-          />
-        ))
+        <>
+          {start > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
+          {view.rows.slice(start, start + visibleCount).map((row, index) => (
+            <MouseTarget
+              key={row.id}
+              id={`queue:row:${row.id}`}
+              active={Boolean(onRowClick)}
+              onClick={() => {
+                const activate = priorPointerId.current === row.id && selectedId === row.id;
+                priorPointerId.current = activate ? null : row.id;
+                onRowClick?.(row.id, activate);
+              }}
+              onWheel={onWheel ? scroll : undefined}
+            >
+              <QueueRow
+                row={row}
+                selected={start + index === view.selectedIndex}
+                rowWidth={rowWidth}
+              />
+            </MouseTarget>
+          ))}
+          {start + visibleCount < view.rows.length ? <Text color={palette.dim}> ▼ ...</Text> : null}
+        </>
       )}
     </Box>
   );

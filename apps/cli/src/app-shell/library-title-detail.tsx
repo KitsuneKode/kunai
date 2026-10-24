@@ -36,6 +36,8 @@ import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useMemo, useState } from "react";
 
+import { useRootContentSuspended } from "./RootContentSuspension";
+
 type DetailRow =
   | { readonly kind: "episode"; readonly entry: OfflineLibraryEntry; readonly flatIndex: number }
   | {
@@ -178,6 +180,7 @@ export function LibraryTitleDetail({
     enabled: showRail,
   });
 
+  const suspended = useRootContentSuspended();
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -248,7 +251,7 @@ export function LibraryTitleDetail({
         }
       })();
     },
-    { isActive: true },
+    { isActive: !suspended },
   );
 
   const list = (
