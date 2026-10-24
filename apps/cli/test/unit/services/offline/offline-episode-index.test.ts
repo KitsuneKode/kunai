@@ -5,12 +5,19 @@ import {
   findNextReadyEpisode,
   findReadyJobIdForEpisode,
   isEpisodeDownloaded,
+  listReadyEpisodes,
 } from "@/services/offline/offline-episode-index";
 import {
   OfflineAssetService,
   type OfflineAssetRepositoryPort,
 } from "@/services/offline/OfflineAssetService";
 import type { OfflineAssetRecord, OfflineNextReadyCursor } from "@kunai/storage";
+import {
+  DownloadJobsRepository,
+  OfflineAssetsRepository,
+  openKunaiDatabase,
+  runMigrations,
+} from "@kunai/storage";
 
 /** Identity is not what these tests exercise: keep whatever id the job carried. */
 const passthroughIdentity = {
@@ -60,6 +67,58 @@ function repositoryStub(
 }
 
 describe("offline-episode-index", () => {
+  test("real repository preserves playback, badges and picker entries beyond 100 assets", () => {
+    const db = openKunaiDatabase(":memory:");
+    try {
+      runMigrations(db, "data");
+      const jobs = new DownloadJobsRepository(db);
+      const assets = new OfflineAssetsRepository(db);
+      const now = new Date().toISOString();
+      db.transaction(() => {
+        for (let episode = 1; episode <= 101; episode++) {
+          const jobId = `fixture-${episode}`;
+          jobs.enqueue({
+            id: jobId,
+            titleId: "anilist:fixture",
+            titleName: "Fixture",
+            mediaKind: "anime",
+            season: 1,
+            episode,
+            providerId: "retired-fixture",
+            mode: "anime",
+            streamUrl: "",
+            headers: {},
+            outputPath: `/tmp/${jobId}.mp4`,
+            tempPath: `/tmp/${jobId}.tmp`,
+            createdAt: now,
+            updatedAt: now,
+          });
+          assets.upsertPlayable({
+            titleId: "anilist:fixture",
+            titleName: "Fixture",
+            mediaKind: "anime",
+            season: 1,
+            episode,
+            profileKey: "anime:original:none:best",
+            originJobId: jobId,
+            filePath: `/tmp/${jobId}.mp4`,
+            state: "ready",
+            updatedAt: now,
+          });
+        }
+      })();
+      const service = new OfflineAssetService(assets, passthroughIdentity);
+      expect(
+        findReadyJobIdForEpisode(service, "anilist:fixture", 1, 101, { mediaKind: "anime" }),
+      ).toBe("fixture-101");
+      expect(isEpisodeDownloaded(service, "anilist:fixture", 1, 101)).toBe(true);
+      expect(downloadedCountForTitle(service, "anilist:fixture")).toBe(101);
+      expect(listReadyEpisodes(service, "anilist:fixture")).toHaveLength(101);
+      expect(assets.listTitleAssets("anilist:fixture", 10)).toHaveLength(10);
+    } finally {
+      db.close();
+    }
+  });
   test("isEpisodeDownloaded and downloadedCountForTitle read ready assets", () => {
     const repo = repositoryStub({
       listTitleAssets: () => [
