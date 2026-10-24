@@ -27,7 +27,14 @@ describe("stream fetch DNS binding", () => {
     const calls: { url: string; init: RequestInit }[] = [];
     await fetchProbeTarget({
       url: "https://media.example/start",
-      init: { headers: { Cookie: "fixture", Authorization: "Bearer fixture" } },
+      init: {
+        headers: {
+          Cookie: "fixture",
+          Authorization: "Bearer fixture",
+          "X-Session-Token": "fixture",
+          Referer: "https://embed.example/",
+        },
+      },
       remaining: () => 1000,
       resolveNamesFor: () => true,
       resolveAddresses: async (host) =>
@@ -45,6 +52,8 @@ describe("stream fetch DNS binding", () => {
     ]);
     expect(new Headers(calls[1]?.init.headers).get("cookie")).toBeNull();
     expect(new Headers(calls[1]?.init.headers).get("authorization")).toBeNull();
+    expect(new Headers(calls[1]?.init.headers).get("x-session-token")).toBeNull();
+    expect(new Headers(calls[1]?.init.headers).get("referer")).toBe("https://embed.example/");
     expect(calls[1]?.init).toMatchObject({ tls: { serverName: "cdn.example" } });
   });
 
