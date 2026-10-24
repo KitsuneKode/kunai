@@ -160,6 +160,8 @@ describe("stream reachability", () => {
   test("HTML content-type on MPEG-TS segment is accepted as reachable", async () => {
     const tsBytes = new Uint8Array(HLS_SEGMENT_PROBE_MIN_BYTES);
     tsBytes[0] = 0x47; // MPEG-TS sync word
+    tsBytes[188] = 0x47;
+    tsBytes[376] = 0x47;
     const probe = await probeStreamReachability({
       url: "https://cdn.example/stream.m3u8",
       fetchImpl: async (url: string) => {
@@ -172,6 +174,26 @@ describe("stream reachability", () => {
     });
 
     expect(probe.status).toBe("reachable");
+  });
+
+  test("HTML error page beginning with 'G' (0x47) is rejected as unreachable", async () => {
+    const errorHtmlBytes = new Uint8Array(HLS_SEGMENT_PROBE_MIN_BYTES);
+    errorHtmlBytes[0] = 0x47; // Starts with 'G', but lacks 188-byte boundaries
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/stream.m3u8",
+      fetchImpl: async (url: string) => {
+        if (url.endsWith("stream.m3u8")) {
+          return response(200, "#EXTM3U\n#EXTINF:3,\n/seg-1\n");
+        }
+        return response(200, errorHtmlBytes, { "content-type": "text/html; charset=utf-8" });
+      },
+      timeoutMs: 200,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    if (probe.status === "unreachable") {
+      expect(probe.reason).toContain("text/html");
+    }
   });
 
   test("abort mid-probe returns timeout", async () => {

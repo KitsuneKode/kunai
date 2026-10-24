@@ -558,8 +558,13 @@ async function probeHlsMediaSegment(
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     if (contentType.includes("text/html")) {
       // CDNs (like sun.paleoak.top) often misreport extensionless MPEG-TS or fMP4 chunks as text/html.
-      // 0x47 is the MPEG-TS packet sync byte.
-      const isMpegTs = buffer.byteLength > 0 && buffer[0] === 0x47;
+      // 0x47 is the MPEG-TS packet sync byte. Validate subsequent 188-byte packet boundaries
+      // so HTML error pages beginning with 'G' (0x47) are rejected as unreachable.
+      const isMpegTs =
+        buffer.byteLength >= 377 &&
+        buffer[0] === 0x47 &&
+        buffer[188] === 0x47 &&
+        buffer[376] === 0x47;
       const isFmp4 =
         buffer.byteLength >= 8 &&
         ((buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70) || // ftyp

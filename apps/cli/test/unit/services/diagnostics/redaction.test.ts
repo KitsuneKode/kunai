@@ -209,13 +209,13 @@ describe("Kunai's own identifiers survive redaction", () => {
   test("redacts sensitive keys regardless of case and separators", () => {
     expect(
       redactDiagnosticValue({
-        apiKey: "secret-123",
-        api_key: "secret-456",
-        client_secret: "secret-789",
-        clientSecret: "secret-abc",
-        password: "supersecret",
-        private_key: "pk_test",
-        passwd: "p123",
+        apiKey: "mock-key-123",
+        api_key: "mock-key-456",
+        client_secret: "mock-secret-789",
+        clientSecret: "mock-secret-abc",
+        password: "mock-dummy-password",
+        private_key: "mock-pk-test",
+        passwd: "mock-passwd-123",
       }),
     ).toEqual({
       apiKey: "[redacted]",

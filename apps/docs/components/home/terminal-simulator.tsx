@@ -119,6 +119,11 @@ const TerminalSimulator = memo(function TerminalSimulator({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (commandPaletteOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setCommandPaletteOpen(false);
+        return;
+      }
       if (filteredCommands.length === 0) return;
 
       if (e.key === "ArrowDown") {
@@ -135,8 +140,6 @@ const TerminalSimulator = memo(function TerminalSimulator({
         if (selected) {
           runSimulatedCommand(`/${selected.id}`);
         }
-      } else if (e.key === "Escape") {
-        setCommandPaletteOpen(false);
       }
     } else {
       if (e.key === "Enter") {
@@ -247,6 +250,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
           onSearchChange={setSearchQuery}
           onSelectIndex={setSelectedPaletteIndex}
           onRun={(cmd) => runSimulatedCommand(`/${cmd.id}`)}
+          onKeyDown={handleKeyDown}
         />
 
         <div className="kunai-terminal-presets mt-4">

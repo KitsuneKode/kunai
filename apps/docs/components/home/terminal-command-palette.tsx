@@ -15,6 +15,7 @@ interface TerminalCommandPaletteProps {
   readonly onSearchChange: (value: string) => void;
   readonly onSelectIndex: (index: number) => void;
   readonly onRun: (command: HomeCommandMetadata) => void;
+  readonly onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 
 export function TerminalCommandPalette({
@@ -26,6 +27,7 @@ export function TerminalCommandPalette({
   onSearchChange,
   onSelectIndex,
   onRun,
+  onKeyDown,
 }: TerminalCommandPaletteProps) {
   const isExpanded = open && commands.length > 0;
   const selectedCommand = isExpanded && selectedIndex >= 0 ? commands[selectedIndex] : undefined;
@@ -60,6 +62,7 @@ export function TerminalCommandPalette({
                 className="palette-search-input text-fd-foreground w-full border-none bg-transparent text-xs"
                 value={searchQuery.replace(/^\//, "")}
                 onChange={(e) => onSearchChange(e.target.value)}
+                onKeyDown={onKeyDown}
                 placeholder="Search commands..."
                 aria-label="CLI commands query filter"
               />

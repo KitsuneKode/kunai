@@ -49,7 +49,7 @@ const warnFill = "#2e2012";
 const danger = "#ff5d5d";
 const dangerDim = "#a02b2b";
 const dangerFill = "#341515";
-const dangerText = "#ff8585"; // alarm text on its fill, contrast 7.8:1
+const dangerText = "#ff8585"; // alarm text on its fill, contrast 7.1:1
 
 // Information / neutral-positive signal — the cool counterweight blue.
 const info = "#5fb6ff";
