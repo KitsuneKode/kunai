@@ -748,7 +748,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                     stdin: "ignore",
                     env: scrubbedChildEnv(),
                   });
-                  registerMpvProcess(proc);
+                  const unregister = registerMpvProcess(proc);
+                  void proc.exited.then(unregister, unregister);
                   return true;
                 },
                 openInBrowser: async (target) => {

@@ -49,6 +49,7 @@ export function LibraryTitleDetail({
   container,
   group,
   entries,
+  commandMode = false,
   onBack,
   onNavigateToQueue,
   onEntriesChanged,
@@ -56,6 +57,7 @@ export function LibraryTitleDetail({
   readonly container: Container;
   readonly group: OfflineLibraryShelfGroup;
   readonly entries: readonly OfflineLibraryEntry[];
+  readonly commandMode?: boolean;
   readonly onBack: () => void;
   readonly onNavigateToQueue?: () => void;
   readonly onEntriesChanged: () => void;
@@ -248,7 +250,7 @@ export function LibraryTitleDetail({
         }
       })();
     },
-    { isActive: true },
+    { isActive: !commandMode },
   );
 
   const list = (

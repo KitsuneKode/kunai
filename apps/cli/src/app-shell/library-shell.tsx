@@ -436,6 +436,7 @@ function LibraryTab({
         container={container}
         group={detailGroup}
         entries={detailEntries}
+        commandMode={commandMode}
         onBack={() => {
           setLibraryView("titles");
           setDetailGroup(null);

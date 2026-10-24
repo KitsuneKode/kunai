@@ -1478,7 +1478,7 @@ export class DownloadService {
     const stdoutPromise = readUtf8Stream(stdoutReader);
     const completion = Promise.all([proc.exited, stdoutPromise]);
     let inheritedCancellation = false;
-    const trackingKey = ownedJobId ?? "__probe__:" + outputPath;
+    const trackingKey = ownedJobId ?? `__probe__:${crypto.randomUUID()}`;
     const cancellation = ownedJobId ? this.cancellationRequests.get(ownedJobId) : undefined;
     this.activeProcesses.set(trackingKey, {
       process: proc,

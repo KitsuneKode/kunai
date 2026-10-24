@@ -23,7 +23,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
   runtimeBaseline,
 }: TerminalSimulatorProps) {
   const [terminalLogs, setTerminalLogs] = useState<readonly HomeLogEntry[]>([
-    { id: "welcome-1", text: `▌ Kunai Shell v${cliVersion}` },
+    { id: "welcome-1", text: `▍ Kunai Shell v${cliVersion}` },
     {
       id: "welcome-2",
       text: `Requires mpv ${runtimeBaseline.mpv}. The binary install embeds bun ${runtimeBaseline.bun}.`,
@@ -122,6 +122,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
       if (e.key === "Escape") {
         e.preventDefault();
         setCommandPaletteOpen(false);
+        focusTerminalInput();
         return;
       }
       if (filteredCommands.length === 0) return;
@@ -178,7 +179,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
     ) {
       return "kunai-log-line kunai-log-line--query";
     }
-    if (text.startsWith("▌")) return "kunai-log-line kunai-log-line--brand";
+    if (text.startsWith("▍")) return "kunai-log-line kunai-log-line--brand";
     return "kunai-log-line kunai-log-line--muted";
   };
 

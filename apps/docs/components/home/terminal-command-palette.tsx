@@ -29,8 +29,11 @@ export function TerminalCommandPalette({
   onRun,
   onKeyDown,
 }: TerminalCommandPaletteProps) {
-  const isExpanded = open && commands.length > 0;
-  const selectedCommand = isExpanded && selectedIndex >= 0 ? commands[selectedIndex] : undefined;
+  const isExpanded = open;
+  const selectedCommand =
+    isExpanded && selectedIndex >= 0 && selectedIndex < commands.length
+      ? commands[selectedIndex]
+      : undefined;
   const activeDescendantId = selectedCommand ? `palette-cmd-${selectedCommand.id}` : undefined;
 
   return (
@@ -73,40 +76,46 @@ export function TerminalCommandPalette({
               aria-label="Suggested commands"
               className="palette-list flex max-h-[180px] flex-col gap-0.5 overflow-y-auto p-1.5"
             >
-              {commands.map((cmd, index) => {
-                const isSelected = index === selectedIndex;
-                const optionId = `palette-cmd-${cmd.id}`;
-                return (
-                  <button
-                    type="button"
-                    key={cmd.id}
-                    id={optionId}
-                    role="option"
-                    aria-selected={isSelected}
-                    className={`palette-item flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
-                      isSelected
-                        ? "is-selected"
-                        : "text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground"
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRun(cmd);
-                    }}
-                    onMouseEnter={() => onSelectIndex(index)}
-                  >
-                    <span>
-                      <span className="text-fd-foreground font-semibold">/{cmd.id}</span>
-                      <span className="kunai-text-accent ml-1.5 text-[10px] opacity-60">
-                        ({cmd.label})
+              {commands.length === 0 ? (
+                <span className="text-fd-muted-foreground px-2.5 py-3 text-center text-xs">
+                  No matching commands
+                </span>
+              ) : (
+                commands.map((cmd, index) => {
+                  const isSelected = index === selectedIndex;
+                  const optionId = `palette-cmd-${cmd.id}`;
+                  return (
+                    <button
+                      type="button"
+                      key={cmd.id}
+                      id={optionId}
+                      role="option"
+                      aria-selected={isSelected}
+                      className={`palette-item flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
+                        isSelected
+                          ? "is-selected"
+                          : "text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground"
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRun(cmd);
+                      }}
+                      onMouseEnter={() => onSelectIndex(index)}
+                    >
+                      <span>
+                        <span className="text-fd-foreground font-semibold">/{cmd.id}</span>
+                        <span className="kunai-text-accent ml-1.5 text-[10px] opacity-60">
+                          ({cmd.label})
+                        </span>
+                        <span className="kunai-step-meta mt-0.5 block">{cmd.description}</span>
                       </span>
-                      <span className="kunai-step-meta mt-0.5 block">{cmd.description}</span>
-                    </span>
-                    <span className="palette-shortcut" aria-hidden="true">
-                      Enter
-                    </span>
-                  </button>
-                );
-              })}
+                      <span className="palette-shortcut" aria-hidden="true">
+                        Enter
+                      </span>
+                    </button>
+                  );
+                })
+              )}
             </span>
           </m.span>
         )}

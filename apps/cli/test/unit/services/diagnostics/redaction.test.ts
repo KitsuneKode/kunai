@@ -213,9 +213,9 @@ describe("Kunai's own identifiers survive redaction", () => {
         api_key: "mock-key-456",
         client_secret: "mock-secret-789",
         clientSecret: "mock-secret-abc",
-        password: "mock-dummy-password",
+        password: "fixture-value-1",
         private_key: "mock-pk-test",
-        passwd: "mock-passwd-123",
+        passwd: "fixture-value-2",
       }),
     ).toEqual({
       apiKey: "[redacted]",

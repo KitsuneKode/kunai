@@ -13,9 +13,10 @@ import {
   providerSmokeProfilePayload,
   resolveProviderSmokeStream,
 } from "./provider-smoke";
+import { directSmokeArgs } from "./smoke-argv";
 
 const profile = createProviderSmokeProfile("kickassanime");
-const args = process.argv.slice(1);
+const args = directSmokeArgs();
 
 const season = Number(args[0] ?? "1");
 const episode = Number(args[1] ?? "1");
@@ -35,7 +36,7 @@ if (clearCache) {
 }
 
 const title: TitleInfo = {
-  id: "animegg:naruto",
+  id: "kickassanime:naruto",
   type: "series",
   name: "Naruto",
 };
