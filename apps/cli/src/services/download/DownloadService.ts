@@ -13,6 +13,7 @@ import type {
 } from "@/domain/types";
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { Logger } from "@/infra/logger/Logger";
+import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
@@ -1470,26 +1471,25 @@ export class DownloadService {
         "default=noprint_wrappers=1:nokey=1",
         outputPath,
       ],
-      { stdin: "ignore", stdout: "pipe", stderr: "ignore" },
+      { stdin: "ignore", stdout: "pipe", stderr: "ignore", env: scrubbedChildEnv() },
     );
     const deadline = this.deps.ffprobeDeadline ?? startDeadline;
     const stdoutReader = proc.stdout.getReader();
     const stdoutPromise = readUtf8Stream(stdoutReader);
     const completion = Promise.all([proc.exited, stdoutPromise]);
     let inheritedCancellation = false;
-    if (ownedJobId) {
-      const cancellation = this.cancellationRequests.get(ownedJobId);
-      this.activeProcesses.set(ownedJobId, {
-        process: proc,
-        releaseIo: () => {
-          void stdoutReader.cancel().catch(() => undefined);
-        },
-        cancelRequested: cancellation !== undefined,
-        cancelMode: cancellation?.mode ?? "abort",
-        cancelReason: cancellation?.reason,
-      });
-      inheritedCancellation = cancellation !== undefined;
-    }
+    const trackingKey = ownedJobId ?? "__probe__:" + outputPath;
+    const cancellation = ownedJobId ? this.cancellationRequests.get(ownedJobId) : undefined;
+    this.activeProcesses.set(trackingKey, {
+      process: proc,
+      releaseIo: () => {
+        void stdoutReader.cancel().catch(() => undefined);
+      },
+      cancelRequested: cancellation !== undefined,
+      cancelMode: cancellation?.mode ?? "abort",
+      cancelReason: cancellation?.reason,
+    });
+    inheritedCancellation = cancellation !== undefined;
 
     let result: readonly [number, string] | undefined;
     try {
@@ -1519,8 +1519,8 @@ export class DownloadService {
         throw new ArtifactValidationTimeoutError();
       }
     } finally {
-      if (ownedJobId && this.activeProcesses.get(ownedJobId)?.process === proc) {
-        this.activeProcesses.delete(ownedJobId);
+      if (this.activeProcesses.get(trackingKey)?.process === proc) {
+        this.activeProcesses.delete(trackingKey);
       }
     }
     const [exitCode, stdout] = result;

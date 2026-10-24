@@ -2008,6 +2008,7 @@ export function RootOverlayShell({
       <Box flexDirection="column" flexGrow={1}>
         <DownloadManagerContent
           container={container}
+          commandMode={commandMode}
           onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
         />
         {commandMode ? (
@@ -2034,6 +2035,7 @@ export function RootOverlayShell({
       <Box flexDirection="column" flexGrow={1}>
         <LibraryShell
           container={container}
+          commandMode={commandMode}
           onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
           initialView={overlay.view ?? "library"}
         />

@@ -87,13 +87,13 @@ export function useShellInput({
         }
         return;
       }
-      if (key.upArrow) {
+      if (key.upArrow || (key.ctrl && input === "p")) {
         if (model.options.length > 0) {
           setHighlightedIndex(movePickerModelSelection(model, -1));
         }
         return;
       }
-      if (key.downArrow) {
+      if (key.downArrow || (key.ctrl && input === "n")) {
         if (model.options.length > 0) {
           setHighlightedIndex(movePickerModelSelection(model, 1));
         }

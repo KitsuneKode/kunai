@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { reducedMotionEnabled } from "./primitives/SakuraPetal";
 import { palette } from "./shell-theme";
 
 // ── Braille helpers for compact inline dot matrix ─────────────────────────
@@ -145,16 +146,17 @@ export function useDotMatrixAnimation(
 ): DotMatrixFrame {
   const frames = React.useMemo(() => generateFrames(variant, 24), [variant]);
   const [tick, setTick] = React.useState(0);
+  const animate = active && !reducedMotionEnabled();
 
   React.useEffect(() => {
-    if (!active) return undefined;
+    if (!animate) return undefined;
     const timer = setInterval(() => {
       setTick((current) => current + 1);
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [active, intervalMs, variant]);
+  }, [animate, intervalMs, variant]);
 
-  const frameIdx = active ? tick % frames.length : 0;
+  const frameIdx = animate ? tick % frames.length : 0;
   return (
     frames[frameIdx] ??
     frames[0] ??

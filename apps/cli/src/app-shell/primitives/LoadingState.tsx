@@ -6,13 +6,16 @@ import { palette } from "../shell-theme";
 
 const BUSY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+import { reducedMotionEnabled } from "./SakuraPetal";
+
 function useBrailleSpinner(active: boolean): string {
   const [frame, setFrame] = React.useState(0);
+  const animate = active && !reducedMotionEnabled();
   React.useEffect(() => {
-    if (!active) return undefined;
+    if (!animate) return undefined;
     const timer = setInterval(() => setFrame((value) => (value + 1) % BUSY_FRAMES.length), 80);
     return () => clearInterval(timer);
-  }, [active]);
+  }, [animate]);
   return BUSY_FRAMES[frame] ?? "⠋";
 }
 

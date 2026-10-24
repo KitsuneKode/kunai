@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { reducedMotionEnabled } from "./primitives/SakuraPetal";
 import { palette } from "./shell-theme";
 
 // Animated "content is loading" placeholder rows. A soft accent band sweeps
@@ -62,12 +63,13 @@ function SkeletonBar({ width, highlight }: { width: number; highlight: number })
 
 function usePulse(active: boolean, intervalMs: number): number {
   const [tick, setTick] = React.useState(0);
+  const animate = active && !reducedMotionEnabled();
   React.useEffect(() => {
-    if (!active) return undefined;
+    if (!animate) return undefined;
     const timer = setInterval(() => setTick((t) => t + 1), intervalMs);
     return () => clearInterval(timer);
-  }, [active, intervalMs]);
-  return tick;
+  }, [animate, intervalMs]);
+  return animate ? tick : 0;
 }
 
 const SPEED = 1; // cells advanced per tick

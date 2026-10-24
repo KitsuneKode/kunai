@@ -164,12 +164,14 @@ export function DownloadManagerContent({
   onClose,
   onNavigateToLibrary,
   showSelectionHints = true,
+  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToLibrary?: () => void;
   /** When false, omit per-selection hint row (parent shell owns the footer). */
   showSelectionHints?: boolean;
+  commandMode?: boolean;
 }) {
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   // Inside a root-owned overlay the provider's content box is the width budget;
@@ -369,7 +371,7 @@ export function DownloadManagerContent({
         return;
       }
     },
-    { isActive: true },
+    { isActive: !commandMode },
   );
 
   const { tooSmall, minColumns, minRows } = viewport;

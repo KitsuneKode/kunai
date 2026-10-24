@@ -60,8 +60,10 @@ import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import { ensureSessionProviderMatchesLane } from "@/domain/session/session-display";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
+import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
+import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import {
   resultEnrichmentKey,
@@ -740,11 +742,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   // Same scheme gate as every other mpv playback path; a
                   // non-URL target falls back to the browser opener below.
                   if (!isAllowedMpvUrl(target, "remote")) return false;
-                  Bun.spawn([...mpvInvocation.argv, target], {
+                  const proc = Bun.spawn([...mpvInvocation.argv, target], {
                     stdout: "ignore",
                     stderr: "ignore",
                     stdin: "ignore",
+                    env: scrubbedChildEnv(),
                   });
+                  registerMpvProcess(proc);
                   return true;
                 },
                 openInBrowser: async (target) => {

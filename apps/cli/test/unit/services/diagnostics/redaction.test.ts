@@ -206,4 +206,25 @@ describe("Kunai's own identifiers survive redaction", () => {
       expect(redactDiagnosticValue({ token: secret })).toEqual({ token: "[redacted]" });
     }
   });
+  test("redacts sensitive keys regardless of case and separators", () => {
+    expect(
+      redactDiagnosticValue({
+        apiKey: "secret-123",
+        api_key: "secret-456",
+        client_secret: "secret-789",
+        clientSecret: "secret-abc",
+        password: "supersecret",
+        private_key: "pk_test",
+        passwd: "p123",
+      }),
+    ).toEqual({
+      apiKey: "[redacted]",
+      api_key: "[redacted]",
+      client_secret: "[redacted]",
+      clientSecret: "[redacted]",
+      password: "[redacted]",
+      private_key: "[redacted]",
+      passwd: "[redacted]",
+    });
+  });
 });

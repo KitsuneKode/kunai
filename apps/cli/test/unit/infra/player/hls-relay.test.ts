@@ -333,6 +333,9 @@ describe("hls-relay gating", () => {
   test.each([
     "https://uwucdn.top/x.m3u8",
     "https://owocdn.top/x.m3u8",
+    "https://sun.paleoak.top/x.m3u8",
+    "https://moon.zenoak.top/x.m3u8",
+    "https://edge.stillhaven.top/x.m3u8",
     "https://vault-06.uwucdn.top/x.m3u8",
     "https://a.b.c.owocdn.top/x.m3u8",
     // URL.hostname normalizes case and excludes the port before this check.
