@@ -37,7 +37,7 @@ function presenceConnectionDetail(
   if (status === "unavailable" || status === "error") {
     return "Retry local Discord IPC connection after a failed attempt";
   }
-  return "Save pending settings and verify local Discord IPC without starting playback";
+  return "Save pending presence settings and verify local Discord IPC without starting playback";
 }
 
 export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] {
@@ -143,10 +143,17 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
 
         const { applySettingsToRuntime } =
           await import("@/app/bootstrap/apply-settings-to-runtime");
+        const current = actionCtx.container.config.getRaw();
         await applySettingsToRuntime({
           container: actionCtx.container,
-          next: actionCtx.config,
-          previous: actionCtx.container.config.getRaw(),
+          next: {
+            ...current,
+            presenceProvider: actionCtx.config.presenceProvider,
+            presencePrivacy: actionCtx.config.presencePrivacy,
+            presenceDiscordClientId: actionCtx.config.presenceDiscordClientId,
+            presenceDiscordOpenUrl: actionCtx.config.presenceDiscordOpenUrl,
+          },
+          previous: current,
         });
         const snapshot = await actionCtx.container.presence.connect();
         return `Discord presence: ${presenceStatusDetail(snapshot.status, snapshot.detail)}`;
