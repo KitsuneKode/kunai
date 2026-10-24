@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -97,7 +97,19 @@ export async function startRealMpvSession(
 
   const mediaDir = join(profile.rootDir, "media");
   const binDir = join(profile.rootDir, "real-mpv-bin");
-  const runDir = join(profile.rootDir, "run");
+  // UDS path length limit is ~100 bytes. When profile.rootDir is deep (e.g. nested
+  // runner/container TMPDIR), placing runDir under /tmp ensures the IPC socket fits
+  // within MAX_UNIX_SOCKET_PATH_BYTES.
+  const idealRunCandidate = join(
+    profile.rootDir,
+    "run",
+    "kunai",
+    "kunai-mpv-0123456789abcdef.sock",
+  );
+  const needsShortRunDir = Buffer.byteLength(idealRunCandidate, "utf8") >= 95;
+  const shortRunParent =
+    needsShortRunDir && existsSync("/tmp") ? mkdtempSync("/tmp/k-rmpv-") : null;
+  const runDir = shortRunParent ? join(shortRunParent, "run") : join(profile.rootDir, "run");
   const tmpDir = join(profile.rootDir, "tmp");
   mkdirSync(mediaDir, { recursive: true });
   mkdirSync(binDir, { recursive: true });
@@ -145,6 +157,11 @@ export async function startRealMpvSession(
     // Any failure before the session owns the profile must not leak either
     // the server or the sandbox.
     server?.stop(true);
+    if (shortRunParent) {
+      try {
+        rmSync(shortRunParent, { recursive: true, force: true });
+      } catch {}
+    }
     disposeIsolatedCliProfile(profile);
     throw error;
   }
@@ -152,20 +169,32 @@ export async function startRealMpvSession(
   return {
     session,
     mediaDir,
-    mpvTimePos: () => readMpvTimePos(profile),
+    mpvTimePos: () => readMpvTimePos(profile, runDir),
     async stop() {
       try {
         await session.stop();
       } finally {
-        server.stop(true);
+        try {
+          server.stop(true);
+        } finally {
+          if (shortRunParent) {
+            try {
+              rmSync(shortRunParent, { recursive: true, force: true });
+            } catch {}
+          }
+        }
       }
     },
   };
 }
 
 /** Discover the Kunai mpv IPC socket inside the sandbox and ask for time-pos. */
-export async function readMpvTimePos(profile: IsolatedCliProfile): Promise<number | null> {
+export async function readMpvTimePos(
+  profile: IsolatedCliProfile,
+  extraRunDir?: string,
+): Promise<number | null> {
   const candidates = [
+    ...(extraRunDir ? [join(extraRunDir, "kunai")] : []),
     join(profile.rootDir, "run", "kunai"),
     join(profile.rootDir, "tmp", "kunai-ipc"),
   ];
