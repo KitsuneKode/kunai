@@ -157,6 +157,23 @@ describe("stream reachability", () => {
     }
   });
 
+  test("HTML content-type on MPEG-TS segment is accepted as reachable", async () => {
+    const tsBytes = new Uint8Array(HLS_SEGMENT_PROBE_MIN_BYTES);
+    tsBytes[0] = 0x47; // MPEG-TS sync word
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/stream.m3u8",
+      fetchImpl: async (url: string) => {
+        if (url.endsWith("stream.m3u8")) {
+          return response(200, "#EXTM3U\n#EXTINF:3,\n/seg-1\n");
+        }
+        return response(200, tsBytes, { "content-type": "text/html; charset=utf-8" });
+      },
+      timeoutMs: 200,
+    });
+
+    expect(probe.status).toBe("reachable");
+  });
+
   test("abort mid-probe returns timeout", async () => {
     const controller = new AbortController();
     const probe = await probeStreamReachability({

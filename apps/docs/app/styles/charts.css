@@ -3,9 +3,9 @@
  *
  * The docs shell is dark-only today (`forcedTheme: "dark"`), but a chart that
  * only exists in one mode is a chart that breaks the day a theme switch ships.
- * Light is the `:root` default; `:root.dark` and the OS preference both restage
- * the same roles for the dark surface. Every value is measured against the
- * surface it actually renders on, not flipped:
+ * Light is the `:root` default; `:root.dark` restages the same roles for the
+ * dark surface. Every value is measured against the surface it actually renders
+ * on, not flipped:
  *
  *   dark  — series #ff8fb0 on #1c1620 = 8.3:1 · residual #968a98 = 5.4:1
  *   light — series #c14a71 on #fcfcfb = 4.6:1 · residual #8b8391 = 3.6:1
@@ -25,14 +25,6 @@
   --kunai-chart-series: var(--kunai-accent);
   --kunai-chart-residual: var(--color-fd-muted-foreground);
   --kunai-chart-axis: var(--kunai-line);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --kunai-chart-series: var(--kunai-accent);
-    --kunai-chart-residual: var(--color-fd-muted-foreground);
-    --kunai-chart-axis: var(--kunai-line);
-  }
 }
 
 /*
@@ -101,20 +93,6 @@
   --kunai-chart-os-extra: #7fae93;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --kunai-chart-lifetime: #b84a6e;
-    --kunai-chart-active: var(--kunai-accent);
-    --kunai-chart-new: #ffc9d9;
-    --kunai-chart-npm: #8d96c6;
-    --kunai-chart-os-windows: #7ba8d1;
-    --kunai-chart-os-macos: #b0a8bc;
-    --kunai-chart-os-linux: #d1ae62;
-    --kunai-chart-os-other: #57505c;
-    --kunai-chart-os-extra: #7fae93;
-  }
-}
-
 /*
  * Ordinal version ramp.
  *
@@ -147,16 +125,6 @@
   --kunai-chart-band-3: #b97286;
   --kunai-chart-band-4: #e387a1;
   --kunai-chart-band-5: #ff9cbd;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --kunai-chart-band-1: #6b4b53;
-    --kunai-chart-band-2: #915e6c;
-    --kunai-chart-band-3: #b97286;
-    --kunai-chart-band-4: #e387a1;
-    --kunai-chart-band-5: #ff9cbd;
-  }
 }
 
 /*
@@ -231,9 +199,9 @@ table.kunai-chart tr.kunai-chart-row[data-hovered="true"] th {
 
 /* Plot column: a hairline baseline, then bars growing from it. */
 .kunai-chart-plot {
-  padding-left: 0.75rem !important;
-  padding-right: 0.625rem !important;
-  border-left: 1px solid var(--kunai-chart-axis) !important;
+  padding-inline-start: 0.75rem !important;
+  padding-inline-end: 0.625rem !important;
+  border-inline-start: 1px solid var(--kunai-chart-axis) !important;
 }
 
 .kunai-chart-bar {

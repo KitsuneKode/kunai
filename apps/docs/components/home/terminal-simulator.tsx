@@ -256,7 +256,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
               type="button"
               key={cmd}
               onClick={() => onPresetClick(cmd)}
-              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-[10px] transition-[transform,border-color,background-color,color] duration-150 ease-out active:scale-[0.96]"
+              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground focus-visible:ring-ring focus-visible:border-fd-primary min-h-[24px] cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-[10px] transition-[transform,border-color,background-color,color] duration-150 ease-out focus-visible:ring-2 focus-visible:outline-none active:scale-[0.96]"
             >
               {cmd}
             </button>

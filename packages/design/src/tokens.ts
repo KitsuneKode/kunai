@@ -17,62 +17,67 @@
 // ---- raw palette (these semantic consts are the source of truth) ----
 
 // Surface scale — warm ink, near-neutral, clear elevation steps.
-// Kitsunebi (狐火): warm lacquer surfaces, pale hinoki text, one cool foxfire accent.
-// Generated in OKLCH at matched lightness per role and measured with APCA (Lc).
+const scrim = "#080509";
+const bg = "#100b0f";
+const surface = "#1c1620";
+const surfaceElevated = "#2a2030";
+const surfaceActive = "#3a2b40"; // selected band
+const raised = "#44354d";
+const line = "#473b51";
+const lineSoft = "#281f2e";
+const lineStrong = "#62526c";
 
-// Surface scale: one warm hue, even steps.
-const scrim = "#090504";
-const bg = "#120a07";
-const surface = "#1f1411";
-const surfaceElevated = "#2c1f1c";
-const surfaceActive = "#143737"; // selected band, leans toward the accent
-const raised = "#42332e";
-const line = "#4b3c37";
-const lineSoft = "#352823";
-const lineStrong = "#66534e";
+// Brand / focus / selection / in-progress — rose, two-step for depth.
+const accent = "#ff8fb0";
+const accentSoft = "#ffc6d8"; // hairline / whisper
+const accentDeep = "#d85f86"; // progress fill, gives bars body
+const accentDim = "#7e3350";
+const accentGlow = "rgba(255,143,176,0.10)";
+const accentFill = "#2c1622"; // pre-blended onto bg for selection/badge depth
 
-// Brand, focus, selection: foxfire.
-const accent = "#3ed6d9"; // Lc 70
-const accentSoft = "#b1ebeb";
-const accentDeep = "#2ea5a7";
-const accentDim = "#296263";
-const accentFill = "#022627";
-const accentGlow = "rgba(62,214,217,0.10)";
+// Ready / complete / available — mint-jade.
+const ok = "#54d6a0";
+const okDim = "#3a9a78";
+const okFill = "#122a22";
 
-// Status. Each has a dim step and a fill; danger and milestone also get a text role.
-const ok = "#4cdf70"; // Lc 71
-const okDim = "#479b57";
-const okFill = "#142517";
-const warn = "#f6ac56"; // Lc 66
-const warnDim = "#ad7a40";
-const warnFill = "#2b1d0d";
-const danger = "#f76d5a"; // Lc 47
-const dangerDim = "#a93628";
-const dangerFill = "#351612";
-const info = "#8db1f4"; // Lc 60
-const infoDim = "#4075db";
-const infoFill = "#162034";
-const milestone = "#bb89f2"; // Lc 51
-const milestoneDim = "#6c329e";
-const milestoneFill = "#251b32";
-const dangerText = "#f99c8d"; // alarm text on its fill, Lc 60
-const milestoneText = "#caa5f5"; // milestone text on its fill, Lc 60
+// Caution / in-flight / aired-not-yet-confirmed — a true amber.
+const warn = "#f59a3c";
+const warnDim = "#b06f28";
+const warnFill = "#2e2012";
 
-// Text ramp, tuned to the same targets as the current tiers.
-const text = "#f5f0e3"; // Lc 98
-const textDim = "#d2cdbf"; // Lc 76
-const muted = "#b9b3a4"; // Lc 61
-const dim = "#9d9788"; // Lc 46
-const faint = "#3c382c"; // decorative only
+// Real, actionable error — a vivid alarm red.
+const danger = "#ff5d5d";
+const dangerDim = "#a02b2b";
+const dangerFill = "#341515";
+const dangerText = "#ff8585"; // alarm text on its fill, contrast 7.8:1
 
-// Content kind (Stats and Calendar) and the heat ramp.
-const typeAnime = "#f69fc5";
-const typeSeries = "#68ccf5";
-const typeMovie = "#e1cc49";
-const typeMixed = "#a496bf";
-const heatRamp = ["#2c1f1c", "#314e4e", "#357879", "#2ea5a7", "#3ed6d9"] as const;
+// Information / neutral-positive signal — the cool counterweight blue.
+const info = "#5fb6ff";
+const infoDim = "#3c7fbf";
+const infoFill = "#112230";
 
-// Add dangerText and milestoneText to the exported tokens object, beside danger and milestone.
+// Series-complete milestone — a single deliberate indigo. Never reuse elsewhere.
+const milestone = "#8b7bf0";
+const milestoneDim = "#4a417c";
+const milestoneFill = "#1c1830";
+const milestoneText = "#b5a8f8"; // milestone text on its fill, contrast 8.1:1
+
+// Text ramp — warm white → faint. Carries ~80% of hierarchy.
+const text = "#f6eff4";
+const textDim = "#cabfca";
+const muted = "#968a98";
+const dim = "#665b69";
+const faint = "#3a3340";
+
+// Media-type hues — Stats + Calendar surfaces (see THE ONE RULE above).
+const typeAnime = "#c98bff"; // orchid
+const typeSeries = "#4fd1c5"; // teal
+const typeMovie = "#f4c45c"; // gold
+const typeMixed = "#a48fb8"; // soft plum — the optical blend, for mixed days
+
+// Watch-activity heat ramp — rose, 5-step (brand-aligned; mint stays reserved
+// for success). Stats may overlay type hue per the paint-mix model in the spec.
+const heatRamp = ["#281f2e", "#5e2f44", "#9a4060", "#d85f86", "#ff8fb0"] as const;
 
 export const tokens = {
   // ---- surfaces ----

@@ -546,15 +546,6 @@ async function probeHlsMediaSegment(
       };
     }
 
-    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (contentType.includes("text/html")) {
-      return {
-        status: "unreachable",
-        reason: "HLS segment unreachable: content-type text/html",
-        definitive: true,
-      };
-    }
-
     const buffer = new Uint8Array(await response.arrayBuffer());
     if (buffer.byteLength < HLS_SEGMENT_PROBE_MIN_BYTES) {
       return {
@@ -562,6 +553,26 @@ async function probeHlsMediaSegment(
         reason: `HLS segment unreachable: body too small (${buffer.byteLength}B)`,
         definitive: true,
       };
+    }
+
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (contentType.includes("text/html")) {
+      // CDNs (like sun.paleoak.top) often misreport extensionless MPEG-TS or fMP4 chunks as text/html.
+      // 0x47 is the MPEG-TS packet sync byte.
+      const isMpegTs = buffer.byteLength > 0 && buffer[0] === 0x47;
+      const isFmp4 =
+        buffer.byteLength >= 8 &&
+        ((buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70) || // ftyp
+          (buffer[4] === 0x6d && buffer[5] === 0x6f && buffer[6] === 0x6f && buffer[7] === 0x66) || // moof
+          (buffer[4] === 0x73 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70)); // styp
+
+      if (!isMpegTs && !isFmp4) {
+        return {
+          status: "unreachable",
+          reason: "HLS segment unreachable: content-type text/html",
+          definitive: true,
+        };
+      }
     }
 
     return { status: "reachable" };

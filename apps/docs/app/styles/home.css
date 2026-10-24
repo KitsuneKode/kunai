@@ -26,11 +26,11 @@
 .kunai-home-providers,
 .kunai-home-start,
 .kunai-home-final {
-  margin-top: clamp(2.5rem, 5vw, 4rem);
+  margin-block-start: clamp(2.5rem, 5vw, 4rem);
 }
 
 .kunai-home-providers .kunai-surface-shell {
-  margin-top: 1.5rem;
+  margin-block-start: 1.5rem;
 }
 
 .kunai-eyebrow {
@@ -85,7 +85,8 @@
     box-shadow 300ms var(--kunai-ease-out);
 }
 
-.kunai-terminal-stage.is-focused {
+.kunai-terminal-stage.is-focused,
+.kunai-terminal-stage:focus-within {
   border-color: var(--kunai-accent);
   box-shadow:
     0 0 0 2px var(--kunai-accent-glow),
@@ -122,7 +123,7 @@
 }
 
 .kunai-terminal-body {
-  margin-top: 0.6rem;
+  margin-block-start: 0.6rem;
   border-radius: 0.5rem;
   padding: 1.25rem;
   font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
@@ -147,7 +148,7 @@
 }
 
 .kunai-log-line--prompt {
-  margin-top: 0.5rem;
+  margin-block-start: 0.5rem;
   font-weight: 700;
   color: var(--kunai-accent);
 }
@@ -179,11 +180,11 @@
 
 .kunai-terminal-input-row {
   position: relative;
-  margin-top: 0.75rem;
+  margin-block-start: 0.75rem;
   display: flex;
   align-items: center;
-  border-top: 1px solid var(--kunai-line);
-  padding-top: 0.5rem;
+  border-block-start: 1px solid var(--kunai-line);
+  padding-block-start: 0.5rem;
 }
 
 @keyframes log-fade-in {
@@ -204,7 +205,7 @@
   height: 15px;
   background-color: var(--kunai-accent);
   vertical-align: middle;
-  margin-left: 2px;
+  margin-inline-start: 2px;
   animation: kunai-blink 1s step-end infinite;
 }
 
@@ -238,8 +239,15 @@
   display: flex;
   align-items: center;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--kunai-line);
+  border-block-end: 1px solid var(--kunai-line);
   background: color-mix(in oklab, var(--kunai-bg) 60%, transparent);
+  transition:
+    border-color 150ms var(--kunai-ease-out),
+    box-shadow 150ms var(--kunai-ease-out);
+}
+
+.palette-search-wrapper:focus-within {
+  border-block-end-color: var(--kunai-accent);
 }
 
 .palette-search-input {
@@ -249,7 +257,12 @@
   font-family: inherit;
   font-size: 0.95rem;
   width: 100%;
-  outline: none;
+}
+
+.palette-search-input:focus-visible {
+  outline: 2px solid var(--kunai-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .palette-list {
@@ -283,7 +296,7 @@
 .palette-item:hover,
 .palette-item.is-selected {
   background: var(--kunai-surface);
-  border-left: 3px solid var(--kunai-accent);
+  border-inline-start: 3px solid var(--kunai-accent);
   transform: translateX(2px);
 }
 
@@ -305,7 +318,7 @@
 .kunai-flow-section,
 .kunai-docs-section,
 .kunai-final {
-  border-top: 1px solid var(--kunai-line);
+  border-block-start: 1px solid var(--kunai-line);
   padding-block: clamp(3.5rem, 6vw, 4.5rem);
 }
 
@@ -331,7 +344,7 @@
 }
 
 .kunai-section-head {
-  margin-bottom: clamp(2rem, 4vw, 3.5rem);
+  margin-block-end: clamp(2rem, 4vw, 3.5rem);
 }
 
 .kunai-flow-card,
@@ -362,7 +375,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.85rem;
   overflow-x: auto;
-  padding-bottom: 0.6rem;
+  padding-block-end: 0.6rem;
 }
 
 .kunai-flow-card {
@@ -435,17 +448,31 @@
   animation: pulse-glow 2.4s var(--kunai-ease-out) infinite;
 }
 
+@keyframes pulse-glow {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--kunai-accent) 60%, transparent);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--kunai-accent) 0%, transparent);
+  }
+}
+
 .kunai-flow-index {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.625rem;
   color: color-mix(in oklab, var(--color-fd-muted-foreground) 45%, transparent);
 }
+
 .provider-interactive-tab.is-active {
-  background: linear-gradient(135deg, var(--kunai-accent-deep), #8c2a44);
-  border-color: var(--kunai-accent);
+  background: linear-gradient(135deg, #b33d63, #8c2a44);
+  border-color: var(--kunai-accent-deep);
   color: #fff;
   box-shadow: 0 4px 12px var(--kunai-accent-glow);
 }
+
 .flag-checkbox-wrapper.is-checked {
   border-color: var(--kunai-accent);
   background: color-mix(in oklab, var(--kunai-accent) 5%, var(--kunai-surface-strong));
@@ -458,7 +485,7 @@
   align-items: end;
   border-radius: 0.6rem;
   padding: clamp(1.5rem, 4vw, 3rem);
-  margin-bottom: 2rem;
+  margin-block-end: 2rem;
 }
 
 .kunai-final h2 {
@@ -466,8 +493,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kunai-reveal {
-    animation: none;
+  .kunai-reveal,
+  .kunai-status-dot--focus {
+    animation: none !important;
   }
 
   .kunai-button,
@@ -593,17 +621,17 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 0.85rem 1.1rem !important;
-  border-bottom: 1px solid var(--kunai-line);
+  border-block-end: 1px solid var(--kunai-line);
   text-align: left;
 }
 .kunai-home table td {
   padding: 0.85rem 1.1rem !important;
-  border-bottom: 1px solid var(--kunai-line);
+  border-block-end: 1px solid var(--kunai-line);
   font-size: 0.85rem;
   color: var(--color-fd-muted-foreground);
 }
 .kunai-home table tr:last-child td {
-  border-bottom: none;
+  border-block-end: none;
 }
 .kunai-home table tr:hover td {
   color: #fff;
@@ -613,7 +641,7 @@
 /* Quick Install Section */
 .install-section {
   position: relative;
-  margin-top: 4rem;
+  margin-block-start: 4rem;
   border: 1px solid var(--kunai-line);
   background: linear-gradient(145deg, rgba(19, 15, 23, 0.4), rgba(30, 24, 36, 0.4));
   backdrop-filter: blur(12px);
@@ -622,15 +650,6 @@
   box-shadow: var(--kunai-card-shadow);
 }
 
-/*
- * The OS tablist scrolls rather than clips.
- *
- * Three tabs at full padding measure ~315px, which does not fit the ~270px
- * content box of a 390px phone. The shell's `overflow-x-hidden` turned that
- * into a silently truncated "WINDOWS" tab — an option the user cannot see or
- * reach. Scrolling keeps every tab reachable; the tighter padding below means
- * most phones never need to scroll at all.
- */
 .os-tab-list {
   min-width: 0;
   overflow-x: auto;
@@ -665,7 +684,7 @@
 .os-tab-button.active {
   color: #fff;
   border-color: var(--kunai-accent-deep);
-  background: linear-gradient(135deg, var(--kunai-accent-deep), #8c2a44);
+  background: linear-gradient(135deg, #b33d63, #8c2a44);
   box-shadow: 0 4px 12px var(--kunai-accent-glow);
 }
 
@@ -728,11 +747,11 @@
   gap: 1rem;
   align-items: start;
   padding: 1.1rem 1.25rem;
-  border-bottom: 1px solid var(--kunai-line);
+  border-block-end: 1px solid var(--kunai-line);
 }
 
 .kunai-highlight-row:last-child {
-  border-bottom: none;
+  border-block-end: none;
 }
 
 @media (max-width: 767.98px) {
@@ -746,12 +765,6 @@
   }
 }
 
-/* ── Hero: paired install commands ─────────────────────────────────────────
-   Both platforms sit in one stack so the choice is made once. The OS label is
-   a fixed column so the two commands align on their first character.
-
-   The command wraps rather than scrolling: a `curl … | bash` line that is cut
-   off mid-URL asks the reader to trust what they cannot see. */
 .kunai-hero-install {
   display: flex;
   flex-direction: column;
@@ -775,7 +788,7 @@
 .kunai-hero-install__os {
   flex: 0 0 auto;
   width: 6.5rem;
-  padding-top: 0.1rem;
+  padding-block-start: 0.1rem;
   color: var(--color-fd-muted-foreground);
   font-size: 0.625rem;
   letter-spacing: 0.04em;
@@ -789,24 +802,17 @@
   line-height: 1.6;
 }
 
-/* The copy control must not shrink when the command wraps to two lines. */
 .kunai-hero-install .kunai-code-row > :last-child {
   flex: 0 0 auto;
 }
 
-/* ── Hero kinds row ────────────────────────────────────────────────────────
-   What Kunai plays, in the server-rendered HTML.
-
-   Visually distinct from the proof row below it on purpose: this row is the
-   answer to "what is this", the proof row is "can I trust it". Same family,
-   different job — so this one takes foreground weight and hairline rules,
-   and the proof row keeps its muted dots. */
 .kunai-hero-kinds {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem 1rem;
-  margin: 1.25rem 0 0;
+  margin-block-start: 1.25rem;
+  margin-inline: 0;
   font-size: 0.8125rem;
   line-height: 1.4;
 }
@@ -821,7 +827,7 @@
 .kunai-hero-kinds__item + .kunai-hero-kinds__item::before {
   content: "";
   position: absolute;
-  left: -0.5rem;
+  inset-inline-start: -0.5rem;
   top: 0.15em;
   bottom: 0.15em;
   width: 1px;
@@ -836,9 +842,6 @@
   font-size: 0.75rem;
 }
 
-/* `kbd` ships as unstyled browser monospace and belongs to no design system
-   until it is themed. Scoped here rather than globally so the docs prose
-   keeps whatever it already does. */
 .kunai-hero-kinds__hint kbd {
   border: 1px solid var(--kunai-line);
   border-radius: 0.375rem;
@@ -850,24 +853,18 @@
   line-height: 1.5;
 }
 
-/* The h1 is the first text in the hero now that the eyebrow is gone, so it
-   sets its own top edge. `.kunai-display-title` caps at 20ch for section
-   headings; the hero headline is longer and needs the room, and declaring it
-   here beats relying on the source order between a utility and a component
-   class that share specificity. */
 .kunai-hero-static h1.kunai-display-title {
   max-width: 24ch;
-  margin-top: 0;
+  margin-block-start: 0;
 }
 
-/* ── Hero proof row ────────────────────────────────────────────────────────
-   Four verifiable facts, each a link to where it can be checked. */
 .kunai-proof-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0 1.5rem;
-  margin: 1.5rem 0 0;
+  margin-block-start: 1.5rem;
+  margin-inline: 0;
   padding: 0;
   list-style: none;
   font-size: 0.75rem;
@@ -882,7 +879,7 @@
 .kunai-proof-row li + li::before {
   content: "";
   position: absolute;
-  left: -0.75rem;
+  inset-inline-start: -0.75rem;
   top: 50%;
   width: 3px;
   height: 3px;
@@ -895,7 +892,7 @@
 .kunai-proof-row a {
   color: inherit;
   text-decoration: none;
-  border-bottom: 1px solid transparent;
+  border-block-end: 1px solid transparent;
   transition:
     color 150ms var(--kunai-ease-out),
     border-color 150ms var(--kunai-ease-out);
@@ -903,11 +900,9 @@
 
 .kunai-proof-row a:hover {
   color: var(--color-fd-foreground);
-  border-bottom-color: color-mix(in oklab, var(--kunai-accent) 50%, transparent);
+  border-block-end-color: color-mix(in oklab, var(--kunai-accent) 50%, transparent);
 }
 
-/* ── Terminal preset row ───────────────────────────────────────────────────
-   Labelled so the chips read as an invitation rather than decoration. */
 .kunai-terminal-presets {
   display: flex;
   flex-wrap: wrap;
@@ -916,13 +911,10 @@
   gap: 0.375rem 0.5rem;
 }
 
-/* ── Secondary install paths ───────────────────────────────────────────────
-   Below the three-step flow and visually quieter: it is the alternative
-   route, not a fourth step. */
 .kunai-other-paths {
-  margin-top: 2rem;
-  padding-top: 1.75rem;
-  border-top: 1px solid var(--kunai-line);
+  margin-block-start: 2rem;
+  padding-block-start: 1.75rem;
+  border-block-start: 1px solid var(--kunai-line);
 }
 
 .kunai-other-paths__head {
@@ -936,7 +928,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
-  margin-top: 1rem;
+  margin-block-start: 1rem;
 }
 
 .kunai-other-paths__commands .kunai-code-row {
@@ -947,7 +939,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0 1.25rem;
-  margin: 1rem 0 0;
+  margin-block-start: 1rem;
+  margin-inline: 0;
   font-size: 0.75rem;
   color: var(--color-fd-muted-foreground);
 }
@@ -958,7 +951,7 @@
   min-height: 2.5rem;
   color: inherit;
   text-decoration: none;
-  border-bottom: 1px solid transparent;
+  border-block-end: 1px solid transparent;
   transition:
     color 150ms var(--kunai-ease-out),
     border-color 150ms var(--kunai-ease-out);
@@ -966,7 +959,7 @@
 
 .kunai-other-paths__links a:hover {
   color: var(--color-fd-foreground);
-  border-bottom-color: color-mix(in oklab, var(--kunai-accent) 50%, transparent);
+  border-block-end-color: color-mix(in oklab, var(--kunai-accent) 50%, transparent);
 }
 
 @media (max-width: 767.98px) {
