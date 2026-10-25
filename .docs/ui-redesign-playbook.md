@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai — UI Redesign Playbook
@@ -200,3 +200,20 @@ A UI redesign pass is not done unless it leaves behind:
 - a VHS tape or screenshot path when the change is heavily visual
 - no new duplicate interaction models
 - no new invisible one-off key behavior
+
+## Kanna on the docs site
+
+The footer uses the small jointed SVG in
+`apps/docs/components/brand/kunai-fox-walker.tsx`, with cream tail/chest markings,
+offset far paws and a visible eye highlight. `apps/docs/lib/fox-gait.ts` advances
+her stride by actual distance, with a short 0.65-width cycle and a six-unit torso
+bob. The footer pace is 40 pixels/second; the pointer roamer retains its own pace.
+The gait remains pure; React renders state changes, while the rig writes joint
+transforms directly without a render per frame.
+
+`apps/docs/components/brand/kunai-fox-patrol.tsx` owns the footer observers and
+frame loop. Offscreen or hidden tabs pause it, live reduced-motion changes plant
+her feet, and the visible Pause/Resume control stops and resumes her at the same
+position. Cleanup removes media/visibility listeners, observers and the pending
+frame. The decorative SVG stays outside the accessibility tree; the pause button
+has an ordinary keyboard-focusable name and focus outline.
