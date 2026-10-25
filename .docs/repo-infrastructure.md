@@ -225,7 +225,9 @@ Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` cov
 The public launcher resolves a platform package; `pkg:check` enforces its file
 allowlist and size budget. Both application build outputs project the CLI
 `package.json` import to its version, the only field runtime callers consume.
-Other JSON imports retain their complete contents, and build-host environment
+Manifest matching uses canonical file paths so symlinked checkouts and macOS
+temporary roots receive the same projection. Other JSON imports retain their
+complete contents, and build-host environment
 values are never inlined. The development-bundle size gate remains unchanged.
 
 The 0.3.0 GitHub Release compatibility bridge is an exact 22-file set: ten
