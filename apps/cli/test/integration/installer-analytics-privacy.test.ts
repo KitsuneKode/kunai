@@ -11,6 +11,33 @@ import {
   windowsShellEnvDefaults,
 } from "./helpers/installer-script-harness";
 
+function isWithinFixture(pathApi: typeof posix, root: string, path: string): boolean {
+  const relative = pathApi.relative(root, path);
+  return (
+    !pathApi.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${pathApi.sep}`)
+  );
+}
+
+for (const [label, pathApi, root, path, expected] of [
+  ["Windows root", win32, "C:\\fixture", "C:\\fixture", true],
+  ["Windows child", win32, "C:\\fixture", "C:\\fixture\\config", true],
+  ["Windows other drive", win32, "C:\\fixture", "D:\\profile", false],
+  ["Windows other UNC share", win32, "\\\\host\\fixture", "\\\\host\\profile", false],
+  ["Windows other UNC server", win32, "\\\\host\\fixture", "\\\\other\\fixture", false],
+  ["Windows parent", win32, "C:\\fixture", "C:\\", false],
+  ["Windows sibling", win32, "C:\\fixture", "C:\\fixture-other", false],
+  ["Windows dotted child", win32, "C:\\fixture", "C:\\fixture\\..cache", true],
+  ["POSIX root", posix, "/fixture", "/fixture", true],
+  ["POSIX child", posix, "/fixture", "/fixture/config", true],
+  ["POSIX parent", posix, "/fixture", "/", false],
+  ["POSIX sibling", posix, "/fixture", "/fixture-other", false],
+  ["POSIX dotted child", posix, "/fixture", "/fixture/..cache", true],
+] as const) {
+  test(`fixture containment: ${label}`, () => {
+    expect(isWithinFixture(pathApi, root, path)).toBe(expected);
+  });
+}
+
 test("installer fixture environments explicitly suppress analytics", () => {
   const fixture = createInstallerSandbox("analytics-env");
   try {
@@ -28,7 +55,7 @@ for (const platform of ["linux", "darwin", "win32"] as const) {
       const paths = getKunaiPaths({ platform, env: fixture.env });
       const targetPath = platform === "win32" ? win32 : posix;
       for (const path of [paths.configDir, paths.dataDir, paths.cacheDir]) {
-        expect(targetPath.relative(fixture.root, path).startsWith("..")).toBe(false);
+        expect(isWithinFixture(targetPath, fixture.root, path)).toBe(true);
       }
     } finally {
       fixture.cleanup();

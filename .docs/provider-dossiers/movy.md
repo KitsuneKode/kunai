@@ -79,7 +79,10 @@ with `mfhd`, `traf`/`tfhd`, `tfdt` and `trun` boxes followed by a nonempty `mdat
 prefix. Declared child sizes and relative sample offsets must fit the captured
 fragment; media payload may extend beyond it. A bare `ftyp` marker, malformed
 boxes, missing decode time, and an incomplete `moof` do not qualify. Recognition
-is deliberately limited to structure visible in the 1 KiB prefix; it does not
-claim full container conformance or remote frame decoding. A locally generated
+requests at most 64 KiB and captures that larger prefix only for HTML-labeled
+responses. Ordinary segments retain the 1 KiB minimum/read; positive TS or fMP4
+evidence can cancel an HTML-labeled read early. All reads cancel at their cap
+even if the server ignores Range. Metadata beyond 64 KiB remains unsupported;
+this does not claim full container conformance or remote frame decoding. A locally generated
 HLS fMP4 fixture was separately decoded by ffmpeg and passed this MIME check.
 The segment layout follows [W3C's ISO BMFF media-segment definition](https://www.w3.org/TR/mse-byte-stream-format-isobmff/#media-segments).

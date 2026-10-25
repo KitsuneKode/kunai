@@ -46,20 +46,23 @@ export type ProbeStreamReachabilityInput = {
 };
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
-const SEGMENT_RANGE_HEADER = `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`;
+const FMP4_PROBE_PREFIX_BYTES = 64 * 1024;
+const SEGMENT_RANGE_HEADER = `bytes=0-${FMP4_PROBE_PREFIX_BYTES - 1}`;
 // A body read past this after the prefix is already gathered is a server
 // ignoring Range and dumping the whole segment on us — cap the bleed.
 const MAX_PROBE_BODY_BYTES = 256 * 1024;
 
-/** Capture only the required prefix and cancel even when the server ignores Range. */
+/** Capture a bounded prefix; stop early once positive media evidence is sufficient. */
 async function readPrefixBytes(
   body: ReadableStream<Uint8Array> | null,
-  minBytes: number,
+  maxBytes: number,
+  acceptPrefix?: (prefix: Uint8Array) => boolean,
 ): Promise<Uint8Array> {
   if (!body) return new Uint8Array(0);
   const reader = body.getReader();
-  const prefix = new Uint8Array(Math.min(minBytes, MAX_PROBE_BODY_BYTES));
+  const prefix = new Uint8Array(Math.min(maxBytes, MAX_PROBE_BODY_BYTES));
   let seen = 0;
+  let nextCheck = HLS_SEGMENT_PROBE_MIN_BYTES;
   try {
     while (seen < prefix.byteLength) {
       const { done, value } = await reader.read();
@@ -68,6 +71,11 @@ async function readPrefixBytes(
         const count = Math.min(value.byteLength, prefix.byteLength - seen);
         prefix.set(value.subarray(0, count), seen);
         seen += count;
+        if (acceptPrefix && seen >= nextCheck) {
+          if (acceptPrefix(prefix.subarray(0, seen))) break;
+          // Bound structural rechecks even when the server trickles tiny chunks.
+          nextCheck = seen + HLS_SEGMENT_PROBE_MIN_BYTES;
+        }
       }
     }
     await reader.cancel("probe-satisfied").catch(() => {});
@@ -532,14 +540,17 @@ async function probeHlsMediaSegment(
     }
 
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-    const firstBytes = await readPrefixBytes(response.body, HLS_SEGMENT_PROBE_MIN_BYTES);
+    const htmlLabeled = contentType.includes("text/html");
+    const firstBytes = await readPrefixBytes(
+      response.body,
+      htmlLabeled ? FMP4_PROBE_PREFIX_BYTES : HLS_SEGMENT_PROBE_MIN_BYTES,
+      htmlLabeled
+        ? (prefix) => hasTransportStreamSync(prefix) || hasFragmentedMp4Prefix(prefix)
+        : undefined,
+    );
     // Some media CDNs mislabel TS/fMP4 as HTML. Only positive media evidence may
     // override that refusal; HTML, short bodies and ambiguous text still fail.
-    if (
-      contentType.includes("text/html") &&
-      !hasTransportStreamSync(firstBytes) &&
-      !hasFragmentedMp4Prefix(firstBytes)
-    ) {
+    if (htmlLabeled && !hasTransportStreamSync(firstBytes) && !hasFragmentedMp4Prefix(firstBytes)) {
       return {
         status: "unreachable",
         reason: "HLS segment unreachable: content-type text/html",

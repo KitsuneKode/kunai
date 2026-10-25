@@ -30,13 +30,14 @@ function mp4Box(type: string, ...parts: readonly Uint8Array[]): Uint8Array {
   return Buffer.concat([header, payload]);
 }
 
-function fmp4Segment(withDecodeTime = true): Uint8Array {
+function fmp4Segment(withDecodeTime = true, sampleCount = 1): Uint8Array {
   const tfhd = Buffer.alloc(8);
   tfhd.writeUInt32BE(0x020000, 0); // default-base-is-moof
   tfhd.writeUInt32BE(1, 4); // track id
-  const trun = Buffer.alloc(12);
-  trun.writeUInt32BE(1, 0); // data-offset-present
-  trun.writeUInt32BE(1, 4); // one sample, defaults supplied by initialization segment
+  const trun = Buffer.alloc(12 + sampleCount * 4);
+  trun.writeUInt32BE(0x201, 0); // data-offset-present + sample-size-present
+  trun.writeUInt32BE(sampleCount, 4);
+  for (let index = 0; index < sampleCount; index++) trun.writeUInt32BE(1, 12 + index * 4);
   const fragmentParts = [mp4Box("tfhd", tfhd)];
   if (withDecodeTime) fragmentParts.push(mp4Box("tfdt", Buffer.alloc(8)));
   fragmentParts.push(mp4Box("trun", trun));
@@ -56,7 +57,10 @@ function fmp4Segment(withDecodeTime = true): Uint8Array {
       mp4Box("trun", trun),
     ),
   );
-  return Buffer.concat([finalized, mp4Box("mdat", mediaBytes())]);
+  return Buffer.concat([
+    finalized,
+    mp4Box("mdat", mediaBytes(Math.max(sampleCount, HLS_SEGMENT_PROBE_MIN_BYTES))),
+  ]);
 }
 
 function extendedMdatSegment(validSize: boolean): Uint8Array {
@@ -79,7 +83,7 @@ describe("stream reachability", () => {
         return response(200, "#EXTM3U\n#EXTINF:3,\n/seg-1.jpg\n");
       }
       expect(init.headers).toMatchObject({
-        Range: `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`,
+        Range: "bytes=0-65535",
       });
       return response(206, mediaBytes());
     };
@@ -282,8 +286,41 @@ describe("stream reachability", () => {
     expect(chunksRead).toBe(1);
   });
 
+  for (const [contentType, expectedChunks] of [
+    ["text/html", 64],
+    ["video/mp2t", 1],
+  ] as const) {
+    test(`segment probe caps reads when Range is ignored (${contentType})`, async () => {
+      let chunksRead = 0;
+      let cancelled = false;
+      const body = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            chunksRead++;
+            controller.enqueue(mediaBytes());
+          },
+          cancel() {
+            cancelled = true;
+          },
+        },
+        { highWaterMark: 0 },
+      );
+      const probe = await probeStreamReachability({
+        url: "https://cdn.example/stream.m3u8",
+        fetchImpl: async (url: string) =>
+          url.endsWith("stream.m3u8")
+            ? response(200, "#EXTM3U\n#EXTINF:3,\n/seg.m4s\n")
+            : new Response(body, { status: 200, headers: { "content-type": contentType } }),
+      });
+      expect(probe.status).toBe(contentType === "text/html" ? "unreachable" : "reachable");
+      expect(chunksRead).toBe(expectedChunks);
+      expect(cancelled).toBe(true);
+    });
+  }
+
   for (const [label, bytes, accepted] of [
     ["moof/mdat", fmp4Segment(), true],
+    ["movie fragment larger than 1 KiB", fmp4Segment(true, 512), true],
     ["extended mdat", extendedMdatSegment(true), true],
     ["invalid extended mdat size", extendedMdatSegment(false), false],
     [
