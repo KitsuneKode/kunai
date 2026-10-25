@@ -211,10 +211,18 @@ export function handleHistoryOverlayInput(
   if (ctx.pendingDelete) {
     if (input.toLowerCase() === "y") {
       const pending = ctx.pendingDelete;
+      const undoBefore = ctx.container.sessionUndo?.captureHistory();
       if (pending.kind === "episode") {
         ctx.container.historyRepository.deleteProgressByKey(pending.key);
       } else {
         ctx.container.historyRepository.deleteTitle(pending.titleId);
+      }
+      if (undoBefore) {
+        ctx.container.sessionUndo?.recordHistoryChange(
+          pending.kind === "episode" ? "deleted episode progress" : "deleted title history",
+          "history delete",
+          undoBefore,
+        );
       }
       ctx.setPendingDelete(null);
       ctx.setOverlayStatus(
@@ -271,6 +279,13 @@ export function handleHistoryOverlayInput(
       );
       return "handled";
     }
+  }
+
+  // `z` pops the live undo entry; with nothing to undo it stays unhandled and
+  // falls through like any other unbound letter.
+  if (input === "z" && !key.ctrl && !key.meta && ctx.container.sessionUndo?.hasLiveUndo()) {
+    ctx.container.sessionUndo.undoLatest();
+    return "handled";
   }
 
   if (key.tab) {

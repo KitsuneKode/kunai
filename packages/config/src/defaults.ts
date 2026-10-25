@@ -57,10 +57,14 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   animeProvider: "hianime",
   youtubeProvider: "youtube",
   // `createProviderPrioritySnapshot` prepends `provider` to this array, so it
-  // holds the *rest* of the order — not the lane default. Videasy is named
-  // explicitly to pin it behind Rivestream rather than float among unlisted
-  // providers.
-  providerPriority: ["rivestream", "videasy"],
+  // holds the *rest* of the order — not the lane default. Rivestream leads the
+  // rest (eleven-service local cycle behind the shared resolve gate, so one
+  // dead mirror costs a candidate, not the lane); VidRock follows (multi-lane
+  // AES-GCM payloads behind the direct-stream gate). Videasy is named
+  // explicitly to pin it last rather than float among unlisted providers: its
+  // session/turnstile path and rotted `videasy.to` domain make it the
+  // fallback, not the lead — registered, not removed.
+  providerPriority: ["rivestream", "vidrock", "videasy"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
   // holds the *rest* of the order and must not repeat the lane default. Miruro
@@ -92,8 +96,13 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   skipPreview: false,
   skipCredits: true,
   footerHints: "detailed",
+  companionPet: "auto",
+  // `DEFAULT_THEME_NAME` in `@kunai/design`, duplicated as a literal: config
+  // cannot import design (boundary allowlist). Ember Dusk stays the default.
+  theme: "ember-dusk",
   quitNearEndBehavior: "continue",
   continueSourcePreference: "auto",
+  prePlayConfirm: "off",
   quitNearEndThresholdMode: "credits-or-90-percent",
   mpvKunaiScriptPath: "",
   mpvKunaiScriptOpts: {},
@@ -139,6 +148,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   downloadPath: "",
   downloadOnboardingDismissed: false,
   playbackKeysSessionsSeen: 0,
+  tipsEnabled: true,
+  seenTips: [],
   analytics: "unset",
   analyticsNoticeShown: false,
   installId: "",

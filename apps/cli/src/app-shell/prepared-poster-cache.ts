@@ -1,5 +1,4 @@
-// =============================================================================
-// prepared-poster-cache.ts — one native preparation per source and geometry.
+// One native preparation per source and geometry.
 //
 // Preparation is the expensive step (decode + resize + PNG bridge), and the same
 // poster is routinely wanted at the same size by more than one surface: two rails
@@ -9,7 +8,6 @@
 //
 // Both halves of a PreparedPoster stay resident, so the cache weighs the PNG and
 // the decoded RGBA together; counting one would under-report by the larger.
-// =============================================================================
 
 import { preparePoster, type PosterPixelBounds, type PreparedPoster } from "@/image/native-image";
 

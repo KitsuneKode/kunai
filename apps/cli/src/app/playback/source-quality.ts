@@ -23,6 +23,7 @@ import type {
   PlaybackSourceGroupView,
   PlaybackSourceInventoryView,
 } from "@/services/playback/PlaybackSourceInventoryView";
+import type { PrePlayConfirmMode } from "@kunai/config";
 import type { StreamCandidate, SubtitleCandidate } from "@kunai/types";
 
 function isPlayableStreamCandidate(stream: StreamCandidate): boolean {
@@ -275,7 +276,10 @@ export function buildStreamInventoryView(
 ): PlaybackSourceInventoryView | null {
   const result = stream?.providerResolveResult;
   if (!result) return null;
-  return projectPlaybackSourceInventory(result, { selectedSubtitleUrl: stream?.subtitle });
+  return projectPlaybackSourceInventory(result, {
+    selectedSubtitleUrl: stream?.subtitle,
+    attachedSubtitles: stream?.subtitleList,
+  });
 }
 
 export function buildSourcePickerOptions(stream: StreamInfo): readonly SourceOption[] {
@@ -316,6 +320,35 @@ export function buildQualityPickerOptions(stream: StreamInfo): readonly QualityO
     })
     .sort((left, right) => right.rank - left.rank)
     .map(({ rank: _rank, ...option }) => option);
+}
+
+/**
+ * Pre-play Tracks-sheet policy, read once per launched session.
+ *
+ * `"always"` means "whenever there is an inventory" — a local file or a bare
+ * direct stream has nothing to confirm, so the sheet would only ever say "no
+ * choices" and that is worse than no prompt. `"when-choices"` requires at
+ * least one control to actually be switchable: more than one real source, more
+ * than one playable stream/quality, or any audio/hardsub/soft-sub choice.
+ */
+export function shouldOfferPrePlayConfirm(
+  mode: PrePlayConfirmMode,
+  control: Pick<
+    PlaybackControlSummary,
+    | "hasInventory"
+    | "sourceCount"
+    | "showSourceControl"
+    | "showQualityControl"
+    | "showMediaTrackControl"
+  >,
+): boolean {
+  if (mode === "off" || !control.hasInventory) return false;
+  if (mode === "always") return true;
+  return (
+    (control.showSourceControl && control.sourceCount > 1) ||
+    control.showQualityControl ||
+    control.showMediaTrackControl
+  );
 }
 
 export function buildPlaybackControlSummary(stream: StreamInfo | null): PlaybackControlSummary {

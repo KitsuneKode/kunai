@@ -23,7 +23,8 @@ export type TrackPickRestartEffects = {
 };
 
 export type TrackPickRestartOutcome = {
-  readonly startIntent: PlaybackStartIntent;
+  /** Null means no playback transition; callers must stay on their current surface. */
+  readonly startIntent: PlaybackStartIntent | null;
   readonly resolvedProviderId: string;
   readonly requiresFreshResolve: boolean;
   /** User-visible note (stale picks): the pick changed nothing, say why. */
@@ -41,7 +42,7 @@ export async function applyTrackPickRestart(input: {
 
   if (resolved.kind === "noop") {
     return {
-      startIntent: startAtResumePoint(resumeSeconds, { suppressResumePrompt: true }),
+      startIntent: null,
       resolvedProviderId: currentProviderId,
       requiresFreshResolve: false,
     };
@@ -51,7 +52,7 @@ export async function applyTrackPickRestart(input: {
     // Nothing is applied and nothing restarts: resuming in place with a note
     // beats replaying the old stream under the pretence the pick worked.
     return {
-      startIntent: startAtResumePoint(resumeSeconds, { suppressResumePrompt: true }),
+      startIntent: null,
       resolvedProviderId: currentProviderId,
       requiresFreshResolve: false,
       notice: resolved.reason,
@@ -61,7 +62,7 @@ export async function applyTrackPickRestart(input: {
   if (resolved.kind === "subtitle-switch") {
     // The player switched tracks live — playback resumes in place either way.
     return {
-      startIntent: startAtResumePoint(resumeSeconds, { suppressResumePrompt: true }),
+      startIntent: null,
       resolvedProviderId: currentProviderId,
       requiresFreshResolve: false,
       notice: resolved.applied

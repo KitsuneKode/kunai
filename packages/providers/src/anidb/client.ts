@@ -9,6 +9,7 @@ import {
 
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
 import {
+  curlArgvHead,
   curlCipherArgs,
   isCloudflareChallengeText,
   resolveCurlCandidate,
@@ -51,11 +52,21 @@ export const ANIDB_HTTP_API_CLIENT_VERSION = "1";
 export const ANIDB_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-const episodeCache = new TTLCache<string, AnidbEpisodeCatalog>(1_800_000);
+// Every cache below is keyed by a caller-chosen aid/eid, so without a hard
+// ceiling a long session or a scripted catalog walk grows them for the life of
+// the process — a TTL only reaps the entry you ask for again.
+const ANIDB_CACHE_MAX_ENTRIES = 512;
+const episodeCache = new TTLCache<string, AnidbEpisodeCatalog>(1_800_000, {
+  maxEntries: ANIDB_CACHE_MAX_ENTRIES,
+});
 /** A miss is cached far shorter than a hit: reindexes are permanent, 404s from a hiccup are not. */
 const ANIDB_MISSING_CATALOG_TTL_MS = 120_000;
-const languageCache = new TTLCache<string, readonly AnidbLanguageEntry[]>(300_000);
-const malCache = new TTLCache<string, number | null>(3_600_000);
+const languageCache = new TTLCache<string, readonly AnidbLanguageEntry[]>(300_000, {
+  maxEntries: ANIDB_CACHE_MAX_ENTRIES,
+});
+const malCache = new TTLCache<string, number | null>(3_600_000, {
+  maxEntries: ANIDB_CACHE_MAX_ENTRIES,
+});
 const externalIdsCache = new TTLCache<
   string,
   {
@@ -64,11 +75,11 @@ const externalIdsCache = new TTLCache<
     readonly officialAid: number | null;
     readonly posterUrl: string | null;
   }
->(3_600_000);
+>(3_600_000, { maxEntries: ANIDB_CACHE_MAX_ENTRIES });
 const officialEpisodeMetadataCache = new TTLCache<
   string,
   ReadonlyMap<number, AnimeEpisodeMetadata>
->(30 * 24 * 60 * 60 * 1000);
+>(30 * 24 * 60 * 60 * 1000, { maxEntries: ANIDB_CACHE_MAX_ENTRIES });
 
 // External ids and official episode numbers are effectively immutable — a
 // MAL/AniList link or an episode title doesn't change between sessions, so
@@ -265,8 +276,7 @@ async function anidbFetchRedirectAware(
     });
   }
   const args = [
-    curl.path,
-    ...curl.prefixArgs,
+    ...curlArgvHead(curl),
     "-s",
     "-A",
     ANIDB_USER_AGENT,
@@ -426,8 +436,7 @@ export async function anidbFetchText(
 
   const maxTime = String(options.maxTimeSec ?? 12);
   const args = [
-    curl.path,
-    ...curl.prefixArgs,
+    ...curlArgvHead(curl),
     "-sL",
     "-A",
     ANIDB_USER_AGENT,

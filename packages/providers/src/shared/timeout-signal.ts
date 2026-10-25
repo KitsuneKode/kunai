@@ -39,16 +39,17 @@ export function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> 
     return new Promise((resolve) => setTimeout(resolve, Math.max(ms, 0)));
   }
   if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const finish = () => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    };
-    const onAbort = () => finish();
-    const timer = setTimeout(finish, ms);
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
+  const { promise, resolve } = Promise.withResolvers<void>();
+  // One exit for both the timer and the abort, so the listener and the timer
+  // are always both released.
+  const finish = () => {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", finish);
+    resolve();
+  };
+  const timer = setTimeout(finish, ms);
+  signal.addEventListener("abort", finish, { once: true });
+  return promise;
 }
 
 /** Manual combine used when `AbortSignal.any` is unavailable. Exported for tests. */

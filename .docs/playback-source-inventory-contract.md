@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-07-19"
+lastReviewed: "2026-10-12T13:45:00Z"
 ---
 
 # Playback Source Inventory Contract
@@ -27,6 +27,17 @@ provider module
   -> playback resolve service cache + fallback policy
   -> UI source, quality, subtitle, audio, and diagnostics views
 ```
+
+## Tracks selections against warm inventory
+
+An exact stream choice must still exist in cached `streams`. A source choice
+may exist either on a stream or in declared `sources`: cycle providers defer
+non-winning mirrors until the user requests them. A source with no streams yet
+must reach the provider's preferred-source resolve path, rather than being
+rejected as stale by the shell. A known inventory that no longer contains the
+chosen source or stream rejects the pick with visible recovery feedback;
+a missing/unknown cache row permits a fresh resolve. Declarations never make a
+missing exact stream valid and never attest playback reachability.
 
 ## Provider Responsibilities
 
@@ -121,12 +132,32 @@ requires another call to materialize a specific quality.
 
 Source and quality pickers must read from cached inventory.
 
-- Source change: select the best stream from the chosen `sourceId`.
+- Source change: select the best stream from the chosen `sourceId`. A pin that already
+  selected an audio/mirror lane must not become an explicit first-rung choice: HiAnime
+  consumes its sub/dub pin before quality selection, and AnimeGG ignores the matching
+  active-mirror pin when ranking that mirror's qualities. An explicit stream id still
+  chooses the exact rung.
 - Quality change: select the chosen stream or variant without recomputing inventory.
 - Subtitle change: select from `subtitles` or a separately cached subtitle list; do not refetch unrelated streams.
+- Tracks merges session-attached `subtitleList` tracks into the view alongside provider
+  subtitles, deduplicating attached URLs against provider and other attached rows.
+  Selecting Off keeps the choices available. Session attachments do not alter the
+  persisted provider inventory or claim provider extraction evidence.
+- During live playback, the Tracks subtitle section (including `/subtitle` and
+  the player picker request) applies external tracks and Off through
+  `selectCurrentSubtitle`. Update the selected row only after the player accepts
+  the choice, and never overwrite a stream replaced during that acknowledgement.
+  Embedded tracks that require a restart follow the stream-selection path.
+- Unchanged or stale picks and live subtitle acknowledgements return no restart
+  intent. Pre-play continues to launch the resolved stream; post-play stays on its
+  menu. A player rejection reports feedback without replaying the unchanged stream.
 - Audio/sub-dub change: reuse cached inventory only if that audio mode was included in the inventory. Otherwise resolve a separate inventory key for the requested mode.
 
 Never let one selected source overwrite another source's inventory. Store the full normalized result, then store user selection as separate playback intent.
+
+Resolve-gate fallback preserves the initial selection intent in `selectionDecision.reason`;
+`selectedQualityRank` describes the accepted rung actually shipped. AnimeGG keeps the
+chosen rung first, then ranks remaining fallback rungs by quality before its three-candidate cap.
 
 ## Resolve Work Identity And Request Economy
 
@@ -209,6 +240,15 @@ Availability states:
 - `unknown`: provider does not expose it without resolving.
 
 Avoid implying soft subtitles when only hard-sub is available. Avoid calling external subtitle services when provider hard-sub satisfies the current mode and the user did not ask for soft subtitles.
+
+Automatic attachment matches ISO 639-1 and ISO 639-3 language codes through the
+shared provider language normalizer. English remains a temporary fallback when
+the preferred language is absent; an attached, identified English track must not
+suppress a late search for French or another configured language. Matching
+provider inventory satisfies the preference without that search. Preserve an
+explicit interactive selection and an attached track without language evidence.
+Late search still requires online playback, proven TMDB identity, and the user's
+Wyzie key; disabled subtitles and satisfying hard subtitles suppress it.
 
 ## Anime Title Aliases And Search Display
 

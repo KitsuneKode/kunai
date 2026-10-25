@@ -52,10 +52,10 @@ async function runDisposal(container: Container, handles: ContainerDisposeHandle
 
   try {
     await bestEffort(() => handles.downloadResolveAbort?.abort());
-    await bestEffort(() => container.presence.shutdown());
-    await bestEffort(() => container.downloadService.beginShutdown("container-dispose"));
-    await bestEffort(() => container.downloadService.pauseActiveJobsForShutdown());
     await bestEffort(() => container.backgroundWorkScheduler.beginShutdown("container-dispose"));
+    await bestEffort(() => container.downloadService.beginShutdown("container-dispose"));
+    await bestEffort(() => container.presence.shutdown());
+    await bestEffort(() => container.downloadService.pauseActiveJobsForShutdown());
     await bestEffort(async () => {
       await container.backgroundWorkScheduler.drain();
     });

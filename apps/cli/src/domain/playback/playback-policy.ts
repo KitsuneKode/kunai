@@ -104,6 +104,34 @@ export function didPlaybackReachCompletionThreshold(
   );
 }
 
+/**
+ * The durability gate for writing `completed:true` to history.
+ *
+ * A history row marked completed is forever: it clears the resume point and
+ * feeds "episode complete" copy plus offline-runway evaluation. Only a clean
+ * natural EOF past the trusted completion threshold sets it. Voluntary quit,
+ * including in the credits, preserves resume; explicit mark-watched is the
+ * user's override. Kills, crashes, timeouts, and suspected-dead streams cannot
+ * clear resume either. mpv-stats demotes premature EOF evidence to unknown.
+ */
+export function shouldMarkEpisodeCompleted(
+  result: PlaybackResult,
+  timing?: PlaybackTimingMetadata | null,
+  thresholdMode: QuitNearEndThresholdMode = "credits-or-90-percent",
+): boolean {
+  if (result.endReason !== "eof") return false;
+  if (result.suspectedDeadStream) return false;
+  if (result.playerExitSignal) return false;
+  if (
+    result.playerExitCode !== null &&
+    result.playerExitCode !== undefined &&
+    result.playerExitCode !== 0
+  ) {
+    return false;
+  }
+  return didPlaybackReachCompletionThreshold(result, timing, thresholdMode);
+}
+
 export function didPlaybackEndNearNaturalEnd(
   result: PlaybackResult,
   timing?: PlaybackTimingMetadata | null,

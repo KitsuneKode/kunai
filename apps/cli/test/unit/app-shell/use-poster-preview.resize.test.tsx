@@ -1,6 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { __testing as paneTesting } from "@/app-shell/image-pane";
+import { setPosterDiskCacheDir } from "@/app-shell/poster-disk-cache";
 import { __testing as rendererTesting } from "@/app-shell/poster-renderer";
 import { usePosterPreview } from "@/app-shell/use-poster-preview";
 import { useShellDimensions } from "@/app-shell/use-viewport-policy";
@@ -36,10 +40,21 @@ function PosterResizeProbe() {
   return <Text>{`poster-cols=${posterCols}`}</Text>;
 }
 
+const tempDirs: string[] = [];
+
+beforeEach(() => {
+  // SAFETY: isolated tmp dir — the poster pipeline must not touch the live profile in tests.
+  const dir = mkdtempSync(join(tmpdir(), "kunai-poster-resize-"));
+  tempDirs.push(dir);
+  setPosterDiskCacheDir(dir);
+});
+
 afterEach(() => {
+  setPosterDiskCacheDir(null);
   paneTesting.runtime.detectImageCapability = originalPaneDetect;
   rendererTesting.runtime.detectImageCapability = originalRendererDetect;
   process.stdout.write = originalStdoutWrite;
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 describe("usePosterPreview resize cleanup", () => {

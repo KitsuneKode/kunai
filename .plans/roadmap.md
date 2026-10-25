@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-10-01
+Last updated: 2026-10-11
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -43,25 +43,28 @@ archive and put only the residue here.
 | Terminal image protocol     | Flicker hardening and `ink-shell` split                   | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
 | Kanna character system      | `seek`/`peek` redraws, then tracing the four raster poses | [2026-08-31-kanna-character-system.md](./2026-08-31-kanna-character-system.md)         |
 | Kanna voice and presence    | Remaining voice moments, terminal reactions, pose map     | [kanna-mascot-personality.md](./kanna-mascot-personality.md)                           |
+| Competitive parity (shell)  | `/theme` command, saved idle row, mouse input, IPTV scope | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md)                 |
 
 ### Playback and providers
 
-| Track                        | Remaining                                                                                                          | Plan                                                                                                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mobile terminal runtime      | Node/a-Shell host proofs implemented; physical qualification, catalog/providers, installers, and publishing remain | [runtime](../.docs/mobile-terminal-runtime.md) · [device lab](../.docs/mobile-device-lab.md) · [mobile app design](./mobile-app-runtime.md) |
-| Provider playback resilience | Miruro gate budget, scheduled crypto freshness check                                                               | [provider-playback-resilience.md](./provider-playback-resilience.md)                                                                        |
-| Provider resolve hardening   | Health recovery, latency ordering, and measured hedge-delay calibration                                            | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)                                                            |
-| Provider hardening           | Research and scraper capability roadmap                                                                            | [provider-hardening.md](./provider-hardening.md)                                                                                            |
-| Provider result contract     | Contract work before broad `@kunai/core` extraction                                                                | [provider-result-contract.md](./provider-result-contract.md)                                                                                |
-| Beta UI/provider hardening   | Tasks 8–10: input routing, subtitle calls, display honesty                                                         | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                                                            |
-| Resolve UX and Playwright    | Pick up during a browser/provider reliability pass                                                                 | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md)                                                          |
+| Track                        | Remaining                                                                                                                                                        | Plan                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mobile terminal runtime      | Node/a-Shell host proofs and the Termux binary + player handoff (#287) implemented; physical qualification, catalog/providers, installers, and publishing remain | [runtime](../.docs/mobile-terminal-runtime.md) · [device lab](../.docs/mobile-device-lab.md) · [mobile app design](./mobile-app-runtime.md) · [terminal handoff](./mobile-terminal-handoff.md) · [handoff implementation](./mobile-terminal-handoff-implementation.md) · [mobile parity and phone web](./2026-10-11-mobile-parity-and-phone-web.md) |
+| Queue and phone follow-up    | Truthful queue state; qualify real phone request profiles, offline durability, and no-store touch direction                                                      | [decisions and evidence](2026-10-03-queue-mobile-followup.md)                                                                                                                                                                                                                                                                                       |
+| Provider playback resilience | Miruro gate budget, scheduled crypto freshness check                                                                                                             | [provider-playback-resilience.md](./provider-playback-resilience.md)                                                                                                                                                                                                                                                                                |
+| Provider resolve hardening   | Health recovery, latency ordering, and measured hedge-delay calibration                                                                                          | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)                                                                                                                                                                                                                                                                    |
+| Provider hardening           | Research and scraper capability roadmap                                                                                                                          | [provider-hardening.md](./provider-hardening.md)                                                                                                                                                                                                                                                                                                    |
+| Provider result contract     | Contract work before broad `@kunai/core` extraction                                                                                                              | [provider-result-contract.md](./provider-result-contract.md)                                                                                                                                                                                                                                                                                        |
+| Beta UI/provider hardening   | Tasks 8–10: input routing, subtitle calls, display honesty                                                                                                       | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                                                                                                                                                                                                                                                                    |
+| Resolve UX and Playwright    | Pick up during a browser/provider reliability pass                                                                                                               | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md)                                                                                                                                                                                                                                                                  |
+| Manga reader lane            | `manga` lane scoped: `src/image` carries the render layer; slice 1 = MangaDex + reader surface                                                                   | [manga-reader-lane.md](./manga-reader-lane.md)                                                                                                                                                                                                                                                                                                      |
 
 ### Offline and release stability
 
 | Track                          | Remaining                                                                                            | Plan                                                                                                 |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | 0.3.0 merge train              | Merge order, chain-A publication, regression watch                                                   | [2026-08-24-0-3-0-merge-train.md](./2026-08-24-0-3-0-merge-train.md)                                 |
-| Provider-independent offline   | Keep downloads playable after provider retirement                                                    | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
+| Provider-independent offline   | Candidate fix: downloads survive provider retirement; merge and platform qualification pending       | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
 | Offline artwork cache          | Library previews                                                                                     | [offline-artwork-cache-and-library-previews.md](./offline-artwork-cache-and-library-previews.md)     |
 | Boundary + downloads           | Reviewed adaptive-download design, not started                                                       | [boundary-hardening-and-adaptive-downloads.md](./boundary-hardening-and-adaptive-downloads.md)       |
 | Poster release smokes          | Real-terminal Kitty, iTerm2, Sixel, and multiplexer pass                                             | [poster-protocol-release-smokes.md](./poster-protocol-release-smokes.md)                             |
@@ -72,7 +75,7 @@ archive and put only the residue here.
 | Track                    | Remaining                                                                                                                                            | Plan                                                                                                          |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
-| Analytics day boundary   | Task 8 only, after the cutover: prove the IST clock is live, then move the snapshot cron to `0 19 * * *`                                             | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
+| Analytics day boundary   | Task 8 only: schedule is now `0 19 * * *`; prove the IST clock is live in prod before merge, then verify the first run                               | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
 
 ### Docs
 
@@ -80,6 +83,13 @@ archive and put only the residue here.
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
 | Analytics series + social cards | Serve the retained `daily_rollup` history, adoption/trend charts, per-share OG images                                                | [2026-08-26-analytics-series-and-social-cards.md](./2026-08-26-analytics-series-and-social-cards.md) |
 | User docs overhaul              | Accuracy/framing PR first; then first-run, debugging playbook, coverage, nav, agent-docs, deploy `apps/docs` to kunai.kitsunekode.in | [2026-08-18-user-docs-overhaul.md](./2026-08-18-user-docs-overhaul.md)                               |
+
+### Growth and distribution
+
+| Track                      | Remaining                                                                   | Plan                                                                   |
+| -------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Install channels           | Homebrew tap, AUR `kunai-bin`, Scoop bucket on top of the release pipeline  | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
+| Localization and community | Localized READMEs, community surface, topics + comparison-table positioning | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
 
 ### Verification and CI
 
@@ -145,10 +155,10 @@ in number order unless a row says otherwise.
 | [061](./061-install-ps1-parity-gaps.md)                               | —     | `KUNAI_REPO` + deps-for-all-methods; then a parity-contract test so seams can't drift                                     | TODO                               |
 | [062](./062-post-install-cleanup-rejection.md)                        | —     | Fix `cleanupOldVersions` rejection; classify all `void` sites; write the convention                                       | TODO                               |
 | [063](./063-docs-dev-dep-advisories.md)                               | —     | Clear `bun audit`; `minimumReleaseAge` floor; weekly informational audit job                                              | TODO                               |
-| [064](../.archive/plans/064-analytics-day-table-order-and-paging.md)  | —     | Day-by-day table: newest-first + chunked reveal (bounded at 180 rows)                                                     | TODO                               |
+| [064](../.archive/plans/064-analytics-day-table-order-and-paging.md)  | —     | none — day-by-day table is newest-first with chunked reveal                                                               | LANDED                             |
 | [065](./065-share-landing-cta-resilience.md)                          | —     | `/w/` CTA: post-click "install below" state + copyable `kunai://` link                                                    | TODO                               |
-| [066](../.archive/plans/066-analytics-cross-links-and-staleness.md)   | —     | Version rows → release pages; window tile → `#day-by-day`; stale badge                                                    | TODO                               |
-| [067](../.archive/plans/067-chart-table-highlight-sync.md)            | —     | Chart hover → table row highlight/scroll (after 064)                                                                      | TODO                               |
+| [066](../.archive/plans/066-analytics-cross-links-and-staleness.md)   | —     | none — release links, `#day-by-day` anchor, and the 48h stale badge all landed                                            | LANDED                             |
+| [067](../.archive/plans/067-chart-table-highlight-sync.md)            | —     | none — chart hover reveals and scrolls the matching table row                                                             | LANDED                             |
 
 048–058 are implemented on `advisor/NNN-*` worktree branches (see each plan's
 "Implementation" note); rows stay until the branch lands. Review residue that
@@ -232,47 +242,26 @@ The release PR is intentionally last: Changesets will keep updating it while
 stability fixes merge, and merging it early would version an incomplete
 candidate.
 
-## Codebase audit remediation — 2026-09-30
+### Delivery and follow-ups — 2026-10-02
 
-[Codebase audit and remediation priorities](./2026-09-30-codebase-audit.md)
-records the current risk-weighted review, reproduced defects, existing plan
-owners, verification limits, and recommended execution order. Status: AUDITED;
-remediation unfinished. Concurrent provider fixes were reconciled; remaining
-transport and download/offline defects still require remediation and qualification. Existing
-plans remain the owners of architecture extraction, identity migrations, and
-plan 022 interaction work; this report does not create a second execution board.
+Proposed, not started. Written against `origin/main@e509732e7` and the open-PR
+state on 2026-10-02.
 
-### Agent execution packets — 2026-10-01
+| Plan                                                                                       | Remaining work                                                                                          | Status   |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------- |
+| [2026-10-02-pr-stack-consolidation.md](./2026-10-02-pr-stack-consolidation.md)             | 30 PRs landed 2026-10-07; re-implement the unmerged stacks' security, playback and UX residue           | PARTIAL  |
+| [2026-10-02-signed-provider-profile-feed.md](./2026-10-02-signed-provider-profile-feed.md) | Design spike: a signed, data-only feed so rotating provider constants ship without a release            | PROPOSED |
+| [2026-10-02-share-moment-discoverability.md](./2026-10-02-share-moment-discoverability.md) | Surface the existing `Ctrl+Shift+S` share-at-timestamp key in the playing legend, README and docs       | PROPOSED |
+| [2026-10-02-color-followups.md](./2026-10-02-color-followups.md)                           | After the APCA text-tier retune: remove the remaining `dimColor` double-dimming once the PR stacks land | PROPOSED |
 
-[Coordinator runbook](./2026-10-01-execution-runbook.md) supplies immutable-base
-assignment rules, shared-file ownership, dependency order and evidence/release
-gates. The [open PR review and integration handoff](./2026-10-01-pr-review.md)
-reconciles #499–#507 against the original audit and packets, with reproduced
-regressions, per-PR actions and older-PR triage. #507 already contains #500;
-#501–#506 form a separate overlapping stack. Repair and reconcile those changes
-before assigning residue; do not redo fixes already present in a reviewed PR.
-Refresh immutable bases before dispatch. No combined tree or release is qualified.
+### Release readiness — 2026-10-08
 
-[Release readiness after the October audits](./2026-10-08-release-readiness.md)
-tracks the post-audit release gate on `integrate/backlog-20261007`.
+Verified against `integrate/backlog-20261007@f840fe511` after three external
+audits. Gate 0 lands the integration on `main`; Phase 1 is release-blocking.
 
-| Packet                                             | Scope                                                          | Assignment state / dependency                                         |
-| -------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- |
-| [R01](./2026-10-01-r01-provider-transport.md)      | Transport, candidate fallback, relay, resolve coverage         | OPEN PRs #500/#502/#507; reconcile wrapper, roster and refusal        |
-| [R02](./2026-10-01-r02-playback-lifecycle.md)      | Watchdog, buffering, stale recovery ownership                  | OPEN PR #507 fixes; cumulative/native qualification remains           |
-| [R03](./2026-10-01-r03-download-durability.md)     | Durable claims, due queue, cleanup truth/partials              | OPEN PRs #504/#507; deletion readers, fencing and partials remain     |
-| [R04](./2026-10-01-r04-offline-authority.md)       | Exact artifact, provider independence, indexed library         | OPEN PR #507 continuation regression; authority/query residue         |
-| [R05](./2026-10-01-r05-account-and-persistence.md) | Auth, ordered sync, config, identity migrations                | OPEN PRs #501/#507; consent, config lock and token commit fixes       |
-| [R06](./2026-10-01-r06-mobile-qualification.md)    | Mobile backup durability and physical qualification            | OPEN PR #507 lock regression; physical evidence still required        |
-| [R07](./2026-10-01-r07-build-and-analytics.md)     | Turbo/docs, gate parity, dependency evidence, metric semantics | OPEN PRs #506/#507; Windows signatures, chronology and build residue  |
-| [R08](./2026-10-01-r08-everyday-ux.md)             | 022 residue and truthful download/offline feedback             | OPEN PRs #503/#505/#504; cleanup contract/feedback and terminal proof |
-| [R09](./2026-10-01-r09-tail-performance.md)        | Tail/resource measurement and characterized simplification     | Measurement READY; no p99 evidence supplied by reviewed PRs           |
-| [R10](./2026-10-01-r10-product-and-growth.md)      | Activation/return/share, pilot, contribution/release loop      | WAITING for qualified R07/R08/R09 journeys; no growth evidence        |
-
-Existing numbered/feature plans remain subject owners. Packet deltas and their
-acceptance extend those plans; do not create duplicate issues/checklists for
-landed work. Retention, p99 and virality are measured outcomes, not promised by
-this planning handoff.
+| Plan                                                                 | Remaining work                                                                               | Status |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------ |
+| [2026-10-08-release-readiness.md](./2026-10-08-release-readiness.md) | Land the integration, then downloads, playback, consent, sanitizer, shell and relay blockers | TODO   |
 
 ## Rules
 

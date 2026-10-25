@@ -1,6 +1,6 @@
 ---
 title: Install and Update
-description: Install Kunai on Linux, macOS, or Windows via the native binary or npm, then keep it current, with upgrade, rollback, and uninstall behaviour explained.
+description: Install Kunai on Android, Linux, macOS, or Windows via the native binary or npm, then keep it current, with upgrade, rollback, and uninstall behaviour explained.
 ---
 
 Kunai supports **zero-prerequisite compiled binaries** (default), global package installs, installer scripts, and source checkouts. Packaged binaries embed the Bun runtime, so you do not need Bun installed to run them. The npm channel is a Node launcher that spawns a platform binary (no Bun). `bun install -g` and source checkouts still need Bun.
@@ -13,7 +13,7 @@ Kunai supports **zero-prerequisite compiled binaries** (default), global package
 
 ## Install paths
 
-<Tabs items={["Linux / macOS", "Windows", "Bun global", "npm global", "Source"]}>
+<Tabs items={["Linux / macOS", "Android (Termux)", "Windows", "Homebrew", "Scoop", "AUR", "Bun global", "npm global", "Source"]}>
 <Tab value="Linux / macOS">
 
 Default: downloads a verified release binary into a versioned store and links `~/.local/bin/kunai`:
@@ -60,6 +60,48 @@ files automatically.
 Supported binary targets: `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-arm64-musl`, `darwin-x64`, `darwin-arm64`.
 
 </Tab>
+<Tab value="Android (Termux)">
+
+Android support is an experimental terminal preview for ARM64 and x64 Termux.
+The artifact targets Android 9 / API 28 or newer, but physical-device
+qualification is still pending. It is not a native Android app.
+
+```sh
+pkg update
+pkg install curl termux-am
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
+kunai --player vlc
+```
+
+The installer detects Termux before generic Linux and selects
+`android-arm64-bionic` or `android-x64-bionic`. It installs under Termux-owned
+storage, not shared `/sdcard`. Install VLC or mpv-android separately as an
+Android app. Use `--player auto` for the chooser, `--player vlc`, or
+`--player mpv`.
+
+Streams that need headers, cookies, or external subtitles play through a
+per-playback loopback gateway: Kunai serves the stream on `127.0.0.1` under an
+unguessable token path and injects the provider's headers upstream, so VLC or
+mpv-android sees a plain localhost URL. HLS playlists are rewritten through it,
+and DASH BaseURLs, segment lists, and standard segment templates use the same
+guarded connection, including redirects and range requests.
+External subtitles ride the gateway and arrive as `subtitles_location` (VLC) or
+`subs` (mpv-android) extras, and deferred locators materialize into a served
+manifest. Select `--player vlc` or `--player mpv` for external subtitles;
+the Android chooser cannot pass them and Kunai refuses that combination.
+Idle shutdown waits for an active stream to finish. Shell exit stops the gateway.
+Blocked playlist URLs stay on a local refusal route, and every route requires
+the session token.
+
+Still refused, with an explanation instead of a broken launch: yt-dlp-only
+streams, local files, and non-HTTP schemes. DRM, malformed DASH, alternative
+BaseURLs, unknown segment variables, and external DASH resources are not
+supported; the gateway returns a short refusal instead of forwarding them.
+Headered, subtitled, and deferred streams are covered by unit and contract tests
+but still need a physical-device
+pass before they graduate from preview. iOS is not supported.
+
+</Tab>
 <Tab value="Windows">
 
 ```powershell
@@ -80,6 +122,53 @@ Bun, pnpm, Yarn, Scoop, Chocolatey, or WinGet), it lists each competing path
 and the command that removes it, and does not delete those installs itself.
 
 Supported binary targets: `windows-x64`, `windows-arm64`.
+
+</Tab>
+<Tab value="Homebrew">
+
+For macOS and Linuxbrew users, from `KitsuneKode/homebrew-tap`:
+
+```sh
+brew install kitsunekode/tap/kunai
+```
+
+The formula fetches the same signed-checksum release archives as the installer
+and installs the binary as `kunai`. `mpv` is your own install (`brew install
+mpv`). Kunai needs it for playback but the formula does not force it as a
+dependency. `kunai upgrade` detects the Cellar path and prints `brew upgrade
+kunai` instead of touching the file; `kunai uninstall` prints `brew uninstall
+kunai` and leaves the binary to Homebrew.
+
+</Tab>
+<Tab value="Scoop">
+
+For Windows users, from `KitsuneKode/scoop-bucket`:
+
+```powershell
+scoop bucket add kitsunekode https://github.com/KitsuneKode/scoop-bucket
+scoop install kunai
+```
+
+The manifest fetches the same `kunai-windows-*.zip` release archives and shims
+the exe as `kunai`. Scoop suggests `extras/mpv` for playback. `kunai upgrade`
+detects the `scoop\apps\kunai` path and prints `scoop update kunai`;
+`kunai uninstall` prints `scoop uninstall kunai`.
+
+</Tab>
+<Tab value="AUR">
+
+For Arch Linux, the `kunai-bin` package (binary `-bin` package, built from the
+published release archives):
+
+```sh
+yay -S kunai-bin
+```
+
+`mpv` is a hard dependency; `yt-dlp`, `ffmpeg`, and `curl` are optional
+dependencies for extra sources and downloads. `kunai upgrade` detects
+`/usr/bin/kunai` and prints your package-manager update path (`yay -Syu
+kunai-bin` or your AUR helper); `kunai uninstall` prints `sudo pacman -R
+kunai-bin`.
 
 </Tab>
 <Tab value="Bun global">
@@ -104,7 +193,9 @@ Diagnose PATH shadows with `kunai doctor`. `kunai upgrade` / `kunai uninstall` f
 </Tab>
 <Tab value="Source">
 
-Contributor-oriented, and not the preferred end-user path:
+Contributor-oriented, and not the preferred end-user path. Needs Node.js on
+PATH (the linked launcher is plain Node ESM) and builds the checkout's own
+binary the first time:
 
 ```sh
 git clone https://github.com/KitsuneKode/kunai.git
@@ -177,9 +268,11 @@ skipped. Before 0.3.0 a missing terminal defaulted to yes and could run
 ### Optional dependencies
 
 Kunai needs `mpv` to play anything, and `yt-dlp` for YouTube. **Package-manager
-installs are never run for you.** The installer checks whether they are already
-present, and if they are not it prints the exact command for your package
-manager:
+installs are never run unless you confirm on a real terminal.** The installer
+checks whether they are already present, and if they are not it prints the exact
+command for your package manager.
+
+On a TTY it offers to run that command:
 
 ```
 ! mpv is not installed — Kunai needs it to play anything.
@@ -190,10 +283,18 @@ manager:
 Run it now? [y/N]
 ```
 
+Without a terminal (`curl … | bash`, `--yes`, `--dry-run`) it does not claim it
+will run anything. It prints the same command as something you should run:
+
+```
+Run this to install them:
+    sudo pacman -S --needed mpv yt-dlp
+```
+
 Three rules hold for every package-manager prompt:
 
-- **The command is always shown**, before it is offered and again if you decline,
-  so nothing is hidden either way.
+- **The command is always shown**, with a verb that matches the next step, and
+  printed again if you decline, so nothing is hidden either way.
 - **The prompt defaults to no.** Pressing Enter never escalates.
 - **`--yes` does not answer this one.** It is consent to install Kunai, not
   consent to become root or to accept a third party's licence agreements. A run
@@ -220,6 +321,9 @@ instead of trusting a matching filename.
   no winget/scoop/choco package; the installer uses the same Windows archive CI
   pins. Windows ARM64 has no upstream build, so that host is pointed at the
   [releases page](https://github.com/lexiforest/curl-impersonate/releases).
+  Kunai looks in `%LOCALAPPDATA%\kunai\deps\curl-impersonate` even when that
+  folder is not on PATH, so extracting a release there by hand works too, with
+  no PATH edit and no new terminal.
 
 The Windows `curl` prompt is still offered alongside these. curl-impersonate
 clears Cloudflare for anime search; it does not give you an HTTP/2 `curl.exe`,
@@ -270,7 +374,11 @@ Kunai's config, data, and cache directories are preserved.
 
 Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade or uninstall; lifecycle logic stays inside the binary.
 
-`kunai --version` shows the active install channel when `install.json` is present.
+`kunai --version` prints `kunai <version> (<channel>)`. `install.json` is
+authoritative when present; otherwise Kunai detects the channel from the
+checkout, launcher, or executable path (`source`, `binary`, `npm-global`,
+`bun-global`, `homebrew`, `scoop`, `system-package`, or `dev` when it cannot
+tell).
 
 ## Update checks
 
@@ -280,6 +388,7 @@ endpoint cannot leave startup checks or `kunai upgrade` waiting indefinitely.
 
 - **Binary installs:** when `autoApplyBinaryUpdates` is enabled (default), Kunai downloads and stages the new version under `versions/` automatically. Restart Kunai to run the new binary. Toggle this from `/update`.
 - **npm/bun/source:** notify-only; run `kunai upgrade` or your package manager manually.
+- **Homebrew/Scoop/AUR:** `kunai upgrade` never self-replaces a package-manager-owned file; it prints your package manager's update command.
 - **Turning it off:** set `updateChecksEnabled` to `false` in `config.json` (default `true`) and Kunai stops checking entirely: no background request, and no update notice.
 
 Manual check from the shell:
@@ -296,21 +405,26 @@ The update panel shows install-method-aware guidance:
 | Source checkout  | Pull the repository, refresh dependencies/build as needed     |
 | Bun global       | `bun update --global @kitsunekode/kunai` or `kunai upgrade`   |
 | npm global       | `npm install -g @kitsunekode/kunai` or `kunai upgrade`        |
+| Homebrew         | `brew upgrade kunai`                                          |
+| Scoop            | `scoop update kunai`                                          |
+| AUR (system pkg) | `yay -Syu kunai-bin` (or your AUR helper)                     |
 
 You can snooze automatic checks for seven days or disable them from the update panel. Manual `/update` always remains available.
 
 ## Platform support matrix (0.3.0)
 
-| Target                                        | Status                                                                    |
-| --------------------------------------------- | ------------------------------------------------------------------------- |
-| `linux-x64`, `linux-arm64` (glibc)            | **Supported**                                                             |
-| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported**                                                             |
-| `darwin-x64`, `darwin-arm64`                  | **Beta**                                                                  |
-| `windows-x64`                                 | **Beta**                                                                  |
-| `windows-arm64`                               | **Experimental**                                                          |
-| WSL                                           | Linux binary + Linux mpv/PATH/data, not Windows-native                    |
-| FreeBSD / other BSD                           | **Unsupported** binary; npm/bun/source only                               |
-| Code signing / notarization                   | Not in beta scope; see [Unsigned binaries](#unsigned-binaries-beta) above |
+| Target                                        | Status                                                                        |
+| --------------------------------------------- | ----------------------------------------------------------------------------- |
+| `linux-x64`, `linux-arm64` (glibc)            | **Supported**                                                                 |
+| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported**                                                                 |
+| `darwin-x64`, `darwin-arm64`                  | **Beta**                                                                      |
+| `windows-x64`                                 | **Beta**                                                                      |
+| `windows-arm64`                               | **Experimental**                                                              |
+| `android-arm64`, `android-x64` (Bionic)       | **Experimental preview; API 28 artifact floor, device qualification pending** |
+| WSL                                           | Linux binary + Linux mpv/PATH/data, not Windows-native                        |
+| FreeBSD / other BSD                           | **Unsupported** binary; npm/bun/source only                                   |
+| iOS / iPadOS                                  | **Unsupported**; terminal runtime and VLC handoff remain unproven             |
+| Code signing / notarization                   | Not in beta scope; see [Unsigned binaries](#unsigned-binaries-beta) above     |
 
 ### Alpine / musl quick start
 

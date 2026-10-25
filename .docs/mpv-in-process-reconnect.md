@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-12"
+lastReviewed: "2026-10-07"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -27,6 +27,12 @@ startup, same-URL replay, normal replacement, and both enabled/disabled baseline
 ## When it runs
 
 1. **`network-read-dead`** (from `playback-watchdog`): demuxer reports network + underrun + `raw-input-rate === 0` while paused-for-cache, sustained for ~8s. Fires at most once per stall incident from the watchdog; **reconnect attempts** are still capped per cycle.
+
+An explicit user pause or `idle-active` suspends the watchdog clocks.
+`core-idle` alone does not: mpv can report it while waiting for network cache,
+which is exactly when starvation detection must remain active. Even a simultaneous
+`paused-for-cache` does not override an explicit user pause. The watchdog suite
+uses injected clocks to cover both cases without wall-clock sleeps.
 
 2. **Premature EOF** (playback-stats guard): `end-file` with `eof` was **demoted** to `unknown` because trusted progress was inconsistent with a full watch (`eofDemotedByPrematureGuard`).
 
@@ -108,3 +114,19 @@ deciding whether to keep a loading presentation need the latter.
 - Diagnostics / shell may show **`mpv-in-process-reconnect`** events (`started` | `complete` | `failed`) with attempt number and a short `detail` (trigger + error when failed).
 - Seek policy lives in `apps/cli/src/infra/player/mpv-in-process-reconnect.ts` (`computeInProcessReconnectSeek`).
 - Presence updates from a superseded generation are dropped rather than sent.
+
+## IPC writes under backpressure
+
+Both Unix sockets and Windows named pipes use the same byte-oriented FIFO. A
+partial Bun socket write retains the remaining bytes until `drain`; a later
+command cannot splice its JSON into the unfinished line. This includes the initial
+property subscriptions and UTF-8 media paths. Queued bytes are capped at 256 KiB;
+a full queue rejects a tracked command rather than growing indefinitely.
+
+A command deadline drops an entirely unsent command. If part of that command has
+already been written, the session closes instead: discarding half a JSON line
+corrupts framing, and sending its remainder after expiry could start retired
+playback. Close discards the queue, settles pending commands, and prevents a late
+drain from sending them. Expiry removes queued bytes or closes the session before
+notifying result callbacks, so reentrant callbacks cannot send an expired command. This fixes a reproduced partial-write defect; it does not
+by itself establish the cause of intermittent native transition failures.

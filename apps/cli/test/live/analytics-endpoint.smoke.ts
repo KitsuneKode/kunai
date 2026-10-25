@@ -1,116 +1,141 @@
 /**
- * Opt-in analytics against the real deployed ingest.
+ * Opt-in contract smoke against an isolated local ingest fixture only.
+ * Never validates production DNS, deployment or production counts.
  *
- * Fixture-backed tests prove the service's own logic; they cannot prove that the
- * shipped default endpoint resolves, that the deployed ingest accepts what this
- * CLI actually emits, or that a send never blocks startup. Those are exactly the
- * failures a user would feel, so they are checked here against production.
- *
- * Opt-in: set KUNAI_LIVE_ANALYTICS=1. Without it this skips and sends nothing —
- * the same posture as every other live smoke.
- *
- * Runs in an isolated profile, so it never reads or writes a real install.
+ * KUNAI_LIVE_ANALYTICS=1 KUNAI_ANALYTICS_TEST_URL=http://127.0.0.1:3000/api/ping
+ * bun run test:live:analytics
  */
-import { UsageAnalyticsService } from "@/services/analytics/usage-analytics-service";
-import { DEFAULT_ANALYTICS_ENDPOINT } from "@/services/analytics/usage-analytics-service";
+import {
+  ANALYTICS_PAYLOAD_KEYS,
+  UsageAnalyticsService,
+} from "@/services/analytics/usage-analytics-service";
+import type { AnalyticsPingCompletion, KitsuneConfig } from "@/services/persistence/ConfigService";
+import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
 import { createProviderSmokeProfile, providerSmokeProfilePayload } from "./provider-smoke";
 
 const enabled = process.env.KUNAI_LIVE_ANALYTICS === "1";
-const profile = createProviderSmokeProfile("analytics");
-
 if (!enabled) {
   console.log(
     JSON.stringify({
       ok: true,
       skipped: true,
-      reason: "set KUNAI_LIVE_ANALYTICS=1 to send one ping to the live endpoint",
-      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
-      ...providerSmokeProfilePayload(profile),
+      reason:
+        "set KUNAI_LIVE_ANALYTICS=1 and KUNAI_ANALYTICS_TEST_URL to an isolated loopback ingest fixture",
     }),
   );
   process.exit(0);
 }
 
-const endpoint = process.env.KUNAI_ANALYTICS_URL?.trim() || DEFAULT_ANALYTICS_ENDPOINT;
+// A dedicated variable avoids accidentally inheriting a real user's endpoint.
+// Numeric loopback only: no DNS, credentials, redirects or production fallback.
+const endpoint = process.env.KUNAI_ANALYTICS_TEST_URL?.trim() ?? "";
+function isLocalFixtureEndpoint(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "http:" &&
+      ["127.0.0.1", "[::1]"].includes(url.hostname) &&
+      url.port !== "" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.pathname === "/api/ping" &&
+      url.search === "" &&
+      url.hash === ""
+    );
+  } catch {
+    return false;
+  }
+}
+if (!isLocalFixtureEndpoint(endpoint)) {
+  console.log(
+    JSON.stringify({
+      ok: false,
+      skipped: false,
+      failures: ["require-isolated-loopback-test-endpoint"],
+    }),
+  );
+  process.exit(1);
+}
+
+const profile = createProviderSmokeProfile("analytics");
 const failures: string[] = [];
-
-/** The endpoint must be reachable over HTTPS on a domain we control. */
-if (!endpoint.startsWith("https://")) failures.push("endpoint-not-https");
-
-let raw: Record<string, unknown> = {
+let raw: KitsuneConfig = {
+  ...DEFAULT_CONFIG,
   analytics: "enabled",
-  // Seeded rather than left empty. `onSessionStart` fires the ping in the
-  // background on purpose — it must never hold up a session — so the
-  // `installId` it mints lands asynchronously, after `describePayload()` below
-  // has already read the config. With an empty id that read returns the
-  // "not enabled yet" placeholder, and every assertion about the wire value
-  // then describes a payload this run never sent.
+  // Synthetic fixture identity. It is never created by a test consent path
+  // and can only be delivered to the explicit isolated loopback fixture above.
   installId: "6b1a9f2c-58d4-4e77-9c31-0a5b7e2d84f0",
-  analyticsEndpoint: endpoint,
 };
 const config = {
-  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-  getRaw: () => ({ ...raw }) as never,
-  async update(partial: Record<string, unknown>) {
+  getRaw: () => ({ ...raw }),
+  async update(partial: Partial<KitsuneConfig>) {
     raw = { ...raw, ...partial };
   },
   async save() {},
+  async recordAnalyticsPing(completion: AnalyticsPingCompletion) {
+    if (raw.analytics !== "enabled" || raw.installId !== completion.installId) return false;
+    raw = {
+      ...raw,
+      analyticsRetryAfter: completion.analyticsRetryAfter,
+      ...(completion.lastAnalyticsPingAt === undefined
+        ? {}
+        : { lastAnalyticsPingAt: completion.lastAnalyticsPingAt }),
+    };
+    return true;
+  },
 };
-
+let pingStatus: number | null = null;
 const service = new UsageAnalyticsService({
-  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-  config: config as never,
+  config,
   currentVersion: "0.3.0",
   endpoint,
-  now: () => Date.now(),
   platform: { os: "linux", arch: "x64" },
+  // Deliberately bypass test DNT only for this isolated config/local fixture.
   env: {},
+  fetchImpl: async (input, init) => {
+    const response = await fetch(input, init);
+    pingStatus = response.status;
+    return response;
+  },
 });
-
-// A ping must never hold up a session. The service retries on the next launch
-// rather than blocking, so anything slow here is a real startup regression.
-const startedAt = Date.now();
-const outcome = await service.onSessionStart({ isInteractive: true });
-const durationMs = Date.now() - startedAt;
-
-if (outcome.kind !== "pinged") failures.push(`unexpected-outcome:${outcome.kind}`);
-if (durationMs > 5_000) failures.push(`ping-too-slow:${durationMs}ms`);
 
 const payload = service.describePayload();
 const keys = Object.keys(payload).sort();
-// The privacy contract bounds this to exactly five keys.
-if (keys.length !== 5) failures.push(`payload-key-count:${keys.length}`);
-for (const required of ["arch", "installId", "os", "ts", "version"]) {
-  if (!keys.includes(required)) failures.push(`payload-missing:${required}`);
-}
-// This body is POSTed to the real endpoint below, so it is the one place a
-// regression would put a raw install id on the wire. A digest is 64 hex chars;
-// a UUID is 36 with dashes, so the shape alone catches it.
-if (!/^[0-9a-f]{64}$/.test(payload.installId)) {
-  failures.push(`install-id-not-hashed:${payload.installId.length}`);
+if (JSON.stringify(keys) !== JSON.stringify(ANALYTICS_PAYLOAD_KEYS)) failures.push("payload-keys");
+if (!/^[0-9a-f]{64}$/.test(payload.installId)) failures.push("install-id-not-hashed");
+
+// Validate BEFORE any network side effect; await delivery rather than treating
+// a fire-and-forget startup outcome as proof that the ingest accepted a ping.
+if (failures.length === 0) {
+  await service.maybePing({ isInteractive: true });
+  if (pingStatus !== 204) failures.push(`ping-not-accepted:${pingStatus ?? "none"}`);
 }
 
-// The ingest must refuse anything beyond the contract, not silently store it.
-const rejected = await fetch(endpoint, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ ...payload, title: "should-be-rejected" }),
-}).catch(() => null);
-if (rejected?.status !== 400) failures.push(`sixth-key-not-rejected:${rejected?.status ?? "none"}`);
+const rejected =
+  failures.length > 0
+    ? null
+    : await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...payload, title: "should-be-rejected" }),
+        redirect: "error",
+        signal: AbortSignal.timeout(2_500),
+      }).catch(() => null);
+if (failures.length === 0 && rejected?.status !== 400) {
+  failures.push(`sixth-key-not-rejected:${rejected?.status ?? "none"}`);
+}
 
 console.log(
   JSON.stringify({
     ok: failures.length === 0,
     skipped: false,
     endpoint,
-    outcome: outcome.kind,
-    pingDurationMs: durationMs,
+    pingStatus,
     payloadKeys: keys,
     sixthKeyStatus: rejected?.status ?? null,
     failures,
     ...providerSmokeProfilePayload(profile),
   }),
 );
-
 process.exit(failures.length === 0 ? 0 : 1);

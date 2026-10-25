@@ -94,7 +94,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           buffer={state.inputMode.buffer}
           seed={state.inputMode.seed}
         />
-        {error ? <Text color={palette.danger}>{error}</Text> : null}
+        {error ? <Text color={palette.dangerText}>{error}</Text> : null}
       </Box>
     );
   }
@@ -135,7 +135,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             <Text color={palette.dim}> ▼ ...</Text>
           ) : null}
         </Box>
-        {error ? <Text color={palette.danger}>{error}</Text> : null}
+        {error ? <Text color={palette.dangerText}>{error}</Text> : null}
       </Box>
     );
   }
@@ -161,7 +161,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             width={rowWidth}
           />
         </Box>
-        {error ? <Text color={palette.danger}>{error}</Text> : null}
+        {error ? <Text color={palette.dangerText}>{error}</Text> : null}
       </Box>
     );
   }
@@ -198,28 +198,20 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             return (
               <Box key={row.def.id} flexDirection="column">
                 {renderMainRow(row, false, rowWidth)}
-                {row.detail ? (
-                  <Text color={palette.dim} dimColor>
-                    {row.detail}
-                  </Text>
-                ) : null}
+                {row.detail ? <Text color={palette.dim}>{row.detail}</Text> : null}
               </Box>
             );
           }
           return (
             <Box key={row.def.id} flexDirection="column">
               {renderMainRow(row, selected, rowWidth)}
-              {selected && row.detail ? (
-                <Text color={palette.dim} dimColor>
-                  {`  ${row.detail}`}
-                </Text>
-              ) : null}
+              {selected && row.detail ? <Text color={palette.dim}>{`  ${row.detail}`}</Text> : null}
             </Box>
           );
         })}
         {start + maxRows < page.rows.length ? <Text color={palette.dim}> ▼ ...</Text> : null}
       </Box>
-      {error ? <Text color={palette.danger}>{error}</Text> : null}
+      {error ? <Text color={palette.dangerText}>{error}</Text> : null}
     </Box>
   );
 });

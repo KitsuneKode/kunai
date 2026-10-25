@@ -18,7 +18,7 @@ import { registerMpvProcess, terminateMpvProcess } from "@/infra/player/mpv-proc
 import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
 import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
-import { buildMpvArgs, shouldApplyStartAtSeek } from "@/mpv";
+import { buildMpvArgs, shouldApplyStartAtSeek, writeMpvSensitiveConf } from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { resolveTuning } from "@/services/persistence/tuning";
 import { checkStreamPreflight } from "@/services/playback/stream-health-check";
@@ -44,6 +44,7 @@ import {
   shouldUnlinkUnixSocket,
 } from "./mpv-ipc-endpoint";
 import { shouldEmitPlaybackProgress } from "./mpv-playback-kernel";
+import { needsMpvNetworkPreflight } from "./mpv-playback-url";
 import type { MpvUrlKind } from "./mpv-playback-url";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import {
@@ -436,11 +437,13 @@ export class PersistentMpvSession {
 
     this.loadStartAt = shouldApplyStartAtSeek(options.startAt) ? (options.startAt ?? 0) : 0;
 
-    const preflightPromise = checkStreamPreflight(stream.url, stream.headers, undefined, {
-      cachedAt: stream.timestamp,
-      streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
-      requiresYtdl: stream.requiresYtdl,
-    });
+    const preflightPromise = needsMpvNetworkPreflight(stream.url, options.urlKind)
+      ? checkStreamPreflight(stream.url, stream.headers, undefined, {
+          cachedAt: stream.timestamp,
+          streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
+          requiresYtdl: stream.requiresYtdl,
+        })
+      : Promise.resolve({ status: "reachable" as const });
 
     if (options.timing) {
       try {
@@ -633,6 +636,15 @@ export class PersistentMpvSession {
       }
     }
 
+    const sensitiveConf = await writeMpvSensitiveConf(
+      {
+        url: this.initialStream.url,
+        headers: this.initialStream.headers ?? {},
+        requiresYtdl: this.initialStream.requiresYtdl,
+        ytdlRawOptions: this.initialStream.ytdlRawOptions,
+      },
+      this.ipcEndpoint,
+    );
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
@@ -658,6 +670,7 @@ export class PersistentMpvSession {
         includeStartArg,
         scriptPath: this.luaScriptPath ?? undefined,
         scriptOpts: this.scriptOptsArg,
+        sensitiveOptionsPath: sensitiveConf?.path,
       },
     );
     this.loadStartAt =
@@ -665,6 +678,22 @@ export class PersistentMpvSession {
     this.subtitlesAttachedAtSpawn = Boolean(this.initialOptions.primarySubtitle);
     this.titleAppliedViaArgs = true;
 
+    try {
+      await this.spawnProcessAndConnect(mpvOptions, args);
+    } finally {
+      // The conf's only reader is mpv's startup config parse — once spawn()
+      // has settled (IPC ready, bootstrap failure, or spawn throw) the file
+      // has no further consumer.
+      await sensitiveConf?.cleanup();
+    }
+  }
+
+  /** The spawn→IPC-connect tail of {@link spawn} — kept separate so the
+   * sensitive-conf cleanup wraps every exit path with one finally. */
+  private async spawnProcessAndConnect(
+    mpvOptions: MpvRuntimeOptions | undefined,
+    args: string[],
+  ): Promise<void> {
     const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
       const active = this.activeCycle;
       if (active && (event.type === "stream-stalled" || event.type === "ipc-stalled")) {

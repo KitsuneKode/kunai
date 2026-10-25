@@ -1,11 +1,9 @@
-// =============================================================================
-// queue-entry-label.ts — single authority for how a queue entry is named in UI.
+// Single authority for how a queue entry is named in UI.
 //
 // The "Next: …" cue appears on the playback footer, the post-play screen, the
 // auto-advance countdown and the queue overlay. Each had grown its own
 // formatter, so the same entry could read "Show S01E03", "Show · S01E03" or
 // just "Show" depending on where you looked.
-// =============================================================================
 
 import { normalizeMediaKind, presentMedia } from "@/domain/media/media-presentation";
 import type { QueueEntry } from "@kunai/storage";

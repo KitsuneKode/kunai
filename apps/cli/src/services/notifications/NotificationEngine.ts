@@ -1,6 +1,8 @@
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import { sanitizeProviderHints } from "@/domain/media/media-item-identity";
 import { normalizeMediaKind } from "@/domain/media/media-presentation";
+import type { ContentType } from "@/domain/types";
+import type { ProviderExternalIds } from "@kunai/types";
 
 export type NotificationSignal =
   | {
@@ -10,6 +12,10 @@ export type NotificationSignal =
       readonly title: string;
       readonly season?: number;
       readonly episode?: number;
+      readonly absoluteEpisode?: number;
+      readonly contentType?: ContentType;
+      readonly sourceId?: string;
+      readonly externalIds?: ProviderExternalIds;
       readonly providerId: string;
       readonly catalogSource?: string;
       readonly availableAt: string;
@@ -28,6 +34,10 @@ export type NotificationSignal =
       readonly title: string;
       readonly season?: number;
       readonly episode?: number;
+      readonly absoluteEpisode?: number;
+      readonly contentType?: ContentType;
+      readonly sourceId?: string;
+      readonly externalIds?: ProviderExternalIds;
     }
   | {
       readonly type: "download-failed";
@@ -36,6 +46,10 @@ export type NotificationSignal =
       readonly title: string;
       readonly season?: number;
       readonly episode?: number;
+      readonly absoluteEpisode?: number;
+      readonly contentType?: ContentType;
+      readonly sourceId?: string;
+      readonly externalIds?: ProviderExternalIds;
       readonly error: string;
     }
   | {
@@ -100,7 +114,9 @@ export function deriveNotifications(
       const episodePart =
         signal.season !== undefined && signal.episode !== undefined
           ? `S${signal.season}E${signal.episode}`
-          : "new episode";
+          : signal.absoluteEpisode !== undefined
+            ? `EP${signal.absoluteEpisode}`
+            : "new episode";
       const body = signal.catalogSource
         ? `${episodePart} reported by catalog (${signal.catalogSource})`
         : `${episodePart} is available on ${signal.providerId}`;
@@ -109,7 +125,7 @@ export function deriveNotifications(
           "new-playable-episode",
           signal.titleId,
           signal.season ?? "-",
-          signal.episode ?? "-",
+          signal.episode ?? signal.absoluteEpisode ?? "-",
           signal.providerId,
         ].join(":"),
         kind: "new-episode",
@@ -117,11 +133,15 @@ export function deriveNotifications(
         body,
         item: {
           mediaKind: normalizeMediaKind(signal.mediaKind),
+          contentType: signal.contentType,
+          sourceId: signal.sourceId,
           titleId: signal.titleId,
           title: signal.title,
           season: signal.season,
           episode: signal.episode,
+          absoluteEpisode: signal.absoluteEpisode,
           providerHints: sanitizeProviderHints([{ providerId: signal.providerId }]),
+          externalIds: signal.externalIds,
         },
         createdAt: input.now,
         updatedAt: input.now,
@@ -146,11 +166,15 @@ export function deriveNotifications(
         body: "Available offline",
         item: {
           mediaKind: normalizeMediaKind(signal.mediaKind),
+          contentType: signal.contentType,
+          sourceId: signal.sourceId,
           titleId: signal.titleId,
           title: signal.title,
           season: signal.season,
           episode: signal.episode,
+          absoluteEpisode: signal.absoluteEpisode,
           providerHints: sanitizeProviderHints([]),
+          externalIds: signal.externalIds,
         },
         createdAt: input.now,
         updatedAt: input.now,
@@ -175,11 +199,15 @@ export function deriveNotifications(
         body: signal.error,
         item: {
           mediaKind: normalizeMediaKind(signal.mediaKind),
+          contentType: signal.contentType,
+          sourceId: signal.sourceId,
           titleId: signal.titleId,
           title: signal.title,
           season: signal.season,
           episode: signal.episode,
+          absoluteEpisode: signal.absoluteEpisode,
           providerHints: sanitizeProviderHints([]),
+          externalIds: signal.externalIds,
         },
         createdAt: input.now,
         updatedAt: input.now,

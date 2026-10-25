@@ -11,10 +11,16 @@
 
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import { MAX_POSTER_SOURCE_BYTES } from "@/image/native-image";
+import { readBoundedBody } from "@/services/network/bounded-body";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
 
 import { createKeyedInflight } from "./inflight";
 import { ByteBudgetLruCache } from "./poster-byte-cache";
+import {
+  isPosterDiskCacheCandidate,
+  readPosterDiskCache,
+  writePosterDiskCache,
+} from "./poster-disk-cache";
 
 export type PosterSource = {
   /** The resolved asset this byte payload came from — the prepared cache keys off it. */
@@ -31,6 +37,22 @@ const sourceCache = new ByteBudgetLruCache<string, PosterSource>({
   weight: (source) => source.bytes.byteLength,
 });
 const sourceInflight = createKeyedInflight();
+// Disk persists queued behind the render path. Tracked so tests (and a future
+// shutdown flush) can wait them out instead of sleeping.
+const pendingDiskWrites = new Set<Promise<void>>();
+
+function persistSourceToDisk(resolved: string, cols: number, bytes: Uint8Array): void {
+  const write = writePosterDiskCache({ url: resolved, cols }, bytes);
+  pendingDiskWrites.add(write);
+  void write.finally(() => {
+    pendingDiskWrites.delete(write);
+  });
+}
+
+/** Resolve when every queued disk persist has settled. Test/shutdown seam. */
+export function flushPosterDiskWrites(): Promise<void> {
+  return Promise.all(pendingDiskWrites).then(() => undefined);
+}
 
 function getTmdbSize(cols: number, variant: "preview" | "detail"): string {
   if (variant === "detail") return cols <= 28 ? "w500" : "w780";
@@ -61,55 +83,6 @@ export function clearPosterSourceCache(): void {
   sourceInflight.clear();
 }
 
-/**
- * Read a stream into one buffer, refusing to exceed the source ceiling.
- *
- * The cumulative check happens before each chunk is kept, so an undeclared or
- * understated body is cut off at the limit rather than after it. Cancelling the
- * reader is what actually stops the transfer; simply returning would leave the
- * socket draining in the background.
- */
-async function readPosterStream(
-  stream: ReadableStream<Uint8Array>,
-  signal?: AbortSignal,
-): Promise<Uint8Array | null> {
-  const reader = stream.getReader();
-  const onAbort = () => void reader.cancel("aborted").catch(() => {});
-  signal?.addEventListener("abort", onAbort, { once: true });
-
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      if (signal?.aborted) return null;
-      total += value.byteLength;
-      if (total > MAX_POSTER_SOURCE_BYTES) {
-        await reader.cancel("too-large").catch(() => {});
-        return null;
-      }
-      chunks.push(value);
-    }
-  } catch {
-    // A dropped connection mid-body is not a cacheable outcome.
-    return null;
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
-  }
-
-  if (signal?.aborted) return null;
-
-  const out = new Uint8Array(total);
-  let cursor = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, cursor);
-    cursor += chunk.byteLength;
-  }
-  return out;
-}
-
 async function readLocalPosterSource(
   path: string,
   signal?: AbortSignal,
@@ -118,7 +91,7 @@ async function readLocalPosterSource(
   if (!(await file.exists())) return null;
   // Stat first: a sidecar larger than the ceiling must never be read at all.
   if (file.size > MAX_POSTER_SOURCE_BYTES || file.size === 0) return null;
-  const bytes = await readPosterStream(file.stream(), signal);
+  const bytes = await readBoundedBody(file.stream(), MAX_POSTER_SOURCE_BYTES, signal);
   if (!bytes || bytes.byteLength === 0) return null;
   return { identity: path, bytes };
 }
@@ -200,7 +173,7 @@ async function readRemotePosterSource(
     return null;
   }
 
-  const bytes = await readPosterStream(response.body, signal);
+  const bytes = await readBoundedBody(response.body, MAX_POSTER_SOURCE_BYTES, signal);
   if (!bytes || bytes.byteLength === 0 || !hasImageSignature(bytes)) return null;
   return { identity: url, bytes };
 }
@@ -228,6 +201,25 @@ export async function fetchPosterSource(
     resolved,
     async () => {
       try {
+        // Disk lane first: a previous session (or an evicted memory entry)
+        // may already hold these bytes. The hit gate is synchronous — the
+        // network fetch below must still fire synchronously on a miss, so
+        // only a plausible file pays for an async read. Local files skip
+        // the disk; they already are on disk.
+        if (
+          !isLocalImagePath(resolved) &&
+          isPosterDiskCacheCandidate({ url: resolved, cols }, MAX_POSTER_SOURCE_BYTES)
+        ) {
+          const diskBytes = await readPosterDiskCache(
+            { url: resolved, cols },
+            MAX_POSTER_SOURCE_BYTES,
+          );
+          if (diskBytes && hasImageSignature(diskBytes)) {
+            const diskSource = { identity: resolved, bytes: diskBytes };
+            sourceCache.set(resolved, diskSource);
+            return diskSource;
+          }
+        }
         const source = isLocalImagePath(resolved)
           ? await readLocalPosterSource(resolved)
           : await readRemotePosterSource(resolved);
@@ -235,6 +227,12 @@ export async function fetchPosterSource(
         // Only a complete, in-bounds read is worth remembering; caching a
         // failure would make one dropped connection permanent for the process.
         sourceCache.set(resolved, source);
+        // Persist remote bytes for the next scroll/launches. Best-effort and
+        // unawaited — the caller already has its source; the disk must never
+        // slow the render path. writePosterDiskCache never rejects.
+        if (!isLocalImagePath(resolved)) {
+          persistSourceToDisk(resolved, cols, source.bytes);
+        }
         return source;
       } catch {
         return null;
@@ -242,6 +240,30 @@ export async function fetchPosterSource(
     },
     signal,
   );
+}
+
+/**
+ * Warm the posters adjacent to the current selection so ↑/↓ lands on cached
+ * bytes instead of a network fetch + re-encode per row. Fire-and-forget:
+ * fetchPosterSource absorbs failures as null and the caches/inflight join
+ * dedupe repeats, so scrolling back and forth is free.
+ */
+export function prefetchPosterSources(
+  urls: readonly (string | undefined)[],
+  currentIndex: number,
+  {
+    cols = 18,
+    variant = "preview",
+    radius = 2,
+  }: { cols?: number; variant?: "preview" | "detail"; radius?: number } = {},
+): void {
+  const depth = Math.max(0, Math.min(4, Math.trunc(radius)));
+  for (let distance = 1; distance <= depth; distance += 1) {
+    for (const index of [currentIndex - distance, currentIndex + distance]) {
+      const url = urls[index];
+      if (url) void fetchPosterSource(url, { cols, variant });
+    }
+  }
 }
 
 /**

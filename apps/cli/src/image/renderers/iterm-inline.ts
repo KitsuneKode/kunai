@@ -1,5 +1,4 @@
-// =============================================================================
-// iterm-inline.ts — iTerm2's inline-image protocol (OSC 1337).
+// ITerm2's inline-image protocol (OSC 1337).
 //
 // The highest-fidelity option on terminals that are not kitty: the prepared PNG
 // is transmitted verbatim, so unlike sixel there is no 256-colour quantisation
@@ -8,7 +7,6 @@
 // Geometry is declared in *cells* (`width=Nch`), which is what keeps the image
 // inside the rectangle the shell reserved for it. Without an explicit size
 // iTerm2 scales to the image's own pixel dimensions and pushes the layout.
-// =============================================================================
 
 /**
  * Build the escape sequence that draws `png` in a `cols` x `rows` cell box.

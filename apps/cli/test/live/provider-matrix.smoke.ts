@@ -50,6 +50,13 @@ const MATRIX: readonly MatrixEntry[] = [
     fixture: "Inception (DASH + playlist cookie)",
   },
   {
+    provider: "vidrock",
+    command: ["bun", "test/live/mpv-playback.smoke.ts", "vidrock"],
+    playbackCommand: ["bun", "test/live/mpv-playback.smoke.ts", "vidrock"],
+    media: "movie",
+    fixture: "Fight Club (Chrome UA + Referer/Origin)",
+  },
+  {
     provider: "anidb",
     command: ["bun", "-e", "await import('./test/live/anidb-onigiri.smoke.ts')"],
     media: "anime",

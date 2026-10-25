@@ -26,8 +26,14 @@ export async function handleRelayRequest(request: Request, env: RelayAppEnv): Pr
 
   const rpcMatch = /^\/rpc\/([^/]+)$/.exec(url.pathname);
   if (rpcMatch?.[1]) {
+    let providerId: string;
+    try {
+      providerId = decodeURIComponent(rpcMatch[1]);
+    } catch {
+      return relayError("bad-request", undefined, "Malformed provider id encoding", 400);
+    }
     return handleRpcRequest(request, {
-      providerId: decodeURIComponent(rpcMatch[1]),
+      providerId,
       registry: relayRegistry,
       authorization: env.authorization,
       transport: env.transport,

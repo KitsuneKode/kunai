@@ -1,5 +1,6 @@
 import type { PlaybackFailureClass } from "@/infra/player/playback-failure-classifier";
 import { classifyProviderFailure, isOfflineNetworkFailure } from "@kunai/core";
+import { detectGeoBlockedProviderResponse } from "@kunai/relay";
 import type { ProviderFailure } from "@kunai/types";
 
 export type ErrorScenario =
@@ -47,6 +48,34 @@ export function buildMpvMissingProblem(input: {
     severity: "blocking",
     cause: "mpv-missing",
     userMessage: `mpv is required for playback. ${input.remediationSummary} Try: ${commandHint}`,
+    recommendedAction: "settings",
+    secondaryActions: ["diagnostics"],
+  };
+}
+
+export function buildAndroidIntentMissingProblem(input: {
+  readonly player: "chooser" | "vlc" | "mpv";
+  readonly remediationSummary: string;
+}): PlaybackProblem {
+  const playerName =
+    input.player === "vlc" ? "VLC" : input.player === "mpv" ? "mpv-android" : "a video player";
+  return {
+    stage: "mpv",
+    severity: "blocking",
+    cause: "android-intent-launcher-missing",
+    userMessage: `Android playback needs the termux-am package and ${playerName}. ${input.remediationSummary}`,
+    recommendedAction: "settings",
+    secondaryActions: ["diagnostics"],
+  };
+}
+
+export function buildUnsupportedPlayerProblem(): PlaybackProblem {
+  return {
+    stage: "mpv",
+    severity: "blocking",
+    cause: "player-selection-unsupported",
+    userMessage:
+      "VLC handoff is currently supported on Android only. Use --player auto or --player mpv on this platform.",
     recommendedAction: "settings",
     secondaryActions: ["diagnostics"],
   };
@@ -190,15 +219,23 @@ export function buildProviderResolveProblem({
         secondaryActions: fallbackActions,
       };
     case "rate-limited":
-    case "blocked":
+    case "blocked": {
+      // The one production reader of `detectGeoBlockedProviderResponse`: a
+      // blocked provider is where regional blocking surfaces, so a geo-block
+      // signature on the failure earns a relay hint. Hint path only — the relay
+      // stays metadata-only, no media route is offered or implied here.
+      const geoHint = geoBlockedRelayHint(last);
       return {
         stage: "provider-resolve",
         severity: "recoverable",
         cause: "provider-access",
-        userMessage: classification.userSummary,
+        userMessage: geoHint
+          ? `${classification.userSummary} ${geoHint}`
+          : classification.userSummary,
         recommendedAction: tryNextAction,
         secondaryActions: ["diagnostics"],
       };
+    }
     case "provider-empty":
     case "provider-parse":
     case "expired-stream":
@@ -409,6 +446,25 @@ function hasOfflineSignature(
 
 const SESSION_GUARD_PATTERN =
   /session_missing|session_invalid|session_expired|turnstile_failed|guarded_session_invalid|valid browser session|x-session-token|videasy session/i;
+
+/**
+ * Hint copy for a failure that carries a geo-block signature. The detector
+ * reads the failure message as the response body — attempts here carry no
+ * status or upstream URL, and every field on its input is optional.
+ */
+function geoBlockedRelayHint(
+  failure: { readonly providerId?: string; readonly message?: string } | undefined,
+): string | null {
+  if (!failure?.message) return null;
+  const detection = detectGeoBlockedProviderResponse({
+    providerId: failure.providerId,
+    body: failure.message,
+  });
+  if (!detection.blocked) return null;
+  return detection.relaySuggested
+    ? "This looks like regional blocking — a personal metadata relay (Relay in Settings) can sometimes reach this provider."
+    : "This looks like regional blocking from this network.";
+}
 
 function findSessionFailure(
   attempts: readonly {

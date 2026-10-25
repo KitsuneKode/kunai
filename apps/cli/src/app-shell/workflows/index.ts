@@ -3,9 +3,11 @@ export {
   openAnimeEpisodeListPicker,
   openAnimeEpisodePicker,
   openEpisodePicker,
+  openPlaybackEpisodePicker,
   openProviderPicker,
   openSeasonPicker,
   openSubtitlePicker,
+  openThemePicker,
   openTracksPanel,
 } from "./picker-workflows";
 export {

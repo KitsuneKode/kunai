@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-10-08"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -126,11 +126,19 @@ accounts, usage ping, done. Implementation is
   but do not schedule offline runway work unless `Keep watching offline` was selected and do not
   revoke an existing title enrollment.
 - HLS size is reported honestly as unknown when content length cannot be known.
-- New temporary files use a short `.tmp.<job-id>.mp4` sibling name so a long final filename
-  does not overflow the filesystem component limit. Existing jobs retain their recorded paths.
+- The recorded temporary base is a short `.tmp.<job-id>.mp4` sibling name so a long final
+  filename does not overflow the filesystem component limit. Each claimed attempt writes
+  `media.mp4` inside its own `.claim-<generation>` directory. Metadata refresh cannot replace
+  that attempt path. Existing jobs retain their recorded base paths.
   Candidates validate after a clean exit, then publish using an exclusive hard link before the
-  temporary name is removed. An existing destination is never overwritten; filesystems without
-  hard-link support fail safely. Choose another directory or resolve the existing file explicitly.
+  temporary name is removed. Child launch, hard-link publication, and exclusive copy reservation
+  hold a short SQLite writer lock after checking the claim token and generation. A cross-device
+  or unsupported-link failure reserves the destination with `wx`, records its device/inode as
+  an incomplete copy, and copies asynchronously through that descriptor before file fsync.
+  Recovery never advertises an incomplete copy as playable, even without ffprobe. It removes
+  such a copy only when its recorded identity still matches. Filesystems without stable file
+  identity fail safely. An existing destination is never overwritten in either path.
+  Choose another directory or resolve an existing file explicitly.
   Legacy destinations claimed by another job or offline asset are refused during publication
   and recovery. Artifact deletion requires a completed/repairable job with no conflicting owner;
   deleting a failed job preserves an unknown existing file.
@@ -140,8 +148,30 @@ accounts, usage ping, done. Implementation is
   publishes successfully, metadata/completion write failures surface and leave the running
   lease recoverable. After that lease expires, recovery validates and adopts the artifact
   without downloading again; persistent database failures remain visible, not successful completion.
-- Queue ownership is a SQLite compare-and-set from `queued` to `running`. Heartbeats form a
-  bounded lease across Kunai processes; recovery never touches a freshly heartbeating owner.
+- Queue ownership is a SQLite compare-and-set from `queued` to `running`, with a unique owner
+  token and monotonic generation for each download or recovery claim. Recovery compares both
+  the observed heartbeat and generation. Every worker metadata/progress/heartbeat/completion
+  mutation presents its claim; a displaced worker cannot finish, fail, abort, or emit completion
+  for its successor. Heartbeat refusal stops that worker's child/copy. Async work never runs
+  under the SQLite writer lock, and the fence rejects async callbacks at typecheck time.
+  Retry also checks eligibility in SQLite, so a stale UI read cannot requeue a newly running
+  owner or an incomplete publication; the caller reports that changed state.
+- Expiry does not prove an old worker is dead. Recovery preserves its private attempt and any
+  legacy shared temporary name. A replacement writes a fresh namespace; a retry may restart
+  transfer bytes. Playback resume is independent of this transfer policy. Successful workers
+  remove only their own attempt. Failed publication bookkeeping retains hard-link inode proof
+  across repeated recovery failures. A recovery claim retains the original staging path until
+  adoption or retry; only a new transfer assigns a fresh directory. Shutdown retains claim
+  tokens for its final pause and leaves incomplete copies with failed cleanup recoverable.
+  Legacy running rows also require a persisted publication identity or a temporary hard link
+  with the destination's device/inode before validation. Without proof, the file is preserved
+  and the job fails visibly, allowing record removal or a different destination. An older
+  rename-only transfer whose completion did not commit cannot be adopted automatically.
+  Large-library paging and cleanup of abandoned attempt directories remain
+  separate work; unqualified files are retained rather than removed speculatively.
+- Publication identity is checked again before local completion and artifact deletion. A file
+  replaced during copy, validation, or after completion is preserved with a visible failure;
+  deleting its job record without artifact deletion remains available.
 - Blocking download intent is unique in SQLite by canonical title and exact nullable
   season/episode coordinates plus exact provider-native episode identity. Concurrent surfaces or
   Kunai processes therefore admit one matching job; the loser receives the ordinary
@@ -190,6 +220,11 @@ accounts, usage ping, done. Implementation is
 - Download-only mode resolves a playable stream without launching mpv.
 - Selected poster URL and IntroDB/AniSkip timing are persisted at enqueue time when available.
 - Completed downloads persist local file size and, when `ffprobe` is available, playable duration after artifact validation. The optional probe has a 30-second deadline, then graceful termination and bounded force-kill cleanup; a probe timeout fails validation without publishing its temporary artifact or deleting a previously published file as corrupt.
+- A completion write releases the running owner token while retaining its claim
+  generation. A subsequent offline-registration error is surfaced through the
+  queue pass and diagnostics; it must not be mistaken for a successor claim or
+  silently swallowed. The valid completed artifact remains intact, and a later
+  queue kick can continue other queued jobs.
 - Offline artwork caching is best-effort and post-completion; artwork failure must never fail or delay a completed download.
 - Thumbnail sidecars are written through a temporary file and renamed only after a non-empty image exists.
 - External subtitle/artwork sidecars are repairable metadata, not proof the video failed. If the video artifact validates but an expected sidecar is missing, the job becomes `repairable` and `/downloads` can retry just the sidecar path without re-running `yt-dlp`.
@@ -278,7 +313,9 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
 - Normal online search keeps provider playback online-first by default even when a downloaded
   copy exists; downloaded state is a badge/action, not a silent hijack.
 - Continue-style flows may prefer a ready local file before provider resolution, but online
-  continuation must remain an explicit action when local episodes are exhausted or broken.
+  continuation must remain an explicit action when local episodes are exhausted or broken. A known
+  selected local episode (or movie) is validated before provider lookup and remote title enrichment;
+  the explicit streaming preference retains online acquisition behavior.
 - History/Continue rows may promote a cached downloaded next episode and show cached `N new`.
   When durable local identity exists, Enter explicitly plays that downloaded episode through the
   validated offline path. Otherwise the row directs the user to `/library`; ordinary online history
@@ -295,10 +332,34 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
 - An offline-library launch keeps its explicit local-only origin through episode selection and
   playback. The validated local source is handed to the local mpv path, including local subtitle
   sidecars, rather than being represented as a remote stream URL.
+- A validated local artifact remains playable when its recorded provider is no longer registered.
+  Provider identity remains provenance for history and sharing; registration becomes mandatory
+  only for online acquisition. Source authority is resolved before adapter lookup, and local
+  playback skips provider selection, traces, health feedback, remote prefetch, and post-play
+  release reconciliation. Manual Next and autoplay use the offline episode index.
+- Initial downloaded launches retain the selected job's provider-native episode identity and season.
+  Numeric season/episode coordinates alone must not choose a different catalog artifact. A saved
+  position is used for instant entry only when its season and episode match the selected episode.
+- Active and post-play episode pickers list locally ready episodes across downloaded seasons,
+  retaining provider-native episode identity. They never fetch a catalog during local playback.
+- Local Tracks shows the downloaded source as a fact and delegates embedded audio/subtitle changes
+  to the player. Provider, source, and acquisition audio-mode switches require opening the title
+  online; stale track picks show feedback without changing preferences, invalidating caches, or
+  replaying the local file. The stream's local presentation marker never grants file access:
+  the player still requires exact path matching against a validated local source.
 - The full player-options path preserves that verified origin by exact media/sidecar path match, so
   resume, autoplay, timing, track preferences, and cancellation remain available without weakening
   mpv URL safety. A local launch failure is a local player problem: it never invalidates provider
   caches or enters source/provider failover.
+- mpv's one-shot launcher and pooled loadfile path skip HTTP preflight only for a file
+  admitted by explicit local authority. HTTP(S) targets still receive network preflight,
+  including an HTTP(S) URL accidentally tagged local. The URL and exact-path trust gates
+  remain intact; provider URLs never gain local-file permission from a display marker.
+- mpv's shutdown can clear duration while retaining position. Playback results keep
+  the duration observed in that playback cycle for both history and premature-EOF
+  checks, even when a later position event arrives after duration is cleared. This retained value
+  resets with each playback cycle, so a short completed file persists without loosening
+  interrupted-stream checks or inheriting another file's duration.
 - Offline playback does not start remote subtitle or timing-metadata lookup, provider prefetch, or
   recommendation warming. Local next-episode readiness, cached timing, and local subtitle sidecars
   remain available.
@@ -334,3 +395,23 @@ Keep config flat unless the config model is deliberately refactored:
 
 Current offline follow-up is indexed in [the roadmap](../.plans/roadmap.md). Do
 not reopen the archived onboarding plan to infer current behavior.
+
+## Due work and queue paging
+
+Download dispatch filters retry eligibility in SQLite before applying the page
+limit, using `DownloadJobsRepository.listDueQueued`. Fifty deferred jobs must
+not hide due work behind them. Pages use stable `(created_at, id)` ordering;
+equal timestamps use the job ID as the tie-breaker, process-local claims are skipped, and the scheduler continues with a bounded
+keyset page budget. The regression seeds 51 durable intents and requires the
+last one to be attempted without changing the earlier retry windows. Up Next
+placement is a separate policy in the [queue feature](features/queue.md).
+
+### Metadata probe shutdown
+
+Artifact metadata repair owns its `ffprobe` process even when there is no running
+download row. Each standalone probe has a private tracking key; shutdown closes
+admission, includes those probes in process cleanup, and leaves published media
+and saved job state intact. A probe waiting for stat or a transcode slot may not
+start after shutdown. Helper processes receive the existing scrubbed child
+environment. Container disposal stops presence and pauses download work before
+closing the databases.

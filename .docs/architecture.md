@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-06"
+lastReviewed: "2026-10-13T11:22:36Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -29,11 +29,11 @@ Kunai is a terminal CLI that:
 1. Searches titles
 2. Lets the user pick a title, season, episode, and provider
 3. Resolves a playable stream URL
-4. Launches `mpv`
+4. Routes playback through managed desktop `mpv` or a detached Android player handoff
 5. Returns to the same shell for post-playback actions, settings, and provider changes
 
 ```text
-user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provider modules -> mpv -> shell
+user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provider modules -> PlayerService -> shell
 ```
 
 ## Entrypoint
@@ -60,7 +60,7 @@ The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.t
 | Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                              | Ink shell, commands, settings, history, and structured pickers                                                          |
 | Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*` | Search backends, metadata fetches, and routing policy                                                                   |
 | Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                               | TMDB/Videasy season data and title enrichment (migration target: catalog services)                                      |
-| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | `mpv` launch, IPC, and Lua-assisted progress tracking                                                                   |
+| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | `mpv` launch, IPC, and Lua-assisted progress tracking; detached Android intent handoff                                  |
 | Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                                                               |
 | Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                                                     |
 | Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                                                    |
@@ -101,6 +101,7 @@ For new providers or major provider hardening, do not jump straight from this do
 | Archive Playwright reference code | Browser interception remains useful for research evidence, not production defaults      |
 | Future runtime-browser package    | Any renewed Playwright path should be isolated behind a runtime boundary/lease model    |
 | Detached `mpv`                    | Keeps the terminal usable and matches ani-cli style behavior                            |
+| Detached Android handoff          | Reuses the same shell/provider flow without pretending an external app is observable    |
 | Lua position reporter             | `mpv` does not reliably expose final playback position on exit                          |
 | Search-service registry           | Keeps room for multiple search backends without hardwiring everything into one provider |
 | `isAnimeProvider` flag            | Anime routing should be explicit and cheap to evaluate                                  |
@@ -143,6 +144,8 @@ storage (`packages/storage` queue repository) and applied by domain/app adapters
   for non-playback exits).
 - Only confirmed `playback-started` acknowledges a claimed row. Process spawn and
   IPC connection are insufficient.
+- Android intent acceptance is also insufficient. Detached handoff restores the
+  exact claimed row to pending because Kunai cannot observe media start.
 - Every handoff carries the exact queue entry ID and absolute anime episode
   identity when present; auto-next and post-play must not substitute a reordered
   head.
@@ -155,6 +158,62 @@ storage (`packages/storage` queue repository) and applied by domain/app adapters
 Contract proof (fake-player / render-capture, no live providers):
 `apps/cli/test/integration/queue-playback-lifecycle.test.ts`. Product vocabulary:
 [.docs/features/queue.md](./features/queue.md).
+
+### Android detached-player flow
+
+On Android/Termux, `--player auto|mpv|vlc` composes
+`HandoffPlayerService` instead of `PlayerServiceImpl`. `auto` opens the Android
+chooser; explicit choices target mpv-android or VLC. The adapter accepts a
+final absolute HTTP(S) URL directly and routes headered, cookie, external-
+subtitle, and deferred streams through `infra/player/stream-gateway.ts` — a
+per-playback loopback server on 127.0.0.1 under a 128-bit token path that
+injects the candidate's normalized headers, rewrites HLS playlists and DASH
+segment addressing, follows redirects only to public targets (the shared
+`@kunai/core` DNS/private-address guards). Each real fetch connects to the
+validated IP with the original Host and TLS server name; every redirect is
+validated and pinned again, and ambient proxies cannot bypass that binding.
+The gateway passes Range through for
+seeking. Blocked playlist and generated MPD targets become local 404 URLs,
+so the external player cannot bypass the target guard. Playlists are bounded
+to 4 MiB, including the first chunk. Idle shutdown waits for requests and
+response bodies to finish; shell shutdown stops the gateway immediately.
+The chooser refuses external subtitles because it has no subtitle extras;
+explicit VLC and mpv-android targets carry them. yt-dlp-only streams,
+local files, and non-HTTP schemes still refuse. The intent launcher constructs
+an argv array for `am`/Termux launchers, passes subtitles as `subs` /
+`subtitles_location` extras, scrubs the child environment, and never
+interpolates a shell command.
+
+DASH rewriting lives in `infra/player/dash-gateway-manifest.ts`. It parses
+MPDs with `@xmldom/xmldom`, resolves hierarchical BaseURLs against the final
+upstream URL, flattens inherited SegmentBase/List/Template addressing at each
+Representation, and rewrites initialization, media, and index URLs. Standard
+`Number`, `Time`, `Bandwidth`, and `RepresentationID` substitutions use
+registered session routes, with bounded validated values and fixed upstream
+origins. Repeat MPD loads reuse template routes; new registrations revoke
+the old session. Generated deferred MPDs use the same rewriter.
+
+DTD/entities, malformed XML, ContentProtection, xlink resources, external
+UTCTiming, PatchLocation, alternative BaseURLs, and unknown template variables
+are outside this preview contract and return a sanitized 422. The parser walk
+is bounded to 20,000 elements; each session admits at most 1,024 distinct
+templates. Unhinted manifests are recognized across transport chunks, XML
+prologs, and comments within a 16 KiB prefix; ambiguous prefixes above that
+bound refuse. Opaque partial-media bytes at EOF preserve their status and Range
+metadata. This is an on-device loopback gateway; the shared relay stays
+metadata-only. Android intent extras and actual playback still need physical
+device qualification.
+
+An accepted `ACTION_VIEW` request is represented as detached handoff evidence,
+not playback evidence. The session emits no start/progress/completion event,
+writes no inferred history, pauses autoplay/near-EOF behavior, restores queue
+claims, and labels post-play as "opened externally". Desktop auto/mpv behavior
+continues through the observed mpv runner; desktop `--player vlc` fails with an
+explicit unsupported-player remediation.
+
+Android is an experimental preview until the physical-device matrix in
+[release-reliability-gate.md](./release-reliability-gate.md) passes. iOS remains
+unimplemented pending a separately approved runtime proof.
 
 ### Provider resolve flow
 
@@ -192,7 +251,27 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 | Stream cache  | OS cache dir `kunai-cache.sqlite`                                         | `@kunai/storage` + CLI cache store   |
 | Debug logs    | `./logs.txt`                                                              | `apps/cli/src/logger.ts`             |
 
+Config startup holds the shared file lock from its initial read through any
+migration write. Later saves merge only changed keys under the same lock.
+A lock timeout rejects before the write callback runs.
+
+Native credential hydration is a read; unrelated config saves never rewrite a
+hydrated token. Explicit replacements and clears share the config lock with their
+file updates. A failed replacement retains plaintext for the next launch's
+migration; a clear rejects until native deletion is verified, rather than reporting
+success and restoring the secret next launch. Native credential latency therefore
+extends this critical section; sibling operations can report bounded lock contention
+while a slow keychain operation is running.
+
 **Watch ledger (2026-06):** `history_progress` is the single source of truth for resume position, completion, and engaged watch time. Columns `watched_seconds`, `last_watched_at`, and `completed_at` (migration `024`) back Stats and continuation. All mark-watched/unwatched surfaces write through `HistoryRepository.markWatched` / `markUnwatched` (preserve resume on unmark). `playback_events` receives fire-and-forget instrumentation from the mpv position tick via `PlaybackEventRepository`. Stats aggregation lives in `WatchStatsRepository` (`packages/storage`).
+
+Automatic local completion requires a natural `end-file` EOF and trusted progress
+past the completion threshold. A quit near the end can count as engaged viewing
+for session policy while keeping its resume position; a kill, crash, timeout, or
+process exit without `end-file` must never clear that position. The last IPC
+`eof-reached` sample alone is insufficient. `shouldMarkEpisodeCompleted` owns
+this rule for both anime and TMDB playback, and explicit mark-watched remains a
+user override.
 
 **Title writes are additive on identity (2026-08):** a write carries whatever metadata its launching lane happened to have, and a lane that knows less than the stored row must never subtract from it. `HistoryRepository.upsertProgress` takes progress fields (position, duration, completion, provider) from the newest write, but protects identity: `poster_url` is `COALESCE`d, `external_ids_json` is merged (stored ids win per key), and a title that is a placeholder for its own id — `TMDB <id>` from `-i/--id`, or a share ref that named a title after itself — never replaces a real stored name. `ListRepository.addItem` and `FollowedTitleRepository.upsert` follow the same rule, so re-adding a title to a Watchlist or muting it cannot rename it. Placeholder names are minted and recognised in one place, `@kunai/core` `directIdTitleName` / `isPlaceholderTitleName`, because both the CLI and storage have to agree on the shape.
 

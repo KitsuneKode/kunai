@@ -23,3 +23,14 @@ export function advertisedKeys(frame: string): readonly string[] {
   }
   return [...keys].sort();
 }
+
+/** A painted interactive surface, rather than a brand in startup output. */
+export function bootSurface(frame: string): string | null {
+  if (!/\[[^\]\n]+\]/.test(frame)) return null;
+  if (/setup\s+\d+⁄\d+/.test(frame)) return "Setup";
+  return (
+    /(?:^|\n)\s*(Browse|Search|Trending|Recommendations|Surprise|Random|Schedule|Library|Downloads|Post-play|Tracks|Up Next|Choose episode|History|Settings|Playback|Error)\s*(?:\n|$)/.exec(
+      frame,
+    )?.[1] ?? null
+  );
+}

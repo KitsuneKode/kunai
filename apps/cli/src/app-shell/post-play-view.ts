@@ -29,6 +29,7 @@ import type { PlaybackRecommendationRailItem } from "./types";
 // ── Hero kind ─────────────────────────────────────────────────────────────────
 
 export type PostPlayHeroKind =
+  | "external-handoff"
   | "did-not-start"
   | "stopped-early"
   | "mid-series"
@@ -359,6 +360,55 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       : undefined;
 
   const episodeMeta = buildEpisodeMeta(episodeLabel, titleDetail, isMovie);
+
+  if (postPlayState.kind === "external-handoff") {
+    const playerName =
+      postPlayState.player === "vlc"
+        ? "VLC"
+        : postPlayState.player === "mpv"
+          ? "mpv-android"
+          : "an Android player";
+    return {
+      heroKind: "external-handoff",
+      heroLabel: `↗ opened in ${playerName}`,
+      heroColor: "accent",
+      heroSub: "the launch was accepted; progress and completion are not tracked",
+      actions: [
+        {
+          id: "try-again",
+          label: "Open again",
+          detail: `send the same stream through ${postPlayState.launcher}`,
+          shortcut: postPlayShortcut(bindings, "post-replay", "r"),
+          primary: true,
+        },
+        {
+          id: "source",
+          label: "Sources",
+          detail: "choose another compatible stream",
+          shortcut: postPlayShortcut(bindings, "post-source", "o"),
+          primary: false,
+        },
+        {
+          id: "fallback",
+          label: "Fallback",
+          detail: "try another provider",
+          shortcut: postPlayShortcut(bindings, "post-fallback", "⇧F"),
+          primary: false,
+        },
+        {
+          id: "search",
+          label: "Search",
+          detail: "find another title",
+          shortcut: postPlayShortcut(bindings, "post-search", "s"),
+          primary: false,
+        },
+      ],
+      discoveryHeading: "you might also like",
+      discovery,
+      railFacts: buildBasicRailFacts(title, titleDetail, currentSeason),
+      episodeMeta,
+    };
+  }
 
   // ── did-not-start ────────────────────────────────────────────────────────
   if (postPlayState.kind === "did-not-start") {

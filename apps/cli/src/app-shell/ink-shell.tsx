@@ -24,13 +24,15 @@ import {
 import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
+import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
+import { decodeEpisodeSelectionValue } from "@/domain/playback/episode-selection";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
-import type { EpisodeInfo } from "@/domain/types";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
+import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
 import { presenceStatusDetail } from "@/services/presence/presence-status-line";
-import { decodeProviderEpisodeIdentity, providerEpisodeIdentitiesEqual } from "@kunai/types";
+import { providerEpisodeIdentitiesEqual } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -41,6 +43,7 @@ import {
 import { useBrowseDestinationLabel } from "./browse-destination";
 import { CapabilityIssueStrip } from "./CapabilityIssueStrip";
 import { dispatchAppCommand } from "./command-router";
+import { setContextualTipListener } from "./contextual-tips";
 import { recordRender } from "./diagnostics/render-trace";
 import { createDismissTimerRegistry } from "./dismiss-timer-registry";
 import { startDownloadStatusMonitor } from "./download-status-monitor";
@@ -52,7 +55,14 @@ import {
   markInteractiveShellMounted,
 } from "./interactive-shell-state";
 import { helpSectionsForScope } from "./keybindings";
-import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
+import {
+  getPickerChromeRows,
+  getPickerLayout,
+  getPickerListMaxVisible,
+  ROOT_HORIZONTAL_PADDING,
+} from "./layout-policy";
+import { startMouseSession } from "./mouse/mouse-session";
+import { MouseDispatchProvider } from "./mouse/MouseRegions";
 import {
   createNotificationQueueState,
   NOTIFICATION_TOAST_TTL_MS,
@@ -84,8 +94,10 @@ import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "./session-picke
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
-  getHighlightedCommand,
   getListShellCommandPaletteMaxVisible,
+  movePaletteSelection,
+  paletteSelectableCount,
+  resolveHighlightedPaletteRow,
   shouldHideCompanionForCommandPalette,
 } from "./shell-command-model";
 import { CommandPalette } from "./shell-command-ui";
@@ -196,7 +208,7 @@ export function clearShellScreen() {
   clearShellScreenArtifacts();
 }
 
-async function openPlaybackStreamSelectionPicker(
+export async function openPlaybackStreamSelectionPicker(
   container: Container,
   action: "source" | "quality" | "audio" | "subtitle" | "provider",
   reason: string,
@@ -219,7 +231,7 @@ async function openPlaybackStreamSelectionPicker(
   const { openTracksPanel } = await import("./workflows");
   const picked = await openTracksPanel(stream, { initialSection }, container);
   if (!picked) return;
-  const selection = streamSelectionFromTrackPick(picked);
+  let selection = streamSelectionFromTrackPick(picked);
   if (!selection && picked.section !== "subtitle") return;
   if (selection && isCurrentStreamSelection(container.stateManager.getState().stream, selection)) {
     return;
@@ -228,6 +240,32 @@ async function openPlaybackStreamSelectionPicker(
   const sessionState = container.stateManager.getState();
   const title = sessionState.currentTitle;
   const episode = sessionState.currentEpisode;
+  if (picked.section === "subtitle") {
+    if (!title || !episode) return;
+    const { resolveTracksPanelPick } = await import("@/app/playback/tracks-panel-pick");
+    const resolved = await resolveTracksPanelPick(picked, selection, {
+      container,
+      title,
+      episode,
+      currentProviderId: sessionState.provider,
+      resumeSeconds: 0,
+      reason,
+    });
+    if (resolved.kind === "subtitle-switch" || resolved.kind === "stale-pick") {
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note:
+          resolved.kind === "stale-pick"
+            ? resolved.reason
+            : resolved.applied
+              ? `Subtitles: ${resolved.label}`
+              : "Subtitles could not be changed. Try again while the player is running.",
+      });
+      return;
+    }
+    if (resolved.kind !== "stream-selection") return;
+    selection = resolved.selection;
+  }
   if (
     title &&
     episode &&
@@ -363,6 +401,14 @@ export async function openActivePlaybackEpisodePicker(
   const watchedEntries = container.historyRepository.listByTitle(title.id);
   const isAnime = state.mode === "anime";
   const animeEpisodes = state.currentAnimeEpisodes ?? undefined;
+  const local =
+    state.stream?.playbackSourceKind === "local" || title.launchSource === "offline-library";
+  const localEpisodes = local
+    ? listReadyEpisodes(
+        container.offlineAssetService,
+        container.offlineTitleIdentity.resolveForTitle(title, state.mode),
+      )
+    : undefined;
   let pickerEpisode = currentEpisode;
 
   while (true) {
@@ -373,6 +419,8 @@ export async function openActivePlaybackEpisodePicker(
       animeEpisodeCount: title.episodeCount,
       animeEpisodes,
       watchedEntries,
+      networkAllowed: !local,
+      localEpisodes,
     });
     if (picker.options.length === 0) return;
 
@@ -386,7 +434,7 @@ export async function openActivePlaybackEpisodePicker(
 
     if (picked === EPISODE_PICKER_SWITCH_SEASON) {
       // `s` mid-playback: hop seasons without leaving the episode picker flow.
-      if (isAnime) continue;
+      if (isAnime || local) continue;
       const { fetchSeasonSummaries } = await import("@/tmdb");
       const { chooseSeasonFromOptions } = await import("./pickers");
       const seasons = (await fetchSeasonSummaries(title.id)) ?? [];
@@ -431,6 +479,17 @@ export async function openActivePlaybackEpisodePicker(
  */
 export function useSessionState(stateManager: SessionStateManager) {
   return useSessionSelector(stateManager, (state) => state);
+}
+
+/**
+ * Cheap identity for a notification snapshot: length plus per-row
+ * (dedupKey, readAt). The bell only needs count/unread/kind, and rebuilding
+ * this string is far cheaper than a repo scan per render.
+ */
+function notificationSnapshotSig(
+  active: readonly { dedupKey: string; readAt?: string | null }[],
+): string {
+  return `${active.length}|${active.map((n) => `${n.dedupKey}@${n.readAt ?? ""}`).join(",")}`;
 }
 
 /**
@@ -487,11 +546,75 @@ export function AppRoot({ container }: { container: Container }) {
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
   const [notificationToastPriority, setNotificationToastPriority] =
     useState<NotificationPriority | null>(null);
+
+  // Session-undo strip — "added to queue · z undo" / the undo outcome. The
+  // journal notifies on record/undo; expiry is time-based, so each peek also
+  // schedules the repaint that hides the line at `expiresAt`.
+  const [undoLine, setUndoLine] = useState<{
+    readonly text: string;
+    readonly tone: ShellStatusTone;
+  } | null>(null);
+  const undoLineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const refreshUndoLine = () => {
+      const strip = container.sessionUndo?.peekStrip(Date.now()) ?? null;
+      setUndoLine(strip ? { text: strip.text, tone: strip.tone } : null);
+      if (undoLineTimerRef.current) {
+        clearTimeout(undoLineTimerRef.current);
+        undoLineTimerRef.current = null;
+      }
+      if (strip) {
+        undoLineTimerRef.current = setTimeout(
+          refreshUndoLine,
+          Math.max(0, strip.expiresAt - Date.now()),
+        );
+      }
+    };
+    refreshUndoLine();
+    const unsubscribe = container.sessionUndo?.subscribe(refreshUndoLine);
+    return () => {
+      unsubscribe?.();
+      if (undoLineTimerRef.current) {
+        clearTimeout(undoLineTimerRef.current);
+        undoLineTimerRef.current = null;
+      }
+    };
+  }, [container.sessionUndo]);
   const notificationSeenKeysRef = useRef<ReadonlySet<string>>(new Set());
   const notificationQueueRef = useRef(createNotificationQueueState());
   const notificationQueueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Memoized bell snapshot: listActive hits the repo, so the bell must not
+  // scan per render. The subscription refreshes it on change; the 1Hz poll
+  // below is the backstop for changes that bypass notify (markRead etc.).
+  const notificationSnapshotSigRef = useRef<string | null>(null);
+  const [activeNotificationSnapshot, setActiveNotificationSnapshot] = useState<
+    ReturnType<Container["notificationService"]["listActive"]>
+  >(() => {
+    const active = container.notificationService.listActive(200, 0);
+    // Seed the poll signature from the same scan so the 1Hz backstop does
+    // not setState (and re-render) on its first tick with identical content.
+    notificationSnapshotSigRef.current = notificationSnapshotSig(active);
+    return active;
+  });
 
   const [weeklyDigestLine, setWeeklyDigestLine] = useState<string | null>(null);
+
+  // Once-ever shortcut coaching: surfaces arm a tip when the user takes the
+  // long way through the palette; the line itself lives on the transient row
+  // for a few seconds, lowest priority, so it can never cover a real alert.
+  const [tipLine, setTipLine] = useState<string | null>(null);
+  const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    setContextualTipListener((line) => {
+      setTipLine(line);
+      if (tipTimerRef.current) clearTimeout(tipTimerRef.current);
+      tipTimerRef.current = setTimeout(() => setTipLine(null), 10_000);
+    });
+    return () => {
+      setContextualTipListener(null);
+      if (tipTimerRef.current) clearTimeout(tipTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     /** Auto-dismiss handles for the streak alerts, cleared on unmount. */
@@ -585,6 +708,8 @@ export function AppRoot({ container }: { container: Container }) {
 
     const handleChange = () => {
       const active = container.notificationService.listActive(200, 0);
+      notificationSnapshotSigRef.current = notificationSnapshotSig(active);
+      setActiveNotificationSnapshot(active);
       const synced = syncNotificationQueueFromActive({
         state: notificationQueueRef.current,
         active,
@@ -601,8 +726,19 @@ export function AppRoot({ container }: { container: Container }) {
     };
 
     const unsubscribe = container.notificationService.subscribe(handleChange);
+    // Backstop poll at most 1Hz: some mutations (markRead from other surfaces)
+    // do not emit through subscribe, but the bell must still converge.
+    const pollTimer = setInterval(() => {
+      const active = container.notificationService.listActive(200, 0);
+      const sig = notificationSnapshotSig(active);
+      if (sig !== notificationSnapshotSigRef.current) {
+        notificationSnapshotSigRef.current = sig;
+        setActiveNotificationSnapshot(active);
+      }
+    }, 1_000);
     return () => {
       unsubscribe();
+      clearInterval(pollTimer);
       if (notificationQueueTimerRef.current) {
         clearTimeout(notificationQueueTimerRef.current);
       }
@@ -615,29 +751,25 @@ export function AppRoot({ container }: { container: Container }) {
     const shouldShow = !lastShown || Date.now() - new Date(lastShown).getTime() > sevenDaysMs;
     if (!shouldShow) return;
 
-    let cancelled = false;
-    void (async () => {
-      try {
-        const stats = container.statsService.getStats(7);
-        if (stats.totalEpisodes === 0) return;
-        const text = container.statsFormatter.formatWeeklyDigest(stats);
-        if (!cancelled) {
-          setWeeklyDigestLine(text);
-          // Must persist, or the "weekly" digest shows on every launch.
+    try {
+      const stats = container.statsService.getStats(7);
+      if (stats.totalEpisodes === 0) return;
+      setWeeklyDigestLine(container.statsFormatter.formatWeeklyDigest(stats));
+      const dismissTimer = setTimeout(() => setWeeklyDigestLine(null), 8_000);
+      // Persist separately from timer ownership so an unmount can always
+      // dismiss the timer, even while the configuration write is pending.
+      void (async () => {
+        try {
           await container.config.update({ lastWeeklyDigestShownAt: new Date().toISOString() });
           await container.config.save().catch(() => undefined);
-          setTimeout(() => {
-            if (!cancelled) setWeeklyDigestLine(null);
-          }, 8_000);
+        } catch {
+          // Digest persistence is best-effort.
         }
-      } catch {
-        // digest is best-effort
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+      })();
+      return () => clearTimeout(dismissTimer);
+    } catch {
+      // Digest calculation is best-effort.
+    }
   }, [container.statsService, container.statsFormatter, container.config]);
 
   // Resize repaint is owned by Ink's reconciler in alternate-screen mode (its
@@ -804,8 +936,9 @@ export function AppRoot({ container }: { container: Container }) {
     playbackActive: playbackIsActive,
   });
   // Bell reflects UNREAD notifications and hides at zero (root-status-summary only
-  // renders the bell when notificationCount > 0).
-  const activeNotifications = container.notificationService.listActive(200, 0);
+  // renders the bell when notificationCount > 0). Reads the memoized snapshot —
+  // never scans the repo per render (see the subscription effect above).
+  const activeNotifications = activeNotificationSnapshot;
   const unreadNotifications = activeNotifications.filter((notification) => !notification.readAt);
   const unreadNotificationCount = unreadNotifications.length;
   const newEpisodeNotificationCount = useMemo(
@@ -994,6 +1127,7 @@ export function AppRoot({ container }: { container: Container }) {
           action,
           source: "runtime",
           activePlayback: {
+            capabilities: container.player.capabilities,
             deps: {
               playerControl: container.playerControl,
               workControl: container.workControl,
@@ -1223,7 +1357,7 @@ export function AppRoot({ container }: { container: Container }) {
       width={shellWidth}
       height={shellHeight}
       backgroundColor={palette.bg}
-      paddingX={1}
+      paddingX={ROOT_HORIZONTAL_PADDING}
       paddingY={0}
     >
       {/* Single canonical header: brand · destination pill · crumb · status · size */}
@@ -1248,10 +1382,12 @@ export function AppRoot({ container }: { container: Container }) {
             alert: rootStatusSummary.alert ?? null,
             notificationToast,
             notificationToastPriority,
+            undoLine,
             streakMilestoneAlert,
             presenceBootLine: visiblePresenceBootLine,
             streakAtRiskAlert,
             weeklyDigestLine,
+            tipLine,
           });
           if (!transient) return null;
           return (
@@ -1305,25 +1441,61 @@ export async function launchSessionApp(container: Container) {
   markInteractiveShellMounted();
   clearShellScreen();
 
-  rootShellInk = render(<AppRoot container={container} />, {
-    exitOnCtrlC: false,
-    alternateScreen: true,
-    // Ink invokes this before writing the frame. The manager defers its paint
-    // to the next task, so sixel lands after the frame rather than inside it.
-    onRender: () => sixelOverlayManager.afterInkRender(),
-  });
-  rootShellExitPromise = rootShellInk.waitUntilExit();
+  // Mouse support: a stdin facade sits between the real TTY and Ink. It pumps
+  // real stdin itself (so Ink's readable/read loop is untouched by a second
+  // consumer), splits SGR mouse reports out before Ink's keypress parser can
+  // see them, and dispatches them as semantic pointer events. Keyboard bytes
+  // pass through untouched. Opt-out: KUNAI_NO_MOUSE=1, or any non-TTY/dumb
+  // terminal.
+  let mouseSession: ReturnType<typeof startMouseSession> = null;
+  try {
+    mouseSession = startMouseSession({
+      stdin: process.stdin,
+      stdout: process.stdout,
+      host: process,
+      disabled: process.env.KUNAI_NO_MOUSE === "1",
+      term: process.env.TERM,
+    });
+    rootShellInk = render(
+      mouseSession ? (
+        <MouseDispatchProvider dispatcher={mouseSession.dispatcher}>
+          <AppRoot container={container} />
+        </MouseDispatchProvider>
+      ) : (
+        <AppRoot container={container} />
+      ),
+      {
+        exitOnCtrlC: false,
+        alternateScreen: true,
+        // SAFETY: MouseSplitStdin implements the readable/read/setRawMode/isTTY
+        // subset Ink's stdin contract calls — verified against ink 7.x source.
+        stdin: (mouseSession?.stdin ?? process.stdin) as NodeJS.ReadStream,
+        // Ink invokes this before writing the frame. The manager defers its paint
+        // to the next task, so sixel lands after the frame rather than inside it.
+        onRender: () => sixelOverlayManager.afterInkRender(),
+      },
+    );
+  } catch (error) {
+    mouseSession?.dispose();
+    clearInteractiveShellMounted();
+    stdinManager.exitShell();
+    throw error;
+  }
+  const exitPromise = rootShellInk.waitUntilExit();
+  rootShellExitPromise = exitPromise;
 
-  void (async () => {
-    await rootShellExitPromise;
+  const releaseShell = () => {
+    mouseSession?.dispose();
     rootShellInk = null;
     rootShellExitPromise = null;
     clearRootContentSession();
     clearInteractiveShellMounted();
     stdinManager.exitShell();
-  })();
+  };
+  // Preserve the returned rejection, while releasing ownership on both paths.
+  void exitPromise.then(releaseShell, releaseShell);
 
-  return rootShellExitPromise;
+  return exitPromise;
 }
 
 export async function shutdownSessionApp(): Promise<void> {
@@ -1354,6 +1526,8 @@ type ListShellSubmitResult<T> =
   | { type: "cancelled" }
   | ListShellActionResult;
 
+const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
+
 function normalizeReservedCommandInput(nextValue: string): {
   value: string;
   openCommandPalette: boolean;
@@ -1366,24 +1540,6 @@ function normalizeReservedCommandInput(nextValue: string): {
     value: nextValue.replaceAll("/", ""),
     openCommandPalette: true,
   };
-}
-
-function decodeEpisodeSelectionValue(value: string): EpisodeInfo | null {
-  const firstSeparator = value.indexOf(":");
-  const secondSeparator = value.indexOf(":", firstSeparator + 1);
-  const seasonText = firstSeparator >= 0 ? value.slice(0, firstSeparator) : "";
-  const episodeText =
-    firstSeparator >= 0
-      ? value.slice(firstSeparator + 1, secondSeparator >= 0 ? secondSeparator : undefined)
-      : "";
-  const season = Number.parseInt(seasonText ?? "", 10);
-  const episode = Number.parseInt(episodeText ?? "", 10);
-  if (!Number.isFinite(season) || !Number.isFinite(episode)) {
-    return null;
-  }
-  if (secondSeparator < 0) return { season, episode };
-  const providerEpisodeIdentity = decodeProviderEpisodeIdentity(value.slice(secondSeparator + 1));
-  return providerEpisodeIdentity ? { season, episode, providerEpisodeIdentity } : null;
 }
 
 function ListShell<T>({
@@ -1413,6 +1569,11 @@ function ListShell<T>({
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const [titleEntries, setTitleEntries] = useState<readonly LocalTitleEntry[]>([]);
+  const titleMatches = useMemo(
+    () => matchLocalTitles(titleEntries, commandInput),
+    [titleEntries, commandInput],
+  );
   const viewport = useDebouncedViewportPolicy("picker");
   const normalizedFilter = filterQuery.trim().toLowerCase();
   const filteredOptions = useMemo(() => {
@@ -1490,13 +1651,20 @@ function ListShell<T>({
   const effectiveFooterMode: ShellFooterMode = "minimal";
   const footerActions = LIST_SHELL_FOOTER_ACTIONS;
 
+  // Snapshot title entries once per open — the matcher is a pure in-memory
+  // index against this list, so a keystroke never hits storage.
+  const openPalette = () => {
+    setTitleEntries(actionContext?.localTitles?.() ?? EMPTY_TITLE_ENTRIES);
+    setCommandMode(true);
+    setHighlightedCommandIndex(0);
+    // commandInput deliberately survives close/reopen — `/` keeps the draft.
+  };
+
   const updateFilterQuery = (nextValue: string) => {
     const normalized = normalizeReservedCommandInput(nextValue);
     setFilterQuery(normalized.value);
     if (normalized.openCommandPalette && actionContext) {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      openPalette();
     }
   };
   const commandEditor = useLineEditor({
@@ -1516,24 +1684,32 @@ function ListShell<T>({
       const matches = getCommandMatches(commandInput, actionContext?.commands ?? []);
 
       if (key.escape) {
+        // Close only — the draft survives so a `/` reopen resumes the query.
         setCommandMode(false);
-        setCommandInput("");
         setHighlightedCommandIndex(0);
         return;
       }
       if (key.return) {
-        const resolved = getHighlightedCommand(
+        const row = resolveHighlightedPaletteRow(
           commandInput,
           actionContext?.commands ?? [],
+          titleMatches,
           highlightedCommandIndex,
         );
-        if (resolved?.enabled) {
+        if (row?.kind === "command" && row.command.enabled) {
+          setCommandInput("");
           onAction?.({
             type: "action",
-            action: toShellAction(resolved.id),
+            action: toShellAction(row.command.id),
             filterQuery,
             selectedIndex: index,
           });
+        }
+        if (row?.kind === "title") {
+          setCommandMode(false);
+          setCommandInput("");
+          setHighlightedCommandIndex(0);
+          actionContext?.onTitlePick?.(row.match.entry);
         }
         return;
       }
@@ -1550,16 +1726,17 @@ function ListShell<T>({
         }
         return;
       }
+      const selectable = paletteSelectableCount(
+        commandInput,
+        actionContext?.commands ?? [],
+        titleMatches,
+      );
       if (key.upArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current - 1 + matches.length) % matches.length);
-        }
+        setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, -1));
         return;
       }
       if (key.downArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current + 1) % matches.length);
-        }
+        setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, 1));
         return;
       }
       if (commandEditor.handleInput(input, key)) {
@@ -1569,9 +1746,7 @@ function ListShell<T>({
     }
 
     if (input === "/" && actionContext) {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      openPalette();
       return;
     }
 
@@ -1735,6 +1910,7 @@ function ListShell<T>({
           cursor={commandEditor.cursor}
           commands={actionContext.commands}
           highlightedIndex={highlightedCommandIndex}
+          titleMatches={titleMatches}
           maxVisible={getListShellCommandPaletteMaxVisible(
             viewport.rows,
             subtitle.split("\n").length,
@@ -2112,7 +2288,7 @@ function StatsShell({
         <Text color={palette.dim}>{"─".repeat(Math.max(0, Math.min(innerWidth, cols - 4)))}</Text>
         {copiedFlash ? (
           <Box marginTop={1}>
-            <Text color={copiedFlash.startsWith("Copied") ? palette.ok : palette.danger}>
+            <Text color={copiedFlash.startsWith("Copied") ? palette.ok : palette.dangerText}>
               {copiedFlash}
             </Text>
           </Box>

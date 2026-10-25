@@ -809,6 +809,37 @@ export const dataMigrations: readonly Migration[] = [
         ON history_title_aliases(alias_id);
     `,
   },
+  {
+    id: "043_data_queue_session_owner_pid",
+    database: "data",
+    // Queue sessions were anonymous: any second instance's startup marked every
+    // 'active' session 'recoverable' — including one owned by a healthy live
+    // process — and a restore then moved its rows out from under it. Recording
+    // the owning pid lets recovery distinguish "crashed" from "live but idle".
+    sql: `
+      ALTER TABLE playback_queue_sessions ADD COLUMN owner_pid INTEGER;
+    `,
+  },
+  {
+    id: "044_data_queue_session_owner_identity",
+    database: "data",
+    sql: `
+      ALTER TABLE playback_queue_sessions ADD COLUMN owner_hostname TEXT;
+      ALTER TABLE playback_queue_sessions ADD COLUMN owner_process_start_id TEXT;
+    `,
+  },
+  {
+    id: "046_data_download_attempt_ownership",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN owner_token TEXT;
+      ALTER TABLE download_jobs ADD COLUMN claim_generation INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE download_jobs ADD COLUMN staging_dir TEXT;
+      ALTER TABLE download_jobs ADD COLUMN publication_pending INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE download_jobs ADD COLUMN publication_dev TEXT;
+      ALTER TABLE download_jobs ADD COLUMN publication_ino TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [
@@ -1164,7 +1195,35 @@ export function runMigrations(
       continue;
     }
 
-    applyMigration(migration, new Date().toISOString());
+    // Two instances launched against the same pre-migration DB both see an
+    // empty applied set and run the loop together: the loser's marker INSERT
+    // conflicts on the twin's committed row, or its ALTER finds the column
+    // already there. Post-conflict the marker is committed, so re-reading the
+    // applied set distinguishes "twin already did it" from a real failure.
+    // Plain writer contention (SQLITE_BUSY past busy_timeout) gets a bounded
+    // retry rather than a fatal startup.
+    let lastError: unknown;
+    let appliedByTwin = false;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        applyMigration(migration, new Date().toISOString());
+        lastError = undefined;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (isDataMigrationApplied(db, migration.id)) {
+          appliedByTwin = true;
+          lastError = undefined;
+          break;
+        }
+        Bun.sleepSync(50 * (attempt + 1));
+      }
+    }
+    if (appliedByTwin) {
+      applied.add(migration.id);
+      continue;
+    }
+    if (lastError) throw lastError;
   }
 }
 

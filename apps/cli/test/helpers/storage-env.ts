@@ -20,6 +20,13 @@
  */
 export function storageRootEnv(dir: string): Record<string, string> {
   return {
+    // A throwaway profile is still a countable install if a local TTY test
+    // explicitly enables analytics. Isolation must suppress consent AND sends,
+    // including when a copied fixture already has an enabled identity.
+    DO_NOT_TRACK: "1",
+    // OS vault entries are global to the account, even under a shadow HOME.
+    // Keep test credentials in the file vault under the redirected config dir.
+    KUNAI_CREDENTIAL_BACKEND: "file",
     // Linux (freedesktop).
     XDG_CACHE_HOME: dir,
     XDG_DATA_HOME: dir,

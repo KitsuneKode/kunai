@@ -190,14 +190,12 @@ function sortRecords(
   records: readonly NotificationRecord[],
   mode: NotificationsSortMode,
 ): NotificationRecord[] {
-  const entries = records.map(
-    (record): NotificationSortEntry => ({
-      record,
-      updatedAtMs: Date.parse(record.updatedAt),
-      attentionTier: record.readAt ? 2 : getNotificationPrimaryAction(record) === "dismiss" ? 1 : 0,
-      typeGroup: TYPE_GROUP[record.kind] ?? 4,
-    }),
-  );
+  const entries = records.map((record): NotificationSortEntry => ({
+    record,
+    updatedAtMs: Date.parse(record.updatedAt),
+    attentionTier: record.readAt ? 2 : getNotificationPrimaryAction(record) === "dismiss" ? 1 : 0,
+    typeGroup: TYPE_GROUP[record.kind] ?? 4,
+  }));
 
   entries.sort((a, b) => {
     if (mode === "attention") {

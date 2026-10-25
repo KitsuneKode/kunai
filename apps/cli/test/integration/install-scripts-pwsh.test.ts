@@ -2019,6 +2019,8 @@ describePwsh("install.ps1 optional dependency consent", () => {
     expect(output).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
     expect(output).toContain("winget install --id yt-dlp.yt-dlp -e");
     expect(output).not.toMatch(/winget install yt-dlp(?:\s|$)/);
+    expect(output).not.toContain("This will run");
+    expect(output).toContain("Run this to install them:");
   });
 
   /**
@@ -2079,6 +2081,9 @@ describePwsh("install.ps1 optional dependency consent", () => {
     );
     expect(output).not.toContain("[RAN]");
     expect(output).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
+    expect(output).not.toContain("This will run");
+    expect(output).toContain("Run this to install them:");
+    expect(output.split("winget install --id mpv-player.mpv-CI.MSVC -e").length - 1).toBe(1);
   });
 
   test("an unrecognised host still gets manual guidance", () => {

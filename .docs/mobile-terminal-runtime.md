@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-03"
+lastReviewed: "2026-10-08"
 ---
 
 # Mobile terminal runtime
@@ -57,6 +57,12 @@ the application returns. This keeps help/version off stdin, prevents typed
 cancellation from leaving Node alive, and prevents an immediate Ctrl+C from
 racing the signal handler. The emitted-artifact integration suite exercises
 both cancellation paths with stdin deliberately left open.
+
+Android owns Ctrl+C handling for the complete state session, including the
+HTTP probe and player launch. Cancellation aborts active network or intent
+work, records `cancelled` when state remains writable, and releases the session
+lock only after application teardown. A state write failure remains a failure.
+An accepted detached handoff cannot stop playback already started by VLC.
 
 The Android intent plan stays inside `apps/mobile` because it has one consumer.
 Node, a-Shell, filesystem, terminal, and evidence mechanics remain there too;
@@ -123,8 +129,19 @@ decision for the Node package actually used on-device.
 One session owns the state transaction from load through final commit. Android
 acquires an exclusive `session.lock` directory lazily; help/version do not lock.
 The iOS launcher locks before staging arguments or cleaning transport files.
-Normal exit releases ownership. An uncatchable termination can leave a lock;
-recovery is explicit rather than guessing whether another session is alive.
+Android acquisition, dead-owner recovery, and release share a fail-fast ticket
+transition protocol. Release compares a unique owner generation, so a retired
+session cannot erase its successor. PID liveness plus Linux process start ticks
+qualify dead-owner recovery; ownerless directories, permission uncertainty, corrupt records, and live
+choosing tickets fail closed. A busy transition can be retried after the competing
+launch finishes. Normal exit releases ownership; a killed Android session can be
+recovered on relaunch. Close older processes before upgrading. iOS recovery
+remains explicit. Device qualification is separate from local Node-worker proof.
+
+Both state adapters restore a valid sole backup before retrying a failed write.
+They restore committed state before cleaning an unsuccessful temporary
+activation, so a cleanup failure cannot prevent restoration. Repeated
+activation and restoration failures preserve the backup for later recovery.
 
 - Accept only absolute credential-free HTTPS URLs without fragments or control
   characters.

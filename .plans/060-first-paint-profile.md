@@ -1,10 +1,5 @@
 # Plan 060: Profile first paint before reordering startup
 
-Status: MEASUREMENT PLANNED. [R09](./2026-10-01-r09-tail-performance.md) extends
-this owner with repeatable populations, raw samples, tail/resource budgets and
-optimization handoff. The three-run medians below remain an exploratory
-attribution step; they are not p99 or release SLO evidence.
-
 > **Drift check (run first):** `git diff --stat 51f19b633..HEAD -- apps/cli/src/main.ts apps/cli/src/infra/diagnostics/ apps/cli/src/app/session/`
 > Mismatch → re-read the startup ordering; someone may have deferred work already.
 

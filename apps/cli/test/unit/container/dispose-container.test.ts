@@ -5,6 +5,19 @@ import type { Container } from "@/container/types";
 
 function fakeContainer(calls: string[], options: { failDataClose?: boolean } = {}) {
   const container = {
+    presence: {
+      shutdown: () => {
+        calls.push("presence:shutdown");
+      },
+    },
+    downloadService: {
+      beginShutdown: () => {
+        calls.push("downloads:shutdown");
+      },
+      pauseActiveJobsForShutdown: async () => {
+        calls.push("downloads:pause");
+      },
+    },
     backgroundWorkScheduler: {
       beginShutdown: (reason: string) => calls.push(`scheduler:shutdown:${reason}`),
       drain: async () => {
@@ -55,6 +68,9 @@ test("disposes in order: quiesce scheduler, drain, settle sync, flush, close DBs
 
   expect(calls).toEqual([
     "scheduler:shutdown:container-dispose",
+    "downloads:shutdown",
+    "presence:shutdown",
+    "downloads:pause",
     "scheduler:drain",
     "sync:shutdown",
     "sync:tokens-idle",

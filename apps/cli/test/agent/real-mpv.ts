@@ -24,7 +24,6 @@ import type { Socket } from "bun";
 import {
   createIsolatedCliProfile,
   disposeIsolatedCliProfile,
-  type IsolatedCliProfile,
 } from "../integration/helpers/isolated-container";
 import { startTmuxSession, type TmuxSession, type TmuxSessionOptions } from "./tmux-session";
 
@@ -97,29 +96,23 @@ export async function startRealMpvSession(
 
   const mediaDir = join(profile.rootDir, "media");
   const binDir = join(profile.rootDir, "real-mpv-bin");
-  // UDS path length limit is ~100 bytes. When profile.rootDir is deep (e.g. nested
-  // runner/container TMPDIR), placing runDir under /tmp ensures the IPC socket fits
-  // within MAX_UNIX_SOCKET_PATH_BYTES.
-  const idealRunCandidate = join(
-    profile.rootDir,
-    "run",
-    "kunai",
-    "kunai-mpv-0123456789abcdef.sock",
-  );
-  const needsShortRunDir = Buffer.byteLength(idealRunCandidate, "utf8") >= 95;
-  const shortRunParent =
-    needsShortRunDir && existsSync("/tmp") ? mkdtempSync("/tmp/k-rmpv-") : null;
-  const runDir = shortRunParent ? join(shortRunParent, "run") : join(profile.rootDir, "run");
-  const tmpDir = join(profile.rootDir, "tmp");
-  mkdirSync(mediaDir, { recursive: true });
-  mkdirSync(binDir, { recursive: true });
-  mkdirSync(runDir, { recursive: true, mode: 0o700 });
-  mkdirSync(tmpDir, { recursive: true });
+  // Unix sockets have a ~100-byte path budget. A profile nested under CI's
+  // TMPDIR (or macOS's /var/folders/...) cannot reliably fit even a short name.
+  // This POSIX-only tmux tier owns a separate, short 0700 IPC sandbox; it never
+  // puts a socket directly in the shared temp directory.
+  let ipcRoot = "";
 
   const mediaPath = join(mediaDir, "fixture.mp4");
   let server: ReturnType<typeof Bun.serve> | null = null;
   let session: TmuxSession;
   try {
+    mkdirSync(mediaDir, { recursive: true });
+    mkdirSync(binDir, { recursive: true });
+    ipcRoot = mkdtempSync("/tmp/kunai-mpv-");
+    const runDir = join(ipcRoot, "run");
+    const tmpDir = join(ipcRoot, "tmp");
+    mkdirSync(runDir, { mode: 0o700 });
+    mkdirSync(tmpDir, { mode: 0o700 });
     await generateMedia(mediaPath);
 
     server = Bun.serve({
@@ -157,19 +150,18 @@ export async function startRealMpvSession(
     // Any failure before the session owns the profile must not leak either
     // the server or the sandbox.
     server?.stop(true);
-    if (shortRunParent) {
-      try {
-        rmSync(shortRunParent, { recursive: true, force: true });
-      } catch {}
+    try {
+      disposeIsolatedCliProfile(profile);
+    } finally {
+      if (ipcRoot) rmSync(ipcRoot, { recursive: true, force: true });
     }
-    disposeIsolatedCliProfile(profile);
     throw error;
   }
 
   return {
     session,
     mediaDir,
-    mpvTimePos: () => readMpvTimePos(profile, runDir),
+    mpvTimePos: () => readMpvTimePos(ipcRoot),
     async stop() {
       try {
         await session.stop();
@@ -177,11 +169,7 @@ export async function startRealMpvSession(
         try {
           server.stop(true);
         } finally {
-          if (shortRunParent) {
-            try {
-              rmSync(shortRunParent, { recursive: true, force: true });
-            } catch {}
-          }
+          rmSync(ipcRoot, { recursive: true, force: true });
         }
       }
     },
@@ -189,15 +177,8 @@ export async function startRealMpvSession(
 }
 
 /** Discover the Kunai mpv IPC socket inside the sandbox and ask for time-pos. */
-export async function readMpvTimePos(
-  profile: IsolatedCliProfile,
-  extraRunDir?: string,
-): Promise<number | null> {
-  const candidates = [
-    ...(extraRunDir ? [join(extraRunDir, "kunai")] : []),
-    join(profile.rootDir, "run", "kunai"),
-    join(profile.rootDir, "tmp", "kunai-ipc"),
-  ];
+async function readMpvTimePos(ipcRoot: string): Promise<number | null> {
+  const candidates = [join(ipcRoot, "run", "kunai"), join(ipcRoot, "tmp", "kunai-ipc")];
   for (const dir of candidates) {
     if (!existsSync(dir)) continue;
     const socks = readdirSync(dir).filter((f) => f.startsWith("kunai-mpv-") && f.endsWith(".sock"));

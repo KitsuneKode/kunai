@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-06-23"
+lastReviewed: "2026-10-11"
 ---
 
 # Title provider health, cache layers, and reset
@@ -18,6 +18,17 @@ Why a provider can feel “dead” even when another recovers, and what to reset
 | **A. Stream URL cache**       | `cacheStore` (resolve cache keys)   | Last working m3u8 URL per title/episode/provider              | May replay **stale/dead** URL until invalidated                                                                             |
 | **B. Global provider health** | `provider_health` in cache DB       | `healthy` / `degraded` / **`down`** (5+ consecutive failures) | Effective **`down`** providers are **skipped** in auto-fallback until TTL heal or manual reset                              |
 | **C. Title-scoped health**    | `title_provider_health` in cache DB | “On _this show_, provider X failed; provider Y worked”        | **Advisory only** — playback notes / Sources UI may suggest another provider; resolve order stays on your selected provider |
+
+Recovery invalidation uses the same provider manifest as resolve-cache writes,
+including each provider's key parts and the active source/stream selection. It
+removes the base and selected keys for that episode while preserving unrelated
+entries. The production-roster regression pins this for every provider.
+
+Caller cancellation produces no global provider-health observation. A total
+resolve deadline may retain failure deltas already returned by attempts: a
+provider timeout is evidence, unlike a user navigating away. The shared work
+service forwards the final consumer's cancellation reason; an earlier consumer
+leaving does not abort work still needed by another consumer.
 
 `/clear-cache` now separates **layer A** from **layers B/C**. Use **Reset provider health** (`/reset-provider-health`) for scoped failure-memory clears without touching stream URLs.
 

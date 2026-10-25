@@ -73,6 +73,17 @@ Help, diagnostics, settings, notifications, history, downloads, and provider
 pickers are overlays. They should not destroy the underlying playback or browse
 context. Close the overlay to return where you were.
 
+## Mouse in search results
+
+Click a result to select it, then click the selected result again to open it.
+Click the search field to resume typing. Scrolling over results stops at the
+first and last title. Keyboard arrows keep their usual navigation behavior.
+
+Mouse support requires a compatible terminal; other screens still use their
+keyboard controls. To keep your terminal's usual selection and copy behavior,
+launch with `KUNAI_NO_MOUSE=1 kunai`. Mouse tracking is automatically disabled
+for piped input/output and `TERM=dumb`.
+
 ## Every shell command
 
 The full command registry, searchable. Generated from the CLI; it updates when

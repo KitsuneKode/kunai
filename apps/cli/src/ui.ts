@@ -65,6 +65,8 @@ export interface CurlCapability {
 
 export interface CapabilitySnapshot {
   readonly mpv: boolean;
+  /** Whether the selected player mode requires a managed mpv binary. */
+  readonly mpvRequired: boolean;
   /** Optional post-download probe (`ffprobe` on PATH); not required for the queue. */
   readonly ffprobe: boolean;
   readonly ytDlp: boolean;
@@ -98,7 +100,7 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
     .sort()
     .join(",");
   const curlBits = `${snapshot.curl.present ? "1" : "0"}:${snapshot.curl.profile ?? "plain"}`;
-  return `mpv:${snapshot.mpv ? "1" : "0"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${curlBits}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
+  return `mpv:${snapshot.mpv ? "1" : "0"}:${snapshot.mpvRequired ? "required" : "optional"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${curlBits}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
 }
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
@@ -147,6 +149,7 @@ async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<
  */
 export async function probeCapabilities(
   options: {
+    requireMpv?: boolean;
     requireYtDlp?: boolean;
     /** PATH lookup seam; defaults to the real one. Injected by tests. */
     which?: (command: string) => string | null;
@@ -166,6 +169,7 @@ export async function probeCapabilities(
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
+  const requireMpv = options.requireMpv ?? true;
   const platform = options.platform ?? process.platform;
   const which = options.which ?? ((command: string) => whichLive(command));
   const issues: CapabilityIssue[] = [];
@@ -215,7 +219,7 @@ export async function probeCapabilities(
   };
   const image = detectImageCapability();
 
-  if (!mpv) {
+  if (requireMpv && !mpv) {
     issues.push({
       id: "mpv-missing",
       // Missing mpv blocks playback only — setup and non-playback shell still mount.
@@ -310,6 +314,7 @@ export async function probeCapabilities(
 
   return {
     mpv,
+    mpvRequired: requireMpv,
     ffprobe,
     ytDlp,
     curl,
@@ -320,14 +325,10 @@ export async function probeCapabilities(
 
 export async function checkDeps(
   appVersion = "0.1.0",
-  options: { silent?: boolean; requireYtDlp?: boolean } = {},
+  options: NonNullable<Parameters<typeof probeCapabilities>[0]> & { silent?: boolean } = {},
 ): Promise<CapabilitySnapshot> {
   const silent = options.silent ?? false;
-  const snapshot = await probeCapabilities({ requireYtDlp: options.requireYtDlp });
-
-  if (!snapshot.mpv && !silent) {
-    console.error("mpv not found — required for playback (shell still available).");
-  }
+  const snapshot = await probeCapabilities(options);
 
   const fingerprint = capabilityFingerprint(snapshot);
   const previous = await loadCapabilityNoticeState();

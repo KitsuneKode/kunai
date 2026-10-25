@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-13"
+lastReviewed: "2026-10-25"
 ---
 
 # Provider Research Dossier — HiAnime (`hianime`)
@@ -8,7 +8,7 @@ lastReviewed: "2026-09-13"
 > Agent-facing (L3). Live material: responses recorded 2026-09-13 against
 > `hianime.at` with plain curl + Chrome 124 UA. No browser, no auth, no account.
 
-Parity reference: ani-cli `5.1.4` (`/home/kitsunekode/Projects/osc/ani-cli`,
+Parity reference: ani-cli `5.1.6` (`/home/kitsunekode/Projects/osc/ani-cli`,
 single `ani-cli` shell script; pinned in `scripts/parity-references.json`).
 Kunai previously used `anidb.app` for the
 ani-cli-shaped lane; ani-cli has since moved its primary to HiAnime, so this
@@ -18,7 +18,21 @@ response` vs `HTTP NNN` — instead of a bare curl exit), ported into
 `splitCurlHttpTrailer` / `hianimeCurlFailureMessage` plus the curl-path HTTP
 status check. 5.1.3 → 5.1.4 carried no hianime-lane changes (#1908 filename
 sanitization, #1912 sed label fix, #1927 docs — all already covered or
-not-applicable here).
+not-applicable here). 5.1.4 → 5.1.5 adds only `--exact` (#1938), a
+CLI-side filter that keeps search rows whose normalized title equals the
+query; Kunai ranks results in its own picker instead, so it is deliberately
+not ported. The rest of that delta is README and contributing docs.
+
+The 5.1.5 → 5.1.6 delta (`0301d67`, reviewed 2026-10-25) adds separate HLS
+`audio_link` handoff to upstream's mpv/IINA/Android/VLC and ffmpeg paths. Kunai
+already handles the underlying hazard differently: `resolveHianimeEpisodeStreams`
+consumes `expandHlsMasterInventory`, which retains a complete master when a
+variant references an external audio rendition. mpv owns that master and its
+audio selection. The HiAnime caller regression confirms an Auto master URL
+survives instead of exposing the silent `video-only.m3u8` variant. We deliberately
+do not copy the upstream shell flags or turn those variants into selectable
+qualities without an accompanying audio contract. This is fixture-backed caller
+parity, not proof of decoded playback or physical Android/iOS behavior.
 
 ## Request Summary
 
@@ -223,6 +237,13 @@ title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
 
 ## Risks And Drift Watchlist
 
+- **Single-server SPOF:** only ZokoAnime resolves — HD-1/Vidstream-2 answer
+  410 upstream and VidPlay-1 (`vidtube.site`) is a different JWPlayer-style
+  page with no `window.__P`. A ZokoAnime outage therefore fails the lane, not
+  a server. Next lane candidate is VidPlay-1 (page shape captured under
+  Unknown above; needs its own extractor — a new player parser, not a config
+  flip, so it stays docs-only until measured live). Megaplay revival is the
+  fallback watch, not a plan.
 - What is likely to change first: embed obfuscation (`otaku-embed-v1` key,
   `window.__P` name), embed host (`zokoanime.video`), CDN host
   (`hls2.aniwatchtv.uk`), servers HTML attributes. Megaplay already died once.

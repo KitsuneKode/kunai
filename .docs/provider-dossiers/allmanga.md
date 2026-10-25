@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-19"
+lastReviewed: "2026-10-22"
 ---
 
 # Provider: AllManga / AllAnime
@@ -12,7 +12,7 @@ lastReviewed: "2026-10-19"
 - **Runtime class:** Direct HTTP GraphQL + decoded source APIs. No browser should be needed on the hot path.
 - **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli` — historical only: ani-cli v5 (2026-08-01) moved to anidb.app and deleted its AllAnime code, so the live mkissa JS chunk is the sole source of truth now.
 - **Production module:** `packages/providers/src/allmanga/*`.
-- **Current status (2026-07-18):** Episode resolve requires ani-cli `aaReq` AES-GCM attestation + rotated hex decrypt key (`origin/fix`). Without it the API returns `AA_CRYPTO_MISSING`. Search/episode catalog POST paths still work without `aaReq`.
+- **Current status (2026-10-22):** The pinned build181 bootstrap/crypto probe returns HTTP200. Full stream resolution in the local production-provider sweep stopped at CAPTCHA, so bootstrap success is not playback qualification. Episode resolve requires `aaReq` AES-GCM attestation and the current rotating key.
 
 ## Current Evidence
 
@@ -25,28 +25,29 @@ lastReviewed: "2026-10-19"
 
 ### Stream source flow
 
-The source flow matches ani-cli:
+Current Kunai flow, derived from the live mkissa chunk (ani-cli v5 no longer implements AllAnime):
 
 ```text
 episode GraphQL persisted GET + aaReq + x-build-id
-  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 166, 7-day epochs)
+  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 181, 7-day epochs)
   -> decoded source names + encoded API paths (or direct https embeds)
   -> per-source API fetch on allanime.day
-  -> mp4 / HLS / DASH-shaped candidates
+  -> mp4 / HLS candidates, or deferred Ak DASH descriptor with separate video/audio
+  -> verifyCandidateStream resolve gate before a successful result
 ```
 
-ani-cli currently generates links for these source families:
+Historical ani-cli source families (before v5), compared with the current Kunai adapters:
 
-| Source family       | ani-cli behavior                          | Kunai behavior today                                                                      |
+| Source family       | Historical ani-cli behavior               | Kunai behavior today                                                                      |
 | ------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `Default`           | WIXMP/repackager or master HLS extraction | Supported                                                                                 |
 | `Yt-mp4`            | direct tools/fast4speed URL               | Supported                                                                                 |
 | `S-mp4`             | API JSON with direct mp4 when present     | Supported when link exists                                                                |
 | `Mp4`               | mp4upload page scrape                     | Supported (embed scrape + `Referer: https://www.mp4upload.com`, scoped `--tls-verify=no`) |
 | `Fm-mp4` / Filemoon | AES/decrypt path                          | Removed upstream (b8032b7); no Kunai code path remains                                    |
-| `Ak`                | Not in the older ani-cli provider list    | **Current drift gap**                                                                     |
+| `Ak`                | Not in the older ani-cli provider list    | Supported via deferred DASH descriptor with separate video/audio                          |
 
-### Solo Leveling S01E01 drift
+### Historical Solo Leveling S01E01 drift (May 2026)
 
 Live probe on 2026-05-25:
 
@@ -59,7 +60,7 @@ Live probe on 2026-05-25:
   - `duration`: media duration.
   - `subtitles[]`: English ASS subtitle endpoint.
 
-Kunai currently skips `Ak`, so the provider returns no streams. This is a source-shape mismatch, not a provider outage and not simple slowness.
+At the time of that probe, Kunai skipped `Ak` and returned no streams. That source-shape gap is now implemented by `packages/providers/src/allmanga/api-client.ts`; it is not evidence of a current missing adapter. Current live qualification is recorded in the summary above.
 
 ### `Ak` DASH proof, 2026-05-26
 
@@ -93,11 +94,11 @@ The experiment generated a temporary MPD from one selected video representation 
 
 ## Known
 
-- GraphQL search/catalog is working with `youtu-chan.com` referer.
-- The AES-256-GCM `tobeparsed` decode path and the build id 166 crypto bootstrap are verified working (re-derived 2026-09-08 after the 140→166 rotation; the episode query executes and `aaReq` is accepted); AES-CTR must not be restored (see `.docs/providers.md`).
+- Search/catalog uses GraphQL with the provider referer; historical successful probes above are dated evidence.
+- The AES-256-GCM `tobeparsed` decode path and build181 bootstrap are pinned. The October 22 bootstrap succeeds; full resolve remains separately blocked in that sweep. AES-CTR must not be restored (see `.docs/providers.md`).
 - Source APIs can return valid data that is not a single HLS/mp4 URL.
 - Returning only the `Ak` video URL would be wrong because audio is separate.
-- The provider contract already allows `protocol: "dash"` and `container: "mpd"`, but there is no implemented AllManga MPD/EDL handoff for `rawUrls`.
+- `rawUrls` is adapted into an opaque deferred DASH descriptor containing both selected video and audio representations; subtitles remain attached. Deterministic coverage is in `packages/providers/test/allmanga.test.ts`. This implementation does not establish current live playback.
 
 ## Recovering a build rotation
 

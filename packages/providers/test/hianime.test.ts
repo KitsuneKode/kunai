@@ -332,6 +332,60 @@ describe("hianime embed decoding", () => {
 });
 
 describe("hianime module resolve", () => {
+  test.each(["sub", "dub"] as const)(
+    "pinning the %s lane retains the requested quality",
+    async (mode) => {
+      clearHianimeCachesForTest();
+      const result = await hianimeProviderModule.resolve(
+        {
+          title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+          episode: { episode: 1 },
+          mediaKind: "anime",
+          intent: "play",
+          allowedRuntimes: ["direct-http"],
+          preferredSourceId: `source:hianime:${mode}`,
+          qualityPreference: "360p",
+        },
+        stubContext(happyRouter),
+      );
+      expect(result.status).toBe("resolved");
+      const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+      expect(selected?.qualityLabel).toBe("360p");
+      expect(selected?.presentation).toBe(mode);
+    },
+  );
+
+  test.each(["refused", "cancelled"])(
+    "a %s selected media playlist never reports provider success",
+    async (outcome) => {
+      clearHianimeCachesForTest();
+      const controller = new AbortController();
+      const result = await hianimeProviderModule.resolve(
+        {
+          title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+          episode: { episode: 1 },
+          mediaKind: "anime",
+          intent: "play",
+          allowedRuntimes: ["direct-http"],
+        },
+        {
+          ...stubContext((url) => {
+            if (url.endsWith(".m3u8") && !url.endsWith("master.m3u8")) {
+              if (outcome === "cancelled") controller.abort();
+              return new Response("fixture refusal", { status: 403 });
+            }
+            return happyRouter(url);
+          }),
+          signal: controller.signal,
+        },
+      );
+      expect(result.status).toBe("exhausted");
+      if (outcome === "cancelled")
+        expect(result.failures.some((failure) => failure.code === "cancelled")).toBe(true);
+      expect(result.trace.events?.some((event) => event.type === "provider:success")).toBe(false);
+    },
+  );
+
   test("resolves sub with ladder, subtitles, timing, and dual-mode inventory", async () => {
     clearHianimeCachesForTest();
     const result = await hianimeProviderModule.resolve(
@@ -1019,4 +1073,31 @@ describe("hianime relay routing (#460)", () => {
       Bun.which = originalWhich;
     }
   });
+});
+
+test("HiAnime retains the master when an HLS quality has separate audio", async () => {
+  clearHianimeCachesForTest();
+  const resolution = await resolveHianimeEpisodeStreams({
+    episodeId: "22676",
+    requestedMode: "sub",
+    context: stubContext((url) =>
+      url.endsWith("master.m3u8")
+        ? `#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Japanese",LANGUAGE="ja",DEFAULT=YES,URI="audio.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=2400000,RESOLUTION=1920x1080,AUDIO="audio"
+video-only.m3u8
+`
+        : happyRouter(url),
+    ),
+  });
+  expect(resolution.requested.status).toBe("resolved");
+  if (resolution.requested.status !== "resolved") throw new Error("expected resolved");
+  expect(resolution.requested.links).toEqual([
+    {
+      url: SUB_PAYLOAD.src,
+      quality: "auto",
+      qualityRank: 0,
+      referer: hianimeEmbedReferer("ZokoAnime"),
+    },
+  ]);
 });

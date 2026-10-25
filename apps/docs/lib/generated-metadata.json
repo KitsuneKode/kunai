@@ -1,10 +1,7 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "176ea8cc26bd716999a53c90e1bbd7dad06c9e6a7d4ff0c691bf5af736c7f60f",
-  "docsContentFingerprint": "8a34e9a2cc190cdf7b6f7351f0d7da8f4de3f37b828926121e30dad3858e8a9a",
-  "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
-  "commandCount": 82,
+  "commandCount": 85,
   "providerIds": [
     "videasy",
     "vidlink",
@@ -145,7 +142,7 @@
         "quality-ranked"
       ],
       "notes": [
-        "Parity with ani-cli v5.1.4: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
+        "Reference ani-cli v5.1.6 (separate HLS audio remains in the master for mpv): /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
         "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
         "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
         "Each season is a separate provider-native slug; there is no in-provider season routing.",
@@ -322,6 +319,12 @@
       "description": "Open settings (relay, playback, shell, and more)"
     },
     {
+      "id": "theme",
+      "label": "Theme",
+      "aliases": ["theme", "appearance", "colors", "colour"],
+      "description": "Pick the shell color theme — applies instantly"
+    },
+    {
       "id": "providers",
       "label": "Providers",
       "aliases": ["providers", "provider-settings", "default-provider"],
@@ -414,7 +417,7 @@
     {
       "id": "docs",
       "label": "Docs",
-      "aliases": ["docs", "documentation", "guide", "manual"],
+      "aliases": ["docs", "documentation", "manual"],
       "description": "Open Kunai documentation"
     },
     {
@@ -422,6 +425,12 @@
       "label": "Help",
       "aliases": ["help", "shortcuts", "?"],
       "description": "Show shortcuts and command help"
+    },
+    {
+      "id": "guide",
+      "label": "Guide",
+      "aliases": ["guide", "tour", "learn", "start-here", "features"],
+      "description": "Browse what Kunai can do, grouped by task — Enter runs it"
     },
     {
       "id": "menu",
@@ -446,6 +455,12 @@
       "label": "Image Pane",
       "aliases": ["image", "preview", "poster"],
       "description": "Toggle the image and details companion pane"
+    },
+    {
+      "id": "pet",
+      "label": "Companion",
+      "aliases": ["pet", "kanna", "companion", "mascot", "fox"],
+      "description": "Show or hide Kanna, the fox on empty and error screens"
     },
     {
       "id": "toggle-autoplay",
@@ -831,6 +846,41 @@
       "description": "Auto-pick the n-th search result (1-based, with -S)"
     },
     {
+      "short": "-e",
+      "long": "--episode",
+      "description": "Start at episode n (anime: absolute; series: S1)"
+    },
+    {
+      "short": "",
+      "long": "--season",
+      "description": "Season for --episode (series only)"
+    },
+    {
+      "short": "",
+      "long": "--quality",
+      "description": "Stream quality: best | 1080p | 720p | 480p"
+    },
+    {
+      "short": "",
+      "long": "--audio",
+      "description": "Audio track: original | en | ja | dub"
+    },
+    {
+      "short": "",
+      "long": "--sub",
+      "description": "Subtitles: en | interactive | none | ar | de | es | fr | ja"
+    },
+    {
+      "short": "",
+      "long": "--dub",
+      "description": "Shortcut for --audio dub"
+    },
+    {
+      "short": "",
+      "long": "--player",
+      "description": "Player backend (auto chooses for this platform)"
+    },
+    {
       "short": "",
       "long": "--mpv-debug",
       "description": "Verbose mpv logging"
@@ -1185,7 +1235,7 @@
       "scope": "browse",
       "group": "While browsing",
       "keys": "m",
-      "label": "Open starting-point menu for the highlighted title (same as Enter)",
+      "label": "Open starting-point menu for the highlighted title (Enter plays through)",
       "tier": "surface",
       "order": 280
     },

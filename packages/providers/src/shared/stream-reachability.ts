@@ -1,4 +1,10 @@
 import {
+  fetchProbeTarget,
+  isGuardedPlatformFetch,
+  type StreamReachabilityFetch,
+} from "@kunai/core";
+
+import {
   HLS_SEGMENT_PROBE_MIN_BYTES,
   isHlsMasterPlaylist,
   isHlsPlaylistUrl,
@@ -7,7 +13,16 @@ import {
   resolveHlsSegmentUrl,
 } from "./hls-manifest";
 
-export type StreamReachabilityFetch = (url: string, init: RequestInit) => Promise<Response>;
+// The fetch-guard chain lives in @kunai/core so other runtimes (the Android
+// stream gateway under infra/player) can share the DNS/private-address rules
+// without importing a provider package. These re-exports keep the module's
+// public surface unchanged.
+export {
+  blockedLiteralTargetReason,
+  fetchGuardedStreamTarget,
+  isGuardedPlatformFetch,
+} from "@kunai/core";
+export type { ProbeFetchOutcome, StreamReachabilityFetch } from "@kunai/core";
 
 export type StreamReachabilityProbeResult =
   | { readonly status: "reachable" }
@@ -32,242 +47,94 @@ export type ProbeStreamReachabilityInput = {
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
 const SEGMENT_RANGE_HEADER = `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`;
-const MAX_PROBE_REDIRECT_HOPS = 3;
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+// A body read past this after the prefix is already gathered is a server
+// ignoring Range and dumping the whole segment on us — cap the bleed.
+const MAX_PROBE_BODY_BYTES = 256 * 1024;
 
-/**
- * Provider-supplied URLs are untrusted input: a page or playlist can name a
- * loopback, link-local, or LAN target and the probe would otherwise fetch it —
- * a server-side request forgery by a site's own markup. Nothing a provider
- * offers should ever be private, so the gate is simple: http(s) only, public
- * literal hosts only, and (on the real fetch path) DNS answers checked too.
- *
- * `blockedLiteralTargetReason` is the synchronous half — scheme, host shape,
- * and literal ranges, no DNS — so an injected fetch sees no extra microtask.
- * `resolvedAddressBlockReason` adds DNS answer validation for the real path.
- */
-export function blockedLiteralTargetReason(url: string): string | null {
-  let parsed: URL;
+/** Capture only the required prefix and cancel even when the server ignores Range. */
+async function readPrefixBytes(
+  body: ReadableStream<Uint8Array> | null,
+  minBytes: number,
+): Promise<Uint8Array> {
+  if (!body) return new Uint8Array(0);
+  const reader = body.getReader();
+  const prefix = new Uint8Array(Math.min(minBytes, MAX_PROBE_BODY_BYTES));
+  let seen = 0;
   try {
-    parsed = new URL(url);
-  } catch {
-    return "unparseable URL";
+    while (seen < prefix.byteLength) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        const count = Math.min(value.byteLength, prefix.byteLength - seen);
+        prefix.set(value.subarray(0, count), seen);
+        seen += count;
+      }
+    }
+    await reader.cancel("probe-satisfied").catch(() => {});
+    return prefix.subarray(0, seen);
+  } catch (error) {
+    // Preserve abort/network classification rather than reporting a short body.
+    await reader.cancel("probe-failed").catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return `unsupported scheme ${parsed.protocol.replace(":", "") || "(none)"}`;
-  }
-  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (!host) return "empty host";
-  if (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host.endsWith(".local") ||
-    host.endsWith(".internal") ||
-    host.endsWith(".home.arpa")
-  ) {
-    return `local name ${host}`;
-  }
-  const literal = isPrivateLiteralAddress(host);
-  if (literal) return literal;
-  // A single-label name is an intranet name; public DNS names always carry a dot.
-  if (!host.includes(".") && !host.includes(":")) {
-    return `single-label host ${host}`;
-  }
-  return null;
 }
 
-async function resolvedAddressBlockReason(url: string): Promise<string | null> {
-  const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  const resolved = await resolveHostAddresses(host);
-  for (const address of resolved) {
-    const reason = isPrivateLiteralAddress(address);
-    if (reason) return `${reason} (DNS answer for ${host})`;
-  }
-  return null;
-}
-
-/** Dotted-quad parse; WHATWG URL canonicalises exotic forms before we see them. */
-function parseIpv4(host: string): [number, number, number, number] | null {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-  if (!m || !m[1] || !m[2] || !m[3] || !m[4]) return null;
-  const parts: [number, number, number, number] = [
-    Number(m[1]),
-    Number(m[2]),
-    Number(m[3]),
-    Number(m[4]),
-  ];
-  return parts.every((p) => p <= 255) ? parts : null;
-}
-
-function isPrivateIpv4(parts: readonly [number, number, number, number]): boolean {
-  const a = parts[0];
-  const b = parts[1];
+function hasTransportStreamSync(prefix: Uint8Array): boolean {
+  // One ASCII 'G' also starts ordinary text. Require three 188-byte packet boundaries.
   return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) || // CGNAT
-    (a === 169 && b === 254) || // link-local
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 0) ||
-    (a === 192 && b === 168) ||
-    (a === 198 && (b === 18 || b === 19)) || // benchmarking
-    (a === 198 && b === 51) ||
-    (a === 203 && b === 0) ||
-    a >= 224 // multicast + reserved + broadcast
+    prefix.byteLength >= 377 && prefix[0] === 0x47 && prefix[188] === 0x47 && prefix[376] === 0x47
   );
 }
 
-/** IPv6-mapped IPv4 (`::ffff:7f00:1`) and NAT64 (`64:ff9b::a9fe:1`) unwrap to v4 checks. */
-function embeddedIpv4(host: string): [number, number, number, number] | null {
-  const tail = host.match(/(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/)?.[1];
-  if (tail) return parseIpv4(tail);
-  const hexTail = host.match(/(?:^|:)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/) ?? null;
-  if (!hexTail?.[1] || !hexTail[2]) return null;
-  const hi = parseInt(hexTail[1], 16);
-  const lo = parseInt(hexTail[2], 16);
-  return [hi >> 8, hi & 0xff, lo >> 8, lo & 0xff];
-}
-
-function isPrivateLiteralAddress(host: string): string | null {
-  const v4 = parseIpv4(host);
-  if (v4) {
-    return isPrivateIpv4(v4) ? `private address ${host}` : null;
-  }
-  if (!host.includes(":")) return null;
-  if (host === "::" || host === "::1") return `loopback address ${host}`;
-  const embedded = embeddedIpv4(host);
-  if (
-    (host.startsWith("::ffff:") || host.startsWith("64:ff9b::")) &&
-    embedded &&
-    isPrivateIpv4(embedded)
-  ) {
-    return `private address ${host}`;
-  }
-  const first = parseInt(host.split(":", 1)[0] || "0", 16);
-  if (
-    (first & 0xffc0) === 0xfe80 || // fe80::/10 link-local
-    (first & 0xfe00) === 0xfc00 || // fc00::/7 ULA
-    (first & 0xffc0) === 0xfec0 || // fec0::/10 site-local
-    (first & 0xff00) === 0xff00 ||
-    // ff00::/8 multicast
-    host.startsWith("2001:db8") ||
-    host.startsWith("2001:0db8")
-  ) {
-    return `private address ${host}`;
-  }
-  return null;
-}
-
-async function resolveHostAddresses(host: string): Promise<string[]> {
-  if (parseIpv4(host) || host.includes(":")) return [];
+/**
+ * Read a full body as text only when it fits `maxBytes`; returns `null` on
+ * overflow — a truncated M3U can still parse as valid markup, so the caller
+ * must see "too large" rather than half a playlist. Mid-body errors rethrow
+ * into the caller's classifier, matching `readPrefixBytes`.
+ */
+export async function readBoundedTextBody(
+  body: ReadableStream<Uint8Array> | null,
+  maxBytes: number = MAX_PROBE_BODY_BYTES,
+): Promise<string | null> {
+  if (!body) return null;
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let seen = 0;
   try {
-    const { lookup } = await import("node:dns/promises");
-    const answers = await lookup(host, { all: true });
-    return answers.map((a) => a.address);
-  } catch {
-    // An unresolvable name fails in the fetch anyway — don't pre-empt its error.
-    return [];
+    while (seen <= maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        seen += value.byteLength;
+      }
+    }
+    if (seen > maxBytes) {
+      await reader.cancel("too-large").catch(() => {});
+      return null;
+    }
+    return new TextDecoder().decode(concatBytes(chunks, seen));
+  } catch (error) {
+    await reader.cancel("probe-failed").catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
   }
 }
 
-export type ProbeFetchOutcome =
-  | { readonly kind: "response"; readonly response: Response }
-  | { readonly kind: "blocked"; readonly reason: string }
-  | { readonly kind: "timeout" };
-
-/**
- * One probe request, following redirects by hand so each hop is re-validated.
- * `redirect: "manual"` keeps a trusted Location header from steering the probe
- * somewhere the initial URL was already checked not to go.
- */
-async function fetchProbeTarget(options: {
-  readonly fetchImpl: StreamReachabilityFetch;
-  readonly url: string;
-  readonly init: RequestInit;
-  readonly remaining: () => number;
-  readonly parentSignal?: AbortSignal;
-  readonly resolveNamesFor: (url: string) => boolean;
-}): Promise<ProbeFetchOutcome> {
-  let target = options.url;
-  let init = options.init;
-  for (let hop = 0; ; hop++) {
-    const literalBlocked = blockedLiteralTargetReason(target);
-    if (literalBlocked) {
-      return { kind: "blocked", reason: `${target} -> ${literalBlocked}` };
-    }
-    // DNS once the literals pass — skipped when the caller already aborted so
-    // a cancelled probe does not sit on a resolver round-trip.
-    if (options.resolveNamesFor(target) && !options.parentSignal?.aborted) {
-      const resolvedBlocked = await resolvedAddressBlockReason(target);
-      if (resolvedBlocked) {
-        return { kind: "blocked", reason: `${target} -> ${resolvedBlocked}` };
-      }
-    }
-    if (options.remaining() <= 0) {
-      return { kind: "timeout" };
-    }
-    // The fetch impl is invoked even on an aborted signal: abort is delivered
-    // through the signal itself, which is also what injected test fetches see.
-    const response = await options.fetchImpl(target, {
-      ...init,
-      redirect: "manual",
-    });
-    if (REDIRECT_STATUSES.has(response.status)) {
-      const location = response.headers.get("location");
-      if (location && hop < MAX_PROBE_REDIRECT_HOPS) {
-        try {
-          const next = new URL(location, target);
-          // Match undici's own redirect hygiene: credentials do not cross
-          // origins, even when every hop individually validates as public.
-          if (next.origin !== new URL(target).origin && init.headers) {
-            init = { ...init, headers: stripCredentialHeaders(init.headers) };
-          }
-          target = next.toString();
-        } catch {
-          // A Location we cannot parse is a response, not a redirect.
-          return { kind: "response", response };
-        }
-        continue;
-      }
-    }
-    return { kind: "response", response };
+function concatBytes(chunks: readonly Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
   }
-}
-
-const CREDENTIAL_HEADERS = new Set(["authorization", "cookie", "proxy-authorization"]);
-
-function stripCredentialHeaders(headers: RequestInit["headers"]): RequestInit["headers"] {
-  // `new Headers()` already accepts every legal headers init shape.
-  const clone = new Headers(headers);
-  for (const name of CREDENTIAL_HEADERS) clone.delete(name);
-  return clone;
+  return out;
 }
 
 /**
- * The same target guard for fetches that are not reachability probes — the
- * HLS ladder expands a provider-supplied master URL before the resolve gate
- * sees its variants, so it borrows the blocklist and per-hop redirect checks.
- * DNS answers are validated only when the impl is the real `fetch`; a relay
- * port resolves on the relay's side, where local answers mean nothing.
- */
-export function fetchGuardedStreamTarget(options: {
-  readonly fetchImpl: StreamReachabilityFetch;
-  readonly url: string;
-  readonly init: RequestInit;
-  readonly signal?: AbortSignal;
-  readonly resolvesLocally?: (url: string) => boolean;
-}): Promise<ProbeFetchOutcome> {
-  return fetchProbeTarget({
-    fetchImpl: options.fetchImpl,
-    url: options.url,
-    init: { ...options.init, signal: options.signal },
-    remaining: () => 1, // the caller's signal owns the deadline
-    parentSignal: options.signal,
-    resolveNamesFor: options.resolvesLocally ?? (() => options.fetchImpl === fetch),
-  });
-}
-
 /** Quick manifest/segment probe used before accepting a provider candidate or handing off to mpv. */
 export async function probeStreamReachability(
   input: ProbeStreamReachabilityInput,
@@ -279,7 +146,10 @@ export async function probeStreamReachability(
   const headers = input.headers ?? {};
   // Injected fetches own their destinations; real fetches get DNS answers
   // re-validated so a public name cannot resolve to a private address.
-  const resolveNamesFor = input.resolvesLocally ?? (() => input.fetchImpl === undefined);
+  // Compare against the captured platform fetch, not `input.fetchImpl ===
+  // undefined`: defaulting to a stubbed `globalThis.fetch` used to keep DNS
+  // on and treat documentation hosts as blocked-target.
+  const resolveNamesFor = input.resolvesLocally ?? (() => isGuardedPlatformFetch(fetchImpl));
 
   if (isHlsPlaylistUrl(input.url)) {
     return probeHlsManifest(
@@ -476,7 +346,17 @@ async function fetchPlaylistText(
         result: { status: "unreachable", reason: `HTTP ${response.status}`, definitive },
       };
     }
-    const text = await response.text();
+    const text = await readBoundedTextBody(response.body);
+    if (text === null) {
+      return {
+        status: "fail",
+        result: {
+          status: "unreachable",
+          reason: "playlist body empty or above probe cap",
+          definitive: true,
+        },
+      };
+    }
     return { status: "ok", text };
   } catch (error) {
     if (controller.signal.aborted || parentSignal?.aborted) {
@@ -546,38 +426,23 @@ async function probeHlsMediaSegment(
       };
     }
 
-    const buffer = new Uint8Array(await response.arrayBuffer());
-    if (buffer.byteLength < HLS_SEGMENT_PROBE_MIN_BYTES) {
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    const firstBytes = await readPrefixBytes(response.body, HLS_SEGMENT_PROBE_MIN_BYTES);
+    // Some media CDNs mislabel TS as HTML. Only positive packet evidence may
+    // override that refusal; HTML, short bodies and ambiguous text still fail.
+    if (contentType.includes("text/html") && !hasTransportStreamSync(firstBytes)) {
       return {
         status: "unreachable",
-        reason: `HLS segment unreachable: body too small (${buffer.byteLength}B)`,
+        reason: "HLS segment unreachable: content-type text/html",
         definitive: true,
       };
     }
-
-    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (contentType.includes("text/html")) {
-      // CDNs (like sun.paleoak.top) often misreport extensionless MPEG-TS or fMP4 chunks as text/html.
-      // 0x47 is the MPEG-TS packet sync byte. Validate subsequent 188-byte packet boundaries
-      // so HTML error pages beginning with 'G' (0x47) are rejected as unreachable.
-      const isMpegTs =
-        buffer.byteLength >= 377 &&
-        buffer[0] === 0x47 &&
-        buffer[188] === 0x47 &&
-        buffer[376] === 0x47;
-      const isFmp4 =
-        buffer.byteLength >= 8 &&
-        ((buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70) || // ftyp
-          (buffer[4] === 0x6d && buffer[5] === 0x6f && buffer[6] === 0x6f && buffer[7] === 0x66) || // moof
-          (buffer[4] === 0x73 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70)); // styp
-
-      if (!isMpegTs && !isFmp4) {
-        return {
-          status: "unreachable",
-          reason: "HLS segment unreachable: content-type text/html",
-          definitive: true,
-        };
-      }
+    if (firstBytes.byteLength < HLS_SEGMENT_PROBE_MIN_BYTES) {
+      return {
+        status: "unreachable",
+        reason: `HLS segment unreachable: body too small (${firstBytes.byteLength}B)`,
+        definitive: true,
+      };
     }
 
     return { status: "reachable" };

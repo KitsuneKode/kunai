@@ -16,6 +16,8 @@ permissions:
   contents: read
 
 env:
+  # Automated builds and installed-binary checks must never create analytics identities.
+  DO_NOT_TRACK: "1"
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_SCM_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
@@ -392,7 +394,8 @@ jobs:
       - name: Test CLI
         # Step-level bound so a wedged suite is attributed here rather than
         # surfacing as an unexplained job cancellation with no failing step.
-        timeout-minutes: 8
+        # Green runs take 5.5-7.5 min here, so 8 timed out a passing suite.
+        timeout-minutes: 12
         env:
           # Bun's 5s per-test default is too tight only here. The SQLite-backed
           # suites open a database per test, and the shared temp store registry
@@ -478,7 +481,7 @@ jobs:
       # so a GNU-only flag in it is a broken install for every Mac user and
       # the Linux leg cannot see it.
       - name: Test CLI
-        timeout-minutes: 8
+        timeout-minutes: 12
         env:
           # Same starvation class as the Windows leg: the scripts' own 20s
           # per-test cap loses a different scheduling-heavy test each run under
@@ -867,7 +870,8 @@ jobs:
 
   ci-ready:
     name: CI ready
-    if: ${{ always() }}
+    # Evaluate failures on active runs; a superseded workflow cannot certify readiness.
+    if: ${{ !cancelled() }}
     needs:
       [
         changes,

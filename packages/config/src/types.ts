@@ -2,6 +2,15 @@ import type { ProviderRelayConfig, StartupPriority } from "@kunai/types";
 
 export type ContinueSourcePreference = "auto" | "local" | "stream" | "ask";
 
+/**
+ * Whether playback pauses on the Tracks sheet before mpv launches.
+ * `"off"` auto-plays the resolved pick; `"when-choices"` prompts only when the
+ * inventory has a real source/quality/track choice; `"always"` prompts on
+ * every inventory. Applies to user-launched plays — autoplay advances and
+ * restarts never re-prompt.
+ */
+export type PrePlayConfirmMode = "off" | "when-choices" | "always";
+
 export type QuitNearEndBehavior = "continue" | "pause";
 
 export type QuitNearEndThresholdMode = "credits-or-90-percent" | "percent-only" | "seconds-only";
@@ -91,8 +100,23 @@ export interface KitsuneConfig {
   skipPreview: boolean;
   skipCredits: boolean;
   footerHints: "detailed" | "minimal";
+  /**
+   * Kanna, the companion fox, on empty/error surfaces and the exit screen.
+   * "auto" resolves from env and terminal capability; "off" hides her until
+   * `/pet` or this setting brings her back. `KUNAI_PET=off` still wins — an
+   * automation off cannot be overridden from inside the app.
+   */
+  companionPet: "auto" | "off";
+  /**
+   * Shell theme id from `@kunai/design`'s `THEMES` registry (e.g.
+   * `"ember-dusk"`, `"nord"`). A string, not a union: `@kunai/config` may not
+   * depend on `@kunai/design` (boundary allowlist), so the registry validates
+   * at apply time and an unrecognized value falls back to the brand default.
+   */
+  theme: string;
   quitNearEndBehavior: QuitNearEndBehavior;
   continueSourcePreference: ContinueSourcePreference;
+  prePlayConfirm: PrePlayConfirmMode;
   quitNearEndThresholdMode: QuitNearEndThresholdMode;
   mpvKunaiScriptPath: string;
   mpvKunaiScriptOpts: Record<string, string>;
@@ -128,6 +152,17 @@ export interface KitsuneConfig {
    * becoming permanent furniture for someone who already knows them.
    */
   playbackKeysSessionsSeen: number;
+  /**
+   * Whether the one-line contextual shortcut hints may appear at all. Disabling
+   * is the way out of the feature entirely — the seen set is kept so turning
+   * tips back on does not re-teach what was already shown.
+   */
+  tipsEnabled: boolean;
+  /**
+   * Ids of every contextual tip that has already rendered. A tip is once-ever:
+   * once its id lands here it never displays again, including across restarts.
+   */
+  seenTips: readonly string[];
   /** Optional usage ping. Fresh installs are off until explicitly enabled. */
   analytics: AnalyticsPreference;
   /** Whether the one-time recommendation notice for an existing install was shown. */

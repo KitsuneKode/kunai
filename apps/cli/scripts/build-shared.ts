@@ -291,6 +291,23 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * code with no single blob. 3_048 leaves ~46 KiB of headroom, restoring real
  * slack rather than clearing one change.
  *
+ * The Android terminal handoff slice was measured independently before that
+ * upstream raise. Its fixed base measured 3,067,451 bytes, leaving only 4,549
+ * bytes below the old cap. The branch measured 3,078,331 bytes: a 10,880-byte
+ * (10.6 KiB) increase for the player-choice/capability model, stream
+ * qualification, Android intent adapter, and detached session routing. The
+ * release metafile attributed 16,540 source bytes to those new modules before
+ * bundling; there was no new dependency or opaque asset. Its proposed 3_020 KiB
+ * ratchet was superseded by main's independently justified 3_048 KiB cap, so
+ * the Android slice does not raise the ratchet again.
+ *
+ * Raised from 3_048 to 3_096 on 2026-10-13 for the Android DASH gateway.
+ * Identical minified build options with only stream-gateway.ts overridden to
+ * 7b16a00eb measured 3,050,925 bytes; the XML parser, DASH addressing and
+ * template routes, and bounded manifest-prefix detection measured 3,151,920
+ * bytes (+100,995, 98.6 KiB). The new cap leaves 18 KiB of headroom. The
+ * public npm launcher pack budgets below are unchanged.
+ *
  * Worth restating because it is what makes this safe: this number guards
  * `dist/kunai.js`, which is published nowhere and is not the source of the
  * compiled binaries either -- `compileBinaryBuildOptions` compiles from
@@ -299,7 +316,7 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * change does not touch and which the exact-tarball verification added in #166
  * has since made stricter.
  */
-export const NPM_BUNDLE_BUDGET_KB = 3_048;
+export const NPM_BUNDLE_BUDGET_KB = 3_096;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -6,6 +6,12 @@ export interface PlaybackWatchdog {
   stop(): void;
 }
 
+function isPlaybackInactive(sample: PlayerStatsSample): boolean {
+  // core-idle also means cache starvation or restart, not a user pause.
+  // Explicit pause and no loaded file are the states that stop stall clocks.
+  return Boolean(sample.paused || sample.idleActive);
+}
+
 export function createPlaybackWatchdog(
   emit: (event: PlayerPlaybackEvent) => void,
   options?: {
@@ -52,7 +58,7 @@ export function createPlaybackWatchdog(
     if (!latest) return;
 
     const now = Date.now();
-    const userPausedOrIdle = Boolean(latest.paused || latest.idleActive || latest.coreIdle);
+    const userPausedOrIdle = isPlaybackInactive(latest);
 
     if (userPausedOrIdle) {
       pausedOrIdle = true;
@@ -198,7 +204,7 @@ export function createPlaybackWatchdog(
         emittedSlowNetwork = false;
       }
 
-      const userPausedOrIdle = Boolean(sample.paused || sample.idleActive || sample.coreIdle);
+      const userPausedOrIdle = isPlaybackInactive(sample);
       if (userPausedOrIdle) {
         pausedOrIdle = true;
         resetProgressClock(sample.observedAt, sample.positionSeconds);

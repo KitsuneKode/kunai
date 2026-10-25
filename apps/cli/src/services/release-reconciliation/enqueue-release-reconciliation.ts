@@ -126,13 +126,23 @@ export function enqueueReleaseReconciliation(
           .map((projection) => {
             const historyRow = historyByTitle.get(projection.titleId);
             const providerId = historyRow?.providerId ?? projection.source;
+            const animeSourced =
+              projection.source === "anilist" || projection.mediaKind === "anime";
             return {
               type: "new-playable-episode" as const,
               titleId: projection.titleId,
               mediaKind: projection.mediaKind,
+              contentType:
+                projection.mediaKind === "movie" ? ("movie" as const) : ("series" as const),
+              sourceId: projection.source,
               title: projection.title,
+              // AniList projects a flat episode number (no season); persisting it
+              // as `episode` would leave the launch missing its absoluteEpisode,
+              // which is the identity the anime lane resolves against.
               season: projection.latestAiredSeason,
-              episode: projection.latestAiredEpisode,
+              episode: animeSourced ? undefined : projection.latestAiredEpisode,
+              absoluteEpisode: animeSourced ? projection.latestAiredEpisode : undefined,
+              externalIds: historyRow?.externalIds,
               providerId,
               catalogSource: catalogSourceLabel(projection.source) ? projection.source : undefined,
               availableAt: projection.checkedAt,

@@ -156,7 +156,7 @@ export function LibraryTitleDetail({
   const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
   const maxVisible = getPickerListMaxVisible(
     viewport.rows,
-    getPickerChromeRows({ hasSubtitle: true, commandMode: false, extraRows: 5 }),
+    getPickerChromeRows({ hasSubtitle: true, commandMode, extraRows: 5 }),
   );
   const windowStart = getWindowStart(safeIndex, totalRows, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, totalRows);

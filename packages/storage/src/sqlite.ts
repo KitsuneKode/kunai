@@ -48,10 +48,6 @@ export interface OpenDatabaseOptions {
 }
 
 export function openKunaiDatabase(path: string, options: OpenDatabaseOptions = {}): KunaiDatabase {
-  if (path.split(/[\\/]/).includes("undefined")) {
-    throw new Error(`Refusing to open database with literal 'undefined' path segment: "${path}"`);
-  }
-
   if (options.readonly !== true) {
     ensureParentDirectory(path);
   }

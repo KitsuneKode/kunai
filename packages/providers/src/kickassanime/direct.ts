@@ -8,6 +8,7 @@
  * Parsing lives in `site.ts`; this file is the runtime contract around it.
  */
 import { createResolveTrace, type CoreProviderModule } from "@kunai/core";
+import { ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
 import type {
   CachePolicy,
   ProviderEpisodeOption,
@@ -142,7 +143,13 @@ async function fetchJson(
   init: { readonly method?: "GET" | "POST"; readonly body?: unknown } = {},
 ): Promise<unknown> {
   const response = await kaaFetch(context, path, init);
-  if (!response.ok) throw new Error(`KickAssAnime returned HTTP ${response.status}`);
+  if (!response.ok)
+    throw providerHttpErrorForStatus({
+      providerId: KICKASSANIME_PROVIDER_ID,
+      stage: "catalog",
+      status: response.status,
+      message: `KickAssAnime returned HTTP ${response.status}`,
+    });
   return response.json();
 }
 
@@ -195,16 +202,15 @@ async function fetchMasterPlaylist(
     });
     if (!response.ok) return null;
     const body = await response.text();
-    // A 204 or an HTML error page is not a readable manifest — returning null
-    // hands the ship decision to the gate probe instead of skipping it.
+    // A 204 or an HTML error page is not a readable manifest.
     return body.includes("#EXTM3U") ? body : null;
   } catch (error) {
     // An abort is not an unreadable manifest — swallowing it lets the gate
     // probe an already-dead signal and ship a stream on a cancelled resolve.
     if (context.signal?.aborted) throw error;
-    // A master this adapter cannot read is not yet a dead stream: the caller
-    // gates the shipped URL on `null`, and only the audio naming is lost when
-    // that probe passes. Returning null — not throwing — keeps those distinct.
+    // A master this adapter cannot read is not yet a dead stream: the resolve
+    // gate decides that, and only the audio naming is lost when it passes.
+    // Returning null — not throwing — keeps those distinct.
     return null;
   }
 }
@@ -217,7 +223,13 @@ async function fetchPlayerPage(
     headers: { referer: `${currentBase}/`, "user-agent": USER_AGENT },
     signal: directStreamFetchSignal(context.signal, KAA_FETCH_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`KickAssAnime player returned HTTP ${response.status}`);
+  if (!response.ok)
+    throw providerHttpErrorForStatus({
+      providerId: KICKASSANIME_PROVIDER_ID,
+      stage: "player",
+      status: response.status,
+      message: `KickAssAnime player returned HTTP ${response.status}`,
+    });
   return response.text();
 }
 
@@ -396,6 +408,21 @@ export const kickassanimeProviderModule: CoreProviderModule = {
         { cachePolicy, events, startedAt },
       );
 
+    const failRequest = (error: unknown, stage: string) => {
+      if (context.signal?.aborted) return fail("cancelled", "KickAssAnime resolve cancelled");
+      if (error instanceof ProviderHttpError)
+        return fail(
+          error.code,
+          `KickAssAnime ${stage} failed: ${describe(error)}`,
+          error.retryable,
+        );
+      if (error instanceof SyntaxError)
+        return fail("parse-failed", `KickAssAnime ${stage} returned invalid JSON`, false);
+      if (error instanceof Error && error.name === "TimeoutError")
+        return fail("timeout", `KickAssAnime ${stage} timed out`, true);
+      return fail("network-error", `KickAssAnime ${stage} failed: ${describe(error)}`, true);
+    };
+
     if (context.signal?.aborted) return fail("cancelled", "resolve cancelled");
     if (input.mediaKind !== "anime")
       return fail("unsupported-title", "KickAssAnime only supports anime");
@@ -403,7 +430,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
     try {
       slug = await locateKaaShow(input.title, context, events);
     } catch (error) {
-      return fail("network-error", `KickAssAnime search failed: ${describe(error)}`, true);
+      return failRequest(error, "search");
     }
     if (!slug) {
       const year = input.title.year ? ` (${input.title.year})` : "";
@@ -446,7 +473,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
         }
       }
     } catch (error) {
-      return fail("network-error", `KickAssAnime episode list failed: ${describe(error)}`, true);
+      return failRequest(error, "episode list");
     }
     if (!located) return fail("not-found", `KickAssAnime has no episode ${episode} for ${slug}`);
 
@@ -459,7 +486,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       server = servers.find((candidate) => PLAYABLE_SERVERS.has(candidate.name));
       if (server) player = parseKaaPlayerPage(await fetchPlayerPage(context, server));
     } catch (error) {
-      return fail("network-error", `KickAssAnime player failed: ${describe(error)}`, true);
+      return failRequest(error, "player");
     }
     if (!server || !player) {
       return fail("not-found", `KickAssAnime offered no playable server for ${slug} ${episode}`);
@@ -516,9 +543,8 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       protocol: "hls",
       container: "m3u8",
       headers,
-      // The master is a ladder (360p/540p/720p); mpv picks the rendition.
-      // The master is a ladder mpv picks from, and its variant playlists are
-      // video-only — the audio lives in the rendition group, so splitting the
+      // The master is a ladder (360p/540p/720p) mpv picks from, and its variant
+      // playlists are video-only — the audio lives in the rendition group, so splitting the
       // ladder into per-quality URLs would hand mpv silent video.
       qualityLabel: "auto",
       qualityRank: 0,
@@ -564,6 +590,28 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       preferredSourceId: input.preferredSourceId,
       favoriteSourceNames: input.favoriteSourceNames,
     });
+
+    // Resolve gate: KickAssAnime ships exactly one stream — the master URL —
+    // and a master that downloads still proves nothing about its media
+    // playlists, so the shipped stream is probed with its own headers either
+    // way. A definitive refusal is retryable: a re-resolve re-fetches the
+    // player page and mints a fresh signed manifest URL. A non-definitive
+    // answer (timeout, 5xx) passes, since mpv retries the identical request.
+    const verdict = await verifyCandidateStream({
+      stream: selection.selected,
+      context,
+      signal: context.signal,
+    });
+    if (context.signal?.aborted) {
+      return fail("cancelled", "KickassAnime resolve-gate probe was cancelled");
+    }
+    if (!verdict.accepted) {
+      return fail(
+        "not-found",
+        `KickassAnime selected stream is unreachable (${verdict.reason})`,
+        true,
+      );
+    }
     const sources: ProviderSourceCandidate[] = [
       createSourceCandidateFromStream({
         providerId: KICKASSANIME_PROVIDER_ID,

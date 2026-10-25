@@ -8,6 +8,7 @@ import { fetchLatestVersion } from "../latest-version";
 import {
   detectPlatform,
   releaseAssetName,
+  resolvePlatformLibc,
   resolveReleaseBinaryTarget,
   type PlatformLibc,
 } from "../platform-assets";
@@ -96,7 +97,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
     return { status: "failed", error: "Could not detect OS/arch." };
   }
 
-  const libc = options.libc ?? (os === "linux" && isMuslEnvironmentSync() ? "musl" : "gnu");
+  const libc = options.libc ?? resolvePlatformLibc(os, os === "linux" && isMuslEnvironmentSync());
   const assetName = releaseAssetName(os, arch, libc);
   const releaseTarget = resolveReleaseBinaryTarget(os, arch, libc);
   const tag = `v${resolved}`;
@@ -337,7 +338,9 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           return { status: "skipped" as const, reason: "lock-contention" as const };
         }
 
-        void cleanupOldVersions(layout);
+        // Fire-and-forget must never reject: a cleanup failure surfacing as an
+        // unhandled rejection would turn a completed install into a crash.
+        void cleanupOldVersions(layout).catch(() => {});
 
         return { status: "installed" as const, version: resolved, versionPath };
       } catch (error) {

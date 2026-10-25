@@ -54,6 +54,18 @@ export function shouldAttemptLateSubtitleLookup({
   if (hardSubSatisfiesSubtitlePreference(stream, requestedSubLang)) {
     return { attempt: false, reason: "hardsub-satisfied", availableTracks };
   }
+  if (stream.subtitle) {
+    const attachedTrack = stream.subtitleList?.find((track) => track.url === stream.subtitle);
+    const attachedLanguage = attachedTrack?.language ?? attachedTrack?.display;
+    if (
+      requestedSubLang === "interactive" ||
+      requestedSubLang === "fzf" ||
+      !attachedLanguage ||
+      langMatches(attachedLanguage, requestedSubLang)
+    ) {
+      return { attempt: false, reason: "attached", availableTracks };
+    }
+  }
   if (availableTracks > 0) {
     const hasRequestedTrack = stream.subtitleList?.some((track) =>
       langMatches(track.language ?? track.display ?? "", requestedSubLang),

@@ -41,6 +41,8 @@ export interface SyncTokenFileIo {
   readonly readTokens: (path: string) => Promise<SyncTokens>;
   /** Replace the whole file with `tokens`. */
   readonly writeTokens: (path: string, tokens: SyncTokens) => Promise<void>;
+  /** Optional independently stored tracker slots; omitted keys remain untouched. */
+  readonly patchTokens?: (path: string, patch: SyncTokens) => Promise<void>;
 }
 
 export const realSyncTokenFileIo: SyncTokenFileIo = {
@@ -106,11 +108,11 @@ export class SyncTokenStore {
   }
 
   patchAniList(data: AniListTokens | undefined): Promise<void> {
-    return this.mutate((current) => ({ ...current, anilist: data }));
+    return this.mutate((current) => ({ ...current, anilist: data }), { anilist: data });
   }
 
   patchTmdb(data: TmdbTokens | undefined): Promise<void> {
-    return this.mutate((current) => ({ ...current, tmdb: data }));
+    return this.mutate((current) => ({ ...current, tmdb: data }), { tmdb: data });
   }
 
   /** Resolves once the mutations queued so far have settled, failures included. */
@@ -118,8 +120,8 @@ export class SyncTokenStore {
     return this.mutationChain;
   }
 
-  private mutate(update: (current: SyncTokens) => SyncTokens): Promise<void> {
-    const operation = this.applyAfter(this.mutationChain, update);
+  private mutate(update: (current: SyncTokens) => SyncTokens, patch?: SyncTokens): Promise<void> {
+    const operation = this.applyAfter(this.mutationChain, update, patch);
     // The caller still sees the rejection; the queue keeps a settled handle so
     // one failed write cannot wedge every later mutation.
     this.mutationChain = operation.catch(() => undefined);
@@ -129,8 +131,13 @@ export class SyncTokenStore {
   private async applyAfter(
     previous: Promise<void>,
     update: (current: SyncTokens) => SyncTokens,
+    patch?: SyncTokens,
   ): Promise<void> {
     await previous;
+    if (patch && this.io.patchTokens) {
+      await this.io.patchTokens(this.path, patch);
+      return;
+    }
     // Re-read inside this turn: an earlier mutation in the chain may have
     // changed the other tracker's slot since this call was made.
     const current = await this.io.readTokens(this.path);

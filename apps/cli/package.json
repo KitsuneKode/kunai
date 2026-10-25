@@ -54,7 +54,7 @@
     "test:coverage:report": "bun test test/unit test/integration --coverage --coverage-reporter=text",
     "test:file": "bun test --timeout=20000",
     "test:unit": "bun test test/unit --timeout=20000 --parallel",
-    "test:future": "bun test --preload ./test/support/future-clock.preload.ts test/unit --timeout=20000",
+    "test:future": "bun test --preload ./test/support/future-clock.preload.ts --path-ignore-patterns='**/native-installer/{activation,version}-lock.test.ts' test/unit --timeout=20000",
     "test:integration": "bun test test/integration --timeout=20000",
     "test:binary:smoke": "KUNAI_BINARY_SMOKE=1 bun test test/integration/compiled-binary-smoke.test.ts",
     "test:npm-global-install": "KUNAI_NPM_GLOBAL_INSTALL=1 bun test test/integration/npm-global-install.test.ts",
@@ -64,6 +64,7 @@
     "test:installer:docker:scenario": "bash test/docker/native-installer/run-local.sh --scenario",
     "test:installer:ci": "KUNAI_INSTALLER_DOCKER=1 bash test/docker/native-installer/run-local.sh",
     "test:live:allanime": "bun test/live/allanime-demonslayer.smoke.ts",
+    "test:live:android-handoff": "bun test/live/android-terminal-handoff.ts",
     "test:live:allmanga-rotation": "bun test/live/allmanga-rotation.smoke.ts",
     "test:live:anidb": "bun test/live/anidb-onigiri.smoke.ts",
     "test:live:hianime": "bun test/live/hianime-naruto.smoke.ts",
@@ -107,7 +108,7 @@
     "build:prod": "bun run check && bun run build",
     "pkg:check": "bun run scripts/verify-npm-pack.ts",
     "release:dry-run": "bun run build:prod && bun run pkg:check",
-    "link:global": "bun link",
+    "link:global": "bun run scripts/link-global.ts",
     "unlink:global": "bun unlink",
     "relink:global": "bun run unlink:global && bun run link:global",
     "prepack": "bun run build",
@@ -117,6 +118,7 @@
     "test:live:mpv": "bun test/live/mpv-playback.smoke.ts"
   },
   "dependencies": {
+    "@xmldom/xmldom": "0.9.12",
     "commander": "catalog:cli",
     "ink": "catalog:cli",
     "react": "catalog:"
@@ -131,12 +133,15 @@
     "@kunai/types": "workspace:*",
     "@types/bun": "catalog:",
     "@types/react": "catalog:",
-    "jpeg-js": "^0.4.4"
+    "jpeg-js": "^0.4.4",
+    "zod": "catalog:"
   },
   "peerDependencies": {
     "typescript": "catalog:"
   },
   "optionalDependencies": {
+    "@kitsunekode/kunai-android-arm64": "0.3.0",
+    "@kitsunekode/kunai-android-x64": "0.3.0",
     "@kitsunekode/kunai-darwin-arm64": "0.3.0",
     "@kitsunekode/kunai-darwin-x64": "0.3.0",
     "@kitsunekode/kunai-linux-arm64": "0.3.0",

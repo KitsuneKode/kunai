@@ -21,6 +21,7 @@ function frame(selectedIndex = 0): string {
 
 const READY: CapabilitySnapshot = {
   mpv: true,
+  mpvRequired: true,
   ffprobe: true,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },
@@ -40,7 +41,7 @@ function consentFrameInShell(): string {
     columns: 80,
     rows: 24,
   });
-  for (let i = 0; i < 5; i += 1) handle.stdin.enqueue("\r");
+  for (let i = 0; i < 4; i += 1) handle.stdin.enqueue("\r");
   const rendered = handle.lastFrame();
   handle.unmount();
   return rendered;

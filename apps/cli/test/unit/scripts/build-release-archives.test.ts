@@ -92,6 +92,31 @@ function readZip(path: string) {
 }
 
 describe("deterministic release archive builder", () => {
+  test("publishes Android binaries as deterministic tar archives", () => {
+    const androidTargets = RELEASE_BINARY_TARGETS.filter((target) => target.os === "android");
+    expect(
+      androidTargets.map((target) => ({
+        id: target.id,
+        triple: target.triple,
+        archive: target.archiveName,
+        format: target.archiveFormat,
+      })),
+    ).toEqual([
+      {
+        id: "android-arm64",
+        triple: "bun-linux-arm64-android",
+        archive: "kunai-android-arm64.tar.gz",
+        format: "tar.gz",
+      },
+      {
+        id: "android-x64",
+        triple: "bun-linux-x64-android",
+        archive: "kunai-android-x64.tar.gz",
+        format: "tar.gz",
+      },
+    ]);
+  });
+
   test("builds the exact archive/raw bridge set with separate sorted manifests", () => {
     const directory = fixtureDirectory("kunai archives");
     try {

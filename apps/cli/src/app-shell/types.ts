@@ -24,6 +24,7 @@ export type ShellAction =
   | "surprise"
   | "back-to-results"
   | "settings"
+  | "theme"
   | "providers"
   | "presence"
   | "analytics"
@@ -40,9 +41,11 @@ export type ShellAction =
   | "diagnostics"
   | "docs"
   | "help"
+  | "guide"
   | "about"
   | "update"
   | "image-pane"
+  | "pet"
   | "toggle-autoplay"
   | "toggle-autoskip"
   | "stop-after-current"
@@ -291,6 +294,12 @@ export type LoadingShellState = {
   videoMeta?: import("@/domain/types").VideoMeta | null;
   onCommandAction?: (action: ShellAction) => void;
   commands?: readonly ResolvedAppCommand[];
+  /** Local title source for the palette's JUMP TO section — read once per open. */
+  paletteTitleSource?: () => readonly import("@/domain/palette/local-title-index").LocalTitleEntry[];
+  /** Enter landed on a JUMP TO title row. */
+  onPaletteTitlePick?: (
+    entry: import("@/domain/palette/local-title-index").LocalTitleEntry,
+  ) => void;
   footerMode?: ShellFooterMode;
   /** Playbacks that have already shown the on-screen key card; it retires past a few. */
   playbackKeysSessionsSeen?: number;
@@ -319,8 +328,24 @@ export type BrowseIdleContext = {
     titleId?: string;
     offlineJobId?: string;
   };
+  /** Top of the Watchlist (sort_order) plus the saved count — the "saved" idle row. */
+  savedNext?: {
+    title: string;
+    titleId: string;
+    total: number;
+  };
   todayReleaseCount?: number;
   todayReleaseTitleCount?: number;
+  /**
+   * "New since you left" — provider-confirmed releases newer than the last
+   * calendar visit, on titles the attention system tracks (muted excluded).
+   * `sinceMs` is the visit the counts are measured from.
+   */
+  newSinceVisit?: {
+    episodeCount: number;
+    titleCount: number;
+    sinceMs: number;
+  };
   calendarNudge?: {
     airingTodayCount: number;
   };
@@ -408,10 +433,23 @@ export type BrowseShellResult<T> =
       type: "launch-playback";
       launch: { readonly title: TitleInfo; readonly episode?: EpisodeInfo };
     }
-  | { type: "cancelled" };
+  | {
+      type: "cancelled";
+      /** Set when another root-content session displaced browse — not a user Esc. */
+      displaced?: true;
+    };
 
 export type PlaybackShellResult =
   | ShellAction
+  | {
+      /**
+       * An overlay (e.g. the notifications inbox) settled this mounted session
+       * with a direct "play this" intent. The post-play menu translates it to a
+       * `history_entry` outcome.
+       */
+      readonly type: "launch-playback";
+      readonly launch: { readonly title: TitleInfo; readonly episode?: EpisodeInfo };
+    }
   | {
       readonly type: "track-selection";
       readonly pick: import("@/domain/playback/track-capabilities").DecodedTrackSelection;
@@ -431,6 +469,17 @@ export type PlaybackShellResult =
   | {
       readonly type: "play-queue-entry";
       readonly queueEntryId: string;
+    }
+  /**
+   * Launch a different title — same shape `routeShellAction` produces for a
+   * history-overlay pick and the same exit `resolvePostPlaybackExitOutcome`
+   * understands. The palette's JUMP TO rows deliver through this channel.
+   */
+  | {
+      readonly type: "history-entry";
+      readonly title: TitleInfo;
+      readonly episode?: EpisodeInfo;
+      readonly startSeconds?: number;
     };
 
 export function toShellAction(commandId: AppCommandId): ShellAction {
@@ -446,6 +495,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "random":
     case "surprise":
     case "settings":
+    case "theme":
     case "providers":
     case "presence":
     case "analytics":
@@ -461,9 +511,11 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "diagnostics":
     case "docs":
     case "help":
+    case "guide":
     case "about":
     case "update":
     case "image-pane":
+    case "pet":
     case "toggle-autoplay":
     case "toggle-autoskip":
     case "stop-after-current":

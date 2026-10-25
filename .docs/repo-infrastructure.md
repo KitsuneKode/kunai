@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-12T14:05:00Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -35,7 +35,7 @@ The monorepo uses [Bun catalogs](https://bun.sh/docs/pm/catalogs) in the root
 - `catalog:cli` — `commander`, `ink` (CLI runtime)
 - `catalog:lint` — `oxlint`, `oxfmt` (root only; turbo package scripts +
   lint-staged resolve them via workspace hoist)
-- `catalog:providers` — `@assemblyscript/loader`, `crypto-js`, `@types/crypto-js`
+- `catalog:providers` — `@assemblyscript/loader`; provider crypto uses built-in APIs
 - `catalog:repo` — `turbo` (root orchestration only)
 - `catalog:web` — Next.js, Fumadocs, Tailwind, Motion, Base UI, Tabler icons,
   docs UI helpers, and docs TypeScript 5.9 (`apps/docs` only)
@@ -46,6 +46,37 @@ or `next` tags.
 Root `overrides` dedupe known transitive drift (`@types/node`, `fumadocs-core`,
 `fumadocs-ui`). Fumadocs still pulls Radix + `lucide-react` transitively; do not
 re-catalog those as direct docs deps — docs UI uses Base UI + Tabler.
+
+`braces@3.0.3` has a tracked Bun depth-limit patch for CVE-2026-93687. Shared
+CI setup checks the installed Changesets/shadcn paths after frozen install with
+`bun run verify:dependency-patches`; [patch maintenance](../patches/README.md)
+records provenance, compatibility, and removal criteria. The registry audit
+still flags 3.0.3 because upstream has no patched release; behavioral verification
+does not turn that audit green.
+
+The October 8 advisory refresh updates the existing transitive ranges for
+[`sharp`](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) to 0.35.5
+(including libvips 1.3.4 / librsvg 2.63.2),
+[`@modelcontextprotocol/sdk`](https://github.com/advisories/GHSA-6qxp-vccf-f47h)
+to 1.32.1, and
+[`source-map-js`](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) to 1.2.2.
+These paths belong to the docs application and developer tools; they are not
+new CLI dependencies. Verify the native image loader through Next's installed
+dependency path, build the docs site, and keep the frozen-install patch checks.
+
+The audit still reports `sprintf-js` 1.0.3 through Changesets →
+`@manypkg/get-packages` → `read-yaml-file` → `js-yaml` 3 → `argparse` 1.
+The [advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) lists no patched
+release. The installed `read-yaml-file` uses the
+YAML library, while `argparse` is imported by that legacy YAML package's separate
+CLI; this does not establish an exposed format-string path in Kunai. Keep the
+finding visible rather than suppressing it or treating the audit as clean.
+
+Dependency fixes should use an upstream compatible release when available.
+Local patches need a reproduced defect, documented upstream provenance and
+removal criteria, and behavioral verification through their real consumers.
+Keep framework major upgrades separate from playback correctness changes;
+an available version alone is not evidence that migrating improves reliability.
 
 `.reference/experiments` is **outside** the default workspace, so it cannot use
 `catalog:` protocols. Main installs stay lean; research deps install only via
@@ -58,7 +89,9 @@ Default workspace packages: `apps/cli`, `apps/docs`, `apps/relay-server`,
 
 `bun install` runs the root `prepare` script and installs Husky hooks.
 
-The pre-commit hook runs staged-file lint/format only:
+The pre-commit hook runs staged-file lint/format only. Its formatter commands
+allow an all-ignored batch (for example captured reference source) to be empty;
+active matched files still undergo the normal formatter check:
 
 ```sh
 bunx lint-staged
@@ -79,14 +112,17 @@ bun run test
 Pull requests and pushes to `main` use the composite setup action
 [`.github/actions/setup-bun-monorepo`](../.github/actions/setup-bun-monorepo/action.yml):
 Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
-`TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache.
+`TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache. The README CI badge points
+at `.github/workflows/ci.yml`, which runs the Linux test job plus blocking
+Windows (`windows-cli`) and macOS (`macos-cli`) legs.
 
 ### Checkout is caller-owned
 
-`CI ready` is the aggregate merge check. It runs with `always()` after every
+`CI ready` is the aggregate merge check. It runs with `!cancelled()` after every
 CI job and executes `scripts/ci-ready.mjs` using the runner's Node, without a
-workspace install. It rejects missing dependencies, failures, cancellations,
-invalid filter outputs and unexpected skips. Only jobs whose path conditions
+workspace install. A cancelled workflow stops the aggregate instead of publishing
+a failure from a superseded run. On active workflows it rejects missing dependencies,
+failures, cancelled dependency jobs, invalid filter outputs and unexpected skips. Only jobs whose path conditions
 are false may skip. Update the policy and its routing fixtures when changing
 job conditions. Release Guard runs on every PR so docs-only changes also emit
 `Version ↔ changelog guard`; a required workflow must not disappear behind a
@@ -151,7 +187,6 @@ every directory the gate scans (`apps/cli/src/{services,domain,infra,app}`,
 would otherwise skip the check meant to catch it. It runs `setup-bun` without
 `bun install` — the script imports only `node:fs` and `node:path`.
 
-<<<<<<< HEAD
 `scripts/ci-affected-run.ts` wraps `--affected` because a PR touching only
 non-package files (`.github/`, `install.sh`, `tools/`, `docs/`, `.docs/`) used
 to select zero workspace tasks and exit 0 — four green legs that ran nothing.
@@ -167,7 +202,9 @@ static: every live `.docs` doc declares `status`, an ISO `lastReviewed`, and the
 L3 banner. The second compares the change set against `origin/main` and fails
 when a doc's body moved but its `lastReviewed` did not — the field only means
 something if editing a doc forces you to answer for it. Set `lastReviewed` to
-the day you actually re-read the doc against the tree; for a mechanical sweep
+the day you actually re-read the doc against the tree, or a UTC ISO timestamp
+(`YYYY-MM-DDTHH:mm:ssZ`) for a second review on the same day. Unchanged dates
+and timestamps still fail when the body changes. For a mechanical sweep
 that cannot change meaning, re-run with `SKIP_DOC_FRESHNESS=1`. Both halves need
 history, which is why every `checkout` in the workflow pins `fetch-depth: 0`; on
 a checkout without the base ref the freshness half skips with a notice rather
@@ -186,8 +223,8 @@ Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` cov
 `bun run build` at the repo root runs `build` + `build:binary:host` in parallel.
 Compiled binaries never ship on npm; `pkg:check` enforces an allowlist and size budget.
 
-The 0.3.0 GitHub Release compatibility bridge is an exact 18-file set: eight
-canonical archives, the same eight raw standalone binaries, legacy
+The 0.3.0 GitHub Release compatibility bridge is an exact 22-file set: ten
+canonical archives, the same ten raw standalone binaries, legacy
 `SHA256SUMS` for raw binaries, and `SHA256SUMS.archives` for archives. Keeping
 raw hashes under the legacy name preserves already-published installer/updater
 compatibility. Each archive contains exactly
@@ -202,7 +239,7 @@ boundaries use the downloaded files directly without a rebuild, native copy, or
 recompression. GitHub downloads may discard the raw binary's executable mode,
 so the Linux smoke restores that filesystem metadata after byte verification;
 the canonical `0755` mode inside tar archives remains independently verified.
-The candidate job then creates GitHub artifact attestations for the exact 18
+The candidate job then creates GitHub artifact attestations for the exact 22
 verified paths. Confirmation and publication fail closed unless every file
 verifies against `KitsuneKode/kunai/.github/workflows/release.yml`, the main
 branch ref, and the current release commit. The verifier also rejects extra or
@@ -278,7 +315,7 @@ are never selected by timestamp.
 ```sh
 bun run verify:build-pipeline       # fast: build + pkg:check + turbo cache
 bun run verify:build-pipeline:pr    # PR parity: + 2 Linux binaries
-KUNAI_VERIFY_ALL_BINARIES=1 bun run verify:build-pipeline:all-targets  # opt-in 8-target build
+KUNAI_VERIFY_ALL_BINARIES=1 bun run verify:build-pipeline:all-targets  # opt-in 10-target build
 
 # README quick-start commands against a real binary. Bare invocation defaults
 # to fixture-assets mode + `bun run build:binary:host` output; CI/release pass
@@ -301,3 +338,47 @@ Release workflow details live in [RELEASING.md](../RELEASING.md). Infrastructure
 - Branch protection configuration lives in GitHub settings.
 - Binary publishing is tracked separately in packaging/release plans.
 - Typecheck does not run in pre-commit; it belongs in CI and pre-push/full local verification.
+
+## Local cache and CI evidence ownership
+
+Turbo uses an explicit `.turbo/cache` directory per checkout. Its automatic
+worktree cache sharing can otherwise restore outputs containing absolute paths
+from another checkout. Remote cache remains separately configured. The setup
+action restores and saves only `.turbo/cache`, so run summaries under
+`.turbo/runs` belong to the current CI attempt rather than a cached previous job.
+Verification tasks remain uncached; build caching and affected-package selection
+continue to provide reuse without replacing fresh release evidence.
+
+## React documentation rendering
+
+Viewer-local timestamps use a `useSyncExternalStore` server snapshot so UTC
+markup remains identical during hydration and useful without JavaScript.
+Analytics snapshot age receives one request clock sample from the async server
+route per ISR generation; the route retains a narrow purity-lint exception
+because freezing that clock would make the stale badge unreliable. The footer
+year is a deployment/module snapshot, not a continuously updating clock.
+
+Chart-hover table expansion adjusts its monotonic reveal count before commit,
+so the matching row is present without an effect-driven render cascade. Rows
+stay revealed when hover ends. Kanna visibility subscribes to pointer preference,
+reduced motion, storage, dismissal, and restoration changes through a browser
+external store, using an empty server snapshot. This preserves dismissal before
+paint and supports restoration even when browser storage is denied.
+
+The docs build declares `BUN_INSTALL_CACHE_DIR` in its package Turbo task
+environment, extending the root list rather than replacing it.
+`apps/docs/next.config.mjs` consumes this path to include Bun's global dependency
+store in the Turbopack and tracing roots. Turbo strict mode otherwise drops a
+custom cache path, making an isolated installation build fail with dependency
+symlinks outside the filesystem root. The cache path participates in the build
+hash because changing it changes generated absolute paths.
+
+If a verification profile changes `HOME` after dependencies were installed,
+explicitly set `BUN_INSTALL_CACHE_DIR` to the cache used by that installation.
+The isolated home cannot discover the original global store by default. This
+preserves profile isolation while letting the docs builder follow its installed
+dependency links.
+
+The root `test:live:allmanga-crypto` command forwards to the CLI's existing
+metadata-only freshness probe; it does not resolve or play a video. It is an
+opt-in live command, outside default unit/integration CI.

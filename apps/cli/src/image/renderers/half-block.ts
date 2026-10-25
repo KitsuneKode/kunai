@@ -1,5 +1,4 @@
-// =============================================================================
-// half-block.ts — poster output that needs no external binary.
+// Poster output that needs no external binary.
 //
 // Each character cell carries two pixels: U+2580 UPPER HALF BLOCK painted with
 // the top pixel as foreground and the bottom pixel as background. A terminal
@@ -8,7 +7,6 @@
 //
 // This is the universal fallback. Only kitty-native and chafa beat it, and both
 // are conditional; this path always works on any truecolour terminal.
-// =============================================================================
 
 import type { DecodedImage } from "../decode";
 import type { ImageRenderOptions } from "../types";

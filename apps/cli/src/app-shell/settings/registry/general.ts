@@ -1,3 +1,4 @@
+import { contextualTipCatalog } from "@/app-shell/contextual-tips";
 import { rotateInstallId } from "@/services/analytics/install-id";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
@@ -88,6 +89,41 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
     },
     {
       kind: "boolean",
+      id: "tipsEnabled",
+      label: "Shortcut tips",
+      detail:
+        "One-line hints that teach the direct key after you reach something through the palette — each shows once, ever",
+      read: (config) => config.tipsEnabled,
+      write: (config, value) => ({ ...config, tipsEnabled: value }),
+    },
+    {
+      kind: "submenu",
+      id: "seeAllTips",
+      label: "Every shortcut tip",
+      detail: "The full list of once-ever tips; picking one already shown lets it teach once more",
+      summarize: (config) => {
+        const catalog = contextualTipCatalog(config.seenTips);
+        const shown = catalog.filter((entry) => entry.seen).length;
+        return `${shown} of ${catalog.length} shown`;
+      },
+      buildChoices: (rowCtx) =>
+        contextualTipCatalog(rowCtx.config.seenTips).map((entry) => ({
+          value: entry.id,
+          label: entry.line,
+          detail: entry.seen ? "shown — pick to let it teach once more" : "not shown yet",
+        })),
+      onPick: (config, value) => {
+        // Re-arm a shown tip: a user who forgot the key can ask for the lesson
+        // back without resetting anything else. Unshown tips need no write.
+        if (!config.seenTips.includes(value)) return config;
+        return {
+          next: { ...config, seenTips: config.seenTips.filter((id) => id !== value) },
+          stay: true,
+        };
+      },
+    },
+    {
+      kind: "boolean",
       id: "usageAnalytics",
       label: "Usage analytics",
       detail: analyticsSettingDetail(ctx.config),
@@ -131,13 +167,24 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
       run: async (actionCtx) => {
         const snapshot = await readPreSetupSnapshot();
         if (!snapshot) return "No saved configuration to restore.";
-        // Restored whole and exactly, onboarding gate included: "undo the setup
-        // run" means the run, not a curated subset of it that leaves the user
-        // guessing which parts came back.
+        // Restored whole and exactly — onboarding gate included — except the
+        // consent-owned keys readPreSetupSnapshot strips: "undo the setup run"
+        // means the run, not a way to resurrect a revoked analytics opt-in.
         await actionCtx.container.config.update(snapshot);
         await actionCtx.container.config.save();
         return "Restored the settings saved before your last setup run.";
       },
+    },
+    {
+      // Kept last: the consent rows above hold their positions because the
+      // consent-flow tests navigate them by keystroke count, and adding a row
+      // in the middle silently retargets those presses.
+      kind: "boolean",
+      id: "companionPet",
+      label: "Kanna the companion",
+      detail: "The fox on empty and error screens — off hides her until /pet or this setting",
+      read: (config) => config.companionPet !== "off",
+      write: (config, value) => ({ ...config, companionPet: value ? "auto" : "off" }),
     },
   ];
 }

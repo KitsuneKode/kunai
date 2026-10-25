@@ -22,6 +22,8 @@ export function buildPlaybackFailureWaterfall({
   readonly recentEvents: readonly DiagnosticEvent[];
   readonly maxRows?: number;
 }): PlaybackFailureWaterfallModel | null {
+  // SAFETY: maxRows=0 would return a titled model with zero rows.
+  const rowBudget = Math.max(1, Math.floor(maxRows));
   const event = recentEvents.find(
     (candidate) =>
       candidate.operation === "provider.resolve.timeline" &&
@@ -36,8 +38,8 @@ export function buildPlaybackFailureWaterfall({
 
   return {
     title: sourceRows.length > 0 ? "Source attempts" : "Provider attempts",
-    rows: rows.slice(0, maxRows),
-    truncated: rows.length > maxRows || event.context.truncated === true,
+    rows: rows.slice(0, rowBudget),
+    truncated: rows.length > rowBudget || event.context.truncated === true,
   };
 }
 

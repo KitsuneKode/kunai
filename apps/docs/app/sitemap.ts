@@ -13,11 +13,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   // lastModified only carries dates with a real source of truth: release
   // pages get their publishedAt, doc pages their git-modified date, and pages
-  // that render live site content (home, analytics) get the newest known
-  // content date — a docs-page edit or a release, never a build stamp.
-  // Pages whose content is fixed (privacy, feedback) omit lastmod rather
-  // than claim a date that isn't theirs. No priority/changefreq: crawlers
-  // ignore both.
+  // that render live site content (home) get the newest known content
+  // date — a docs-page edit or a release, never a build stamp. Pages whose
+  // content is fixed (privacy, support) omit lastmod rather than claim a
+  // date that isn't theirs. /analytics and /feedback carry noindex and stay
+  // out of the sitemap entirely. No priority/changefreq: crawlers ignore both.
   const releaseDates = releases
     .map((release) => release.publishedAt ?? release.date)
     .filter((date): date is string => Boolean(date))
@@ -41,11 +41,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: latestRelease ? new Date(latestRelease) : undefined,
     },
     {
-      url: `${docsSiteUrl}/feedback`,
-    },
-    {
-      url: `${docsSiteUrl}/analytics`,
-      lastModified: contentLastModified,
+      url: `${docsSiteUrl}/support`,
     },
     {
       url: `${docsSiteUrl}/privacy`,

@@ -2,9 +2,18 @@ import { existsSync } from "node:fs";
 
 import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playback-checkpoint";
 
+import { setCompanionPreferenceSource } from "../app-shell/companion-policy";
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
+import { detectPlayerPlatform, resolvePlayerMode } from "../domain/playback/player-choice";
+import { shouldRecoverQueueOwner } from "../domain/queue/queue-owner-recovery";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
+import {
+  isProcessAlive,
+  normalizedHostname,
+  processStartId,
+} from "../infra/os/process-owner-identity";
 import { whichLive } from "../infra/os/which";
+import { HandoffPlayerService } from "../infra/player/handoff-player-service";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
 import { PlayerServiceImpl } from "../infra/player/PlayerServiceImpl";
@@ -52,6 +61,7 @@ import { ReleaseReconciliationService } from "../services/release-reconciliation
 import { SEARCH_SERVICE_DEFINITIONS } from "../services/search/definitions";
 import { SearchRegistryImpl } from "../services/search/SearchRegistry";
 import { searchTitles } from "../services/search/SearchRoutingService";
+import { SessionUndoService } from "../services/session-undo/session-undo-service";
 import { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
 import { readInstallManifest } from "../services/update/install-manifest";
 import { detectInstallMethod } from "../services/update/install-method";
@@ -128,25 +138,36 @@ export function bootstrapServices(input: {
   } = persistence;
 
   const stateManager = new SessionStateManagerImpl({ logger });
+  const playerMode = resolvePlayerMode({
+    choice: options?.playerChoice ?? "auto",
+    platform: detectPlayerPlatform(),
+  });
   const shell = new ShellServiceImpl({ logger, tracer, stateManager });
   const playerControl = new PlayerControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const workControl = new WorkControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const playerPresentation: PlayerPresentationPort = {
     isInteractiveShellMounted,
   };
-  const player = new PlayerServiceImpl({
-    logger,
-    tracer,
-    diagnostics: diagnosticsService,
-    playerControl,
-    config,
-    mpv: options?.mpv,
-    presentation: playerPresentation,
-  });
+  const player =
+    playerMode.kind === "android-handoff"
+      ? new HandoffPlayerService({ target: playerMode.target })
+      : new PlayerServiceImpl({
+          logger,
+          tracer,
+          diagnostics: diagnosticsService,
+          playerControl,
+          config,
+          mpv: options?.mpv,
+          presentation: playerPresentation,
+        });
   const presence = new PresenceServiceImpl({ config, diagnostics: diagnosticsService });
 
   const offlineTitleIdentity = new OfflineTitleIdentityService(historyTitleAliases, offlineAssets);
   const offlineAssetService = new OfflineAssetService(offlineAssets, offlineTitleIdentity);
+  // The companion reads her stored preference through this source, so `/pet`
+  // and the settings row take effect on the next render — no restart, and no
+  // separate state to drift out of sync with config.json.
+  setCompanionPreferenceSource(() => config.companionPet);
   const connectivity = new Connectivity(() => config.offlineMode);
   const notificationSinkRegistry = new NotificationSinkRegistry();
   notificationSinkRegistry.register(
@@ -192,9 +213,15 @@ export function bootstrapServices(input: {
             type: "download-complete",
             titleId: asset.titleId,
             mediaKind: asset.mediaKind,
+            contentType: job.contentType,
             title: asset.titleName,
-            season: asset.season,
-            episode: asset.episode,
+            // Anime jobs store the absolute number in `episode` (see
+            // offline-sync-policy); the launch intent needs it back as
+            // absoluteEpisode or the anime lane resolves the wrong episode.
+            season: job.mediaKind === "anime" ? undefined : asset.season,
+            episode: job.mediaKind === "anime" ? undefined : asset.episode,
+            absoluteEpisode: job.mediaKind === "anime" ? asset.episode : undefined,
+            externalIds: job.externalIds,
           },
         ],
         asset.updatedAt,
@@ -206,9 +233,12 @@ export function bootstrapServices(input: {
           type: "download-failed",
           titleId: job.titleId,
           mediaKind: job.mediaKind,
+          contentType: job.contentType,
           title: job.titleName,
-          season: job.season,
-          episode: job.episode,
+          season: job.mediaKind === "anime" ? undefined : job.season,
+          episode: job.mediaKind === "anime" ? undefined : job.episode,
+          absoluteEpisode: job.mediaKind === "anime" ? job.episode : undefined,
+          externalIds: job.externalIds,
           error,
         },
       ]);
@@ -260,10 +290,7 @@ export function bootstrapServices(input: {
     historyRepository,
     offlineAssetService,
   });
-  downloadService.onEvent((event) => {
-    if (event.type === "deleted") offlineAssetService.removeForJob(event.jobId);
-  });
-  // Repairs libraries damaged before deleteJob emitted ahead of the row delete.
+  // Repairs libraries damaged before job and asset deletion shared a transaction.
   // Ownerless assets still read `ready`, so the library advertises titles it
   // cannot play, and nothing job-driven can reach them. No-op once healthy.
   const purgedOrphanCount = offlineAssetService.purgeOrphanedAssets();
@@ -281,15 +308,44 @@ export function bootstrapServices(input: {
     diagnostics: diagnosticsService,
   });
   const startupAt = new Date().toISOString();
-  // Crash/stale active sessions (including in-flight rows) become recoverable
-  // before this process owns a fresh active session.
-  queueRepository.markActiveQueueSessionsRecoverable(sessionId, startupAt);
+  const ownerHostname = normalizedHostname();
+  const ownStartId = processStartId(process.pid);
+  // Probe each distinct owner once, within one shared native-probe budget.
+  const ownerProbeDeadline = Date.now() + 2_000;
+  const ownerStarts = new Map<number, string | null>();
+  const readOwnerStart = (pid: number): string | null => {
+    if (!ownerStarts.has(pid)) {
+      ownerStarts.set(pid, processStartId(pid, Math.max(0, ownerProbeDeadline - Date.now())));
+    }
+    return ownerStarts.get(pid) ?? null;
+  };
+  for (const session of queueRepository.listActiveQueueSessionsWithPendingWork(sessionId)) {
+    if (
+      !shouldRecoverQueueOwner({
+        session,
+        hostname: ownerHostname,
+        now: Date.parse(startupAt),
+        isAlive: isProcessAlive,
+        processStartId: readOwnerStart,
+      })
+    )
+      continue;
+    queueRepository.markQueueSessionRecoverable(session.id, startupAt, {
+      ownerPid: session.ownerPid ?? null,
+      ownerHostname: session.ownerHostname ?? null,
+      ownerProcessStartId: session.ownerProcessStartId ?? null,
+      activityAt: session.lastActivityAt ?? session.updatedAt,
+    });
+  }
   queueRepository.createQueueSession({
     id: sessionId,
     status: "active",
     createdAt: startupAt,
     updatedAt: startupAt,
     lastActivityAt: startupAt,
+    ownerPid: process.pid,
+    ownerHostname,
+    ownerProcessStartId: ownStartId ?? undefined,
   });
   notificationService.deleteByKind("queue-recovery");
   const latestRecoverableSession = queueRepository.listRecoverableQueueSessions()[0];
@@ -521,6 +577,13 @@ export function bootstrapServices(input: {
     durablePlaylistService,
     listService,
     queueService,
+    sessionUndo: new SessionUndoService({
+      queueRepository,
+      queueSessionId: sessionId,
+      listRepository,
+      followedTitleRepository,
+      historyRepository,
+    }),
     statsService,
     statsFormatter,
     syncTokenStore,
@@ -535,6 +598,7 @@ export function bootstrapServices(input: {
     searchRegistry,
     shellChrome,
     capabilitySnapshot,
+    playerMode,
     debugTracePath,
     debugSessionInstructions,
   };

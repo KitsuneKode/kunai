@@ -1,8 +1,10 @@
 import {
+  formatNewSinceVisitLine,
   formatReadyForYouNowMeta,
   RETURN_LOOP_FOR_YOU_NOW_HEADING,
   RETURN_LOOP_NAV_HINT,
 } from "./return-loop-copy";
+import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { BrowseIdleContext, ShellAction } from "./types";
 
@@ -14,6 +16,9 @@ export function resolveIdleRowAction(
   rowId: string,
   idleContext: BrowseIdleContext | undefined,
 ): ShellAction | null {
+  // "trending" exists precisely when the context resolved empty — gate it
+  // before the null-context early return or the row can never fire.
+  if (rowId === "trending") return "trending";
   if (!idleContext) return null;
   switch (rowId) {
     case "continue":
@@ -22,8 +27,14 @@ export function resolveIdleRowAction(
       return idleContext.offlineReadyNext?.offlineJobId ? "play-offline-ready" : null;
     case "playlist-next":
       return idleContext.playlistNext?.titleId ? "play-queue-next" : null;
+    case "saved":
+      return idleContext.savedNext?.titleId ? "watchlist" : null;
     case "ready-now":
       return (idleContext.todayReleaseCount ?? 0) > 0 ? "notifications" : null;
+    case "new-since-visit":
+      // Lands on Tracked — the same tab the calendar-nudge row opens, because
+      // both rows count tracked titles, not the unfiltered All schedule.
+      return (idleContext.newSinceVisit?.episodeCount ?? 0) > 0 ? "tracked-calendar" : null;
     case "calendar-nudge":
       // Opens the calendar already on Tracked. This row counts *tracked* titles
       // airing, so landing on the unfiltered All tab made the number look wrong
@@ -61,10 +72,16 @@ function idleRowHint(rowId: string, focused: boolean): string | undefined {
       return "↵ play offline";
     case "playlist-next":
       return "↵ play next · m menu";
+    case "saved":
+      return "↵ open watchlist";
     case "ready-now":
       return "↵ open notices";
+    case "new-since-visit":
+      return "↵ open schedule";
     case "calendar-nudge":
       return "↵ open schedule";
+    case "trending":
+      return "↵ open trending";
     default:
       return undefined;
   }
@@ -72,22 +89,54 @@ function idleRowHint(rowId: string, focused: boolean): string | undefined {
 
 export function buildBrowseIdleReturnLoopModel(
   idleContext: BrowseIdleContext | undefined,
-  options: { readonly idleFocused: boolean; readonly selectedIndex?: number },
+  options: {
+    readonly idleFocused: boolean;
+    readonly selectedIndex?: number;
+    /**
+     * Set once the idle context finished resolving and still has nothing to
+     * show (a fresh profile). The deck then offers one discovery row instead
+     * of leaving the screen a bare search form. Pass false while loading —
+     * otherwise the row flickers in and out during the lazy read.
+     */
+    readonly showDiscoveryRowWhenEmpty?: boolean;
+    /** Injectable clock for the since-label — tests never read the wall clock. */
+    readonly nowMs?: number;
+  },
 ): BrowseIdleReturnLoopModel | null {
-  if (!idleContext) return null;
-
   const selectedIndex = Math.max(0, options.selectedIndex ?? 0);
   const rows: BrowseIdleReturnLoopRow[] = [];
 
-  if (idleContext.continueWatching) {
+  // "New since you left" leads the strip: it answers the question users open
+  // the home screen with, and it sits above Continue Watching by design.
+  if (idleContext?.newSinceVisit && idleContext.newSinceVisit.episodeCount > 0) {
+    const rowIndex = rows.length;
+    rows.push({
+      id: "new-since-visit",
+      glyph: "●",
+      glyphColor: palette.ok,
+      title: formatNewSinceVisitLine(
+        idleContext.newSinceVisit.episodeCount,
+        idleContext.newSinceVisit.sinceMs,
+        options.nowMs ?? Date.now(),
+      ),
+      hint: idleRowHint("new-since-visit", options.idleFocused && selectedIndex === rowIndex),
+      focused: options.idleFocused && selectedIndex === rowIndex,
+      actionable: true,
+    });
+  }
+
+  if (idleContext?.continueWatching) {
     const cw = idleContext.continueWatching;
-    const meta = [cw.ep, cw.remainingLabel].filter(Boolean).join(" · ");
+    const meta = [cw.ep, cw.remainingLabel]
+      .filter((part): part is string => Boolean(part))
+      .map(sanitizeTerminalText)
+      .join(" · ");
     const rowIndex = rows.length;
     rows.push({
       id: "continue",
       glyph: "⏸",
       glyphColor: palette.accent,
-      title: cw.title,
+      title: sanitizeTerminalText(cw.title),
       meta: meta.length > 0 ? meta : undefined,
       hint: idleRowHint("continue", options.idleFocused && selectedIndex === rowIndex),
       focused: options.idleFocused && selectedIndex === rowIndex,
@@ -95,39 +144,54 @@ export function buildBrowseIdleReturnLoopModel(
     });
   }
 
-  if (idleContext.offlineReadyNext) {
+  if (idleContext?.offlineReadyNext) {
     const offline = idleContext.offlineReadyNext;
     const rowIndex = rows.length;
     rows.push({
       id: "offline-ready",
       glyph: "⬇",
       glyphColor: palette.ok,
-      title: offline.title,
-      meta: offline.ep ? `${offline.ep} · ready offline` : "ready offline",
+      title: sanitizeTerminalText(offline.title),
+      meta: offline.ep ? `${sanitizeTerminalText(offline.ep)} · ready offline` : "ready offline",
       hint: idleRowHint("offline-ready", options.idleFocused && selectedIndex === rowIndex),
       focused: options.idleFocused && selectedIndex === rowIndex,
       actionable: Boolean(offline.offlineJobId),
     });
   }
 
-  if (idleContext.playlistNext) {
+  if (idleContext?.playlistNext) {
     const next = idleContext.playlistNext;
     const rowIndex = rows.length;
     rows.push({
       id: "playlist-next",
       glyph: "▶",
       glyphColor: palette.ok,
-      title: next.title,
-      meta: next.ep,
+      title: sanitizeTerminalText(next.title),
+      meta: next.ep !== undefined ? sanitizeTerminalText(next.ep) : undefined,
       hint: idleRowHint("playlist-next", options.idleFocused && selectedIndex === rowIndex),
       focused: options.idleFocused && selectedIndex === rowIndex,
       actionable: Boolean(next.titleId),
     });
   }
 
-  const readyCount = idleContext.todayReleaseCount ?? 0;
+  if (idleContext?.savedNext) {
+    const saved = idleContext.savedNext;
+    const rowIndex = rows.length;
+    rows.push({
+      id: "saved",
+      glyph: "◈",
+      glyphColor: palette.accent,
+      title: saved.title,
+      meta: saved.total > 1 ? `watchlist · ${saved.total} saved` : "on your watchlist",
+      hint: idleRowHint("saved", options.idleFocused && selectedIndex === rowIndex),
+      focused: options.idleFocused && selectedIndex === rowIndex,
+      actionable: true,
+    });
+  }
+
+  const readyCount = idleContext?.todayReleaseCount ?? 0;
   if (readyCount > 0) {
-    const titleCount = idleContext.todayReleaseTitleCount ?? 0;
+    const titleCount = idleContext?.todayReleaseTitleCount ?? 0;
     const rowIndex = rows.length;
     rows.push({
       id: "ready-now",
@@ -144,7 +208,7 @@ export function buildBrowseIdleReturnLoopModel(
     });
   }
 
-  const airingToday = idleContext.calendarNudge?.airingTodayCount ?? 0;
+  const airingToday = idleContext?.calendarNudge?.airingTodayCount ?? 0;
   if (airingToday > 0) {
     const rowIndex = rows.length;
     rows.push({
@@ -159,12 +223,27 @@ export function buildBrowseIdleReturnLoopModel(
     });
   }
 
-  if (rows.length === 0) return null;
+  if (rows.length === 0) {
+    if (!options.showDiscoveryRowWhenEmpty) return null;
+    // A resolved-but-empty deck belongs to a fresh profile — nothing
+    // continued, nothing saved, nothing queued. Offer the one row that puts
+    // content in front of them instead of leaving a bare search form.
+    rows.push({
+      id: "trending",
+      glyph: "✧",
+      glyphColor: palette.accent,
+      title: "Trending this week",
+      meta: "see what's popular",
+      hint: idleRowHint("trending", options.idleFocused && selectedIndex === 0),
+      focused: options.idleFocused && selectedIndex === 0,
+      actionable: true,
+    });
+  }
 
   return {
     heading: RETURN_LOOP_FOR_YOU_NOW_HEADING,
     rows,
-    hasSelectableContinue: Boolean(idleContext.continueWatching?.titleId),
+    hasSelectableContinue: Boolean(idleContext?.continueWatching?.titleId),
     hasSelectableRows: rows.some((row) => row.actionable),
   };
 }

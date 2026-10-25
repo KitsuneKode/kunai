@@ -7,12 +7,14 @@ import {
   buildQualityPickerOptions,
   buildSourcePickerOptions,
   buildStreamPickerOptions,
+  buildStreamInventoryView,
   decodeMediaTrackPickerSelection,
   formatPlaybackSessionFactsStrip,
   isCurrentStreamSelection,
   streamSelectionFromSource,
   streamSelectionFromStream,
   streamSelectionFromTrackPick,
+  shouldOfferPrePlayConfirm,
   shouldSkipExternalSubtitleLookup,
 } from "@/app/playback/source-quality";
 import type { StreamInfo } from "@/domain/types";
@@ -578,4 +580,82 @@ test("streamSelectionFromTrackPick maps each panel section to a restart intent",
 test("shouldSkipExternalSubtitleLookup is true when hardsub satisfies preference", () => {
   expect(shouldSkipExternalSubtitleLookup(streamWithCandidates, "en")).toBe(true);
   expect(shouldSkipExternalSubtitleLookup(streamWithCandidates, "interactive")).toBe(false);
+});
+
+test("shouldOfferPrePlayConfirm honors the mode contract", () => {
+  const withChoices = buildPlaybackControlSummary(streamWithSubtitles);
+  expect(shouldOfferPrePlayConfirm("off", withChoices)).toBe(false);
+  expect(shouldOfferPrePlayConfirm("when-choices", withChoices)).toBe(true);
+  expect(shouldOfferPrePlayConfirm("always", withChoices)).toBe(true);
+
+  // A bare direct stream has no inventory to confirm — never prompt on it.
+  const direct = buildPlaybackControlSummary(null);
+  expect(shouldOfferPrePlayConfirm("when-choices", direct)).toBe(false);
+  expect(shouldOfferPrePlayConfirm("always", direct)).toBe(false);
+});
+
+test("shouldOfferPrePlayConfirm skips inventories with nothing switchable", () => {
+  const summary = buildPlaybackControlSummary(streamWithSubtitles);
+  // Same inventory shape but a single source, a single playable stream, and
+  // no track controls — "when-choices" must not nag on a dead-simple play.
+  expect(
+    shouldOfferPrePlayConfirm("when-choices", {
+      ...summary,
+      sourceCount: 1,
+      showSourceControl: true,
+      showQualityControl: false,
+      showMediaTrackControl: false,
+    }),
+  ).toBe(false);
+  // Multiple real sources still prompt even when quality is fixed.
+  expect(
+    shouldOfferPrePlayConfirm("when-choices", {
+      ...summary,
+      sourceCount: 2,
+      showQualityControl: false,
+      showMediaTrackControl: false,
+    }),
+  ).toBe(true);
+});
+
+test("late attached subtitles reach the Tracks view without rewriting provider inventory", () => {
+  const providerResult = streamWithSubtitles.providerResolveResult!;
+  const before = JSON.stringify(providerResult);
+  const url = "https://wyzie.example/es.vtt";
+  const view = buildStreamInventoryView({
+    ...streamWithSubtitles,
+    subtitle: url,
+    subtitleList: [
+      { url, language: "es", display: "Spanish · search" },
+      { url, language: "es", display: "Duplicate search row" },
+      { url: "https://subs.example/en.vtt", language: "en" },
+    ],
+  });
+  const attached = view?.subtitleOptions.filter((option) => option.subtitleUrl === url);
+  expect(attached).toHaveLength(1);
+  expect(attached?.[0]).toMatchObject({
+    label: "Spanish · search",
+    state: "selected",
+    delivery: "external",
+    restartRequired: false,
+  });
+  expect(
+    view?.subtitleOptions.filter((option) => option.subtitleUrl === "https://subs.example/en.vtt"),
+  ).toHaveLength(1);
+  expect(
+    view?.subtitleOptions.find((option) => option.subtitleUrl === "https://subs.example/fr.vtt"),
+  ).toBeDefined();
+  expect(JSON.stringify(providerResult)).toBe(before);
+});
+
+test("late subtitle view can select Off without losing attached track choices", () => {
+  const view = buildStreamInventoryView({
+    ...streamWithCandidates,
+    subtitle: undefined,
+    subtitleList: [{ url: "https://wyzie.example/es.vtt", language: "es" }],
+  });
+  expect(view?.subtitleOptions.find((option) => option.delivery === "off")?.state).toBe("selected");
+  expect(
+    view?.subtitleOptions.find((option) => option.subtitleUrl === "https://wyzie.example/es.vtt"),
+  ).toMatchObject({ state: "available", restartRequired: false });
 });

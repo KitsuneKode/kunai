@@ -2,7 +2,7 @@ import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
 import { formatCatalogAirDateLabel } from "@/domain/playback/playback-policy";
 import type { PostPlayInput } from "@/domain/playback/post-play-state";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
-import type { EpisodeInfo, TitleInfo } from "@/domain/types";
+import type { EpisodeInfo, PlaybackHandoffEvidence, TitleInfo } from "@/domain/types";
 import type { QueueEntry } from "@kunai/storage";
 
 export type PostPlayPlaybackContext = {
@@ -13,12 +13,14 @@ export type PostPlayPlaybackContext = {
   readonly nextAirDateHint?: string;
   /** False when mpv never meaningfully started (exit on load / quit in first seconds). */
   readonly playbackStarted?: boolean;
+  readonly handoff?: PlaybackHandoffEvidence;
 };
 
 export function buildPostPlayInputFromPlaybackContext(
   context: PostPlayPlaybackContext,
 ): PostPlayInput {
-  const { title, currentEpisode, availability, nextAirDateHint, playbackStarted } = context;
+  const { title, currentEpisode, availability, nextAirDateHint, playbackStarted, handoff } =
+    context;
 
   if (title.type !== "series") {
     return {
@@ -27,6 +29,7 @@ export function buildPostPlayInputFromPlaybackContext(
       isSeriesComplete: true,
       isCaughtUpOnAiring: false,
       playbackStarted,
+      handoff,
     };
   }
 
@@ -64,6 +67,7 @@ export function buildPostPlayInputFromPlaybackContext(
     hasNextSeason,
     nextAirDate,
     playbackStarted,
+    handoff,
   };
 }
 

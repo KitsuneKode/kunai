@@ -2,11 +2,17 @@ import {
   classifyPlaybackFailureFromEvent,
   recoveryForPlaybackFailure,
 } from "@/infra/player/playback-failure-classifier";
+import type { PlaybackSkipKind } from "@/infra/player/playback-skip";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 
 export type MpvPlaybackFeedback = {
   readonly detail?: string | null;
   readonly note?: string | null;
+  /**
+   * Set only for `segment-skipped`, so the state-facing dispatcher can swap the
+   * factual note for companion copy without re-parsing the sentence.
+   */
+  readonly skipKind?: PlaybackSkipKind;
 };
 
 /** User-facing copy for mpv playback events (extracted from PlaybackPhase). */
@@ -104,6 +110,7 @@ export function describeMpvPlayerEvent(event: PlayerPlaybackEvent): MpvPlaybackF
     case "segment-skipped":
       return {
         note: `${event.kind.charAt(0).toUpperCase()}${event.kind.slice(1)} ${event.automatic ? "skipped automatically" : "skipped"}`,
+        skipKind: event.kind,
       };
     case "track-changed":
       return {

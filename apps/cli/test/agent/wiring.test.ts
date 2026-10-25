@@ -8,7 +8,11 @@
  * One session per test — sessions share process env, so they are sequential,
  * never concurrent (the driver enforces this with a throwing guard).
  */
+import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
+import { join } from "node:path";
+
+import type { JsonObject } from "@kunai/types";
 
 import { createAgentSession, type AgentSession } from "./agent-driver";
 import { K } from "./keys";
@@ -111,6 +115,12 @@ describe("agent wiring · queue", () => {
       s.press("Q");
       await s.waitForFrame((f) => f.includes("UP NEXT"), "up-next surface");
       await s.waitSettled();
+      // `x` arms on first press (prompt names the row in the footer) and
+      // removes on the second — single-press removal would be one key away
+      // from an accident next to Ctrl+C.
+      s.press("x");
+      await s.waitForFrame((f) => f.includes("Press x again"), "remove confirm prompt");
+      await s.waitSettled();
       s.press("x");
       await s.waitForBackend(
         (i) => i.queue().length === before,
@@ -118,6 +128,74 @@ describe("agent wiring · queue", () => {
       );
     });
   }, 30_000);
+});
+
+describe("agent wiring · session undo", () => {
+  it("q → strip offers z → z restores playlist_queue exactly", async () => {
+    await withSession("wiring-undo-queue", {}, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+
+      s.press("movie", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+
+      const baseline = s.inspect().queue();
+      s.press("q");
+      await s.waitForBackend(
+        (i) => i.queue().length === baseline.length + 1,
+        "playlist_queue +1 after q",
+      );
+      // The affordance is a frame claim AND a DB fact: strip advertises z
+      // while the row sits committed underneath it.
+      await s.waitForFrame((f) => f.includes("added to queue · z undo"), "undo strip");
+
+      s.press("z");
+      await s.waitForFrame((f) => f.includes("undid queue add"), "undo outcome line");
+      await s.waitForBackend(
+        (i) => i.queue().length === baseline.length,
+        "playlist_queue back to baseline after z",
+      );
+
+      // The undo wrote nothing new to undo: a second z is a silent no-op —
+      // no error surface, no strip, no DB drift.
+      const frameAfterUndo = s.frame();
+      s.press("z");
+      await s.waitSettled();
+      expect(s.frame()).toBe(frameAfterUndo);
+      expect(s.inspect().queue().length).toBe(baseline.length);
+    });
+  }, 30_000);
+
+  it("x inside Up Next journals a removal that z reverses", async () => {
+    await withSession("wiring-undo-remove", {}, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+
+      s.press("movie", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+      s.press("q");
+      await s.waitForBackend((i) => i.queue().length === 1, "queued");
+      // Consume the add's undo affordance so the remove is what z pops.
+      s.press("z");
+      await s.waitForBackend((i) => i.queue().length === 0, "add undone");
+      s.press("q");
+      await s.waitForBackend((i) => i.queue().length === 1, "queued again");
+
+      s.press("Q");
+      await s.waitForFrame((f) => f.includes("UP NEXT"), "up-next surface");
+      await s.waitSettled();
+      // Destructive remove is two-press: first x arms the row-keyed confirm,
+      // the second executes and is what the undo journal must capture.
+      s.press("x");
+      await s.waitForFrame((f) => f.includes("again to remove"), "remove armed");
+      s.press("x");
+      await s.waitForBackend((i) => i.queue().length === 0, "x removed the row");
+
+      s.press("z");
+      await s.waitForBackend(
+        (i) => i.queue().length === 1 && i.queue()[0]?.status === "pending",
+        "z restored the removed row",
+      );
+    });
+  }, 45_000);
 });
 
 describe("agent wiring · post-play history", () => {
@@ -138,6 +216,176 @@ describe("agent wiring · post-play history", () => {
       );
     });
   }, 45_000);
+});
+
+describe("agent wiring · anime episode picker", () => {
+  it("opens with the cursor on an episode, so one Enter plays it", async () => {
+    // The picker used to open on nothing when the current episode was not in
+    // the list (here: episode 1 of a title offering only 7), so Enter was a
+    // silent no-op until the user pressed ↓.
+    await withSession("wiring-anime-episode", { mpv: "fake" }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      s.press(K.tab);
+      await s.waitForFrame((f) => f.includes("anime"), "anime mode");
+      s.press("smoke", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Anime"), "anime fixture results");
+      s.press(K.enter);
+      await s.waitForFrame((f) => f.includes("▌ Episode 7"), "episode picker with a cursor");
+      await s.waitSettled();
+      s.press(K.enter);
+      await s.waitForFrame((f) => f.includes("Post-play"), "post-play surface", 30_000);
+
+      await s.waitForBackend(
+        (i) =>
+          i
+            .history()
+            .some((row) => row.title_id === "anilist:smoke-anime-1" && row.media_kind === "anime"),
+        "history_progress records the anime episode",
+      );
+    });
+  }, 45_000);
+});
+
+describe("agent wiring · notifications inbox", () => {
+  /**
+   * The harness has no signal producer wired to the fixture catalog, so the
+   * notice is written the way NotificationService persists it — a row in the
+   * notifications table with the full media identity in item_json. Reads are
+   * live (NotificationService.listActive queries per open), so a post-boot
+   * insert surfaces like a real notice.
+   */
+  function seedEpisodeNotification(
+    session: AgentSession,
+    notice: {
+      readonly dedupKey: string;
+      readonly title: string;
+      readonly body: string;
+      readonly item: JsonObject;
+    },
+  ): void {
+    const db = new Database(join(session.profile.paths.dataDir, "kunai-data.sqlite"));
+    try {
+      const now = new Date().toISOString();
+      db.query(
+        `INSERT INTO notifications
+           (id, dedup_key, kind, title, body, item_json, action_json, created_at, updated_at)
+         VALUES (?, ?, 'new-episode', ?, ?, ?, '["dismiss"]', ?, ?)`,
+      ).run(
+        `seed-${notice.dedupKey}`,
+        notice.dedupKey,
+        notice.title,
+        notice.body,
+        JSON.stringify(notice.item),
+        now,
+        now,
+      );
+    } finally {
+      db.close();
+    }
+  }
+
+  it("Enter on an episode notice plays it through the awaited inbox route", async () => {
+    await withSession("wiring-inbox-play", { mpv: "fake" }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      seedEpisodeNotification(s, {
+        dedupKey: "wiring:smoke-series-s1e2",
+        title: "Smoke Series S01E02 available",
+        body: "episode 2 just landed",
+        item: {
+          mediaKind: "series",
+          contentType: "series",
+          titleId: "tmdb:smoke-series-1",
+          title: "Smoke Series",
+          season: 1,
+          episode: 2,
+        },
+      });
+
+      // Awaited route: the browse palette's /notifications awaits the outcome
+      // bridge — Enter resolves a playback outcome into a history-entry.
+      s.press("/");
+      await s.waitForFrame((f) => f.includes("command"), "command palette");
+      s.press("notifications", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Series S01E02"), "inbox row");
+      await s.waitSettled();
+
+      s.press(K.enter);
+      await s.waitForFrame((f) => f.includes("Post-play"), "post-play surface", 30_000);
+
+      await s.waitForBackend(
+        (i) =>
+          i
+            .history()
+            .some(
+              (row) =>
+                row.title_id === "tmdb:smoke-series-1" && row.season === 1 && row.episode === 2,
+            ),
+        "history_progress contains the announced episode",
+      );
+    });
+  }, 45_000);
+
+  it("Enter self-delivers a title switch while playback is live", async () => {
+    // `hold` keeps the fake mpv alive so the notifications overlay can open
+    // over a genuinely-playing session — the direct-dispatch delivery target.
+    await withSession(
+      "wiring-inbox-play-direct",
+      { mpv: "fake", fakeMpvMode: "hold" },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        seedEpisodeNotification(s, {
+          dedupKey: "wiring:smoke-anime-ep7",
+          title: "Smoke Anime ep 7 available",
+          body: "absolute episode 7 just landed",
+          item: {
+            mediaKind: "anime",
+            titleId: "anilist:smoke-anime-1",
+            title: "Smoke Anime",
+            absoluteEpisode: 7,
+          },
+        });
+
+        // Start live playback of the smoke movie — it holds instead of ending.
+        s.press("movie", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("Now Playing"), "playback live", 30_000);
+
+        // Direct route: /history opens a root overlay over the live playback
+        // mount; the overlay's own / palette then dispatches OPEN_OVERLAY with
+        // no bridge awaiter, so the row must self-deliver a switch-title.
+        s.press("/");
+        await s.waitForFrame((f) => f.includes("command"), "command palette");
+        s.press("history", K.enter);
+        await s.waitForFrame((f) => f.includes("History"), "history overlay");
+        await s.waitSettled();
+
+        s.press("/");
+        await s.waitForFrame((f) => f.includes("command"), "overlay command palette");
+        s.press("notifications", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Anime ep 7"), "inbox row (direct)");
+        await s.waitSettled();
+
+        // Live playback gates play-now behind "Switch playback?" first.
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("Switch playback"), "switch confirmation");
+        await s.waitSettled();
+        s.press(K.enter);
+
+        // Proof the announced title actually launched: the resolve/startup
+        // diagnostics carry the title id — a frame claim alone would also
+        // match the lingering inbox toast.
+        await s.waitForBackend(
+          (i) =>
+            i
+              .tableRows("cache.diagnostic_events")
+              .some((row) => row.includes("anilist:smoke-anime-1")),
+          "playback startup diagnostics for the announced anime title",
+          30_000,
+        );
+      },
+    );
+  }, 60_000);
 });
 
 describe("agent wiring · offline mode", () => {

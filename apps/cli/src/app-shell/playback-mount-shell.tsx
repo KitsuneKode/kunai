@@ -31,12 +31,15 @@ import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { isEpisodeDownloaded } from "@/services/offline/offline-episode-index";
+import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
 import type { ProviderId } from "@kunai/types";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
+import { notePaletteCommand } from "./contextual-tips";
 import { usePosterSurfaceBoundaryCleanup } from "./image-pane";
 import { LoadingShell } from "./loading-shell";
+import { pickPaletteTitle } from "./palette-title-launch";
 import { PLAYBACK_KEYS_PANEL_SESSIONS } from "./playback-keys-panel";
 import { formatPlaybackSessionKeysHint } from "./playback-session-key-hints";
 import { buildPostPlayFooterActions } from "./post-play-footer-actions";
@@ -148,7 +151,8 @@ export function buildPlaybackRootLoadingShellState(
     details: state.playbackDetail ?? `Provider: ${state.provider}`,
     providerName: activeProvider?.metadata.name ?? state.provider,
     providerId: state.provider,
-    subtitleStatus: isActivePlayback ? playbackSubtitleStatus : undefined,
+    // Bootstrap subtitle row lives in the !isPlaying branch — gate would starve it.
+    subtitleStatus: playbackSubtitleStatus ?? undefined,
     downloadStatus: downloadStatus ?? undefined,
     cancellable: playbackCanCancel,
     trace: playbackTrace,
@@ -220,6 +224,7 @@ export function buildPlaybackRootLoadingShellState(
       : undefined,
     playbackKeysHint: isActivePlayback
       ? formatPlaybackSessionKeysHint({
+          capabilities: container.player.capabilities,
           stream: state.stream,
           autoplayPaused: state.autoplaySessionPaused,
           autoskipPaused: state.autoskipSessionPaused,
@@ -266,6 +271,8 @@ export function buildPlaybackRootLoadingShellState(
     titleType: state.currentTitle?.type,
     videoMeta: state.videoMeta,
     onCommandAction: handlers.onCommandAction,
+    paletteTitleSource: () => collectLocalTitleEntries(container),
+    onPaletteTitlePick: (entry) => pickPaletteTitle(container, entry),
   };
 }
 
@@ -277,6 +284,32 @@ export function buildPlaybackRootLoadingShellState(
 function preloadTracksPanelModules(): void {
   void import("./workflows");
   void import("@/app/playback/tracks-panel-pick");
+}
+
+/** Flush cadence for progress React state (~4Hz). */
+const PLAYBACK_SNAPSHOT_FLUSH_MS = 250;
+
+/** Visible-field equality for stats snapshots. `updatedAt` is excluded — it
+ * changes on every build and would defeat the throttle. Position is quantized
+ * to the flush cadence for the same reason. */
+function isSamePlaybackSnapshot(
+  previous: PlaybackStatsSnapshot | null,
+  next: PlaybackStatsSnapshot | null,
+): boolean {
+  if (previous === next) return true;
+  if (!previous || !next) return false;
+  const quantize = (value: number | undefined) =>
+    value === undefined ? undefined : Math.round(value * (1_000 / PLAYBACK_SNAPSHOT_FLUSH_MS));
+  return (
+    quantize(previous.positionSeconds) === quantize(next.positionSeconds) &&
+    quantize(previous.durationSeconds) === quantize(next.durationSeconds) &&
+    quantize(previous.cacheAheadSeconds) === quantize(next.cacheAheadSeconds) &&
+    quantize(previous.cacheSpeedBytesPerSecond) === quantize(next.cacheSpeedBytesPerSecond) &&
+    quantize(previous.bufferingPercent) === quantize(next.bufferingPercent) &&
+    previous.seeking === next.seeking &&
+    previous.pausedForCache === next.pausedForCache &&
+    previous.voConfigured === next.voConfigured
+  );
 }
 
 export function PlaybackRootContent(input: PlaybackRootContentInput) {
@@ -299,11 +332,22 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
 
   useEffect(() => {
     if (!playbackIsActive) return undefined;
+    // Progress React state flushes at most ~4Hz, and only when a visible
+    // field actually changed: the raw IPC samples mutate continuously in
+    // infra (observed by the 2.5s stall watchdog, which this does not touch),
+    // while getStatsSnapshot() builds a fresh object per call — flushing it
+    // unconditionally re-rendered the playback tree even while paused.
+    // Position is quantized to the flush cadence so sub-frame jitter from
+    // time-pos events cannot defeat the change check.
+    let lastFlushed: PlaybackStatsSnapshot | null = null;
     const refreshSnapshot = () => {
-      setStatsSnapshot(input.container.playerControl.getStatsSnapshot());
+      const next = input.container.playerControl.getStatsSnapshot();
+      if (isSamePlaybackSnapshot(lastFlushed, next)) return;
+      lastFlushed = next;
+      setStatsSnapshot(next);
     };
     refreshSnapshot();
-    const timer = setInterval(refreshSnapshot, 1_000);
+    const timer = setInterval(refreshSnapshot, 250);
     return () => clearInterval(timer);
   }, [input.container.playerControl, playbackIsActive]);
 
@@ -384,6 +428,14 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
       onReturnToSearch={handlers.onReturnToSearch}
       onToggleFavorite={favoriteTitle ? toggleFavorite : undefined}
       isFavorite={favoriteTitle ? isFavorite : undefined}
+      onUndo={() => input.container.sessionUndo?.undoLatest()}
+      onPaletteCommand={(commandId) => {
+        // Bootstrap shares this surface with the player, but its keys are not
+        // live until playback is — a tip armed mid-resolve would teach a chord
+        // that currently does nothing.
+        if (!playbackIsActive) return;
+        notePaletteCommand(input.container, "activePlayback", commandId);
+      }}
     />
   );
 }
@@ -577,6 +629,8 @@ function PlaybackShell({
       footerMode="minimal"
       commands={commands}
       inputLocked={overlayBlocksInput}
+      localTitles={() => collectLocalTitleEntries(container)}
+      onTitlePick={(entry) => pickPaletteTitle(container, entry)}
       escapeAction="back-to-results"
       onUnhandledInput={(input, key) => {
         if (key.upArrow || input === "k") {
@@ -587,6 +641,12 @@ function PlaybackShell({
           setSelectedActionIndex((index) =>
             Math.min(Math.max(0, postPlayView.actions.length - 1), index + 1),
           );
+          return;
+        }
+        // `z` pops the live undo entry — queue/watchlist actions fired from
+        // post-play are journaled, so the strip's undo works here too.
+        if (input === "z" && !key.ctrl && !key.meta && container.sessionUndo?.hasLiveUndo()) {
+          container.sessionUndo.undoLatest();
           return;
         }
         const resolved = resolvePostPlayUnhandledInput(input, key, {
@@ -621,6 +681,7 @@ function PlaybackShell({
         onResolve(resolved.result);
       }}
       onResolve={resolvePostPlayAction}
+      onPaletteCommand={(commandId) => notePaletteCommand(container, "postPlayback", commandId)}
     >
       {playbackViewport.tooSmall ? (
         <ResizeBlocker

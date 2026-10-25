@@ -51,8 +51,24 @@ test.each([72, 100, 140])("renders queue rows cleanly at %i cols", (cols) => {
   // fact the user chose.
   expect(out).toContain("E08");
   expect(out).not.toContain("S02");
+  expect(out).toContain("up next");
+  expect(out).not.toContain("playing");
   const detached = out.split("\n").filter((l) => l.trim().length > 0 && /^─+$/.test(l.trim()));
   expect(detached).toHaveLength(0);
+});
+
+test("a claimed row renders startup without implying the player began", () => {
+  const view = buildQueueView({
+    entries: [{ ...entry("1", "Resolving", 1, 2), status: "in-flight" }],
+    selectedId: "1",
+    resolvePoster: () => undefined,
+    recoverableSessions: 0,
+  });
+  const out = captureFrame(<QueueShell view={view} columns={100} listWidth={92} rowWidth={88} />, {
+    columns: 100,
+  }).replace(ANSI, "");
+  expect(out).toContain("starting");
+  expect(out).not.toContain("playing");
 });
 
 test("empty state shows the hint", () => {

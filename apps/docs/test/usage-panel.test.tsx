@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+const NOW_MS = Date.parse("2026-10-03T12:00:00.000Z");
+
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { IST_DAY_BOUNDARY_FROM } from "../../analytics-ingest/src/analytics-day";
@@ -85,20 +87,22 @@ const series: DocsAnalyticsSeries = {
 
 describe("usage panel", () => {
   test("renders empty state when metrics are unavailable", () => {
-    const html = renderToStaticMarkup(<UsagePanel metrics={null} series={null} />);
+    const html = renderToStaticMarkup(<UsagePanel nowMs={NOW_MS} metrics={null} series={null} />);
     expect(html).toContain("Public pulse not published yet");
     expect(html).not.toContain("Lifetime installs");
   });
 
   test("renders the zero-day empty when actives are zero", () => {
     const html = renderToStaticMarkup(
-      <UsagePanel metrics={{ ...sample, activeInstalls: 0 }} series={series} />,
+      <UsagePanel nowMs={NOW_MS} metrics={{ ...sample, activeInstalls: 0 }} series={series} />,
     );
     expect(html).toContain("No pings for 2026-08-13");
   });
 
   test("renders the snapshot header without empty copy", () => {
-    const html = renderToStaticMarkup(<UsagePanel metrics={sample} series={series} />);
+    const html = renderToStaticMarkup(
+      <UsagePanel nowMs={NOW_MS} metrics={sample} series={series} />,
+    );
     expect(html).toContain("2026-08-13");
     expect(html).toContain("schema v2");
     expect(html).not.toContain("Public pulse not published yet");
@@ -247,7 +251,9 @@ describe("day boundary and update time", () => {
   test("the server render keeps the UTC text as the no-JavaScript fallback", () => {
     // renderToStaticMarkup never runs effects, so this is exactly what a viewer
     // without JavaScript sees.
-    const frame = renderToStaticMarkup(<UsagePanel metrics={sample} series={series} />);
+    const frame = renderToStaticMarkup(
+      <UsagePanel nowMs={NOW_MS} metrics={sample} series={series} />,
+    );
     expect(frame).toContain("2026-08-14 00:05:00 UTC");
     // The machine-readable instant rides a <time> element so the client can
     // reformat it. Matched case-insensitively: the attribute casing React emits
@@ -259,7 +265,9 @@ describe("day boundary and update time", () => {
     // Both dates are derived from the ingest constant, never typed here. Moving
     // the cutover without updating this caption must fail, not ship a page
     // that describes a boundary production no longer uses.
-    const frame = renderToStaticMarkup(<UsagePanel metrics={sample} series={series} />);
+    const frame = renderToStaticMarkup(
+      <UsagePanel nowMs={NOW_MS} metrics={sample} series={series} />,
+    );
     expect(frame).toContain("midnight IST (18:30 UTC)");
     expect(frame).toContain(`from ${longUtcDate(IST_DAY_BOUNDARY_FROM + IST_OFFSET_MS)}`);
   });
@@ -267,7 +275,9 @@ describe("day boundary and update time", () => {
   test("the caption names the short changeover day", () => {
     // The seam day is the UTC date of the cutover instant. It ends at 18:30 UTC,
     // so "earlier days end at midnight UTC" alone would be false for it.
-    const frame = renderToStaticMarkup(<UsagePanel metrics={sample} series={series} />);
+    const frame = renderToStaticMarkup(
+      <UsagePanel nowMs={NOW_MS} metrics={sample} series={series} />,
+    );
     expect(frame).toContain(`${longUtcDate(IST_DAY_BOUNDARY_FROM)} is an 18.5-hour changeover day`);
   });
 });

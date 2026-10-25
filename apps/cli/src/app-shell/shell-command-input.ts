@@ -1,17 +1,21 @@
 import { useLineEditor } from "@/app-shell/line-editor";
-import { movePickerModelSelection } from "@/domain/session/picker-model";
+import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
 import { useInput } from "ink";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import type { ResolvedAppCommand } from "./commands";
+import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { recordInputDrop } from "./diagnostics/render-trace";
 import { routeShellInput } from "./input-router";
 import {
   buildCommandPickerModel,
   getCommandAutocompleteTarget,
-  getHighlightedCommand,
+  movePaletteSelection,
+  paletteSelectableCount,
+  resolveHighlightedPaletteRow,
 } from "./shell-command-model";
 import { toShellAction, type FooterAction, type ShellAction } from "./types";
+
+const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
 
 export function useShellInput({
   footerActions,
@@ -20,6 +24,9 @@ export function useShellInput({
   letterKeysHandledExternally = false,
   escapeAction = "quit",
   onResolve,
+  localTitles,
+  onTitlePick,
+  onPaletteCommand,
 }: {
   footerActions: readonly FooterAction[];
   commands: readonly ResolvedAppCommand[];
@@ -28,10 +35,21 @@ export function useShellInput({
   letterKeysHandledExternally?: boolean;
   escapeAction?: ShellAction | null;
   onResolve: (action: ShellAction) => void;
+  /**
+   * Local title source consulted ONCE when the palette opens. Must be a cheap
+   * synchronous read over an already-built in-memory index — never a query per
+   * keystroke. Omit to keep the palette command-only on this surface.
+   */
+  localTitles?: () => readonly LocalTitleEntry[];
+  /** Enter landed on a JUMP TO title row. */
+  onTitlePick?: (entry: LocalTitleEntry) => void;
+  /** Fires only when a command is picked from the palette — the "long way" signal tips key off. */
+  onPaletteCommand?: (commandId: AppCommandId) => void;
 }) {
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [titleEntries, setTitleEntries] = useState<readonly LocalTitleEntry[]>(EMPTY_TITLE_ENTRIES);
   const commandEditor = useLineEditor({
     value: commandInput,
     onChange: (nextValue) => {
@@ -40,12 +58,25 @@ export function useShellInput({
     },
   });
 
+  const titleMatches = useMemo(
+    () => matchLocalTitles(titleEntries, commandInput),
+    [titleEntries, commandInput],
+  );
+
   useEffect(() => {
     if (!disabled) return;
     setCommandMode(false);
     setCommandInput("");
     setHighlightedIndex(0);
   }, [disabled]);
+
+  const openCommandPalette = () => {
+    setTitleEntries(localTitles?.() ?? EMPTY_TITLE_ENTRIES);
+    setCommandMode(true);
+    setHighlightedIndex(0);
+    // commandInput deliberately survives close/reopen — `/` keeps the draft
+    // (Raycast-style); only a completed Enter clears it.
+  };
 
   useInput((input, key) => {
     if (disabled) {
@@ -59,7 +90,6 @@ export function useShellInput({
     if (key.escape) {
       if (commandMode) {
         setCommandMode(false);
-        setCommandInput("");
         setHighlightedIndex(0);
         return;
       }
@@ -68,12 +98,28 @@ export function useShellInput({
     }
 
     if (commandMode) {
-      const model = buildCommandPickerModel(commandInput, commands, highlightedIndex);
-
       if (key.return) {
-        const resolved = getHighlightedCommand(commandInput, commands, highlightedIndex);
-        if (resolved?.enabled) {
-          onResolve(toShellAction(resolved.id));
+        const row = resolveHighlightedPaletteRow(
+          commandInput,
+          commands,
+          titleMatches,
+          highlightedIndex,
+        );
+        // Commands keep precedence over JUMP TO title rows: a palette Enter on
+        // a command is also the "long way" signal contextual tips key off.
+        if (row?.kind === "command" && row.command.enabled) {
+          setCommandMode(false);
+          setCommandInput("");
+          setHighlightedIndex(0);
+          onPaletteCommand?.(row.command.id);
+          onResolve(toShellAction(row.command.id));
+          return;
+        }
+        if (row?.kind === "title") {
+          setCommandMode(false);
+          setCommandInput("");
+          setHighlightedIndex(0);
+          onTitlePick?.(row.match.entry);
           return;
         }
         return;
@@ -82,21 +128,19 @@ export function useShellInput({
         const target = getCommandAutocompleteTarget(commandInput, commands, highlightedIndex);
         if (target) {
           commandEditor.setValue(target.aliases[0] ?? target.id);
+          const model = buildCommandPickerModel(commandInput, commands, highlightedIndex);
           const targetIndex = model.options.findIndex((option) => option.value === target.id);
           setHighlightedIndex(Math.max(0, targetIndex));
         }
         return;
       }
-      if (key.upArrow || (key.ctrl && input === "p")) {
-        if (model.options.length > 0) {
-          setHighlightedIndex(movePickerModelSelection(model, -1));
-        }
+      const selectable = paletteSelectableCount(commandInput, commands, titleMatches);
+      if (key.upArrow) {
+        setHighlightedIndex((current) => movePaletteSelection(selectable, current, -1));
         return;
       }
-      if (key.downArrow || (key.ctrl && input === "n")) {
-        if (model.options.length > 0) {
-          setHighlightedIndex(movePickerModelSelection(model, 1));
-        }
+      if (key.downArrow) {
+        setHighlightedIndex((current) => movePaletteSelection(selectable, current, 1));
         return;
       }
       if (commandEditor.handleInput(input, key)) {
@@ -106,8 +150,7 @@ export function useShellInput({
     }
 
     if (route.command === "open-command-palette" && commands.length > 0) {
-      setCommandMode(true);
-      setCommandInput("");
+      openCommandPalette();
       return;
     }
 
@@ -117,9 +160,7 @@ export function useShellInput({
     );
     if (footerAction) {
       if (footerAction.action === "command-mode") {
-        setCommandMode(true);
-        setCommandInput("");
-        setHighlightedIndex(0);
+        openCommandPalette();
         return;
       }
       if (letterKeysHandledExternally) {
@@ -143,5 +184,11 @@ export function useShellInput({
     }
   });
 
-  return { commandMode, commandInput, commandCursor: commandEditor.cursor, highlightedIndex };
+  return {
+    commandMode,
+    commandInput,
+    commandCursor: commandEditor.cursor,
+    highlightedIndex,
+    titleMatches,
+  };
 }

@@ -21,6 +21,75 @@ describe("design color resolution", () => {
     },
   );
 
+  /**
+   * On 16 colours there are only six hues and their bright twins, so a careless
+   * mapping makes unrelated signals the same colour: the brand accent, the anime
+   * kind, the milestone and the mixed-day blend were all literal "magenta", and
+   * the warning and the movie kind were both "yellow". One colour has to mean one
+   * thing, so every signal that carries meaning gets its own entry here.
+   */
+  test("no two meaning-carrying tokens collapse to one colour on 16-colour terminals", () => {
+    const resolved = resolveDesignTokens("16");
+    const signals = [
+      "accent",
+      "ok",
+      "warn",
+      "danger",
+      "info",
+      "milestone",
+      "typeAnime",
+      "typeSeries",
+      "typeMovie",
+    ] as const;
+    const seen = new Map<string, string>();
+    for (const name of signals) {
+      const value = resolved[name];
+      const clash = seen.get(value);
+      expect(clash, `${name} and ${clash} both resolve to "${value}"`).toBeUndefined();
+      seen.set(value, name);
+    }
+  });
+
+  describe("text and control contrast on the surfaces they render on (truecolor)", () => {
+    const t = resolveDesignTokens("truecolor");
+    const luminance = (hex: string): number => {
+      const channel = (offset: number) => {
+        const c = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+    };
+    const ratio = (a: string, b: string): number => {
+      const [first, second] = [luminance(a), luminance(b)];
+      return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+    };
+
+    test.each(["text", "textDim", "muted"] as const)(
+      "%s is body-readable (4.5:1) on every surface, including the selected row",
+      (token) => {
+        for (const surface of ["bg", "surface", "surfaceElevated", "surfaceActive"] as const) {
+          expect(ratio(t[token], t[surface]), `${token} on ${surface}`).toBeGreaterThanOrEqual(4.5);
+        }
+      },
+    );
+
+    test("lineControl is a 3:1 edge on every surface a control sits on", () => {
+      for (const surface of ["bg", "surface", "surfaceElevated"] as const) {
+        expect(
+          ratio(t.lineControl, t[surface]),
+          `lineControl on ${surface}`,
+        ).toBeGreaterThanOrEqual(3);
+      }
+    });
+
+    test("the decorative line stays decorative, so nothing leans on it to mark a control", () => {
+      // If `line` ever reaches 3:1 this is no longer a distinction worth keeping,
+      // and lineControl can be retired. Until then, it is the tell that the two
+      // tokens mean different things.
+      expect(ratio(t.line, t.surface)).toBeLessThan(3);
+    });
+  });
+
   test("detects remote/tmux-safe color levels without truecolor hints", () => {
     expect(detectTerminalColorLevel({ COLORTERM: "truecolor", TERM: "xterm-256color" })).toBe(
       "truecolor",

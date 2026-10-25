@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-10-11"
 ---
 
 # Kunai — Diagnostics Guide
@@ -51,7 +51,10 @@ the newest 10,000 events or 14 days by default and is pruned with the rest of
 disposable cache maintenance. Diagnostics write/read failures must not block
 search, playback, provider resolution, shell input, or shutdown.
 
-Export a redacted support bundle with `/export-diagnostics`. The exported JSON includes app/runtime metadata, startup capability checks, a readable `triage` summary (verdict, likely cause, affected subsystems, recommended actions, correlation summary, and last relevant event per subsystem), and the bounded diagnostics event buffer. Stream URLs, auth headers, cookies, tokens, and local home-directory prefixes are redacted before writing the file.
+Export a redacted support bundle with `/export-diagnostics`. The exported JSON includes app/runtime metadata, startup capability checks, a readable `triage` summary (verdict, likely cause, affected subsystems, recommended actions, correlation summary, and last relevant event per subsystem), and the bounded diagnostics event buffer. Stream URLs, auth headers, cookies, tokens, and local home-directory prefixes are redacted before writing the file. Sensitive object keys are matched independent
+of case and hyphen/underscore separators (`apiKey`, `api_key`, and `API-KEY`
+receive the same treatment); password, client-secret, and private-key fields are
+also withheld.
 
 For agent-friendly local inspection without launching the shell:
 

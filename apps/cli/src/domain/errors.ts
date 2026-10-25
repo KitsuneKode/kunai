@@ -1,8 +1,6 @@
-// =============================================================================
 // Error Taxonomy
 //
 // Typed errors for consistent handling and recovery strategies.
-// =============================================================================
 
 export type ErrorCode =
   | "NETWORK_ERROR"

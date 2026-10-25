@@ -245,7 +245,7 @@ function Get-ReleaseAssetName {
 function Resolve-PublishedVersion {
   if ($DryRun -and $Version -eq 'latest') { return 'dry-run' }
   if ($Version -ne 'latest') { return (Get-NormalizedVersion $Version) }
-  $release = Invoke-RestMethod -Uri $ReleasesApi -Headers @{ 'user-agent' = 'kunai-installer' }
+  $release = Invoke-RestMethod -Uri $ReleasesApi -Headers @{ 'user-agent' = 'kunai-installer' } -TimeoutSec 30
   $tag = [string]$release.tag_name
   return (Get-NormalizedVersion $tag)
 }
@@ -1600,19 +1600,23 @@ function Request-OptionalInstall {
     return
   }
 
+  # -Yes is consent to install Kunai, not consent to accept a third party's
+  # licence agreements. Redirected input takes the same path, so `irm … | iex`
+  # in CI reports what is missing rather than installing it.
+  #
+  # Print the command once, with a verb that matches whether this process will
+  # run it. "This will run" before the console check made piped installs look
+  # like they were about to escalate, then print the same command as homework.
+  if ($Yes -or $DryRun -or [Console]::IsInputRedirected) {
+    Write-Info 'Run this to install them:'
+    foreach ($command in $commands) { Write-Host "    $command" }
+    return
+  }
+
   Write-Host ''
   Write-Host '  This will run:'
   foreach ($command in $commands) { Write-Host "    $command" }
   Write-Host ''
-
-  # -Yes is consent to install Kunai, not consent to accept a third party's
-  # licence agreements. Redirected input takes the same path, so `irm … | iex`
-  # in CI reports what is missing rather than installing it.
-  if ($Yes -or $DryRun -or [Console]::IsInputRedirected) {
-    Write-Info 'Install them with:'
-    foreach ($command in $commands) { Write-Host "    $command" }
-    return
-  }
 
   $reply = Read-Host 'Run it now? [y/N]'
   if ($reply -notmatch '^[Yy]') {
@@ -2430,9 +2434,10 @@ switch ($Method) {
   }
 }
 
-if ($Method -eq 'binary') {
-  Install-OptionalDeps
-}
+# Every method, like install.sh: the portable helpers live in Kunai's data dir,
+# which an npm, bun or source install uses just the same — gating them on
+# -Method binary left those users without mpv guidance or curl-impersonate.
+Install-OptionalDeps
 
 Write-Host 'Done.' -ForegroundColor Green
 Write-Host 'Try:  kunai -S "Frieren" -a'

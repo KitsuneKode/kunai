@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-12T15:30:46Z"
 ---
 
 # Kunai — Testing Strategy
@@ -26,7 +26,7 @@ The published npm launcher package excludes the entire `test/` tree: its file al
 
 ## Turborepo Test Execution
 
-`bun run test` is `turbo run test`. Test tasks currently set `cache: false`; selected suites execute on every invocation. Typecheck and build tasks can still replay from cache. Use `--force` when reporting fresh execution of those gates.
+`bun run test` is `turbo run test`. Test tasks currently set `cache: false`; selected suites execute on every invocation. Typecheck also disables caching; build tasks can still replay from cache. Use `--force` when reporting fresh execution of those gates.
 
 CLI suites are separate Turbo tasks for scheduling and focused invocation. Because test caching is disabled, a unit-only change selecting the CLI package still runs both suites:
 
@@ -42,9 +42,25 @@ Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integratio
 
 ## Verification loop for contributors and agents
 
+Use `storageRootEnv()` from `apps/cli/test/helpers/storage-env.ts` for every
+throwaway profile. It redirects HOME/XDG/APPDATA and forces
+`KUNAI_CREDENTIAL_BACKEND=file`: native credential vault entries belong to the
+OS account and are not isolated by a different HOME. `createCredentialVault()`
+consumes that existing override before probing an OS backend. The common
+compiled/agent profile harness inherits it, and `applyStorageRootEnv()` restores
+the prior override with the other environment values. Backend-specific tests
+must use explicit injected environment and spawn ports; they must never probe
+the developer's credential store.
+
 1. Start with the feature map and the owning test file. Use
    `bun run --cwd apps/cli test:file test/unit/<area>/<file>.test.ts` for a focused
    reproduction; the package script supplies the timeout budget and preload.
+   `bun test` runs with the developer's real home, so a test that mounts a shell
+   or boots a service writes the real profile unless it isolates itself
+   (`BrowseShell` saves a submitted query to search history, for one). Isolate
+   with `applyStorageRootEnv` from `test/helpers/storage-env.ts`. To check a
+   suspect test, compare the real profile's mtime and hash around a multi-file
+   run; a lone file can exit before the async write lands and look clean.
 2. Change the failure trigger deliberately: deferred resolve/reject, cancellation,
    injected clock, or fake timer. A sleep is not an acknowledgement. A generous
    test timeout bounds a hang; it does not prove synchronization.
@@ -54,9 +70,27 @@ Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integratio
 4. Run the owning suite, then `bun run ci:affected` with a verified
    `TURBO_SCM_BASE`. Missing or stale comparison history is not evidence of a
    small change; inspect Turbo's dry run before relying on selection.
-5. Before handoff, run the required full gates and report the exact revision,
+5. `bun run ci:preflight` runs the repository lint baseline, document paths
+   and review-date checks before the long tasks in both `ci` and `ci:affected`.
+   Plain `bun run lint` does not include this hosted baseline gate. The freshness
+   check compares committed HEAD with its base; run it after committing a content
+   review date, rather than using a skip flag for meaningful edits.
+6. Before handoff, run the required full gates and report the exact revision,
    command, exit status, failures, skips, and cache status. Separate local Linux,
    hosted Windows/macOS, opt-in database/native, and live-provider evidence.
+
+For live CLI behavior use the repo's `verify-kunai` skill and the held-session
+`doctor` command. It checks liveness, interactive chrome, contained profile
+paths, file credentials and no analytics opt-in; it does not verify source
+revision, provider availability or player progress. The launcher shell-quotes
+literal environment/path values and refuses storage/vault overrides. `--command`
+remains a developer-controlled shell fragment of extra main.ts arguments.
+Reports belong outside the temporary profile. Failed interactive startup saves
+a diagnostic report outside the profile and stops only its created session;
+`--keep-profile` preserves the shadow directory. Existing sidecars are decoded through a schema and checked
+before any inspector read or cleanup; deletion additionally requires the
+profile directory to belong to the requested session name. Tests for these commands live in the
+separate `bun run test:agent` tier, not the default unit/integration suites.
 
 The debounce contract in
 `apps/cli/test/unit/app-shell/settle-value.test.tsx` advances Bun fake timers inside
@@ -262,7 +296,6 @@ added the following tests and removed the following dead tests.
 | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/cli/test/unit/app-shell/render-capture.test.tsx` (extended)       | `render()` + `simulateTicks()` + `act()` wiring; the previous real-time `countCommits(Flickering)` test was timing-dependent, replaced with a deterministic 6-commit assertion.                                   |
 | `apps/cli/test/unit/app-shell/input-router.useinput.test.tsx`           | First test to drive `useInput` through the harness. Asserts the router wires through correctly: Ctrl+C → hard-global, `/` in command-palette context → palette, `/` in text-input context → open-command-palette. |
-| `apps/cli/test/unit/app-shell/dot-matrix-loader.test.tsx` (rewritten)   | Loader animation is interval-driven; replaced the real-time assertion with `simulateTicks` so the commit count is exact.                                                                                          |
 | `apps/cli/test/unit/main-args.test.ts` (extended)                       | `--jump` / `--quick` / `-q` / `--continue` / `--history` / `--offline` parsing and invalid-input fallthrough.                                                                                                     |
 | `apps/cli/test/unit/app-shell/help-overlay.test.tsx`                    | The "no-drift" contract from `keybindings.ts:7-9`: every live binding label is rendered in some tab, no hard-coded copy can reappear, and `HELP_TABS` matches the registry order.                                 |
 | `apps/cli/test/unit/app-shell/post-play-h.useinput.test.tsx`            | P0-2 regression: `h` from the post-play surface routes to `onResolve("history")`; Ctrl+H does not; overlay-blocked `h` is dropped.                                                                                |
@@ -426,8 +459,11 @@ Local equivalent: `KUNAI_INSTALLER_DOCKER=1 bun run test:installer:docker`
 
 - `--dry-run` must not create `KUNAI_BIN_DIR` / data / config directories
 - Incomplete release assets fail with empty-asset / missing-checksum messages and npm|bun|source|pinned-version recovery copy
+- Optional-dep consent: a run with no TTY / `--yes` / `--dry-run` prints
+  `Run this to install them:` once and never `This will run` — that verb is
+  reserved for the TTY prompt that actually offers to spawn the package manager
 
-**Full cross-compile (all 8 targets)** — not on every PR (too slow). Use:
+**Full cross-compile (all 10 targets)** — not on every PR (too slow). Use:
 
 - **Release** workflow `binaries` job after a real npm publish (authoritative)
 - **`.github/workflows/build-binaries.yml`** — weekly cron + `workflow_dispatch` + pushes that touch build scripts
@@ -479,6 +515,22 @@ Do not loop live smokes while iterating on a provider. Use fixture payloads, moc
 and provider contract tests for repeated runs, then perform one focused live smoke when the
 deterministic seam is already green.
 
+Android handoff has its own physical-device smoke and is likewise opt-in:
+
+```sh
+KUNAI_ANDROID_HANDOFF_PLAYER=vlc \
+KUNAI_ANDROID_HANDOFF_URL="<direct-test-media-url>" \
+KUNAI_ANDROID_HANDOFF_BINARY="$(realpath ./apps/cli/dist/bin/kunai-android-arm64)" \
+bun run test:live:android-handoff
+```
+
+Run it only inside Android/Termux. The harness creates an isolated temporary
+HOME/XDG profile, requires an explicit compiled binary path, refuses desktop
+hosts and roots inside the real profile, and prints compiled entrypoint,
+binary/runtime, TTY, SQLite WAL/reopen, player, and launcher evidence. A green
+launcher smoke proves only that Android accepted the intent; provider playback
+qualification is a separate, device-level record.
+
 ### 7. Agent verification loop (`apps/cli/test/agent/`)
 
 Best target for:
@@ -526,6 +578,12 @@ line. The same Test job runs `bun run test:agent` on PRs — L2 is in-process,
 no external tools needed. `onboarding.test.ts` drives the real setup wizard
 over tmux (fresh seed → s → S → Enter → `onboardingVersion` committed,
 `analytics` still `unset`) and self-gates on `Bun.which("tmux")`.
+
+The real-mpv local-transition test waits for the subscribed `pause=true`
+property before issuing its first unpause command. An open IPC pipe alone
+does not establish that cold-start mpv has processed its subscriptions. Keep
+the normal IPC command deadline; native readiness is an event boundary,
+not a sleep or an enlarged command timeout.
 
 Rules that make the loop trustworthy:
 
@@ -666,6 +724,13 @@ Opt-in release-candidate smoke, run only when provider traffic is acceptable:
 - Source refresh tests must prove that voluntary refresh cooldown does not block broken-stream recovery, and that a failed fresh lookup can keep the current cached stream instead of stalling playback.
 - Storage maintenance tests must seed durable user tables and disposable cache tables together, then prove automatic maintenance only prunes cache-class rows.
 - Fake mpv IPC lifecycle tests cover app-side orchestration only; keep one manual real-mpv smoke for release candidates that touch playback.
+- The opt-in real-player tier (`KUNAI_REAL_MPV=1 bun run test:cli:file real-mpv.test.ts`)
+  drives the real CLI in tmux, observes advancing mpv IPC time, and checks the
+  same profile's history row. The media/profile remains under the isolated
+  storage roots; IPC uses a separate, uniquely created 0700 sandbox under
+  `/tmp` on Linux/macOS so nested CI or macOS temp paths cannot exceed the Unix
+  socket path limit. Both normal shutdown and failed startup remove only that
+  owned IPC sandbox. This fixture proof does not qualify live providers or devices.
 - Live provider and Discord smokes are opt-in and must not be added to `bun run test`, CI, or Husky.
 
 ## Manual Smoke Matrix
@@ -742,6 +807,18 @@ via harness scripts such as `bun run --cwd apps/cli capture:settings`.
 - Assert runtime behavior, not source substrings (except intentional architecture/doc drift guards).
 - Prefer real backends: `createIsolatedContainer`, temp SQLite, provider fixtures.
 - Mock only external boundaries (`fetch`, `Bun.spawn` for mpv/yt-dlp, live sites).
+- Stubbing `globalThis.fetch` is not enough for `fetchGuardedStreamTarget`: it
+  DNS-checks only the platform `fetch` captured at module load. Pass a distinct
+  `fetchImpl`, or expect the stubbed global to skip DNS. Do not let unit tests
+  depend on how `example.com` or a CDN name resolves on the host.
+- `npm-launcher.test.ts` needs a real Node on PATH. `bun run` / turbo expose a
+  `node` symlink to Bun; under that shim `require.resolve` finds the optional
+  `@kitsunekode/kunai-<target>` package and the tests spawn the compiled app
+  instead of the vendor stand-in. Skip when `node` is Bun; CI installs Node.
+- Capability-notice persistence tests pass the dependency probe's lookup and
+  filesystem seams through `checkDeps`; they never execute host curl or replace
+  the shared mpv-discovery export. Dedicated probe/discovery tests own those
+  executable checks.
 - Use `simulateTicks` from the render harness instead of real timers in unit tests.
 - TDD on rewrite: write the new behavior test first, then delete brittle guards.
 
@@ -749,3 +826,42 @@ For CLI UX:
 
 - prefer VHS tapes over brittle pseudo-interactive assertions when the real need is visual review
 - prefer deterministic state tests over VHS when the real need is behavior confidence
+
+## Automated PR review
+
+CodeRabbit configuration belongs in `.coderabbit.yaml` and must validate against
+[its published schema](https://coderabbit.ai/integrations/schema.v2.json). Tool settings
+are nested under `reviews.tools`; a root-level `tools` object is ignored by the bot.
+`reviews.auto_review.base_branches` includes `.*` so stacked PRs targeting feature
+branches are eligible alongside default-branch PRs. `reviews.fail_commit_status`
+reports review errors as failures instead of successful checks.
+
+A successful bot status is not evidence of a completed review: inspect the review
+or walkthrough for skipped-review and configuration warnings. Draft and explicitly
+excluded-title rules still apply. This configuration enables reviews; it does not
+make them required by branch protection or prove that a hosted review ran.
+
+### Sync default-budget wiring
+
+The default-budget case in
+`apps/cli/test/unit/services/sync/sync-drain.test.ts` uses a real migrated
+in-memory SQLite outbox. It retains the production service defaults and checks
+that one pass claims the expected rows and clears the queue. That assertion does
+not require disk durability or WAL contention; the other drain cases continue
+using file-backed databases. Keep native filesystem/lifecycle qualification in
+its owning tests rather than relying on a wiring test's wall-clock budget.
+
+## Automated analytics isolation
+
+The CLI test preload, shadow-profile helper, manual sandbox and native Docker
+smoke force `DO_NOT_TRACK=1`. Every hosted workflow also sets it and Turbo
+preserves it in strict tasks. Tests must not mint countable production install
+identities, including when `CI=0` or a fixture already has consent. Agent launch
+overrides may not replace isolated roots or disable DNT. Test consent behavior
+with injected in-memory configuration and fetch fixtures.
+
+The opt-in analytics smoke requires `KUNAI_ANALYTICS_TEST_URL` with numeric
+loopback and an explicit port, refuses redirects, and awaits fixture acceptance.
+A fixed synthetic UUID still counts as an install if sent to production. The
+smoke establishes the local wire contract, not production deployment or counts;
+its server must use disposable storage.

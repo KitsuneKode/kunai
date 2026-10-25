@@ -9,6 +9,7 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("-S, --search <query>");
   expect(help).toContain("--continue, --resume");
   expect(help).toContain("--install-protocol-handler");
+  expect(help).toContain("--player <auto|mpv|vlc>");
   expect(help).toContain("Register the Linux-only kunai:// URL handler");
   expect(help).toContain("-y, --youtube");
   expect(help).toContain("--debug                Verbose redacted logging to ./logs.txt");
@@ -25,6 +26,17 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("kunai upgrade");
   expect(help).toContain("kunai upgrade --check");
   expect(help).toContain("kunai uninstall");
+});
+
+test("parseArgs exposes an explicit player choice with an auto default", () => {
+  expect(parseArgs([]).player).toBe("auto");
+  expect(parseArgs(["--player", "auto"]).player).toBe("auto");
+  expect(parseArgs(["--player", "mpv"]).player).toBe("mpv");
+  expect(parseArgs(["--player", "vlc"]).player).toBe("vlc");
+});
+
+test("parseArgs rejects unknown player choices", () => {
+  expect(() => parseArgs(["--player", "potato"])).toThrow(/--player.*auto.*mpv.*vlc/i);
 });
 
 test("parseArgs treats --json as a known maintenance flag", () => {
@@ -360,4 +372,50 @@ test("mpv config flags are independent and default to unset", () => {
   expect(parseArgs(["node", "kunai"]).mpv?.noUserConfig).toBeUndefined();
   expect(parseArgs(["node", "kunai", "--mpv-clean"]).mpv?.clean).toBe(true);
   expect(parseArgs(["node", "kunai", "--mpv-clean"]).mpv?.noUserConfig).toBeUndefined();
+});
+
+test("parseArgs supports -e/--episode and --season", () => {
+  const anime = parseArgs(["-a", "-S", "Frieren", "-e", "5"]);
+  expect(anime.episode).toBe(5);
+  expect(anime.season).toBeUndefined();
+
+  const series = parseArgs(["-S", "Dark", "--season", "2", "--episode", "3"]);
+  expect(series.episode).toBe(3);
+  expect(series.season).toBe(2);
+});
+
+test("parseArgs rejects malformed episode and season values", () => {
+  for (const bad of ["0", "-1", "abc", "5.5", "5x"]) {
+    expect(() => parseArgs(["-S", "Dune", "-e", bad])).toThrow(CliUsageError);
+    expect(() => parseArgs(["-S", "Dune", "--season", bad, "-e", "1"])).toThrow(CliUsageError);
+  }
+});
+
+test("parseArgs rejects --season without --episode", () => {
+  // `--season 2` alone is ambiguous — S2E1 or "browse season 2"? — and silently
+  // guessing is the house failure mode.
+  expect(() => parseArgs(["-S", "Dark", "--season", "2"])).toThrow(/--season requires --episode/);
+});
+
+test("parseArgs validates --quality, --audio, --sub against the media vocabulary", () => {
+  const args = parseArgs(["-S", "Dune", "--quality", "720p", "--audio", "en", "--sub", "fr"]);
+  expect(args.quality).toBe("720p");
+  expect(args.audio).toBe("en");
+  expect(args.subtitle).toBe("fr");
+
+  // `--quality 1080` forgives the missing "p".
+  expect(parseArgs(["-S", "Dune", "--quality", "1080"]).quality).toBe("1080p");
+
+  for (const bad of ["bogus", "8k", "auto"]) {
+    expect(() => parseArgs(["-S", "Dune", "--quality", bad])).toThrow(CliUsageError);
+  }
+  expect(() => parseArgs(["-S", "Dune", "--audio", "xx"])).toThrow(/invalid --audio/);
+  expect(() => parseArgs(["-S", "Dune", "--sub", "xx"])).toThrow(/invalid --sub/);
+});
+
+test("parseArgs folds --dub into audio and rejects it combined with --audio", () => {
+  expect(parseArgs(["-a", "-S", "Naruto", "--dub"]).audio).toBe("dub");
+  expect(() => parseArgs(["-a", "-S", "Naruto", "--dub", "--audio", "en"])).toThrow(
+    /--dub and --audio are mutually exclusive/,
+  );
 });

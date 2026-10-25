@@ -1,6 +1,9 @@
 // Post-playback menu inner loop — extracted from PlaybackPhase.execute() so the
 // outer episode loop can call a single function and act on its directive.
 import { resolveCommandContext } from "@/app-shell/commands";
+import { companionMode } from "@/app-shell/companion-policy";
+import { kannaDoneText } from "@/app-shell/kanna-voice";
+import { takePaletteTitleLaunch } from "@/app-shell/palette-title-launch";
 import { claimQueuePlaybackLaunch } from "@/app-shell/root-queue-bridge";
 import type { PlaybackShellResult, PlaybackShellState, ShellAction } from "@/app-shell/types";
 import {
@@ -153,7 +156,7 @@ export type PostPlaybackMenuDeps = {
     selection: StreamSelectionIntent | null,
     resumeSeconds: number,
     reason: string,
-  ) => Promise<PlaybackStartIntent>;
+  ) => Promise<PlaybackStartIntent | null>;
   readonly handoffNextEpisodePrefetch: (
     target: EpisodePrefetchTarget,
     reason: "playback.prefetch-wait" | "post-playback.autonext.prefetch-wait",
@@ -175,13 +178,14 @@ export type PostPlaybackMenuDeps = {
     animeEpisodeCount?: number;
     animeEpisodes?: readonly EpisodePickerOption[];
     container: Container;
-  }) => Promise<{ season: number; episode: number } | null>;
+  }) => Promise<Pick<EpisodeInfo, "season" | "episode" | "providerEpisodeIdentity"> | null>;
   readonly episodeInfoFromSelection: (input: {
     season: number;
     episode: number;
     isAnime: boolean;
     titleId: string;
     animeEpisodes?: readonly EpisodePickerOption[];
+    providerEpisodeIdentity?: EpisodeInfo["providerEpisodeIdentity"];
   }) => EpisodeInfo;
 
   readonly readAutoAdvanceGuards: () => AutoAdvanceGuards;
@@ -203,6 +207,25 @@ export async function runPostPlaybackMenu(
   const { logger } = container;
   const { title, currentEpisode, episodeAvailability, result, preparedStream } = iteration;
   let resolvedProviderId = iteration.resolvedProviderId;
+
+  // A title switch armed while a countdown or teardown was in flight has no
+  // file left to stop — the session is already over. Honour it now instead of
+  // showing a menu for a title the user just asked to leave.
+  const pendingTitleSwitch = container.playerControl.consumePendingTitleSelection();
+  if (pendingTitleSwitch) {
+    await deps.teardownPlaybackForPostPlayExit();
+    return {
+      kind: "exit",
+      result: {
+        status: "success",
+        value: {
+          type: "history_entry",
+          title: pendingTitleSwitch.title,
+          episode: pendingTitleSwitch.episode,
+        },
+      },
+    };
+  }
 
   postPlayback: while (true) {
     const resumeSeconds = toHistoryTimestamp(
@@ -288,13 +311,15 @@ export async function runPostPlaybackMenu(
       );
       const selection = picked ? streamSelectionFromTrackPick(picked) : null;
       if (picked && (selection || picked.section === "subtitle")) {
-        run.pendingStart = await deps.completeSourceTrackPick(
+        const trackStart = await deps.completeSourceTrackPick(
           currentEpisode,
           picked,
           selection,
           resumeSeconds,
           "post-playback-tracks",
         );
+        if (!trackStart) continue postPlayback;
+        run.pendingStart = trackStart;
         run.playbackSession = deps.transitionPlaybackSession(
           run.playbackSession,
           "recovery-started",
@@ -377,7 +402,7 @@ export async function runPostPlaybackMenu(
               name: topRecAdvance.title,
               type: topRec?.type === "movie" ? "movie" : "series",
               posterUrl: topRec?.posterPath ?? undefined,
-              ...(topRec?.externalIds ? { externalIds: topRec.externalIds } : {}),
+              externalIds: topRec?.externalIds,
             },
             mode,
           },
@@ -405,6 +430,7 @@ export async function runPostPlaybackMenu(
       isAnime: mode === "anime",
       nextAirDateHint: iteration.catalogAutoplayEndBanner?.replace(/^Caught up ·\s*/i, ""),
       playbackStarted,
+      handoff: result.handoff,
     });
     const postPlayState = resolvePostPlayState(postPlayInput);
     const watchTimeSummary =
@@ -420,6 +446,18 @@ export async function runPostPlaybackMenu(
     // milestone) were the exact ones that never showed them, and the surface
     // looked random. `m` still opens the title-control menu on demand here.
     let postAction: PlaybackShellResult | ShellAction | undefined;
+
+    // A JUMP TO pick during active playback parks its launch here: the picker
+    // stopped mpv, post-play opens, and the staged value arrives through the
+    // same history-entry channel a mounted post-play session would settle with.
+    const stagedPaletteLaunch = takePaletteTitleLaunch();
+    if (stagedPaletteLaunch) {
+      postAction = {
+        type: "history-entry",
+        title: stagedPaletteLaunch.title,
+        episode: stagedPaletteLaunch.episode,
+      };
+    }
 
     if (postAction === undefined) {
       const upcomingEpisode = episodeAvailability.nextEpisode;
@@ -498,7 +536,14 @@ export async function runPostPlaybackMenu(
           episodeDurationSeconds: result.duration,
           status: iteration.catalogAutoplayEndBanner
             ? { label: iteration.catalogAutoplayEndBanner, tone: "neutral" }
-            : { label: "Ready for next action", tone: "success" },
+            : {
+                // A resumable position means the progress write already landed;
+                // the status row is where that save announces itself.
+                label:
+                  (canResumePlayback ? kannaDoneText("saved", companionMode()) : undefined) ??
+                  "Ready for next action",
+                tone: "success",
+              },
           footerMode: "minimal",
           postPlayState,
           episodeLabel: buildPostPlayEpisodeLabel(title, currentEpisode, seasonEpisodeTotal),
@@ -532,6 +577,37 @@ export async function runPostPlaybackMenu(
     }
 
     if (typeof postAction === "object" && postAction !== null && "type" in postAction) {
+      if (postAction.type === "history-entry") {
+        // Palette JUMP TO / routed title launch — same exit the routed-action
+        // path below produces; handled here because the shell can resolve it
+        // directly as a result object rather than a ShellAction string.
+        const exitOutcome = resolvePostPlaybackExitOutcome(postAction);
+        if (exitOutcome) {
+          await deps.teardownPlaybackForPostPlayExit();
+          // SAFETY: resolvePostPlaybackExitOutcome builds the post-play exit
+          // result shape; its launch-playback branch returns the same
+          // PhaseResult<PlaybackOutcome> the loop's other exits produce.
+          return { kind: "exit", result: exitOutcome as PhaseResult<PlaybackOutcome> };
+        }
+        continue postPlayback;
+      }
+      if (postAction.type === "launch-playback") {
+        // The inbox's "Play now" (and any other launch-bearing overlay) settles
+        // this mounted post-play session with a launch intent — exit so the
+        // phase loop hands the session to the new title.
+        await deps.teardownPlaybackForPostPlayExit();
+        return {
+          kind: "exit",
+          result: {
+            status: "success",
+            value: {
+              type: "history_entry",
+              title: postAction.launch.title,
+              episode: postAction.launch.episode,
+            },
+          },
+        };
+      }
       if (postAction.type === "track-selection") {
         const picked = postAction.pick;
         const selection = streamSelectionFromTrackPick(picked);
@@ -539,13 +615,15 @@ export async function runPostPlaybackMenu(
           continue postPlayback;
         }
         const fromProviderId = resolvedProviderId;
-        run.pendingStart = await deps.completeSourceTrackPick(
+        const trackStart = await deps.completeSourceTrackPick(
           currentEpisode,
           picked,
           selection,
           resumeSeconds,
           "post-playback-tracks",
         );
+        if (!trackStart) continue postPlayback;
+        run.pendingStart = trackStart;
         run.playbackSession = deps.transitionPlaybackSession(
           run.playbackSession,
           "episode-navigation",
@@ -812,13 +890,15 @@ export async function runPostPlaybackMenu(
         continue postPlayback;
       }
       const fromProviderId = resolvedProviderId;
-      run.pendingStart = await deps.completeSourceTrackPick(
+      const trackStart = await deps.completeSourceTrackPick(
         currentEpisode,
         picked,
         selection,
         resumeSeconds,
         "post-playback-tracks",
       );
+      if (!trackStart) continue postPlayback;
+      run.pendingStart = trackStart;
       run.playbackSession = deps.transitionPlaybackSession(
         run.playbackSession,
         "episode-navigation",
@@ -900,6 +980,7 @@ export async function runPostPlaybackMenu(
       const pickedEpisode = deps.episodeInfoFromSelection({
         season: selection.season,
         episode: selection.episode,
+        providerEpisodeIdentity: selection.providerEpisodeIdentity,
         isAnime: mode === "anime",
         titleId: title.id,
         animeEpisodes: iteration.currentAnimeEpisodes,

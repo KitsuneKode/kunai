@@ -59,6 +59,79 @@ function readerFilesFor(symbol: string, definedIn: readonly string[]): string[] 
 }
 
 describe("contract conformance", () => {
+  test("the public player flag reaches runtime composition", () => {
+    const main = readRepoFile("apps/cli/src/main.ts");
+    const container = readRepoFile("apps/cli/src/container/bootstrap-services.ts");
+
+    expect(main).toContain("playerChoice: args.player");
+    expect(container).toContain('options?.playerChoice ?? "auto"');
+    expect(container).toContain("resolvePlayerMode");
+  });
+
+  test("every player capability has a production behavior reader", () => {
+    const declaration = readRepoFile("apps/cli/src/domain/playback/player-capabilities.ts");
+    const interfaceBody = declaration.match(
+      /export interface PlayerCapabilities \{(?<body>[\s\S]*?)\n\}/u,
+    )?.groups?.body;
+    expect(interfaceBody).toBeDefined();
+
+    const fields = [...(interfaceBody ?? "").matchAll(/readonly\s+(\w+):/gu)].map(
+      (match) => match[1],
+    );
+    const sources = PRODUCTION_SOURCES.filter(
+      ({ file }) => file !== "apps/cli/src/domain/playback/player-capabilities.ts",
+    );
+    const unread = fields.filter(
+      (field) =>
+        !sources.some(({ text }) =>
+          new RegExp(`\\bcapabilities\\s*\\.\\s*${field}\\b`, "u").test(text),
+        ),
+    );
+
+    expect(unread, "capability declared without a behavior reader").toEqual([]);
+  });
+
+  test("Android release targets reach every distribution consumer", () => {
+    const platformAssets = readRepoFile("apps/cli/src/services/update/platform-assets.ts");
+    const binaryBuilder = readRepoFile("apps/cli/scripts/build-binaries.ts");
+    const nativeUpdater = readRepoFile(
+      "apps/cli/src/services/update/native-installer/install-latest.ts",
+    );
+    const commandUpdater = readRepoFile("apps/cli/src/services/update/run-upgrade.ts");
+    const npmLauncher = readRepoFile("apps/cli/scripts/npm-launcher.mjs");
+    const installer = readRepoFile("install.sh");
+
+    for (const target of ["android-arm64", "android-x64"]) {
+      expect(platformAssets).toContain(`id: "${target}"`);
+      expect(npmLauncher).toContain(`return "${target}"`);
+    }
+    expect(platformAssets).toContain('libc: "bionic"');
+    expect(binaryBuilder).toContain("RELEASE_BINARY_TARGETS");
+    expect(nativeUpdater).toContain("resolveReleaseBinaryTarget");
+    expect(nativeUpdater).toContain("resolvePlatformLibc");
+    expect(commandUpdater).toContain("resolvePlatformLibc");
+    expect(installer).toContain('target="android-${arch}-bionic"');
+  });
+
+  test("the Android live smoke is opt-in and forwarded from the root", () => {
+    // SAFETY: repo package.json files are read for their scripts map only;
+    // anything absent asserts as undefined below.
+    const rootPackage = JSON.parse(readRepoFile("package.json")) as {
+      scripts: Record<string, string>;
+    };
+    // SAFETY: same read — the CLI manifest's scripts table.
+    const cliPackage = JSON.parse(readRepoFile("apps/cli/package.json")) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(rootPackage.scripts["test:live:android-handoff"]).toBe(
+      "bun run --cwd apps/cli test:live:android-handoff",
+    );
+    expect(cliPackage.scripts["test:live:android-handoff"]).toBe(
+      "bun test/live/android-terminal-handoff.ts",
+    );
+  });
+
   test("background download queue kicks use the supervised entry point", () => {
     const discardedQueuePasses = PRODUCTION_SOURCES.flatMap(({ file, text }) =>
       file === "apps/cli/src/services/download/DownloadService.ts"
@@ -96,9 +169,7 @@ describe("contract conformance", () => {
    */
   test("every registered command is offered by at least one palette context", () => {
     // Nested `/sync-connect-*` stay under `/sync`. `/favorites` is ADR-retired.
-    // `/clear-history` is deliberately buried.
     const KNOWN_UNREACHABLE_COMMANDS = new Set([
-      "clear-history",
       "favorites",
       "sync-connect-anilist",
       "sync-connect-tmdb",
@@ -260,11 +331,11 @@ describe("contract conformance", () => {
       },
     ];
 
-    // DEBT (2026-07-21): declared, wired to nothing.
-    // - detectGeoBlockedProviderResponse: geo-blocking is the failure the relay
-    //   exists for and nothing detects it; its allow-list also names "allmanga",
-    //   which is the module name, not the provider id ("allanime").
-    const KNOWN_ORPHANED_CONTRACTS = new Set(["detectGeoBlockedProviderResponse"]);
+    // Ratchet: entries are deleted as they gain a reader, never extended.
+    // `detectGeoBlockedProviderResponse` is read by
+    // `apps/cli/src/domain/playback/playback-problem.ts` (geoBlockedRelayHint),
+    // so the baseline is now empty.
+    const KNOWN_ORPHANED_CONTRACTS = new Set<string>([]);
 
     const orphaned: string[] = [];
     const revived: string[] = [];

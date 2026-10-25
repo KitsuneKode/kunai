@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-04"
+lastReviewed: "2026-10-11"
 ---
 
 # Provider: KickAssAnime
@@ -24,6 +24,20 @@ are hard-subbed; KickAssAnime closes both gaps.
   name plus a four-hex discriminator.
 
 ## Known
+
+### Failure classification
+
+Catalog and player-page HTTP failures retain the shared provider error class:
+404 is non-retryable `not-found`, 401/403 are `blocked`, 429 is retryable
+`rate-limited`, and retryable 5xx remain `provider-unavailable` (504 is
+`timeout`). Invalid catalog JSON is non-retryable `parse-failed` and a transport
+deadline is retryable `timeout`. An aborted caller signal produces `cancelled`;
+an `AbortError` from a transport alone remains retryable. An HTTP response does
+not trigger domain discovery. This applies to cross-catalog
+title lookup, episode listing, and player-page resolution. Master readability
+and the resolve gate still make separate decisions, as described below.
+
+### Upstream observations
 
 Observed directly on 2026-09-12 unless noted.
 
@@ -102,6 +116,13 @@ the master. Its `manifest` now arrives protocol-relative
 slash (`https:////bl.krussdomi.com`) form is still repaired the same way.
 BirdStream's DASH is parsed but never chosen — its manifest 404'd for the title
 tested.
+
+**Single-server SPOF:** a VidStreaming outage has no second server today (also
+recorded in `research.ts`, which is why this stays a dossier note rather than
+a code change). Next lane candidate is BirdStream: enabling it is
+`PLAYABLE_SERVERS` in `direct.ts` plus DASH handling, but only against a live
+title whose BirdStream manifest answers 200 — enabling it blind would trade a
+diagnosable `not-found` for mpv failures.
 
 ## Subtitle Inventory
 

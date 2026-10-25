@@ -28,6 +28,12 @@ type PendingRootContentMount = {
   readonly sessionId: number;
   readonly settle: (value: unknown) => void;
   readonly fallbackValue: unknown;
+  /**
+   * Resolves the mount when another session displaces it. Distinct from
+   * `fallbackValue` so the caller can tell "evicted" from "cancelled" —
+   * browse uses it to remount rather than report a user cancel.
+   */
+  readonly displacedValue: unknown;
 };
 
 const pendingRootContentMounts = new Set<PendingRootContentMount>();
@@ -82,6 +88,51 @@ export function forceCloseRootContent<TResult>(value: TResult): boolean {
   );
   if (!mount) return false;
   mount.settle(value);
+  return true;
+}
+
+/**
+ * Park until no foreign session holds the root content slot. A detached
+ * overlay workflow (`void runRootWorkflowSafely`) mounts its picker as root
+ * content while SearchPhase's loop is already mid-flight — remounting browse
+ * over a live picker would evict and cancel it before the user can act.
+ * Browse counts as free: a stale browse session is only ever displaced by the
+ * same owner that mounted it.
+ */
+export function waitForRootContentSlot(signal?: AbortSignal): Promise<void> {
+  const slotFree = () => {
+    const session = rootContentSession;
+    return session === null || session.kind === "browse";
+  };
+  // An already-aborted signal never fires "abort" again — check before
+  // subscribing or the wait parks until the slot frees on its own.
+  if (slotFree() || signal?.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const finish = () => {
+      unsubscribe();
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    const unsubscribe = subscribeRootContentSession(() => {
+      if (slotFree()) finish();
+    });
+    signal?.addEventListener("abort", finish, { once: true });
+  });
+}
+
+/**
+ * Settle the mounted session with its own fallback value — the polite close
+ * for sessions whose result type the caller does not know (a picker displaced
+ * by a palette launch resolves "cancelled", browse resolves "cancelled",
+ * post-play resolves "quit"). Returns false when nothing is mounted.
+ */
+export function settleRootContentSessionWithFallback(): boolean {
+  if (!rootContentSession) return false;
+  const mount = [...pendingRootContentMounts].find(
+    (candidate) => candidate.sessionId === rootContentSession?.id,
+  );
+  if (!mount) return false;
+  mount.settle(mount.fallbackValue);
   return true;
 }
 
@@ -147,11 +198,14 @@ export function mountRootContent<TResult>({
   kind,
   renderContent,
   fallbackValue,
+  displacedValue,
   headerLabel,
 }: {
   kind: RootContentKind;
   renderContent: (finish: (value: TResult) => void) => ReactElement;
   fallbackValue: TResult;
+  /** Resolves the session if another mount displaces it; defaults to fallbackValue. */
+  displacedValue?: TResult;
   headerLabel?: string;
 }): MountedRootContent<TResult> {
   const sessionId = rootContentNextId++;
@@ -167,6 +221,7 @@ export function mountRootContent<TResult>({
     sessionId,
     settle: (value) => settle(value as TResult),
     fallbackValue,
+    displacedValue: displacedValue ?? fallbackValue,
   };
 
   settle = (value: TResult) => {
@@ -183,7 +238,11 @@ export function mountRootContent<TResult>({
 
   pendingRootContentMounts.add(pendingMount);
 
-  if (rootContentSession !== null && rootContentSession.id !== sessionId) {
+  const displacedSessionId =
+    rootContentSession !== null && rootContentSession.id !== sessionId
+      ? rootContentSession.id
+      : null;
+  if (displacedSessionId !== null) {
     clearRootContentTransitionFrame();
   }
 
@@ -193,6 +252,27 @@ export function mountRootContent<TResult>({
     element: renderContent(settle),
     ...(headerLabel ? { headerLabel } : null),
   });
+
+  if (displacedSessionId !== null) {
+    // A displaced session's `result` promise must still resolve — its owner
+    // awaits it, and leaving it parked strands whatever phase was waiting
+    // (e.g. a SearchPhase browse remount evicted by a picker that a detached
+    // overlay workflow mounts afterwards). Teardown already resolves pending
+    // mounts with their fallbackValue; replacement gets the same treatment.
+    // Runs after the new session installs so the displaced mount's own
+    // session-clear is a no-op and subscribers never see a null frame.
+    //
+    // Scoped to the mount this call displaced: subscriber notification above
+    // is synchronous, so a subscriber may itself mount a session that already
+    // displaced this one — settling every foreign mount here would evict that
+    // newer session right after it won the slot.
+    for (const mount of pendingRootContentMounts) {
+      if (mount.sessionId === displacedSessionId) {
+        // Settle deletes only the mount being iterated — safe during for…of.
+        mount.settle(mount.displacedValue);
+      }
+    }
+  }
 
   return {
     close: (value) => settle(value),

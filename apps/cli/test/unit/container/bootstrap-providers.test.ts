@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { loadProductionProviderModules } from "@/container/bootstrap-providers";
+import { isAnimeOnlyProviderId } from "@/domain/media/content-kind";
 import { RELAY_CAPABLE_PROVIDER_OPTIONS } from "@/domain/provider-relay-settings";
 import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
 import { DEFAULT_CONFIG } from "@kunai/config";
 
 import { PROBES as STATUS_SWEEP_PROBES } from "../../../../../packages/providers/scripts/provider-status-sweep.ts";
+import { relayRegistry } from "../../../../relay-server/src/provider-registry";
 
 describe("production provider defaults", () => {
   test("every configured lane default is a registered production module", async () => {
@@ -85,6 +87,27 @@ describe("production provider defaults", () => {
     );
   });
 
+  test("the deployed relay registers every relay-capable production module", async () => {
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    const capable = modules.filter((module) => module.manifest.relayProfile !== undefined);
+    expect(relayRegistry.providers.map((entry) => entry.providerId).sort()).toEqual(
+      capable.map((module) => module.providerId).sort(),
+    );
+    for (const module of capable) {
+      for (const host of module.manifest.relayProfile?.upstreamHosts ?? []) {
+        expect(relayRegistry.isHostAllowed(module.providerId, `https://${host}/`, "metadata")).toBe(
+          true,
+        );
+      }
+    }
+    expect(relayRegistry.get("youtube")).toBeUndefined();
+    expect(relayRegistry.isHostAllowed("hianime", "https://foreign.example/", "metadata")).toBe(
+      false,
+    );
+  });
+
   test("every declared capability has a runtime operation that implements it", async () => {
     const modules = await loadProductionProviderModules(
       createProviderPrioritySnapshot(DEFAULT_CONFIG),
@@ -141,5 +164,35 @@ describe("production provider defaults", () => {
         expect(keyParts).toContain("episode");
       }
     }
+  });
+});
+
+describe("anime-only provider ids", () => {
+  test("match every production module whose manifest serves only anime", async () => {
+    // History stamps a title "anime" from its provider when no AniList/MAL id
+    // resolved. A hand list that missed hianime/animegg/kickassanime/anidb
+    // mis-stamped those plays "series" — so pin it to the manifests.
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    const animeOnly = modules
+      .filter(
+        (module) =>
+          module.manifest.mediaKinds.length > 0 &&
+          module.manifest.mediaKinds.every((kind) => kind === "anime"),
+      )
+      .map((module) => module.providerId)
+      .sort();
+
+    expect(
+      animeOnly.filter((id) => !isAnimeOnlyProviderId(id)),
+      "anime-only manifest missing from ANIME_ONLY_PROVIDER_IDS",
+    ).toEqual([]);
+    expect(
+      modules
+        .map((module) => module.providerId)
+        .filter(isAnimeOnlyProviderId)
+        .sort(),
+    ).toEqual(animeOnly);
   });
 });

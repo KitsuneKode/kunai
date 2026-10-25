@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { UsageAnalyticsService } from "@/services/analytics/usage-analytics-service";
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import type { AnalyticsPingCompletion, KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
 import { analyticsDayKey } from "../../../analytics-ingest/src/analytics-day";
@@ -41,6 +41,16 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
       raw = { ...raw, ...partial };
     },
     async save() {},
+    async recordAnalyticsPing(completion: AnalyticsPingCompletion) {
+      if (raw.analytics !== "enabled" || raw.installId !== completion.installId) return false;
+      raw = {
+        ...raw,
+        analyticsRetryAfter: completion.analyticsRetryAfter,
+      };
+      if (completion.lastAnalyticsPingAt !== undefined)
+        raw = { ...raw, lastAnalyticsPingAt: completion.lastAnalyticsPingAt };
+      return true;
+    },
     get rawRef() {
       return raw;
     },
@@ -80,9 +90,25 @@ function wireCliToIngest(options: {
 }
 
 describe("CLI → ingest → docs wire contract", () => {
+  test("a fixed smoke UUID still counts as one new and lifetime install", async () => {
+    const store = createMemoryAnalyticsStore();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const config = makeConfig({
+        analytics: "enabled",
+        installId: "6b1a9f2c-58d4-4e77-9c31-0a5b7e2d84f0",
+      });
+      const { service } = wireCliToIngest({ store, config });
+      await service.maybePing({ isInteractive: true });
+    }
+    const rollup = await store.rollUpDay(analyticsDayKey(NOW));
+    expect(rollup.activeInstalls).toBe(1);
+    expect(rollup.newInstalls).toBe(1);
+    expect(rollup.lifetimeInstalls).toBe(1);
+  });
+
   test("a payload the CLI actually emits is accepted by the ingest", async () => {
     const store = createMemoryAnalyticsStore();
-    const config = makeConfig({ analytics: "enabled", installId: "" });
+    const config = makeConfig({ analytics: "enabled", installId: crypto.randomUUID() });
     const { service, results } = wireCliToIngest({ store, config });
 
     await service.maybePing({ isInteractive: true });
@@ -104,7 +130,7 @@ describe("CLI → ingest → docs wire contract", () => {
       { version: "0.2.5", os: "linux", arch: "x64" },
     ];
     for (const machine of fleet) {
-      const config = makeConfig({ analytics: "enabled", installId: "" });
+      const config = makeConfig({ analytics: "enabled", installId: crypto.randomUUID() });
       const { service } = wireCliToIngest({ store, ...machine, config });
       await service.maybePing({ isInteractive: true });
     }
@@ -118,7 +144,7 @@ describe("CLI → ingest → docs wire contract", () => {
 
   test("what a CLI ping produces survives a JSON round trip as valid v2", async () => {
     const store = createMemoryAnalyticsStore();
-    const config = makeConfig({ analytics: "enabled", installId: "" });
+    const config = makeConfig({ analytics: "enabled", installId: crypto.randomUUID() });
     const { service } = wireCliToIngest({ store, config });
     await service.maybePing({ isInteractive: true });
 
@@ -138,7 +164,7 @@ describe("CLI → ingest → docs wire contract", () => {
     // One machine on an unusual build is the identifiability case the floor
     // exists for. The docs site must never receive the raw bucket.
     const store = createMemoryAnalyticsStore();
-    const config = makeConfig({ analytics: "enabled", installId: "" });
+    const config = makeConfig({ analytics: "enabled", installId: crypto.randomUUID() });
     const { service } = wireCliToIngest({ store, config, os: "win32", arch: "arm64" });
     await service.maybePing({ isInteractive: true });
 

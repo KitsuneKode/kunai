@@ -12,19 +12,29 @@ function createContext(
     providerId: "vidlink",
     now: () => new Date().toISOString(),
     signal,
-    fetch: { runtime: "direct-http", fetch: fetchImpl },
-  } as unknown as ProviderRuntimeContext;
+    fetch: {
+      runtime: "direct-http",
+      fetch: (input, init) =>
+        fetchImpl(input instanceof Request ? input.url : String(input), init ?? {}),
+    },
+  };
 }
 
 function createInput(overrides: Partial<ProviderResolveInput> = {}): ProviderResolveInput {
   return {
     mediaKind: "movie",
-    title: { id: "tmdb:27205", title: "Inception", externalIds: { tmdbId: 27205 } },
+    intent: "play",
+    title: {
+      id: "tmdb:27205",
+      kind: overrides.mediaKind ?? "movie",
+      title: "Inception",
+      externalIds: { tmdbId: "27205" },
+    },
     allowedRuntimes: ["direct-http"],
     qualityPreference: "best",
     startupPriority: "balanced",
     ...overrides,
-  } as ProviderResolveInput;
+  };
 }
 
 const THREE_STREAMS = {
@@ -56,6 +66,43 @@ describe("direct stream resolve gate", () => {
     expect(result.streams?.[0]).toBeDefined();
     // The 720p sibling is alive, so the provider must not be condemned.
     expect(result.selectedStreamId).toBeTruthy();
+    // Refusal is per request: a healthy lower rung shares the CDN hostname.
+    expect(result.streams.map((stream) => stream.url)).toEqual([
+      "https://cdn.example/720.mp4",
+      "https://cdn.example/480.mp4",
+    ]);
+    expect(result.variants?.flatMap((variant) => variant.streamIds)).toEqual(
+      result.streams.map((stream) => stream.id),
+    );
+  });
+
+  test("a title without streams does not damage provider availability", async () => {
+    const result = await resolveDirectStreamSource({
+      providerId: "vidlink",
+      host: "vidlink.pro",
+      label: "VidLink",
+      input: createInput(),
+      context: createContext(async () => new Response("ok")),
+      fetchPayload: async () => null,
+    });
+    expect(result.status).toBe("exhausted");
+    expect(result.failures.at(-1)?.code).toBe("not-found");
+    expect(result.healthDelta).toBeUndefined();
+  });
+
+  test("a transport failure still damages provider availability", async () => {
+    const result = await resolveDirectStreamSource({
+      providerId: "vidlink",
+      host: "vidlink.pro",
+      label: "VidLink",
+      input: createInput(),
+      context: createContext(async () => new Response("ok")),
+      fetchPayload: async () => {
+        throw new Error("connection refused");
+      },
+    });
+    expect(result.failures.at(-1)?.code).toBe("network-error");
+    expect(result.healthDelta?.outcome).toBe("failure");
   });
 
   test("a rate-limited CDN blocks, because its streams do not play either", async () => {
@@ -200,7 +247,7 @@ describe("direct stream resolve gate", () => {
       input: createInput({
         mediaKind: "series",
         episode: { season: 0, episode: 1 },
-      } as Partial<ProviderResolveInput>),
+      }),
       context: createContext(async () => new Response("ok")),
       fetchPayload: async () => THREE_STREAMS,
     });
@@ -210,7 +257,7 @@ describe("direct stream resolve gate", () => {
       providerId: "vidlink",
       host: "vidlink.pro",
       label: "VidLink",
-      input: createInput({ mediaKind: "series" } as Partial<ProviderResolveInput>),
+      input: createInput({ mediaKind: "series" }),
       context: createContext(async () => new Response("ok")),
       fetchPayload: async () => THREE_STREAMS,
     });

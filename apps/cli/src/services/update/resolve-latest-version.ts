@@ -19,6 +19,9 @@ export async function resolveLatestVersion(
 ): Promise<string | null> {
   switch (channel) {
     case "binary":
+    case "homebrew":
+    case "scoop":
+    case "system-package":
       return fetchLatestVersion(fetchImpl, undefined, signal);
     case "npm-global":
     case "bun-global":

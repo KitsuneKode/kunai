@@ -12,10 +12,13 @@ import {
 import type { CalendarTypeTab } from "@/app-shell/calendar-ui.model";
 import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
+import { notePaletteCommand } from "@/app-shell/contextual-tips";
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import type { CalendarRouteRequest } from "@/app-shell/hooks/use-calendar-route";
 import { openBrowseShell } from "@/app-shell/ink-shell";
+import { pickPaletteTitle } from "@/app-shell/palette-title-launch";
 import { chooseFromListShell } from "@/app-shell/pickers";
+import { getRootContentSession, waitForRootContentSlot } from "@/app-shell/root-content-state";
 import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
 import {
   applyHistorySelectionProvider,
@@ -40,6 +43,7 @@ import { launchCalendarContinue } from "@/app/search/calendar-continue-launch";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calendar-results";
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
+import { prefetchBrowseEntrySelection } from "@/app/search/prefetch-browse-entry";
 import {
   buildSearchFailureNote,
   shouldRunBootstrapSearch,
@@ -50,6 +54,7 @@ import {
   shouldDeferBrowseIdleContext,
   type SearchStartupRoute,
 } from "@/app/search/search-startup-policy";
+import { loadLocalSuggestionCorpus, toCatalogSuggestions } from "@/app/search/search-suggestions";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import {
@@ -59,11 +64,11 @@ import {
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import { ensureSessionProviderMatchesLane } from "@/domain/session/session-display";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
+import { countLabel } from "@/domain/text-display";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
-import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
-import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
+import { registerMpvProcess, type MpvChildProcess } from "@/infra/player/mpv-process-registry";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import {
   resultEnrichmentKey,
@@ -75,11 +80,14 @@ import { buildSearchDiagnosticEvent } from "@/services/diagnostics/diagnostic-ev
 import { seedCaughtUpReleaseProgressFromCatalogCount } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { observeOnline } from "@/services/network/network-observation";
+import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
+import { addSearchQuery } from "@/services/persistence/search-history";
 import {
   enqueueReleaseReconciliation,
   collectReleaseReconciliationRows,
 } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { searchTitles, type SearchFilterEvidence } from "@/services/search/SearchRoutingService";
+import { suggestCatalogTitles } from "@/services/search/suggest-titles";
 import { describeMirrorTargets, resolveMirrorTargets } from "@/services/sync/mirror-targets";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
@@ -93,6 +101,33 @@ const SEEDED_CALENDAR_TYPE_TABS: Partial<Record<ShellAction, CalendarTypeTab>> =
   "series-calendar": "TV",
   "tracked-calendar": "Tracked",
 };
+
+/**
+ * The trailer window is detached mpv — no IPC socket, no session — so it lives
+ * in the process registry instead: quit-time teardown kills it like the main
+ * player, and a re-press replaces the running one rather than stacking
+ * windows on a key mash.
+ */
+let liveTrailerProcess: MpvChildProcess | null = null;
+
+function spawnTrailerMpv(argv: readonly string[], target: string): boolean {
+  if (liveTrailerProcess && liveTrailerProcess.exitCode === null) {
+    try {
+      liveTrailerProcess.kill("SIGTERM");
+    } catch {
+      // Already gone between the liveness check and the kill.
+    }
+  }
+  const proc = Bun.spawn([...argv, "--", target], {
+    stdout: "ignore",
+    stderr: "ignore",
+    stdin: "ignore",
+  });
+  liveTrailerProcess = proc;
+  const unregister = registerMpvProcess(proc);
+  void proc.exited.then(unregister, unregister);
+  return true;
+}
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -148,6 +183,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
   private hasHealedHistoryMetadata = false;
   /** Titles already warmed this session, so a search never re-fetches one. */
   private readonly warmedAnimeEpisodeCaches = new Set<string>();
+  /** Result ids whose Enter-path prefetch already ran this session. */
+  private readonly dwellPrefetchedResultIds = new Set<string>();
 
   /**
    * Warm the top anime result's episode catalog in the background so the
@@ -428,6 +465,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           initialSearchError = undefined;
           const results = search.results;
           this.warmAnimeEpisodesForResults(context, results);
+          // Bootstrap searches (-S, initial query, auto-search) never pass the
+          // browse submit that records history — record here. Dedupe in
+          // addSearchQuery makes a later interactive repeat idempotent.
+          addSearchQuery(searchIntent.intent.query);
           pendingSearchEvidence = search.evidence;
           pendingSearchWarnings = searchIntent.warnings;
           pendingSearchEmptyMessage =
@@ -575,12 +616,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         // into the shell, so run them through the same local-filter pipeline that
         // interactive Enter uses — otherwise `-S "mob downloaded:true"` would show
         // an unfiltered list while Enter honestly narrows it.
+        const consumedSearchEvidence = pendingSearchEvidence;
         const initialBrowse = buildBrowseInitialResults({
           options: browseState.searchResults.map((r) =>
             mapBrowseResultOption(container, browseContext, r),
           ),
           query: browseState.searchQuery,
-          evidence: pendingSearchEvidence,
+          evidence: consumedSearchEvidence,
         });
         const initialWarnings = pendingSearchWarnings;
         const initialEmptyMessage = pendingSearchEmptyMessage;
@@ -588,10 +630,27 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         pendingSearchWarnings = [];
         pendingSearchEmptyMessage = undefined;
 
+        // A picker mounted by a detached overlay workflow (e.g. /providers run
+        // from Up Next) owns the content slot until the user dismisses it.
+        // Mounting browse now would evict and cancel it; wait for the slot
+        // instead. The wait resolves inside the foreign session's settle, so
+        // another workflow's mount can land before this continuation — the
+        // recheck loops until the slot is free at mount time, keeping the
+        // check and the mount in one synchronous turn.
+        for (;;) {
+          const holding = getRootContentSession();
+          if (holding === null || holding.kind === "browse") break;
+          await waitForRootContentSlot(context.signal);
+          if (context.signal.aborted) {
+            return { status: "cancelled" };
+          }
+        }
+
         const outcomePromise = this.dependencies.openBrowseShell({
           mode: syncedState.mode,
           provider: syncedState.provider,
           settings: container.config.getRaw(),
+          onPaletteCommand: (commandId) => notePaletteCommand(container, "browse", commandId),
           initialCalendarTypeTab,
           initialCalendarRoute: openedCalendarRoute,
           initialErrorMessage: initialSearchError,
@@ -653,7 +712,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               ? browseState.searchQuery.trim().length === 0
                 ? (routeSubtitle ??
                   `${browseState.searchResults.length} recommendation picks · loaded`)
-                : `${initialBrowse.options.length} results · previous search${initialBrowse.subtitleSuffix}`
+                : `${countLabel(initialBrowse.options.length, "result")} · previous search${initialBrowse.subtitleSuffix}`
               : undefined,
           initialWarnings,
           initialSelectedIndex: browseState.selectedResultIndex,
@@ -667,8 +726,60 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           commands: resolveCommands(syncedState, SEARCH_BROWSE_COMMAND_IDS, {
             excludeGroups: ["Experimental"],
           }),
+          localTitles: () => collectLocalTitleEntries(container),
+          onTitlePick: (entry) => pickPaletteTitle(container, entry),
           idleContext: latestIdleContext,
           loadIdleContext,
+          // Type-ahead band sources. Remote is ONE fast registry call — never
+          // the provider-lane `searchTitles` walk — and local is a synchronous
+          // snapshot of the user's own titles. Both die quietly: the band is an
+          // enhancement surface, not an error surface.
+          onSuggest: async (query, signal) => {
+            // Catalog suggestions are a network hop (TMDB/AniList through the
+            // registry). Offline sessions keep local rows only — the same gate
+            // dwell prefetch uses.
+            if (!container.connectivity.isOnline()) return [];
+            const liveState = stateManager.getState();
+            const suggestIntent = createSearchIntentEngine().fromText(query, {
+              currentMode: liveState.mode,
+            });
+            const outcome = await suggestCatalogTitles({
+              query: suggestIntent.intent.query,
+              mode: liveState.mode,
+              providerId: liveState.provider,
+              providerCatalogIdentity: providerRegistry.get(liveState.provider)?.metadata
+                .catalogIdentity,
+              searchRegistry,
+              signal,
+            });
+            return toCatalogSuggestions(
+              outcome?.results ?? [],
+              container.config.animeTitlePreference,
+            );
+          },
+          loadLocalSuggestions: () => loadLocalSuggestionCorpus(container),
+          // Dwell prefetch (~500ms on a rested row): warms exactly what the
+          // select path below pays — provider mapping, identity enrich, title
+          // detail, and the episode catalog — so Enter resolves from cache.
+          // Dedupe per result: re-resting on a row the session already warmed
+          // must not re-pay the Cloudflare-gated anime fetch.
+          onPrefetchOption: (result, signal) => {
+            if (this.dwellPrefetchedResultIds.has(result.id)) return;
+            this.dwellPrefetchedResultIds.add(result.id);
+            void prefetchBrowseEntrySelection({
+              container,
+              result,
+              fallbackMode: stateManager.getState().mode,
+              providerId: stateManager.getState().provider,
+              signal,
+              warmedAnimeEpisodeCaches: this.warmedAnimeEpisodeCaches,
+            });
+          },
+          // `z` on the browse surface pops the session journal — the router
+          // callbacks below are what journaled those entries in the first place.
+          onUndo: () => {
+            container.sessionUndo?.undoLatest();
+          },
           onQueueSelected: async (result) => {
             const router = createContainerMediaActionRouter(container);
             await router.run({
@@ -742,15 +853,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   // Same scheme gate as every other mpv playback path; a
                   // non-URL target falls back to the browser opener below.
                   if (!isAllowedMpvUrl(target, "remote")) return false;
-                  const proc = Bun.spawn([...mpvInvocation.argv, target], {
-                    stdout: "ignore",
-                    stderr: "ignore",
-                    stdin: "ignore",
-                    env: scrubbedChildEnv(),
-                  });
-                  const unregister = registerMpvProcess(proc);
-                  void proc.exited.then(unregister, unregister);
-                  return true;
+                  return spawnTrailerMpv(mpvInvocation.argv, target);
                 },
                 openInBrowser: async (target) => {
                   const opened = await openExternalUrl(target);
@@ -806,6 +909,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             initialSearchError = undefined;
             const results = search.results;
             this.warmAnimeEpisodesForResults(context, results);
+            // Follow-up programmatic searches resolve here rather than in the
+            // browse submit — record so history reflects every completed query.
+            addSearchQuery(query);
 
             logger.info("Search complete", {
               query,
@@ -841,7 +947,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
               options: results.map((r) => mapBrowseResultOption(container, freshBrowseContext, r)),
-              subtitle: `${results.length} results · ${search.sourceName}`,
+              subtitle: `${countLabel(results.length, "result")} · ${search.sourceName}`,
               upstreamFilterBadges: search.evidence.upstream,
               localFilterBadges: search.evidence.local,
               unsupportedFilterBadges: search.evidence.unsupported,
@@ -966,6 +1072,32 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         if (outcome.type === "cancelled") {
+          // A foreign session that displaced this browse resolves it with the
+          // displaced marker, not the plain cancelled fallback — the eviction
+          // reason rides the outcome, so awaits between settle and here cannot
+          // launder it into a real Esc. Park until the slot frees, then
+          // remount rather than reporting a cancel the user never made.
+          if (outcome.displaced) {
+            // The evicted mount consumed the one-shot inputs. A calendar route
+            // that never reached onCalendarAccepted committed nothing — hand
+            // the request back so the remount still opens it; the pending
+            // search evidence belongs to this mount and goes back with it.
+            if (
+              openedCalendarRoute !== undefined &&
+              acceptedCalendarRequestKey !== openedCalendarRoute.requestKey
+            ) {
+              pendingCalendarRoute = openedCalendarRoute;
+              pendingCalendarType = initialCalendarTypeTab;
+            }
+            pendingSearchEvidence = consumedSearchEvidence;
+            pendingSearchWarnings = initialWarnings;
+            pendingSearchEmptyMessage = initialEmptyMessage;
+            await waitForRootContentSlot(context.signal);
+            if (context.signal.aborted) {
+              return { status: "cancelled" };
+            }
+            continue;
+          }
           return { status: "cancelled" };
         }
 
@@ -1048,12 +1180,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 selectionMode,
                 context.signal,
               );
+              const menuTitle = { ...title, forceStartingMenu: true };
               stateManager.dispatch({
                 type: "SELECT_TITLE",
-                title,
+                title: menuTitle,
                 videoMeta: videoMetaFromSearchResult(selected),
               });
-              return { status: "success", value: title };
+              return { status: "success", value: menuTitle };
             }
 
             // Idle continue / queue: prime the title without locking an episode so
@@ -1066,7 +1199,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   titleFromHistorySelection(continueWatchingSelection),
                   continueWatchingSelection.entry,
                 );
-                stateManager.dispatch({ type: "SELECT_TITLE", title });
+                stateManager.dispatch({
+                  type: "SELECT_TITLE",
+                  title: { ...title, forceStartingMenu: true },
+                });
               } else {
                 const queueNext = container.queueService.peekNext();
                 if (queueNext && latestIdleContext?.playlistNext?.titleId === queueNext.titleId) {
@@ -1077,7 +1213,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   if (launch) {
                     stateManager.dispatch({
                       type: "SELECT_TITLE",
-                      title: titleInfoFromQueuePlaybackLaunch(launch),
+                      title: {
+                        ...titleInfoFromQueuePlaybackLaunch(launch),
+                        forceStartingMenu: true,
+                      },
                     });
                   } else {
                     logger.info("Idle playlist-next claim failed; priming without queue intent", {
@@ -1085,14 +1224,20 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                     });
                     const { queuePlaybackIntent: _unclaimed, ...title } =
                       titleInfoFromQueueEntry(queueNext);
-                    stateManager.dispatch({ type: "SELECT_TITLE", title });
+                    stateManager.dispatch({
+                      type: "SELECT_TITLE",
+                      title: { ...title, forceStartingMenu: true },
+                    });
                   }
                 }
               }
             } else {
               const existing = stateManager.getState().currentTitle;
               if (existing) {
-                stateManager.dispatch({ type: "SELECT_TITLE", title: existing });
+                stateManager.dispatch({
+                  type: "SELECT_TITLE",
+                  title: { ...existing, forceStartingMenu: true },
+                });
               }
             }
 

@@ -21,12 +21,14 @@ export function createMobileEnvironment(): MobileEnvironment {
   const root = resolveAndroidStateRoot(process.env);
   const state = createNodeStateStore({ root });
   const terminal = createNodeTerminalPort();
+  const cancellation = new AbortController();
   let release: (() => void) | undefined;
   return {
+    signal: cancellation.signal,
     http: createNodeHttpPort(),
     state: {
       async load() {
-        release ??= acquireNodeSession(root);
+        release ??= acquireNodeSession(root, () => cancellation.abort());
         return state.load();
       },
       async commit(next) {

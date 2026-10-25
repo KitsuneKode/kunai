@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { __testing, resolveCurlCandidate } from "../src/shared/curl-impersonate";
+import { __testing, curlArgvHead, resolveCurlCandidate } from "../src/shared/curl-impersonate";
 
 /** A PATH dir with nothing but a fake curl_ff wrapper. */
 function makeWrapperDir(version: string): string {
@@ -236,5 +236,73 @@ describe("resolveCurlCandidate Windows wrapper handling", () => {
       which: (command: string) => (command === "curl_ff99.bat" ? "/opt/cf/curl_ff99.bat" : null),
     });
     expect(candidate).toBeNull();
+  });
+});
+
+describe("resolveCurlCandidate Kunai-managed helpers", () => {
+  const managedDir = "C:\\Users\\u\\AppData\\Local\\kunai\\deps\\curl-impersonate\\bin";
+  const managedBackend = `${managedDir}\\curl-impersonate.exe`;
+  const forwarder = '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome150" %*';
+
+  test("on Windows, the installer-provisioned build is found when its dir is not on PATH", () => {
+    // install.ps1 registers the dir on the user PATH, but a terminal opened
+    // before the install (and every npm/bun install) never sees that PATH.
+    const candidate = resolveCurlCandidate({
+      platform: "win32",
+      listPathEntries: () => [],
+      which: (command) => (command === "curl" ? "C:\\Windows\\System32\\curl.exe" : null),
+      managedWrapperDirs: () => [{ dir: managedDir, entries: ["curl_chrome150.bat"] }],
+      fileExists: (path) => path === managedBackend,
+      readTextFile: () => forwarder,
+    });
+
+    expect(candidate).toEqual({
+      path: managedBackend,
+      prefixArgs: ["--compressed", "--impersonate", "chrome150"],
+      impersonates: true,
+      profile: "chrome150",
+    });
+  });
+
+  test("a PATH build still wins over the managed one", () => {
+    const pathBinary = "C:\\tools\\curl_chrome160.exe";
+    const candidate = resolveCurlCandidate({
+      platform: "win32",
+      listPathEntries: () => ["curl_chrome160.exe"],
+      which: (command) => (command === "curl_chrome160.exe" ? pathBinary : null),
+      managedWrapperDirs: () => [{ dir: managedDir, entries: ["curl_chrome150.bat"] }],
+      fileExists: (path) => path === managedBackend,
+      readTextFile: () => forwarder,
+    });
+
+    expect(candidate?.path).toBe(pathBinary);
+  });
+
+  test("off Windows the managed location is never consulted", () => {
+    let consulted = false;
+    resolveCurlCandidate({
+      platform: "linux",
+      listPathEntries: () => [],
+      which: () => null,
+      managedWrapperDirs: () => {
+        consulted = true;
+        return [];
+      },
+    });
+    expect(consulted).toBe(false);
+  });
+});
+
+describe("curlArgvHead", () => {
+  test("puts -q first, ahead of an impersonate build's own prefix args", () => {
+    // curl only honours -q (skip ~/.curlrc) as the very first argument.
+    expect(
+      curlArgvHead({
+        path: "C:\\k\\curl-impersonate.exe",
+        prefixArgs: ["--compressed", "--impersonate", "chrome150"],
+        impersonates: true,
+        profile: "chrome150",
+      }),
+    ).toEqual(["C:\\k\\curl-impersonate.exe", "-q", "--compressed", "--impersonate", "chrome150"]);
   });
 });

@@ -1,0 +1,139 @@
+/* ── Flow timeline ──────────────────────────────────────────────────────────
+   Three steps on a rail, with Kanna walking along it as the section scrolls.
+
+   The rail and the fox are decoration (`aria-hidden`); the three list items
+   below are the content. At phone width the rail is dropped and the list
+   becomes a vertical timeline, because three columns of prose do not fit a
+   phone and a fox walking down a column would be a different animation.
+
+   Geometry, from the bottom of the track: a number label, a gap, then a dot
+   that the rail passes through. The fox's feet sit on that rail. */
+
+.kunai-timeline {
+  --timeline-label: 1rem;
+  --timeline-gap: 0.45rem;
+  --timeline-dot: 0.6rem;
+  --timeline-rail: calc(var(--timeline-label) + var(--timeline-gap) + var(--timeline-dot) / 2);
+  position: relative;
+  margin-top: clamp(1.75rem, 4vw, 2.75rem);
+}
+
+.kunai-timeline__track {
+  position: relative;
+  display: none;
+  /* Room for the fox (72px) above the rail, plus the labels below it. */
+  height: calc(var(--timeline-rail) + 4.7rem);
+}
+
+@media (min-width: 640px) {
+  .kunai-timeline__track {
+    display: block;
+  }
+}
+
+.kunai-timeline__rail {
+  position: absolute;
+  right: calc(100% / 6);
+  bottom: var(--timeline-rail);
+  left: calc(100% / 6);
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--kunai-accent) 45%, var(--kunai-line)) 0 6px,
+    transparent 6px 12px
+  );
+}
+
+.kunai-timeline__node {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--timeline-gap);
+  transform: translateX(-50%);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--kunai-text-caption);
+  line-height: var(--timeline-label);
+  color: var(--color-fd-muted-foreground);
+}
+
+.kunai-timeline__node::before {
+  content: "";
+  width: var(--timeline-dot);
+  height: var(--timeline-dot);
+  border-radius: 9999px;
+  background: var(--kunai-accent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--kunai-accent) 16%, transparent);
+}
+
+.kunai-timeline__fox {
+  position: absolute;
+  /* Her feet are drawn about 6% up from the bottom of the box; sinking the box
+     by that much puts them on the rail rather than hovering above it. */
+  bottom: calc(var(--timeline-rail) - 0.28rem);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.kunai-timeline__steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kunai-timeline__step {
+  position: relative;
+  padding-left: 2.5rem;
+  border-left: 1px dashed color-mix(in oklab, var(--kunai-accent) 40%, var(--kunai-line));
+  margin-left: 0.7rem;
+}
+
+/* On a phone the index is the node: a numbered dot sitting on the rail. */
+.kunai-timeline__index {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  width: 1.4rem;
+  height: 1.4rem;
+  place-items: center;
+  border: 1px solid var(--kunai-line);
+  border-radius: 9999px;
+  background: var(--kunai-surface);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--kunai-text-caption);
+  color: var(--kunai-accent);
+  transform: translateX(-50%);
+}
+
+.kunai-timeline__step p {
+  color: var(--color-fd-muted-foreground);
+  text-wrap: pretty;
+}
+
+@media (min-width: 640px) {
+  .kunai-timeline__steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(1rem, 3vw, 2.5rem);
+  }
+
+  .kunai-timeline__step {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+    text-align: center;
+  }
+
+  .kunai-timeline__step p {
+    margin-inline: auto;
+    max-width: 24rem;
+  }
+
+  .kunai-timeline__index {
+    display: none;
+  }
+}

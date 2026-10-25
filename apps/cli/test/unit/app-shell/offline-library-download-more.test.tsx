@@ -296,3 +296,37 @@ test("anime movie download-more restores its persisted lane before actual enqueu
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("library detail reserves four rows for the command input and leaves its keys alone", () => {
+  const entries = Array.from({ length: 30 }, (_, index): OfflineLibraryEntry => ({
+    ...ENTRY,
+    job: { ...ENTRY.job, id: `episode-${index}`, contentType: "series", episode: index + 1 },
+  }));
+  const group = createOfflineLibraryEngine().buildShelf(entries).groups[0]!;
+  let backCount = 0;
+  const props = {
+    container: createContainer(),
+    group,
+    entries,
+    onBack: () => {
+      backCount++;
+    },
+    onEntriesChanged: () => {},
+  };
+  const ordinary = render(<LibraryTitleDetail {...props} />, { columns: 80, rows: 44 });
+  const ordinaryRows = stripAnsi(ordinary.lastFrame() ?? "")
+    .split("\n")
+    .filter((line) => / E\d+ +offline/.test(line)).length;
+  ordinary.unmount();
+  const palette = render(<LibraryTitleDetail {...props} commandMode />, { columns: 80, rows: 44 });
+  try {
+    const paletteRows = stripAnsi(palette.lastFrame() ?? "")
+      .split("\n")
+      .filter((line) => / E\d+ +offline/.test(line)).length;
+    expect(ordinaryRows - paletteRows).toBe(4);
+    palette.stdin.enqueue("\u001b");
+    expect(backCount).toBe(0);
+  } finally {
+    palette.unmount();
+  }
+});

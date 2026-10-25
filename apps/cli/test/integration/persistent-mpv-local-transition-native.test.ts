@@ -7,6 +7,7 @@ import { bundledKunaiMpvBridgePath } from "@/infra/player/kunai-mpv-bridge";
 import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
 import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
+import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigService";
 
 const MPV_BIN = Bun.which("mpv");
@@ -89,6 +90,7 @@ mpvTest("real mpv reuses one process across two local loadfile transitions", asy
 
   const children: Array<ReturnType<typeof Bun.spawn>> = [];
   let ipc: MpvIpcSession | undefined;
+  const pausedReady = Promise.withResolvers<void>();
   const runtime: PersistentMpvSessionRuntime = {
     which: () => MPV_BIN,
     spawn(command, options) {
@@ -114,13 +116,19 @@ mpvTest("real mpv reuses one process across two local loadfile transitions", asy
     },
     openIpcSession: async (options) => {
       const { openMpvIpcSession } = await import("@/infra/player/mpv-ipc");
-      ipc = await openMpvIpcSession(options);
+      ipc = await openMpvIpcSession({
+        ...options,
+        onPropertyUpdate(update) {
+          options.onPropertyUpdate(update);
+          if (update.name === "pause" && update.value === true) pausedReady.resolve();
+        },
+      });
       return ipc;
     },
   };
 
   const firstEvents: string[] = [];
-  const secondEvents: string[] = [];
+  const secondEvents: PlayerPlaybackEvent[] = [];
   let session: PersistentMpvSession | null = null;
   try {
     session = await PersistentMpvSession.create({
@@ -143,7 +151,12 @@ mpvTest("real mpv reuses one process across two local loadfile transitions", asy
     });
 
     const initialPlayback = session.waitForCurrentPlayback();
-    expect((await ipc!.send(["set_property", "pause", false])).ok).toBe(true);
+    // A connected pipe does not prove that cold-start mpv has processed its
+    // subscriptions. Wait for its actual paused state before issuing unpause;
+    // keep the ordinary IPC command deadline and native boundary timeout.
+    await withTimeout(pausedReady.promise, "initial paused state");
+    const unpause = await ipc!.send(["set_property", "pause", false]);
+    expect(unpause).toMatchObject({ ok: true });
     const first = await withTimeout(initialPlayback, "first local playback");
     expect(first.endReason).toBe("eof");
 
@@ -154,16 +167,20 @@ mpvTest("real mpv reuses one process across two local loadfile transitions", asy
           displayTitle: "Native transition 2",
           urlKind: "local",
           primarySubtitle: null,
-          onPlaybackEvent: (event) => secondEvents.push(event.type),
+          onPlaybackEvent: (event) => secondEvents.push(event),
         },
       ),
       "second local playback",
     );
-    expect(second.endReason).toBe("eof");
+    // Keep the IPC failure and playback samples in a native assertion failure:
+    // "error instead of eof" alone cannot distinguish transport from load failure.
+    expect({ result: second, events: secondEvents }).toMatchObject({
+      result: { endReason: "eof" },
+    });
 
     expect(children).toHaveLength(1);
     expect(firstEvents).toContain("playback-started");
-    expect(secondEvents).toContain("playback-started");
+    expect(secondEvents.map((event) => event.type)).toContain("playback-started");
   } finally {
     await session?.close();
     await Promise.all(children.map(async (child) => await child.exited.catch(() => -1)));
@@ -253,7 +270,8 @@ for (const [startsExceptional, baseline] of [
           runtime,
         });
         const initialPlayback = session.waitForCurrentPlayback();
-        expect((await ipc!.send(["set_property", "pause", false])).ok).toBe(true);
+        const unpause = await ipc!.send(["set_property", "pause", false]);
+        expect(unpause).toMatchObject({ ok: true });
         expect((await withTimeout(initialPlayback, "TLS initial playback")).endReason).toBe("eof");
         for (const url of urls.slice(1))
           expect(

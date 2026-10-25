@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { existsSync } from "node:fs";
 // =============================================================================
 // Kunai - Canonical Runtime Entry Point
 //
@@ -22,8 +23,6 @@
 // (The old `apps/cli/index.ts` compatibility shim was removed in c1d48ffb.)
 // =============================================================================
 
-import { existsSync } from "node:fs";
-
 import { applyShareRefLaunch } from "@/app/bootstrap/apply-resolved-share-target";
 import {
   formatBootstrapPlan,
@@ -43,7 +42,11 @@ import {
 } from "@/app/bootstrap/launch-entry";
 import { launchShellWithPostPaintStartupWork } from "@/app/bootstrap/post-paint-startup-work";
 import { mapAnimeTitleToProviderNative } from "@/app/bootstrap/resolve-share-target";
-import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
+import {
+  isBelowOnboardedFloor,
+  maybeRunStartupSetup,
+  shouldRunSetupWizard,
+} from "@/app/bootstrap/startup-setup";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import { SessionController } from "@/app/session/SessionController";
 import {
@@ -54,6 +57,7 @@ import {
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
 import { buildCliHelpText, CliUsageError, parseCliArgs, type CliArgs } from "@/cli-args";
 import { createContainer, disposeContainer } from "@/container";
+import { detectPlayerPlatform, resolvePlayerMode } from "@/domain/playback/player-choice";
 import {
   parseKunaiShareUrl,
   type KunaiShareAction,
@@ -72,6 +76,7 @@ import {
   selectDownloadCleanupCandidates,
 } from "@/services/download/download-cleanup-policy";
 import { updateSignalFromCheck } from "@/services/notifications/notification-update-signal";
+import { flushSearchHistory } from "@/services/persistence/search-history";
 import { checkDeps } from "@/ui";
 import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage";
 
@@ -164,6 +169,7 @@ export function createMainShutdownRuntime(deps: MainShutdownDeps): ShutdownRunti
       await Promise.allSettled([
         Promise.resolve().then(() => container.activePlaybackCheckpoint.flush()),
         container.config.flushPending(),
+        flushSearchHistory(),
         container.downloadService.pauseActiveJobsForShutdown("download paused by shutdown", {
           gracefulWaitMs: shutdownWaitBudgetMs,
           forceWaitMs: shutdownWaitBudgetMs,
@@ -270,7 +276,11 @@ async function maybeResolveContinueTitle(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<StartupHistoryTarget | null> {
   if (!args.continuePlayback) return null;
-  const recentEntries = container.historyRepository.listRecent(500);
+  // Only the head of the recency scan feeds startup: the continuation anchor
+  // is the newest row's title (always row 0), and the batch reads below are
+  // keyed by title. 100 rows keeps every plausible anchor plus prefetch
+  // margin at a fifth of the old scan.
+  const recentEntries = container.historyRepository.listRecent(100);
   const titleIds = [...new Set(recentEntries.map((entry) => entry.titleId))];
   const releaseProgress = container.releaseProgressCache.getByTitleIds(titleIds);
   const offlinePolicies = new Map(
@@ -280,7 +290,9 @@ async function maybeResolveContinueTitle(
   );
   const nextReadyByTitle = readNextReadyOfflineEpisodes(recentEntries, container);
   const decision = container.continueWatchingService.startupCandidate({
-    scanLimit: 500,
+    // Limit-1 decision: the anchor is the newest row's title bucket, which a
+    // recency-ordered scan always yields first — 50 rows is margin, not need.
+    scanLimit: 50,
     signalsByTitle: (titleId) =>
       buildStartupContinuationSignals({
         releaseProgress: releaseProgress.get(titleId),
@@ -332,8 +344,16 @@ function readNextReadyOfflineEpisodes(
   entries: readonly HistoryProgress[],
   container: Awaited<ReturnType<typeof createContainer>>,
 ): ReadonlyMap<string, { season: number; episode: number; jobId?: string }> {
+  // Entries arrive newest-first, so the first cursor per title is the latest
+  // position — later duplicates only repeat the same asset lookup.
+  const seenTitles = new Set<string>();
   const cursors = entries
     .filter((entry) => entry.mediaKind !== "movie")
+    .filter((entry) => {
+      if (seenTitles.has(entry.titleId)) return false;
+      seenTitles.add(entry.titleId);
+      return true;
+    })
     .map((entry) => ({
       titleId: entry.titleId,
       season: entry.season ?? 1,
@@ -420,6 +440,8 @@ async function maybeRunDownloadMode(
     anime: boolean;
     quick: boolean;
     jump?: number;
+    episode?: number;
+    season?: number;
     downloadPath?: string;
   },
   container: Awaited<ReturnType<typeof createContainer>>,
@@ -445,6 +467,15 @@ async function maybeRunDownloadMode(
   if (searchResult.status !== "success") {
     console.log("Download cancelled before a title was selected.");
     return true;
+  }
+
+  // `-e/--episode` means "download this episode" — arm the same one-shot
+  // request the playback path reads so DownloadOnlyPhase skips the checklist.
+  if (args.episode !== undefined) {
+    container.stateManager.dispatch({
+      type: "SET_EPISODE_REQUEST",
+      episode: { season: args.season ?? 1, episode: args.episode },
+    });
   }
 
   // Download mode never reaches PlaybackPhase, so nothing here would otherwise
@@ -514,7 +545,7 @@ function searchResultFromTitle(title: TitleInfo): SearchResult {
 async function maybeRunAutoCleanupDownloads(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<void> {
-  const { config, downloadService, diagnosticsService, historyRepository, logger } = container;
+  const { config, downloadService, diagnosticsService, logger } = container;
   if (!config.autoCleanupWatched) return;
 
   const graceDays = Math.max(0, config.autoCleanupGraceDays);
@@ -522,9 +553,11 @@ async function maybeRunAutoCleanupDownloads(
   const jobs = downloadService.listCompleted(500);
   const titleIds = new Set(jobs.map((job) => job.titleId));
   const historyByTitle = new Map<string, import("@kunai/storage").HistoryProgress[]>();
+  // Targeted read: only completed-download titles need history, so push the
+  // predicate into SQLite instead of scanning 1000 recency rows in memory.
   const recentHistory = (() => {
     try {
-      return historyRepository.listRecent(1_000);
+      return container.historyRepository.listByTitleIds([...titleIds]);
     } catch {
       return [];
     }
@@ -646,9 +679,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     );
   }
 
-  // Best-effort: clear any stale `*.old` left by a prior Windows self-replace.
+  // Best-effort: clear the running Kunai binary's own Windows self-replace backup.
   void import("./services/update/self-replace").then(({ cleanupOldBinary }) =>
-    cleanupOldBinary(process.execPath).catch(() => {}),
+    cleanupOldBinary(process.execPath, import.meta.path).catch(() => {}),
   );
 
   // Parse CLI arguments before acquiring the versioned lifetime lock so short
@@ -830,13 +863,24 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       downloadOnboardingDismissed: configJson.downloadOnboardingDismissed ?? false,
     },
   });
+  // A never-onboarded install lands on the discover tray instead of an empty
+  // search box — the first screen should be something to watch, not a form.
+  // Captured before the wizard runs so a completed setup still gets the
+  // content-first landing on its first launch. Explicit routes (-S, -i,
+  // --history, --offline, --discover, share links) always win.
+  const freshInstall = isBelowOnboardedFloor(configJson.onboardingVersion ?? 0);
   // Must precede checkDeps: that snapshot records the chosen image protocol, and
   // it is what diagnostics and `/report-issue` carry into a bug report. Probing
   // afterwards would have every report claim the pre-probe fallback.
   await graphicsProbeReady;
 
+  const startupPlayerMode = resolvePlayerMode({
+    choice: args.player,
+    platform: detectPlayerPlatform(),
+  });
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
+    requireMpv: startupPlayerMode.kind === "managed-mpv",
     requireYtDlp: !args.offline && (args.youtube || configJson.defaultMode === "youtube"),
   });
 
@@ -853,6 +897,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     debugJson: args.debugJson,
     debugSession: args.debugSession,
     mpv: args.mpv,
+    playerChoice: args.player,
     shellChrome: args.shellChrome,
     capabilitySnapshot,
     appVersion: KUNAI_VERSION,
@@ -1176,7 +1221,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   // Missing mpv no longer aborts startup — setup and non-playback surfaces stay
   // usable. PlaybackPhase gates dynamically before provider/history work.
-  if (!capabilitySnapshot.mpv) {
+  if (startupPlayerMode.kind === "managed-mpv" && !capabilitySnapshot.mpv) {
     container.diagnosticsService.record({
       category: "session",
       operation: "startup.capability.mpv-missing",
@@ -1296,7 +1341,17 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       initialQuery: bootstrapQuery,
       initialTitle: bootstrapTitle,
       initialEpisode: bootstrapEpisode,
-      initialRoute: args.initialRoute,
+      // `-e/--episode` is a raw request, not resolved metadata: the session loop
+      // shapes it into an EpisodeInfo once the picked title's lane is known.
+      requestedEpisode:
+        args.episode !== undefined
+          ? { season: args.season ?? 1, episode: args.episode }
+          : undefined,
+      initialRoute:
+        args.initialRoute ??
+        (freshInstall && !bootstrapTitle && !bootstrapQuery && !args.offline
+          ? "recommendation"
+          : undefined),
       autoPickSearchResultIndex: autoPick,
     });
 

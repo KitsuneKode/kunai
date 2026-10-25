@@ -164,6 +164,9 @@ export function getBrowseCommandPaletteMaxVisible(
   return Math.max(1, Math.min(18, availableRows));
 }
 
+/** Columns reserved on each side of the app root. */
+export const ROOT_HORIZONTAL_PADDING = 1;
+
 /** Rows consumed by AppRoot header and padding above shell content. */
 export const ROOT_CHROME_ROWS = 4;
 
@@ -237,6 +240,7 @@ export function resolveOverlayPanelKind(overlayType: string): OverlayPanelKind {
   }
   if (
     overlayType === "help" ||
+    overlayType === "guide" ||
     overlayType === "about" ||
     overlayType === "diagnostics" ||
     overlayType === "details"
@@ -313,6 +317,8 @@ export function getBrowseChromeRows(flags: {
   readonly hasContextStrip: boolean;
   readonly hasQueryDirtyHint: boolean;
   readonly commandMode: boolean;
+  /** Rendered rows of the type-ahead suggestion band (headers + items + skeletons). */
+  readonly suggestionBandRows?: number;
 }): number {
   let rows = BROWSE_BASE_CHROME_ROWS;
   if (flags.hasResultSubtitle) rows += 1;
@@ -322,6 +328,7 @@ export function getBrowseChromeRows(flags: {
   if (flags.hasContextStrip) rows += 1;
   if (flags.hasQueryDirtyHint) rows += 1;
   if (flags.commandMode) rows += 4;
+  rows += flags.suggestionBandRows ?? 0;
   return rows;
 }
 

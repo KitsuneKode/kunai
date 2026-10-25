@@ -79,6 +79,40 @@ describe("vault-backed SyncTokenFileIo", () => {
     await store.clear();
     expect(vault.store.size).toBe(0);
   });
+
+  test.each(["anilist", "tmdb"] as const)(
+    "patching %s preserves malformed bytes in the other tracker",
+    async (tracker) => {
+      const vault = fakeVault();
+      const otherKey =
+        tracker === "anilist" ? CREDENTIAL_KEYS.tmdbTokens : CREDENTIAL_KEYS.anilistTokens;
+      vault.store.set(otherKey, "{malformed-credential-fixture");
+      const store = new SyncTokenStore(fakePaths(dir), vaultSyncTokenFileIo(vault));
+      if (tracker === "anilist") await store.patchAniList({ accessToken: "fixture", userId: 1 });
+      else await store.patchTmdb({ sessionId: "fixture" });
+      expect(vault.store.get(otherKey)).toBe("{malformed-credential-fixture");
+      if (tracker === "anilist") await store.patchAniList(undefined);
+      else await store.patchTmdb(undefined);
+      expect(vault.store.get(otherKey)).toBe("{malformed-credential-fixture");
+      await store.clear();
+      expect(vault.store.size).toBe(0);
+    },
+  );
+
+  test("tracker patches do not read or rewrite an unrelated vault slot", async () => {
+    const vault = fakeVault({
+      get: async () => {
+        throw new Error("unavailable read");
+      },
+    });
+    vault.store.set(CREDENTIAL_KEYS.tmdbTokens, "unchanged-fixture-bytes");
+    const store = new SyncTokenStore(fakePaths(dir), vaultSyncTokenFileIo(vault));
+    await store.patchAniList({ accessToken: "fixture", userId: 1 });
+    expect(vault.store.get(CREDENTIAL_KEYS.tmdbTokens)).toBe("unchanged-fixture-bytes");
+    await store.patchAniList(undefined);
+    expect(vault.store.has(CREDENTIAL_KEYS.anilistTokens)).toBe(false);
+    expect(vault.store.get(CREDENTIAL_KEYS.tmdbTokens)).toBe("unchanged-fixture-bytes");
+  });
 });
 
 describe("migrateSyncTokensToVault", () => {
@@ -210,6 +244,23 @@ describe("createCredentialVault backend selection", () => {
     expect(fallbacks[0]).toContain("secret-service");
   });
 
+  test("stalled secret-tool probe falls back to file fast (races the probe timeout)", async () => {
+    // SAFETY: the never-resolving probe models a missing daemon with a present
+    // CLI — the old serial await would block the full 3s probe timeout here.
+    const spawn: CredentialSpawn = () => new Promise(() => undefined);
+    const startedAt = Date.now();
+    const vault = await createCredentialVault({
+      paths: fakePaths(dir),
+      platform: "linux",
+      env: {},
+      which: (cmd) => (cmd === "secret-tool" ? "/usr/bin/secret-tool" : null),
+      spawn,
+    });
+    expect(vault.backend).toBe("file");
+    // The 3s probe timeout stays the spawn's kill backstop; we only wait ~300ms.
+    expect(Date.now() - startedAt).toBeLessThan(3_000);
+  });
+
   test("file backend round-trips through an owner-only file", async () => {
     const vault = await createCredentialVault({
       paths: fakePaths(dir),
@@ -283,9 +334,9 @@ describe("vault read failures abort mutations", () => {
 
     await expect(io.readTokens("ignored")).rejects.toThrow();
     await expect(store.patchAniList({ accessToken: "a", userId: 1 })).rejects.toThrow();
-    // The aborted mutation never reached writeTokens — tmdb.tokens survives.
+    // The targeted write fails too; it never deletes or rewrites tmdb.tokens.
     expect(deletes).toEqual([]);
-    expect(sets).toEqual([]);
+    expect(sets).toEqual([CREDENTIAL_KEYS.anilistTokens]);
   });
 
   test.each([

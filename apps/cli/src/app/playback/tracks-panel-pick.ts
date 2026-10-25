@@ -18,6 +18,7 @@ export type TracksPanelPickContext = {
   readonly currentProviderId: string;
   readonly resumeSeconds: number;
   readonly reason: string;
+  readonly playbackSourceKind?: "local" | "provider";
 };
 
 export type TracksPanelPickResult =
@@ -95,6 +96,17 @@ export async function resolveTracksPanelPick(
   context: TracksPanelPickContext,
 ): Promise<TracksPanelPickResult> {
   const { container, title, episode, currentProviderId } = context;
+  if (
+    context.playbackSourceKind === "local" ||
+    container.stateManager.getState().stream?.playbackSourceKind === "local" ||
+    title.launchSource === "offline-library"
+  ) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Use player controls for downloaded tracks. Open the title online to change providers or sources.",
+    });
+    return { kind: "noop" };
+  }
 
   if (picked.section === "provider" && selection?.providerId) {
     if (selection.providerId === currentProviderId) {
@@ -221,10 +233,12 @@ export async function resolveTracksPanelPick(
 }
 
 /**
- * Null when the pick still names a live stream/source in the cached
+ * Null when the pick still names a stream or declared source in the cached
  * inventory, otherwise a human-readable reason. A missing cache row is not
  * staleness — without inventory there is nothing to contradict the pick, and
- * the apply path re-resolves from the provider.
+ * the apply path re-resolves from the provider. Deferred sources may have no
+ * streams yet; their declaration is enough to request resolution, while an
+ * exact stream pick must still exist in the stream inventory.
  */
 async function staleTrackSelectionReason(
   selection: StreamSelectionIntent,
@@ -296,6 +310,14 @@ async function resolveSubtitleTrackPick(
     },
     context.reason,
   );
+  // The player acknowledgement can arrive after navigation replaces the
+  // stream. Reflect the accepted choice only on the stream we controlled.
+  if (applied && stream && container.stateManager.getState().stream === stream) {
+    container.stateManager.dispatch({
+      type: "SET_STREAM",
+      stream: { ...stream, subtitle: option.subtitleUrl ?? undefined },
+    });
+  }
   container.diagnosticsService.record({
     category: "playback",
     operation: "playback.track-switch",
@@ -326,23 +348,27 @@ export function matchTrackSelectionAgainstInventory(
     readonly sources?: readonly { readonly id: string }[];
   } | null,
 ): string | null {
-  if (!inventory || !Array.isArray(inventory.streams)) return null;
+  if (!inventory) return null;
   if (
     selection.streamId &&
+    Array.isArray(inventory.streams) &&
     !inventory.streams.some((candidate) => candidate.id === selection.streamId)
   ) {
     return "That stream is no longer available — the source list changed. Pick again from the refreshed list.";
   }
-  if (selection.sourceId) {
-    // A source row can be known without owning a stream yet — cycle providers
-    // list skipped/deferred sources that only resolve on demand. Checking only
-    // `streams` would brand those picks stale and drop them silently.
-    const known =
-      inventory.streams.some((candidate) => candidate.sourceId === selection.sourceId) ||
-      (inventory.sources?.some((source) => source.id === selection.sourceId) ?? false);
-    if (!known) {
-      return "That source is no longer available — the source list changed. Pick again from the refreshed list.";
-    }
+  if (
+    selection.sourceId &&
+    (Array.isArray(inventory.streams) || Array.isArray(inventory.sources)) &&
+    !(
+      Array.isArray(inventory.streams) &&
+      inventory.streams.some((candidate) => candidate.sourceId === selection.sourceId)
+    ) &&
+    !(
+      Array.isArray(inventory.sources) &&
+      inventory.sources.some((candidate) => candidate.id === selection.sourceId)
+    )
+  ) {
+    return "That source is no longer available — the source list changed. Pick again from the refreshed list.";
   }
   return null;
 }

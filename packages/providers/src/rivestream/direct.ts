@@ -95,14 +95,18 @@ const RIVESTREAM_PROVIDER_SERVICES_TTL_MS = 24 * 60 * 60 * 1000;
  * it still named `ophim`, which upstream no longer serves, and knew none of the
  * six services that now answer. A stale fallback is worse than a short one —
  * every name here costs a request when discovery is already failing.
+ *
+ * Pruned 2026-10-14: `solstice`, `quasar`, and `primevids` are demoted backends
+ * (see `RIVESTREAM_DEMOTED_BACKENDS`) — serving nothing or 403s live — so they
+ * no longer spend fallback attempts either.
+ *
+ * Exported for the prune regression test — a re-added dead name must fail
+ * loudly here, not as wasted live attempts.
  */
-const RIVESTREAM_STATIC_PROVIDER_SERVICES = [
+export const RIVESTREAM_STATIC_PROVIDER_SERVICES = [
   "apex",
   "pulse",
-  "solstice",
-  "quasar",
   "horizon",
-  "primevids",
   "flowcast",
   "asiacloud",
   "citadel",
@@ -128,6 +132,37 @@ let providerServicesCache:
 export function clearRivestreamCachesForTest(): void {
   providerServicesCache = undefined;
   secretKeyCache.clear();
+}
+
+/**
+ * Backends observed dead live on 2026-10-14: `savannah`, `prometheus`,
+ * `quasar`, and `solstice` return no sources for titles other mirrors serve,
+ * and `primevids` answers 403. They stay in the walk as a last resort —
+ * upstream rotates backends, so a demoted name may recover — but sorted behind
+ * every healthy mirror so the sequential cycle reaches a working lane (e.g.
+ * citadel) before spending a single attempt on them. Matching is
+ * case-insensitive; discovery casing is upstream-controlled.
+ */
+export const RIVESTREAM_DEMOTED_BACKENDS: ReadonlySet<string> = new Set(
+  ["savannah", "prometheus", "quasar", "solstice", "primevids"].map((name) => name.toLowerCase()),
+);
+
+export function isRivestreamDemotedBackend(provider: string): boolean {
+  return RIVESTREAM_DEMOTED_BACKENDS.has(provider.toLowerCase());
+}
+
+/**
+ * Stable partition of a service list: healthy mirrors keep discovery order up
+ * front, demoted backends trail in discovery order. Nothing is dropped — a
+ * demoted backend that recovers still resolves when everything ahead of it
+ * fails, and an explicitly pinned source still outranks the order via the
+ * candidate priority in `buildRivestreamCycleCandidates`.
+ */
+export function demoteRivestreamDeadBackends(providers: readonly string[]): readonly string[] {
+  const healthy = providers.filter((provider) => !isRivestreamDemotedBackend(provider));
+  if (healthy.length === providers.length) return [...providers];
+  const demoted = providers.filter((provider) => isRivestreamDemotedBackend(provider));
+  return [...healthy, ...demoted];
 }
 
 type RivestreamProviderServicesResponse = {
@@ -253,7 +288,13 @@ const cArray = [
   "rFRD5wlM",
 ];
 
-function generateSecretKey(e: string | number) {
+/**
+ * Exported for the rotation canary in `test/rivestream-secret-key.test.ts` —
+ * the pinned vector there fails fast in CI when the upstream `cArray` salt or
+ * hash rotates, instead of surfacing as 401 resolve failures. See
+ * `.docs/provider-dossiers/rivestream.md` (known failure modes).
+ */
+export function generateSecretKey(e: string | number) {
   if (e === undefined) return "rive";
   try {
     let t, n;
@@ -390,7 +431,24 @@ export const rivestreamProviderModule: CoreProviderModule = {
       const season = input.episode?.season ?? 1;
       const episode = input.episode?.episode ?? 1;
 
-      const { providers, origin: servicesOrigin } = await getRivestreamProviderServices(context);
+      const { providers: discoveredProviders, origin: servicesOrigin } =
+        await getRivestreamProviderServices(context);
+      // Dead-backend prune (2026-10-14): demoted mirrors trail the walk so the
+      // sequential cycle reaches a working lane before spending an attempt on
+      // them. Nothing is dropped — a recovered mirror still resolves as the
+      // last resort, and the working fallbacks keep their discovery order.
+      const providers = demoteRivestreamDeadBackends(discoveredProviders);
+      const demotedProviders = discoveredProviders.filter((provider) =>
+        isRivestreamDemotedBackend(provider),
+      );
+      if (demotedProviders.length > 0) {
+        emitTraceEvent(events, context, {
+          type: "source:skipped",
+          providerId: RIVESTREAM_PROVIDER_ID,
+          message: `Demoted dead backends trail the cycle: ${demotedProviders.join(", ")}`,
+          attributes: { backends: demotedProviders.length },
+        });
+      }
       if (servicesOrigin === "static") {
         emitTraceEvent(events, context, {
           type: "source:failed",
@@ -906,6 +964,12 @@ function prefetchRivestreamServiceCandidates(opts: {
       context.endpointHealth &&
       !context.endpointHealth.shouldTry(RIVESTREAM_PROVIDER_ID, provider)
     ) {
+      continue;
+    }
+    // Demoted backends trail the cycle as a last resort, so prefetching them
+    // spends a request the sequential walk almost never reaches. The cycle
+    // fetches on demand if it ever gets that far (see resolveCandidate).
+    if (isRivestreamDemotedBackend(provider)) {
       continue;
     }
     const promise = fetchRivestreamSourceData({

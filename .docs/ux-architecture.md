@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-10-12T14:57:13Z"
 ---
 
 # Kunai — UX Architecture
@@ -66,6 +66,7 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 - command palettes should open with an immediately highlighted default action and still support zero-typing keyboard browsing
 - command palettes should group actions by `Global` and `Context` rather than by implementation source
 - command palettes should imply the recommended action through default highlight rather than extra “recommended” noise in every row
+- command palettes should also match locally-known titles (`JUMP TO`) once the input is at least two characters — titles are read from local state only (history, queue, followed, lists, playlists), never the network; commands keep precedence over title rows; the title section collapses on empty input; a title pick lands on the same title→episode flow a browse selection uses
 
 ### Hotkey philosophy
 
@@ -78,6 +79,75 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 - prefer explicit leader mode over hidden timed key chords
 - if an action is unavailable, show why instead of silently ignoring the input
 - mode actions should be phrased by destination, like `Anime mode` or `Series mode`, instead of generic toggle wording
+
+### Optional terminal mouse input
+
+The Ink shell owns one paused-mode stdin facade in `app-shell/mouse/`.
+It separates mouse reports before Ink parses keyboard input; it never adds
+another `data` listener to the real TTY. Tracking requires both stdin and
+stdout to be TTYs, excludes `TERM=dumb`, and can be disabled with
+`KUNAI_NO_MOUSE=1`. Session disposal releases subscriptions, hit regions,
+pending parsing timers, and the process-exit hook on normal or rejected exit.
+Incomplete reports and ambiguous Escape prefixes are held for at most 50 ms of
+idle time, then released unchanged; pending input is also capped at 64 characters.
+
+Browse results use explicit selection: click a row to select and focus it;
+click the visibly selected row again to open it. Clicking the search field
+restores text focus. Wheel input over ordinary results clamps at the first
+and last row; keyboard arrows retain their existing wrapping behavior.
+The footer describes the click gesture only when mouse support is enabled.
+These high-frequency interactions repaint immediately without animation.
+
+Local overlays, the command palette, and root-content suspension remove
+covered result regions from hit-testing. Press and release must belong to the
+same stationary region and button; dragging cancels activation. Unrelated
+renders preserve a pending click. Re-measurement uses Ink layout coordinates
+plus one terminal cell; this assumes the fullscreen shell renders no `Static`
+output above the live region.
+
+Other surfaces currently receive unhandled vertical wheel reports as arrow
+keys. That is a keyboard fallback, not complete pointer support for their
+controls. Calendar rows, settings, playback controls, and destructive menus
+must add their own tested pointer ownership before claiming click parity.
+Incomplete reports expire after 50 ms idle or 64 buffered bytes; expiry
+returns held bytes rather than silently swallowing later keystrokes.
+
+### Session undo (`z`)
+
+- `z` is contextual the way lazygit's is: it exists only while an undo strip is live, and the strip itself is what advertises the key (`added to queue · z undo`). There is no standing `z` footer entry — the footer rule (show only currently usable actions) is kept by not claiming one.
+- the strip lives in the single transient row at shell root, so it renders identically across browse, post-play, playback, and overlays. It expires after ~8s and never steals focus.
+- undo is in-session and local-only: it restores the local SQLite state the action changed — queue rows (ids + positions), list membership, followed-title preference, history rows — to exactly the pre-mutation state. Side effects that already escaped (flushed tracker sync, queued downloads, mpv progress writes) are out of scope; the strip never claims to undo them.
+- only actions with a clean inverse are journaled. A fake undo is worse than none — ops like queue-session restore across sessions are deliberately not undoable.
+- `z` loses to every text-input owner: while a filter field, the command palette, or a picker list owns printable input, `z` types. On non-typing surfaces it pops the newest live journal entry; with nothing live it is a silent no-op.
+- if the entity changed elsewhere after the action (a row was played, re-followed, re-queued), undo does not overwrite the newer state — it pops the entry and says why (`can't undo queue add — queue changed since then`).
+- the confirmation line (`undid queue add`) is itself not undoable — undo is never journaled.
+
+### Contextual tips
+
+Shortcut coaching is earned, not ambient. A tip fires only after the user did
+the thing the long way — picked a command out of the `/` palette that a plain
+keypress would have reached — and only on a surface where that key is actually
+live. The contract:
+
+- **once-ever.** Each tip id shows at most once, then never again. The seen
+  set lives in `config.json` (`seenTips`, next to `tipsEnabled`), persisted
+  before the line renders so a crash can only cost a tip, never repeat one.
+- **dismissible.** The Settings → "Shortcut tips" boolean turns the feature
+  off entirely without burning the seen set; "Every shortcut tip" lists the
+  whole catalog, marks what already showed, and lets a shown tip be re-armed
+  deliberately.
+- **lowest priority.** Tips render on the same transient row as alerts,
+  toasts, streaks, and digest — last in line, so a coaching line can never
+  displace feedback about something that just happened.
+- **never under focus.** A tip does not fire while an overlay or picker owns
+  the screen. Root-owned overlays therefore do not wire the trigger at all.
+- **honest.** Copy resolves the real chord from the keybinding registry at
+  render time (`bindingId → glyph`), so a rebound key can never drift the
+  text. A candidate tip whose key is not bound on that surface — or whose
+  command is not in that surface's palette — is not a tip and does not ship.
+
+Map: `apps/cli/src/domain/session/contextual-tips.ts`; copy, arming, and
+catalog: `apps/cli/src/app-shell/contextual-tips.ts`.
 
 ## Selection Over Freeform Input
 
@@ -136,6 +206,11 @@ Title details should be honest about data quality:
 - keep actual Kitty/Ghostty image rendering outside the Ink render tree until the image-pane service owns layout, clearing, and flicker control
 - never require image support for selection, playback, or episode navigation
 
+External link labels are sanitized for terminal rendering. Their targets stay
+opaque through the details model and `l` shortcut: display sanitization must not
+rewrite the URL being opened. The shared desktop opener rejects raw control
+characters and permits only its explicit URL schemes on every platform.
+
 Post-playback should use the same rule for lightweight panels so provider changes, history, diagnostics, help, and about do not break the user out of the current title context.
 Settings should follow that same in-shell rule for browse and post-playback shells, even while deeper season, episode, and subtitle flows still finish their overlay migration.
 
@@ -179,6 +254,72 @@ implementation:
   route as well as the calendar UI state, so a settled route can never keep rendering ordinary
   results through calendar chrome.
 
+### Search type-ahead suggestion band
+
+The browse shell owns a Spotlight-style suggestion band anchored between the query field and the
+divider (`app-shell/suggestion-band-ui.tsx`). Streaming-app search feel: it answers after ~2
+typed characters, before Enter.
+
+Sources and async contract:
+
+- Two layers merge into one ranked band — pure logic in
+  `domain/search/suggestion-engine.ts`: prefix match > word-boundary > subsequence, recency as
+  the tiebreak, catalog rows deduped against shown local titles.
+- Local layer is synchronous and free: past submitted searches, watched titles, followed titles,
+  and list/playlist rows (`app/search/search-suggestions.ts` materializes them as
+  `SearchSuggestion<SearchResult>` — every row's `value` is a real SearchResult).
+- Remote layer is ONE call into the fast registry catalog for the lane — `services/search/
+suggest-titles.ts` resolves `getForProvider(provider)` first (AniList for anime providers,
+  same as `searchTitles`), then the registry default (TMDB). It never runs the provider-lane
+  search walk, never enriches, never resolves a provider or probes a stream. YouTube mode has
+  no registry catalog, so the band shows local rows only — provider-native search is too heavy
+  per keystroke.
+- `app-shell/hooks/use-search-suggestions.ts` debounces ~300ms, aborts the superseded request,
+  and gates commits by request id — a stale response can never overwrite a newer draft's rows.
+  Local rows paint in the same frame as the keystroke; while the catalog call is in flight the
+  catalog section shows dim `░` skeleton rows.
+- Zero remote hits leave local rows plus a `keep typing · ↵ search anyway` hint; a catalog
+  failure settles silently to local-only. The band is an enhancement, never an error surface.
+
+Keyboard contract:
+
+- The band never steals focus — it is not a focus zone. Typing always edits the draft; the
+  query field keeps its cursor.
+- `↓` from the query highlights the first suggestion; `↑`/`↓` move inside it. `↓` past the last
+  row exits the band and continues the normal path (results → list, empty → idle rows / query
+  history). `↑` above the first row drops back to plain typing.
+- `Enter` on a highlighted suggestion commits it through the exact pipeline a results-list row
+  uses — `onSubmit(value)` for title rows (session routing, episode flow unchanged) or a real
+  `runSearch(commitQuery)` for history/query rows. Plain `Enter` with nothing highlighted still
+  runs the submitted search. `Ctrl+O`/`Shift+Enter` open the details sheet for the highlighted
+  suggestion, same as a list row.
+- `Esc` dismisses the band for the current draft first; the next `Esc` resumes the existing
+  ladder (narrow filter → chips → clear query → cancel). The next keystroke reopens it.
+- A dim ghost completion trails the cursor at end-of-line from the top suggestion; `→` or `Tab`
+  accepts it. Mid-text `→`/`Tab` behave exactly as before.
+
+Suppression — the band simply does not exist:
+
+- command mode, calendar view, any open overlay, loading/searching states, and playback or
+  post-play surfaces (the band lives inside browse only).
+- blocked/ultra-compact terminals — same `<60 cols / <20 rows` threshold as `viewport.ultraCompact`.
+- a draft below 2 chars, a draft equal to the submitted query (bootstrap `-S` results and
+  preserved-search remounts land here — the band stays quiet until the user edits).
+
+Mode and lifecycle seams:
+
+- Series and anime both use the fast registry contract; the provider's catalog identity picks
+  TMDB vs AniList, and a picked suggestion's `resolvedLane` stamps the same way committed
+  results do, so a watched anime row picked in series mode still replays in anime mode.
+- `/search` resolves through command mode first — the band is suppressed while the palette is
+  open and resumes on the resolved query's next edit.
+- `KUNAI_REDUCED_MOTION` / `NO_MOTION`: the band renders in the keystroke's frame and the
+  catalog debounce drops to zero — no staged animation exists and none is simulated; the
+  request gate still coalesces superseded drafts.
+- No 1-9 quick-pick: the band only exists while the draft is non-empty, so digits are query
+  characters, not shortcuts. The existing 1-9 chip-clear (which fires on the empty query) is
+  untouched by construction.
+
 ### Title control is the one action policy
 
 `app-shell/title-control/title-control-actions.ts` is the single source of
@@ -205,6 +346,44 @@ the menu without running it (`pickTitleControlShellAction`) and re-dispatches
 row-scoped actions through `MediaActionRouter` with that row's media item. The
 `history` allow-list is therefore deliberately narrow: it carries only actions
 that can be aimed at a row.
+
+### Enter on a rested title plays; menus stay one key away
+
+Plain Enter on a browse result is the play key, not the menu key. The contract
+lives in `apps/cli/src/app-shell/title-control/smart-auto-launch.ts` and is
+resolved once per entry in `PlaybackPhase`:
+
+- a live resume position plays in place — no second prompt;
+- a finished last episode plays the next unwatched episode when one is known,
+  resolved through the same loader the starting menu would have run;
+- a partially-watched movie resumes the same way;
+- everything ambiguous — first watch, no saved position, a failed provider, an
+  explicit `m` — opens the starting-point menu. `m` always opens it: that is
+  the documented way out of auto-entry, carried on the title as
+  `forceStartingMenu` so a plain Enter one key later still auto-plays.
+
+Dwell prefetch (`app-shell/hooks/use-dwell-prefetch.ts` →
+`app/search/prefetch-browse-entry.ts`) exists to keep that Enter cheap: ~500ms
+after a result row stops moving it warms the exact chain select+playback pays —
+provider-native mapping, identity enrich, title detail, and the episode catalog
+(provider `listEpisodes` for anime, `fetchSeriesData` for TMDB series). It is
+latest-wins (a moved cursor aborts the in-flight warm), silent on every
+failure, session-deduped per result, a hard no-op while offline or on YouTube
+rows, and it never fires mid-navigation. It writes no session state — it only
+fills caches the real path already reads.
+
+### The browse home return loop
+
+An empty query is the home screen, and `browse-idle-context.ts` +
+`browse-idle-actions.ts` own its strip of local shortcut rows. "New since you
+left" leads it — above Continue Watching — when the attention system's
+`release_progress_cache` holds provider-confirmed releases newer than
+`lastCalendarVisitAt` (the same anchor the calendar's own newness marker uses,
+so a first-ever visit claims nothing). Muted titles never count. It is one `●`
+row — `3 new episodes since Tuesday` — Enter opens the schedule already on the
+Tracked tab, and the row is absent entirely when nothing qualifies: never an
+empty strip. Every row in the strip renders instantly; high-frequency paths
+get no decorative animation.
 
 ## Picker Filtering
 
@@ -239,6 +418,9 @@ Short-lived playback feedback should use mpv OSD plus shell status text for non-
 ## Settings Behavior
 
 - settings apply immediately after a row interaction commits
+- A rejected settings save reports its error in the shelf and diagnostics.
+  Immediate, debounced, and final-on-close saves share one rejection boundary;
+  a final save after the shelf closes records diagnostics without updating it.
 - `Esc` cancels active text input, backs out of submenus, or closes the
   settings shelf; it does not roll back values already applied to config
 - label settings by effect timing:
@@ -322,22 +504,29 @@ Autoplay and next/previous actions should follow real episode availability from 
 
 The Ink shell hands playback intents to the app phase loop through a **promise
 bridge**: `waitForRootQueueSelection()` / `resolveRootQueueSelection()` in
-`apps/cli/src/app-shell/root-queue-bridge.ts`, and the same shape in
-`root-history-bridge.ts`. The route awaits the bridge and returns a result the
-phase loop plays. Queue and history use it.
+`apps/cli/src/app-shell/root-queue-bridge.ts`, the same shape in
+`root-history-bridge.ts`, and `waitForNotificationSelection()` /
+`resolveNotificationSelection()` / `hasPendingNotificationSelection()` in
+`root-overlay-bridge.ts`. The route awaits the bridge and returns a result the
+phase loop plays.
 
 **Use the promise bridge for any new intent. Do not add a staged module
 global.** A staged global is read by exactly one route, but overlays open from
 more than one place — the notifications inbox is opened both by
 `openNotificationsOverlay()` and by a direct `OPEN_OVERLAY` dispatch in
-`root-overlay-shell.tsx`. On the route that never read the staged value, "play
-now" silently did nothing, and the stranded intent later fired against an
-unrelated session and played the wrong title. Subscribe/notify plus
-clear-on-open bounded that damage; it did not remove the second pattern.
+`root-overlay-shell.tsx`. Under the old staged global, the route that never
+read the value made "play now" silently do nothing, and the stranded intent
+later fired against an unrelated session.
 
-Migrating notifications onto the promise bridge is the outstanding
-single-source-of-truth fix. Whatever the mechanism, an intent has to work on
-every path that can open the surface.
+Notifications cover both directions now. On the awaited route the row
+resolves the bridge and the opener returns a `history-entry` result. On the
+direct route there is no awaiter, so the row executor self-delivers through
+`notification-playback-delivery.ts`: a retained browse or post-play session
+settles with `launch-playback`, and live or resolving playback receives a
+stop-backed `switch-title` intent that the phase loop consumes after the
+stop/resolve abort. Nothing to deliver to reports feedback instead of
+dropping the intent. Whatever the mechanism, an intent has to work on every
+path that can open the surface.
 
 ## Anti-Patterns
 
@@ -346,3 +535,24 @@ every path that can open the surface.
 - blocking setup wizards for common adjustments
 - asking for raw values when structured data already exists
 - decorative animation that delays interaction
+
+## Playback command input ownership
+
+`LoadingShell` mounts its playback input reader inside `ShellFrame`, below the
+command-mode context provider. While the palette is open, letters and Escape
+belong to it; closing the palette restores playback shortcuts. On a cancellable
+resolve, the first Escape closes the palette and a subsequent Escape cancels
+the resolve. The regression suite delivers Ink's pending-Escape callback
+explicitly instead of waiting for its timer.
+
+### Multilingual terminal text
+
+Display helpers sanitize provider text before measuring it with Bun's terminal-cell
+width calculation. Truncation walks complete grapheme clusters, so combining
+accents, flags and joined emoji stay intact. Padding and ellipsis placement use
+the same cell budget as CJK titles. Surfaces reuse
+`apps/cli/src/domain/text-display.ts` rather than counting code points or UTF-16 units.
+
+Browse requires a prior pointer click on the same selected title before opening
+it. Preselected rows, keyboard navigation, scrolling and covered content do not
+authorize pointer activation.

@@ -2,7 +2,7 @@ import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import { resolveHistorySelectionLaunch } from "@/app-shell/history-selection-launch";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { buildQueueRestoreDeps, buildQueueRestoreStatus } from "@/app-shell/queue-restore";
-import { forceCloseRootContent } from "@/app-shell/root-content-state";
+import { forceCloseRootContent, getRootContentSession } from "@/app-shell/root-content-state";
 import {
   applyMediaItemSessionRouting,
   playbackIntentFromMediaItem,
@@ -11,6 +11,7 @@ import { applyProviderPickerSelection } from "@/app/playback/playback-provider-s
 import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
+import type { LocalTitleMatch } from "@/domain/palette/local-title-index";
 import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-name";
 import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
 import {
@@ -23,6 +24,7 @@ import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
 import { restoreQueueSessionWithResume } from "@/domain/queue/restore-queue-session";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import { isPlaybackSessionActive, type SessionState } from "@/domain/session/SessionState";
+import { countLabel } from "@/domain/text-display";
 import type { SearchResult } from "@/domain/types";
 import { openExternalUrlAndWait } from "@/infra/shell/open-external-url";
 import { projectionFromViewDecision } from "@/services/continuation/continuation-policy";
@@ -40,6 +42,7 @@ import {
   NotificationActionRouter,
   type NotificationActionId,
 } from "@/services/notifications/NotificationActionRouter";
+import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import type { InstallMethodKind } from "@/services/update/install-method";
 import { resolveNotificationUpdateAction } from "@/services/update/notification-update-action";
@@ -55,12 +58,49 @@ import {
 } from "react";
 
 import { requestBrowseIdleContextRefresh } from "./browse-idle-context";
-import { cancelRootOverlay } from "./cancel-root-overlay";
-import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
+import { cancelAllRootOverlays, cancelRootOverlay } from "./cancel-root-overlay";
+import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
 import { diagnosticsVisibleRows } from "./diagnostics-dashboard-model";
+import { sanitizeTerminalText } from "./shell-text";
 
 /** The ContextStrip line drawn above the panel, inside the content area. */
 const DIAGNOSTICS_CONTEXT_STRIP_ROWS = 1;
+
+/**
+ * Palette commands the root overlay resolves inline — each maps to an overlay
+ * swap in `onResolve`. Exported so the command-registry coverage test can
+ * assert every advertised rootOverlay command has a reader here or in
+ * PALETTE_WORKFLOW_ACTIONS.
+ */
+export const ROOT_OVERLAY_NAV_COMMANDS: ReadonlySet<ShellAction> = new Set([
+  "settings",
+  "presence",
+  "help",
+  "guide",
+  "about",
+  "diagnostics",
+  "downloads",
+  "notifications",
+  "continue",
+  "history",
+  "provider",
+  "library",
+  "up-next",
+]);
+
+/**
+ * The actions this surface actually routes — palette Enter resolves nav
+ * commands inline and runs workflow actions through `runRootWorkflowSafely`.
+ * The guide derives its "runs here" tag from this exact set, so a row can
+ * never advertise Enter on a command the surface would drop.
+ */
+const GUIDE_RUNNABLE_HERE: ReadonlySet<string> = new Set<string>([
+  ...ROOT_OVERLAY_NAV_COMMANDS,
+  ...PALETTE_WORKFLOW_ACTIONS,
+]);
+
+/** Commands the search/browse surface lists — the guide's "→ search" tag. */
+const GUIDE_SEARCH_SURFACE: ReadonlySet<string> = new Set<string>(SEARCH_BROWSE_COMMAND_IDS);
 
 import { buildDiagnosticsPanelInput, buildDiagnosticsSpanModel } from "./diagnostics-panel-source";
 import {
@@ -69,6 +109,13 @@ import {
 } from "./diagnostics-panel.model";
 import { PALETTE_WORKFLOW_ACTIONS } from "./dispatch-palette-command";
 import { DownloadManagerContent } from "./download-manager-shell";
+import {
+  buildGuideRows,
+  GUIDE_COMMAND_IDS,
+  GUIDE_SURFACE_NOTE,
+  type GuideRow,
+} from "./guide-model";
+import { GuideShell } from "./guide-shell";
 import { HistoryShell } from "./history-shell";
 import {
   buildHistoryView,
@@ -97,6 +144,7 @@ import {
   getSelectedNotificationActionId,
   selectNotificationPickerOptions,
 } from "./notification-overlay-model";
+import { deliverNotificationPlayback } from "./notification-playback-delivery";
 import { NotificationsShell } from "./notifications-shell";
 import { buildNotificationsView, nearestNotificationDedupKey } from "./notifications-view";
 import { resolveOverlayBackStack } from "./overlay-back-stack";
@@ -112,6 +160,7 @@ import {
 } from "./overlay-input-safety";
 import { OverlayLayoutProvider, type OverlayLayoutValue } from "./overlay-layout-context";
 import { type BrowseOverlay, OverlayPanel } from "./overlay-panel";
+import { pickPaletteTitle } from "./palette-title-launch";
 import {
   buildAboutPanelLines,
   buildDiagnosticsPanelLines,
@@ -131,10 +180,10 @@ import {
   type RootHistorySelection,
 } from "./root-history-bridge";
 import {
-  clearNotificationPlaybackIntent,
+  hasPendingNotificationSelection,
   openDiagnosticsOverlay,
+  resolveNotificationSelection,
   stageNotificationDetailsItem,
-  stageNotificationPlaybackIntent,
 } from "./root-overlay-bridge";
 import {
   buildRootGenericPickerOptions,
@@ -144,13 +193,20 @@ import {
   isRootChoiceOverlay,
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
-import { resolveQueueRowPlaySelection, resolveRootQueueSelection } from "./root-queue-bridge";
+import {
+  episodeInfoFromQueuePlaybackLaunch,
+  hasPendingRootQueueSelection,
+  resolveQueueRowPlaySelection,
+  resolveRootQueueSelection,
+  titleInfoFromQueuePlaybackLaunch,
+} from "./root-queue-bridge";
 import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
 import { runRootWorkflowSafely } from "./root-workflow-dispatch";
+import { SEARCH_BROWSE_COMMAND_IDS } from "./search-browse-command-ids";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
 import { SettingsShell } from "./settings/SettingsShell";
 import { useShellInput } from "./shell-command-input";
-import { CommandPalette } from "./shell-command-ui";
+import { CommandPalette, PaletteTitleMatchesProvider } from "./shell-command-ui";
 import { ContextStrip, ShellFooter, ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import { subtitleGridColumns, tracksOptionsPaneWidth } from "./tracks-panel-layout";
@@ -160,7 +216,14 @@ import {
   type TracksNavState,
 } from "./tracks-panel-nav";
 import { TracksPanelShell } from "./tracks-panel-shell";
-import type { BrowseShellResult, FooterAction, ShellPanelLine } from "./types";
+import type {
+  BrowseShellResult,
+  FooterAction,
+  PlaybackShellResult,
+  ShellAction,
+  ShellPanelLine,
+} from "./types";
+import { toShellAction } from "./types";
 import { handleHistoryOverlayInput, type HistoryDeletePending } from "./use-history-overlay-input";
 import {
   createNotificationsOverlayState,
@@ -244,12 +307,18 @@ export function buildHelpTabRows(tab: string): readonly { key: string; desc: str
   return helpTabRows(tab);
 }
 
-function wrapOverlayLayout(layout: OverlayLayoutValue, node: ReactNode) {
+function wrapOverlayLayout(
+  layout: OverlayLayoutValue,
+  node: ReactNode,
+  titleMatches: readonly LocalTitleMatch[],
+) {
   return (
     <OverlayLayoutProvider value={layout}>
-      <ViewportResizeGate kind="picker" message="Resize terminal to use this panel">
-        {node}
-      </ViewportResizeGate>
+      <PaletteTitleMatchesProvider matches={titleMatches}>
+        <ViewportResizeGate kind="picker" message="Resize terminal to use this panel">
+          {node}
+        </ViewportResizeGate>
+      </PaletteTitleMatchesProvider>
     </OverlayLayoutProvider>
   );
 }
@@ -388,6 +457,7 @@ function HelpShell({
         actions={footerActions}
         mode="detailed"
         commandMode={commandMode}
+        companionHint
       />
     </Box>
   );
@@ -626,7 +696,12 @@ export function RootOverlayShell({
   const [asyncLines, setAsyncLines] = useState<readonly ShellPanelLine[] | null>(null);
   const [loadingAsyncLines, setLoadingAsyncLines] = useState(overlay.type === "history");
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [overlayStatus, setOverlayStatus] = useState<string | null>(null);
+  const [overlayStatus, setOverlayStatusState] = useState<string | null>(null);
+  // Status lines can embed provider/history titles — sanitize at entry so every
+  // producer stays escape-safe without each call site remembering to.
+  const setOverlayStatus = useCallback((message: string | null) => {
+    setOverlayStatusState(message === null ? null : sanitizeTerminalText(message));
+  }, []);
   const [overlayClosePending, setOverlayClosePending] = useState(false);
   const [notificationActionDedupKey, setNotificationActionDedupKey] = useState<string | null>(null);
   const [notificationPlayConfirm, setNotificationPlayConfirm] = useState<{
@@ -793,6 +868,12 @@ export function RootOverlayShell({
   // Up Next queue: bumping the tick after a mutation (reorder/remove/clear/restore)
   // recomputes the view from the service's fresh getAll().
   const [queueTick, setQueueTick] = useState(0);
+  // Armed destructive queue action. First press arms and the prompt stays
+  // visible in the footer until the second press mutates (or something
+  // disarms it) — unlike overlayStatus, which self-clears after 2.5s while an
+  // arm would silently survive. Keyed by row id for removes so a resort
+  // between presses cannot retarget the confirm (library-shell convention).
+  const [queueConfirm, setQueueConfirm] = useState<{ key: string; prompt: string } | null>(null);
   const queuePosterResolver = useMemo(() => {
     const map = new Map<string, string>();
     for (const { titleId, entry } of historySelections) {
@@ -823,7 +904,6 @@ export function RootOverlayShell({
   });
   const effectiveSubtitle =
     (overlay.type === "notifications" ||
-      overlay.type === "history" ||
       overlay.type === "tracks_panel" ||
       overlay.type === "diagnostics") &&
     overlayStatus
@@ -844,82 +924,85 @@ export function RootOverlayShell({
     { key: "/", label: "commands", action: "command-mode" },
     { key: "esc", label: "close", action: "quit" },
   ];
-  const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
-    footerActions,
-    commands,
-    escapeAction: null,
-    onResolve: (action) => {
-      if (
-        action === "settings" ||
-        action === "presence" ||
-        action === "help" ||
-        action === "about" ||
-        action === "diagnostics" ||
-        action === "downloads" ||
-        action === "notifications" ||
-        action === "continue" ||
-        action === "history" ||
-        action === "provider"
-      ) {
-        if (action === "notifications" && !container.featureFlags.attentionInbox) {
-          container.stateManager.dispatch({
-            type: "SET_PLAYBACK_FEEDBACK",
-            note: "Attention inbox is disabled.",
-          });
-          return;
-        }
-        if (action === "diagnostics") {
-          if (
-            (isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") &&
-            overlay.id
-          ) {
-            container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
-          }
-          void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
-          return;
-        }
-        const nextOverlay =
-          action === "provider"
-            ? {
-                type: "provider_picker" as const,
-                currentProvider: state.provider,
-                lane: shellModeToProviderLane(state.mode),
-              }
-            : action === "history" || action === "continue"
-              ? { type: "history" as const, initialFilterMode: "watching" as const }
-              : action === "notifications"
-                ? { type: "notifications" as const }
-                : action === "downloads"
-                  ? { type: "downloads" as const }
-                  : action === "settings" || action === "presence"
-                    ? { type: "settings" as const }
-                    : { type: action };
-        if ((isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") && overlay.id) {
-          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
-        }
+  /**
+   * The overlay surface's command router: nav commands swap the top overlay,
+   * workflow actions run detached. Palette Enter and guide-row Enter share
+   * this so a command can never be advertised in one place and dead in the
+   * other.
+   */
+  const resolveOverlayPaletteAction = (action: ShellAction) => {
+    if (ROOT_OVERLAY_NAV_COMMANDS.has(action)) {
+      if (action === "notifications" && !container.featureFlags.attentionInbox) {
         container.stateManager.dispatch({
-          type: "OPEN_OVERLAY",
-          overlay: nextOverlay,
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: "Attention inbox is disabled.",
         });
         return;
       }
-      if (action === "library") {
-        const nextOverlay = { type: "library" as const, view: "library" as const };
+      if (action === "diagnostics") {
         if ((isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") && overlay.id) {
           container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
         }
-        container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
+        void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
         return;
       }
-      if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
-        void runRootWorkflowSafely({
-          container,
-          action,
-          cancelPickerId: isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
-        });
+      const nextOverlay =
+        action === "provider"
+          ? {
+              type: "provider_picker" as const,
+              currentProvider: state.provider,
+              lane: shellModeToProviderLane(state.mode),
+            }
+          : action === "history" || action === "continue"
+            ? { type: "history" as const, initialFilterMode: "watching" as const }
+            : action === "up-next"
+              ? { type: "queue" as const }
+              : action === "library"
+                ? { type: "library" as const, view: "library" as const }
+                : action === "notifications"
+                  ? { type: "notifications" as const }
+                  : action === "downloads"
+                    ? { type: "downloads" as const }
+                    : action === "settings" || action === "presence"
+                      ? { type: "settings" as const }
+                      : action === "about"
+                        ? { type: "about" as const }
+                        : action === "guide"
+                          ? { type: "guide" as const }
+                          : { type: "help" as const };
+      if ((isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") && overlay.id) {
+        container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
       }
-    },
-  });
+      container.stateManager.dispatch({
+        type: "OPEN_OVERLAY",
+        overlay: nextOverlay,
+      });
+      return;
+    }
+    if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
+      void runRootWorkflowSafely({
+        container,
+        action,
+        cancelPickerId: isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
+      });
+    }
+  };
+  const { commandMode, commandInput, commandCursor, highlightedIndex, titleMatches } =
+    useShellInput({
+      footerActions,
+      commands,
+      // The settings surface owns `/` itself — its footer advertises it as
+      // search. Without disabling here, one keystroke opened the palette AND
+      // armed the settings filter (both handlers see commandMode=false on the
+      // same event), and closing the palette left a phantom focused search.
+      disabled: overlay.type === "settings",
+      escapeAction: null,
+      localTitles: () => collectLocalTitleEntries(container),
+      onTitlePick: (entry) => pickPaletteTitle(container, entry),
+      onResolve: resolveOverlayPaletteAction,
+    });
+
+  const wrapWithLayout = (node: ReactNode) => wrapOverlayLayout(overlayLayout, node, titleMatches);
 
   const overlayPanelKind = resolveOverlayPanelKind(overlay.type);
   const overlayDedicatedShell =
@@ -1093,15 +1176,16 @@ export function RootOverlayShell({
     setHistoryPendingDelete(null);
   }, [historyTab, overlay.type]);
 
+  // An armed queue destroy must not survive leaving the queue: without this,
+  // returning later and pressing the same key once would mutate.
+  useEffect(() => {
+    setQueueConfirm(null);
+  }, [overlay.type]);
+
   // Discard any play-now intent left staged by an earlier inbox session.
   // Only the palette route consumes the intent (it reads after close), so an
   // inbox opened by direct dispatch can strand one; without this it would fire
   // against the next palette-opened session and play the wrong title.
-  useEffect(() => {
-    if (overlay.type !== "notifications") return;
-    clearNotificationPlaybackIntent();
-  }, [overlay.type]);
-
   useEffect(() => {
     if (overlay.type !== "history") {
       return;
@@ -1147,7 +1231,7 @@ export function RootOverlayShell({
     if (!overlayStatus) return undefined;
     const timer = setTimeout(() => setOverlayStatus(null), 2500);
     return () => clearTimeout(timer);
-  }, [overlayStatus]);
+  }, [overlayStatus, setOverlayStatus]);
 
   const runNotificationAction = (
     dedupKey: string | null | undefined,
@@ -1180,32 +1264,29 @@ export function RootOverlayShell({
           playNow: async (item) => {
             applyMediaItemSessionRouting(container, item);
             const intent = playbackIntentFromMediaItem(item);
-            container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-
-            // Two routes open this inbox and only one used to consume the
-            // intent, so "Play now" from inside another overlay reported
-            // success and played nothing.
-            //
-            // Settling the retained browse session is the one channel that
-            // reaches the phase loop from inside an overlay (the same one
-            // offline playback uses). It succeeds exactly when browse is still
-            // mounted — the direct OPEN_OVERLAY route. On the palette route
-            // browse has already resolved, so this returns false and the intent
-            // is staged for `openNotificationsOverlay` to take on close. The two
-            // cases are mutually exclusive, so playback can never start twice.
-            const delivered = forceCloseRootContent<BrowseShellResult<SearchResult>>({
-              type: "launch-playback",
-              launch: {
+            // The inbox has two open paths and the outcome channel differs per
+            // path. The awaited route (openNotificationsOverlay) is listening
+            // on the bridge — resolve it and the opener turns the outcome into
+            // a history-entry result. The direct route (a bare OPEN_OVERLAY)
+            // has nobody listening, so the row delivers the launch itself:
+            // settle a mounted browse/post-play session or arm a switch-title
+            // intent against live playback.
+            const bridged = hasPendingNotificationSelection();
+            if (bridged) {
+              resolveNotificationSelection({
+                kind: "playback",
                 title: intent.title,
                 ...(intent.episode ? { episode: intent.episode } : {}),
-              },
-            });
-            if (!delivered) stageNotificationPlaybackIntent(intent);
+              });
+            }
+            container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+            if (!bridged) await deliverNotificationPlayback(container, intent);
           },
         },
         details: {
           open: async (item) => {
             stageNotificationDetailsItem(item);
+            resolveNotificationSelection({ kind: "details", item });
             container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
           },
         },
@@ -1600,6 +1681,13 @@ export function RootOverlayShell({
             const awaited = hasPendingRootHistorySelection();
             resolveRootHistorySelection(selection);
             if (selection) {
+              // launch-playback resolves only on browse — delivered to a
+              // playback or picker session it would be a foreign result the
+              // phase loop cannot read, silently dropping the pick.
+              if (!awaited && getRootContentSession()?.kind !== "browse") {
+                setOverlayStatus("Play it from the search screen");
+                return;
+              }
               container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
               if (!awaited) {
                 void resolveHistorySelectionLaunch(container, selection, "history").then(
@@ -1631,54 +1719,183 @@ export function RootOverlayShell({
       const row = sel >= 0 ? queueRows[sel] : undefined;
       if (key.return && row) {
         // Claim exact row before handoff; failed CAS keeps the overlay open.
-        resolveQueueRowPlaySelection(
+        setQueueConfirm(null);
+        const awaited = hasPendingRootQueueSelection();
+        const mountedKind = getRootContentSession()?.kind;
+        if (!awaited && mountedKind === "post-playback") {
+          // Post-play owns this handoff natively — its own queue rail resolves
+          // the same result, and the phase loop claims the row itself. Claiming
+          // here first would make that CAS fail and drop the launch.
+          container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+          forceCloseRootContent<PlaybackShellResult>({
+            type: "play-queue-entry",
+            queueEntryId: row.id,
+          });
+          return;
+        }
+        if (!awaited && mountedKind !== "browse") {
+          // launch-playback only resolves on browse — on active playback, a
+          // picker, or an idle slot nobody consumes it, so claiming would leave
+          // the row in-flight forever. Keep it pending and say where it plays.
+          setOverlayStatus("Queue play from the search screen or the post-play menu");
+          return;
+        }
+        const played = resolveQueueRowPlaySelection(
           container.queueService,
           row.id,
           resolveRootQueueSelection,
           () => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" }),
         );
+        // The palette route awaits this through openRootQueueSelection. Opened
+        // directly from another overlay there is no resolver — the claim above
+        // would close the overlay and drop a launch nothing consumed. Fall back
+        // to the same finish channel the history path uses.
+        if (played.status === "claimed" && !awaited) {
+          const episode = episodeInfoFromQueuePlaybackLaunch(played.launch);
+          const launchTitle = titleInfoFromQueuePlaybackLaunch(played.launch);
+          forceCloseRootContent<BrowseShellResult<SearchResult>>(
+            episode
+              ? { type: "launch-playback", launch: { title: launchTitle, episode } }
+              : { type: "launch-playback", launch: { title: launchTitle } },
+          );
+        }
         return;
       }
       if (input === "J" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
+        setQueueConfirm(null);
         if (container.queueService.moveDown(row.id))
           setSelectedIndex((c) => Math.min(c + 1, queueRows.length - 1));
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input === "K" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
+        setQueueConfirm(null);
         if (container.queueService.moveUp(row.id)) setSelectedIndex((c) => Math.max(c - 1, 0));
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input === "g" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
+        setQueueConfirm(null);
         container.queueService.moveToTop(row.id);
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input === "G" && row) {
+        const undoBefore = container.sessionUndo?.captureQueue();
+        setQueueConfirm(null);
         container.queueService.moveToBottom(row.id);
+        container.sessionUndo?.recordQueueChange(
+          "reordered queue",
+          "queue reorder",
+          undoBefore ?? [],
+        );
         refresh();
         return;
       }
       if (input.toLowerCase() === "x" && row) {
-        container.queueService.remove(row.id);
-        setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
-        refresh();
+        // Destructive, adjacent to Ctrl+C, and one press away from an
+        // accident: arm on first press, remove on the second. Keyed by row id
+        // so a resort between presses cannot retarget the confirm —
+        // same convention as library-shell.
+        const confirmKey = `remove:${row.id}`;
+        if (queueConfirm?.key === confirmKey) {
+          setQueueConfirm(null);
+          const undoBefore = container.sessionUndo?.captureQueue();
+          container.queueService.remove(row.id);
+          container.sessionUndo?.recordQueueChange(
+            "removed from queue",
+            "queue remove",
+            undoBefore ?? [],
+          );
+          setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
+          setOverlayStatus(`Removed ${row.title} from Up Next`);
+          refresh();
+        } else {
+          setQueueConfirm({ key: confirmKey, prompt: `Press x again to remove ${row.title}` });
+        }
         return;
       }
       if (input === "C") {
-        container.queueService.clearPlayed();
-        setSelectedIndex(0);
-        refresh();
+        const playedCount = queueRows.filter((candidate) => candidate.state === "played").length;
+        if (playedCount === 0) {
+          setQueueConfirm(null);
+          setOverlayStatus("No played items to clear");
+          return;
+        }
+        if (queueConfirm?.key === "clear-played") {
+          setQueueConfirm(null);
+          const undoBefore = container.sessionUndo?.captureQueue();
+          container.queueService.clearPlayed();
+          container.sessionUndo?.recordQueueChange(
+            "cleared played items",
+            "played clear",
+            undoBefore ?? [],
+          );
+          setSelectedIndex(0);
+          setOverlayStatus(`Cleared ${playedCount} played ${playedCount === 1 ? "item" : "items"}`);
+          refresh();
+        } else {
+          setQueueConfirm({
+            key: "clear-played",
+            prompt: `Press C again to clear ${playedCount} played ${playedCount === 1 ? "item" : "items"}`,
+          });
+        }
         return;
       }
       if (input === "c" && !key.ctrl) {
-        container.queueService.clear();
-        setSelectedIndex(0);
+        if (queueRows.length === 0) {
+          setQueueConfirm(null);
+          setOverlayStatus("Up Next is already empty");
+          return;
+        }
+        if (queueConfirm?.key === "clear-all") {
+          const cleared = queueRows.length;
+          setQueueConfirm(null);
+          const undoBefore = container.sessionUndo?.captureQueue();
+          container.queueService.clear();
+          container.sessionUndo?.recordQueueChange(
+            "cleared queue",
+            "queue clear",
+            undoBefore ?? [],
+          );
+          setSelectedIndex(0);
+          setOverlayStatus(`Cleared ${cleared} ${cleared === 1 ? "item" : "items"} from Up Next`);
+          refresh();
+        } else {
+          setQueueConfirm({
+            key: "clear-all",
+            prompt: `Press c again to clear all ${queueRows.length} ${queueRows.length === 1 ? "item" : "items"}`,
+          });
+        }
+        return;
+      }
+      // `z` undoes the latest journal entry while one is live; with nothing to
+      // undo it falls through to the choice-overlay filter like any letter.
+      if (input === "z" && container.sessionUndo?.hasLiveUndo()) {
+        container.sessionUndo?.undoLatest();
         refresh();
         return;
       }
       if (input.toLowerCase() === "r") {
+        setQueueConfirm(null);
         const sessions = container.queueService.listRecoverableSessions();
         // Sessions come back most-recent-first; naming the target in the status
         // line is what makes this restore explicit rather than a silent guess.
@@ -1695,6 +1912,11 @@ export function RootOverlayShell({
         refresh();
         return;
       }
+      // Arrows + filtering fall through to the generic handlers below. An
+      // armed confirm names one row: moving the selection must disarm it, or
+      // a later press on the original row would delete with no prompt visible
+      // (the status line self-clears after 2.5s while the arm would survive).
+      if ((key.upArrow || key.downArrow) && queueConfirm) setQueueConfirm(null);
       // No early return — arrows + filtering fall through.
     }
     if (
@@ -1776,7 +1998,7 @@ export function RootOverlayShell({
         });
         return;
       }
-      if (overlay.type === "downloads" || overlay.type === "library") {
+      if (overlay.type === "downloads" || overlay.type === "library" || overlay.type === "guide") {
         return;
       }
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
@@ -1921,6 +2143,12 @@ export function RootOverlayShell({
         });
         return;
       }
+      // `z` pops the live undo entry on every choice surface; when nothing is
+      // undoable it still reaches the filter editor as ordinary text.
+      if (input === "z" && !key.ctrl && !key.meta && container.sessionUndo?.hasLiveUndo()) {
+        container.sessionUndo?.undoLatest();
+        return;
+      }
       if (
         shouldHistoryOverlayAcceptFilterInput({
           overlayType: overlay.type,
@@ -2003,8 +2231,7 @@ export function RootOverlayShell({
                 };
 
   if (overlay.type === "downloads") {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <DownloadManagerContent
           container={container}
@@ -2024,14 +2251,14 @@ export function RootOverlayShell({
           actions={footerActions}
           mode="detailed"
           commandMode={commandMode}
+          companionHint
         />
       </Box>,
     );
   }
 
   if (overlay.type === "library") {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <LibraryShell
           container={container}
@@ -2052,8 +2279,7 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "settings") {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <SettingsShell
           container={container}
@@ -2079,8 +2305,7 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "notifications" && !notificationActionDedupKey && !notificationPlayConfirm) {
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <NotificationsShell
           view={notificationsView}
@@ -2110,6 +2335,7 @@ export function RootOverlayShell({
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
+          companionHint
         />
       </Box>,
     );
@@ -2138,8 +2364,7 @@ export function RootOverlayShell({
         : null,
     };
 
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <ContextStrip
           items={[
@@ -2147,6 +2372,7 @@ export function RootOverlayShell({
               label: `${queueView.counts.unplayed} up next · ${queueView.counts.total} total`,
               tone: "info",
             },
+            ...(overlayStatus ? [{ label: overlayStatus, tone: "warning" as const }] : []),
           ]}
         />
         <QueueShell
@@ -2164,11 +2390,15 @@ export function RootOverlayShell({
           />
         ) : null}
         <ShellFooter
-          taskLabel="Up Next"
+          // An armed confirm prompt lives here (not only in overlayStatus,
+          // which self-clears after 2.5s) so it stays visible until the second
+          // press or a disarm — notifications-footer pattern.
+          taskLabel={queueConfirm?.prompt ?? overlayStatus ?? "Up Next"}
           actions={queueFooterActions()}
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
+          companionHint
         />
       </Box>,
     );
@@ -2182,8 +2412,7 @@ export function RootOverlayShell({
     } = getPickerLayout(overlayLayout.contentColumns, overlayLayout.contentRows);
     const listWidth = pickerListWidth ?? innerWidth;
 
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         <ContextStrip
           items={[
@@ -2193,6 +2422,7 @@ export function RootOverlayShell({
                 : `${historyView.flatRows.length} titles · ${historyView.tabLabels[historyView.tabIndex] ?? "All"}`,
               tone: "info",
             },
+            ...(overlayStatus ? [{ label: overlayStatus, tone: "warning" as const }] : []),
           ]}
         />
         <HistoryShell
@@ -2214,8 +2444,8 @@ export function RootOverlayShell({
           taskLabel={
             historyPendingDelete
               ? historyPendingDelete.kind === "episode"
-                ? `Delete episode progress for ${historyPendingDelete.label}? y confirm · Esc cancel`
-                : `Delete all history for ${historyPendingDelete.label}? y confirm · Esc cancel`
+                ? `Delete episode progress for ${sanitizeTerminalText(historyPendingDelete.label)}? y confirm · Esc cancel`
+                : `Delete all history for ${sanitizeTerminalText(historyPendingDelete.label)}? y confirm · Esc cancel`
               : historySourceChoiceTitleId
                 ? "History · l local, s stream, Esc cancel"
                 : "History"
@@ -2224,6 +2454,7 @@ export function RootOverlayShell({
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
+          companionHint
         />
       </Box>,
     );
@@ -2244,8 +2475,7 @@ export function RootOverlayShell({
       commandItems.length > 0
         ? [...scopeSections, { group: "Commands", items: commandItems }]
         : scopeSections;
-    return wrapOverlayLayout(
-      overlayLayout,
+    return wrapWithLayout(
       <HelpShell
         sections={helpScopeSections}
         scopeLabel={HELP_SCOPE_LABELS[helpScope]}
@@ -2260,10 +2490,59 @@ export function RootOverlayShell({
     );
   }
 
-  if (overlay.type === "tracks_panel") {
-    const tracksHasSwitchable = trackGroups.some((group) => group.rows.some((row) => row.enabled));
+  if (overlay.type === "guide") {
+    const guideSections = buildGuideRows({
+      commands: resolveCommands(state, GUIDE_COMMAND_IDS),
+      runnableHere: GUIDE_RUNNABLE_HERE,
+      searchSurface: GUIDE_SEARCH_SURFACE,
+    });
+    const activateGuideRow = (row: GuideRow) => {
+      // Disabled rows carry the palette's own refusal reason — say why instead
+      // of running a command the palette would have blocked.
+      if (!row.enabled) {
+        setOverlayStatus(row.reason ?? `${row.invocation} is unavailable right now`);
+        return;
+      }
+      const action = toShellAction(row.command);
+      if (row.surface === "run") {
+        resolveOverlayPaletteAction(action);
+        return;
+      }
+      // A search-surface command rides the same {type:"action"} result a
+      // browse-palette Enter produces — deliver it only while a browse
+      // session is actually mounted underneath the overlay stack.
+      if (row.surface === "search" && getRootContentSession()?.kind === "browse") {
+        cancelAllRootOverlays(state.activeModals, container.stateManager);
+        forceCloseRootContent<BrowseShellResult<SearchResult>>({ type: "action", action });
+        return;
+      }
+      // The note rides the guide's own subtitle line — playbackNote only
+      // renders on playback surfaces, so it would be invisible here.
+      setOverlayStatus(`${row.invocation} ${GUIDE_SURFACE_NOTE[row.surface]}`);
+    };
     return wrapOverlayLayout(
       overlayLayout,
+      <GuideShell
+        sections={guideSections}
+        // Row budget for the scrollable list: the panel chrome (title, hint,
+        // footer) plus an optional status note line all draw above it.
+        maxRows={Math.max(4, overlayLayout.contentRows - (overlayStatus ? 8 : 7))}
+        commandMode={commandMode}
+        commandInput={commandInput}
+        commandCursor={commandCursor}
+        commands={commands}
+        highlightedIndex={highlightedIndex}
+        footerActions={footerActions}
+        statusNote={overlayStatus}
+        onActivate={activateGuideRow}
+      />,
+      titleMatches,
+    );
+  }
+
+  if (overlay.type === "tracks_panel") {
+    const tracksHasSwitchable = trackGroups.some((group) => group.rows.some((row) => row.enabled));
+    return wrapWithLayout(
       <Box flexDirection="column" flexGrow={1}>
         {effectiveSubtitle.trim() ? (
           <ContextStrip items={[{ label: effectiveSubtitle, tone: "neutral" }]} />
@@ -2297,13 +2576,13 @@ export function RootOverlayShell({
           ]}
           mode="detailed"
           commandMode={commandMode}
+          companionHint
         />
       </Box>,
     );
   }
 
-  return wrapOverlayLayout(
-    overlayLayout,
+  return wrapWithLayout(
     <Box flexDirection="column" flexGrow={1}>
       <ContextStrip
         items={
@@ -2320,13 +2599,13 @@ export function RootOverlayShell({
                 {
                   label:
                     overlay.type === "provider_picker"
-                      ? `${filteredProviderOptions.length} options`
+                      ? countLabel(filteredProviderOptions.length, "option")
                       : overlay.type === "notifications"
                         ? notificationActionDedupKey
-                          ? `${filteredNotificationActionOptions.length} actions`
-                          : `${filteredNotificationOptions.length} options`
+                          ? countLabel(filteredNotificationActionOptions.length, "action")
+                          : countLabel(filteredNotificationOptions.length, "option")
                         : isRootMediaPickerOverlay(overlay)
-                          ? `${filteredGenericPickerOptions.length} options`
+                          ? countLabel(filteredGenericPickerOptions.length, "option")
                           : `${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`,
                   tone: "info" as const,
                 },
@@ -2366,6 +2645,7 @@ export function RootOverlayShell({
         actions={footerActions}
         mode="detailed"
         commandMode={commandMode}
+        companionHint
       />
     </Box>,
   );

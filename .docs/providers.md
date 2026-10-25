@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-04"
+lastReviewed: "2026-10-12T13:17:48Z"
 ---
 
 # Kunai — Provider Guide
@@ -15,6 +15,31 @@ For concrete example patterns and demo provider shapes, use [.docs/provider-exam
 
 For **auto-skip timing** (IntroDB + AniSkip), **MAL / catalog identity** for anime, and **templates for wiring new anime providers** into that pipeline, read [.docs/playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md).
 
+## Published status observations
+
+The scheduled `.github/workflows/provider-status-sweep.yml` writes the configured
+live probe results to `apps/docs/lib/generated-provider-status.json`. Its current
+eight-probe roster is narrower than the desktop production registry; an omitted
+provider has no measured row. Runner-region results do not prove every user's
+network, title or playback request.
+
+`.github/scripts/publish-provider-status.sh` snapshots that output and publishes
+only the status artifact from a fresh detached worktree at the dispatch branch's
+current remote head. Probe/runtime edits are never committed, reset, stashed or
+rebased. Commit and push hooks are disabled only for those bot commands. A
+concurrent branch advance triggers up to three clean attempts; a newer remote
+observation wins over an older candidate. Identical observations are idempotent.
+
+`generatedAt` is the actual sweep observation time and advances after a new
+sweep even when every provider stays healthy. A daily freshness update is
+meaningful evidence; do not suppress it as timing noise. This script fixes
+publication plumbing; it does not run a new sweep or manufacture a healthy row.
+
+Local Git regression tests exercise dirty-checkout preservation, one-artifact
+publication, branch choice, fresh timestamps, idempotency, stale-result
+protection, concurrent remote advancement and hook isolation. Windows skips
+these Bash workflow mechanics; the publication job runs on Ubuntu.
+
 ## Direction: Provider SDK (Implemented)
 
 Kunai uses a Provider SDK shape modeled after the Vercel AI SDK:
@@ -24,7 +49,7 @@ apps/cli shell
   -> ProviderEngine (retry, timeout, fallback, abort)
   -> CoreProviderModule.resolve(input, context) -> ProviderResolveResult
   -> provider-result-adapter -> StreamInfo
-  -> mpv
+  -> PlayerService (managed mpv or qualified Android handoff)
 ```
 
 ### Package Ownership
@@ -48,8 +73,24 @@ User selects title + episode
   -> providerResolveResultToStreamInfo(result, title, subtitlePreference)
   -> StreamInfo { url, headers, subtitles, providerResolveResult }
   -> providerHealth.set(healthDelta)  [persist health for adaptive fallback]
-  -> mpv
+  -> PlayerService
 ```
+
+### Android stream qualification
+
+Android support does not label whole providers mobile-compatible. Every final
+`StreamInfo` is checked at the player boundary. The initial detached handoff
+accepts only absolute HTTP(S) media URLs with empty headers and no cookies,
+yt-dlp requirement, unresolved locator, local source, or external subtitle.
+Anything else fails visibly before Android is launched; Kunai does not proxy or
+rewrite media to make a candidate fit.
+
+Production providers and fallback order remain exactly those loaded by
+`loadProductionProviderModules()`. Provider-side curl or yt-dlp subprocesses may
+still participate in resolution when available in Termux, but a final stream
+that needs player-side yt-dlp or request headers is not handoff-safe. Qualifying
+anime and TMDB lanes must be proven separately on a physical device before a
+provider is reported as working on Android.
 
 ### Fallback Layers
 
@@ -138,6 +179,10 @@ Providers share a persisted endpoint-health gate on `ProviderRuntimeContext.endp
 
 `runProviderCycle` skips quarantined candidates (`source:skipped`, reason `quarantined`) and records failures/successes by class. Videasy seeds deprecated routes (`1movies`, Sanji) into the gate; runtime quarantine can still learn new dead endpoints. VidLink participates per-endpoint across its two hard dependencies (`vidlink.pro` API and `enc-dec.app`): classified non-OK statuses feed the gate (429/403/timeout/network → transient, persistent 5xx → server-error), while 404 stays title-shaped and never records health evidence. AllManga keys its cycle candidates on the stream's own source host (`metadata.sourceHost`), so a mirror host that refuses the resolve-gate probe (`endpointScoped`) is quarantined once instead of being re-probed on every resolve; a host that merely lacks the title stays in the pool. A pinned title source is cleared when its endpoint is quarantined. Resolve-gate stream probes allow slow CDN timeouts (unverified) but fail on definitive 4xx/5xx; playback preflight re-resolves the same provider once with `intent: "refresh"` before cross-provider fallback.
 
+The same module DNS-checks probe answers only on the platform `fetch` captured
+at load. A stubbed or injected `fetchImpl` owns its destinations, so unit tests
+that replace `globalThis.fetch` do not depend on how `example.com` resolves.
+
 **Every 4xx is definitive at the resolve gate.** `isDefinitiveHttpStatus` in
 `packages/providers/src/shared/stream-reachability.ts` treats the whole 4xx range
 as a refusal. 429 was briefly excluded on the theory that a CDN throttling a CLI
@@ -151,7 +196,12 @@ the stream _plays_, not merely that a probe passed.
 probes up to `RESOLVE_GATE_MAX_PROBES` ranked candidates and takes the first that
 answers, so one dead or hotlink-protected URL no longer condemns its working
 siblings. It stops immediately when `context.signal` aborts — a cancelled resolve
-keeps its selection rather than recording a stream failure.
+returns cancellation rather than handing off a selection or recording a stream
+failure. Definitively refused stream requests are removed before constructing
+selectable variants; a refusal on one URL does not remove healthy paths on the
+same CDN. `not-found` remains in the trace for title-level recovery, but carries
+no provider availability failure delta. Transport, timeout and server failures
+continue to report provider health evidence.
 
 ### Persistent provider cache (`context.cache`)
 
@@ -176,12 +226,25 @@ here. The rule is _what may be persisted_, not whether to cache:
   `hianime:episodes`, `vidlink:enc-dec`) so `/reset-provider-health`-style
   sweeps can scope them.
 
-**Stream verification has two boundaries, and only one is universal.** The
-resolve-gate is opt-in per provider: VidLink enables it through
-`resolveDirectStreamSource`, Videasy runs its own probe as a negative gate only
-(it rejects definitive failures but attests nothing — issue #361 showed a green
-probe can 403 the very next request on signed CDN URLs), and YouTube is attested
-by construction. The playback preflight is the universal boundary: any stream
+**Stream verification has two boundaries.** Production direct providers route
+resolve-time candidate checks through the shared `verifyCandidateStream` gate,
+directly or through its candidate walk. Coverage derives the adapter keys from
+`loadProductionProviderModules()` rather than maintaining an eight-provider
+list beside a twelve-provider registry. YouTube's watch-URL/ytdl runtime and
+Miruro's measured probe-budget limitation have explicit exemptions in
+`packages/providers/test/provider-resolve-gate-coverage.test.ts`; an exemption
+is not direct-media verification.
+
+Movy, HiAnime and AnimeGG check the chosen stream first and walk at most three
+ranked candidates. Definitively refused hosts are removed from returned streams
+and variant inventories. KickassAnime checks its single master, including its
+media playlist/segment through the shared HLS probe, and cannot report success
+for a definitively missing master. Cancellation during the probe returns a
+cancelled result without a provider-success event. The candidate's own headers
+are passed to its probe, not reconstructed separately. Slow/indeterminate probes
+retain the shared unverified policy; this does not attest that playback will work.
+
+The playback preflight is the universal boundary: any stream
 that is not provider-attested inside `playbackTrustMs` is probed at handoff, and
 the probe races mpv's `loadfile`, so it adds no wait — a definitive dead URL
 fails fast only when mpv itself also fails. Stream age alone used to waive that
@@ -204,6 +267,10 @@ so a cached resolve older than an hour will 403 on replay. And mpv only has
 dedicated options for referer and user-agent — everything else a provider
 attaches has to ride `http-header-fields`, which is why
 `normalizeStreamHttpHeaders` forwards unknown headers instead of dropping them.
+Those fields (and `ytdl-raw-options`, which can carry a PO token) never ride
+mpv argv: `writeMpvSensitiveConf` writes them to an owner-only `--include`
+conf next to the IPC socket, deleted once the endpoint proves mpv's startup
+parse is done — argv is world-readable via `/proc/<pid>/cmdline`.
 
 **Per-candidate timeouts are clamped to the attempt budget.**
 `providerCycleCandidateTimeoutMs` (in `packages/core/src/provider-attempt-budget.ts`)
@@ -218,6 +285,13 @@ Provider priority is user-configurable:
 
 - `provider` / `animeProvider` remain the default provider for a new session mode.
 - `providerPriority` controls movie/series fallback and picker order.
+  The shipped default is `["rivestream", "vidrock", "videasy"]` behind the
+  `vidlink` lane lead: Rivestream first (eleven-service local cycle behind the
+  shared resolve gate), VidRock second (multi-lane AES-GCM payloads behind the
+  direct-stream gate), Videasy last and still loaded (session/turnstile-gated
+  with a rotted `videasy.to` domain — a working fallback, not a removal).
+  Unlisted providers (e.g. `movy`, still `candidate` status) stay reachable
+  after configured entries.
 - `animeProviderPriority` controls anime fallback and picker order.
 - Priority lists are applied when the provider engine is built and read again
   during playback resolve, so settings changes affect fallback order without a

@@ -20,6 +20,7 @@ import type { AttentionFeatureFlags } from "../domain/features/feature-flags";
 import type { ListService } from "../domain/lists/ListService";
 import type { StatsFormatter } from "../domain/lists/StatsFormatter";
 import type { StatsService } from "../domain/lists/StatsService";
+import type { PlayerChoice, PlayerMode } from "../domain/playback/player-choice";
 import type { QueueService } from "../domain/queue/QueueService";
 import type { SessionStateManager } from "../domain/session/SessionStateManager";
 import type { Logger } from "../infra/logger/Logger";
@@ -71,6 +72,7 @@ import type { ReleaseProgressWriter } from "../services/release-reconciliation/R
 import type { ReleaseReconciliationService } from "../services/release-reconciliation/ReleaseReconciliationService";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
 import type { SearchServiceDefinition } from "../services/search/SearchService";
+import type { SessionUndoService } from "../services/session-undo/session-undo-service";
 import type { SyncAuthAvailability } from "../services/sync/auth-contract";
 import type { SyncService } from "../services/sync/SyncService";
 import type { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
@@ -173,6 +175,8 @@ export interface Container {
   readonly durablePlaylistService: DurablePlaylistService;
   readonly listService: ListService;
   readonly queueService: QueueService;
+  /** In-session undo journal (`z` in the shell). Not persisted. */
+  readonly sessionUndo: SessionUndoService;
   readonly statsService: StatsService;
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;
@@ -191,6 +195,8 @@ export interface Container {
   readonly shellChrome: ShellChrome;
   /** Startup capability checks captured before container bootstrap. */
   readonly capabilitySnapshot: CapabilitySnapshot | null;
+  /** Runtime-selected player implementation; consumed by playback and presentation policies. */
+  readonly playerMode: PlayerMode;
   /** JSONL diagnostics trace path when --debug-json or --debug-session is active. */
   readonly debugTracePath?: string;
   /** Human-readable startup notes for developer debug sessions only. */
@@ -218,6 +224,7 @@ export interface ContainerOptions {
   mpv?: MpvRuntimeOptions;
   shellChrome?: ShellChrome;
   capabilitySnapshot?: CapabilitySnapshot | null;
+  playerChoice?: PlayerChoice;
   appVersion?: string;
   debugJson?: boolean;
   debugSession?: boolean;

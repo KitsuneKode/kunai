@@ -1,9 +1,7 @@
-// =============================================================================
-// history-progress.ts — finished-state authority + timestamp formatting
+// Finished-state authority + timestamp formatting
 //
 // Single authority for "is this episode finished" over the canonical
 // HistoryProgress row. Replaces the lossy facade-era isFinished.
-// =============================================================================
 
 import { isAnimeOnlyProviderId } from "@/domain/media/content-kind";
 import type { ContentType, ProviderLane } from "@/domain/types";
@@ -24,7 +22,7 @@ import type { MediaKind } from "@kunai/types";
 export function correctedHistoryMediaKind(
   progress: Pick<HistoryProgress, "mediaKind" | "externalIds" | "providerId">,
 ): MediaKind {
-  // 1. An anime-only provider (AllAnime/Miruro) is definitive — anime even if stored
+  // 1. An anime-only provider (see ANIME_ONLY_PROVIDER_IDS) is definitive — anime even if stored
   //    "series" with no external id (the common AllAnime mislabel).
   if (isAnimeOnlyProviderId(progress.providerId)) return "anime";
   // 2. An AniList/MAL id is definitive too (those catalogs are anime-only) — so an
@@ -116,8 +114,8 @@ export function readLatestHistoryByTitle(
 
 /**
  * Single authority for "is this episode finished".
- * The persisted `completed` flag (written richly from credits/threshold/EOF) wins.
- * The 95% ratio is only a fallback when a positive duration is known.
+ * Only the persisted `completed` flag (natural EOF or explicit mark-watched) wins.
+ * Progress ratio and credits timing cannot override an unfinished row.
  */
 // Re-exported from @kunai/storage, which owns HistoryProgress. Lower layers
 // (domain/queue) need this predicate too and must not import upward.

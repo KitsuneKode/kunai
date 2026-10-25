@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-29"
+lastReviewed: "2026-10-14"
 ---
 
 # Provider: VidLink (`vidlink`)
@@ -23,7 +23,7 @@ lastReviewed: "2026-09-29"
 - Fetch `https://vidlink.pro/api/b/<type>/<encryptedId>` with
   `referer: https://vidlink.pro/`, `origin: https://vidlink.pro`, desktop UA, and
   `x-playback-environment: webkit`.
-- `webkit` is load-bearing: it selects the DASH manifest on
+- The 2026-09-29 delivery contract used `webkit` to select the DASH manifest on
   `sacdn.hakunaymatata.com` whose CloudFront signed cookies arrive in the
   payload's `playlistHeaders` — those headers must reach the player, or the
   manifest 403s. The `file` lane (`bcdn.hakunaymatata.com` MP4s) is flagged
@@ -31,8 +31,11 @@ lastReviewed: "2026-09-29"
   "simplify" to it.
 - Payload carries `stream.qualities` (per-rendition URLs), `captions`
   (provider subtitles), and `playbackMetadata` (codec/resolution hints).
-- 20 s per-request timeout, 2 attempts with 500 ms backoff (5xx only sleeps
-  inside the try; any error retries once via the catch).
+- 20 s per-request timeout, 2 attempts. A 429 sleeps out its `Retry-After`
+  (delta-seconds or HTTP-date, capped at 10 s; fixed 500 ms without a usable
+  header) BEFORE the endpoint quarantine is recorded and the retry fires, so
+  the second attempt lands past the throttle window instead of inside it. 5xx
+  keeps the fixed 500 ms sleep; other statuses throw after recording.
 
 ## Failure honesty (post-2026-09-29)
 
@@ -47,7 +50,19 @@ lastReviewed: "2026-09-29"
 
 ## Known gaps
 
-- No dossier-grade live recordings yet (this file is a contract summary, not a
-  wire capture — the hianime dossier shows the depth a real session log adds).
+- Live default-route qualification on 2026-10-04 at `b8c69881745430ea3a8ca43e7af3f7a650d0acd5`
+  failed for both TMDB lanes from the review host. Dune (438631) returned HTTP 200
+  without a usable stream. Dutton Ranch (299167), season 1 episode 1, returned a
+  `file` stream with qualities 360/480/720/1080 and no playlist or playlist headers,
+  despite the unchanged `x-playback-environment: webkit` request. Its selected media
+  probe returned HTTP 429. A second isolated production-engine resolve reproduced
+  both failures; a schema-only fetch observation confirmed the API response shapes.
+  This is evidence from one host, not a global outage or proof of an API repair.
+- Do not turn the refusal into success, add a media relay, or silently switch the
+  default to make signoff green. Requalify the delivery contract and any proposed
+  alternative on the actual supported routes and regions before changing defaults.
+- No dossier-grade wire capture yet; the observations above omit signed URLs,
+  cookies and response bodies. The hianime dossier shows the depth a real session
+  log adds.
 - enc-dec.app is a single external dependency for the id-encryption step; its
   outage degrades the provider to nothing — fallback providers cover it.
