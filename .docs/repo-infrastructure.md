@@ -230,8 +230,17 @@ history, which is why every `checkout` in the workflow pins `fetch-depth: 0`; on
 a checkout without the base ref the freshness half skips with a notice rather
 than failing on the shape of the clone.
 
-Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` covering
-`~/.bun/install/cache` only (Bun reconstructs `node_modules` from the store).
+The v4 Bun cache covers `~/.bun/install/cache`, with an OS and install-configuration
+partition (`package.json` and `bunfig.toml`) before the lockfile/patch fingerprint.
+Fallback restores stay inside that partition; older generations are excluded.
+Windows CI exports `BUN_INSTALL_GLOBAL_STORE=0` before frozen installation so
+dependency links remain in the checkout. Restored global-store junctions had
+produced `EPERM` on a transitive dependency despite a successful install and
+oxfmt probe. Registry package bytes remain cacheable. Linux/macOS retain the
+configured global store. Executable dependency-patch verification remains
+mandatory before any cache save; this change does not retry or skip that gate.
+The formatter probe uses `bunx --no-install` so a missing local binary cannot
+silently fetch another formatter version.
 
 **Build tasks** (Turbo):
 

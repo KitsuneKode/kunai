@@ -23,16 +23,24 @@ runs:
       with:
         bun-version-file: package.json
 
+    # Archived Windows junctions under cache/links can become unreadable even
+    # when installation and a bin probe succeed. Keep dependency links local;
+    # the registry package cache remains reusable and patch checks stay required.
+    - name: Use project-local Windows store
+      if: runner.os == 'Windows'
+      shell: bash
+      run: echo "BUN_INSTALL_GLOBAL_STORE=0" >> "$GITHUB_ENV"
+
     - name: Restore Bun install store
       uses: actions/cache/restore@v5
       id: bun-store
       with:
         path: ~/.bun/install/cache
-        # v3 includes maintained patches. Older stores also captured a truncated
-        # Windows oxfmt link entry; never restore their loose cache prefix.
-        key: ${{ runner.os }}-bun-store-v3-${{ hashFiles('bun.lock', 'patches/*.patch') }}
+        # v4 excludes archives containing unreadable Windows global-store links.
+        # Keep restore prefixes specific to the Bun version/install configuration.
+        key: ${{ runner.os }}-bun-store-v4-${{ hashFiles('package.json', 'bunfig.toml') }}-${{ hashFiles('bun.lock', 'patches/*.patch') }}
         restore-keys: |
-          ${{ runner.os }}-bun-store-v3-
+          ${{ runner.os }}-bun-store-v4-${{ hashFiles('package.json', 'bunfig.toml') }}-
 
     - name: Cache Turbo local
       if: inputs.skip-turbo-cache != 'true'
@@ -56,11 +64,11 @@ runs:
       id: bun-store-ok
       shell: bash
       run: |
-        if ! bun x oxfmt --version >/dev/null 2>&1; then
+        if ! bunx --no-install oxfmt --version >/dev/null 2>&1; then
           echo "::warning::Bun install store failed the oxfmt probe; rebuilding cold"
           rm -rf "$HOME/.bun/install/cache"
           bun install --frozen-lockfile
-          bun x oxfmt --version
+          bunx --no-install oxfmt --version
         fi
 
     - name: Verify installed dependency patches
@@ -72,4 +80,4 @@ runs:
       uses: actions/cache/save@v5
       with:
         path: ~/.bun/install/cache
-        key: ${{ runner.os }}-bun-store-v3-${{ hashFiles('bun.lock', 'patches/*.patch') }}
+        key: ${{ runner.os }}-bun-store-v4-${{ hashFiles('package.json', 'bunfig.toml') }}-${{ hashFiles('bun.lock', 'patches/*.patch') }}
