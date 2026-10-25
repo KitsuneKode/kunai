@@ -125,6 +125,13 @@ keep chunk count from accumulating retained abort closures and preserve partial-
 removal. SHA-256, archive validation, retry classification and download budgets
 remain unchanged.
 
+The response stall timer is armed only while awaiting the next body read and
+cleared before local disk work. File opening and writing cannot consume this
+network inactivity budget; the total download deadline still spans the attempt.
+Stall/retry regressions explicitly deliver timer callbacks after a partial write,
+then verify cancellation, reader release, removal and retry. They run on all
+platforms without a parked asynchronous stream pull or wall-clock race.
+
 ## Native Installer Activation Gate
 
 Activation-lock name contention is retried within its deadline. `EACCES` and

@@ -155,7 +155,6 @@ function createStallWatch(stallDeadlineMs: number, onStall: () => void): StallWa
     timer = setTimeout(onStall, stallDeadlineMs);
     timer.unref?.();
   };
-  reset();
   return { reset, clear };
 }
 
@@ -308,7 +307,15 @@ async function streamResponseToFile(input: {
     const fileHandle = await open(input.destinationPath, "w");
     handle = fileHandle;
     while (true) {
-      const readResult = await readChunkOrAbort(reader, combined);
+      // Only network reads consume the stall budget. Local open/write latency
+      // remains subject to the overall deadline, not a response inactivity timer.
+      stall.reset();
+      let readResult;
+      try {
+        readResult = await readChunkOrAbort(reader, combined);
+      } finally {
+        stall.clear();
+      }
       if (readResult.done) break;
 
       const bytes = readResult.value;
@@ -321,7 +328,6 @@ async function streamResponseToFile(input: {
         );
       }
       hash.update(bytes);
-      stall.reset();
       await writeAllBytes(async (chunk, offset, length) => {
         const result = await fileHandle.write(chunk, offset, length);
         return result.bytesWritten;
