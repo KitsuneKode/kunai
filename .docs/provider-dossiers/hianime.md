@@ -86,7 +86,7 @@ parity, not proof of decoded playback or physical Android/iOS behavior.
   inner `ep-name` div.
 - Servers are `GET /api/theme/episode/servers?episodeId=<episodeId>` → JSON `{html}`
   with `<div class="item server-item" data-type="sub|dub" data-server-name="…"
-data-hash="<base64 embed URL>">`. Observed matrix 2026-09-13:
+  data-hash="<base64 embed URL>">`. Observed matrix 2026-09-13:
 
   | Server      | Sub | Dub | Embed host                                      | Verdict                                                                                             |
   | ----------- | --- | --- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -98,7 +98,7 @@ data-hash="<base64 embed URL>">`. Observed matrix 2026-09-13:
 - ZokoAnime embed decoding (ani-cli `deobfuscate_blob` parity, verified byte-for-byte):
   `window.__P="<b64>"` → base64 decode → XOR with `otaku-embed-v1` (repeating) →
   JSON. Payload keys: `src` (master `.m3u8`), `subtitles[]` (`{lang, label,
-default, src}` VTT), `skip: {intro, outro: {start, end}}` (either may be null),
+  default, src}` VTT), `skip: {intro, outro: {start, end}}` (either may be null),
   `download_url` (`/download/mal/…`), `poster`, `sprite_vtt` (empty string when
   absent), `default_audio`, `video_id`. Embed referer for playback is the embed
   origin + `/` (e.g. `https://zokoanime.video/`); the MAL id comes from the embed
@@ -205,7 +205,7 @@ No iframes, no JS execution, no browser needed.
 - Provider kind: API-first HTTP (`direct-http`), no browser. Single `ZokoAnime`
   server per audio mode; no provider-local cycling beyond sub/dub source rows.
 - What should be extracted: show slug catalog, episode `(number, episodeId,
-title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
+  title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
   HLS ladder, `inventory:audio-modes` when servers expose both modes.
 - What should be deferred: VidTube support, Megaplay revival watch, per-episode
   MAL enrichment at list time (resolve supplies it).

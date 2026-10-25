@@ -155,7 +155,7 @@
     "release:publish": "bun run scripts/publish-npm-release.ts",
     "release:publish:check": "bun run scripts/publish-npm-release.ts",
     "verify:dependency-patches": "bun run scripts/verify-dependency-patches.mjs",
-    "ci:preflight": "bun run lint:anti-slop:baseline && bun run verify:doc-paths && bun run verify:doc-frontmatter",
+    "ci:preflight": "bun run lint:anti-slop:baseline && bun run verify:doc-paths && bun run verify:doc-frontmatter && bun run fmt:root:check",
     "audit:dependencies": "bun audit"
   },
   "dependencies": {

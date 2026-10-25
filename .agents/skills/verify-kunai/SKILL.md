@@ -61,7 +61,7 @@ journal, and writes a bundle (transcript, frames, per-step DB deltas).
 
 - plain tokens type text (`smoke` types s-m-o-k-e)
 - named keys: `<enter> <esc> <up> <down> <left> <right> <tab> <space>
-<backspace> <ctrlC>`
+  <backspace> <ctrlC>`
 - `<wait:TEXT>` — pause until a frame contains TEXT; `<wait:/re/>` waits on a
   regex (`[\s\S]` spans lines)
 - `<wait-config:key=value>` — pause until the debounced write lands in

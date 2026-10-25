@@ -116,7 +116,7 @@ root `CHANGELOG.md`, or `.changeset/*.md`), lint-staged also runs `bun run guard
 catch version/changelog drift before commit.
 
 The pre-push hook runs preflight and affected workspace types, lint, formatting
-and tests through:
+and tests through (preflight also runs root documentation/workflow formatting):
 
 ```sh
 bun run ci:affected

@@ -98,7 +98,7 @@ that installs with **no Bun on PATH** and asserts the install succeeds and
   `resolveLaunchSurfaceName` (`bootstrap-intent.ts:67-72`) ranks `history` above
   `download`, but `runCli` runs `maybeRunDownloadMode` and returns
   (`main.ts:1143-1148`) before the history branch at `:1152`. `kunai --history
---download` therefore prints "watch history" and opens download mode. **Fix:**
+  --download` therefore prints "watch history" and opens download mode. **Fix:**
   one precedence order, applied in both places — the announced surface and the
   executed surface must come from the same list, not two hand-maintained ones.
   (Canvas audit A-11, verified at `ec2e90e6`.)
