@@ -18,12 +18,15 @@ tests and documentation are not installed by the patch.
 
 [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) listed
 no patched release on October 3, 2026. This is a locally maintained mitigation,
-not an official upstream release. `bun audit` will continue to flag the installed
-3.0.3 version; do not suppress the advisory or describe the audit as clean.
+not an official upstream release. A current registry audit may stop reporting
+that historical advisory; absence from the feed does not replace the behavioral
+checks or justify removing the patch. Do not add advisory suppressions.
 
 The root `patchedDependencies` and lockfile bind the patch. Bun applies it on
 `bun install --frozen-lockfile`. Every shared CI setup verifies behavior through
-the actual Changesets config/git and shadcn glob dependency paths:
+the actual shadcn glob dependency path. Changesets 3 config/git now declare
+`picomatch` instead; the verifier checks that transition against their installed
+package manifests rather than resolving a stale hoisted `micromatch`:
 
 Patch contents are included in the Bun store cache key and Turbo's global task
 hash, so editing an existing patch cannot reuse a build made without that change.
@@ -35,7 +38,7 @@ node scripts/verify-dependency-patches.mjs
 
 Checks cover deeply nested braces, parentheses and mixed patterns below the
 existing length ceiling; direct ASTs; attempts to raise the ceiling; the allowed
-boundary; and ordinary glob/range semantics. All 15 checks failed against the
-unpatched installation and pass with the patch. Keep the verifier when updating
+boundary; and ordinary glob/range semantics. The original three-consumer verifier reproduced the unpatched failure; the
+remaining five shadcn checks must still fail without the patch. Keep the verifier when updating
 dependencies. When upstream publishes a reviewed fix, remove the patch binding,
 regenerate the lockfile, and verify these contracts before removing the patch.

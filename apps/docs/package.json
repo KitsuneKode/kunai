@@ -48,9 +48,9 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "shadcn": "^4.21.1",
+    "shadcn": "^4.22.1",
     "tailwindcss": "catalog:web",
-    "typescript": "catalog:web"
+    "typescript": "catalog:"
   },
   "engines": {
     "bun": ">=1.4.4"

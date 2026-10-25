@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-25"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai — Repo Infrastructure
@@ -38,51 +38,65 @@ The monorepo uses [Bun catalogs](https://bun.sh/docs/pm/catalogs) in the root
 - `catalog:providers` — `@assemblyscript/loader`; provider crypto uses built-in APIs
 - `catalog:repo` — `turbo` (root orchestration only)
 - `catalog:web` — Next.js, Fumadocs, Tailwind, Motion, Base UI, Tabler icons,
-  docs UI helpers, and docs TypeScript 5.9 (`apps/docs` only)
+  docs UI helpers. The docs app shares TypeScript 7 from `catalog:`; Next.js
+  16.4 uses its native CLI checker during production builds.
 
 Prefer npm `latest` (stable) pins in catalogs — not `canary`, `preview`, `rc`,
 or `next` tags.
+
+The October 26 refresh checks every production-workspace direct dependency against
+its registry stable tag. Bun 1.4.4 and TypeScript 7.0.2 are already current;
+Bun's runtime floor, package-manager declaration, types and CI setup agree.
+Ink 8.0.0 was tested (6,638 CLI unit tests passed) but not adopted: its bundle
+was 3,189,750 bytes, above the unchanged 3,170,304-byte cap. Ink 7.1.1 remains
+until a separate runtime-preserving optimization qualifies the upgrade.
+Oxlint/plugins 1.89.0 also require a separate React Compiler migration: the CLI
+reports existing render-time ref and effect patterns as errors. Keep the 1.74.0
+pair until those lifecycle changes are independently qualified; no rules or
+baselines were disabled to make the upgrade pass. Oxfmt is updated to 0.74.0. Research
+workspaces and unpublished Kunai platform packages are not registry-updated.
+
+Changesets 3 requires the matching v2 action (pinned by commit), renamed
+`version-script`/`pr-title`/`commit-message` inputs, and explicit
+`privatePackages: { version: true, tag: false }` to preserve the former private
+workspace versioning behavior. `changeset status` must compose the existing
+public/private changesets successfully; no version or tag is created by that
+check. Root Changesets scripts use the locked CLI through `bunx --bun --no-install`
+so a machine-specific Node version cannot select the release tool runtime or
+download an unpinned CLI. Publication still follows the preserved-artifact pipeline.
 
 Root `overrides` dedupe known transitive drift (`@types/node`, `fumadocs-core`,
 `fumadocs-ui`). Fumadocs still pulls Radix + `lucide-react` transitively; do not
 re-catalog those as direct docs deps — docs UI uses Base UI + Tabler.
 
-`braces@3.0.3` has a tracked Bun depth-limit patch for CVE-2026-93687. Shared
-CI setup checks the installed Changesets/shadcn paths after frozen install with
+`braces@3.0.3` retains a tracked Bun depth-limit patch. Shared CI setup
+checks the installed shadcn glob path and the Changesets 3 migration away from
+`braces` after frozen install with
 `bun run verify:dependency-patches`; [patch maintenance](../patches/README.md)
-records provenance, compatibility, and removal criteria. The registry audit
-still flags 3.0.3 because upstream has no patched release; behavioral verification
-does not turn that audit green.
+records provenance, compatibility, and removal criteria.
 
-The October 8 advisory refresh updates the existing transitive ranges for
-[`sharp`](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) to 0.35.5
-(including libvips 1.3.4 / librsvg 2.63.2),
-[`@modelcontextprotocol/sdk`](https://github.com/advisories/GHSA-6qxp-vccf-f47h)
-to 1.32.1, and
-[`source-map-js`](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) to 1.2.2.
-These paths belong to the docs application and developer tools; they are not
-new CLI dependencies. Verify the native image loader through Next's installed
-dependency path, build the docs site, and keep the frozen-install patch checks.
+`bun run audit:dependencies` checks the complete locked workspace tree against
+current registry advisories. The PR release guard runs it before installation,
+and the manual release candidate runs it before its repository/artifact build
+gates. Findings and audit failures stop those jobs. The scan includes development
+dependencies: internal CLI workspace packages are build inputs even where they
+are declared as devDependencies, and the docs/tooling graph has its own exposure.
+An audit result identifies affected installed packages; it does not by itself
+prove an application exploit. Current versions, dependency paths and verification
+results belong in the release qualification record.
 
-The audit still reports `sprintf-js` 1.0.3 through Changesets →
-`@manypkg/get-packages` → `read-yaml-file` → `js-yaml` 3 → `argparse` 1.
-The [advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) lists no patched
-release. The installed `read-yaml-file` uses the
-YAML library, while `argparse` is imported by that legacy YAML package's separate
-CLI; this does not establish an exposed format-string path in Kunai. Keep the
-finding visible rather than suppressing it or treating the audit as clean.
-
-Dependency fixes should use an upstream compatible release when available.
-Local patches need a reproduced defect, documented upstream provenance and
-removal criteria, and behavioral verification through their real consumers.
-Keep framework major upgrades separate from playback correctness changes;
-an available version alone is not evidence that migrating improves reliability.
+Dependency fixes use compatible upstream stable releases and targeted catalog or
+override floors. Update a parent package when its supported newer release removes
+a vulnerable legacy dependency; do not force an incompatible major into its graph.
+Local patches require a reproduced defect, upstream provenance, removal criteria
+and behavioral verification through their real consumers. Keep unrelated framework
+major migrations separate from playback correctness work.
 
 `.reference/experiments` is **outside** the default workspace, so it cannot use
 `catalog:` protocols. Main installs stay lean; research deps install only via
 `bun run experiments:install` (standalone `.reference/experiments/bun.lock`).
 
-Default workspace packages: `apps/cli`, `apps/docs`, `apps/relay-server`,
+Default workspace packages: `apps/cli`, `apps/mobile`, `apps/docs`, `apps/relay-server`,
 `apps/analytics-ingest`, `packages/*`.
 
 ## Local Hooks
@@ -101,10 +115,11 @@ When release-related files change (`apps/cli/package.json`, `apps/cli/CHANGELOG.
 root `CHANGELOG.md`, or `.changeset/*.md`), lint-staged also runs `bun run guard` to
 catch version/changelog drift before commit.
 
-The pre-push hook runs the full workspace test command:
+The pre-push hook runs preflight and affected workspace types, lint, formatting
+and tests through:
 
 ```sh
-bun run test
+bun run ci:affected
 ```
 
 ## CI

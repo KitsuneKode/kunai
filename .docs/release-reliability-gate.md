@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-25"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai Release Reliability Gate
@@ -20,6 +20,7 @@ Use the command above before CLI build or release-pipeline changes (covers build
 Run from the repo root:
 
 ```sh
+bun run audit:dependencies
 bun run fmt:check
 bun run lint
 bun run test
@@ -40,6 +41,10 @@ Expected result:
   ten preserved raw binaries, `SHA256SUMS`, and `SHA256SUMS.archives`
 - package check rejects `dist/bin/**`, source/maps, analyze metafiles, lifecycle scripts, dependency drift, and oversized launcher tarballs
 - release dry-run completes build, checks, and packability without publishing
+
+Dispatch version input is passed through the step environment, never interpolated
+into generated Bash source. Exact comparison with the package version rejects
+hostile strings as data before candidate construction.
 
 The release workflow additionally opens the exact preserved
 `.release-candidate/kunai-npm.tgz` after `release:pack`, both before candidate

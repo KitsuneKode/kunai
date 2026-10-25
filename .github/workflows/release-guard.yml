@@ -51,6 +51,9 @@ jobs:
         with:
           bun-version-file: package.json
 
+      - name: Audit locked dependencies
+        run: bun run audit:dependencies
+
       # The guard scripts are run straight from source, and the chain already
       # reaches out of scripts/ into apps/cli/src (sync-npm-platform-versions
       # imports platform-assets). Today nothing in that chain resolves a package

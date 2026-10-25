@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 let passed = 0;
 let failed = 0;
@@ -17,17 +18,24 @@ const rootRequire = createRequire(new URL("../package.json", import.meta.url));
 const docsRequire = createRequire(new URL("../apps/docs/package.json", import.meta.url));
 
 function dependencyRequire(start, chain) {
-  return chain.reduce(
-    (parent, name) => createRequire(parent.resolve(name)),
-    start,
-  );
+  return chain.reduce((parent, name) => createRequire(parent.resolve(name)), start);
 }
 
-const consumers = [
-  ["Changesets config", rootRequire, ["@changesets/cli", "@changesets/config", "micromatch"]],
-  ["Changesets git", rootRequire, ["@changesets/cli", "@changesets/git", "micromatch"]],
-  ["shadcn glob", docsRequire, ["shadcn", "fast-glob", "micromatch"]],
-];
+const consumers = [["shadcn glob", docsRequire, ["shadcn", "fast-glob", "micromatch"]]];
+
+// Changesets 3 migrated these consumers to picomatch. Verify declared edges,
+// not a hoisted/stale micromatch that a reused installation can still resolve.
+const changesetsRequire = createRequire(rootRequire.resolve("@changesets/cli"));
+for (const name of ["@changesets/config", "@changesets/git"]) {
+  test(`${name}: current glob dependency avoids braces`, () => {
+    const manifest = JSON.parse(
+      readFileSync(changesetsRequire.resolve(`${name}/package.json`), "utf8"),
+    );
+    assert.match(manifest.dependencies.picomatch, /[0-9]/);
+    assert.equal(manifest.dependencies.micromatch, undefined);
+    assert.equal(manifest.dependencies.braces, undefined);
+  });
+}
 
 function nestedAst(depth) {
   let node = { type: "text", value: "a" };
@@ -41,7 +49,11 @@ for (const [label, start, chain] of consumers) {
   const micromatch = consumer(".");
 
   test(`${label}: installed parser rejects deeply nested braces and parentheses`, () => {
-    for (const [open, close] of [["{", "}"], ["(", ")"], ["({", "})"]]) {
+    for (const [open, close] of [
+      ["{", "}"],
+      ["(", ")"],
+      ["({", "})"],
+    ]) {
       const pattern = open.repeat(3000) + "a" + close.repeat(3000);
       // The mixed case exceeds the old length ceiling; keep that case below it.
       const input = pattern.length > 10000 ? open.repeat(2000) + "a" + close.repeat(2000) : pattern;
@@ -52,7 +64,10 @@ for (const [label, start, chain] of consumers) {
   for (const method of ["compile", "expand", "stringify"]) {
     test(`${label}: ${method} guards direct ASTs and cannot raise the safe ceiling`, () => {
       assert.throws(() => braces[method](nestedAst(3000)), /exceeds max depth/);
-      assert.throws(() => braces[method](nestedAst(101), { maxDepth: Infinity }), /exceeds max depth/);
+      assert.throws(
+        () => braces[method](nestedAst(101), { maxDepth: Infinity }),
+        /exceeds max depth/,
+      );
       assert.throws(() => braces[method](nestedAst(101), { maxDepth: 10000 }), /exceeds max depth/);
     });
   }
@@ -65,11 +80,22 @@ for (const [label, start, chain] of consumers) {
     assert.throws(() => braces.parse("{{a,b},c}", { maxDepth: 1 }), /exceeds max depth/);
     assert.doesNotThrow(() => braces.parse("{{a,b},c}", { maxDepth: 2 }));
     assert.deepEqual(braces.expand("file-{01..03}.{ts,tsx}"), [
-      "file-01.ts", "file-01.tsx", "file-02.ts", "file-02.tsx", "file-03.ts", "file-03.tsx",
+      "file-01.ts",
+      "file-01.tsx",
+      "file-02.ts",
+      "file-02.tsx",
+      "file-03.ts",
+      "file-03.tsx",
     ]);
     assert.deepEqual(braces.expand("a/{b,{c,d}}/e"), ["a/b/e", "a/c/e", "a/d/e"]);
     assert.equal(braces.stringify("a/{b,c}/d"), "a/{b,c}/d");
-    assert.deepEqual(micromatch(["apps/cli/a.ts", "apps/docs/b.tsx", "README.md"], "apps/{cli,docs}/**/*.{ts,tsx}"), ["apps/cli/a.ts", "apps/docs/b.tsx"]);
+    assert.deepEqual(
+      micromatch(
+        ["apps/cli/a.ts", "apps/docs/b.tsx", "README.md"],
+        "apps/{cli,docs}/**/*.{ts,tsx}",
+      ),
+      ["apps/cli/a.ts", "apps/docs/b.tsx"],
+    );
   });
 }
 

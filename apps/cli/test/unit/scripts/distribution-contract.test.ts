@@ -194,6 +194,27 @@ describe("release workflow candidate-before-publication contract", () => {
   const publish = () => extractWorkflowJob(release, "publish");
   const metadata = () => extractWorkflowJob(release, "metadata");
 
+  test("PR release guard rejects vulnerable locked dependencies", () => {
+    expect(rootPackage.scripts["audit:dependencies"]).toBe("bun audit");
+    const guard = readFileSync(join(REPO_ROOT, ".github/workflows/release-guard.yml"), "utf8");
+    const job = extractWorkflowJob(guard, "guard");
+    expect(job).toContain("bun run audit:dependencies");
+    expect(job.indexOf("bun run audit:dependencies")).toBeLessThan(
+      job.indexOf("bun install --frozen-lockfile"),
+    );
+    expect(job).not.toMatch(/continue-on-error:\s*true/);
+  });
+
+  test("release candidate audits dependencies before artifact builds", () => {
+    const job = candidate();
+    const audit = job.indexOf("bun run audit:dependencies");
+    expect(audit).toBeGreaterThanOrEqual(0);
+    expect(audit).toBeLessThan(job.indexOf("bun run ci"));
+    expect(audit).toBeLessThan(job.indexOf("bun run build"));
+    expect(job).not.toMatch(/audit:dependencies[^\n]*\|\|/);
+    expect(job).not.toMatch(/continue-on-error:\s*true/);
+  });
+
   test("push flow has no publish command", () => {
     expect(release).toMatch(/workflow_dispatch:/);
     expect(release).toMatch(/inputs:[\s\S]*version:/);
