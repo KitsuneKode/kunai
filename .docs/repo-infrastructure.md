@@ -122,6 +122,11 @@ and tests through (preflight also runs root documentation/workflow formatting):
 bun run ci:affected
 ```
 
+Doc freshness compares both committed versions with the installed formatter
+before allowing an unchanged review date on a formatting-only edit. Content
+changes still require reconciliation; a missing or failing formatter cannot
+exempt a doc. This avoids inventing review dates during formatter upgrades.
+
 ## CI
 
 Pull requests and pushes to `main` use the composite setup action

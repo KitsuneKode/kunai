@@ -13,6 +13,22 @@ function doc(reviewed: string, body: string): string {
 
 for (const scenario of [
   {
+    name: "formatter-only list indentation does not invent a new review date",
+    before: "2026-10-11",
+    after: "2026-10-11",
+    beforeBody: "- `command\nargument`",
+    afterBody: "- `command\n  argument`",
+    exit: 0,
+  },
+  {
+    name: "formatting plus a content edit still needs review",
+    before: "2026-10-11",
+    after: "2026-10-11",
+    beforeBody: "- `command\nargument`",
+    afterBody: "- `command\n  changed-argument`",
+    exit: 1,
+  },
+  {
     name: "a second review on the same day can use an ISO timestamp",
     before: "2026-10-11",
     after: "2026-10-11T12:05:00Z",
@@ -56,7 +72,7 @@ for (const scenario of [
       mkdirSync(join(root, ".docs"));
       copyFileSync(verifier, join(root, "scripts/verify-doc-frontmatter.ts"));
       const target = join(root, ".docs/fixture.md");
-      writeFileSync(target, doc(scenario.before, "Before."));
+      writeFileSync(target, doc(scenario.before, scenario.beforeBody ?? "Before."));
       const git = (...args: string[]) => {
         const result = Bun.spawnSync(["git", ...args], {
           cwd: root,
@@ -86,7 +102,7 @@ for (const scenario of [
         );
       commit("before");
       const base = git("rev-parse", "HEAD");
-      writeFileSync(target, doc(scenario.after, "Changed behavior."));
+      writeFileSync(target, doc(scenario.after, scenario.afterBody ?? "Changed behavior."));
       git("add", ".");
       commit("after");
       const result = Bun.spawnSync([process.execPath, "scripts/verify-doc-frontmatter.ts"], {
