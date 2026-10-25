@@ -9,7 +9,7 @@ test("agent launch refuses an override of its analytics suppression", async () =
   const session = await createAgentSession({
     label: "privacy-override",
     extraEnv: { DO_NOT_TRACK: "0", CI: "0" },
-  }).catch((error: unknown) => {
+  }).catch((error) => {
     rejection = error instanceof Error ? error.message : String(error);
     return null;
   });

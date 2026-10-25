@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 
-type Environment = Readonly<Record<string, unknown>>;
+type Environment = Readonly<Record<string, string | number | boolean | null>>;
 type Workflow = {
   env?: Environment;
   jobs: Record<string, { env?: Environment; steps?: { env?: Environment }[] }>;
@@ -15,7 +15,7 @@ test("every hosted workflow disables analytics through job and step inheritance"
   const paths = Array.from(new Bun.Glob(".github/workflows/*.yml").scanSync(root)).sort();
   expect(paths.length).toBeGreaterThan(0);
   for (const path of paths) {
-    // Repository-owned YAML: validate effective overrides as GitHub Actions does.
+    // SAFETY: repository-owned YAML; validate effective overrides as GitHub Actions does.
     const workflow = Bun.YAML.parse(await Bun.file(resolve(root, path)).text()) as Workflow;
     expect(workflow.env?.DO_NOT_TRACK, path).toBe("1");
     for (const [name, job] of Object.entries(workflow.jobs)) {
@@ -29,7 +29,7 @@ test("every hosted workflow disables analytics through job and step inheritance"
 });
 
 test("Turbo strict tasks retain analytics suppression even outside CI", async () => {
-  // Repository-owned configuration; retain only the two environment declarations.
+  // SAFETY: repository-owned configuration; retain only the two environment declarations.
   const config = Bun.JSON5.parse(await Bun.file(resolve(root, "turbo.json")).text()) as {
     globalPassThroughEnv?: string[];
     globalEnv?: string[];

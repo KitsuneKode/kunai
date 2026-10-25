@@ -15,85 +15,85 @@ import {
   resolveProviderSmokeStream,
 } from "./provider-smoke";
 
-const profile = createProviderSmokeProfile("vidrock");
-const args = process.argv.slice(1);
+async function main(): Promise<void> {
+  const profile = createProviderSmokeProfile("vidrock");
+  const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
 
-const season = Number(args[0] ?? "1");
-const episode = Number(args[1] ?? "1");
-const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
+  const { createContainer } = await import("@/container");
+  const container = await createContainer({ debug: true });
+  const provider = container.providerRegistry.get("vidrock");
 
-const { createContainer } = await import("@/container");
-const container = await createContainer({ debug: true });
-const provider = container.providerRegistry.get("vidrock");
+  if (!provider) {
+    console.error(JSON.stringify({ ok: false, stage: "provider", reason: "missing_vidrock" }));
+    process.exit(1);
+  }
 
-if (!provider) {
-  console.error(JSON.stringify({ ok: false, stage: "provider", reason: "missing_vidrock" }));
-  process.exit(1);
-}
+  if (clearCache) {
+    await container.cacheStore.clear();
+  }
 
-if (clearCache) {
-  await container.cacheStore.clear();
-}
+  const title: TitleInfo = {
+    id: "27205",
+    type: "movie",
+    name: "Inception",
+  };
 
-const title: TitleInfo = {
-  id: "27205",
-  type: "movie",
-  name: "Inception",
-};
-
-let resolveError: unknown = null;
-let failureCodes: readonly string[] = [];
-let failureMessages: readonly string[] = [];
-let streamCandidates = 0;
-const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
-  container,
-  providerId: "vidrock",
-  mode: "series",
-  request: {
-    title,
-    audioPreference: container.config.movieLanguageProfile.audio,
-    subtitlePreference: container.config.movieLanguageProfile.subtitle,
-  },
-})
-  .then((resolved) => {
-    failureCodes = resolved.result.failures.map((failure) => failure.code);
-    failureMessages = resolved.result.failures.map((failure) => failure.message);
-    streamCandidates = resolved.result.streams.length;
-    return resolved;
+  let resolveFailure: ReturnType<typeof providerSmokeError> | undefined;
+  let failureCodes: readonly string[] = [];
+  let failureMessages: readonly string[] = [];
+  let streamCandidates = 0;
+  const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
+    container,
+    providerId: "vidrock",
+    mode: "series",
+    request: {
+      title,
+      audioPreference: container.config.movieLanguageProfile.audio,
+      subtitlePreference: container.config.movieLanguageProfile.subtitle,
+    },
   })
-  .catch((error) => {
-    resolveError = error;
-    return { stream: null, resolveDurationMs: null };
-  });
-
-const streamProbe = stream?.url
-  ? await probeStreamReachability({
-      url: stream.url,
-      headers: stream.headers,
-      timeoutMs: 5_000,
+    .then((resolved) => {
+      failureCodes = resolved.result.failures.map((failure) => failure.code);
+      failureMessages = resolved.result.failures.map((failure) => failure.message);
+      streamCandidates = resolved.result.streams.length;
+      return resolved;
     })
-  : null;
-const streamReachable = streamProbe ? isStreamReachableForResolve(streamProbe) : null;
+    .catch((error) => {
+      resolveFailure = providerSmokeError(error);
+      return { stream: null, resolveDurationMs: null };
+    });
 
-const payload = {
-  ...buildProviderSmokePayload({
-    provider: "vidrock",
-    title,
-    stream,
-    resolveDurationMs,
-  }),
-  ...(resolveError ? providerSmokeError(resolveError) : null),
-  failureCodes,
-  failureMessages,
-  streamCandidates,
-  streamProbe,
-  streamReachable,
-  ...providerSmokeProfilePayload(profile),
-  cacheCleared: clearCache,
-};
+  const streamProbe = stream?.url
+    ? await probeStreamReachability({
+        url: stream.url,
+        headers: stream.headers,
+        timeoutMs: 5_000,
+      })
+    : null;
+  const streamReachable = streamProbe ? isStreamReachableForResolve(streamProbe) : null;
 
-console.log(JSON.stringify(payload, null, 2));
+  const payload = {
+    ...buildProviderSmokePayload({
+      provider: "vidrock",
+      title,
+      stream,
+      resolveDurationMs,
+    }),
+    ...resolveFailure,
+    failureCodes,
+    failureMessages,
+    streamCandidates,
+    streamProbe,
+    streamReachable,
+    ...providerSmokeProfilePayload(profile),
+    cacheCleared: clearCache,
+  };
 
-if (!stream?.url || streamReachable === false) {
-  process.exit(1);
+  console.log(JSON.stringify(payload, null, 2));
+
+  if (!stream?.url || streamReachable === false) {
+    process.exit(1);
+  }
 }
+
+await main();
