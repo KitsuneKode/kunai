@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
+import { link, mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -93,7 +93,7 @@ describe("release build shared options", () => {
     expect(npmBundleBuildOptions(root, { minify: false }).minify).toBe(false);
   });
 
-  test.each(["direct", "symlinked"] as const)(
+  test.each(["direct", "symlinked", "hardlinked-manifest"] as const)(
     "embeds only the CLI version through a %s root, preserving other manifests and runtime env",
     async (rootKind) => {
       const sandboxRoot = await mkdtemp(join(tmpdir(), "kunai-build-manifest-"));
@@ -112,6 +112,13 @@ describe("release build shared options", () => {
           join(fixtureRoot, "package.json"),
           JSON.stringify({ version: "1.2.3-test", scripts: { test: "UNUSED_CLI_SCRIPT_MARKER" } }),
         );
+        if (rootKind === "hardlinked-manifest") {
+          await mkdir(join(fixtureRoot, "manifest-alias"));
+          await link(
+            join(fixtureRoot, "package.json"),
+            join(fixtureRoot, "manifest-alias/package.json"),
+          );
+        }
         await Bun.write(
           join(fixtureRoot, "other/package.json"),
           JSON.stringify({ scripts: { test: "other manifest stays intact" } }),
@@ -119,7 +126,9 @@ describe("release build shared options", () => {
         await Bun.write(
           join(fixtureRoot, "src/main.ts"),
           [
-            'import cli from "../package.json" with { type: "json" };',
+            rootKind === "hardlinked-manifest"
+              ? 'import cli from "../manifest-alias/package.json" with { type: "json" };'
+              : 'import cli from "../package.json" with { type: "json" };',
             'import other from "../other/package.json" with { type: "json" };',
             "console.log(JSON.stringify([cli.version, other.scripts.test, process.env.KUNAI_MANIFEST_RUNTIME_TEST]));",
           ].join("\n"),
@@ -128,7 +137,22 @@ describe("release build shared options", () => {
         const result = await Bun.build(npmBundleBuildOptions(buildRoot, { minify: true }));
         expect(result.success).toBe(true);
         const bundle = join(fixtureRoot, "dist/kunai.js");
-        expect(await Bun.file(bundle).text()).not.toContain("UNUSED_CLI_SCRIPT_MARKER");
+        const declared = statSync(join(buildRoot, "package.json"), { bigint: true });
+        const imported = statSync(
+          join(
+            fixtureRoot,
+            rootKind === "hardlinked-manifest" ? "manifest-alias/package.json" : "package.json",
+          ),
+          { bigint: true },
+        );
+        const diagnostics = JSON.stringify({
+          buildRoot,
+          fileIds: [`${declared.dev}:${declared.ino}`, `${imported.dev}:${imported.ino}`],
+          inputs: Object.keys(requireBuildMetafile(result.metafile).inputs),
+        });
+        expect(await Bun.file(bundle).text(), diagnostics).not.toContain(
+          "UNUSED_CLI_SCRIPT_MARKER",
+        );
         const child = Bun.spawn([process.execPath, bundle], {
           env: { ...process.env, KUNAI_MANIFEST_RUNTIME_TEST: "resolved at runtime" },
           stdout: "pipe",

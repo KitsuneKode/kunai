@@ -7,7 +7,7 @@
 // Keeping release stubs, defines, and graph guards in one place avoids drift
 // between the two outputs (a previous bug: `bun build --compile` could not
 // resolve `react-devtools-core` because it lacked the bundle's stub plugin).
-import { realpathSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { isJsonString } from "@kunai/types";
@@ -52,11 +52,12 @@ function cliVersionManifestPlugin(root: string): BunPlugin {
   return {
     name: "kunai-cli-version-manifest",
     setup(build) {
-      // Bun canonicalizes loaded paths; macOS /var and symlinked checkouts
-      // can spell the same manifest differently from the supplied root.
-      const manifestPath = realpathSync(resolve(root, "package.json"));
+      // Follow aliases and compare filesystem identity. Path spellings can
+      // differ across Windows junctions, short names, symlinks and hard links.
+      const manifest = statSync(resolve(root, "package.json"), { bigint: true });
       build.onLoad({ filter: /package\.json$/ }, async ({ path }) => {
-        if (realpathSync(path) !== manifestPath) return;
+        const loaded = statSync(path, { bigint: true });
+        if (loaded.dev !== manifest.dev || loaded.ino !== manifest.ino) return;
         const { version } = await Bun.file(path).json();
         if (!isJsonString(version) || version.length === 0) {
           throw new Error("[build] CLI package.json must contain a non-empty version");

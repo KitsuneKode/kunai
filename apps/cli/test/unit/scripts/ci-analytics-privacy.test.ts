@@ -22,8 +22,8 @@ test("workflow discovery covers both GitHub YAML suffixes", () => {
     for (const name of ["one.yml", "two.yaml", "README.md"])
       writeFileSync(join(directory, ".github/workflows", name), "");
     expect(hostedWorkflowPaths(directory)).toEqual([
-      ".github/workflows/one.yml",
-      ".github/workflows/two.yaml",
+      join(".github", "workflows", "one.yml"),
+      join(".github", "workflows", "two.yaml"),
     ]);
   } finally {
     rmSync(directory, { recursive: true, force: true });
