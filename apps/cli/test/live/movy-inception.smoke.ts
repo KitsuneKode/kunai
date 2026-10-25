@@ -5,7 +5,7 @@
  * This test verifies the seed fetch, lane decryption, and source resolution.
  */
 import type { TitleInfo } from "@/domain/types";
-import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
+import { probeStreamReachability } from "@kunai/providers";
 
 import {
   buildProviderSmokePayload,
@@ -13,6 +13,7 @@ import {
   providerSmokeError,
   providerSmokeProfilePayload,
   resolveProviderSmokeStream,
+  smokeStreamReachable,
 } from "./provider-smoke";
 
 async function main(): Promise<void> {
@@ -70,7 +71,7 @@ async function main(): Promise<void> {
         timeoutMs: 5_000,
       })
     : null;
-  const streamReachable = streamProbe ? isStreamReachableForResolve(streamProbe) : null;
+  const streamReachable = smokeStreamReachable(streamProbe);
 
   const payload = {
     ...buildProviderSmokePayload({
@@ -80,9 +81,9 @@ async function main(): Promise<void> {
       resolveDurationMs,
     }),
     ...resolveFailure,
-    failureCodes,
-    failureMessages,
-    streamCandidates,
+    failureCodes: resolveFailure?.failureCodes ?? failureCodes,
+    failureMessages: resolveFailure?.failureMessages ?? failureMessages,
+    streamCandidates: resolveFailure?.streamCandidates ?? streamCandidates,
     streamProbe,
     streamReachable,
     ...providerSmokeProfilePayload(profile),

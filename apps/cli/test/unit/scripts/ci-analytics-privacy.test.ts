@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 
@@ -11,8 +11,27 @@ type Workflow = {
 
 const root = resolve(import.meta.dir, "../../../../..");
 
+function hostedWorkflowPaths(directory: string): string[] {
+  return Array.from(new Bun.Glob(".github/workflows/*.{yml,yaml}").scanSync(directory)).sort();
+}
+
+test("workflow discovery covers both GitHub YAML suffixes", () => {
+  const directory = mkdtempSync(join(tmpdir(), "kunai-workflow-suffixes-"));
+  try {
+    mkdirSync(join(directory, ".github/workflows"), { recursive: true });
+    for (const name of ["one.yml", "two.yaml", "README.md"])
+      writeFileSync(join(directory, ".github/workflows", name), "");
+    expect(hostedWorkflowPaths(directory)).toEqual([
+      ".github/workflows/one.yml",
+      ".github/workflows/two.yaml",
+    ]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("every hosted workflow disables analytics through job and step inheritance", async () => {
-  const paths = Array.from(new Bun.Glob(".github/workflows/*.yml").scanSync(root)).sort();
+  const paths = hostedWorkflowPaths(root);
   expect(paths.length).toBeGreaterThan(0);
   for (const path of paths) {
     // SAFETY: repository-owned YAML; validate effective overrides as GitHub Actions does.

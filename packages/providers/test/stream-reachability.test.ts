@@ -22,6 +22,54 @@ function mediaBytes(size = HLS_SEGMENT_PROBE_MIN_BYTES): Uint8Array {
   return new Uint8Array(size).fill(0xab);
 }
 
+function mp4Box(type: string, ...parts: readonly Uint8Array[]): Uint8Array {
+  const payload = Buffer.concat(parts);
+  const header = Buffer.alloc(8);
+  header.writeUInt32BE(payload.length + 8);
+  header.write(type, 4, "ascii");
+  return Buffer.concat([header, payload]);
+}
+
+function fmp4Segment(withDecodeTime = true): Uint8Array {
+  const tfhd = Buffer.alloc(8);
+  tfhd.writeUInt32BE(0x020000, 0); // default-base-is-moof
+  tfhd.writeUInt32BE(1, 4); // track id
+  const trun = Buffer.alloc(12);
+  trun.writeUInt32BE(1, 0); // data-offset-present
+  trun.writeUInt32BE(1, 4); // one sample, defaults supplied by initialization segment
+  const fragmentParts = [mp4Box("tfhd", tfhd)];
+  if (withDecodeTime) fragmentParts.push(mp4Box("tfdt", Buffer.alloc(8)));
+  fragmentParts.push(mp4Box("trun", trun));
+  const fragment = mp4Box(
+    "moof",
+    mp4Box("mfhd", Buffer.alloc(8)),
+    mp4Box("traf", ...fragmentParts),
+  );
+  trun.writeInt32BE(fragment.length + 8, 8);
+  const finalized = mp4Box(
+    "moof",
+    mp4Box("mfhd", Buffer.alloc(8)),
+    mp4Box(
+      "traf",
+      mp4Box("tfhd", tfhd),
+      ...(withDecodeTime ? [mp4Box("tfdt", Buffer.alloc(8))] : []),
+      mp4Box("trun", trun),
+    ),
+  );
+  return Buffer.concat([finalized, mp4Box("mdat", mediaBytes())]);
+}
+
+function extendedMdatSegment(validSize: boolean): Uint8Array {
+  const segment = Buffer.from(fmp4Segment());
+  const dataOffset = segment.indexOf("mdat") - 4;
+  const header = Buffer.alloc(16);
+  header.writeUInt32BE(1);
+  header.write("mdat", 4, "ascii");
+  header.writeBigUInt64BE(validSize ? BigInt(16 + HLS_SEGMENT_PROBE_MIN_BYTES) : 0n, 8);
+  segment.writeInt32BE(dataOffset + 16, segment.indexOf("trun") + 12);
+  return Buffer.concat([segment.subarray(0, dataOffset), header, mediaBytes()]);
+}
+
 describe("stream reachability", () => {
   test("HLS media playlists probe first media segment after playlist fetch", async () => {
     const urls: string[] = [];
@@ -233,6 +281,35 @@ describe("stream reachability", () => {
     expect(cancelled).toBe(true);
     expect(chunksRead).toBe(1);
   });
+
+  for (const [label, bytes, accepted] of [
+    ["moof/mdat", fmp4Segment(), true],
+    ["extended mdat", extendedMdatSegment(true), true],
+    ["invalid extended mdat size", extendedMdatSegment(false), false],
+    [
+      "styp/moof/mdat",
+      Buffer.concat([mp4Box("styp", Buffer.from("msdh0000msdh", "ascii")), fmp4Segment()]),
+      true,
+    ],
+    ["missing decode-time box", fmp4Segment(false), false],
+    ["empty fragment", Buffer.concat([mp4Box("moof"), mp4Box("mdat", mediaBytes())]), false],
+    [
+      "MP4 marker without fragment",
+      Buffer.concat([mp4Box("ftyp", Buffer.from("iso60000iso6", "ascii")), mediaBytes()]),
+      false,
+    ],
+  ] as const) {
+    test(`HTML-labeled fMP4 prefix: ${label}`, async () => {
+      const probe = await probeStreamReachability({
+        url: "https://cdn.example/stream.m3u8",
+        fetchImpl: async (url: string) =>
+          url.endsWith("stream.m3u8")
+            ? response(200, "#EXTM3U\n#EXTINF:3,\n/seg.m4s\n")
+            : response(200, bytes, { "content-type": "text/html" }),
+      });
+      expect(probe.status).toBe(accepted ? "reachable" : "unreachable");
+    });
+  }
 
   test("a segment body that errors mid-read is not reported as a small body", async () => {
     // readPrefixBytes used to catch the read failure and return the partial

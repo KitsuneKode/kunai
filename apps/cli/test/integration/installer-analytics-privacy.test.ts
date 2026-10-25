@@ -5,6 +5,7 @@ import { join, posix, resolve, win32 } from "node:path";
 
 import { getKunaiPaths } from "@kunai/storage";
 
+import { storageRootEnv } from "../helpers/storage-env";
 import {
   createInstallerSandbox,
   windowsShellEnvDefaults,
@@ -53,6 +54,7 @@ test.skipIf(process.platform === "win32")(
         {
           env: {
             ...process.env,
+            ...storageRootEnv(root),
             BASH_ENV: bashEnv,
             DO_NOT_TRACK: "0",
             CI: "0",

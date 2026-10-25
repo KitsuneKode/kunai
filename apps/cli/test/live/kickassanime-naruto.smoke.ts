@@ -4,7 +4,7 @@
  * KickAssAnime uses HLS with separate Referer/Origin headers for manifest vs segments.
  */
 import type { TitleInfo } from "@/domain/types";
-import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
+import { probeStreamReachability } from "@kunai/providers";
 
 import {
   buildProviderSmokePayload,
@@ -12,6 +12,7 @@ import {
   providerSmokeError,
   providerSmokeProfilePayload,
   resolveProviderSmokeStream,
+  smokeStreamReachable,
 } from "./provider-smoke";
 import { directSmokeArgs } from "./smoke-argv";
 
@@ -75,7 +76,7 @@ async function main(): Promise<void> {
         timeoutMs: 5_000,
       })
     : null;
-  const streamReachable = streamProbe ? isStreamReachableForResolve(streamProbe) : null;
+  const streamReachable = smokeStreamReachable(streamProbe);
 
   const payload = {
     ...buildProviderSmokePayload({
@@ -87,9 +88,9 @@ async function main(): Promise<void> {
       resolveDurationMs,
     }),
     ...resolveFailure,
-    failureCodes,
-    failureMessages,
-    streamCandidates,
+    failureCodes: resolveFailure?.failureCodes ?? failureCodes,
+    failureMessages: resolveFailure?.failureMessages ?? failureMessages,
+    streamCandidates: resolveFailure?.streamCandidates ?? streamCandidates,
     streamProbe,
     streamReachable,
     ...providerSmokeProfilePayload(profile),

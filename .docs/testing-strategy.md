@@ -860,7 +860,8 @@ identities, including when `CI=0` or a fixture already has consent. Agent launch
 overrides may not replace isolated roots or disable DNT. Test consent behavior
 with injected in-memory configuration and fetch fixtures.
 
-The opt-in analytics smoke requires `KUNAI_ANALYTICS_TEST_URL` with numeric
+The opt-in analytics smoke requires both `KUNAI_LIVE_ANALYTICS=1` and
+`KUNAI_ANALYTICS_TEST_URL` with numeric
 loopback and an explicit port, refuses redirects, and awaits fixture acceptance.
 A fixed synthetic UUID still counts as an install if sent to production. The
 smoke establishes the local wire contract, not production deployment or counts;

@@ -289,7 +289,7 @@ function LibraryTab({
         setFilterQuery((query) => query.slice(0, -1));
         return;
       }
-      if (input === "\u001b") return;
+      if (input === "\u001b" || input === "/") return;
       // `z` pops the live undo entry; with nothing undoable it stays a filter
       // character like any other letter.
       if (input === "z" && container.sessionUndo?.hasLiveUndo()) {

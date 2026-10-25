@@ -139,6 +139,23 @@ async function pressEscape(handle: { stdin: { enqueue: (data: string) => void } 
 }
 
 describe("library input ownership", () => {
+  test("the palette-opening slash never becomes a library filter", async () => {
+    const handle = render(<LibraryShell container={fixture()} onClose={() => {}} />, {
+      columns: 100,
+      rows: 40,
+    });
+    try {
+      await waitForFrame(handle, "Dune");
+      handle.stdin.enqueue("/");
+      expect(stripAnsi(handle.lastFrame())).not.toContain("Filter: /");
+      expect(stripAnsi(handle.lastFrame())).toContain("Dune");
+      handle.stdin.enqueue("d");
+      expect(stripAnsi(handle.lastFrame())).toContain("Filter: d");
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("printable d filters once and does not toggle config", async () => {
     const updates: unknown[] = [];
     const handle = render(<LibraryShell container={fixture({ updates })} onClose={() => {}} />, {
