@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-25"
 ---
 
 # Kunai Release Reliability Gate
@@ -108,6 +108,17 @@ version and activation locks, which exclude uninstall through the lifecycle
 guard, then re-reads before publishing so a newer activation is not overwritten
 and a removed manifest is not recreated. Issue #132 and 0.3.0 dispatch remain
 blocked until this complete stack passes protected native release gates.
+
+## Download resource ownership
+
+Native updater downloads remove each chunk's abort listener when that read settles.
+An already-aborted signal refuses the next read, including a response that becomes
+ready alongside cancellation. Completion releases the reader lock. HTTP refusal,
+size refusal and file-open failure cancel unused bodies through the existing
+bounded cleanup grace; fast cleanup also clears its fallback timer. These rules
+keep chunk count from accumulating retained abort closures and preserve partial-file
+removal. SHA-256, archive validation, retry classification and download budgets
+remain unchanged.
 
 ## Native Installer Activation Gate
 

@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { getEventListeners } from "node:events";
 import { existsSync } from "node:fs";
+import * as fsPromises from "node:fs/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -138,6 +140,110 @@ describe("downloadToFile", () => {
     expect(await Bun.file(path).text()).toBe("hello-kunai");
     expect(Bun.file(path).size).toBe(result.sizeBytes);
     expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  test("successful chunked downloads release abort listeners and the reader lock", async () => {
+    const { path } = await tempDest();
+    const watchedSignals = new Set<AbortSignal>();
+    const originalAdd = AbortSignal.prototype.addEventListener;
+    const add = spyOn(AbortSignal.prototype, "addEventListener").mockImplementation(function (
+      this: AbortSignal,
+      type: string,
+      listener: Parameters<AbortSignal["addEventListener"]>[1],
+      options?: Parameters<AbortSignal["addEventListener"]>[2],
+    ) {
+      if (type === "abort") watchedSignals.add(this);
+      return originalAdd.call(this, type, listener, options);
+    });
+    const response = streamResponse(Array.from({ length: 32 }, () => new Uint8Array(16).fill(1)));
+    try {
+      await downloadToFile({
+        url: "https://example.test/chunks",
+        destinationPath: path,
+        fetchImpl: async () => response,
+        policy: { ...DEFAULT_BINARY_DOWNLOAD_POLICY, maxAttempts: 1 },
+      });
+      expect(watchedSignals.size).toBeGreaterThan(0);
+      expect({
+        abortListeners: Math.max(
+          0,
+          ...Array.from(watchedSignals, (signal) => getEventListeners(signal, "abort").length),
+        ),
+        locked: response.body?.locked,
+      }).toEqual({ abortListeners: 0, locked: false });
+    } finally {
+      add.mockRestore();
+    }
+  });
+
+  test("abort acknowledged with a ready response cannot publish a download", async () => {
+    const { path } = await tempDest();
+    const controller = new AbortController();
+    await expect(
+      downloadToFile({
+        url: "https://example.test/abort-at-response",
+        destinationPath: path,
+        signal: controller.signal,
+        fetchImpl: async () => {
+          controller.abort();
+          return textResponse("must-not-publish");
+        },
+        policy: { ...DEFAULT_BINARY_DOWNLOAD_POLICY, maxAttempts: 1 },
+      }),
+    ).rejects.toMatchObject({ code: "DOWNLOAD_ABORTED" });
+    expect(existsSync(path)).toBe(false);
+  });
+
+  test("HTTP rejection cancels its unconsumed response body", async () => {
+    const { path } = await tempDest();
+    let cancellations = 0;
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        cancel() {
+          cancellations++;
+        },
+      }),
+      { status: 403 },
+    );
+    await expect(
+      downloadToFile({
+        url: "https://example.test/refused",
+        destinationPath: path,
+        fetchImpl: async () => response,
+        policy: { ...DEFAULT_BINARY_DOWNLOAD_POLICY, maxAttempts: 1 },
+      }),
+    ).rejects.toMatchObject({ code: "DOWNLOAD_HTTP", status: 403 });
+    expect(cancellations).toBe(1);
+    expect(response.body?.locked).toBe(false);
+  });
+
+  test("file-open failure cancels the response and releases its reader", async () => {
+    const { path } = await tempDest();
+    let cancellations = 0;
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        cancel() {
+          cancellations++;
+        },
+      }),
+    );
+    const open = spyOn(fsPromises, "open").mockRejectedValue(new Error("fixture-open-denied"));
+    try {
+      await expect(
+        downloadToFile({
+          url: "https://example.test/open-denied",
+          destinationPath: path,
+          fetchImpl: async () => response,
+          policy: { ...DEFAULT_BINARY_DOWNLOAD_POLICY, maxAttempts: 1 },
+        }),
+      ).rejects.toThrow("fixture-open-denied");
+      expect({ cancellations, locked: response.body?.locked }).toEqual({
+        cancellations: 1,
+        locked: false,
+      });
+    } finally {
+      open.mockRestore();
+    }
   });
 
   stallTest("stalled response cleans partial file and retries", async () => {

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-07"
+lastReviewed: "2026-10-25"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -130,3 +130,14 @@ playback. Close discards the queue, settles pending commands, and prevents a lat
 drain from sending them. Expiry removes queued bytes or closes the session before
 notifying result callbacks, so reentrant callbacks cannot send an expired command. This fixes a reproduced partial-write defect; it does not
 by itself establish the cause of intermittent native transition failures.
+
+## IPC receive bounds
+
+The transport caps each newline-delimited IPC frame at 1 MiB of UTF-8 bytes,
+including its newline. It checks raw bytes before decoding and JSON parsing,
+including when a frame arrives across many chunks. An oversized or unterminated
+frame closes the IPC session, clears its receive buffer and settles pending
+commands with a size-limit error. A large socket batch of individually bounded
+frames remains valid; fragmented multibyte characters retain the existing
+StringDecoder behavior. This bounds malformed-peer resource use and is not a
+claim that mpv or arbitrary media formats cannot contain vulnerabilities.

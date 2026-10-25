@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdir, open, rm, stat } from "node:fs/promises";
+import { mkdir, open, rm, stat, type FileHandle } from "node:fs/promises";
 import { dirname } from "node:path";
+import type { ReadableStreamDefaultReader as NodeStreamReader } from "node:stream/web";
 
 export interface DownloadPolicy {
   readonly totalDeadlineMs: number;
@@ -196,7 +197,13 @@ function linkSignals(signals: readonly AbortSignal[]): AbortSignal {
 const READER_CANCEL_GRACE_MS = 250;
 
 async function cancelReaderBounded(reader: { cancel: () => Promise<void> }): Promise<void> {
-  await Promise.race([reader.cancel().catch(() => {}), Bun.sleep(READER_CANCEL_GRACE_MS)]);
+  const deadline = Promise.withResolvers<void>();
+  const timer = setTimeout(deadline.resolve, READER_CANCEL_GRACE_MS);
+  try {
+    await Promise.race([reader.cancel().catch(() => {}), deadline.promise]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function abortReason(signal: AbortSignal): Error {
@@ -204,20 +211,20 @@ function abortReason(signal: AbortSignal): Error {
   return new DownloadError("DOWNLOAD_ABORTED", "Download aborted", { retryable: false });
 }
 
-function whenAborted(signal: AbortSignal): Promise<never> {
-  return new Promise((_resolve, reject) => {
-    if (signal.aborted) {
-      reject(abortReason(signal));
-      return;
-    }
-    signal.addEventListener(
-      "abort",
-      () => {
-        reject(abortReason(signal));
-      },
-      { once: true },
-    );
-  });
+async function readChunkOrAbort(
+  reader: Pick<NodeStreamReader<Uint8Array>, "read">,
+  signal: AbortSignal,
+) {
+  if (signal.aborted) throw abortReason(signal);
+  const aborted = Promise.withResolvers<never>();
+  const onAbort = () => aborted.reject(abortReason(signal));
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    return await Promise.race([reader.read(), aborted.promise]);
+  } finally {
+    // A successful read must release its abort closure and race result too.
+    signal.removeEventListener("abort", onAbort);
+  }
 }
 
 async function cleanupPartial(path: string): Promise<void> {
@@ -281,6 +288,7 @@ async function streamResponseToFile(input: {
   const hash = createHash("sha256");
   let sizeBytes = 0;
   let stalled = false;
+  const reader = input.response.body.getReader();
   const stallController = new AbortController();
   const stall = createStallWatch(input.stallDeadlineMs, () => {
     stalled = true;
@@ -294,12 +302,13 @@ async function streamResponseToFile(input: {
   });
 
   const combined = linkSignals([input.signal, stallController.signal]);
-  const reader = input.response.body.getReader();
-  const handle = await open(input.destinationPath, "w");
+  let handle: FileHandle | undefined;
 
   try {
+    const fileHandle = await open(input.destinationPath, "w");
+    handle = fileHandle;
     while (true) {
-      const readResult = await Promise.race([reader.read(), whenAborted(combined)]);
+      const readResult = await readChunkOrAbort(reader, combined);
       if (readResult.done) break;
 
       const bytes = readResult.value;
@@ -314,13 +323,13 @@ async function streamResponseToFile(input: {
       hash.update(bytes);
       stall.reset();
       await writeAllBytes(async (chunk, offset, length) => {
-        const result = await handle.write(chunk, offset, length);
+        const result = await fileHandle.write(chunk, offset, length);
         return result.bytesWritten;
       }, bytes);
     }
   } catch (error) {
     await cancelReaderBounded(reader);
-    await handle.close().catch(() => {});
+    await handle?.close().catch(() => {});
     await cleanupPartial(input.destinationPath);
     stall.clear();
 
@@ -347,7 +356,8 @@ async function streamResponseToFile(input: {
     );
   } finally {
     stall.clear();
-    await handle.close().catch(() => {});
+    await handle?.close().catch(() => {});
+    reader.releaseLock();
   }
 
   if (sizeBytes === 0) {
@@ -390,9 +400,9 @@ async function attemptDownload(input: {
 
   const attemptDeadline = createDeadlineSignal(remaining);
   const combined = linkSignals([input.signal, attemptDeadline.signal]);
+  let response: Response | undefined;
 
   try {
-    let response: Response;
     try {
       response = await input.fetchImpl(input.url, { signal: combined });
     } catch (error) {
@@ -428,6 +438,8 @@ async function attemptDownload(input: {
     });
   } finally {
     attemptDeadline.clear();
+    // Own unused HTTP-error/size-refusal bodies as well as completed streams.
+    if (response?.body && !response.body.locked) await cancelReaderBounded(response.body);
   }
 }
 
