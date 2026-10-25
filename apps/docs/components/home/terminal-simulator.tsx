@@ -1,7 +1,7 @@
 "use client";
 
 import { commandsForPalette } from "@/lib/home-presenters";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { simulatedCommandScript } from "./simulated-command-script";
 import { TerminalCommandPalette } from "./terminal-command-palette";
@@ -152,36 +152,41 @@ const TerminalSimulator = memo(function TerminalSimulator({
     }
   };
 
-  const runSimulatedCommand = (cmdText: string) => {
-    if (terminalState === "running") return;
+  const runSimulatedCommand = useCallback(
+    (cmdText: string) => {
+      if (terminalState === "running") return;
 
-    setCommandPaletteOpen(false);
-    setTerminalState("running");
-    setTerminalInput("");
-    setTerminalLogs((prev) => [
-      ...prev,
-      { id: `${Date.now()}-input`, text: `\nkunai > ${cmdText}` },
-    ]);
+      setCommandPaletteOpen(false);
+      setTerminalState("running");
+      setTerminalInput("");
+      setTerminalLogs((prev) => [
+        ...prev,
+        { id: `${Date.now()}-input`, text: `\nkunai > ${cmdText}` },
+      ]);
 
-    const script = simulatedCommandScript(cmdText, providers, paletteCommands);
-    for (const step of script.steps) {
+      const script = simulatedCommandScript(cmdText, providers, paletteCommands);
+      for (const step of script.steps) {
+        scriptTimersRef.current.push(
+          window.setTimeout(() => {
+            setTerminalLogs((prev) => [
+              ...prev,
+              { id: `${Date.now()}-${Math.random()}`, text: step.line },
+            ]);
+          }, step.at),
+        );
+      }
       scriptTimersRef.current.push(
         window.setTimeout(() => {
-          setTerminalLogs((prev) => [
-            ...prev,
-            { id: `${Date.now()}-${Math.random()}`, text: step.line },
-          ]);
-        }, step.at),
+          setTerminalState("idle");
+        }, script.doneAt),
       );
-    }
-    scriptTimersRef.current.push(
-      window.setTimeout(() => {
-        setTerminalState("idle");
-      }, script.doneAt),
-    );
-  };
+    },
+    [terminalState, providers, paletteCommands],
+  );
 
-  runCommandRef.current = runSimulatedCommand;
+  useEffect(() => {
+    runCommandRef.current = runSimulatedCommand;
+  }, [runSimulatedCommand]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (commandPaletteOpen) {
