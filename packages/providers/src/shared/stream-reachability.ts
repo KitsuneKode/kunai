@@ -115,7 +115,9 @@ function readIsoBox(view: DataView, offset: number): IsoBoxPrefix | null {
   if (size === 0 && type === "mdat")
     return { type, payload: offset + header, end: Number.POSITIVE_INFINITY };
   if (size < header) return null;
-  return { type, payload: offset + header, end: offset + size };
+  const end = offset + size;
+  if (!Number.isSafeInteger(end)) return null;
+  return { type, payload: offset + header, end };
 }
 
 function hasTrackFragment(
@@ -126,7 +128,8 @@ function hasTrackFragment(
 ): boolean {
   let header = false;
   let decodeTime = false;
-  let run = false;
+  const runs: IsoBoxPrefix[] = [];
+  let defaultSampleSize: number | undefined;
   for (let offset = box.payload; offset < box.end;) {
     const child = readIsoBox(view, offset);
     if (!child || child.end > box.end) return false;
@@ -138,6 +141,10 @@ function hasTrackFragment(
       if ((flags & ~0x03003a) !== 0 || view.getUint32(child.payload + 4) === 0) return false;
       const optionalFields = [2, 8, 16, 32].filter((flag) => (flags & flag) !== 0).length;
       if (length !== 8 + optionalFields * 4) return false;
+      if ((flags & 0x10) !== 0) {
+        const sizeOffset = child.payload + 8 + (flags & 2 ? 4 : 0) + (flags & 8 ? 4 : 0);
+        defaultSampleSize = view.getUint32(sizeOffset);
+      }
       header = true;
     } else if (child.type === "tfdt") {
       if (decodeTime || length < 8) return false;
@@ -159,11 +166,36 @@ function hasTrackFragment(
         return false;
       const sampleOffset = view.getInt32(child.payload + 8);
       if (sampleOffset < minimumDataOffset || sampleOffset >= dataEndOffset) return false;
-      run = true;
+      runs.push(child);
     }
     offset = child.end;
   }
-  return header && decodeTime && run;
+  if (!header || !decodeTime || runs.length === 0) return false;
+  if (!Number.isFinite(dataEndOffset)) return true;
+  // Resolve defaults after the whole traf, so box order cannot bypass extent checks.
+  for (const child of runs) {
+    const fields = view.getUint32(child.payload) & 0xffffff;
+    const samples = view.getUint32(child.payload + 4);
+    let remaining = dataEndOffset - view.getInt32(child.payload + 8);
+    if ((fields & 0x200) !== 0) {
+      const stride =
+        [0x100, 0x200, 0x400, 0x800].filter((flag) => (fields & flag) !== 0).length * 4;
+      const firstSize = child.payload + 12 + (fields & 4 ? 4 : 0) + (fields & 0x100 ? 4 : 0);
+      // Explicit sizes imply a bounded entry table already checked against box length.
+      for (let index = 0; index < samples; index++) {
+        const size = view.getUint32(firstSize + index * stride);
+        if (size > remaining) return false;
+        remaining -= size;
+      }
+    } else if (defaultSampleSize !== undefined) {
+      // A field-free run may claim billions of samples. Never loop over that count
+      // or round its product past JS's safe-integer range.
+      if (BigInt(samples) * BigInt(defaultSampleSize) > BigInt(remaining)) return false;
+    }
+    // Otherwise sizes live in the initialization segment's trex, not this prefix.
+    // Keep the structural-prefix contract; this is not a full media decode check.
+  }
+  return true;
 }
 
 function hasFragmentedMp4Prefix(prefix: Uint8Array): boolean {

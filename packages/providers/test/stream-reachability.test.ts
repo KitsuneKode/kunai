@@ -74,6 +74,57 @@ function extendedMdatSegment(validSize: boolean): Uint8Array {
   return Buffer.concat([segment.subarray(0, dataOffset), header, mediaBytes()]);
 }
 
+/** Complete small fragments, padded with a valid free box to reach the probe floor. */
+function sampleExtentFragment(
+  sizes: readonly number[],
+  payloadSize: number,
+  mode: "trun" | "tfhd" | "override" | "trex" = "trun",
+  extraRunFields = false,
+  runBeforeHeader = false,
+): Uint8Array {
+  const hasDefault = mode === "tfhd" || mode === "override";
+  const explicitSizes = mode === "trun" || mode === "override";
+  const tfhd = Buffer.alloc(hasDefault ? 20 : 8);
+  tfhd.writeUInt32BE(hasDefault ? 0x02001a : 0x020000);
+  tfhd.writeUInt32BE(1, 4);
+  if (hasDefault) {
+    tfhd.writeUInt32BE(1, 8); // sample description
+    tfhd.writeUInt32BE(1000, 12); // default duration
+    tfhd.writeUInt32BE(mode === "override" ? 1000000 : (sizes[0] ?? 0), 16);
+  }
+  const fields = explicitSizes ? (extraRunFields ? 0xb05 : 0x201) : 1;
+  const fieldCount = explicitSizes ? (extraRunFields ? 3 : 1) : 0;
+  const firstSample = extraRunFields && explicitSizes ? 16 : 12;
+  const trun = Buffer.alloc(firstSample + sizes.length * fieldCount * 4);
+  trun.writeUInt32BE(fields);
+  trun.writeUInt32BE(sizes.length, 4);
+  if (explicitSizes) {
+    for (let index = 0; index < sizes.length; index++) {
+      const sample = firstSample + index * fieldCount * 4;
+      if (extraRunFields) trun.writeUInt32BE(1000, sample);
+      trun.writeUInt32BE(sizes[index] ?? 0, sample + (extraRunFields ? 4 : 0));
+    }
+  }
+  const moof = () =>
+    mp4Box(
+      "moof",
+      mp4Box("mfhd", Buffer.alloc(8)),
+      mp4Box(
+        "traf",
+        ...(runBeforeHeader
+          ? [mp4Box("trun", trun), mp4Box("tfhd", tfhd)]
+          : [mp4Box("tfhd", tfhd), mp4Box("trun", trun)]),
+        mp4Box("tfdt", Buffer.alloc(8)),
+      ),
+    );
+  trun.writeInt32BE(moof().length + 8, 8);
+  return Buffer.concat([
+    mp4Box("free", mediaBytes()),
+    moof(),
+    mp4Box("mdat", mediaBytes(payloadSize)),
+  ]);
+}
+
 describe("stream reachability", () => {
   test("HLS media playlists probe first media segment after playlist fetch", async () => {
     const urls: string[] = [];
@@ -322,7 +373,60 @@ describe("stream reachability", () => {
     ["moof/mdat", fmp4Segment(), true],
     ["movie fragment larger than 1 KiB", fmp4Segment(true, 512), true],
     ["extended mdat", extendedMdatSegment(true), true],
+    ["single sample extends past mdat", sampleExtentFragment([2], 1), false],
+    ["cumulative samples extend past mdat", sampleExtentFragment([1, 1], 1), false],
+    ["sample sizes exactly fill mdat", sampleExtentFragment([2, 3], 5), true],
+    [
+      "all trun fields still locate sample sizes",
+      sampleExtentFragment([2, 3], 5, "trun", true),
+      true,
+    ],
+    [
+      "all trun fields still reject an overrun",
+      sampleExtentFragment([2, 3], 4, "trun", true),
+      false,
+    ],
+    ["tfhd default sizes fit", sampleExtentFragment([2, 2], 4, "tfhd"), true],
+    ["tfhd default sizes overrun", sampleExtentFragment([2, 2], 3, "tfhd"), false],
+    ["trun sizes override the tfhd default", sampleExtentFragment([1, 1], 2, "override"), true],
+    [
+      "tfhd order cannot bypass default-size check",
+      sampleExtentFragment([2, 2], 3, "tfhd", false, true),
+      false,
+    ],
     ["invalid extended mdat size", extendedMdatSegment(false), false],
+    [
+      "sizes supplied by init retain prefix validation",
+      sampleExtentFragment([1, 1], 2, "trex"),
+      true,
+    ],
+    [
+      "field-free large counts cannot overflow size arithmetic",
+      (() => {
+        const fragment = Buffer.from(sampleExtentFragment([0xffffffff], 1, "tfhd"));
+        fragment.writeUInt32BE(0xffffffff, fragment.indexOf("trun") + 8);
+        return fragment;
+      })(),
+      false,
+    ],
+    [
+      "open-ended mdat retains known default sizes",
+      (() => {
+        const fragment = Buffer.from(sampleExtentFragment([2, 2], 4, "tfhd"));
+        fragment.writeUInt32BE(0, fragment.indexOf("mdat") - 4);
+        return fragment;
+      })(),
+      true,
+    ],
+    [
+      "box end exceeds safe integer precision",
+      (() => {
+        const fragment = Buffer.from(extendedMdatSegment(true));
+        fragment.writeBigUInt64BE(BigInt(Number.MAX_SAFE_INTEGER), fragment.indexOf("mdat") + 4);
+        return fragment;
+      })(),
+      false,
+    ],
     ...[0, 1, 400].map((beyond) => {
       const fragment = Buffer.from(fmp4Segment());
       const mdatStart = fragment.indexOf("mdat") - 4;
