@@ -323,6 +323,13 @@ describe("stream reachability", () => {
     ["movie fragment larger than 1 KiB", fmp4Segment(true, 512), true],
     ["extended mdat", extendedMdatSegment(true), true],
     ["invalid extended mdat size", extendedMdatSegment(false), false],
+    ...[0, 1, 400].map((beyond) => {
+      const fragment = Buffer.from(fmp4Segment());
+      const mdatStart = fragment.indexOf("mdat") - 4;
+      fragment.writeUInt32BE(9, mdatStart); // Declares a single media byte.
+      fragment.writeInt32BE(mdatStart + 9 + beyond, fragment.indexOf("trun") + 12);
+      return [`sample offset at/past mdat end +${beyond}`, fragment, false] as const;
+    }),
     [
       "styp/moof/mdat",
       Buffer.concat([mp4Box("styp", Buffer.from("msdh0000msdh", "ascii")), fmp4Segment()]),

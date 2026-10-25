@@ -192,6 +192,12 @@ so passing the gate only handed mpv a 587-byte nginx error page. Failing here is
 what lets a working provider take over. Any future exception needs evidence that
 the stream _plays_, not merely that a probe passed.
 
+HTML-labeled HLS fragments need positive TS or complete fMP4-header evidence.
+For fMP4, each track-run data offset must begin inside the declared `mdat`
+payload: at/after its payload start and strictly before a finite end. A prefix
+may truncate the media body, but may not claim a sample outside its own declared
+box. Open-ended `mdat` retains the bounded-prefix contract.
+
 **The gate walks candidates, it does not judge one.** `resolveDirectStreamSource`
 probes up to `RESOLVE_GATE_MAX_PROBES` ranked candidates and takes the first that
 answers, so one dead or hotlink-protected URL no longer condemns its working
@@ -547,12 +553,13 @@ import {
   createTraceStep,
   type CoreProviderModule,
 } from "@kunai/core";
-import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
 } from "@kunai/types";
+
+import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 
 export const myProviderModule: CoreProviderModule = {
   providerId: "myprovider",

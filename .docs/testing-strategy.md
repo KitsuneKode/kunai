@@ -51,8 +51,9 @@ compiled/agent profile harness inherits it, and `applyStorageRootEnv()` restores
 the prior override with the other environment values. Backend-specific tests
 must use explicit injected environment and spawn ports; they must never probe
 the developer's credential store. Installer fixture containment checks use the
-target platform's path rules and reject absolute relative paths (including
-Windows cross-drive escapes), parent segments and sibling paths. The fixture
+target platform's path rules. Reject a path when `relative(root, path)` is
+absolute (including Windows cross-drive escapes), starts with a parent segment,
+or names a sibling path. The fixture
 root itself and child names beginning with dots remain valid.
 
 1. Start with the feature map and the owning test file. Use

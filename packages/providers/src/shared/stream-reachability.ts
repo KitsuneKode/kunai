@@ -118,7 +118,12 @@ function readIsoBox(view: DataView, offset: number): IsoBoxPrefix | null {
   return { type, payload: offset + header, end: offset + size };
 }
 
-function hasTrackFragment(view: DataView, box: IsoBoxPrefix, minimumDataOffset: number): boolean {
+function hasTrackFragment(
+  view: DataView,
+  box: IsoBoxPrefix,
+  minimumDataOffset: number,
+  dataEndOffset: number,
+): boolean {
   let header = false;
   let decodeTime = false;
   let run = false;
@@ -152,7 +157,8 @@ function hasTrackFragment(view: DataView, box: IsoBoxPrefix, minimumDataOffset: 
       ).length;
       if (samples === 0 || length !== 12 + (fields & 4 ? 4 : 0) + samples * sampleFields * 4)
         return false;
-      if (view.getInt32(child.payload + 8) < minimumDataOffset) return false;
+      const sampleOffset = view.getInt32(child.payload + 8);
+      if (sampleOffset < minimumDataOffset || sampleOffset >= dataEndOffset) return false;
       run = true;
     }
     offset = child.end;
@@ -184,7 +190,8 @@ function hasFragmentedMp4Prefix(prefix: Uint8Array): boolean {
             return false;
           header = true;
         } else if (child.type === "traf") {
-          if (!hasTrackFragment(view, child, data.payload - offset)) return false;
+          if (!hasTrackFragment(view, child, data.payload - offset, data.end - offset))
+            return false;
           tracks++;
         }
         childOffset = child.end;
