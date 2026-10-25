@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T14:05:00Z"
+lastReviewed: "2026-10-25"
 ---
 
 # Kunai — Repo Infrastructure
@@ -215,13 +215,18 @@ Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` cov
 
 **Build tasks** (Turbo):
 
-- `build` — npm bundle (`dist/kunai.js`, `dist/assets/**`)
+- `build` — unpublished development bundle (`dist/kunai.js`, `dist/assets/**`)
+  and public npm launcher package (`dist/npm/**`)
 - `build:binary:host` — host compiled binary (`dist/bin/kunai-*`)
 - `build:binaries` — release cross-compiles plus deterministic archives
   (`dist/bin/**`): `.tar.gz` for Linux/macOS, `.zip` for Windows
 
 `bun run build` at the repo root runs `build` + `build:binary:host` in parallel.
-Compiled binaries never ship on npm; `pkg:check` enforces an allowlist and size budget.
+The public launcher resolves a platform package; `pkg:check` enforces its file
+allowlist and size budget. Both application build outputs project the CLI
+`package.json` import to its version, the only field runtime callers consume.
+Other JSON imports retain their complete contents, and build-host environment
+values are never inlined. The development-bundle size gate remains unchanged.
 
 The 0.3.0 GitHub Release compatibility bridge is an exact 22-file set: ten
 canonical archives, the same ten raw standalone binaries, legacy
