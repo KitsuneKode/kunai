@@ -106,3 +106,13 @@ fresh workspace types/preflight pass afterward. This follow-up is outside the
 frozen 763067b artifact set. The versioned release still needs a new immutable
 candidate after integration; do not present the earlier binaries as containing
 this later guard.
+
+Final source follow-up 3f9032807 also passes a fresh forced workspace test run
+(9,660 pass / 62 skip / zero fail; 26 tasks, zero cached), fresh types/lint and
+a ten-task forced build. Real native IPC additionally confirms an unchanged-ID
+acknowledgement survives a later lookup. A prior pack-guard attempt failed when
+this checkout's root dependency directory was absent; frozen-lockfile restore
+changed no tracked files, seven installed dependency-patch checks passed, the
+two pack-guard tests passed, and the complete fresh run above followed. The
+cause of that directory removal was not established. No failed gate was skipped
+or timeout raised.
