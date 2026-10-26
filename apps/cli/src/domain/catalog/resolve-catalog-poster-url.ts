@@ -16,6 +16,11 @@ export function resolveCatalogPosterUrl(
   const trimmed = candidate?.trim();
   if (!trimmed) return null;
 
+  // Older Invidious search rows persisted instance-relative YouTube images.
+  if (/^\/vi(?:_webp)?\/[\w-]{11}\/[\w-]+\.(?:jpg|webp)$/.test(trimmed)) {
+    return `https://i.ytimg.com${trimmed}`;
+  }
+
   if (trimmed.startsWith("/")) {
     const size = options.tmdbSize ?? "w500";
     return `${TMDB_IMAGE_BASE}/${size}${trimmed}`;

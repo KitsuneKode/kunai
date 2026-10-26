@@ -20,6 +20,12 @@ This is a narrow contract doc. For broader context, read:
 
 Providers own provider-specific mess. The playback runtime owns user policy. The UI renders normalized inventory and never scrapes.
 
+A selected source is a selection fact, not evidence that playback started.
+Failed-current annotations retain the selection for recovery without a
+`playing` badge. Source details deduplicate native labels and host evidence.
+Subtitle candidates may be available before mpv attaches or selects them;
+the shell must preserve that distinction and honor explicit Off observations.
+
 ```text
 provider module
   -> provider-specific source retry / mirror probing / variant extraction

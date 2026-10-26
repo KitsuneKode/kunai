@@ -1,6 +1,7 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import type { ShellMode } from "@/domain/types";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { errorCode } from "@/infra/fs/errno";
 import {
@@ -35,7 +36,8 @@ async function readHistory(file: string): Promise<string[]> {
 
 /** One scoped writer; disk is authoritative across sessions and profiles. */
 export function createSearchHistoryStore(
-  resolveFile: () => string = () => join(kunaiConfigDir(), "search-history.json"),
+  resolveFile: (mode?: ShellMode) => string = (mode) =>
+    join(kunaiConfigDir(), mode ? `search-history-${mode}.json` : "search-history.json"),
 ) {
   const pending: { file: string; query: string }[] = [];
   let queue: Promise<void> = Promise.resolve();
@@ -67,8 +69,8 @@ export function createSearchHistoryStore(
         listeners.delete(listener);
       };
     },
-    refresh(): Promise<void> {
-      const file = resolveFile();
+    refresh(mode?: ShellMode): Promise<void> {
+      const file = resolveFile(mode);
       const existing = refreshing.get(file);
       if (existing) return existing;
       const revision = revisions.get(file) ?? 0;
@@ -90,8 +92,8 @@ export function createSearchHistoryStore(
       refreshing.set(file, work);
       return work;
     },
-    get(): readonly string[] {
-      const file = resolveFile();
+    get(mode?: ShellMode): readonly string[] {
+      const file = resolveFile(mode);
       const disk = snapshots.get(file) ?? [];
       const local = pending
         .filter((entry) => entry.file === file)
@@ -99,12 +101,12 @@ export function createSearchHistoryStore(
         .reverse();
       return [...new Set([...local, ...disk])].slice(0, MAX_HISTORY);
     },
-    add(query: string): void {
+    add(query: string, mode?: ShellMode): void {
       const trimmed = query.trim();
       if (!trimmed) return;
       // Capture before the async queue yields: profile/environment changes can
       // never redirect an already accepted query into another profile.
-      const entry = { file: resolveFile(), query: trimmed };
+      const entry = { file: resolveFile(mode), query: trimmed };
       pending.push(entry);
       revisions.set(entry.file, (revisions.get(entry.file) ?? 0) + 1);
       for (const listener of listeners) listener();
@@ -141,9 +143,9 @@ export function createSearchHistoryStore(
 }
 
 const store = createSearchHistoryStore();
-export const getSearchHistory = () => store.get();
-export const addSearchQuery = (query: string) => store.add(query);
+export const getSearchHistory = (mode?: ShellMode) => store.get(mode);
+export const addSearchQuery = (query: string, mode?: ShellMode) => store.add(query, mode);
 export const flushSearchHistory = () => store.flush();
 
-export const refreshSearchHistory = () => store.refresh();
+export const refreshSearchHistory = (mode?: ShellMode) => store.refresh(mode);
 export const subscribeSearchHistory = (listener: () => void) => store.subscribe(listener);

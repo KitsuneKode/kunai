@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   describePlaybackSubtitleStatus,
+  playbackSubtitleStatusTone,
   projectPlaybackSubtitleState,
 } from "@/app/playback/subtitle-status";
 import type { StreamInfo } from "@/domain/types";
@@ -48,6 +49,20 @@ const hardsubStream: StreamInfo = {
   },
 };
 
+test("waiting and explicit Off subtitle statuses remain informational", () => {
+  for (const status of [
+    "subtitles not resolved yet",
+    "subtitle lookup pending",
+    "subtitles disabled",
+    "subtitles off in mpv",
+    "subtitles hidden in mpv",
+  ]) {
+    expect(playbackSubtitleStatusTone(status)).toBe("info");
+  }
+  expect(playbackSubtitleStatusTone("subtitle playing")).toBe("success");
+  expect(playbackSubtitleStatusTone("subtitles not found")).toBe("warning");
+});
+
 test("describePlaybackSubtitleStatus treats hardsub inventory as subtitles available", () => {
   expect(describePlaybackSubtitleStatus(hardsubStream, "en")).toBe("hardsub en");
 });
@@ -63,6 +78,26 @@ test("describePlaybackSubtitleStatus keeps true missing subtitles explicit", () 
       "en",
     ),
   ).toBe("subtitles not found");
+});
+
+test("resolved YouTube subtitle inventory is available before mpv confirms selection", () => {
+  const stream: StreamInfo = {
+    url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    headers: {},
+    timestamp: 1,
+    requiresYtdl: true,
+    subtitleList: [{ url: "https://cdn.example/en.vtt", language: "en" }],
+  };
+  expect(projectPlaybackSubtitleState(stream, "en")).toMatchObject({
+    kind: "available",
+    label: "1 subtitle track available",
+    tone: "info",
+  });
+  expect(projectPlaybackSubtitleState(stream, "none").kind).toBe("disabled");
+  expect(
+    projectPlaybackSubtitleState({ ...stream, playbackSubtitle: { id: 0, visible: true } }, "en")
+      .kind,
+  ).toBe("disabled");
 });
 
 test("projectPlaybackSubtitleState keeps resolved inventory from overriding the disabled startup preference", () => {

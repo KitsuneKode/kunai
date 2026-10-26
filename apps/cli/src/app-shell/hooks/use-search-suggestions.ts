@@ -39,6 +39,8 @@ export interface SearchSuggestionsState<TValue> {
 export function useSearchSuggestions<TValue>(input: {
   readonly query: string;
   readonly enabled: boolean;
+  /** Mode and provider identity; changing either invalidates the previous request. */
+  readonly scopeKey?: string;
   readonly onSuggest?: (
     query: string,
     signal: AbortSignal,
@@ -46,11 +48,15 @@ export function useSearchSuggestions<TValue>(input: {
   readonly debounceMs?: number;
   readonly timers?: SuggestionTimers;
 }): SearchSuggestionsState<TValue> {
-  const { query, enabled } = input;
+  const { query, enabled, scopeKey } = input;
   const debounceMs = input.debounceMs ?? SUGGESTION_DEBOUNCE_MS;
   const timers = input.timers ?? REAL_TIMERS;
 
-  const [suggestions, setSuggestions] = useState<readonly SearchSuggestion<TValue>[]>([]);
+  const [result, setResult] = useState<{
+    readonly query: string;
+    readonly scopeKey?: string;
+    readonly suggestions: readonly SearchSuggestion<TValue>[];
+  }>({ query, scopeKey, suggestions: [] });
   const [pending, setPending] = useState(false);
   const gateRef = useRef(createLatestRequestGate());
   const abortRef = useRef<AbortController | null>(null);
@@ -65,7 +71,7 @@ export function useSearchSuggestions<TValue>(input: {
     const gate = gateRef.current;
     const requestId = gate.begin();
     if (!enabled || !onSuggest || query.trim().length < SUGGESTION_MIN_QUERY_LENGTH) {
-      setSuggestions([]);
+      setResult({ query, scopeKey, suggestions: [] });
       setPending(false);
       return () => {
         gate.invalidate();
@@ -74,7 +80,7 @@ export function useSearchSuggestions<TValue>(input: {
 
     // Clear stale rows the moment the draft changes — during the debounce
     // window the catalog section shows skeletons, never last keystroke's hits.
-    setSuggestions([]);
+    setResult({ query, scopeKey, suggestions: [] });
     setPending(true);
 
     const handle = timers.set(() => {
@@ -85,12 +91,12 @@ export function useSearchSuggestions<TValue>(input: {
         try {
           const next = await onSuggest(query, controller.signal);
           if (!gate.isCurrent(requestId)) return;
-          setSuggestions(next);
+          setResult({ query, scopeKey, suggestions: next });
           setPending(false);
         } catch {
           // Suggestions are never an error surface — settle quietly to local-only.
           if (!gate.isCurrent(requestId)) return;
-          setSuggestions([]);
+          setResult({ query, scopeKey, suggestions: [] });
           setPending(false);
         }
       })();
@@ -102,7 +108,11 @@ export function useSearchSuggestions<TValue>(input: {
       abortRef.current?.abort();
       abortRef.current = null;
     };
-  }, [query, enabled, debounceMs, timers]);
+  }, [query, enabled, scopeKey, debounceMs, timers]);
 
+  // Passive effects run after a commit: never expose the previous scope's rows
+  // during that first render, even when its request already completed.
+  const suggestions =
+    enabled && result.query === query && result.scopeKey === scopeKey ? result.suggestions : [];
   return { suggestions, pending };
 }

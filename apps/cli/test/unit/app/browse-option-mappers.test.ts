@@ -4,6 +4,18 @@ import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/search/brow
 import type { SearchResult } from "@/domain/types";
 
 describe("toBrowseResultOption", () => {
+  test("cached relative YouTube artwork uses the image CDN in the preview rail", () => {
+    const option = toBrowseResultOption({
+      id: "youtube:dQw4w9WgXcQ",
+      type: "movie",
+      title: "Video",
+      year: "",
+      overview: "",
+      posterPath: "/vi/dQw4w9WgXcQ/hqdefault.jpg",
+      externalIds: { youtubeId: "dQw4w9WgXcQ" },
+    });
+    expect(option.previewImageUrl).toBe("https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg");
+  });
   test("maps a series result into a details-first browse option", () => {
     const result: SearchResult = {
       id: "demo",

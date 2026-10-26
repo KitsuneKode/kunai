@@ -113,7 +113,7 @@ describe("splitMouseSequences", () => {
   });
 
   test("tracking sequences are reversible ANSI toggles", () => {
-    expect(MOUSE_TRACKING_ENABLE).toBe("\x1b[?1000h\x1b[?1002h\x1b[?1006h");
-    expect(MOUSE_TRACKING_DISABLE).toBe("\x1b[?1006l\x1b[?1002l\x1b[?1000l");
+    expect(MOUSE_TRACKING_ENABLE).toBe("\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h");
+    expect(MOUSE_TRACKING_DISABLE).toBe("\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l");
   });
 });

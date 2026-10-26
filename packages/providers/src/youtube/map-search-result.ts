@@ -13,6 +13,15 @@ import type {
 } from "./invidious-client";
 import { extractPipedVideoId, type PipedSearchItem } from "./piped-client";
 
+function normalizeThumbnailUrl(candidate: string | undefined): string | null {
+  const url = candidate?.trim();
+  if (!url) return null;
+  if (/^\/vi(?:_webp)?\/[\w-]{11}\/[\w-]+\.(?:jpg|webp)$/.test(url)) {
+    return `https://i.ytimg.com${url}`;
+  }
+  return /^https:\/\//i.test(url) ? url : null;
+}
+
 function pickInvidiousThumbnail(
   thumbnails: InvidiousSearchVideo["videoThumbnails"] | undefined,
 ): string | null {
@@ -21,7 +30,7 @@ function pickInvidiousThumbnail(
     thumbnails.find((thumb) => thumb.quality === "medium") ??
     thumbnails.find((thumb) => thumb.quality === "high") ??
     thumbnails[thumbnails.length - 1];
-  return preferred?.url ?? null;
+  return normalizeThumbnailUrl(preferred?.url);
 }
 
 export { pickInvidiousThumbnail };
@@ -104,12 +113,13 @@ export function mapInvidiousSearchItem(item: InvidiousSearchItem): ProviderSearc
   }
 
   if (item.type === "playlist") {
+    const poster = normalizeThumbnailUrl(item.playlistThumbnail);
     return {
       id: toYoutubePlaylistCatalogId(item.playlistId),
       type: "series",
       title: item.title,
       overview: "",
-      posterPath: item.playlistThumbnail ?? null,
+      posterPath: poster,
       metadataSource: "Invidious",
       episodeCount: item.videoCount,
       channelTitle: item.author,
@@ -120,8 +130,8 @@ export function mapInvidiousSearchItem(item: InvidiousSearchItem): ProviderSearc
         youtubeChannelId: item.authorId,
       },
       artwork: {
-        posterUrl: item.playlistThumbnail,
-        thumbnailUrl: item.playlistThumbnail,
+        posterUrl: poster ?? undefined,
+        thumbnailUrl: poster ?? undefined,
       },
     };
   }
@@ -159,7 +169,7 @@ export function mapPipedSearchItem(item: PipedSearchItem): ProviderSearchResult 
   if (!videoId || !item.title) return null;
   const uploadedMs = item.uploaded && item.uploaded > 0 ? item.uploaded : undefined;
   const channelId = extractPipedChannelId(item.uploaderUrl);
-  const poster = item.thumbnail ?? youtubeThumbnailUrl(videoId);
+  const poster = normalizeThumbnailUrl(item.thumbnail) ?? youtubeThumbnailUrl(videoId);
   return {
     id: toYoutubeVideoCatalogId(videoId),
     type: "movie",

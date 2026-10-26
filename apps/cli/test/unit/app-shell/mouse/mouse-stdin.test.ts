@@ -288,8 +288,8 @@ describe("MouseSplitStdin", () => {
     proxy.disableTracking();
     proxy.disableTracking();
     expect(writes).toEqual([
-      "\x1b[?1000h\x1b[?1002h\x1b[?1006h",
-      "\x1b[?1006l\x1b[?1002l\x1b[?1000l",
+      "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h",
+      "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l",
     ]);
   });
 
@@ -299,7 +299,7 @@ describe("MouseSplitStdin", () => {
     proxy.enableTracking();
     proxy.detach();
     expect(source.listenerCount("readable")).toBe(0);
-    expect(writes.at(-1)).toBe("\x1b[?1006l\x1b[?1002l\x1b[?1000l");
+    expect(writes.at(-1)).toBe("\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l");
     // Bytes fed after detach are dropped, not buffered.
     source.feed("z");
     expect(drain(proxy)).toBe("");

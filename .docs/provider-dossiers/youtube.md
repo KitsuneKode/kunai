@@ -23,6 +23,16 @@ lastReviewed: "2026-10-26"
 
 ## Failure contract
 
+Search artwork is normalized before entering catalog rows. Instance-relative
+`/vi/` and `/vi_webp/` image paths become canonical HTTPS YouTube CDN URLs;
+invalid relative paths fall back to the video-id thumbnail. The catalog poster
+resolver also repairs these paths in older cached rows, rather than treating
+them as TMDB poster names. Channel artwork requires an absolute HTTPS URL.
+
+Tracks marks the current connection as selected, not as proof of playback.
+Resolved subtitle inventory is reported as available; only mpv observations
+establish the active subtitle and its visibility.
+
 `metadata-failure.ts` classifies yt-dlp's stderr (thrown verbatim by
 `fetchYtDlpVideoInfo`) into two buckets:
 
