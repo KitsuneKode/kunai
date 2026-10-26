@@ -3,8 +3,9 @@
  *
  * Curated by hand, not read off the GitHub org: a profile fills up with forks,
  * experiments and coursework, and a showcase of "everything" says nothing about
- * what the maintainer stands behind. Every entry here is the maintainer's own
- * original work (not a fork), checked against the GitHub API when it was added.
+ * what the maintainer stands behind. Every entry here is a maintained repository
+ * (not a GitHub fork), checked against the API when added. Upstream credits,
+ * including NvChad/base46's palettes, remain with each project.
  * `portless` is deliberately absent: it is a fork of an upstream project.
  *
  * Taglines are written here rather than pulled from each repo's description, so
@@ -14,7 +15,7 @@
 
 const OWNER = "https://github.com/KitsuneKode";
 
-export type WorkshopKind = "CLI" | "Web app" | "Scaffold" | "Terminal tool";
+export type WorkshopKind = "CLI" | "Web app" | "Editor themes" | "Terminal tool";
 
 export type WorkshopProject = {
   /** The GitHub repository name under KitsuneKode. */
@@ -28,6 +29,10 @@ export type WorkshopProject = {
   /** A live site or package page, when there is one. */
   readonly siteUrl?: string;
   readonly siteLabel?: string;
+  /** Local, reviewed imagery: never an iframe or a remote screenshot service. */
+  readonly preview:
+    | { readonly image: string; readonly alt: string }
+    | { readonly code: string; readonly label: string };
 };
 
 function defineProject(
@@ -38,14 +43,16 @@ function defineProject(
 
 export const workshop: readonly WorkshopProject[] = [
   defineProject({
-    repo: "arche",
-    name: "Arche",
-    kind: "Scaffold",
+    repo: "nvchad-themes",
+    name: "NvChad Themes",
+    kind: "Editor themes",
     tagline:
-      "A preset-led scaffold CLI and full-stack TypeScript monorepo: Next.js, Express, tRPC, Better Auth.",
-    language: "TypeScript",
-    siteUrl: "https://arche.kitsunekode.in",
-    siteLabel: "arche.kitsunekode.in",
+      "94 base46 palettes for VS Code, Cursor and Zed, with matching themes for your coding agents.",
+    language: "HTML",
+    preview: {
+      image: "/workshop/nvchad-tokyonight.webp",
+      alt: "NvChad Tokyonight in Cursor, showing a real TypeScript editor",
+    },
   }),
   defineProject({
     repo: "sweep",
@@ -54,8 +61,10 @@ export const workshop: readonly WorkshopProject[] = [
     tagline:
       "Safe, fast artifact cleanup for any project tree: node_modules, dist, .next and target, with hard guardrails.",
     language: "TypeScript",
-    siteUrl: "https://www.npmjs.com/package/@kitsunekode/sweep",
-    siteLabel: "npm",
+    preview: {
+      code: "$ sweep\n\nReview build artifacts.\nKeep control of what goes.",
+      label: "Artifact cleanup",
+    },
   }),
   defineProject({
     repo: "kittymux",
@@ -63,6 +72,11 @@ export const workshop: readonly WorkshopProject[] = [
     kind: "Terminal tool",
     tagline: "An agent-aware workspace layer for kitty: sessions, brand glyphs and a usage HUD.",
     language: "Python",
+    siteUrl: "https://kittymux.kitsunekode.in",
+    preview: {
+      code: "$ kittymux demo\n\nOne workspace.\nA herd of coding agents.",
+      label: "Kitty workspaces",
+    },
   }),
   defineProject({
     repo: "run-cli",
@@ -71,6 +85,10 @@ export const workshop: readonly WorkshopProject[] = [
     tagline:
       "A Bun-native CLI that turns project startup into one command, with profiles and shell completions.",
     language: "TypeScript",
+    preview: {
+      image: "/workshop/run-cli.webp",
+      alt: "run-cli project preview from its repository",
+    },
   }),
   defineProject({
     repo: "js-questions-lab",
@@ -81,6 +99,10 @@ export const workshop: readonly WorkshopProject[] = [
     language: "TypeScript",
     siteUrl: "https://jsquestionslab.kitsunekode.in",
     siteLabel: "jsquestionslab.kitsunekode.in",
+    preview: {
+      code: "console.log(typeof null)\n\nThink it through.\nRun it. See why.",
+      label: "JavaScript practice",
+    },
   }),
   defineProject({
     repo: "yt-playlist-dedupe",
@@ -90,6 +112,10 @@ export const workshop: readonly WorkshopProject[] = [
     language: "TypeScript",
     siteUrl: "https://yt-ddp.kitsunekode.in",
     siteLabel: "yt-ddp.kitsunekode.in",
+    preview: {
+      code: "Playlist → Review → Deduplicate\n\nKeep the videos you want.\nLeave duplicates behind.",
+      label: "YouTube playlist tools",
+    },
   }),
 ];
 

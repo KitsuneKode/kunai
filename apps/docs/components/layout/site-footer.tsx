@@ -6,6 +6,8 @@ import { SUPPORT_PATH } from "@/lib/support";
 import { workshop } from "@/lib/workshop";
 import Link from "next/link";
 
+import { FooterWordmark } from "./footer-wordmark";
+
 // Copyright follows the deployed server's year, never the viewer's clock.
 const COPYRIGHT_YEAR = new Date().getUTCFullYear();
 
@@ -27,8 +29,6 @@ type FooterLink = {
   readonly href: string;
   readonly label: string;
   readonly external?: boolean;
-  /** A short descriptor printed under the label. */
-  readonly note?: string;
 };
 
 const DOCS_LINKS: readonly FooterLink[] = [
@@ -68,9 +68,8 @@ const TRUST_LINKS: readonly FooterLink[] = [
  * fork is never presented here as something KitsuneKode made.
  */
 const ECOSYSTEM_LINKS: readonly FooterLink[] = workshop.map((project) => ({
-  href: project.repoUrl,
+  href: project.siteUrl ?? project.repoUrl,
   label: project.name,
-  note: project.kind,
   external: true,
 }));
 
@@ -82,9 +81,6 @@ function FooterLinkItem({ link }: { readonly link: FooterLink }) {
       <a href={link.href} rel="noreferrer" target="_blank" className={className}>
         {link.label}
         <span className="sr-only"> (opens in a new tab)</span>
-        {link.note ? (
-          <span className="text-fd-muted-foreground/80 block text-xs leading-5">{link.note}</span>
-        ) : null}
       </a>
     );
   }
@@ -120,7 +116,7 @@ function FooterColumn({
 
 export function SiteFooter() {
   return (
-    <footer className="border-fd-border relative mt-auto border-t">
+    <footer className="kunai-site-footer border-fd-border relative mt-auto border-t">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 py-12 md:px-10">
         <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-5">
           <div className="col-span-2 flex max-w-xs flex-col gap-3 sm:col-span-3 lg:col-span-1">
@@ -142,6 +138,7 @@ export function SiteFooter() {
           <FooterColumn title="Trust" links={TRUST_LINKS} />
           <FooterColumn title="Also by KitsuneKode" links={ECOSYSTEM_LINKS} />
         </div>
+        <FooterWordmark />
         <div className="border-fd-border text-fd-muted-foreground flex flex-col gap-2 border-t pt-6 text-xs sm:flex-row sm:items-center sm:justify-between">
           <p className="m-0">
             © {COPYRIGHT_YEAR} KitsuneKode. Docs for Kunai v{codeMetadata.cliVersion}.

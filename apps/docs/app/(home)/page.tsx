@@ -22,7 +22,7 @@ const HOME_DESCRIPTION =
   "Kunai is a terminal client that searches anime, series, movies, and YouTube, resolves a stream a direct provider already serves, and plays it in mpv.";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Kunai: anime, series and movies in mpv, in your terminal",
+  title: "Kunai: anime, series, movies & YouTube in your terminal",
   absoluteTitle: true,
   description: HOME_DESCRIPTION,
   socialDescription:

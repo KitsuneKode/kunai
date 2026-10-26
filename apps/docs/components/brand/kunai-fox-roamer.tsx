@@ -12,6 +12,7 @@ import {
   STANDING_POSE,
   withHeading,
 } from "@/lib/fox-gait";
+import { useKannaPaused } from "@/lib/kanna-motion";
 import {
   createRoamerState,
   poseForPhase,
@@ -221,6 +222,7 @@ type GaitState = {
 };
 
 export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
+  const paused = useKannaPaused();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
   // Her whole movement state lives in a ref, not React state: it advances every
@@ -275,7 +277,8 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   }, [line]);
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled || paused) return undefined;
+    lastFrame.current = 0;
 
     function onMove(event: PointerEvent) {
       pointer.current = { x: event.clientX, y: event.clientY };
@@ -379,13 +382,24 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     }
 
     window.addEventListener("pointermove", onMove, { passive: true });
-    frameRef.current = window.requestAnimationFrame(tick);
+    function syncVisibility() {
+      if (document.hidden) {
+        if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      } else if (frameRef.current === null) {
+        lastFrame.current = 0;
+        frameRef.current = window.requestAnimationFrame(tick);
+      }
+    }
+    syncVisibility();
+    document.addEventListener("visibilitychange", syncVisibility);
     return () => {
       window.removeEventListener("pointermove", onMove);
+      document.removeEventListener("visibilitychange", syncVisibility);
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     };
-  }, [enabled, size, machine]);
+  }, [enabled, paused, size, machine]);
 
   // Unprompted chatter. `phase` is read through a ref rather than a dependency
   // on purpose: as a dependency it re-ran this effect every time she started or
@@ -397,7 +411,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   }, [phase]);
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled || paused) return undefined;
     let timer: number;
     const schedule = () => {
       const window_ = CHATTER_WINDOW_MS[phaseRef.current];
@@ -420,7 +434,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     };
     schedule();
     return () => window.clearTimeout(timer);
-  }, [enabled, say]);
+  }, [enabled, paused, say]);
 
   const dismiss = useCallback(() => {
     try {
@@ -440,7 +454,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     // Hidden from assistive tech, and out of the tab order, on purpose: she
     // only ever appears for a fine pointer, so there is no keyboard path that
     // could reach her and nothing here that is not decorative.
-    <div ref={hostRef} className="kunai-roamer" aria-hidden="true">
+    <div ref={hostRef} className="kunai-roamer" data-paused={paused} aria-hidden="true">
       {line ? <p className="kunai-roamer__bubble">{line}</p> : null}
       <button
         type="button"

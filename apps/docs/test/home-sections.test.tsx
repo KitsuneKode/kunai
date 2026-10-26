@@ -86,7 +86,7 @@ describe("ProjectCard", () => {
 
   test("makes the whole card one link to the project's main page, with source separate", () => {
     const html = renderToStaticMarkup(<ProjectCard project={sweep} meta={meta} />);
-    expect(html).toContain(`href="${sweep.siteUrl}"`);
+    expect(html).toContain(`href="${sweep.siteUrl ?? sweep.repoUrl}"`);
     expect(html).toContain("after:absolute");
     expect(html).toContain(`href="${sweep.repoUrl}"`);
   });
@@ -120,7 +120,7 @@ describe("footer workshop column", () => {
   const html = renderToStaticMarkup(<SiteFooter />);
 
   test("lists every curated project and never the fork", () => {
-    for (const project of workshop) expect(html).toContain(project.repoUrl);
+    for (const project of workshop) expect(html).toContain(project.siteUrl ?? project.repoUrl);
     expect(html).not.toContain("portless");
   });
 });

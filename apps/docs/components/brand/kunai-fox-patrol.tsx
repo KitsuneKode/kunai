@@ -2,6 +2,7 @@
 
 import { type FoxWalkerHandle, KunaiFoxWalker } from "@/components/brand/kunai-fox-walker";
 import { advancePhase, blendPose, type FoxPose, gaitPose, STANDING_POSE } from "@/lib/fox-gait";
+import { setKannaPaused, useKannaPaused } from "@/lib/kanna-motion";
 import { createPatrolState, stepPatrol } from "@/lib/patrol-machine";
 import { useEffect, useRef, useState } from "react";
 
@@ -33,10 +34,15 @@ export function KunaiFoxPatrol() {
   const laneRef = useRef<HTMLDivElement | null>(null);
   const foxRef = useRef<HTMLDivElement | null>(null);
   const walkerRef = useRef<FoxWalkerHandle | null>(null);
-  const [paused, setPaused] = useState(false);
+  const paused = useKannaPaused();
   const pausedRef = useRef(false);
   const syncRef = useRef<() => void>(() => {});
   const [facing, setFacing] = useState<"left" | "right">("right");
+
+  useEffect(() => {
+    pausedRef.current = paused;
+    syncRef.current();
+  }, [paused]);
 
   useEffect(() => {
     const lane = laneRef.current;
@@ -123,9 +129,7 @@ export function KunaiFoxPatrol() {
   }, []);
 
   function togglePause() {
-    pausedRef.current = !pausedRef.current;
-    setPaused(pausedRef.current);
-    syncRef.current();
+    setKannaPaused(!paused);
   }
 
   return (
@@ -137,7 +141,12 @@ export function KunaiFoxPatrol() {
       </div>
       <span className="kunai-footer-patrol__caption">
         Kanna, the fox.
-        <button type="button" className="kunai-footer-patrol__toggle" onClick={togglePause}>
+        <button
+          type="button"
+          className="kunai-footer-patrol__toggle"
+          onClick={togglePause}
+          aria-label={paused ? "Resume Kanna's wandering" : "Pause Kanna's wandering"}
+        >
           {paused ? "Resume Kanna" : "Pause Kanna"}
         </button>
       </span>

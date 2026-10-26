@@ -15,15 +15,19 @@ import { RootProvider } from "fumadocs-ui/provider/next";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
-export const metadata: Metadata = {
-  metadataBase: new URL(docsSiteUrl),
-  title: {
-    default: "Kunai Docs",
-    template: "%s | Kunai · terminal streaming client",
-  },
-  description:
-    "Guides for Kunai, the terminal client for anime, series, movies, and YouTube: resolve a stream, hand off to mpv, recover, and use local offline files.",
-};
+export function generateMetadata(): Metadata {
+  const metadata: Metadata = {
+    metadataBase: new URL(docsSiteUrl),
+    title: {
+      default: "Kunai Docs",
+      template: "%s | Kunai · terminal streaming client",
+    },
+    description:
+      "Guides for Kunai, the terminal client for anime, series, movies, and YouTube: resolve a stream, hand off to mpv, recover, and use local offline files.",
+  };
+  if (process.env.VERCEL_ENV === "preview") metadata.robots = { index: false, follow: true };
+  return metadata;
+}
 
 export const viewport: Viewport = {
   width: "device-width",
