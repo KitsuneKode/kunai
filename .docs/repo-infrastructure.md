@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-26T00:43:04Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -115,10 +115,24 @@ When release-related files change (`apps/cli/package.json`, `apps/cli/CHANGELOG.
 root `CHANGELOG.md`, or `.changeset/*.md`), lint-staged also runs `bun run guard` to
 catch version/changelog drift before commit.
 
-The pre-push hook first verifies generated docs metadata. Main and tag pushes
-run `bun run ci`; branch pushes run `bun run ci:affected`, which includes
-preflight, typecheck, lint, formatting, and tests. A successful affected run can
-include cache replays, so final candidate verification still needs forced gates.
+The pre-push hook checks generated documentation metadata first. Pushes to
+`main` or tags then run the full workspace gate; other branch pushes use the
+affected workspace gate:
+
+```sh
+bun run ci           # main and tags
+bun run ci:affected  # other branches
+```
+
+Both run preflight (including root documentation/workflow formatting), types,
+lint, formatting and tests. Only `bun run ci` additionally runs
+`verify:parity-references` and `verify:doc-coverage`; `ci:affected` omits those
+two verifiers. The hosted CI job matrix has its own path conditions described
+below, so a successful branch pre-push does not establish that those hosted
+checks ran.
+
+Affected runs may include cache replays; final candidate qualification still
+requires forced gates.
 
 The minified development bundle has its own measured size ratchet in
 `apps/cli/scripts/build-shared.ts`. It is not the public npm payload: the Node
