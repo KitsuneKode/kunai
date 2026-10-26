@@ -287,6 +287,11 @@ the repository itself deliberately requires Bun. It does not bypass engine
 checks with `--force` or alter the repository's package-manager policy. Preserved
 tarball inspection and registry/publish commands use the same artifact context;
 user/environment registry authentication still follows npm's normal resolution.
+Pack metadata accepts npm 11's single-record array and npm 12's single-entry
+package-name map. A keyed record must agree with its key; multiple records,
+missing fields and mismatched expected package identity/version/integrity still
+fail. This compatibility does not change the release workflow's pinned Node/npm
+toolchain or enable publication during candidate preparation.
 The real-npm regression in
 `apps/cli/test/integration/npm-global-install.test.ts` packs tiny isolated
 candidates and verifies that inspection returns their exact preserved integrity.
