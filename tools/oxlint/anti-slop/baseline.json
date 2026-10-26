@@ -1,7 +1,7 @@
 {
   "anti-slop(no-chained-type-assertions)": 285,
-  "anti-slop(no-conditional-empty-object-spread)": 277,
-  "anti-slop(no-known-value-widening)": 425,
+  "anti-slop(no-conditional-empty-object-spread)": 275,
+  "anti-slop(no-known-value-widening)": 420,
   "anti-slop(no-module-load-env-read)": 63,
   "anti-slop(no-object-parameters)": 2,
   "anti-slop(no-reflect-get)": 2,

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-23"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai — Quickstart

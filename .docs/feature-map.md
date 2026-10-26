@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26T08:06:09Z"
+lastReviewed: "2026-10-26"
 ---
 
 # Feature Map

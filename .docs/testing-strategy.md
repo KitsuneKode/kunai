@@ -897,3 +897,19 @@ that one pass claims the expected rows and clears the queue. That assertion does
 not require disk durability or WAL contention; the other drain cases continue
 using file-backed databases. Keep native filesystem/lifecycle qualification in
 its owning tests rather than relying on a wiring test's wall-clock budget.
+
+## Automated analytics isolation
+
+The CLI test preload, shadow-profile helper, manual sandbox and native Docker
+smoke force `DO_NOT_TRACK=1`. Every hosted workflow also sets it and Turbo
+preserves it in strict tasks. Tests must not mint countable production install
+identities, including when `CI=0` or a fixture already has consent. Agent launch
+overrides may not replace isolated roots or disable DNT. Test consent behavior
+with injected in-memory configuration and fetch fixtures.
+
+The opt-in analytics smoke requires both `KUNAI_LIVE_ANALYTICS=1` and
+`KUNAI_ANALYTICS_TEST_URL` with numeric
+loopback and an explicit port, refuses redirects, and awaits fixture acceptance.
+A fixed synthetic UUID still counts as an install if sent to production. The
+smoke establishes the local wire contract, not production deployment or counts;
+its server must use disposable storage.

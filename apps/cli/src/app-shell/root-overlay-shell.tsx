@@ -248,7 +248,7 @@ const EMPTY_TRACKS_FAVORITES: readonly string[] = [];
 const HELP_TABS_INTERNAL = helpSections().map((section) => section.group);
 
 /** Human-readable scope labels for the help overlay header. */
-const HELP_SCOPE_LABELS: Record<KeyScope, string> = {
+const HELP_SCOPE_LABELS = {
   global: "global",
   editing: "editing",
   browse: "browse",
@@ -261,7 +261,7 @@ const HELP_SCOPE_LABELS: Record<KeyScope, string> = {
   queue: "queue",
   history: "history",
   notifications: "notifications",
-};
+} satisfies Record<KeyScope, string>;
 
 const HELP_SECTION_BY_GROUP = new Map<string, HelpSection>(
   helpSections().map((section) => [section.group, section]),
@@ -1298,8 +1298,7 @@ export function RootOverlayShell({
             if (bridged) {
               resolveNotificationSelection({
                 kind: "playback",
-                title: intent.title,
-                ...(intent.episode ? { episode: intent.episode } : {}),
+                ...intent,
               });
             }
             container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
@@ -1795,10 +1794,7 @@ export function RootOverlayShell({
                     launch
                       ? forceCloseRootContent<BrowseShellResult<SearchResult>>({
                           type: "launch-playback",
-                          launch: {
-                            title: launch.title,
-                            ...(launch.episode ? { episode: launch.episode } : {}),
-                          },
+                          launch,
                         })
                       : false,
                 );
