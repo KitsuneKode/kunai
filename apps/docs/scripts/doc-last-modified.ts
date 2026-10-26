@@ -1,20 +1,50 @@
 import { execFile } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
 
+// Git's repository-local environment (rev-parse --local-env-vars), plus discovery
+// controls, must not redirect a cwd-scoped query into the invoking hook's repo.
+const repositoryOverrides = [
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_CONFIG",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_IMPLICIT_WORK_TREE",
+  "GIT_GRAFT_FILE",
+  "GIT_INDEX_FILE",
+  "GIT_NO_REPLACE_OBJECTS",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_PREFIX",
+  "GIT_SHALLOW_FILE",
+  "GIT_COMMON_DIR",
+  "GIT_CEILING_DIRECTORIES",
+  "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+];
+
 /** Read authorship per file: directory-wide logs can omit merge-resolution edits. */
 export function createDocLastModified(root: string) {
+  const env = { ...process.env };
+  for (const key of repositoryOverrides) delete env[key];
   async function git(args: string[]) {
     // Next also loads this config under Node; do not require a Bun global here.
-    return (await run("git", args, { cwd: root, maxBuffer: 64 * 1024 })).stdout.trim();
+    return (await run("git", args, { cwd: root, env, maxBuffer: 64 * 1024 })).stdout.trim();
   }
   let fullHistory: Promise<boolean> | undefined;
   const dates = new Map<string, Promise<Date | undefined>>();
   async function hasFullHistory() {
     try {
-      return (await git(["rev-parse", "--is-shallow-repository"])) === "false";
+      if ((await git(["rev-parse", "--is-shallow-repository"])) !== "false") return false;
+      const [expected, discovered] = await Promise.all([
+        realpath(root),
+        git(["rev-parse", "--show-toplevel"]).then((top) => realpath(top)),
+      ]);
+      return expected === discovered;
     } catch {
       // A source archive without Git still builds; unknown dates stay omitted.
       return false;

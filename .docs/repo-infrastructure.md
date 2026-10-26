@@ -469,8 +469,11 @@ utility/share/withdrawn pages keep their existing indexing policy.
 using full Git history and Fumadocs' author-date convention, avoiding re-dating
 unchanged guides when commits are rebased. File-specific queries retain edits
 authored during merge resolution, which directory-wide log summaries can omit.
-A shallow clone or a source archive supplies no
-guide dates, rather than attributing every guide to the clone boundary. Use a
+A Git subprocess ignores inherited repository-location overrides and verifies
+that its canonical top-level directory matches the requested checkout. Worktrees
+and symlinked checkout paths remain supported. A shallow clone or a source
+archive, including one inside an unrelated repository, supplies no guide dates,
+rather than attributing every guide to the clone boundary or ancestor history. Use a
 full checkout (or Vercel's `VERCEL_DEEP_CLONE=true`) to publish per-file dates.
 The sitemap lists canonical content URLs and published release dates; the home
 page does not borrow the date of an unrelated guide. XML without a stylesheet
