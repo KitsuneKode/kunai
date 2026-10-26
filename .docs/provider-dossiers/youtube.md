@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-29"
+lastReviewed: "2026-10-26"
 ---
 
 # Provider: YouTube (`youtube`)
