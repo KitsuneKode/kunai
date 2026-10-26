@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-26T00:43:04Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -115,12 +115,21 @@ When release-related files change (`apps/cli/package.json`, `apps/cli/CHANGELOG.
 root `CHANGELOG.md`, or `.changeset/*.md`), lint-staged also runs `bun run guard` to
 catch version/changelog drift before commit.
 
-The pre-push hook runs preflight and affected workspace types, lint, formatting
-and tests through (preflight also runs root documentation/workflow formatting):
+The pre-push hook checks generated documentation metadata first. Pushes to
+`main` or tags then run the full workspace gate; other branch pushes use the
+affected workspace gate:
 
 ```sh
-bun run ci:affected
+bun run ci           # main and tags
+bun run ci:affected  # other branches
 ```
+
+Both run preflight (including root documentation/workflow formatting), types,
+lint, formatting and tests. Only `bun run ci` additionally runs
+`verify:parity-references` and `verify:doc-coverage`; `ci:affected` omits those
+two verifiers. The hosted CI job matrix has its own path conditions described
+below, so a successful branch pre-push does not establish that those hosted
+checks ran.
 
 Doc freshness compares both committed versions with the installed formatter
 before allowing an unchanged review date on a formatting-only edit. Content
