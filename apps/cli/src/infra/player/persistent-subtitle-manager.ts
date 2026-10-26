@@ -1,6 +1,7 @@
 import type { SubtitleTrack } from "@/domain/types";
 import { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import { collectAdditionalSubtitleTracks, describeSubtitleTrackForMpv } from "@/mpv";
+import { isJsonNumber, isJsonObject } from "@kunai/types";
 
 import type { MpvIpcSession } from "./mpv-ipc";
 import { extractExternalSubtitleIds } from "./subtitle-track-cache";
@@ -67,19 +68,17 @@ export class PersistentSubtitleManager {
 
   findExternalSubtitleId(url: string): number | undefined {
     if (!isAllowedMpvUrl(url, "remote") || !Array.isArray(this.lastTrackList)) return undefined;
-    const track = this.lastTrackList.find((value: unknown) => {
-      if (!value || typeof value !== "object") return false;
-      const row = value as Record<string, unknown>;
-      return (
-        row.type === "sub" &&
-        row.external === true &&
-        row["external-filename"] === url &&
-        typeof row.id === "number" &&
-        Number.isSafeInteger(row.id) &&
-        row.id > 0
-      );
-    }) as { id: number } | undefined;
-    return track?.id;
+    const track = this.lastTrackList.find(
+      (value) =>
+        isJsonObject(value) &&
+        value.type === "sub" &&
+        value.external === true &&
+        value["external-filename"] === url &&
+        isJsonNumber(value.id) &&
+        Number.isSafeInteger(value.id) &&
+        value.id > 0,
+    );
+    return isJsonObject(track) && isJsonNumber(track.id) ? track.id : undefined;
   }
 
   cachedExternalSubtitleIds(): number[] {

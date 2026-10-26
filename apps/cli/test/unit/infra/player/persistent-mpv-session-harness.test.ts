@@ -1542,7 +1542,7 @@ test("replacement subtitles retain unchanged process visibility without a second
   }
 });
 
-test.each(["es", "de"] as const)(
+test.each(["es", "de"])(
   "subtitle picker reuses %s or attaches only that track without growing the inventory",
   async (language) => {
     const harness = createHarness();

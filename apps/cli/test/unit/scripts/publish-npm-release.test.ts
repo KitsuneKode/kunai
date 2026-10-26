@@ -74,11 +74,15 @@ function candidatePackage404(candidate: LocalPackageCandidate, detail: string) {
 }
 
 describe("local npm publication candidates", () => {
-  test.each(["array", "keyed"] as const)(
+  test.each(["array", "keyed"])(
     "packs canonical platform inputs and inspects the preserved launcher tarball (%s JSON)",
-    async (shape) => {
-      const packMetadata = (record: Record<string, string>) =>
-        JSON.stringify(shape === "array" ? [record] : { [record.name!]: record });
+    async (format) => {
+      const packMetadata = (record: {
+        name: string;
+        version: string;
+        integrity: string;
+        filename: string;
+      }) => JSON.stringify(format === "array" ? [record] : { [record.name]: record });
       const root = mkdtempSync(join(tmpdir(), "kunai-publication-candidates-"));
       const platformDirectory = join(root, "npm-platform");
       const tarballDirectory = join(root, "tarballs");
@@ -166,9 +170,9 @@ describe("local npm publication candidates", () => {
     },
   );
 
-  test.each(["wrong-key", "multiple"] as const)(
+  test.each(["wrong-key", "multiple"])(
     "rejects inconsistent keyed pack JSON (%s)",
-    async (shape) => {
+    async (format) => {
       const root = mkdtempSync(join(CANDIDATE_FIXTURE_ROOT, "invalid-pack-"));
       const manifest = join(root, "package.json");
       writeFileSync(manifest, JSON.stringify({ name: "@kitsunekode/kunai", version: "1.2.3" }));
@@ -179,7 +183,7 @@ describe("local npm publication candidates", () => {
         filename: "fixture.tgz",
       };
       const value =
-        shape === "wrong-key"
+        format === "wrong-key"
           ? { "@kitsunekode/wrong": record }
           : {
               [record.name]: record,
@@ -193,7 +197,7 @@ describe("local npm publication candidates", () => {
           platformDirectory: join(root, "platform"),
           platformTarballDirectory: join(root, "tarballs"),
         }),
-      ).rejects.toThrow(shape === "wrong-key" ? "key disagrees" : "exactly one metadata record");
+      ).rejects.toThrow(format === "wrong-key" ? "key disagrees" : "exactly one metadata record");
     },
   );
 
