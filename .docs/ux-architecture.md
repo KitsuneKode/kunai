@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26T00:43:04Z"
+lastReviewed: "2026-10-26T08:05:31Z"
 ---
 
 # Kunai — UX Architecture
@@ -269,7 +269,7 @@ Sources and async contract:
   and list/playlist rows (`app/search/search-suggestions.ts` materializes them as
   `SearchSuggestion<SearchResult>` — every row's `value` is a real SearchResult).
 - Remote layer is ONE call into the fast registry catalog for the lane —
-  `services/search/suggest-titles.ts` resolves `getForProvider(provider)` first (AniList for anime providers,
+  `apps/cli/src/services/search/suggest-titles.ts` resolves `getForProvider(provider)` first (AniList for anime providers,
   same as `searchTitles`), then the registry default (TMDB). It never runs the provider-lane
   search walk, never enriches, never resolves a provider or probes a stream. YouTube mode has
   no registry catalog, so the band shows local rows only — provider-native search is too heavy
