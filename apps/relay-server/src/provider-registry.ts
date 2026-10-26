@@ -1,6 +1,5 @@
 import {
   allmangaProviderModule,
-  anidbProviderModule,
   animeggProviderModule,
   hianimeProviderModule,
   kickassanimeProviderModule,
@@ -28,7 +27,6 @@ export const relayProviderModules = [
   rivestreamProviderModule,
   movyProviderModule,
   allmangaProviderModule,
-  anidbProviderModule,
   hianimeProviderModule,
   animeggProviderModule,
   kickassanimeProviderModule,

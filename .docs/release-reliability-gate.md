@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai Release Reliability Gate
@@ -20,6 +20,7 @@ Use the command above before CLI build or release-pipeline changes (covers build
 Run from the repo root:
 
 ```sh
+bun run audit:dependencies
 bun run fmt:check
 bun run lint
 bun run test
@@ -40,6 +41,10 @@ Expected result:
   ten preserved raw binaries, `SHA256SUMS`, and `SHA256SUMS.archives`
 - package check rejects `dist/bin/**`, source/maps, analyze metafiles, lifecycle scripts, dependency drift, and oversized launcher tarballs
 - release dry-run completes build, checks, and packability without publishing
+
+Dispatch version input is passed through the step environment, never interpolated
+into generated Bash source. Exact comparison with the package version rejects
+hostile strings as data before candidate construction.
 
 The release workflow additionally opens the exact preserved
 `.release-candidate/kunai-npm.tgz` after `release:pack`, both before candidate
@@ -108,6 +113,24 @@ version and activation locks, which exclude uninstall through the lifecycle
 guard, then re-reads before publishing so a newer activation is not overwritten
 and a removed manifest is not recreated. Issue #132 and 0.3.0 dispatch remain
 blocked until this complete stack passes protected native release gates.
+
+## Download resource ownership
+
+Native updater downloads remove each chunk's abort listener when that read settles.
+An already-aborted signal refuses the next read, including a response that becomes
+ready alongside cancellation. Completion releases the reader lock. HTTP refusal,
+size refusal and file-open failure cancel unused bodies through the existing
+bounded cleanup grace; fast cleanup also clears its fallback timer. These rules
+keep chunk count from accumulating retained abort closures and preserve partial-file
+removal. SHA-256, archive validation, retry classification and download budgets
+remain unchanged.
+
+The response stall timer is armed only while awaiting the next body read and
+cleared before local disk work. File opening and writing cannot consume this
+network inactivity budget; the total download deadline still spans the attempt.
+Stall/retry regressions explicitly deliver timer callbacks after a partial write,
+then verify cancellation, reader release, removal and retry. They run on all
+platforms without a parked asynchronous stream pull or wall-clock race.
 
 ## Native Installer Activation Gate
 

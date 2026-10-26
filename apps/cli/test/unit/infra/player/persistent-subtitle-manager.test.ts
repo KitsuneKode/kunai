@@ -207,3 +207,33 @@ describe("PersistentSubtitleManager", () => {
     });
   });
 });
+
+test("Off retains subtitle inventory without selecting it", async () => {
+  const { ipc, commands } = createFakeIpc();
+  const manager = new PersistentSubtitleManager(() => false);
+  const result = await manager.attachSubtitles(ipc, {
+    primarySubtitle: "https://subs.example/en.vtt",
+    subtitleTracks: [{ url: "https://subs.example/es.vtt", language: "es" }],
+  });
+  expect(result).toEqual({ status: "attached", attachedCount: 2 });
+  expect(
+    commands
+      .filter((command) => command[0] === "sub-add")
+      .every((command) => command[2] === "auto"),
+  ).toBe(true);
+  expect(commands.at(-1)).toEqual(["set_property", "sid", "no"]);
+});
+
+test("Off selected while a late attachment is pending wins over its completion", async () => {
+  let enabled = true;
+  const { ipc, commands } = createFakeIpc();
+  const originalSend = ipc.send;
+  ipc.send = async (command, timeout) => {
+    const result = await originalSend(command, timeout);
+    if (command[0] === "sub-add") enabled = false;
+    return result;
+  };
+  const manager = new PersistentSubtitleManager(() => enabled);
+  await manager.attachSubtitles(ipc, { primarySubtitle: "https://subs.example/en.vtt" });
+  expect(commands.at(-1)).toEqual(["set_property", "sid", "no"]);
+});

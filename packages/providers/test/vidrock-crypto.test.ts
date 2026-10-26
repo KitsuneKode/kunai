@@ -156,3 +156,81 @@ describe("VidRock key pin", () => {
     expect(result.failures?.[0]?.message).toMatch(/rotat/);
   });
 });
+
+async function encryptLaneUrl(url: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    Buffer.from(VIDROCK_KEY_HEX, "hex"),
+    "AES-GCM",
+    false,
+    ["encrypt"],
+  );
+  const iv = new Uint8Array(12);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    new TextEncoder().encode(url),
+  );
+  return Buffer.concat([iv, new Uint8Array(encrypted)]).toString("base64url");
+}
+
+test("VidRock detects extensionless HLS from bounded playlist bytes and exposes real quality URLs", async () => {
+  const ciphertext = await encryptLaneUrl("https://worker.example/opaque");
+  const result = await vidrockProviderModule.resolve(
+    {
+      title: { id: "tmdb:550", kind: "movie", title: "Fight Club", tmdbId: "550" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      providerId: "vidrock",
+      now: () => "2026-10-24T00:00:00Z",
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (target) => {
+          const url = String(target);
+          if (url.includes("/api/")) return Response.json({ Luna: { url: ciphertext } });
+          if (url.endsWith("/opaque"))
+            return new Response(
+              '#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="English",LANGUAGE="en",URI="en.vtt"\n#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080\n1080.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720\n720.m3u8\n',
+            );
+          if (url.endsWith(".m3u8")) return new Response("#EXTM3U\n#EXTINF:5,\nsegment.ts\n");
+          return new Response(new Uint8Array(2048));
+        },
+      },
+    },
+  );
+  expect(result.status).toBe("resolved");
+  expect(result.streams.map((s) => s.url)).toEqual([
+    "https://worker.example/1080.m3u8",
+    "https://worker.example/720.m3u8",
+  ]);
+  expect(result.streams.map((s) => s.qualityLabel)).toEqual(["1080p", "720p"]);
+  expect(result.streams.every((s) => s.protocol === "hls")).toBe(true);
+  expect(result.subtitles.map((s) => s.url)).toEqual(["https://worker.example/en.vtt"]);
+});
+
+test("VidRock does not declare arbitrary worker bytes to be HLS", async () => {
+  const ciphertext = await encryptLaneUrl("https://worker.example/opaque");
+  const result = await vidrockProviderModule.resolve(
+    {
+      title: { id: "tmdb:550", kind: "movie", title: "Fight Club", tmdbId: "550" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    {
+      providerId: "vidrock",
+      now: () => "2026-10-24T00:00:00Z",
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (target) =>
+          String(target).includes("/api/")
+            ? Response.json({ Luna: { url: ciphertext } })
+            : new Response(new Uint8Array(2048)),
+      },
+    },
+  );
+  expect(result.streams.every((s) => s.protocol !== "hls")).toBe(true);
+});

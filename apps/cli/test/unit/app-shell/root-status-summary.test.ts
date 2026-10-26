@@ -4,6 +4,52 @@ import { buildRootStatusSummary } from "@/app-shell/root-status-summary";
 import { createInitialState } from "@/domain/session/SessionState";
 
 describe("buildRootStatusSummary", () => {
+  test.each([
+    {
+      name: "movie after playback ends",
+      view: "post-playback",
+      status: "ready",
+      title: { id: "film", name: "A film", type: "movie" as const },
+      expected: "movie",
+    },
+    {
+      name: "anime theatrical film",
+      view: "playback",
+      status: "playing",
+      title: {
+        id: "anime",
+        name: "Anime film",
+        type: "movie" as const,
+        externalIds: { malId: "1" },
+      },
+      expected: "anime",
+    },
+    {
+      name: "YouTube identity with movie structure",
+      view: "playback",
+      status: "playing",
+      title: {
+        id: "clip",
+        name: "A video",
+        type: "movie" as const,
+        externalIds: { youtubeId: "fixture-video" },
+      },
+      expected: "YouTube",
+    },
+  ])("header retains resolved identity for $name", ({ view, status, title, expected }) => {
+    const base = createInitialState("vidlink", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state: { ...base, mode: "series", view: "playback", currentTitle: title },
+      currentViewLabel: view,
+      rootStatus: status,
+    });
+    expect(summary.crumb).toStartWith(`${expected} ·`);
+  });
+
   test("summarizes active playback with title, episode, subtitles, and chain state", () => {
     const base = createInitialState("vidking", "hianime", {
       anime: { audio: "original", subtitle: "en" },

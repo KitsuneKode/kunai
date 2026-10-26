@@ -24,6 +24,10 @@ import type {
   PlaybackSourceGroupView,
   PlaybackSourceInventoryView,
 } from "@/services/playback/PlaybackSourceInventoryView";
+import {
+  resolveYtdlFormatFromCandidate,
+  resolveYoutubeYtdlRawOptions,
+} from "@/services/providers/youtube-playback-options";
 import type { PrePlayConfirmMode } from "@kunai/config";
 import type { StreamCandidate, SubtitleCandidate } from "@kunai/types";
 
@@ -304,7 +308,20 @@ export function buildQualityPickerOptions(stream: StreamInfo): readonly QualityO
   if (!result) return [];
 
   const projection = projectPlaybackSourceInventory(result);
-  return result.streams
+  // A YouTube format is shared by extractor-client lanes. The projection orders
+  // its candidates with the current connection first, retaining an exact stream
+  // id for the existing selection path and preserving other lanes for recovery.
+  const streamsById = new Map(result.streams.map((candidate) => [candidate.id, candidate]));
+  const candidates =
+    result.providerId === "youtube"
+      ? projection.qualityOptions.flatMap((option) => {
+          const candidate = option.streamIds
+            .map((id) => streamsById.get(id))
+            .find((entry) => entry && isPlayableStreamCandidate(entry));
+          return candidate ? [candidate] : [];
+        })
+      : result.streams;
+  return candidates
     .filter((candidate) => isPlayableStreamCandidate(candidate))
     .map((candidate) => {
       const option = projection.qualityOptions.find((qualityOption) =>
@@ -434,7 +451,10 @@ export function buildPlaybackControlSummary(stream: StreamInfo | null): Playback
     hardSubLanguages,
     softSubtitleLanguages,
     showSourceControl: sourceChoiceCount > 0,
-    showQualityControl: qualityLabels.length > 1 || playableStreams.length > 1,
+    showQualityControl:
+      result.providerId === "youtube"
+        ? buildQualityPickerOptions(stream).length > 1
+        : qualityLabels.length > 1 || playableStreams.length > 1,
     showMediaTrackControl:
       languageChoiceCount > 1 || softSubtitleLanguages.length > 0 || Boolean(stream.subtitle),
     summary: result.providerId,
@@ -482,6 +502,7 @@ export function applyPreferredStreamSelection(
   stream: StreamInfo,
   selection: StreamSelectionIntent,
   qualityPreference?: string,
+  subtitlePreference?: string,
 ): StreamInfo {
   const result = stream.providerResolveResult;
   if (!result || result.streams.length === 0) return stream;
@@ -498,7 +519,13 @@ export function applyPreferredStreamSelection(
     const preference = qualityPreference?.trim().toLowerCase();
     const automatic = !preference || ["auto", "best", "max"].includes(preference);
     const ceiling = preference === "4k" ? 2160 : Number.parseInt(preference ?? "", 10);
+    const current = result.streams.find((candidate) => candidate.id === result.selectedStreamId);
+    const sameYoutubeFormat =
+      result.providerId === "youtube" && !selection.automaticQuality && current?.variantId
+        ? candidates.find((candidate) => candidate.variantId === current.variantId)
+        : undefined;
     selected =
+      sameYoutubeFormat ??
       (!automatic
         ? candidates.find(
             (candidate) =>
@@ -543,10 +570,16 @@ export function applyPreferredStreamSelection(
 
   return {
     ...stream,
+    playbackSubtitle: undefined,
     url: selected.url,
     headers: selected.headers ?? {},
     audioLanguages: selected.audioLanguages ? [...selected.audioLanguages] : undefined,
     hardSubLanguage: selected.hardSubLanguage,
+    requiresYtdl: selected.requiresYtdl,
+    ytdlFormat: selected.requiresYtdl ? resolveYtdlFormatFromCandidate(selected) : undefined,
+    ytdlRawOptions: selected.requiresYtdl
+      ? resolveYoutubeYtdlRawOptions(selected, subtitlePreference)
+      : undefined,
     subtitle: keepCurrentSubtitle ? stream.subtitle : undefined,
     subtitleSource: keepCurrentSubtitle ? stream.subtitleSource : "none",
     providerResolveResult: {

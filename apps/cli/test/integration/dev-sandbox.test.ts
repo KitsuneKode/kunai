@@ -28,7 +28,7 @@ describe.skipIf(process.platform === "win32")("manual sandbox launcher", () => {
     const executable = join(shim, "bun");
     writeFileSync(
       executable,
-      `#!${process.execPath}\nawait Bun.write(process.env.SANDBOX_CAPTURE, JSON.stringify({env:Object.fromEntries(["HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "APPDATA", "LOCALAPPDATA", "KUNAI_CREDENTIAL_BACKEND"].map(key=>[key,process.env[key]])),args:process.argv.slice(2)}));\n`,
+      `#!${process.execPath}\nawait Bun.write(process.env.SANDBOX_CAPTURE, JSON.stringify({env:Object.fromEntries(["HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "APPDATA", "LOCALAPPDATA", "KUNAI_CREDENTIAL_BACKEND", "DO_NOT_TRACK"].map(key=>[key,process.env[key]])),args:process.argv.slice(2)}));\n`,
     );
     chmodSync(executable, 0o755);
   });
@@ -45,6 +45,8 @@ describe.skipIf(process.platform === "win32")("manual sandbox launcher", () => {
           SANDBOX_DIR: directory,
           KEEP: keep,
           KUNAI_CREDENTIAL_BACKEND: "native",
+          DO_NOT_TRACK: "0",
+          CI: "0",
         },
         stdout: "pipe",
         stderr: "pipe",

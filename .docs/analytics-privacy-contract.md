@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-10-25"
 ---
 
 # Analytics Privacy Contract
@@ -71,6 +71,54 @@ Read this before touching `apps/cli/src/services/analytics/`,
   This string is baked into immutable npm tarballs and compiled binaries, so it
   must outlive whatever serves it today: DNS can be re-pointed, a published
   binary cannot. Changing it strands every install already in the wild.
+
+## Test and development boundaries
+
+Test profiles must never become production install observations. Filesystem
+isolation alone does not provide this: an explicit consent keystroke in a local
+test TTY can create an id, and a fixed synthetic UUID still adds one new/lifetime
+install when first accepted by an ingest.
+
+- Every hosted workflow sets `DO_NOT_TRACK=1` at workflow scope, including
+  installed-binary and shell checks. A regression verifies effective job and step
+  overrides cannot turn it off. Turbo explicitly passes that variable through
+  strict tasks, verified with a real task under `CI=0`. This supplements the test
+  preload; it does not
+  change explicit user consent in the shipped app.
+- The CLI test preload forces `DO_NOT_TRACK=1`, including when the parent has
+  `CI=0` or `DO_NOT_TRACK=0`. `storageRootEnv()` supplies the same override with
+  the HOME/XDG/APPDATA isolation, and its in-process undo restores the previous
+  environment. Installer fixtures, compiled profiles and agent launchers inherit
+  it; the standalone native Docker smoke and manual sandbox launcher also force
+  it. The existing consent gate refuses enable/id creation and suppresses sends
+  even if an isolated fixture starts with analytics enabled.
+- Agent launch options cannot override the profile's storage, credential or DNT
+  values. Privacy assertion failures report identity presence without printing
+  the raw id. An agent's seeded profile remains disposable; it is never copied
+  back to a user's real profile.
+- Consent and wire-contract fixtures may inject an unblocked environment only
+  with isolated in-memory/temporary config and mocked delivery or an isolated
+  local ingest. Synthetic ids belong only to those fixtures. A test must not
+  opt out of suppression and then call production fetch.
+- `bun run test:live:analytics` requires both `KUNAI_LIVE_ANALYTICS=1` and a
+  dedicated `KUNAI_ANALYTICS_TEST_URL` of the form
+  `http://127.0.0.1:3000/api/ping` or `http://[::1]:3000/api/ping`. An explicit
+  port is required; credentials, queries, fragments, DNS hosts and remote URLs
+  are refused before any fetch. The normal endpoint override and production
+  default are never used. Both requests refuse redirects, and success requires
+  an awaited `204` for the valid ping and `400` for the extra-field probe.
+
+The loopback fixture must use a disposable datastore and must not proxy a
+production ingest or connect to production storage. A loopback URL proves only
+where the client connects; it cannot establish the server's database ownership.
+This smoke proves local delivery/validation, not production DNS, deployment,
+startup latency or production counts. No production rows are added or deleted
+as part of testing.
+
+An arbitrary installed binary cannot infer that a person is testing it. Manual
+test installs outside these helpers must explicitly set `DO_NOT_TRACK=1` and
+redirect every platform storage root before starting it, including setup and
+Settings exercises. Normal user installs retain their explicit opt-in behavior.
 
 ## Payload and ingest
 

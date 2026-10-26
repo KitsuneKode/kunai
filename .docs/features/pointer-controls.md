@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-23"
+lastReviewed: "2026-10-24"
 ---
 
 # Terminal pointer controls
@@ -43,7 +43,7 @@ touch gestures and player-window controls need separate qualification.
 ## Remaining qualification and scope
 
 The implemented slice covers Browse search/results, Library titles/tabs, Up Next,
-Tracks, Settings, setup choices and command-palette rows. Downloads inside Library release input when covered, but
+Tracks, Settings, setup choices, shared frame footers and command-palette rows. Downloads inside Library release input when covered, but
 this does not add click controls to every download action. Calendar, history,
 notifications and player-window controls retain their existing input
 contracts and need separate pointer work before claiming parity.
@@ -75,3 +75,32 @@ rows only explain their reason. Wheel input clamps the highlight; Back closes th
 palette and restores the underlying input owner. Downloads also relinquish input
 while covered by the palette. Tracks exposes Back; Now Playing exposes Share
 through the existing share command. These do not register OS handlers implicitly.
+
+## Shared frame footer controls
+
+Loading, playing and post-play frame footers register only visible live controls.
+Left press and release must hit the same stationary action and button. A pressed
+control shows a `▾` marker and fill immediately; release, drag, movement or losing
+ownership clears the feedback. Idle hover appears only from actual terminal
+motion reports. No synthetic hover or feedback timer runs. Locked frames, root
+overlays and the local command palette release the footer's measured rectangles.
+
+Commands opens the local frame palette. Loading and playback letters use
+`apps/cli/src/app-shell/playback-shell-input.ts` for both pointer and keyboard:
+Cancel requires a cancellable resolve, Stop calls the active-player handler,
+Tracks requires candidates and a picker, and fallback requires an available
+fallback and handler. Missing handlers remove those controls. Cancel and Stop
+remain available even on surfaces without a command callback.
+
+Loading and failure expose `/provider` when the current command set contains it.
+An enabled command uses the same action as palette Enter. While resolution blocks
+provider changes, clicking opens the filtered palette and its disabled reason.
+It never forces a provider switch around the command guard. Recovery adds one
+Recover footer control when its real handler exists. Existing keyboard bindings
+and command aliases remain the fallback on terminals without mouse support.
+
+The type-ahead suggestion band is a bounded, separately filled surface with a
+window that follows keyboard selection and a three-line preview of already-loaded
+title metadata. Its border, heading and preview are counted in the browse layout
+budget. Query history advertises search; title rows advertise opening and details.
+This does not add pointer activation to suggestion rows.

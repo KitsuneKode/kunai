@@ -1,11 +1,18 @@
 ---
 status: current
-lastReviewed: "2026-09-01"
+lastReviewed: "2026-10-24"
 ---
 
 # Provider: AniDB — runtime contract
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+**Production status:** retired 2026-10-24. `anidb.app` redirects away from the
+old origin (HTTP 302 to `anilab.so`); ani-cli had already moved to HiAnime
+(c99221d). `loadProductionProviderModules()` no longer imports the module;
+`@kunai/config` maps persisted `anidb` selections to HiAnime and strips the id
+from priority, disable, and title-pin fields. The package stays for unit/live
+fixtures and historic cache keys — not for live user resolve.
 
 Catalog capabilities live in [anidb-metadata-capabilities.md](./anidb-metadata-capabilities.md).
 This file holds the runtime behaviour that used to sit in `.docs/providers.md`.

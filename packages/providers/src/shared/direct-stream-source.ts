@@ -37,6 +37,8 @@ export interface DirectStreamInput {
   readonly url: string;
   /** Quality hint such as "1080", "720p", "4k" — used for label + ranking. */
   readonly qualityHint?: string;
+  /** Protocol observed from a fetched manifest, for extensionless endpoints. */
+  readonly protocol?: StreamCandidate["protocol"];
   readonly serverLabel?: string;
   readonly audioLanguages?: readonly string[];
   readonly presentation?: import("@kunai/types").StreamPresentation;
@@ -427,7 +429,7 @@ function normalizeStreams(
   for (const entry of payload.streams) {
     if (!entry.url || seen.has(entry.url)) continue;
     seen.add(entry.url);
-    const protocol = inferProtocol(entry.url);
+    const protocol = entry.protocol ?? inferProtocol(entry.url);
     const qualityLabel = normalizeQualityLabel(entry.qualityHint);
     const qualityRank = qualityRankFromLabel(entry.qualityHint) ?? 0;
     streams.push({

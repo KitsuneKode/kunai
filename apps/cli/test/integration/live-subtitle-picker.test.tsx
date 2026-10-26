@@ -250,91 +250,250 @@ test("a provider default subtitle is cleared before playback when this session c
   }
 });
 
-test("Tracks quality and Auto are reversible session choices that preserve subtitles and saved defaults", async () => {
-  const { buildTracksPanelData } = await import("@/app-shell/tracks-panel-data");
-  const { applyPreferredStreamSelection, streamSelectionFromTrackPick } =
-    await import("@/app/playback/source-quality");
-  const { container, dispose } = await createIsolatedContainer("session-quality-auto");
-  const title = { id: "tmdb:1", type: "movie" as const, name: "Quality fixture" };
-  const episode = { season: 1, episode: 1 };
-  const base = subtitleStream();
-  const inventory = base.providerResolveResult;
-  if (!inventory) throw new Error("Fixture inventory missing");
-  const stream: StreamInfo = {
-    ...base,
-    providerResolveResult: {
-      ...inventory,
-      selectedStreamId: "1080",
-      sources: [
-        {
-          id: "source-a",
-          providerId: "vidlink",
-          kind: "mirror",
-          status: "selected",
+test.each(["vidlink", "youtube"] as const)(
+  "Tracks quality and Auto for %s preserve subtitles and saved defaults",
+  async (providerId) => {
+    const { buildTracksPanelData } = await import("@/app-shell/tracks-panel-data");
+    const { applyPreferredStreamSelection, streamSelectionFromTrackPick } =
+      await import("@/app/playback/source-quality");
+    const { container, dispose } = await createIsolatedContainer("session-quality-auto");
+    const title = { id: "tmdb:1", type: "movie" as const, name: "Quality fixture" };
+    const episode = { season: 1, episode: 1 };
+    const base = subtitleStream();
+    const inventory = base.providerResolveResult;
+    if (!inventory) throw new Error("Fixture inventory missing");
+    const stream: StreamInfo = {
+      ...base,
+      providerResolveResult: {
+        ...inventory,
+        providerId,
+        selectedStreamId: "1080",
+        sources: [
+          {
+            id: "source-a",
+            providerId,
+            kind: "mirror",
+            status: "selected",
+            confidence: 1,
+          },
+        ],
+        streams: [1080, 720].map((quality) => ({
+          id: String(quality),
+          providerId,
+          sourceId: "source-a",
+          variantId: `format-${quality}`,
+          protocol: "hls" as const,
+          qualityRank: quality,
+          qualityLabel: `${quality}p`,
+          url: `https://media.example/${quality}.m3u8`,
           confidence: 1,
-        },
-      ],
-      streams: [1080, 720].map((quality) => ({
-        id: String(quality),
-        providerId: "vidlink",
-        sourceId: "source-a",
-        protocol: "hls" as const,
-        qualityRank: quality,
-        qualityLabel: `${quality}p`,
-        url: `https://media.example/${quality}.m3u8`,
-        confidence: 1,
-        cachePolicy: {
-          ttlClass: "stream-manifest" as const,
-          scope: "local" as const,
-          keyParts: [],
-        },
-      })),
-    },
-  };
-  const saved = structuredClone(container.config.getRaw());
-  container.stateManager.dispatch({ type: "SELECT_TITLE", title });
-  container.stateManager.dispatch({ type: "SELECT_EPISODE", episode });
+          cachePolicy: {
+            ttlClass: "stream-manifest" as const,
+            scope: "local" as const,
+            keyParts: [],
+          },
+        })),
+      },
+    };
+    const saved = structuredClone(container.config.getRaw());
+    container.stateManager.dispatch({ type: "SELECT_TITLE", title });
+    container.stateManager.dispatch({ type: "SELECT_EPISODE", episode });
+    container.stateManager.dispatch({ type: "SET_STREAM", stream });
+    container.stateManager.dispatch({
+      type: "SET_SESSION_TRACK_PREFERENCES",
+      preferences: { subtitle: "none" },
+    });
+    const context = {
+      container,
+      title,
+      episode,
+      currentProviderId: providerId,
+      resumeSeconds: 17,
+      reason: "quality-test",
+    };
+    try {
+      const pick = { section: "quality" as const, value: "720" };
+      await resolveTracksPanelPick(pick, streamSelectionFromTrackPick(pick), context);
+      expect(container.stateManager.getState().playbackTrackPreferences).toEqual({
+        subtitle: "none",
+        quality: "720p",
+      });
+      const data = await buildTracksPanelData(stream, container);
+      expect(data.groups.find((group) => group.section === "quality")?.rows[0]).toMatchObject({
+        label: "Auto",
+        enabled: true,
+        selected: false,
+      });
+      const auto = { section: "quality" as const, value: "quality:auto" };
+      const low = applyPreferredStreamSelection(stream, { sourceId: null, streamId: "720" });
+      container.stateManager.dispatch({ type: "SET_STREAM", stream: low });
+      const result = await resolveTracksPanelPick(
+        auto,
+        streamSelectionFromTrackPick(auto),
+        context,
+      );
+      expect(result.kind).toBe("stream-selection");
+      if (result.kind !== "stream-selection") throw new Error("Expected a real restart intent");
+      expect(
+        applyPreferredStreamSelection(
+          low,
+          await (async () => {
+            const { PlaybackSelectionCoordinator } =
+              await import("@/app/playback/playback-selection-coordinator");
+            const coordinator = new PlaybackSelectionCoordinator({
+              titleId: title.id,
+              episodePlaybackSelection: container.episodePlaybackSelection,
+              titlePlaybackSource: container.titlePlaybackSource,
+            });
+            await coordinator.applyEpisodeSelection(providerId, episode, result.selection);
+            return coordinator.getEffective(providerId, episode);
+          })(),
+          "best",
+        ).providerResolveResult?.selectedStreamId,
+      ).toBe("1080");
+      expect(container.stateManager.getState().playbackTrackPreferences).toEqual({
+        subtitle: "none",
+        quality: "best",
+      });
+      expect(container.config.getRaw()).toEqual(saved);
+    } finally {
+      await disposeContainer(container);
+      dispose();
+    }
+  },
+);
+
+test("native observations arriving before acknowledgement preserve the accepted Off preference", async () => {
+  const { container, dispose } = await createIsolatedContainer("subtitle-observation-ack");
+  const stream = { ...subtitleStream(), subtitle: subtitleUrl };
   container.stateManager.dispatch({ type: "SET_STREAM", stream });
   container.stateManager.dispatch({
     type: "SET_SESSION_TRACK_PREFERENCES",
-    preferences: { subtitle: "none" },
+    preferences: { subtitle: "en" },
   });
-  const context = {
-    container,
-    title,
-    episode,
-    currentProviderId: "vidlink",
-    resumeSeconds: 17,
-    reason: "quality-test",
-  };
+  container.playerControl.setActive({
+    id: "observation-player",
+    stop: async () => {},
+    selectSubtitle: async () => {
+      container.stateManager.dispatch({
+        type: "SET_STREAM",
+        stream: { ...stream, playbackSubtitle: { id: 0, visible: true } },
+      });
+      return true;
+    },
+  });
   try {
-    const pick = { section: "quality" as const, value: "720" };
-    await resolveTracksPanelPick(pick, streamSelectionFromTrackPick(pick), context);
-    expect(container.stateManager.getState().playbackTrackPreferences).toEqual({
-      subtitle: "none",
-      quality: "720p",
+    await resolveTracksPanelPick({ section: "subtitle", value: "subtitle:off" }, null, {
+      container,
+      title: { id: "tmdb:1", type: "movie", name: "Subtitle fixture" },
+      episode: { season: 1, episode: 1 },
+      currentProviderId: "vidlink",
+      resumeSeconds: 0,
+      reason: "observation-race",
     });
-    const data = await buildTracksPanelData(stream, container);
-    expect(data.groups.find((group) => group.section === "quality")?.rows[0]).toMatchObject({
-      label: "Auto",
-      enabled: true,
-      selected: false,
+    expect(container.stateManager.getState().playbackTrackPreferences.subtitle).toBe("none");
+    expect(container.stateManager.getState().stream?.subtitle).toBeUndefined();
+    expect(container.stateManager.getState().stream?.playbackSubtitle).toEqual({
+      id: 0,
+      visible: true,
     });
-    const auto = { section: "quality" as const, value: "quality:auto" };
-    const result = await resolveTracksPanelPick(auto, streamSelectionFromTrackPick(auto), context);
-    expect(result.kind).toBe("stream-selection");
-    if (result.kind !== "stream-selection") throw new Error("Expected a real restart intent");
-    expect(
-      applyPreferredStreamSelection(stream, result.selection, "best").providerResolveResult
-        ?.selectedStreamId,
-    ).toBe("1080");
-    expect(container.stateManager.getState().playbackTrackPreferences).toEqual({
-      subtitle: "none",
-      quality: "best",
-    });
-    expect(container.config.getRaw()).toEqual(saved);
   } finally {
     await disposeContainer(container);
     dispose();
   }
 });
+
+test.each(["native-state", "explicit-off", "replaced-file"] as const)(
+  "late subtitle lookup preserves newer %s",
+  async (change) => {
+    const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
+    const { container, dispose } = await createIsolatedContainer(`late-lookup-${change}`);
+    const title = {
+      id: "tmdb:550",
+      type: "movie" as const,
+      name: "Late fixture",
+      externalIds: { tmdbId: "550" },
+    };
+    const episode = { season: 1, episode: 1 };
+    const stream: StreamInfo = {
+      url: "https://media.example/late.mp4",
+      headers: {},
+      timestamp: Date.now(),
+    };
+    const live = { ...stream, playbackSubtitle: { id: 0, visible: false } };
+    const replacement = { ...stream, url: "https://media.example/another.mp4" };
+    const originalFetch = globalThis.fetch;
+    let finished = false;
+    const originalRecord = container.diagnosticsService.record.bind(container.diagnosticsService);
+    const recorded = spyOn(container.diagnosticsService, "record").mockImplementation((event) => {
+      originalRecord(event);
+      if (
+        event.message === "Late subtitle lookup attached tracks" ||
+        event.message === "Late subtitle lookup failed"
+      )
+        finished = true;
+    });
+    const online = spyOn(container.connectivity, "isOnline").mockReturnValue(true);
+    const controller = new AbortController();
+    try {
+      await container.config.update({ wyzieApiKey: "isolated-test-key" });
+      container.stateManager.dispatch({ type: "SELECT_TITLE", title });
+      container.stateManager.dispatch({ type: "SELECT_EPISODE", episode });
+      container.stateManager.dispatch({ type: "SET_STREAM", stream });
+      container.stateManager.dispatch({
+        type: "SET_SESSION_TRACK_PREFERENCES",
+        preferences: { subtitle: "en" },
+      });
+      globalThis.fetch = Object.assign(
+        async () =>
+          new Response(
+            JSON.stringify([
+              { id: "late-en", url: subtitleUrl, language: "en", display: "English" },
+            ]),
+            { headers: { "content-type": "application/json" } },
+          ),
+        { preconnect: originalFetch.preconnect },
+      );
+      container.playerControl.setActive({
+        id: "late-lookup-player",
+        stop: async () => {},
+        attachSubtitles: async () => {
+          container.stateManager.dispatch({
+            type: "SET_STREAM",
+            stream: change === "replaced-file" ? replacement : live,
+          });
+          if (change === "explicit-off")
+            container.stateManager.dispatch({
+              type: "SET_SESSION_TRACK_PREFERENCES",
+              preferences: { subtitle: "none" },
+            });
+          return { status: "attached", attachedCount: 1 };
+        },
+      });
+      new PlaybackPhase()["startLateSubtitleResolver"]({
+        stream,
+        title,
+        episode,
+        context: { container, signal: controller.signal },
+      });
+      await waitUntil(() => finished, { label: "late lookup completes" });
+      const current = container.stateManager.getState().stream;
+      if (change === "replaced-file") {
+        expect(current).toBe(replacement);
+        expect(container.stateManager.getState().playbackNote).toBeNull();
+        expect(current?.subtitleList).toBeUndefined();
+      } else {
+        expect(current?.playbackSubtitle).toEqual(live.playbackSubtitle);
+        expect(current?.subtitleList?.some((track) => track.url === subtitleUrl)).toBe(true);
+        if (change === "explicit-off") expect(current?.subtitle).toBeUndefined();
+      }
+    } finally {
+      controller.abort();
+      globalThis.fetch = originalFetch;
+      recorded.mockRestore();
+      online.mockRestore();
+      await disposeContainer(container);
+      dispose();
+    }
+  },
+);

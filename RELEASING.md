@@ -293,7 +293,7 @@ a `tag` input for backfills. It:
    (`scripts/verify-github-release-assets.ts`).
 2. Renders the channel files deterministically with
    `bun run scripts/packaging/render-channels.ts --version <x.y.z> --sums
-<path> --license <path> --out dist/channels` and uploads them as the
+   <path> --license <path> --out dist/channels` and uploads them as the
    `package-channels-<tag>` artifact for review.
 3. Publishes, when credentials exist — each publish step prints a `::notice::`
    and is skipped when its secret is absent:

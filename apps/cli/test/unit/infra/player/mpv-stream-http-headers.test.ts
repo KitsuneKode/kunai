@@ -467,3 +467,26 @@ describe("per-file audio language", () => {
     expect(toMpvLanguageToken("none", { forSubtitle: false })).toBe("none");
   });
 });
+
+test("persistent files enforce Off and restore automatic selection for the next preference", () => {
+  const off = buildPersistentLoadfileOptions(
+    "https://cdn.example/master.m3u8",
+    0,
+    {},
+    {
+      subtitlePreference: "none",
+    },
+  );
+  expect(off.sid).toBe("no");
+  expect(off.slang).toBe("no");
+  const on = buildPersistentLoadfileOptions(
+    "https://cdn.example/master.m3u8",
+    0,
+    {},
+    {
+      subtitlePreference: "en",
+    },
+  );
+  expect(on.sid).toBe("auto");
+  expect(on.slang).toBe("en");
+});

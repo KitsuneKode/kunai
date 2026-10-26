@@ -36,6 +36,8 @@ const INK = "#1c1620";
 /** Hip joints, in viewBox units. The knee sits `THIGH` below its hip. */
 const FRONT_HIP = { x: 208, y: 230 } as const;
 const BACK_HIP = { x: 104, y: 232 } as const;
+const FRONT_FAR_HIP = { x: 198, y: 226 } as const;
+const BACK_FAR_HIP = { x: 94, y: 228 } as const;
 const THIGH = 32;
 const TAIL_ROOT = { x: 108, y: 214 } as const;
 const NECK = { x: 182, y: 200 } as const;
@@ -78,9 +80,9 @@ function legTransforms(hip: { readonly x: number; readonly y: number }, angles: 
 /** The `transform` attribute for every moving part of a pose. */
 export function partTransforms(pose: FoxPose) {
   const frontNear = legTransforms(FRONT_HIP, pose.frontNear);
-  const frontFar = legTransforms(FRONT_HIP, pose.frontFar);
+  const frontFar = legTransforms(FRONT_FAR_HIP, pose.frontFar);
   const backNear = legTransforms(BACK_HIP, pose.backNear);
-  const backFar = legTransforms(BACK_HIP, pose.backFar);
+  const backFar = legTransforms(BACK_FAR_HIP, pose.backFar);
   return {
     rig: `translate(0 ${round(pose.bodyY)}) ${rotate(pose.bodyPitch, TORSO_CENTRE)}`,
     tail: rotate(pose.tail, TAIL_ROOT),
@@ -186,14 +188,23 @@ export const KunaiFoxWalker = forwardRef<FoxWalkerHandle, KunaiFoxWalkerProps>(
               d="M110,234 C76,250 22,242 12,200 C4,168 16,144 36,138 C46,156 60,162 78,172 C98,184 114,196 116,214 Z"
               fill={BODY}
             />
+            <path
+              d="M12,200 C4,168 16,144 36,138 C40,150 50,158 62,164 C48,178 46,196 50,216 C34,216 20,210 12,200 Z"
+              fill={LIGHT}
+            />
           </g>
 
-          <Leg hip={BACK_HIP} part="backFar" fill={BODY_FAR} transforms={transforms} />
-          <Leg hip={FRONT_HIP} part="frontFar" fill={BODY_FAR} transforms={transforms} />
+          <Leg hip={BACK_FAR_HIP} part="backFar" fill={BODY_FAR} transforms={transforms} />
+          <Leg hip={FRONT_FAR_HIP} part="frontFar" fill={BODY_FAR} transforms={transforms} />
 
           <path
             d="M78,208 C78,182 124,170 164,174 C208,178 238,194 242,220 C245,244 234,262 214,266 L100,270 C72,266 64,238 78,208 Z"
             fill={BODY}
+          />
+
+          <path
+            d="M180,192 C204,186 228,198 234,218 L224,240 L212,233 L198,246 L186,225 L176,216 Z"
+            fill={LIGHT}
           />
 
           <Leg hip={BACK_HIP} part="backNear" fill={BODY} transforms={transforms} />
@@ -228,11 +239,26 @@ export const KunaiFoxWalker = forwardRef<FoxWalkerHandle, KunaiFoxWalkerProps>(
               d="M204,174 C212,160 246,158 273,167 C275,190 258,208 232,208 C212,208 200,192 204,174 Z"
               fill={LIGHT}
             />
+            <path
+              d="M219,135 Q230,130 240,135"
+              fill="none"
+              stroke={BODY_FAR}
+              strokeWidth={3}
+              strokeLinecap="round"
+            />
             <ellipse cx={234} cy={150} rx={8} ry={12.5} fill={INK} />
+            <ellipse cx={236} cy={146} rx={2.3} ry={3.4} fill="#fff4f8" />
+            <path
+              d="M252,182 Q259,187 267,181"
+              fill="none"
+              stroke={INK}
+              strokeWidth={2.5}
+              strokeLinecap="round"
+            />
             <ellipse cx={272} cy={168} rx={7} ry={5.5} fill={INK} />
             {/* The kunai she carries: a ring at the mouth and a short blade. */}
             <circle cx={265} cy={196} r={5} fill="none" stroke={LIGHT} strokeWidth={3} />
-            <path d="M268,190 L316,186 L270,203 Z" fill="#ffe6ee" />
+            <path d="M268,190 L305,188 L270,201 Z" fill="#ffe6ee" />
           </g>
         </g>
       </svg>

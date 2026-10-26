@@ -55,6 +55,8 @@ concurrency:
 permissions: {}
 
 env:
+  # Automated builds and installed-binary checks must never create analytics identities.
+  DO_NOT_TRACK: "1"
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_SCM_BASE: ""
@@ -93,11 +95,11 @@ jobs:
           turbo-cache-prefix: release-version-pr
 
       - name: Create or update version PR
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # changesets/action@v1
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # changesets/action@v2
         with:
-          version: bun run version:packages
-          title: "chore: version packages"
-          commit: "chore: version packages"
+          version-script: bun run version:packages
+          pr-title: "chore: version packages"
+          commit-message: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -140,6 +142,9 @@ jobs:
         with:
           turbo-cache-prefix: release-candidate
 
+      - name: Audit locked dependencies
+        run: bun run audit:dependencies
+
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # actions/setup-node@v6
         with:
           node-version: ${{ env.RELEASE_NODE_VERSION }}
@@ -153,9 +158,10 @@ jobs:
 
       - name: Check dispatch version matches package.json
         id: ver
+        env:
+          EXPECTED: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          EXPECTED="${{ inputs.version }}"
           ACTUAL="$(bun -e 'console.log(require("./apps/cli/package.json").version)')"
           if [[ "$ACTUAL" != "$EXPECTED" ]]; then
             echo "::error::version mismatch: workflow_dispatch=${EXPECTED} package.json=${ACTUAL}"

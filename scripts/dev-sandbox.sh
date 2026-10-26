@@ -86,8 +86,9 @@ echo
 
 # `env -i` is not used on purpose: the run still needs PATH to find mpv, and
 # TERM plus the terminal's own identifying variables to detect graphics support
-# at all. Only the storage roots are redirected.
+# at all. Storage, credentials and analytics are isolated explicitly.
 exec env \
+  DO_NOT_TRACK=1 \
   KUNAI_CREDENTIAL_BACKEND=file \
   HOME="$SANDBOX" \
   USERPROFILE="$SANDBOX" \

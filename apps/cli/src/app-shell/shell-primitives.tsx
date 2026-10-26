@@ -3,6 +3,7 @@ import React from "react";
 
 import { companionMode, companionToggleable } from "./companion-policy";
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
+import { MouseTarget } from "./mouse/MouseRegions";
 import { measureColumns, padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
@@ -146,6 +147,7 @@ export function Footer({
   maxVisible,
   terminalWidth: terminalWidthProp,
   companionHint = false,
+  onActivate,
 }: {
   taskLabel: string;
   actions: readonly FooterAction[];
@@ -159,7 +161,9 @@ export function Footer({
    * there would promise a control the palette cannot deliver.
    */
   companionHint?: boolean;
+  onActivate?: (action: FooterAction) => void;
 }) {
+  const footerId = React.useId();
   const { cols } = useShellDimensions();
   const terminalWidth = terminalWidthProp ?? cols;
   const taskWidth = Math.max(20, terminalWidth - 4);
@@ -187,7 +191,7 @@ export function Footer({
     <Box flexDirection="column" marginTop={1}>
       <Text color={palette.text}>{truncateLine(taskLabel, taskWidth)}</Text>
       {visibleActions.length > 0 ? (
-        <Box flexWrap="nowrap" marginTop={1}>
+        <Box flexWrap="wrap" marginTop={1}>
           {visibleActions.map((action, index) => {
             const glyph = FOOTER_GLYPHS[action.key] ?? "";
             const keyDisplay = glyph ? `${glyph}§${action.key}` : action.key;
@@ -208,16 +212,24 @@ export function Footer({
             const labelColor =
               role === "primary" ? palette.text : role === "meta" ? palette.muted : palette.textDim;
             return (
-              <Box
+              <MouseTarget
+                id={`${footerId}:footer:${action.key}:${action.action ?? "hint"}:${action.label}`}
+                active={Boolean(onActivate && action.action && !action.disabled)}
+                onClick={
+                  onActivate && action.action && !action.disabled
+                    ? () => onActivate(action)
+                    : undefined
+                }
+                feedback={Boolean(onActivate && action.action && !action.disabled)}
                 key={`${action.key}-${action.label}`}
-                marginRight={index === visibleActions.length - 1 ? 0 : 2}
-                marginBottom={1}
               >
-                <Text bold={role === "primary"} color={keyColor}>
-                  {hotkeyLabel(keyDisplay)}
-                </Text>
-                <Text color={labelColor}> {truncateLine(action.label, 28)}</Text>
-              </Box>
+                <Box marginRight={index === visibleActions.length - 1 ? 0 : 2} marginBottom={1}>
+                  <Text bold={role === "primary"} color={keyColor}>
+                    {hotkeyLabel(keyDisplay)}
+                  </Text>
+                  <Text color={labelColor}> {truncateLine(action.label, 28)}</Text>
+                </Box>
+              </MouseTarget>
             );
           })}
         </Box>
@@ -240,6 +252,7 @@ export function ShellFooter({
   maxVisible,
   terminalWidth,
   companionHint = false,
+  onActivate,
 }: {
   taskLabel: string;
   actions: readonly FooterAction[];
@@ -248,6 +261,7 @@ export function ShellFooter({
   maxVisible?: number;
   terminalWidth?: number;
   companionHint?: boolean;
+  onActivate?: (action: FooterAction) => void;
 }) {
   return (
     <Footer
@@ -258,6 +272,7 @@ export function ShellFooter({
       maxVisible={maxVisible}
       terminalWidth={terminalWidth}
       companionHint={companionHint}
+      onActivate={onActivate}
     />
   );
 }

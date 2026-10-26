@@ -18,7 +18,8 @@ const config = {
 describe("buildTracksPanelData", () => {
   test("local playback exposes file facts without provider inventory or registry access", async () => {
     // SAFETY: This test double supplies the exact members read by the exercised workflow.
-    const container = {
+    // SAFETY: partial test container supplies every config/state/registry member this projection reads.
+    const container: Container = {
       stateManager: createTestStateManager("retired-provider"),
       providerRegistry: {
         getAll: (): ReturnType<Container["providerRegistry"]["getAll"]> => {
@@ -93,7 +94,8 @@ describe("buildTracksPanelData", () => {
       failures: [],
     };
 
-    const container = {
+    // SAFETY: partial test container supplies every config/state/registry member this projection reads.
+    const container: Container = {
       config: { getRaw: () => config },
       stateManager: {
         getState: () => ({
@@ -123,7 +125,7 @@ describe("buildTracksPanelData", () => {
           return cached;
         },
       },
-    } as unknown as Container;
+    } as never;
 
     await buildTracksPanelData(
       {
@@ -184,4 +186,101 @@ describe("buildTracksPanelData", () => {
       expect.objectContaining({ qualityPreference: "720p", providerId: "rivestream" }),
     );
   });
+});
+
+test.each(["unknown", "1080p"])(
+  "a singleton %s quality is one honest Auto fact rather than a fake switch",
+  async (label) => {
+    const stream = {
+      url: "https://cdn.example/stream",
+      headers: {},
+      timestamp: 1,
+      providerResolveResult: {
+        status: "resolved" as const,
+        providerId: "vidlink",
+        selectedStreamId: "one",
+        streams: [
+          {
+            id: "one",
+            providerId: "vidlink",
+            sourceId: "source",
+            url: "https://cdn.example/stream",
+            protocol: "dash" as const,
+            qualityLabel: label,
+            confidence: 1,
+            cachePolicy: {
+              ttlClass: "stream-manifest" as const,
+              scope: "local" as const,
+              keyParts: [],
+            },
+          },
+        ],
+        sources: [],
+        subtitles: [],
+        failures: [],
+        trace: {
+          id: "trace",
+          startedAt: new Date().toISOString(),
+          cacheHit: false,
+          title: { id: "1", title: "Title", kind: "movie" as const },
+          steps: [],
+          failures: [],
+        },
+      },
+    };
+    // SAFETY: partial test container supplies every config/state/registry member this projection reads.
+    const container: Container = {
+      config: {
+        getRaw: () => ({
+          ...config,
+          seriesLanguageProfile: { ...config.seriesLanguageProfile, quality: "auto" },
+        }),
+      },
+      stateManager: {
+        getState: () => ({
+          mode: "series",
+          provider: "vidlink",
+          currentTitle: null,
+          currentEpisode: null,
+          playbackTrackPreferences: {},
+        }),
+      },
+      providerRegistry: { getAll: () => [], get: () => undefined },
+      titleProviderHealth: { getSwitchSuggestion: () => undefined },
+    } as never;
+    const data = await buildTracksPanelData(stream, container);
+    const quality = data.groups.find((group) => group.section === "quality");
+    expect(quality?.rows).toHaveLength(1);
+    expect(quality?.rows[0]).toMatchObject({ label: "Auto", selected: true, enabled: false });
+    expect(quality?.selectable).toBe(false);
+    expect(quality?.rows[0]?.detail).not.toContain("unknown");
+  },
+);
+
+test("Tracks does not mark Off while mpv is rendering an embedded subtitle", async () => {
+  // SAFETY: partial test container supplies every config/state/registry member this projection reads.
+  const container: Container = {
+    config: { getRaw: () => config },
+    stateManager: {
+      getState: () => ({
+        mode: "series",
+        provider: "vidlink",
+        currentTitle: null,
+        playbackTrackPreferences: {},
+      }),
+    },
+    providerRegistry: { getAll: () => [], get: () => undefined },
+  } as never;
+  const data = await buildTracksPanelData(
+    {
+      url: "https://cdn.example/video.mp4",
+      headers: {},
+      timestamp: 1,
+      playbackSubtitle: { id: 2, visible: true, language: "en", title: "Embedded English" },
+    },
+    container,
+  );
+  const subtitles = data.groups.find((group) => group.section === "subtitle");
+  expect(subtitles?.rows.find((row) => row.value === "subtitle:off")?.selected).toBe(false);
+  expect(subtitles?.rows.find((row) => row.selected)?.label).toContain("Embedded English");
 });

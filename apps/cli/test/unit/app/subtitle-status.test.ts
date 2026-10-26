@@ -65,7 +65,7 @@ test("describePlaybackSubtitleStatus keeps true missing subtitles explicit", () 
   ).toBe("subtitles not found");
 });
 
-test("projectPlaybackSubtitleState keeps disabled preference from hiding selected subtitles", () => {
+test("projectPlaybackSubtitleState keeps resolved inventory from overriding the disabled startup preference", () => {
   const state = projectPlaybackSubtitleState(
     {
       url: "https://cdn.example/1080.m3u8",
@@ -77,9 +77,9 @@ test("projectPlaybackSubtitleState keeps disabled preference from hiding selecte
   );
 
   expect(state).toMatchObject({
-    kind: "selected",
-    label: "subtitle selected",
-    tone: "success",
+    kind: "disabled",
+    label: "subtitles disabled",
+    tone: "info",
   });
 });
 
@@ -131,4 +131,46 @@ test("projectPlaybackSubtitleState describes YouTube subtitle preference with al
       label: "subtitles not found",
     },
   );
+});
+
+test("live mpv selection and visibility outrank URL inventory and startup defaults", () => {
+  const stream: StreamInfo = {
+    url: "https://video.example/file.mkv",
+    headers: {},
+    timestamp: 1,
+    subtitle: "https://subs.example/stale.vtt",
+    playbackSubtitle: { id: 3, visible: true, language: "ja", title: "Embedded Japanese" },
+  };
+  expect(projectPlaybackSubtitleState(stream, "none")).toMatchObject({
+    kind: "selected",
+    label: "subtitle playing · Embedded Japanese",
+  });
+  expect(
+    projectPlaybackSubtitleState({ ...stream, playbackSubtitle: { id: 3, visible: false } }, "en"),
+  ).toMatchObject({
+    kind: "disabled",
+    label: "subtitles hidden in mpv",
+  });
+  expect(
+    projectPlaybackSubtitleState({ ...stream, playbackSubtitle: { id: 0, visible: true } }, "en", {
+      attached: true,
+    }),
+  ).toMatchObject({
+    kind: "disabled",
+    label: "subtitles off in mpv",
+  });
+});
+
+test("live YouTube embedded captions need no external subtitle URL", () => {
+  expect(
+    projectPlaybackSubtitleState(
+      {
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        headers: {},
+        timestamp: 1,
+        playbackSubtitle: { id: 1, visible: true, language: "en" },
+      },
+      "none",
+    ),
+  ).toMatchObject({ kind: "selected", label: "subtitle playing · en" });
 });

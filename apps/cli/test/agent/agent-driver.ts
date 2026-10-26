@@ -286,6 +286,12 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     profile = createIsolatedCliProfile(sessionLabel);
     cleanups.push(applyStorageRootEnv(profile.rootDir));
 
+    for (const [key, value] of Object.entries(options.extraEnv ?? {})) {
+      if (key in profile.env && value !== profile.env[key]) {
+        throw new Error(`cannot override isolated profile env: ${key}`);
+      }
+    }
+
     // Deterministic-shell env. Seeded BEFORE the container import so the
     // first config read already sees the onboarded state.
     const seed = options.seed ?? "onboarded";
@@ -564,7 +570,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       const installId = typeof config.installId === "string" ? config.installId.trim() : "";
       if (installId.length > 0) {
         throw new Error(
-          `privacy invariant: installId was minted during the session (${installId}). ` +
+          `privacy invariant: an installId was present during the session. ` +
             `Hazard 3: only an explicit keystroke may enable analytics.`,
         );
       }

@@ -287,7 +287,6 @@ export class PlaybackResolveService {
 
   async resolve(input: PlaybackResolveInput): Promise<PlaybackResolveOutput> {
     const manifest = this.deps.engine.getManifest(input.providerId);
-    const providerName = manifest?.displayName ?? input.providerId;
     const catalogIdentity = manifest ? resolveProviderCatalogIdentity(manifest) : undefined;
 
     // A cached URL is still a provider result. Manual exclusions must apply

@@ -29,7 +29,7 @@ This is a long-lived cleanup. Do it tier by tier; do not attempt it in one pass.
   behavior.
 - No structural commit may change runtime behavior. Moves and renames only.
 - Boundary direction must never regress: `types → schemas/core → providers/relay
-→ storage → apps`. The existing `boundary-imports.test.ts` must stay green.
+  → storage → apps`. The existing `boundary-imports.test.ts` must stay green.
 - Do not mass-rename for style in one commit. Rename within a folder/feature
   slice at a time so review and `git` history stay legible.
 

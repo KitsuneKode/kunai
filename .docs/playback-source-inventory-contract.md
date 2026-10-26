@@ -148,12 +148,37 @@ Source and quality pickers must read from cached inventory.
   `selectCurrentSubtitle`. Update the selected row only after the player accepts
   the choice, and never overwrite a stream replaced during that acknowledgement.
   Embedded tracks that require a restart follow the stream-selection path.
+- Native mpv `sid` and `sub-visibility` observations are file-local live facts,
+  separate from the saved language preference and provider inventory. The watching
+  label and Tracks selection use those facts when known, including hidden and Off.
+  Late inventory may select the requested default when no subtitle has played yet.
+  A native On/Off choice wins over later inventory, and an explicit accepted pick
+  can restore visibility. Process-wide visibility survives file replacement even
+  when mpv emits no new visibility event. Startup and persistent `loadfile` both apply
+  `sid=no` for Off. Replies from a replaced file cannot rewrite its successor. Late external
+  search completion merges into the current stream, preserving native state and
+  explicit Off; a replaced source/file receives no stale lookup result.
 - Unchanged or stale picks and live subtitle acknowledgements return no restart
   intent. Pre-play continues to launch the resolved stream; post-play stays on its
   menu. A player rejection reports feedback without replaying the unchanged stream.
 - Audio/sub-dub change: reuse cached inventory only if that audio mode was included in the inventory. Otherwise resolve a separate inventory key for the requested mode.
 
 Never let one selected source overwrite another source's inventory. Store the full normalized result, then store user selection as separate playback intent.
+
+YouTube quality rows use exact yt-dlp format IDs, shared across extractor-client
+connection lanes. Equal heights alone are not equivalent: codec, reported FPS,
+reported average bitrate and the format ID distinguish the discovered rows.
+The selected stream stays first within its row; other quality rows prefer that
+same connection when present. Tracks and the standalone quality picker consume
+this ordering. Source-only connection switches retain the current format when
+the target lane has it; Auto clears that preference through both the picker and
+episode selection coordinator, including reuse of a cached low-format stream. Other providers retain
+source-specific quality rows.
+
+An exact YouTube choice pins the discovered video format (plus best audio when
+the format is video-only); it has no fallback to another video format. Metadata
+does not prove that every client can play it. The watch-URL handoff is checked by
+mpv, and bitrate describes extractor metadata rather than measured throughput.
 
 Resolve-gate fallback preserves the initial selection intent in `selectionDecision.reason`;
 `selectedQualityRank` describes the accepted rung actually shipped. AnimeGG keeps the

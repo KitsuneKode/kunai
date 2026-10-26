@@ -25,6 +25,7 @@ import type {
 
 import { ProviderHttpError, providerFetch } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import {
   cycleExhaustionFailure,
   providerFailureCodeFromCycleFailure,
@@ -329,11 +330,57 @@ async function resolveMovyLaneCandidate({
   const variants: ProviderVariantCandidate[] = [];
   const subtitles: SubtitleCandidate[] = [];
 
-  for (const source of rawSources) {
+  const expandedSources = (
+    await Promise.all(
+      rawSources.map(async (source) => {
+        const laneAudio = movyLaneAudioLanguage(source.quality);
+        if (!source.url || movySourceProtocol(source) !== "hls") {
+          // SAFETY: no manifest was inspected; undefined preserves the lane-audio fallback.
+          return [
+            { source, laneAudio, audioLanguages: undefined as readonly string[] | undefined },
+          ];
+        }
+        const inventory = await expandHlsMasterInventory({
+          fetch: context.fetch?.fetch.bind(context.fetch) ?? fetch,
+          resolvesLocally: context.fetch?.resolvesLocally,
+          masterUrl: source.url,
+          headers: { referer: MOVY_REFERER, "user-agent": USER_AGENT },
+          signal: signal ?? context.signal,
+        });
+        if (isHlsDeadHostStatus(inventory.probe.httpStatus)) return [];
+        for (const track of inventory.subtitleTracks) {
+          subtitles.push({
+            id: `subtitle:${MOVY_PROVIDER_ID}:${Bun.hash(track.url).toString(36)}`,
+            providerId: MOVY_PROVIDER_ID,
+            sourceId,
+            url: track.url,
+            language: track.language,
+            label: track.label,
+            format: inferSubtitleFormat(track.url),
+            source: "provider",
+            confidence: 0.9,
+            cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
+          });
+        }
+        const audioLanguages = inventory.audioLanguages.length
+          ? inventory.audioLanguages
+          : undefined;
+        if (inventory.probe.kind !== "ok") return [{ source, laneAudio, audioLanguages }];
+        return inventory.variants.map((variant) => ({
+          source: { ...source, url: variant.url, quality: variant.qualityLabel },
+          laneAudio,
+          audioLanguages,
+        }));
+      }),
+    )
+  ).flat();
+
+  for (const { source, laneAudio, audioLanguages } of expandedSources) {
     const url = source.url;
     if (!url) continue;
-    const laneAudio = movyLaneAudioLanguage(source.quality);
-    const qualityStr = laneAudio ? "auto" : String(source.quality || "auto");
+    const qualityStr = movyLaneAudioLanguage(source.quality)
+      ? "auto"
+      : String(source.quality || "auto");
     const qualityLabel = normalizeQualityLabel(qualityStr);
     // Lane labels like "Auto HLS" / "Auto - Vidara" are adaptive ladders, not
     // a fixed tier — rank them as `auto` or they'd sort below an explicit 360p.
@@ -375,7 +422,7 @@ async function resolveMovyLaneCandidate({
       url,
       protocol,
       container: protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4",
-      audioLanguages: laneAudio ? [laneAudio] : undefined,
+      audioLanguages: audioLanguages ?? (laneAudio ? [laneAudio] : undefined),
       qualityLabel,
       qualityRank,
       languageEvidence,
@@ -440,7 +487,12 @@ async function resolveMovyLaneCandidate({
     gatedStreams.some((stream) => stream.variantId === variant.id),
   );
 
-  return { provider: lane, streams: gatedStreams, variants: gatedVariants, subtitles };
+  return {
+    provider: lane,
+    streams: gatedStreams,
+    variants: gatedVariants,
+    subtitles: [...new Map(subtitles.map((subtitle) => [subtitle.url, subtitle])).values()],
+  };
 }
 
 export function buildMovyCycleCandidates(

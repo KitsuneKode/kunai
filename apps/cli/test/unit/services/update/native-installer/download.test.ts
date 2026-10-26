@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { getEventListeners } from "node:events";
 import { existsSync } from "node:fs";
+import * as fsPromises from "node:fs/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,32 +15,6 @@ import {
 } from "@/services/update/native-installer/download";
 
 import { waitUntil } from "../../../../support/wait-until";
-
-/**
- * The two stall cases below are skipped on Windows.
- *
- * They model a server that stops sending and never hangs up. The download logic
- * handles it correctly — verified directly against `downloadToFile`, which
- * detects the stall, cancels, retries, and resolves with `attempts: 2` — but the
- * Bun test runner on Windows never reaches process exit with that stream still
- * mid-pull, so the whole suite's buffered output is never flushed and the run
- * looks hung rather than finished. It wedged every Windows test run, not just
- * this file.
- *
- * `streamResponse` now releases its park from the stream's `cancel` callback
- * rather than sitting on `new Promise(() => {})`, which is strictly better and
- * is what the production path actually triggers — but it is *not* sufficient:
- * Bun still does not exit with these running on Windows, so the parked `pull` is
- * not the only thing holding the loop open. Measured, not assumed: with the
- * cancel-release in place and the skip removed, the run still hangs past three
- * minutes with no output.
- *
- * The behaviour stays covered on Linux and macOS CI, which is where these run
- * today. Removing this skip needs the underlying Bun exit behaviour understood
- * or fixed; tracked in the Windows parity backlog in
- * .docs/repo-infrastructure.md.
- */
-const stallTest = process.platform === "win32" ? test.skip : test;
 
 const made: string[] = [];
 
@@ -54,6 +30,52 @@ async function tempDest(name = "artifact.bin"): Promise<{ root: string; path: st
   return { root, path: join(root, name) };
 }
 
+/** Deliver only stall callbacks explicitly, without scheduling wall-clock races. */
+function manualStallTimers(stallMs: number) {
+  const schedule = globalThis.setTimeout;
+  const cancel = globalThis.clearTimeout;
+  const pending = new Map<unknown, () => void>();
+  const secondRead = Promise.withResolvers<void>();
+  let reads = 0;
+  const scheduled = spyOn(globalThis, "setTimeout").mockImplementation(
+    Object.assign(
+      (...args: Parameters<typeof schedule>) => {
+        const timer = schedule(...args);
+        if (args[1] === stallMs) {
+          cancel(timer);
+          const [callback, , ...callbackArgs] = args;
+          pending.set(timer, () => callback(...callbackArgs));
+          if (++reads === 2) secondRead.resolve();
+        }
+        return timer;
+      },
+      { __promisify__: schedule.__promisify__ },
+    ),
+  );
+  const clear = (...args: Parameters<typeof cancel>) => {
+    pending.delete(args[0]);
+    cancel(...args);
+  };
+  // SAFETY: all overloads forward their original arguments unchanged to cancel.
+  const cancelled = spyOn(globalThis, "clearTimeout").mockImplementation(clear as typeof cancel);
+  return {
+    secondRead: secondRead.promise,
+    get activeCount() {
+      return pending.size;
+    },
+    expire() {
+      const callbacks = [...pending.values()];
+      pending.clear();
+      for (const callback of callbacks) callback();
+    },
+    restore() {
+      pending.clear();
+      cancelled.mockRestore();
+      scheduled.mockRestore();
+    },
+  };
+}
+
 function textResponse(
   body: string,
   init: { status?: number; headers?: Record<string, string> } = {},
@@ -64,49 +86,37 @@ function textResponse(
   });
 }
 
-function streamResponse(
-  chunks: readonly Uint8Array[],
-  init: {
-    status?: number;
-    headers?: Record<string, string>;
-    delayMs?: number;
-    stallAfterChunk?: number;
-  } = {},
-): Response {
+function streamResponse(chunks: readonly Uint8Array[]): Response {
   let index = 0;
-  const delayMs = init.delayMs ?? 0;
-  let releaseStall: (() => void) | undefined;
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      // Stall check first so we can hang after N chunks without closing.
-      if (init.stallAfterChunk !== undefined && index === init.stallAfterChunk) {
-        // Park until the consumer cancels, not forever. `new Promise(() => {})`
-        // leaves this `pull` pending for the life of the process: the stream can
-        // never finish, so Bun keeps the loop alive and the whole test run hangs
-        // with no failing test to point at. Resolving from `cancel` models the
-        // real thing more honestly too -- a stalled server does stop mattering
-        // once the client gives up on it, which is exactly what this asserts.
-        await new Promise<void>((resolve) => {
-          releaseStall = resolve;
-        });
-        return;
-      }
-      if (index >= chunks.length) {
-        controller.close();
-        return;
-      }
-      if (delayMs > 0) await Bun.sleep(delayMs);
-      controller.enqueue(chunks[index]!);
-      index += 1;
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (index >= chunks.length) controller.close();
+        else controller.enqueue(chunks[index++]!);
+      },
+    }),
+  );
+}
+
+function stalledResponse(chunk: Uint8Array) {
+  let cancellations = 0;
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(chunk);
+        // Leave the body open without an unresolved async pull callback.
+      },
+      cancel() {
+        cancellations++;
+      },
+    }),
+  );
+  return {
+    response,
+    get cancellations() {
+      return cancellations;
     },
-    cancel() {
-      releaseStall?.();
-    },
-  });
-  return new Response(body, {
-    status: init.status ?? 200,
-    headers: init.headers,
-  });
+  };
 }
 
 describe("download policy defaults", () => {
@@ -122,6 +132,54 @@ describe("download policy defaults", () => {
 });
 
 describe("downloadToFile", () => {
+  test.each(["open", "write"] as const)(
+    "local file %s does not consume the response stall budget",
+    async (phase) => {
+      const { path } = await tempDest();
+      const timers = manualStallTimers(40);
+      const openFile = fsPromises.open;
+      let timersWhileOpening: number | undefined;
+      let timersWhileWriting: number | undefined;
+      let restoreWrite: (() => void) | undefined;
+      const opening = spyOn(fsPromises, "open").mockImplementation(async (...args) => {
+        timersWhileOpening = timers.activeCount;
+        // Model slow local IO by delivering every currently armed stall callback.
+        if (phase === "open") timers.expire();
+        const file = await openFile(...args);
+        const write = file.write.bind(file);
+        const writeWithStallCheck = (...writeArgs: Parameters<typeof write>) => {
+          timersWhileWriting = timers.activeCount;
+          if (phase === "write") timers.expire();
+          return write(...writeArgs);
+        };
+        // SAFETY: the wrapper preserves every overload's arguments and result.
+        const writing = spyOn(file, "write").mockImplementation(
+          writeWithStallCheck as typeof write,
+        );
+        restoreWrite = () => writing.mockRestore();
+        return file;
+      });
+      try {
+        await expect(
+          downloadToFile({
+            url: "https://example.test/ready-body",
+            destinationPath: path,
+            fetchImpl: async () => textResponse("ok"),
+            policy: { ...DEFAULT_BINARY_DOWNLOAD_POLICY, stallDeadlineMs: 40, maxAttempts: 1 },
+          }),
+        ).resolves.toMatchObject({ attempts: 1, sizeBytes: 2 });
+        expect(timersWhileOpening).toBe(0);
+        expect(timersWhileWriting).toBe(0);
+        expect(timers.activeCount).toBe(0);
+        expect(await Bun.file(path).text()).toBe("ok");
+      } finally {
+        restoreWrite?.();
+        opening.mockRestore();
+        timers.restore();
+      }
+    },
+  );
+
   test("streams bytes, hashes, and reports attempts", async () => {
     const { path } = await tempDest();
     const bytes = new TextEncoder().encode("hello-kunai");
@@ -140,20 +198,123 @@ describe("downloadToFile", () => {
     expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  stallTest("stalled response cleans partial file and retries", async () => {
+  test("successful chunked downloads release abort listeners and the reader lock", async () => {
     const { path } = await tempDest();
-    let calls = 0;
-    const firstChunk = new TextEncoder().encode("partial");
+    const watchedSignals = new Set<AbortSignal>();
+    const originalAdd = AbortSignal.prototype.addEventListener;
+    const add = spyOn(AbortSignal.prototype, "addEventListener").mockImplementation(function (
+      this: AbortSignal,
+      type: string,
+      listener: Parameters<AbortSignal["addEventListener"]>[1],
+      options?: Parameters<AbortSignal["addEventListener"]>[2],
+    ) {
+      if (type === "abort") watchedSignals.add(this);
+      return originalAdd.call(this, type, listener, options);
+    });
+    const response = streamResponse(Array.from({ length: 32 }, () => new Uint8Array(16).fill(1)));
+    try {
+      await downloadToFile({
+        url: "https://example.test/chunks",
+        destinationPath: path,
+        fetchImpl: async () => response,
+        policy: { ...DEFAULT_BINARY_DOWNLOAD_POLICY, maxAttempts: 1 },
+      });
+      expect(watchedSignals.size).toBeGreaterThan(0);
+      expect({
+        abortListeners: Math.max(
+          0,
+          ...Array.from(watchedSignals, (signal) => getEventListeners(signal, "abort").length),
+        ),
+        locked: response.body?.locked,
+      }).toEqual({ abortListeners: 0, locked: false });
+    } finally {
+      add.mockRestore();
+    }
+  });
 
+  test("abort acknowledged with a ready response cannot publish a download", async () => {
+    const { path } = await tempDest();
+    const controller = new AbortController();
     await expect(
       downloadToFile({
+        url: "https://example.test/abort-at-response",
+        destinationPath: path,
+        signal: controller.signal,
+        fetchImpl: async () => {
+          controller.abort();
+          return textResponse("must-not-publish");
+        },
+        policy: { ...DEFAULT_BINARY_DOWNLOAD_POLICY, maxAttempts: 1 },
+      }),
+    ).rejects.toMatchObject({ code: "DOWNLOAD_ABORTED" });
+    expect(existsSync(path)).toBe(false);
+  });
+
+  test("HTTP rejection cancels its unconsumed response body", async () => {
+    const { path } = await tempDest();
+    let cancellations = 0;
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        cancel() {
+          cancellations++;
+        },
+      }),
+      { status: 403 },
+    );
+    await expect(
+      downloadToFile({
+        url: "https://example.test/refused",
+        destinationPath: path,
+        fetchImpl: async () => response,
+        policy: { ...DEFAULT_BINARY_DOWNLOAD_POLICY, maxAttempts: 1 },
+      }),
+    ).rejects.toMatchObject({ code: "DOWNLOAD_HTTP", status: 403 });
+    expect(cancellations).toBe(1);
+    expect(response.body?.locked).toBe(false);
+  });
+
+  test("file-open failure cancels the response and releases its reader", async () => {
+    const { path } = await tempDest();
+    let cancellations = 0;
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        cancel() {
+          cancellations++;
+        },
+      }),
+    );
+    const open = spyOn(fsPromises, "open").mockRejectedValue(new Error("fixture-open-denied"));
+    try {
+      await expect(
+        downloadToFile({
+          url: "https://example.test/open-denied",
+          destinationPath: path,
+          fetchImpl: async () => response,
+          policy: { ...DEFAULT_BINARY_DOWNLOAD_POLICY, maxAttempts: 1 },
+        }),
+      ).rejects.toThrow("fixture-open-denied");
+      expect({ cancellations, locked: response.body?.locked }).toEqual({
+        cancellations: 1,
+        locked: false,
+      });
+    } finally {
+      open.mockRestore();
+    }
+  });
+
+  test("stalled response cleans partial file and retries", async () => {
+    const { path } = await tempDest();
+    const timers = manualStallTimers(40);
+    const first = stalledResponse(new TextEncoder().encode("partial"));
+    let calls = 0;
+    try {
+      const pending = downloadToFile({
         url: "https://example.test/stall",
         destinationPath: path,
         fetchImpl: async () => {
-          calls += 1;
-          if (calls === 1) {
-            return streamResponse([firstChunk], { stallAfterChunk: 1, delayMs: 5 });
-          }
+          calls++;
+          if (calls === 1) return first.response;
+          expect(existsSync(path)).toBe(false);
           return textResponse("ok");
         },
         policy: {
@@ -161,38 +322,61 @@ describe("downloadToFile", () => {
           stallDeadlineMs: 40,
           maxAttempts: 2,
           maxBytes: 1024,
-          retryBaseDelayMs: 10,
+          retryBaseDelayMs: 0,
         },
-      }),
-    ).resolves.toMatchObject({ attempts: 2, sizeBytes: 2 });
-
-    expect(calls).toBe(2);
-    expect(await Bun.file(path).text()).toBe("ok");
+      });
+      const result = pending.then(
+        (value) => ({ value }),
+        (cause: unknown) => ({ error: cause }),
+      );
+      await timers.secondRead;
+      expect(await Bun.file(path).text()).toBe("partial");
+      expect(timers.activeCount).toBe(1);
+      timers.expire();
+      expect(await result).toMatchObject({ value: { attempts: 2, sizeBytes: 2 } });
+      expect(calls).toBe(2);
+      expect(first.cancellations).toBe(1);
+      expect(first.response.body?.locked).toBe(false);
+      expect(timers.activeCount).toBe(0);
+      expect(await Bun.file(path).text()).toBe("ok");
+    } finally {
+      timers.restore();
+    }
   });
 
-  stallTest("stalled final attempt removes partial destination", async () => {
+  test("stalled final attempt removes partial destination", async () => {
     const { path } = await tempDest();
-
-    await expect(
-      downloadToFile({
+    const timers = manualStallTimers(40);
+    const stalled = stalledResponse(new TextEncoder().encode("x"));
+    try {
+      const pending = downloadToFile({
         url: "https://example.test/stall-final",
         destinationPath: path,
-        fetchImpl: async () =>
-          streamResponse([new TextEncoder().encode("x")], { stallAfterChunk: 1 }),
+        fetchImpl: async () => stalled.response,
         policy: {
-          // Outer guard only — the stall detector at 30ms is the mechanism
-          // under test. A 500ms total could out-race it when the loop stalls
-          // under parallel-suite load and then misreport "deadline exceeded".
           totalDeadlineMs: 5_000,
-          stallDeadlineMs: 30,
+          stallDeadlineMs: 40,
           maxAttempts: 1,
           maxBytes: 1024,
-          retryBaseDelayMs: 1,
+          retryBaseDelayMs: 0,
         },
-      }),
-    ).rejects.toThrow(/stall/i);
-
-    expect(existsSync(path)).toBe(false);
+      });
+      const result = pending.then(
+        (value) => ({ value }),
+        (cause: unknown) => ({ error: cause }),
+      );
+      await timers.secondRead;
+      expect(await Bun.file(path).text()).toBe("x");
+      expect(timers.activeCount).toBe(1);
+      timers.expire();
+      expect(await result).toMatchObject({ error: { code: "DOWNLOAD_STALL" } });
+      expect(existsSync(path)).toBe(false);
+      expect(stalled.cancellations).toBe(1);
+      expect(stalled.response.body?.locked).toBe(false);
+      expect(timers.activeCount).toBe(0);
+    } finally {
+      timers.restore();
+    }
   });
 
   test("Content-Length over limit fails without retry", async () => {

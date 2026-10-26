@@ -110,9 +110,9 @@ export function gaitPose(phase: number): FoxPose {
   const bounce = (1 - Math.cos(2 * TAU * p)) / 2; // 0 at each footfall, 1 between
   const lagged = (1 - Math.cos(2 * TAU * (p - 0.07))) / 2;
   return {
-    bodyY: -14 * bounce,
-    bodyPitch: 2.2 * Math.sin(2 * TAU * (p + 0.1)),
-    headY: 5 * (lagged - bounce),
+    bodyY: -6 * bounce,
+    bodyPitch: 1.5 * Math.sin(2 * TAU * (p + 0.1)),
+    headY: 3 * (lagged - bounce),
     headPitch: -3.2 * Math.sin(2 * TAU * (p - 0.05)),
     tail: 9 + 11 * Math.sin(TAU * (p - 0.22)),
     earNear: 5.5 * Math.sin(2 * TAU * (p - 0.12)),
@@ -241,13 +241,13 @@ export function blendPose(from: FoxPose, to: FoxPose, t: number): FoxPose {
 /**
  * Pixels of travel per full stride, for a figure drawn `size` px wide.
  *
- * Scales with the figure so a big fox takes proportionally big steps. The
- * factor is a compromise: a true match to her top speed would need her legs to
- * blur, so strides are a little longer than her short legs could strictly
- * cover. That reads as brisk, which is the character, rather than as skating.
+ * Scales with the figure so a big fox takes proportionally big steps. A short
+ * stride fits her paw reach: the former 1.5-body-length cycle left the paws
+ * hanging in the air while the torso slid past. Faster travel now makes the
+ * feet step faster instead of stretching each step across the page.
  */
 export function strideLength(size: number): number {
-  return size * 1.5;
+  return size * 0.65;
 }
 
 /** Advance the stride by the distance actually covered. Never moves backwards. */

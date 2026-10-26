@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai — Provider Guide
@@ -56,7 +56,7 @@ apps/cli shell
 
 - `@kunai/types` — canonical TypeScript contracts: `ProviderModule`, `ProviderResolveResult`, `StreamCandidate`, `SubtitleCandidate`, `ProviderFailure`, `ResolveTrace`
 - `@kunai/core` — `ProviderEngine` (orchestration, retry, timeout, fallback), `CoreProviderManifest`, `defineProviderManifest`, `resolveWithFallback`, cache-policy helpers
-- `@kunai/providers` — supported direct-provider modules (`videasy`, `vidlink`, `rivestream`, `vidrock`, `movy`, `allmanga`, `anidb`, `hianime`, `animegg`, `kickassanime`, `miruro`, `youtube`) plus research/candidate modules kept out of the production resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
+- `@kunai/providers` — direct-provider modules; the production roster is only what `loadProductionProviderModules()` registers (`videasy`, `vidlink`, `rivestream`, `vidrock`, `movy`, `allmanga`, `hianime`, `animegg`, `kickassanime`, `miruro`, `youtube`). The `anidb` package remains for fixtures and historic ids but is not live. Research/candidate modules stay out of the resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
 - `@kunai/storage` — SQLite cache, history, health, source inventory, trace persistence
 - `@kunai/schemas` — Zod validation schemas for all shared types
 - `apps/cli` — Ink UX, mpv IPC, `ProviderRegistry` (engine compat wrapper), `provider-result-adapter`/`stream-request-adapter` (type conversion), playback orchestration
@@ -191,6 +191,18 @@ VidLink's CDN answers 429 to GET, HEAD and ranged GET alike on every candidate,
 so passing the gate only handed mpv a 587-byte nginx error page. Failing here is
 what lets a working provider take over. Any future exception needs evidence that
 the stream _plays_, not merely that a probe passed.
+
+HTML-labeled HLS fragments need positive TS or complete fMP4-header evidence.
+For fMP4, each track-run data offset must begin inside the declared `mdat`
+payload: at/after its payload start and strictly before a finite end. Declared
+`trun` sizes, or a `tfhd` default size when the run omits them, must fit the
+remaining media-data extent; exact-end samples are valid. Counts without an
+entry table use constant-time exact arithmetic, and box ends must stay in the
+safe integer range. Explicit run sizes override defaults. A prefix may truncate
+the media body, but may not claim known sample bytes outside its own declared
+box. Open-ended `mdat`, and sample sizes supplied only by the initialization
+segment's `trex`, retain structural-prefix validation; this probe does not decode
+the complete media.
 
 **The gate walks candidates, it does not judge one.** `resolveDirectStreamSource`
 probes up to `RESOLVE_GATE_MAX_PROBES` ranked candidates and takes the first that
@@ -418,8 +430,25 @@ working playback path; those streams carry `metadataUnavailable: true`.
 below the requested height. The old selector did an exact label match and fell
 back to `qualityLabels[0]` — a list sorted highest-first — so asking for 720p on
 a video publishing only 1080p and 480p silently returned 1080p. When metadata is
-unavailable the requested label is still used to build the yt-dlp format
-selector, so the cap survives a failed probe instead of becoming `best`.
+unavailable the requested label builds height-filtered alternatives first. The
+last fallback is yt-dlp's default, so this degraded path may exceed the preference;
+it does not prove an available rendition or a strict bandwidth cap. Live playback
+without a discovered format uses the default selector.
+
+**A discovered quality row pins a format, not just a height.** Metadata schema v4
+keeps each safe yt-dlp `format_id`, labels reported codec/FPS/average bitrate when
+present, and deduplicates repeated IDs. Exact format IDs drive stream and variant
+identity; labels are display only. Video-only formats select `ID+ba`, premerged
+formats select `ID`, and unknown audio presence selects `ID+ba/ID`. No alternative
+changes the video format. The audio paired by `ba` remains yt-dlp's choice, not a
+reported audio-language or audio-bitrate selection. Reported bitrate is not a
+measurement of the viewer's network or final merged bitrate.
+
+Configured player clients appear as primary/fallback connections. They request
+the same video and can expose different formats. Quality projection groups the
+same format across those lanes, preferring the active connection for exact picks;
+source-only switches retain that format when possible. mpv still performs the
+playback check: metadata extraction and a watch URL are not stream proof.
 
 **The Invidious registry lookup is bounded.** It was the only fetch on the search
 path without its own timeout, so a hung registry stalled search before any
@@ -451,7 +480,7 @@ Third lane provider for standalone videos, Shorts, playlists, and channels.
   not a dead lane to fall through. It never relabels an unclassified video as a
   Short, and is intentionally unsupported in TMDB and AniList modes, just like the
   other YouTube content shapes.
-- **Detail/quality:** `yt-dlp -J` on cache miss (SQLite `youtube_metadata_cache`, 15-minute TTL). Resolve fails with `yt-dlp-missing` when yt-dlp is absent. Default quality ceiling is **1080p** (`youtubeLanguageProfile.quality`); change under `/settings` → Language → YouTube quality. Format selector uses `bv*[height<=?H]+ba/bv*[height<=?H]/bv*+ba/b` — `bv*` (not `bv`) so pre-merged renditions stay eligible, `<=?H` so live HLS variants with no reported height are not rejected, and the ceiling repeated on the fallback so a failed merge cannot silently promote the viewer above the quality they asked for.
+- **Detail/quality:** `yt-dlp -J` on cache miss (SQLite `youtube_metadata_cache`, 15-minute TTL). Resolve fails with `yt-dlp-missing` when yt-dlp is absent. Default height preference is **1080p** (`youtubeLanguageProfile.quality`); change under `/settings` → Language → YouTube quality. Discovered formats use exact selectors. Without a discovered format, non-live playback uses `bv*[height<=?H]+ba/bv*[height<=?H]/bv*+ba/b/ba`: `bv*` permits premerged renditions and `<=?H` permits unknown heights. The final default fallback may exceed the preference; this is not a strict cap.
 - **Playback:** canonical `https://www.youtube.com/watch?v=ID` with mpv `--ytdl-format` and `--ytdl-raw-options` (SponsorBlock, live edge via `no-live-from-start=`, PO tokens). Live broadcasts apply a short-buffer demuxer profile (`demuxer-readahead-secs=10`, `demuxer-max-bytes=32MiB`, `cache-pause-wait=1`) at spawn **and** on every persistent loadfile replacement — a replacement inherits nothing from spawn argv, so both paths read one shared constant. Live playback also suppresses the `--start` seek, the loadfile `start`, the watch-later resume prompt, and the in-process reconnect seek: a broadcast has no absolute position to return to. Kunai disables mpv-ytdlautoformat overrides via `--script-opts=ytdlautoformat-domains=` so a user-level `ytdlautoformat` script cannot force 720p. **No full video file is written for play** — mpv streams via yt-dlp; only JSON metadata is cached in SQLite.
 - **Subtitles:** Automatically attaches all human-authored tracks, the original language track (`-orig`), and user-configured language translations while filtering out machine-translation spam and `live_chat` JSON metadata.
 - **Downloads:** explicit queue via `d` / download flows; yt-dlp writes `.mp4` to `downloadPath` (or OS default) with `-f` from the same format selector, `--merge-output-format mp4`, cookies/extractor args, and optional `--sponsorblock-remove`; live streams rejected at enqueue.
@@ -553,12 +582,13 @@ import {
   createTraceStep,
   type CoreProviderModule,
 } from "@kunai/core";
-import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
 } from "@kunai/types";
+
+import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 
 export const myProviderModule: CoreProviderModule = {
   providerId: "myprovider",
@@ -693,14 +723,18 @@ Active providers are registered in `apps/cli/src/container/bootstrap-providers.t
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
 `hianime` is the **default** anime provider (`animeProvider: "hianime"`,
-`animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb",
-"allanime"]`, provider-defaults revision 3). The lead moved off AniDB when
-anidb.app started answering 503 at the origin, matching ani-cli's own `fix:`
-switch to hianime. `anidb` stays registered and in the priority tail: it still
-carries the AID cross-link and XML episode-title strengths the other adapters
-lack. `miruro` is the first fallback — it fronts roughly a dozen backends
-behind one AniList-keyed pipe, so an upstream outage costs a server rather
-than the lane.
+`animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro"]`,
+provider-defaults revision 6). The lead moved off AniDB when anidb.app stopped
+serving the old origin (HTTP 302 to an unrelated site, 2026-10-24), matching
+ani-cli's earlier move to HiAnime (c99221d). AniDB was **retired from
+production** — the module stays in `@kunai/providers` for tests and historic
+records, but `loadProductionProviderModules()` no longer registers it.
+`normalizeRetiredProductionProviderFields` in `@kunai/config` maps any persisted
+`anidb` lane selection to HiAnime, strips the id from priority and disable
+lists, and drops title pins that still name it (without aliasing history ids).
+`miruro` is the tail fallback in shipped defaults — it fronts roughly a dozen
+backends behind one AniList-keyed pipe, so an upstream outage costs a server
+rather than the lane.
 
 Miruro's search goes through its own pipe (`search`, `q` + `type: "ANIME"`),
 which relays AniList's catalog: results carry AniList and MAL ids exactly as the
@@ -745,8 +779,8 @@ share none of that. `kickassanime` and `animegg` follow it in the default
 order: both have their own catalog, site and CDN, but KickAssAnime can also
 take over a title found in _another_ catalog — it matches the show by name and
 year and remembers the result on the title bridge — whereas AnimeGG only plays
-what its own search found. AniDB and AllAnime close the order, AniDB for when
-it returns and AllAnime for the ani-cli parity path. See
+what its own search found. AllAnime closes the shipped order for the ani-cli
+parity path. See
 [the KickAssAnime dossier](./provider-dossiers/kickassanime.md) and
 [the AnimeGG dossier](./provider-dossiers/animegg.md), both of which record why a
 reachability probe cannot judge their streams.
@@ -790,7 +824,6 @@ default to the table — a bump alone stamps configs without changing them.
 | `movy`         | movie, series | direct-http | `packages/providers/src/movy/direct.ts`         |
 | `videasy`      | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`      |
 | `vidrock`      | movie, series | direct-http | `packages/providers/src/vidrock/direct.ts`      |
-| `anidb`        | anime         | direct-http | `packages/providers/src/anidb/direct.ts`        |
 | `animegg`      | anime         | direct-http | `packages/providers/src/animegg/direct.ts`      |
 | `kickassanime` | anime         | direct-http | `packages/providers/src/kickassanime/direct.ts` |
 | `allanime`     | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`     |
@@ -807,10 +840,9 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   AniList id or another site's slug is never sent as one. A title from any other catalog is matched
   by name and year — exactly one hit, or the provider steps aside — and the slug is then stored
   through `context.titleBridge` against the AniList id, so later plays ask nothing.
-- **AniDB (`anidb`)** — `provider-native`; fifth in the default anime order, behind HiAnime, Miruro, KickAssAnime and AnimeGG (demoted from the lead when anidb.app went 503). Native ids must satisfy
-  `slug-positiveNumericSuffix`; numeric AniList ids and opaque AllAnime ids are not AniDB ids. The
-  AllManga Tier-1 lookup never runs for AniDB, and only a validated AniDB slug may be written to
-  `providerNativeIds.anidb` — otherwise the result keeps its catalog identity.
+- **AniDB (`anidb`)** — **retired from production** (2026-10-24). The package and dossiers remain
+  for fixtures and historic `providerNativeIds`; live resolve does not register the module. See
+  [anidb-runtime-contract.md](./provider-dossiers/anidb-runtime-contract.md).
 - **AllAnime (`allanime`)** — `provider-native`, registered as a fallback and
   manually selectable. AniList-backed discovery
   results are remapped to opaque AllAnime show ids before resolve; `externalIds.anilistId` is

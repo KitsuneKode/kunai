@@ -2368,6 +2368,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               stream,
               getPreferredStreamSelection(sourceProviderId, currentEpisode),
               playbackQualityPreference(profileContext),
+              playbackSubtitlePreference(profileContext),
             );
           }
           if (!stream || resolveController.signal.aborted) {
@@ -4368,6 +4369,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       diagnosticsService,
     } = context.container;
 
+    if (stream.playbackSubtitle) {
+      stream = { ...stream, playbackSubtitle: undefined };
+      stateManager.dispatch({ type: "SET_STREAM", stream });
+    }
     const subtitleStatus = describePlaybackSubtitleStatus(
       stream,
       playbackSubtitlePreference({
@@ -4600,7 +4605,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         applyPlaybackStatusSignal: (signal) => this.applyPlaybackStatusSignal(context, signal),
         onTrackChanged: (event) => {
           const currentStream = stateManager.getState().stream;
-          if (currentStream && event.trackType === "sub" && event.id === 0) {
+          if (currentStream && event.trackType === "sub" && event.subtitleState) {
+            stateManager.dispatch({
+              type: "SET_STREAM",
+              stream: { ...currentStream, playbackSubtitle: event.subtitleState },
+            });
+          } else if (currentStream && event.trackType === "sub" && event.id === 0) {
             stateManager.dispatch({
               type: "SET_STREAM",
               stream: { ...currentStream, subtitle: undefined },
@@ -4829,27 +4839,35 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         });
         if (!attached) return;
 
-        // The attach is silent otherwise: subtitles appear mid-playback with no
-        // account of where they came from or how many alternates were found.
-        this.updatePlaybackFeedback(context, {
-          note:
-            mergedSubtitleList.length > 1
-              ? `Attached subtitles · ${mergedSubtitleList.length} tracks available in the player`
-              : "Attached subtitles found by search",
-        });
-
         const currentState = stateManager.getState();
+        const currentStream = currentState.stream;
         if (
+          !iterationSignal.aborted &&
           currentState.currentTitle?.id === title.id &&
           currentState.currentEpisode?.season === episode.season &&
-          currentState.currentEpisode?.episode === episode.episode
+          currentState.currentEpisode?.episode === episode.episode &&
+          currentStream?.url === stream.url &&
+          currentStream.timestamp === stream.timestamp &&
+          currentStream.providerResolveResult === stream.providerResolveResult
         ) {
+          // The attach is silent otherwise: subtitles appear mid-playback with no
+          // account of where they came from or how many alternates were found.
+          this.updatePlaybackFeedback(context, {
+            note:
+              mergedSubtitleList.length > 1
+                ? `Attached subtitles · ${mergedSubtitleList.length} tracks available in the player`
+                : "Attached subtitles found by search",
+          });
+
           stateManager.dispatch({
             type: "SET_STREAM",
             stream: {
-              ...stream,
-              subtitle: selectedUrl,
-              subtitleList: mergedSubtitleList,
+              ...currentStream,
+              subtitle:
+                currentState.playbackTrackPreferences.subtitle === "none"
+                  ? undefined
+                  : (currentStream.subtitle ?? selectedUrl),
+              subtitleList: mergeSubtitleTracks(currentStream.subtitleList, result.list),
               subtitleSource: "wyzie",
               subtitleEvidence: {
                 directSubtitleObserved: Boolean(stream.subtitleList?.length),

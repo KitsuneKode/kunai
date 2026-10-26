@@ -663,3 +663,54 @@ test("well-formed language tags keep their specific display names", () => {
     view.subtitleOptions.find((option) => option.id === "subtitle:sub-en-us")?.label,
   ).toContain("American English");
 });
+
+test("YouTube qualities share client fallback lanes and retain the selected connection", () => {
+  const view = projectPlaybackSourceInventory({
+    status: "resolved",
+    providerId: "youtube",
+    selectedStreamId: "web-137",
+    subtitles: [],
+    failures: [],
+    trace: trace({ title: { id: "youtube:abc", kind: "video", title: "Actual video" } }),
+    streams: [
+      stream({
+        id: "visionos-137",
+        providerId: "youtube",
+        protocol: "youtube",
+        sourceId: "visionos",
+        variantId: "format-137",
+        qualityLabel: "1080p · H.264 · #137",
+      }),
+      stream({
+        id: "web-137",
+        providerId: "youtube",
+        protocol: "youtube",
+        sourceId: "web",
+        variantId: "format-137",
+        qualityLabel: "1080p · H.264 · #137",
+      }),
+      stream({
+        id: "visionos-248",
+        providerId: "youtube",
+        protocol: "youtube",
+        sourceId: "visionos",
+        variantId: "format-248",
+        qualityLabel: "1080p · VP9 · #248",
+      }),
+      stream({
+        id: "web-248",
+        providerId: "youtube",
+        protocol: "youtube",
+        sourceId: "web",
+        variantId: "format-248",
+        qualityLabel: "1080p · VP9 · #248",
+      }),
+    ],
+  });
+  expect(view.qualityOptions).toHaveLength(2);
+  expect(view.qualityOptions[0]).toMatchObject({
+    state: "selected",
+    streamIds: ["web-137", "visionos-137"],
+  });
+  expect(view.qualityOptions[1]?.streamIds[0]).toBe("web-248");
+});

@@ -62,6 +62,7 @@ export function LibraryTitleDetail({
   readonly onNavigateToQueue?: () => void;
   readonly onEntriesChanged: () => void;
 }) {
+  const suspended = useRootContentSuspended();
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   const networkAvailable = useConnectivityOnline(container.connectivity);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -156,7 +157,7 @@ export function LibraryTitleDetail({
   const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
   const maxVisible = getPickerListMaxVisible(
     viewport.rows,
-    getPickerChromeRows({ hasSubtitle: true, commandMode: false, extraRows: 5 }),
+    getPickerChromeRows({ hasSubtitle: true, commandMode: suspended, extraRows: 5 }),
   );
   const windowStart = getWindowStart(safeIndex, totalRows, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, totalRows);
@@ -180,7 +181,6 @@ export function LibraryTitleDetail({
     enabled: showRail,
   });
 
-  const suspended = useRootContentSuspended();
   useInput(
     (input, key) => {
       if (key.escape) {

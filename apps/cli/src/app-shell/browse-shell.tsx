@@ -162,7 +162,7 @@ import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
 import { getWindowStart, measureColumns, sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
-import { SearchSuggestionBand } from "./suggestion-band-ui";
+import { getSuggestionBandRowCount, SearchSuggestionBand } from "./suggestion-band-ui";
 import {
   toShellAction,
   type FooterAction,
@@ -1407,6 +1407,7 @@ export function BrowseShell<T>({
   const calendarRouteLoadingModel = buildCalendarLoadingState(calendarRouteKind === "retrying");
   const calendarEmptyModeLabel =
     calendarTypeTab === "All" ? "calendar" : calendarTypeTab.toLowerCase();
+  const suggestionMaxRows = Math.max(7, Math.min(12, viewport.rows - 20));
   const browseChromeRows = getBrowseChromeRows({
     hasResultSubtitle: !ultraCompact && Boolean(resultStatus.primary || resultStatus.secondary),
     hasFilterBar: showResultFilterBar,
@@ -1420,7 +1421,7 @@ export function BrowseShell<T>({
     // results window must shrink or rows bleed into the footer.
     suggestionBandRows:
       suggestionBandVisible && suggestionBandModel.rows.length > 0
-        ? suggestionBandModel.rows.length
+        ? getSuggestionBandRowCount(suggestionBandModel, boundedSuggestionIndex, suggestionMaxRows)
         : 0,
   });
   const maxVisible = getBrowseListMaxVisible(viewport.rows, browseChromeRows);
@@ -2239,6 +2240,7 @@ export function BrowseShell<T>({
             {suggestionBandVisible && suggestionBandModel.rows.length > 0 ? (
               <SearchSuggestionBand
                 model={suggestionBandModel}
+                maxRows={suggestionMaxRows}
                 selectedIndex={boundedSuggestionIndex}
                 width={innerWidth}
               />

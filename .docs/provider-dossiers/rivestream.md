@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-14"
+lastReviewed: "2026-10-24"
 ---
 
 # Provider: Rivestream
@@ -80,3 +80,26 @@ sequenceDiagram
 - **Cache key dimensions:** `Rivestream_[MediaID]_[Episode]`.
 - **Diagnostics events:** `HashGenerationFailed`, `API401Unauthorized`.
 - **Tests to add:** Mock the MurmurHash + `cArray` logic to guarantee `secretKey` stability across Node versions.
+
+## Header and rendition inventory recovery (2026-10-24)
+
+HLS expansion uses the same request headers as the candidate gate and playback
+handoff. Observed HLS masters retain subtitle renditions and audio languages;
+separate-audio masters remain one Auto URL to preserve sound. Extensionless HLS
+media keeps its observed protocol. A source switch promotes `preferredSourceId`
+and resolves that source's own quality rows rather than relabeling the winning
+source's URLs. Untried sources remain inventory candidates, not proven qualities.
+
+Query-string headers are accepted only on the exact HTTPS
+`proxy.valhallastream.com/m3u8` wrapper with no credentials or nondefault port.
+The JSON declaration is capped at 8192 characters; only Referer, Origin and
+User-Agent survive, with bounded values and no control bytes. Host, connection
+and credential overrides are rejected; unrelated hosts cannot declare headers.
+No URL unwrapping was introduced. The normal stream target guard still checks
+all fetched manifests, redirects and probe destinations.
+
+A bounded isolated TMDB 550 movie resolve returned the 720/480 HLS source with
+26 subtitles. The API also returned Vanguard's 4K HDR wrapper. A separate guarded
+direct-target request returned HTTP 502, disproving an assumption that bypassing
+the wrapper was a qualified fix on this host. Do not turn either refusal into
+playability evidence. No decoded-frame playback qualification was performed.

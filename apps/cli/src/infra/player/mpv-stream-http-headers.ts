@@ -186,6 +186,8 @@ export type PersistentLoadfileOptions = {
   readonly "tls-verify"?: string;
   /** Audio language for this file; see {@link toMpvLanguageToken}. */
   readonly alang?: string;
+  readonly slang?: string;
+  readonly sid?: "no" | "auto";
   readonly "chapters-file"?: string;
   /** mpv's `--ytdl` is a yes/no flag: whether ytdl_hook runs at all. */
   readonly ytdl?: string;
@@ -244,6 +246,7 @@ export type PersistentLoadfileMediaOptions = {
   readonly urlKind?: MpvUrlKind;
   /** Kunai audio setting: a language code, or the mode "sub"/"dub". */
   readonly audioPreference?: string;
+  readonly subtitlePreference?: string;
   /** Ephemeral chapters file path containing chapter markers. */
   readonly chaptersFile?: string | null;
 };
@@ -285,6 +288,11 @@ export function buildPersistentLoadfileOptions(
   // why the stale option never showed.
   const alang = toMpvLanguageToken(ytdlOptions?.audioPreference, { forSubtitle: false });
   if (alang) loadOptions.alang = alang;
+  const slang = toMpvLanguageToken(ytdlOptions?.subtitlePreference, { forSubtitle: true });
+  if (slang) loadOptions.slang = slang;
+  // A language preference cannot disable subtitle decoding. Reset the per-file
+  // selection as well, so Off from a previous file cannot leak into the next.
+  if (ytdlOptions?.subtitlePreference) loadOptions.sid = slang === "no" ? "no" : "auto";
 
   if (isYoutubeWatchUrl(url) || ytdlOptions?.requiresYtdl) {
     // `ytdl` is a yes/no flag and `ytdl-format` is the selector, so assigning

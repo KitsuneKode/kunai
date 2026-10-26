@@ -17,7 +17,6 @@ import path from "node:path";
 import type { ProviderModule, ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { allmangaProviderModule } from "../src/allmanga/direct";
-import { anidbProviderModule } from "../src/anidb/direct";
 import { animeggProviderModule } from "../src/animegg/direct";
 import { hianimeProviderModule } from "../src/hianime/direct";
 import { kickassanimeProviderModule } from "../src/kickassanime/direct";
@@ -102,14 +101,6 @@ const ALLMANGA_ONE_PIECE: ProviderResolveInput = {
   episode: { season: 1, episode: 1 },
 };
 
-const ANIDB_ONE_PIECE: ProviderResolveInput = {
-  allowedRuntimes: ["direct-http"],
-  intent: "play",
-  mediaKind: "anime",
-  title: { id: "one-piece-69", kind: "anime", title: "One Piece" },
-  episode: { season: 1, episode: 1 },
-};
-
 const YOUTUBE_INPUT: ProviderResolveInput = {
   allowedRuntimes: ["direct-http"],
   intent: "play",
@@ -170,12 +161,6 @@ export const PROBES: readonly ProbeSpec[] = [
     module: allmangaProviderModule,
     frontDoor: "https://api.allanime.day",
     input: ALLMANGA_ONE_PIECE,
-  },
-  {
-    id: "anidb",
-    module: anidbProviderModule,
-    frontDoor: "https://anidb.app",
-    input: ANIDB_ONE_PIECE,
   },
   {
     id: "hianime",

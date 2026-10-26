@@ -15,6 +15,6 @@ test("the relay registry covers exactly the relayable production roster", async 
     .filter((module) => module.manifest.relayProfile !== undefined)
     .map((module) => String(module.providerId))
     .sort();
-  expect(relayable).toHaveLength(11);
+  expect(relayable).toHaveLength(10);
   expect(relayRegistry.providers.map((entry) => entry.providerId).sort()).toEqual(relayable);
 });

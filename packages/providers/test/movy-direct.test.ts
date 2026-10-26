@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
+import type { LooseJsonValue } from "@kunai/types";
 import type {
   EndpointHealthPort,
   ProviderResolveInput,
@@ -414,4 +415,44 @@ describe("movy seed cache — untrusted envelope", () => {
     expect(result.status).toBe("resolved");
     expect(seedCalls).toBe(2);
   });
+});
+
+// XOR the known captured plaintext/ciphertext pair to reuse its keystream for
+// shorter synthetic payloads. No production crypto or decoder is mocked.
+function encryptFixturePayload(payload: LooseJsonValue): string {
+  const cipher = Buffer.from(FIXTURE.body, "base64url");
+  const known = Buffer.from(
+    `mvm1${decryptMovyPayload(FIXTURE.body, FIXTURE.seed, FIXTURE.mediaId)}`,
+  );
+  const plain = Buffer.from(`mvm1${JSON.stringify(payload)}`);
+  if (plain.length > known.length) throw new Error("fixture keystream too short");
+  return Buffer.from(plain.map((byte, i) => byte ^ (cipher[i] ?? 0) ^ (known[i] ?? 0))).toString(
+    "base64url",
+  );
+}
+
+test("Movy expands real HLS qualities and preserves manifest-only subtitles", async () => {
+  const body = encryptFixturePayload({
+    sources: [{ url: "https://cdn.example/master.m3u8", type: "hls", quality: "Auto" }],
+    subtitles: [{ file: "https://cdn.example/en.vtt", language: "en" }],
+  });
+  const ctx = contextReturning((url) => {
+    if (url.includes("/seed")) return Response.json({ seed: FIXTURE.seed, ttlMs: 30000 });
+    if (url.includes("/miami/sources")) return new Response(body);
+    if (url.includes("/sources")) return new Response("down", { status: 500 });
+    if (url.endsWith("master.m3u8"))
+      return new Response(
+        '#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="English",LANGUAGE="en",URI="en.vtt"\n#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080,SUBTITLES="s"\n1080.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,SUBTITLES="s"\n720.m3u8\n',
+      );
+    if (url.endsWith(".m3u8")) return new Response("#EXTM3U\n#EXTINF:5,\nsegment.ts\n");
+    return new Response(new Uint8Array(2048));
+  });
+  const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+  expect(result.status).toBe("resolved");
+  expect(result.streams.map((s) => s.qualityLabel)).toEqual(["1080p", "720p"]);
+  expect(result.streams.map((s) => s.url)).toEqual([
+    "https://cdn.example/1080.m3u8",
+    "https://cdn.example/720.m3u8",
+  ]);
+  expect(result.subtitles.map((s) => s.url)).toEqual(["https://cdn.example/en.vtt"]);
 });

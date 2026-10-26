@@ -164,10 +164,11 @@ describe("vidlink DASH delivery", () => {
     expect(stream?.headers?.Cookie).toBe(COOKIE);
   });
 
-  test("labels the DASH stream with the highest stated rendition", async () => {
+  test("keeps adaptive DASH as one Auto choice without pretending to select a representation", async () => {
     const result = await resolveVidlinkDirect(INPUT, buildContext());
-    // resolutions arrive unordered; without this the panel shows a bare "auto".
-    expect(result.streams[0]?.qualityLabel).toBe("1080p");
+    expect(result.streams).toHaveLength(1);
+    expect(result.streams[0]?.qualityLabel).toBe("auto");
+    expect(result.streams[0]?.url).not.toContain("#");
   });
 
   test("keeps the provider's subtitle inventory", async () => {
@@ -455,7 +456,7 @@ describe("vidlink 429 backoff", () => {
       // The retry lands after the cooldown instead of inside it, so it succeeds.
       expect(apiAttempts).toBe(2);
       expect(result.status).toBe("resolved");
-      expect(result.streams[0]?.qualityLabel).toBe("1080p");
+      expect(result.streams[0]?.qualityLabel).toBe("auto");
       // The header is respected BEFORE the quarantine evidence is recorded.
       const sleepIndex = calls.findIndex((call) => call.kind === "sleep");
       const recordIndex = calls.findIndex((call) => call.kind === "record");

@@ -122,3 +122,14 @@ describe("buildDetailsSheet", () => {
     expect(sheet.your.offline).toBe(true);
   });
 });
+
+it("keeps a YouTube video identity in the details header despite movie structure", () => {
+  const sheet = buildDetailsSheet({
+    seed: { title: "Video", type: "movie", contentKind: "video" },
+    detail: null,
+    history: null,
+    availability: null,
+  });
+  expect(sheet.header.metaLine).toContain("Video");
+  expect(sheet.header.metaLine).not.toContain("Movie");
+});

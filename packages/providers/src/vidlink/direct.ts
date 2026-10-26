@@ -296,14 +296,10 @@ export function resolveVidlinkDirect(
             }
           }
         } else {
-          // A DASH manifest is one adaptive URL: mpv switches renditions inside
-          // it, so the ladder is a label, not a list. `playbackMetadata` is the
-          // only place the ceiling is stated, and without it the Tracks panel
-          // shows a bare "auto" row for a stream that is really 1080p.
-          streams.push({
-            url: stream.playlist,
-            qualityHint: highestVidlinkResolution(stream.playbackMetadata?.resolutions),
-          });
+          // No representation constraint is carried to playback for remote
+          // MPDs. A declared ceiling is not a selected quality: keep one Auto
+          // URL rather than manufacturing duplicate URLs or fragment selectors.
+          streams.push({ url: stream.playlist, qualityHint: "auto" });
         }
       }
 
@@ -333,15 +329,6 @@ export function resolveVidlinkDirect(
       return payload;
     },
   });
-}
-
-/** Highest rendition VidLink states for a DASH manifest, as a `"1080p"`-style label. */
-function highestVidlinkResolution(resolutions: readonly string[] | undefined): string | undefined {
-  const heights = (resolutions ?? [])
-    .map((entry) => Number.parseInt(entry, 10))
-    .filter((height) => Number.isFinite(height) && height > 0);
-  if (heights.length === 0) return undefined;
-  return `${Math.max(...heights)}p`;
 }
 
 /** Fetch VidLink API with retry on 5xx, inside the endpoint quarantine. */

@@ -24,6 +24,10 @@ concurrency:
   group: provider-status-sweep
   cancel-in-progress: true
 
+env:
+  # Automated builds and installed-binary checks must never create analytics identities.
+  DO_NOT_TRACK: "1"
+
 jobs:
   sweep:
     name: Probe providers and publish status

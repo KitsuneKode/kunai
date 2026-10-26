@@ -10,17 +10,19 @@
 // z-ordering for free.
 // =============================================================================
 
-import { Box, measureElement, type DOMElement } from "ink";
+import { Box, Text, measureElement, type DOMElement } from "ink";
 import {
   createContext,
   useContext,
   useLayoutEffect,
   useRef,
+  useState,
   type ReactElement,
   type ReactNode,
 } from "react";
 
 import { useRootContentSuspended } from "../RootContentSuspension";
+import { palette } from "../shell-theme";
 import type { MouseEvent } from "./terminal-mouse";
 
 export type MouseRect = {
@@ -31,6 +33,7 @@ export type MouseRect = {
 };
 
 export type MouseRegionHandlers = {
+  readonly onInteractionChange?: (state: "idle" | "hover" | "pressed") => void;
   /** Left click = press + release inside the same region. */
   readonly onClick?: (event: MouseEvent) => void;
   readonly onWheel?: (direction: "up" | "down", event: MouseEvent) => void;
@@ -51,6 +54,21 @@ export class MouseDispatcher {
   /** Press target held until release decides click vs miss. */
   private pendingPress: { regionId: string; button: MouseEvent["button"] } | null = null;
 
+  private hoveredId: string | null = null;
+
+  private cancelPress(): void {
+    const id = this.pendingPress?.regionId;
+    this.pendingPress = null;
+    if (id) this.regions.get(id)?.handlers.onInteractionChange?.("idle");
+  }
+
+  private hover(id: string | null): void {
+    if (id === this.hoveredId) return;
+    if (this.hoveredId) this.regions.get(this.hoveredId)?.handlers.onInteractionChange?.("idle");
+    this.hoveredId = id;
+    if (id) this.regions.get(id)?.handlers.onInteractionChange?.("hover");
+  }
+
   register(id: string, rect: MouseRect, handlers: MouseRegionHandlers): void {
     const previous = this.regions.get(id);
     if (
@@ -61,20 +79,22 @@ export class MouseDispatcher {
         previous.rect.width !== rect.width ||
         previous.rect.height !== rect.height)
     ) {
-      this.pendingPress = null;
+      this.cancelPress();
     }
     this.orderCounter += 1;
     this.regions.set(id, { id, rect, handlers, order: this.orderCounter });
   }
 
   unregister(id: string): void {
+    if (this.pendingPress?.regionId === id) this.cancelPress();
+    if (this.hoveredId === id) this.hover(null);
     this.regions.delete(id);
-    if (this.pendingPress?.regionId === id) this.pendingPress = null;
   }
 
   clear(): void {
+    this.cancelPress();
+    this.hover(null);
     this.regions.clear();
-    this.pendingPress = null;
   }
 
   get size(): number {
@@ -115,16 +135,20 @@ export class MouseDispatcher {
     const region = this.hit(event);
 
     if (event.kind === "press") {
+      this.cancelPress();
+      this.hover(null);
       this.pendingPress =
         region?.handlers.onClick || region?.handlers.onRightClick
           ? { regionId: region.id, button: event.button }
           : null;
+      if (event.button === "left" && this.pendingPress)
+        region?.handlers.onInteractionChange?.("pressed");
       return region !== null;
     }
 
     if (event.kind === "release") {
       const pending = this.pendingPress;
-      this.pendingPress = null;
+      this.cancelPress();
       if (!pending || !region || region.id !== pending.regionId || pending.button !== event.button)
         return region !== null;
       const clickEvent: MouseEvent = { ...event, kind: "press" };
@@ -141,7 +165,10 @@ export class MouseDispatcher {
     }
 
     if (event.kind === "drag") {
-      this.pendingPress = null;
+      this.cancelPress();
+      // No-button motion is the only evidence of idle hover. 1002 does not
+      // request it; terminals that report it anyway can supply honest feedback.
+      this.hover(event.button === "none" && region?.handlers.onClick ? region.id : null);
       return region !== null;
     }
 
@@ -222,18 +249,44 @@ export function MouseTarget(props: {
   readonly onWheel?: (direction: "up" | "down", event: MouseEvent) => void;
   readonly onRightClick?: (event: MouseEvent) => void;
   readonly active?: boolean;
+  readonly feedback?: boolean;
   readonly flexShrink?: number;
   readonly children: ReactNode;
 }) {
   const ref = useRef<InkBoxRef | null>(null);
+  const [interaction, setInteraction] = useState<"idle" | "hover" | "pressed">("idle");
   useMouseRegion(
     ref,
     props.id,
-    { onClick: props.onClick, onWheel: props.onWheel, onRightClick: props.onRightClick },
+    {
+      onClick: props.onClick,
+      onWheel: props.onWheel,
+      onRightClick: props.onRightClick,
+      onInteractionChange: props.feedback ? setInteraction : undefined,
+    },
     { active: props.active },
   );
   return (
-    <Box ref={ref} flexShrink={props.flexShrink}>
+    <Box
+      ref={ref}
+      flexShrink={props.flexShrink}
+      backgroundColor={
+        props.feedback && props.active !== false && interaction !== "idle"
+          ? interaction === "pressed"
+            ? palette.accentFill
+            : palette.surfaceElevated
+          : undefined
+      }
+    >
+      {props.feedback ? (
+        <Text color={palette.accent}>
+          {props.active !== false && interaction === "pressed"
+            ? "▾"
+            : props.active !== false && interaction === "hover"
+              ? "›"
+              : " "}
+        </Text>
+      ) : null}
       {props.children}
     </Box>
   );

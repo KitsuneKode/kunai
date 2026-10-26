@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-08"
+lastReviewed: "2026-10-25"
 ---
 
 # Provider Research Dossier — HiAnime (`hianime`)
@@ -8,7 +8,7 @@ lastReviewed: "2026-10-08"
 > Agent-facing (L3). Live material: responses recorded 2026-09-13 against
 > `hianime.at` with plain curl + Chrome 124 UA. No browser, no auth, no account.
 
-Parity reference: ani-cli `5.1.5` (`/home/kitsunekode/Projects/osc/ani-cli`,
+Parity reference: ani-cli `5.1.6` (`/home/kitsunekode/Projects/osc/ani-cli`,
 single `ani-cli` shell script; pinned in `scripts/parity-references.json`).
 Kunai previously used `anidb.app` for the
 ani-cli-shaped lane; ani-cli has since moved its primary to HiAnime, so this
@@ -22,6 +22,17 @@ not-applicable here). 5.1.4 → 5.1.5 adds only `--exact` (#1938), a
 CLI-side filter that keeps search rows whose normalized title equals the
 query; Kunai ranks results in its own picker instead, so it is deliberately
 not ported. The rest of that delta is README and contributing docs.
+
+The 5.1.5 → 5.1.6 delta (`0301d67`, reviewed 2026-10-25) adds separate HLS
+`audio_link` handoff to upstream's mpv/IINA/Android/VLC and ffmpeg paths. Kunai
+already handles the underlying hazard differently: `resolveHianimeEpisodeStreams`
+consumes `expandHlsMasterInventory`, which retains a complete master when a
+variant references an external audio rendition. mpv owns that master and its
+audio selection. The HiAnime caller regression confirms an Auto master URL
+survives instead of exposing the silent `video-only.m3u8` variant. We deliberately
+do not copy the upstream shell flags or turn those variants into selectable
+qualities without an accompanying audio contract. This is fixture-backed caller
+parity, not proof of decoded playback or physical Android/iOS behavior.
 
 ## Request Summary
 
@@ -75,7 +86,7 @@ not ported. The rest of that delta is README and contributing docs.
   inner `ep-name` div.
 - Servers are `GET /api/theme/episode/servers?episodeId=<episodeId>` → JSON `{html}`
   with `<div class="item server-item" data-type="sub|dub" data-server-name="…"
-data-hash="<base64 embed URL>">`. Observed matrix 2026-09-13:
+  data-hash="<base64 embed URL>">`. Observed matrix 2026-09-13:
 
   | Server      | Sub | Dub | Embed host                                      | Verdict                                                                                             |
   | ----------- | --- | --- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -87,7 +98,7 @@ data-hash="<base64 embed URL>">`. Observed matrix 2026-09-13:
 - ZokoAnime embed decoding (ani-cli `deobfuscate_blob` parity, verified byte-for-byte):
   `window.__P="<b64>"` → base64 decode → XOR with `otaku-embed-v1` (repeating) →
   JSON. Payload keys: `src` (master `.m3u8`), `subtitles[]` (`{lang, label,
-default, src}` VTT), `skip: {intro, outro: {start, end}}` (either may be null),
+  default, src}` VTT), `skip: {intro, outro: {start, end}}` (either may be null),
   `download_url` (`/download/mal/…`), `poster`, `sprite_vtt` (empty string when
   absent), `default_audio`, `video_id`. Embed referer for playback is the embed
   origin + `/` (e.g. `https://zokoanime.video/`); the MAL id comes from the embed
@@ -194,7 +205,7 @@ No iframes, no JS execution, no browser needed.
 - Provider kind: API-first HTTP (`direct-http`), no browser. Single `ZokoAnime`
   server per audio mode; no provider-local cycling beyond sub/dub source rows.
 - What should be extracted: show slug catalog, episode `(number, episodeId,
-title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
+  title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
   HLS ladder, `inventory:audio-modes` when servers expose both modes.
 - What should be deferred: VidTube support, Megaplay revival watch, per-episode
   MAL enrichment at list time (resolve supplies it).

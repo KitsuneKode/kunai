@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-23"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai — UX Architecture
@@ -12,6 +12,11 @@ Use this doc when designing terminal interactions, keybindings, panels, command 
 The root status header maps both `idle` and `ready` to “ready”. Settled browse,
 picker, and post-play surfaces must not use the unknown-status “Loading…”
 fallback; searching and playback retain their own activity labels.
+
+During playback and post-play, the header uses the shared content-identity
+resolver: movies remain movies after stopping, anime films remain anime, and
+YouTube videos retain the YouTube label even with movie-shaped catalog data.
+Returning to browse restores the search-lane label.
 
 ## Design Goals
 
@@ -52,6 +57,12 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 - companion panes should appear only when the viewport can support them without crowding the main task
 - when a provider or result does not have real detail data, the shell should show a light preview rather than pretending there is a richer details state
 - the fullscreen hierarchy should stay stable across browse, picker, overlay, and post-playback states
+
+Failure panels are static: no decorative animation runs over the error or its
+recovery controls. Provider failures expose a direct provider choice and preserve
+the failure when that picker is cancelled; a verified choice retries through the
+normal resolve path. Failure in one provider does not mean the title is absent
+from every provider.
 
 ### Command philosophy
 
@@ -274,9 +285,16 @@ implementation:
 
 ### Search type-ahead suggestion band
 
-The browse shell owns a Spotlight-style suggestion band anchored between the query field and the
-divider (`app-shell/suggestion-band-ui.tsx`). Streaming-app search feel: it answers after ~2
-typed characters, before Enter.
+The browse shell owns a bordered suggestion surface anchored between the query field and the
+divider (`app-shell/suggestion-band-ui.tsx`). It answers after roughly two typed characters,
+before Enter. It has its own surface fill and visible Suggestions label, separate from submitted
+results. The viewport bounds its row window; moving the highlight keeps that row visible.
+The selected preview reuses the suggestion's title, metadata and provenance badge. It makes no
+extra metadata request and loads no poster. Title rows advertise Enter/open and Ctrl+O/details;
+query-history rows advertise Enter/search. The shared row-count helper includes the border,
+heading and three preview rows in browse's result-window budget. Long titles and metadata use
+terminal-cell budgets and preserve complete graphemes. Selecting, typing and dismissing repaint
+immediately; static pending skeletons appear only while a catalog request is outstanding.
 
 Sources and async contract:
 
@@ -287,7 +305,7 @@ Sources and async contract:
   and list/playlist rows (`app/search/search-suggestions.ts` materializes them as
   `SearchSuggestion<SearchResult>` — every row's `value` is a real SearchResult).
 - Remote layer is ONE call into the fast registry catalog for the lane — `services/search/
-suggest-titles.ts` resolves `getForProvider(provider)` first (AniList for anime providers,
+  suggest-titles.ts` resolves `getForProvider(provider)` first (AniList for anime providers,
   same as `searchTitles`), then the registry default (TMDB). It never runs the provider-lane
   search walk, never enriches, never resolves a provider or probes a stream. YouTube mode has
   no registry catalog, so the band shows local rows only — provider-native search is too heavy
@@ -555,6 +573,24 @@ path that can open the surface.
 - decorative animation that delays interaction
 
 ## Playback command input ownership
+
+Shared frame footer controls use the current enabled actions. Their measured regions disappear
+when the frame is locked, a root overlay covers it, or the local command palette opens. A press
+shows a static `▾` and fill until release; dragging or moving the target cancels both feedback
+and activation. Optional idle-motion reports show hover, without requesting new terminal modes.
+Keyboard paths remain visible on each control, and no timer delays activation or fabricates hover.
+
+Loading footer clicks pass through `resolvePlaybackShellInput`, the same capability guards as
+keyboard input: cancellation requires a cancellable operation, Stop uses the player handler,
+and fallback requires an available provider and handler. `/` opens the local palette. Slash-labelled
+provider controls share palette Enter's enabled-command check; an unavailable provider command
+opens its filtered palette and disabled reason. Provider choice therefore remains discoverable
+during resolution without enabling a blocked switch. Recovery adds one guarded Recover control;
+unavailable callback-backed controls are omitted rather than accepting a silent no-op.
+
+Bloom and stage shimmer run only during a visible, actual wait. Recovery, covered loading,
+and healthy playback are steady. Existing `KUNAI_REDUCED_MOTION` and `NO_MOTION` policies keep
+waiting feedback static too. This does not add animation to keyboard or pointer actions.
 
 `LoadingShell` mounts its playback input reader inside `ShellFrame`, below the
 command-mode context provider. While the palette is open, letters and Escape

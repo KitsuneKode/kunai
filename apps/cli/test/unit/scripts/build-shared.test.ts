@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
+import { link, mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -90,6 +92,89 @@ describe("release build shared options", () => {
     expect(npmBundleBuildOptions(root, { minify: true }).format).toBe("esm");
     expect(npmBundleBuildOptions(root, { minify: false }).minify).toBe(false);
   });
+
+  test.each(["direct", "symlinked", "hardlinked-manifest"] as const)(
+    "embeds only the CLI version through a %s root, preserving other manifests and runtime env",
+    async (rootKind) => {
+      const sandboxRoot = await mkdtemp(join(tmpdir(), "kunai-build-manifest-"));
+      const fixtureRoot = join(sandboxRoot, "project");
+      const buildRoot =
+        rootKind === "symlinked" ? join(sandboxRoot, "linked-project") : fixtureRoot;
+      try {
+        await mkdir(fixtureRoot);
+        if (rootKind === "symlinked") {
+          await symlink(fixtureRoot, buildRoot, process.platform === "win32" ? "junction" : "dir");
+        }
+        await mkdir(join(fixtureRoot, "src"));
+        await mkdir(join(fixtureRoot, "other"));
+        await Bun.write(join(fixtureRoot, "tsconfig.json"), "{}");
+        await Bun.write(
+          join(fixtureRoot, "package.json"),
+          JSON.stringify({ version: "1.2.3-test", scripts: { test: "UNUSED_CLI_SCRIPT_MARKER" } }),
+        );
+        if (rootKind === "hardlinked-manifest") {
+          await mkdir(join(fixtureRoot, "manifest-alias"));
+          await link(
+            join(fixtureRoot, "package.json"),
+            join(fixtureRoot, "manifest-alias/package.json"),
+          );
+        }
+        await Bun.write(
+          join(fixtureRoot, "other/package.json"),
+          JSON.stringify({ scripts: { test: "other manifest stays intact" } }),
+        );
+        await Bun.write(
+          join(fixtureRoot, "src/main.ts"),
+          [
+            rootKind === "hardlinked-manifest"
+              ? 'import cli from "../manifest-alias/package.json" with { type: "json" };'
+              : 'import cli from "../package.json" with { type: "json" };',
+            'import other from "../other/package.json" with { type: "json" };',
+            "console.log(JSON.stringify([cli.version, other.scripts.test, process.env.KUNAI_MANIFEST_RUNTIME_TEST]));",
+          ].join("\n"),
+        );
+
+        const result = await Bun.build(npmBundleBuildOptions(buildRoot, { minify: true }));
+        expect(result.success).toBe(true);
+        const bundle = join(fixtureRoot, "dist/kunai.js");
+        const declared = statSync(join(buildRoot, "package.json"), { bigint: true });
+        const imported = statSync(
+          join(
+            fixtureRoot,
+            rootKind === "hardlinked-manifest" ? "manifest-alias/package.json" : "package.json",
+          ),
+          { bigint: true },
+        );
+        const diagnostics = JSON.stringify({
+          buildRoot,
+          fileIds: [`${declared.dev}:${declared.ino}`, `${imported.dev}:${imported.ino}`],
+          inputs: Object.keys(requireBuildMetafile(result.metafile).inputs),
+        });
+        expect(await Bun.file(bundle).text(), diagnostics).not.toContain(
+          "UNUSED_CLI_SCRIPT_MARKER",
+        );
+        const child = Bun.spawn([process.execPath, bundle], {
+          env: { ...process.env, KUNAI_MANIFEST_RUNTIME_TEST: "resolved at runtime" },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        const [code, stdout, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ]);
+        expect(code).toBe(0);
+        expect(stderr).toBe("");
+        expect(JSON.parse(stdout)).toEqual([
+          "1.2.3-test",
+          "other manifest stays intact",
+          "resolved at runtime",
+        ]);
+      } finally {
+        await rm(sandboxRoot, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("disables bunfig autoload for compiled binaries", () => {
     const compile = compileBinaryBuildOptions(root, {

@@ -47,13 +47,10 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // stays registered and last in the order so an upstream revival needs no
   // code change.
   provider: "vidlink",
-  // HiAnime leads the anime lane. AniDB stays registered and in the priority
-  // tail because it still carries the only verified AID cross-link and XML
-  // episode titles, but it is not first: anidb.app answers 503 at the origin,
-  // and ani-cli itself moved off it (pystardust/ani-cli c99221d "replace anidb
-  // with hianime provider", a `fix:`, not a `revert:`). A lane default that
-  // cannot answer is worse than a slower one that can — search only queries
-  // the configured default.
+  // HiAnime leads the anime lane. AniDB was removed from the production roster
+  // when anidb.app began redirecting to an unrelated site (HTTP 302 to
+  // anilab.so, 2026-10-24); ani-cli had already moved to HiAnime (c99221d).
+  // The package remains for fixtures and historic ids — not live resolve.
   animeProvider: "hianime",
   youtubeProvider: "youtube",
   // `createProviderPrioritySnapshot` prepends `provider` to this array, so it
@@ -72,17 +69,16 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // holds the *rest* of the order and must not repeat the lane default.
   // KickAssAnime leads the rest (own catalog, own site, own CDN, soft VTT
   // subs); AnimeGG follows (multi-rung MP4, hardsubbed). AllAnime precedes
-  // the dead pair: anidb.app redirects to an unrelated landing page and the
-  // miruro `/api/secure/pipe` route is gone from their shipped bundle
-  // (2026-10-13) — both stay registered at the tail for a zero-cost revival.
-  animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro", "anidb"],
+  // Miruro at the tail — its `/api/secure/pipe` route is gone from their
+  // shipped bundle (2026-10-13) but the module stays registered for revival.
+  animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
   // Revision 4 reorders dead/degraded tails: Movy is named before Videasy in
   // the series lane and AllAnime precedes AniDB in the anime lane.
-  // Revision 5 demotes the dead anime pair: Miruro's pipe API was removed
-  // upstream and AniDB's domain was repurposed, so both move behind AllAnime.
-  providerDefaultsRevision: 5,
+  // Revision 5 demoted Miruro and AniDB behind AllAnime while both stayed live.
+  // Revision 6 retires AniDB from production and drops it from shipped defaults.
+  providerDefaultsRevision: 6,
   disabledProviders: [],
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },

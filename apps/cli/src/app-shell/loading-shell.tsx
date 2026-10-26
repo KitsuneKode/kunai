@@ -28,7 +28,6 @@ import type { StageRailItem } from "./loading-shell-runtime";
 import { buildMediaPanel } from "./media-panel-model";
 import { MediaPanel } from "./MediaPanel";
 import { MouseTarget } from "./mouse/MouseRegions";
-import { OffscreenFreeze } from "./offscreen-freeze";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import {
   applyPlaybackShellInputEffect,
@@ -36,13 +35,14 @@ import {
   type PlaybackShellInputContext,
 } from "./playback-shell-input";
 import { ProgressBar } from "./primitives/ProgressBar";
+import { useRootContentSuspended } from "./RootContentSuspension";
 import { GlimmerLabel, SakuraBloom } from "./SakuraLoader";
 import { useShellCommandModeOpen } from "./shell-command-mode";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine } from "./shell-primitives";
 import { padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
-import type { LoadingShellState, ShellPanelLine } from "./types";
+import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
@@ -168,9 +168,10 @@ function PlaybackShellInput({
   readonly onToggleMemory: () => void;
 }) {
   const commandModeOpen = useShellCommandModeOpen();
+  const suspended = useRootContentSuspended();
 
   useInput((key, modifiers) => {
-    if (commandModeOpen) return;
+    if (commandModeOpen || suspended) return;
     if ((key === "c" && modifiers.ctrl) || key === "\x03") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
       return;
@@ -414,13 +415,17 @@ export const LoadingShell = React.memo(function LoadingShell({
 
   usePlaybackPosterSurfaceCleanup(state.operation);
   const supervisingPlayback = isPlaybackSupervisionOperation(state.operation);
-  const elapsed = useElapsed(!supervisingPlayback);
+  const rootContentSuspended = useRootContentSuspended();
+  const waitingForPlayback =
+    !supervisingPlayback && !rootContentSuspended && !buildPlaybackRecoveryViewModel(state);
+  const elapsed = useElapsed(waitingForPlayback);
   // Runtime diagnostics are on demand, so hidden health data does not poll or
   // repaint behind ordinary playback feedback.
   const timerPolicy = getLoadingShellTimerPolicy({
     operation: state.operation,
     memoryPanelVisible,
     runtimeHealthVisible: memoryPanelVisible,
+    offscreen: rootContentSuspended,
   });
   const memoryLine = useRuntimeMemoryLine(timerPolicy.memoryRefreshMs);
   const runtimeHealthLine = useRuntimeHealthLine(
@@ -640,7 +645,22 @@ export const LoadingShell = React.memo(function LoadingShell({
     fallbackAvailable: state.fallbackAvailable === true,
   });
 
-  const footerActions = buildLoadingFooterActions(state);
+  const footerActions = [
+    ...(recoveryView?.actions.some((action) => action.id === "recover") && onRecover
+      ? [{ key: "r", label: "recover", action: "recover", primary: true } as const]
+      : []),
+    ...buildLoadingFooterActions(state),
+  ].map((action: FooterAction) => ({
+    ...action,
+    disabled:
+      action.disabled ||
+      (action.action === "command-mode" && (!state.commands?.length || !state.onCommandAction)) ||
+      (action.action === "provider" && !state.onCommandAction) ||
+      (action.action === "source" && !canOpenSourcePicker) ||
+      (action.action === "quality" && !onPickQuality) ||
+      (action.action === "quit" && !(isPlaying ? onStop : state.cancellable && onCancel)) ||
+      (action.action === "fallback" && !onFallback),
+  }));
 
   return (
     <ShellFrame
@@ -662,9 +682,20 @@ export const LoadingShell = React.memo(function LoadingShell({
       footerActions={footerActions}
       footerMode={state.footerMode ?? "detailed"}
       commands={state.commands ?? []}
-      inputLocked={!state.onCommandAction}
       letterKeysHandledExternally
       escapeAction={null}
+      onFooterAction={(action) => {
+        const shiftedFallback = action.key === "⇧F";
+        const effect = resolvePlaybackShellInput(
+          shiftedFallback ? "F" : action.key,
+          { shift: shiftedFallback },
+          playbackInput,
+        );
+        if (effect)
+          applyPlaybackShellInputEffect(effect, playbackInputHandlers, () =>
+            setMemoryPanelVisible((visible) => !visible),
+          );
+      }}
       onResolve={(action) => {
         if (action === "memory") {
           setMemoryPanelVisible((visible) => !visible);
@@ -704,15 +735,14 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {/* Signature ❀ bloom + glimmer stage label, then stage context */}
                 <Box flexDirection="row" marginTop={1} alignItems="flex-start">
                   <Box marginRight={2}>
-                    <OffscreenFreeze
-                      active={timerPolicy.animate}
-                      frozen={timerPolicy.freezeWhenOffscreen}
-                    >
-                      <SakuraBloom
-                        active={timerPolicy.animate && !timerPolicy.freezeWhenOffscreen}
-                        stalled={showStallPrompt}
-                      />
-                    </OffscreenFreeze>
+                    <SakuraBloom
+                      active={
+                        waitingForPlayback &&
+                        timerPolicy.animate &&
+                        !timerPolicy.freezeWhenOffscreen
+                      }
+                      stalled={showStallPrompt}
+                    />
                   </Box>
                   <Box flexDirection="column" flexGrow={1}>
                     <GlimmerLabel
@@ -720,7 +750,11 @@ export const LoadingShell = React.memo(function LoadingShell({
                         state.stageDetail || stageLabel(activeStage),
                         Math.max(12, infoWidth),
                       )}
-                      active={timerPolicy.animate && !timerPolicy.freezeWhenOffscreen}
+                      active={
+                        waitingForPlayback &&
+                        timerPolicy.animate &&
+                        !timerPolicy.freezeWhenOffscreen
+                      }
                       stalled={showStallPrompt}
                     />
                     <Box marginTop={1}>

@@ -7,8 +7,10 @@
 // Keeping release stubs, defines, and graph guards in one place avoids drift
 // between the two outputs (a previous bug: `bun build --compile` could not
 // resolve `react-devtools-core` because it lacked the bundle's stub plugin).
-import { join } from "node:path";
+import { statSync } from "node:fs";
+import { join, resolve } from "node:path";
 
+import { isJsonString } from "@kunai/types";
 import type { BunPlugin } from "bun";
 
 export type BunBuildMetafile = NonNullable<Awaited<ReturnType<typeof Bun.build>>["metafile"]>;
@@ -36,6 +38,32 @@ export function reactDevtoolsStubPlugin(root: string): BunPlugin {
     name: "kunai-release-stubs",
     setup(build) {
       build.onResolve({ filter: /^react-devtools-core$/ }, () => ({ path: stub }));
+    },
+  };
+}
+
+/**
+ * Runtime consumers of the CLI manifest read only its version. A default JSON
+ * import otherwise retains the entire manifest, including development scripts
+ * and dependency lists. Project just this manifest for both release outputs;
+ * other package.json imports keep their ordinary JSON-loader behavior.
+ */
+function cliVersionManifestPlugin(root: string): BunPlugin {
+  return {
+    name: "kunai-cli-version-manifest",
+    setup(build) {
+      // Follow aliases and compare filesystem identity. Path spellings can
+      // differ across Windows junctions, short names, symlinks and hard links.
+      const manifest = statSync(resolve(root, "package.json"), { bigint: true });
+      build.onLoad({ filter: /package\.json$/ }, async ({ path }) => {
+        const loaded = statSync(path, { bigint: true });
+        if (loaded.dev !== manifest.dev || loaded.ino !== manifest.ino) return;
+        const { version } = await Bun.file(path).json();
+        if (!isJsonString(version) || version.length === 0) {
+          throw new Error("[build] CLI package.json must contain a non-empty version");
+        }
+        return { contents: JSON.stringify({ version }), loader: "json" };
+      });
     },
   };
 }
@@ -85,7 +113,7 @@ export function releaseBuildBaseOptions(
     // Kunai reads KUNAI_* and other process.env at runtime — never inline the
     // build machine's environment into published artifacts.
     env: "disable",
-    plugins: [reactDevtoolsStubPlugin(root)],
+    plugins: [reactDevtoolsStubPlugin(root), cliVersionManifestPlugin(root)],
     metafile: true,
     tsconfig: join(root, "tsconfig.json"),
   };

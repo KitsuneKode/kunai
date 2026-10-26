@@ -11,7 +11,7 @@ Use this doc for setup, local execution, and common environment issues. Architec
 
 ## Prerequisites
 
-- Bun `>=1.4.2` for source installs during beta (matches `engines.bun` in the root `package.json`)
+- Bun `>=1.4.4` for source installs during beta (matches `engines.bun` in the root `package.json`)
 - Desktop: `mpv` in `PATH`. Android preview: Termux plus VLC or mpv-android;
   desktop mpv is not installed inside Termux.
 - No poster dependency: every renderer consumes one natively prepared image.

@@ -2,6 +2,9 @@ import { StringDecoder } from "node:string_decoder";
 
 import type { MpvIpcEndpoint } from "./mpv-ipc-endpoint";
 
+// Bound each newline-delimited message before decoding or parsing peer data.
+const MAX_IPC_FRAME_BYTES = 1024 * 1024;
+
 export const MPV_OBSERVED_PROPERTIES = [
   "time-pos",
   "playback-time",
@@ -22,6 +25,8 @@ export const MPV_OBSERVED_PROPERTIES = [
   "filename",
   "media-title",
   "track-list",
+  "sid",
+  "sub-visibility",
 ] as const;
 
 export const MPV_INITIAL_PROPERTIES = ["playback-time", "duration", "percent-pos"] as const;
@@ -181,6 +186,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
   let closed = false;
   let closePromise: Promise<void> | null = null;
   let bufferValue = "";
+  let bufferedBytes = 0;
   const writes: Array<{ bytes: Buffer; offset: number; requestId?: number }> = [];
   let queuedBytes = 0;
   let waitingForDrain = false;
@@ -202,6 +208,8 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
   const markClosed = (error = "session closed", timedOutRequestId?: number) => {
     if (closed) return;
     closed = true;
+    bufferValue = "";
+    bufferedBytes = 0;
     writes.length = 0;
     queuedBytes = 0;
     drainPending(error, timedOutRequestId);
@@ -238,13 +246,23 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
         waitingForDrain = false;
         flushWrites(sock);
       },
-      data(_socket, data) {
-        if (closed) return;
-        bufferValue += decoder.write(data);
-        let nl = bufferValue.indexOf("\n");
-        while (nl !== -1) {
-          const line = bufferValue.slice(0, nl);
-          bufferValue = bufferValue.slice(nl + 1);
+      data(sock, data) {
+        for (let offset = 0; offset < data.byteLength;) {
+          if (closed) return;
+          const newline = data.indexOf(0x0a, offset);
+          const end = newline === -1 ? data.byteLength : newline + 1;
+          const bytes = end - offset;
+          if (bufferedBytes + bytes > MAX_IPC_FRAME_BYTES) {
+            markClosed("mpv IPC frame exceeds 1 MiB");
+            sock.terminate();
+            return;
+          }
+          bufferedBytes += bytes;
+          bufferValue += decoder.write(data.subarray(offset, end));
+          if (newline === -1) return;
+          const line = bufferValue.slice(0, -1);
+          bufferValue = "";
+          bufferedBytes = 0;
           const parsed = parseMpvIpcLine(line);
           if (parsed) {
             dispatchMessage(
@@ -256,7 +274,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
               options.onFileLoaded,
             );
           }
-          nl = bufferValue.indexOf("\n");
+          offset = end;
         }
       },
       close(sock) {

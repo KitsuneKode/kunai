@@ -1,9 +1,10 @@
-import { providerMetadataMatchesLane } from "@/domain/provider-lane";
+import { providerMetadataMatchesLane, shellModeToProviderLane } from "@/domain/provider-lane";
 import type { ProviderLane, ProviderMetadata, ShellMode } from "@/domain/types";
 
 import type { TrackCapability, TrackCapabilityGroup } from "./track-capabilities";
 
 export type ProviderHealthHint = {
+  readonly status?: "healthy" | "degraded" | "down" | "unknown";
   readonly errorClass?: string;
   readonly consecutiveFailures?: number;
   readonly suggestedProviderId?: string;
@@ -25,6 +26,8 @@ export type BuildProviderTrackCapabilitiesInput = {
 function healthDetail(providerId: string, health?: ProviderHealthHint): string | undefined {
   if (!health) return undefined;
   const parts: string[] = [];
+  if (health.status === "down") parts.push("Recent failures · retry available");
+  else if (health.status === "degraded") parts.push("Recent errors");
   if (health.errorClass) {
     parts.push(`last failure: ${health.errorClass}`);
   }
@@ -60,7 +63,15 @@ export function buildProviderTrackCapabilities(
         ...eligible,
         ...input.providers.filter((provider) => provider.id === input.currentProviderId),
       ];
-  const rows: TrackCapability[] = listed.map((provider) => {
+  // Shared providers remain eligible for linked identities, below the mode's
+  // own providers. Stable sorting preserves each lane's configured priority.
+  const lane = shellModeToProviderLane(input.mode);
+  const ordered = [...listed].sort(
+    (left, right) =>
+      Number(!providerMetadataMatchesLane(left, lane)) -
+      Number(!providerMetadataMatchesLane(right, lane)),
+  );
+  const rows: TrackCapability[] = ordered.map((provider) => {
     const selected = provider.id === input.currentProviderId;
     const health = input.healthByProviderId?.[provider.id];
     return {
@@ -70,7 +81,12 @@ export function buildProviderTrackCapabilities(
       selected,
       enabled: !selected,
       detail: healthDetail(provider.id, health),
-      risk: health?.errorClass ? "failed" : "normal",
+      risk:
+        health?.errorClass || health?.status === "down"
+          ? "failed"
+          : health?.status === "degraded"
+            ? "fallback"
+            : "normal",
       reason: selected ? "Current provider" : undefined,
     };
   });

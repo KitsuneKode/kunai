@@ -11,7 +11,9 @@ import {
   resolveDirectStreamSource,
   type DirectStreamInput,
   type DirectStreamPayload,
+  type DirectSubtitleInput,
 } from "../shared/direct-stream-source";
+import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { blockedLiteralTargetReason } from "../shared/stream-reachability";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { vidrockManifest, VIDROCK_PROVIDER_ID } from "./manifest";
@@ -102,6 +104,7 @@ export function resolveVidrockDirect(
 
       const key = await vidrockGcmKey();
       const streams: DirectStreamInput[] = [];
+      const subtitles: DirectSubtitleInput[] = [];
       let ciphertextLanes = 0;
       let decryptFailures = 0;
       for (const [name, server] of Object.entries(
@@ -152,7 +155,38 @@ export function resolveVidrockDirect(
           continue;
         }
 
-        streams.push({ url, serverLabel: name, audioLanguages });
+        // The worker path is opaque: inspect bounded, guarded response bytes
+        // rather than treating every workers.dev URL as an HLS stream.
+        const inventory = await expandHlsMasterInventory({
+          fetch: ctx.fetch?.fetch.bind(ctx.fetch) ?? fetch,
+          resolvesLocally: ctx.fetch?.resolvesLocally,
+          masterUrl: url,
+          headers: {
+            "user-agent": STREAM_USER_AGENT,
+            referer: STREAM_REFERER,
+            origin: STREAM_ORIGIN,
+          },
+          signal: directStreamFetchSignal(ctx.signal, 12_000),
+        });
+        if (isHlsDeadHostStatus(inventory.probe.httpStatus)) continue;
+        if (inventory.isHls) {
+          for (const track of inventory.subtitleTracks) {
+            subtitles.push({ url: track.url, language: track.language, label: track.label });
+          }
+          for (const variant of inventory.variants) {
+            streams.push({
+              url: variant.url,
+              protocol: "hls",
+              qualityHint: variant.qualityLabel,
+              serverLabel: name,
+              audioLanguages: inventory.audioLanguages.length
+                ? inventory.audioLanguages
+                : audioLanguages,
+            });
+          }
+        } else {
+          streams.push({ url, serverLabel: name, audioLanguages });
+        }
       }
       if (streams.length === 0) {
         // Every lane carried ciphertext and every decrypt failed: the blob
@@ -172,6 +206,7 @@ export function resolveVidrockDirect(
 
       const payload: DirectStreamPayload = {
         streams,
+        subtitles,
         // current-Chrome UA + vidrock.net Referer and Origin on every playlist
         // and segment request: the CDN hosts challenge (403/404/CF page) or
         // serve wrong content without them (verified 2026-10-13). These headers

@@ -47,6 +47,22 @@ wrapper, not `runProviderCycle`.
 
 ## Known gaps
 
+- The normalized metadata schema is v4: format IDs survive height/codec/FPS/bitrate
+  labels. Older normalized schemas refetch rather than inventing exact IDs.
+- Connection lanes request the same video with different extractor clients.
+  Availability can differ; a format discovered during metadata extraction is not
+  proof that all clients support it. Exact selectors fail if unavailable instead
+  of silently substituting another video format. Video-only formats use best
+  audio; separate audio-language/bitrate choices are not exposed by this ladder.
+- SponsorBlock categories are forwarded to yt-dlp/mpv. Forwarding and metadata
+  tests do not prove sponsored segments are removed during streaming, and give
+  no Premium-equivalent or ad-free playback guarantee.
+- Desktop speed uses native mpv bindings, documented in the public shortcuts
+  guide. Mobile is the separate terminal entrypoint in `apps/mobile/src/entry.ts`,
+  with player handoff rather than a web layout or desktop mpv controls. Physical
+  Termux/a-Shell input and VLC playback need device evidence through
+  `bun run test:live:mobile-host-proof`; desktop fixtures do not qualify them.
+
 - No live-recorded session evidence in this dossier — behavior notes are from
   source, not wire captures.
 - Playback is delegated to mpv's ytdl hook, so mpv-side yt-dlp freshness is a

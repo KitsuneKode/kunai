@@ -6,11 +6,13 @@
 // carrying a `loading` flag so the renderer can skeleton only the unresolved parts.
 
 import type { TitleDetail, TitleLink } from "@/domain/catalog/title-detail";
+import { resolveContentKind, type ContentKind } from "@/domain/media/content-kind";
 import { sanitizeTerminalText } from "@/domain/text-display";
 import { isFinished } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
 
 export type DetailsSheetSeed = {
+  readonly contentKind?: ContentKind;
   readonly title: string;
   readonly type: "movie" | "series";
   readonly year?: string;
@@ -99,7 +101,15 @@ export function buildDetailsSheet(input: {
   const score = detail?.score ?? seed.score;
   const genres = detail?.genres ?? seed.genres ?? [];
   const status = statusLabel(detail?.status);
-  const typeLabel = seed.type === "movie" ? "Movie" : "Series";
+  const kind = seed.contentKind ?? resolveContentKind(detail ?? { type: seed.type }, "series");
+  const typeLabel =
+    kind === "video"
+      ? "Video"
+      : kind === "anime"
+        ? "Anime"
+        : seed.type === "movie"
+          ? "Movie"
+          : "Series";
   const metaLine = [
     typeLabel,
     seed.year !== undefined ? sanitizeTerminalText(seed.year) : undefined,

@@ -7,7 +7,7 @@ import {
 import { YOUTUBE_METADATA_SCHEMA_VERSION } from "../../src/youtube/youtube-metadata";
 
 describe("normalizeYtDlpVideoInfo", () => {
-  test("maps yt-dlp -J payload into compact v2 metadata", () => {
+  test("maps yt-dlp -J payload into compact current-schema metadata", () => {
     const metadata = normalizeYtDlpVideoInfo(
       {
         id: "dQw4w9WgXcQ",
@@ -48,8 +48,8 @@ describe("normalizeYtDlpVideoInfo", () => {
     expect(
       [...metadata.qualities]
         .sort((left, right) => right.rank - left.rank)
-        .map((entry) => entry.label),
-    ).toEqual(["1080p", "720p", "360p"]);
+        .map((entry) => entry.rank),
+    ).toEqual([1080, 720, 360]);
     expect(metadata.subtitles).toHaveLength(2);
     expect(metadata.subtitles.find((track) => track.language === "en")?.source).toBe("manual");
     expect(metadata.subtitles.find((track) => track.language === "es")?.source).toBe("auto");
@@ -57,7 +57,7 @@ describe("normalizeYtDlpVideoInfo", () => {
 });
 
 describe("parseCachedYoutubeMetadata", () => {
-  test("returns v2 payloads without re-normalizing", () => {
+  test("returns current-schema payloads without re-normalizing", () => {
     const payload = JSON.stringify({
       schemaVersion: YOUTUBE_METADATA_SCHEMA_VERSION,
       videoId: "abc123",
@@ -83,6 +83,16 @@ describe("parseCachedYoutubeMetadata", () => {
 });
 
 describe("parseCachedYoutubeMetadata schema drift", () => {
+  test("a normalized ladder without exact format ids must refetch rather than pin undefined", () => {
+    const broken = JSON.stringify({
+      schemaVersion: YOUTUBE_METADATA_SCHEMA_VERSION,
+      videoId: "abc123",
+      qualities: [{ label: "1080p", rank: 1080 }],
+      subtitles: [],
+    });
+    expect(parseCachedYoutubeMetadata(broken, "abc123")).toBeNull();
+  });
+
   test("a payload from a previous schema version is a cache miss, not a hollow record", () => {
     // Bumping the version for `publishedAt` made every existing entry take the
     // raw-blob path, which reads yt-dlp's snake_case names. A normalized camelCase
@@ -95,7 +105,7 @@ describe("parseCachedYoutubeMetadata schema drift", () => {
       durationSeconds: 754,
       channelTitle: "Some Channel",
       uploadDate: "20240115",
-      qualities: [{ label: "1080p", formatId: "137", height: 1080 }],
+      qualities: [{ label: "1080p", formatId: "137", rank: 1080 }],
       subtitles: [],
     });
 
@@ -121,7 +131,7 @@ describe("parseCachedYoutubeMetadata schema drift", () => {
       title: "Cached title",
       durationSeconds: 754,
       publishedAt: "2024-01-15T00:00:00.000Z",
-      qualities: [{ label: "1080p", formatId: "137", height: 1080 }],
+      qualities: [{ label: "1080p", formatId: "137", rank: 1080 }],
       subtitles: [],
     });
 

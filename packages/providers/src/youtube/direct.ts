@@ -47,7 +47,11 @@ import type {
   YoutubeVideoMetadata,
 } from "./youtube-metadata";
 import { createYoutubeMetadataService } from "./youtube-metadata-service";
-import { buildYtdlFormatSelector, defaultYtdlPlaybackFormat } from "./yt-dlp-metadata";
+import {
+  buildExactYtdlFormatSelector,
+  buildYtdlFormatSelector,
+  defaultYtdlPlaybackFormat,
+} from "./yt-dlp-metadata";
 import { parseYoutubePlayerClients, withYoutubePlayerClient } from "./ytdl-options";
 
 export { YOUTUBE_PROVIDER_ID, youtubeManifest };
@@ -563,7 +567,10 @@ async function resolveYoutube(
         ? playerClients.map((client) => ({
             client,
             sourceId: `source:${YOUTUBE_PROVIDER_ID}:${client}`,
-            label: `YouTube · ${client}`,
+            label:
+              playerClients.indexOf(client) === 0
+                ? "YouTube · primary connection"
+                : `YouTube · fallback connection ${playerClients.indexOf(client)}`,
             extractorArgs: withYoutubePlayerClient(globalYoutubeConfig.extractorArgs, client),
           }))
         : [
@@ -575,17 +582,17 @@ async function resolveYoutube(
             },
           ];
 
-    const streamId = (label: string, client: string | null) =>
+    const streamId = (formatId: string, client: string | null) =>
       client
-        ? `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${client}:${label}`
-        : `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${label}`;
+        ? `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${client}:${formatId}`
+        : `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${formatId}`;
 
     const streams: StreamCandidate[] = lanes.flatMap((lane, laneIndex) =>
       qualityLabels.map((entry) => ({
-        id: streamId(entry.label, lane.client),
+        id: streamId(entry.formatId, lane.client),
         providerId: YOUTUBE_PROVIDER_ID,
         sourceId: lane.sourceId,
-        variantId: `variant:${YOUTUBE_PROVIDER_ID}:${entry.label}`,
+        variantId: `variant:${YOUTUBE_PROVIDER_ID}:${entry.formatId}`,
         url: watchUrl,
         protocol: "youtube" as const,
         container: "unknown" as const,
@@ -597,7 +604,13 @@ async function resolveYoutube(
         confidence: (ytInfo ? 0.95 : 0.85) - laneIndex * 0.05,
         cachePolicy,
         metadata: {
-          ytdlFormat: isLive ? defaultYtdlPlaybackFormat() : buildYtdlFormatSelector(entry.label),
+          ytdlFormat:
+            mappedFormats.length > 0
+              ? buildExactYtdlFormatSelector(entry.formatId, entry.hasAudio)
+              : isLive
+                ? defaultYtdlPlaybackFormat()
+                : buildYtdlFormatSelector(entry.label),
+          formatId: mappedFormats.length > 0 ? entry.formatId : undefined,
           // Read back by the player so each lane asks yt-dlp for its own client
           // rather than the global default.
           extractorArgs: lane.extractorArgs,
@@ -615,20 +628,20 @@ async function resolveYoutube(
 
     const primaryLane = lanes[0];
     const selectedStreamId = streamId(
-      selectedQuality?.label ?? "best",
+      selectedQuality?.formatId ?? "best",
       primaryLane?.client ?? null,
     );
 
     // One variant per quality, listing that quality's stream in every lane so the
     // failover order is preserved when a viewer picks a specific quality.
     const variants: ProviderVariantCandidate[] = qualityLabels.map((entry) => ({
-      id: `variant:${YOUTUBE_PROVIDER_ID}:${entry.label}`,
+      id: `variant:${YOUTUBE_PROVIDER_ID}:${entry.formatId}`,
       providerId: YOUTUBE_PROVIDER_ID,
       sourceId: primaryLane?.sourceId ?? `source:${YOUTUBE_PROVIDER_ID}:youtube`,
       qualityLabel: entry.label,
       qualityRank: entry.rank,
       protocol: "youtube",
-      streamIds: lanes.map((lane) => streamId(entry.label, lane.client)),
+      streamIds: lanes.map((lane) => streamId(entry.formatId, lane.client)),
       confidence: 0.9,
     }));
 
@@ -659,6 +672,9 @@ async function resolveYoutube(
         confidence: 0.95 - laneIndex * 0.05,
         requiresRuntime: "direct-http" as const,
         cachePolicy,
+        metadata: {
+          sourceDetail: `Extractor connection method${lane.client ? ` (${lane.client})` : ""}; same video. Format availability can differ; playback is checked by mpv.`,
+        },
       })),
       streams,
       variants: variants.length > 0 ? variants : undefined,

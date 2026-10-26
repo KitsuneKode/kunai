@@ -1,11 +1,11 @@
+import type { TitleDetail, TitleStatus } from "@/domain/catalog/title-detail";
 // =============================================================================
 // details-view.ts — pure view-model logic for the [i] Details sheet
 //
 // Maps a TitleDetail domain object into presentable rows + strings with no
 // UI or I/O. Pure and independently testable.
 // =============================================================================
-
-import type { TitleDetail, TitleStatus } from "@/domain/catalog/title-detail";
+import { resolveContentKind } from "@/domain/media/content-kind";
 
 import { wrapText } from "./shell-text";
 
@@ -155,7 +155,15 @@ export function resolvePosterUrl(detail: TitleDetail): string | undefined {
  * Example: "Series · 2024 · TV-MA"
  */
 export function buildDetailSubtitle(detail: TitleDetail): string {
-  const typeLabel = detail.type === "movie" ? "Movie" : "Series";
+  const kind = resolveContentKind(detail, "series");
+  const typeLabel =
+    kind === "video"
+      ? "Video"
+      : kind === "anime"
+        ? "Anime"
+        : detail.type === "movie"
+          ? "Movie"
+          : "Series";
   const parts = [typeLabel, detail.year, detail.contentRating].filter(Boolean);
   return parts.join(" · ");
 }

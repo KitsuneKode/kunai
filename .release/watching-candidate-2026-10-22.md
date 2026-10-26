@@ -304,3 +304,93 @@ evidence, not independently repeated by the reviewer. No reviewer source changes
 This UX implementation is ready for local manual testing with the sandbox command
 above. Release publication, hosted platform gates, physical devices and sustained
 live-provider qualification remain outstanding; none is implied by local green.
+
+## October 24 capability recovery — local candidate
+
+Current dirty follow-up is based on `f3e893ce7`; no commit, remote merge or
+publication was performed. This evidence supersedes earlier October 24 partial
+worker runs; it does not replace the platform/live release gates above.
+
+Implemented: real HLS variant expansion for Rivestream, Movy and extensionless
+VidRock manifests; honest adaptive DASH Auto for VidLink; exact YouTube format
+and client selection through both pickers and handoff options; clickable guarded
+footer actions; bounded suggestion previews; native-anime-first provider rows
+with recent-health hints; provider access from failure; and native subtitle
+selection/visibility separate from saved defaults. AniDB is removed from the
+production roster and relay roster, with revision-6 saved-config normalization;
+its package and history identities remain. Videasy and AllManga remain registered.
+
+React Doctor was used for the changed React surfaces. Its branch-wide scan
+still reports warnings in earlier work; this is not a clean React-health claim.
+The newly introduced grapheme formatter allocation was moved out of render.
+
+One fresh GPT-6.1 Sol review found four actionable regressions, all fixed with
+regressions: late preferred subtitles not activating, live observation cloning
+invalidating accepted subtitle picks, unchanged process visibility missing on the
+next file, and YouTube Auto losing intent through picker/coordinator. A separate
+parent regression also covers late Off acknowledgements crossing file generations.
+The original reproduction tests failed before their fixes. The full suite below
+ran after integration. Error-panel captures and the relay count were refreshed;
+the retired production AniDB handoff integration now checks recovery to a live
+registered lane rather than resolving the retired module from production.
+
+| Fresh command                       | Result                                              |
+| ----------------------------------- | --------------------------------------------------- |
+| `bun run test --force`              | 26 tasks, zero cache; 9546 pass, 62 skip, 0 fail    |
+| `bun run typecheck --force`         | 15 tasks pass, zero cache                           |
+| `bun run lint --force`              | 14 tasks pass, zero cache; existing warnings remain |
+| `bun run build --force`             | 10 tasks pass, zero cache, host Linux binary built  |
+| Development bundle                  | 3,174,928 bytes, below unchanged 3,194,880-byte cap |
+| `bun run fmt` / `bun run fmt:check` | pass                                                |
+| Doc paths, frontmatter, coverage    | pass                                                |
+| Opt-in compiled host smoke          | 13 pass, 1 full-release-set skip, 0 fail            |
+| Opt-in real mpv CLI tier            | 1 pass: advancing IPC position and SQLite history   |
+
+Real-terminal browse/preview replay used a fresh isolated profile and file
+credentials, verified by the session doctor, then captured in
+`/tmp/kunai-watching-final-terminal/` and disposed. This is fixture-catalog
+terminal evidence, not live-provider evidence. The real-mpv subtitle lifecycle
+check selected a late English track, preserved explicit Off through another
+attachment, and observed the next file with unchanged visibility in one process:
+`/tmp/kunai-subtitle-lifecycle-real.log`. Its reproducible script is
+`/tmp/kunai-subtitle-lifecycle-proof.ts` (run from the CLI test/agent location for
+repository alias resolution); all storage roots were isolated and removed.
+
+Bounded direct-provider resolve/probe evidence is redacted in
+`/tmp/kunai-provider-live-recovery.jsonl`: VidLink adaptive DASH with 15 subtitle
+tracks; Rivestream 720p/480p with 26 tracks; VidRock a real HLS ladder; Movy
+2160p/1080p/720p/480p. These are title-specific resolve/probe facts, not decoded
+live playback or general provider health. Higher Rivestream wrapper targets
+failed, and an unverified external subtitle service was not added. No media relay
+or weakened verification gate was introduced. External provider availability,
+macOS/Windows, physical mobile behavior, and streaming SponsorBlock removal remain
+unqualified by this pass.
+
+YouTube discovery/trending/history recommendations and channel-upload browsing
+already exist. Filtered channel search still needs a separate recovery pass before
+claiming the full channel journey is qualified. Live TV/sports source intake and
+manga/comic reading remain separate unfinished features, not shipped capabilities.
+Manga was explicitly confirmed as reading, not the AllManga anime adapter.
+
+Manual local testing, with a fresh isolated profile:
+
+```sh
+SANDBOX_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kunai-preview.XXXXXX")" KEEP=1 bun run sandbox
+```
+
+Start with subtitle Off/On in Kunai and mpv, source/quality/Auto reversal,
+clickable footer actions and failure-to-provider recovery. The sandbox prints its
+path; preserve it for repeat testing with `KEEP=1` and that same `SANDBOX_DIR`.
+
+### Delayed subtitle-worker question
+
+The old quota-failed worker's pending question was answered and the superseded
+worker stopped. Its additional finding was independently reproduced: late Wyzie
+completion spread an older stream snapshot, erasing live sid/visibility facts,
+overwriting an explicit Off, and updating a replacement source in the same title.
+The merge now uses the current stream, checks file/source identity and cancellation,
+preserves newer choices and inventory, and guards user-visible attachment feedback.
+Three failing integration cases now pass; the focused file has 11 passing tests.
+The follow-up logs use `/tmp/kunai-late-verified-*`; the fresh forced full suite passes 9546 tests with 62 skips and no failures.
+Forced types/lint, formatting/docs, the 10-task host build and host binary smoke
+(13 pass, 1 full-release-set skip) also pass after this additional change.

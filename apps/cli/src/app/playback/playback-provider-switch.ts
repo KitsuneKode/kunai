@@ -227,7 +227,10 @@ export async function applyProviderPickerSelection(input: {
   if (!pickedProviderId) return { changed: false, recomputeRequested: false };
 
   const state = container.stateManager.getState();
-  const fromProviderId = resolveStreamProviderId(state.stream) ?? state.provider;
+  const fromProviderId =
+    state.playbackStatus === "error"
+      ? state.provider
+      : (resolveStreamProviderId(state.stream) ?? state.provider);
   if (pickedProviderId === fromProviderId) {
     return { changed: false, recomputeRequested: false };
   }
@@ -249,6 +252,24 @@ export async function applyProviderPickerSelection(input: {
   const cancelledInFlight = container.workControl.cancelActive("provider-fallback-picker");
 
   const next = container.stateManager.getState();
+  // The failed resolve has already released its player and is waiting on the
+  // error status. Recompute cannot wake it; a loading transition retries the
+  // same episode with the explicit provider after its caches are invalidated.
+  if (
+    state.playbackStatus === "error" &&
+    next.playbackStatus === "error" &&
+    next.provider === pickedProviderId &&
+    next.providerSwitchSeq === state.providerSwitchSeq + 1 &&
+    next.currentTitle?.id === state.currentTitle?.id &&
+    next.currentEpisode?.season === state.currentEpisode?.season &&
+    next.currentEpisode?.episode === state.currentEpisode?.episode &&
+    next.currentTitle &&
+    next.currentEpisode
+  ) {
+    container.stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
+    container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "loading" });
+    return { changed: true, recomputeRequested: false };
+  }
   const recomputeRequested =
     !cancelledInFlight &&
     isPlaybackSessionActive(next.playbackStatus) &&

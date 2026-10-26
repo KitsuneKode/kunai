@@ -273,3 +273,31 @@ describe("hls rendition tracks (#EXT-X-MEDIA)", () => {
     expect(isHlsDeadHostStatus(undefined)).toBe(false);
   });
 });
+
+test("only HLS document bytes identify an extensionless stream, not a misleading MIME", async () => {
+  const inventory = await expandHlsMasterInventory({
+    masterUrl: "https://worker.example/opaque",
+    fetch: async () =>
+      new Response("<html>\n#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1280x720\n720.m3u8\n</html>", {
+        headers: { "content-type": "application/vnd.apple.mpegurl" },
+      }),
+  });
+  expect(inventory.isHls).toBe(false);
+});
+test("HLS inventory excludes private and non-HTTP variant and subtitle targets", async () => {
+  const inventory = await expandHlsMasterInventory({
+    masterUrl: "https://cdn.example/master.m3u8",
+    fetch: async () =>
+      new Response(`#EXTM3U
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="bad",URI="http://127.0.0.1/private.vtt"
+#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1920x1080
+file:///etc/passwd
+#EXT-X-STREAM-INF:BANDWIDTH=2,RESOLUTION=1280x720
+http://169.254.169.254/private.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=3,RESOLUTION=854x480
+480.m3u8
+`),
+  });
+  expect(inventory.variants.map((v) => v.url)).toEqual(["https://cdn.example/480.m3u8"]);
+  expect(inventory.subtitleTracks).toEqual([]);
+});

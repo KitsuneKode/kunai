@@ -17,7 +17,6 @@ import React, { act } from "react";
 
 import { render } from "../harness/render-capture";
 import { applyStorageRootEnv } from "../helpers/storage-env";
-import { waitUntil as sharedWaitUntil } from "../support/wait-until";
 import { createIsolatedContainer } from "./helpers/isolated-container";
 
 const disposals: (() => void)[] = [];
@@ -142,16 +141,6 @@ async function keys(handle: ReturnType<typeof mount>, ...input: string[]) {
     await act(async () => {
       handle.stdin.enqueue(key);
     });
-}
-async function waitUntil(predicate: () => boolean, label: string) {
-  await sharedWaitUntil(predicate, {
-    label,
-    tick: async (ms) => {
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, ms));
-      });
-    },
-  });
 }
 const down = "\x1b[B";
 const up = "\x1b[A";

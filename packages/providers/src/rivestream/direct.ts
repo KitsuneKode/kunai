@@ -996,12 +996,24 @@ function isRivestreamAbortOrTimeoutError(error: unknown): boolean {
 export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, string> | null {
   let params: URLSearchParams;
   try {
-    params = new URL(sourceUrl).searchParams;
+    const url = new URL(sourceUrl);
+    // Only the observed wrapper may declare playback request headers. A query
+    // on any arbitrary media host is not authorization to override them.
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "proxy.valhallastream.com" ||
+      url.port ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/m3u8"
+    )
+      return null;
+    params = url.searchParams;
   } catch {
     return null;
   }
   const raw = params.get("headers");
-  if (!raw) return null;
+  if (!raw || raw.length > 8192) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -1012,9 +1024,26 @@ export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, s
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof value !== "string") continue;
-    const cleaned = value.replace(/[\r\n]/g, "").trim();
-    if (!name.trim() || !cleaned) continue;
-    headers[name.trim()] = cleaned;
+    const key = name.toLowerCase();
+    if (!["referer", "origin", "user-agent"].includes(key)) continue;
+    // Reject, do not concatenate, injected header lines. Keep transport and
+    // credential headers out of this untrusted query-string declaration.
+    if (
+      value.length > 2048 ||
+      [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+    )
+      continue;
+    const cleaned = value.trim();
+    if (!cleaned) continue;
+    if (key === "referer" || key === "origin") {
+      try {
+        const target = new URL(cleaned);
+        if (target.protocol !== "https:" || target.username || target.password) continue;
+      } catch {
+        continue;
+      }
+    }
+    headers[key] = cleaned;
   }
   return Object.keys(headers).length > 0 ? headers : null;
 }
@@ -1075,14 +1104,14 @@ async function resolveRivestreamProviderCandidate({
   // master host drops out here instead of failing in mpv.
   const expandedSources = await Promise.all(
     rawSources.map(async (source) => {
-      if (!source.url || !source.url.includes(".m3u8")) {
+      if (!source.url || (!source.url.includes(".m3u8") && source.format !== "hls")) {
         return { source, variants: null as readonly HlsLadderVariant[] | null };
       }
       const inventory = await expandHlsMasterInventory({
         resolvesLocally: context.fetch?.resolvesLocally,
         fetch: context.fetch?.fetch.bind(context.fetch) ?? fetch,
         masterUrl: source.url,
-        headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
+        headers: resolveRivestreamStreamHeaders(source.url),
         // The per-candidate controller aborts at candidateTimeoutMs — ladder
         // expansion runs after the prefetch, so a hung master must die with
         // the attempt instead of lingering as an orphan fetch.
@@ -1090,6 +1119,20 @@ async function resolveRivestreamProviderCandidate({
       });
       if (isHlsDeadHostStatus(inventory.probe.httpStatus)) {
         return { source, variants: [] as readonly HlsLadderVariant[] };
+      }
+      for (const track of inventory.subtitleTracks) {
+        subtitles.push({
+          id: `subtitle:${RIVESTREAM_PROVIDER_ID}:${Bun.hash(track.url).toString(36)}`,
+          providerId: RIVESTREAM_PROVIDER_ID,
+          sourceId,
+          url: track.url,
+          language: track.language,
+          label: track.label,
+          format: inferSubtitleFormat(track.url),
+          source: "provider",
+          confidence: 0.9,
+          cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
+        });
       }
       // Only a parsed master expands — the `auto` fallback row would erase the
       // API's own quality label, so any other probe result keeps the source row.
@@ -1099,18 +1142,21 @@ async function resolveRivestreamProviderCandidate({
           inventory.probe.kind === "ok"
             ? inventory.variants
             : (null as readonly HlsLadderVariant[] | null),
+        audioLanguages: inventory.audioLanguages,
+        isHls: inventory.isHls,
       };
     }),
   );
 
-  for (const { source, variants: ladder } of expandedSources) {
+  for (const { source, variants: ladder, audioLanguages, isHls } of expandedSources) {
     if (!source.url || ladder?.length === 0) continue;
     const qualityStr = String(source.quality || source.format || "auto");
-    const protocol = source.url.includes(".m3u8")
-      ? "hls"
-      : source.url.includes(".mpd")
-        ? "dash"
-        : "mp4";
+    const protocol =
+      isHls || ladder || source.url.includes(".m3u8")
+        ? "hls"
+        : source.url.includes(".mpd")
+          ? "dash"
+          : "mp4";
     const streamHeaders = resolveRivestreamStreamHeaders(source.url);
     const normalizedAudioLanguage =
       inferRivestreamAudioLanguage(provider, qualityStr) ??
@@ -1161,7 +1207,11 @@ async function resolveRivestreamProviderCandidate({
         url: row.url,
         protocol,
         container: protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4",
-        audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
+        audioLanguages: audioLanguages?.length
+          ? audioLanguages
+          : normalizedAudioLanguage
+            ? [normalizedAudioLanguage]
+            : undefined,
         qualityLabel,
         qualityRank,
         languageEvidence,

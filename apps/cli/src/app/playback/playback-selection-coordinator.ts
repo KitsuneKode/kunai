@@ -95,10 +95,10 @@ export class PlaybackSelectionCoordinator {
       episode: episodeQuarantined ? null : episodeSelection,
       titleSourceId: titleQuarantined ? null : titleSourceId,
     });
-    return {
-      sourceId: resolved.sourceId,
-      streamId: resolved.streamId,
-    };
+    const selection = { sourceId: resolved.sourceId, streamId: resolved.streamId };
+    if (!episodeQuarantined && episodeSelection?.automaticQuality)
+      return { ...selection, automaticQuality: true };
+    return selection;
   }
 
   async applyEpisodeSelection(

@@ -23,6 +23,36 @@ export type SubtitleAttachmentResult =
     };
 
 export class PersistentSubtitleManager {
+  constructor(private readonly isSelectionEnabled: () => boolean = () => true) {}
+
+  private observedSubtitleId: number | undefined;
+  private explicitlyOff = false;
+
+  noteSelectedSubtitle(id: number, explicit = false): void {
+    if (id === 0 && (explicit || (this.observedSubtitleId ?? 0) > 0)) this.explicitlyOff = true;
+    if (id > 0) this.explicitlyOff = false;
+    this.observedSubtitleId = id;
+  }
+  resetSelectionObservation(): void {
+    this.observedSubtitleId = undefined;
+    this.explicitlyOff = false;
+  }
+  private selectionEnabled(): boolean {
+    return this.observedSubtitleId !== undefined && this.observedSubtitleId > 0
+      ? true
+      : !this.explicitlyOff && this.isSelectionEnabled();
+  }
+
+  shouldSelectLatePrimary(): boolean {
+    return this.selectionEnabled() && !(this.observedSubtitleId && this.observedSubtitleId > 0);
+  }
+
+  private async preserveOff(ipc: MpvIpcSession, isCurrent: () => boolean): Promise<void> {
+    if (isCurrent() && !this.selectionEnabled()) {
+      await ipc.send(["set_property", "sid", "no"], 1_000);
+    }
+  }
+
   private lastTrackList: unknown = null;
   private externalSubtitleIds: number[] = [];
 
@@ -73,7 +103,13 @@ export class PersistentSubtitleManager {
     if (safePrimary) {
       const primary = describeSubtitleTrackForMpv(safePrimary, subtitleTracks);
       const result = await ipcSession.send(
-        ["sub-add", safePrimary, "select", primary.title, primary.language],
+        [
+          "sub-add",
+          safePrimary,
+          this.selectionEnabled() ? "select" : "auto",
+          primary.title,
+          primary.language,
+        ],
         MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
       );
       if (!result.ok || !isCurrent()) return;
@@ -91,6 +127,7 @@ export class PersistentSubtitleManager {
       if (!result.ok || !isCurrent()) return;
     }
 
+    await this.preserveOff(ipcSession, isCurrent);
     const attachedCount = (safePrimary ? 1 : 0) + additionalTracks.length;
     if (attachedCount > 0 && isCurrent()) {
       onAttached?.(attachedCount);
@@ -100,8 +137,10 @@ export class PersistentSubtitleManager {
   async attachSubtitles(
     ipcSession: MpvIpcSession | null,
     attachment: PersistentLateSubtitleAttachment,
+    isCurrent: () => boolean = () => true,
+    selectPrimary = true,
   ): Promise<SubtitleAttachmentResult> {
-    if (!ipcSession) return { status: "no-ipc", attachedCount: 0 };
+    if (!ipcSession || !isCurrent()) return { status: "no-ipc", attachedCount: 0 };
     let attached = 0;
     const safePrimary =
       attachment.primarySubtitle && isAllowedMpvUrl(attachment.primarySubtitle, "remote")
@@ -118,18 +157,29 @@ export class PersistentSubtitleManager {
     if (safePrimary) {
       const primary = describeSubtitleTrackForMpv(safePrimary, attachment.subtitleTracks);
       const result = await ipcSession.send(
-        ["sub-add", safePrimary, "select", primary.title, primary.language],
+        [
+          "sub-add",
+          safePrimary,
+          selectPrimary && this.selectionEnabled() ? "select" : "auto",
+          primary.title,
+          primary.language,
+        ],
         MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
       );
+      if (!isCurrent()) return { status: "none-requested", attachedCount: 0 };
+      await this.preserveOff(ipcSession, isCurrent);
       if (result.ok) attached += 1;
       else return { status: "sub-add-failed", attachedCount: attached, failedTrack: "primary" };
     }
 
     for (const track of additionalTracks) {
+      if (!isCurrent()) return { status: "none-requested", attachedCount: 0 };
       const result = await ipcSession.send(
         ["sub-add", track.url, "auto", track.display ?? "", track.language ?? ""],
         MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
       );
+      if (!isCurrent()) return { status: "none-requested", attachedCount: 0 };
+      await this.preserveOff(ipcSession, isCurrent);
       if (result.ok) attached += 1;
       else return { status: "sub-add-failed", attachedCount: attached, failedTrack: "additional" };
     }

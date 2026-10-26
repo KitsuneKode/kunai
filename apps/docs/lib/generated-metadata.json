@@ -8,7 +8,6 @@
     "vidrock",
     "rivestream",
     "movy",
-    "anidb",
     "allanime",
     "hianime",
     "miruro",
@@ -97,23 +96,6 @@
       ]
     },
     {
-      "id": "anidb",
-      "displayName": "AniDB",
-      "description": "anidb.app catalog and streams — ani-cli v5's source",
-      "domain": "anidb.app",
-      "recommended": true,
-      "mediaKinds": ["anime"],
-      "capabilities": ["search", "episode-list", "source-resolve", "quality-ranked"],
-      "notes": [
-        "Parity with ani-cli v5.0 (2026-08-01): browse search, /api/frontend anime episodes + episode languages, embed → HLS master.",
-        "Episode metadata follows the explicit anidb.app → official anidb.net AID cross-link, then reads official XML; AniList/Jikan fill missing fields and still artwork.",
-        "Bun/fetch often gets Cloudflare 403 on anidb.app HTML/API; production path uses curl with a Chrome UA (dossier-proven).",
-        "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained. Ladder expansion uses the same curl fallback as metadata so a relay miss does not collapse to one auto row.",
-        "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it. No independently addressable subtitle track has been observed — do not advertise hardsub.",
-        "Relay-safe for metadata RPC (/rpc/anidb). Video always stays direct; the relay has no media route."
-      ]
-    },
-    {
       "id": "allanime",
       "displayName": "AllManga",
       "description": "Anime episodes in sub and dub — the ani-cli parity source",
@@ -144,7 +126,7 @@
         "quality-ranked"
       ],
       "notes": [
-        "Parity with ani-cli v5.1.5: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
+        "Reference ani-cli v5.1.6 (separate HLS audio remains in the master for mpv): /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
         "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
         "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
         "Each season is a separate provider-native slug; there is no in-provider season routing.",
@@ -468,35 +450,35 @@
       "id": "toggle-autoplay",
       "label": "Pause Autoplay",
       "aliases": ["autoplay", "pause-autoplay", "resume-autoplay"],
-      "description": "Temporarily pause or resume autoplay for this playback chain"
+      "description": "Pause or resume this playback chain’s autoplay"
     },
     {
       "id": "toggle-autoskip",
       "label": "Pause Autoskip",
       "aliases": ["autoskip", "skip", "pause-autoskip", "resume-autoskip"],
-      "description": "Temporarily pause or resume auto-skip for this session"
+      "description": "Pause or resume auto-skip for this session"
     },
     {
       "id": "stop-after-current",
       "label": "Stop After Current",
       "aliases": ["stop-after", "stop-after-current", "one-more", "finish-episode"],
-      "description": "Stop after current episode instead of continuing"
+      "description": "Finish this episode, then stop"
     },
     {
       "id": "replay",
       "label": "Replay",
       "aliases": ["replay", "restart"],
-      "description": "Restart the current item from the beginning without refreshing the source"
+      "description": "Restart with the same source"
     },
     {
       "id": "recover",
       "label": "Recover Playback",
       "aliases": ["recover", "fix", "repair", "retry-playback"],
-      "description": "Refresh the current stream and resume this episode after a playback issue"
+      "description": "Refresh the stream and resume playback"
     },
     {
       "id": "recompute",
-      "label": "Recompute Sources",
+      "label": "Refresh Sources",
       "aliases": [
         "recompute",
         "refresh-sources",
@@ -507,49 +489,49 @@
         "all-servers",
         "probe-sources"
       ],
-      "description": "Re-resolve on the current provider only: bypass stream cache and provider memory, then probe all VidKing sources"
+      "description": "Refresh this provider’s sources, ignoring cached results"
     },
     {
       "id": "fallback",
       "label": "Fallback Provider",
       "aliases": ["fallback", "try-next-provider", "next-provider", "f"],
-      "description": "Stop waiting on the current provider and try the next compatible provider"
+      "description": "Try the next compatible provider"
     },
     {
       "id": "play-local",
       "label": "Play Downloaded Copy",
       "aliases": ["play-local", "local", "offline-play", "play-offline"],
-      "description": "Switch the current episode to the verified offline download"
+      "description": "Play the verified download"
     },
     {
       "id": "watch-online",
       "label": "Watch Online",
       "aliases": ["watch-online", "online", "stream-online"],
-      "description": "Switch the current episode back to online provider streaming"
+      "description": "Switch back to online playback"
     },
     {
       "id": "source",
       "label": "Source / Servers",
       "aliases": ["source", "sources", "mirror", "server", "servers", "tracks"],
-      "description": "Open the tracks panel at the source / servers section"
+      "description": "Choose a source in Tracks"
     },
     {
       "id": "quality",
       "label": "Quality",
       "aliases": ["quality", "qualities", "variant"],
-      "description": "Open the tracks panel at the quality section"
+      "description": "Choose quality in Tracks"
     },
     {
       "id": "audio",
       "label": "Audio",
       "aliases": ["audio", "dub", "language"],
-      "description": "Open the tracks panel at the audio section"
+      "description": "Choose audio in Tracks"
     },
     {
       "id": "subtitle",
       "label": "Subtitles",
       "aliases": ["subtitle", "subtitles", "subs", "captions", "cc"],
-      "description": "Open the tracks panel at the subtitles section"
+      "description": "Choose subtitles or Off in Tracks"
     },
     {
       "id": "memory",
@@ -561,13 +543,13 @@
       "id": "mark-anime",
       "label": "Mark as Anime",
       "aliases": ["mark-anime", "set-anime", "is-anime"],
-      "description": "Reclassify the current title as anime in your history (fixes a wrong label)"
+      "description": "Correct this title’s history label to anime"
     },
     {
       "id": "mark-series",
       "label": "Mark as Series",
       "aliases": ["mark-series", "set-series", "not-anime"],
-      "description": "Reclassify the current title as series in your history (fixes a wrong label)"
+      "description": "Correct this title’s history label to series"
     },
     {
       "id": "share",
@@ -591,19 +573,19 @@
       "id": "follow",
       "label": "Follow Releases",
       "aliases": ["follow", "track", "track-releases"],
-      "description": "Track future releases and notices for the current title"
+      "description": "Follow future releases for this title"
     },
     {
       "id": "unfollow",
       "label": "Unfollow Releases",
       "aliases": ["unfollow", "untrack", "stop-following"],
-      "description": "Stop explicit release tracking without muting the title"
+      "description": "Stop following this title’s releases"
     },
     {
       "id": "mute",
       "label": "Mute Releases",
       "aliases": ["mute", "mute-title", "mute-releases", "hide-releases"],
-      "description": "Stop release notices for the current title"
+      "description": "Mute this title’s release notices"
     },
     {
       "id": "mark-watched",
@@ -621,13 +603,13 @@
       "id": "mark-season-watched",
       "label": "Mark Season Watched",
       "aliases": ["mark-season-watched", "season-watched", "mark-season"],
-      "description": "Mark every episode in the current season up to the current episode as watched"
+      "description": "Mark this season through the current episode watched"
     },
     {
       "id": "mark-up-to-episode",
       "label": "Mark Up To Episode",
       "aliases": ["mark-up-to-episode", "mark-through", "mark-through-episode"],
-      "description": "Pick an episode and mark the whole season through that episode as watched"
+      "description": "Mark this season through a chosen episode watched"
     },
     {
       "id": "watch",
@@ -663,13 +645,13 @@
       "id": "clear-cache",
       "label": "Clear Cache",
       "aliases": ["clear-cache", "purge-cache", "flush-cache"],
-      "description": "Clear stream URL cache (and optionally provider failure memory)"
+      "description": "Clear cached streams; optionally reset provider errors"
     },
     {
       "id": "reset-provider-health",
       "label": "Reset Provider Health",
       "aliases": ["reset-provider-health", "clear-provider-memory", "forget-provider-failures"],
-      "description": "Forget provider failures so auto-fallback can retry down providers"
+      "description": "Reset provider errors so fallback can retry"
     },
     {
       "id": "clear-history",
@@ -687,7 +669,7 @@
       "id": "report-issue",
       "label": "Report Issue",
       "aliases": ["report-issue", "issue", "bug-report"],
-      "description": "Open the GitHub issue page with diagnostics guidance"
+      "description": "Report an issue with diagnostics"
     },
     {
       "id": "watchlist",
@@ -705,13 +687,13 @@
       "id": "playlists",
       "label": "Playlists",
       "aliases": ["playlists", "playlist", "pl", "lists"],
-      "description": "View and manage durable playlists"
+      "description": "Manage saved playlists"
     },
     {
       "id": "up-next",
       "label": "Up Next",
       "aliases": ["up-next", "upnext", "queue", "queue-playlist"],
-      "description": "View and manage the current playback order"
+      "description": "Manage Up Next"
     },
     {
       "id": "playlist-add",
@@ -723,7 +705,7 @@
       "id": "queue-season",
       "label": "Queue Rest of Season",
       "aliases": ["queue-season", "season-queue", "queue-rest-season"],
-      "description": "Queue remaining episodes in the current season"
+      "description": "Add remaining season episodes to Up Next"
     },
     {
       "id": "stats",
@@ -741,13 +723,13 @@
       "id": "sync-connect-anilist",
       "label": "Connect AniList",
       "aliases": ["connect-anilist", "anilist-connect", "anilist"],
-      "description": "Link your AniList account to sync watch progress"
+      "description": "Link AniList for watch progress sync"
     },
     {
       "id": "sync-connect-tmdb",
       "label": "Connect TMDB",
       "aliases": ["connect-tmdb", "tmdb-connect", "tmdb"],
-      "description": "Link your TMDB account to sync watchlist and favourites"
+      "description": "Link TMDB for watchlist and favourite sync"
     },
     {
       "id": "sync-disconnect",
@@ -1057,7 +1039,7 @@
     }
   ],
   "runtimeBaseline": {
-    "bun": "1.4.2",
+    "bun": "1.4.4",
     "mpv": "0.38+"
   },
   "shortcuts": [

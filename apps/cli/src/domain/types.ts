@@ -119,7 +119,16 @@ export interface EpisodePickerOption {
   readonly totalEpisodeCount?: number;
 }
 
+export type PlaybackSubtitleObservation = {
+  readonly id: number;
+  readonly visible: boolean;
+  readonly language?: string;
+  readonly title?: string;
+};
+
 export interface StreamInfo {
+  /** File-local player observation; never provider extraction evidence. */
+  readonly playbackSubtitle?: PlaybackSubtitleObservation;
   /** Presentation authority only; local player access still requires a validated LocalPlaybackSource. */
   readonly playbackSourceKind?: "local";
   readonly url: string;

@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-10-22
+Last updated: 2026-10-26
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -32,7 +32,11 @@ so it is not re-derived — not because it is scheduled.
 Current execution: [watching release candidate](./2026-10-22-watching-release-candidate.md)
 
 Watching UX follow-up: [first-run, playback, Tracks and shell coherence](./2026-10-23-watching-ux-coherence.md).
-has a local combined implementation of safety, provider, timing, mouse and playback work.
+Watching capability recovery: [provider inventories, playback truth and discoverable controls](./2026-10-24-watching-capability-recovery.md).
+Integration and test safety: [analytics isolation, review reconciliation and checkout recovery](./2026-10-25-integration-and-test-safety.md).
+
+The watching candidate has a local combined implementation of safety, provider,
+timing, mouse and playback work.
 Independent review found a cancellation race, now fixed locally. Release
 integration and external qualification remain open; see its
 [candidate evidence and remaining gates](../.release/watching-candidate-2026-10-22.md).

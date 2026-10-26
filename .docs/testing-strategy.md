@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-23"
+lastReviewed: "2026-10-25"
 ---
 
 # Kunai — Testing Strategy
@@ -44,13 +44,20 @@ Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integratio
 
 Use `storageRootEnv()` from `apps/cli/test/helpers/storage-env.ts` for every
 throwaway profile. It redirects HOME/XDG/APPDATA and forces
-`KUNAI_CREDENTIAL_BACKEND=file`: native credential vault entries belong to the
+`KUNAI_CREDENTIAL_BACKEND=file` and `DO_NOT_TRACK=1`: native credential vault entries belong to the
 OS account and are not isolated by a different HOME. `createCredentialVault()`
 consumes that existing override before probing an OS backend. The common
 compiled/agent profile harness inherits it, and `applyStorageRootEnv()` restores
-the prior override with the other environment values. Backend-specific tests
+the prior overrides with the other environment values. The CLI test preload
+also forces DNT, so local test runs with `CI=0` cannot opt into production
+analytics. A throwaway profile and a fixed UUID alone do not prevent production
+install counts. Backend-specific tests
 must use explicit injected environment and spawn ports; they must never probe
-the developer's credential store.
+the developer's credential store. Installer fixture containment checks use the
+target platform's path rules. Reject a path when `relative(root, path)` is
+absolute (including Windows cross-drive escapes), starts with a parent segment,
+or names a sibling path. The fixture
+root itself and child names beginning with dots remain valid.
 
 1. Start with the feature map and the owning test file. Use
    `bun run --cwd apps/cli test:file test/unit/<area>/<file>.test.ts` for a focused
@@ -58,9 +65,9 @@ the developer's credential store.
    `bun test` runs with the developer's real home, so a test that mounts a shell
    or boots a service writes the real profile unless it isolates itself
    (`BrowseShell` saves a submitted query to search history, for one). Isolate
-   with `applyStorageRootEnv` from `test/helpers/storage-env.ts`. To check a
-   suspect test, compare the real profile's mtime and hash around a multi-file
-   run; a lone file can exit before the async write lands and look clean.
+   with `applyStorageRootEnv` from `test/helpers/storage-env.ts`. Check resolved
+   config/data/cache containment against the temporary root before loading a
+   profile; do not read the real profile to test whether isolation worked.
 2. Change the failure trigger deliberately: deferred resolve/reject, cancellation,
    injected clock, or fake timer. A sleep is not an acknowledgement. A generous
    test timeout bounds a hang; it does not prove synchronization.
@@ -83,7 +90,7 @@ For live CLI behavior use the repo's `verify-kunai` skill and the held-session
 `doctor` command. It checks liveness, interactive chrome, contained profile
 paths, file credentials and no analytics opt-in; it does not verify source
 revision, provider availability or player progress. The launcher shell-quotes
-literal environment/path values and refuses storage/vault overrides. `--command`
+literal environment/path values and refuses storage/vault/DNT overrides. `--command`
 remains a developer-controlled shell fragment of extra main.ts arguments.
 Reports belong outside the temporary profile. Failed interactive startup saves
 a diagnostic report outside the profile and stops only its created session;
@@ -91,6 +98,44 @@ a diagnostic report outside the profile and stops only its created session;
 before any inspector read or cleanup; deletion additionally requires the
 profile directory to belong to the requested session name. Tests for these commands live in the
 separate `bun run test:agent` tier, not the default unit/integration suites.
+
+For manual setup/Settings tests, use `bun run sandbox -- --setup` (or
+`scripts/dev-sandbox.sh --setup`). The launcher forces DNT even with `KEEP=1`
+and an enabled fixture profile. A test install launched outside the harness
+must supply `DO_NOT_TRACK=1` and all storage roots explicitly; the runtime
+cannot distinguish an arbitrary manual test install from a real user.
+
+### Analytics fixture smoke
+
+Consent tests may inject `env: {}` only alongside isolated config and
+mocked/local ingest delivery. Never pair that bypass with a production fetch.
+The regular CLI-to-ingest integration test uses the real ingest and an
+in-memory store without any network request.
+
+The opt-in analytics smoke now accepts only an isolated numeric-loopback ingest
+fixture with a disposable datastore:
+
+```sh
+KUNAI_LIVE_ANALYTICS=1 KUNAI_ANALYTICS_TEST_URL=http://127.0.0.1:3000/api/ping bun run test:live:analytics
+```
+
+IPv6 loopback (`http://[::1]:3000/api/ping`) is also supported. Start the fixture
+separately; this command does not provision a server or database. Never use a
+proxy to production or production database credentials. The smoke requires an
+explicit port, refuses remote/default URLs and redirects before sending its
+synthetic identity, and awaits a `204` plus a `400` for the sixth-key probe.
+It does not validate production DNS, deployed ingest, startup latency or counts.
+Its regression tests replace fetch before importing the actual smoke, so even
+testing rejection of a production URL cannot hit production.
+
+The privacy regressions cover test preload, storage-root helpers, installer
+environment propagation, enabled fixture profiles and local smoke restrictions
+with `CI=0`. Hosted jobs should set `DO_NOT_TRACK=1` at the job level as well,
+especially when launching installed binaries or shell/Docker runners outside
+Bun's test preload. All hosted workflows also set `DO_NOT_TRACK=1`; Turbo's
+`globalPassThroughEnv` preserves it in strict tasks. The workflow inheritance
+and a real strict-mode task are regression-tested with `CI=0`. That supplements the runtime's CI gate and the helper
+guards; it does not replace config isolation.
 
 The debounce contract in
 `apps/cli/test/unit/app-shell/settle-value.test.tsx` advances Bun fake timers inside
@@ -589,7 +634,8 @@ Rules that make the loop trustworthy:
 
 - every claim cites captured evidence — no quote, no verification
 - the profile is always a throwaway; `KUNAI_CONFIG_DIR` is never an override
-- analytics stays off and `dispose()` asserts no `installId` was minted
+- analytics stays off; `assertPrivacyClean()` rejects a present `installId`
+  without echoing its value
 - a frame that renders before its input handlers attach is real UX truth —
   wait on the surface (`<wait:>`), don't retry keys blindly
 - a frame that says "applied" while the file stays unchanged is a deferred

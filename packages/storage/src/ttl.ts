@@ -34,5 +34,6 @@ export function getExpiresAt(ttlClass: CacheTtlClass, now = new Date()): string 
 }
 
 export function isExpired(expiresAt: string, now = new Date()): boolean {
-  return Date.parse(expiresAt) <= now.getTime();
+  const timestamp = Date.parse(expiresAt);
+  return !Number.isFinite(timestamp) || timestamp <= now.getTime();
 }

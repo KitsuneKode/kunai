@@ -47,6 +47,7 @@ export function ShellFrame({
   letterKeysHandledExternally = false,
   escapeAction,
   onUnhandledInput,
+  onFooterAction,
   onResolve,
   localTitles,
   onTitlePick,
@@ -69,6 +70,7 @@ export function ShellFrame({
   inputLocked?: boolean;
   letterKeysHandledExternally?: boolean;
   escapeAction?: ShellAction | null;
+  onFooterAction?: (action: FooterAction) => void;
   onUnhandledInput?: (input: string, key: ShellFrameInputKey) => void;
   onResolve: (action: ShellAction) => void;
   /** Local title source — consulted once per palette open for the JUMP TO section. */
@@ -97,6 +99,7 @@ export function ShellFrame({
     highlightedIndex,
     titleMatches,
     palettePointer,
+    activateFooterAction,
   } = useShellInput({
     footerActions,
     commands,
@@ -107,6 +110,7 @@ export function ShellFrame({
     localTitles,
     onTitlePick,
     onPaletteCommand,
+    onFooterAction,
   });
 
   useInput((input, key) => {
@@ -174,6 +178,7 @@ export function ShellFrame({
           mode={footerMode}
           commandMode={commandMode && !inputDisabled}
           terminalWidth={cols}
+          onActivate={!inputDisabled && !commandMode ? activateFooterAction : undefined}
         />
       </Box>
     </Box>

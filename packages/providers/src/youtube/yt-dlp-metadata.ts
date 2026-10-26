@@ -1,3 +1,5 @@
+import { isJsonString } from "@kunai/types";
+
 import { youtubeQualityHeight } from "./quality-selection";
 import { spawnYtDlpWithTimeout, type YtDlpSpawn } from "./spawn-ytdlp";
 import { buildYoutubeYtdlCliArgs } from "./ytdl-options";
@@ -10,6 +12,7 @@ export type YtDlpFormatInfo = {
   readonly vcodec?: string;
   readonly acodec?: string;
   readonly tbr?: number;
+  readonly fps?: number;
   readonly format?: string;
   readonly protocol?: string;
   readonly url?: string;
@@ -89,23 +92,64 @@ export function buildYtdlFormatSelector(qualityLabel?: string): string {
   return `bv*[height<=?${height}]+ba/bv*[height<=?${height}]/${defaultYtdlPlaybackFormat()}`;
 }
 
+/** Pin a discovered rendition. Never silently replace a missing exact format with best. */
+export function buildExactYtdlFormatSelector(formatId: string, hasAudio?: boolean): string {
+  if (!/^[\w.-]+$/.test(formatId)) throw new Error("Invalid YouTube format id");
+  if (hasAudio === true) return formatId;
+  if (hasAudio === false) return `${formatId}+ba`;
+  return `${formatId}+ba/${formatId}`;
+}
+
+function codecLabel(codec: string | undefined): string | undefined {
+  if (!codec || codec === "none") return undefined;
+  if (/^avc/i.test(codec)) return "H.264";
+  if (/^(hev|hvc)/i.test(codec)) return "HEVC";
+  if (/^vp0?9/i.test(codec)) return "VP9";
+  if (/^av0?1/i.test(codec)) return "AV1";
+  return codec;
+}
+
 export function mapYtDlpFormatsToQualityLabels(
   formats: readonly YtDlpFormatInfo[] | undefined,
-): readonly { readonly label: string; readonly rank: number; readonly formatId: string }[] {
+): readonly import("./youtube-metadata").YoutubeVideoQuality[] {
   const videoFormats = (formats ?? []).filter(
-    (format) => typeof format.height === "number" && format.height > 0 && format.vcodec !== "none",
+    (format): format is YtDlpFormatInfo & { readonly height: number; readonly format_id: string } =>
+      Number.isFinite(format.height) &&
+      (format.height ?? 0) > 0 &&
+      isJsonString(format.vcodec) &&
+      format.vcodec !== "none" &&
+      isJsonString(format.format_id) &&
+      /^[\w.-]+$/.test(format.format_id),
   );
-  const seen = new Set<number>();
-  const ranked: { readonly label: string; readonly rank: number; readonly formatId: string }[] = [];
-  for (const format of videoFormats.sort((a, b) => (b.height ?? 0) - (a.height ?? 0))) {
-    const height = format.height ?? 0;
-    if (seen.has(height)) continue;
-    seen.add(height);
-    ranked.push({
-      label: `${height}p`,
-      rank: height,
-      formatId: format.format_id ?? `${height}p`,
-    });
-  }
-  return ranked;
+  // Prefer height, then frame rate and bitrate; id breaks ties deterministically.
+  videoFormats.sort(
+    (a, b) =>
+      (b.height ?? 0) - (a.height ?? 0) ||
+      (b.fps ?? 0) - (a.fps ?? 0) ||
+      (b.tbr ?? 0) - (a.tbr ?? 0) ||
+      (a.format_id ?? "").localeCompare(b.format_id ?? ""),
+  );
+  const seen = new Set<string>();
+  return videoFormats.flatMap((format) => {
+    const formatId = format.format_id;
+    if (seen.has(formatId)) return [];
+    seen.add(formatId);
+    const height = format.height;
+    const fps =
+      Number.isFinite(format.fps) && (format.fps ?? 0) > 0 ? `${format.fps}fps` : undefined;
+    const bitrate =
+      Number.isFinite(format.tbr) && (format.tbr ?? 0) > 0
+        ? `${Number(((format.tbr ?? 0) / 1000).toFixed(2))} Mb/s`
+        : undefined;
+    return [
+      {
+        label: [`${height}p`, codecLabel(format.vcodec), fps, bitrate, `#${formatId}`]
+          .filter(Boolean)
+          .join(" · "),
+        rank: height,
+        formatId,
+        hasAudio: format.acodec ? format.acodec !== "none" : undefined,
+      },
+    ];
+  });
 }

@@ -1,4 +1,5 @@
 import { hardSubInventory, selectedHardSubLanguage } from "@/domain/subtitle-policy";
+import { sanitizeTerminalText, truncateLine } from "@/domain/text-display";
 import type { StreamInfo } from "@/domain/types";
 import { buildYoutubeSubtitlePreferencePlan, isYoutubeWatchUrl } from "@kunai/providers/youtube";
 
@@ -37,6 +38,21 @@ export function projectPlaybackSubtitleState(
   subLang: string,
   options: PlaybackSubtitleStateOptions = {},
 ): PlaybackSubtitleState {
+  const hardSub = stream ? selectedHardSubLanguage(stream) : undefined;
+  if (hardSub)
+    return { kind: "selected", label: `hardsub ${hardSub}`, tone: "success", detail: hardSub };
+  const live = stream?.playbackSubtitle;
+  if (live) {
+    if (!live.visible) return { kind: "disabled", label: "subtitles hidden in mpv", tone: "info" };
+    if (live.id === 0) return { kind: "disabled", label: "subtitles off in mpv", tone: "info" };
+    const track = truncateLine(sanitizeTerminalText(live.title || live.language || ""), 48);
+    return {
+      kind: "selected",
+      label: track ? `subtitle playing · ${track}` : "subtitle playing",
+      tone: "success",
+    };
+  }
+  if (subLang === "none") return { kind: "disabled", label: "subtitles disabled", tone: "info" };
   if (options.attached) {
     return { kind: "attached", label: "subtitle attached", tone: "success" };
   }
@@ -61,20 +77,6 @@ export function projectPlaybackSubtitleState(
     if (plan.statusHint) {
       return { kind: "available", label: plan.statusHint, tone: "success" };
     }
-  }
-
-  const selectedHardSub = stream ? selectedHardSubLanguage(stream) : undefined;
-  if (selectedHardSub) {
-    return {
-      kind: "selected",
-      label: `hardsub ${selectedHardSub}`,
-      tone: "success",
-      detail: selectedHardSub,
-    };
-  }
-
-  if (subLang === "none") {
-    return { kind: "disabled", label: "subtitles disabled", tone: "info" };
   }
 
   if (!stream) {

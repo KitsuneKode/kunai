@@ -377,19 +377,13 @@ export function toErrorScenario(
         kind: "provider-session",
         providerName: context.providerName ?? "provider",
       };
+    // These causes describe extraction, access, or local handoff failures, not
+    // catalog absence. Render the problem's actionable message verbatim.
     case "no-stream":
     case "provider-access":
-    // An unplayable download is the same shape of dead end as a title no
-    // provider can serve: the thing the user asked for is not obtainable right
-    // now. Without this case the switch fell through to `undefined`, and the
-    // shell rendered the bare `⚠ issue · offline-file-unavailable` slug instead
-    // of the error surface every other blocking failure gets.
     case "offline-file-unavailable":
     case "local-playback-failed":
-      return {
-        kind: "title-unavailable",
-        title: context.title ?? extractUnavailableTitle(problem.userMessage),
-      };
+      return undefined;
     case "expired-stream":
     case "seek-stuck":
     case "ipc-stuck":
@@ -399,12 +393,6 @@ export function toErrorScenario(
     default:
       return undefined;
   }
-}
-
-function extractUnavailableTitle(message: string): string {
-  const quoted = message.match(/"([^"]+)"/);
-  if (quoted?.[1]) return quoted[1];
-  return "This title";
 }
 
 function hasRuntimeMissingFailure(

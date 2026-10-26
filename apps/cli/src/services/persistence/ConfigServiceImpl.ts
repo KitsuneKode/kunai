@@ -12,6 +12,8 @@ import {
 import {
   MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
   mergeKitsuneConfig,
+  normalizeRetiredProductionProviderFields,
+  retiredProductionProviderFieldsChanged,
   type PrePlayConfirmMode,
 } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
@@ -302,6 +304,15 @@ export class ConfigServiceImpl implements ConfigService {
       ),
       providerRelay: normalizeProviderRelayConfig(loaded.providerRelay),
       titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
+    };
+    const retiredBefore = retiredProductionProviderFieldSlice(service.config);
+    service.config = applyRetiredProductionProviderNormalization(service.config);
+    const retiredFieldsChanged = retiredProductionProviderFieldsChanged(
+      retiredBefore,
+      retiredProductionProviderFieldSlice(service.config),
+    );
+    service.config = {
+      ...service.config,
       analytics: normalizedAnalytics,
       analyticsNoticeShown: loaded.analyticsNoticeShown === true,
       // Anything but an explicit `false` keeps tips on — a hand-edited `0` or
@@ -388,7 +399,8 @@ export class ConfigServiceImpl implements ConfigService {
       migratedVideasyAppId ||
       videasyVaultResave ||
       migratedAnimeDefaults ||
-      migratedSeriesDefaults
+      migratedSeriesDefaults ||
+      retiredFieldsChanged
     ) {
       // Migrations changed keys nothing marked dirty — without the flag the
       // persist would merge over the live file and drop them.
@@ -1059,6 +1071,7 @@ export class ConfigServiceImpl implements ConfigService {
           }
         : null),
     };
+    this.config = applyRetiredProductionProviderNormalization(this.config);
   }
 
   private savePending: Promise<void> | null = null;
@@ -1239,7 +1252,37 @@ const INHERITED_ANIME_DEFAULTS: readonly {
     animeProvider: "hianime",
     priorities: [["miruro", "kickassanime", "animegg", "allanime", "anidb"]],
   },
+  // Revision 5 kept HiAnime as the lane default but still shipped AniDB at the
+  // anime tail while the domain was already repurposed. Revision 6 retires the
+  // adapter from production and drops it from shipped defaults.
+  {
+    revision: 5,
+    animeProvider: "hianime",
+    priorities: [["kickassanime", "animegg", "allanime", "miruro", "anidb"]],
+  },
 ];
+
+function retiredProductionProviderFieldSlice(
+  config: KitsuneConfig,
+): ReturnType<typeof normalizeRetiredProductionProviderFields> {
+  return {
+    provider: config.provider,
+    providerPriority: config.providerPriority,
+    animeProvider: config.animeProvider,
+    animeProviderPriority: config.animeProviderPriority,
+    youtubeProvider: config.youtubeProvider,
+    youtubeProviderPriority: config.youtubeProviderPriority,
+    disabledProviders: config.disabledProviders,
+    titleProviderPreferences: config.titleProviderPreferences,
+  };
+}
+
+function applyRetiredProductionProviderNormalization(config: KitsuneConfig): KitsuneConfig {
+  const normalized = normalizeRetiredProductionProviderFields(
+    retiredProductionProviderFieldSlice(config),
+  );
+  return { ...config, ...normalized };
+}
 
 function shouldMigrateInheritedAnimeDefaults(loaded: Partial<KitsuneConfig>): boolean {
   const revision = readProviderDefaultsRevision(loaded);

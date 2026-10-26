@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-15"
+lastReviewed: "2026-10-24"
 ---
 
 # Provider: VidLink (`vidlink`)
@@ -70,3 +70,18 @@ lastReviewed: "2026-10-15"
   log adds.
 - enc-dec.app is a single external dependency for the id-encryption step; its
   outage degrades the provider to nothing — fallback providers cover it.
+
+## Adaptive quality inventory (2026-10-24)
+
+A remote DASH MPD remains one `auto` stream. `playbackMetadata.resolutions`
+is a declaration of available renditions, not a representation constraint passed
+to playback. The existing deferred MPD materializer handles AllManga Ak descriptors;
+it does not filter VidLink's remote MPD. Do not duplicate the same URL at several
+qualities or append virtual fragments: neither selects a DASH representation.
+Per-file quality URLs and safe HLS variant URLs remain separate selectable rows.
+
+A bounded isolated TMDB 550 movie resolve on October 24 returned DASH, declared
+720/480, 15 subtitles and one Auto stream through the unchanged candidate gate.
+This confirms the current request/resolve path on one Linux host, not decoded
+playback or the availability of 1080p on other titles. Signed URLs and cookies
+were omitted from retained evidence.

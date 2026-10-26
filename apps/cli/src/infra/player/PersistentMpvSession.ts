@@ -179,7 +179,9 @@ export class PersistentMpvSession {
    * publish an event, or activate player control on a retired session.
    */
   private retired = false;
-  private readonly subtitleManager = new PersistentSubtitleManager();
+  private readonly subtitleManager = new PersistentSubtitleManager(
+    () => this.currentOptions.subtitlePreference?.trim().toLowerCase() !== "none",
+  );
   private readonly propertyRouter = new PersistentMpvPropertyRouter({
     getActiveCycle: () => this.activeCycle,
     getIpcSession: () => this.ipcSession,
@@ -476,6 +478,7 @@ export class PersistentMpvSession {
           isLive: stream.isLive,
           urlKind: options.urlKind,
           audioPreference: options.audioPreference,
+          subtitlePreference: options.subtitlePreference,
           chaptersFile: this.currentChaptersFilePath,
         },
       ),
@@ -881,6 +884,8 @@ export class PersistentMpvSession {
       lastPlaybackProgressDurationSeconds: 0,
       acceptPlaybackProperties: cycleOptions.acceptPlaybackProperties ?? true,
     };
+    this.propertyRouter.resetSubtitleObservation();
+    this.subtitleManager.resetSelectionObservation();
     this.activeCycle = cycle;
     this.currentOptions = options;
     return cycle;
@@ -1112,16 +1117,36 @@ export class PersistentMpvSession {
     readonly subtitleTracks?: readonly SubtitleTrack[];
   }): Promise<boolean> {
     if (!this.ipcSession) return false;
+    const generation = this.cycleGeneration;
     if (!selection.subtitleUrl) {
       const result = await this.ipcSession.send(["set_property", "sid", "no"], 1_000);
+      if (!this.isGenerationCurrent(generation)) return false;
+      if (result.ok) {
+        this.currentOptions = { ...this.currentOptions, subtitlePreference: "none" };
+        this.subtitleManager.noteSelectedSubtitle(0, true);
+      }
       return result.ok;
     }
 
-    const attached = await this.subtitleManager.attachSubtitles(this.ipcSession, {
-      primarySubtitle: selection.subtitleUrl,
-      subtitleTracks: selection.subtitleTracks,
-    });
-    if (attached.attachedCount <= 0) return false;
+    const previousOptions = this.currentOptions;
+    const selectingOptions = { ...previousOptions, subtitlePreference: "interactive" };
+    this.currentOptions = selectingOptions;
+    this.subtitleManager.resetSelectionObservation();
+    const attached = await this.subtitleManager.attachSubtitles(
+      this.ipcSession,
+      {
+        primarySubtitle: selection.subtitleUrl,
+        subtitleTracks: selection.subtitleTracks,
+      },
+      () => this.isGenerationCurrent(generation),
+    );
+    if (!this.isGenerationCurrent(generation)) return false;
+    if (attached.attachedCount <= 0) {
+      if (this.currentOptions === selectingOptions) this.currentOptions = previousOptions;
+      return false;
+    }
+    const visibility = await this.ipcSession.send(["set_property", "sub-visibility", true], 1_000);
+    if (!this.isGenerationCurrent(generation) || !visibility.ok) return false;
     this.currentCycleOptions().onPlaybackEvent?.({
       type: "late-subtitles-attached",
       trackCount: attached.attachedCount,
@@ -1130,7 +1155,14 @@ export class PersistentMpvSession {
   }
 
   private async attachSubtitles(attachment: LateSubtitleAttachment) {
-    const result = await this.subtitleManager.attachSubtitles(this.ipcSession, attachment);
+    const generation = this.cycleGeneration;
+    const result = await this.subtitleManager.attachSubtitles(
+      this.ipcSession,
+      attachment,
+      () => this.isGenerationCurrent(generation),
+      this.subtitleManager.shouldSelectLatePrimary(),
+    );
+    if (!this.isGenerationCurrent(generation)) return result;
 
     if (result.attachedCount > 0) {
       this.currentCycleOptions().onPlaybackEvent?.({
@@ -1745,6 +1777,7 @@ export class PersistentMpvSession {
             isLive: this.playbackStream.isLive,
             urlKind: opts.urlKind,
             audioPreference: opts.audioPreference,
+            subtitlePreference: opts.subtitlePreference,
             chaptersFile: this.currentChaptersFilePath ?? undefined,
           },
         ),

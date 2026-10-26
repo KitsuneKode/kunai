@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-23"
+lastReviewed: "2026-10-26"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -141,3 +141,14 @@ and shown as waiting/buffering rather than an established-stream error. Real
 network-read-dead recovery thresholds and retry limits are unchanged. Advancing
 or explicitly resumed playback clears stale on-screen buffering feedback; the
 incident stays in diagnostics.
+
+## IPC receive bounds
+
+The transport caps each newline-delimited IPC frame at 1 MiB of UTF-8 bytes,
+including its newline. It checks raw bytes before decoding and JSON parsing,
+including when a frame arrives across many chunks. An oversized or unterminated
+frame closes the IPC session, clears its receive buffer and settles pending
+commands with a size-limit error. A large socket batch of individually bounded
+frames remains valid; fragmented multibyte characters retain the existing
+StringDecoder behavior. This bounds malformed-peer resource use and is not a
+claim that mpv or arbitrary media formats cannot contain vulnerabilities.

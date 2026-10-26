@@ -244,7 +244,7 @@ function LibraryTab({
   const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
   const maxVisible = getPickerListMaxVisible(
     viewport.rows,
-    getPickerChromeRows({ hasSubtitle: false, commandMode: false, extraRows: 4 }),
+    getPickerChromeRows({ hasSubtitle: false, commandMode: suspended, extraRows: 4 }),
   );
   const windowStart = getWindowStart(safeIndex, totalRows, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, totalRows);
@@ -306,7 +306,7 @@ function LibraryTab({
         setFilterQuery((query) => query.slice(0, -1));
         return;
       }
-      if (input === "\u001b") return;
+      if (input === "\u001b" || input === "/") return;
       // `z` pops the live undo entry; with nothing undoable it stays a filter
       // character like any other letter.
       if (input === "z" && container.sessionUndo?.hasLiveUndo()) {

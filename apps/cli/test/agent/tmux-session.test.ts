@@ -12,6 +12,15 @@ function itTmux(name: string, run: () => Promise<void>) {
 }
 
 describe("tmux session env validation", () => {
+  itTmux("rejects an analytics suppression override before launching", async () => {
+    await expect(
+      startTmuxSession({
+        name: `envprivacy-${process.pid}`,
+        env: { DO_NOT_TRACK: "0", CI: "0" },
+      }),
+    ).rejects.toThrow(/cannot override isolated profile env: DO_NOT_TRACK/);
+  });
+
   itTmux("rejects a hostile env name and cleans up its sandbox", async () => {
     const name = `envreject-${process.pid}`;
     const before = readdirSync(tmpdir()).filter((d) => d.includes(name));

@@ -126,6 +126,9 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
           }),
         ]
       : []),
+    ...(state.commands?.some((command) => command.id === "provider")
+      ? [{ key: "/provider", label: "providers", action: "provider" } as const]
+      : []),
     ...(state.fallbackAvailable
       ? [footerActionFromBinding("player-fallback", "fallback", bindings, { label: fallbackLabel })]
       : []),

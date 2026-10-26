@@ -251,6 +251,7 @@ test("buildMpvArgs maps language preferences to mpv alang/slang", () => {
 
   expect(args).toContain("--alang=orig");
   expect(args).toContain("--slang=no");
+  expect(args).toContain("--sid=no");
 });
 
 test("buildMpvArgs turns Kunai's sub/dub audio modes into tracks mpv can match", () => {

@@ -1,3 +1,4 @@
+import { resolveContentKind } from "@/domain/media/content-kind";
 import {
   formatSessionLaneLabel,
   formatSessionProviderLabel,
@@ -76,7 +77,7 @@ function headerTone(rootStatus: string): ShellStatusTone {
 
 export function buildRootStatusSummary({
   state,
-  currentViewLabel: _currentViewLabel,
+  currentViewLabel,
   rootStatus,
   downloadStatus,
   streak,
@@ -158,14 +159,23 @@ export function buildRootStatusSummary({
     // contradicting each other about the same title. Correct that case
     // whenever a title is committed (bootstrap included), not only once the
     // transport starts: idle/browse keeps the lane crumb because there is no
-    // single title to contradict. The anime and YouTube lanes carry real
-    // meaning a title's own type would lose.
+    // single title to contradict. Post-play still owns that title. Use the
+    // shared identity resolver so anime films and YouTube videos keep their
+    // content identity independently of their movie/series structure.
     const titleCommitted =
-      isActivePlayback || rootStatus === "loading" || rootStatus === "resolving";
-    const laneCrumb =
-      titleCommitted && state.currentTitle?.type === "movie"
-        ? "movie"
-        : formatSessionLaneLabel(state.mode);
+      isActivePlayback ||
+      rootStatus === "loading" ||
+      rootStatus === "resolving" ||
+      currentViewLabel === "post-playback" ||
+      currentViewLabel === "playback";
+    const kind = resolveContentKind(state.currentTitle, state.mode, {
+      providerId: streamProviderId ?? state.provider,
+    });
+    const laneCrumb = titleCommitted
+      ? kind === "video"
+        ? formatSessionLaneLabel("youtube")
+        : kind
+      : formatSessionLaneLabel(state.mode);
     crumbParts.push(laneCrumb, providerCrumb);
   }
   if (!isActivePlayback) {

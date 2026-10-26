@@ -93,3 +93,25 @@ test("movie footer offers only applicable playback navigation", () => {
     "command-mode",
   ]);
 });
+
+test.each([false, true])("provider choice stays discoverable while enabled=%s", (enabled) => {
+  const actions = buildLoadingFooterActions({
+    title: "Test",
+    operation: "resolving",
+    cancellable: true,
+    commands: [
+      {
+        id: "provider",
+        label: "Provider",
+        aliases: ["provider"],
+        description: "Choose provider",
+        enabled,
+        reason: enabled ? undefined : "Wait for stream resolution to finish first.",
+      },
+    ],
+  });
+  expect(actions.find((action) => action.action === "provider")).toMatchObject({
+    key: "/provider",
+    label: "providers",
+  });
+});

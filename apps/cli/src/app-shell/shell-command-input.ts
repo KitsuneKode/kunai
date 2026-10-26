@@ -27,7 +27,9 @@ export function useShellInput({
   localTitles,
   onTitlePick,
   onPaletteCommand,
+  onFooterAction,
 }: {
+  onFooterAction?: (action: FooterAction) => void;
   footerActions: readonly FooterAction[];
   commands: readonly ResolvedAppCommand[];
   disabled?: boolean;
@@ -70,7 +72,8 @@ export function useShellInput({
     setHighlightedIndex(0);
   }, [disabled]);
 
-  const openCommandPalette = () => {
+  const openCommandPalette = (initialInput?: string) => {
+    if (initialInput !== undefined) commandEditor.setValue(initialInput);
     setTitleEntries(localTitles?.() ?? EMPTY_TITLE_ENTRIES);
     setCommandMode(true);
     setHighlightedIndex(0);
@@ -97,6 +100,28 @@ export function useShellInput({
       setHighlightedIndex(0);
       onTitlePick?.(row.match.entry);
     }
+  };
+
+  const activateFooterAction = (action: FooterAction) => {
+    if (disabled || commandMode || action.disabled || !footerActions.includes(action)) return;
+    if (action.action === "command-mode") {
+      if (commands.length > 0) openCommandPalette();
+      return;
+    }
+    // Slash-labelled controls are the same enabled commands as palette Enter.
+    if (action.key.startsWith("/")) {
+      const command = commands.find((candidate) => toShellAction(candidate.id) === action.action);
+      if (command?.enabled) {
+        onPaletteCommand?.(command.id);
+        if (action.action) onResolve(action.action);
+      } else if (command) openCommandPalette(command.aliases[0] ?? command.id);
+      return;
+    }
+    if (letterKeysHandledExternally) {
+      onFooterAction?.(action);
+      return;
+    }
+    if (action.action) onResolve(action.action);
   };
 
   useInput((input, key) => {
@@ -184,6 +209,7 @@ export function useShellInput({
   });
 
   return {
+    activateFooterAction,
     commandMode,
     commandInput,
     commandCursor: commandEditor.cursor,

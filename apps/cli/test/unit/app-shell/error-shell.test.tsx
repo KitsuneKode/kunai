@@ -1,22 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 
+import { MouseDispatcher, MouseDispatchProvider } from "@/app-shell/mouse/MouseRegions";
 import { ErrorShell } from "@/app-shell/root-status-shells";
 import React, { act } from "react";
 
 import { CAPTURE_WIDTHS, captureFrame, render } from "../../harness/render-capture";
-import { frameWidth, renderedWidth } from "../../support/rendered-width";
-import { waitUntil } from "../../support/wait-until";
-
-/**
- * Let the petal-fall interval run for real, with its state updates flushed
- * inside an act() boundary. The panel is interval-driven, so a bare sleep
- * leaves React warning about unwrapped updates — and this harness treats that
- * warning as a defect rather than noise.
- */
-const advance = (ms: number) =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, ms));
-  });
+import { renderedWidth } from "../../support/rendered-width";
 
 const props = {
   message: "An unknown error occurred",
@@ -51,33 +40,19 @@ describe("ErrorShell", () => {
     expect(frame).toContain("boom");
   });
 
-  // The layout constraint, asserted on real rendered frames.
-  //
-  // This test must WATCH the fall, not just mount the panel: a static panel
-  // commits exactly one frame, and "all one frame has the same width" is
-  // vacuously true. Waiting past several 380ms steps means the width assertion
-  // is made across genuinely different frames, and the distinct-frame check
-  // fails loudly if the animation ever stops running at all.
-  test("panel width never changes across the frames of the fall", async () => {
-    const handle = render(<ErrorShell {...props} />, { columns: CAPTURE_WIDTHS.medium });
+  test("failure recovery stays steady without decorative animation timers", () => {
+    const previous = process.env.KUNAI_REDUCED_MOTION;
+    process.env.KUNAI_REDUCED_MOTION = "0";
+    const intervals = spyOn(globalThis, "setInterval");
+    const handle = render(<ErrorShell {...props} />);
     try {
-      await waitUntil(
-        () => new Set(handle.frames.filter((frame) => frame.includes("Playback failed"))).size > 1,
-        {
-          label: "petal fall advanced past the mount frame",
-          tick: async (ms) => {
-            await advance(ms);
-          },
-        },
-      );
-      const panelFrames = handle.frames.filter((frame) => frame.includes("Playback failed"));
-
-      // Guard against the assertion below passing for the wrong reason.
-      expect(new Set(panelFrames).size).toBeGreaterThan(1);
-
-      expect(new Set(panelFrames.map(frameWidth)).size).toBe(1);
+      expect(handle.lastFrame()).toContain("Playback failed");
+      expect(intervals.mock.calls).toHaveLength(0);
     } finally {
       handle.unmount();
+      intervals.mockRestore();
+      if (previous === undefined) delete process.env.KUNAI_REDUCED_MOTION;
+      else process.env.KUNAI_REDUCED_MOTION = previous;
     }
   });
 
@@ -154,31 +129,6 @@ describe("ErrorShell", () => {
     }
   });
 
-  // Partial cover for the input-responsiveness risk. This proves the running
-  // interval does not starve the useInput handler in the React/Ink layer. It
-  // does NOT cover the real-terminal failure mode this repo has hit before —
-  // synchronous stdout writes on a repaint loop blocking stdin — because the
-  // capture harness writes to a buffer, not a TTY. That still needs a hand check.
-  test("r still triggers retry while the petals are mid-fall", async () => {
-    let retried = 0;
-    const handle = render(
-      <ErrorShell
-        {...props}
-        onRetry={() => {
-          retried += 1;
-        }}
-      />,
-      { columns: CAPTURE_WIDTHS.medium },
-    );
-    try {
-      await advance(50);
-      handle.stdin.enqueue("r");
-      expect(retried).toBe(1);
-    } finally {
-      handle.unmount();
-    }
-  });
-
   test("Enter resolves", () => {
     let resolved = 0;
     const handle = render(
@@ -197,23 +147,62 @@ describe("ErrorShell", () => {
       handle.unmount();
     }
   });
+});
 
-  test("under reduced motion it renders the settled panel with no clock", async () => {
-    const previous = process.env.KUNAI_REDUCED_MOTION;
-    process.env.KUNAI_REDUCED_MOTION = "1";
-    try {
-      const handle = render(<ErrorShell {...props} />, { columns: CAPTURE_WIDTHS.medium });
-      try {
-        await advance(500);
-        // A still panel commits its mount frame and nothing further.
-        expect(new Set(handle.frames).size).toBe(1);
-        expect(handle.lastFrame()).toContain("Playback failed");
-      } finally {
-        handle.unmount();
-      }
-    } finally {
-      if (previous === undefined) delete process.env.KUNAI_REDUCED_MOTION;
-      else process.env.KUNAI_REDUCED_MOTION = previous;
-    }
-  });
+test("failure surface exposes provider recovery with a working shortcut", () => {
+  const hits: string[] = [];
+  const handle = render(
+    <ErrorShell
+      message="Provider did not return a playable stream"
+      onResolve={() => hits.push("dismiss")}
+      onProviders={() => hits.push("providers")}
+    />,
+  );
+  try {
+    expect(handle.lastFrame()).toContain("[p] providers");
+    handle.stdin.enqueue("p");
+    expect(hits).toEqual(["providers"]);
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("provider recovery button activates through the real Ink mouse region", () => {
+  const dispatcher = new MouseDispatcher();
+  let opens = 0;
+  const handle = render(
+    <MouseDispatchProvider dispatcher={dispatcher}>
+      <ErrorShell
+        message="No stream from this provider"
+        onResolve={() => {}}
+        onProviders={() => {
+          opens++;
+        }}
+      />
+    </MouseDispatchProvider>,
+  );
+  try {
+    const region = dispatcher
+      .debugRegions()
+      .find((candidate) => candidate.id === "playback-error:providers");
+    expect(region).toBeDefined();
+    if (!region) throw new Error("Provider button has no hit target");
+    const event = {
+      x: region.rect.x,
+      y: region.rect.y,
+      button: "left" as const,
+      ctrl: false,
+      shift: false,
+      alt: false,
+    };
+    act(() => {
+      dispatcher.dispatch({ ...event, kind: "press" });
+    });
+    act(() => {
+      dispatcher.dispatch({ ...event, kind: "release" });
+    });
+    expect(opens).toBe(1);
+  } finally {
+    handle.unmount();
+  }
 });

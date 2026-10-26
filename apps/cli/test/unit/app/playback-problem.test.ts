@@ -21,10 +21,7 @@ describe("playback problem model", () => {
       secondaryActions: ["relaunch"],
     });
     expect(problem.userMessage).toContain("downloaded file");
-    expect(toErrorScenario(problem, { title: "Obsession" })).toEqual({
-      kind: "title-unavailable",
-      title: "Obsession",
-    });
+    expect(toErrorScenario(problem, { title: "Obsession" })).toBeUndefined();
   });
 
   test("maps an unplayable downloaded file to a blocking problem that names the remedy", () => {
@@ -46,10 +43,9 @@ describe("playback problem model", () => {
     // Without a case in `toErrorScenario` this fell through to undefined, and
     // the shell showed the bare cause slug "offline-file-unavailable" instead of
     // the error screen every other blocking failure gets.
-    expect(toErrorScenario(buildOfflineFileUnavailableProblem(), { title: "Obsession" })).toEqual({
-      kind: "title-unavailable",
-      title: "Obsession",
-    });
+    expect(
+      toErrorScenario(buildOfflineFileUnavailableProblem(), { title: "Obsession" }),
+    ).toBeUndefined();
   });
 
   test("maps missing mpv to a blocking playback dependency problem", () => {
@@ -150,7 +146,7 @@ describe("playback problem model", () => {
           attempts: [{ failure: { message: "403 forbidden for Severance" } }],
         }),
       ),
-    ).toEqual({ kind: "title-unavailable", title: "This title" });
+    ).toBeUndefined();
 
     expect(
       toErrorScenario(
@@ -314,4 +310,13 @@ describe("playback problem model", () => {
     expect(problem.cause).toBe("provider-access");
     expect(problem.userMessage).not.toContain("regional blocking");
   });
+});
+
+test("provider extraction and access failures retain their actual message rather than claim title absence", () => {
+  for (const code of ["PARSE_ERROR", "BLOCKED", "NO_STREAM"]) {
+    const problem = buildProviderResolveProblem({
+      attempts: [{ failure: { code, message: "Provider could not return a playable stream" } }],
+    });
+    expect(toErrorScenario(problem, { title: "Known catalog title" })).toBeUndefined();
+  }
 });

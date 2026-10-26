@@ -116,7 +116,7 @@ describe("ConfigServiceImpl", () => {
     await service.update({ disabledProviders: [" miruro ", "anidb", "miruro"] });
     await service.save();
 
-    expect((await store.load()).disabledProviders).toEqual(["miruro", "anidb"]);
+    expect((await store.load()).disabledProviders).toEqual(["miruro"]);
   });
 
   test("a null sync sub-object on disk cannot collapse the live config shape", async () => {
@@ -292,23 +292,11 @@ describe("ConfigServiceImpl", () => {
     const service = await ConfigServiceImpl.load(store);
 
     expect(service.animeProvider).toBe("hianime");
-    expect(service.animeProviderPriority).toEqual([
-      "kickassanime",
-      "animegg",
-      "allanime",
-      "miruro",
-      "anidb",
-    ]);
+    expect(service.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
     const persisted = await store.load();
     expect(persisted.animeProvider).toBe("hianime");
-    expect(persisted.animeProviderPriority).toEqual([
-      "kickassanime",
-      "animegg",
-      "allanime",
-      "miruro",
-      "anidb",
-    ]);
-    expect(persisted.providerDefaultsRevision).toBe(5);
+    expect(persisted.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+    expect(persisted.providerDefaultsRevision).toBe(DEFAULT_CONFIG.providerDefaultsRevision);
   });
 
   test("moves inherited Miruro defaults from revisions 1 and 2 to HiAnime", async () => {
@@ -328,20 +316,14 @@ describe("ConfigServiceImpl", () => {
       const service = await ConfigServiceImpl.load(store);
 
       expect(service.animeProvider).toBe("hianime");
-      expect(service.animeProviderPriority).toEqual([
-        "kickassanime",
-        "animegg",
-        "allanime",
-        "miruro",
-        "anidb",
-      ]);
-      expect((await store.load()).providerDefaultsRevision).toBe(5);
+      expect(service.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+      expect((await store.load()).providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
     }
   });
 
-  test("a revision-1 user who went back to AniDB keeps it", async () => {
-    // The revision-0 pair is inherited only at revision 0; at revision 1 it is
-    // a choice made after the first migration.
+  test("maps a revision-1 AniDB re-pick to the live anime default", async () => {
     const store = new MemoryConfigStore({
       animeProvider: "anidb",
       animeProviderPriority: ["anidb"],
@@ -349,8 +331,8 @@ describe("ConfigServiceImpl", () => {
     });
     const service = await ConfigServiceImpl.load(store);
 
-    expect(service.animeProvider).toBe("anidb");
-    expect(service.animeProviderPriority).toEqual(["anidb"]);
+    expect(service.animeProvider).toBe("hianime");
+    expect(service.animeProviderPriority).toEqual([]);
   });
 
   test("a revision-1 list the user reordered is left alone", async () => {
@@ -361,7 +343,7 @@ describe("ConfigServiceImpl", () => {
     });
     const service = await ConfigServiceImpl.load(store);
 
-    expect(service.animeProviderPriority).toEqual(["miruro", "allanime", "anidb"]);
+    expect(service.animeProviderPriority).toEqual(["miruro", "allanime"]);
   });
 
   test("moves an AniDB default that predates the priority list", async () => {
@@ -369,33 +351,32 @@ describe("ConfigServiceImpl", () => {
     const service = await ConfigServiceImpl.load(store);
 
     expect(service.animeProvider).toBe("hianime");
-    expect(service.animeProviderPriority).toEqual([
-      "kickassanime",
-      "animegg",
-      "allanime",
-      "miruro",
-      "anidb",
-    ]);
+    expect(service.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
   });
 
-  test("leaves an anime lane the user customised alone, and does not write", async () => {
-    for (const loaded of [
-      { animeProvider: "allanime", animeProviderPriority: ["allanime", "anidb"] },
-      // AniDB first is still a choice once the priority list was edited — the
-      // pair must be one no shipped default ever wrote, or it migrates.
-      { animeProvider: "anidb", animeProviderPriority: ["anidb", "miruro", "allanime"] },
-    ]) {
-      const store = new MemoryConfigStore(loaded);
-      const before = await store.load();
-      const service = await ConfigServiceImpl.load(store);
+  test("leaves a customised anime lane alone when it does not reference retired ids", async () => {
+    const loaded = { animeProvider: "allanime", animeProviderPriority: ["allanime", "miruro"] };
+    const store = new MemoryConfigStore(loaded);
+    const before = await store.load();
+    const service = await ConfigServiceImpl.load(store);
 
-      expect(service.animeProvider).toBe(loaded.animeProvider);
-      expect(service.animeProviderPriority).toEqual(loaded.animeProviderPriority);
-      expect(await store.load()).toBe(before);
-    }
+    expect(service.animeProvider).toBe(loaded.animeProvider);
+    expect(service.animeProviderPriority).toEqual(loaded.animeProviderPriority);
+    expect(await store.load()).toBe(before);
   });
 
-  test("a user can choose AniDB again after the migration without it being undone", async () => {
+  test("strips retired ids from a customised anime lane without changing the lead", async () => {
+    const store = new MemoryConfigStore({
+      animeProvider: "allanime",
+      animeProviderPriority: ["allanime", "anidb"],
+    });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.animeProvider).toBe("allanime");
+    expect(service.animeProviderPriority).toEqual(["allanime"]);
+  });
+
+  test("cannot persist AniDB as the anime lane selection after retirement", async () => {
     const store = new MemoryConfigStore({
       animeProvider: "anidb",
       animeProviderPriority: ["anidb"],
@@ -407,8 +388,8 @@ describe("ConfigServiceImpl", () => {
     await service.save();
 
     const reloaded = await ConfigServiceImpl.load(store);
-    expect(reloaded.animeProvider).toBe("anidb");
-    expect(reloaded.animeProviderPriority).toEqual(["anidb"]);
+    expect(reloaded.animeProvider).toBe("hianime");
+    expect(reloaded.animeProviderPriority).toEqual([]);
   });
 
   test("a fresh install starts on HiAnime without writing a config file", async () => {
@@ -484,26 +465,24 @@ describe("ConfigServiceImpl", () => {
       const service = await ConfigServiceImpl.load(store);
 
       expect(service.animeProvider).toBe("allanime");
-      expect(service.animeProviderPriority).toEqual(["allanime", "miruro", "anidb"]);
+      expect(service.animeProviderPriority).toEqual(["allanime", "miruro"]);
       expect(service.getRaw().providerDefaultsRevision).toBe(
         DEFAULT_CONFIG.providerDefaultsRevision,
       );
     });
 
-    test("leaves a reordered list headed by anidb alone", async () => {
-      // A reorder write puts the pick first and the rest of the full list after
-      // it — distinguishable from every pair a default ever wrote.
+    test("maps a reordered list that still names anidb as the lane pick", async () => {
       const store = new MemoryConfigStore({
         animeProvider: "anidb",
         animeProviderPriority: ["allanime", "miruro"],
       });
       const service = await ConfigServiceImpl.load(store);
 
-      expect(service.animeProvider).toBe("anidb");
+      expect(service.animeProvider).toBe("hianime");
       expect(service.animeProviderPriority).toEqual(["allanime", "miruro"]);
     });
 
-    test("does not re-migrate a stamped config whose user re-picked the old default", async () => {
+    test("heals a stamped config that still names the retired adapter", async () => {
       const store = new MemoryConfigStore({
         animeProvider: "anidb",
         animeProviderPriority: ["anidb"],
@@ -511,11 +490,9 @@ describe("ConfigServiceImpl", () => {
       });
       await ConfigServiceImpl.load(store);
 
-      // The stamp means load() treats the pair as a user choice: no migration
-      // write fired — the store still holds exactly what it was given.
       const persisted = await store.load();
-      expect(persisted.animeProvider).toBe("anidb");
-      expect(persisted.animeProviderPriority).toEqual(["anidb"]);
+      expect(persisted.animeProvider).toBe("hianime");
+      expect(persisted.animeProviderPriority).toEqual([]);
     });
 
     test("moves every revision-1/2 miruro default pair to the current defaults", async () => {
@@ -539,9 +516,7 @@ describe("ConfigServiceImpl", () => {
       }
     });
 
-    test("a stamped user who re-picked AniDB at revision 1 keeps it", async () => {
-      // The revision-0 pair is inherited only at revision 0; at revision 1 it is
-      // a choice made after the first migration.
+    test("maps a stamped AniDB re-pick at revision 1 to the live default", async () => {
       const store = new MemoryConfigStore({
         animeProvider: "anidb",
         animeProviderPriority: ["anidb"],
@@ -549,8 +524,8 @@ describe("ConfigServiceImpl", () => {
       });
       const service = await ConfigServiceImpl.load(store);
 
-      expect(service.animeProvider).toBe("anidb");
-      expect(service.animeProviderPriority).toEqual(["anidb"]);
+      expect(service.animeProvider).toBe("hianime");
+      expect(service.animeProviderPriority).toEqual([]);
     });
 
     test("moves an un-stamped config on the shipped videasy pair to the current defaults", async () => {
@@ -859,5 +834,66 @@ describe("ConfigServiceImpl untrusted-shape hardening", () => {
     );
 
     expect(service.getRaw().provider).toBe(DEFAULT_CONFIG.provider);
+  });
+
+  describe("retired production provider: anidb", () => {
+    test("maps an explicit anime selection and strips the id from custom priority", async () => {
+      const store = new MemoryConfigStore({
+        animeProvider: "anidb",
+        animeProviderPriority: ["kickassanime", "anidb", "miruro"],
+        providerDefaultsRevision: DEFAULT_CONFIG.providerDefaultsRevision,
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.animeProvider).toBe("hianime");
+      expect(service.animeProviderPriority).toEqual(["kickassanime", "miruro"]);
+    });
+
+    test("removes a retired disable entry without disabling hianime", async () => {
+      const store = new MemoryConfigStore({
+        disabledProviders: ["anidb"],
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.disabledProviders).toEqual([]);
+      expect(service.animeProvider).toBe("hianime");
+    });
+
+    test("drops title pins that still point at anidb", async () => {
+      const store = new MemoryConfigStore({
+        titleProviderPreferences: { "anilist:21": "anidb", "anilist:5114": "allanime" },
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.titleProviderPreferences).toEqual({ "anilist:5114": "allanime" });
+    });
+
+    test("migrates a revision-5 inherited default that still listed anidb at the tail", async () => {
+      const store = new MemoryConfigStore({
+        animeProvider: "hianime",
+        animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro", "anidb"],
+        providerDefaultsRevision: 5,
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.animeProviderPriority).toEqual([
+        "kickassanime",
+        "animegg",
+        "allanime",
+        "miruro",
+      ]);
+      expect((await store.load()).providerDefaultsRevision).toBe(6);
+    });
+
+    test("normalizes anidb away on update as well as load", async () => {
+      const service = await ConfigServiceImpl.load(new MemoryConfigStore({}));
+      await service.update({
+        animeProvider: "anidb",
+        animeProviderPriority: ["anidb", "allanime"],
+      });
+
+      expect(service.animeProvider).toBe("hianime");
+      expect(service.animeProviderPriority).toEqual(["allanime"]);
+    });
   });
 });

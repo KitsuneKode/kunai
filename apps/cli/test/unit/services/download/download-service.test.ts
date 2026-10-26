@@ -2741,6 +2741,49 @@ describe("DownloadService", () => {
     expect(recovered?.errorMessage).not.toContain("secret.example");
   });
 
+  test("shutdown owns a standalone metadata probe without changing its saved job", async () => {
+    let expireProbe!: () => void;
+    const expired = new Promise<void>((resolve) => {
+      expireProbe = resolve;
+    });
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      ffprobeAvailable: true,
+      downloadPath: tempDir,
+      ffprobeDeadline: () => ({ expired, cancel() {} }),
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:8", type: "movie", name: "Metadata Probe" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    writeFileSync(job.outputPath, "keep-the-published-artifact");
+    const probe = createHangingProbe("SIGTERM");
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/usr/bin/ffprobe" : null));
+    spawnSpy.mockImplementation(() => {
+      markStarted();
+      return probe.process;
+    });
+    const repair = service.repairArtifactMetadata([job.id]);
+    await started;
+    await service.pauseActiveJobsForShutdown("metadata probe shutdown");
+    const ownedByShutdown = probe.killSignals.length > 0;
+    // Always settle the fixture, including on the failing-before implementation.
+    if (!ownedByShutdown) expireProbe();
+    await repair;
+    expect(ownedByShutdown).toBe(true);
+    expect(probe.stdoutCancelled).toBe(true);
+    expect(repo.get(job.id)?.status).toBe("queued");
+    expect(await Bun.file(job.outputPath).text()).toBe("keep-the-published-artifact");
+  });
+
   test("shutdown owns a recovery ffprobe and preserves its published artifact", async () => {
     const enqueueService = buildService({
       repo,

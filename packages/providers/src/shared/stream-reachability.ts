@@ -46,43 +46,198 @@ export type ProbeStreamReachabilityInput = {
 };
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
-const SEGMENT_RANGE_HEADER = `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`;
+const FMP4_PROBE_PREFIX_BYTES = 64 * 1024;
+const SEGMENT_RANGE_HEADER = `bytes=0-${FMP4_PROBE_PREFIX_BYTES - 1}`;
 // A body read past this after the prefix is already gathered is a server
 // ignoring Range and dumping the whole segment on us — cap the bleed.
 const MAX_PROBE_BODY_BYTES = 256 * 1024;
 
-/**
- * Counts body bytes until `minBytes` are seen, then cancels the reader so the
- * socket stops draining. Returns the number of bytes observed, capped at
- * `MAX_PROBE_BODY_BYTES` — a body that never reaches `minBytes` within that
- * ceiling is treated as short anyway.
- */
+/** Capture a bounded prefix; stop early once positive media evidence is sufficient. */
 async function readPrefixBytes(
   body: ReadableStream<Uint8Array> | null,
-  minBytes: number,
-): Promise<number> {
-  if (!body) return 0;
+  maxBytes: number,
+  acceptPrefix?: (prefix: Uint8Array) => boolean,
+): Promise<Uint8Array> {
+  if (!body) return new Uint8Array(0);
   const reader = body.getReader();
+  const prefix = new Uint8Array(Math.min(maxBytes, MAX_PROBE_BODY_BYTES));
   let seen = 0;
+  let nextCheck = HLS_SEGMENT_PROBE_MIN_BYTES;
   try {
-    while (seen < minBytes && seen < MAX_PROBE_BODY_BYTES) {
+    while (seen < prefix.byteLength) {
       const { done, value } = await reader.read();
       if (done) break;
-      seen += value?.byteLength ?? 0;
+      if (value) {
+        const count = Math.min(value.byteLength, prefix.byteLength - seen);
+        prefix.set(value.subarray(0, count), seen);
+        seen += count;
+        if (acceptPrefix && seen >= nextCheck) {
+          if (acceptPrefix(prefix.subarray(0, seen))) break;
+          // Bound structural rechecks even when the server trickles tiny chunks.
+          nextCheck = seen + HLS_SEGMENT_PROBE_MIN_BYTES;
+        }
+      }
     }
-    // Once the threshold is crossed the rest of the body is unread on purpose —
-    // cancelling is what actually closes the transfer.
     await reader.cancel("probe-satisfied").catch(() => {});
-    return Math.min(seen, MAX_PROBE_BODY_BYTES);
+    return prefix.subarray(0, seen);
   } catch (error) {
-    // A mid-body abort or socket error is not "body too small" — rethrow so
-    // the caller's classifier maps abort → timeout and transient network
-    // failures to non-definitive instead of a definitive unreachable.
+    // Preserve abort/network classification rather than reporting a short body.
     await reader.cancel("probe-failed").catch(() => {});
     throw error;
   } finally {
     reader.releaseLock();
   }
+}
+
+function hasTransportStreamSync(prefix: Uint8Array): boolean {
+  // One ASCII 'G' also starts ordinary text. Require three 188-byte packet boundaries.
+  return (
+    prefix.byteLength >= 377 && prefix[0] === 0x47 && prefix[188] === 0x47 && prefix[376] === 0x47
+  );
+}
+
+type IsoBoxPrefix = { readonly type: string; readonly payload: number; readonly end: number };
+
+function readIsoBox(view: DataView, offset: number): IsoBoxPrefix | null {
+  if (offset + 8 > view.byteLength) return null;
+  let size = view.getUint32(offset);
+  const type = String.fromCharCode(
+    ...[0, 1, 2, 3].map((index) => view.getUint8(offset + 4 + index)),
+  );
+  let header = 8;
+  if (size === 1) {
+    if (offset + 16 > view.byteLength) return null;
+    const extendedSize = view.getBigUint64(offset + 8);
+    if (extendedSize < 16n || extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+    size = Number(extendedSize);
+    header = 16;
+  }
+  if (size === 0 && type === "mdat")
+    return { type, payload: offset + header, end: Number.POSITIVE_INFINITY };
+  if (size < header) return null;
+  const end = offset + size;
+  if (!Number.isSafeInteger(end)) return null;
+  return { type, payload: offset + header, end };
+}
+
+function hasTrackFragment(
+  view: DataView,
+  box: IsoBoxPrefix,
+  minimumDataOffset: number,
+  dataEndOffset: number,
+): boolean {
+  let header = false;
+  let decodeTime = false;
+  const runs: IsoBoxPrefix[] = [];
+  let defaultSampleSize: number | undefined;
+  for (let offset = box.payload; offset < box.end;) {
+    const child = readIsoBox(view, offset);
+    if (!child || child.end > box.end) return false;
+    const length = child.end - child.payload;
+    if (child.type === "tfhd") {
+      if (header || length < 8) return false;
+      const flags = view.getUint32(child.payload);
+      // HLS uses fragment-relative addressing, never an absolute external base.
+      if ((flags & ~0x03003a) !== 0 || view.getUint32(child.payload + 4) === 0) return false;
+      const optionalFields = [2, 8, 16, 32].filter((flag) => (flags & flag) !== 0).length;
+      if (length !== 8 + optionalFields * 4) return false;
+      if ((flags & 0x10) !== 0) {
+        const sizeOffset = child.payload + 8 + (flags & 2 ? 4 : 0) + (flags & 8 ? 4 : 0);
+        defaultSampleSize = view.getUint32(sizeOffset);
+      }
+      header = true;
+    } else if (child.type === "tfdt") {
+      if (decodeTime || length < 8) return false;
+      const flags = view.getUint32(child.payload);
+      if (flags !== 0 && flags !== 0x01000000) return false;
+      if (length !== (flags === 0 ? 8 : 12)) return false;
+      decodeTime = true;
+    } else if (child.type === "trun") {
+      if (length < 12) return false;
+      const flags = view.getUint32(child.payload);
+      const version = flags >>> 24;
+      const fields = flags & 0xffffff;
+      if (version > 1 || (fields & ~0xf05) !== 0 || (fields & 1) === 0) return false;
+      const samples = view.getUint32(child.payload + 4);
+      const sampleFields = [0x100, 0x200, 0x400, 0x800].filter(
+        (flag) => (fields & flag) !== 0,
+      ).length;
+      if (samples === 0 || length !== 12 + (fields & 4 ? 4 : 0) + samples * sampleFields * 4)
+        return false;
+      const sampleOffset = view.getInt32(child.payload + 8);
+      if (sampleOffset < minimumDataOffset || sampleOffset >= dataEndOffset) return false;
+      runs.push(child);
+    }
+    offset = child.end;
+  }
+  if (!header || !decodeTime || runs.length === 0) return false;
+  if (!Number.isFinite(dataEndOffset)) return true;
+  // Resolve defaults after the whole traf, so box order cannot bypass extent checks.
+  for (const child of runs) {
+    const fields = view.getUint32(child.payload) & 0xffffff;
+    const samples = view.getUint32(child.payload + 4);
+    let remaining = dataEndOffset - view.getInt32(child.payload + 8);
+    if ((fields & 0x200) !== 0) {
+      const stride =
+        [0x100, 0x200, 0x400, 0x800].filter((flag) => (fields & flag) !== 0).length * 4;
+      const firstSize = child.payload + 12 + (fields & 4 ? 4 : 0) + (fields & 0x100 ? 4 : 0);
+      // Explicit sizes imply a bounded entry table already checked against box length.
+      for (let index = 0; index < samples; index++) {
+        const size = view.getUint32(firstSize + index * stride);
+        if (size > remaining) return false;
+        remaining -= size;
+      }
+    } else if (defaultSampleSize !== undefined) {
+      // A field-free run may claim billions of samples. Never loop over that count
+      // or round its product past JS's safe-integer range.
+      if (BigInt(samples) * BigInt(defaultSampleSize) > BigInt(remaining)) return false;
+    }
+    // Otherwise sizes live in the initialization segment's trex, not this prefix.
+    // Keep the structural-prefix contract; this is not a full media decode check.
+  }
+  return true;
+}
+
+function hasFragmentedMp4Prefix(prefix: Uint8Array): boolean {
+  const view = new DataView(prefix.buffer, prefix.byteOffset, prefix.byteLength);
+  for (let offset = 0; offset < prefix.byteLength;) {
+    const box = readIsoBox(view, offset);
+    if (!box || box.end > prefix.byteLength) return false;
+    if (box.type === "moof") {
+      const data = readIsoBox(view, box.end);
+      if (
+        !data ||
+        data.type !== "mdat" ||
+        data.end <= data.payload ||
+        prefix.byteLength <= data.payload
+      )
+        return false;
+      let header = false;
+      let tracks = 0;
+      for (let childOffset = box.payload; childOffset < box.end;) {
+        const child = readIsoBox(view, childOffset);
+        if (!child || child.end > box.end) return false;
+        if (child.type === "mfhd") {
+          if (header || child.end - child.payload !== 8 || view.getUint32(child.payload) !== 0)
+            return false;
+          header = true;
+        } else if (child.type === "traf") {
+          if (!hasTrackFragment(view, child, data.payload - offset, data.end - offset))
+            return false;
+          tracks++;
+        }
+        childOffset = child.end;
+      }
+      // The moof must be complete. Only mdat's media payload may extend beyond
+      // the prefix; an ftyp marker alone or a truncated fragment proves nothing.
+      return header && tracks > 0;
+    }
+    if (!["styp", "sidx", "emsg", "prft", "free", "skip"].includes(box.type)) return false;
+    if (box.type === "styp" && (box.end - box.payload < 8 || (box.end - box.payload) % 4 !== 0))
+      return false;
+    offset = box.end;
+  }
+  return false;
 }
 
 /**
@@ -424,23 +579,27 @@ async function probeHlsMediaSegment(
     }
 
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (contentType.includes("text/html")) {
+    const htmlLabeled = contentType.includes("text/html");
+    const firstBytes = await readPrefixBytes(
+      response.body,
+      htmlLabeled ? FMP4_PROBE_PREFIX_BYTES : HLS_SEGMENT_PROBE_MIN_BYTES,
+      htmlLabeled
+        ? (prefix) => hasTransportStreamSync(prefix) || hasFragmentedMp4Prefix(prefix)
+        : undefined,
+    );
+    // Some media CDNs mislabel TS/fMP4 as HTML. Only positive media evidence may
+    // override that refusal; HTML, short bodies and ambiguous text still fail.
+    if (htmlLabeled && !hasTransportStreamSync(firstBytes) && !hasFragmentedMp4Prefix(firstBytes)) {
       return {
         status: "unreachable",
         reason: "HLS segment unreachable: content-type text/html",
         definitive: true,
       };
     }
-
-    // The Range header is only a request — a server free to ignore it would
-    // otherwise have arrayBuffer() pull the whole segment into memory for a
-    // check that only needs the first bytes. Read what we need and cut the
-    // socket loose.
-    const firstBytes = await readPrefixBytes(response.body, HLS_SEGMENT_PROBE_MIN_BYTES);
-    if (firstBytes < HLS_SEGMENT_PROBE_MIN_BYTES) {
+    if (firstBytes.byteLength < HLS_SEGMENT_PROBE_MIN_BYTES) {
       return {
         status: "unreachable",
-        reason: `HLS segment unreachable: body too small (${firstBytes}B)`,
+        reason: `HLS segment unreachable: body too small (${firstBytes.byteLength}B)`,
         definitive: true,
       };
     }
