@@ -451,3 +451,20 @@ audit found 40 existing checkouts, 23 with uncommitted work; notably,
 `docs/kanna-stay` has 31 unpushed commits and `deps/ink-8` has one. They were
 preserved. Only the stale registration for the already-missing cursor-audit
 worktree was pruned; its branch and commits remain available.
+
+## October 27: upstream controls and live-roster parity
+
+The bounded VidLink comparison used Dune (438631), Fight Club (550) and
+Inception (27205), with identical encryption and production movie request paths.
+Dune returned HTTP 200 with JSON `null`, both with `webkit` and with no playback
+environment header. Both controls returned DASH manifests and 15 captions. No
+signed URL or cookie was retained. This is a title-specific upstream no-source
+observation, not a local encryption fix or a green default-route signoff.
+
+The production live-smoke aggregate had drifted: it still invoked retired AniDB,
+while omitting VidRock and Videasy. A new roster-derived regression failed on
+that mismatch, then passed after the aggregate was reconciled to all 11 live
+production modules. The root and CLI AniDB smoke aliases were removed. Historical
+fixtures stay available without claiming current production search coverage.
+The focused roster file passes 10 tests; CLI typecheck and lint pass, with the
+existing warnings retained. No runtime defaults or probe gates changed.

@@ -10,6 +10,22 @@ import { PROBES as STATUS_SWEEP_PROBES } from "../../../../../packages/providers
 import { relayRegistry } from "../../../../relay-server/src/provider-registry";
 
 describe("production provider defaults", () => {
+  test("the live provider aggregate covers the production roster without retired adapters", async () => {
+    const cliPackage = await Bun.file(new URL("../../../package.json", import.meta.url)).json();
+    const rootPackage = await Bun.file(
+      new URL("../../../../../package.json", import.meta.url),
+    ).json();
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    const smokeIds = cliPackage.scripts["test:live:providers"]
+      .split(" && ")
+      .map((step: string) => step.match(/^bun run test:live:([a-z]+)$/)?.[1]);
+    expect(smokeIds.sort()).toEqual(modules.map((module) => module.providerId).sort());
+    expect(cliPackage.scripts["test:live:anidb"]).toBeUndefined();
+    expect(rootPackage.scripts["test:live:anidb"]).toBeUndefined();
+  });
+
   test("retired adapters stay out of the live production roster", async () => {
     const modules = await loadProductionProviderModules(
       createProviderPrioritySnapshot(DEFAULT_CONFIG),

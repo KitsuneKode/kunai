@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-10-27"
 ---
 
 # Provider: VidLink (`vidlink`)
@@ -53,6 +53,15 @@ lastReviewed: "2026-10-24"
   non-retryable response-shape drift, rather than a network fault.
 
 ## Known gaps
+
+- A bounded comparison on 2026-10-26 UTC reproduced Dune (438631) returning
+  HTTP 200 with JSON `null`, both with the production `webkit` header and with
+  that header omitted. The same encryption and movie request path returned DASH
+  manifests and 15 captions for Fight Club (550) and Inception (27205). This
+  narrows the observed failure to a title-specific upstream no-source response;
+  it is not evidence that the encryption or entire movie endpoint is broken.
+  No response-shape workaround, default change or resolve-gate bypass was added.
+  The strict default-movie signoff remains red until that route is qualified.
 
 - Live default-route qualification on 2026-10-04 at `b8c69881745430ea3a8ca43e7af3f7a650d0acd5`
   failed for both TMDB lanes from the review host. Dune (438631) returned HTTP 200

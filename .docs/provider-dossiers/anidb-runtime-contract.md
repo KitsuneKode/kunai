@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-10-27"
 ---
 
 # Provider: AniDB — runtime contract
@@ -13,6 +13,12 @@ old origin (HTTP 302 to `anilab.so`); ani-cli had already moved to HiAnime
 `@kunai/config` maps persisted `anidb` selections to HiAnime and strips the id
 from priority, disable, and title-pin fields. The package stays for unit/live
 fixtures and historic cache keys — not for live user resolve.
+
+The retired adapter is excluded from `test:live:providers`; the former
+`test:live:anidb` command was removed. Its retained resolve-only script does not
+claim search qualification. Production anime search/resolve qualification now
+uses the configured live provider through `test:live:release-signoff`, rather
+than restoring a retired domain to make a historical smoke run.
 
 Catalog capabilities live in [anidb-metadata-capabilities.md](./anidb-metadata-capabilities.md).
 This file holds the runtime behaviour that used to sit in `.docs/providers.md`.

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-27"
 ---
 
 # Kunai — Testing Strategy
@@ -20,6 +20,15 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 - keep VHS tapes and captured golden outputs under `apps/cli/test/vhs/` for UI demos and visual regression review
 - keep the agent verification loop under `apps/cli/test/agent/` — user-path drivers, evidence bundles, wiring scenarios (`bun run test:agent`; not swept into `test:unit`/`test:integration`)
 - keep mobile unit/integration contracts under `apps/mobile/test/{unit,integration}/`
+
+`bun run test:live:providers` covers every production provider returned by
+`loadProductionProviderModules()`. The roster contract test compares those
+modules with the aggregate's executable smoke commands. Retired adapters are
+excluded, even when historical fixtures remain in the tree. In particular,
+AniDB has no active smoke command after retirement; its old resolve-only script
+does not establish current search coverage. Live smokes are opt-in and a skipped
+or unrun provider is not a passing provider.
+
 - keep the redacted, opt-in device-evidence validator under `apps/mobile/test/live/`; it validates supplied evidence and never controls a device
 
 The published npm launcher package excludes the entire `test/` tree: its exact tarball allowlist contains `package.json`, `dist/npm-launcher.mjs`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
