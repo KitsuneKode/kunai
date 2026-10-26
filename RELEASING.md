@@ -11,6 +11,8 @@ This repo uses Changesets + Turborepo for versioning, changelogs, and release no
 
   ```text
   @kitsunekode/kunai
+  @kitsunekode/kunai-android-arm64
+  @kitsunekode/kunai-android-x64
   @kitsunekode/kunai-darwin-arm64
   @kitsunekode/kunai-darwin-x64
   @kitsunekode/kunai-linux-arm64
@@ -25,7 +27,7 @@ This repo uses Changesets + Turborepo for versioning, changelogs, and release no
   created. If any name is absent, an owner must bootstrap it once before the
   protected workflow is allowed to publish a real release.
 
-- Configure npm Trusted Publishing (OIDC) separately for **all nine packages**:
+- Configure npm Trusted Publishing (OIDC) separately for **all eleven packages**:
   - npm package settings → Trusted publishers
   - GitHub repository: `KitsuneKode/kunai`
   - Workflow path: `.github/workflows/release.yml` (workflow filename `release.yml`)
@@ -42,6 +44,8 @@ settings change, preflight every package at the candidate version:
 VERSION=0.3.0
 for PACKAGE in \
   @kitsunekode/kunai \
+  @kitsunekode/kunai-android-arm64 \
+  @kitsunekode/kunai-android-x64 \
   @kitsunekode/kunai-darwin-arm64 \
   @kitsunekode/kunai-darwin-x64 \
   @kitsunekode/kunai-linux-arm64 \
@@ -150,18 +154,21 @@ Job **`candidate`** (no publish):
 
 1. Asserts `inputs.version` equals `apps/cli/package.json` `version`
 2. `bun run ci` → `build` → `pkg:check` → real npm global install → `guard` → `release:notes:check`
-3. Builds all eight release binaries plus their deterministic archives,
-   verifies the exact 18 native files listed below, and runs compiled binary
+3. Builds all ten release binaries plus their deterministic archives,
+   verifies the exact 22 native files listed below, and runs compiled binary
    smoke
-4. Builds the eight exact-version npm platform packages and preserves their
+4. Builds the ten exact-version npm platform packages and preserves their
    tarballs, then runs `bun run release:pack` to preserve the launcher as
    `.release-candidate/kunai-npm.tgz`
 5. Stages the native files under an isolated `native/` directory, reverifies
-   that exact 18-file directory, creates GitHub OIDC attestations for all 18
+   that exact 22-file directory, creates GitHub OIDC attestations for all 22
    subjects, then uploads artifact
    `kunai-release-candidate-<version>-<commit-sha>` with the preserved launcher
    and platform-package tarballs alongside it (14-day retention). Downstream
    jobs download this immutable artifact by its numeric artifact id.
+
+The native and npm platform sets both include the two Android targets. The
+launcher plus ten platform packages make eleven npm packages in total.
 
 The exact native directory is:
 
@@ -174,6 +181,10 @@ kunai-linux-x64-musl
 kunai-linux-x64-musl.tar.gz
 kunai-linux-arm64-musl
 kunai-linux-arm64-musl.tar.gz
+kunai-android-arm64
+kunai-android-arm64.tar.gz
+kunai-android-x64
+kunai-android-x64.tar.gz
 kunai-darwin-x64
 kunai-darwin-x64.tar.gz
 kunai-darwin-arm64
@@ -237,21 +248,21 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
 
 1. Downloads the preserved candidate artifact (does **not** rebuild, re-pack,
    or recompress native assets)
-2. Reverifies the exact native directory and all 18 attestations, before npm
+2. Reverifies the exact native directory and all 22 attestations, before npm
    publication, against the
    expected version, release workflow, main-branch ref, and candidate commit
 3. Runs `bun run release`, whose npm publisher works in three phases: it
    decides every preserved platform-package tarball against the registry
    before writing any (a conflicting version anywhere halts with nothing new
    published), writes every missing platform package back to back and waits
-   out one shared visibility window for the set, and only once all eight are
+   out one shared visibility window for the set, and only once all ten are
    read back with the expected integrity writes the exact-version launcher and
    waits for it. Every write uses npm provenance. npm applies a publish
    asynchronously — 0.3.0 saw one package take seven minutes to become
    visible — so the window backs off from 3s to 30s for about ten minutes, and
    a write is reissued only after a whole window still shows nothing (npm's
    refusal to overwrite then counts as confirmation)
-4. Retries `npm view` for the launcher and all eight platform packages until
+4. Retries `npm view` for the launcher and all ten platform packages until
    every exact version is visible, then performs a clean registry install and
    launcher smoke
 5. Creates annotated tag `v<version>` and pushes it, via
@@ -259,7 +270,7 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
    the same version, and refusing to move a tag that points elsewhere
 6. Reverifies the same downloaded native directory and provenance again,
    immediately before creating a **draft** GitHub release (`make_latest: false`)
-   with its 18 files
+   with its 22 files
 7. `bun run scripts/verify-github-release-assets.ts <tag> --expect-draft …`
    downloads the draft assets and verifies their bytes and attestations
 8. Promotes immediately after that draft-byte verification:
@@ -319,14 +330,14 @@ channel step degrades to a notice when its secret is missing.
 
 ## npm publication recovery
 
-If publication stops partway through the nine-package set, rerun the same
+If publication stops partway through the eleven-package set, rerun the same
 Release workflow with the **same version**. The publisher reconciles the
 preserved candidate against npm in canonical order:
 
 - an absent version is published;
 - an existing version with identical npm integrity is verified and skipped;
 - an existing version with different integrity halts the release;
-- all eight platform packages are reconciled before `@kitsunekode/kunai`.
+- all ten platform packages are reconciled before `@kitsunekode/kunai`.
 
 Do not unpublish, overwrite, or hand-increment a partial candidate. The launcher
 stays last so users can never resolve it before its exact-version platform
@@ -356,7 +367,7 @@ Fixing the release machinery — a workflow file, `scripts/publish-npm-release.t
 a gate script — does not touch those tarballs, so a dispatch carrying only such
 a fix reconciles cleanly against whatever is already live. Changing anything the
 tarball carries does not: a new `homepage` in `apps/cli/package.json` propagates
-into all nine manifests, and a version already on npm would then halt the
+into all eleven manifests, and a version already on npm would then halt the
 release on the integrity rule above. Land that kind of change in the next
 version instead.
 
@@ -403,14 +414,14 @@ change on a new branch and open a PR manually.
 - `version:packages` runs `changeset version`, mirrors changelog, and regenerates `.release/kunai-v*.md` / `.json` via `bun run release:notes`.
 
 **npm vs GitHub Release artifacts:** npm publishes the preserved
-`kunai-npm.tgz` (allowlisted launcher files only). The eight archives and eight
+`kunai-npm.tgz` (allowlisted launcher files only). The ten archives and ten
 raw standalone binaries ship only via the GitHub release — `bun run pkg:check`
 fails if `dist/bin/` appears in the npm tarball.
 
 ## GitHub release tags
 
-Prefer tag `vX.Y.Z` created by the **publish** job with the 18 required native
-assets (8 archives + 8 raw binaries + 2 checksum manifests). Release notes body
+Prefer tag `vX.Y.Z` created by the **publish** job with the 22 required native
+assets (10 archives + 10 raw binaries + 2 checksum manifests). Release notes body
 comes from `.release/kunai-vX.Y.Z.md`. Avoid duplicate
 `@kitsunekode/kunai@X.Y.Z` releases with empty bodies.
 
@@ -419,7 +430,7 @@ comes from `.release/kunai-vX.Y.Z.md`. Avoid duplicate
 - `bun run changeset` → create release intent files
 - `bun run version:packages` → apply pending versions + update both changelogs + staged `.release` notes
 - `bun run release:pack` → write `.release-candidate/kunai-npm.tgz` (same packing path CI uses)
-- `bun run release` → reconcile/publish the eight preserved platform tarballs,
+- `bun run release` → reconcile/publish the ten preserved platform tarballs,
   then the preserved launcher tarball last, using npm trusted publishing and
   provenance (CI publish job in practice)
 - `bun run guard` → verify version ↔ changelog sync locally (also runs on pre-commit when release files change)

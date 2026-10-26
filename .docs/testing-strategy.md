@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-25"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai — Testing Strategy
@@ -22,7 +22,7 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 - keep mobile unit/integration contracts under `apps/mobile/test/{unit,integration}/`
 - keep the redacted, opt-in device-evidence validator under `apps/mobile/test/live/`; it validates supplied evidence and never controls a device
 
-The published npm launcher package excludes the entire `test/` tree: its file allowlist contains `dist/kunai.mjs`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
+The published npm launcher package excludes the entire `test/` tree: its exact tarball allowlist contains `package.json`, `dist/npm-launcher.mjs`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
 
 ## Turborepo Test Execution
 
