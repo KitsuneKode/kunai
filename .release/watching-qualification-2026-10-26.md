@@ -94,3 +94,15 @@ PR668, merge updated main normally into PR669, qualify/review that combined
 revision, integrate PR669, reconcile already-included source PRs, then regenerate
 version PR327. No shared history was rewritten and no remote main merge, release,
 tag or package publication was performed in this pass.
+
+## Subsequent unchanged-ID acknowledgement regression
+
+A focused follow-up found that selecting an already-active mpv subtitle ID may
+not emit another `sid` event. Reset observation state then allowed a later lookup
+to replace that choice. The acknowledged existing ID is now recorded only if
+its playback generation remains current. The new assertion failed with
+`select` instead of `auto` before the fix; 54 focused player/picker tests and
+fresh workspace types/preflight pass afterward. This follow-up is outside the
+frozen 763067b artifact set. The versioned release still needs a new immutable
+candidate after integration; do not present the earlier binaries as containing
+this later guard.

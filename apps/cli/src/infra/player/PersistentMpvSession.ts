@@ -1143,6 +1143,10 @@ export class PersistentMpvSession {
     if (existingId !== undefined) {
       const result = await this.ipcSession.send(["set_property", "sid", existingId], 1_000);
       selected = result.ok;
+      // mpv need not re-emit an unchanged sid; an acknowledged selection is
+      // authoritative for late-attachment policy in this file generation.
+      if (result.ok && this.isGenerationCurrent(generation))
+        this.subtitleManager.noteSelectedSubtitle(existingId);
     } else {
       const attached = await this.subtitleManager.attachSubtitles(
         this.ipcSession,

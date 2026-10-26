@@ -1598,6 +1598,15 @@ test.each(["es", "de"])(
       expect(
         events.slice(eventStart).filter((event) => event.type === "late-subtitles-attached"),
       ).toEqual([]);
+      if (language === "es") {
+        // Selecting an already-active ID may not emit another mpv sid event.
+        // Its acknowledgement must still protect that choice from late lookup.
+        const afterPick = harness.commands.length;
+        await control.attachSubtitles?.({ primarySubtitle: "https://subs.example/late.vtt" });
+        expect(
+          harness.commands.slice(afterPick).find((command) => command[0] === "sub-add")?.[2],
+        ).toBe("auto");
+      }
     } finally {
       await session.close();
     }
