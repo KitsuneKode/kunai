@@ -43,8 +43,8 @@ export function projectPlaybackSubtitleState(
     return { kind: "selected", label: `hardsub ${hardSub}`, tone: "success", detail: hardSub };
   const live = stream?.playbackSubtitle;
   if (live) {
-    if (!live.visible) return { kind: "disabled", label: "subtitles hidden in mpv", tone: "info" };
     if (live.id === 0) return { kind: "disabled", label: "subtitles off in mpv", tone: "info" };
+    if (!live.visible) return { kind: "disabled", label: "subtitles hidden in mpv", tone: "info" };
     const track = truncateLine(sanitizeTerminalText(live.title || live.language || ""), 48);
     return {
       kind: "selected",

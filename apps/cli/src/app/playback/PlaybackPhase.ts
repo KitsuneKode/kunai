@@ -4608,7 +4608,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (currentStream && event.trackType === "sub" && event.subtitleState) {
             stateManager.dispatch({
               type: "SET_STREAM",
-              stream: { ...currentStream, playbackSubtitle: event.subtitleState },
+              stream: {
+                ...currentStream,
+                playbackSubtitle: event.subtitleState,
+                ...(event.id === 0 ? { subtitle: undefined } : {}),
+              },
             });
           } else if (currentStream && event.trackType === "sub" && event.id === 0) {
             stateManager.dispatch({

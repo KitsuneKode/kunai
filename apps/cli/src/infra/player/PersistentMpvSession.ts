@@ -1132,25 +1132,37 @@ export class PersistentMpvSession {
     const selectingOptions = { ...previousOptions, subtitlePreference: "interactive" };
     this.currentOptions = selectingOptions;
     this.subtitleManager.resetSelectionObservation();
-    const attached = await this.subtitleManager.attachSubtitles(
-      this.ipcSession,
-      {
-        primarySubtitle: selection.subtitleUrl,
-        subtitleTracks: selection.subtitleTracks,
-      },
-      () => this.isGenerationCurrent(generation),
-    );
+    // Refresh file-local IDs before selecting: a picker must not grow mpv's
+    // external inventory on each click or replay IDs from a replaced file.
+    const tracks = await this.ipcSession.send(["get_property", "track-list"], 1_000);
     if (!this.isGenerationCurrent(generation)) return false;
-    if (attached.attachedCount <= 0) {
+    if (tracks.ok && Array.isArray(tracks.response.data))
+      this.subtitleManager.updateTrackList(tracks.response.data);
+    const existingId = this.subtitleManager.findExternalSubtitleId(selection.subtitleUrl);
+    let selected = false;
+    if (existingId !== undefined) {
+      const result = await this.ipcSession.send(["set_property", "sid", existingId], 1_000);
+      selected = result.ok;
+    } else {
+      const attached = await this.subtitleManager.attachSubtitles(
+        this.ipcSession,
+        {
+          primarySubtitle: selection.subtitleUrl,
+          subtitleTracks: selection.subtitleTracks?.filter(
+            (track) => track.url === selection.subtitleUrl,
+          ),
+        },
+        () => this.isGenerationCurrent(generation),
+      );
+      selected = attached.attachedCount > 0;
+    }
+    if (!this.isGenerationCurrent(generation)) return false;
+    if (!selected) {
       if (this.currentOptions === selectingOptions) this.currentOptions = previousOptions;
       return false;
     }
     const visibility = await this.ipcSession.send(["set_property", "sub-visibility", true], 1_000);
     if (!this.isGenerationCurrent(generation) || !visibility.ok) return false;
-    this.currentCycleOptions().onPlaybackEvent?.({
-      type: "late-subtitles-attached",
-      trackCount: attached.attachedCount,
-    });
     return true;
   }
 

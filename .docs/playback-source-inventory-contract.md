@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-23"
+lastReviewed: "2026-10-26"
 ---
 
 # Playback Source Inventory Contract
@@ -301,3 +301,18 @@ is still current. Rejected or superseded acknowledgements change no preference.
 Off clears a provider-default external subtitle during preparation after a new
 resolve, while keeping the inventory available for turning subtitles on again.
 Hardcoded subtitles remain a property of the video and cannot be removed by mpv.
+
+## Interactive subtitle inventory ownership
+
+An external subtitle picker selection queries the current mpv track list and
+selects an existing matching external track by ID. If the URL is not attached,
+it adds only that chosen track with its language/title metadata. It does not
+re-add the available inventory or report an interactive selection as a late
+background attachment. File-generation guards apply across the query and
+selection acknowledgements.
+
+A native mpv Off observation clears the selected external URL while retaining
+the available inventory and session language preference. Live Off takes
+precedence over the visibility flag when no track is selected; visibility Off
+with a selected track is reported as hidden. Native On and visibility changes
+remain file-local observations rather than saved language preferences.

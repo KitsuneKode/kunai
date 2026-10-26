@@ -497,3 +497,62 @@ test.each(["native-state", "explicit-off", "replaced-file"] as const)(
     }
   },
 );
+
+test("native subtitle Off clears the selected URL while preserving inventory and language preference", async () => {
+  const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
+  const { container, dispose } = await createIsolatedContainer("native-subtitle-off");
+  const controller = new AbortController();
+  const stream = { ...subtitleStream(), subtitle: subtitleUrl };
+  const title = { id: "tmdb:1", type: "movie" as const, name: "Subtitle fixture" };
+  container.stateManager.dispatch({ type: "SELECT_TITLE", title });
+  container.stateManager.dispatch({ type: "SET_STREAM", stream });
+  container.stateManager.dispatch({
+    type: "SET_SESSION_TRACK_PREFERENCES",
+    preferences: { subtitle: "en" },
+  });
+  const play = spyOn(container.player, "play").mockImplementation(async (_stream, options) => {
+    const generation = { process: 1, cycle: 1 };
+    options.onGenerationActivated?.(generation);
+    options.onPlaybackEvent?.({
+      generation,
+      event: {
+        type: "track-changed",
+        trackType: "sub",
+        id: 0,
+        subtitleState: { id: 0, visible: true },
+      },
+    });
+    return { watchedSeconds: 0, duration: 0, endReason: "quit" };
+  });
+  // The player port emits observations; this case performs no late network lookup.
+  const capabilities = container.player.capabilities;
+  Object.defineProperty(container.player, "capabilities", {
+    configurable: true,
+    value: { ...capabilities, externalSubtitles: false, progressEvents: false },
+  });
+  try {
+    await new PlaybackPhase()["playStream"](
+      stream,
+      title,
+      { season: 1, episode: 1 },
+      {
+        container,
+        signal: controller.signal,
+      },
+    );
+    const state = container.stateManager.getState();
+    expect(state.stream?.playbackSubtitle).toEqual({ id: 0, visible: true });
+    expect(state.stream?.subtitle).toBeUndefined();
+    expect(state.stream?.providerResolveResult?.subtitles).toHaveLength(1);
+    expect(state.playbackTrackPreferences.subtitle).toBe("en");
+  } finally {
+    controller.abort();
+    play.mockRestore();
+    Object.defineProperty(container.player, "capabilities", {
+      configurable: true,
+      value: capabilities,
+    });
+    await disposeContainer(container);
+    dispose();
+  }
+});

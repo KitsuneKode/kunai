@@ -1541,3 +1541,65 @@ test("replacement subtitles retain unchanged process visibility without a second
     harness.endProcess();
   }
 });
+
+test.each(["es", "de"] as const)(
+  "subtitle picker reuses %s or attaches only that track without growing the inventory",
+  async (language) => {
+    const harness = createHarness();
+    const events: PlayerPlaybackEvent[] = [];
+    const tracks = ["en", "es", "fr", "de"].map((lang) => ({
+      url: `https://subs.example/${lang}.vtt`,
+      language: lang,
+      display: lang,
+    }));
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Subtitle pick",
+        primarySubtitle: null,
+        subtitlePreference: "en",
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      // SAFETY: the harness supplies runtime; no user config is loaded.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      await flushAsyncWork();
+      harness.callbacks().onPropertyUpdate({
+        name: "track-list",
+        observedAt: 2,
+        value: tracks.slice(0, 3).map((track, index) => ({
+          id: index + 1,
+          type: "sub",
+          external: true,
+          "external-filename": track.url,
+          lang: track.language,
+        })),
+      });
+      const start = harness.commands.length;
+      const eventStart = events.length;
+      const control = session.getControl();
+      expect(
+        await control.selectSubtitle?.({
+          subtitleUrl: `https://subs.example/${language}.vtt`,
+          subtitleTracks: tracks,
+        }),
+      ).toBe(true);
+      const additions = harness.commands.slice(start).filter((command) => command[0] === "sub-add");
+      if (language === "es") {
+        expect(additions).toEqual([]);
+        expect(harness.commands.slice(start)).toContainEqual(["set_property", "sid", 2]);
+      } else {
+        expect(additions.map((command) => command[1])).toEqual(["https://subs.example/de.vtt"]);
+      }
+      expect(
+        events.slice(eventStart).filter((event) => event.type === "late-subtitles-attached"),
+      ).toEqual([]);
+    } finally {
+      await session.close();
+    }
+  },
+);

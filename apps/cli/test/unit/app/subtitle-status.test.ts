@@ -174,3 +174,17 @@ test("live YouTube embedded captions need no external subtitle URL", () => {
     ),
   ).toMatchObject({ kind: "selected", label: "subtitle playing · en" });
 });
+
+test("native Off takes precedence over visibility when no subtitle is selected", () => {
+  expect(
+    projectPlaybackSubtitleState(
+      {
+        url: "https://media.example/movie.mp4",
+        headers: {},
+        timestamp: Date.now(),
+        playbackSubtitle: { id: 0, visible: false },
+      },
+      "en",
+    ).label,
+  ).toBe("subtitles off in mpv");
+});

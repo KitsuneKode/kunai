@@ -65,6 +65,23 @@ export class PersistentSubtitleManager {
     return this.lastTrackList;
   }
 
+  findExternalSubtitleId(url: string): number | undefined {
+    if (!isAllowedMpvUrl(url, "remote") || !Array.isArray(this.lastTrackList)) return undefined;
+    const track = this.lastTrackList.find((value: unknown) => {
+      if (!value || typeof value !== "object") return false;
+      const row = value as Record<string, unknown>;
+      return (
+        row.type === "sub" &&
+        row.external === true &&
+        row["external-filename"] === url &&
+        typeof row.id === "number" &&
+        Number.isSafeInteger(row.id) &&
+        row.id > 0
+      );
+    }) as { id: number } | undefined;
+    return track?.id;
+  }
+
   cachedExternalSubtitleIds(): number[] {
     return [...this.externalSubtitleIds];
   }
