@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { createDocLastModified } from "../scripts/doc-last-modified";
 
@@ -46,7 +47,7 @@ test("full history preserves file dates; shallow boundaries and source archives 
     expect((await lookup(path.join(full, "docs/b.mdx")))?.toISOString()).toBe(
       "2025-02-01T00:00:00.000Z",
     );
-    await git(root, ["clone", "--depth=1", `file://${full}`, shallow]);
+    await git(root, ["clone", "--depth=1", pathToFileURL(full).href, shallow]);
     expect(await createDocLastModified(shallow)(path.join(shallow, "docs/a.mdx"))).toBeUndefined();
     expect(await createDocLastModified(root)(path.join(root, "docs/a.mdx"))).toBeUndefined();
   } finally {
