@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 
 import { createDocLastModified } from "../scripts/doc-last-modified";
 
-test("full history preserves file dates; shallow boundaries and source archives omit them", async () => {
+test("full history preserves author dates; shallow boundaries and source archives omit them", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "kunai-doc-history-"));
   const full = path.join(root, "full");
   const shallow = path.join(root, "shallow");
@@ -20,7 +20,8 @@ test("full history preserves file dates; shallow boundaries and source archives 
         GIT_AUTHOR_EMAIL: "fixture@example.invalid",
         GIT_COMMITTER_EMAIL: "fixture@example.invalid",
         GIT_AUTHOR_DATE: date,
-        GIT_COMMITTER_DATE: date,
+        // Rebase-like history: recording the commit later must not re-date its guide.
+        GIT_COMMITTER_DATE: "2025-06-01T00:00:00Z",
       },
       stdout: "ignore",
       stderr: "pipe",

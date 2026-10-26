@@ -19,7 +19,7 @@ export function createDocLastModified(root: string) {
         "-c",
         "core.quotepath=false",
         "log",
-        "--format=commit:%cI",
+        "--format=commit:%aI",
         "--name-only",
         "--",
         "docs",

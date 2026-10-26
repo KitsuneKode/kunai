@@ -466,7 +466,8 @@ Public pages retain their own canonical URLs, social cards and structured data;
 utility/share/withdrawn pages keep their existing indexing policy.
 
 `apps/docs/scripts/doc-last-modified.ts` resolves guide timestamps once per
-build from full Git history. A shallow clone or a source archive supplies no
+build from full Git history using author dates, matching Fumadocs and avoiding
+re-dating unchanged guides when commits are rebased. A shallow clone or a source archive supplies no
 guide dates, rather than attributing every guide to the clone boundary. Use a
 full checkout (or Vercel's `VERCEL_DEEP_CLONE=true`) to publish per-file dates.
 The sitemap lists canonical content URLs and published release dates; the home
