@@ -10,7 +10,7 @@ test("full history preserves author dates; shallow boundaries and source archive
   const root = await mkdtemp(path.join(os.tmpdir(), "kunai-doc-history-"));
   const full = path.join(root, "full");
   const shallow = path.join(root, "shallow");
-  async function git(cwd: string, args: string[], date = "2025-01-01T00:00:00Z") {
+  async function git(cwd: string, args: string[], date = "2025-01-01T00:00:00Z", expectedExit = 0) {
     const child = Bun.spawn(["git", ...args], {
       cwd,
       env: {
@@ -26,7 +26,7 @@ test("full history preserves author dates; shallow boundaries and source archive
       stdout: "ignore",
       stderr: "pipe",
     });
-    expect(await child.exited).toBe(0);
+    expect(await child.exited).toBe(expectedExit);
   }
   try {
     await mkdir(path.join(full, "docs"), { recursive: true });
@@ -46,6 +46,38 @@ test("full history preserves author dates; shallow boundaries and source archive
       "2025-01-01T00:00:00.000Z",
     );
     expect((await lookup(path.join(full, "docs/b.mdx")))?.toISOString()).toBe(
+      "2025-02-01T00:00:00.000Z",
+    );
+    await git(full, ["branch", "fixture-feature"]);
+    await git(full, ["checkout", "-b", "fixture-main"]);
+    await Bun.write(path.join(full, "docs/a.mdx"), "Main edit");
+    await git(full, ["add", "."]);
+    await git(
+      full,
+      ["-c", "commit.gpgsign=false", "commit", "-m", "Main edit"],
+      "2025-03-01T00:00:00Z",
+    );
+    await git(full, ["checkout", "fixture-feature"]);
+    await Bun.write(path.join(full, "docs/a.mdx"), "Feature edit");
+    await git(full, ["add", "."]);
+    await git(
+      full,
+      ["-c", "commit.gpgsign=false", "commit", "-m", "Feature edit"],
+      "2025-03-02T00:00:00Z",
+    );
+    await git(full, ["merge", "--no-commit", "fixture-main"], undefined, 1);
+    await Bun.write(path.join(full, "docs/a.mdx"), "Resolution authored during merge");
+    await git(full, ["add", "."]);
+    await git(
+      full,
+      ["-c", "commit.gpgsign=false", "commit", "-m", "Resolve guide"],
+      "2025-03-03T00:00:00Z",
+    );
+    const mergedLookup = createDocLastModified(full);
+    expect((await mergedLookup(path.join(full, "docs/a.mdx")))?.toISOString()).toBe(
+      "2025-03-03T00:00:00.000Z",
+    );
+    expect((await mergedLookup(path.join(full, "docs/b.mdx")))?.toISOString()).toBe(
       "2025-02-01T00:00:00.000Z",
     );
     await git(root, ["clone", "--depth=1", pathToFileURL(full).href, shallow]);

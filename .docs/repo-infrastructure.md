@@ -465,9 +465,11 @@ rejected. The root layout marks Vercel preview deployments `noindex, follow`.
 Public pages retain their own canonical URLs, social cards and structured data;
 utility/share/withdrawn pages keep their existing indexing policy.
 
-`apps/docs/scripts/doc-last-modified.ts` resolves guide timestamps once per
-build from full Git history using author dates, matching Fumadocs and avoiding
-re-dating unchanged guides when commits are rebased. A shallow clone or a source archive supplies no
+`apps/docs/scripts/doc-last-modified.ts` memoizes guide timestamps per path
+using full Git history and Fumadocs' author-date convention, avoiding re-dating
+unchanged guides when commits are rebased. File-specific queries retain edits
+authored during merge resolution, which directory-wide log summaries can omit.
+A shallow clone or a source archive supplies no
 guide dates, rather than attributing every guide to the clone boundary. Use a
 full checkout (or Vercel's `VERCEL_DEEP_CLONE=true`) to publish per-file dates.
 The sitemap lists canonical content URLs and published release dates; the home
