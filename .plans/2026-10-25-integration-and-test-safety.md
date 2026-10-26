@@ -108,3 +108,17 @@ CodeRabbit remains rate-limited and GitGuardian remains user-owned.
 `f0f83ef86` is pushed; its normal gate passes 9,383 tests / 61 skips / zero
 failures, with two unchanged tasks cached. Await the new Windows/platform run
 and final-head review.
+
+## October 26 integration execution
+
+The user authorized the proposed merge and qualification sequence. The combined
+review's three subtitle findings and npm 12 pack-metadata incompatibility were
+reproduced and fixed. Fresh forced gates and preserved artifact checks pass;
+see [the qualification record](../.release/watching-qualification-2026-10-26.md).
+
+Integration remains gated by maintainer-owned GitGuardian on PR668. Release also
+needs recovery/qualification of the red VidLink/Dune default-route signoff,
+bootstrap/trusted publishers for the two missing Android npm names, physical
+mobile/operator evidence, and a fresh main/versioned attested candidate. Do not
+close included source PRs or refresh PR327 before the integration lands. Current
+0.3.0 preliminary artifacts are not publishable as the proposed 0.4.0 release.
