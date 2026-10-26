@@ -394,3 +394,60 @@ Three failing integration cases now pass; the focused file has 11 passing tests.
 The follow-up logs use `/tmp/kunai-late-verified-*`; the fresh forced full suite passes 9546 tests with 62 skips and no failures.
 Forced types/lint, formatting/docs, the 10-task host build and host binary smoke
 (13 pass, 1 full-release-set skip) also pass after this additional change.
+
+## October 26: combined security and scoped search checkpoint
+
+Source checkpoint: `2d597ab16` (search recovery `25686928f`). This candidate includes PR668 at
+`7b9acf451` and the `origin/main` status update at `d923c4e12` through normal
+merges. It remains a release candidate, not a published release.
+
+Search history is partitioned by anime, series/movie and YouTube. Local title
+suggestions stay in their lane; remote requests are cancelled and gated by
+query, mode and provider. Completed results also carry that scope so they cannot
+flash in another mode before passive-effect cleanup. Legacy unclassified history
+is preserved without being copied into every lane. YouTube type-ahead remains
+local-only; committed search retains its provider-native path.
+
+Palette title selection and hover expose bounded metadata. Compact terminals use
+the section heading; taller terminals reserve three stable rows. Hover does not
+activate a title or move its hit target. Existing keyboard submission and Escape
+behavior remain covered. New and cached relative YouTube artwork uses the image
+CDN. Tracks no longer calls a selected source playing or repeats host labels.
+Subtitle inventory, explicit Off, pending lookup and confirmed mpv selection
+remain distinct; waiting and Off use neutral text.
+
+Fresh verification of this source:
+
+- Forced root types: 15 tasks, no cached tasks; forced lint: 14 tasks, no errors
+  (existing warnings remain). Formatting, anti-slop baseline, doc paths and
+  frontmatter checks pass. No lint baseline or bundle budget was increased.
+- Forced root tests: 9,677 pass, 62 explicit skips, zero failures across 26
+  uncached tasks. This includes 6,877 CLI unit tests and 411 CLI integration tests.
+- Forced host build: 10 uncached tasks pass. The development bundle is 3,181,843
+  bytes against the unchanged 3,194,880-byte cap. The Linux binary is 107.4 MiB;
+  the embedded Bun runtime dominates it. Public npm files total 10.5 KiB.
+- Real-mpv generated-media proof: mpv time advances and SQLite records progress.
+- AppRoot replay: the palette frame contains `Movie · videasy · history` and the
+  backend records `tmdb:smoke-movie-1`; both citations were mechanically checked.
+- Live YouTube: metadata resolves, inventory reaches 2160p, and Shorts search
+  returns only Shorts. A separate headless mpv run decodes one frame of the
+  official Big Buck Bunny fixture using Kunai's resolved format and raw options.
+  This does not qualify interactive switching, physical terminals or mobile.
+- `bun audit --json` returns an empty advisory result. React Doctor reports no
+  newly introduced findings against the pre-follow-up candidate.
+
+Evidence logs use `/tmp/kunai-search-final-*`; redacted live and worktree snapshots
+are under the task's `20261026-search-youtube-recovery` artifact directory.
+
+Release remains blocked: the fresh live-default signoff resolves and probes the
+series and anime routes, but the default VidLink movie route returns no stream
+(`provider-drift`). Its fixture, timeout and resolve gate were not weakened.
+GitGuardian's historical-fixture disposition remains with the user. Hosted checks
+must run on the new head; physical-device and final publication/provenance gates
+remain separate. No remote PR merge, release tag or package publication occurred.
+
+The primary checkout is clean on `main`, aligned with `origin/main`. The worktree
+audit found 40 existing checkouts, 23 with uncommitted work; notably,
+`docs/kanna-stay` has 31 unpushed commits and `deps/ink-8` has one. They were
+preserved. Only the stale registration for the already-missing cursor-audit
+worktree was pruned; its branch and commits remain available.
