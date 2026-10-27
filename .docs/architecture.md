@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-10-27"
 ---
 
 # Kunai — Runtime Architecture
@@ -189,6 +189,15 @@ local files, and non-HTTP schemes still refuse. The intent launcher constructs
 an argv array for `am`/Termux launchers, passes subtitles as `subs` /
 `subtitles_location` extras, scrubs the child environment, and never
 interpolates a shell command.
+
+The Android launch has a ten-second deadline across both process exit and
+stdout/stderr completion, with a 64 KiB limit per output stream. Playback
+cancellation and application shutdown abort the pending launcher, cancel its
+pipe readers and stop a gateway created for that failed handoff. The native
+child receives a kill signal; timers and abort listeners are released on every
+outcome. Cancellation never becomes accepted-handoff evidence. This cannot
+revoke an intent Android has already delivered or stop an external player
+that has already opened it.
 
 DASH rewriting lives in `infra/player/dash-gateway-manifest.ts`. It parses
 MPDs with `@xmldom/xmldom`, resolves hierarchical BaseURLs against the final

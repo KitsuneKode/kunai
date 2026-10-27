@@ -14,7 +14,17 @@ interface AndroidIntentProcess {
 
 export interface AndroidIntentRuntime {
   readonly which: (command: string) => string | null;
-  readonly spawn: (argv: readonly string[]) => AndroidIntentProcess;
+  readonly spawn: (
+    argv: readonly string[],
+    options: { readonly signal: AbortSignal },
+  ) => AndroidIntentProcess;
+}
+
+type AndroidIntentTimer = ReturnType<typeof setTimeout> | number;
+
+export interface AndroidIntentTimers {
+  readonly setTimeout: (callback: () => void, delayMs: number) => AndroidIntentTimer;
+  readonly clearTimeout: (handle: AndroidIntentTimer) => void;
 }
 
 export type AndroidIntentCommand =
@@ -40,6 +50,12 @@ const PLAYER_PACKAGES = {
 } as const;
 
 const MAX_DIAGNOSTIC_LENGTH = 2_048;
+const MAX_OUTPUT_BYTES = 64 * 1024;
+const LAUNCH_TIMEOUT_MS = 10_000;
+const defaultTimers: AndroidIntentTimers = {
+  setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+  clearTimeout: (handle) => clearTimeout(handle),
+};
 
 /**
  * Launcher children get a scrubbed environment: the process only needs PATH
@@ -58,12 +74,15 @@ function scrubbedIntentEnv(): Record<string, string> {
 
 export const defaultAndroidIntentRuntime: AndroidIntentRuntime = {
   which: (command) => Bun.which(command),
-  spawn: (argv) =>
+  spawn: (argv, { signal }) =>
     Bun.spawn([...argv], {
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
       env: scrubbedIntentEnv(),
+      signal,
+      killSignal: "SIGKILL",
+      maxBuffer: 2 * MAX_OUTPUT_BYTES,
     }),
 };
 
@@ -158,9 +177,37 @@ function boundedDiagnostic(value: string): string | undefined {
   return normalized.slice(0, MAX_DIAGNOSTIC_LENGTH);
 }
 
-async function readOutput(stream: ReadableStream<Uint8Array> | null | undefined): Promise<string> {
+async function readOutput(
+  stream: ReadableStream<Uint8Array> | null | undefined,
+  signal: AbortSignal,
+): Promise<string> {
   if (!stream) return "";
-  return new Response(stream).text();
+  const reader = stream.getReader();
+  const cancel = () => {
+    void reader.cancel().catch(() => {});
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  try {
+    if (signal.aborted) cancel();
+    signal.throwIfAborted();
+    while (true) {
+      const { done, value } = await reader.read();
+      signal.throwIfAborted();
+      if (done) return text + decoder.decode();
+      bytes += value.byteLength;
+      if (bytes > MAX_OUTPUT_BYTES) {
+        cancel();
+        throw new Error("Android launcher output exceeded 64 KiB");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    reader.releaseLock();
+  }
 }
 
 function errorDetail(error: Error | string | undefined): string | undefined {
@@ -179,18 +226,40 @@ export async function launchAndroidIntent(input: {
   readonly url: string;
   readonly subtitles?: readonly string[];
   readonly runtime?: AndroidIntentRuntime;
+  readonly signal?: AbortSignal;
+  readonly timers?: AndroidIntentTimers;
 }): Promise<AndroidIntentLaunchResult> {
+  if (input.signal?.aborted) throw new DOMException("playback aborted", "AbortError");
   const runtime = input.runtime ?? defaultAndroidIntentRuntime;
   const command = resolveAndroidIntentCommand({ ...input, runtime });
   if (!command.ok) return command;
 
+  const controller = new AbortController();
+  const onParentAbort = () => controller.abort(new DOMException("playback aborted", "AbortError"));
+  input.signal?.addEventListener("abort", onParentAbort, { once: true });
+  if (input.signal?.aborted) onParentAbort();
+  const { promise: aborted, reject: rejectAbort } = Promise.withResolvers<never>();
+  // spawn can throw before the exit/output race installs its handlers.
+  void aborted.catch(() => {});
+  const onAbort = () => rejectAbort(controller.signal.reason);
+  controller.signal.addEventListener("abort", onAbort, { once: true });
+  const timers = input.timers ?? defaultTimers;
+  const deadline = timers.setTimeout(
+    () => controller.abort(new Error("Android player launch timed out")),
+    LAUNCH_TIMEOUT_MS,
+  );
   try {
-    const process = runtime.spawn(command.argv);
-    const [exitCode, stdout, stderr] = await Promise.all([
-      process.exited,
-      readOutput(process.stdout),
-      readOutput(process.stderr),
+    controller.signal.throwIfAborted();
+    const process = runtime.spawn(command.argv, { signal: controller.signal });
+    const [exitCode, stdout, stderr] = await Promise.race([
+      Promise.all([
+        process.exited,
+        readOutput(process.stdout, controller.signal),
+        readOutput(process.stderr, controller.signal),
+      ]),
+      aborted,
     ]);
+    controller.signal.throwIfAborted();
     if (exitCode === 0) return { ok: true, launcher: command.launcher };
 
     const rawDetail = stderr.trim() || stdout.trim() || `exit ${exitCode}`;
@@ -205,11 +274,18 @@ export async function launchAndroidIntent(input: {
     }
     return { ok: false, reason: "launch-rejected", launcher: command.launcher, detail };
   } catch (error) {
+    // Abort also kills the native launcher and releases any pending pipe reads.
+    controller.abort(error);
+    if (input.signal?.aborted) throw new DOMException("playback aborted", "AbortError");
     return {
       ok: false,
       reason: "launch-rejected",
       launcher: command.launcher,
       detail: errorDetail(error instanceof Error ? error : undefined),
     };
+  } finally {
+    timers.clearTimeout(deadline);
+    controller.signal.removeEventListener("abort", onAbort);
+    input.signal?.removeEventListener("abort", onParentAbort);
   }
 }
