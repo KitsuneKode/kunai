@@ -30,7 +30,7 @@
     },
     "apps/cli": {
       "name": "@kitsunekode/kunai",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "bin": {
         "kunai": "dist/kunai.mjs",
       },
@@ -54,16 +54,16 @@
         "zod": "catalog:",
       },
       "optionalDependencies": {
-        "@kitsunekode/kunai-android-arm64": "0.3.0",
-        "@kitsunekode/kunai-android-x64": "0.3.0",
-        "@kitsunekode/kunai-darwin-arm64": "0.3.0",
-        "@kitsunekode/kunai-darwin-x64": "0.3.0",
-        "@kitsunekode/kunai-linux-arm64": "0.3.0",
-        "@kitsunekode/kunai-linux-arm64-musl": "0.3.0",
-        "@kitsunekode/kunai-linux-x64": "0.3.0",
-        "@kitsunekode/kunai-linux-x64-musl": "0.3.0",
-        "@kitsunekode/kunai-windows-arm64": "0.3.0",
-        "@kitsunekode/kunai-windows-x64": "0.3.0",
+        "@kitsunekode/kunai-android-arm64": "0.4.0",
+        "@kitsunekode/kunai-android-x64": "0.4.0",
+        "@kitsunekode/kunai-darwin-arm64": "0.4.0",
+        "@kitsunekode/kunai-darwin-x64": "0.4.0",
+        "@kitsunekode/kunai-linux-arm64": "0.4.0",
+        "@kitsunekode/kunai-linux-arm64-musl": "0.4.0",
+        "@kitsunekode/kunai-linux-x64": "0.4.0",
+        "@kitsunekode/kunai-linux-x64-musl": "0.4.0",
+        "@kitsunekode/kunai-windows-arm64": "0.4.0",
+        "@kitsunekode/kunai-windows-x64": "0.4.0",
       },
       "peerDependencies": {
         "typescript": "catalog:",
@@ -127,7 +127,7 @@
     },
     "packages/config": {
       "name": "@kunai/config",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@kunai/schemas": "workspace:*",
         "@kunai/types": "workspace:*",
@@ -142,7 +142,7 @@
     },
     "packages/core": {
       "name": "@kunai/core",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@kunai/types": "workspace:*",
       },
@@ -165,7 +165,7 @@
     },
     "packages/providers": {
       "name": "@kunai/providers",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@assemblyscript/loader": "catalog:providers",
         "@kunai/core": "workspace:*",
@@ -180,7 +180,7 @@
     },
     "packages/relay": {
       "name": "@kunai/relay",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@kunai/core": "workspace:*",
         "@kunai/types": "workspace:*",
@@ -194,7 +194,7 @@
     },
     "packages/schemas": {
       "name": "@kunai/schemas",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@kunai/types": "workspace:*",
         "zod": "catalog:",
@@ -208,7 +208,7 @@
     },
     "packages/storage": {
       "name": "@kunai/storage",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@kunai/core": "workspace:*",
         "@kunai/schemas": "workspace:*",
@@ -223,7 +223,7 @@
     },
     "packages/types": {
       "name": "@kunai/types",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
         "@types/bun": "catalog:",
       },
@@ -549,22 +549,6 @@
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
     "@kitsunekode/kunai": ["@kitsunekode/kunai@workspace:apps/cli"],
-
-    "@kitsunekode/kunai-darwin-arm64": ["@kitsunekode/kunai-darwin-arm64@0.3.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-7f6Zs1ExJGyYHuvw74adbxK2hi1wgJKKDGbjh6ABTL3RZeNI1bPTFH0lFnaQG4viwm4Q8OXvXD0cSE5hEtNFsg=="],
-
-    "@kitsunekode/kunai-darwin-x64": ["@kitsunekode/kunai-darwin-x64@0.3.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-EAvgeNBy+Fgei8xSw13LtIqhv2YN+Wex0TCnSrMs6ogvccfmGd61d5dT3ose6Ud6wKO3XJRERCxhig5n5y6dDg=="],
-
-    "@kitsunekode/kunai-linux-arm64": ["@kitsunekode/kunai-linux-arm64@0.3.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-pfzLWDRnTHxbi5uLz+RRYTtZuPqdidrXQ1Fie3V+YyPZcw3BXPwZpqZpxR7mUe4WvFn4mjtQRUrZt7I1/33I9w=="],
-
-    "@kitsunekode/kunai-linux-arm64-musl": ["@kitsunekode/kunai-linux-arm64-musl@0.3.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-rfDrCFX4CVxQYBH7jHDXgmL56cPtSxHXIDn0JmUn3G7CES5xjkBwl9AbHmEeJrWJN99zUVVNelSuEP4tWE6m1A=="],
-
-    "@kitsunekode/kunai-linux-x64": ["@kitsunekode/kunai-linux-x64@0.3.0", "", { "os": "linux", "cpu": "x64" }, "sha512-WLWicFJHn7Hpt6zmlfsW/LeSb+DuXADvB9LXZ6u8XhbehUTgr14STHmpy0X9slqzhQOMcMC7NUJIdJ0IHQS2dw=="],
-
-    "@kitsunekode/kunai-linux-x64-musl": ["@kitsunekode/kunai-linux-x64-musl@0.3.0", "", { "os": "linux", "cpu": "x64" }, "sha512-pHx0Y+OsYEcSN+fqM062JzufJ6LIYE5t052M+FnCVLB5hL0qCw5dP63+g/uSQdXPWUSW9fnKvf/1FR1MKg1GbA=="],
-
-    "@kitsunekode/kunai-windows-arm64": ["@kitsunekode/kunai-windows-arm64@0.3.0", "", { "os": "win32", "cpu": "arm64" }, "sha512-EF0S5Tw9x3SZh44DliVzDTbd+eSWqXGg+WBCh3j56rqp4Pqxy7brDOxZDYqjiic/rHHYJ166oDrFJ6VMl/cG4g=="],
-
-    "@kitsunekode/kunai-windows-x64": ["@kitsunekode/kunai-windows-x64@0.3.0", "", { "os": "win32", "cpu": "x64" }, "sha512-O92PsYiUxsTrW8xU1i9q81CCNEptWTK8TnjPK1gc332+WMVMGWpaK6/7XfhSCmI3KrmHk4B9mNGQP/WNkT4eIQ=="],
 
     "@kunai/analytics-ingest": ["@kunai/analytics-ingest@workspace:apps/analytics-ingest"],
 

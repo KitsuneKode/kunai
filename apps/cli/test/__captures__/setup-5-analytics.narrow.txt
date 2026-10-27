@@ -11,7 +11,7 @@
        No network calls. No install id stored on disk.
 
    Privacy first, by construction
-     { "installId": "<sha256 of a local id>", "version": "0.3.0",
+     { "installId": "<sha256 of a local id>", "version": "0.4.0",
        "os": "linux", "arch": "x64", "ts": 0 }
      Never: titles · queries · providers · URLs · paths · your IP
      The raw id never leaves this machine. Off in /settings deletes

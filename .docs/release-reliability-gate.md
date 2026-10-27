@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-27T11:48:19Z"
 ---
 
 # Kunai Release Reliability Gate
@@ -161,6 +161,15 @@ hot-looping. Poll values at or below zero are clamped to one millisecond in all
 three implementations. A zero timeout still permits one uncontended exclusive
 create, but never waits. External process-start probes are bounded where the
 runtime must launch a helper process.
+
+PowerShell poll tests execute the actual protocol with a stopped stopwatch and
+capture `Start-Sleep` requests, so a poll longer than the budget must request only
+the remaining delay; an expired budget requests no sleep. The full installer
+test separately checks contention refusal, unchanged lock ownership, retained
+verified version metadata and no launcher or manifest activation. It does not
+time the complete child-process shutdown: Windows scheduling, identity probes
+and cleanup can outlast the lock budget without extending the requested poll.
+
 Stale/corrupt reclamation first publishes a unique token-owned reclaim claim.
 Claimants elect one reclaimer by lexical claim order, then that owner re-reads
 and atomically renames the canonical file to quarantine for validation. It
