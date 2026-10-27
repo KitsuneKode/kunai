@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-27T07:08:05Z"
 ---
 
 # Kunai — UI Redesign Playbook
@@ -224,6 +224,9 @@ roamer, including unprompted chatter. Resume keeps their positions, resets the
 frame clock and never overrides reduced motion or a roamer dismissal. The
 roamer also cancels its frame while the document is hidden. Navigation within
 the app preserves the shared choice; a full reload starts a fresh page session.
+Restoring the roamer while paused mounts it at its saved position without starting
+the frame loop. A click-triggered speech bubble remains visible immediately while
+paused; only its entrance animation is omitted, and unprompted chatter stays stopped.
 
 `apps/docs/components/layout/footer-wordmark.tsx` is a decorative, oversized
 signature below the navigation. Its pointer light uses a local CSS mask,

@@ -12,6 +12,10 @@
   animation-play-state: paused;
 }
 
+.kunai-roamer[data-paused="true"] .kunai-roamer__bubble {
+  animation: none;
+}
+
 .kunai-footer-wordmark {
   position: relative;
   isolation: isolate;

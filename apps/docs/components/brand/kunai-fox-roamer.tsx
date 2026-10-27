@@ -238,6 +238,16 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const gait = useRef<GaitState>({ phase: 0, heading: 0, pose: STANDING_POSE, settleMs: 0 });
   const lastFrame = useRef(0);
   const seeded = useRef(false);
+  const attachHost = useCallback(
+    (host: HTMLDivElement | null) => {
+      hostRef.current = host;
+      if (!host) return;
+      // A restored host must keep its position even when no frame may run.
+      const pos = machine.current.pos;
+      host.style.transform = `translate3d(${(pos.x - size / 2).toFixed(1)}px, ${(pos.y - size / 2).toFixed(1)}px, 0)`;
+    },
+    [machine, size],
+  );
 
   const [phase, setPhase] = useState<RoamerPhase>("sitting");
   const [facing, setFacing] = useState<"left" | "right">("right");
@@ -454,7 +464,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     // Hidden from assistive tech, and out of the tab order, on purpose: she
     // only ever appears for a fine pointer, so there is no keyboard path that
     // could reach her and nothing here that is not decorative.
-    <div ref={hostRef} className="kunai-roamer" data-paused={paused} aria-hidden="true">
+    <div ref={attachHost} className="kunai-roamer" data-paused={paused} aria-hidden="true">
       {line ? <p className="kunai-roamer__bubble">{line}</p> : null}
       <button
         type="button"
