@@ -219,7 +219,7 @@ Alpine containers for both musl builds, also with the raw fallback withheld.
 
 ```sh
 mkdir -p .release-candidate && ROOT="$PWD" && \
-  (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename "$ROOT/.release-candidate/kunai-npm.tgz")
+  (cd apps/cli/dist/npm && bun pm pack --ignore-scripts --quiet --filename "$ROOT/.release-candidate/kunai-npm.tgz")
 ```
 
 ### 3. Confirmation gate (still no publish)
