@@ -64,7 +64,8 @@ the command palette:
 | Recover the current stream       | `r` or `/recover`        |
 | Try the next compatible provider | `Shift+F` or `/fallback` |
 | Arrange playback order           | `/up-next`               |
-| Save titles for later            | `/watchlist`             |
+| Save or unsave the current title | `/bookmark`              |
+| Open saved titles                | `/watchlist`             |
 | Manage offline downloads         | `/downloads`             |
 | Play downloaded files            | `/library`               |
 
@@ -89,15 +90,27 @@ for the data and network boundaries.
 kunai upgrade --check
 kunai upgrade
 kunai doctor
-npm uninstall -g @kitsunekode/kunai
 ```
 
 `kunai doctor` checks tool discovery and install ownership. For playback
 problems, open `/diagnostics` or `/export-diagnostics` in the shell. Review an
 export before attaching it to an issue, and never paste cookies or credentials.
 
+Choose how to remove Kunai. To also delete config, history, cache and downloaded
+videos in the default download directory, run this while `kunai` is still installed:
+
+```sh
+kunai uninstall --purge
+```
+
+To remove only the npm package and keep your data instead:
+
+```sh
+npm uninstall -g @kitsunekode/kunai
+```
+
 See [troubleshooting](https://kunai.kitsunekode.in/docs/users/troubleshooting)
-for recovery steps and [installation and removal](https://kunai.kitsunekode.in/docs/users/install-and-update#uninstall)
+for recovery steps and [installation and removal](https://kunai.kitsunekode.in/docs/users/install-and-update#lifecycle-cli-only)
 for data-retention options.
 
 ## Project
