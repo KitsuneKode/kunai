@@ -468,3 +468,10 @@ production modules. The root and CLI AniDB smoke aliases were removed. Historica
 fixtures stay available without claiming current production search coverage.
 The focused roster file passes 10 tests; CLI typecheck and lint pass, with the
 existing warnings retained. No runtime defaults or probe gates changed.
+
+The remaining current PR 668 test finding was repaired on its own branch: AniDB's
+then-active smoke once again searches the requested title before resolving a
+returned identity. The isolated live run exits at `stage: "search"` with zero
+Onigiri results and no install ID; it cannot pass through a fixed native ID.
+This parent correction is merged into the watching candidate without restoring
+AniDB to production or bringing back its removed script aliases.
