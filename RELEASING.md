@@ -71,7 +71,7 @@ network, malformed-response, and integrity errors are failures, not absence.
 3. Commit the generated `.changeset/*.md` file with your feature/fix commits.
 4. Open a PR. The **Release Guard** workflow runs `bun run guard` and fails on version/changelog drift.
 5. Merge to `main`. The **Release** workflow opens or updates a version PR only — it never publishes on push.
-6. Review and merge the version PR (`chore: version packages`). That commit bumps `apps/cli/package.json`, both changelogs, and regenerates staged `.release/kunai-vX.Y.Z.{md,json}` artifacts.
+6. Review and merge the version PR (`chore: version packages`). That commit bumps `apps/cli/package.json`, synchronizes native platform pins and `bun.lock`, updates both changelogs, and regenerates staged `.release/kunai-vX.Y.Z.{md,json}` artifacts. Check the frozen install, generated docs data and version-bearing setup captures before merging.
 7. Manually dispatch **Release** with the exact version string (must match `apps/cli/package.json`) and the provider signoff run id, wait for **confirmation**, approve `release-production`, and let candidate → confirmation → publish → metadata complete. Review the resulting metadata PR, approve its workflow runs if requested, and merge after required checks pass.
 
 **Never hand-edit** `apps/cli/package.json` `version` or `apps/cli/src/main.ts` for releases. Runtime version (`KUNAI_VERSION`) is derived from `package.json` at build time.
@@ -143,6 +143,7 @@ Job **`version-pr`**: `changesets/action` runs `bun run version:packages` and op
 After the version PR merges, expect:
 
 - Bumped `@kitsunekode/kunai` version in `apps/cli/package.json`
+- Matching native platform pins and `bun.lock`, refreshed with `bun install --lockfile-only --ignore-scripts`; CI continues to install with `--frozen-lockfile`
 - Updated `apps/cli/CHANGELOG.md` + root `CHANGELOG.md`
 - Staged `.release/kunai-vX.Y.Z.md` + `.release/kunai-vX.Y.Z.json` (`status: staged`)
 
@@ -411,7 +412,7 @@ change on a new branch and open a PR manually.
 
 - **Release Guard** (`.github/workflows/release-guard.yml`): PR-time check that `package.json`, both changelogs, pending changesets, and installer/release paths agree.
 - **CI** (`.github/workflows/ci.yml`): parallel Turbo jobs; installer Docker smoke when installer paths change.
-- `version:packages` runs `changeset version`, mirrors changelog, and regenerates `.release/kunai-v*.md` / `.json` via `bun run release:notes`.
+- `version:packages` runs `changeset version`, synchronizes native platform pins, refreshes `bun.lock` without installing packages or running lifecycle scripts, mirrors the changelog, and regenerates `.release/kunai-v*.md` / `.json` via `bun run release:notes`.
 
 **npm vs GitHub Release artifacts:** npm publishes the preserved
 `kunai-npm.tgz` (allowlisted launcher files only). The ten archives and ten
