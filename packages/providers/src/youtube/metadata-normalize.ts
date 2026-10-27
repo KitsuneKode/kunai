@@ -1,3 +1,5 @@
+import { isJsonObject, isJsonString } from "@kunai/types";
+
 import {
   YOUTUBE_METADATA_SCHEMA_VERSION,
   type YoutubeVideoMetadata,
@@ -59,6 +61,18 @@ export function parseCachedYoutubeMetadata(
       // that looks valid. A version we do not recognise is a cache miss, so the
       // caller refetches instead of serving a stripped one until the TTL expires.
       if (parsed.schemaVersion !== YOUTUBE_METADATA_SCHEMA_VERSION) return null;
+      if (
+        !("qualities" in parsed) ||
+        !Array.isArray(parsed.qualities) ||
+        !parsed.qualities.every(
+          (quality) =>
+            isJsonObject(quality) &&
+            "formatId" in quality &&
+            isJsonString(quality.formatId) &&
+            /^[\w.-]+$/.test(quality.formatId),
+        )
+      )
+        return null;
       if ("videoId" in parsed && typeof parsed.videoId === "string") {
         return parsed as YoutubeVideoMetadata;
       }

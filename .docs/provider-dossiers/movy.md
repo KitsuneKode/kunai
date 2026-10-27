@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-25"
+lastReviewed: "2026-10-26"
 ---
 
 # Provider: Movy
@@ -73,6 +73,37 @@ in `packages/providers/src/movy/streamcrypto.ts`; the module is dependency-free.
 - `bun test test/movy-direct.test.ts`: fixture decrypt (real captured
   ciphertext), resolve, lane exhaustion, pinned-source cycle, candidate order —
   all green.
+
+## HLS inventory recovery (2026-10-24)
+
+Lane `sources` containing HLS are expanded through the shared bounded, guarded
+manifest reader. Safely separable variants carry distinct real URLs, quality rows
+and the same lane identity and headers through the normal candidate gate.
+Masters requiring separate audio remain one Auto stream. Manifest audio languages
+and subtitle renditions survive even when the lane's `subtitles` array is empty;
+sidecar and manifest duplicates collapse by URL. Source switching still resolves
+the requested lane; it does not advertise other lanes as already playable.
+
+The research suggestion to query `subtitles.vidy.st/search` remains unverified.
+Primary asset retrieval did not establish that endpoint or its alleged response
+schema; no external subtitle host or search endpoint was added. The confirmed
+missing seam is HLS manifest inventory, not proof that every title has subtitles.
+
+An isolated, bounded October 24 TMDB 550 movie resolve returned a real
+2160/1080/720/480 HLS ladder and zero subtitles through the unchanged resolve
+gate. The deterministic encrypted-payload fixture separately proves recovery
+of manifest-only subtitles and exact variant URLs. Neither is a decoded-frame
+playback qualification, and no signed URLs or seeds are retained in reports.
+
+## Mislabeled segment MIME recovery
+
+The shared HLS probe accepts a `text/html` segment only when its bounded prefix
+contains three MPEG-TS sync bytes at 188-byte packet boundaries. A single ASCII
+`G`, an HTML error page, and an undersized body remain failures. The probe captures
+only the required 1 KiB prefix and cancels the body even if Range is ignored; it
+does not buffer full segments or bypass HTTP, redirect, DNS, or candidate gates.
+Fixture coverage establishes this exception and bounded reading, not current live
+Movy playback or support for every container mislabeled as HTML.
 
 The HTML MIME exception also recognizes a complete, bounded fMP4 movie fragment
 with `mfhd`, `traf`/`tfhd`, `tfdt` and `trun` boxes followed by a nonempty `mdat`

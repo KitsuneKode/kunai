@@ -25,6 +25,8 @@ export const MPV_OBSERVED_PROPERTIES = [
   "filename",
   "media-title",
   "track-list",
+  "sid",
+  "sub-visibility",
 ] as const;
 
 export const MPV_INITIAL_PROPERTIES = ["playback-time", "duration", "percent-pos"] as const;

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
+import type { LooseJsonValue } from "@kunai/types";
 import type {
   EndpointHealthPort,
   ProviderResolveInput,
@@ -16,8 +17,10 @@ import { decryptMovyPayload, MovyDecryptError } from "../src/movy/streamcrypto";
 
 /**
  * Captured live from `api.wecollege.net/denver/sources` (TMDB 1423191,
- * "Resident Evil") — the seed is single-use but the pair is deterministic
- * for the decrypt unit test.
+ * "Resident Evil") before upstream removed the denver route (404 since
+ * 2026-10-13) — the seed is single-use but the pair is deterministic for the
+ * decrypt unit test, and the ciphertext is lane-agnostic: stubs below serve
+ * it from live lanes.
  */
 const FIXTURE = {
   mediaId: 1423191,
@@ -107,7 +110,7 @@ describe("resolveMovyDirect", () => {
         ...contextReturning((url, init) => {
           if (url.includes("/seed"))
             return new Response(JSON.stringify({ seed: FIXTURE.seed, ttlMs: 30000 }));
-          if (url.includes("/denver/sources")) return new Response(FIXTURE.body);
+          if (url.includes("/miami/sources")) return new Response(FIXTURE.body);
           if (outcome === "cancelled" && init?.redirect === "manual") controller.abort();
           return new Response("fixture refusal", { status: 403 });
         }),
@@ -146,7 +149,7 @@ describe("resolveMovyDirect", () => {
       if (url.includes("/seed")) {
         return new Response(JSON.stringify({ seed: FIXTURE.seed, ttlMs: 30000 }), { status: 200 });
       }
-      if (url.includes("/denver/sources")) {
+      if (url.includes("/miami/sources")) {
         return new Response(FIXTURE.body, { status: 200 });
       }
       return new Response(JSON.stringify({ error: "Error", message: "lane down" }), {
@@ -160,7 +163,7 @@ describe("resolveMovyDirect", () => {
     // Every lane stays visible for server switching in the tracks panel.
     expect(result.sources?.length).toBe(MOVY_LANES.length);
     expect(
-      result.sources?.some((s) => s.id === "source:movy:denver" && s.status === "selected"),
+      result.sources?.some((s) => s.id === "source:movy:miami" && s.status === "selected"),
     ).toBe(true);
   });
 
@@ -170,7 +173,7 @@ describe("resolveMovyDirect", () => {
     const endpointHealth: EndpointHealthPort = {
       shouldTry: (_providerId, endpoint) => {
         seen.push(endpoint);
-        return endpoint !== "denver";
+        return endpoint !== "miami";
       },
       recordSuccess: () => {},
       recordFailure: () => {},
@@ -196,15 +199,15 @@ describe("resolveMovyDirect", () => {
 
     const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
     expect(result.status).toBe("resolved");
-    // Health was consulted for denver, but the quarantined lane was never
+    // Health was consulted for miami, but the quarantined lane was never
     // asked over HTTP — the cycle skipped it before any sources fetch.
-    expect(seen).toContain("denver");
-    expect(requestedLanes).not.toContain("denver");
+    expect(seen).toContain("miami");
+    expect(requestedLanes).not.toContain("miami");
   });
 
   test("reports quarantine honestly when every lane is skipped", async () => {
-    // `stopReason: "all-quarantined"` yields zero attempts — the failure must
-    // name the quarantine, not claim the lanes were tried and exhausted.
+    // Endpoint quarantine refuses every lane. No automatic canary is wired
+    // in the production cycle: preserve the refusal and report its reason.
     let fetches = 0;
     const endpointHealth: EndpointHealthPort = {
       shouldTry: () => false,
@@ -224,6 +227,39 @@ describe("resolveMovyDirect", () => {
     expect(fetches).toBe(0);
     expect(result.failures?.[0]?.code).toBe("provider-unavailable");
     expect(result.failures?.[0]?.message).toContain("quarantined");
+    expect(
+      result.trace.events?.some(
+        (event) => event.type === "provider:exhausted" && event.message.includes("quarantined"),
+      ),
+    ).toBe(true);
+  });
+
+  test("lanes become resolvable again when endpoint health readmits them", async () => {
+    let allowed = false;
+    const endpointHealth: EndpointHealthPort = {
+      shouldTry: () => allowed,
+      recordSuccess: () => {},
+      recordFailure: () => {},
+    };
+    const ctx = {
+      ...contextReturning((url) => {
+        if (url.includes("/seed")) {
+          return new Response(JSON.stringify({ seed: FIXTURE.seed, ttlMs: 30000 }), {
+            status: 200,
+          });
+        }
+        if (url.includes("/sources")) {
+          return new Response(FIXTURE.body, { status: 200 });
+        }
+        return new Response("{}", { status: 200 });
+      }),
+      endpointHealth,
+    };
+
+    expect((await movyProviderModule.resolve(MOVIE_INPUT, ctx)).status).toBe("exhausted");
+    allowed = true;
+    const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+    expect(result.status).toBe("resolved");
   });
 
   test("exhausts when every lane fails", async () => {
@@ -286,7 +322,19 @@ describe("buildMovyCycleCandidates", () => {
   test("produces one candidate per lane in lane order", () => {
     const candidates = buildMovyCycleCandidates(MOVY_LANES);
     expect(candidates.length).toBe(MOVY_LANES.length);
-    expect(candidates[0]?.serverId).toBe("denver");
+    expect(candidates[0]?.serverId).toBe("miami");
+  });
+
+  test("removed upstream lanes stay out of the roster", () => {
+    // Upstream deleted the denver route (404 "Route GET:/denver/… not found"
+    // since 2026-10-13) — keeping it would burn every resolve's first cycle.
+    expect(MOVY_LANES).not.toContain("denver");
+    // Ladders before Auto-only: the first success wins the cycle, so the
+    // 4K/ladder lanes (miami, boise, atlanta) must precede Auto-only lanes.
+    const order = [...MOVY_LANES];
+    expect(order.indexOf("miami")).toBeLessThan(order.indexOf("portland"));
+    expect(order.indexOf("boise")).toBeLessThan(order.indexOf("paris"));
+    expect(order.indexOf("atlanta")).toBeLessThan(order.indexOf("portland"));
   });
 
   test("preferred source outranks lane order", () => {
@@ -337,7 +385,7 @@ describe("movy seed cache — untrusted envelope", () => {
           status: 200,
         });
       }
-      if (url.includes("/denver/sources")) return new Response(FIXTURE.body, { status: 200 });
+      if (url.includes("/miami/sources")) return new Response(FIXTURE.body, { status: 200 });
       return new Response("{}", { status: 500 });
     });
 
@@ -359,7 +407,7 @@ describe("movy seed cache — untrusted envelope", () => {
         const seed = seedCalls === 1 ? "0.wrongseed" : FIXTURE.seed;
         return new Response(JSON.stringify({ seed, ttlMs: 30000 }), { status: 200 });
       }
-      if (url.includes("/denver/sources")) return new Response(FIXTURE.body, { status: 200 });
+      if (url.includes("/miami/sources")) return new Response(FIXTURE.body, { status: 200 });
       return new Response("{}", { status: 500 });
     });
 
@@ -367,4 +415,44 @@ describe("movy seed cache — untrusted envelope", () => {
     expect(result.status).toBe("resolved");
     expect(seedCalls).toBe(2);
   });
+});
+
+// XOR the known captured plaintext/ciphertext pair to reuse its keystream for
+// shorter synthetic payloads. No production crypto or decoder is mocked.
+function encryptFixturePayload(payload: LooseJsonValue): string {
+  const cipher = Buffer.from(FIXTURE.body, "base64url");
+  const known = Buffer.from(
+    `mvm1${decryptMovyPayload(FIXTURE.body, FIXTURE.seed, FIXTURE.mediaId)}`,
+  );
+  const plain = Buffer.from(`mvm1${JSON.stringify(payload)}`);
+  if (plain.length > known.length) throw new Error("fixture keystream too short");
+  return Buffer.from(plain.map((byte, i) => byte ^ (cipher[i] ?? 0) ^ (known[i] ?? 0))).toString(
+    "base64url",
+  );
+}
+
+test("Movy expands real HLS qualities and preserves manifest-only subtitles", async () => {
+  const body = encryptFixturePayload({
+    sources: [{ url: "https://cdn.example/master.m3u8", type: "hls", quality: "Auto" }],
+    subtitles: [{ file: "https://cdn.example/en.vtt", language: "en" }],
+  });
+  const ctx = contextReturning((url) => {
+    if (url.includes("/seed")) return Response.json({ seed: FIXTURE.seed, ttlMs: 30000 });
+    if (url.includes("/miami/sources")) return new Response(body);
+    if (url.includes("/sources")) return new Response("down", { status: 500 });
+    if (url.endsWith("master.m3u8"))
+      return new Response(
+        '#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="English",LANGUAGE="en",URI="en.vtt"\n#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080,SUBTITLES="s"\n1080.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,SUBTITLES="s"\n720.m3u8\n',
+      );
+    if (url.endsWith(".m3u8")) return new Response("#EXTM3U\n#EXTINF:5,\nsegment.ts\n");
+    return new Response(new Uint8Array(2048));
+  });
+  const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+  expect(result.status).toBe("resolved");
+  expect(result.streams.map((s) => s.qualityLabel)).toEqual(["1080p", "720p"]);
+  expect(result.streams.map((s) => s.url)).toEqual([
+    "https://cdn.example/1080.m3u8",
+    "https://cdn.example/720.m3u8",
+  ]);
+  expect(result.subtitles.map((s) => s.url)).toEqual(["https://cdn.example/en.vtt"]);
 });

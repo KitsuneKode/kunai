@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T13:45:00Z"
+lastReviewed: "2026-10-26"
 ---
 
 # Playback Source Inventory Contract
@@ -19,6 +19,12 @@ This is a narrow contract doc. For broader context, read:
 ## Principle
 
 Providers own provider-specific mess. The playback runtime owns user policy. The UI renders normalized inventory and never scrapes.
+
+A selected source is a selection fact, not evidence that playback started.
+Failed-current annotations retain the selection for recovery without a
+`playing` badge. Source details deduplicate native labels and host evidence.
+Subtitle candidates may be available before mpv attaches or selects them;
+the shell must preserve that distinction and honor explicit Off observations.
 
 ```text
 provider module
@@ -132,7 +138,7 @@ requires another call to materialize a specific quality.
 
 Source and quality pickers must read from cached inventory.
 
-- Source change: select the best stream from the chosen `sourceId`. A pin that already
+- Source change: select the best stream within the session quality preference from the chosen `sourceId`. A pin that already
   selected an audio/mirror lane must not become an explicit first-rung choice: HiAnime
   consumes its sub/dub pin before quality selection, and AnimeGG ignores the matching
   active-mirror pin when ranking that mirror's qualities. An explicit stream id still
@@ -148,12 +154,37 @@ Source and quality pickers must read from cached inventory.
   `selectCurrentSubtitle`. Update the selected row only after the player accepts
   the choice, and never overwrite a stream replaced during that acknowledgement.
   Embedded tracks that require a restart follow the stream-selection path.
+- Native mpv `sid` and `sub-visibility` observations are file-local live facts,
+  separate from the saved language preference and provider inventory. The watching
+  label and Tracks selection use those facts when known, including hidden and Off.
+  Late inventory may select the requested default when no subtitle has played yet.
+  A native On/Off choice wins over later inventory, and an explicit accepted pick
+  can restore visibility. Process-wide visibility survives file replacement even
+  when mpv emits no new visibility event. Startup and persistent `loadfile` both apply
+  `sid=no` for Off. Replies from a replaced file cannot rewrite its successor. Late external
+  search completion merges into the current stream, preserving native state and
+  explicit Off; a replaced source/file receives no stale lookup result.
 - Unchanged or stale picks and live subtitle acknowledgements return no restart
   intent. Pre-play continues to launch the resolved stream; post-play stays on its
   menu. A player rejection reports feedback without replaying the unchanged stream.
 - Audio/sub-dub change: reuse cached inventory only if that audio mode was included in the inventory. Otherwise resolve a separate inventory key for the requested mode.
 
 Never let one selected source overwrite another source's inventory. Store the full normalized result, then store user selection as separate playback intent.
+
+YouTube quality rows use exact yt-dlp format IDs, shared across extractor-client
+connection lanes. Equal heights alone are not equivalent: codec, reported FPS,
+reported average bitrate and the format ID distinguish the discovered rows.
+The selected stream stays first within its row; other quality rows prefer that
+same connection when present. Tracks and the standalone quality picker consume
+this ordering. Source-only connection switches retain the current format when
+the target lane has it; Auto clears that preference through both the picker and
+episode selection coordinator, including reuse of a cached low-format stream. Other providers retain
+source-specific quality rows.
+
+An exact YouTube choice pins the discovered video format (plus best audio when
+the format is video-only); it has no fallback to another video format. Metadata
+does not prove that every client can play it. The watch-URL handoff is checked by
+mpv, and bitrate describes extractor metadata rather than measured throughput.
 
 Resolve-gate fallback preserves the initial selection intent in `selectionDecision.reason`;
 `selectedQualityRank` describes the accepted rung actually shipped. AnimeGG keeps the
@@ -261,3 +292,33 @@ Switching anime title display preference must be a pure projection over `SearchR
 The source checkout currently requires Bun for development and local source runs. The codebase uses Bun-first APIs and tooling (`Bun.spawn`, `Bun.which`, `Bun.file`, `Bun.connect`, `Bun.hash`, workspaces, lockfile behavior).
 
 For beta, prefer reducing onboarding friction through packaged binaries or installer checks over porting the runtime to Node/npm. A Node-only source path is possible later, but it would add compatibility work across process, socket, filesystem, bundling, and package scripts without improving playback reliability first.
+
+## Session track choices
+
+`SessionState.playbackTrackPreferences` overlays subtitle and quality choices on
+the active media profile. Resolve, prefetch, mpv options, inventory keys and
+recovery invalidation consume that same effective profile. Source/provider picks
+do not write these choices back to configuration. Auto clears an exact stream
+pick and uses best available quality in the active source; numeric picks carry
+their quality preference into later source switches.
+
+An accepted live external-subtitle choice updates the override only if its stream
+is still current. Rejected or superseded acknowledgements change no preference.
+Off clears a provider-default external subtitle during preparation after a new
+resolve, while keeping the inventory available for turning subtitles on again.
+Hardcoded subtitles remain a property of the video and cannot be removed by mpv.
+
+## Interactive subtitle inventory ownership
+
+An external subtitle picker selection queries the current mpv track list and
+selects an existing matching external track by ID. If the URL is not attached,
+it adds only that chosen track with its language/title metadata. It does not
+re-add the available inventory or report an interactive selection as a late
+background attachment. File-generation guards apply across the query and
+selection acknowledgements.
+
+A native mpv Off observation clears the selected external URL while retaining
+the available inventory and session language preference. Live Off takes
+precedence over the visibility flag when no track is selected; visibility Off
+with a selected track is reported as hidden. Native On and visibility changes
+remain file-local observations rather than saved language preferences.

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26T00:43:04Z"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai — Repo Infrastructure
@@ -130,6 +130,18 @@ lint, formatting and tests. Only `bun run ci` additionally runs
 two verifiers. The hosted CI job matrix has its own path conditions described
 below, so a successful branch pre-push does not establish that those hosted
 checks ran.
+
+Affected runs may include cache replays; final candidate qualification still
+requires forced gates.
+
+The minified development bundle has its own measured size ratchet in
+`apps/cli/scripts/build-shared.ts`. It is not the public npm payload: the Node
+launcher retains separate 32 KiB packed / 64 KiB unpacked limits. Combined PRs
+can exceed the development ratchet even when each passed independently. Measure
+the same build options together, remove redundant code, and document any
+remaining intentional adjustment beside the constant. The October 15 review
+train removed duplicate subtitle checks before a 4 KiB development-only budget
+adjustment; public package limits remain unchanged.
 
 Doc freshness compares both committed versions with the installed formatter
 before allowing an unchanged review date on a formatting-only edit. Content
@@ -267,6 +279,22 @@ Manifest matching follows links and compares device/inode identity with exact
 bigint values, covering aliases through symlinks, junctions and hard links. Other JSON imports retain their
 complete contents, and build-host environment
 values are never inlined. The development-bundle size gate remains unchanged.
+
+Release preparation and publication scope each npm invocation with an explicit
+`--prefix` pointing to the platform package or preserved tarball directory.
+This keeps npm 11's development-engine checks on the artifact being handled;
+the repository itself deliberately requires Bun. It does not bypass engine
+checks with `--force` or alter the repository's package-manager policy. Preserved
+tarball inspection and registry/publish commands use the same artifact context;
+user/environment registry authentication still follows npm's normal resolution.
+Pack metadata accepts npm 11's single-record array and npm 12's single-entry
+package-name map. A keyed record must agree with its key; multiple records,
+missing fields and mismatched expected package identity/version/integrity still
+fail. This compatibility does not change the release workflow's pinned Node/npm
+toolchain or enable publication during candidate preparation.
+The real-npm regression in
+`apps/cli/test/integration/npm-global-install.test.ts` packs tiny isolated
+candidates and verifies that inspection returns their exact preserved integrity.
 
 The 0.3.0 GitHub Release compatibility bridge is an exact 22-file set: ten
 canonical archives, the same ten raw standalone binaries, legacy
@@ -427,3 +455,12 @@ dependency links.
 The root `test:live:allmanga-crypto` command forwards to the CLI's existing
 metadata-only freshness probe; it does not resolve or play a video. It is an
 opt-in live command, outside default unit/integration CI.
+
+### October 22 watching candidate bundle measurement
+
+The combined provider, v4 timing, consent and mouse implementation produced
+3,185,739 bytes against the prior 3,174,400-byte development-bundle cap
+(11,339 bytes over). The explicit development cap is now 3,194,880 bytes
+(3120 KiB), leaving 9,141 bytes of headroom. This admits the measured feature
+set; the boundary test still rejects the first byte over the cap. The public
+Node launcher's packed and unpacked budgets remain 32 KiB and 64 KiB.

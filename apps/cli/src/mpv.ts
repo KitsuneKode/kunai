@@ -729,6 +729,7 @@ export function buildMpvArgs(
   })();
   if (slang) {
     args.push(`--slang=${slang}`);
+    if (slang === "no") args.push("--sid=no");
     if ((isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) && slang !== "no" && slang !== "orig") {
       args.push("--subs-fallback=default");
     }

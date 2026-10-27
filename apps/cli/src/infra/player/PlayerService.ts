@@ -6,6 +6,7 @@
 
 import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { PlayerCapabilities } from "@/domain/playback/player-capabilities";
+import type { PlaybackSubtitleObservation } from "@/domain/types";
 import type { PlaybackResult, ShellMode, StreamInfo, TitleInfo } from "@/domain/types";
 import type { PlaybackTimingMetadata } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
@@ -57,6 +58,8 @@ export type PlayerPlaybackEvent =
   | {
       type: "stream-stalled";
       secondsWithoutProgress: number;
+      /** No advancing time has been observed for this file yet. */
+      duringStartup?: boolean;
       /** When set, the stall matched demuxer/network starvation heuristics (see playback-watchdog). */
       stallKind?: "progress" | "network-read-dead";
     }
@@ -64,7 +67,12 @@ export type PlayerPlaybackEvent =
   | { type: "player-closing" }
   | { type: "player-closed" }
   | { type: "segment-skipped"; kind: PlaybackSkipKind; automatic: boolean }
-  | { type: "track-changed"; trackType: "audio" | "sub"; id: number }
+  | {
+      type: "track-changed";
+      trackType: "audio" | "sub";
+      id: number;
+      subtitleState?: PlaybackSubtitleObservation;
+    }
   | {
       type: "mpv-in-process-reconnect";
       phase: "started" | "complete" | "failed";

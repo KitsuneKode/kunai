@@ -9,9 +9,11 @@ import React from "react";
 import { CompanionHost } from "../CompanionHost";
 import { reducedMotionEnabled } from "../motion-policy";
 import { BLOOM_FRAMES, STATIC_PETAL } from "../primitives/SakuraPetal";
+import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 import type { ScopedDependencyRow } from "./dependency-rows";
 import { ChoiceRow, ScreenTitle, ToggleRow, type FooterKey } from "./SetupFrame";
+import { SetupTarget } from "./SetupPointer";
 
 export const MODE_OPTIONS = [
   {
@@ -118,6 +120,7 @@ export function DependencyScreen({
                   {pad(row.name, nameWidth)}
                 </Text>
                 <Text color={palette.dim}>{pad(row.detail, detailWidth)}</Text>
+                {roleWidth > 0 ? <Text> </Text> : null}
                 {roleWidth > 0 ? <Text color={palette.dim}>{pad(row.role, roleWidth)}</Text> : null}
               </Box>
               {isSelected && row.consequence ? (
@@ -163,12 +166,9 @@ export function ModeScreen({ selected }: { readonly selected: number }) {
       />
       <Box flexDirection="column">
         {MODE_OPTIONS.map((option, i) => (
-          <ChoiceRow
-            key={option.value}
-            label={option.label}
-            detail={option.detail}
-            selected={i === selected}
-          />
+          <SetupTarget key={option.value} field="mode" value={String(i)}>
+            <ChoiceRow label={option.label} detail={option.detail} selected={i === selected} />
+          </SetupTarget>
         ))}
       </Box>
     </Box>
@@ -196,35 +196,40 @@ function LanguageColumn({
   readonly options: readonly { value: string; label: string; detail: string }[];
   readonly index: number;
 }) {
-  const active = options[index];
   return (
     <Box flexDirection="column" width="48%">
       <Text color={focused ? palette.accent : palette.dim} bold>
         {focused ? "❯ " : "  "}
         {heading}
+        {focused ? " ↑↓" : ""}
       </Text>
       {options.map((option, i) => (
-        <Box key={option.value}>
-          <Text
-            color={
-              focused && i === index
-                ? palette.accent
-                : i === index
-                  ? palette.accentDim
-                  : palette.dim
-            }
-          >
-            {i === index ? "▌ " : "  "}
-          </Text>
-          <Text color={i === index ? palette.text : palette.muted}>{option.label}</Text>
-        </Box>
+        <SetupTarget
+          key={option.value}
+          field={heading === "Audio" ? "audio" : "subtitle"}
+          value={String(i)}
+        >
+          <Box backgroundColor={focused && i === index ? palette.accentFill : undefined}>
+            <Text
+              color={
+                focused && i === index
+                  ? palette.accent
+                  : i === index
+                    ? palette.accentDim
+                    : palette.dim
+              }
+            >
+              {i === index ? "▌ " : "  "}
+            </Text>
+            <Text
+              color={i === index ? palette.text : palette.textDim}
+              bold={focused && i === index}
+            >
+              {option.label}
+            </Text>
+          </Box>
+        </SetupTarget>
       ))}
-      {focused && active ? (
-        <Box>
-          <Text color={palette.dim}>{"  "}</Text>
-          <Text color={palette.textDim}>↳ {active.detail}</Text>
-        </Box>
-      ) : null}
     </Box>
   );
 }
@@ -232,21 +237,19 @@ function LanguageColumn({
 export function LanguageScreen({
   lanes,
   activeLane,
-  profiles,
   audioOptions,
   subtitleOptions,
   audioIndex,
   subtitleIndex,
   focus,
+  contentWidth = 76,
 }: {
   readonly lanes: readonly {
     readonly value: "series" | "movie" | "anime" | "youtube";
     readonly label: string;
   }[];
   readonly activeLane: "series" | "movie" | "anime" | "youtube";
-  readonly profiles: Readonly<
-    Record<"series" | "movie" | "anime" | "youtube", { audio: string; subtitle: string }>
-  >;
+  readonly contentWidth?: number;
   readonly audioOptions: readonly { value: string; label: string; detail: string }[];
   readonly subtitleOptions: readonly { value: string; label: string; detail: string }[];
   readonly audioIndex: number;
@@ -255,28 +258,19 @@ export function LanguageScreen({
 }) {
   return (
     <Box flexDirection="column">
-      <ScreenTitle
-        text="Language"
-        sub="Each media type keeps its own defaults. Change either again per episode."
-      />
+      <ScreenTitle text="Language" />
       <Box marginBottom={1} gap={1} flexWrap="wrap">
         {lanes.map((lane) => {
           const active = lane.value === activeLane;
-          const profile = profiles[lane.value];
-          const audio = audioOptions.find((option) => option.value === profile.audio)?.label;
-          const subtitle = subtitleOptions.find(
-            (option) => option.value === profile.subtitle,
-          )?.label;
           return (
-            <Box key={lane.value} backgroundColor={active ? palette.accentFill : undefined}>
-              <Text color={active ? palette.accent : palette.dim}>{active ? "▌ " : "  "}</Text>
-              <Text color={active ? palette.text : palette.muted} bold={active}>
-                {lane.label}
-              </Text>
-              <Text color={active ? palette.textDim : palette.dim}>
-                {` ${audio ?? profile.audio}/${subtitle ?? profile.subtitle}`}
-              </Text>
-            </Box>
+            <SetupTarget key={lane.value} field="lane" value={lane.value}>
+              <Box backgroundColor={active ? palette.accentFill : undefined}>
+                <Text color={active ? palette.accent : palette.dim}>{active ? "▌ " : "  "}</Text>
+                <Text color={active ? palette.text : palette.muted} bold={active}>
+                  {lane.label}
+                </Text>
+              </Box>
+            </SetupTarget>
           );
         })}
       </Box>
@@ -294,12 +288,13 @@ export function LanguageScreen({
           index={subtitleIndex}
         />
       </Box>
-      <Box marginTop={1}>
-        <Text color={palette.textDim}>
-          tab / shift-tab switches profile · ←→ picks audio or subtitles · ↑↓ chooses · a applies
-          this profile to all
-        </Text>
-      </Box>
+      <Text color={palette.muted}>
+        {truncateLine(
+          (focus === "audio" ? audioOptions[audioIndex] : subtitleOptions[subtitleIndex])?.detail ??
+            "",
+          contentWidth,
+        )}
+      </Text>
     </Box>
   );
 }
@@ -330,80 +325,93 @@ export function LibraryScreen({
 }) {
   return (
     <Box flexDirection="column">
-      <ScreenTitle
-        text="Playback, downloads & accounts"
-        sub="Toggles here and in Settings — accounts are linked after setup, so a browser hiccup never traps you."
-      />
+      <ScreenTitle text="Playback, downloads & accounts" sub="Change these later in Settings." />
       <Box flexDirection="column">
-        <ToggleRow
-          label="Download for offline"
-          detail={downloadPath}
-          on={toggles.downloadsEnabled}
-          selected={selected === 0}
-          {...(ytDlpReady
-            ? {}
-            : { disabledNote: "yt-dlp not found — install it, then turn this on" })}
-        />
-        <ToggleRow
-          kind="cycle"
-          label={`Download quality — ${toggles.downloadQuality}`}
-          detail={`space cycles ${DOWNLOAD_QUALITIES.join(" · ")}`}
-          on={toggles.downloadsEnabled}
-          selected={selected === 1}
-          // A cycle row under a switch that is off is a dead control; saying so
-          // beats letting space spin a value nothing uses yet (#233).
-          {...(toggles.downloadsEnabled
-            ? {}
-            : { disabledNote: "turn on downloads first — then space cycles quality" })}
-        />
+        <SetupTarget field="library" value="0">
+          <ToggleRow
+            label="Download for offline"
+            detail={downloadPath}
+            on={toggles.downloadsEnabled}
+            selected={selected === 0}
+            {...(ytDlpReady
+              ? {}
+              : { disabledNote: "yt-dlp not found — install it, then turn this on" })}
+          />
+        </SetupTarget>
+        <SetupTarget field="library" value="1">
+          <ToggleRow
+            kind="cycle"
+            label={`Download quality — ${toggles.downloadQuality}`}
+            detail={`space cycles ${DOWNLOAD_QUALITIES.join(" · ")}`}
+            on={toggles.downloadsEnabled}
+            selected={selected === 1}
+            // A cycle row under a switch that is off is a dead control; saying so
+            // beats letting space spin a value nothing uses yet (#233).
+            {...(toggles.downloadsEnabled
+              ? {}
+              : { disabledNote: "turn on downloads first — then space cycles quality" })}
+          />
+        </SetupTarget>
       </Box>
 
-      <Box marginTop={1} marginBottom={0}>
+      <Box marginTop={0} marginBottom={0}>
         <Text color={palette.muted}>Playback feel</Text>
       </Box>
       <Box flexDirection="column">
-        <ToggleRow
-          label="Play the next episode automatically"
-          detail="Keeps a binge going without a keystroke"
-          on={toggles.autoNext}
-          selected={selected === 2}
-        />
-        <ToggleRow
-          label="Skip intros"
-          detail="Uses AniSkip and IntroDB timings when they exist"
-          on={toggles.skipIntro}
-          selected={selected === 3}
-        />
-        <ToggleRow
-          label="Skip credits"
-          detail="Jumps the end card and rolls on"
-          on={toggles.skipCredits}
-          selected={selected === 4}
-        />
+        <SetupTarget field="library" value="2">
+          <ToggleRow
+            label="Play the next episode automatically"
+            detail="Keeps a binge going without a keystroke"
+            on={toggles.autoNext}
+            selected={selected === 2}
+          />
+        </SetupTarget>
+        <SetupTarget field="library" value="3">
+          <ToggleRow
+            label="Skip intros"
+            detail="Uses AniSkip and IntroDB timings when they exist"
+            on={toggles.skipIntro}
+            selected={selected === 3}
+          />
+        </SetupTarget>
+        <SetupTarget field="library" value="4">
+          <ToggleRow
+            label="Skip credits"
+            detail="Jumps the end card and rolls on"
+            on={toggles.skipCredits}
+            selected={selected === 4}
+          />
+        </SetupTarget>
       </Box>
 
-      <Box marginTop={1} marginBottom={0}>
+      <Box marginTop={0} marginBottom={0}>
         <Text color={palette.muted}>While we're here</Text>
       </Box>
       <Box flexDirection="column">
-        <ToggleRow
-          label="AniList"
-          detail="Track watch progress on your list"
-          on={toggles.connectAniList}
-          selected={selected === 5}
-        />
-        <ToggleRow
-          label="TMDB"
-          detail="Track shows and films"
-          on={toggles.connectTmdb}
-          selected={selected === 6}
-        />
-        <ToggleRow
-          label="Discord presence"
-          detail="Show friends what you're watching"
-          on={toggles.presenceDiscord}
-          selected={selected === 7}
-        />
+        <SetupTarget field="library" value="5">
+          <ToggleRow
+            label="AniList"
+            detail="Track watch progress on your list"
+            on={toggles.connectAniList}
+            selected={selected === 5}
+          />
+        </SetupTarget>
+        <SetupTarget field="library" value="6">
+          <ToggleRow
+            label="TMDB"
+            detail="Track shows and films"
+            on={toggles.connectTmdb}
+            selected={selected === 6}
+          />
+        </SetupTarget>
+        <SetupTarget field="library" value="7">
+          <ToggleRow
+            label="Discord presence"
+            detail="Show friends what you're watching"
+            on={toggles.presenceDiscord}
+            selected={selected === 7}
+          />
+        </SetupTarget>
       </Box>
     </Box>
   );
@@ -421,10 +429,14 @@ export function DoneScreen({
   headline,
   summary,
   outstanding,
+  compact = false,
+  contentWidth = 76,
 }: {
   readonly headline: string;
   readonly summary: readonly SummaryLine[];
   readonly outstanding: readonly SummaryLine[];
+  readonly compact?: boolean;
+  readonly contentWidth?: number;
 }) {
   return (
     <Box flexDirection="column">
@@ -433,7 +445,7 @@ export function DoneScreen({
           thing seen before the shell opens. `idle` rather than the wizard's
           `wait` — the waiting is over. */}
       <Box marginBottom={1} flexDirection="row">
-        <CompanionHost moment="settled" rows={3} marginRight={2} />
+        {!compact ? <CompanionHost moment="settled" rows={3} marginRight={2} /> : null}
         <Box flexDirection="column">
           <Text color={palette.ok} bold>
             {STATIC_PETAL}
@@ -452,17 +464,21 @@ export function DoneScreen({
               {line.ok ? "✓ " : "△ "}
             </Text>
             <Text color={palette.text}>{pad(line.label, 22)}</Text>
-            <Text color={palette.muted}>{line.detail}</Text>
+            <Text color={palette.muted}>
+              {truncateLine(line.detail, Math.max(12, contentWidth - 24))}
+            </Text>
           </Box>
         ))}
       </Box>
 
       <Box flexDirection="column">
-        <Text color={palette.muted}>Try these first</Text>
+        {!compact ? <Text color={palette.muted}>Try these first</Text> : null}
         <Box paddingLeft={2} flexDirection="column">
-          <Text color={palette.textDim}>
-            type a title, or <Text color={palette.dim}>/discover · /calendar · /random</Text>
-          </Text>
+          {!compact ? (
+            <Text color={palette.textDim}>
+              type a title, or <Text color={palette.dim}>/discover · /calendar · /random</Text>
+            </Text>
+          ) : null}
           <Text color={palette.textDim}>
             press <Text color={palette.accent}>/</Text> any time for commands
           </Text>

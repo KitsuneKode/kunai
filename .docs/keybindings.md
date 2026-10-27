@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-24"
 ---
 
 # Kunai CLI Keybindings
@@ -68,7 +68,26 @@ In a compatible terminal, click a result to select it, then click the selected
 result again to open it. Click the search field to resume typing. Scrolling
 stops at the list boundaries; keyboard arrows still wrap. Covered results do
 not accept clicks while an overlay or command palette owns focus. This does
-not imply click support for other surfaces.
+not imply click support for every surface.
+
+Library and Up Next use the same select-then-open gesture. Library tabs switch
+views directly. Mouse selection and wheel movement never delete files or remove
+queue entries; their existing keyboard confirmation rules remain in effect.
+Up Next uses the same exact-row claim as Enter and refuses items already starting
+or played. Large queues keep only the selected window on screen.
+
+Shared frame footers (including loading, playback and post-play) accept a left
+press and release on the same stationary control. A held press shows `▾` and a
+fill immediately; release, drag, resize or losing ownership clears it. Hover is
+shown only if the terminal actually reports idle motion. Commands opens the
+local palette; it does not send a playback command. Covered, locked and removed
+controls cannot activate from an old rectangle.
+
+Loading and failure footers expose `/provider` when the command exists. Clicking
+it runs the same enabled command as typing `/provider` and Enter. While resolving
+blocks provider changes, it opens the filtered palette with the existing disabled
+reason instead. A failure offers `r` Recover only when a recovery handler exists.
+Cancel uses the cancellable-resolve route; Stop uses the active-player route.
 
 Set `KUNAI_NO_MOUSE=1` before launching to retain ordinary terminal mouse
 behavior. Mouse tracking is disabled automatically for piped input/output and

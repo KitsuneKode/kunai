@@ -1,4 +1,9 @@
-import type { PlaybackTimingMetadata, SubtitleTrack } from "@/domain/types";
+import type {
+  PlaybackSubtitleObservation,
+  PlaybackTimingMetadata,
+  SubtitleTrack,
+} from "@/domain/types";
+import { isJsonObject, isJsonNumber, isJsonString } from "@kunai/types";
 
 import type { MpvIpcSession } from "./mpv-ipc";
 import { applyObservedPropertySample, type PlayerStatsState } from "./mpv-stats";
@@ -52,7 +57,49 @@ export type PersistentMpvPropertyRouterDeps = {
 };
 
 export class PersistentMpvPropertyRouter {
+  private subtitleId: number | undefined;
+  private subtitleVisible: boolean | undefined;
+  private subtitleFingerprint = "";
+
   constructor(private readonly deps: PersistentMpvPropertyRouterDeps) {}
+
+  resetSubtitleObservation(): void {
+    this.subtitleId = undefined;
+    // Visibility is process-wide: mpv does not re-emit an unchanged value on loadfile.
+    this.subtitleFingerprint = "";
+  }
+
+  private emitSubtitleObservation(): void {
+    if (this.subtitleId === undefined || this.subtitleVisible === undefined) return;
+    const tracks = this.deps.subtitleManager.currentTrackList();
+    const track = Array.isArray(tracks)
+      ? tracks.find(
+          (value) =>
+            isJsonObject(value) &&
+            "id" in value &&
+            value.id === this.subtitleId &&
+            "type" in value &&
+            value.type === "sub",
+        )
+      : undefined;
+    let subtitleState: PlaybackSubtitleObservation = {
+      id: this.subtitleId,
+      visible: this.subtitleVisible,
+    };
+    if (this.subtitleId > 0 && isJsonString(track?.lang))
+      subtitleState = { ...subtitleState, language: track.lang };
+    if (this.subtitleId > 0 && isJsonString(track?.title))
+      subtitleState = { ...subtitleState, title: track.title };
+    const fingerprint = JSON.stringify(subtitleState);
+    if (fingerprint === this.subtitleFingerprint) return;
+    this.subtitleFingerprint = fingerprint;
+    this.deps.getCurrentOptions().onPlaybackEvent?.({
+      type: "track-changed",
+      trackType: "sub",
+      id: this.subtitleId,
+      subtitleState,
+    });
+  }
 
   handlePropertyUpdate(message: { name: string; value: unknown; observedAt: number }): void {
     const { name, value, observedAt } = message;
@@ -81,6 +128,14 @@ export class PersistentMpvPropertyRouter {
 
     const active = this.deps.getActiveCycle();
     if (!active) return;
+    if (name === "sid") {
+      if (isJsonNumber(value) && Number.isInteger(value) && value >= 0) this.subtitleId = value;
+      else if (value === false || value === "no") this.subtitleId = 0;
+      if (this.subtitleId !== undefined)
+        this.deps.subtitleManager.noteSelectedSubtitle(this.subtitleId);
+    } else if (name === "sub-visibility" && (value === true || value === false)) {
+      this.subtitleVisible = value;
+    }
 
     applyObservedPropertySample(
       active.stats,
@@ -88,6 +143,7 @@ export class PersistentMpvPropertyRouter {
       { acceptPlaybackProperties: active.acceptPlaybackProperties },
     );
     if (!active.acceptPlaybackProperties) return;
+    this.emitSubtitleObservation();
 
     if (active.stats.latestIpcSample) {
       this.deps.observeWatchdog(active.stats.latestIpcSample);

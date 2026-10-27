@@ -48,6 +48,13 @@ test("youtube mode resolves video content kind for history and profiles", () => 
   );
 });
 
+test("YouTube identity stays video when a standalone title is viewed outside YouTube mode", () => {
+  const title = { type: "movie", externalIds: { youtubeId: "jNQXAC9IVRw" } } as const;
+  expect(resolveContentKind(title, "series")).toBe("video");
+  expect(classifyPersistedKind(title, "series")).toBe("video");
+  expect(resolveContentKind({ type: "movie" }, "series", { providerId: "youtube" })).toBe("video");
+});
+
 test("mediaLanguageProfileFor uses youtubeLanguageProfile in youtube mode", () => {
   const profiles = {
     animeLanguageProfile: { audio: "ja", subtitle: "en", quality: "1080p" },

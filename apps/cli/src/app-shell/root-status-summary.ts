@@ -1,3 +1,4 @@
+import { resolveContentKind } from "@/domain/media/content-kind";
 import {
   formatSessionLaneLabel,
   formatSessionProviderLabel,
@@ -45,6 +46,7 @@ function humanReadableRootStatus(raw: string): string {
     case "error":
       return "Playback error";
     case "idle":
+    case "ready":
       return "ready";
     case "resolving":
       return "Resolving…";
@@ -75,7 +77,7 @@ function headerTone(rootStatus: string): ShellStatusTone {
 
 export function buildRootStatusSummary({
   state,
-  currentViewLabel: _currentViewLabel,
+  currentViewLabel,
   rootStatus,
   downloadStatus,
   streak,
@@ -151,15 +153,29 @@ export function buildRootStatusSummary({
     crumbParts.push("↓ offline");
   } else {
     // The lane describes the search context ("series" vs "anime"), which is the
-    // right crumb while browsing. Once a concrete title is playing, though, a
-    // movie opened from the series lane read "series" in the header while the
-    // rail beside it read "movie" — two panels contradicting each other about
-    // the same title. Correct only that case: the anime and YouTube lanes carry
-    // real meaning a title's own type would lose.
-    const laneCrumb =
-      isActivePlayback && state.currentTitle?.type === "movie"
-        ? "movie"
-        : formatSessionLaneLabel(state.mode);
+    // right crumb while browsing. Once a concrete title is resolving or
+    // playing, though, a movie opened from the series lane read "series" in
+    // the header while the rail beside it read "movie" — two panels
+    // contradicting each other about the same title. Correct that case
+    // whenever a title is committed (bootstrap included), not only once the
+    // transport starts: idle/browse keeps the lane crumb because there is no
+    // single title to contradict. Post-play still owns that title. Use the
+    // shared identity resolver so anime films and YouTube videos keep their
+    // content identity independently of their movie/series structure.
+    const titleCommitted =
+      isActivePlayback ||
+      rootStatus === "loading" ||
+      rootStatus === "resolving" ||
+      currentViewLabel === "post-playback" ||
+      currentViewLabel === "playback";
+    const kind = resolveContentKind(state.currentTitle, state.mode, {
+      providerId: streamProviderId ?? state.provider,
+    });
+    const laneCrumb = titleCommitted
+      ? kind === "video"
+        ? formatSessionLaneLabel("youtube")
+        : kind
+      : formatSessionLaneLabel(state.mode);
     crumbParts.push(laneCrumb, providerCrumb);
   }
   if (!isActivePlayback) {

@@ -1,6 +1,5 @@
-// Captures the failure panel at its SETTLED frame. Reduced motion pins the
-// panel to that frame with no clock, so the capture is deterministic and a
-// diff in __captures__ means the layout actually moved.
+// Failure panels are static. Capture their recovery controls without a clock;
+// a diff in __captures__ means the layout actually moved.
 import { ErrorShell } from "@/app-shell/root-status-shells";
 import React from "react";
 

@@ -6,6 +6,7 @@ import type { TrackCapabilityGroup } from "@/domain/playback/track-capabilities"
 import React from "react";
 
 import { captureFrame } from "../../harness/render-capture";
+import { renderWithPointer } from "../../support/pointer-render";
 
 const groups: TrackCapabilityGroup[] = [
   {
@@ -49,6 +50,52 @@ const groups: TrackCapabilityGroup[] = [
 ];
 
 describe("TracksPanelShell two-pane", () => {
+  test("keeps section values separated and hides repeated state/route diagnostics", () => {
+    const noisy: TrackCapabilityGroup[] = [
+      {
+        section: "subtitle",
+        title: "Subtitles",
+        selectable: true,
+        rows: [
+          {
+            section: "subtitle",
+            label: "English",
+            value: "en",
+            selected: true,
+            enabled: false,
+            risk: "normal",
+          },
+        ],
+      },
+      {
+        section: "source",
+        title: "Source",
+        selectable: true,
+        rows: [
+          {
+            section: "source",
+            label: "Citadel",
+            value: "citadel",
+            selected: true,
+            enabled: false,
+            risk: "normal",
+            detail: "playing · Rivestream · Citadel · selected · host rivestream.app",
+          },
+        ],
+      },
+    ];
+    const frame = captureFrame(
+      <TracksPanelShell
+        groups={noisy}
+        width={100}
+        nav={{ focusedPane: "options", sectionIndex: 1, optionIndex: 0 }}
+      />,
+      { columns: 100 },
+    );
+    expect(frame).toMatch(/Subtitles\s+English/);
+    expect(frame).not.toContain("host rivestream.app");
+    expect(frame).not.toContain("current");
+  });
   test("shows counts header and a ♥ on a favorited source", () => {
     const frame = captureFrame(
       <TracksPanelShell
@@ -187,4 +234,56 @@ describe("TracksPanelShell subtitle grid", () => {
     expect(frame.split("\n").length).toBeLessThanOrEqual(16);
     expect(frame).toContain("more");
   });
+});
+
+test.each([50, 80, 140])("tracks options report their semantic value at %i columns", (width) => {
+  const selected: string[] = [];
+  const handle = renderWithPointer(
+    <TracksPanelShell
+      groups={groups}
+      width={width}
+      pointer={{
+        section: (section) => selected.push(section),
+        option: (section, value) => selected.push(`${section}:${value}`),
+        scroll: () => {},
+      }}
+    />,
+    { columns: width },
+  );
+  try {
+    handle.click("tracks:option:source:fade");
+    expect(selected).toEqual(["source:fade"]);
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("narrow Tracks follows the last focused subtitle rather than hiding it", () => {
+  const subtitles: TrackCapabilityGroup[] = [
+    {
+      section: "subtitle",
+      title: "Subtitles",
+      selectable: true,
+      rows: Array.from({ length: 1000 }, (_, index) => ({
+        section: "subtitle" as const,
+        label: `Caption ${index}`,
+        value: String(index),
+        enabled: true,
+        selected: false,
+        risk: "normal" as const,
+      })),
+    },
+  ];
+  const frame = captureFrame(
+    <TracksPanelShell
+      groups={subtitles}
+      width={50}
+      height={30}
+      nav={{ focusedPane: "options", sectionIndex: 0, optionIndex: 999 }}
+    />,
+    { columns: 50, rows: 30 },
+  );
+  expect(frame).toContain("▌ Caption 999");
+  expect(frame).not.toContain("widen the terminal");
+  expect(frame.split("\n").every((line) => Bun.stringWidth(line) <= 50)).toBe(true);
 });

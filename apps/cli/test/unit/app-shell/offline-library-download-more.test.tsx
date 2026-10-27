@@ -9,6 +9,7 @@ import {
   getRootContentSession,
   type RootContentSession,
 } from "@/app-shell/root-content-state";
+import { RootContentSuspension } from "@/app-shell/RootContentSuspension";
 import type { Container } from "@/container";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import { DownloadService, type EnqueueDownloadInput } from "@/services/download/DownloadService";
@@ -318,7 +319,12 @@ test("library detail reserves four rows for the command input and leaves its key
     .split("\n")
     .filter((line) => / E\d+ +offline/.test(line)).length;
   ordinary.unmount();
-  const palette = render(<LibraryTitleDetail {...props} commandMode />, { columns: 80, rows: 44 });
+  const palette = render(
+    <RootContentSuspension suspended>
+      <LibraryTitleDetail {...props} />
+    </RootContentSuspension>,
+    { columns: 80, rows: 44 },
+  );
   try {
     const paletteRows = stripAnsi(palette.lastFrame() ?? "")
       .split("\n")

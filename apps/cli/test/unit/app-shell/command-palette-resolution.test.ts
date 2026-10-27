@@ -13,6 +13,21 @@ const COMMANDS = [
   cmd("recommendation", ["recommendation", "recommend"], "Personalized recommendations"),
 ];
 
+test("a command prefix narrows the palette instead of matching incidental description letters", () => {
+  const commands = [
+    cmd("filters", ["filters", "filter"], "Filter search results"),
+    cmd("notifications", ["notifications"], "Review actionable app notices"),
+    cmd("settings", ["settings"], "Configure playback and profile settings"),
+    cmd("continue", ["continue"], "Open unfinished and recent watch progress"),
+  ];
+  expect(buildCommandPickerModel("fi", commands, 0).options.map((row) => row.value)).toEqual([
+    "filters",
+  ]);
+  expect(buildCommandPickerModel("/fi", commands, 0).options.map((row) => row.value)).toEqual([
+    "filters",
+  ]);
+});
+
 function blockedCmd(id: string, aliases: readonly string[], reason: string): ResolvedAppCommand {
   return {
     id,

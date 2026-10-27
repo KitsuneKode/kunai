@@ -94,3 +94,27 @@ test("the playing provider always lists even when lane eligibility excludes it",
   expect(group.rows.find((row) => row.value === "allanime")?.selected).toBe(true);
   expect(group.rows.find((row) => row.value === "allanime")?.reason).toBe("Current provider");
 });
+
+test("anime providers lead shared providers while preserving configured order within each lane", () => {
+  const group = buildProviderTrackCapabilities({
+    providers,
+    mode: "anime",
+    lanes: ["anime", "series"],
+    currentProviderId: "vidking",
+  });
+  expect(group.rows.map((row) => row.value)).toEqual(["allanime", "miruro", "vidking"]);
+  expect(group.rows.at(-1)?.selected).toBe(true);
+});
+
+test("recent provider failures are visible without disabling an explicit retry", () => {
+  const group = buildProviderTrackCapabilities({
+    providers,
+    mode: "anime",
+    currentProviderId: "allanime",
+    healthByProviderId: { miruro: { status: "down", consecutiveFailures: 5 } },
+  });
+  const row = group.rows.find((candidate) => candidate.value === "miruro");
+  expect(row?.detail).toContain("Recent failures");
+  expect(row?.risk).toBe("failed");
+  expect(row?.enabled).toBe(true);
+});

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26T08:05:31Z"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai — UX Architecture
@@ -8,6 +8,15 @@ lastReviewed: "2026-10-26T08:05:31Z"
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when designing terminal interactions, keybindings, panels, command flows, and validation behavior.
+
+The root status header maps both `idle` and `ready` to “ready”. Settled browse,
+picker, and post-play surfaces must not use the unknown-status “Loading…”
+fallback; searching and playback retain their own activity labels.
+
+During playback and post-play, the header uses the shared content-identity
+resolver: movies remain movies after stopping, anime films remain anime, and
+YouTube videos retain the YouTube label even with movie-shaped catalog data.
+Returning to browse restores the search-lane label.
 
 ## Design Goals
 
@@ -49,6 +58,12 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 - when a provider or result does not have real detail data, the shell should show a light preview rather than pretending there is a richer details state
 - the fullscreen hierarchy should stay stable across browse, picker, overlay, and post-playback states
 
+Failure panels are static: no decorative animation runs over the error or its
+recovery controls. Provider failures expose a direct provider choice and preserve
+the failure when that picker is cancelled; a verified choice retries through the
+normal resolve path. Failure in one provider does not mean the title is absent
+from every provider.
+
 ### Command philosophy
 
 - `/` is the global entry point for actions
@@ -68,6 +83,11 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 - command palettes should imply the recommended action through default highlight rather than extra “recommended” noise in every row
 - command palettes should also match locally-known titles (`JUMP TO`) once the input is at least two characters — titles are read from local state only (history, queue, followed, lists, playlists), never the network; commands keep precedence over title rows; the title section collapses on empty input; a title pick lands on the same title→episode flow a browse selection uses
 
+Search and palette Enter submit the editor's current input draft even when text
+and Enter arrive before React commits a frame. Pending palette text resets the
+selection to the first match; it must never execute a command from the previous
+query. This applies to Browse and the shared picker/post-play input hook.
+
 ### Hotkey philosophy
 
 - `Ctrl+C`, `/`, `Esc`, and `?` are always-global
@@ -83,7 +103,9 @@ Kunai should behave like a terminal app shell, not a sequence of unrelated promp
 ### Optional terminal mouse input
 
 The Ink shell owns one paused-mode stdin facade in `app-shell/mouse/`.
-It separates mouse reports before Ink parses keyboard input; it never adds
+It preserves wire order, including an expired incomplete-report tail: Ink receives preceding keyboard bytes before a later
+mouse report is dispatched, including reports in the same chunk or queued
+under one readable event. It never adds
 another `data` listener to the real TTY. Tracking requires both stdin and
 stdout to be TTYs, excludes `TERM=dumb`, and can be disabled with
 `KUNAI_NO_MOUSE=1`. Session disposal releases subscriptions, hit regions,
@@ -105,9 +127,16 @@ renders preserve a pending click. Re-measurement uses Ink layout coordinates
 plus one terminal cell; this assumes the fullscreen shell renders no `Static`
 output above the live region.
 
+Library and Up Next rows also use select-then-activate. Library tabs use absolute
+indices in a windowed strip, and selecting a title clears pending deletion.
+Queue rows carry stable IDs through the shared Enter/mouse activation path; only
+the visible queue window renders and registers. The command palette removes
+queue pointer ownership. Starting/played entries give feedback without claiming
+or closing the overlay.
+
 Other surfaces currently receive unhandled vertical wheel reports as arrow
 keys. That is a keyboard fallback, not complete pointer support for their
-controls. Calendar rows, settings, playback controls, and destructive menus
+controls. Calendar rows, player-window controls, and destructive menus
 must add their own tested pointer ownership before claiming click parity.
 Incomplete reports expire after 50 ms idle or 64 buffered bytes; expiry
 returns held bytes rather than silently swallowing later keystrokes.
@@ -256,15 +285,25 @@ implementation:
 
 ### Search type-ahead suggestion band
 
-The browse shell owns a Spotlight-style suggestion band anchored between the query field and the
-divider (`app-shell/suggestion-band-ui.tsx`). Streaming-app search feel: it answers after ~2
-typed characters, before Enter.
+The browse shell owns a bordered suggestion surface anchored between the query field and the
+divider (`app-shell/suggestion-band-ui.tsx`). It answers after roughly two typed characters,
+before Enter. It has its own surface fill and visible Suggestions label, separate from submitted
+results. The viewport bounds its row window; moving the highlight keeps that row visible.
+The selected preview reuses the suggestion's title, metadata and provenance badge. It makes no
+extra metadata request and loads no poster. Title rows advertise Enter/open and Ctrl+O/details;
+query-history rows advertise Enter/search. The shared row-count helper includes the border,
+heading and three preview rows in browse's result-window budget. Long titles and metadata use
+terminal-cell budgets and preserve complete graphemes. Selecting, typing and dismissing repaint
+immediately; static pending skeletons appear only while a catalog request is outstanding.
 
 Sources and async contract:
 
 - Two layers merge into one ranked band — pure logic in
   `domain/search/suggestion-engine.ts`: prefix match > word-boundary > subsequence, recency as
   the tiebreak, catalog rows deduped against shown local titles.
+- Query histories are partitioned into anime, series/movie, and YouTube files. Every active
+  caller supplies its mode; unclassified legacy queries stay preserved in their original file
+  rather than leaking into all modes. Local title suggestions are filtered to the active lane.
 - Local layer is synchronous and free: past submitted searches, watched titles, followed titles,
   and list/playlist rows (`app/search/search-suggestions.ts` materializes them as
   `SearchSuggestion<SearchResult>` — every row's `value` is a real SearchResult).
@@ -275,11 +314,17 @@ Sources and async contract:
   no registry catalog, so the band shows local rows only — provider-native search is too heavy
   per keystroke.
 - `app-shell/hooks/use-search-suggestions.ts` debounces ~300ms, aborts the superseded request,
-  and gates commits by request id — a stale response can never overwrite a newer draft's rows.
+  and gates commits by request id and mode/provider scope — a stale response can never
+  overwrite a newer draft or lane's rows. Changing providers cancels and restarts the debounce
+  even when the text stays the same.
   Local rows paint in the same frame as the keystroke; while the catalog call is in flight the
   catalog section shows dim `░` skeleton rows.
 - Zero remote hits leave local rows plus a `keep typing · ↵ search anyway` hint; a catalog
   failure settles silently to local-only. The band is an enhancement, never an error surface.
+
+During playback bootstrap, pending or explicitly disabled subtitles use neutral
+status text. Resolved tracks are available inventory until mpv confirms selection;
+a missing track or failed lookup is a warning, not an ordinary loading state.
 
 Keyboard contract:
 
@@ -538,6 +583,24 @@ path that can open the surface.
 
 ## Playback command input ownership
 
+Shared frame footer controls use the current enabled actions. Their measured regions disappear
+when the frame is locked, a root overlay covers it, or the local command palette opens. A press
+shows a static `▾` and fill until release; dragging or moving the target cancels both feedback
+and activation. Optional idle-motion reports show hover, without requesting new terminal modes.
+Keyboard paths remain visible on each control, and no timer delays activation or fabricates hover.
+
+Loading footer clicks pass through `resolvePlaybackShellInput`, the same capability guards as
+keyboard input: cancellation requires a cancellable operation, Stop uses the player handler,
+and fallback requires an available provider and handler. `/` opens the local palette. Slash-labelled
+provider controls share palette Enter's enabled-command check; an unavailable provider command
+opens its filtered palette and disabled reason. Provider choice therefore remains discoverable
+during resolution without enabling a blocked switch. Recovery adds one guarded Recover control;
+unavailable callback-backed controls are omitted rather than accepting a silent no-op.
+
+Bloom and stage shimmer run only during a visible, actual wait. Recovery, covered loading,
+and healthy playback are steady. Existing `KUNAI_REDUCED_MOTION` and `NO_MOTION` policies keep
+waiting feedback static too. This does not add animation to keyboard or pointer actions.
+
 `LoadingShell` mounts its playback input reader inside `ShellFrame`, below the
 command-mode context provider. While the palette is open, letters and Escape
 belong to it; closing the palette restores playback shortcuts. On a cancellable
@@ -553,6 +616,45 @@ accents, flags and joined emoji stay intact. Padding and ellipsis placement use
 the same cell budget as CJK titles. Surfaces reuse
 `apps/cli/src/domain/text-display.ts` rather than counting code points or UTF-16 units.
 
+Up Next also requires a prior mouse click on the same selected row before
+launching playback. Keyboard input, including navigation that leaves the same row selected, scrolling and disabling its pointer owner clear that intent.
+
 Browse requires a prior pointer click on the same selected title before opening
 it. Preselected rows, keyboard navigation, scrolling and covered content do not
 authorize pointer activation.
+
+## Watching hierarchy and feedback
+
+Now Playing leads with title and episode, real progress, source name and media
+facts. One footer owns the immediate controls: Tracks (`o`), quality (`k`),
+applicable episode navigation, stop and commands. Autoplay/autoskip remain in the
+status and command/help surfaces. Provider selection lives in Tracks and
+`/provider`. Full host/error/retry evidence belongs to diagnostics, not every row.
+
+Tracks uses a rose band for focus and a checkmark for the applied option. Labels
+and values reserve separate cell budgets; subtitle Off is first. Quality Auto
+means best available from the selected source, not a claimed bandwidth measurement
+or adaptive bitrate guarantee. A session choice carries through stream changes
+without overwriting saved per-media defaults. New titles reset those overrides.
+
+Palette matching prioritizes command-name/alias prefixes; `/fi` narrows to
+Filters instead of matching incidental letters throughout descriptions. Fuzzy
+matching remains a fallback when no prefix matches. Disabled explanations appear
+only for the focused row. The palette replaces other footer hints while open.
+Startup rails follow the current playback cycle and never delay transitions to
+make a stage visible. Waiting for the first frame is buffering; recovery history
+remains available after playback resumes.
+
+### Palette title previews and pointer motion
+
+The local JUMP TO section stays a global navigation surface; its selected title
+shows its actual media kind and provider. Tall terminals reserve three fixed
+preview rows before selection, so hover cannot move its own target. Compact
+terminals show the same identity in the section header without growing the
+palette. Keyboard selection and pointer hover feed the same highlighted index;
+hover never opens a title. Enter or a click on the selected title activates it.
+
+SGR mouse tracking requests all-motion reports (1003) as well as press/release,
+and disables each mode when detaching. Only changes of hovered target notify
+preview consumers; motion within one target does not schedule a state update.
+Terminals without mouse support retain keyboard navigation.

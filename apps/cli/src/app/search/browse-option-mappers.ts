@@ -2,6 +2,7 @@ import type { BrowseShellOption, ShellPanelLine } from "@/app-shell/types";
 import { buildLocalFilterFacts } from "@/app/search/browse-local-filter-facts";
 import { isCalendarSearchResult } from "@/app/search/calendar-results";
 import type { CalendarItem } from "@/domain/calendar/calendar-item";
+import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { ListService } from "@/domain/lists/ListService";
 import { isAnimeContent } from "@/domain/media/content-kind";
 import type { SearchResult, TitleAliasKind, YouTubeLiveStatus } from "@/domain/types";
@@ -92,12 +93,8 @@ function countLabel(result: SearchResult, isYoutubeResult: boolean): string | un
   return count === 1 ? "1 episode" : `${count} episodes`;
 }
 
-const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
-
 function toPosterUrl(posterPath: string | null): string | undefined {
-  if (!posterPath) return undefined;
-  if (/^https?:\/\//i.test(posterPath)) return posterPath;
-  return `${TMDB_POSTER_BASE_URL}${posterPath}`;
+  return resolveCatalogPosterUrl(posterPath, { tmdbSize: "w342" }) ?? undefined;
 }
 
 function formatRating(rating: number | null | undefined): string | undefined {

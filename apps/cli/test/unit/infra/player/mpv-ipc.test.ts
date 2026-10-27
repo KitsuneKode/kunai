@@ -184,6 +184,8 @@ describe("mpv-ipc", () => {
       "filename",
       "media-title",
       "track-list",
+      "sid",
+      "sub-visibility",
     ]);
   });
 

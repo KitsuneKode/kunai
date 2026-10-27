@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat, truncate, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -55,6 +55,32 @@ describe("poster disk cache", () => {
     const parts = { url: "https://cdn.example/big.jpg", cols: 18 };
     await writePosterDiskCache(parts, PNG_BYTES);
     expect(await readPosterDiskCache(parts, 2)).toBeNull();
+  });
+
+  test("prunes a heavily over-budget cache without skipping remaining entries", async () => {
+    // Sparse fixtures exercise byte accounting without allocating hundreds of MiB.
+    for (let index = 0; index < 10; index += 1) {
+      const path = join(dir, `${index}.poster`);
+      await writeFile(path, PNG_BYTES);
+      await truncate(path, MAX_POSTER_DISK_CACHE_BYTES / 2);
+      await utimes(path, new Date(1_000 + index), new Date(1_000 + index));
+    }
+    const newest = { url: "https://cdn.example/newest.jpg", cols: 18 };
+    await writePosterDiskCache(newest, PNG_BYTES);
+    const files = await readdir(dir);
+    const sizes = await Promise.all(files.map(async (name) => (await stat(join(dir, name))).size));
+    expect(sizes.reduce((total, size) => total + size, 0)).toBeLessThanOrEqual(
+      MAX_POSTER_DISK_CACHE_BYTES,
+    );
+    expect(await readPosterDiskCache(newest, 1024)).toEqual(PNG_BYTES);
+  });
+
+  test("recovers the entry limit after another session leaves a large backlog", async () => {
+    await Promise.all(
+      Array.from({ length: 400 }, (_, index) => writeFile(join(dir, `${index}.poster`), PNG_BYTES)),
+    );
+    await writePosterDiskCache({ url: "https://cdn.example/new.jpg", cols: 18 }, PNG_BYTES);
+    expect((await readdir(dir)).length).toBeLessThanOrEqual(MAX_POSTER_DISK_CACHE_ENTRIES);
   });
 
   test("clear drops every entry", async () => {

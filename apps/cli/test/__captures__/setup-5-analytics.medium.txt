@@ -1,7 +1,6 @@
 # setup-5-analytics · medium (100×34)
-   🦊 Kunai · usage ping                                                                setup 5⁄6
+   usage ping                                                                           setup 5⁄6
  ──────────────────────────────────────────────────────────────────────────────────────────────────
-
 
           Help Kunai know it's being used
           Recommended. Nothing is sent until you confirm here.
@@ -17,4 +16,4 @@
             Never: titles · queries · providers · URLs · paths · your IP
             The raw id never leaves this machine. Off in /settings deletes it.
  ──────────────────────────────────────────────────────────────────────────────────────────────────
-   [enter]  confirm  ·  [↑↓]  choose  ·  [s]  keep it off  ·  [b]  back                     Setup
+   [enter] confirm  [↑↓] choose  [s] keep it off  [b] back                                  Setup

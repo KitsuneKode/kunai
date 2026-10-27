@@ -1,10 +1,11 @@
 import { getLineEditorViewport, splitCursor } from "@/app-shell/line-editor";
-import type { LocalTitleMatch } from "@/domain/palette/local-title-index";
+import type { LocalTitleEntry, LocalTitleMatch } from "@/domain/palette/local-title-index";
 import { Box, Text } from "ink";
 import React from "react";
 
 import type { ResolvedAppCommand } from "./commands";
 import { getCommandPaletteVisibleCommandCount } from "./layout-policy";
+import { MouseTarget } from "./mouse/MouseRegions";
 import {
   COMMAND_GROUP_LABELS,
   CONTEXT_COMMAND_IDS,
@@ -141,8 +142,122 @@ function AccentTitleLabel({
   );
 }
 
+export type PalettePointerActions = {
+  readonly select: (index: number) => void;
+  readonly activate: (index: number) => void;
+  readonly close: () => void;
+};
+export const PalettePointerContext = React.createContext<PalettePointerActions | null>(null);
+
+function paletteTitleSummary(entry: LocalTitleEntry): string {
+  const kind =
+    entry.mediaKind === "video"
+      ? "YouTube"
+      : entry.mediaKind === "anime"
+        ? "Anime"
+        : entry.contentType === "movie"
+          ? "Movie"
+          : "Series";
+  return `${kind} · ${entry.providerId ?? entry.source}`;
+}
+
+function paletteTitleSectionLabel(entry: LocalTitleEntry | undefined, expanded: boolean): string {
+  if (!entry || expanded) return TITLE_SECTION_LABEL;
+  return `${TITLE_SECTION_LABEL} · ${paletteTitleSummary(entry)}`;
+}
+
+function paletteTitlePreviewRows(titleCount: number, terminalRows: number): number {
+  return titleCount > 0 && terminalRows >= 48 ? 3 : 0;
+}
+
+function PaletteTitlePreview({
+  entry,
+  width,
+}: {
+  readonly entry?: LocalTitleEntry;
+  readonly width: number;
+}) {
+  return (
+    <Box flexDirection="column" height={3} paddingLeft={2}>
+      {entry ? (
+        <>
+          <Text color={palette.text} bold wrap="truncate">
+            {truncateLine(entry.title, width - 2)}
+          </Text>
+          <Text color={palette.muted} wrap="truncate">
+            {truncateLine(`${paletteTitleSummary(entry)} · ${entry.detail}`, width - 2)}
+          </Text>
+          <Text color={palette.dim}>Enter open title · Esc close</Text>
+        </>
+      ) : (
+        <Text color={palette.dim}>Point at a title or use ↑↓ to preview</Text>
+      )}
+    </Box>
+  );
+}
+
+function PaletteLocalTitles({
+  matches,
+  commandCount,
+  highlightedIndex,
+  expanded,
+  width,
+  pointer,
+}: {
+  readonly matches: readonly LocalTitleMatch[];
+  readonly commandCount: number;
+  readonly highlightedIndex: number;
+  readonly expanded: boolean;
+  readonly width: number;
+  readonly pointer?: PalettePointerActions | null;
+}) {
+  if (matches.length === 0) return null;
+  const selectedTitle = matches[highlightedIndex - commandCount]?.entry;
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text color={palette.dim} dimColor>
+        {truncateLine(paletteTitleSectionLabel(selectedTitle, expanded), width)}
+      </Text>
+      {matches.map((match, index) => {
+        const absoluteIndex = commandCount + index;
+        const selected = absoluteIndex === highlightedIndex;
+        const aliasWidth = Math.min(20, Math.max(10, Math.floor(width * 0.28)));
+        const titleWidth = Math.max(12, width - aliasWidth - 7);
+        const detail = padColumnsEnd(truncateLine(match.entry.detail, aliasWidth), aliasWidth);
+        return (
+          <MouseTarget
+            key={`title:${match.entry.source}:${match.entry.titleId}`}
+            id={`palette:title:${match.entry.source}:${match.entry.titleId}`}
+            active={Boolean(pointer)}
+            onHover={() => pointer?.select(absoluteIndex)}
+            onClick={() =>
+              selected ? pointer?.activate(absoluteIndex) : pointer?.select(absoluteIndex)
+            }
+          >
+            <Box width={width + 4} backgroundColor={selected ? palette.accentFill : undefined}>
+              <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+              <Box width={titleWidth}>
+                <AccentTitleLabel
+                  title={match.entry.title}
+                  ranges={match.ranges}
+                  width={titleWidth}
+                />
+              </Box>
+              <Text color={palette.dim}> </Text>
+              <Text wrap="truncate" color={selected ? palette.text : palette.muted}>
+                {detail}
+              </Text>
+            </Box>
+          </MouseTarget>
+        );
+      })}
+    </Box>
+  );
+}
+
 export function CommandPalette({
   input,
+  pointer: pointerProp,
   cursor = input.length,
   commands,
   titleMatches: titleMatchesProp,
@@ -151,6 +266,7 @@ export function CommandPalette({
   width,
 }: {
   input: string;
+  pointer?: PalettePointerActions;
   cursor?: number;
   commands: readonly ResolvedAppCommand[];
   /** Local title matches — rendered as a capped JUMP TO section under commands. */
@@ -159,6 +275,8 @@ export function CommandPalette({
   maxVisible?: number;
   width?: number;
 }) {
+  const pointerContext = React.useContext(PalettePointerContext);
+  const pointer = pointerProp ?? pointerContext;
   const contextTitleMatches = React.useContext(PaletteTitleMatchesContext);
   const titleMatches = titleMatchesProp ?? contextTitleMatches ?? [];
   const { cols: shellColumns, rows: terminalRows } = useShellDimensions();
@@ -169,8 +287,11 @@ export function CommandPalette({
     .map((option) => commands.find((command) => command.id === option.value))
     .filter((command): command is ResolvedAppCommand => Boolean(command));
   const showGrouped = input.trim().length === 0 && matches.length > 0;
+  const selectedTitle = titleMatches[highlightedIndex - matches.length]?.entry;
+  const previewRows = paletteTitlePreviewRows(titleMatches.length, terminalRows);
+  const reserveTitlePreview = previewRows > 0;
   const visibleCount = getCommandPaletteVisibleCommandCount({
-    maxRows: Math.max(1, maxVisible),
+    maxRows: Math.max(1, maxVisible - previewRows),
     totalMatches: matches.length,
     grouped: showGrouped,
   });
@@ -187,40 +308,68 @@ export function CommandPalette({
     const aliasWidth = Math.min(20, Math.max(10, Math.floor(contentWidth * 0.28)));
     const detailWidth = Math.max(10, contentWidth - aliasWidth - 7);
     const detail = padColumnsEnd(truncateLine(command.description, detailWidth), detailWidth);
-    const showReason = !command.enabled && (selected || command.reason);
+    const showReason = !command.enabled && selected;
     return (
-      <Box key={command.id} flexDirection="column" width={contentWidth + 4}>
-        <Box width={contentWidth + 4} backgroundColor={selected ? palette.accentFill : undefined}>
-          <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
-          <Text
-            color={!command.enabled ? palette.dim : selected ? palette.accent : palette.text}
-            bold={selected && command.enabled}
-            dimColor={!command.enabled}
-          >
-            {padColumnsEnd(truncateLine(alias, aliasWidth), aliasWidth)}
-          </Text>
-          <Text color={palette.dim}> </Text>
-          <Text
-            wrap="truncate"
-            color={command.enabled ? (selected ? palette.text : palette.muted) : palette.dim}
-            dimColor={!command.enabled}
-          >
-            {detail}
-          </Text>
-        </Box>
-        {showReason ? (
-          <Box paddingLeft={4}>
-            <Text color={palette.dim} dimColor>
-              {command.reason ?? "unavailable"}
+      <MouseTarget
+        key={command.id}
+        id={`palette:command:${command.id}`}
+        active={Boolean(pointer)}
+        onClick={() => {
+          if (selected && command.enabled) pointer?.activate(absoluteIndex);
+          else pointer?.select(absoluteIndex);
+        }}
+        onWheel={(direction) =>
+          pointer?.select(
+            Math.max(
+              0,
+              Math.min(
+                matches.length + titleMatches.length - 1,
+                highlightedIndex + (direction === "up" ? -1 : 1),
+              ),
+            ),
+          )
+        }
+      >
+        <Box flexDirection="column" width={contentWidth + 4}>
+          <Box width={contentWidth + 4} backgroundColor={selected ? palette.accentFill : undefined}>
+            <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+            <Text
+              color={!command.enabled ? palette.dim : selected ? palette.accent : palette.text}
+              bold={selected && command.enabled}
+              dimColor={!command.enabled}
+            >
+              {padColumnsEnd(truncateLine(alias, aliasWidth), aliasWidth)}
+            </Text>
+            <Text color={palette.dim}> </Text>
+            <Text
+              wrap="truncate"
+              color={command.enabled ? (selected ? palette.text : palette.muted) : palette.dim}
+              dimColor={!command.enabled}
+            >
+              {detail}
             </Text>
           </Box>
-        ) : null}
-      </Box>
+          {showReason ? (
+            <Box paddingLeft={4}>
+              <Text color={palette.dim} dimColor>
+                {command.reason ?? "unavailable"}
+              </Text>
+            </Box>
+          ) : null}
+        </Box>
+      </MouseTarget>
     );
   };
 
   return (
     <Box flexDirection="column" marginTop={1} width={shellWidth} flexShrink={0}>
+      {pointer ? (
+        <MouseTarget id="palette:back" onClick={pointer.close}>
+          <Text color={palette.textDim}>
+            ← Back <Text color={palette.muted}>(Esc)</Text>
+          </Text>
+        </MouseTarget>
+      ) : null}
       <Box marginTop={0}>
         <Text color={palette.accent}>/</Text>
         <LineEditorText
@@ -235,6 +384,9 @@ export function CommandPalette({
         Tab autocomplete · ↑↓ choose · Enter run
         {matches.length > visibleMatches.length ? ` · ${matches.length} commands` : ""}
       </Text>
+      {reserveTitlePreview ? (
+        <PaletteTitlePreview entry={selectedTitle} width={contentWidth} />
+      ) : null}
       <Box flexDirection="column">
         {matches.length > 0 ? (
           <>
@@ -278,42 +430,14 @@ export function CommandPalette({
           <Text color={palette.dim}>No matching commands</Text>
         )}
       </Box>
-      {titleMatches.length > 0 ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color={palette.dim} dimColor>
-            {TITLE_SECTION_LABEL}
-          </Text>
-          {titleMatches.map((match, index) => {
-            const absoluteIndex = matches.length + index;
-            const selected = absoluteIndex === highlightedIndex;
-            const aliasWidth = Math.min(20, Math.max(10, Math.floor(contentWidth * 0.28)));
-            const titleWidth = Math.max(12, contentWidth - aliasWidth - 7);
-            const detail = padColumnsEnd(truncateLine(match.entry.detail, aliasWidth), aliasWidth);
-            return (
-              <Box
-                key={`title:${match.entry.source}:${match.entry.titleId}`}
-                width={contentWidth + 4}
-                backgroundColor={selected ? palette.accentFill : undefined}
-              >
-                <Text color={selected ? palette.accent : palette.dim}>
-                  {selected ? "▌ " : "  "}
-                </Text>
-                <Box width={titleWidth}>
-                  <AccentTitleLabel
-                    title={match.entry.title}
-                    ranges={match.ranges}
-                    width={titleWidth}
-                  />
-                </Box>
-                <Text color={palette.dim}> </Text>
-                <Text wrap="truncate" color={selected ? palette.text : palette.muted}>
-                  {detail}
-                </Text>
-              </Box>
-            );
-          })}
-        </Box>
-      ) : null}
+      <PaletteLocalTitles
+        matches={titleMatches}
+        commandCount={matches.length}
+        highlightedIndex={highlightedIndex}
+        expanded={reserveTitlePreview}
+        width={contentWidth}
+        pointer={pointer}
+      />
     </Box>
   );
 }

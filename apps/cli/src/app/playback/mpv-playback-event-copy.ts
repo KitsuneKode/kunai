@@ -92,6 +92,12 @@ export function describeMpvPlayerEvent(event: PlayerPlaybackEvent): MpvPlaybackF
     case "playback-started":
       return { detail: "Playing" };
     case "stream-stalled": {
+      if (event.duringStartup) {
+        return {
+          detail: "Waiting for the first frame",
+          note: "Still buffering · trying to restore the connection",
+        };
+      }
       const dead = event.stallKind === "network-read-dead";
       return {
         detail: dead ? "Stream stalled (network read idle)" : "Stream stalled",

@@ -10,6 +10,30 @@ import { PROBES as STATUS_SWEEP_PROBES } from "../../../../../packages/providers
 import { relayRegistry } from "../../../../relay-server/src/provider-registry";
 
 describe("production provider defaults", () => {
+  test("the live provider aggregate covers the production roster without retired adapters", async () => {
+    const cliPackage = await Bun.file(new URL("../../../package.json", import.meta.url)).json();
+    const rootPackage = await Bun.file(
+      new URL("../../../../../package.json", import.meta.url),
+    ).json();
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    const smokeIds = cliPackage.scripts["test:live:providers"]
+      .split(" && ")
+      .map((step: string) => step.match(/^bun run test:live:([a-z]+)$/)?.[1]);
+    expect(smokeIds.sort()).toEqual(modules.map((module) => module.providerId).sort());
+    expect(cliPackage.scripts["test:live:anidb"]).toBeUndefined();
+    expect(rootPackage.scripts["test:live:anidb"]).toBeUndefined();
+  });
+
+  test("retired adapters stay out of the live production roster", async () => {
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    const ids = modules.map((module) => module.providerId);
+    expect(ids).not.toContain("anidb");
+  });
+
   test("every configured lane default is a registered production module", async () => {
     const modules = await loadProductionProviderModules(
       createProviderPrioritySnapshot(DEFAULT_CONFIG),
@@ -17,9 +41,8 @@ describe("production provider defaults", () => {
     const ids = modules.map((module) => module.providerId);
 
     expect(DEFAULT_CONFIG.provider).toBe("vidlink");
-    // The anime lane default must be a provider that answers. AniDB stays
-    // registered in the priority tail; it is not first, because search only
-    // queries the configured default and anidb.app answers 503 at the origin.
+    // The anime lane default must be a provider that answers — search only
+    // queries the configured default.
     expect(DEFAULT_CONFIG.animeProvider).toBe("hianime");
     expect(ids).toContain(DEFAULT_CONFIG.provider);
     expect(ids).toContain(DEFAULT_CONFIG.animeProvider);
@@ -41,7 +64,6 @@ describe("production provider defaults", () => {
     // so existing configs and cache keys keep resolving.
     expect(modules.map((module) => module.providerId).sort()).toEqual([
       "allanime",
-      "anidb",
       "animegg",
       "hianime",
       "kickassanime",

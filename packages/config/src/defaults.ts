@@ -47,37 +47,39 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // stays registered and last in the order so an upstream revival needs no
   // code change.
   provider: "vidlink",
-  // HiAnime leads the anime lane. AniDB stays registered and in the priority
-  // tail because it still carries the only verified AID cross-link and XML
-  // episode titles, but it is not first: anidb.app answers 503 at the origin,
-  // and ani-cli itself moved off it (pystardust/ani-cli c99221d "replace anidb
-  // with hianime provider", a `fix:`, not a `revert:`). A lane default that
-  // cannot answer is worse than a slower one that can — search only queries
-  // the configured default.
+  // HiAnime leads the anime lane. AniDB was removed from the production roster
+  // when anidb.app began redirecting to an unrelated site (HTTP 302 to
+  // anilab.so, 2026-10-24); ani-cli had already moved to HiAnime (c99221d).
+  // The package remains for fixtures and historic ids — not live resolve.
   animeProvider: "hianime",
   youtubeProvider: "youtube",
   // `createProviderPrioritySnapshot` prepends `provider` to this array, so it
   // holds the *rest* of the order — not the lane default. Rivestream leads the
   // rest (eleven-service local cycle behind the shared resolve gate, so one
   // dead mirror costs a candidate, not the lane); VidRock follows (multi-lane
-  // AES-GCM payloads behind the direct-stream gate). Videasy is named
-  // explicitly to pin it last rather than float among unlisted providers: its
-  // session/turnstile path and rotted `videasy.to` domain make it the
-  // fallback, not the lead — registered, not removed.
-  providerPriority: ["rivestream", "vidrock", "videasy"],
+  // AES-GCM payloads behind the direct-stream gate). Movy is named explicitly
+  // ahead of Videasy: unlisted it floated to the very end, behind a provider
+  // whose upstream is gone, while its own aggregator still resolves. Videasy
+  // stays named and last rather than floating: its session/turnstile path and
+  // rotted `videasy.to` domain make it the fallback, not the lead — registered,
+  // not removed.
+  providerPriority: ["rivestream", "vidrock", "movy", "videasy"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
-  // holds the *rest* of the order and must not repeat the lane default. Miruro
-  // is first of the rest: it aggregates roughly a dozen backends behind one
-  // AniList-keyed pipe, so one upstream going dark costs a server rather than
-  // the lane. KickAssAnime and AnimeGG share nothing with Miruro — own
-  // catalog, own site, own CDN — and KickAssAnime can take over a title Miruro
-  // found. AniDB follows for when it returns, then AllAnime for the ani-cli
-  // parity path.
-  animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb", "allanime"],
+  // holds the *rest* of the order and must not repeat the lane default.
+  // KickAssAnime leads the rest (own catalog, own site, own CDN, soft VTT
+  // subs); AnimeGG follows (multi-rung MP4, hardsubbed). AllAnime precedes
+  // Miruro at the tail — its `/api/secure/pipe` route is gone from their
+  // shipped bundle (2026-10-13) but the module stays registered for revival.
+  animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
-  providerDefaultsRevision: 3,
+  // Revision 4 reorders dead/degraded tails: Movy is named before Videasy in
+  // the series lane and AllAnime precedes AniDB in the anime lane.
+  // Revision 5 demoted Miruro and AniDB behind AllAnime while both stayed live.
+  // Revision 6 retires AniDB from production and drops it from shipped defaults.
+  providerDefaultsRevision: 6,
+  disabledProviders: [],
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },

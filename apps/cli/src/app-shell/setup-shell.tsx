@@ -30,6 +30,7 @@ import { mountRootContent } from "./root-content-state";
 import { AnalyticsScreen, ANALYTICS_ON_INDEX, ANALYTICS_OFF_INDEX } from "./setup/AnalyticsScreen";
 import { buildDependencyRows, type ScopedDependencyRow } from "./setup/dependency-rows";
 import { SetupFrame, setupContentWidth, type FooterKey } from "./setup/SetupFrame";
+import { SetupPointerContext, type SetupPointerActions } from "./setup/SetupPointer";
 import {
   DependencyScreen,
   dependencyFooter,
@@ -237,7 +238,7 @@ export function SetupShell({
   // Columns only. The frame takes its height from its container via flexGrow —
   // sizing to `stdout.rows` is what pushed the footer off the bottom of the
   // screen, because setup mounts inside the app shell's box, not the terminal.
-  const { cols } = useShellDimensions();
+  const { cols, rows } = useShellDimensions();
   // Setup is inside AppRoot, whose side padding also consumes columns.
   const frameWidth = Math.max(0, cols - ROOT_HORIZONTAL_PADDING * 2);
   // Same policy the gate below renders against. While it is too small the
@@ -644,82 +645,145 @@ export function SetupShell({
     }
   });
 
+  const pointer: SetupPointerActions = {
+    pick(field, value) {
+      if (viewport.tooSmall || rechecking) return;
+      if (confirmingAbort) {
+        setConfirmingAbort(false);
+        return;
+      }
+      if (field === "lane") {
+        const lane = SETUP_LANGUAGE_LANES.find((entry) => entry.value === value);
+        if (lane) setLanguageLane(lane.value);
+        return;
+      }
+      const index = Number(value);
+      if (!Number.isInteger(index) || index < 0) return;
+      if (field === "mode" && index < MODE_OPTIONS.length) setModeIdx(index);
+      if (field === "library" && index < 8) {
+        if (libraryIdx === index) toggle();
+        else setLibraryIdx(index);
+      }
+      if (field === "audio" || field === "subtitle") {
+        const options = field === "audio" ? AUDIO_PREFERENCE_OPTIONS : SUBTITLE_PREFERENCE_OPTIONS;
+        const option = options[index];
+        if (!option) return;
+        setLangFocus(field);
+        setLanguageProfiles((current) => ({
+          ...current,
+          [languageLane]: { ...current[languageLane], [field]: option.value },
+        }));
+      }
+    },
+    action(key) {
+      if (viewport.tooSmall || rechecking) return;
+      if (confirmingAbort) {
+        setConfirmingAbort(false);
+        return;
+      }
+      if (key === "enter") {
+        // A pointer can never grant the keystroke-only analytics consent.
+        if (screen !== "analytics") advance();
+      } else if (key === "b") back();
+      else if (key === "s") {
+        if (screen === "analytics") commitAnalytics("disabled");
+        else applyScreenRecommendation();
+        advance();
+      } else if (key === "S") {
+        if (screen === "analytics") {
+          commitAnalytics("disabled");
+          advance();
+        } else acceptRemainingDefaults();
+      } else if (key === "a") applyLanguageProfileToAll();
+      else if (key === "tab") setLanguageLane((current) => cycleSetupLanguageLane(current, 1));
+      else if (key === "←→")
+        setLangFocus((current) => (current === "audio" ? "subtitle" : "audio"));
+      else if (key === "space") toggle();
+      else if (key === "r") recheck();
+      else if (key === "d") setShowFix((current) => !current);
+    },
+  };
+
   const footer = buildFooter(screen, {
     hasFix: Boolean(depRows[depIdx]?.fix),
     isFirst: screenIdx === 0,
   });
 
   return (
-    <ViewportResizeGate kind="picker" message="Resize terminal to run setup">
-      <SetupFrame
-        width={frameWidth}
-        context={SCREEN_CONTEXT[screen]}
-        step={screenIdx}
-        totalSteps={SCREEN_ORDER.length}
-        footer={footer}
-        // The summary screen draws its own, in a pose that means the waiting is
-        // over. The frame would otherwise stack a second one above it.
-        companion={screen === "done" ? null : "setup"}
-      >
-        {screen === "deps" ? (
-          <DependencyScreen
-            rows={depRows}
-            selected={depIdx}
-            rechecking={rechecking}
-            tick={tick}
-            showFix={showFix}
-            contentWidth={setupContentWidth(frameWidth)}
-          />
-        ) : null}
-        {screen === "mode" ? <ModeScreen selected={modeIdx} /> : null}
-        {screen === "language" ? (
-          <LanguageScreen
-            lanes={SETUP_LANGUAGE_LANES}
-            activeLane={languageLane}
-            profiles={languageProfiles}
-            audioOptions={AUDIO_PREFERENCE_OPTIONS}
-            subtitleOptions={SUBTITLE_PREFERENCE_OPTIONS}
-            audioIndex={audioIdx}
-            subtitleIndex={subtitleIdx}
-            focus={langFocus}
-          />
-        ) : null}
-        {screen === "library" ? (
-          <LibraryScreen
-            toggles={{
-              downloadsEnabled,
-              downloadQuality: DOWNLOAD_QUALITIES[qualityIdx] ?? "1080p",
-              autoNext,
-              skipIntro,
-              skipCredits,
-              connectAniList,
-              connectTmdb,
-              presenceDiscord,
-            }}
-            selected={libraryIdx}
-            ytDlpReady={snapshot.ytDlp}
-            downloadPath={downloadPath}
-          />
-        ) : null}
-        {screen === "analytics" ? <AnalyticsScreen selectedIndex={analyticsIdx} /> : null}
-        {screen === "done" ? (
-          <DoneScreen
-            headline={describeChoice(buildPrefs(analyticsDecision))}
-            summary={summaryLines(buildPrefs(analyticsDecision))}
-            outstanding={outstandingLines(depRows)}
-          />
-        ) : null}
+    <SetupPointerContext.Provider value={pointer}>
+      <ViewportResizeGate kind="picker" message="Resize terminal to run setup">
+        <SetupFrame
+          width={frameWidth}
+          context={SCREEN_CONTEXT[screen]}
+          step={screenIdx}
+          totalSteps={SCREEN_ORDER.length}
+          footer={footer}
+          // The summary screen draws its own, in a pose that means the waiting is
+          // over. The frame would otherwise stack a second one above it.
+          companion={screen === "deps" ? "setup" : null}
+        >
+          {screen === "deps" ? (
+            <DependencyScreen
+              rows={depRows}
+              selected={depIdx}
+              rechecking={rechecking}
+              tick={tick}
+              showFix={showFix}
+              contentWidth={setupContentWidth(frameWidth)}
+            />
+          ) : null}
+          {screen === "mode" ? <ModeScreen selected={modeIdx} /> : null}
+          {screen === "language" ? (
+            <LanguageScreen
+              lanes={SETUP_LANGUAGE_LANES}
+              activeLane={languageLane}
+              contentWidth={setupContentWidth(frameWidth)}
+              audioOptions={AUDIO_PREFERENCE_OPTIONS}
+              subtitleOptions={SUBTITLE_PREFERENCE_OPTIONS}
+              audioIndex={audioIdx}
+              subtitleIndex={subtitleIdx}
+              focus={langFocus}
+            />
+          ) : null}
+          {screen === "library" ? (
+            <LibraryScreen
+              toggles={{
+                downloadsEnabled,
+                downloadQuality: DOWNLOAD_QUALITIES[qualityIdx] ?? "1080p",
+                autoNext,
+                skipIntro,
+                skipCredits,
+                connectAniList,
+                connectTmdb,
+                presenceDiscord,
+              }}
+              selected={libraryIdx}
+              ytDlpReady={snapshot.ytDlp}
+              downloadPath={downloadPath}
+            />
+          ) : null}
+          {screen === "analytics" ? <AnalyticsScreen selectedIndex={analyticsIdx} /> : null}
+          {screen === "done" ? (
+            <DoneScreen
+              compact={rows < 30}
+              contentWidth={setupContentWidth(frameWidth)}
+              headline={describeChoice(buildPrefs(analyticsDecision))}
+              summary={summaryLines(buildPrefs(analyticsDecision))}
+              outstanding={outstandingLines(depRows)}
+            />
+          ) : null}
 
-        {confirmingAbort ? (
-          <Box marginTop={1}>
-            <Text color={palette.dangerText} bold>
-              Press esc again to quit without saving
-            </Text>
-            <Text color={palette.muted}> — any other key stays.</Text>
-          </Box>
-        ) : null}
-      </SetupFrame>
-    </ViewportResizeGate>
+          {confirmingAbort ? (
+            <Box marginTop={1}>
+              <Text color={palette.dangerText} bold>
+                Press esc again to quit without saving
+              </Text>
+              <Text color={palette.muted}> — any other key stays.</Text>
+            </Box>
+          ) : null}
+        </SetupFrame>
+      </ViewportResizeGate>
+    </SetupPointerContext.Provider>
   );
 }
 
@@ -737,18 +801,17 @@ function buildFooter(
         { key: "↑↓", label: "choose" },
         ...back,
         { key: "s", label: "recommended" },
-        { key: "S", label: "remaining defaults" },
+        { key: "S", label: "finish defaults" },
       ];
     case "language":
       // tab and ↑↓ are named in the screen body, right where they act; the
       // footer keeps only the decisions.
       return [
         { key: "enter", label: "next" },
-        { key: "tab/shift-tab", label: "profile" },
+        { key: "tab", label: "profile" },
         { key: "←→", label: "audio / subs" },
-        { key: "a", label: "apply to all" },
-        { key: "s", label: "recommended" },
-        { key: "S", label: "remaining defaults" },
+        { key: "a", label: "copy to all" },
+        { key: "S", label: "finish defaults" },
         ...back,
       ];
     case "library":
@@ -757,7 +820,7 @@ function buildFooter(
         { key: "↑↓", label: "choose" },
         { key: "enter", label: "next" },
         { key: "s", label: "recommended" },
-        { key: "S", label: "remaining defaults" },
+        { key: "S", label: "finish defaults" },
         ...back,
       ];
     case "analytics":
@@ -886,6 +949,7 @@ export function runSetupFlow(
 } {
   const mounted = mountRootContent<SetupFlowPayload>({
     kind: "picker",
+    headerLabel: "Setup",
     renderContent: (finish) => (
       <SetupShell
         snapshot={snapshot}

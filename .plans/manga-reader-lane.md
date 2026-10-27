@@ -10,6 +10,13 @@ downloads as PDF/ZIP/CBZ and render pages in-terminal via Kitty/Sixel/iTerm2.
 This doc scopes a `manga` content lane for Kunai: the personal-media-hub thesis
 extending to a second medium — not manga bolted onto the video pipeline.
 
+## Confirmed scope
+
+On 2026-10-24 the user confirmed manga/comic reading, not changes to the
+AllManga anime streaming adapter. This is a separate reader lane. The current
+watching candidate does not implement a reader; chapter/page identity, reading
+direction, progress and offline behavior remain required before claiming support.
+
 ## Why it belongs
 
 Same audience (anime/manga is one hobby), and Kunai's moats map cleanly:

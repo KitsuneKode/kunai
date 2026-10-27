@@ -86,6 +86,27 @@ function view(over: Partial<PlaybackSourceInventoryView>): PlaybackSourceInvento
 }
 
 describe("buildTrackCapabilities", () => {
+  test("selected and failed sources never claim decoded playback or repeat host evidence", () => {
+    const groups = buildTrackCapabilities(
+      view({
+        sourceGroups: [
+          sourceGroup({
+            label: "YouTube",
+            state: "selected",
+            hints: ["selected", "host youtube.com"],
+            nativeLabels: ["YouTube", "youtube.com"],
+          }),
+        ],
+      }),
+    );
+    const current = groups[0]?.rows[0];
+    expect(current?.detail).toBe("selected · host youtube.com");
+    const failed = annotateCurrentTrackFailure(groups, "Playback failed on this stream.")[0]
+      ?.rows[0];
+    expect(failed).toMatchObject({ selected: true, risk: "failed", enabled: false });
+    expect(failed?.detail).not.toContain("playing");
+  });
+
   test("returns nothing for a missing view", () => {
     expect(buildTrackCapabilities(null)).toEqual([]);
     expect(buildTrackCapabilities(undefined)).toEqual([]);

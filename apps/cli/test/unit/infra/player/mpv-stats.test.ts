@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { shouldPersistHistory } from "@/domain/playback/playback-history";
+import { shouldMarkEpisodeCompleted } from "@/domain/playback/playback-policy";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -29,6 +30,22 @@ describe("mpv-stats", () => {
       expect(shouldPersistHistory(result)).toBe(true);
     });
   }
+
+  test.each([8, 181, 300, 600])(
+    "a duration-only EOF for a %ss item cannot manufacture watched progress",
+    (duration) => {
+      const stats = createPlayerStatsState();
+      applyObservedPropertySample(stats, { name: "duration", value: duration, observedAt: 100 });
+      applyObservedPropertySample(stats, { name: "eof-reached", value: true, observedAt: 101 });
+      applyEndFileEvent(stats, "eof", 102);
+      recordPlayerExit(stats, { code: 0, signal: null });
+      const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+      expect(result.watchedSeconds).toBe(0);
+      expect(result.endReason).toBe("unknown");
+      expect(result.suspectedDeadStream).toBe(true);
+      expect(shouldMarkEpisodeCompleted(result)).toBe(false);
+    },
+  );
 
   test("cleared duration cannot bypass the premature network EOF guard", () => {
     const stats = createPlayerStatsState();

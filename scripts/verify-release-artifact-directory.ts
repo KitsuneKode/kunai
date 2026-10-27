@@ -199,7 +199,7 @@ if (import.meta.main) {
     const args = parseCliArgs(process.argv.slice(2));
     await verifyReleaseArtifactDirectory(args);
     console.log(
-      `[release-assets] OK — verified 8 archives + 8 raw binaries + 2 manifests in ${args.directory}`,
+      `[release-assets] OK — verified ${REQUIRED_ARCHIVE_ASSET_NAMES.length} archives + ${REQUIRED_BINARY_ASSET_NAMES.length} raw binaries + 2 manifests in ${args.directory}`,
     );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

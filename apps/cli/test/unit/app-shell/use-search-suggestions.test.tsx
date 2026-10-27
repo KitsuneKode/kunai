@@ -73,12 +73,14 @@ type HarnessControl = { readonly setQuery: (q: string) => void };
 function Harness({
   initialQuery,
   enabled = true,
+  scopeKey,
   onSuggest,
   timers,
   onControl,
 }: {
   readonly initialQuery: string;
   readonly enabled?: boolean;
+  readonly scopeKey?: string;
   readonly onSuggest: (
     query: string,
     signal: AbortSignal,
@@ -90,6 +92,7 @@ function Harness({
   const { suggestions, pending } = useSearchSuggestions<Row>({
     query,
     enabled,
+    scopeKey,
     onSuggest,
     debounceMs: 300,
     timers,
@@ -323,4 +326,102 @@ describe("useSearchSuggestions", () => {
     handle.unmount();
     expect(signals[0]?.aborted).toBe(true);
   });
+});
+
+for (const nextScope of ["youtube:youtube", "anime:animegg"]) {
+  test(`same-query scope switch to ${nextScope} cancels old suggestions and debounces the new scope`, async () => {
+    const clock = manualTimers();
+    const old = deferred<readonly SearchSuggestion<Row>[]>();
+    const next = deferred<readonly SearchSuggestion<Row>[]>();
+    let oldSignal: AbortSignal | undefined;
+    let changeScope: (scope: string) => void = () => {};
+    const calls: string[] = [];
+    function ScopedHarness() {
+      const [scope, setScope] = useState("anime:hianime");
+      changeScope = setScope;
+      return (
+        <Harness
+          initialQuery="same"
+          scopeKey={scope}
+          timers={clock.timers}
+          onSuggest={(_query, signal) => {
+            calls.push(scope);
+            if (scope === "anime:hianime") {
+              oldSignal = signal;
+              return old.promise;
+            }
+            return next.promise;
+          }}
+        />
+      );
+    }
+    const handle = render(<ScopedHarness />);
+    try {
+      await act(async () => {
+        clock.flush();
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        changeScope(nextScope);
+        await flushMicrotasks();
+      });
+      expect(oldSignal?.aborted).toBe(true);
+      expect(clock.size).toBe(1);
+      await act(async () => {
+        old.resolve([suggestion("old-anime")]);
+        await flushMicrotasks();
+      });
+      expect(handle.lastFrame()).not.toContain("old-anime");
+      await act(async () => {
+        clock.flush();
+        await flushMicrotasks();
+      });
+      expect(calls).toEqual(["anime:hianime", nextScope]);
+      await act(async () => {
+        next.resolve([suggestion("new-youtube")]);
+        await flushMicrotasks();
+      });
+      expect(handle.lastFrame()).toContain("new-youtube");
+    } finally {
+      handle.unmount();
+    }
+  });
+}
+
+test("a settled result never renders in a different scope before effects clear it", async () => {
+  const clock = manualTimers();
+  const observed: Array<{ scope: string; ids: string[] }> = [];
+  let changeScope: (scope: string) => void = () => {};
+  function ScopedHarness() {
+    const [scope, setScope] = useState("anime:hianime");
+    changeScope = setScope;
+    const state = useSearchSuggestions<Row>({
+      query: "same",
+      enabled: true,
+      scopeKey: scope,
+      timers: clock.timers,
+      onSuggest: async () => [suggestion(scope)],
+    });
+    observed.push({ scope, ids: state.suggestions.map((row) => row.id) });
+    return <Text>{state.suggestions.map((row) => row.id).join(",")}</Text>;
+  }
+  const handle = render(<ScopedHarness />);
+  try {
+    await act(async () => {
+      clock.flush();
+      await flushMicrotasks();
+    });
+    expect(handle.lastFrame()).toContain("anime:hianime");
+    await act(async () => {
+      changeScope("youtube:youtube");
+      await flushMicrotasks();
+    });
+    expect(
+      observed
+        .filter((row) => row.scope === "youtube:youtube")
+        .every((row) => row.ids.length === 0),
+    ).toBe(true);
+  } finally {
+    handle.unmount();
+  }
 });

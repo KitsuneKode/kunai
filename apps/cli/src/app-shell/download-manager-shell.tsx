@@ -32,6 +32,8 @@ import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useRootContentSuspended } from "./RootContentSuspension";
+
 /** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
 
 function refreshJobLists(container: Container) {
@@ -181,14 +183,12 @@ export function DownloadManagerContent({
   onClose,
   onNavigateToLibrary,
   showSelectionHints = true,
-  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToLibrary?: () => void;
   /** When false, omit per-selection hint row (parent shell owns the footer). */
   showSelectionHints?: boolean;
-  commandMode?: boolean;
 }) {
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   // Inside a root-owned overlay the provider's content box is the width budget;
@@ -329,6 +329,7 @@ export function DownloadManagerContent({
     }
   }, [allJobs, selectedIndex]);
 
+  const suspended = useRootContentSuspended();
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -450,7 +451,7 @@ export function DownloadManagerContent({
         return;
       }
     },
-    { isActive: !commandMode },
+    { isActive: !suspended },
   );
 
   const { tooSmall, minColumns, minRows } = viewport;

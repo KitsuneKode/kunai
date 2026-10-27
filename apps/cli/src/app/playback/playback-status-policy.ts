@@ -98,7 +98,7 @@ function transitionFromPaused(
   event: PlayerPlaybackEvent,
 ): PlaybackStatusDecision {
   if (event.type === "playback-resumed") {
-    return accept(current, { status: "playing", generation: current.generation });
+    return accept(current, { status: "playing", generation: current.generation }, true);
   }
   if (event.type === "playback-progress" || event.type === "playback-started") {
     return reject(current);
@@ -117,13 +117,14 @@ function transitionFromActive(
     case "network-buffering":
       return to("buffering");
     case "stream-stalled":
+      return to(event.duringStartup ? "buffering" : "stalled");
     case "ipc-stalled":
       return to("stalled");
     case "seek-stalled":
       return to("seeking");
     case "playback-started":
     case "playback-resumed":
-      return to("playing");
+      return to("playing", true);
     case "playback-paused":
       return to("paused");
     case "playback-progress":

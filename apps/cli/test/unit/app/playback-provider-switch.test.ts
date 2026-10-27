@@ -7,7 +7,12 @@ import {
   clearTitleProviderPreference,
   resolveTitleProviderPreferenceForTitle,
 } from "@/app/playback/playback-provider-switch";
-import { createInitialState, reduceState } from "@/domain/session/SessionState";
+import {
+  createInitialState,
+  reduceState,
+  type SessionState,
+  type StateTransition,
+} from "@/domain/session/SessionState";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 const config = {
@@ -429,4 +434,57 @@ describe("playback provider switch", () => {
     expect(cleared).toBe(true);
     expect(updates.at(-1)?.titleProviderPreferences).toEqual({ "anilist:2": "vidking" });
   });
+});
+
+test("an explicit provider pick after a failure restarts that episode instead of leaving the error parked", async () => {
+  let state: SessionState = {
+    ...createInitialState("vidlink", "hianime", {
+      anime: config.animeLanguageProfile,
+      series: config.seriesLanguageProfile,
+      movie: config.movieLanguageProfile,
+    }),
+    currentTitle: { id: "1396", type: "series", name: "Known title" },
+    currentEpisode: { season: 1, episode: 1 },
+    playbackStatus: "error",
+    playbackError: "No stream",
+  };
+  let recomputes = 0;
+  // SAFETY: recovery fixture supplies state/config/cache/provider collaborators used by this route.
+  const container = {
+    stateManager: {
+      getState: () => state,
+      dispatch: (transition: StateTransition) => {
+        state = reduceState(state, transition);
+      },
+    },
+    config: {
+      getRaw: () => ({ ...config, titleProviderPreferences: {} }),
+      update: async () => {},
+      save: async () => {},
+    },
+    cacheStore: { delete: async () => {} },
+    sourceInventory: { delete: async () => {} },
+    titleProviderHealth: { clear: () => {} },
+    providerRegistry: {
+      getCompatible: () => [{ metadata: { id: "vidlink" } }, { metadata: { id: "rivestream" } }],
+      getManifest: () => undefined,
+    },
+    diagnosticsService: { record: () => {} },
+    workControl: { cancelActive: () => false },
+    playerControl: {
+      recomputeCurrentPlayback: async () => {
+        recomputes++;
+        return true;
+      },
+    },
+  } as never;
+  await applyProviderPickerSelection({
+    container,
+    pickedProviderId: "rivestream",
+    reason: "error-provider-switch",
+  });
+  expect(state.provider).toBe("rivestream");
+  expect(state.playbackStatus).toBe("loading");
+  expect(state.playbackError).toBeNull();
+  expect(recomputes).toBe(0);
 });

@@ -6,17 +6,9 @@ import { Box, Text, useInput } from "ink";
 import React from "react";
 
 import { extractErrorDebugExcerpt } from "./error-debug-excerpt";
-import { reducedMotionEnabled } from "./motion-policy";
-import {
-  GUTTER_COLUMN,
-  PETAL_STEP_MS,
-  type PetalPlacement,
-  petalsForFrame,
-  settledFrame,
-} from "./petal-fall";
-import { buildErrorRows, type ErrorRow, type ErrorRowTone, rowText } from "./playback-error-rows";
+import { MouseTarget } from "./mouse/MouseRegions";
+import { buildErrorRows, type ErrorRow, type ErrorRowTone } from "./playback-error-rows";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
-import { useFrameTick } from "./primitives/SakuraPetal";
 import { SakuraLoader } from "./SakuraLoader";
 import { palette } from "./shell-theme";
 import { useShellDimensions } from "./use-viewport-policy";
@@ -118,8 +110,6 @@ const PANEL_CHROME = 6;
 const MIN_PANEL_WIDTH = 30;
 const MAX_PANEL_WIDTH = 76;
 
-type Cell = { readonly ch: string; readonly color: string; readonly bold: boolean };
-
 function toneColor(tone: ErrorRowTone): string {
   switch (tone) {
     case "danger-strong":
@@ -138,81 +128,22 @@ function toneColor(tone: ErrorRowTone): string {
   }
 }
 
-/**
- * Lay a row's text into a cell buffer, then drop this row's petals into it.
- * Petals are written LAST and only into cells the text left empty, so a petal
- * can never lengthen the row — which is what makes reflow impossible rather
- * than merely unlikely.
- *
- * Cells are terminal columns, not code points: a wide glyph claims its second
- * column as an empty cell so the width clip and the petal lanes both measure
- * real screen space (and a petal cannot land on a glyph's trailing half).
- */
-function rowCells(row: ErrorRow, petals: readonly PetalPlacement[], width: number): Cell[] {
-  const cells: Cell[] = [{ ch: "│", color: palette.dangerDim, bold: false }];
-  while (cells.length < TEXT_COLUMN) {
-    cells.push({ ch: " ", color: palette.dim, bold: false });
-  }
-
-  for (const segment of row.segments) {
-    const color = toneColor(segment.tone);
-    const bold = segment.tone === "danger-strong";
-    for (const ch of segment.text) {
-      const chColumns = measureColumns(ch);
-      if (chColumns === 0) {
-        // A combining mark draws nothing; fuse it onto the text cell it
-        // modifies instead of letting it occupy a column of its own.
-        for (let i = cells.length - 1; i > GUTTER_COLUMN; i--) {
-          const host = cells[i];
-          if (!host || host.ch === " " || host.ch.length === 0) continue;
-          cells[i] = { ...host, ch: host.ch + ch };
-          break;
-        }
-        continue;
-      }
-      if (cells.length + chColumns > width) break;
-      cells.push({ ch, color, bold });
-      for (let i = 1; i < chColumns; i++) cells.push({ ch: "", color, bold });
-    }
-  }
-
-  for (const petal of petals) {
-    if (petal.column >= width) continue;
-    while (cells.length <= petal.column) {
-      cells.push({ ch: " ", color: palette.dim, bold: false });
-    }
-    if (cells[petal.column]?.ch !== " " && petal.column !== GUTTER_COLUMN) continue;
-    cells[petal.column] = { ch: petal.glyph, color: petal.color, bold: true };
-  }
-
-  return cells;
-}
-
-/** Collapse a cell buffer into as few <Text> runs as the colors allow. */
-function ErrorRowLine({
-  row,
-  petals,
-  width,
-}: {
-  readonly row: ErrorRow;
-  readonly petals: readonly PetalPlacement[];
-  readonly width: number;
-}) {
-  const cells = rowCells(row, petals, width);
-  const runs: { text: string; color: string; bold: boolean }[] = [];
-  for (const cell of cells) {
-    const last = runs.at(-1);
-    if (last && last.color === cell.color && last.bold === cell.bold) last.text += cell.ch;
-    else runs.push({ text: cell.ch, color: cell.color, bold: cell.bold });
-  }
+/** Failure text is static: recovery actions own feedback, not decorations. */
+function ErrorRowLine({ row, width }: { readonly row: ErrorRow; readonly width: number }) {
+  let remaining = width - TEXT_COLUMN;
   return (
     <Text>
-      {runs.map((run, index) => (
-        // eslint-disable-next-line react/no-array-index-key -- runs are positional by construction
-        <Text key={`r-${index}`} color={run.color} bold={run.bold}>
-          {run.text}
-        </Text>
-      ))}
+      <Text color={palette.dangerDim}>│ </Text>
+      {row.segments.map((segment, index) => {
+        const text = truncateLine(segment.text, Math.max(0, remaining));
+        remaining -= measureColumns(text);
+        return (
+          // eslint-disable-next-line react/no-array-index-key -- error segments are positional
+          <Text key={index} color={toneColor(segment.tone)} bold={segment.tone === "danger-strong"}>
+            {text}
+          </Text>
+        );
+      })}
     </Text>
   );
 }
@@ -225,6 +156,7 @@ export function ErrorShell({
   debugError,
   onResolve,
   onRetry,
+  onProviders,
 }: {
   message: string;
   scenario?: ErrorScenario;
@@ -233,6 +165,7 @@ export function ErrorShell({
   debugError?: unknown;
   onResolve: () => void;
   onRetry?: () => void;
+  onProviders?: () => void;
 }) {
   // Memoized on its inputs, not recomputed per render: it is a dependency of
   // the row model below, and a fresh object each render would defeat that memo.
@@ -246,9 +179,8 @@ export function ErrorShell({
       onResolve();
       return;
     }
-    if (input.toLowerCase() === "r" && onRetry) {
-      onRetry();
-    }
+    if (input.toLowerCase() === "r" && onRetry) onRetry();
+    if (input.toLowerCase() === "p" && onProviders) onProviders();
   });
 
   // Width comes from the terminal alone — never from the petals, or the border
@@ -270,19 +202,6 @@ export function ErrorShell({
     [message, scenario, waterfall, debugExcerpt, onRetry, width],
   );
 
-  const settled = settledFrame(rows.length);
-  const tick = useFrameTick(true, PETAL_STEP_MS, settled);
-  const frame = reducedMotionEnabled() ? settled : tick;
-
-  // Columns, not code points — the petal lanes yield to where text actually
-  // ends on screen, and a CJK row's text ends roughly twice as far right as a
-  // code-point count suggests.
-  const rowEndColumns = React.useMemo(
-    () => rows.map((row) => TEXT_COLUMN + measureColumns(rowText(row))),
-    [rows],
-  );
-  const petals = petalsForFrame({ frame, rowCount: rows.length, rowEndColumns, width });
-
   return (
     <Box
       flexDirection="column"
@@ -297,10 +216,16 @@ export function ErrorShell({
           // eslint-disable-next-line react/no-array-index-key -- rows are positional by construction
           key={`row-${index}`}
           row={row}
-          petals={petals.filter((petal) => petal.row === index)}
           width={width}
         />
       ))}
+      {onProviders ? (
+        <MouseTarget id="playback-error:providers" onClick={onProviders}>
+          <Text color={palette.accent} bold>
+            [p] providers
+          </Text>
+        </MouseTarget>
+      ) : null}
     </Box>
   );
 }

@@ -1,6 +1,6 @@
 import type { PlayerCapabilities } from "@/domain/playback/player-capabilities";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
-import { isJsonObject, type JsonValue } from "@kunai/types";
+import { isJsonObject } from "@kunai/types";
 
 import type { ShellAction } from "./types";
 

@@ -4,6 +4,52 @@ import { buildRootStatusSummary } from "@/app-shell/root-status-summary";
 import { createInitialState } from "@/domain/session/SessionState";
 
 describe("buildRootStatusSummary", () => {
+  test.each([
+    {
+      name: "movie after playback ends",
+      view: "post-playback",
+      status: "ready",
+      title: { id: "film", name: "A film", type: "movie" as const },
+      expected: "movie",
+    },
+    {
+      name: "anime theatrical film",
+      view: "playback",
+      status: "playing",
+      title: {
+        id: "anime",
+        name: "Anime film",
+        type: "movie" as const,
+        externalIds: { malId: "1" },
+      },
+      expected: "anime",
+    },
+    {
+      name: "YouTube identity with movie structure",
+      view: "playback",
+      status: "playing",
+      title: {
+        id: "clip",
+        name: "A video",
+        type: "movie" as const,
+        externalIds: { youtubeId: "fixture-video" },
+      },
+      expected: "YouTube",
+    },
+  ])("header retains resolved identity for $name", ({ view, status, title, expected }) => {
+    const base = createInitialState("vidlink", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state: { ...base, mode: "series", view: "playback", currentTitle: title },
+      currentViewLabel: view,
+      rootStatus: status,
+    });
+    expect(summary.crumb).toStartWith(`${expected} ·`);
+  });
+
   test("summarizes active playback with title, episode, subtitles, and chain state", () => {
     const base = createInitialState("vidking", "hianime", {
       anime: { audio: "original", subtitle: "en" },
@@ -119,6 +165,21 @@ describe("buildRootStatusSummary", () => {
     expect(summary.crumb).toBe("anime · allanime");
   });
 
+  test("a settled shell reports ready instead of an endless loading state", () => {
+    const state = createInitialState("vidlink", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    // AppRoot emits ready after search/playback work has settled.
+    const summary = buildRootStatusSummary({
+      state,
+      currentViewLabel: "browse",
+      rootStatus: "ready",
+    });
+    expect(summary.header).toEqual({ label: "ready", tone: "success" });
+  });
+
   test("keeps idle search state compact when no title is selected", () => {
     const base = createInitialState("vidking", "hianime", {
       anime: { audio: "original", subtitle: "en" },
@@ -164,6 +225,34 @@ describe("buildRootStatusSummary", () => {
 
     expect(summary.crumb).toContain("movie");
     expect(summary.crumb).not.toContain("series");
+  });
+
+  test("a resolving movie reads as a movie, not as its lane", () => {
+    // The bootstrap variant of the playing-movie case: while the resolve is
+    // still running the header read "series" for a movie because the
+    // correction was gated on active transport. The rail already knows the
+    // title kind during bootstrap, so the header must agree with it.
+    const base = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    for (const rootStatus of ["loading", "resolving"] as const) {
+      const summary = buildRootStatusSummary({
+        state: {
+          ...base,
+          mode: "series",
+          provider: "vidlink",
+          view: "playback",
+          currentTitle: { id: "od", name: "The Odyssey", type: "movie" },
+        },
+        currentViewLabel: "playback",
+        rootStatus,
+      });
+
+      expect(summary.crumb).toContain("movie");
+      expect(summary.crumb).not.toContain("series");
+    }
   });
 
   test("a playing series still reads as its lane", () => {

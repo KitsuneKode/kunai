@@ -47,7 +47,11 @@ import type {
   YoutubeVideoMetadata,
 } from "./youtube-metadata";
 import { createYoutubeMetadataService } from "./youtube-metadata-service";
-import { buildYtdlFormatSelector, defaultYtdlPlaybackFormat } from "./yt-dlp-metadata";
+import {
+  buildExactYtdlFormatSelector,
+  buildYtdlFormatSelector,
+  defaultYtdlPlaybackFormat,
+} from "./yt-dlp-metadata";
 import { parseYoutubePlayerClients, withYoutubePlayerClient } from "./ytdl-options";
 
 export { YOUTUBE_PROVIDER_ID, youtubeManifest };
@@ -307,36 +311,105 @@ async function listYoutubeEpisodes(
 ): Promise<readonly ProviderEpisodeOption[] | null> {
   const parsed = parseYoutubeCatalogId(input.title.id);
   if (parsed.kind === "playlist") {
-    const playlist = await invidiousGetPlaylist(parsed.nativeId, {
-      preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
-      signal: context.signal,
-    });
-    return (playlist.videos ?? []).map((video, index) => ({
-      index: video.index ?? index + 1,
-      label: `#${video.index ?? index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
-      name: video.title,
-      detail: video.title,
-      totalEpisodeCount: playlist.videoCount ?? playlist.videos?.length,
-      externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
-    }));
+    try {
+      const playlist = await invidiousGetPlaylist(parsed.nativeId, {
+        preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
+        signal: context.signal,
+      });
+      return (playlist.videos ?? []).map((video, index) => ({
+        index: video.index ?? index + 1,
+        label: `#${video.index ?? index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
+        name: video.title,
+        detail: video.title,
+        totalEpisodeCount: playlist.videoCount ?? playlist.videos?.length,
+        externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
+      }));
+    } catch {
+      // The public instance pool is thin — fall through to local yt-dlp.
+    }
+    return listYoutubeEpisodesViaYtdlp(
+      `https://www.youtube.com/playlist?list=${encodeURIComponent(parsed.nativeId)}`,
+      context,
+    );
   }
 
   if (parsed.kind === "channel") {
-    const channel = await invidiousGetChannelVideos(parsed.nativeId, {
-      preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
-      signal: context.signal,
-    });
-    const channelVideos = channel.latestVideos ?? channel.videos ?? [];
-    return channelVideos.map((video, index) => ({
-      index: index + 1,
-      label: `#${index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
-      name: video.title,
-      detail: video.title,
-      externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
-    }));
+    try {
+      const channel = await invidiousGetChannelVideos(parsed.nativeId, {
+        preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
+        signal: context.signal,
+      });
+      const channelVideos = channel.latestVideos ?? channel.videos ?? [];
+      return channelVideos.map((video, index) => ({
+        index: index + 1,
+        label: `#${index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
+        name: video.title,
+        detail: video.title,
+        externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
+      }));
+    } catch {
+      // The public instance pool is thin — fall through to local yt-dlp.
+    }
+    return listYoutubeEpisodesViaYtdlp(
+      `https://www.youtube.com/channel/${encodeURIComponent(parsed.nativeId)}/videos`,
+      context,
+    );
   }
 
   return null;
+}
+
+const YTDLP_EPISODE_LIST_LIMIT = 50;
+
+/**
+ * Local yt-dlp fallback for playlist/channel episode listing when every
+ * Invidious instance is down. `--flat-playlist` keeps it to one fast pass
+ * with no media probing.
+ */
+async function listYoutubeEpisodesViaYtdlp(
+  pageUrl: string,
+  context: ProviderRuntimeContext,
+): Promise<readonly ProviderEpisodeOption[] | null> {
+  if (!Bun.which("yt-dlp", { PATH: process.env.PATH })) return null;
+  try {
+    const proc = await spawnYtDlpWithTimeout({
+      args: [
+        "--flat-playlist",
+        "--dump-json",
+        "--no-warnings",
+        "--playlist-end",
+        String(YTDLP_EPISODE_LIST_LIMIT),
+        "--",
+        pageUrl,
+      ],
+      signal: context.signal,
+      timeoutMs: 30_000,
+    });
+    if (proc.exitCode !== 0 || !proc.stdout.trim()) return null;
+    const episodes: ProviderEpisodeOption[] = [];
+    for (const line of proc.stdout.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        // SAFETY: yt-dlp emits playlist JSON; required identity fields are checked before use.
+        const entry = JSON.parse(trimmed) as { id?: string; title?: string; duration?: number };
+        if (!entry.id || !entry.title) continue;
+        const index = episodes.length + 1;
+        episodes.push({
+          index,
+          label: `#${index}${entry.duration ? ` · ${formatDurationSeconds(entry.duration)}` : ""}`,
+          name: entry.title,
+          detail: entry.title,
+          externalIds: { youtubeId: entry.id },
+        });
+      } catch {
+        // skip malformed line
+      }
+    }
+    return episodes;
+  } catch {
+    return null;
+  }
 }
 
 async function loadYtDlpVideoInfo(
@@ -494,7 +567,10 @@ async function resolveYoutube(
         ? playerClients.map((client) => ({
             client,
             sourceId: `source:${YOUTUBE_PROVIDER_ID}:${client}`,
-            label: `YouTube · ${client}`,
+            label:
+              playerClients.indexOf(client) === 0
+                ? "YouTube · primary connection"
+                : `YouTube · fallback connection ${playerClients.indexOf(client)}`,
             extractorArgs: withYoutubePlayerClient(globalYoutubeConfig.extractorArgs, client),
           }))
         : [
@@ -506,17 +582,17 @@ async function resolveYoutube(
             },
           ];
 
-    const streamId = (label: string, client: string | null) =>
+    const streamId = (formatId: string, client: string | null) =>
       client
-        ? `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${client}:${label}`
-        : `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${label}`;
+        ? `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${client}:${formatId}`
+        : `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${formatId}`;
 
     const streams: StreamCandidate[] = lanes.flatMap((lane, laneIndex) =>
       qualityLabels.map((entry) => ({
-        id: streamId(entry.label, lane.client),
+        id: streamId(entry.formatId, lane.client),
         providerId: YOUTUBE_PROVIDER_ID,
         sourceId: lane.sourceId,
-        variantId: `variant:${YOUTUBE_PROVIDER_ID}:${entry.label}`,
+        variantId: `variant:${YOUTUBE_PROVIDER_ID}:${entry.formatId}`,
         url: watchUrl,
         protocol: "youtube" as const,
         container: "unknown" as const,
@@ -528,7 +604,13 @@ async function resolveYoutube(
         confidence: (ytInfo ? 0.95 : 0.85) - laneIndex * 0.05,
         cachePolicy,
         metadata: {
-          ytdlFormat: isLive ? defaultYtdlPlaybackFormat() : buildYtdlFormatSelector(entry.label),
+          ytdlFormat:
+            mappedFormats.length > 0
+              ? buildExactYtdlFormatSelector(entry.formatId, entry.hasAudio)
+              : isLive
+                ? defaultYtdlPlaybackFormat()
+                : buildYtdlFormatSelector(entry.label),
+          formatId: mappedFormats.length > 0 ? entry.formatId : undefined,
           // Read back by the player so each lane asks yt-dlp for its own client
           // rather than the global default.
           extractorArgs: lane.extractorArgs,
@@ -546,20 +628,20 @@ async function resolveYoutube(
 
     const primaryLane = lanes[0];
     const selectedStreamId = streamId(
-      selectedQuality?.label ?? "best",
+      selectedQuality?.formatId ?? "best",
       primaryLane?.client ?? null,
     );
 
     // One variant per quality, listing that quality's stream in every lane so the
     // failover order is preserved when a viewer picks a specific quality.
     const variants: ProviderVariantCandidate[] = qualityLabels.map((entry) => ({
-      id: `variant:${YOUTUBE_PROVIDER_ID}:${entry.label}`,
+      id: `variant:${YOUTUBE_PROVIDER_ID}:${entry.formatId}`,
       providerId: YOUTUBE_PROVIDER_ID,
       sourceId: primaryLane?.sourceId ?? `source:${YOUTUBE_PROVIDER_ID}:youtube`,
       qualityLabel: entry.label,
       qualityRank: entry.rank,
       protocol: "youtube",
-      streamIds: lanes.map((lane) => streamId(entry.label, lane.client)),
+      streamIds: lanes.map((lane) => streamId(entry.formatId, lane.client)),
       confidence: 0.9,
     }));
 
@@ -590,6 +672,9 @@ async function resolveYoutube(
         confidence: 0.95 - laneIndex * 0.05,
         requiresRuntime: "direct-http" as const,
         cachePolicy,
+        metadata: {
+          sourceDetail: `Extractor connection method${lane.client ? ` (${lane.client})` : ""}; same video. Format availability can differ; playback is checked by mpv.`,
+        },
       })),
       streams,
       variants: variants.length > 0 ? variants : undefined,

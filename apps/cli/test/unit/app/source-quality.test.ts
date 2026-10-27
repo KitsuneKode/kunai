@@ -659,3 +659,153 @@ test("late subtitle view can select Off without losing attached track choices", 
     view?.subtitleOptions.find((option) => option.subtitleUrl === "https://wyzie.example/es.vtt"),
   ).toMatchObject({ state: "available", restartRequired: false });
 });
+
+test("a source switch retains the requested quality and Auto can reverse it", () => {
+  const selection = streamSelectionFromSource("source-a");
+  expect(
+    applyPreferredStreamSelection(streamWithCandidates, selection, "720p").providerResolveResult
+      ?.selectedStreamId,
+  ).toBe("stream-720");
+  expect(
+    applyPreferredStreamSelection(streamWithCandidates, selection, "best").providerResolveResult
+      ?.selectedStreamId,
+  ).toBe("stream-1080");
+  expect(
+    applyPreferredStreamSelection(
+      streamWithCandidates,
+      streamSelectionFromStream("stream-720"),
+      "best",
+    ).providerResolveResult?.selectedStreamId,
+  ).toBe("stream-720");
+  expect(streamSelectionFromTrackPick({ section: "quality", value: "quality:auto" })).toEqual({
+    sourceId: null,
+    streamId: null,
+    automaticQuality: true,
+  });
+});
+
+test("source switches respect a quality ceiling when the exact resolution is absent", () => {
+  expect(
+    applyPreferredStreamSelection(
+      streamWithCandidates,
+      streamSelectionFromSource("source-a"),
+      "900p",
+    ).providerResolveResult?.selectedStreamId,
+  ).toBe("stream-720");
+});
+
+test("YouTube quality picker offers each exact format once and keeps the active connection", () => {
+  const base = streamWithCandidates.providerResolveResult!;
+  const youtube: StreamInfo = {
+    ...streamWithCandidates,
+    providerResolveResult: {
+      ...base,
+      providerId: "youtube",
+      selectedStreamId: "web-137",
+      streams: ["visionos", "web"].flatMap((client) =>
+        ["137", "248"].map((formatId) => ({
+          ...base.streams[0]!,
+          id: `${client}-${formatId}`,
+          providerId: "youtube",
+          protocol: "youtube" as const,
+          sourceId: client,
+          variantId: `format-${formatId}`,
+          qualityLabel: `1080p · #${formatId}`,
+        })),
+      ),
+    },
+  };
+  const options = buildQualityPickerOptions(youtube);
+  expect(options.map((option) => option.value)).toEqual(["web-137", "web-248"]);
+  expect(options.filter((option) => option.label.includes("current"))).toHaveLength(1);
+  const changed = applyPreferredStreamSelection(
+    youtube,
+    streamSelectionFromStream(options[1]!.value),
+  );
+  expect(changed.providerResolveResult?.selectedStreamId).toBe("web-248");
+});
+
+test("YouTube format and connection picks update the options shipped to mpv", () => {
+  const base = streamWithCandidates.providerResolveResult!;
+  const youtube = {
+    ...streamWithCandidates,
+    requiresYtdl: true,
+    ytdlFormat: "137+ba",
+    ytdlRawOptions: "extractor-args=%30%youtube:player_client=visionos,sub-langs=%3%all",
+    providerResolveResult: {
+      ...base,
+      providerId: "youtube",
+      selectedStreamId: "visionos-137",
+      streams: ["visionos", "web"].flatMap((client) =>
+        ["248", "137"].map((formatId) => ({
+          ...base.streams[0]!,
+          id: `${client}-${formatId}`,
+          providerId: "youtube",
+          sourceId: client,
+          variantId: `format-${formatId}`,
+          requiresYtdl: true,
+          protocol: "youtube" as const,
+          qualityLabel: `1080p · #${formatId}`,
+          metadata: {
+            ytdlFormat: `${formatId}+ba`,
+            extractorArgs: `youtube:player_client=${client}`,
+          },
+        })),
+      ),
+    },
+  };
+  const formatPick = applyPreferredStreamSelection(
+    youtube,
+    streamSelectionFromStream("web-248"),
+    undefined,
+    "fr",
+  );
+  expect(formatPick.ytdlFormat).toBe("248+ba");
+  expect(formatPick.ytdlRawOptions).toContain("player_client=web");
+  expect(formatPick.ytdlRawOptions).toContain("sub-langs=%3%all");
+  const withoutSubtitles = applyPreferredStreamSelection(
+    youtube,
+    streamSelectionFromStream("web-248"),
+    undefined,
+    "none",
+  );
+  expect(withoutSubtitles.ytdlRawOptions).not.toContain("sub-langs=");
+  // A connection change alone must not silently change the codec/format.
+  const connectionPick = applyPreferredStreamSelection(
+    youtube,
+    streamSelectionFromSource("web"),
+    "1080p",
+    "fr",
+  );
+  expect(connectionPick.providerResolveResult?.selectedStreamId).toBe("web-137");
+  expect(connectionPick.ytdlFormat).toBe("137+ba");
+  const automaticPick = applyPreferredStreamSelection(
+    youtube,
+    { sourceId: "web", streamId: null, automaticQuality: true },
+    "best",
+    "fr",
+  );
+  expect(automaticPick.providerResolveResult?.selectedStreamId).toBe("web-248");
+});
+
+test("a single YouTube format across two connections does not advertise a quality choice", () => {
+  const base = streamWithCandidates.providerResolveResult!;
+  const youtube = {
+    ...streamWithCandidates,
+    providerResolveResult: {
+      ...base,
+      providerId: "youtube",
+      selectedStreamId: "web-137",
+      streams: ["visionos", "web"].map((client) => ({
+        ...base.streams[0]!,
+        id: `${client}-137`,
+        providerId: "youtube",
+        sourceId: client,
+        variantId: "format-137",
+        qualityLabel: "1080p",
+      })),
+    },
+  };
+  expect(buildPlaybackControlSummary(youtube).showQualityControl).toBe(false);
+  expect(buildPlaybackControlSummary(youtube).qualityCount).toBe(1);
+});

@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 
 import { buildSettingsPage, listSettingsSectionLabels } from "@/app-shell/settings/build-page";
 import { handleSettingsKey } from "@/app-shell/settings/controller";
+import { firstSelectableRowIndex } from "@/app-shell/settings/navigation";
+import { handleSettingsPointer } from "@/app-shell/settings/pointer";
 import { createSettingsUiState } from "@/app-shell/settings/state";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
@@ -334,4 +336,67 @@ test("Enter while filtering keeps the applied filter and leaves the field", () =
   });
   expect(result.state.searchFocused).toBe(false);
   expect(result.state.searchQuery).toBe("relay");
+});
+
+test("single-provider YouTube keeps mode settings but hides provider controls", () => {
+  const config = baseConfig();
+  const ctx = {
+    ...mockRegistryCtx(config),
+    youtubeProviderOptions: [{ value: "youtube", label: "YouTube" }],
+  };
+  const page = buildSettingsPage(ctx, { searchQuery: "provider" });
+  expect(page.rowById.has("youtubeProvider")).toBe(false);
+  expect(page.rowById.has("youtubeProviderPriority")).toBe(false);
+  expect(config.youtubeProvider).toBe("youtube");
+  const youtube = buildSettingsPage(ctx, {
+    activeSectionIndex: listSettingsSectionLabels(ctx).indexOf("YouTube"),
+  });
+  expect(youtube.rows.length).toBeGreaterThan(1);
+});
+
+test("YouTube provider controls return when a second registered choice exists", () => {
+  const config = baseConfig();
+  const ctx = {
+    ...mockRegistryCtx(config),
+    youtubeProviderOptions: [
+      { value: "youtube", label: "YouTube" },
+      { value: "youtube-other", label: "Other" },
+    ],
+  };
+  const page = buildSettingsPage(ctx, { searchQuery: "provider" });
+  expect(page.rowById.has("youtubeProvider")).toBe(true);
+  expect(page.rowById.has("youtubeProviderPriority")).toBe(true);
+});
+
+test("pointer ignores hidden, section and unknown rows and never leaves the selectable range", () => {
+  const config = baseConfig();
+  const registryCtx = {
+    ...mockRegistryCtx(config),
+    youtubeProviderOptions: [{ value: "youtube", label: "YouTube" }],
+  };
+  const ctx = { container: registryCtx.container, registryCtx };
+  const initial = createSettingsUiState(config);
+  const page = buildSettingsPage(registryCtx, { activeSectionIndex: initial.activeSectionIndex });
+  const state = { ...initial, selectedIndex: firstSelectableRowIndex(page) };
+
+  for (const id of ["youtubeProvider", "section:general", "not-a-row"]) {
+    const result = handleSettingsPointer({ type: "row", id }, state, ctx);
+    expect(result.handled).toBe(false);
+    expect(result.state).toBe(state);
+  }
+
+  const up = handleSettingsPointer({ type: "scroll", direction: "up" }, state, ctx);
+  expect(up.state.selectedIndex).toBe(state.selectedIndex);
+  let current = state;
+  for (let step = 0; step < page.rows.length + 3; step++) {
+    const result = handleSettingsPointer({ type: "scroll", direction: "down" }, current, ctx);
+    expect(page.rows[result.state.selectedIndex]).toBeDefined();
+    current = result.state;
+  }
+  expect(page.rows[current.selectedIndex]?.def.kind).not.toBe("section");
+
+  const busy = { ...state, busy: true };
+  expect(handleSettingsPointer({ type: "scroll", direction: "down" }, busy, ctx).handled).toBe(
+    false,
+  );
 });

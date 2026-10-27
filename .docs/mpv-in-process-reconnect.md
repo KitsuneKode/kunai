@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-25"
+lastReviewed: "2026-10-26"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -130,6 +130,17 @@ playback. Close discards the queue, settles pending commands, and prevents a lat
 drain from sending them. Expiry removes queued bytes or closes the session before
 notifying result callbacks, so reentrant callbacks cannot send an expired command. This fixes a reproduced partial-write defect; it does not
 by itself establish the cause of intermittent native transition failures.
+
+## New-file watchdog baseline
+
+Each file cycle resets watchdog position, progress/cache clocks and emitted
+incident flags. The first observed sample establishes its baseline at observation
+time, so a slow resolve/launch does not consume the stall budget before mpv can
+report. Until advancing progress is observed, starvation is tagged `duringStartup`
+and shown as waiting/buffering rather than an established-stream error. Real
+network-read-dead recovery thresholds and retry limits are unchanged. Advancing
+or explicitly resumed playback clears stale on-screen buffering feedback; the
+incident stays in diagnostics.
 
 ## IPC receive bounds
 

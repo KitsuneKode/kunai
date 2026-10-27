@@ -1,4 +1,5 @@
 import { stripCurrentLabel } from "@/domain/current-label";
+import { isProviderEnabled, setProviderEnabled } from "@/domain/provider/provider-switches";
 
 import {
   applyAnimeProviderOrder,
@@ -26,18 +27,46 @@ function providerEnumOptions(ctx: SettingsRegistryContext, kind: "series" | "ani
   }));
 }
 
+function providerToggleRows(
+  ctx: SettingsRegistryContext,
+  kind: "series" | "anime" | "youtube",
+): SettingRowDef[] {
+  const options =
+    kind === "series"
+      ? ctx.seriesProviderOptions
+      : kind === "anime"
+        ? ctx.animeProviderOptions
+        : ctx.youtubeProviderOptions;
+  return options.map((option): SettingRowDef => ({
+    kind: "boolean",
+    id: `provider:enabled:${option.value}`,
+    label: `Enable ${stripCurrentLabel(option.label)}`,
+    detail:
+      kind === "series"
+        ? "Movies and series: off removes it from resolve and fallback"
+        : kind === "anime"
+          ? "Anime: off removes it from resolve and fallback"
+          : "YouTube: off removes it from resolve and fallback",
+    read: (config) => isProviderEnabled(config.disabledProviders, option.value),
+    write: (config, value) => ({
+      ...config,
+      disabledProviders: setProviderEnabled(config.disabledProviders, option.value, value),
+    }),
+  }));
+}
+
 export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
     {
       kind: "section",
       id: "section:providers",
       label: "Providers",
-      detail: "Default resolver used before per-title overrides",
+      detail: "Choose a default provider and order your automatic fallbacks",
     },
     {
       kind: "enum",
       id: "provider",
-      label: "Default provider",
+      label: "Movies and series provider",
       detail: "Movies and series: used on new searches until you pick another provider",
       options: providerEnumOptions(ctx, "series"),
       presentation: "submenu",
@@ -57,6 +86,7 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "enum",
       id: "youtubeProvider",
+      gate: { predicate: () => ctx.youtubeProviderOptions.length > 1 },
       label: "YouTube provider",
       detail: "YouTube mode default: used on new YouTube searches until changed in-session",
       options: providerEnumOptions(ctx, "youtube"),
@@ -77,7 +107,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       kind: "reorder",
       id: "animeProviderPriority",
       label: configLabel("animeProviderPriority"),
-      detail: "Try order for anime — first entry is default, rest are fallbacks",
+      detail:
+        "Your configured anime fallback order; the provider picker offers every available provider",
       resolveOrder: resolveAnimeProviderOrder,
       applyOrder: applyAnimeProviderOrder,
       providerOptions: (orderCtx) => orderCtx.animeProviderOptions,
@@ -85,12 +116,23 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "reorder",
       id: "youtubeProviderPriority",
+      gate: { predicate: () => ctx.youtubeProviderOptions.length > 1 },
       label: configLabel("youtubeProviderPriority"),
       detail: "Try order for YouTube — first entry is default, rest are fallbacks",
       resolveOrder: resolveYoutubeProviderOrder,
       applyOrder: applyYoutubeProviderOrder,
       providerOptions: (orderCtx) => orderCtx.youtubeProviderOptions,
     },
+    {
+      kind: "section",
+      id: "section:provider-toggles",
+      label: "Provider switches",
+      detail: "Off providers stay off; enable a provider to restore an empty lane",
+      configKeys: ["disabledProviders"],
+    },
+    ...providerToggleRows(ctx, "series"),
+    ...providerToggleRows(ctx, "anime"),
+    ...providerToggleRows(ctx, "youtube"),
     {
       kind: "text",
       id: "videasySessionToken",
@@ -110,8 +152,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "enum",
       id: "videasyAppId",
-      label: "Videasy app id",
-      detail: `Current ${ctx.config.videasyAppId}  ·  choose token source compatibility`,
+      label: "Videasy session source",
+      detail: "Match the site where you created the optional session token",
       options: [
         {
           value: "vidking",
@@ -120,8 +162,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
         },
         {
           value: "bc-frontend",
-          label: "Cineplay / Bitcine",
-          detail: "Use sessions minted by cineplay.to (or legacy bitcine.tv) playback pages",
+          label: "Cineplay",
+          detail: "Use sessions created by Cineplay playback pages",
         },
       ],
       presentation: "submenu",

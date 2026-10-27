@@ -219,6 +219,17 @@ instead of handing mpv a stream that cannot play yet.
 
 **SponsorBlock** is off unless you set `youtubeMetadata.sponsorblockRemove` in Settings › YouTube (for example `sponsor,intro`). That value is forwarded to yt-dlp / mpv. There is no shipped default category list.
 
+Forwarding SponsorBlock options does not establish that segment removal works
+during streaming. Kunai makes no ad-free or Premium-equivalent playback promise.
+
+Quality choices preserve yt-dlp's discovered format IDs. Codec, frame rate and
+average bitrate appear when reported; two rows at the same resolution can be
+different formats. Bitrate is reported metadata, not measured connection speed.
+Primary/fallback connections are extractor methods for the same video. Picking
+a quality keeps the current connection when it has that format. Exact video
+formats do not silently fall back to a different video format; availability is
+still checked by mpv. Video-only formats use yt-dlp's best audio choice.
+
 ### Cookie safety (age-restricted / members)
 
 Optional keys under `youtubeMetadata` in `~/.config/kunai/config.json` (also editable from `/settings` → YouTube):

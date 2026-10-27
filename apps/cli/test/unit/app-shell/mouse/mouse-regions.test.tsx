@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 
 import { BrowseShell } from "@/app-shell/browse-shell";
+import { LoadingShell } from "@/app-shell/loading-shell";
 import { RootContentSuspension } from "@/app-shell/RootContentSuspension";
+import { ShellFrame } from "@/app-shell/shell-frame";
+import type { FooterAction, ShellAction } from "@/app-shell/types";
 import { render as inkRender, Box, Text, useInput } from "ink";
 import { act, useRef } from "react";
 
@@ -603,4 +606,297 @@ describe("BrowseShell mouse rows", () => {
       handle.unmount();
     }
   });
+});
+
+describe("clickable shared footer", () => {
+  const actions: readonly FooterAction[] = [
+    { key: "o", label: "tracks", action: "source" },
+    { key: "/", label: "commands", action: "command-mode" },
+  ];
+  function frame(resolved: ShellAction[], locked = false, footerActions = actions) {
+    return (
+      <ShellFrame
+        eyebrow="test"
+        title="Test"
+        subtitle=""
+        footerTask="Playback"
+        footerActions={footerActions}
+        inputLocked={locked}
+        commands={[{ id: "help", label: "Help", aliases: [], description: "Help", enabled: true }]}
+        onResolve={(action) => resolved.push(action)}
+      >
+        <Text>body</Text>
+      </ShellFrame>
+    );
+  }
+  function target(handle: ReturnType<typeof mountWithMouse>, key: string) {
+    const region = handle.dispatcher.debugRegions().find((r) => r.id.includes(`footer:${key}:`));
+    if (!region) throw new Error(`Missing footer target ${key}`);
+    return region.rect;
+  }
+  test("real SGR click resolves once; commands opens the local palette", () => {
+    const resolved: ShellAction[] = [];
+    const h = mountWithMouse(frame(resolved));
+    try {
+      let r = target(h, "o");
+      h.click(r.x, r.y);
+      expect(resolved).toEqual(["source"]);
+      r = target(h, "/");
+      h.click(r.x, r.y);
+      expect(h.lastFrame()).toContain("type a command");
+      expect(resolved).toEqual(["source"]);
+      expect(
+        h.dispatcher.debugRegions().some((registered) => registered.id.includes("footer:")),
+      ).toBe(false);
+    } finally {
+      h.unmount();
+    }
+  });
+  test.each(["locked", "overlay", "changed"] as const)(
+    "%s cancels pending footer press",
+    (mode) => {
+      const resolved: ShellAction[] = [];
+      const h = mountWithMouse(frame(resolved));
+      try {
+        const r = target(h, "o");
+        act(() => h.source.feed(`\x1b[<0;${r.x};${r.y}M`));
+        if (mode === "overlay")
+          h.rerender(<RootContentSuspension suspended>{frame(resolved)}</RootContentSuspension>);
+        else
+          h.rerender(
+            frame(
+              resolved,
+              mode === "locked",
+              mode === "changed" ? [{ key: "o", label: "other", action: "help" }] : actions,
+            ),
+          );
+        act(() => h.source.feed(`\x1b[<0;${r.x};${r.y}m`));
+        expect(resolved).toEqual([]);
+      } finally {
+        h.unmount();
+      }
+    },
+  );
+  test.each(["resolving", "playing"] as const)(
+    "%s footer uses playback handler routes",
+    (operation) => {
+      const calls: string[] = [];
+      const h = mountWithMouse(
+        <LoadingShell
+          state={{
+            title: "Test",
+            operation,
+            cancellable: true,
+            hasStreamCandidates: true,
+            onCommandAction: (a) => calls.push(a),
+          }}
+          onCancel={() => calls.push("cancel")}
+          onStop={() => calls.push("stop")}
+          onPickSource={() => calls.push("tracks")}
+          onPickQuality={() => calls.push("quality")}
+        />,
+      );
+      try {
+        const r = target(h, operation === "playing" ? "o" : "q");
+        h.click(r.x, r.y);
+        expect(calls).toEqual([operation === "playing" ? "tracks" : "cancel"]);
+      } finally {
+        h.unmount();
+      }
+    },
+  );
+});
+
+test("mouse feedback is transition-only, never steals selection or invents hover", () => {
+  const d = new MouseDispatcher();
+  const changes: string[] = [];
+  d.register(
+    "feedback",
+    { x: 1, y: 1, width: 10, height: 1 },
+    { onClick: () => {}, onInteractionChange: (state) => changes.push(state) },
+  );
+  const event = { x: 2, y: 1, button: "left", ctrl: false, shift: false, alt: false } as const;
+  d.dispatch({ ...event, kind: "press" });
+  expect(changes).toEqual(["pressed"]);
+  d.dispatch({ ...event, kind: "release" });
+  expect(changes).toEqual(["pressed", "idle"]);
+  d.dispatch({ ...event, kind: "drag", button: "none" });
+  d.dispatch({ ...event, x: 3, kind: "drag", button: "none" });
+  expect(changes).toEqual(["pressed", "idle", "hover"]);
+  d.dispatch({ ...event, x: 30, kind: "drag", button: "none" });
+  expect(changes.at(-1)).toBe("idle");
+});
+
+describe("footer feedback and ownership regressions", () => {
+  const command = {
+    id: "provider",
+    label: "Providers",
+    aliases: ["provider"],
+    description: "Choose provider",
+    enabled: true,
+  } as const;
+  const actions: readonly FooterAction[] = [
+    { key: "o", label: "tracks", action: "source" },
+    { key: "/provider", label: "providers", action: "provider" },
+    { key: "/", label: "commands", action: "command-mode" },
+  ];
+  function fixture(calls: ShellAction[], pad = 0, enabled = true) {
+    return (
+      <Box paddingTop={pad}>
+        <ShellFrame
+          title="Test"
+          eyebrow="test"
+          subtitle=""
+          footerTask="Playback"
+          commands={[
+            {
+              ...command,
+              enabled,
+              reason: enabled ? undefined : "Wait for stream resolution to finish first.",
+            },
+          ]}
+          footerActions={actions}
+          onResolve={(a) => calls.push(a)}
+        >
+          <Text>body</Text>
+        </ShellFrame>
+      </Box>
+    );
+  }
+  function region(h: ReturnType<typeof mountWithMouse>, key: string) {
+    const result = h.dispatcher.debugRegions().find((r) => r.id.includes(`footer:${key}:`));
+    if (!result) throw new Error(`Missing ${key}`);
+    return result.rect;
+  }
+  test("press paints a visible glyph immediately and release clears it without a timer", () => {
+    const calls: ShellAction[] = [];
+    const h = mountWithMouse(fixture(calls));
+    try {
+      const r = region(h, "o");
+      expect(h.lastFrame()).not.toContain("▾");
+      act(() => h.source.feed(`\x1b[<0;${r.x};${r.y}M`));
+      expect(h.lastFrame()).toContain("▾");
+      expect(calls).toEqual([]);
+      act(() => h.source.feed(`\x1b[<0;${r.x};${r.y}m`));
+      expect(h.lastFrame()).not.toContain("▾");
+      expect(calls).toEqual(["source"]);
+    } finally {
+      h.unmount();
+    }
+  });
+  test("moving a retained footer cancels its pending press and feedback", () => {
+    const calls: ShellAction[] = [];
+    const h = mountWithMouse(fixture(calls));
+    try {
+      const r = region(h, "o");
+      act(() => h.source.feed(`\x1b[<0;${r.x};${r.y}M`));
+      h.rerender(fixture(calls, 2));
+      expect(region(h, "o").y).not.toBe(r.y);
+      act(() => h.source.feed(`\x1b[<0;${r.x};${r.y}m`));
+      expect(calls).toEqual([]);
+      expect(h.lastFrame()).not.toContain("▾");
+    } finally {
+      h.unmount();
+    }
+  });
+  test("slash-labelled provider controls share the enabled palette command gate", () => {
+    const calls: ShellAction[] = [];
+    const h = mountWithMouse(fixture(calls));
+    try {
+      let r = region(h, "/provider");
+      h.click(r.x, r.y);
+      expect(calls).toEqual(["provider"]);
+      h.rerender(fixture(calls, 0, false));
+      r = region(h, "/provider");
+      h.click(r.x, r.y);
+      expect(calls).toEqual(["provider"]);
+      expect(h.lastFrame()).toContain("Wait for stream resolution to finish first.");
+      expect(
+        h.dispatcher.debugRegions().some((registered) => registered.id.includes("footer:")),
+      ).toBe(false);
+    } finally {
+      h.unmount();
+    }
+  });
+  test.each(["resolving", "playing"] as const)(
+    "%s stop control works without a palette handler",
+    (operation) => {
+      const calls: string[] = [];
+      const h = mountWithMouse(
+        <LoadingShell
+          state={{ title: "Test", operation, cancellable: true }}
+          onCancel={() => calls.push("cancel")}
+          onStop={() => calls.push("stop")}
+        />,
+      );
+      try {
+        const r = region(h, "q");
+        h.click(r.x, r.y);
+        expect(calls).toEqual([operation === "playing" ? "stop" : "cancel"]);
+      } finally {
+        h.unmount();
+      }
+    },
+  );
+  test.each([false, true])(
+    "failure exposes recover and provider controls (covered=%s)",
+    (covered) => {
+      const calls: string[] = [];
+      const h = mountWithMouse(
+        <RootContentSuspension suspended={covered}>
+          <LoadingShell
+            state={{
+              title: "Test",
+              operation: "resolving",
+              latestIssue: "no source",
+              commands: [command],
+              onCommandAction: (a) => calls.push(a),
+            }}
+            onRecover={() => calls.push("recover")}
+          />
+        </RootContentSuspension>,
+      );
+      try {
+        if (covered) {
+          expect(h.dispatcher.size).toBe(0);
+          act(() => h.source.feed("r"));
+          expect(calls).toEqual([]);
+        } else {
+          let r = region(h, "r");
+          h.click(r.x, r.y);
+          r = region(h, "/provider");
+          h.click(r.x, r.y);
+          expect(calls).toEqual(["recover", "provider"]);
+        }
+      } finally {
+        h.unmount();
+      }
+    },
+  );
+});
+
+test("fallback footer shares Shift+F availability guard and never accepts bare f", () => {
+  const calls: string[] = [];
+  const node = (fallbackAvailable: boolean) => (
+    <LoadingShell
+      state={{ title: "Test", operation: "resolving", fallbackAvailable }}
+      onFallback={() => calls.push("fallback")}
+    />
+  );
+  const h = mountWithMouse(node(true));
+  try {
+    const target = h.dispatcher.debugRegions().find((entry) => entry.id.includes("footer:⇧F:"));
+    if (!target) throw new Error("Missing fallback footer");
+    h.click(target.rect.x, target.rect.y);
+    act(() => h.source.feed("f"));
+    expect(calls).toEqual(["fallback"]);
+    act(() => h.source.feed("F"));
+    expect(calls).toEqual(["fallback", "fallback"]);
+    h.rerender(node(false));
+    h.click(target.rect.x, target.rect.y);
+    act(() => h.source.feed("F"));
+    expect(calls).toEqual(["fallback", "fallback"]);
+  } finally {
+    h.unmount();
+  }
 });

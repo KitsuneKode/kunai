@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Reconcile the nine npm packages in a release candidate with the registry.
+ * Reconcile the complete npm package set in a release candidate with the registry.
  *
  * Candidate preparation packs platform packages once. Publication inspects
  * those preserved tarballs without repacking and reconciles them in canonical
@@ -8,7 +8,7 @@
  * the default; only `--yes` may publish.
  */
 import { mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   type LocalPackageCandidate,
@@ -137,10 +137,17 @@ function parseJson(stdout: string, context: string): unknown {
 
 function parseNpmPackMetadata(stdout: string, context: string): NpmPackMetadata {
   const parsed = parseJson(stdout, `${context} npm pack`);
-  if (!Array.isArray(parsed) || parsed.length !== 1 || !isJsonObject(parsed[0])) {
+  // npm 11 returns an array; npm 12 keys the same records by package name.
+  // Both must describe exactly one package, and keyed identity must agree.
+  const entries = isJsonObject(parsed) ? Object.entries(parsed) : null;
+  const records = Array.isArray(parsed) ? parsed : entries?.map(([, value]) => value);
+  if (!records || records.length !== 1 || !isJsonObject(records[0])) {
     throw new Error(`[publish] ${context} npm pack must return exactly one metadata record.`);
   }
-  const record = parsed[0];
+  const record = records[0];
+  if (entries && entries[0]?.[0] !== record.name) {
+    throw new Error(`[publish] ${context} npm pack key disagrees with package name.`);
+  }
   for (const field of ["name", "version", "integrity", "filename"] as const) {
     if (typeof record[field] !== "string" || record[field].length === 0) {
       throw new Error(`[publish] ${context} npm pack metadata has no ${field}.`);
@@ -177,7 +184,17 @@ async function inspectTarball(
   await assertNonemptyTarball(tarballPath, context);
   const request: CommandRequest = {
     command: "npm",
-    args: ["pack", "--json", "--dry-run", "--ignore-scripts", tarballPath],
+    // Scope npm to the preserved artifact, not this Bun-only development root.
+    // npm 11 checks devEngines before pack/view/publish, including dry runs.
+    args: [
+      "pack",
+      "--prefix",
+      dirname(tarballPath),
+      "--json",
+      "--dry-run",
+      "--ignore-scripts",
+      tarballPath,
+    ],
     cwd: ROOT,
   };
   const result = await command(request);
@@ -218,6 +235,8 @@ export async function buildLocalPackageCandidates(
         command: "npm",
         args: [
           "pack",
+          "--prefix",
+          packageDirectory,
           "--json",
           "--ignore-scripts",
           "--pack-destination",
@@ -440,7 +459,14 @@ export function createNpmRegistryPort(command: CommandPort): RegistryPort {
   ): Promise<CommandResult | null> {
     const request: CommandRequest = {
       command: "npm",
-      args: ["view", `${candidate.name}@${candidate.version}`, ...fields, "--json"],
+      args: [
+        "view",
+        `${candidate.name}@${candidate.version}`,
+        ...fields,
+        "--json",
+        "--prefix",
+        dirname(candidate.tarballPath),
+      ],
       cwd: ROOT,
     };
     const result = await command(request);
@@ -499,7 +525,15 @@ async function publishOnce(
 ): Promise<void> {
   const request: CommandRequest = {
     command: "npm",
-    args: ["publish", candidate.tarballPath, "--access", "public", "--provenance"],
+    args: [
+      "publish",
+      candidate.tarballPath,
+      "--access",
+      "public",
+      "--provenance",
+      "--prefix",
+      dirname(candidate.tarballPath),
+    ],
     cwd: ROOT,
   };
   const result = await options.command(request);

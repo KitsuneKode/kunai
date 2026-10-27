@@ -244,6 +244,15 @@ describe("transitionPlaybackStatus — degraded states", () => {
     expect(decision.snapshot).toEqual(snapshot("buffering"));
   });
 
+  test("waiting for the first frame stays buffering, not an error state", () => {
+    const decision = transitionPlaybackStatus(snapshot("ready"), {
+      kind: "player-event",
+      generation: GEN,
+      event: { type: "stream-stalled", secondsWithoutProgress: 9, duringStartup: true },
+    });
+    expect(decision.snapshot).toEqual(snapshot("buffering"));
+  });
+
   test.each(["stream-stalled", "ipc-stalled"] as const)("%s enters stalled", (type) => {
     const decision = transitionPlaybackStatus(snapshot("playing"), {
       kind: "player-event",

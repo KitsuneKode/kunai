@@ -80,16 +80,14 @@ export function setVidlinkRetrySleepForTest(sleep: typeof vidlinkRetrySleepImpl 
 }
 
 /**
- * Upper bound for honoring a 429 `Retry-After` before the next attempt. The
- * header names the server's own throttle window, but an unbounded sleep would
- * hold the resolve open past every attempt budget — past the cap the endpoint
- * quarantine and the fallback lane take over instead.
+ * Maximum inline wait. A longer server throttle yields to provider fallback;
+ * it must never be shortened into permission to retry before the server allows.
  */
 const VIDLINK_429_MAX_BACKOFF_MS = 10_000;
 
 /**
  * Parse a `Retry-After` response header (delta-seconds or HTTP-date) into a
- * capped millisecond backoff. Absent or unparseable values are 0 — the caller
+ * millisecond backoff. Absent or unparseable values are 0 — the caller
  * falls back to its fixed retry sleep.
  */
 export function parseVidlinkRetryAfterMs(value: string | null, nowMs: number = Date.now()): number {
@@ -98,11 +96,11 @@ export function parseVidlinkRetryAfterMs(value: string | null, nowMs: number = D
   if (!trimmed) return 0;
   const deltaSeconds = Number(trimmed);
   if (Number.isFinite(deltaSeconds) && deltaSeconds >= 0) {
-    return Math.min(Math.floor(deltaSeconds * 1000), VIDLINK_429_MAX_BACKOFF_MS);
+    return Math.floor(deltaSeconds * 1000);
   }
   const dateMs = Date.parse(trimmed);
   if (Number.isFinite(dateMs)) {
-    return Math.min(Math.max(dateMs - nowMs, 0), VIDLINK_429_MAX_BACKOFF_MS);
+    return Math.max(dateMs - nowMs, 0);
   }
   return 0;
 }
@@ -298,14 +296,10 @@ export function resolveVidlinkDirect(
             }
           }
         } else {
-          // A DASH manifest is one adaptive URL: mpv switches renditions inside
-          // it, so the ladder is a label, not a list. `playbackMetadata` is the
-          // only place the ceiling is stated, and without it the Tracks panel
-          // shows a bare "auto" row for a stream that is really 1080p.
-          streams.push({
-            url: stream.playlist,
-            qualityHint: highestVidlinkResolution(stream.playbackMetadata?.resolutions),
-          });
+          // No representation constraint is carried to playback for remote
+          // MPDs. A declared ceiling is not a selected quality: keep one Auto
+          // URL rather than manufacturing duplicate URLs or fragment selectors.
+          streams.push({ url: stream.playlist, qualityHint: "auto" });
         }
       }
 
@@ -335,15 +329,6 @@ export function resolveVidlinkDirect(
       return payload;
     },
   });
-}
-
-/** Highest rendition VidLink states for a DASH manifest, as a `"1080p"`-style label. */
-function highestVidlinkResolution(resolutions: readonly string[] | undefined): string | undefined {
-  const heights = (resolutions ?? [])
-    .map((entry) => Number.parseInt(entry, 10))
-    .filter((height) => Number.isFinite(height) && height > 0);
-  if (heights.length === 0) return undefined;
-  return `${Math.max(...heights)}p`;
 }
 
 /** Fetch VidLink API with retry on 5xx, inside the endpoint quarantine. */
@@ -388,6 +373,7 @@ async function fetchVidlinkApi(
         endpointHealth.recordSuccess(VIDLINK_API_ENDPOINT);
         return response;
       }
+      await response.body?.cancel().catch(() => undefined);
       const error = vidlinkHttpError(response.status, VIDLINK_API_ENDPOINT, "api");
       const willRetry =
         attempt < maxAttempts && (response.status >= 500 || response.status === 429);
@@ -397,6 +383,11 @@ async function fetchVidlinkApi(
         // how a throttled host used to eat every candidate in a row. Without a
         // usable header the fixed retry sleep still spaces the attempts.
         const backoffMs = parseVidlinkRetryAfterMs(response.headers.get("retry-after")) || 500;
+        if (backoffMs > VIDLINK_429_MAX_BACKOFF_MS) {
+          endpointHealth.recordFailure(VIDLINK_API_ENDPOINT, { class: "transient", titleId });
+          lastError = error;
+          break;
+        }
         await vidlinkRetrySleep(backoffMs, signal);
         signal?.throwIfAborted();
       }
@@ -472,6 +463,7 @@ async function encryptTmdbId(
         signal: directStreamFetchSignal(signal, VIDLINK_FETCH_TIMEOUT_MS),
       });
       if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
         const error = vidlinkHttpError(response.status, ENC_DEC_ENDPOINT, "enc-dec");
         if (response.status === 429 && attempt < maxAttempts && !signal?.aborted) {
           // Same throttle contract as the VidLink API path: wait out the
@@ -479,6 +471,11 @@ async function encryptTmdbId(
           // burning the retry inside the cooldown. `continue` skips the catch
           // below so the backoff is not followed by a second fixed sleep.
           const backoffMs = parseVidlinkRetryAfterMs(response.headers.get("retry-after")) || 500;
+          if (backoffMs > VIDLINK_429_MAX_BACKOFF_MS) {
+            endpointHealth.recordFailure(ENC_DEC_ENDPOINT, { class: "transient", titleId });
+            lastError = error;
+            break;
+          }
           await vidlinkRetrySleep(backoffMs, signal);
           signal?.throwIfAborted();
           const failureClass = vidlinkFailureClass(error.code);

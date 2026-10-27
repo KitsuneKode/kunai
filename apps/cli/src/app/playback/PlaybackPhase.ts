@@ -202,6 +202,7 @@ import {
   describeProviderFallbackDetail,
   describeProviderFallbackHaltedDetail,
   describeProviderFallbackHaltedNote,
+  describeProviderHedgeDetail,
   describeProviderHedgeNote,
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
@@ -1609,6 +1610,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           let consumedBundle: ReturnType<EpisodePrefetchHandle["takeReadyFor"]> = null;
           let prefetchWasPrepared = false;
           const profileContext = {
+            overrides: stateManager.getState().playbackTrackPreferences,
             mode: stateManager.getState().mode,
             title,
             config,
@@ -1832,6 +1834,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   episode: currentEpisode,
                   mode: stateManager.getState().mode,
                   config,
+                  overrides: stateManager.getState().playbackTrackPreferences,
                   selectedSourceId: currentPreferredStreamSelection.sourceId,
                   selectedStreamId: currentPreferredStreamSelection.streamId,
                 });
@@ -1930,6 +1933,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                         });
                       } else if (engineEvent.type === "provider-hedge-started") {
                         this.updatePlaybackFeedback(context, {
+                          // Name the parallel provider in the detail slot: the
+                          // previous fallback sentence ("X did not resolve —
+                          // trying Y") would otherwise sit stale on screen
+                          // while the hedged provider is the live attempt.
+                          detail: describeProviderHedgeDetail({
+                            toProviderName: engineProviderName(engineEvent.toProviderId),
+                          }),
                           note: describeProviderHedgeNote({
                             toProviderName: engineProviderName(engineEvent.toProviderId),
                           }),
@@ -2357,6 +2367,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             stream = applyPreferredStreamSelection(
               stream,
               getPreferredStreamSelection(sourceProviderId, currentEpisode),
+              playbackQualityPreference(profileContext),
+              playbackSubtitlePreference(profileContext),
             );
           }
           if (!stream || resolveController.signal.aborted) {
@@ -2946,6 +2958,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               episode: currentEpisode,
               mode: stateManager.getState().mode,
               config,
+              overrides: stateManager.getState().playbackTrackPreferences,
               selectedSourceId: selectedResolveStream?.sourceId,
               selectedStreamId: preparedStream.providerResolveResult?.selectedStreamId,
             });
@@ -4174,7 +4187,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   ): Promise<EpisodePrefetchBundle | null> {
     const { config, stateManager, playbackResolveWork } = context.container;
     const mode = stateManager.getState().mode;
-    const profileCtx = { mode, title: input.title, config: config.getRaw() };
+    const profileCtx = {
+      mode,
+      title: input.title,
+      config: config.getRaw(),
+      overrides: stateManager.getState().playbackTrackPreferences,
+    };
     const subLang = playbackSubtitlePreference(profileCtx);
     const isInteractiveSubtitle = subLang === "interactive" || subLang === "fzf";
 
@@ -4243,6 +4261,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   ): Promise<StreamInfo> {
     const { stateManager, logger, config } = context.container;
     const subLang = playbackSubtitlePreference({
+      overrides: stateManager.getState().playbackTrackPreferences,
       mode: stateManager.getState().mode,
       title,
       config,
@@ -4255,7 +4274,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         requestedSubLang: subLang,
         reason: "hardsub-satisfied-or-disabled",
       });
-      return stream;
+      return subLang === "none" ? { ...stream, subtitle: undefined } : stream;
     }
 
     const subtitleDecision = await choosePlaybackSubtitle({
@@ -4350,9 +4369,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       diagnosticsService,
     } = context.container;
 
+    if (stream.playbackSubtitle) {
+      stream = { ...stream, playbackSubtitle: undefined };
+      stateManager.dispatch({ type: "SET_STREAM", stream });
+    }
     const subtitleStatus = describePlaybackSubtitleStatus(
       stream,
       playbackSubtitlePreference({
+        overrides: stateManager.getState().playbackTrackPreferences,
         mode: stateManager.getState().mode,
         title,
         config,
@@ -4447,16 +4471,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       playOptions: {
         abortSignal: context.signal,
         audioPreference: playbackAudioPreference({
+          overrides: stateManager.getState().playbackTrackPreferences,
           mode: stateManager.getState().mode,
           title,
           config,
         }),
         subtitlePreference: playbackSubtitlePreference({
+          overrides: stateManager.getState().playbackTrackPreferences,
           mode: stateManager.getState().mode,
           title,
           config,
         }),
         qualityPreference: playbackQualityPreference({
+          overrides: stateManager.getState().playbackTrackPreferences,
           mode: stateManager.getState().mode,
           title,
           config,
@@ -4578,7 +4605,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         applyPlaybackStatusSignal: (signal) => this.applyPlaybackStatusSignal(context, signal),
         onTrackChanged: (event) => {
           const currentStream = stateManager.getState().stream;
-          if (currentStream && event.trackType === "sub" && event.id === 0) {
+          if (currentStream && event.trackType === "sub" && event.subtitleState) {
+            const observedStream = { ...currentStream, playbackSubtitle: event.subtitleState };
+            if (event.id === 0) observedStream.subtitle = undefined;
+            stateManager.dispatch({ type: "SET_STREAM", stream: observedStream });
+          } else if (currentStream && event.trackType === "sub" && event.id === 0) {
             stateManager.dispatch({
               type: "SET_STREAM",
               stream: { ...currentStream, subtitle: undefined },
@@ -4624,6 +4655,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const { stateManager, diagnosticsService, logger } = context.container;
     const mode = stateManager.getState().mode;
     const requestedSubLang = playbackSubtitlePreference({
+      overrides: stateManager.getState().playbackTrackPreferences,
       mode,
       title,
       config: context.container.config,
@@ -4806,27 +4838,35 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         });
         if (!attached) return;
 
-        // The attach is silent otherwise: subtitles appear mid-playback with no
-        // account of where they came from or how many alternates were found.
-        this.updatePlaybackFeedback(context, {
-          note:
-            mergedSubtitleList.length > 1
-              ? `Attached subtitles · ${mergedSubtitleList.length} tracks available in the player`
-              : "Attached subtitles found by search",
-        });
-
         const currentState = stateManager.getState();
+        const currentStream = currentState.stream;
         if (
+          !iterationSignal.aborted &&
           currentState.currentTitle?.id === title.id &&
           currentState.currentEpisode?.season === episode.season &&
-          currentState.currentEpisode?.episode === episode.episode
+          currentState.currentEpisode?.episode === episode.episode &&
+          currentStream?.url === stream.url &&
+          currentStream.timestamp === stream.timestamp &&
+          currentStream.providerResolveResult === stream.providerResolveResult
         ) {
+          // The attach is silent otherwise: subtitles appear mid-playback with no
+          // account of where they came from or how many alternates were found.
+          this.updatePlaybackFeedback(context, {
+            note:
+              mergedSubtitleList.length > 1
+                ? `Attached subtitles · ${mergedSubtitleList.length} tracks available in the player`
+                : "Attached subtitles found by search",
+          });
+
           stateManager.dispatch({
             type: "SET_STREAM",
             stream: {
-              ...stream,
-              subtitle: selectedUrl,
-              subtitleList: mergedSubtitleList,
+              ...currentStream,
+              subtitle:
+                currentState.playbackTrackPreferences.subtitle === "none"
+                  ? undefined
+                  : (currentStream.subtitle ?? selectedUrl),
+              subtitleList: mergeSubtitleTracks(currentStream.subtitleList, result.list),
               subtitleSource: "wyzie",
               subtitleEvidence: {
                 directSubtitleObserved: Boolean(stream.subtitleList?.length),

@@ -26,6 +26,7 @@ import { streamRequestToResolveInput } from "@/services/providers/stream-request
 import { isVideasyFamilyProvider } from "@kunai/core";
 import {
   resolveProviderCatalogIdentity,
+  resolveProviderId,
   type ProviderEngine,
   type CoreProviderModule,
   type ProviderEngineEvent,
@@ -40,6 +41,7 @@ import type { StreamHealthPhase } from "@kunai/providers";
 import type { CatalogCrosswalkRepository, ProviderHealthRepository } from "@kunai/storage";
 import type {
   MediaKind,
+  ProviderId,
   ProviderHealthDelta,
   ProviderResolveInput,
   ProviderResolveResult,
@@ -285,10 +287,18 @@ export class PlaybackResolveService {
 
   async resolve(input: PlaybackResolveInput): Promise<PlaybackResolveOutput> {
     const manifest = this.deps.engine.getManifest(input.providerId);
-    const providerName = manifest?.displayName ?? input.providerId;
     const catalogIdentity = manifest ? resolveProviderCatalogIdentity(manifest) : undefined;
 
-    if (input.prefetchedStream) {
+    // A cached URL is still a provider result. Manual exclusions must apply
+    // before replay or any health probe, not only to fresh engine attempts.
+    const admittedIds = this.deps.getOrderedModules
+      ? new Set(this.deps.getOrderedModules().map((module) => resolveProviderId(module.providerId)))
+      : null;
+    const isAdmitted = (providerId: ProviderId) =>
+      !admittedIds || admittedIds.has(resolveProviderId(providerId));
+    const providerAdmitted = isAdmitted(input.providerId);
+
+    if (providerAdmitted && input.prefetchedStream) {
       const prefetched = input.prefetchedStream;
       const blocked = isBlockedStreamUrl(prefetched.url, input.blockedStreamUrls);
       const stale = !isStreamTimestampFresh(prefetched);
@@ -317,7 +327,7 @@ export class PlaybackResolveService {
     const cacheKey = this.buildCacheKey(input, input.providerId);
     // Cache reads are best-effort: a failing store (disk full, corrupt DB) must
     // degrade to a live resolve rather than take the whole playback down.
-    let cachedStream = await this.readCachedStream(input, cacheKey);
+    let cachedStream = providerAdmitted ? await this.readCachedStream(input, cacheKey) : null;
     let cacheBecameStale = false;
     if (cachedStream?.deferredLocator) {
       await this.deleteCachedStream(cacheKey);
@@ -400,7 +410,7 @@ export class PlaybackResolveService {
       qualityPreference: input.qualityPreference,
       startupPriority: input.startupPriority,
     };
-    const inventoryEntry = await this.readSourceInventory(inventoryInput);
+    const inventoryEntry = providerAdmitted ? await this.readSourceInventory(inventoryInput) : null;
     const inventoryResult = inventoryEntry?.inventory ?? null;
     if (inventoryResult && inventoryMatchesSelection(inventoryResult, input)) {
       if (
@@ -575,11 +585,19 @@ export class PlaybackResolveService {
       });
     }
 
-    const compatibleIds = [...candidatePlan.candidateIds];
+    // The planner deliberately prepends the selected provider, including when
+    // absent from its module list. Enforce manual admission at the dispatch
+    // boundary too; the engine still owns all registered modules.
+    const compatibleIds = candidatePlan.candidateIds.filter(isAdmitted);
 
     input.onFeedback?.({
-      detail: `Resolving via ${providerName}`,
-      note: describeProviderResolveProviderNote(false),
+      detail: compatibleIds[0]
+        ? `Resolving via ${this.deps.engine.getManifest(compatibleIds[0])?.displayName ?? compatibleIds[0]}`
+        : "No enabled providers available",
+      note:
+        compatibleIds.length > 0
+          ? describeProviderResolveProviderNote(false)
+          : "Enable a provider in Settings to retry.",
     });
     input.onEvent?.({
       type: "provider-resolve-started",

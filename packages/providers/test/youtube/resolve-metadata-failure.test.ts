@@ -136,7 +136,9 @@ describe("youtube resolve on metadata failure", () => {
 
     const result = await resolveYoutube(buildInput("720p"));
     const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
-    expect(selected?.qualityLabel).toBe("480p");
+    expect(selected?.qualityRank).toBe(480);
+    expect(selected?.metadata?.formatId).toBe("135");
+    expect(selected?.metadata?.ytdlFormat).toBe("135");
   });
 });
 

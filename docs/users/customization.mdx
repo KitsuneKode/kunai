@@ -194,6 +194,14 @@ These are process flags; see [CLI Reference](/docs/users/cli-reference#mpv-and-d
 
 ### Persistent mpv bridge settings
 
+For a desktop speed default, add `speed=1.25` to your own `mpv.conf`; remove it
+or set `speed=1` to restore normal startup speed. Kunai reads mpv's user config
+unless you use `--mpv-clean` or `--no-user-mpv-config`. Restart the player session
+after editing it. In the player window, `[` / `]` adjust speed and `Backspace`
+resets it for playback. This is an mpv preference, with locations documented in
+the [mpv configuration reference](https://mpv.io/manual/master/#configuration-files).
+
+
 Config keys tune the Kunai Lua bridge script:
 
 | Key | Purpose |

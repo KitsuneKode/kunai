@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-14"
+lastReviewed: "2026-10-27"
 ---
 
 # Provider: VidLink (`vidlink`)
@@ -31,11 +31,16 @@ lastReviewed: "2026-10-14"
   "simplify" to it.
 - Payload carries `stream.qualities` (per-rendition URLs), `captions`
   (provider subtitles), and `playbackMetadata` (codec/resolution hints).
-- 20 s per-request timeout, 2 attempts. A 429 sleeps out its `Retry-After`
-  (delta-seconds or HTTP-date, capped at 10 s; fixed 500 ms without a usable
-  header) BEFORE the endpoint quarantine is recorded and the retry fires, so
-  the second attempt lands past the throttle window instead of inside it. 5xx
-  keeps the fixed 500 ms sleep; other statuses throw after recording.
+- 20 s per-request timeout, at most 2 attempts. A 429 `Retry-After` is
+  parsed as delta-seconds or an HTTP-date without shortening its window.
+  Windows up to 10 s are awaited before an inline retry; longer windows
+  immediately exhaust this resolve as `rate-limited` so provider fallback can
+  proceed without an early second request. A missing or invalid header keeps
+  the 500 ms retry spacing. Both API and enc-dec paths dispose rejected response
+  bodies before waiting or falling back. This bounds inline retries; it does
+  not establish a shared cooldown across independent resolve contexts.
+  5xx keeps the fixed 500 ms sleep; other statuses throw after recording.
+  HTTP semantics: [RFC 9110, Retry-After](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after).
 
 ## Failure honesty (post-2026-09-29)
 
@@ -44,11 +49,19 @@ lastReviewed: "2026-10-14"
   Before that, a plain `Error("HTTP N")` was flattened to `network-error` /
   `retryable: true` twice (once at throw, once in the shared catch), so a 404
   title and a dead host looked identical and every blip retried.
-- "enc-dec.app did not return an encrypted id" remains a generic error — the
-  upstream contract is `{result}` and nothing else distinguishes drift from a
-  bad id today.
+- A successful enc-dec response without `result` is `parse-failed`,
+  non-retryable response-shape drift, rather than a network fault.
 
 ## Known gaps
+
+- A bounded comparison on 2026-10-26 UTC reproduced Dune (438631) returning
+  HTTP 200 with JSON `null`, both with the production `webkit` header and with
+  that header omitted. The same encryption and movie request path returned DASH
+  manifests and 15 captions for Fight Club (550) and Inception (27205). This
+  narrows the observed failure to a title-specific upstream no-source response;
+  it is not evidence that the encryption or entire movie endpoint is broken.
+  No response-shape workaround, default change or resolve-gate bypass was added.
+  The strict default-movie signoff remains red until that route is qualified.
 
 - Live default-route qualification on 2026-10-04 at `b8c69881745430ea3a8ca43e7af3f7a650d0acd5`
   failed for both TMDB lanes from the review host. Dune (438631) returned HTTP 200
@@ -66,3 +79,18 @@ lastReviewed: "2026-10-14"
   log adds.
 - enc-dec.app is a single external dependency for the id-encryption step; its
   outage degrades the provider to nothing — fallback providers cover it.
+
+## Adaptive quality inventory (2026-10-24)
+
+A remote DASH MPD remains one `auto` stream. `playbackMetadata.resolutions`
+is a declaration of available renditions, not a representation constraint passed
+to playback. The existing deferred MPD materializer handles AllManga Ak descriptors;
+it does not filter VidLink's remote MPD. Do not duplicate the same URL at several
+qualities or append virtual fragments: neither selects a DASH representation.
+Per-file quality URLs and safe HLS variant URLs remain separate selectable rows.
+
+A bounded isolated TMDB 550 movie resolve on October 24 returned DASH, declared
+720/480, 15 subtitles and one Auto stream through the unchanged candidate gate.
+This confirms the current request/resolve path on one Linux host, not decoded
+playback or the availability of 1080p on other titles. Signed URLs and cookies
+were omitted from retained evidence.

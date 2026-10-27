@@ -1,3 +1,4 @@
+import { resolveContentKind } from "@/domain/media/content-kind";
 import type { SearchResult } from "@/domain/types";
 
 import type { DetailsSheetSeed } from "./details-sheet.model";
@@ -31,6 +32,14 @@ export function buildBrowseDetailsSheetSeed<T>(option: BrowseShellOption<T>): De
   return {
     title: option.previewTitle ?? option.label,
     type: value?.type === "movie" ? "movie" : "series",
+    contentKind: resolveContentKind(
+      {
+        type: value?.type === "movie" ? "movie" : "series",
+        externalIds: value?.externalIds,
+        isAnime: value?.isAnime,
+      },
+      "series",
+    ),
     year: value?.year || undefined,
     score: typeof value?.rating === "number" && value.rating > 0 ? value.rating : undefined,
     posterUrl: option.previewImageUrl,

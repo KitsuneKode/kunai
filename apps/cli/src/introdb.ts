@@ -5,10 +5,12 @@ import {
   type PlaybackTimingSourceFetchResult,
 } from "@/infra/timing/PlaybackTimingSource";
 
-const INTRODB_API = "https://api.theintrodb.org/v2/media";
+const INTRODB_API = "https://api.theintrodb.org/v4/media";
 
 type IntroDbPayload = {
-  tmdb_id?: number | string;
+  tvdb_id?: number;
+  season?: number;
+  episode?: number;
   type?: string;
   intro?: unknown;
   recap?: unknown;
@@ -36,7 +38,14 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
   parentSignal?: AbortSignal;
 }): Promise<PlaybackTimingSourceFetchResult> {
   const { tmdbId, type, season, episode, signal, parentSignal } = opts;
-  if (!isUsableTmdbId(tmdbId)) {
+  if (parentSignal?.aborted || signal?.aborted) {
+    return { metadata: null, failureClass: "cancelled" };
+  }
+  if (
+    !isUsableTmdbId(tmdbId) ||
+    (type === "series" &&
+      (!Number.isInteger(season) || season! < 0 || !Number.isInteger(episode) || episode! < 1))
+  ) {
     return { metadata: null, failureClass: "identity-missing" };
   }
 
@@ -61,11 +70,38 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
       };
     }
 
-    const payload = (await response.json()) as IntroDbPayload;
+    const body: unknown = await response.json();
+    if (parentSignal?.aborted || signal?.aborted) {
+      return {
+        metadata: null,
+        failureClass: parentSignal?.aborted || !parentSignal ? "cancelled" : "timeout",
+      };
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return { metadata: null, failureClass: "http-error" };
+    }
+    // SAFETY: body is a JSON object; identity and segments are validated below before use.
+    const payload = body as IntroDbPayload;
+    // Raw v4 HTTP bodies have no SDK `kind` discriminator. Refuse the
+    // versions/episodes alternatives and keep TVDB identity out of TMDB fields.
+    // `season`/`episode` echo the caller's own coordinates but the OpenAPI
+    // schema leaves them optional/nullable: absent is fine, a different
+    // episode is somebody else's skip window.
+    if (
+      !Number.isSafeInteger(payload.tvdb_id) ||
+      payload.tvdb_id! <= 0 ||
+      payload.type !== (type === "movie" ? "movie" : "tv") ||
+      "versions" in body ||
+      "episodes" in body ||
+      (type === "series" &&
+        (!echoesCoordinate(payload.season, season) || !echoesCoordinate(payload.episode, episode)))
+    ) {
+      return { metadata: null, failureClass: "http-error" };
+    }
     return {
       metadata: {
-        tmdbId: String(payload.tmdb_id ?? tmdbId),
-        type: payload.type === "movie" ? "movie" : "series",
+        tmdbId,
+        type,
         intro: normalizeSegments(payload.intro),
         recap: normalizeSegments(payload.recap),
         credits: normalizeSegments(payload.credits),
@@ -76,9 +112,18 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
   } catch (error) {
     return {
       metadata: null,
-      failureClass: classifyTimingThrownError(error, { parentSignal }),
+      failureClass: parentSignal?.aborted
+        ? "cancelled"
+        : classifyTimingThrownError(error, { parentSignal }),
     };
   }
+}
+
+function echoesCoordinate(
+  echoed: IntroDbPayload["season"] | null,
+  requested: number | undefined,
+): boolean {
+  return echoed === undefined || echoed === null || echoed === requested;
 }
 
 function isUsableTmdbId(id: string): boolean {
@@ -96,18 +141,20 @@ function normalizeSegments(value: unknown): PlaybackTimingSegment[] {
 function normalizeSegment(value: unknown): PlaybackTimingSegment | null {
   if (!value || typeof value !== "object") return null;
   const entry = value as Record<string, unknown>;
-  return {
-    startMs: toOptionalInt(entry.start_ms),
-    endMs: toOptionalInt(entry.end_ms),
-  };
+  const startMs = toOptionalInt(entry.start_ms);
+  const endMs = toOptionalInt(entry.end_ms);
+  // v4 documents `end_ms: 0` as "no segment"; a segment ending at 0 is empty.
+  if (
+    (entry.start_ms != null && startMs === null) ||
+    (entry.end_ms != null && endMs === null) ||
+    (startMs === null && endMs === null) ||
+    endMs === 0 ||
+    (startMs !== null && endMs !== null && endMs <= startMs)
+  )
+    return null;
+  return { startMs, endMs };
 }
 
 function toOptionalInt(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }

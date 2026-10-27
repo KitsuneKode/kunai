@@ -83,19 +83,54 @@ import { parseYtDlpProgressLine } from "./ytdlp-progress";
 const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STALLED_HEARTBEAT_MS = 90_000;
-// Queue order is `created_at`, but two enqueues in the same millisecond are
+// Queue order is `created_at`, but two mutations in the same millisecond are
 // indistinguishable to SQLite — and UUID tiebreaks are random per run, so a
 // fast double-enqueue picked its winner by luck (flaky FIFO in tests, wrong
-// order in production). Clamp stamps monotonically so insertion order is total.
-let lastEnqueueTimestampMs = 0;
-function monotonicEnqueueIso(): string {
+// order in production). The same collision applies to the other queue
+// mutations that order rows (requeue, scheduleRetry, defer, recovery
+// reschedule). Clamp all of them through one monotonic clock. Future-dated
+// stamps (retryAt) additionally carry a bounded jitter so mass failures do
+// not re-claim in lockstep — spread there matters more than total order.
+let lastQueueTimestampMs = 0;
+function monotonicNowMs(): number {
   const now = Date.now();
-  lastEnqueueTimestampMs = Math.max(now, lastEnqueueTimestampMs + 1);
-  return new Date(lastEnqueueTimestampMs).toISOString();
+  lastQueueTimestampMs = Math.max(now, lastQueueTimestampMs + 1);
+  return lastQueueTimestampMs;
 }
-/** Test seam — enqueue timestamps are module state shared across cases. */
+function monotonicNowIso(): string {
+  return new Date(monotonicNowMs()).toISOString();
+}
+/** Test seam — queue timestamps are module state shared across cases. */
 export function resetDownloadEnqueueClockForTest(): void {
-  lastEnqueueTimestampMs = 0;
+  lastQueueTimestampMs = 0;
+}
+/** Small spread so mass retries/deferrals do not re-claim in lockstep. */
+function retryJitterMs(): number {
+  return Math.floor(Math.random() * 1000);
+}
+
+// mkdir/statfs failure codes that mean "the folder is unusable" (unplugged
+// drive, dropped mount, file where a directory should be) as opposed to a
+// bug elsewhere. Only these defer the job; anything else — notably a
+// database throw from the reservation read — propagates as a worker
+// rejection so it reaches the supervisor instead of masquerading as a full
+// disk. Codeless errors never match: an unknown throw is a bug, not a drive.
+const FILESYSTEM_UNAVAILABLE_CODES = new Set([
+  "EACCES",
+  "EPERM",
+  "ENOENT",
+  "ENOTDIR",
+  "ELOOP",
+  "EROFS",
+  "ENXIO",
+]);
+
+function isFilesystemUnavailableError(cause: unknown): boolean {
+  if (cause instanceof Error) {
+    const code = (cause as NodeJS.ErrnoException).code;
+    return typeof code === "string" && FILESYSTEM_UNAVAILABLE_CODES.has(code);
+  }
+  return false;
 }
 const STDERR_MAX_BYTES = 64_000;
 // A subtitle is a text sidecar — a few hundred KB at most. Anything beyond this
@@ -231,7 +266,8 @@ export type DownloadQueueKickSource =
   | "shell-download"
   | "download-manager"
   | "offline-repair"
-  | "offline-runway";
+  | "offline-runway"
+  | "queue-coalesced";
 
 type DownloadEventListener = (event: DownloadEvent) => void;
 
@@ -319,7 +355,10 @@ export class DownloadService {
   private readonly copyControllers = new Map<string, AbortController>();
   private readonly jobClaims = new Map<string, DownloadClaimRef>();
   private queueWorkerRunning = false;
-  private lastQueuePassFailureContext: DownloadQueueFailureContext | undefined;
+  // A kick that lands while workers are mid-pass must not be dropped: without
+  // this, a job enqueued after workers paged past it sat invisible until the
+  // next external kick. Coalesced into one follow-up pass in the finally below.
+  private pendingKick = false;
   private reconciledStartupJobs = false;
   private shutdownRequested = false;
   private readonly cancellationRequests = new Map<
@@ -470,7 +509,7 @@ export class DownloadService {
         "A playable or active offline copy already exists for this episode.",
       );
     }
-    const now = monotonicEnqueueIso();
+    const now = monotonicNowIso();
     const id = crypto.randomUUID();
     const outputPath = this.resolveOutputPath(input);
     // A full-length output component cannot also fit an appended UUID.
@@ -642,7 +681,7 @@ export class DownloadService {
       return;
     }
     try {
-      if (!this.deps.repo.requeue(jobId, new Date().toISOString()) && job)
+      if (!this.deps.repo.requeue(jobId, monotonicNowIso()) && job)
         throw new Error("Download state changed before retry. Refresh Downloads and try again.");
     } catch (error) {
       if (error instanceof DownloadJobAdmissionConflictError) {
@@ -711,108 +750,169 @@ export class DownloadService {
   async processNextQueued(
     queueContext?: DownloadQueueWorkerContext,
   ): Promise<DownloadJobRecord | null> {
-    if (queueContext) queueContext.jobId = undefined;
+    if (this.shutdownRequested) return null;
     const eligibility = this.getEnqueueEligibility();
     if (!eligibility.allowed) {
       return null;
     }
 
-    const now = new Date().toISOString();
-    const next = this.selectEligibleQueuedJob(now);
-    if (!next) {
-      return null;
-    }
-    if (queueContext) queueContext.jobId = next.id;
-    // Claim synchronously (no await before this) so a concurrent worker's
-    // selectEligibleQueuedJob skips this job until it is markRunning or released.
-    this.claimedJobIds.add(next.id);
-
-    // `evaluateStorageForPath` runs mkdir + statfs, which throw when the output
-    // path is unwritable, unmounted, or not a directory — an unplugged external
-    // drive or a dropped network share. That throw used to escape past the
-    // claim: `claimedJobIds` still held the id, `selectEligibleQueuedJob` skips
-    // claimed ids forever, and the job became unstartable for the rest of the
-    // session while still showing as queued. Before queue supervision, it also
-    // reached discarded `processQueue()` promises as an unhandled rejection,
-    // which `main.ts` escalates to a fatal shutdown.
-    let storage: Awaited<ReturnType<DownloadService["evaluateStorageForPath"]>>;
-    try {
-      storage = await this.evaluateStorageForPath(
-        next.outputPath,
-        next.id,
-        next.selectedQualityLabel,
-      );
-    } catch (error) {
-      this.claimedJobIds.delete(next.id);
-      const detail = error instanceof Error ? error.message : String(error);
-      const retryAt = new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString();
-      this.deps.repo.deferQueued(
-        next.id,
-        `Download paused because the download folder is unavailable: ${detail}`,
-        retryAt,
-        now,
-      );
-      this.deps.diagnostics?.record({
-        category: "download",
-        level: "warn",
-        operation: "download.path.unavailable",
-        message: "Download start failed because the output path could not be prepared",
-        context: { jobId: next.id, error: detail },
-      });
-      return null;
-    }
-
-    if (!storage.allowed) {
-      this.claimedJobIds.delete(next.id);
-      const retryAt = new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString();
-      this.deps.repo.deferQueued(
-        next.id,
-        this.formatInsufficientDiskMessage(storage.requiredBytes),
-        retryAt,
-        now,
-      );
-      this.deps.diagnostics?.record({
-        category: "download",
-        level: "warn",
-        operation: "download.capacity.start",
-        message: "Download start delayed because storage reserve would be breached",
-        context: {
-          jobId: next.id,
-          requiredBytes: storage.requiredBytes,
-        },
-      });
-      return null;
-    }
-    // Anything between the claim and the try/finally below must release the
-    // claim on the way out, or the job is stranded exactly as above.
-    let stopHeartbeat: () => void;
-    let owned: DownloadJobRecord = next;
-    let claim: DownloadClaimRef;
-    try {
-      const acquired = this.deps.repo.markRunning(next.id, now);
-      if (!acquired) {
-        this.claimedJobIds.delete(next.id);
-        // Another process won the durable claim after our read. Its update makes
-        // this row ineligible, so continue with the next queued candidate.
-        return await this.processNextQueued(queueContext);
+    // One worker drains many jobs per pass: deferral and lost-claim paths
+    // continue to the next eligible candidate instead of returning null and
+    // idling the worker while work remains. Bounded by the queue itself —
+    // every iteration either claims (leaving via the download path below) or
+    // defers/consumes a candidate.
+    while (!this.shutdownRequested) {
+      if (queueContext) queueContext.jobId = undefined;
+      const now = monotonicNowIso();
+      const next = this.selectEligibleQueuedJob(now);
+      if (!next) {
+        return null;
       }
-      claim = acquired;
-      this.jobClaims.set(next.id, claim);
-      owned = { ...next, tempPath: join(claim.stagingDir, "media.mp4") };
-      stopHeartbeat = this.startHeartbeat(next.id, claim);
-    } catch (error) {
-      this.claimedJobIds.delete(next.id);
-      this.jobClaims.delete(next.id);
-      throw error;
-    }
+      if (queueContext) queueContext.jobId = next.id;
+      // Claim synchronously (no await before this) so a concurrent worker's
+      // selectEligibleQueuedJob skips this job until it is markRunning or released.
+      this.claimedJobIds.add(next.id);
 
+      // `evaluateStorageForPath` runs mkdir + statfs, which throw when the output
+      // path is unwritable, unmounted, or not a directory — an unplugged external
+      // drive or a dropped network share. That throw used to escape past the
+      // claim: `claimedJobIds` still held the id, `selectEligibleQueuedJob` skips
+      // claimed ids forever, and the job became unstartable for the rest of the
+      // session while still showing as queued. Before queue supervision, it also
+      // reached discarded `processQueue()` promises as an unhandled rejection,
+      // which `main.ts` escalates to a fatal shutdown.
+      //
+      // Only filesystem failures defer here: `estimateActiveReservationBytes`
+      // runs a database read (`listActive`) whose throw (locked/IO) is a worker
+      // rejection, not an unavailable folder — see the split inside
+      // `evaluateStorageForPath`.
+      let storage: Awaited<ReturnType<DownloadService["evaluateStorageForPath"]>>;
+      try {
+        const diskStats = await this.probeOutputVolume(next.outputPath);
+        storage = this.evaluateAdmission(diskStats, next.id, next.selectedQualityLabel);
+      } catch (error) {
+        this.claimedJobIds.delete(next.id);
+        if (!isFilesystemUnavailableError(error)) throw error;
+        const detail = error instanceof Error ? error.message : String(error);
+        this.deferForUnavailableStorage(next.id, detail);
+        continue;
+      }
+
+      if (!storage.allowed) {
+        this.claimedJobIds.delete(next.id);
+        this.deferForInsufficientStorage(
+          next.id,
+          this.formatInsufficientDiskMessage(storage.requiredBytes),
+          storage.requiredBytes,
+        );
+        continue;
+      }
+      // Anything between the claim and the try/finally below must release the
+      // claim on the way out, or the job is stranded exactly as above.
+      // A shutdown that lands after the storage await must not start a
+      // download: `beginShutdown` snapshots running jobs for pause requests,
+      // and a claim taken past that snapshot would miss its pause and run to
+      // completion through shutdown.
+      if (this.shutdownRequested) {
+        this.claimedJobIds.delete(next.id);
+        // No durable claim was taken. Preserve queued work and any cancellation
+        // or sibling update that landed while the storage probe was pending.
+        return null;
+      }
+      let stopHeartbeat: () => void;
+      let owned: DownloadJobRecord = next;
+      let claim: DownloadClaimRef;
+      try {
+        const acquired = this.deps.repo.markRunning(next.id, now);
+        if (!acquired) {
+          this.claimedJobIds.delete(next.id);
+          // Another process won the durable claim after our read. Its update
+          // makes this row ineligible, so continue with the next queued candidate.
+          continue;
+        }
+        claim = acquired;
+        this.jobClaims.set(next.id, claim);
+        owned = { ...next, tempPath: join(claim.stagingDir, "media.mp4") };
+        if (!this.deps.repo.markHeartbeat(next.id, monotonicNowIso(), claim)) {
+          // Lost the lease between claim and first beat (a sibling recovered
+          // it). Never download without a live heartbeat — the crash inside
+          // the first 15s window would otherwise sit unrecoverable until the
+          // full stall timeout.
+          this.claimedJobIds.delete(next.id);
+          this.jobClaims.delete(next.id);
+          continue;
+        }
+        stopHeartbeat = this.startHeartbeat(next.id, claim);
+      } catch (error) {
+        this.claimedJobIds.delete(next.id);
+        this.jobClaims.delete(next.id);
+        throw error;
+      }
+      return await this.runClaimedDownload(next, owned, claim, stopHeartbeat);
+    }
+    return null;
+  }
+
+  /** Deferral for an unusable download folder (unplugged drive, bad mount). */
+  private deferForUnavailableStorage(jobId: string, detail: string): void {
+    const retryAt = new Date(
+      monotonicNowMs() + STORAGE_DEFERRAL_RETRY_MS + retryJitterMs(),
+    ).toISOString();
+    this.deps.repo.deferQueued(
+      jobId,
+      `Download paused because the download folder is unavailable: ${detail}`,
+      retryAt,
+      monotonicNowIso(),
+    );
+    this.deps.diagnostics?.record({
+      category: "download",
+      level: "warn",
+      operation: "download.path.unavailable",
+      message: "Download start failed because the output path could not be prepared",
+      context: { jobId, error: detail },
+    });
+  }
+
+  /** Deferral for a breached safety reserve. Same shape as the folder case. */
+  private deferForInsufficientStorage(
+    jobId: string,
+    message: string,
+    requiredBytes?: number,
+  ): void {
+    const retryAt = new Date(
+      monotonicNowMs() + STORAGE_DEFERRAL_RETRY_MS + retryJitterMs(),
+    ).toISOString();
+    this.deps.repo.deferQueued(jobId, message, retryAt, monotonicNowIso());
+    this.deps.diagnostics?.record({
+      category: "download",
+      level: "warn",
+      operation: "download.capacity.start",
+      message: "Download start delayed because storage reserve would be breached",
+      context: {
+        jobId,
+        requiredBytes,
+      },
+    });
+  }
+
+  /**
+   * The download half of `processNextQueued`: runs with a live in-memory and
+   * durable claim held. Split out so the selection half above can loop over
+   * deferrals without recursing.
+   */
+  private async runClaimedDownload(
+    next: DownloadJobRecord,
+    owned: DownloadJobRecord,
+    claim: DownloadClaimRef,
+    stopHeartbeat: () => void,
+  ): Promise<DownloadJobRecord | null> {
     try {
       await mkdir(dirname(claim.stagingDir), { recursive: true });
       await mkdir(claim.stagingDir);
       const downloaded = await this.executeYtDlpDownload(owned, claim);
       const subtitleResult = await this.downloadSubtitleIfAvailable(downloaded);
       await this.persistOutputFileSize(downloaded);
-      const completedAt = new Date().toISOString();
+      const completedAt = monotonicNowIso();
       const finalized = this.deps.repo.withRunningClaim(claim, () => {
         if (this.cancellationRequests.has(next.id)) throw new Error("download aborted");
         this.assertPublishedIdentity(next.id);
@@ -843,9 +943,12 @@ export class DownloadService {
       ) {
         // Terminal writes release ownership without changing generation. A
         // failing post-completion hook still belongs to this worker and must
-        // surface; only a successor generation (or stale-claim error) displaces it.
-        // A displaced worker may clean only its immutable attempt, never the
-        // shared legacy name or a successor's staging artifacts.
+        // surface; only a successor generation (recovery always bumps it, so a
+        // bare generation comparison is exact here) displaces it — and a
+        // displacing recovery accounts the job itself via reschedule, so the
+        // silent return loses nothing. A displaced worker may clean only its
+        // immutable attempt, never the shared legacy name or a successor's
+        // staging artifacts.
         await this.removeAttempt(claim);
         return null;
       }
@@ -859,7 +962,7 @@ export class DownloadService {
       const cancellation = this.cancellationRequests.get(next.id);
       const cancelled = active?.cancelRequested === true || cancellation !== undefined;
       const message = error instanceof Error ? error.message : String(error);
-      const failedAt = new Date().toISOString();
+      const failedAt = monotonicNowIso();
       if (cancelled) {
         if (active?.cancelMode === "pause" || cancellation?.mode === "pause") {
           this.deps.repo.pause(
@@ -876,7 +979,12 @@ export class DownloadService {
         }
       } else {
         const analysis = analyzeDownloadFailure(message);
-        const retriesLeft = next.retryCount + 1 < next.maxAttempts;
+        // Re-read before spending budget: `next` is the pre-download snapshot
+        // and a concurrent recovery may have moved the counters since.
+        const fresh = this.deps.repo.get(next.id);
+        const retryCount = fresh?.retryCount ?? next.retryCount;
+        const maxAttempts = fresh?.maxAttempts ?? next.maxAttempts;
+        const retriesLeft = retryCount + 1 < maxAttempts;
         if (analysis.failureKind === "disk-full") {
           // The pre-flight reserve check only sees the volume as it was before
           // the transfer started. A disk that fills underneath a running job —
@@ -889,7 +997,7 @@ export class DownloadService {
           this.deps.repo.pause(
             next.id,
             this.formatDiskExhaustedMessage(),
-            new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString(),
+            new Date(monotonicNowMs() + STORAGE_DEFERRAL_RETRY_MS + retryJitterMs()).toISOString(),
             failedAt,
             this.jobClaims.get(next.id),
           );
@@ -901,7 +1009,11 @@ export class DownloadService {
             context: { jobId: next.id },
           });
         } else if (analysis.retryable && retriesLeft) {
-          const retryAt = new Date(Date.now() + retryDelayMs(next.retryCount)).toISOString();
+          // Jittered per attempt: a mass failure without it stamps identical
+          // `next_retry_at` values that re-claim in lockstep and thunder.
+          const retryAt = new Date(
+            monotonicNowMs() + retryDelayMs(retryCount) + retryJitterMs(),
+          ).toISOString();
           this.deps.repo.scheduleRetry(
             next.id,
             message,
@@ -968,17 +1080,30 @@ export class DownloadService {
    * re-queued or adopted — on the next kick instead of stranding the job.
    */
   kickQueue(source: DownloadQueueKickSource): void {
-    void this.processQueue().catch((error: unknown) => {
-      this.reportQueuePassFailure(source, error);
+    if (this.queueWorkerRunning) {
+      this.pendingKick = true;
+      return;
+    }
+    let failureContext: DownloadQueueFailureContext | undefined;
+    void this.processQueuePass((context) => {
+      failureContext = context;
+    }).catch((cause: unknown) => {
+      this.reportQueuePassFailure(source, cause, failureContext);
     });
   }
 
   async processQueue(): Promise<void> {
+    return this.processQueuePass();
+  }
+
+  private async processQueuePass(
+    onFailure?: (context: DownloadQueueFailureContext) => void,
+  ): Promise<void> {
     if (this.queueWorkerRunning || this.shutdownRequested) {
       return;
     }
     this.queueWorkerRunning = true;
-    this.lastQueuePassFailureContext = undefined;
+    let failureContext: DownloadQueueFailureContext | undefined;
     let stage: DownloadQueuePassStage = "resume-paused";
     try {
       if (!this.reconciledStartupJobs) {
@@ -1018,7 +1143,7 @@ export class DownloadService {
       if (failures.length === 1) {
         const [failure] = failures;
         if (failure) {
-          this.lastQueuePassFailureContext = {
+          failureContext = {
             stage: "worker",
             workerIndex: failure.context.workerIndex,
             jobId: failure.context.jobId,
@@ -1031,23 +1156,29 @@ export class DownloadService {
           failures.map((failure) => failure.reason),
           buildDownloadQueueAggregateMessage(failures.map((failure) => failure.reason)),
         );
-        this.lastQueuePassFailureContext = {
+        failureContext = {
           stage: "worker",
           workerFailures: failures.length,
         };
         throw aggregate;
       }
     } catch (error) {
-      this.lastQueuePassFailureContext ??= { stage };
+      onFailure?.(failureContext ?? { stage });
       throw error;
     } finally {
       this.queueWorkerRunning = false;
+      if (this.pendingKick && !this.shutdownRequested) {
+        this.pendingKick = false;
+        this.kickQueue("queue-coalesced");
+      }
     }
   }
 
-  private reportQueuePassFailure(source: DownloadQueueKickSource, error: unknown): void {
-    const failureContext = this.lastQueuePassFailureContext ?? { stage: "worker" as const };
-    this.lastQueuePassFailureContext = undefined;
+  private reportQueuePassFailure(
+    source: DownloadQueueKickSource,
+    cause: unknown,
+    failureContext: DownloadQueueFailureContext = { stage: "worker" },
+  ): void {
     let event: ReturnType<typeof buildDownloadDiagnosticEvent>;
     try {
       event = buildDownloadDiagnosticEvent({
@@ -1064,8 +1195,8 @@ export class DownloadService {
           workerIndex: failureContext.workerIndex,
           workerFailures: failureContext.workerFailures,
           jobId: failureContext.jobId,
-          errorName: error instanceof Error ? error.name : typeof error,
-          errorMessage: error instanceof Error ? error.message : String(error),
+          errorName: cause instanceof Error ? cause.name : typeof cause,
+          errorMessage: cause instanceof Error ? cause.message : String(cause),
         },
       });
     } catch {
@@ -2223,13 +2354,13 @@ export class DownloadService {
     for (const job of this.deps.repo.listPaused(200)) {
       const retryAt = job.nextRetryAt ? Date.parse(job.nextRetryAt) : 0;
       if (!Number.isFinite(retryAt) || retryAt <= now) {
-        this.deps.repo.requeue(job.id, new Date().toISOString());
+        this.deps.repo.requeue(job.id, monotonicNowIso());
       }
     }
   }
 
   private async reconcileInterruptedJobs(): Promise<void> {
-    const now = new Date().toISOString();
+    const now = monotonicNowIso();
     const nowMs = Date.parse(now);
     for (const runningJob of this.deps.repo.listRunning(200)) {
       // `running` is a lease, not proof this process owns the job. A second
@@ -2534,9 +2665,16 @@ export class DownloadService {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = () => {
       if (!active) return;
-      if (!this.deps.repo.markHeartbeat(jobId, new Date().toISOString(), claim)) {
+      if (!this.deps.repo.markHeartbeat(jobId, monotonicNowIso(), claim)) {
         active = false;
-        this.activeProcesses.get(jobId)?.cancel?.("download ownership changed");
+        // Ownership moved to a successor: stop everything this attempt owns.
+        // `cancel` alone is not enough — validation entries (ffprobe) register
+        // without one, so a lost lease during validation would leave the child
+        // running past the handoff.
+        const lost = this.activeProcesses.get(jobId);
+        lost?.cancel?.("download ownership changed");
+        lost?.releaseIo?.();
+        if (lost) void this.terminateProcess(lost.process, undefined).catch(() => undefined);
         this.copyControllers.get(jobId)?.abort();
         return;
       }
@@ -2590,8 +2728,27 @@ export class DownloadService {
     excludeJobId?: string,
     qualityLabel?: string,
   ) {
+    const diskStats = await this.probeOutputVolume(outputPath);
+    return this.evaluateAdmission(diskStats, excludeJobId, qualityLabel);
+  }
+
+  /**
+   * Filesystem half of the pre-flight check: mkdir + statfs. Throws only for
+   * volume problems — the caller's filesystem-error catch owns this await and
+   * nothing else, so a database throw from the admission half below can never
+   * be misread as an unavailable folder.
+   */
+  private async probeOutputVolume(outputPath: string): Promise<{ bavail: number; bsize: number }> {
     await mkdir(dirname(outputPath), { recursive: true });
-    const diskStats = await this.statfs(dirname(outputPath));
+    return this.statfs(dirname(outputPath));
+  }
+
+  /** Admission half: pure computation over volume stats plus a DB reservation read. */
+  private evaluateAdmission(
+    diskStats: { bavail: number; bsize: number },
+    excludeJobId?: string,
+    qualityLabel?: string,
+  ) {
     const qualityEstimate = estimateBytesForDownloadQuality(qualityLabel);
     return evaluateStorageAdmission({
       availableBytes: diskStats.bavail * diskStats.bsize,

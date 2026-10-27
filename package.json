@@ -92,7 +92,6 @@
     "test:live:allmanga-crypto": "bun run --cwd apps/cli test:live:allmanga-crypto",
     "test:live:mobile-host-proof": "bun run --cwd apps/mobile test:live:mobile-host-proof",
     "test:live:analytics": "bun run --cwd apps/cli test:live:analytics",
-    "test:live:anidb": "bun run --cwd apps/cli test:live:anidb",
     "test:live:tracker-sync": "bun run --cwd apps/cli test:live:tracker-sync",
     "test:live:discord": "bun run --cwd apps/cli test:live:discord",
     "test:live:miruro": "bun run --cwd apps/cli test:live:miruro",

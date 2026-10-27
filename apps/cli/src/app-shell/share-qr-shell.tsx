@@ -7,6 +7,8 @@ import { encodeQrMatrix, renderQrHalfBlocks } from "@/domain/share/qr-code";
 import { Box, Text, useInput } from "ink";
 import React, { useMemo } from "react";
 
+import { MouseTarget } from "./mouse/MouseRegions";
+
 export function buildTerminalShareQr(url: string): string | null {
   try {
     return renderQrHalfBlocks(encodeQrMatrix(url));
@@ -30,7 +32,7 @@ function ShareQrShell({
   const qr = useMemo(() => buildTerminalShareQr(url), [url]);
   const qrLines = qr?.split("\n") ?? [];
   const minimumColumns = Math.max(40, qrLines[0]?.length ?? 0);
-  const minimumRows = qrLines.length + 4;
+  const minimumRows = qrLines.length + 5;
 
   useInput((input, key) => {
     if (key.escape || key.return || input.toLowerCase() === "q") onBack();
@@ -39,6 +41,9 @@ function ShareQrShell({
   if (!qr) {
     return (
       <Box flexDirection="column" flexGrow={1} alignItems="center" justifyContent="center">
+        <MouseTarget id="share:back" onClick={onBack}>
+          <Text color={palette.textDim}>← Back (Esc)</Text>
+        </MouseTarget>
         <Text bold color={palette.text}>
           This share reference is too large for the terminal QR.
         </Text>
@@ -58,18 +63,26 @@ function ShareQrShell({
 
   if (cols < minimumColumns || rows < minimumRows) {
     return (
-      <ResizeBlocker
-        columns={cols}
-        rows={rows}
-        minColumns={minimumColumns}
-        minRows={minimumRows}
-        message="Terminal too small for this QR"
-      />
+      <Box flexDirection="column" flexGrow={1}>
+        <MouseTarget id="share:back" onClick={onBack}>
+          <Text color={palette.textDim}>← Back (Esc)</Text>
+        </MouseTarget>
+        <ResizeBlocker
+          columns={cols}
+          rows={rows}
+          minColumns={minimumColumns}
+          minRows={minimumRows}
+          message="Terminal too small for this QR"
+        />
+      </Box>
     );
   }
 
   return (
     <Box flexDirection="column" flexGrow={1} alignItems="center">
+      <MouseTarget id="share:back" onClick={onBack}>
+        <Text color={palette.textDim}>← Back (Esc)</Text>
+      </MouseTarget>
       <Text bold color={palette.text}>
         {truncateLine(`Scan to share · ${title}`, Math.max(24, cols - 4))}
       </Text>

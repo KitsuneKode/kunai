@@ -1003,3 +1003,26 @@ describe("root shell surface selection", () => {
     expect(state.episodeRequest).toBeNull();
   });
 });
+
+test("session track choices survive source and episode changes but reset for another title", () => {
+  let state = createInitialState("vidlink", "allmanga", {
+    anime: { audio: "original", subtitle: "en" },
+    series: { audio: "original", subtitle: "en" },
+    movie: { audio: "original", subtitle: "en" },
+  });
+  const title = { id: "1396", name: "Series", type: "series" as const };
+  state = reduceState(state, { type: "SELECT_TITLE", title });
+  state = reduceState(state, {
+    type: "SET_SESSION_TRACK_PREFERENCES",
+    preferences: { subtitle: "none" },
+  });
+  state = reduceState(state, {
+    type: "SET_SESSION_TRACK_PREFERENCES",
+    preferences: { quality: "720p" },
+  });
+  state = reduceState(state, { type: "SELECT_EPISODE", episode: { season: 1, episode: 2 } });
+  state = reduceState(state, { type: "SELECT_TITLE", title });
+  expect(state.playbackTrackPreferences).toEqual({ subtitle: "none", quality: "720p" });
+  state = reduceState(state, { type: "SELECT_TITLE", title: { ...title, id: "other" } });
+  expect(state.playbackTrackPreferences).toEqual({});
+});

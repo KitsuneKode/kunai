@@ -10,9 +10,10 @@ import { sanitizeTerminalText } from "@/domain/text-display";
 import { Box, Text } from "ink";
 import React from "react";
 
+import { MouseTarget } from "./mouse/MouseRegions";
 import { StateBlock } from "./primitives/StateBlock";
-import { getWindowStart, truncateLine } from "./shell-text";
-import { palette, APP_LABEL } from "./shell-theme";
+import { getWindowStart, measureColumns, truncateLine } from "./shell-text";
+import { palette } from "./shell-theme";
 import {
   chunkSubtitleGrid,
   disambiguateSubtitleLabels,
@@ -23,11 +24,39 @@ import {
   subtitleGridWindow,
   tracksPaneVisibleRows,
   tracksCountsHeader,
+  tracksOptionsPaneWidth,
 } from "./tracks-panel-layout";
 import { createInitialTracksNav, type TracksNavState } from "./tracks-panel-nav";
 
 /** Stable empty default so the favorites prop keeps referential equality across renders. */
 const EMPTY_FAVORITES: readonly string[] = [];
+
+export type TracksPointerActions = {
+  readonly section: (section: TrackCapabilitySection) => void;
+  readonly option: (section: TrackCapabilitySection, value: string) => void;
+  readonly scroll: (section: TrackCapabilitySection, direction: "up" | "down") => void;
+};
+
+function TrackOptionTarget({
+  capability,
+  pointer,
+  children,
+}: {
+  readonly capability: TrackCapability;
+  readonly pointer?: TracksPointerActions;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <MouseTarget
+      id={`tracks:option:${capability.section}:${capability.value}`}
+      active={Boolean(pointer)}
+      onClick={() => pointer?.option(capability.section, capability.value)}
+      onWheel={(direction) => pointer?.scroll(capability.section, direction)}
+    >
+      {children}
+    </MouseTarget>
+  );
+}
 
 export type TracksPanelShellProps = {
   groups: readonly TrackCapabilityGroup[];
@@ -40,12 +69,14 @@ export type TracksPanelShellProps = {
   filterQuery?: string;
   /** Inline nav hints — off when ShellFooter already owns the footer (root overlay). */
   showNavHint?: boolean;
+  pointer?: TracksPointerActions;
+  onBack?: () => void;
 };
 
 function riskColor(risk: TrackCapabilityRisk): string {
   switch (risk) {
     case "failed":
-      return palette.dangerText;
+      return palette.muted;
     case "fallback":
       return palette.accentDeep;
     case "unavailable":
@@ -69,7 +100,7 @@ function rowStatusGlyph(
   capability: TrackCapability,
 ): { readonly glyph: string; readonly color: string } | null {
   if (capability.risk === "failed") {
-    return { glyph: "✕ ", color: palette.dangerText };
+    return { glyph: "× ", color: palette.muted };
   }
   if (capability.selected) {
     return { glyph: "✓ ", color: palette.ok };
@@ -79,16 +110,25 @@ function rowStatusGlyph(
 
 function rowTag(capability: TrackCapability): string | null {
   if (capability.selected && capability.risk === "failed") {
-    return capability.reason ?? "failed on last try";
+    return "Retry";
   }
   if (capability.risk === "failed") {
-    return capability.reason ?? "failed on last try";
+    return "Retry";
   }
-  if (capability.selected) return "current";
+  if (capability.selected) return null;
   if (capability.risk === "fallback") return "not tried";
   if (capability.risk === "unavailable") return "unavailable";
-  if (capability.enabled) return "available";
+  if (capability.enabled) return null;
   return null;
+}
+
+/** Ordinary rows show media facts; raw routes and failure traces stay in diagnostics. */
+function compactTrackDetail(detail: string | undefined): string | undefined {
+  if (!detail) return undefined;
+  const facts = detail.match(
+    /(?:\b(?:4K|\d{3,4}p)\b|\b\d+ subtitles?\b|\b(?:English|Japanese|Hindi|French|Spanish|German|Original) audio\b|\b(?:hardsub|soft subs)\b|Best available[^·]*|Currently[^·]*)/gi,
+  );
+  return facts ? [...new Set(facts)].join(" · ") : undefined;
 }
 
 function currentValue(group: TrackCapabilityGroup): string {
@@ -127,6 +167,8 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
   providerLabel,
   filterQuery = "",
   showNavHint = false,
+  pointer,
+  onBack,
 }: TracksPanelShellProps) {
   if (groups.length === 0) {
     return (
@@ -151,16 +193,20 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
 
   const header = (
     <Box flexDirection="column" marginBottom={1}>
-      <Box>
-        <Text color={palette.accent} bold>
-          {APP_LABEL}
-          {"  "}
-        </Text>
-        <Text color={palette.textDim} bold>
-          Tracks
-        </Text>
+      <Box justifyContent="space-between" width={Math.max(1, width - 2)}>
+        {headerLine ? (
+          <Text color={palette.muted}>
+            {truncateLine(headerLine, Math.max(8, width - (onBack ? 18 : 2)))}
+          </Text>
+        ) : null}
+        {onBack ? (
+          <MouseTarget id="tracks:back" onClick={onBack}>
+            <Text color={palette.textDim}>
+              ← Back <Text color={palette.muted}>(Esc)</Text>
+            </Text>
+          </MouseTarget>
+        ) : null}
       </Box>
-      {headerLine ? <Text color={palette.dim}>{truncateLine(headerLine, width - 2)}</Text> : null}
       {filterQuery.trim() ? (
         <Text color={palette.accentSoft}>{truncateLine(`filter: ${filterQuery}`, width - 2)}</Text>
       ) : null}
@@ -179,13 +225,20 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
     return (
       <Box flexDirection="column" paddingX={1}>
         {header}
-        <StackedView groups={groups} favorites={favorites} width={width} height={height} />
+        <StackedView
+          groups={groups}
+          favorites={favorites}
+          width={width}
+          height={height}
+          nav={state}
+          pointer={pointer}
+        />
         {footer}
       </Box>
     );
   }
 
-  const rightWidth = width - SECTION_COL_WIDTH - 3;
+  const rightWidth = tracksOptionsPaneWidth(width);
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -196,17 +249,31 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
             const focused = state.focusedPane === "sections" && index === state.sectionIndex;
             const active = index === state.sectionIndex;
             return (
-              <Box key={`sec-${group.section}`}>
-                <Text color={focused ? palette.accent : palette.dim}>{focused ? "▸ " : "  "}</Text>
-                <Box width={9}>
-                  <Text color={active ? palette.text : palette.muted} bold={active} wrap="truncate">
-                    {group.title}
+              <MouseTarget
+                key={`sec-${group.section}`}
+                id={`tracks:section:${group.section}`}
+                active={Boolean(pointer)}
+                onClick={() => pointer?.section(group.section)}
+                onWheel={(direction) => pointer?.scroll(group.section, direction)}
+              >
+                <Box backgroundColor={active ? palette.accentFill : undefined}>
+                  <Text color={focused ? palette.accent : palette.dim}>
+                    {focused ? "▸ " : "  "}
+                  </Text>
+                  <Box width={10} flexShrink={0}>
+                    <Text
+                      color={active ? palette.text : palette.muted}
+                      bold={active}
+                      wrap="truncate"
+                    >
+                      {group.title}
+                    </Text>
+                  </Box>
+                  <Text color={palette.dim} wrap="truncate">
+                    {truncateLine(currentValue(group), SECTION_COL_WIDTH - 13)}
                   </Text>
                 </Box>
-                <Text color={palette.dim} wrap="truncate">
-                  {truncateLine(currentValue(group), SECTION_COL_WIDTH - 12)}
-                </Text>
-              </Box>
+              </MouseTarget>
             );
           })}
         </Box>
@@ -214,6 +281,7 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
           {focusedGroup ? (
             <OptionsPane
               group={focusedGroup}
+              pointer={pointer}
               state={state}
               favorites={favorites}
               width={Math.max(12, rightWidth)}
@@ -233,8 +301,10 @@ function OptionsPane({
   favorites,
   width,
   height,
+  pointer,
 }: {
   group: TrackCapabilityGroup;
+  pointer?: TracksPointerActions;
   state: TracksNavState;
   favorites: readonly string[];
   width: number;
@@ -283,22 +353,32 @@ function OptionsPane({
               const flatIndex = (startRow + rowIndex) * columns + cellIndex;
               const highlighted = optionsFocused && flatIndex === state.optionIndex;
               return (
-                <Box key={`sub-${capability.value}`} width={cellWidth}>
-                  <Text
-                    color={
-                      highlighted
-                        ? palette.accent
-                        : capability.selected
-                          ? palette.ok
-                          : palette.textDim
-                    }
-                    bold={highlighted || capability.selected}
-                    wrap="truncate"
+                <TrackOptionTarget
+                  key={`sub-${capability.value}`}
+                  capability={capability}
+                  pointer={pointer}
+                >
+                  <Box
+                    width={cellWidth}
+                    backgroundColor={highlighted ? palette.accentFill : undefined}
                   >
-                    {capability.selected ? "✓ " : highlighted ? "▌ " : "  "}
-                    {sanitizeTerminalText(labels[flatIndex] ?? capability.label)}
-                  </Text>
-                </Box>
+                    <Text
+                      color={
+                        highlighted
+                          ? palette.accent
+                          : capability.selected
+                            ? palette.ok
+                            : palette.textDim
+                      }
+                      bold={highlighted || capability.selected}
+                      wrap="truncate"
+                    >
+                      {highlighted ? "▌" : " "}
+                      {capability.selected ? "✓ " : "  "}
+                      {sanitizeTerminalText(labels[flatIndex] ?? capability.label)}
+                    </Text>
+                  </Box>
+                </TrackOptionTarget>
               );
             })}
           </Box>
@@ -336,37 +416,45 @@ function OptionsPane({
         const fav = group.section === "source" && isFavoriteSource(favorites, capability.label);
         const tag = rowTag(capability);
         const statusGlyph = rowStatusGlyph(capability);
+        const detail = [tag, compactTrackDetail(capability.detail)].filter(Boolean).join(" · ");
+        const prefixWidth = 2 + (fav ? 2 : 0) + (statusGlyph ? 2 : 0);
+        const detailWidth = detail ? Math.min(measureColumns(detail), Math.floor(width * 0.42)) : 0;
+        const labelWidth = Math.max(1, width - prefixWidth - (detailWidth ? detailWidth + 2 : 0));
         return (
-          <Box key={`opt-${capability.value}`} flexDirection="row">
-            <Text color={highlighted ? palette.accent : palette.dim}>
-              {highlighted ? "▌ " : capability.selected ? "› " : "  "}
-            </Text>
-            {fav ? <Text color={palette.accent}>♥ </Text> : null}
-            {statusGlyph ? (
-              <Text color={statusGlyph.color} bold={capability.risk === "failed"}>
-                {statusGlyph.glyph}
-              </Text>
-            ) : null}
-            <Text
-              color={rowColor(capability, highlighted)}
-              bold={highlighted || capability.selected}
-              wrap="truncate"
+          <TrackOptionTarget
+            key={`opt-${capability.value}`}
+            capability={capability}
+            pointer={pointer}
+          >
+            <Box
+              flexDirection="row"
+              width={width}
+              backgroundColor={highlighted ? palette.accentFill : undefined}
             >
-              {sanitizeTerminalText(capability.label)}
-            </Text>
-            {capability.detail || tag ? (
-              <Text color={highlighted ? palette.accentSoft : palette.dim}>
-                {"  "}
-                {truncateLine(
-                  [tag, capability.detail].filter(Boolean).join(" · "),
-                  Math.max(
-                    8,
-                    width - capability.label.length - (fav ? 6 : 4) - (statusGlyph ? 2 : 0),
-                  ),
-                )}
+              <Text color={highlighted ? palette.accent : palette.dim}>
+                {highlighted ? "▌ " : capability.selected ? "› " : "  "}
               </Text>
-            ) : null}
-          </Box>
+              {fav ? <Text color={palette.accent}>♥ </Text> : null}
+              {statusGlyph ? (
+                <Text color={statusGlyph.color} bold={capability.risk === "failed"}>
+                  {statusGlyph.glyph}
+                </Text>
+              ) : null}
+              <Text
+                color={rowColor(capability, highlighted)}
+                bold={highlighted || capability.selected}
+                wrap="truncate"
+              >
+                {truncateLine(sanitizeTerminalText(capability.label), labelWidth)}
+              </Text>
+              {detailWidth > 0 ? (
+                <Text color={highlighted ? palette.accentSoft : palette.dim}>
+                  {"  "}
+                  {truncateLine(detail, detailWidth)}
+                </Text>
+              ) : null}
+            </Box>
+          </TrackOptionTarget>
         );
       })}
       {hiddenBelow > 0 ? <Text color={palette.dim}>{`↓ ${hiddenBelow} more`}</Text> : null}
@@ -380,30 +468,52 @@ function StackedView({
   favorites,
   width,
   height,
+  nav,
+  pointer,
 }: {
   groups: readonly TrackCapabilityGroup[];
   favorites: readonly string[];
   width: number;
   height?: number;
+  nav: TracksNavState;
+  pointer?: TracksPointerActions;
 }) {
-  const allRows = buildTrackPanelRows(groups);
-  // This view stacks every section's rows, so a long subtitle list ran straight
-  // past the bottom of a narrow terminal and over what sat below it. It carries
-  // no focus state, so the honest budget is a cap plus a count of the remainder
-  // rather than a window that pretends to follow a cursor.
+  const orderedGroups = groups.map((group) => ({ ...group, rows: displayRows(group, favorites) }));
+  const allRows = buildTrackPanelRows(orderedGroups);
+  const group = orderedGroups[nav.sectionIndex];
+  const focused = group?.rows[nav.optionIndex];
+  const focusedIndex = Math.max(
+    0,
+    allRows.findIndex(
+      (row) =>
+        row.group.section === group?.section &&
+        (nav.focusedPane === "sections"
+          ? row.kind === "header"
+          : row.kind === "row" && row.capability.value === focused?.value),
+    ),
+  );
   const budget = tracksPaneVisibleRows(height);
-  const rows = allRows.slice(0, budget);
-  const hiddenRows = allRows.length - rows.length;
+  const start = getWindowStart(focusedIndex, allRows.length, budget);
+  const rows = allRows.slice(start, start + budget);
+  const hiddenRows = allRows.length - start - rows.length;
   return (
     <Box flexDirection="column">
+      {start > 0 ? <Text color={palette.dim}>↑ more</Text> : null}
       {rows.map((row) => {
         if (row.kind === "header") {
           return (
-            <Box key={`h-${row.group.section}`} marginTop={1}>
-              <Text color={palette.textDim} bold>
-                {row.group.title}
-              </Text>
-            </Box>
+            <MouseTarget
+              key={`h-${row.group.section}`}
+              id={`tracks:section:${row.group.section}`}
+              active={Boolean(pointer)}
+              onClick={() => pointer?.section(row.group.section)}
+            >
+              <Box marginTop={1}>
+                <Text color={palette.textDim} bold>
+                  {row.group.title}
+                </Text>
+              </Box>
+            </MouseTarget>
           );
         }
         if (row.kind === "empty") {
@@ -414,26 +524,46 @@ function StackedView({
           );
         }
         const { capability } = row;
+        const highlighted =
+          nav.focusedPane === "options" &&
+          row.group.section === group?.section &&
+          capability.value === focused?.value;
         const fav =
           capability.section === "source" && isFavoriteSource(favorites, capability.label);
         const statusGlyph = rowStatusGlyph(capability);
         return (
-          <Box key={`r-${row.group.section}-${capability.value}`} flexDirection="row">
-            <Text color={palette.dim}>{capability.selected ? "› " : "  "}</Text>
-            {fav ? <Text color={palette.accent}>♥ </Text> : null}
-            {statusGlyph ? (
-              <Text color={statusGlyph.color} bold={capability.risk === "failed"}>
-                {statusGlyph.glyph}
+          <TrackOptionTarget
+            key={`r-${row.group.section}-${capability.value}`}
+            capability={capability}
+            pointer={pointer}
+          >
+            <Box
+              flexDirection="row"
+              width={Math.max(1, width - 2)}
+              backgroundColor={highlighted ? palette.accentFill : undefined}
+            >
+              <Text color={highlighted ? palette.accent : palette.dim}>
+                {highlighted ? "▌ " : capability.selected ? "› " : "  "}
               </Text>
-            ) : null}
-            <Text color={rowColor(capability, false)} bold={capability.selected} wrap="truncate">
-              {truncateLine(capability.label, width - 6 - (statusGlyph ? 2 : 0))}
-            </Text>
-          </Box>
+              {fav ? <Text color={palette.accent}>♥ </Text> : null}
+              {statusGlyph ? (
+                <Text color={statusGlyph.color} bold={capability.risk === "failed"}>
+                  {statusGlyph.glyph}
+                </Text>
+              ) : null}
+              <Text
+                color={rowColor(capability, highlighted)}
+                bold={highlighted || capability.selected}
+                wrap="truncate"
+              >
+                {truncateLine(capability.label, width - 6 - (statusGlyph ? 2 : 0))}
+              </Text>
+            </Box>
+          </TrackOptionTarget>
         );
       })}
       {hiddenRows > 0 ? (
-        <Text color={palette.dim}>{`↓ ${String(hiddenRows)} more — widen the terminal`}</Text>
+        <Text color={palette.dim}>{`↓ ${String(hiddenRows)} more — scroll to see`}</Text>
       ) : null}
     </Box>
   );

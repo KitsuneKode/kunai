@@ -153,12 +153,26 @@ export function buildCommandPickerModel(
   // rendering an empty palette.
   const runnable = commands.filter((command) => command.enabled);
   const visible = showGrouped && runnable.length > 0 ? runnable : commands;
+  const query = input.trim().replace(/^\//, "").toLowerCase();
+  // Once an alias/name prefix identifies a command, incidental fuzzy matches
+  // deep in descriptions should not keep the entire menu on screen.
+  const prefixMatches = query
+    ? visible.filter((command) =>
+        [command.id, command.label, ...command.aliases].some((name) =>
+          name
+            .toLowerCase()
+            .split(/[\s_-]+/)
+            .some((word) => word.startsWith(query)),
+        ),
+      )
+    : [];
+  const matching = prefixMatches.length > 0 ? prefixMatches : visible;
   return buildPickerModel<AppCommandId>({
     query: input,
     selectedIndex: highlightedIndex,
     groupOrder: showGrouped ? ["context", "global"] : undefined,
     groupLabels: COMMAND_GROUP_LABELS,
-    options: visible.map((command) => ({
+    options: matching.map((command) => ({
       id: command.id,
       value: command.id,
       label: command.label,

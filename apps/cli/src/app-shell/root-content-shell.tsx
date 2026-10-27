@@ -8,6 +8,7 @@ import React from "react";
 import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
 import { PlaybackRootContent, type PlaybackRootContentInput } from "./playback-mount-shell";
 import { clearPlaybackShellError, peekPlaybackShellError } from "./playback-shell-error-capture";
+import { openSessionProviderPicker } from "./provider-picker-overlay";
 import type { ResolvedRootContent, RootContentSession } from "./root-content-state";
 import { getRootOverlayResetKey } from "./root-overlay-model";
 import type { RootOwnedOverlay } from "./root-shell-state";
@@ -88,6 +89,19 @@ export function renderErrorRootContent(
         stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
         stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
       }}
+      onProviders={
+        state.currentTitle
+          ? () => {
+              void openSessionProviderPicker(container).catch((error: unknown) => {
+                container.diagnosticsService.record({
+                  category: "ui",
+                  message: "Provider recovery picker failed",
+                  context: { error: error instanceof Error ? error.message : String(error) },
+                });
+              });
+            }
+          : undefined
+      }
       onRetry={() => {
         clearPlaybackShellError();
         stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });

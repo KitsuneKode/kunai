@@ -5,6 +5,7 @@ import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc"
 import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
 import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
+import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 
 import { waitUntil } from "../../../support/wait-until";
 
@@ -299,6 +300,115 @@ describe("PersistentMpvSession deferred bootstrap resources", () => {
 });
 
 describe("PersistentMpvSession fake IPC lifecycle harness", () => {
+  test("watchdog replacement stop preserves the new load and restores playback", async () => {
+    const loadRequested = Promise.withResolvers<void>();
+    const completed = Promise.withResolvers<void>();
+    const harness = createHarness({
+      beforeSend(command) {
+        if (command[0] === "loadfile") loadRequested.resolve();
+      },
+    });
+    let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
+    harness.runtime.createPlaybackWatchdog = (emit) => {
+      emitWatchdog = emit;
+      return { observe() {}, stop() {}, reset() {} };
+    };
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: "https://subs.example/episode.vtt",
+        onPlaybackEvent(event) {
+          if (event.type === "mpv-in-process-reconnect" && event.phase === "complete")
+            completed.resolve();
+        },
+      },
+      // SAFETY: this fixture only supplies the reconnect and script options it exercises.
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady() {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 2 });
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 3 });
+      emitWatchdog({
+        type: "stream-stalled",
+        stallKind: "network-read-dead",
+        secondsWithoutProgress: 8,
+      });
+      await loadRequested.promise;
+      expect(pendingLoadOwners(session)).toBe(1);
+      // Real mpv ends the OLD file with stop before loading its replacement.
+      harness.callbacks().onEndFile({ reason: "stop", observedAt: 4 });
+      expect(pendingLoadOwners(session)).toBe(1);
+      harness.callbacks().onFileLoaded?.({ observedAt: 5 });
+      await completed.promise;
+      expect(harness.commands).toContainEqual(["seek", 100, "absolute"]);
+      expect(harness.commands).toContainEqual([
+        "sub-add",
+        "https://subs.example/episode.vtt",
+        "select",
+        "",
+        "",
+      ]);
+      const playback = session.waitForCurrentPlayback();
+      harness.callbacks().onEndFile({ reason: "quit", observedAt: 6 });
+      expect(await playback).toMatchObject({ endReason: "quit" });
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  for (const reason of ["error", "quit"] as const) {
+    test(`watchdog reconnect still ends on a real ${reason} before file-loaded`, async () => {
+      const loadRequested = Promise.withResolvers<void>();
+      const harness = createHarness({
+        beforeSend(command) {
+          if (command[0] === "loadfile") loadRequested.resolve();
+        },
+      });
+      let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
+      harness.runtime.createPlaybackWatchdog = (emit) => {
+        emitWatchdog = emit;
+        return { observe() {}, stop() {}, reset() {} };
+      };
+      const session = await PersistentMpvSession.create({
+        stream: createStream(),
+        options: { displayTitle: "Episode 1", primarySubtitle: null },
+        // SAFETY: partial config pins just the reconnect policy used by this fixture.
+        kitsuneConfig: {
+          mpvInProcessStreamReconnect: true,
+          mpvInProcessStreamReconnectMaxAttempts: 1,
+          mpvKunaiScriptOpts: "",
+        } as never,
+        onControlReady() {},
+        runtime: harness.runtime,
+      });
+      try {
+        harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+        const playback = session.waitForCurrentPlayback();
+        emitWatchdog({
+          type: "stream-stalled",
+          stallKind: "network-read-dead",
+          secondsWithoutProgress: 8,
+        });
+        await loadRequested.promise;
+        harness.callbacks().onEndFile({ reason, observedAt: 2 });
+        expect(await playback).toMatchObject({ endReason: reason });
+        expect(pendingLoadOwners(session)).toBe(0);
+      } finally {
+        harness.endProcess();
+        await session.close();
+      }
+    });
+  }
+
   test("updates autoskip policy during an active intro without leaving a stale automatic skip", async () => {
     const harness = createHarness();
     const partialTiming = {
@@ -1122,3 +1232,383 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     await playbackResult;
   });
 });
+
+test("persistent Off survives late subtitles and a new file carries its own language choice", async () => {
+  const harness = createHarness();
+  let control: import("@/infra/player/PlayerControlService").ActivePlayerControl | null = null;
+  const session = await PersistentMpvSession.create({
+    stream: createStream(),
+    options: { displayTitle: "Episode 1", primarySubtitle: null, subtitlePreference: "none" },
+    // SAFETY: minimal config fixture; the harness supplies runtime and playback options used here.
+    kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+    onControlReady: (value) => {
+      control = value;
+    },
+    runtime: harness.runtime,
+  });
+  harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+  await flushAsyncWork();
+  if (!control) throw new Error("No active player control");
+  // SAFETY: onControlReady supplies this declared control type before the fixture uses it.
+  const active = control as import("@/infra/player/PlayerControlService").ActivePlayerControl;
+  await active.attachSubtitles?.({ primarySubtitle: "https://subs.example/en.vtt" });
+  expect(harness.commands).toContainEqual([
+    "sub-add",
+    "https://subs.example/en.vtt",
+    "auto",
+    "",
+    "",
+  ]);
+  expect(harness.commands).toContainEqual(["set_property", "sid", "no"]);
+  harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+  await flushAsyncWork();
+  void session.play(createStream({ url: "https://video.example/episode-2.m3u8" }), {
+    displayTitle: "Episode 2",
+    primarySubtitle: null,
+    subtitlePreference: "en",
+  });
+  await flushAsyncWork();
+  const load = harness.commands.findLast((command) => command[0] === "loadfile");
+  expect(load?.[4]).toMatchObject({ slang: "en", sid: "auto" });
+  harness.endProcess();
+});
+
+describe("live subtitle facts", () => {
+  test("native sid Off/On and visibility are reported without rewriting the startup preference", async () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const harness = createHarness();
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Native",
+        primarySubtitle: null,
+        subtitlePreference: "none",
+        onPlaybackEvent: (e) => events.push(e),
+      },
+      // SAFETY: minimal config fixture; the harness supplies runtime and playback options used here.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    const update = (
+      name: string,
+      value: Parameters<ReturnType<typeof harness.callbacks>["onPropertyUpdate"]>[0]["value"],
+    ) => harness.callbacks().onPropertyUpdate({ name, value, observedAt: 1 });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    await flushAsyncWork();
+    update("track-list", [{ id: 1, type: "sub", lang: "en", title: "Embedded" }]);
+    update("sid", false);
+    update("sub-visibility", true);
+    update("sid", 1);
+    update("sub-visibility", false);
+    update("sub-visibility", true);
+    update("sid", "no");
+    const snapshots = events.filter((e) => e.type === "track-changed" && e.trackType === "sub");
+    expect(snapshots).toContainEqual(
+      expect.objectContaining({
+        id: 1,
+        subtitleState: { id: 1, visible: true, language: "en", title: "Embedded" },
+      }),
+    );
+    expect(snapshots).toContainEqual(
+      expect.objectContaining({
+        id: 1,
+        subtitleState: { id: 1, visible: false, language: "en", title: "Embedded" },
+      }),
+    );
+    expect(snapshots.at(-1)).toMatchObject({ id: 0, subtitleState: { id: 0, visible: true } });
+    expect(session["currentOptions"].subtitlePreference).toBe("none");
+    await session.close();
+  });
+
+  test("native On under startup Off is preserved by late attachment, and late inventory never selects", async () => {
+    const harness = createHarness();
+    let control: import("@/infra/player/PlayerControlService").ActivePlayerControl | null = null;
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Native", primarySubtitle: null, subtitlePreference: "none" },
+      // SAFETY: minimal config fixture; the harness supplies runtime and playback options used here.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: (value) => {
+        control = value;
+      },
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    await flushAsyncWork();
+    harness.callbacks().onPropertyUpdate({ name: "sid", value: 1, observedAt: 2 });
+    const start = harness.commands.length;
+    // SAFETY: onControlReady supplies this declared control type before the fixture uses it.
+    const nativeControl = control as
+      | import("@/infra/player/PlayerControlService").ActivePlayerControl
+      | null;
+    await nativeControl?.attachSubtitles?.({ primarySubtitle: "https://subs.example/late.vtt" });
+    expect(harness.commands.slice(start)).toContainEqual([
+      "sub-add",
+      "https://subs.example/late.vtt",
+      "auto",
+      "",
+      "",
+    ]);
+    expect(harness.commands.slice(start)).not.toContainEqual(["set_property", "sid", "no"]);
+    await session.close();
+  });
+});
+
+test("native subtitle selection and visibility are observed as file-local facts", async () => {
+  const harness = createHarness();
+  const events: PlayerPlaybackEvent[] = [];
+  const session = await PersistentMpvSession.create({
+    stream: createStream(),
+    options: {
+      displayTitle: "Episode",
+      primarySubtitle: null,
+      subtitlePreference: "none",
+      onPlaybackEvent: (event) => events.push(event),
+    },
+    // SAFETY: minimal config fixture; the harness supplies runtime and playback options used here.
+    kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+    onControlReady: () => {},
+    runtime: harness.runtime,
+  });
+  harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+  await flushAsyncWork();
+  harness.callbacks().onPropertyUpdate({
+    name: "track-list",
+    value: [{ id: 3, type: "sub", lang: "ja", title: "Embedded Japanese", selected: true }],
+    observedAt: 2,
+  });
+  harness.callbacks().onPropertyUpdate({ name: "sub-visibility", value: true, observedAt: 3 });
+  harness.callbacks().onPropertyUpdate({ name: "sid", value: 3, observedAt: 4 });
+  expect(events).toContainEqual({
+    type: "track-changed",
+    trackType: "sub",
+    id: 3,
+    subtitleState: { id: 3, visible: true, language: "ja", title: "Embedded Japanese" },
+  });
+  harness.callbacks().onPropertyUpdate({ name: "sub-visibility", value: false, observedAt: 5 });
+  expect(events.at(-1)).toMatchObject({
+    type: "track-changed",
+    subtitleState: { id: 3, visible: false },
+  });
+  harness.callbacks().onPropertyUpdate({ name: "sid", value: false, observedAt: 6 });
+  expect(events.at(-1)).toMatchObject({
+    type: "track-changed",
+    subtitleState: { id: 0, visible: false },
+  });
+  harness.callbacks().onEndFile({ reason: "eof", observedAt: 7 });
+  await flushAsyncWork();
+  events.length = 0;
+  void session.play(createStream({ url: "https://video.example/next.m3u8" }), {
+    displayTitle: "Next",
+    primarySubtitle: null,
+    onPlaybackEvent: (event) => events.push(event),
+  });
+  await flushAsyncWork();
+  harness.callbacks().onPropertyUpdate({ name: "sid", value: 3, observedAt: 8 });
+  expect(events.some((event) => event.type === "track-changed")).toBe(false);
+  harness.endProcess();
+});
+
+test("a late Off acknowledgement cannot overwrite the next file's subtitle preference", async () => {
+  let releaseOff!: () => void;
+  let offSent!: () => void;
+  const offStarted = new Promise<void>((resolve) => {
+    offSent = resolve;
+  });
+  const offPending = new Promise<void>((resolve) => {
+    releaseOff = resolve;
+  });
+  let holdOff = false;
+  const harness = createHarness({
+    beforeSend: async (command) => {
+      if (holdOff && command[0] === "set_property" && command[1] === "sid" && command[2] === "no") {
+        offSent();
+        await offPending;
+      }
+    },
+  });
+  let control: import("@/infra/player/PlayerControlService").ActivePlayerControl | null = null;
+  const session = await PersistentMpvSession.create({
+    stream: createStream(),
+    options: { displayTitle: "First", primarySubtitle: null, subtitlePreference: "en" },
+    // SAFETY: minimal config fixture; the harness supplies runtime and playback options used here.
+    kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+    onControlReady: (value) => {
+      control = value;
+    },
+    runtime: harness.runtime,
+  });
+  try {
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    await flushAsyncWork();
+    holdOff = true;
+    const activeControl = control as
+      | import("@/infra/player/PlayerControlService").ActivePlayerControl
+      | null;
+    const selectingOff = activeControl?.selectSubtitle?.({ subtitleUrl: null });
+    await offStarted;
+    harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+    void session.play(createStream({ url: "https://video.example/second.m3u8" }), {
+      displayTitle: "Second",
+      primarySubtitle: null,
+      subtitlePreference: "fr",
+    });
+    await waitFor(() => harness.commands.some((command) => command[0] === "loadfile"));
+    releaseOff();
+    expect(await selectingOff).toBe(false);
+    expect(session["currentOptions"].subtitlePreference).toBe("fr");
+  } finally {
+    releaseOff();
+    harness.endProcess();
+  }
+});
+
+test("a preferred late subtitle activates when the file initially has no subtitle track", async () => {
+  const harness = createHarness();
+  let control: import("@/infra/player/PlayerControlService").ActivePlayerControl | null = null;
+  await PersistentMpvSession.create({
+    stream: createStream(),
+    options: { displayTitle: "Late English", primarySubtitle: null, subtitlePreference: "en" },
+    // SAFETY: minimal config fixture; the harness supplies runtime and playback options used here.
+    kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+    onControlReady: (value) => {
+      control = value;
+    },
+    runtime: harness.runtime,
+  });
+  try {
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    await flushAsyncWork();
+    harness.callbacks().onPropertyUpdate({ name: "track-list", value: [], observedAt: 2 });
+    harness.callbacks().onPropertyUpdate({ name: "sid", value: false, observedAt: 3 });
+    const start = harness.commands.length;
+    const active = control as
+      | import("@/infra/player/PlayerControlService").ActivePlayerControl
+      | null;
+    await active?.attachSubtitles?.({ primarySubtitle: "https://subs.example/en.vtt" });
+    expect(harness.commands.slice(start)).toContainEqual([
+      "sub-add",
+      "https://subs.example/en.vtt",
+      "select",
+      "",
+      "",
+    ]);
+    expect(harness.commands.slice(start)).not.toContainEqual(["set_property", "sid", "no"]);
+  } finally {
+    harness.endProcess();
+  }
+});
+
+test("replacement subtitles retain unchanged process visibility without a second visibility event", async () => {
+  const harness = createHarness();
+  const events: PlayerPlaybackEvent[] = [];
+  const session = await PersistentMpvSession.create({
+    stream: createStream(),
+    options: { displayTitle: "First", primarySubtitle: null },
+    // SAFETY: minimal config fixture; the harness supplies runtime and playback options used here.
+    kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+    onControlReady: () => {},
+    runtime: harness.runtime,
+  });
+  try {
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    await flushAsyncWork();
+    harness.callbacks().onPropertyUpdate({ name: "sub-visibility", value: true, observedAt: 2 });
+    harness.callbacks().onPropertyUpdate({ name: "sid", value: false, observedAt: 3 });
+    harness.callbacks().onEndFile({ reason: "eof", observedAt: 4 });
+    void session.play(createStream({ url: "https://video.example/second.m3u8" }), {
+      displayTitle: "Second",
+      primarySubtitle: null,
+      onPlaybackEvent: (event) => events.push(event),
+    });
+    await waitFor(() => harness.commands.some((command) => command[0] === "loadfile"));
+    harness.callbacks().onFileLoaded?.({ observedAt: 5 });
+    await flushAsyncWork();
+    harness.callbacks().onPropertyUpdate({
+      name: "track-list",
+      value: [{ type: "sub", id: 5, lang: "fr" }],
+      observedAt: 6,
+    });
+    harness.callbacks().onPropertyUpdate({ name: "sid", value: 5, observedAt: 7 });
+    expect(events).toContainEqual({
+      type: "track-changed",
+      trackType: "sub",
+      id: 5,
+      subtitleState: { id: 5, visible: true, language: "fr" },
+    });
+  } finally {
+    harness.endProcess();
+  }
+});
+
+test.each(["es", "de"])(
+  "subtitle picker reuses %s or attaches only that track without growing the inventory",
+  async (language) => {
+    const harness = createHarness();
+    const events: PlayerPlaybackEvent[] = [];
+    const tracks = ["en", "es", "fr", "de"].map((lang) => ({
+      url: `https://subs.example/${lang}.vtt`,
+      language: lang,
+      display: lang,
+    }));
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Subtitle pick",
+        primarySubtitle: null,
+        subtitlePreference: "en",
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      // SAFETY: the harness supplies runtime; no user config is loaded.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      await flushAsyncWork();
+      harness.callbacks().onPropertyUpdate({
+        name: "track-list",
+        observedAt: 2,
+        value: tracks.slice(0, 3).map((track, index) => ({
+          id: index + 1,
+          type: "sub",
+          external: true,
+          "external-filename": track.url,
+          lang: track.language,
+        })),
+      });
+      const start = harness.commands.length;
+      const eventStart = events.length;
+      const control = session.getControl();
+      expect(
+        await control.selectSubtitle?.({
+          subtitleUrl: `https://subs.example/${language}.vtt`,
+          subtitleTracks: tracks,
+        }),
+      ).toBe(true);
+      const additions = harness.commands.slice(start).filter((command) => command[0] === "sub-add");
+      if (language === "es") {
+        expect(additions).toEqual([]);
+        expect(harness.commands.slice(start)).toContainEqual(["set_property", "sid", 2]);
+      } else {
+        expect(additions.map((command) => command[1])).toEqual(["https://subs.example/de.vtt"]);
+      }
+      expect(
+        events.slice(eventStart).filter((event) => event.type === "late-subtitles-attached"),
+      ).toEqual([]);
+      if (language === "es") {
+        // Selecting an already-active ID may not emit another mpv sid event.
+        // Its acknowledgement must still protect that choice from late lookup.
+        const afterPick = harness.commands.length;
+        await control.attachSubtitles?.({ primarySubtitle: "https://subs.example/late.vtt" });
+        expect(
+          harness.commands.slice(afterPick).find((command) => command[0] === "sub-add")?.[2],
+        ).toBe("auto");
+      }
+    } finally {
+      await session.close();
+    }
+  },
+);

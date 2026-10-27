@@ -12,6 +12,15 @@ test("resolveCatalogPosterUrl expands TMDB relative paths", () => {
   );
 });
 
+test("legacy YouTube thumbnail paths retain their CDN instead of becoming TMDB posters", () => {
+  expect(resolveCatalogPosterUrl("/vi/dQw4w9WgXcQ/hqdefault.jpg")).toBe(
+    "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+  );
+  expect(resolveCatalogPosterUrl("/vi_webp/dQw4w9WgXcQ/mqdefault.webp")).toBe(
+    "https://i.ytimg.com/vi_webp/dQw4w9WgXcQ/mqdefault.webp",
+  );
+});
+
 test("resolveCatalogPosterUrl passes through absolute HTTPS URLs", () => {
   expect(
     resolveCatalogPosterUrl(

@@ -10,6 +10,7 @@ import {
   type LibraryShelfSection,
 } from "@/app-shell/library-shelf-model";
 import { LibraryTitleDetail } from "@/app-shell/library-title-detail";
+import { MouseTarget } from "@/app-shell/mouse/MouseRegions";
 import {
   libraryFooterActions,
   downloadQueueFooterActions,
@@ -48,7 +49,9 @@ import {
 } from "@/services/download/download-removal";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+import { useRootContentSuspended } from "./RootContentSuspension";
 
 type TabId = "library" | "queue";
 
@@ -65,12 +68,10 @@ export function LibraryShell({
   container,
   onClose,
   initialView = "library",
-  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   initialView?: TabId;
-  commandMode?: boolean;
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
   const [downloadJobCount, setDownloadJobCount] = useState(0);
@@ -110,6 +111,7 @@ export function LibraryShell({
         labels={["Library", "Downloads"]}
         activeIndex={tab === "library" ? 0 : 1}
         hint="Tab switch"
+        pointer={{ id: "library", select: (index) => setTab(index === 0 ? "library" : "queue") }}
       />
       <Text color={palette.dim} dimColor>
         {downloadsEnabled ? "downloads on" : "downloads off"} · runway: title opt-in
@@ -122,14 +124,12 @@ export function LibraryShell({
             onClose={onClose}
             onNavigateToLibrary={() => setTab("library")}
             showSelectionHints={false}
-            commandMode={commandMode}
           />
         ) : (
           <LibraryTab
             container={container}
             onClose={onClose}
             onNavigateToQueue={() => setTab("queue")}
-            commandMode={commandMode}
           />
         )}
       </Box>
@@ -169,13 +169,12 @@ function LibraryTab({
   container,
   onClose,
   onNavigateToQueue,
-  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToQueue: () => void;
-  commandMode?: boolean;
 }) {
+  const suspended = useRootContentSuspended();
   const [libraryView, setLibraryView] = useState<LibraryView>("titles");
   const [detailGroup, setDetailGroup] = useState<OfflineLibraryShelfGroup | null>(null);
   const [entries, setEntries] = useState<
@@ -189,6 +188,10 @@ function LibraryTab({
   const [filterQuery, setFilterQuery] = useState("");
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   const titlesActive = libraryView === "titles";
+  const priorPointerKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (suspended || !titlesActive) priorPointerKey.current = null;
+  }, [suspended, titlesActive]);
 
   useEffect(() => {
     let cancelled = false;
@@ -241,7 +244,7 @@ function LibraryTab({
   const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
   const maxVisible = getPickerListMaxVisible(
     viewport.rows,
-    getPickerChromeRows({ hasSubtitle: false, commandMode, extraRows: 4 }),
+    getPickerChromeRows({ hasSubtitle: false, commandMode: suspended, extraRows: 4 }),
   );
   const windowStart = getWindowStart(safeIndex, totalRows, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, totalRows);
@@ -267,8 +270,22 @@ function LibraryTab({
     })();
   };
 
+  const openTitle = (group: OfflineLibraryShelfGroup) => {
+    setConfirmDeleteKey(null);
+    setDetailGroup(group);
+    setLibraryView("title-detail");
+  };
+  const scrollTitles = (direction: "up" | "down") => {
+    priorPointerKey.current = null;
+    setConfirmDeleteKey(null);
+    setSelectedIndex((current) =>
+      Math.max(0, Math.min(totalRows - 1, current + (direction === "up" ? -1 : 1))),
+    );
+  };
+
   useInput(
     (input, key) => {
+      priorPointerKey.current = null;
       // Esc cancels an armed delete-confirm first (web-routing back: undo the
       // pending state before leaving the surface). Only when nothing is armed does
       // esc close the Library overlay.
@@ -368,15 +385,14 @@ function LibraryTab({
       }
       if (key.return) {
         if (!selectedOfflineGroup) return;
-        setDetailGroup(selectedOfflineGroup);
-        setLibraryView("title-detail");
+        openTitle(selectedOfflineGroup);
         return;
       }
       if (confirmDeleteKey !== null) {
         setConfirmDeleteKey(null);
       }
     },
-    { isActive: titlesActive && !commandMode },
+    { isActive: titlesActive && !suspended },
   );
 
   const railPosterUrl =
@@ -450,7 +466,6 @@ function LibraryTab({
         container={container}
         group={detailGroup}
         entries={detailEntries}
-        commandMode={commandMode}
         onBack={() => {
           setLibraryView("titles");
           setDetailGroup(null);
@@ -497,20 +512,35 @@ function LibraryTab({
         const ep = formatLibrarySeasonCode(row.group);
         const status = formatLibraryStatus(row, historyMap);
         return (
-          <ListRow
+          <MouseTarget
             key={row.group.key}
-            selected={selected}
-            rowWidth={rowWidth}
-            flexColumnIndex={rowLayout.flexColumnIndex}
-            columns={buildMediaListRowColumns({
-              title,
-              episodeCode: ep,
-              statusLabel: status.label,
-              statusColor: status.color,
-              statusDim: status.dim,
-              layout: rowLayout,
-            })}
-          />
+            id={`library:row:${row.group.key}`}
+            onWheel={scrollTitles}
+            onClick={() => {
+              setConfirmDeleteKey(null);
+              if (item.flatIndex !== safeIndex || priorPointerKey.current !== row.group.key) {
+                priorPointerKey.current = row.group.key;
+                setSelectedIndex(item.flatIndex);
+              } else {
+                priorPointerKey.current = null;
+                openTitle(row.group);
+              }
+            }}
+          >
+            <ListRow
+              selected={selected}
+              rowWidth={rowWidth}
+              flexColumnIndex={rowLayout.flexColumnIndex}
+              columns={buildMediaListRowColumns({
+                title,
+                episodeCode: ep,
+                statusLabel: status.label,
+                statusColor: status.color,
+                statusDim: status.dim,
+                layout: rowLayout,
+              })}
+            />
+          </MouseTarget>
         );
       })}
       {showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}
@@ -637,10 +667,7 @@ function formatLibrarySeasonCode(group: OfflineLibraryShelfGroup): string {
   return "—";
 }
 
-function formatLibraryStatus(
-  row: LibraryShelfRow,
-  historyMap: Record<string, HistoryProgress>,
-): { label: string; color: string; dim: boolean } {
+function formatLibraryStatus(row: LibraryShelfRow, historyMap: Record<string, HistoryProgress>) {
   const { group } = row;
   const hist = historyMap[group.titleId];
   if (hist && !isFinished(hist) && (hist.durationSeconds ?? 0) > 0) {

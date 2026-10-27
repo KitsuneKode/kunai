@@ -128,11 +128,11 @@ test("every pre-consent screen exposes the safe remaining-defaults shortcut", ()
   try {
     handle.stdin.enqueue("\r"); // -> mode
     expect(handle.lastFrame()).toContain("[S]");
-    expect(handle.lastFrame()).toContain("remaining defaults");
+    expect(handle.lastFrame()).toContain("finish defaults");
 
     handle.stdin.enqueue("\r"); // -> language
     expect(handle.lastFrame()).toContain("[S]");
-    expect(handle.lastFrame()).toContain("remaining defaults");
+    expect(handle.lastFrame()).toContain("finish defaults");
   } finally {
     handle.unmount();
   }
@@ -175,7 +175,7 @@ test("the focused language column names its choice's detail (#233)", () => {
 });
 
 test("language profile hotkeys edit one media lane without rewriting the others", () => {
-  const { handle } = start({
+  const { handle, results } = start({
     languageProfiles: {
       series: { audio: "original", subtitle: "en" },
       movie: { audio: "en", subtitle: "es" },
@@ -189,8 +189,7 @@ test("language profile hotkeys edit one media lane without rewriting the others"
   try {
     handle.stdin.enqueue("\r"); // -> mode
     handle.stdin.enqueue("\r"); // -> language
-    expect(stripAnsi(handle.lastFrame())).toContain("Shows Original/English");
-    expect(stripAnsi(handle.lastFrame())).toContain("Anime Japanese/None");
+    expect(stripAnsi(handle.lastFrame())).toContain("▌ Shows");
 
     handle.stdin.enqueue("\x1b[B"); // Shows audio: Original -> English
     handle.stdin.enqueue("\t"); // Shows -> Movies
@@ -198,11 +197,16 @@ test("language profile hotkeys edit one media lane without rewriting the others"
     handle.stdin.enqueue("\x1b[C"); // focus subtitles
     handle.stdin.enqueue("\x1b[B"); // None -> Arabic
 
-    const frame = stripAnsi(handle.lastFrame());
-    expect(frame).toContain("Shows English/English");
-    expect(frame).toContain("Anime Japanese/Arabic");
-    expect(frame).toContain("Movies English/Spanish");
-    expect(frame).toContain("YouTube Any dub/Pick each time");
+    expect(stripAnsi(handle.lastFrame())).toContain("▌ Anime");
+    handle.stdin.enqueue(["\r", "\r"]); // library -> analytics
+    handle.stdin.enqueue("s");
+    handle.stdin.enqueue("\r");
+    expect(results[0]?.prefs.languageProfiles).toEqual({
+      series: { audio: "en", subtitle: "en" },
+      anime: { audio: "ja", subtitle: "ar" },
+      movie: { audio: "en", subtitle: "es" },
+      youtube: { audio: "dub", subtitle: "interactive" },
+    });
   } finally {
     handle.unmount();
   }

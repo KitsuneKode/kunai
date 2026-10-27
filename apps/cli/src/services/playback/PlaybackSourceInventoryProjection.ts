@@ -556,7 +556,12 @@ function projectQualityOptions(
   const groups = new Map<string, MutableQualityOption>();
   for (const stream of result.streams) {
     const label = stream.qualityLabel ?? stream.container ?? stream.protocol ?? stream.id;
-    const id = `quality:${stream.sourceId ?? "unknown"}:${stream.variantId ?? label}`;
+    // YouTube variants identify an exact format shared by connection fallback lanes.
+    // Other providers keep source-specific rows: equal labels alone do not prove equivalence.
+    const id =
+      stream.providerId === "youtube" && stream.variantId
+        ? `quality:youtube:${stream.variantId}`
+        : `quality:${stream.sourceId ?? "unknown"}:${stream.variantId ?? label}`;
     const option = groups.get(id) ?? {
       id,
       label,
@@ -587,11 +592,25 @@ function projectQualityOptions(
       const subtitles = uniqueSubtitles(
         streams.flatMap((stream) => subtitlesForStream(stream, result.subtitles)),
       );
+      const streamIds = [...option.streamIds];
+      if (result.providerId === "youtube") {
+        const priorities = new Map(
+          streams.map((stream) => [
+            stream.id,
+            stream.id === selectedStream?.id
+              ? 0
+              : stream.sourceId === selectedStream?.sourceId
+                ? 1
+                : 2,
+          ]),
+        );
+        streamIds.sort((left, right) => (priorities.get(left) ?? 2) - (priorities.get(right) ?? 2));
+      }
       return {
         ...publicOption,
         state,
         sourceIds,
-        streamIds: [...option.streamIds],
+        streamIds,
         restartRequired: selectedStream ? !option.streamIds.has(selectedStream.id) : true,
         hints: buildPlaybackInventoryEvidenceHints({
           state,

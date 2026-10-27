@@ -6,10 +6,10 @@
 // owns the stream plumbing; this file only knows bytes → events.
 // =============================================================================
 
-/** Enable: button press/release + drag (1002) + SGR extended coords (1006). */
-export const MOUSE_TRACKING_ENABLE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+/** Enable: button press/release + all motion (1003) + SGR extended coords (1006). */
+export const MOUSE_TRACKING_ENABLE = "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h";
 /** Disable in reverse order; harmless if the modes were never on. */
-export const MOUSE_TRACKING_DISABLE = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
+export const MOUSE_TRACKING_DISABLE = "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l";
 
 export type MouseButton = "left" | "middle" | "right" | "wheel-up" | "wheel-down" | "none";
 
@@ -118,39 +118,49 @@ export type MouseSplitResult = {
  * Caller owns `pendingTail` stitching: prepend it to the next chunk before
  * calling again.
  */
-export function splitMouseSequences(chunk: string): MouseSplitResult {
-  const events: MouseEvent[] = [];
-  let input = "";
+export type OrderedMouseInput =
+  | { readonly kind: "input"; readonly input: string }
+  | { readonly kind: "mouse"; readonly event: MouseEvent };
+
+export type OrderedMouseSplitResult = {
+  readonly parts: readonly OrderedMouseInput[];
+  readonly pendingTail: string;
+};
+
+/** Preserve wire order so Ink handles preceding keys before the next click. */
+export function splitOrderedMouseSequences(chunk: string): OrderedMouseSplitResult {
+  const parts: OrderedMouseInput[] = [];
+  const addInput = (text: string) => {
+    const input = stripLegacyMouse(text);
+    if (input) parts.push({ kind: "input", input });
+  };
   let lastIndex = 0;
   for (const match of chunk.matchAll(SGR_MOUSE_PATTERN)) {
-    input += chunk.slice(lastIndex, match.index);
+    addInput(chunk.slice(lastIndex, match.index));
     const event = parseSgrMouseSequence(match[0]);
-    if (event) events.push(event);
+    if (event) parts.push({ kind: "mouse", event });
     lastIndex = match.index + match[0].length;
   }
   const tail = chunk.slice(lastIndex);
-  const partial = SGR_MOUSE_PARTIAL.exec(tail);
+  const partial = SGR_MOUSE_PARTIAL.exec(tail) ?? LEGACY_MOUSE_PARTIAL.exec(tail);
   if (partial) {
-    input += tail.slice(0, partial.index);
-    return { input: stripLegacyMouse(input), events, pendingTail: partial[0] };
+    addInput(tail.slice(0, partial.index));
+    return { parts, pendingTail: partial[0] };
   }
-  input += tail;
-  const legacyPartial = LEGACY_MOUSE_PARTIAL.exec(input);
-  if (legacyPartial) {
-    input = input.slice(0, legacyPartial.index);
-    return { input: stripLegacyMouse(input), events, pendingTail: legacyPartial[0] };
+  const prefix = tail.endsWith(`${ESC}[`) ? `${ESC}[` : tail.endsWith(ESC) ? ESC : "";
+  addInput(prefix ? tail.slice(0, -prefix.length) : tail);
+  return { parts, pendingTail: prefix };
+}
+
+export function splitMouseSequences(chunk: string): MouseSplitResult {
+  const { parts, pendingTail } = splitOrderedMouseSequences(chunk);
+  let input = "";
+  const events: MouseEvent[] = [];
+  for (const part of parts) {
+    if (part.kind === "input") input += part.input;
+    else events.push(part.event);
   }
-  // The introducer itself can be split by the TTY. Hold ambiguous Escape
-  // prefixes briefly; the stdin facade releases standalone keyboard input on idle.
-  const prefix = input.endsWith(`${ESC}[`) ? `${ESC}[` : input.endsWith(ESC) ? ESC : "";
-  if (prefix) {
-    return {
-      input: stripLegacyMouse(input.slice(0, -prefix.length)),
-      events,
-      pendingTail: prefix,
-    };
-  }
-  return { input: stripLegacyMouse(input), events, pendingTail: "" };
+  return { input, events, pendingTail };
 }
 
 /** Remove X10/urxvt reports from already-SGR-split input. Pure drop — see the

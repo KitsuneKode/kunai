@@ -1,20 +1,18 @@
 # setup-1-deps · narrow (72×34)
-   🦊 Kunai · welcome                                       setup 1⁄6
+   welcome                                                  setup 1⁄6
  ──────────────────────────────────────────────────────────────────────
-
 
    ❀  Let's get you watching
 
    Kunai finds playable streams and hands them to mpv.
    Here's what's on this machine.
 
-   ▌ ✓ mpv               found on PATH           playback
-     ✓ yt-dlp            found on PATH           youtube · downloads
-     ✓ ffmpeg            found on PATH           quality · downloads
-     ✓ curl-impersonate  matching chrome150      anime search
-     ✓ posters           kitty-native · ghostty  artwork
-     ✓ data & cache      ~/.local/share/kunai    history · offline
+    ✓ mpv               found on PATH            playback
+    ✓ yt-dlp            found on PATH            youtube · downloads
+    ✓ ffmpeg            found on PATH            quality · downloads
+    ✓ curl-impersonate  matching chrome150       anime search
+    ✓ posters           kitty-native · ghostty   artwork
+    ✓ data & cache      ~/.local/share/kunai     history · offline
  ──────────────────────────────────────────────────────────────────────
-   [enter]  continue  ·  [r]  recheck  ·  [S]                   Setup
-
-    remaining defaults  ·  [esc]  quit
+   [enter] continue  [r] recheck  [S] remaining defaults        Setup
+   [esc] quit

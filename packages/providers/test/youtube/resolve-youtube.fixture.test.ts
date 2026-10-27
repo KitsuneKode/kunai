@@ -185,3 +185,41 @@ describe("resolveYoutube", () => {
     });
   });
 });
+
+ytdlpTest(
+  "exact format selection survives resolve and clients are labelled as connection fallbacks",
+  async () => {
+    const metadata = normalizeYtDlpVideoInfo(
+      {
+        id: FIXTURE_VIDEO_ID,
+        title: "Me at the zoo",
+        formats: [
+          { format_id: "137", height: 1080, vcodec: "avc1", acodec: "none", fps: 30, tbr: 4500 },
+          { format_id: "248", height: 1080, vcodec: "vp9", acodec: "none", fps: 60, tbr: 3000 },
+          { format_id: "18", height: 360, vcodec: "avc1", acodec: "mp4a" },
+        ],
+      },
+      FIXTURE_VIDEO_ID,
+    );
+    configureYoutubeProvider({
+      extractorArgs: "youtube:player_client=visionos,web",
+      metadataCache: { get: () => metadata, set: () => {} },
+    });
+    const resolve = youtubeProviderModule.resolve;
+    if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");
+    const result = await resolve(buildResolveInput(), TEST_CONTEXT);
+    expect(result.streams).toHaveLength(6);
+    expect(new Set(result.streams.map((stream) => stream.id)).size).toBe(6);
+    expect(result.variants).toHaveLength(3);
+    expect(
+      result.streams
+        .filter((stream) => stream.metadata?.formatId === "137")
+        .every((stream) => stream.metadata?.ytdlFormat === "137+ba"),
+    ).toBe(true);
+    expect(
+      result.streams.find((stream) => stream.metadata?.formatId === "18")?.metadata?.ytdlFormat,
+    ).toBe("18");
+    expect(result.sources?.[0]?.label).toBe("YouTube · primary connection");
+    expect(result.sources?.[1]?.label).toBe("YouTube · fallback connection 1");
+  },
+);

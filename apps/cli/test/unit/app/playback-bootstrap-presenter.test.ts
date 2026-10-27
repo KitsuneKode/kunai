@@ -20,9 +20,19 @@ function timelineEvent(stage: string): DiagnosticEvent {
 }
 
 describe("playback-bootstrap-presenter", () => {
-  test("maps resolve startup stages to preparing-provider", () => {
-    expect(mapStartupStageToLoadingStage("resolve-started", "loading")).toBe("preparing-provider");
+  test("keeps source discovery active until resolve actually completes", () => {
+    expect(mapStartupStageToLoadingStage("resolve-started", "loading")).toBe("finding-stream");
     expect(mapStartupStageToLoadingStage("player-ready", "loading")).toBe("starting-playback");
+  });
+
+  test("new episode progress does not inherit the prior episode's completed rail", () => {
+    expect(
+      latestPlaybackStartupStage([
+        timelineEvent("first-progress"),
+        timelineEvent("episode-bootstrap-started"),
+        timelineEvent("resolve-started"),
+      ]),
+    ).toBe("resolve-started");
   });
 
   test("picks latest startup stage from diagnostics", () => {

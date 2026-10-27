@@ -1675,6 +1675,31 @@ function ListShell<T>({
     },
   });
 
+  function activateListPalette(selectionIndex: number) {
+    const row = resolveHighlightedPaletteRow(
+      commandInput,
+      actionContext?.commands ?? [],
+      titleMatches,
+      selectionIndex,
+    );
+    if (row?.kind === "command" && row.command.enabled) {
+      setCommandMode(false);
+      setCommandInput("");
+      onAction?.({
+        type: "action",
+        action: toShellAction(row.command.id),
+        filterQuery,
+        selectedIndex: index,
+      });
+    }
+    if (row?.kind === "title") {
+      setCommandMode(false);
+      setCommandInput("");
+      setHighlightedCommandIndex(0);
+      actionContext?.onTitlePick?.(row.match.entry);
+    }
+  }
+
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
@@ -1690,27 +1715,7 @@ function ListShell<T>({
         return;
       }
       if (key.return) {
-        const row = resolveHighlightedPaletteRow(
-          commandInput,
-          actionContext?.commands ?? [],
-          titleMatches,
-          highlightedCommandIndex,
-        );
-        if (row?.kind === "command" && row.command.enabled) {
-          setCommandInput("");
-          onAction?.({
-            type: "action",
-            action: toShellAction(row.command.id),
-            filterQuery,
-            selectedIndex: index,
-          });
-        }
-        if (row?.kind === "title") {
-          setCommandMode(false);
-          setCommandInput("");
-          setHighlightedCommandIndex(0);
-          actionContext?.onTitlePick?.(row.match.entry);
-        }
+        activateListPalette(highlightedCommandIndex);
         return;
       }
       if (key.tab) {
@@ -1906,6 +1911,14 @@ function ListShell<T>({
 
       {commandMode && actionContext ? (
         <CommandPalette
+          pointer={{
+            select: setHighlightedCommandIndex,
+            activate: activateListPalette,
+            close: () => {
+              setCommandMode(false);
+              setHighlightedCommandIndex(0);
+            },
+          }}
           input={commandInput}
           cursor={commandEditor.cursor}
           commands={actionContext.commands}

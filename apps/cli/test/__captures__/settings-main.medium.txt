@@ -1,10 +1,10 @@
 # settings-main · medium (100×45)
  Settings
  series default  ·  discover auto  ·  series vidlink  ·  anime hianime
-  General   Appearance  Discover  Providers  Provider relay  YouTube › Tab / Shift+Tab
+  General   Appearance  Discover  Providers  Provider switches › Tab / Shift+Tab
 
 
- GENERAL ──────────────────────────────────────────────────────────────────────────────────────────
+ GENERAL ────────────────────────────────────────────────────────────────────────────────────────
  Launch mode and how much shortcut help the shell shows
    ▸ Default startup mode ·  Series mode
    ▸ Footer hints ·  Detailed

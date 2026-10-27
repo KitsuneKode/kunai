@@ -163,7 +163,8 @@ function redactReason(reason: string): string {
 /**
  * Spawn headless mpv and wait for decode. Success is exit 0 after decoding
  * up to `frames` frames. Non-zero exit, stderr `error`, or timeout kill is
- * evidence the stream does not play even if the HTTP probe was reachable.
+ * a failed playback qualification even if the HTTP probe was reachable. A timeout
+ * does not establish that zero frames decoded before the deadline.
  */
 export async function verifyStreamPlaysInMpv(input: {
   readonly mpvBinary?: string;
@@ -223,7 +224,11 @@ export async function verifyStreamPlaysInMpv(input: {
     }
     await proc.exited;
     await readStderr;
-    return { ok: false, exitCode: null, reason: "mpv verify timed out without decoding" };
+    return {
+      ok: false,
+      exitCode: null,
+      reason: "mpv verify timed out before confirming the frame budget",
+    };
   }
   await readStderr;
   if (outcome.code === 0) {

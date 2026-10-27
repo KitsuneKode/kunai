@@ -25,23 +25,25 @@ export function buildSettingsRegistryContext(
   container: Container,
   config: KitsuneConfig,
 ): SettingsRegistryContext {
+  // Settings lists every registered provider — including switched-off ones —
+  // so a disable never hides its own re-enable switch.
   const seriesProviderMetadata = sortProvidersByConfigPriority({
     providers: container.providerRegistry
-      .getAll()
+      .getAllRegistered()
       .map((provider) => provider.metadata)
       .filter((metadata) => !metadata.isAnimeProvider && !metadata.isYoutubeProvider),
     priority: [config.provider, ...config.providerPriority],
   });
   const animeProviderMetadata = sortProvidersByConfigPriority({
     providers: container.providerRegistry
-      .getAll()
+      .getAllRegistered()
       .map((provider) => provider.metadata)
       .filter((metadata) => metadata.isAnimeProvider),
     priority: [config.animeProvider, ...config.animeProviderPriority],
   });
   const youtubeProviderMetadata = sortProvidersByConfigPriority({
     providers: container.providerRegistry
-      .getAll()
+      .getAllRegistered()
       .map((provider) => provider.metadata)
       .filter((metadata) => metadata.isYoutubeProvider),
     priority: [config.youtubeProvider, ...config.youtubeProviderPriority],
@@ -49,6 +51,7 @@ export function buildSettingsRegistryContext(
 
   return {
     config,
+    persistedConfig: container.config.getRaw(),
     presenceSnapshot: container.presence.getSnapshot(),
     seriesProviderOptions: buildSettingsProviderOptions({
       providers: seriesProviderMetadata,

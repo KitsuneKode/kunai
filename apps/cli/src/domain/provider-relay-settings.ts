@@ -11,7 +11,6 @@ import {
  * turn it off and made the "all relay-capable" summary a lie (#460).
  */
 export const RELAY_CAPABLE_PROVIDER_OPTIONS = [
-  { value: "anidb", label: "AniDB" },
   { value: "allanime", label: "AllAnime" },
   { value: "animegg", label: "AnimeGG" },
   { value: "hianime", label: "HiAnime" },

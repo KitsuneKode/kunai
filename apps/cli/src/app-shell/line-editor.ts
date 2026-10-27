@@ -458,10 +458,15 @@ export function useLineEditor({
     [onChange],
   );
 
+  // Input events can arrive before React commits the displayed value. Submit
+  // from the editor's event-owned draft, never from a previous render.
+  const getValue = useCallback(() => stateRef.current.value, []);
+
   return {
     cursor: clampCursor(value, cursor),
     killRing,
     handleInput,
+    getValue,
     setCursor,
     setValue,
   };

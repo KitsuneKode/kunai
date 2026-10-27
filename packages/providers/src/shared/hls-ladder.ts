@@ -2,7 +2,11 @@ import type { ProviderFetchPort } from "@kunai/types";
 
 import { isHlsMasterPlaylist, isHlsPlaylistUrl } from "./hls-manifest";
 import { normalizeQualityLabel, qualityRankFromLabel } from "./source-inventory";
-import { fetchGuardedStreamTarget, readBoundedTextBody } from "./stream-reachability";
+import {
+  blockedLiteralTargetReason,
+  fetchGuardedStreamTarget,
+  readBoundedTextBody,
+} from "./stream-reachability";
 import { normalizeIsoLanguageCode } from "./subtitle-helpers";
 
 export type HlsLadderVariant = {
@@ -56,6 +60,8 @@ export function isHlsDeadHostStatus(status: number | undefined): boolean {
 }
 
 export type HlsMasterInventory = {
+  /** True only after reading an HLS playlist, never from the URL or MIME alone. */
+  readonly isHls: boolean;
   readonly variants: readonly HlsLadderVariant[];
   readonly audioTracks: readonly HlsRenditionTrack[];
   readonly subtitleTracks: readonly HlsRenditionTrack[];
@@ -92,6 +98,7 @@ export async function expandHlsMasterInventory(
     qualityRank: 0,
   };
   const empty = (probe: HlsMasterProbe): HlsMasterInventory => ({
+    isHls: false,
     variants: [fallback],
     audioTracks: [],
     subtitleTracks: [],
@@ -129,8 +136,11 @@ export async function expandHlsMasterInventory(
     if (text === null) {
       return empty({ kind: "http-error", httpStatus: response.status });
     }
-    if (!isHlsMasterPlaylist(text)) {
+    if (!/^\s*#EXTM3U(?:\s|$)/.test(text)) {
       return empty({ kind: "not-master", httpStatus: response.status });
+    }
+    if (!isHlsMasterPlaylist(text)) {
+      return { ...empty({ kind: "not-master", httpStatus: response.status }), isHls: true };
     }
     // A variant whose audio group points at a separate playlist gets its sound
     // (or its other languages) from there, and its own playlist is often
@@ -142,6 +152,7 @@ export async function expandHlsMasterInventory(
     if (masterVariantsNeedSeparateAudio(text)) {
       const renditions = parseHlsMasterRenditions(text, masterUrl);
       return {
+        isHls: true,
         variants: [fallback],
         ...renditions,
         probe: { kind: "ok", httpStatus: response.status },
@@ -156,7 +167,12 @@ export async function expandHlsMasterInventory(
     const sorted = [...variants].sort((left, right) => right.qualityRank - left.qualityRank);
     const capped = maxVariants > 0 ? sorted.slice(0, maxVariants) : sorted;
     const renditions = parseHlsMasterRenditions(text, masterUrl);
-    return { variants: capped, ...renditions, probe: { kind: "ok", httpStatus: response.status } };
+    return {
+      isHls: true,
+      variants: capped,
+      ...renditions,
+      probe: { kind: "ok", httpStatus: response.status },
+    };
   } catch {
     return empty({ kind: "network" });
   }
@@ -300,8 +316,8 @@ export function parseHlsMasterVariants(
 
 function resolveHlsVariantUrl(masterUrl: string, href: string): string | null {
   try {
-    if (href.startsWith("http://") || href.startsWith("https://")) return href;
-    return new URL(href, masterUrl).toString();
+    const url = new URL(href, masterUrl).toString();
+    return blockedLiteralTargetReason(url) === null ? url : null;
   } catch {
     return null;
   }

@@ -108,6 +108,21 @@ export async function resolveTracksPanelPick(
     return { kind: "noop" };
   }
 
+  if (picked.section === "quality" && selection?.automaticQuality) {
+    const stream = container.stateManager.getState().stream;
+    const result = stream?.providerResolveResult;
+    const active = result?.streams.find((row) => row.id === result.selectedStreamId);
+    container.stateManager.dispatch({
+      type: "SET_SESSION_TRACK_PREFERENCES",
+      preferences: { quality: "best" },
+    });
+    return {
+      kind: "stream-selection",
+      section: "quality",
+      selection: { sourceId: active?.sourceId ?? null, streamId: null, automaticQuality: true },
+    };
+  }
+
   if (picked.section === "provider" && selection?.providerId) {
     if (selection.providerId === currentProviderId) {
       return { kind: "noop" };
@@ -225,6 +240,17 @@ export async function resolveTracksPanelPick(
     if (stale) return { kind: "stale-pick", section: picked.section, reason: stale };
   }
 
+  if (picked.section === "quality" && selection.streamId) {
+    const stream = container.stateManager.getState().stream;
+    const candidate = stream?.providerResolveResult?.streams.find(
+      (row) => row.id === selection.streamId,
+    );
+    if (candidate?.qualityLabel)
+      container.stateManager.dispatch({
+        type: "SET_SESSION_TRACK_PREFERENCES",
+        preferences: { quality: candidate.qualityLabel },
+      });
+  }
   return {
     kind: "stream-selection",
     section: picked.section,
@@ -254,6 +280,7 @@ async function staleTrackSelectionReason(
         episode,
         mode,
         container.config.getRaw(),
+        container.stateManager.getState().playbackTrackPreferences,
       ),
     )
     .catch(() => null);
@@ -272,11 +299,25 @@ async function resolveSubtitleTrackPick(
   context: TracksPanelPickContext,
 ): Promise<TracksPanelPickResult> {
   const { container } = context;
-  const stream = container.stateManager.getState().stream;
+  const before = container.stateManager.getState();
+  const stream = before.stream;
+  const player = container.playerControl.getActive();
   const view = buildStreamInventoryView(stream);
-  const option = view?.subtitleOptions.find(
-    (candidate) => (candidate.subtitleUrl ?? candidate.id) === picked.value,
-  );
+  const option =
+    view?.subtitleOptions.find(
+      (candidate) => (candidate.subtitleUrl ?? candidate.id) === picked.value,
+    ) ??
+    (picked.value === "subtitle:off" && stream?.playbackSubtitle
+      ? {
+          id: "subtitle:off",
+          label: "Subtitles off",
+          delivery: "off" as const,
+          restartRequired: false,
+          subtitleUrl: null,
+          streamIds: [],
+          language: undefined,
+        }
+      : undefined);
   if (!option) {
     return {
       kind: "stale-pick",
@@ -312,10 +353,30 @@ async function resolveSubtitleTrackPick(
   );
   // The player acknowledgement can arrive after navigation replaces the
   // stream. Reflect the accepted choice only on the stream we controlled.
-  if (applied && stream && container.stateManager.getState().stream === stream) {
+  const after = container.stateManager.getState();
+  const current = after.stream;
+  if (
+    applied &&
+    stream &&
+    current &&
+    container.playerControl.getActive() === player &&
+    after.playbackGeneration === before.playbackGeneration &&
+    after.currentTitle === before.currentTitle &&
+    after.currentEpisode === before.currentEpisode &&
+    after.providerSwitchSeq === before.providerSwitchSeq &&
+    current.url === stream.url &&
+    current.timestamp === stream.timestamp &&
+    current.providerResolveResult === stream.providerResolveResult
+  ) {
+    container.stateManager.dispatch({
+      type: "SET_SESSION_TRACK_PREFERENCES",
+      preferences: {
+        subtitle: option.delivery === "off" ? "none" : (option.language ?? "interactive"),
+      },
+    });
     container.stateManager.dispatch({
       type: "SET_STREAM",
-      stream: { ...stream, subtitle: option.subtitleUrl ?? undefined },
+      stream: { ...current, subtitle: option.subtitleUrl ?? undefined },
     });
   }
   container.diagnosticsService.record({

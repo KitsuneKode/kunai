@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-16"
 ---
 
 # Title provider health, cache layers, and reset
@@ -23,6 +23,12 @@ Recovery invalidation uses the same provider manifest as resolve-cache writes,
 including each provider's key parts and the active source/stream selection. It
 removes the base and selected keys for that episode while preserving unrelated
 entries. The production-roster regression pins this for every provider.
+Episode/title purge actions hydrate the saved episode override and title default
+before computing those selected keys. Title purges keep provider-native episode
+identities distinct even when their displayed season/episode numbers match.
+Purging cache entries preserves the saved preferences themselves. Quarantine is
+applied to each selection layer before merging: an unavailable episode override
+falls back to a healthy title default, without carrying its old quality pin.
 
 Caller cancellation produces no global provider-health observation. A total
 resolve deadline may retain failure deltas already returned by attempts: a

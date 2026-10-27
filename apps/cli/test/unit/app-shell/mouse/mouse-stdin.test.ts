@@ -61,6 +61,65 @@ function drain(proxy: MouseSplitStdin): string {
 }
 
 describe("MouseSplitStdin", () => {
+  test("idle tail release stays after the input and mouse packets preceding it", () => {
+    const source = new FakeSource();
+    const dispatcher = new MouseDispatcher();
+    const order: string[] = [];
+    let flush: (() => void) | undefined;
+    dispatcher.register(
+      "fixture",
+      { x: 1, y: 1, width: 10, height: 10 },
+      { onWheel: () => order.push("mouse") },
+    );
+    const proxy = new MouseSplitStdin(source, dispatcher, {
+      write: () => {},
+      scheduleTailFlush: (task) => {
+        flush = task;
+        return () => {};
+      },
+    });
+    try {
+      source.feed("a\x1b[<64;5;5M\x1b[<0;7");
+      order.push(`key:${proxy.read()}`);
+      flush?.();
+      let input: string | null;
+      while ((input = proxy.read()) !== null) order.push(`key:${input}`);
+      expect(order).toEqual(["key:a", "mouse", "key:\x1b[<0;7"]);
+    } finally {
+      proxy.detach();
+    }
+  });
+
+  test("tail expiry consumes an already buffered continuation before releasing it as keys", () => {
+    const source = new FakeSource();
+    const dispatcher = new MouseDispatcher();
+    const events: MouseEvent[] = [];
+    let flush: (() => void) | undefined;
+    dispatcher.register(
+      "fixture",
+      { x: 1, y: 1, width: 10, height: 10 },
+      { onClick: (event) => events.push(event) },
+    );
+    const proxy = new MouseSplitStdin(source, dispatcher, {
+      write: () => {},
+      scheduleTailFlush: (task) => {
+        flush = task;
+        return () => {};
+      },
+    });
+    try {
+      source.feed("a\x1b[<0;7");
+      expect(proxy.read()).toBe("a");
+      source.feed(";2M\x1b[<0;7;2m");
+      flush?.();
+      expect(drain(proxy)).toBe("");
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ x: 7, y: 2 });
+    } finally {
+      proxy.detach();
+    }
+  });
+
   function scheduledHarness() {
     const source = new FakeSource();
     let task: (() => void) | undefined;
@@ -229,8 +288,8 @@ describe("MouseSplitStdin", () => {
     proxy.disableTracking();
     proxy.disableTracking();
     expect(writes).toEqual([
-      "\x1b[?1000h\x1b[?1002h\x1b[?1006h",
-      "\x1b[?1006l\x1b[?1002l\x1b[?1000l",
+      "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h",
+      "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l",
     ]);
   });
 
@@ -240,7 +299,7 @@ describe("MouseSplitStdin", () => {
     proxy.enableTracking();
     proxy.detach();
     expect(source.listenerCount("readable")).toBe(0);
-    expect(writes.at(-1)).toBe("\x1b[?1006l\x1b[?1002l\x1b[?1000l");
+    expect(writes.at(-1)).toBe("\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l");
     // Bytes fed after detach are dropped, not buffered.
     source.feed("z");
     expect(drain(proxy)).toBe("");
@@ -297,4 +356,51 @@ describe("MouseSplitStdin", () => {
     expect(source.resumes).toBe(1);
     expect(proxy.isTTY).toBe(true);
   });
+});
+
+test.each(["same chunk", "queued chunks"])(
+  "keyboard and mouse are delivered in wire order: %s",
+  (mode) => {
+    const { source, proxy, dispatcher } = harness();
+    let delivered = "";
+    dispatcher.register(
+      "row",
+      { x: 1, y: 1, width: 10, height: 3 },
+      {
+        onClick: () => {
+          delivered += "<click>";
+        },
+      },
+    );
+    const report = "\x1b[<0;5;2M\x1b[<0;5;2m";
+    if (mode === "same chunk") source.feed("before" + report + "after");
+    else {
+      source.feed("before");
+      source.feed(report);
+      source.feed("after");
+    }
+    let input: string | null;
+    while ((input = proxy.read()) !== null) delivered += input;
+    expect(delivered).toBe("before<click>after");
+    proxy.detach();
+  },
+);
+
+test("unhandled wheel fallback stays between the surrounding keyboard and mouse input", () => {
+  const { source, proxy, dispatcher } = harness();
+  let delivered = "";
+  dispatcher.register(
+    "row",
+    { x: 1, y: 1, width: 10, height: 3 },
+    {
+      onClick: () => {
+        delivered += "<click>";
+      },
+    },
+  );
+  source.feed("before\x1b[<64;50;50Mafter\x1b[<0;5;2M\x1b[<0;5;2m");
+  let input: string | null;
+  while ((input = proxy.read()) !== null) delivered += input;
+  expect(delivered).toBe("before\x1b[Aafter<click>");
+  proxy.detach();
 });

@@ -122,3 +122,18 @@ describe("diagnostics current evidence", () => {
     expect(insight.developerEvidence.recentEvents.length).toBe(2);
   });
 });
+
+test("provider recovery picker can cover an error and return to it without dismissing", () => {
+  const state = playbackState("error");
+  const mount = { hasRootContent: false, hasMountedScreen: false };
+  expect(
+    resolveRootShellSurface(
+      {
+        ...state,
+        activeModals: [{ type: "provider_picker", currentProvider: "vidlink", lane: "series" }],
+      },
+      mount,
+    ),
+  ).toBe("root-overlay");
+  expect(resolveRootShellSurface(state, mount)).toBe("error");
+});

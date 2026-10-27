@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-29"
+lastReviewed: "2026-10-26"
 ---
 
 # Provider: YouTube (`youtube`)
@@ -22,6 +22,16 @@ lastReviewed: "2026-09-29"
   be a lie the relay registry would happily repeat.
 
 ## Failure contract
+
+Search artwork is normalized before entering catalog rows. Instance-relative
+`/vi/` and `/vi_webp/` image paths become canonical HTTPS YouTube CDN URLs;
+invalid relative paths fall back to the video-id thumbnail. The catalog poster
+resolver also repairs these paths in older cached rows, rather than treating
+them as TMDB poster names. Channel artwork requires an absolute HTTPS URL.
+
+Tracks marks the current connection as selected, not as proof of playback.
+Resolved subtitle inventory is reported as available; only mpv observations
+establish the active subtitle and its visibility.
 
 `metadata-failure.ts` classifies yt-dlp's stderr (thrown verbatim by
 `fetchYtDlpVideoInfo`) into two buckets:
@@ -46,6 +56,22 @@ probe, one watch URL per playback. Timeout/retry semantics live in the spawn
 wrapper, not `runProviderCycle`.
 
 ## Known gaps
+
+- The normalized metadata schema is v4: format IDs survive height/codec/FPS/bitrate
+  labels. Older normalized schemas refetch rather than inventing exact IDs.
+- Connection lanes request the same video with different extractor clients.
+  Availability can differ; a format discovered during metadata extraction is not
+  proof that all clients support it. Exact selectors fail if unavailable instead
+  of silently substituting another video format. Video-only formats use best
+  audio; separate audio-language/bitrate choices are not exposed by this ladder.
+- SponsorBlock categories are forwarded to yt-dlp/mpv. Forwarding and metadata
+  tests do not prove sponsored segments are removed during streaming, and give
+  no Premium-equivalent or ad-free playback guarantee.
+- Desktop speed uses native mpv bindings, documented in the public shortcuts
+  guide. Mobile is the separate terminal entrypoint in `apps/mobile/src/entry.ts`,
+  with player handoff rather than a web layout or desktop mpv controls. Physical
+  Termux/a-Shell input and VLC playback need device evidence through
+  `bun run test:live:mobile-host-proof`; desktop fixtures do not qualify them.
 
 - No live-recorded session evidence in this dossier — behavior notes are from
   source, not wire captures.

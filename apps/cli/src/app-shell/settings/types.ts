@@ -15,6 +15,8 @@ export type SettingGate = {
 };
 
 export type SettingsRegistryContext = {
+  /** Config as it was persisted when this context was built, before pending edits. */
+  readonly persistedConfig?: KitsuneConfig;
   readonly config: KitsuneConfig;
   readonly presenceSnapshot: PresenceSnapshot | null;
   readonly seriesProviderOptions: readonly ShellPickerOption<string>[];

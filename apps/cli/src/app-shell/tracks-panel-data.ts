@@ -1,3 +1,4 @@
+import { playbackQualityPreference } from "@/app/playback/playback-profile-context";
 import { buildSourceInventoryCacheInput } from "@/app/playback/playback-source-cache-invalidation";
 import { buildStreamInventoryView } from "@/app/playback/source-quality";
 import type { Container } from "@/container";
@@ -6,6 +7,7 @@ import {
   type ProviderHealthHint,
 } from "@/domain/playback/provider-track-capabilities";
 import {
+  QUALITY_AUTO_VALUE,
   buildTrackCapabilities,
   composeTrackPanelGroups,
   encodeCrossProviderSourceValue,
@@ -14,8 +16,10 @@ import {
 } from "@/domain/playback/track-capabilities";
 import { providerPickerLanesForTitle, shellModeToProviderLane } from "@/domain/provider-lane";
 import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
+import { sanitizeTerminalText } from "@/domain/text-display";
 import type { EpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
 import { availableAudioModesFromTrace } from "@/services/playback/PlaybackSourceInventoryProjection";
+import { resolveEffectiveProviderHealth } from "@/services/playback/provider-health-policy";
 
 export type TracksPanelData = {
   readonly groups: readonly TrackCapabilityGroup[];
@@ -26,16 +30,19 @@ function buildHealthHints(
   container: Container,
   titleId: string | undefined,
 ): Readonly<Record<string, ProviderHealthHint>> {
-  if (!titleId) return {};
   const hints: Record<string, ProviderHealthHint> = {};
   for (const provider of container.providerRegistry.getAll()) {
-    const suggestion = container.titleProviderHealth.getSwitchSuggestion(
-      titleId,
-      provider.metadata.id,
+    const suggestion = titleId
+      ? container.titleProviderHealth.getSwitchSuggestion(titleId, provider.metadata.id)
+      : undefined;
+    const health = resolveEffectiveProviderHealth(
+      container.providerHealth?.get(provider.metadata.id),
     );
-    if (suggestion) {
+    if (suggestion || health) {
       hints[provider.metadata.id] = {
-        suggestedProviderId: suggestion.suggestedProviderId,
+        suggestedProviderId: suggestion?.suggestedProviderId,
+        status: health?.effectiveStatus,
+        consecutiveFailures: health?.healedByTtl ? undefined : health?.consecutiveFailures,
       };
     }
   }
@@ -75,7 +82,14 @@ async function appendCrossProviderSourceHints(
   const hintRows: TrackCapability[] = [];
   for (const provider of compatible) {
     const cached = await container.sourceInventory.get(
-      buildSourceInventoryCacheInput(provider.id, title, episode, mode, config),
+      buildSourceInventoryCacheInput(
+        provider.id,
+        title,
+        episode,
+        mode,
+        config,
+        state.playbackTrackPreferences,
+      ),
     );
     if (!cached?.sources?.length) continue;
     const selected = cached.streams.find((candidate) => candidate.id === cached.selectedStreamId);
@@ -116,7 +130,7 @@ export async function buildTracksPanelData(
     result?.trace.title.kind ?? (state.mode === "anime" ? "anime" : state.currentTitle?.type);
   const inventoryView = buildStreamInventoryView(stream);
   const audioModes = result ? availableAudioModesFromTrace(result) : [];
-  const inventoryGroups = buildTrackCapabilities(inventoryView, {
+  let inventoryGroups = buildTrackCapabilities(inventoryView, {
     mediaKind,
     availableAudioModes: audioModes.length > 0 ? audioModes : undefined,
     currentPresentation: currentPresentationFromStream(stream),
@@ -162,6 +176,110 @@ export async function buildTracksPanelData(
     };
   }
 
+  const liveSubtitle = stream?.playbackSubtitle;
+  if (liveSubtitle) {
+    const playing = liveSubtitle.id > 0 && liveSubtitle.visible;
+    if (!inventoryGroups.some((group) => group.section === "subtitle")) {
+      inventoryGroups = [
+        ...inventoryGroups,
+        { section: "subtitle", title: "Subtitles", rows: [], selectable: false },
+      ];
+    }
+    inventoryGroups = inventoryGroups.map((group) =>
+      group.section !== "subtitle"
+        ? group
+        : {
+            ...group,
+            selectable: true,
+            rows: [
+              {
+                section: "subtitle" as const,
+                label: "Subtitles off",
+                value: "subtitle:off",
+                selected: liveSubtitle.id === 0,
+                enabled: liveSubtitle.id > 0,
+                risk: "normal" as const,
+              },
+              ...group.rows
+                .filter((row) => row.value !== "subtitle:off")
+                .map((row) => ({ ...row, selected: false, enabled: row.enabled || row.selected })),
+              ...(liveSubtitle.id > 0
+                ? [
+                    {
+                      section: "subtitle" as const,
+                      label: sanitizeTerminalText(
+                        `${playing ? "" : "Hidden · "}${liveSubtitle.title || liveSubtitle.language || "mpv subtitle"}`,
+                      ),
+                      value: `mpv-subtitle:${liveSubtitle.id}`,
+                      selected: true,
+                      enabled: false,
+                      reason: "Selected in mpv",
+                      risk: "normal" as const,
+                    },
+                  ]
+                : []),
+            ],
+          },
+    );
+  }
+
+  const preference = playbackQualityPreference({
+    mode: state.mode,
+    title: state.currentTitle,
+    config: container.config.getRaw(),
+    overrides: state.playbackTrackPreferences,
+  });
+  const automatic = !preference || preference === "auto" || preference === "best";
+  inventoryGroups = inventoryGroups.map((group) => {
+    if (group.section !== "quality" || group.rows.length === 0) return group;
+    const current = group.rows.find((row) => row.selected);
+    if (group.rows.length === 1) {
+      const only = group.rows[0];
+      if (!only) return group;
+      const knownQuality = /\d{3,4}p|4k|8k/i.test(only.label);
+      return {
+        ...group,
+        selectable: !automatic,
+        emptyReason: "No alternate quality reported by this source",
+        rows: [
+          {
+            ...only,
+            label: "Auto",
+            value: QUALITY_AUTO_VALUE,
+            selected: automatic,
+            enabled: !automatic,
+            detail: knownQuality
+              ? `${only.label} · only reported quality`
+              : "Quality chosen by the stream",
+            reason: automatic ? "No alternate quality reported by this source" : undefined,
+          },
+        ],
+      };
+    }
+    return {
+      ...group,
+      selectable: true,
+      rows: [
+        {
+          section: "quality" as const,
+          label: "Auto",
+          value: QUALITY_AUTO_VALUE,
+          selected: automatic,
+          enabled: !automatic,
+          detail: current
+            ? `Currently ${current.label} · Best available`
+            : "Best available from this source",
+          risk: "normal" as const,
+        },
+        ...group.rows.map((row) => ({
+          ...row,
+          selected: automatic ? false : row.selected,
+          enabled: automatic && row.selected ? true : row.enabled,
+        })),
+      ],
+    };
+  });
+
   const providers = container.providerRegistry.getAll().map((provider) => provider.metadata);
   // Same eligibility as the provider picker: a linked title can switch into
   // the other lane's providers, and the playing provider is always listed.
@@ -171,7 +289,7 @@ export async function buildTracksPanelData(
   );
   const providerGroup = buildProviderTrackCapabilities({
     providers,
-    mode: state.mode === "anime" ? "anime" : "series",
+    mode: state.mode,
     lanes: tracksLanes,
     currentProviderId: result?.providerId ?? state.provider,
     healthByProviderId: buildHealthHints(container, state.currentTitle?.id),

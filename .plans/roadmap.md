@@ -29,6 +29,18 @@ so it is not re-derived — not because it is scheduled.
 
 ## Active tracks
 
+Current execution: [watching release candidate](./2026-10-22-watching-release-candidate.md)
+
+Watching UX follow-up: [first-run, playback, Tracks and shell coherence](./2026-10-23-watching-ux-coherence.md).
+Watching capability recovery: [provider inventories, playback truth and discoverable controls](./2026-10-24-watching-capability-recovery.md).
+Integration and test safety: [analytics isolation, review reconciliation and checkout recovery](./2026-10-25-integration-and-test-safety.md).
+
+The watching candidate has a local combined implementation of safety, provider,
+timing, mouse and playback work.
+Independent review found a cancellation race, now fixed locally. Release
+integration and external qualification remain open; see its
+[candidate evidence and remaining gates](../.release/watching-candidate-2026-10-22.md).
+
 Every row has real remaining work. When a plan's core lands, move it to the
 archive and put only the residue here.
 
@@ -236,7 +248,7 @@ Count: **17 fixed, 0 open**.
    are complete. Keep sync experimental until the disposable-account live smoke
    proves the production container → SQLite outbox → restart → remote mutation path.
 5. Run the deterministic release gate, provider signoff, real mpv playback,
-   and poster-protocol smokes. Only then merge version PR #31.
+   and poster-protocol smokes. Only then merge version PR #327.
 
 The release PR is intentionally last: Changesets will keep updating it while
 stability fixes merge, and merging it early would version an incomplete
@@ -256,12 +268,14 @@ state on 2026-10-02.
 
 ### Release readiness — 2026-10-08
 
-Verified against `integrate/backlog-20261007@f840fe511` after three external
-audits. Gate 0 lands the integration on `main`; Phase 1 is release-blocking.
+The October 8 audit used `integrate/backlog-20261007@f840fe511`. Gate 0 and
+its residue landed through #591 and #613. The October 22 watching candidate
+reconciles the remaining fixes against current main; Phase 1 and actual
+candidate qualification remain release-blocking.
 
-| Plan                                                                 | Remaining work                                                                               | Status |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------ |
-| [2026-10-08-release-readiness.md](./2026-10-08-release-readiness.md) | Land the integration, then downloads, playback, consent, sanitizer, shell and relay blockers | TODO   |
+| Plan                                                                 | Remaining work                                                                     | Status      |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------- |
+| [2026-10-08-release-readiness.md](./2026-10-08-release-readiness.md) | Reconcile remaining blockers and qualify the combined candidate; Gate 0 has landed | IN PROGRESS |
 
 ## Rules
 

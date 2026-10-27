@@ -76,6 +76,8 @@ export function trackSectionOrderForMediaKind(
   return mediaKind === "anime" ? SECTION_ORDER_ANIME : SECTION_ORDER_SERIES;
 }
 
+export const QUALITY_AUTO_VALUE = "quality:auto";
+
 export const AUDIO_MODE_VALUE_PREFIX = "audio-mode:";
 export const CROSS_PROVIDER_SOURCE_VALUE_PREFIX = "cross-provider:";
 
@@ -111,8 +113,6 @@ function isSourceSwitchable(state: PlaybackInventoryOptionState): boolean {
 /** Servers-style status chip for the source picker detail line. */
 function sourceStatusBadge(state: PlaybackInventoryOptionState): string | undefined {
   switch (state) {
-    case "selected":
-      return "playing";
     case "skipped":
       return "skipped";
     case "failed":
@@ -137,23 +137,31 @@ function riskFromState(state: PlaybackInventoryOptionState): TrackCapabilityRisk
   }
 }
 
-function detailFromNativeLabels(
-  nativeLabels: readonly string[],
-  label: string,
-): string | undefined {
-  const extras = nativeLabels.filter((native) => native && native !== label);
-  return extras.length > 0 ? extras.join(" · ") : undefined;
-}
-
 function detailFromHintsAndNativeLabels(
   hints: readonly string[],
   nativeLabels: readonly string[],
   label: string,
 ): string | undefined {
-  const parts = [...hints, detailFromNativeLabels(nativeLabels, label)].filter(
-    (part): part is string => Boolean(part),
-  );
+  const seen = new Set([label.toLowerCase()]);
+  const parts = [...hints, ...nativeLabels]
+    .flatMap((part) => part.split(" · "))
+    .filter((part) => {
+      const key = part
+        .trim()
+        .toLowerCase()
+        .replace(/^host /, "");
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+function detailFromNativeLabels(
+  nativeLabels: readonly string[],
+  label: string,
+): string | undefined {
+  return detailFromHintsAndNativeLabels([], nativeLabels, label);
 }
 
 // Flag per audio language so the source/server picker reads like the web Servers
@@ -308,7 +316,10 @@ export function buildTrackCapabilities(
     push(row);
   }
 
-  for (const option of view.subtitleOptions) {
+  const subtitleOptions = [...view.subtitleOptions].sort(
+    (a, b) => Number(b.delivery === "off") - Number(a.delivery === "off"),
+  );
+  for (const option of subtitleOptions) {
     // External tracks and "off" switch live through mpv (`sub-add`/`sid`) — no
     // restart. Stream-embedded tracks (restartRequired) ride the stream switch.
     const preplayChoice = option.restartRequired && option.state === "available";

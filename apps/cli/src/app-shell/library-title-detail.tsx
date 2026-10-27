@@ -36,6 +36,8 @@ import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useMemo, useState } from "react";
 
+import { useRootContentSuspended } from "./RootContentSuspension";
+
 type DetailRow =
   | { readonly kind: "episode"; readonly entry: OfflineLibraryEntry; readonly flatIndex: number }
   | {
@@ -49,7 +51,6 @@ export function LibraryTitleDetail({
   container,
   group,
   entries,
-  commandMode = false,
   onBack,
   onNavigateToQueue,
   onEntriesChanged,
@@ -57,11 +58,11 @@ export function LibraryTitleDetail({
   readonly container: Container;
   readonly group: OfflineLibraryShelfGroup;
   readonly entries: readonly OfflineLibraryEntry[];
-  readonly commandMode?: boolean;
   readonly onBack: () => void;
   readonly onNavigateToQueue?: () => void;
   readonly onEntriesChanged: () => void;
 }) {
+  const suspended = useRootContentSuspended();
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   const networkAvailable = useConnectivityOnline(container.connectivity);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -156,7 +157,7 @@ export function LibraryTitleDetail({
   const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
   const maxVisible = getPickerListMaxVisible(
     viewport.rows,
-    getPickerChromeRows({ hasSubtitle: true, commandMode, extraRows: 5 }),
+    getPickerChromeRows({ hasSubtitle: true, commandMode: suspended, extraRows: 5 }),
   );
   const windowStart = getWindowStart(safeIndex, totalRows, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, totalRows);
@@ -250,7 +251,7 @@ export function LibraryTitleDetail({
         }
       })();
     },
-    { isActive: !commandMode },
+    { isActive: !suspended },
   );
 
   const list = (

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import type { LocalPackageCandidate } from "../../../../../scripts/npm-publication-plan";
 import {
@@ -74,94 +74,132 @@ function candidatePackage404(candidate: LocalPackageCandidate, detail: string) {
 }
 
 describe("local npm publication candidates", () => {
-  test("packs canonical platform inputs and inspects the preserved launcher tarball", async () => {
-    const root = mkdtempSync(join(tmpdir(), "kunai-publication-candidates-"));
-    const platformDirectory = join(root, "npm-platform");
-    const tarballDirectory = join(root, "tarballs");
-    const launcherTarballPath = join(root, "kunai-npm.tgz");
-    const launcherManifestPath = join(root, "package.json");
-    mkdirSync(platformDirectory, { recursive: true });
-    writeFileSync(launcherTarballPath, "preserved launcher bytes");
-    writeFileSync(
-      launcherManifestPath,
-      JSON.stringify({ name: "@kitsunekode/kunai", version: "1.2.3" }),
-    );
+  test.each(["array", "keyed"])(
+    "packs canonical platform inputs and inspects the preserved launcher tarball (%s JSON)",
+    async (format) => {
+      const packMetadata = (record: {
+        name: string;
+        version: string;
+        integrity: string;
+        filename: string;
+      }) => JSON.stringify(format === "array" ? [record] : { [record.name]: record });
+      const root = mkdtempSync(join(tmpdir(), "kunai-publication-candidates-"));
+      const platformDirectory = join(root, "npm-platform");
+      const tarballDirectory = join(root, "tarballs");
+      const launcherTarballPath = join(root, "kunai-npm.tgz");
+      const launcherManifestPath = join(root, "package.json");
+      mkdirSync(platformDirectory, { recursive: true });
+      writeFileSync(launcherTarballPath, "preserved launcher bytes");
+      writeFileSync(
+        launcherManifestPath,
+        JSON.stringify({ name: "@kitsunekode/kunai", version: "1.2.3" }),
+      );
 
-    const commands: string[][] = [];
-    const command: CommandPort = async (request) => {
-      commands.push([request.command, ...request.args]);
-      const source = request.args.at(-1)!;
-      if (source === launcherTarballPath) {
-        return {
-          exitCode: 0,
-          stdout: JSON.stringify([
-            {
+      const commands: string[][] = [];
+      const command: CommandPort = async (request) => {
+        commands.push([request.command, ...request.args]);
+        const source = request.args.at(-1)!;
+        if (source === launcherTarballPath) {
+          return {
+            exitCode: 0,
+            stdout: packMetadata({
               name: "@kitsunekode/kunai",
               version: "1.2.3",
               integrity: `sha512-${Buffer.from("launcher").toString("base64")}`,
               filename: basename(launcherTarballPath),
-            },
-          ]),
-          stderr: "",
-        };
-      }
+            }),
+            stderr: "",
+          };
+        }
 
-      const id = basename(source);
-      const filename = `${id}.tgz`;
-      mkdirSync(tarballDirectory, { recursive: true });
-      writeFileSync(join(tarballDirectory, filename), `packed ${id}`);
-      return {
-        exitCode: 0,
-        stdout: JSON.stringify([
-          {
+        const id = basename(source);
+        const filename = `${id}.tgz`;
+        mkdirSync(tarballDirectory, { recursive: true });
+        writeFileSync(join(tarballDirectory, filename), `packed ${id}`);
+        return {
+          exitCode: 0,
+          stdout: packMetadata({
             name: `@kitsunekode/kunai-${id}`,
             version: "1.2.3",
             integrity: `sha512-${Buffer.from(id).toString("base64")}`,
             filename,
-          },
-        ]),
-        stderr: "",
+          }),
+          stderr: "",
+        };
       };
-    };
 
-    try {
-      const result = await buildLocalPackageCandidates({
-        command,
-        launcherManifestPath,
-        launcherTarballPath,
-        platformDirectory,
-        platformTarballDirectory: tarballDirectory,
-      });
+      try {
+        const result = await buildLocalPackageCandidates({
+          command,
+          launcherManifestPath,
+          launcherTarballPath,
+          platformDirectory,
+          platformTarballDirectory: tarballDirectory,
+        });
 
-      expect(result.map((candidate) => candidate.name)).toEqual([
-        ...PLATFORM_IDS.map((id) => `@kitsunekode/kunai-${id}`),
-        "@kitsunekode/kunai",
-      ]);
-      const expectedRoles: LocalPackageCandidate["role"][] = [
-        ...PLATFORM_IDS.map((): LocalPackageCandidate["role"] => "platform"),
-        "launcher" as const,
-      ];
-      expect(result.map((candidate) => candidate.role)).toEqual(expectedRoles);
-      expect(
-        commands.slice(0, PLATFORM_IDS.length).every((invocation) => invocation[0] === "npm"),
-      ).toBe(true);
-      expect(
-        commands
-          .slice(0, PLATFORM_IDS.length)
-          .every((invocation) => invocation.includes("--pack-destination")),
-      ).toBe(true);
-      expect(commands.at(-1)).toEqual([
-        "npm",
-        "pack",
-        "--json",
-        "--dry-run",
-        "--ignore-scripts",
-        launcherTarballPath,
-      ]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+        expect(result.map((candidate) => candidate.name)).toEqual([
+          ...PLATFORM_IDS.map((id) => `@kitsunekode/kunai-${id}`),
+          "@kitsunekode/kunai",
+        ]);
+        const expectedRoles: LocalPackageCandidate["role"][] = [
+          ...PLATFORM_IDS.map((): LocalPackageCandidate["role"] => "platform"),
+          "launcher" as const,
+        ];
+        expect(result.map((candidate) => candidate.role)).toEqual(expectedRoles);
+        expect(
+          commands.slice(0, PLATFORM_IDS.length).every((invocation) => invocation[0] === "npm"),
+        ).toBe(true);
+        expect(
+          commands
+            .slice(0, PLATFORM_IDS.length)
+            .every((invocation) => invocation.includes("--pack-destination")),
+        ).toBe(true);
+        expect(commands.at(-1)).toEqual([
+          "npm",
+          "pack",
+          "--prefix",
+          dirname(launcherTarballPath),
+          "--json",
+          "--dry-run",
+          "--ignore-scripts",
+          launcherTarballPath,
+        ]);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.each(["wrong-key", "multiple"])(
+    "rejects inconsistent keyed pack JSON (%s)",
+    async (format) => {
+      const root = mkdtempSync(join(CANDIDATE_FIXTURE_ROOT, "invalid-pack-"));
+      const manifest = join(root, "package.json");
+      writeFileSync(manifest, JSON.stringify({ name: "@kitsunekode/kunai", version: "1.2.3" }));
+      const record = {
+        name: "@kitsunekode/kunai-linux-x64",
+        version: "1.2.3",
+        integrity: "sha512-Zml4dHVyZQ==",
+        filename: "fixture.tgz",
+      };
+      const value =
+        format === "wrong-key"
+          ? { "@kitsunekode/wrong": record }
+          : {
+              [record.name]: record,
+              "@kitsunekode/extra": { ...record, name: "@kitsunekode/extra" },
+            };
+      await expect(
+        buildLocalPackageCandidates({
+          command: async () => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: "" }),
+          launcherManifestPath: manifest,
+          launcherTarballPath: join(root, "launcher.tgz"),
+          platformDirectory: join(root, "platform"),
+          platformTarballDirectory: join(root, "tarballs"),
+        }),
+      ).rejects.toThrow(format === "wrong-key" ? "key disagrees" : "exactly one metadata record");
+    },
+  );
 
   test("publication inspects preserved platform tarballs without repacking them", async () => {
     const root = mkdtempSync(join(tmpdir(), "kunai-preserved-candidates-"));
@@ -268,7 +306,15 @@ describe("npm registry error classification", () => {
 
     expect(await registry.queryIntegrity(candidate)).toBeNull();
     expect(calls).toEqual([
-      ["npm", "view", "@kitsunekode/kunai-linux-x64@1.2.3", "dist.integrity", "--json"],
+      [
+        "npm",
+        "view",
+        "@kitsunekode/kunai-linux-x64@1.2.3",
+        "dist.integrity",
+        "--json",
+        "--prefix",
+        dirname(candidate.tarballPath),
+      ],
     ]);
   });
 
@@ -452,7 +498,13 @@ describe("resumable npm publication orchestration", () => {
     const command: CommandPort = async (request) => {
       expect(request.command).toBe("npm");
       expect(request.args.slice(0, 1)).toEqual(["publish"]);
-      expect(request.args.slice(2)).toEqual(["--access", "public", "--provenance"]);
+      expect(request.args.slice(2)).toEqual([
+        "--access",
+        "public",
+        "--provenance",
+        "--prefix",
+        dirname(request.args[1]!),
+      ]);
       const candidate = localCandidates.find((item) => item.tarballPath === request.args[1])!;
       published.push(candidate.name);
       registryState.set(candidate.name, metadata(candidate));

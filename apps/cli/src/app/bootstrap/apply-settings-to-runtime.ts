@@ -7,25 +7,33 @@ import { providerForLane } from "./lane-settings-sync";
 export async function applySettingsToRuntime({
   container,
   next: requested,
-  previous,
 }: {
   readonly container: Container;
-  readonly next: KitsuneConfig;
-  readonly previous?: KitsuneConfig;
+  /** Only the fields to change; every other persisted key is left alone. */
+  readonly next: Partial<KitsuneConfig>;
 }): Promise<void> {
   const { stateManager, config } = container;
-  const before = previous ?? config.getRaw();
+  const before = config.getRaw();
   // Settings offers the visible control, but the analytics service remains the
   // sole owner of what an enable/disable choice writes. In particular, enable
   // mints the id atomically with the preference and disable clears it.
-  const analyticsPatch =
-    requested.analytics === "unset"
-      ? { analytics: "unset" as const, installId: "" }
-      : container.usageAnalytics.consentPatch(requested.analytics);
-  const next = { ...requested, ...analyticsPatch };
+  const patch: Partial<KitsuneConfig> = { ...requested };
+  // Identity and cadence belong to the consent service, never to a UI snapshot.
+  delete patch.installId;
+  delete patch.analyticsRetryAfter;
+  delete patch.lastAnalyticsPingAt;
+  if (requested.analytics !== undefined) {
+    Object.assign(
+      patch,
+      requested.analytics === "unset"
+        ? { analytics: "unset", installId: "" }
+        : container.usageAnalytics.consentPatch(requested.analytics),
+    );
+  }
 
-  await config.update(next);
+  await config.update(patch);
   await config.save();
+  const next = config.getRaw();
 
   if (before.theme !== next.theme) {
     // Live swap: `tokens` is rewritten in place, so the next Ink frame paints
@@ -35,7 +43,10 @@ export async function applySettingsToRuntime({
     setDesignTheme(next.theme);
   }
 
-  container.providerRegistry.setPriority(createProviderPrioritySnapshot(next));
+  container.providerRegistry.setPriority({
+    ...createProviderPrioritySnapshot(next),
+    disabledProviderIds: next.disabledProviders,
+  });
 
   const state = stateManager.getState();
   for (const mode of ["series", "anime", "youtube"] as const) {

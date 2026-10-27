@@ -47,6 +47,7 @@ export function ShellFrame({
   letterKeysHandledExternally = false,
   escapeAction,
   onUnhandledInput,
+  onFooterAction,
   onResolve,
   localTitles,
   onTitlePick,
@@ -69,6 +70,7 @@ export function ShellFrame({
   inputLocked?: boolean;
   letterKeysHandledExternally?: boolean;
   escapeAction?: ShellAction | null;
+  onFooterAction?: (action: FooterAction) => void;
   onUnhandledInput?: (input: string, key: ShellFrameInputKey) => void;
   onResolve: (action: ShellAction) => void;
   /** Local title source — consulted once per palette open for the JUMP TO section. */
@@ -90,18 +92,26 @@ export function ShellFrame({
     }
   });
 
-  const { commandMode, commandInput, commandCursor, highlightedIndex, titleMatches } =
-    useShellInput({
-      footerActions,
-      commands,
-      disabled: inputDisabled,
-      letterKeysHandledExternally,
-      escapeAction,
-      onResolve,
-      localTitles,
-      onTitlePick,
-      onPaletteCommand,
-    });
+  const {
+    commandMode,
+    commandInput,
+    commandCursor,
+    highlightedIndex,
+    titleMatches,
+    palettePointer,
+    activateFooterAction,
+  } = useShellInput({
+    footerActions,
+    commands,
+    disabled: inputDisabled,
+    letterKeysHandledExternally,
+    escapeAction,
+    onResolve,
+    localTitles,
+    onTitlePick,
+    onPaletteCommand,
+    onFooterAction,
+  });
 
   useInput((input, key) => {
     if (inputDisabled || commandMode) return;
@@ -151,6 +161,7 @@ export function ShellFrame({
       <Box flexDirection="column">
         {commandMode ? (
           <CommandPalette
+            pointer={palettePointer}
             input={commandInput}
             cursor={commandCursor}
             commands={commands}
@@ -167,6 +178,7 @@ export function ShellFrame({
           mode={footerMode}
           commandMode={commandMode && !inputDisabled}
           terminalWidth={cols}
+          onActivate={!inputDisabled && !commandMode ? activateFooterAction : undefined}
         />
       </Box>
     </Box>

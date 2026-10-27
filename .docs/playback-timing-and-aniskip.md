@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-08"
+lastReviewed: "2026-10-22"
 ---
 
 # Playback timing, IntroDB, and AniSkip
@@ -25,7 +25,9 @@ PlaybackPhase
 
 ## IntroDB (The Intro Database)
 
-- **Endpoint:** `GET https://api.theintrodb.org/v2/media?tmdb_id=…&season=…&episode=…` (see `apps/cli/src/introdb.ts`).
+- **Endpoint:** `GET https://api.theintrodb.org/v4/media?tmdb_id=…&season=…&episode=…` (see `apps/cli/src/introdb.ts`).
+- **Response identity:** v4 returns `tvdb_id`, never a TMDB response id. Kunai preserves the requested TMDB identity for its timing result and validates the raw response's media type and any echoed episode coordinates. Episode/version-list alternatives are not timing records. Movie requests omit TV coordinates; series require a known season and 1-based episode.
+- **Empty or malformed timing:** missing buckets are empty; `end_ms: 0` means no segment. Invalid, reversed or negative boundaries cannot become skip windows. Cancellation remains distinct from timeout, offline and HTTP failure.
 - **Requires a TMDB id** in the query. Anime providers that use opaque catalog ids (e.g. AllAnime `_id`) are **not** valid IntroDB keys.
 - **IntroDB in anime mode:** `IntroDbTimingSource` only runs when `title.id` looks like a numeric TMDB id (`apps/cli/src/infra/timing/IntroDbTimingSource.ts`). Otherwise IntroDB is skipped so AniSkip is not blocked by useless calls.
 - **Segments without `end_ms`:** IntroDB may return open-ended credits. Skip logic ignores segments without a finite end; see `.plans/kunai-execution-passes-and-cli-modes.md` for rationale.

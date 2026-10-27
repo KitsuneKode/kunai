@@ -67,6 +67,14 @@ The tray size follows **Settings → Discover → Discover tray size**.
 - `/toggle-autoplay`, `/toggle-autoskip`, and `/stop-after-current` change the
   current playback chain only.
 
+## Playback speed
+
+Playback speed is available in the **mpv player window** using its native
+bindings: `[` / `]` decrease/increase speed by 10%, `{` / `}` halve/double it,
+and `Backspace` resets it to normal. Focus the player window for these keys;
+custom mpv input bindings can override them. See the
+[mpv controls reference](https://mpv.io/manual/master/#interactive-control).
+
 ## Overlays
 
 Help, diagnostics, settings, notifications, history, downloads, and provider
@@ -78,6 +86,11 @@ context. Close the overlay to return where you were.
 Click a result to select it, then click the selected result again to open it.
 Click the search field to resume typing. Scrolling over results stops at the
 first and last title. Keyboard arrows keep their usual navigation behavior.
+
+Library, Up Next, Tracks, and Settings use the same select-then-activate gesture. Click Library tabs
+to switch views. Tracks and Settings focus a choice before activating it.
+Usage analytics requires Enter; mouse clicks never grant consent. Mouse navigation
+never deletes files or removes queued items.
 
 Mouse support requires a compatible terminal; other screens still use their
 keyboard controls. To keep your terminal's usual selection and copy behavior,

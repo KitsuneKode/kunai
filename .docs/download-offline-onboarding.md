@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-25"
+lastReviewed: "2026-10-27T06:55:37Z"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -42,7 +42,7 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 
 ## Setup Wizard Behavior
 
-Seven screens, in order: dependencies, mode, language, playback, downloads &
+Six screens, in order: dependencies, mode, language, playback/downloads &
 accounts, usage ping, done. Implementation is
 `apps/cli/src/app-shell/setup-shell.tsx`; the write map is
 `runSetupWizard` in `apps/cli/src/app-shell/workflows/setup-workflows.ts`.
@@ -187,6 +187,10 @@ accounts, usage ping, done. Implementation is
   bounded retry. This closes the unavoidable filesystem-rename/SQLite-commit crash window.
 - Abort terminates active download processes (`yt-dlp`), deletes temporary files, and persists an aborted job state.
 - App shutdown pauses active downloads, cleans temporary workers, and leaves jobs retryable.
+  If shutdown arrives during a queued job's storage probe, the worker releases
+  only its in-memory reservation. It has no durable running claim yet, so it
+  leaves the persisted state untouched, including an explicit cancellation
+  made while the probe was pending.
 - Abort or shutdown requested while stream resolution is pending prevents a later
   downloader launch and fresh-stream metadata writes. When resolution settles,
   the queue preserves the recorded abort/pause decision without consuming a
@@ -206,6 +210,9 @@ accounts, usage ping, done. Implementation is
   and freeing disk space triggers nothing by itself. Paused-job messages
   therefore state the action to take rather than promising an automatic
   resume.
+- A queue kick received during an active pass coalesces into one follow-up
+  pass. Failure diagnostics retain the failed pass's stage, worker and job
+  attribution even when that follow-up has already started.
 - `resumeEligiblePausedJobs` is not the resume path and is not dead code: it
   exists solely to heal a corrupt `next_retry_at`, which SQL string-compares
   into `listPaused` while `selectEligibleQueuedJob` skips it forever.
@@ -296,8 +303,10 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
 
 - No aggressive startup network probe.
 - Offline prompt appears only after a real network failure.
-- Runtime network status is **offline** (connect/DNS/unreachable — including Bun's
-  "Unable to connect" fetch string) or **limited** (timeouts). Confirmed offline is
+- Runtime network status is **offline** for a failed search/connectivity check
+  or an explicit system outage (`ENETUNREACH`), and **limited** for timeouts or
+  a single provider/poster/subtitle endpoint failure. One CDN DNS failure must
+  not disable every other provider or claim that the internet is unavailable. Confirmed offline is
   sticky until a later success: a TMDB/proxy fallback that only times out must not
   reclassify the session as flaky. Limited still counts as online for retries.
   A failed search keeps its query editable, marks search state as failed, and
@@ -342,6 +351,10 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
   position is used for instant entry only when its season and episode match the selected episode.
 - Active and post-play episode pickers list locally ready episodes across downloaded seasons,
   retaining provider-native episode identity. They never fetch a catalog during local playback.
+- Title-scoped asset readers return the complete recorded set. Playback lookup,
+  availability badges, counts and local episode pickers must not inherit a
+  display window such as the first 100 assets. Repository callers can request
+  an explicit limit when they need a bounded display page.
 - Local Tracks shows the downloaded source as a fact and delegates embedded audio/subtitle changes
   to the player. Provider, source, and acquisition audio-mode switches require opening the title
   online; stale track picks show feedback without changing preferences, invalidating caches, or

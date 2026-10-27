@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import {
   blockedLiteralTargetReason,
   fetchGuardedStreamTarget,
+  filterCrossOriginStreamHeaders,
   isHlsPlaylistUrl,
   resolveHlsSegmentUrl,
   type StreamReachabilityFetch,
@@ -121,6 +122,7 @@ type LiveSession = {
   readonly token: string;
   readonly url?: string;
   readonly headers: Headers;
+  readonly credentialOrigin: string | null;
   readonly subtitles: readonly string[];
   readonly document?: StreamGatewayDocument;
   readonly allowedOrigins: Set<string>;
@@ -368,7 +370,10 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
     if (!session.allowedOrigins.has(origin)) {
       return { kind: "refused" };
     }
-    const headers = new Headers(session.headers);
+    const headers =
+      origin === session.credentialOrigin
+        ? new Headers(session.headers)
+        : filterCrossOriginStreamHeaders(session.headers);
     extra.forEach((value, name) => headers.set(name, value));
     const outcome = await fetchGuardedStreamTarget({
       fetchImpl,
@@ -688,6 +693,12 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
         }
       };
       if (input.url) addOrigin(input.url);
+      let credentialOrigin: string | null = null;
+      try {
+        if (input.url) credentialOrigin = new URL(input.url).origin;
+      } catch {
+        // An invalid entry never gains destination or credential authorization.
+      }
       const subtitles = (input.subtitles ?? []).filter((subtitle) => {
         addOrigin(subtitle);
         try {
@@ -704,6 +715,7 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
         token,
         url: input.url,
         headers: toFetchHeaders(normalized),
+        credentialOrigin,
         subtitles,
         document: input.document,
         allowedOrigins,

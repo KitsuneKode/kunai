@@ -56,6 +56,54 @@ describe("playback-watchdog", () => {
     timers = [];
   });
 
+  test("the first sample starts the progress clock after a slow player launch", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), { stallAfterMs: 1_000 });
+    nowMs = 30_000;
+    watchdog.observe({
+      source: "ipc",
+      observedAt: nowMs,
+      positionSeconds: 0,
+      durationSeconds: 100,
+    });
+    runTimers();
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(0);
+    nowMs += 1_100;
+    runTimers();
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(1);
+    watchdog.stop();
+  });
+
+  test("a new file resets the old position, samples and stall clocks", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), { stallAfterMs: 1_000 });
+    watchdog.observe({ source: "ipc", observedAt: 0, positionSeconds: 600, durationSeconds: 800 });
+    nowMs = 5_000;
+    watchdog.reset();
+    runTimers();
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(0);
+    watchdog.observe({
+      source: "ipc",
+      observedAt: nowMs,
+      positionSeconds: 0,
+      durationSeconds: 100,
+    });
+    nowMs += 800;
+    watchdog.observe({
+      source: "ipc",
+      observedAt: nowMs,
+      positionSeconds: 1,
+      durationSeconds: 100,
+    });
+    nowMs += 800;
+    runTimers();
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(0);
+    nowMs += 300;
+    runTimers();
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(1);
+    watchdog.stop();
+  });
+
   test.each([false, true])("cache-idle recovery respects explicit user pause=%s", (paused) => {
     const events: PlayerPlaybackEvent[] = [];
     const watchdog = createPlaybackWatchdog((event) => events.push(event), {

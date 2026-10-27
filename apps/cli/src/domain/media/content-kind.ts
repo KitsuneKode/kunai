@@ -93,7 +93,12 @@ export function resolveContentKind(
   mode: ShellMode,
   options: { readonly providerId?: string | null } = {},
 ): ContentKind {
-  if (isYoutubeShellMode(mode)) return "video";
+  if (
+    isYoutubeShellMode(mode) ||
+    isYoutubeProviderId(options.providerId) ||
+    title?.externalIds?.youtubeId
+  )
+    return "video";
   if (isAnimeIdentity(title, options)) return "anime";
   if (title?.type === "movie") return "movie";
   return mode === "anime" ? "anime" : "series";
@@ -111,7 +116,12 @@ export function classifyPersistedKind(
   mode: ShellMode,
   options: { readonly providerId?: string | null } = {},
 ): ContentKind {
-  if (isYoutubeShellMode(mode) || isYoutubeProviderId(options.providerId)) return "video";
+  if (
+    isYoutubeShellMode(mode) ||
+    isYoutubeProviderId(options.providerId) ||
+    title?.externalIds?.youtubeId
+  )
+    return "video";
   if (isAnimeIdentity(title, options)) return "anime";
   if (title?.type === "movie") return "movie";
   return "series";

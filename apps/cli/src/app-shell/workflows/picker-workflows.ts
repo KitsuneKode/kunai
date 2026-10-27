@@ -314,7 +314,7 @@ export async function openThemePicker(
     })),
   });
   if (!picked || !isThemeName(picked) || picked === active) return;
-  await persistSettingsDraft(container, { ...config, theme: picked });
+  await persistSettingsDraft(container, { ...config, theme: picked }, config);
   // persist is a no-op when the pick already equals config.theme (env mask),
   // so repaint explicitly — an explicit pick wins over the env for this run.
   if (picked === config.theme) setDesignTheme(picked);

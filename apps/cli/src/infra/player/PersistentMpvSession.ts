@@ -179,7 +179,9 @@ export class PersistentMpvSession {
    * publish an event, or activate player control on a retired session.
    */
   private retired = false;
-  private readonly subtitleManager = new PersistentSubtitleManager();
+  private readonly subtitleManager = new PersistentSubtitleManager(
+    () => this.currentOptions.subtitlePreference?.trim().toLowerCase() !== "none",
+  );
   private readonly propertyRouter = new PersistentMpvPropertyRouter({
     getActiveCycle: () => this.activeCycle,
     getIpcSession: () => this.ipcSession,
@@ -476,6 +478,7 @@ export class PersistentMpvSession {
           isLive: stream.isLive,
           urlKind: options.urlKind,
           audioPreference: options.audioPreference,
+          subtitlePreference: options.subtitlePreference,
           chaptersFile: this.currentChaptersFilePath,
         },
       ),
@@ -709,7 +712,9 @@ export class PersistentMpvSession {
         void this.handleNetworkReadDeadReconnect();
       }
     };
-    this.watchdog = createPlaybackWatchdog(emitPlaybackEvent);
+    this.watchdog = (this.runtime.createPlaybackWatchdog ?? createPlaybackWatchdog)(
+      emitPlaybackEvent,
+    );
 
     const mpvInvocation = discoverMpvInvocation({
       which: this.runtime.which,
@@ -879,6 +884,8 @@ export class PersistentMpvSession {
       lastPlaybackProgressDurationSeconds: 0,
       acceptPlaybackProperties: cycleOptions.acceptPlaybackProperties ?? true,
     };
+    this.propertyRouter.resetSubtitleObservation();
+    this.subtitleManager.resetSelectionObservation();
     this.activeCycle = cycle;
     this.currentOptions = options;
     return cycle;
@@ -938,6 +945,7 @@ export class PersistentMpvSession {
   }
 
   private resetCycleState(): void {
+    this.watchdog?.reset();
     this.reconnectTryCount = 0;
     this.reconnectBackoffUntilMs = 0;
     this.reconnectInFlight = false;
@@ -1109,25 +1117,68 @@ export class PersistentMpvSession {
     readonly subtitleTracks?: readonly SubtitleTrack[];
   }): Promise<boolean> {
     if (!this.ipcSession) return false;
+    const generation = this.cycleGeneration;
     if (!selection.subtitleUrl) {
       const result = await this.ipcSession.send(["set_property", "sid", "no"], 1_000);
+      if (!this.isGenerationCurrent(generation)) return false;
+      if (result.ok) {
+        this.currentOptions = { ...this.currentOptions, subtitlePreference: "none" };
+        this.subtitleManager.noteSelectedSubtitle(0, true);
+      }
       return result.ok;
     }
 
-    const attached = await this.subtitleManager.attachSubtitles(this.ipcSession, {
-      primarySubtitle: selection.subtitleUrl,
-      subtitleTracks: selection.subtitleTracks,
-    });
-    if (attached.attachedCount <= 0) return false;
-    this.currentCycleOptions().onPlaybackEvent?.({
-      type: "late-subtitles-attached",
-      trackCount: attached.attachedCount,
-    });
+    const previousOptions = this.currentOptions;
+    const selectingOptions = { ...previousOptions, subtitlePreference: "interactive" };
+    this.currentOptions = selectingOptions;
+    this.subtitleManager.resetSelectionObservation();
+    // Refresh file-local IDs before selecting: a picker must not grow mpv's
+    // external inventory on each click or replay IDs from a replaced file.
+    const tracks = await this.ipcSession.send(["get_property", "track-list"], 1_000);
+    if (!this.isGenerationCurrent(generation)) return false;
+    if (tracks.ok && Array.isArray(tracks.response.data))
+      this.subtitleManager.updateTrackList(tracks.response.data);
+    const existingId = this.subtitleManager.findExternalSubtitleId(selection.subtitleUrl);
+    let selected = false;
+    if (existingId !== undefined) {
+      const result = await this.ipcSession.send(["set_property", "sid", existingId], 1_000);
+      selected = result.ok;
+      // mpv need not re-emit an unchanged sid; an acknowledged selection is
+      // authoritative for late-attachment policy in this file generation.
+      if (result.ok && this.isGenerationCurrent(generation))
+        this.subtitleManager.noteSelectedSubtitle(existingId);
+    } else {
+      const attached = await this.subtitleManager.attachSubtitles(
+        this.ipcSession,
+        {
+          primarySubtitle: selection.subtitleUrl,
+          subtitleTracks: selection.subtitleTracks?.filter(
+            (track) => track.url === selection.subtitleUrl,
+          ),
+        },
+        () => this.isGenerationCurrent(generation),
+      );
+      selected = attached.attachedCount > 0;
+    }
+    if (!this.isGenerationCurrent(generation)) return false;
+    if (!selected) {
+      if (this.currentOptions === selectingOptions) this.currentOptions = previousOptions;
+      return false;
+    }
+    const visibility = await this.ipcSession.send(["set_property", "sub-visibility", true], 1_000);
+    if (!this.isGenerationCurrent(generation) || !visibility.ok) return false;
     return true;
   }
 
   private async attachSubtitles(attachment: LateSubtitleAttachment) {
-    const result = await this.subtitleManager.attachSubtitles(this.ipcSession, attachment);
+    const generation = this.cycleGeneration;
+    const result = await this.subtitleManager.attachSubtitles(
+      this.ipcSession,
+      attachment,
+      () => this.isGenerationCurrent(generation),
+      this.subtitleManager.shouldSelectLatePrimary(),
+    );
+    if (!this.isGenerationCurrent(generation)) return result;
 
     if (result.attachedCount > 0) {
       this.currentCycleOptions().onPlaybackEvent?.({
@@ -1558,6 +1609,21 @@ export class PersistentMpvSession {
     const active = this.activeCycle;
     if (!active) return;
 
+    // The watchdog replaces a still-loaded file. mpv emits that old file's
+    // end-file(stop) before the replacement's file-loaded, so it must not
+    // retire the new load or resolve the watch cycle. Error/EOF reconnects
+    // already ended their old file; genuine reload errors and user close
+    // still follow normal teardown.
+    if (
+      reason === "stop" &&
+      !this.retired &&
+      this.reconnectInFlight &&
+      this.pendingInProcessReconnect?.trigger === "network-read-dead" &&
+      this.pendingFileLoad?.generation === this.cycleGeneration
+    ) {
+      return;
+    }
+
     // A reconnect's reload was still pending (loadfile ACKed, awaiting file-loaded)
     // but we got an end-file instead — the reload itself died (e.g. a dead CDN ACKs
     // loadfile then emits end-file error with no file-loaded). Clear the in-flight
@@ -1727,6 +1793,7 @@ export class PersistentMpvSession {
             isLive: this.playbackStream.isLive,
             urlKind: opts.urlKind,
             audioPreference: opts.audioPreference,
+            subtitlePreference: opts.subtitlePreference,
             chaptersFile: this.currentChaptersFilePath ?? undefined,
           },
         ),

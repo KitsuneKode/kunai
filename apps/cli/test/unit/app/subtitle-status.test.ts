@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   describePlaybackSubtitleStatus,
+  playbackSubtitleStatusTone,
   projectPlaybackSubtitleState,
 } from "@/app/playback/subtitle-status";
 import type { StreamInfo } from "@/domain/types";
@@ -48,6 +49,20 @@ const hardsubStream: StreamInfo = {
   },
 };
 
+test("waiting and explicit Off subtitle statuses remain informational", () => {
+  for (const status of [
+    "subtitles not resolved yet",
+    "subtitle lookup pending",
+    "subtitles disabled",
+    "subtitles off in mpv",
+    "subtitles hidden in mpv",
+  ]) {
+    expect(playbackSubtitleStatusTone(status)).toBe("info");
+  }
+  expect(playbackSubtitleStatusTone("subtitle playing")).toBe("success");
+  expect(playbackSubtitleStatusTone("subtitles not found")).toBe("warning");
+});
+
 test("describePlaybackSubtitleStatus treats hardsub inventory as subtitles available", () => {
   expect(describePlaybackSubtitleStatus(hardsubStream, "en")).toBe("hardsub en");
 });
@@ -65,7 +80,27 @@ test("describePlaybackSubtitleStatus keeps true missing subtitles explicit", () 
   ).toBe("subtitles not found");
 });
 
-test("projectPlaybackSubtitleState keeps disabled preference from hiding selected subtitles", () => {
+test("resolved YouTube subtitle inventory is available before mpv confirms selection", () => {
+  const stream: StreamInfo = {
+    url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    headers: {},
+    timestamp: 1,
+    requiresYtdl: true,
+    subtitleList: [{ url: "https://cdn.example/en.vtt", language: "en" }],
+  };
+  expect(projectPlaybackSubtitleState(stream, "en")).toMatchObject({
+    kind: "available",
+    label: "1 subtitle track available",
+    tone: "info",
+  });
+  expect(projectPlaybackSubtitleState(stream, "none").kind).toBe("disabled");
+  expect(
+    projectPlaybackSubtitleState({ ...stream, playbackSubtitle: { id: 0, visible: true } }, "en")
+      .kind,
+  ).toBe("disabled");
+});
+
+test("projectPlaybackSubtitleState keeps resolved inventory from overriding the disabled startup preference", () => {
   const state = projectPlaybackSubtitleState(
     {
       url: "https://cdn.example/1080.m3u8",
@@ -77,9 +112,9 @@ test("projectPlaybackSubtitleState keeps disabled preference from hiding selecte
   );
 
   expect(state).toMatchObject({
-    kind: "selected",
-    label: "subtitle selected · preference off",
-    tone: "success",
+    kind: "disabled",
+    label: "subtitles disabled",
+    tone: "info",
   });
 });
 
@@ -131,4 +166,60 @@ test("projectPlaybackSubtitleState describes YouTube subtitle preference with al
       label: "subtitles not found",
     },
   );
+});
+
+test("live mpv selection and visibility outrank URL inventory and startup defaults", () => {
+  const stream: StreamInfo = {
+    url: "https://video.example/file.mkv",
+    headers: {},
+    timestamp: 1,
+    subtitle: "https://subs.example/stale.vtt",
+    playbackSubtitle: { id: 3, visible: true, language: "ja", title: "Embedded Japanese" },
+  };
+  expect(projectPlaybackSubtitleState(stream, "none")).toMatchObject({
+    kind: "selected",
+    label: "subtitle playing · Embedded Japanese",
+  });
+  expect(
+    projectPlaybackSubtitleState({ ...stream, playbackSubtitle: { id: 3, visible: false } }, "en"),
+  ).toMatchObject({
+    kind: "disabled",
+    label: "subtitles hidden in mpv",
+  });
+  expect(
+    projectPlaybackSubtitleState({ ...stream, playbackSubtitle: { id: 0, visible: true } }, "en", {
+      attached: true,
+    }),
+  ).toMatchObject({
+    kind: "disabled",
+    label: "subtitles off in mpv",
+  });
+});
+
+test("live YouTube embedded captions need no external subtitle URL", () => {
+  expect(
+    projectPlaybackSubtitleState(
+      {
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        headers: {},
+        timestamp: 1,
+        playbackSubtitle: { id: 1, visible: true, language: "en" },
+      },
+      "none",
+    ),
+  ).toMatchObject({ kind: "selected", label: "subtitle playing · en" });
+});
+
+test("native Off takes precedence over visibility when no subtitle is selected", () => {
+  expect(
+    projectPlaybackSubtitleState(
+      {
+        url: "https://media.example/movie.mp4",
+        headers: {},
+        timestamp: Date.now(),
+        playbackSubtitle: { id: 0, visible: false },
+      },
+      "en",
+    ).label,
+  ).toBe("subtitles off in mpv");
 });

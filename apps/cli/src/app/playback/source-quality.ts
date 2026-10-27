@@ -12,6 +12,7 @@ import {
 } from "@/domain/media/media-track-model";
 import {
   AUDIO_MODE_VALUE_PREFIX,
+  QUALITY_AUTO_VALUE,
   decodeCrossProviderSourceValue,
   type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
@@ -23,6 +24,10 @@ import type {
   PlaybackSourceGroupView,
   PlaybackSourceInventoryView,
 } from "@/services/playback/PlaybackSourceInventoryView";
+import {
+  resolveYtdlFormatFromCandidate,
+  resolveYoutubeYtdlRawOptions,
+} from "@/services/providers/youtube-playback-options";
 import type { PrePlayConfirmMode } from "@kunai/config";
 import type { StreamCandidate, SubtitleCandidate } from "@kunai/types";
 
@@ -77,6 +82,7 @@ export type MediaTrackPickerSelection =
   | { readonly kind: "subtitle-off" };
 
 export type StreamSelectionIntent = {
+  readonly automaticQuality?: boolean;
   readonly sourceId: string | null;
   readonly streamId: string | null;
   readonly providerId?: string;
@@ -139,6 +145,9 @@ export function streamSelectionFromTrackPick(picked: {
       return streamSelectionFromSource(picked.value);
     }
     case "quality":
+      if (picked.value === QUALITY_AUTO_VALUE)
+        return { sourceId: null, streamId: null, automaticQuality: true };
+      return streamSelectionFromStream(picked.value);
     case "hardsub":
       return streamSelectionFromStream(picked.value);
     case "audio":
@@ -299,7 +308,20 @@ export function buildQualityPickerOptions(stream: StreamInfo): readonly QualityO
   if (!result) return [];
 
   const projection = projectPlaybackSourceInventory(result);
-  return result.streams
+  // A YouTube format is shared by extractor-client lanes. The projection orders
+  // its candidates with the current connection first, retaining an exact stream
+  // id for the existing selection path and preserving other lanes for recovery.
+  const streamsById = new Map(result.streams.map((candidate) => [candidate.id, candidate]));
+  const candidates =
+    result.providerId === "youtube"
+      ? projection.qualityOptions.flatMap((option) => {
+          const candidate = option.streamIds
+            .map((id) => streamsById.get(id))
+            .find((entry) => entry && isPlayableStreamCandidate(entry));
+          return candidate ? [candidate] : [];
+        })
+      : result.streams;
+  return candidates
     .filter((candidate) => isPlayableStreamCandidate(candidate))
     .map((candidate) => {
       const option = projection.qualityOptions.find((qualityOption) =>
@@ -429,7 +451,10 @@ export function buildPlaybackControlSummary(stream: StreamInfo | null): Playback
     hardSubLanguages,
     softSubtitleLanguages,
     showSourceControl: sourceChoiceCount > 0,
-    showQualityControl: qualityLabels.length > 1 || playableStreams.length > 1,
+    showQualityControl:
+      result.providerId === "youtube"
+        ? buildQualityPickerOptions(stream).length > 1
+        : qualityLabels.length > 1 || playableStreams.length > 1,
     showMediaTrackControl:
       languageChoiceCount > 1 || softSubtitleLanguages.length > 0 || Boolean(stream.subtitle),
     summary: result.providerId,
@@ -446,7 +471,7 @@ export type PlaybackSessionControlInput = {
   readonly isSeries?: boolean;
 };
 
-/** Active source identity: flavor label · provider · CDN host (e.g. Luffy · videasy · light.goldweather.net). */
+/** The source name for normal playback; full routing evidence belongs in diagnostics. */
 export function formatPlaybackSourceLine(stream: StreamInfo | null): string | null {
   if (stream && isLocalPlaybackStream(stream)) {
     return formatLocalPlaybackSourceLine(stream);
@@ -463,12 +488,7 @@ export function formatPlaybackSourceLine(stream: StreamInfo | null): string | nu
     projection.sourceGroups[0]?.label ??
     result.sources?.find((source) => source.status === "selected")?.label;
 
-  const route = formatPlaybackStreamRoute(stream);
-  const host = route?.includes(" / ") ? route.split(" / ").slice(1).join(" / ") : null;
-  const parts = [sourceName, result.providerId, host].filter((part): part is string =>
-    Boolean(part?.trim()),
-  );
-  return parts.length > 0 ? parts.join(" · ") : route;
+  return sourceName ?? result.providerId;
 }
 
 /** Stream inventory for the playback context strip (session toggles live on the keys line). */
@@ -481,6 +501,8 @@ export function formatPlaybackSessionFactsStrip(input: PlaybackSessionControlInp
 export function applyPreferredStreamSelection(
   stream: StreamInfo,
   selection: StreamSelectionIntent,
+  qualityPreference?: string,
+  subtitlePreference?: string,
 ): StreamInfo {
   const result = stream.providerResolveResult;
   if (!result || result.streams.length === 0) return stream;
@@ -491,10 +513,28 @@ export function applyPreferredStreamSelection(
       : null) ?? null;
 
   if (!selected && selection.sourceId) {
+    const candidates = [...result.streams]
+      .filter((candidate) => candidate.sourceId === selection.sourceId && candidate.url)
+      .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0));
+    const preference = qualityPreference?.trim().toLowerCase();
+    const automatic = !preference || ["auto", "best", "max"].includes(preference);
+    const ceiling = preference === "4k" ? 2160 : Number.parseInt(preference ?? "", 10);
+    const current = result.streams.find((candidate) => candidate.id === result.selectedStreamId);
+    const sameYoutubeFormat =
+      result.providerId === "youtube" && !selection.automaticQuality && current?.variantId
+        ? candidates.find((candidate) => candidate.variantId === current.variantId)
+        : undefined;
     selected =
-      [...result.streams]
-        .filter((candidate) => candidate.sourceId === selection.sourceId)
-        .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0))[0] ?? null;
+      sameYoutubeFormat ??
+      (!automatic
+        ? candidates.find(
+            (candidate) =>
+              candidate.qualityLabel?.toLowerCase() === preference ||
+              (Number.isFinite(ceiling) && (candidate.qualityRank ?? Infinity) <= ceiling),
+          )
+        : undefined) ??
+      candidates[0] ??
+      null;
   }
 
   if (selected && !selected.url) {
@@ -530,10 +570,16 @@ export function applyPreferredStreamSelection(
 
   return {
     ...stream,
+    playbackSubtitle: undefined,
     url: selected.url,
     headers: selected.headers ?? {},
     audioLanguages: selected.audioLanguages ? [...selected.audioLanguages] : undefined,
     hardSubLanguage: selected.hardSubLanguage,
+    requiresYtdl: selected.requiresYtdl,
+    ytdlFormat: selected.requiresYtdl ? resolveYtdlFormatFromCandidate(selected) : undefined,
+    ytdlRawOptions: selected.requiresYtdl
+      ? resolveYoutubeYtdlRawOptions(selected, subtitlePreference)
+      : undefined,
     subtitle: keepCurrentSubtitle ? stream.subtitle : undefined,
     subtitleSource: keepCurrentSubtitle ? stream.subtitleSource : "none",
     providerResolveResult: {

@@ -1,22 +1,37 @@
 ---
 status: current
-lastReviewed: "2026-10-27"
+lastReviewed: "2026-10-27T06:55:37Z"
 ---
 
 # Provider: AniDB — runtime contract
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
+**Production status:** retired 2026-10-24. `anidb.app` redirects away from the
+old origin (HTTP 302 to `anilab.so`); ani-cli had already moved to HiAnime
+(c99221d). `loadProductionProviderModules()` no longer imports the module;
+`@kunai/config` maps persisted `anidb` selections to HiAnime and strips the id
+from priority, disable, and title-pin fields. The package stays for unit/live
+fixtures and historic cache keys — not for live user resolve.
+
+The retired adapter is excluded from `test:live:providers`; the former
+`test:live:anidb` command was removed. Its retained search-to-resolve script is historical and
+cannot resolve through the production registry. Production anime search/resolve qualification now
+uses the configured live provider through `test:live:release-signoff`, rather
+than restoring a retired domain to make a historical smoke run.
+
 Catalog capabilities live in [anidb-metadata-capabilities.md](./anidb-metadata-capabilities.md).
 This file holds the runtime behaviour that used to sit in `.docs/providers.md`.
 
-## Live smoke coverage
+## Historical smoke coverage
 
-The `test:live:anidb` command searches the requested title through AniDB before
-resolving a returned identity. An exception, transport failure (`null`), or empty
-catalog exits at the search stage; there is no fixed-id escape hatch. This
-checks the search-to-resolve route, not a claim that the upstream is healthy.
-The isolated profile suppresses analytics and never touches a user profile.
+Before retirement, the AniDB smoke searched the requested title before resolving
+a returned identity. An exception, transport failure (`null`), or empty catalog
+exits at the search stage; there is no fixed-id escape hatch. PR 668's restored
+search check returned zero results for Onigiri on October 27. That is evidence
+of an unavailable route, not a successful search qualification. The smoke's
+isolated profile suppresses analytics and never touches a user profile; its
+former command remains removed from this production roster.
 
 ## AniDB catalog search compatibility
 
