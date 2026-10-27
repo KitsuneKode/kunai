@@ -18,13 +18,13 @@ type HomeBentoProps = {
 /** How many provider names the tile prints before it says "+N more". */
 const PROVIDER_CHIP_LIMIT = 8;
 
-const MODES = ["Anime", "Series", "Movies", "YouTube"] as const;
+const MODES = ["Series & movies", "Anime", "YouTube"] as const;
 
 /**
  * What "everything stays one keystroke away" means, shown instead of listed.
  *
  * Four tiles of two sizes (7/5 over 5/7), not three equal cards: each carries a
- * small piece of the thing it describes (the four modes, the real provider names,
+ * small piece of the thing it describes (the three modes, the real provider names,
  * the commands you reach for when playback stalls), so the section demonstrates
  * the product where the old list of four rows only described it. Everything is
  * server-rendered, with no client JavaScript, and the numbers and names come from
@@ -46,8 +46,8 @@ export function HomeBento({ highlights, providers }: HomeBentoProps) {
     <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
       <Tile
         className="md:col-span-7"
-        label="Four catalog modes"
-        detail={byLabel.get("Four catalog modes")}
+        label="Three search modes"
+        detail={byLabel.get("Three search modes")}
       >
         <div className="mt-6 flex flex-wrap items-center gap-2" aria-hidden="true">
           {MODES.map((mode, index) => (

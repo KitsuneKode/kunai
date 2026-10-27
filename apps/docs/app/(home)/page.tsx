@@ -4,6 +4,7 @@ import { codeMetadata } from "@/lib/code-metadata";
 import { featuredCommands, summarizeProviders } from "@/lib/home-presenters";
 import { serializeJsonLd, softwareApplicationJsonLd, websiteJsonLd } from "@/lib/json-ld";
 import { buildPageMetadata } from "@/lib/page-metadata";
+import { latestReleaseNotesArtifact } from "@/lib/release-notes";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
@@ -19,22 +20,23 @@ export const revalidate = 3600;
  * and the thing anyone searching for this would actually type.
  */
 const HOME_DESCRIPTION =
-  "Kunai is a terminal client that searches anime, series, movies, and YouTube, resolves a stream a direct provider already serves, and plays it in mpv.";
+  "Watch anime, movies, TV series and YouTube from your terminal with mpv. Search, switch sources, resume playback and queue offline downloads.";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Kunai: anime, series, movies & YouTube in your terminal",
+  title: "Kunai | Anime, movies & YouTube in your terminal",
   absoluteTitle: true,
   description: HOME_DESCRIPTION,
   socialDescription:
-    "Search anime, series, movies, and YouTube from your terminal; resolved by direct providers, played in mpv.",
+    "Anime, movies, TV series and YouTube in one terminal client, with mpv playback, source switching and resume.",
   path: "/",
 });
 
 export default function HomePage() {
+  const publishedRelease = latestReleaseNotesArtifact();
   const jsonLd = [
     websiteJsonLd(),
     softwareApplicationJsonLd({
-      version: codeMetadata.cliVersion,
+      version: publishedRelease?.version,
       description: HOME_DESCRIPTION,
     }),
   ];
@@ -54,6 +56,7 @@ export default function HomePage() {
         allCommands={codeMetadata.commands}
         providerSummary={providerSummary}
         cliVersion={codeMetadata.cliVersion}
+        publishedVersion={publishedRelease?.version}
         runtimeBaseline={codeMetadata.runtimeBaseline}
         usageLine={usageLine}
       />

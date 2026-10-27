@@ -20,7 +20,7 @@ export type HomeFlowStep = {
 };
 
 /**
- * The four catalog modes, in the order `Tab` cycles them in the shell.
+ * The four content types. Movies and series share one of three search modes.
  *
  * These live in the server-rendered hero on purpose. The terminal simulator is
  * the only other place on this page that names what Kunai plays, and it is
@@ -31,12 +31,12 @@ export type HomeFlowStep = {
 export const homeKinds = ["Anime", "Series", "Movies", "YouTube"] as const;
 
 export const homeHero = {
-  title: "Watch anime, series and movies from your terminal.",
+  title: "Watch anime, movies, series and YouTube from your terminal.",
   description:
-    "Search anime, series, movies and YouTube, resolve a direct stream on your machine, and play it in mpv, with downloads, resume and recovery built in.",
+    "Find a title, choose a source and play in mpv. Keep subtitles, resume, offline downloads and playback recovery together in one keyboard-driven session.",
   kinds: homeKinds,
   /** Earns its place by teaching a real hotkey rather than labelling the row. */
-  kindsHint: { key: "Tab", label: "cycles modes" },
+  kindsHint: { key: "Tab", label: "switches search mode" },
   installCommands: [CANONICAL_INSTALL, CANONICAL_SETUP],
   primaryCta: {
     label: "Get started",
@@ -52,13 +52,13 @@ const providerCount = codeMetadata.providerIds.length;
 
 export const homeHighlights = [
   {
-    label: "Four catalog modes",
+    label: "Three search modes",
     detail:
-      "Series, anime, and YouTube each get their own mode. Tab cycles them; /anime, /series, and /youtube jump straight to one.",
+      "Movies and TV series share series mode. Tab switches between series, anime and YouTube; /series, /anime and /youtube open one directly.",
   },
   {
     label: "Direct providers",
-    detail: `${providerCount} provider modules resolve streams on your machine. No browser automation and no shared relay by default.`,
+    detail: `${providerCount} provider modules resolve streams on your machine. Each source can offer different quality, audio and subtitle choices.`,
   },
   {
     label: "Continue watching",
@@ -81,7 +81,7 @@ export const homeFlow: readonly HomeFlowStep[] = [
   {
     title: "Resolve locally",
     description:
-      "Kunai asks a provider for a stream it already serves, checks that it plays, then hands the URL to mpv.",
+      "Kunai asks a provider for a stream it already serves and probes the candidate before handing its URL to mpv.",
   },
   {
     title: "Play in mpv",

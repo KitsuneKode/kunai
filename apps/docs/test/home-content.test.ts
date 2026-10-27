@@ -42,7 +42,7 @@ describe("docs home content", () => {
    * the terminal simulator, which is client-only and appears after an
    * interaction — so neither a crawler nor a skimming visitor could find it.
    */
-  test("hero copy names every catalog mode in server-rendered text", () => {
+  test("hero copy names every content type in server-rendered text", () => {
     const heroText = `${homeHero.title} ${homeHero.description}`.toLowerCase();
 
     for (const kind of homeKinds) {
@@ -50,7 +50,7 @@ describe("docs home content", () => {
     }
   });
 
-  test("catalog modes match the shell's Tab order", () => {
+  test("content types stay visible beside the mode-switch hint", () => {
     expect(homeKinds).toEqual(["Anime", "Series", "Movies", "YouTube"]);
     expect(homeHero.kindsHint.key).toBe("Tab");
   });

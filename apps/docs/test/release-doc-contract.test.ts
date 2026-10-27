@@ -71,7 +71,7 @@ describe("0.3.0 public truth contract", () => {
 
     expect(readme).toContain(NATIVE_INSTALL_PS1);
     expect(readme).toContain("### Install Kunai");
-    expect(readme).toContain("### Dependencies by platform");
+    expect(readme).toContain("### Install Playback Tools");
 
     // Getting started / QuickStartSteps must not present Bun global as the primary path.
     expect(gettingStarted).toContain(NATIVE_INSTALL_SH);

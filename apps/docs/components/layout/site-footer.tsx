@@ -129,8 +129,7 @@ export function SiteFooter() {
               <span className="text-[1.05rem] font-medium tracking-tight">Kunai</span>
             </Link>
             <p className="text-fd-muted-foreground m-0 text-sm leading-6 text-pretty">
-              A terminal client that finds anime, series, movies, and YouTube streams and plays them
-              in mpv.
+              Watch anime, movies, TV series and YouTube from your terminal with mpv.
             </p>
           </div>
           <FooterColumn title="Docs" links={DOCS_LINKS} />
