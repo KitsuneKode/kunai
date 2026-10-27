@@ -159,7 +159,7 @@ function ChartInstallsView({
   const metricOptions =
     osKeys.length === 0 ? METRICS.filter((m) => m.key !== "platforms") : METRICS;
 
-  const visible = sliceRange(points, range);
+  const visible = React.useMemo(() => sliceRange(points, range), [points, range]);
   // The average is computed over the FULL series and then sliced, so a "last 7
   // days" view still averages across the days before its left edge instead of
   // restarting from a one-point mean.

@@ -13,13 +13,13 @@
     ],
     "catalog": {
       "typescript": "^7.0.2",
-      "@types/bun": "1.4.2",
-      "@types/node": "^26.6.4",
+      "@types/bun": "1.4.4",
+      "@types/node": "^26.6.5",
       "@types/react": "^19.3.0",
       "@types/react-dom": "^19.3.0",
-      "react": "^19.3.0",
-      "react-dom": "^19.3.0",
-      "zod": "^4.6.5"
+      "react": "^19.3.1",
+      "react-dom": "^19.3.1",
+      "zod": "^4.6.7"
     },
     "catalogs": {
       "cli": {
@@ -28,31 +28,30 @@
       },
       "lint": {
         "@oxlint/plugins": "1.74.0",
-        "oxfmt": "^0.71.0",
+        "oxfmt": "^0.74.0",
         "oxlint": "1.74.0"
       },
       "providers": {
         "@assemblyscript/loader": "^0.28.20"
       },
       "repo": {
-        "turbo": "^2.11.7"
+        "turbo": "^2.11.10"
       },
       "web": {
-        "@base-ui/react": "^1.8.0",
-        "@tabler/icons-react": "^3.48.0",
+        "@base-ui/react": "^1.9.0",
+        "@tabler/icons-react": "^3.49.0",
         "@tailwindcss/postcss": "^4.3.3",
         "@types/mdx": "^2.0.14",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
-        "fumadocs-core": "^16.15.18",
-        "fumadocs-mdx": "^15.4.6",
-        "fumadocs-ui": "^16.15.18",
-        "motion": "^14.0.0",
-        "next": "^16.3.8",
+        "fumadocs-core": "^16.17.8",
+        "fumadocs-mdx": "^15.4.10",
+        "fumadocs-ui": "^16.17.8",
+        "motion": "^14.6.0",
+        "next": "^16.4.3",
         "tailwind-merge": "^3.7.0",
         "tailwindcss": "^4.3.3",
         "tw-animate-css": "^1.4.0",
-        "typescript": "5.9.3",
         "react-markdown": "^10.1.0",
         "remark-gfm": "^4.0.1"
       }
@@ -133,8 +132,8 @@
     "verify:doc-frontmatter": "bun run scripts/verify-doc-frontmatter.ts",
     "verify:parity-references": "bun run scripts/verify-parity-references.ts",
     "release:dry-run": "bun run --cwd apps/cli release:dry-run",
-    "changeset": "bunx changeset",
-    "version:packages": "bunx changeset version && bun run scripts/sync-npm-platform-versions.ts && bun run scripts/sync-root-changelog.ts && bun run release:notes",
+    "changeset": "bunx --bun --no-install changeset",
+    "version:packages": "bunx --bun --no-install changeset version && bun run scripts/sync-npm-platform-versions.ts && bun run scripts/sync-root-changelog.ts && bun run release:notes",
     "release:notes": "bun run scripts/generate-release-notes.ts",
     "release:notes:check": "bun run scripts/generate-release-notes.ts --check",
     "release:confirmation:check": "bun run scripts/release-confirmation-gate.ts",
@@ -156,14 +155,15 @@
     "release:publish": "bun run scripts/publish-npm-release.ts",
     "release:publish:check": "bun run scripts/publish-npm-release.ts",
     "verify:dependency-patches": "bun run scripts/verify-dependency-patches.mjs",
-    "ci:preflight": "bun run lint:anti-slop:baseline && bun run verify:doc-paths && bun run verify:doc-frontmatter"
+    "ci:preflight": "bun run lint:anti-slop:baseline && bun run verify:doc-paths && bun run verify:doc-frontmatter && bun run fmt:root:check",
+    "audit:dependencies": "bun audit"
   },
   "dependencies": {
     "typescript": "catalog:"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "^0.7.0",
-    "@changesets/cli": "^2.31.1",
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
     "@oxlint/plugins": "catalog:lint",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
@@ -173,9 +173,14 @@
   },
   "overrides": {
     "@types/node": "catalog:",
+    "body-parser": "^2.4.0",
+    "fast-uri": "^3.1.9",
     "fumadocs-core": "catalog:web",
     "fumadocs-ui": "catalog:web",
+    "hono": "^4.13.11",
+    "ip-address": "^10.7.4",
     "mdast-util-to-markdown": "2.1.2",
+    "undici": "^7.30.1",
     "ws": "^8.21.0"
   },
   "lint-staged": {
@@ -205,19 +210,19 @@
   "devEngines": {
     "packageManager": {
       "name": "bun",
-      "version": "1.4.2",
+      "version": "1.4.4",
       "onFail": "error"
     },
     "runtime": {
       "name": "bun",
-      "version": ">=1.4.2",
+      "version": ">=1.4.4",
       "onFail": "error"
     }
   },
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.4"
   },
-  "packageManager": "bun@1.4.2",
+  "packageManager": "bun@1.4.4",
   "patchedDependencies": {
     "braces@3.0.3": "patches/braces@3.0.3.patch"
   },

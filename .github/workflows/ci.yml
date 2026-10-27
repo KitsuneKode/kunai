@@ -16,6 +16,8 @@ permissions:
   contents: read
 
 env:
+  # Automated builds and installed-binary checks must never create analytics identities.
+  DO_NOT_TRACK: "1"
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_SCM_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}

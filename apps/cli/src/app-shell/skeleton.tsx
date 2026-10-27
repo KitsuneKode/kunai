@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { useFrameTick as usePulse } from "./primitives/SakuraPetal";
 import { palette } from "./shell-theme";
 
 // Animated "content is loading" placeholder rows. A soft accent band sweeps
@@ -58,16 +59,6 @@ function SkeletonBar({ width, highlight }: { width: number; highlight: number })
       ))}
     </>
   );
-}
-
-function usePulse(active: boolean, intervalMs: number): number {
-  const [tick, setTick] = React.useState(0);
-  React.useEffect(() => {
-    if (!active) return undefined;
-    const timer = setInterval(() => setTick((t) => t + 1), intervalMs);
-    return () => clearInterval(timer);
-  }, [active, intervalMs]);
-  return tick;
 }
 
 const SPEED = 1; // cells advanced per tick

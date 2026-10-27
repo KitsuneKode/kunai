@@ -18,6 +18,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Automated builds and installed-binary checks must never create analytics identities.
+  DO_NOT_TRACK: "1"
+
 jobs:
   package-channels:
     name: Render and publish package channels

@@ -65,10 +65,12 @@ export function LibraryShell({
   container,
   onClose,
   initialView = "library",
+  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   initialView?: TabId;
+  commandMode?: boolean;
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
   const [downloadJobCount, setDownloadJobCount] = useState(0);
@@ -120,12 +122,14 @@ export function LibraryShell({
             onClose={onClose}
             onNavigateToLibrary={() => setTab("library")}
             showSelectionHints={false}
+            commandMode={commandMode}
           />
         ) : (
           <LibraryTab
             container={container}
             onClose={onClose}
             onNavigateToQueue={() => setTab("queue")}
+            commandMode={commandMode}
           />
         )}
       </Box>
@@ -165,10 +169,12 @@ function LibraryTab({
   container,
   onClose,
   onNavigateToQueue,
+  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToQueue: () => void;
+  commandMode?: boolean;
 }) {
   const [libraryView, setLibraryView] = useState<LibraryView>("titles");
   const [detailGroup, setDetailGroup] = useState<OfflineLibraryShelfGroup | null>(null);
@@ -235,7 +241,7 @@ function LibraryTab({
   const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
   const maxVisible = getPickerListMaxVisible(
     viewport.rows,
-    getPickerChromeRows({ hasSubtitle: false, commandMode: false, extraRows: 4 }),
+    getPickerChromeRows({ hasSubtitle: false, commandMode, extraRows: 4 }),
   );
   const windowStart = getWindowStart(safeIndex, totalRows, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, totalRows);
@@ -283,7 +289,7 @@ function LibraryTab({
         setFilterQuery((query) => query.slice(0, -1));
         return;
       }
-      if (input === "\u001b") return;
+      if (input === "\u001b" || input === "/") return;
       // `z` pops the live undo entry; with nothing undoable it stays a filter
       // character like any other letter.
       if (input === "z" && container.sessionUndo?.hasLiveUndo()) {
@@ -370,7 +376,7 @@ function LibraryTab({
         setConfirmDeleteKey(null);
       }
     },
-    { isActive: titlesActive },
+    { isActive: titlesActive && !commandMode },
   );
 
   const railPosterUrl =
@@ -444,6 +450,7 @@ function LibraryTab({
         container={container}
         group={detailGroup}
         entries={detailEntries}
+        commandMode={commandMode}
         onBack={() => {
           setLibraryView("titles");
           setDetailGroup(null);

@@ -137,7 +137,8 @@ type PickerRequest = {
 };
 
 type PickerResult =
-  { type: "selected"; id: string; value: string } | { type: "cancelled"; id: string };
+  | { type: "selected"; id: string; value: string }
+  | { type: "cancelled"; id: string };
 ```
 
 - [x] **Step 2: Add reducer helpers**

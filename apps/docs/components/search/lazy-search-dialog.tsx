@@ -37,9 +37,8 @@ const WARM_EVENTS = ["pointerdown", "keydown", "touchstart"] as const;
 export function LazySearchDialog(props: LazySearchDialogProps) {
   const [requested, setRequested] = useState(false);
 
-  useEffect(() => {
-    if (props.open) setRequested(true);
-  }, [props.open]);
+  // Remember the first open in the same render, without an effect/render cascade.
+  if (props.open && !requested) setRequested(true);
 
   useEffect(() => {
     const warm = () => void import("./kunai-search-dialog");

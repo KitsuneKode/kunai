@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-08"
+lastReviewed: "2026-10-25"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -405,3 +405,13 @@ equal timestamps use the job ID as the tie-breaker, process-local claims are ski
 keyset page budget. The regression seeds 51 durable intents and requires the
 last one to be attempted without changing the earlier retry windows. Up Next
 placement is a separate policy in the [queue feature](features/queue.md).
+
+### Metadata probe shutdown
+
+Artifact metadata repair owns its `ffprobe` process even when there is no running
+download row. Each standalone probe has a private tracking key; shutdown closes
+admission, includes those probes in process cleanup, and leaves published media
+and saved job state intact. A probe waiting for stat or a transcode slot may not
+start after shutdown. Helper processes receive the existing scrubbed child
+environment. Container disposal stops presence and pauses download work before
+closing the databases.

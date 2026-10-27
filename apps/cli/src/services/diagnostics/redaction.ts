@@ -25,19 +25,24 @@ const DEFAULT_MAX_STRING_LENGTH = 1_000;
 
 const SENSITIVE_KEYS = new Set([
   "authorization",
+  "auth",
   "cookie",
-  "set-cookie",
-  "x-api-key",
-  "api-key",
+  "setcookie",
+  "xapikey",
+  "apikey",
   "token",
-  "access-token",
-  "refresh-token",
-  "session-token",
+  "accesstoken",
+  "refreshtoken",
   "sessiontoken",
   "signature",
   "sig",
   "videasysessiontoken",
-  "x-session-token",
+  "xsessiontoken",
+  "password",
+  "passwd",
+  "secret",
+  "clientsecret",
+  "privatekey",
 ]);
 
 const SENSITIVE_QUERY_KEYS = new Set([
@@ -71,7 +76,8 @@ export function redactDiagnosticValue(value: unknown, options: RedactionOptions 
 
   const output: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (SENSITIVE_KEYS.has(key.toLowerCase())) {
+    const normalizedKey = key.toLowerCase().replace(/[-_]/g, "");
+    if (SENSITIVE_KEYS.has(normalizedKey)) {
       output[key] = "[redacted]";
       continue;
     }

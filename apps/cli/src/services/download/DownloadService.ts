@@ -20,6 +20,7 @@ import {
   type FileReservation,
 } from "@/infra/fs/reserved-file-copy";
 import type { Logger } from "@/infra/logger/Logger";
+import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
@@ -404,6 +405,7 @@ export class DownloadService {
   async repairArtifactMetadata(jobIds: readonly string[]): Promise<number> {
     let repaired = 0;
     for (const jobId of jobIds) {
+      if (this.shutdownRequested) break;
       const job = this.deps.repo.get(jobId);
       if (!job?.outputPath) continue;
       try {
@@ -1202,7 +1204,10 @@ export class DownloadService {
     for (const jobId of runningJobIds) {
       this.cancellationRequests.set(jobId, { mode: "pause", reason });
     }
-    const activeEntries = await this.collectActiveProcesses(runningJobIds, 250);
+    // Metadata repair probes have no running queue row but still belong to this
+    // service. Include their private tracking keys so shutdown releases their I/O.
+    const processKeys = [...new Set([...runningJobIds, ...this.activeProcesses.keys()])];
+    const activeEntries = await this.collectActiveProcesses(processKeys, 250);
     if (activeEntries.length === 0) return;
     // Workers release their in-memory claims when they settle. Retain the
     // snapshot so a late shutdown write cannot become an unfenced update.
@@ -1827,6 +1832,8 @@ export class DownloadService {
     if (!this.deps.ffprobeAvailable || !whichLive("ffprobe")) {
       return { fileSize: fileStat.size };
     }
+    // stat and transcode admission can yield across shutdown. Do not spawn late.
+    if (this.shutdownRequested) throw new Error("download aborted");
     const proc = Bun.spawn(
       [
         "ffprobe",
@@ -1838,26 +1845,25 @@ export class DownloadService {
         "default=noprint_wrappers=1:nokey=1",
         outputPath,
       ],
-      { stdin: "ignore", stdout: "pipe", stderr: "ignore" },
+      { stdin: "ignore", stdout: "pipe", stderr: "ignore", env: scrubbedChildEnv() },
     );
     const deadline = this.deps.ffprobeDeadline ?? startDeadline;
     const stdoutReader = proc.stdout.getReader();
     const stdoutPromise = readUtf8Stream(stdoutReader);
     const completion = Promise.all([proc.exited, stdoutPromise]);
     let inheritedCancellation = false;
-    if (ownedJobId) {
-      const cancellation = this.cancellationRequests.get(ownedJobId);
-      this.activeProcesses.set(ownedJobId, {
-        process: proc,
-        releaseIo: () => {
-          void stdoutReader.cancel().catch(() => undefined);
-        },
-        cancelRequested: cancellation !== undefined,
-        cancelMode: cancellation?.mode ?? "abort",
-        cancelReason: cancellation?.reason,
-      });
-      inheritedCancellation = cancellation !== undefined;
-    }
+    const trackingKey = ownedJobId ?? `__probe__:${crypto.randomUUID()}`;
+    const cancellation = ownedJobId ? this.cancellationRequests.get(ownedJobId) : undefined;
+    this.activeProcesses.set(trackingKey, {
+      process: proc,
+      releaseIo: () => {
+        void stdoutReader.cancel().catch(() => undefined);
+      },
+      cancelRequested: cancellation !== undefined,
+      cancelMode: cancellation?.mode ?? "abort",
+      cancelReason: cancellation?.reason,
+    });
+    inheritedCancellation = cancellation !== undefined;
 
     let result: readonly [number, string] | undefined;
     try {
@@ -1887,8 +1893,8 @@ export class DownloadService {
         throw new ArtifactValidationTimeoutError();
       }
     } finally {
-      if (ownedJobId && this.activeProcesses.get(ownedJobId)?.process === proc) {
-        this.activeProcesses.delete(ownedJobId);
+      if (this.activeProcesses.get(trackingKey)?.process === proc) {
+        this.activeProcesses.delete(trackingKey);
       }
     }
     const [exitCode, stdout] = result;

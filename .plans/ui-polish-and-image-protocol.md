@@ -52,7 +52,8 @@ Keep the companion pane textual and explain that poster preview needs a terminal
 
 ```ts
 export type PosterResult =
-  { kind: "kitty"; placeholder: string; rows: number; cols: number } | { kind: "none" };
+  | { kind: "kitty"; placeholder: string; rows: number; cols: number }
+  | { kind: "none" };
 
 // LRU-style map: url → PosterResult (capped at 12 entries)
 const posterCache = new Map<string, PosterResult>();
@@ -354,7 +355,7 @@ session"). The footer renders on two lines: task label, then hotkeys.
 - `taskLabel` shortened to just the task noun: `"Playback"`, `"Browse"`, `"Search"`
 - Status suffix appended inline after `·`: `"Playback  ·  Ready"`
 - Hotkeys line: group primary (`r replay  f search  e episodes`) and secondary (`n/p nav  q quit
-/ commands`) separated by a gap
+  / commands`) separated by a gap
 - Disabled commands omitted from footer (already done) but their reason shown as a tooltip-style
   suffix on the adjacent enabled command when relevant
 

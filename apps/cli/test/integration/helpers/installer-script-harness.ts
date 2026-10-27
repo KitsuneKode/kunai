@@ -2,10 +2,11 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
+import { storageRootEnv } from "../../helpers/storage-env";
 import { removeTempDir } from "../../support/remove-temp-dir";
 
 /**
- * Sandbox the directories install.ps1 resolves its defaults from.
+ * Sandbox the installer defaults and any CLI subprocess's storage/analytics.
  *
  * install.ps1 is a Windows script: it reads LOCALAPPDATA/APPDATA/USERPROFILE,
  * which PowerShell defines only on Windows. Supplying them lets the identical
@@ -21,6 +22,7 @@ import { removeTempDir } from "../../support/remove-temp-dir";
  */
 export function windowsShellEnvDefaults(root: string): NodeJS.ProcessEnv {
   return {
+    ...storageRootEnv(root),
     LOCALAPPDATA: join(root, "localappdata"),
     APPDATA: join(root, "appdata"),
     USERPROFILE: join(root, "userprofile"),

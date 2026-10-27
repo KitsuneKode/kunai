@@ -82,6 +82,27 @@ function freshnessBase(): string | null {
  * reconcile. Additions are included — a new doc states a review date it should
  * have actually earned.
  */
+/** Canonical formatter equality allows mechanical edits without faking a review.
+ * Missing/failed formatter output never exempts a doc from freshness checks.
+ */
+function onlyFormattingChanged(base: string, path: string): boolean {
+  const before = git("show", `${base}:${path}`);
+  const after = git("show", `HEAD:${path}`);
+  const formatter = Bun.which("oxfmt");
+  if (before === null || after === null || formatter === null) return false;
+  const format = (input: string): string | null => {
+    const result = Bun.spawnSync([formatter, "--stdin-filepath", path], {
+      cwd: ROOT,
+      stdin: Buffer.from(input),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return result.exitCode === 0 ? result.stdout.toString() : null;
+  };
+  const formattedBefore = format(before);
+  return formattedBefore !== null && formattedBefore === format(after);
+}
+
 function unreconciledSince(base: string): string[] {
   const changed = git("diff", "--name-only", "--diff-filter=d", base, "HEAD", "--", ".docs");
   if (changed === null) return [];
@@ -91,7 +112,8 @@ function unreconciledSince(base: string): string[] {
     if (!path.startsWith(DOC_PREFIX) || !path.endsWith(".md")) continue;
     if (EXCLUDED_DIRS.some((dir) => path.startsWith(DOC_PREFIX + dir))) continue;
     const patch = git("diff", "-U0", base, "HEAD", "--", path);
-    if (patch !== null && !REVIEWED_LINE.test(patch)) result.push(path);
+    if (patch !== null && !REVIEWED_LINE.test(patch) && !onlyFormattingChanged(base, path))
+      result.push(path);
   }
   return result;
 }
@@ -131,9 +153,7 @@ for (const relative of files) {
     new Date(reviewedAt).toISOString().replace(".000Z", "Z").slice(0, reviewed.length) !== reviewed
   ) {
     // "unknown" and friends silently defeat the point of the field.
-    problems.push(
-      `${path} — lastReviewed '${reviewed}' is not an ISO date or UTC timestamp`,
-    );
+    problems.push(`${path} — lastReviewed '${reviewed}' is not an ISO date or UTC timestamp`);
   }
 
   if (!text.includes(BANNER)) {

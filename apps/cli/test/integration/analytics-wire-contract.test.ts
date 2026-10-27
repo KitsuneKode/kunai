@@ -90,6 +90,22 @@ function wireCliToIngest(options: {
 }
 
 describe("CLI → ingest → docs wire contract", () => {
+  test("a fixed smoke UUID still counts as one new and lifetime install", async () => {
+    const store = createMemoryAnalyticsStore();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const config = makeConfig({
+        analytics: "enabled",
+        installId: "6b1a9f2c-58d4-4e77-9c31-0a5b7e2d84f0",
+      });
+      const { service } = wireCliToIngest({ store, config });
+      await service.maybePing({ isInteractive: true });
+    }
+    const rollup = await store.rollUpDay(analyticsDayKey(NOW));
+    expect(rollup.activeInstalls).toBe(1);
+    expect(rollup.newInstalls).toBe(1);
+    expect(rollup.lifetimeInstalls).toBe(1);
+  });
+
   test("a payload the CLI actually emits is accepted by the ingest", async () => {
     const store = createMemoryAnalyticsStore();
     const config = makeConfig({ analytics: "enabled", installId: crypto.randomUUID() });

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T15:30:46Z"
+lastReviewed: "2026-10-25"
 ---
 
 # Kunai — Testing Strategy
@@ -50,7 +50,11 @@ consumes that existing override before probing an OS backend. The common
 compiled/agent profile harness inherits it, and `applyStorageRootEnv()` restores
 the prior override with the other environment values. Backend-specific tests
 must use explicit injected environment and spawn ports; they must never probe
-the developer's credential store.
+the developer's credential store. Installer fixture containment checks use the
+target platform's path rules. Reject a path when `relative(root, path)` is
+absolute (including Windows cross-drive escapes), starts with a parent segment,
+or names a sibling path. The fixture
+root itself and child names beginning with dots remain valid.
 
 1. Start with the feature map and the owning test file. Use
    `bun run --cwd apps/cli test:file test/unit/<area>/<file>.test.ts` for a focused
@@ -850,3 +854,19 @@ that one pass claims the expected rows and clears the queue. That assertion does
 not require disk durability or WAL contention; the other drain cases continue
 using file-backed databases. Keep native filesystem/lifecycle qualification in
 its owning tests rather than relying on a wiring test's wall-clock budget.
+
+## Automated analytics isolation
+
+The CLI test preload, shadow-profile helper, manual sandbox and native Docker
+smoke force `DO_NOT_TRACK=1`. Every hosted workflow also sets it and Turbo
+preserves it in strict tasks. Tests must not mint countable production install
+identities, including when `CI=0` or a fixture already has consent. Agent launch
+overrides may not replace isolated roots or disable DNT. Test consent behavior
+with injected in-memory configuration and fetch fixtures.
+
+The opt-in analytics smoke requires both `KUNAI_LIVE_ANALYTICS=1` and
+`KUNAI_ANALYTICS_TEST_URL` with numeric
+loopback and an explicit port, refuses redirects, and awaits fixture acceptance.
+A fixed synthetic UUID still counts as an install if sent to production. The
+smoke establishes the local wire contract, not production deployment or counts;
+its server must use disposable storage.

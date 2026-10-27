@@ -22,7 +22,7 @@ export type PatrolState = {
 };
 
 /** An unhurried walk. The roaming fox is brisk because she is chasing something. */
-export const PATROL_SPEED_PX_PER_SEC = 64;
+export const PATROL_SPEED_PX_PER_SEC = 40;
 /** How long she stands at each stop, drawn uniformly from this range. */
 export const PAUSE_RANGE_MS = [2400, 6800] as const;
 /** The shortest hop worth walking. Closer than this reads as shuffling in place. */

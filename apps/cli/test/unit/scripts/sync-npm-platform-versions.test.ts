@@ -233,7 +233,7 @@ describe("version:packages contract", () => {
     const command = rootPackage.scripts["version:packages"];
 
     expect(command).toMatch(
-      /^bunx changeset version && bun run scripts\/sync-npm-platform-versions\.ts && bun run scripts\/sync-root-changelog\.ts && bun run release:notes$/,
+      /^bunx --bun --no-install changeset version && bun run scripts\/sync-npm-platform-versions\.ts && bun run scripts\/sync-root-changelog\.ts && bun run release:notes$/,
     );
   });
 

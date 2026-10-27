@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-10-22"
 ---
 
 # Provider: AllManga / AllAnime
@@ -12,7 +12,7 @@ lastReviewed: "2026-10-11"
 - **Runtime class:** Direct HTTP GraphQL + decoded source APIs. No browser should be needed on the hot path.
 - **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli` — historical only: ani-cli v5 (2026-08-01) moved to anidb.app and deleted its AllAnime code, so the live mkissa JS chunk is the sole source of truth now.
 - **Production module:** `packages/providers/src/allmanga/*`.
-- **Current status (2026-07-18):** Episode resolve requires ani-cli `aaReq` AES-GCM attestation + rotated hex decrypt key (`origin/fix`). Without it the API returns `AA_CRYPTO_MISSING`. Search/episode catalog POST paths still work without `aaReq`.
+- **Current status (2026-10-22):** The pinned build181 bootstrap/crypto probe returns HTTP200. Full stream resolution in the local production-provider sweep stopped at CAPTCHA, so bootstrap success is not playback qualification. Episode resolve requires `aaReq` AES-GCM attestation and the current rotating key.
 
 ## Current Evidence
 
@@ -25,28 +25,29 @@ lastReviewed: "2026-10-11"
 
 ### Stream source flow
 
-The source flow matches ani-cli:
+Current Kunai flow, derived from the live mkissa chunk (ani-cli v5 no longer implements AllAnime):
 
 ```text
 episode GraphQL persisted GET + aaReq + x-build-id
-  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 166, 7-day epochs)
+  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 181, 7-day epochs)
   -> decoded source names + encoded API paths (or direct https embeds)
   -> per-source API fetch on allanime.day
-  -> mp4 / HLS / DASH-shaped candidates
+  -> mp4 / HLS candidates, or deferred Ak DASH descriptor with separate video/audio
+  -> verifyCandidateStream resolve gate before a successful result
 ```
 
-ani-cli currently generates links for these source families:
+Historical ani-cli source families (before v5), compared with the current Kunai adapters:
 
-| Source family       | ani-cli behavior                          | Kunai behavior today                                                                      |
+| Source family       | Historical ani-cli behavior               | Kunai behavior today                                                                      |
 | ------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `Default`           | WIXMP/repackager or master HLS extraction | Supported                                                                                 |
 | `Yt-mp4`            | direct tools/fast4speed URL               | Supported                                                                                 |
 | `S-mp4`             | API JSON with direct mp4 when present     | Supported when link exists                                                                |
 | `Mp4`               | mp4upload page scrape                     | Supported (embed scrape + `Referer: https://www.mp4upload.com`, scoped `--tls-verify=no`) |
 | `Fm-mp4` / Filemoon | AES/decrypt path                          | Removed upstream (b8032b7); no Kunai code path remains                                    |
-| `Ak`                | Not in the older ani-cli provider list    | **Current drift gap**                                                                     |
+| `Ak`                | Not in the older ani-cli provider list    | Supported via deferred DASH descriptor with separate video/audio                          |
 
-### Solo Leveling S01E01 drift
+### Historical Solo Leveling S01E01 drift (May 2026)
 
 Live probe on 2026-05-25:
 
@@ -59,7 +60,7 @@ Live probe on 2026-05-25:
   - `duration`: media duration.
   - `subtitles[]`: English ASS subtitle endpoint.
 
-Kunai currently skips `Ak`, so the provider returns no streams. This is a source-shape mismatch, not a provider outage and not simple slowness.
+At the time of that probe, Kunai skipped `Ak` and returned no streams. That source-shape gap is now implemented by `packages/providers/src/allmanga/api-client.ts`; it is not evidence of a current missing adapter. Current live qualification is recorded in the summary above.
 
 ### `Ak` DASH proof, 2026-05-26
 
@@ -93,25 +94,25 @@ The experiment generated a temporary MPD from one selected video representation 
 
 ## Known
 
-- GraphQL search/catalog is working with `youtu-chan.com` referer.
-- The AES-256-GCM `tobeparsed` decode path and the build id 166 crypto bootstrap are verified working (re-derived 2026-09-08 after the 140→166 rotation; the episode query executes and `aaReq` is accepted); AES-CTR must not be restored (see `.docs/providers.md`).
+- Search/catalog uses GraphQL with the provider referer; historical successful probes above are dated evidence.
+- The AES-256-GCM `tobeparsed` decode path and build181 bootstrap are pinned. The October 22 bootstrap succeeds; full resolve remains separately blocked in that sweep. AES-CTR must not be restored (see `.docs/providers.md`).
 - Source APIs can return valid data that is not a single HLS/mp4 URL.
 - Returning only the `Ak` video URL would be wrong because audio is separate.
-- The provider contract already allows `protocol: "dash"` and `container: "mpd"`, but there is no implemented AllManga MPD/EDL handoff for `rawUrls`.
+- `rawUrls` is adapted into an opaque deferred DASH descriptor containing both selected video and audio representations; subtitles remain attached. Deterministic coverage is in `packages/providers/test/allmanga.test.ts`. This implementation does not establish current live playback.
 
 ## Recovering a build rotation
 
 Upstream rotates the client crypto roughly monthly
-(`81` → `119` → `140` → `166` → `171` → `177`). The _derivation_ constants
-move together — build id, salts, fragment offsets, mask fragments, key, epoch —
-and a partial update fails exactly like a total one, so recover those as a set.
-The persisted-query hash rotates on its own schedule and can be stale while the
-derivation set is current, or the reverse; either way every resolve returns
-zero streams, so check both. Done 2026-09-08 for `140` → `166`, and again
+(`81` → `119` → `140` → `166` → `171` → `177` → `181`). The _derivation_
+constants move together — build id, salts, fragment offsets, mask fragments,
+key, epoch — and a partial update fails exactly like a total one, so recover
+those as a set. The persisted-query hash rotates on its own schedule and can be
+stale while the derivation set is current, or the reverse; either way every
+resolve returns zero streams, so check both. Done 2026-09-08 for `140` → `166`,
 2026-10-13 for `171` → `177` (two intermediate builds `172`–`176` never made it
 into the tree — probing `166`–`174` returned `unknown_build_id` while `177`
 answered `invalid_boot_token`, bracketing the live generation before the chunk
-was read).
+was read), and 2026-10-19 for `177` → `181`.
 
 **Read the failure first — the endpoint says which half is stale.**
 
@@ -127,15 +128,16 @@ Scanning build ids until the answer flips from `unknown_build_id` to
 
 **Then re-extract from the crypto chunk.** It is the chunk under
 `cdn.mkissa.net/all/mk/_app/immutable/chunks/` containing both `buildId` and
-`client-crypto` (`BVxTyUEI.js` on 2026-09-08, `RD7DzHLl.js` on 2026-10-13);
-reach it by crawling `_app/immutable/entry/app.*.js`. Strings are 3-character
-fragments in a rotated table, so nothing greps out as a literal — and **every
-symbol name in this section rotates with the build**, so find them by shape,
-not by name. On build 177 the pieces were: `tu()` returns the string array;
-`Un(e) = tu()[e - 374]` is the accessor; `At`/`cr` are two-arg wrappers over
-`Un`; and a `push/shift` checksum IIFE `})(tu, N)` rotates the array in place —
-replay it verbatim in a JS engine before reading. The config object literal
-(`$f`, next to the `tu` table) then reads almost plainly:
+`client-crypto` (`BVxTyUEI.js` on 2026-09-08, `RD7DzHLl.js` on 2026-10-13,
+`Cs-j4hUW.js` on 2026-10-19); reach it by crawling `_app/immutable/entry/app.*.js`.
+Strings are 3-character fragments in a rotated table, so nothing greps out as a
+literal — and **every symbol name in this section rotates with the build**, so
+find them by shape, not by name. On build 177 the pieces were: `tu()` returns
+the string array; `Un(e) = tu()[e - 374]` is the accessor; `At`/`cr` are
+two-arg wrappers over `Un`; and a `push/shift` checksum IIFE `})(tu, N)`
+rotates the array in place — replay it verbatim in a JS engine before reading.
+The config object literal (`$f`, next to the `tu` table) then reads almost
+plainly:
 
 - `saltMul`, `saltAdd`, `fragMul`, `fragAdd` — literal numbers.
 - `bootPrefix`, `parts` — concatenated `At()`/`cr()` calls plus suffixes;
@@ -146,20 +148,40 @@ replay it verbatim in a JS engine before reading. The config object literal
   mask-key byte only when the `Xk()` browser-env probe passes; API requests
   accept the raw mask, so it is documented in `crypto.ts` but not ported.
 
+On build 181 the crypto moved to a **multi-domain** layout — the same chunk now
+carries several independent string tables, each with its own accessor and
+`push/shift` IIFE: `nu`/`ga` (offset 282) feeds the crypto cluster through
+shifted two-arg wrappers (`or`, `Tt`); `au`/`pr` (offset 425) feeds the
+`x-aa-boot` request builder; `ru`/`ma`/`jt` (offset 423) feeds the env probe
+`Qk`; `wu`/`dn` (offset 144) names the GraphQL request fields (`aaReq` at
+`dn(182)`). The config object `Df` still reads plainly once its wrappers are
+evaluated; the build id is `fd = Tt(642,518)` → `"181"`, reached indirectly via
+`Or = py() → fd`. A 7.7KB `const io=(function(){…})()` self-check + `eT()` call
+sits between the `nu` IIFE and the `nu` table — in a replay sandbox it must run
+(or be neutered) before the values read correctly, and it patches `console`, so
+snapshot `console.log` before evaluating the region. New on 181: `envXor`
+re-rolled to `82`; the `Qk()` env probe still gates whether it applies — the
+bootstrap accepts the **raw** mask only, same as 177. The signed payload field
+order moved to `buildId:group:host:epoch:lane` joined by `:`.
+
 Historic name map for orientation: 140/166 called the table `Xc`, the accessor
 `Vr`, the config `Rf`, the masks `mm`, and the build id `cd = fr(296)`. `parts`
 is the boot payload field order and rotates independently of the separator;
 build 140 signed `group.host.lane.buildId.epoch`, build 166 signed
-`group:lane:epoch:host:buildId`, build 177 signs `group/lane/host/buildId/epoch`.
+`group:lane:epoch:host:buildId`, build 177 signs `group/lane/host/buildId/epoch`,
+build 181 signs `buildId:group:host:epoch:lane` joined by `:`.
 
 **The persisted query hash rotates too**, and separately. It is a true persisted
 query — the document is never sent — so a stale hash returns
 `PersistedQueryNotFound` and every resolve yields zero streams. Rebuild it by
 expanding the episode query template — find the builder whose body contains
-`episode(` (named `iK` on 140, `Dj` on 177) and expand its fragments (`Oi`,
-`Kt`, `Zr()`, and their children `Hd`, `Hs`, `ku`→`Ka`→`fR`/`dp`→`mR`/`up`),
-then take `sha256` of the result with the mobile-only `$qat` lines omitted —
-the pinned hash is the desktop variant.
+`episode(` (named `iK` on 140, `Dj` on 177 and 181) and expand its fragments
+(`Oi`, `Kt`, `Zr()`, and their children `Hd`, `Hs`, `ku`→`Ka`→`fR`/`dp`→`mR`/`up`;
+on 181 the children are `St`, `Gt`, `GS`, `Qz`, `en`, `Eu` — conditionals take
+`[true,false]` argument sets), then take `sha256` of the result with the
+mobile-only `$qat` lines omitted — the pinned hash is the desktop variant.
+Build 181 kept the episode template byte-identical to 177, so the hash did not
+rotate; verify by resolving rather than assuming.
 
 Confirm the whole chain live before landing: bootstrap must answer `200` with a
 `partB`, the episode GET must return `"tobeparsed"` rather than an

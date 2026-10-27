@@ -123,7 +123,7 @@
         "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
         "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
         "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
-        "2026-10: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171 → 177; 177 moved the boot payload to group/lane/host/buildId/epoch and added an env-gated mask XOR) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
+        "2026-10: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171 → 177 → 181; 177 moved the boot payload to group/lane/host/buildId/epoch and added an env-gated mask XOR; 181 moved it to buildId:group:host:epoch:lane and split the chunk into four string-table domains) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
       ]
     },
     {
@@ -142,7 +142,7 @@
         "quality-ranked"
       ],
       "notes": [
-        "Parity with ani-cli v5.1.5: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
+        "Reference ani-cli v5.1.6 (separate HLS audio remains in the master for mpv): /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
         "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
         "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
         "Each season is a separate provider-native slug; there is no in-provider season routing.",
@@ -1055,7 +1055,7 @@
     }
   ],
   "runtimeBaseline": {
-    "bun": "1.4.2",
+    "bun": "1.4.4",
     "mpv": "0.38+"
   },
   "shortcuts": [

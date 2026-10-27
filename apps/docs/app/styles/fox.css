@@ -286,19 +286,58 @@ a:focus-visible .kunai-nav-title .kunai-fox {
 
 .kunai-footer-patrol {
   position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
+  inset-block-start: 0;
+  inset-inline: 0;
   height: 0;
   pointer-events: none;
 }
 
 .kunai-footer-patrol__fox {
   position: absolute;
-  bottom: -3px;
-  left: 0;
+  inset-block-end: -3px;
+  inset-inline-start: 0;
   /* `will-change` is set from the component only while she is walking and on screen:
      declared here it would hold a compositor layer on every page forever. */
+}
+
+.kunai-footer-patrol__caption {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.kunai-footer-patrol__toggle {
+  color: inherit;
+  font: inherit;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid var(--kunai-line);
+  border-radius: 0.375rem;
+  background: transparent;
+  cursor: pointer;
+  text-underline-offset: 0.2em;
+}
+
+.kunai-footer-patrol__toggle:focus-visible {
+  outline: 2px solid var(--kunai-accent);
+  outline-offset: 3px;
+}
+
+.kunai-footer-patrol__toggle:active {
+  background: var(--kunai-surface);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-footer-patrol__toggle:hover {
+    color: var(--kunai-text);
+    text-decoration: underline;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kunai-footer-patrol__toggle {
+    display: none;
+  }
 }
 
 /* ── Roamer ─────────────────────────────────────────────────────────────────

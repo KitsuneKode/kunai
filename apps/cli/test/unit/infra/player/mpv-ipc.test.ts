@@ -250,6 +250,85 @@ describe("mpv-ipc", () => {
     });
   });
 
+  for (const terminated of [false, true]) {
+    test(`bounds an oversized IPC frame and settles commands (newline=${terminated})`, async () => {
+      const clock = createCloseTimerHarness();
+      let updates = 0;
+      await withFakeMpvSocket(true, async (socket) => {
+        const session = await openMpvIpcSession({
+          endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+          onPropertyUpdate() {
+            updates++;
+          },
+          onEndFile() {},
+          commandTimers: clock.timers,
+        });
+        const pending = session.send(["set_property", "pause", true]);
+        const timer = clock.scheduled.at(-1);
+        if (!timer) throw new Error("command did not schedule its deadline");
+        const line = JSON.stringify({
+          event: "property-change",
+          name: "media-title",
+          data: "x".repeat(1024 * 1024),
+        });
+        const bytes = Buffer.from(line + (terminated ? "\n" : ""));
+        for (let offset = 0; offset < bytes.length; offset += 64 * 1024) {
+          socket.emitData(bytes.subarray(offset, offset + 64 * 1024));
+        }
+        expect({ terminated: socket.terminate(), updates }).toEqual({ terminated: 1, updates: 0 });
+        expect(await pending).toMatchObject({ ok: false, error: "mpv IPC frame exceeds 1 MiB" });
+        expect(clock.cleared).toContain(timer.id);
+        await session.close();
+      });
+    });
+  }
+
+  test("counts IPC frame limits in UTF-8 bytes", async () => {
+    let updates = 0;
+    await withFakeMpvSocket(true, async (socket) => {
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+        onPropertyUpdate() {
+          updates++;
+        },
+        onEndFile() {},
+      });
+      socket.emitData(
+        Buffer.from(
+          JSON.stringify({
+            event: "property-change",
+            name: "media-title",
+            data: "🦊".repeat(256 * 1024),
+          }) + "\n",
+        ),
+      );
+      expect({ terminated: socket.terminate(), updates }).toEqual({ terminated: 1, updates: 0 });
+      await session.close();
+    });
+  });
+
+  test("accepts a large batch of individually bounded IPC frames", async () => {
+    let updates = 0;
+    await withFakeMpvSocket(true, async (socket) => {
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+        onPropertyUpdate() {
+          updates++;
+        },
+        onEndFile() {},
+      });
+      const line =
+        JSON.stringify({
+          event: "property-change",
+          name: "media-title",
+          data: "x".repeat(32 * 1024),
+        }) + "\n";
+      socket.emitData(Buffer.from(line.repeat(40)));
+      expect({ terminated: socket.terminate(), updates }).toEqual({ terminated: 0, updates: 40 });
+      await session.close();
+    });
+  });
+
   test("reassembles fragmented multi-byte UTF-8 chunks without replacement character corruption", async () => {
     const propertyUpdates: Array<{ name: string; value: unknown }> = [];
     await withFakeMpvSocket(true, async ({ emitData }) => {

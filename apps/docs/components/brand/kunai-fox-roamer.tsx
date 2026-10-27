@@ -242,6 +242,13 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   // True from the moment she starts walking until she has finished settling, so
   // the vector drawing is on screen for exactly as long as it has legs to move.
   const [showWalker, setShowWalker] = useState(false);
+  // The frame loop reads this instead of closing over `showWalker`, for the
+  // same reason `phaseRef` exists: the loop is created once per `enabled`, and
+  // a captured value would be frozen at whatever it was on mount.
+  const showWalkerRef = useRef(showWalker);
+  useEffect(() => {
+    showWalkerRef.current = showWalker;
+  }, [showWalker]);
   const [line, setLine] = useState<string | null>(null);
   const enabled = useSyncExternalStore(
     subscribeVisibility,
@@ -388,14 +395,6 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
-
-  // The frame loop reads this instead of closing over `showWalker`, for the
-  // same reason `phaseRef` exists: the loop is created once per `enabled`, and
-  // a captured value would be frozen at whatever it was on mount.
-  const showWalkerRef = useRef(showWalker);
-  useEffect(() => {
-    showWalkerRef.current = showWalker;
-  }, [showWalker]);
 
   useEffect(() => {
     if (!enabled) return undefined;

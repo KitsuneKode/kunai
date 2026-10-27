@@ -453,9 +453,7 @@ async function maybeRunDownloadMode(
 
   const searchResult = bootstrapTitle
     ? ({ status: "success", value: bootstrapTitle } as const)
-    : await new (
-        await import("@/app/search/SearchPhase")
-      ).SearchPhase().execute(
+    : await new (await import("@/app/search/SearchPhase")).SearchPhase().execute(
         {
           initialQuery: args.search,
           autoPickSearchResultIndex: resolveAutoPickIndex(args),

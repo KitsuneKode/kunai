@@ -33,16 +33,16 @@ export function KunaiFoxPatrol() {
   const laneRef = useRef<HTMLDivElement | null>(null);
   const foxRef = useRef<HTMLDivElement | null>(null);
   const walkerRef = useRef<FoxWalkerHandle | null>(null);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  const syncRef = useRef<() => void>(() => {});
   const [facing, setFacing] = useState<"left" | "right">("right");
 
   useEffect(() => {
     const lane = laneRef.current;
     const fox = foxRef.current;
     if (!lane || !fox) return undefined;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      walkerRef.current?.setPose(STANDING_POSE);
-      return undefined;
-    }
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
     // `tick` is a hoisted function declaration, so it cannot see the narrowing
     // of `fox` above; a const of the narrowed type carries it in.
@@ -91,7 +91,11 @@ export function KunaiFoxPatrol() {
     }
 
     function sync() {
-      const shouldRun = visible && !document.hidden;
+      const shouldRun = visible && !document.hidden && !reducedMotion.matches && !pausedRef.current;
+      if (reducedMotion.matches || pausedRef.current) {
+        walkerRef.current?.setPose(STANDING_POSE);
+        settleMs = SETTLE_MS;
+      }
       if (shouldRun && frame === undefined) {
         last = 0;
         foxEl.style.willChange = "transform";
@@ -103,22 +107,40 @@ export function KunaiFoxPatrol() {
       }
     }
 
+    syncRef.current = sync;
     observer.observe(lane);
     resizer.observe(lane);
     document.addEventListener("visibilitychange", sync);
+    reducedMotion.addEventListener("change", sync);
     return () => {
+      syncRef.current = () => {};
       observer.disconnect();
       resizer.disconnect();
       document.removeEventListener("visibilitychange", sync);
+      reducedMotion.removeEventListener("change", sync);
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
   }, []);
 
+  function togglePause() {
+    pausedRef.current = !pausedRef.current;
+    setPaused(pausedRef.current);
+    syncRef.current();
+  }
+
   return (
-    <div ref={laneRef} className="kunai-footer-patrol" aria-hidden="true">
-      <div ref={foxRef} className="kunai-footer-patrol__fox">
-        <KunaiFoxWalker ref={walkerRef} size={SIZE} facing={facing} />
+    <>
+      <div ref={laneRef} className="kunai-footer-patrol" aria-hidden="true">
+        <div ref={foxRef} className="kunai-footer-patrol__fox">
+          <KunaiFoxWalker ref={walkerRef} size={SIZE} facing={facing} />
+        </div>
       </div>
-    </div>
+      <span className="kunai-footer-patrol__caption">
+        Kanna, the fox.
+        <button type="button" className="kunai-footer-patrol__toggle" onClick={togglePause}>
+          {paused ? "Resume Kanna" : "Pause Kanna"}
+        </button>
+      </span>
+    </>
   );
 }

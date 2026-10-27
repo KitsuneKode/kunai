@@ -201,3 +201,16 @@ describe("withHeading", () => {
     expect(withHeading(gaitPose(0.2), 30).frontNear.knee).toBe(gaitPose(0.2).frontNear.knee);
   });
 });
+
+describe("quiet walking silhouette", () => {
+  test("a stride stays within the short-legged silhouette instead of sliding a body length", () => {
+    expect(strideLength(56)).toBeGreaterThan(56 * 0.5);
+    expect(strideLength(56)).toBeLessThan(56 * 0.8);
+  });
+
+  test("the torso stays grounded while the legs carry the step", () => {
+    for (let step = 0; step < 100; step++) {
+      expect(gaitPose(step / 100).bodyY).toBeGreaterThanOrEqual(-6);
+    }
+  });
+});

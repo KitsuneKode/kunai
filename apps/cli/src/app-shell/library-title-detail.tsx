@@ -49,6 +49,7 @@ export function LibraryTitleDetail({
   container,
   group,
   entries,
+  commandMode = false,
   onBack,
   onNavigateToQueue,
   onEntriesChanged,
@@ -56,6 +57,7 @@ export function LibraryTitleDetail({
   readonly container: Container;
   readonly group: OfflineLibraryShelfGroup;
   readonly entries: readonly OfflineLibraryEntry[];
+  readonly commandMode?: boolean;
   readonly onBack: () => void;
   readonly onNavigateToQueue?: () => void;
   readonly onEntriesChanged: () => void;
@@ -154,7 +156,7 @@ export function LibraryTitleDetail({
   const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
   const maxVisible = getPickerListMaxVisible(
     viewport.rows,
-    getPickerChromeRows({ hasSubtitle: true, commandMode: false, extraRows: 5 }),
+    getPickerChromeRows({ hasSubtitle: true, commandMode, extraRows: 5 }),
   );
   const windowStart = getWindowStart(safeIndex, totalRows, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, totalRows);
@@ -248,7 +250,7 @@ export function LibraryTitleDetail({
         }
       })();
     },
-    { isActive: true },
+    { isActive: !commandMode },
   );
 
   const list = (

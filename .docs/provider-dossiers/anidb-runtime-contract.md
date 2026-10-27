@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-01"
+lastReviewed: "2026-10-27"
 ---
 
 # Provider: AniDB — runtime contract
@@ -9,6 +9,14 @@ lastReviewed: "2026-09-01"
 
 Catalog capabilities live in [anidb-metadata-capabilities.md](./anidb-metadata-capabilities.md).
 This file holds the runtime behaviour that used to sit in `.docs/providers.md`.
+
+## Live smoke coverage
+
+The `test:live:anidb` command searches the requested title through AniDB before
+resolving a returned identity. An exception, transport failure (`null`), or empty
+catalog exits at the search stage; there is no fixed-id escape hatch. This
+checks the search-to-resolve route, not a claim that the upstream is healthy.
+The isolated profile suppresses analytics and never touches a user profile.
 
 ## AniDB catalog search compatibility
 

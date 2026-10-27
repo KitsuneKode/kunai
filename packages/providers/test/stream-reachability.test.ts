@@ -22,6 +22,109 @@ function mediaBytes(size = HLS_SEGMENT_PROBE_MIN_BYTES): Uint8Array {
   return new Uint8Array(size).fill(0xab);
 }
 
+function mp4Box(type: string, ...parts: readonly Uint8Array[]): Uint8Array {
+  const payload = Buffer.concat(parts);
+  const header = Buffer.alloc(8);
+  header.writeUInt32BE(payload.length + 8);
+  header.write(type, 4, "ascii");
+  return Buffer.concat([header, payload]);
+}
+
+function fmp4Segment(withDecodeTime = true, sampleCount = 1): Uint8Array {
+  const tfhd = Buffer.alloc(8);
+  tfhd.writeUInt32BE(0x020000, 0); // default-base-is-moof
+  tfhd.writeUInt32BE(1, 4); // track id
+  const trun = Buffer.alloc(12 + sampleCount * 4);
+  trun.writeUInt32BE(0x201, 0); // data-offset-present + sample-size-present
+  trun.writeUInt32BE(sampleCount, 4);
+  for (let index = 0; index < sampleCount; index++) trun.writeUInt32BE(1, 12 + index * 4);
+  const fragmentParts = [mp4Box("tfhd", tfhd)];
+  if (withDecodeTime) fragmentParts.push(mp4Box("tfdt", Buffer.alloc(8)));
+  fragmentParts.push(mp4Box("trun", trun));
+  const fragment = mp4Box(
+    "moof",
+    mp4Box("mfhd", Buffer.alloc(8)),
+    mp4Box("traf", ...fragmentParts),
+  );
+  trun.writeInt32BE(fragment.length + 8, 8);
+  const finalized = mp4Box(
+    "moof",
+    mp4Box("mfhd", Buffer.alloc(8)),
+    mp4Box(
+      "traf",
+      mp4Box("tfhd", tfhd),
+      ...(withDecodeTime ? [mp4Box("tfdt", Buffer.alloc(8))] : []),
+      mp4Box("trun", trun),
+    ),
+  );
+  return Buffer.concat([
+    finalized,
+    mp4Box("mdat", mediaBytes(Math.max(sampleCount, HLS_SEGMENT_PROBE_MIN_BYTES))),
+  ]);
+}
+
+function extendedMdatSegment(validSize: boolean): Uint8Array {
+  const segment = Buffer.from(fmp4Segment());
+  const dataOffset = segment.indexOf("mdat") - 4;
+  const header = Buffer.alloc(16);
+  header.writeUInt32BE(1);
+  header.write("mdat", 4, "ascii");
+  header.writeBigUInt64BE(validSize ? BigInt(16 + HLS_SEGMENT_PROBE_MIN_BYTES) : 0n, 8);
+  segment.writeInt32BE(dataOffset + 16, segment.indexOf("trun") + 12);
+  return Buffer.concat([segment.subarray(0, dataOffset), header, mediaBytes()]);
+}
+
+/** Complete small fragments, padded with a valid free box to reach the probe floor. */
+function sampleExtentFragment(
+  sizes: readonly number[],
+  payloadSize: number,
+  mode: "trun" | "tfhd" | "override" | "trex" = "trun",
+  extraRunFields = false,
+  runBeforeHeader = false,
+): Uint8Array {
+  const hasDefault = mode === "tfhd" || mode === "override";
+  const explicitSizes = mode === "trun" || mode === "override";
+  const tfhd = Buffer.alloc(hasDefault ? 20 : 8);
+  tfhd.writeUInt32BE(hasDefault ? 0x02001a : 0x020000);
+  tfhd.writeUInt32BE(1, 4);
+  if (hasDefault) {
+    tfhd.writeUInt32BE(1, 8); // sample description
+    tfhd.writeUInt32BE(1000, 12); // default duration
+    tfhd.writeUInt32BE(mode === "override" ? 1000000 : (sizes[0] ?? 0), 16);
+  }
+  const fields = explicitSizes ? (extraRunFields ? 0xb05 : 0x201) : 1;
+  const fieldCount = explicitSizes ? (extraRunFields ? 3 : 1) : 0;
+  const firstSample = extraRunFields && explicitSizes ? 16 : 12;
+  const trun = Buffer.alloc(firstSample + sizes.length * fieldCount * 4);
+  trun.writeUInt32BE(fields);
+  trun.writeUInt32BE(sizes.length, 4);
+  if (explicitSizes) {
+    for (let index = 0; index < sizes.length; index++) {
+      const sample = firstSample + index * fieldCount * 4;
+      if (extraRunFields) trun.writeUInt32BE(1000, sample);
+      trun.writeUInt32BE(sizes[index] ?? 0, sample + (extraRunFields ? 4 : 0));
+    }
+  }
+  const moof = () =>
+    mp4Box(
+      "moof",
+      mp4Box("mfhd", Buffer.alloc(8)),
+      mp4Box(
+        "traf",
+        ...(runBeforeHeader
+          ? [mp4Box("trun", trun), mp4Box("tfhd", tfhd)]
+          : [mp4Box("tfhd", tfhd), mp4Box("trun", trun)]),
+        mp4Box("tfdt", Buffer.alloc(8)),
+      ),
+    );
+  trun.writeInt32BE(moof().length + 8, 8);
+  return Buffer.concat([
+    mp4Box("free", mediaBytes()),
+    moof(),
+    mp4Box("mdat", mediaBytes(payloadSize)),
+  ]);
+}
+
 describe("stream reachability", () => {
   test("HLS media playlists probe first media segment after playlist fetch", async () => {
     const urls: string[] = [];
@@ -31,7 +134,7 @@ describe("stream reachability", () => {
         return response(200, "#EXTM3U\n#EXTINF:3,\n/seg-1.jpg\n");
       }
       expect(init.headers).toMatchObject({
-        Range: `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`,
+        Range: "bytes=0-65535",
       });
       return response(206, mediaBytes());
     };
@@ -188,6 +291,173 @@ describe("stream reachability", () => {
       expect(probe.reason).toContain("text/html");
     }
   });
+
+  for (const syncCount of [1, 2, 3]) {
+    test(`HTML MIME override requires three TS sync boundaries (${syncCount} present)`, async () => {
+      const bytes = mediaBytes();
+      for (let packet = 0; packet < syncCount; packet++) bytes[packet * 188] = 0x47;
+      const probe = await probeStreamReachability({
+        url: "https://cdn.example/stream.m3u8",
+        fetchImpl: async (url: string) =>
+          url.endsWith("stream.m3u8")
+            ? response(200, "#EXTM3U\n#EXTINF:3,\n/seg.ts\n")
+            : response(200, bytes, { "content-type": "text/html" }),
+      });
+      expect(probe.status).toBe(syncCount === 3 ? "reachable" : "unreachable");
+    });
+  }
+
+  test("mislabeled TS probes cancel after the prefix when Range is ignored", async () => {
+    let chunksRead = 0;
+    let cancelled = false;
+    const bytes = mediaBytes();
+    for (const offset of [0, 188, 376]) bytes[offset] = 0x47;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          chunksRead++;
+          controller.enqueue(bytes);
+          if (chunksRead === 100) controller.close();
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/stream.m3u8",
+      fetchImpl: async (url: string) =>
+        url.endsWith("stream.m3u8")
+          ? response(200, "#EXTM3U\n#EXTINF:3,\n/seg.ts\n")
+          : new Response(body, { status: 200, headers: { "content-type": "text/html" } }),
+    });
+    expect(probe.status).toBe("reachable");
+    expect(cancelled).toBe(true);
+    expect(chunksRead).toBe(1);
+  });
+
+  for (const [contentType, expectedChunks] of [
+    ["text/html", 64],
+    ["video/mp2t", 1],
+  ] as const) {
+    test(`segment probe caps reads when Range is ignored (${contentType})`, async () => {
+      let chunksRead = 0;
+      let cancelled = false;
+      const body = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            chunksRead++;
+            controller.enqueue(mediaBytes());
+          },
+          cancel() {
+            cancelled = true;
+          },
+        },
+        { highWaterMark: 0 },
+      );
+      const probe = await probeStreamReachability({
+        url: "https://cdn.example/stream.m3u8",
+        fetchImpl: async (url: string) =>
+          url.endsWith("stream.m3u8")
+            ? response(200, "#EXTM3U\n#EXTINF:3,\n/seg.m4s\n")
+            : new Response(body, { status: 200, headers: { "content-type": contentType } }),
+      });
+      expect(probe.status).toBe(contentType === "text/html" ? "unreachable" : "reachable");
+      expect(chunksRead).toBe(expectedChunks);
+      expect(cancelled).toBe(true);
+    });
+  }
+
+  for (const [label, bytes, accepted] of [
+    ["moof/mdat", fmp4Segment(), true],
+    ["movie fragment larger than 1 KiB", fmp4Segment(true, 512), true],
+    ["extended mdat", extendedMdatSegment(true), true],
+    ["single sample extends past mdat", sampleExtentFragment([2], 1), false],
+    ["cumulative samples extend past mdat", sampleExtentFragment([1, 1], 1), false],
+    ["sample sizes exactly fill mdat", sampleExtentFragment([2, 3], 5), true],
+    [
+      "all trun fields still locate sample sizes",
+      sampleExtentFragment([2, 3], 5, "trun", true),
+      true,
+    ],
+    [
+      "all trun fields still reject an overrun",
+      sampleExtentFragment([2, 3], 4, "trun", true),
+      false,
+    ],
+    ["tfhd default sizes fit", sampleExtentFragment([2, 2], 4, "tfhd"), true],
+    ["tfhd default sizes overrun", sampleExtentFragment([2, 2], 3, "tfhd"), false],
+    ["trun sizes override the tfhd default", sampleExtentFragment([1, 1], 2, "override"), true],
+    [
+      "tfhd order cannot bypass default-size check",
+      sampleExtentFragment([2, 2], 3, "tfhd", false, true),
+      false,
+    ],
+    ["invalid extended mdat size", extendedMdatSegment(false), false],
+    [
+      "sizes supplied by init retain prefix validation",
+      sampleExtentFragment([1, 1], 2, "trex"),
+      true,
+    ],
+    [
+      "field-free large counts cannot overflow size arithmetic",
+      (() => {
+        const fragment = Buffer.from(sampleExtentFragment([0xffffffff], 1, "tfhd"));
+        fragment.writeUInt32BE(0xffffffff, fragment.indexOf("trun") + 8);
+        return fragment;
+      })(),
+      false,
+    ],
+    [
+      "open-ended mdat retains known default sizes",
+      (() => {
+        const fragment = Buffer.from(sampleExtentFragment([2, 2], 4, "tfhd"));
+        fragment.writeUInt32BE(0, fragment.indexOf("mdat") - 4);
+        return fragment;
+      })(),
+      true,
+    ],
+    [
+      "box end exceeds safe integer precision",
+      (() => {
+        const fragment = Buffer.from(extendedMdatSegment(true));
+        fragment.writeBigUInt64BE(BigInt(Number.MAX_SAFE_INTEGER), fragment.indexOf("mdat") + 4);
+        return fragment;
+      })(),
+      false,
+    ],
+    ...[0, 1, 400].map((beyond) => {
+      const fragment = Buffer.from(fmp4Segment());
+      const mdatStart = fragment.indexOf("mdat") - 4;
+      fragment.writeUInt32BE(9, mdatStart); // Declares a single media byte.
+      fragment.writeInt32BE(mdatStart + 9 + beyond, fragment.indexOf("trun") + 12);
+      return [`sample offset at/past mdat end +${beyond}`, fragment, false] as const;
+    }),
+    [
+      "styp/moof/mdat",
+      Buffer.concat([mp4Box("styp", Buffer.from("msdh0000msdh", "ascii")), fmp4Segment()]),
+      true,
+    ],
+    ["missing decode-time box", fmp4Segment(false), false],
+    ["empty fragment", Buffer.concat([mp4Box("moof"), mp4Box("mdat", mediaBytes())]), false],
+    [
+      "MP4 marker without fragment",
+      Buffer.concat([mp4Box("ftyp", Buffer.from("iso60000iso6", "ascii")), mediaBytes()]),
+      false,
+    ],
+  ] as const) {
+    test(`HTML-labeled fMP4 prefix: ${label}`, async () => {
+      const probe = await probeStreamReachability({
+        url: "https://cdn.example/stream.m3u8",
+        fetchImpl: async (url: string) =>
+          url.endsWith("stream.m3u8")
+            ? response(200, "#EXTM3U\n#EXTINF:3,\n/seg.m4s\n")
+            : response(200, bytes, { "content-type": "text/html" }),
+      });
+      expect(probe.status).toBe(accepted ? "reachable" : "unreachable");
+    });
+  }
 
   test("a segment body that errors mid-read is not reported as a small body", async () => {
     // readPrefixBytes used to catch the read failure and return the partial

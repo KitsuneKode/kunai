@@ -1074,3 +1074,30 @@ describe("hianime relay routing (#460)", () => {
     }
   });
 });
+
+test("HiAnime retains the master when an HLS quality has separate audio", async () => {
+  clearHianimeCachesForTest();
+  const resolution = await resolveHianimeEpisodeStreams({
+    episodeId: "22676",
+    requestedMode: "sub",
+    context: stubContext((url) =>
+      url.endsWith("master.m3u8")
+        ? `#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Japanese",LANGUAGE="ja",DEFAULT=YES,URI="audio.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=2400000,RESOLUTION=1920x1080,AUDIO="audio"
+video-only.m3u8
+`
+        : happyRouter(url),
+    ),
+  });
+  expect(resolution.requested.status).toBe("resolved");
+  if (resolution.requested.status !== "resolved") throw new Error("expected resolved");
+  expect(resolution.requested.links).toEqual([
+    {
+      url: SUB_PAYLOAD.src,
+      quality: "auto",
+      qualityRank: 0,
+      referer: hianimeEmbedReferer("ZokoAnime"),
+    },
+  ]);
+});

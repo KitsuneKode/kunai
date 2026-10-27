@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T13:17:48Z"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai — Provider Guide
@@ -191,6 +191,18 @@ VidLink's CDN answers 429 to GET, HEAD and ranged GET alike on every candidate,
 so passing the gate only handed mpv a 587-byte nginx error page. Failing here is
 what lets a working provider take over. Any future exception needs evidence that
 the stream _plays_, not merely that a probe passed.
+
+HTML-labeled HLS fragments need positive TS or complete fMP4-header evidence.
+For fMP4, each track-run data offset must begin inside the declared `mdat`
+payload: at/after its payload start and strictly before a finite end. Declared
+`trun` sizes, or a `tfhd` default size when the run omits them, must fit the
+remaining media-data extent; exact-end samples are valid. Counts without an
+entry table use constant-time exact arithmetic, and box ends must stay in the
+safe integer range. Explicit run sizes override defaults. A prefix may truncate
+the media body, but may not claim known sample bytes outside its own declared
+box. Open-ended `mdat`, and sample sizes supplied only by the initialization
+segment's `trex`, retain structural-prefix validation; this probe does not decode
+the complete media.
 
 **The gate walks candidates, it does not judge one.** `resolveDirectStreamSource`
 probes up to `RESOLVE_GATE_MAX_PROBES` ranked candidates and takes the first that
@@ -547,12 +559,13 @@ import {
   createTraceStep,
   type CoreProviderModule,
 } from "@kunai/core";
-import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
 } from "@kunai/types";
+
+import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 
 export const myProviderModule: CoreProviderModule = {
   providerId: "myprovider",

@@ -1,7 +1,7 @@
 "use client";
 
 import { commandsForPalette } from "@/lib/home-presenters";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { simulatedCommandScript } from "./simulated-command-script";
 import { TerminalCommandPalette } from "./terminal-command-palette";
@@ -152,39 +152,50 @@ const TerminalSimulator = memo(function TerminalSimulator({
     }
   };
 
-  const runSimulatedCommand = (cmdText: string) => {
-    if (terminalState === "running") return;
+  const runSimulatedCommand = useCallback(
+    (cmdText: string) => {
+      if (terminalState === "running") return;
 
-    setCommandPaletteOpen(false);
-    setTerminalState("running");
-    setTerminalInput("");
-    setTerminalLogs((prev) => [
-      ...prev,
-      { id: `${Date.now()}-input`, text: `\nkunai > ${cmdText}` },
-    ]);
+      setCommandPaletteOpen(false);
+      setTerminalState("running");
+      setTerminalInput("");
+      setTerminalLogs((prev) => [
+        ...prev,
+        { id: `${Date.now()}-input`, text: `\nkunai > ${cmdText}` },
+      ]);
 
-    const script = simulatedCommandScript(cmdText, providers, paletteCommands);
-    for (const step of script.steps) {
+      const script = simulatedCommandScript(cmdText, providers, paletteCommands);
+      for (const step of script.steps) {
+        scriptTimersRef.current.push(
+          window.setTimeout(() => {
+            setTerminalLogs((prev) => [
+              ...prev,
+              { id: `${Date.now()}-${Math.random()}`, text: step.line },
+            ]);
+          }, step.at),
+        );
+      }
       scriptTimersRef.current.push(
         window.setTimeout(() => {
-          setTerminalLogs((prev) => [
-            ...prev,
-            { id: `${Date.now()}-${Math.random()}`, text: step.line },
-          ]);
-        }, step.at),
+          setTerminalState("idle");
+        }, script.doneAt),
       );
-    }
-    scriptTimersRef.current.push(
-      window.setTimeout(() => {
-        setTerminalState("idle");
-      }, script.doneAt),
-    );
-  };
+    },
+    [terminalState, providers, paletteCommands],
+  );
 
-  runCommandRef.current = runSimulatedCommand;
+  useEffect(() => {
+    runCommandRef.current = runSimulatedCommand;
+  }, [runSimulatedCommand]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (commandPaletteOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setCommandPaletteOpen(false);
+        focusTerminalInput();
+        return;
+      }
       if (filteredCommands.length === 0) return;
 
       if (e.key === "ArrowDown") {
@@ -201,8 +212,6 @@ const TerminalSimulator = memo(function TerminalSimulator({
         if (selected) {
           runSimulatedCommand(`/${selected.id}`);
         }
-      } else if (e.key === "Escape") {
-        setCommandPaletteOpen(false);
       }
     } else {
       if (e.key === "Enter") {
@@ -316,6 +325,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
           onSearchChange={setSearchQuery}
           onSelectIndex={setSelectedPaletteIndex}
           onRun={(cmd) => runSimulatedCommand(`/${cmd.id}`)}
+          onKeyDown={handleKeyDown}
         />
 
         <div className="kunai-terminal-presets mt-4">
@@ -325,7 +335,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
               type="button"
               key={cmd}
               onClick={() => onPresetClick(cmd)}
-              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-xs transition-[transform,border-color,background-color,color] duration-150 ease-out active:scale-[0.96]"
+              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground focus-visible:ring-ring focus-visible:border-fd-primary min-h-[24px] cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-xs transition-[transform,border-color,background-color,color] duration-150 ease-out focus-visible:ring-2 focus-visible:outline-none active:scale-[0.96]"
             >
               {cmd}
             </button>

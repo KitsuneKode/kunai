@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { isHlsPlaylistUrl, resolveHlsSegmentUrl } from "@kunai/core";
 import type { Server } from "bun";
 
+import { scrubbedChildEnv } from "../os/child-env";
 import { curlSupportsHttp2 } from "../os/curl-features";
 import { whichLive } from "../os/which";
 import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
@@ -19,7 +20,13 @@ import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
  * attacker-influenceable input: the base64 path segments on `/p/` and `/s/`,
  * and every URI rewritten out of a provider-supplied playlist.
  */
-const CDN_APEX_HOSTNAMES = ["uwucdn.top", "owocdn.top"] as const;
+const CDN_APEX_HOSTNAMES = [
+  "uwucdn.top",
+  "owocdn.top",
+  "paleoak.top",
+  "zenoak.top",
+  "stillhaven.top",
+] as const;
 
 /** `#EXTM3U`, as bytes — a playlist is identified without decoding the body. */
 const HLS_PLAYLIST_MAGIC = Buffer.from("#EXTM3U", "latin1");
@@ -226,6 +233,7 @@ function curlFetchOnce(
     const proc = spawn(
       curlPath,
       buildHlsRelayCurlArgs(url, referer, origin, budget, curlSupportsHttp2()),
+      { env: scrubbedChildEnv() },
     );
     let chunks: Buffer[] = [];
     let totalBytes = 0;

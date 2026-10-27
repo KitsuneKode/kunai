@@ -5,6 +5,10 @@
 # Default scenario: full-lifecycle
 set -euo pipefail
 
+# This runner can open --setup in a real PTY outside CI. A disposable HOME
+# alone does not prevent an explicit test keystroke from creating an install.
+export DO_NOT_TRACK=1
+
 VARIANT="${1:?glibc or musl}"
 SCENARIO="${2:-full-lifecycle}"
 REPO="${REPO_ROOT:-/repo}"
