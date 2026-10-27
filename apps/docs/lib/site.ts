@@ -2,24 +2,29 @@
  * Public docs site origin — the base for canonical URLs, the sitemap, robots,
  * Open Graph, and `llms.txt`.
  *
- * `DOCS_SITE_URL` is the explicit answer and always wins. Without it a deploy
- * used to fall straight through to `http://localhost:3000` and publish that
- * origin in every canonical tag and sitemap entry, which is invisible locally
- * and wrong the moment the site is hosted. The Vercel-provided origins are the
- * honest middle ground: the production alias when the deployment has one, then
- * the per-deployment URL for previews.
+ * `DOCS_SITE_URL` explicitly overrides the public origin (including local smoke
+ * builds). Otherwise deployment aliases and localhost must never become the
+ * canonical identity of a public guide. Preview builds also declare noindex.
  */
 function resolveDocsSiteUrl(env: Record<string, string | undefined>): string {
   const explicit = env.DOCS_SITE_URL?.trim();
-  if (explicit) return explicit;
-
-  const productionHost = env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  if (productionHost) return `https://${productionHost}`;
-
-  const deploymentHost = env.VERCEL_URL?.trim();
-  if (deploymentHost) return `https://${deploymentHost}`;
-
-  return "http://localhost:3000";
+  if (explicit) {
+    const url = new URL(explicit);
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    ) {
+      throw new Error(
+        "DOCS_SITE_URL must be an HTTP(S) origin without credentials, path, query or fragment",
+      );
+    }
+    return url.origin;
+  }
+  return "https://kunai.kitsunekode.in";
 }
 
 export function docsSiteUrlFrom(env: Record<string, string | undefined>): string {

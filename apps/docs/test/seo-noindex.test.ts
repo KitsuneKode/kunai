@@ -25,6 +25,17 @@ describe("noindex utility pages", () => {
 });
 
 describe("canonical + robots through buildPageMetadata", () => {
+  test("sitemap URLs are unique public canonicals and home does not borrow a guide date", () => {
+    const entries = sitemap();
+    expect(new Set(entries.map((entry) => entry.url)).size).toBe(entries.length);
+    expect(
+      entries.every(
+        (entry) => entry.url.startsWith(`${docsSiteUrl}/`) || entry.url === docsSiteUrl,
+      ),
+    ).toBe(true);
+    expect(entries.find((entry) => entry.url === docsSiteUrl)?.lastModified).toBeUndefined();
+  });
+
   test("every page metadata carries its own canonical URL", () => {
     const metadata = buildPageMetadata({
       title: "Troubleshooting",

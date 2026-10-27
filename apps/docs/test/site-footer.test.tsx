@@ -43,12 +43,12 @@ describe("SiteFooter", () => {
       "https://github.com/KitsuneKode/kunai",
       "https://github.com/KitsuneKode/kunai/issues",
       "https://www.npmjs.com/package/@kitsunekode/kunai",
-      "https://github.com/KitsuneKode/kittymux",
+      "https://kittymux.kitsunekode.in",
       "https://github.com/KitsuneKode/sweep",
       "https://github.com/KitsuneKode/run-cli",
-      "https://github.com/KitsuneKode/arche",
-      "https://github.com/KitsuneKode/js-questions-lab",
-      "https://github.com/KitsuneKode/yt-playlist-dedupe",
+      "https://github.com/KitsuneKode/nvchad-themes",
+      "https://jsquestionslab.kitsunekode.in",
+      "https://yt-ddp.kitsunekode.in",
     ]) {
       expect(html).toContain(`href="${href}"`);
     }
@@ -68,6 +68,12 @@ describe("SiteFooter", () => {
     for (const label of ["Docs", "Project", "Trust", "Also by KitsuneKode"]) {
       expect(html).toContain(`aria-label="${label}"`);
     }
+  });
+
+  test("keeps sibling links compact and includes a decorative signature", () => {
+    expect(html).not.toContain(">Terminal tool<");
+    expect(html).not.toContain(">CLI<");
+    expect(html).toContain('class="kunai-footer-wordmark"');
   });
 
   test("renders the footer landmark with the Kunai home link", () => {

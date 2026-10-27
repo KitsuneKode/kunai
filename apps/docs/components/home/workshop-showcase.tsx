@@ -6,6 +6,7 @@ import {
   type WorkshopProject,
 } from "@/lib/workshop";
 import { IconArrowUpRight, IconBrandGithub, IconStar } from "@tabler/icons-react";
+import Image from "next/image";
 
 /**
  * "Also from the workshop": the maintainer's other original projects.
@@ -61,6 +62,22 @@ export function ProjectCard({
   return (
     <article className="kunai-surface-shell group/card has-[a:focus-visible]:ring-ring relative flex w-full flex-col transition-[border-color,box-shadow] duration-200 ease-[var(--ease-out)] hover:border-[color-mix(in_oklab,var(--kunai-accent)_32%,transparent)] has-[a:focus-visible]:ring-2">
       <div className="kunai-surface-shell__inner flex h-full flex-col gap-4 p-5">
+        <div className="kunai-workshop-preview">
+          {"image" in project.preview ? (
+            <Image
+              src={project.preview.image}
+              alt={project.preview.alt}
+              width={640}
+              height={344}
+              sizes="(max-width: 639px) 90vw, (max-width: 1023px) 45vw, 340px"
+            />
+          ) : (
+            <div className="kunai-workshop-preview__terminal">
+              <span>{project.preview.label}</span>
+              <pre>{project.preview.code}</pre>
+            </div>
+          )}
+        </div>
         <header className="flex items-start gap-3">
           <span
             aria-hidden="true"

@@ -1,0 +1,96 @@
+.kunai-site-footer a:focus-visible {
+  outline: 2px solid var(--kunai-accent);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.kunai-site-footer a:active {
+  color: var(--kunai-accent);
+}
+
+.kunai-roamer[data-paused="true"] * {
+  animation-play-state: paused;
+}
+
+.kunai-roamer[data-paused="true"] .kunai-roamer__bubble {
+  animation: none;
+}
+
+.kunai-footer-wordmark {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  font-family: var(--font-sans), sans-serif;
+  font-size: clamp(5rem, 34vw, 27rem);
+  font-weight: 650;
+  line-height: 0.9;
+  letter-spacing: -0.075em;
+  text-align: center;
+  color: color-mix(in oklch, var(--color-fd-foreground) 9%, var(--kunai-bg));
+  padding-block: 0.08em;
+  user-select: none;
+}
+
+.kunai-footer-wordmark__light {
+  position: absolute;
+  inset: 0;
+  padding-block: inherit;
+  color: color-mix(in oklch, var(--kunai-accent) 60%, var(--color-fd-foreground));
+  mask-image: radial-gradient(
+    180px circle at var(--wordmark-x, 50%) var(--wordmark-y, 50%),
+    black,
+    transparent
+  );
+  opacity: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kunai-footer-wordmark:hover .kunai-footer-wordmark__light {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .kunai-footer-wordmark__light {
+    transition: opacity 180ms var(--ease-out);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kunai-footer-wordmark__light {
+    display: none;
+  }
+}
+
+.kunai-workshop-preview {
+  aspect-ratio: 1.86;
+  overflow: clip;
+  border-radius: 0.6rem;
+  border: 1px solid var(--kunai-line);
+  background: var(--kunai-bg);
+}
+
+.kunai-workshop-preview img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.kunai-workshop-preview__terminal {
+  padding: clamp(0.75rem, 2vw, 1.25rem);
+  font-family: var(--font-mono), monospace;
+}
+
+.kunai-workshop-preview__terminal > span {
+  color: var(--kunai-accent);
+  font-size: 0.65rem;
+}
+
+.kunai-workshop-preview__terminal pre {
+  margin-block: 0.75rem 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-fd-foreground);
+  font-size: clamp(0.65rem, 1vw, 0.75rem);
+  line-height: 1.65;
+}

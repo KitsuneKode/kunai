@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-27T07:25:41Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -455,6 +455,35 @@ dependency links.
 The root `test:live:allmanga-crypto` command forwards to the CLI's existing
 metadata-only freshness probe; it does not resolve or play a video. It is an
 opt-in live command, outside default unit/integration CI.
+
+### Docs discovery and canonical identity
+
+`apps/docs/lib/site.ts` defaults to `https://kunai.kitsunekode.in`, independent
+of a preview alias or the developer's hostname. `DOCS_SITE_URL` may override it
+with an HTTP(S) origin; credentials, paths, query strings and fragments are
+rejected. The root layout marks Vercel preview deployments `noindex, follow`.
+Public pages retain their own canonical URLs, social cards and structured data;
+utility/share/withdrawn pages keep their existing indexing policy.
+
+`apps/docs/scripts/doc-last-modified.ts` memoizes guide timestamps per path
+using full Git history and Fumadocs' author-date convention, avoiding re-dating
+unchanged guides when commits are rebased. File-specific queries retain edits
+authored during merge resolution, which directory-wide log summaries can omit.
+A Git subprocess ignores inherited repository-location overrides and verifies
+that its canonical top-level directory matches the requested checkout. Worktrees
+and symlinked checkout paths remain supported. A shallow clone or a source
+archive, including one inside an unrelated repository, supplies no guide dates,
+rather than attributing every guide to the clone boundary or ancestor history. Use a
+full checkout (or Vercel's `VERCEL_DEEP_CLONE=true`) to publish per-file dates.
+The sitemap lists canonical content URLs and published release dates; the home
+page does not borrow the date of an unrelated guide. XML without a stylesheet
+is expected crawler output, not a broken page.
+
+`apps/docs/app/llms.txt/route.ts` exposes linked guide summaries and source
+provenance, including home, support and privacy. It supplements readable HTML
+and JSON-LD; no separate AI ranking mechanism or guaranteed search placement is
+claimed. After deployment, sitemap submission and index coverage still require
+the site's Search Console owner; local builds cannot establish indexing.
 
 ### October 22 watching candidate bundle measurement
 

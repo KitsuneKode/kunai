@@ -22,6 +22,7 @@ export async function GET() {
     "",
     "## Pages",
     "",
+    `- [Kunai](${docsSiteUrl}/): Terminal client for anime, movies, series and YouTube, played in mpv`,
     ...pages.map(
       (page) => `- [${page.data.title}](${docsSiteUrl}${page.url}): ${page.data.description}`,
     ),
@@ -34,6 +35,7 @@ export async function GET() {
     `- [Feedback](${docsSiteUrl}/feedback): File bugs, provider issues, and feature requests on GitHub`,
     `- [Usage analytics](${docsSiteUrl}/analytics): Public usage pulse and opt-in rules`,
     `- [Privacy](${docsSiteUrl}/privacy): What leaves your machine, site telemetry, and third parties`,
+    `- [Support Kunai](${docsSiteUrl}/support): Ways to support development and report problems`,
     "",
   ];
 

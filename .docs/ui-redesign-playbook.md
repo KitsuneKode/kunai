@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-27T07:08:05Z"
 ---
 
 # Kunai — UI Redesign Playbook
@@ -217,3 +217,28 @@ her feet, and the visible Pause/Resume control stops and resumes her at the same
 position. Cleanup removes media/visibility listeners, observers and the pending
 frame. The decorative SVG stays outside the accessibility tree; the pause button
 has an ordinary keyboard-focusable name and focus outline.
+
+The footer control reads the shared in-memory store in
+`apps/docs/lib/kanna-motion.ts`. Pause stops both the patrol and the pointer
+roamer, including unprompted chatter. Resume keeps their positions, resets the
+frame clock and never overrides reduced motion or a roamer dismissal. The
+roamer also cancels its frame while the document is hidden. Navigation within
+the app preserves the shared choice; a full reload starts a fresh page session.
+Restoring the roamer while paused mounts it at its saved position without starting
+the frame loop. A click-triggered speech bubble remains visible immediately while
+paused; only its entrance animation is omitted, and unprompted chatter stays stopped.
+
+`apps/docs/components/layout/footer-wordmark.tsx` is a decorative, oversized
+signature below the navigation. Its pointer light uses a local CSS mask,
+fine-pointer hover only, and disappears under reduced motion; it never changes
+the link layout or accessibility tree. Sibling project links use the curated
+website when available, otherwise GitHub, with no category sublabels.
+
+Workshop previews in `apps/docs/lib/workshop.ts` are reviewed local images or
+short text introductions, never live iframes, embeds or a screenshot service.
+NvChad Themes replaces Arche in the shared list. The Tokyonight editor image
+comes from `KitsuneKode/nvchad-themes` commit
+`02b23368fd66fc415f056ef5a0a770d3deaabe56`; its palettes credit NvChad/base46.
+The run-cli social image comes from `KitsuneKode/run-cli` commit
+`60b414d3639a9b115148709d09982037a8a4d882`. Both are resized WebP derivatives,
+served locally with reserved aspect ratios and descriptive alternative text.

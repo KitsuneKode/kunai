@@ -476,6 +476,17 @@ Onigiri results and no install ID; it cannot pass through a fixed native ID.
 This parent correction is merged into the watching candidate without restoring
 AniDB to production or bringing back its removed script aliases.
 
+## October 27: mobile preview guide recovery
+
+The website integration branch now includes the unique public guide and navigation
+entry from PR 499. It was checked against the current mobile host-proof contracts
+and corrected to keep physical Android/iPhone qualification pending, distinguish
+probe traffic from VLC handoff, and preserve uncertain lock ownership. Stale
+generated metadata from PR 499 was not copied; current metadata was regenerated.
+The website suite passes 452 tests; its typecheck, lint, and production build pass.
+This is documentation recovery, not a supported mobile release or permission to
+close PR 499 before the integration lands.
+
 ## October 27: accepted safety integration and renewed release checks
 
 PR 668 merged normally as `9e99a4841` after GitGuardian cleared and all review

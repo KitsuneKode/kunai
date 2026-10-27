@@ -15,6 +15,7 @@
 @import "./styles/docs-chrome.css";
 @import "./styles/home.css";
 @import "./styles/fox.css";
+@import "./styles/footer.css";
 @import "./styles/timeline.css";
 @import "./styles/charts.css";
 @import "tw-animate-css";
