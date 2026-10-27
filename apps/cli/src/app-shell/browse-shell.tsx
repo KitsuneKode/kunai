@@ -73,6 +73,7 @@ import {
   buildPreviewRailModelFromBrowseOption,
   filterBrowseOptionsByResultFilter,
   mapPosterPreviewState,
+  refreshFavouritePreview,
 } from "./browse-preview-rail";
 import {
   isQueryDirty,
@@ -865,7 +866,15 @@ export function BrowseShell<T>({
 
   const boundedSelectedIndex =
     displayOptions.length === 0 ? 0 : Math.min(selectedIndex, displayOptions.length - 1);
-  const selectedOption = displayOptions[boundedSelectedIndex];
+  const selectedResultOption = displayOptions[boundedSelectedIndex];
+  const selectedFavourite =
+    selectedResultOption && isFavorite ? isFavorite(selectedResultOption.value) : undefined;
+  // Keep the enriched option stable between membership changes: the settled
+  // preview must not restart its work on every unrelated render.
+  const selectedOption = useMemo(
+    () => refreshFavouritePreview(selectedResultOption, selectedFavourite),
+    [selectedResultOption, selectedFavourite],
+  );
   // Ink drains every available raw stdin chunk before React paints. Keep the
   // calendar's intended row in a ref so a burst like → ↓ ← ↓ ↵ never resolves
   // the row that was selected before the burst began.

@@ -65,6 +65,10 @@ hosted, device or release signoff.
 - [ ] Research MovieBox-TUI's actual mobile/distribution implementation and
       identify transferable behavior with source links, license obligations and
       verification limits. Do not infer reliability from popularity alone.
+- [ ] Compare the current production roster with FMHY's video catalog, then
+      qualify only promising additions through the existing provider intake
+      process. Prioritize working delivery and useful source/quality/subtitle
+      coverage; a directory listing is not playback evidence.
 - [ ] Produce simple Android install/use/recovery instructions and an explicitly
       experimental iOS installation path; avoid presenting unpublished artifacts
       as downloadable releases or requiring unnecessary runtime dependencies.
@@ -77,6 +81,11 @@ hosted, device or release signoff.
 - [ ] Use the `verify-kunai` skill and a dedicated Kitty window with an isolated
       profile. Do not send keys to the maintainer's existing sessions or alter
       their profile. Capture frames and backend state before fixing defects.
+      The maintainer requested real providers and real titles on the laptop's
+      eDP-1 display, workspace 9, fullscreen. Keep fixture regressions separate
+      from that live manual session. Ensure the QA launcher does not inherit
+      `NO_COLOR=1`; select the maintainer's installed terminal font rather than
+      relying on this machine's CJK monospace fallback.
 - [ ] Exercise first run, search editing, debounce and mode-specific history,
       arrow navigation, suggestions, hover detail previews, thumbnails, Tracks,
       quality/Auto, subtitles/Off, failure recovery, queue, downloads and relaunch.

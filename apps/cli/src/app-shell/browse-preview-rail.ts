@@ -28,6 +28,32 @@ const RAIL_LABEL_SHORT: Record<string, string> = {
   Status: "Status",
 };
 
+/** A result's descriptive facts are snapshots; list membership is live state. */
+export function refreshFavouritePreview<T>(
+  option: BrowseShellOption<T> | undefined,
+  favourited: boolean | undefined,
+): BrowseShellOption<T> | undefined {
+  if (
+    !option ||
+    favourited === undefined ||
+    !option.previewFacts?.some((fact) => fact.label === "Favourite")
+  ) {
+    return option;
+  }
+  return {
+    ...option,
+    previewFacts: option.previewFacts.map((fact) =>
+      fact.label === "Favourite"
+        ? {
+            ...fact,
+            detail: favourited ? "♥ Favourited · f to remove" : "Not favourited · f to add",
+            tone: favourited ? "success" : "neutral",
+          }
+        : fact,
+    ),
+  };
+}
+
 function shortenRailLabel(label: string): string {
   return RAIL_LABEL_SHORT[label] ?? label;
 }
