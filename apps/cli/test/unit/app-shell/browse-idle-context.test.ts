@@ -3,6 +3,65 @@ import { describe, expect, test } from "bun:test";
 import { buildBrowseIdleContext } from "@/app-shell/browse-idle-context";
 
 describe("buildBrowseIdleContext", () => {
+  test("resume and saved titles follow the active mode without changing queue order", async () => {
+    const row = (mediaKind: "movie" | "anime" | "video", title: string, updatedAt: string) => ({
+      key: title,
+      titleId: title,
+      title,
+      mediaKind,
+      providerId: mediaKind === "anime" ? "hianime" : mediaKind === "video" ? "youtube" : "vidlink",
+      positionSeconds: 90,
+      durationSeconds: 600,
+      completed: false,
+      createdAt: updatedAt,
+      updatedAt,
+    });
+    const history = [
+      row("video", "Newest video", "2026-06-13T12:00:00Z"),
+      row("anime", "Anime resume", "2026-06-13T11:00:00Z"),
+      row("movie", "Movie resume", "2026-06-13T10:00:00Z"),
+    ];
+    const queued = { titleId: "queue-video", title: "Queued video", mediaKind: "video" };
+    const container = {
+      queueService: { peekNext: () => queued },
+      releaseProgressCache: {
+        summarizeActive: () => ({ titleCount: 0, episodeCount: 0 }),
+        getByTitleIds: () => new Map(),
+      },
+      offlineAssetService: { listNextReadyByTitleCursors: () => [] },
+      historyRepository: { listLatestByTitle: () => history },
+      config: { lastCalendarVisitAt: 0 },
+      followedTitleRepository: { listByPreference: () => [] },
+      listService: {
+        getWatchlist: () => history.map((entry) => ({ ...entry, addedAt: entry.createdAt })),
+      },
+    };
+    // SAFETY: the read-only container stub implements every reader used by the idle builder.
+    const idleContainer = container as never;
+    for (const [mode, expected] of [
+      ["series", "Movie resume"],
+      ["anime", "Anime resume"],
+      ["youtube", "Newest video"],
+      ["anime", "Anime resume"],
+    ] as const) {
+      const result = await buildBrowseIdleContext(idleContainer, { mode });
+      expect(result.idleContext?.continueWatching?.title).toBe(expected);
+      expect(result.continueWatchingSelection?.entry.title).toBe(expected);
+      expect(result.idleContext?.savedNext?.title).toBe(expected);
+      expect(result.idleContext?.savedNext?.total).toBe(1);
+      expect(result.idleContext?.playlistNext?.title).toBe(
+        mode === "youtube" ? "Queued video" : undefined,
+      );
+      expect(container.queueService.peekNext()).toBe(queued);
+    }
+    const empty = await buildBrowseIdleContext(idleContainer, {
+      mode: "anime",
+      preloadedHistory: { video: history[0]! },
+    });
+    expect(empty.continueWatchingSelection).toBeNull();
+    expect(empty.idleContext?.continueWatching).toBeUndefined();
+  });
+
   test("prioritizes local resume and offline-ready reads without provider calls", async () => {
     const container = {
       queueService: {

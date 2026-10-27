@@ -580,6 +580,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         if (!deferIdleContext) {
           const bundle = await buildBrowseIdleContext(container, {
             preloadedHistory: allHistory,
+            mode: stateManager.getState().mode,
           });
           latestIdleContext = bundle.idleContext;
           continueWatchingSelection = bundle.continueWatchingSelection;
@@ -590,6 +591,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 const deferredHistory = this.readLocalBrowseHistory(context);
                 const bundle = await buildBrowseIdleContext(container, {
                   preloadedHistory: deferredHistory,
+                  mode: stateManager.getState().mode,
                 });
                 latestIdleContext = bundle.idleContext;
                 continueWatchingSelection = bundle.continueWatchingSelection;

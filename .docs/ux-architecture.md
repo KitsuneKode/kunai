@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-28"
 ---
 
 # Kunai — UX Architecture
@@ -304,6 +304,8 @@ Sources and async contract:
 - Query histories are partitioned into anime, series/movie, and YouTube files. Every active
   caller supplies its mode; unclassified legacy queries stay preserved in their original file
   rather than leaking into all modes. Local title suggestions are filtered to the active lane.
+  Per-source item quotas apply after that lane filter: activity in another mode
+  cannot hide a retained matching title. Outer list/playlist fan-out limits remain bounded.
 - Local layer is synchronous and free: past submitted searches, watched titles, followed titles,
   and list/playlist rows (`app/search/search-suggestions.ts` materializes them as
   `SearchSuggestion<SearchResult>` — every row's `value` is a real SearchResult).
@@ -429,6 +431,14 @@ row — `3 new episodes since Tuesday` — Enter opens the schedule already on t
 Tracked tab, and the row is absent entirely when nothing qualifies: never an
 empty strip. Every row in the strip renders instantly; high-frequency paths
 get no decorative animation.
+
+Resume, offline-next and saved-title shortcuts use the current mode, including
+YouTube. SearchPhase supplies the mode to both the immediate and deferred local
+context readers. A mode without unfinished history gets no resume shortcut;
+switching modes never substitutes the newest title from another lane. The queue
+retains its global playback order: its shortcut appears only when the actual head
+matches the mode. The aggregate unwatched-release notification count remains
+global; title-specific history and new-since-visit rows are scoped locally.
 
 ## Picker Filtering
 
