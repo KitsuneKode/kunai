@@ -13,100 +13,56 @@ preview until Android is qualified.
 ## 0.4.0 scope checkpoint (2026-10-27)
 
 Android watching and the experimental iOS host/VLC preview are the accepted
-release scope. M1 and M2 code is present on merged main; physical Android
-qualification in #631 and Android package publication are still pending.
-The separate `apps/mobile` host proof builds for 0.4.0 and passes local
-Node/fake-iOS tests, which do not establish phone playback. Full iOS
-search/providers, native store apps and the M3 phone web UI are later work.
+release scope. Physical Android qualification in #631, package publication and
+iOS device qualification remain open. Full iOS search/providers, native store
+apps and the M3 phone web UI are later work.
 The [Android guide](../docs/users/android.mdx) distinguishes the real CLI
 from the Node host proof and states that staged assets are not public.
 
-## Why this shape
+## Design direction
 
-- Bun ships official Android (Bionic) builds since 1.3.14 and
-  `bun build --compile --target=bun-linux-{arm64,x64}-android`. The repo is on
-  Bun 1.4.x, so the **real desktop CLI** runs in Termux — no second
-  implementation, no feature drift. `apps/mobile` (Node/a-Shell host proof,
-  no catalog or providers) is not the parity path; it stays the iOS preview.
-- Android players (VLC, mpv-android) are launched by intent and cannot receive
-  request headers or cookies. Most provider streams need a Referer/Origin, so
-  a plain intent handoff covers only a minority of providers. Kunai already
-  ships a loopback HLS relay for mpv (`apps/cli/src/infra/player/hls-relay.ts`);
-  generalizing that pattern on-device closes the gap.
-- A touch UI served from the phone itself (`http://127.0.0.1:<port>`) makes
-  Kunai usable for people who will never drive a TUI on a phone keyboard. The
-  phone does the work; nothing leaves the device except the provider requests
-  the CLI already makes. This is the local-only half of the "paired web"
-  direction in `kunai-experience-and-growth-moat.md`.
+Use the real CLI for the Android watching route. Keep the Node/a-Shell host
+proof separate; do not duplicate catalog and provider behavior there. The
+remaining touch UI should run on the phone through loopback, with no hosted
+resolver or shared media service. This follows the local-only direction in
+[kunai-experience-and-growth-moat.md](./kunai-experience-and-growth-moat.md).
 
 ## Non-negotiables this plan must keep
 
-- The shared relay stays metadata-only. The stream gateway below is a
+- The shared relay stays metadata-only. The existing stream gateway is a
   **per-process loopback** server on the device that runs the player — the
   same category as `hls-relay.ts`, never a hosted or LAN-exposed media route.
 - Every handed-off stream is still the candidate `verifyCandidateStream`
   probed; the gateway forwards exactly that request shape.
 - No new analytics, no install id, no shared URLs baked into binaries.
-- One desktop entrypoint: `kunai serve` is a subcommand of
+- One desktop entrypoint: the proposed `kunai serve` must be a subcommand of
   `apps/cli/src/main.ts`, not a new binary.
 - Concurrent TUI + `serve` on one profile follows ADR 0003.
 
-## M1 — Termux runs the real CLI (implemented; device qualification pending)
+## 0.4.0 qualification and publication
 
-The #287 functionality is present on current `main`:
-Bionic `android-arm64`/`android-x64` targets in build, release, checksums,
-npm optional packages, `install.sh` Termux detection (`$TERMUX_VERSION` /
-Termux `$PREFIX`), upgrade asset selection, `--player auto|mpv|vlc`,
-detached-handoff result modelling (no invented progress/EOF/completion),
-managed-only controls disabled with an explanation.
+The implemented M1/M2 core is recorded in the
+[archive](../.archive/plans/2026-10-11-mobile-m1-m2-implemented-core.md).
+Current gateway and handoff contracts belong to
+[architecture](../.docs/architecture.md) and
+[mobile terminal runtime](../.docs/mobile-terminal-runtime.md).
 
-Done when: CI builds both Android targets, the compiled smoke runs under the
-host for every non-Android target, unit/integration suites pass, and the
-physical-device checklist from #287 is published as an issue for a tester.
+- [ ] Collect exact-candidate hosted build evidence for both Android targets.
+      Host execution of other platform binaries is not an Android device pass.
+- [ ] Qualify the real CLI on physical ARM64 Termux with VLC and mpv-android:
+      search, provider resolution, headers/cookies, subtitles, chooser refusal,
+      return to Termux, backgrounding and gateway shutdown. Keep #631 open until
+      its acceptance evidence is complete.
+- [ ] Finish Android package publication and verify install/update/rollback
+      against public artifacts. Staged binaries and local builds are not a
+      public installation channel.
+- [ ] Qualify the separate iOS a-Shell/VLC host preview with the device lab.
+      Do not imply full iOS search/providers or background playback support.
 
-## M2 — Android stream gateway
+## M3 — Proposed `kunai serve`: the phone web surface (after 0.4.0)
 
-The gateway implementation is present on merged main. The continuation on 2026-10-12 reproduced and
-fixed idle shutdown during progressive responses, chooser subtitle loss,
-blocked playlist/MPD targets escaping to the external player, and a first-chunk
-playlist size-limit bypass. Upstream DASH now resolves relative hierarchical
-BaseURLs and inherited SegmentBase/List/Template references against the final
-manifest URL. Segment substitutions use guarded session routes; unsupported
-XML/DRM/external-resource forms are refused with a sanitized 422. Generated
-deferred MPDs share the same rewriter. The architecture doc owns the supported
-forms and bounds. Independent review is complete; final hosted gates and
-physical-device proof remain outstanding. M3 is deferred beyond 0.4.0;
-M4 has installer implementation and public instructions, with physical
-qualification still pending.
-
-The implemented handoff gateway is used when the player cannot
-take headers (Android intents; any future launch-only player):
-
-- Bind `127.0.0.1` on an ephemeral port; every route is under an unguessable
-  per-playback token path (`/g/<128-bit token>/...`); requests without it 404.
-- Upstream allowlist = the probed candidate's origin plus hosts that appear in
-  the playlists it serves (HLS master → media → segment/key URIs are rewritten
-  to gateway paths). Reuse `assertRelayUpstreamUrl`-style validation and the
-  existing DNS/private-address guards; never follow a redirect to a private
-  address.
-- Inject exactly the candidate's normalized headers
-  (`normalizeStreamHttpHeaders`); cookies only if the candidate carries them.
-- Stream bodies (no whole-segment buffering for MP4/large files); support
-  `Range` for progressive MP4 so seeking works.
-- External subtitles: serve the selected track through the gateway and pass it
-  as the player's subtitle extra (`subtitles_location` for VLC, `subs` for
-  mpv-android).
-- Lifetime: starts with the handoff, stops on idle timeout (no traffic for N
-  minutes) or when the shell exits; one gateway per process.
-- Lift #287's rejection list (headers, cookies, external subtitles, deferred
-  locators) for streams the gateway can serve; keep rejecting only what it
-  genuinely cannot (DRM, yt-dlp-only URLs without a local yt-dlp).
-
-Edge cases: HLS with AES keys (rewrite `#EXT-X-KEY` URIs), relative URIs,
-byte-range playlists, servers that 403 on missing Origin, players that open
-several connections at once, Termux being backgrounded (doc `termux-wake-lock`).
-
-## M3 — `kunai serve`: the phone web surface
+This command and web surface are unimplemented design work, not an available
+installation or playback path.
 
 `kunai serve [--port N] [--open] [--no-open]`
 
@@ -139,14 +95,16 @@ Desktop gets the same command: `kunai serve` plays in mpv and is a pleasant
 mouse/touch UI on the same machine. LAN pairing (QR, device list, revoke) is
 **out of scope** here; it is a later plan because it changes the threat model.
 
-## M4 — Install and onboarding on Android
+## M4 — Qualify installation and onboarding on Android
 
-- `install.sh` path for Termux (from M1) plus a one-screen doc:
-  `pkg install curl` → install script → `kunai serve`.
-- `kunai doctor` reports Termux, VLC/mpv-android presence (via
-  `pm list packages` where available) and wake-lock advice.
-- Docs: `docs/users/android.mdx` (new), platform matrix row moves from
-  "Not supported yet" to "Preview" only after a physical-device pass.
+- [ ] Exercise the published Termux installer, executable storage, architecture
+      selection, update, rollback and uninstall; keep the documented public
+      install commands conditional until Android artifacts exist.
+- [ ] Verify doctor output on the phone for Termux, VLC/mpv-android detection and
+      wake-lock advice, including unavailable Android package-query commands.
+- [ ] Reconcile `docs/users/android.mdx` and the platform matrix with the physical
+      evidence. Keep `kunai serve` instructions out of the current TUI install
+      flow until M3 is implemented and qualified.
 
 ## Verification
 

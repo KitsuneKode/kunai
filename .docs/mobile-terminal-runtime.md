@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T16:46:55Z"
+lastReviewed: "2026-10-28"
 ---
 
 # Mobile terminal runtime
@@ -14,6 +14,9 @@ preview. Android watching uses `apps/cli/src/main.ts`, the Bionic binary and
 the Android intent/loopback gateway in `apps/cli/src/infra/player/`. It has
 the CLI's catalog and provider flow; it is not the Node host proof below.
 The public route is [Android (Termux)](../docs/users/android.mdx).
+The gateway carries the verified candidate's headers and cookies. External
+subtitles require an explicit VLC or mpv-android target; the chooser rejects
+that combination. Local files and yt-dlp-only streams remain unsupported.
 
 The private `apps/mobile` application remains the iOS a-Shell/VLC preview
 and a separate Android Node host proof. Neither host proof has search or

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T16:46:55Z"
+lastReviewed: "2026-10-28"
 ---
 
 # Kunai — Quickstart
@@ -67,7 +67,13 @@ Posters need nothing installed. Kunai's Windows CI provisions mpv from the
 official pinned binary archive rather than relying on a package-manager mirror;
 the commands above are user-install choices, not CI dependencies.
 
-Android Termux preview (Android 9 / API 28 or newer, ARM64 or x64 only):
+Android Termux 0.4.0 candidate (Android 9 / API 28 or newer, ARM64 or x64 only):
+
+Android binaries and packages are not public yet. Source contributors use the
+Bun checkout commands above. The [Android guide](../docs/users/android.mdx)
+describes the candidate watching route and pending physical qualification.
+Run the following installer commands only once the published release includes
+an Android asset for your architecture:
 
 ```sh
 pkg update
@@ -79,14 +85,19 @@ kunai --player vlc
 
 The cross-built ELF declares API 28 as its platform floor; physical-device
 qualification is still pending. Install VLC or mpv-android as an Android app.
-`--player auto` opens the system chooser. This preview hands off only direct
-HTTP(S) streams that need no custom headers, cookies, yt-dlp, local file, or
-external subtitle. Launch acceptance does not give Kunai progress/completion
+`--player auto` opens the system chooser. HTTP(S) streams can use the local
+intent/loopback gateway to carry the verified candidate's headers and cookies.
+External subtitles require `--player vlc` or `--player mpv`; the chooser rejects
+streams requiring external subtitles. Streams requiring yt-dlp or local files
+remain unsupported. Launch acceptance does not give Kunai progress/completion
 evidence, so autoplay, auto-skip, automatic history progress, and queue
 acknowledgement are disabled for that handoff. iOS is not supported by this
 runtime.
 
-Kunai is Bun-first in beta. A Node/npm-only source checkout is not supported because the CLI uses Bun runtime APIs directly. Published native binaries are the preferred end-user path; source contributors need the Bun version declared above.
+Kunai is Bun-first in beta. A Node/npm-only source checkout is not supported
+because the CLI uses Bun runtime APIs directly. Published desktop native binaries
+are the preferred end-user path. Android native binaries become that path once
+published and qualified; source contributors need the Bun version declared above.
 
 ## Test this checkout with an isolated profile
 
