@@ -2,7 +2,7 @@
 
 - **Written against commit**: `01ab215b`
 - **Priority**: P2
-- **Effort**: L (five independent slices)
+- **Effort**: L (four remaining slices)
 - **Risk**: LOW–MED (Esc/back semantics are load-bearing; see 022.5)
 - **Depends on**: nothing
 
@@ -13,30 +13,18 @@
 > what is documented can never drift from the keys that are actually bound
 
 That is false in several ways, and the shell's input layer is the least coherent part
-of an otherwise careful product. Each slice below is independently shippable.
+of an otherwise careful product. The original help-scope defect is now fixed; each remaining slice needs a current-code check before work starts.
 
 ---
 
-## 022.1 — `?` shows the wrong surface's help (S, highest value)
+## Landed help routing
 
-`apps/cli/src/app-shell/root-shell-state.ts:133-148` — `resolveHelpScope` switches
-only on `state.playbackStatus` and can return exactly three values: `"player"`,
-`"postPlayback"`, `"browse"`.
-
-So pressing `?` inside Up Next, History, Notifications, Library or Downloads shows
-**browse** help. `keybindings.ts:607-910` defines **28 bindings** across those five
-scopes whose help copy is therefore unreachable — `J/K` reorder, `g/G` jump to ends,
-`[`/`]` paging, `p` protect. `HELP_SCOPE_LABELS` (`root-overlay-shell.tsx:163-175`)
-even carries labels for scopes `resolveHelpScope` can never produce.
-
-**Fix.** Derive the scope from the top overlay (`state.activeModals.at(-1)`) before
-falling back to playback status: `queue`→`queue`, `history`→`history`,
-`notifications`→`notifications`, `library`/`downloads`→`library`, pickers→`browse`.
-Add `downloads` and `stats` to `KeyScope` while there.
-
-**Verify.** Test `resolveHelpScope` per overlay type. Then extend
-`contract-conformance.test.ts`: every `KeyScope` must be reachable from
-`resolveHelpScope` — that turns this class of bug into a build failure.
+The original 022.1 help-scope defect is fixed. `resolveHelpScope()` now reads
+the overlay below Help before falling back to playback state. Queue, History,
+Notifications and Library/Downloads resolve to their own binding scopes; the
+scope-reachability regression in `contract-conformance.test.ts` enforces this.
+This slice is no longer active work. The remaining slices below need separate
+current-code checks before implementation.
 
 ---
 
@@ -174,7 +162,6 @@ bun run typecheck && bun run lint && bun run test
 
 Per slice, plus:
 
-- 022.1: a test mapping each overlay type to its help scope.
 - 022.2: a test that each destructive action requires two presses.
 - 022.3: a test that typing `x` into the library filter filters rather than deletes.
 - 022.4: a test that a rejected settings persist surfaces an error state.

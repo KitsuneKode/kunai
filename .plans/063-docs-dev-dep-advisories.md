@@ -6,7 +6,7 @@
   implemented in the watching candidate; release-age policy and scheduled
   reporting remain proposed.
 - **Priority:** P2
-- **Current-code check:** `c3c64a177`, 2026-10-26. The fresh
+- **Current-code check:** `904e4e121`, 2026-10-27. The fresh
   `DO_NOT_TRACK=1 bun audit --json` run exited zero with `{}`.
 - **Scope:** install policy and maintenance reporting. Keep unrelated dependency
   upgrades and framework migrations separate.
