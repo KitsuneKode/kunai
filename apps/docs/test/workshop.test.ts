@@ -4,6 +4,16 @@ import { parseRepoPayload } from "../lib/github-repos";
 import { presentWorkshopMeta, STAR_DISPLAY_FLOOR, workshop } from "../lib/workshop";
 
 describe("workshop list", () => {
+  test("uses maintained websites as the primary destinations", () => {
+    for (const [repo, url] of [
+      ["sweep", "https://sweep.kitsunekode.in"],
+      ["kittymux", "https://kittymux.kitsunekode.in"],
+      ["js-questions-lab", "https://jsquestionslab.kitsunekode.in"],
+    ]) {
+      expect(workshop.find((project) => project.repo === repo)?.siteUrl).toBe(url);
+    }
+  });
+
   test("every project is a distinct repository under the maintainer's account", () => {
     const repos = workshop.map((project) => project.repo);
     expect(new Set(repos).size).toBe(repos.length);

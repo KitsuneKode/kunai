@@ -44,7 +44,7 @@ describe("SiteFooter", () => {
       "https://github.com/KitsuneKode/kunai/issues",
       "https://www.npmjs.com/package/@kitsunekode/kunai",
       "https://kittymux.kitsunekode.in",
-      "https://github.com/KitsuneKode/sweep",
+      "https://sweep.kitsunekode.in",
       "https://github.com/KitsuneKode/run-cli",
       "https://github.com/KitsuneKode/nvchad-themes",
       "https://jsquestionslab.kitsunekode.in",
