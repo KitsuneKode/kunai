@@ -1,15 +1,15 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { BrowseShell } from "@/app-shell/browse-shell";
 import { kunaiConfigDir } from "@/infra/storage/kunai-paths";
+import { flushSearchHistory } from "@/services/persistence/search-history";
 import React, { act } from "react";
 
 import { render } from "../../harness/render-capture";
 import { applyStorageRootEnv } from "../../helpers/storage-env";
-import { waitUntil } from "../../support/wait-until";
 
 test("failed bootstrap search keeps its query and offline recovery visible", async () => {
   // BrowseShell saves the query it submits to search history, so Enter below writes a file.
@@ -17,7 +17,7 @@ test("failed bootstrap search keeps its query and offline recovery visible", asy
   // write "Bojack Horseman" into ~/.config/kunai/search-history.json on every multi-file run.
   const sandbox = mkdtempSync(join(tmpdir(), "kunai-browse-search-failure-"));
   const restoreEnv = applyStorageRootEnv(sandbox);
-  const historyFile = join(kunaiConfigDir(), "search-history.json");
+  const historyFile = join(kunaiConfigDir(), "search-history-series.json");
   expect(historyFile.startsWith(sandbox)).toBe(true);
 
   const queries: string[] = [];
@@ -51,10 +51,10 @@ test("failed bootstrap search keeps its query and offline recovery visible", asy
     });
 
     expect(queries).toEqual(["Bojack Horseman"]);
-    // The save is asynchronous and best-effort; waiting for it keeps it from landing after cleanup.
-    await waitUntil(() => existsSync(historyFile), {
-      label: "search history saved to the sandbox",
-    });
+    // Observe the writer completing instead of racing a wall-clock deadline.
+    await flushSearchHistory();
+    expect(JSON.parse(readFileSync(historyFile, "utf8"))).toEqual(["Bojack Horseman"]);
+    expect(existsSync(join(kunaiConfigDir(), "search-history-youtube.json"))).toBe(false);
   } finally {
     handle.unmount();
     restoreEnv();

@@ -389,9 +389,9 @@ export function BrowseShell<T>({
   const [historyRevision, setHistoryRevision] = useState(0);
   useEffect(() => {
     const unsubscribe = subscribeSearchHistory(() => setHistoryRevision((value) => value + 1));
-    void refreshSearchHistory();
+    void refreshSearchHistory(mode);
     return unsubscribe;
-  }, []);
+  }, [mode]);
   const [draftQuery, setDraftQuery] = useState("");
   // Suggestion band (type-ahead dropdown under the query field): the highlight
   // is band-local state, never a focus zone — typing keeps editing the draft.
@@ -680,7 +680,7 @@ export function BrowseShell<T>({
         setLastSearchedQuery(rawQuery);
         setResultFilter("");
         setFilterModeOpen(false);
-        addSearchQuery(rawQuery);
+        addSearchQuery(rawQuery, mode);
         setOptions(processed.options);
         setSelectedIndex(0);
         setResultSubtitle(`${response.subtitle}${filterSuffix}`);
@@ -704,7 +704,7 @@ export function BrowseShell<T>({
         setEmptyMessage("Search failed.");
       }
     },
-    [query, onSearch, leaveCalendarSurface],
+    [mode, query, onSearch, leaveCalendarSurface],
   );
 
   const clearStructuredFilterChip = useCallback(
@@ -1138,12 +1138,13 @@ export function BrowseShell<T>({
   });
 
   useEffect(() => {
-    if (suggestionBandVisible) void refreshSearchHistory();
-  }, [suggestionBandVisible]);
+    if (suggestionBandVisible) void refreshSearchHistory(mode);
+  }, [suggestionBandVisible, mode]);
 
   const { suggestions: catalogSuggestions, pending: suggestionsPending } = useSearchSuggestions<T>({
     query,
     enabled: suggestionBandVisible,
+    scopeKey: `${mode}:${provider}`,
     onSuggest,
     // Reduced motion = no keystroke latency: local rows already render in the
     // same frame; the catalog call also fires immediately (the gate + abort
@@ -1153,7 +1154,7 @@ export function BrowseShell<T>({
 
   const localSuggestionCorpus = useMemo<readonly SearchSuggestion<T>[]>(() => {
     if (!suggestionBandVisible) return [];
-    const history = getSearchHistory().map((entry, index): SearchSuggestion<T> => ({
+    const history = getSearchHistory(mode).map((entry, index): SearchSuggestion<T> => ({
       id: `history:${index}:${entry}`,
       title: entry,
       source: "query-history",
@@ -1169,7 +1170,7 @@ export function BrowseShell<T>({
     // The corpus is a snapshot per band-open, not per keystroke — re-reading
     // SQLite on every character is wasted work the scorer never sees.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [suggestionBandVisible, loadLocalSuggestions, historyRevision]);
+  }, [suggestionBandVisible, loadLocalSuggestions, historyRevision, mode]);
 
   const suggestionBandModel = useMemo(
     () =>
@@ -2036,7 +2037,7 @@ export function BrowseShell<T>({
     }
 
     if (key.upArrow && options.length === 0) {
-      const history = getSearchHistory();
+      const history = getSearchHistory(mode);
       if (history.length === 0) return;
       const nextIndex = historyIndex + 1;
       if (nextIndex >= history.length) return;
@@ -2056,7 +2057,7 @@ export function BrowseShell<T>({
         setQuery(draftQuery);
         return;
       }
-      const history = getSearchHistory();
+      const history = getSearchHistory(mode);
       const nextIndex = historyIndex - 1;
       setHistoryIndex(nextIndex);
       setQuery(history[nextIndex] ?? "");

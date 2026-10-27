@@ -667,10 +667,7 @@ function formatLibrarySeasonCode(group: OfflineLibraryShelfGroup): string {
   return "—";
 }
 
-function formatLibraryStatus(
-  row: LibraryShelfRow,
-  historyMap: Record<string, HistoryProgress>,
-): { label: string; color: string; dim: boolean } {
+function formatLibraryStatus(row: LibraryShelfRow, historyMap: Record<string, HistoryProgress>) {
   const { group } = row;
   const hist = historyMap[group.titleId];
   if (hist && !isFinished(hist) && (hist.durationSeconds ?? 0) > 0) {

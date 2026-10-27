@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26T08:06:09Z"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai — UX Architecture
@@ -301,6 +301,9 @@ Sources and async contract:
 - Two layers merge into one ranked band — pure logic in
   `domain/search/suggestion-engine.ts`: prefix match > word-boundary > subsequence, recency as
   the tiebreak, catalog rows deduped against shown local titles.
+- Query histories are partitioned into anime, series/movie, and YouTube files. Every active
+  caller supplies its mode; unclassified legacy queries stay preserved in their original file
+  rather than leaking into all modes. Local title suggestions are filtered to the active lane.
 - Local layer is synchronous and free: past submitted searches, watched titles, followed titles,
   and list/playlist rows (`app/search/search-suggestions.ts` materializes them as
   `SearchSuggestion<SearchResult>` — every row's `value` is a real SearchResult).
@@ -311,11 +314,17 @@ Sources and async contract:
   no registry catalog, so the band shows local rows only — provider-native search is too heavy
   per keystroke.
 - `app-shell/hooks/use-search-suggestions.ts` debounces ~300ms, aborts the superseded request,
-  and gates commits by request id — a stale response can never overwrite a newer draft's rows.
+  and gates commits by request id and mode/provider scope — a stale response can never
+  overwrite a newer draft or lane's rows. Changing providers cancels and restarts the debounce
+  even when the text stays the same.
   Local rows paint in the same frame as the keystroke; while the catalog call is in flight the
   catalog section shows dim `░` skeleton rows.
 - Zero remote hits leave local rows plus a `keep typing · ↵ search anyway` hint; a catalog
   failure settles silently to local-only. The band is an enhancement, never an error surface.
+
+During playback bootstrap, pending or explicitly disabled subtitles use neutral
+status text. Resolved tracks are available inventory until mpv confirms selection;
+a missing track or failed lookup is a warning, not an ordinary loading state.
 
 Keyboard contract:
 
@@ -635,3 +644,17 @@ only for the focused row. The palette replaces other footer hints while open.
 Startup rails follow the current playback cycle and never delay transitions to
 make a stage visible. Waiting for the first frame is buffering; recovery history
 remains available after playback resumes.
+
+### Palette title previews and pointer motion
+
+The local JUMP TO section stays a global navigation surface; its selected title
+shows its actual media kind and provider. Tall terminals reserve three fixed
+preview rows before selection, so hover cannot move its own target. Compact
+terminals show the same identity in the section header without growing the
+palette. Keyboard selection and pointer hover feed the same highlighted index;
+hover never opens a title. Enter or a click on the selected title activates it.
+
+SGR mouse tracking requests all-motion reports (1003) as well as press/release,
+and disables each mode when detaching. Only changes of hovered target notify
+preview consumers; motion within one target does not schedule a state update.
+Terminals without mouse support retain keyboard navigation.

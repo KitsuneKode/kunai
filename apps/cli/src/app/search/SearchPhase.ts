@@ -443,11 +443,12 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           const searchIntent = createSearchIntentEngine().fromText(currentState.searchQuery, {
             currentMode: currentState.mode,
           });
+          const searchMode = stateManager.getState().mode;
           let search: Awaited<ReturnType<typeof searchTitles>>;
           try {
             search = await observeOnline(container, "search-error", () =>
               this.dependencies.searchTitles(searchIntent.intent, {
-                mode: stateManager.getState().mode,
+                mode: searchMode,
                 providerId: currentState.provider,
                 animeLanguageProfile: container.config.animeLanguageProfile,
                 youtubeLanguageProfile: container.config.youtubeLanguageProfile,
@@ -468,7 +469,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           // Bootstrap searches (-S, initial query, auto-search) never pass the
           // browse submit that records history — record here. Dedupe in
           // addSearchQuery makes a later interactive repeat idempotent.
-          addSearchQuery(searchIntent.intent.query);
+          addSearchQuery(searchIntent.intent.query, searchMode);
           pendingSearchEvidence = search.evidence;
           pendingSearchWarnings = searchIntent.warnings;
           pendingSearchEmptyMessage =
@@ -757,7 +758,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               container.config.animeTitlePreference,
             );
           },
-          loadLocalSuggestions: () => loadLocalSuggestionCorpus(container),
+          loadLocalSuggestions: () =>
+            loadLocalSuggestionCorpus(container, stateManager.getState().mode),
           // Dwell prefetch (~500ms on a rested row): warms exactly what the
           // select path below pays — provider mapping, identity enrich, title
           // detail, and the episode catalog — so Enter resolves from cache.
@@ -887,11 +889,12 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
 
+            const searchMode = stateManager.getState().mode;
             let search: Awaited<ReturnType<typeof searchTitles>>;
             try {
               search = await observeOnline(container, "search-error", () =>
                 this.dependencies.searchTitles(searchIntent.intent, {
-                  mode: stateManager.getState().mode,
+                  mode: searchMode,
                   providerId: stateManager.getState().provider,
                   animeLanguageProfile: container.config.animeLanguageProfile,
                   youtubeLanguageProfile: container.config.youtubeLanguageProfile,
@@ -911,7 +914,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             this.warmAnimeEpisodesForResults(context, results);
             // Follow-up programmatic searches resolve here rather than in the
             // browse submit — record so history reflects every completed query.
-            addSearchQuery(query);
+            addSearchQuery(query, searchMode);
 
             logger.info("Search complete", {
               query,

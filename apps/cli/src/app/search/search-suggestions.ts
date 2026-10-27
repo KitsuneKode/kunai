@@ -12,8 +12,9 @@
 // =============================================================================
 
 import type { Container } from "@/container";
+import { shellModeToProviderLane } from "@/domain/provider-lane";
 import type { SearchSuggestion } from "@/domain/search/suggestion-engine";
-import type { ProviderLane, SearchResult } from "@/domain/types";
+import type { ProviderLane, SearchResult, ShellMode } from "@/domain/types";
 import {
   correctedHistoryMediaKind,
   historyContentType,
@@ -27,14 +28,16 @@ import type { HistoryProgress, ListItem, UserPlaylistItemRecord } from "@kunai/s
 
 import { chooseSearchResultTitle } from "./browse-option-mappers";
 
-type CorpusSource = Pick<
-  Container,
-  | "historyRepository"
-  | "followedTitleRepository"
-  | "listService"
-  | "listRepository"
-  | "playlistsRepository"
->;
+type CorpusSource = {
+  readonly historyRepository: Parameters<typeof readLatestHistoryByTitle>[0];
+  readonly followedTitleRepository: Pick<Container["followedTitleRepository"], "listByPreference">;
+  readonly listService: Pick<
+    Container["listService"],
+    "getFavorites" | "getWatchlist" | "getListItems"
+  >;
+  readonly listRepository: Pick<Container["listRepository"], "getLists">;
+  readonly playlistsRepository: Pick<Container["playlistsRepository"], "list" | "listItems">;
+};
 
 const CORPUS_BOUNDS = {
   watched: 60,
@@ -158,9 +161,11 @@ function playlistItemSuggestion(
  */
 export function loadLocalSuggestionCorpus(
   source: CorpusSource,
+  mode?: ShellMode,
 ): readonly SearchSuggestion<SearchResult>[] {
   const byTitleId = new Map<string, SearchSuggestion<SearchResult>>();
   const push = (suggestion: SearchSuggestion<SearchResult>, titleId: string) => {
+    if (mode && suggestion.value?.resolvedLane !== shellModeToProviderLane(mode)) return;
     if (!byTitleId.has(titleId)) byTitleId.set(titleId, suggestion);
   };
 

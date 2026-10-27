@@ -166,8 +166,7 @@ export class MouseDispatcher {
 
     if (event.kind === "drag") {
       this.cancelPress();
-      // No-button motion is the only evidence of idle hover. 1002 does not
-      // request it; terminals that report it anyway can supply honest feedback.
+      // No-button motion selects a preview target without activating it.
       this.hover(event.button === "none" && region?.handlers.onClick ? region.id : null);
       return region !== null;
     }
@@ -250,6 +249,8 @@ export function MouseTarget(props: {
   readonly onRightClick?: (event: MouseEvent) => void;
   readonly active?: boolean;
   readonly feedback?: boolean;
+  /** Focus/preview only; hover must never activate a command. */
+  readonly onHover?: () => void;
   readonly flexShrink?: number;
   readonly children: ReactNode;
 }) {
@@ -262,7 +263,13 @@ export function MouseTarget(props: {
       onClick: props.onClick,
       onWheel: props.onWheel,
       onRightClick: props.onRightClick,
-      onInteractionChange: props.feedback ? setInteraction : undefined,
+      onInteractionChange:
+        props.feedback || props.onHover
+          ? (state) => {
+              if (props.feedback) setInteraction(state);
+              if (state === "hover") props.onHover?.();
+            }
+          : undefined,
     },
     { active: props.active },
   );

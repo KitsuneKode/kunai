@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-27"
 ---
 
 # Kunai — Testing Strategy
@@ -20,6 +20,15 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 - keep VHS tapes and captured golden outputs under `apps/cli/test/vhs/` for UI demos and visual regression review
 - keep the agent verification loop under `apps/cli/test/agent/` — user-path drivers, evidence bundles, wiring scenarios (`bun run test:agent`; not swept into `test:unit`/`test:integration`)
 - keep mobile unit/integration contracts under `apps/mobile/test/{unit,integration}/`
+
+`bun run test:live:providers` covers every production provider returned by
+`loadProductionProviderModules()`. The roster contract test compares those
+modules with the aggregate's executable smoke commands. Retired adapters are
+excluded, even when historical fixtures remain in the tree. In particular,
+AniDB has no active smoke command after retirement; its old resolve-only script
+does not establish current search coverage. Live smokes are opt-in and a skipped
+or unrun provider is not a passing provider.
+
 - keep the redacted, opt-in device-evidence validator under `apps/mobile/test/live/`; it validates supplied evidence and never controls a device
 
 The published npm launcher package excludes the entire `test/` tree: its exact tarball allowlist contains `package.json`, `dist/npm-launcher.mjs`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
@@ -897,3 +906,19 @@ that one pass claims the expected rows and clears the queue. That assertion does
 not require disk durability or WAL contention; the other drain cases continue
 using file-backed databases. Keep native filesystem/lifecycle qualification in
 its owning tests rather than relying on a wiring test's wall-clock budget.
+
+## Automated analytics isolation
+
+The CLI test preload, shadow-profile helper, manual sandbox and native Docker
+smoke force `DO_NOT_TRACK=1`. Every hosted workflow also sets it and Turbo
+preserves it in strict tasks. Tests must not mint countable production install
+identities, including when `CI=0` or a fixture already has consent. Agent launch
+overrides may not replace isolated roots or disable DNT. Test consent behavior
+with injected in-memory configuration and fetch fixtures.
+
+The opt-in analytics smoke requires both `KUNAI_LIVE_ANALYTICS=1` and
+`KUNAI_ANALYTICS_TEST_URL` with numeric
+loopback and an explicit port, refuses redirects, and awaits fixture acceptance.
+A fixed synthetic UUID still counts as an install if sent to production. The
+smoke establishes the local wire contract, not production deployment or counts;
+its server must use disposable storage.

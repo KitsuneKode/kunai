@@ -6,10 +6,10 @@
 // owns the stream plumbing; this file only knows bytes → events.
 // =============================================================================
 
-/** Enable: button press/release + drag (1002) + SGR extended coords (1006). */
-export const MOUSE_TRACKING_ENABLE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+/** Enable: button press/release + all motion (1003) + SGR extended coords (1006). */
+export const MOUSE_TRACKING_ENABLE = "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h";
 /** Disable in reverse order; harmless if the modes were never on. */
-export const MOUSE_TRACKING_DISABLE = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
+export const MOUSE_TRACKING_DISABLE = "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l";
 
 export type MouseButton = "left" | "middle" | "right" | "wheel-up" | "wheel-down" | "none";
 

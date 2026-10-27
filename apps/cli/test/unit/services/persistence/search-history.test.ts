@@ -150,3 +150,26 @@ describe("search history persistence", () => {
     expect(readFileSync(historyFile(), "utf8")).toBe("broken fixture");
   });
 });
+
+test("mode-scoped query history never mixes anime, series and YouTube", async () => {
+  addSearchQuery("Frieren", "anime");
+  addSearchQuery("Dune", "series");
+  addSearchQuery("lofi hip hop", "youtube");
+  await flushSearchHistory();
+  expect(getSearchHistory("anime")).toEqual(["Frieren"]);
+  expect(getSearchHistory("series")).toEqual(["Dune"]);
+  expect(getSearchHistory("youtube")).toEqual(["lofi hip hop"]);
+  const restarted = createSearchHistoryStore();
+  await restarted.refresh("youtube");
+  expect(restarted.get("youtube")).toEqual(["lofi hip hop"]);
+  expect(restarted.get("anime")).toEqual([]);
+});
+
+test("unclassified legacy queries stay preserved without appearing in every mode", async () => {
+  addSearchQuery("legacy query");
+  await flushSearchHistory();
+  await refreshSearchHistory("youtube");
+  expect(getSearchHistory("youtube")).toEqual([]);
+  expect(getSearchHistory()).toEqual(["legacy query"]);
+  expect(readDisk()).toEqual(["legacy query"]);
+});

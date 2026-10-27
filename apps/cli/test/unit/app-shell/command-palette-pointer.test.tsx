@@ -104,3 +104,62 @@ test("Now Playing Share uses the real command callback and yields to the palette
     h.unmount();
   }
 });
+
+test.each([30, 60])(
+  "hover previews a local title without activation at %i terminal rows",
+  async (rows) => {
+    const { act, useState } = await import("react");
+    const events: string[] = [];
+    function Palette() {
+      const [index, setIndex] = useState(-1);
+      return (
+        <CommandPalette
+          input="Fri"
+          commands={[]}
+          highlightedIndex={index}
+          titleMatches={[
+            {
+              entry: {
+                titleId: "anilist:1",
+                mediaKind: "anime",
+                title: "Frieren: Beyond Journey's End",
+                source: "history",
+                providerId: "hianime",
+                detail: "S01E12 · history",
+              },
+              ranges: [],
+            },
+          ]}
+          pointer={{ select: setIndex, activate: () => events.push("open"), close: () => {} }}
+        />
+      );
+    }
+    const h = renderWithPointer(<Palette />, { columns: 140, rows });
+    try {
+      const region = h.dispatcher
+        .debugRegions()
+        .find((row) => row.id === "palette:title:history:anilist:1");
+      expect(region).toBeDefined();
+      await act(async () => {
+        h.dispatcher.dispatch({
+          kind: "drag",
+          button: "none",
+          x: region!.rect.x,
+          y: region!.rect.y,
+          ctrl: false,
+          shift: false,
+          alt: false,
+        });
+      });
+      expect(h.lastFrame()).toContain("Anime · hianime");
+      expect(h.dispatcher.debugRegions().find((row) => row.id === region!.id)?.rect).toEqual(
+        region!.rect,
+      );
+      expect(events).toEqual([]);
+      h.click("palette:title:history:anilist:1");
+      expect(events).toEqual(["open"]);
+    } finally {
+      h.unmount();
+    }
+  },
+);

@@ -3,6 +3,19 @@ import { describe, expect, test } from "bun:test";
 import { mapInvidiousSearchItem } from "@kunai/providers/youtube";
 
 describe("mapInvidiousSearchItem", () => {
+  test("canonicalizes instance-relative video thumbnails before they reach poster consumers", () => {
+    const mapped = mapInvidiousSearchItem({
+      type: "video",
+      title: "Thumbnail regression",
+      videoId: "dQw4w9WgXcQ",
+      author: "Channel",
+      authorId: "UCfixture",
+      videoThumbnails: [{ quality: "medium", url: "/vi/dQw4w9WgXcQ/mqdefault.jpg" }],
+    });
+    expect(mapped?.posterPath).toBe("https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg");
+    expect(mapped?.artwork?.thumbnailUrl).toBe("https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg");
+  });
+
   test("maps liveNow to live badge", () => {
     const mapped = mapInvidiousSearchItem({
       type: "video",

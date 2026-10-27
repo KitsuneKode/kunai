@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26T00:43:04Z"
+lastReviewed: "2026-10-26"
 ---
 
 # Kunai — Repo Infrastructure

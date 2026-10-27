@@ -66,6 +66,16 @@ export function projectPlaybackSubtitleState(
     };
   }
 
+  const subtitleCount =
+    stream?.subtitleList?.length || stream?.providerResolveResult?.subtitles?.length || 0;
+  if (subtitleCount > 0) {
+    return {
+      kind: "available",
+      label: `${subtitleCount} subtitle ${subtitleCount === 1 ? "track" : "tracks"} available`,
+      tone: "info",
+    };
+  }
+
   if (isYoutubePlaybackStream(stream)) {
     const plan = buildYoutubeSubtitlePreferencePlan(subLang);
     if (subLang === "none" || plan.mpvSlang === "no") {
@@ -92,14 +102,6 @@ export function projectPlaybackSubtitleState(
     };
   }
 
-  if (stream.subtitleList?.length) {
-    return {
-      kind: "available",
-      label: `${stream.subtitleList.length} subtitle tracks available`,
-      tone: "success",
-    };
-  }
-
   if (options.lateLookup === "pending") {
     return { kind: "late-lookup-pending", label: "subtitle lookup pending", tone: "info" };
   }
@@ -121,12 +123,20 @@ export function playbackSubtitleStatusTone(status: string): PlaybackSubtitleStat
   if (
     normalized.includes("attached") ||
     normalized.includes("selected") ||
+    normalized.includes("playing") ||
     normalized.startsWith("hardsub") ||
     normalized.includes("available")
   ) {
     return "success";
   }
-  if (normalized.includes("not resolved")) return "info";
+  if (
+    normalized.includes("not resolved") ||
+    normalized.includes("pending") ||
+    normalized.includes("disabled") ||
+    normalized.includes("off in mpv") ||
+    normalized.includes("hidden in mpv")
+  )
+    return "info";
   return "warning";
 }
 

@@ -1,4 +1,7 @@
-import { compactPlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
+import {
+  compactPlaybackSubtitleStatus,
+  playbackSubtitleStatusTone,
+} from "@/app/playback/subtitle-status";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput } from "ink";
@@ -594,10 +597,12 @@ export const LoadingShell = React.memo(function LoadingShell({
   const activeStage = state.stage ?? (isPlaying ? "starting-playback" : "finding-stream");
   const stageRailItems = renderStageRail(activeStage, loadingIssue);
   const providerDetail = normalizeProviderDetail(state.details);
-  const subtitleReady = Boolean(
-    state.subtitleStatus?.toLowerCase().includes("attached") ||
-    state.subtitleStatus?.toLowerCase().includes("ready"),
-  );
+  const subtitleTone = playbackSubtitleStatusTone(state.subtitleStatus ?? "");
+  const subtitleColor = {
+    success: palette.ok,
+    info: palette.muted,
+    warning: palette.warn,
+  }[subtitleTone];
 
   // Active control-surface state, derived from existing playback stats — the
   // playing body renders structured rows (health · tracks · session · up next)
@@ -608,8 +613,8 @@ export const LoadingShell = React.memo(function LoadingShell({
         state.audioTrack ? `audio ${state.audioTrack}` : undefined,
         state.subtitleTrack
           ? compactPlaybackSubtitleStatus(state.subtitleTrack)
-          : subtitleReady
-            ? "subs on"
+          : state.subtitleStatus
+            ? compactPlaybackSubtitleStatus(state.subtitleStatus)
             : undefined,
       ]
         .filter((part): part is string => Boolean(part))
@@ -785,7 +790,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                     {/* Subtitle status — revealed after 2s */}
                     {disclosure.showSubtitleStatus && state.subtitleStatus && (
                       <Box marginTop={1}>
-                        <Text color={subtitleReady ? palette.ok : palette.accentDeep}>
+                        <Text color={subtitleColor}>
                           {truncateLine(state.subtitleStatus, Math.max(12, infoWidth))}
                         </Text>
                       </Box>
