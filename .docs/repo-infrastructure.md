@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T07:25:41Z"
+lastReviewed: "2026-10-27T11:58:38Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -464,6 +464,20 @@ with an HTTP(S) origin; credentials, paths, query strings and fragments are
 rejected. The root layout marks Vercel preview deployments `noindex, follow`.
 Public pages retain their own canonical URLs, social cards and structured data;
 utility/share/withdrawn pages keep their existing indexing policy.
+
+The home page's version badge and `SoftwareApplication` version follow the latest
+published release artifact, matching the `releases/latest` download link. The docs source
+version can include an unpublished staged release and is not evidence that its
+binary is available. When no published release is known, structured data omits
+`softwareVersion` instead of substituting a source-build version, and the badge
+reads "Release notes". The simulator and docs retain their source version. It names mpv
+for desktop playback and yt-dlp for YouTube/downloads without inventing ratings.
+
+Public descriptions name the content Kunai handles, then explain playback,
+resume and recovery. Movies and TV series share series mode: three search modes
+cover four content types. A provider probe is not decoded playback proof, and
+copy must not present it as one. Native binaries embed their runtime; the npm
+and Bun global-package channels use a Node launcher and require Node on PATH.
 
 `apps/docs/scripts/doc-last-modified.ts` memoizes guide timestamps per path
 using full Git history and Fumadocs' author-date convention, avoiding re-dating

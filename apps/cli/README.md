@@ -1,181 +1,114 @@
-# @kitsunekode/kunai
+# Kunai
 
-`@kitsunekode/kunai` is the published CLI package for Kunai.
+**Watch anime, movies, TV series and YouTube from your terminal with mpv.**
 
-Kunai is a terminal-first client that resolves third-party stream URLs and launches playback in `mpv`. It does not host, upload, mirror, seed, or distribute video content.
+Search for a title, choose a source and keep watching in one keyboard-driven
+session, with source switching, subtitles, resume and offline downloads.
 
-## Requirements
+[Installation guide](https://kunai.kitsunekode.in/docs/users/install-and-update) ·
+[Feature guide](https://kunai.kitsunekode.in/docs/users/what-you-can-do) ·
+[Release notes](https://kunai.kitsunekode.in/releases) ·
+[GitHub repository](https://github.com/KitsuneKode/kunai)
 
-- **Node** on your `PATH` (this npm channel ships a Node launcher that spawns a platform binary — you do not need Bun)
-- `mpv` on your `PATH` (required for playback)
-- `yt-dlp` on your `PATH` for YouTube playback and when offline downloads are enabled
-- `ffprobe` for optional verification of finished downloads only—not the downloader
-- Built-in half-block poster fallback; Kitty/Ghostty/iTerm2/sixel when the terminal supports them
-- Discord desktop app for Rich Presence (optional; local Unix-socket / Windows named-pipe IPC)
+## Install and Start
 
-Native release binaries embed Bun and do **not** need a separate Bun or Node install. Prefer
-`install.sh` / `install.ps1` when you want zero runtime prerequisites. This npm page is
-for the package-manager channel only.
-
-See [platform and poster support](https://kunai.kitsunekode.in/docs/users/platforms)
-for terminal capabilities and OS-specific setup.
-
-Install core tools:
-
-```bash
-# Linux (Arch)
-sudo pacman -S mpv yt-dlp
-
-# Linux (Debian/Ubuntu)
-sudo apt install mpv yt-dlp
-
-# macOS (Homebrew)
-brew install mpv yt-dlp
-```
-
-Windows: `winget install --id mpv-player.mpv-CI.MSVC -e` installs the real
-`mpv.exe` Kunai probes and controls; `mpv.net` provides `mpvnet.exe` and is not a
-substitute. The native installer drops a portable `yt-dlp` and (on x64)
-curl-impersonate into `%LOCALAPPDATA%\kunai\deps\`. If you are installing those
-yourself, use `winget install --id yt-dlp.yt-dlp -e` — the un-qualified
-query matches a Microsoft Store listing as well and fails. Add `ffprobe`
-(from FFmpeg) only if you want post-download validation.
-
-## Install
-
-```bash
-# npm
+```sh
 npm install -g @kitsunekode/kunai
-
-# Bun
-bun install -g @kitsunekode/kunai
-```
-
-Both commands install the same Node launcher and exact platform binary, so Node remains required
-at runtime for this package-manager channel. Optional platform binaries ship as optional
-dependencies. Diagnose PATH and ownership with `kunai doctor`.
-
-Run:
-
-```bash
-kunai
 kunai --setup
+kunai
 ```
 
-## Update and uninstall
+The npm package contains a Node launcher and selects the matching native
+platform package. **Keep Node on your PATH.** Bun's global-package channel
+uses the same launcher and also needs Node.
 
-Primary update path (channel-aware):
+For a self-contained binary with no separate Node or Bun installation, use the
+[native installation guide](https://kunai.kitsunekode.in/docs/users/install-and-update).
 
-```bash
-kunai upgrade
+## Playback Tools
+
+- **mpv:** required for desktop playback.
+- **yt-dlp:** required for YouTube playback and offline downloads.
+- **ffprobe:** used for download validation where available.
+- **curl-impersonate:** used by providers that need an impersonating HTTP client.
+
+```sh
+sudo pacman -S mpv yt-dlp     # Arch Linux
+sudo apt install mpv yt-dlp   # Debian / Ubuntu
+brew install mpv yt-dlp      # macOS
+```
+
+On Windows, install mpv with `winget install --id mpv-player.mpv-CI.MSVC -e`.
+For yt-dlp, use `winget install --id yt-dlp.yt-dlp -e`.
+See the [platform guide](https://kunai.kitsunekode.in/docs/users/platforms)
+for support levels and optional tool setup.
+
+## Find Something to Watch
+
+```sh
+kunai -S "Dune"              # movies and TV series
+kunai -a -S "Demon Slayer"   # anime
+kunai -y -S "live coding"    # YouTube
+kunai --continue            # resume an unfinished title
+kunai --offline             # open local media
+```
+
+The shell stays open while mpv plays. Use the footer shortcuts or `/` for
+the command palette:
+
+| Task                             | Command or key           |
+| -------------------------------- | ------------------------ |
+| Choose a provider                | `/provider`              |
+| Open source and track choices    | `o` during playback      |
+| Choose quality                   | `k` during playback      |
+| Recover the current stream       | `r` or `/recover`        |
+| Try the next compatible provider | `Shift+F` or `/fallback` |
+| Arrange playback order           | `/up-next`               |
+| Save titles for later            | `/watchlist`             |
+| Manage offline downloads         | `/downloads`             |
+| Play downloaded files            | `/library`               |
+
+Source, quality, audio and subtitle choices depend on the provider and title.
+Recovery can try another source; it cannot guarantee that a title is available.
+Read the [commands guide](https://kunai.kitsunekode.in/docs/users/commands-and-shortcuts)
+for the full controls.
+
+## Local Data and Privacy
+
+History, Up Next, Playlists and download records are stored locally. A Kunai
+account is not required. AniList and TMDB sync and Discord presence are
+optional integrations. Usage analytics requires explicit consent and excludes
+titles, queries, providers, stream URLs and file paths.
+
+Read [reliability and privacy](https://kunai.kitsunekode.in/docs/users/reliability-and-privacy)
+for the data and network boundaries.
+
+## Update, Diagnose and Remove
+
+```sh
 kunai upgrade --check
-```
-
-npm-native alternatives:
-
-```bash
-npm install -g @kitsunekode/kunai   # update
-npm uninstall -g @kitsunekode/kunai # remove package
-kunai uninstall                     # ownership-aware removal
-kunai uninstall --purge             # also delete config/history/cache
-```
-
-If `kunai` is missing or shadowed after install, diagnose PATH and ownership:
-
-```bash
-kunai doctor
-kunai doctor --json
-type -a kunai                # bash: list every kunai on PATH
-# or: which -a kunai
-# zsh: whence -a kunai  (also which -a / type -a)
-# PowerShell: Get-Command kunai -All
-kunai install --force        # redownload/reverify; pin with: kunai install --force X.Y.Z
-kunai rollback --list        # verified local versions only
-kunai uninstall              # ownership-aware; use npm uninstall -g for npm channel
-```
-
-### Support matrix (0.3.0)
-
-| Target                                      | Status                                                         |
-| ------------------------------------------- | -------------------------------------------------------------- |
-| Linux glibc/musl x64 + arm64 (four targets) | Supported                                                      |
-| macOS x64/arm64                             | Beta                                                           |
-| Windows x64                                 | Beta                                                           |
-| Windows ARM64                               | Experimental                                                   |
-| WSL                                         | Linux environment (separate from Windows-native PATH/mpv/data) |
-| BSD                                         | Unsupported binary                                             |
-
-Alpine:
-
-```bash
-apk add mpv yt-dlp ffmpeg
-curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
-kunai --version
-kunai --setup
-```
-
-YouTube cookies (optional): `youtubeMetadata.cookiesFromBrowser` or absolute
-`cookiesFile` — never paste cookie contents into issues; review redacted
-`/export-diagnostics` bundles. No DRM bypass claim.
-
-## Useful Commands
-
-```bash
-kunai
-kunai -a
-kunai -S "Dune"
-kunai -i 438631 -t movie
-kunai --debug
-kunai --setup
-kunai --offline
-kunai doctor
 kunai upgrade
+kunai doctor
+npm uninstall -g @kitsunekode/kunai
 ```
 
-Default download path (when downloads are enabled):
+`kunai doctor` checks tool discovery and install ownership. For playback
+problems, open `/diagnostics` or `/export-diagnostics` in the shell. Review an
+export before attaching it to an issue, and never paste cookies or credentials.
 
-- Linux: `~/.local/share/kunai/downloads` (or `XDG_DATA_HOME/kunai/downloads`)
-- macOS: `~/Library/Application Support/kunai/downloads`
-- Windows: `%LOCALAPPDATA%\kunai\downloads`
+See [troubleshooting](https://kunai.kitsunekode.in/docs/users/troubleshooting)
+for recovery steps and [installation and removal](https://kunai.kitsunekode.in/docs/users/install-and-update#uninstall)
+for data-retention options.
 
-Recommendation shortcuts:
+## Project
 
-```bash
-# inside Kunai command palette
-/recommendation
-/downloads
-/library
-/up-next
-```
+Kunai is a beta terminal media client built with Bun, TypeScript, React and Ink.
+Provider availability varies with upstream services and your network. Experimental
+mobile work is documented separately and is not a supported full mobile app.
 
-Download workflow shortcuts:
-
-- From browse results, use `Ctrl+D` / `/download` to queue the selected result.
-- During playback or post-playback, use `d` / `/download` to queue the current stream.
-- Use `/downloads` to inspect active/failed/completed jobs and retry or cancel entries.
-
-Playback recovery shortcuts:
-
-- Use `r` / `/recover` to refresh the current stream and resume.
-- Use `/recompute` when provider/source inventory looks stale and cached provider memory should be bypassed.
-- Use `⇧F` / `/fallback` to try the next compatible provider.
-- Use `o` / `/source` for source and `k` for quality.
-
-## Diagnostics
-
-- Use `--debug` for verbose logs
-- Use `--debug-json` to write scoped JSONL diagnostics traces
-- Use `--debug-session` for a developer repro session with trace path and breakpoint guidance
-- Use `/export-diagnostics` inside Kunai for a redacted report snapshot
-- Use `/report-issue` to export a redacted bundle and open a prefilled GitHub issue draft
-- Use `kunai doctor` when PATH or install ownership looks wrong
-
-## Caveats
-
-- Provider availability can drift over time
-- Subtitle/source inventories vary by provider and title
-- Kunai prioritizes deterministic recovery and diagnostics over opaque retries
-- This npm channel needs Node (launcher) plus the platform optional dependency; native binaries do not
+- [Report an issue](https://github.com/KitsuneKode/kunai/issues)
+- [Contribute to Kunai](https://github.com/KitsuneKode/kunai/blob/main/CONTRIBUTING.md)
+- [Read the MIT license](https://github.com/KitsuneKode/kunai/blob/main/LICENSE)
 
 ## Disclaimer
 
@@ -183,8 +116,3 @@ Kunai is a client-side playback tool. It does not host, upload, mirror, seed, or
 distribute video content. Streams and related assets are served by non-affiliated
 third-party providers. Use responsibly and in accordance with applicable laws and
 service terms.
-
-## Project
-
-- Repository: https://github.com/kitsunekode/kunai
-- Issues: https://github.com/kitsunekode/kunai/issues

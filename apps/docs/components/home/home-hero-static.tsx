@@ -8,11 +8,11 @@ import { IconArrowRight } from "@tabler/icons-react";
 import Link from "next/link";
 
 type HomeHeroStaticProps = {
-  readonly cliVersion: string;
+  readonly publishedVersion?: string;
   readonly providerCount: number;
 };
 
-export function HomeHeroStatic({ cliVersion, providerCount }: HomeHeroStaticProps) {
+export function HomeHeroStatic({ publishedVersion, providerCount }: HomeHeroStaticProps) {
   const installCommand = homeHero.installCommands[0] ?? CANONICAL_INSTALL;
 
   return (
@@ -56,7 +56,7 @@ export function HomeHeroStatic({ cliVersion, providerCount }: HomeHeroStaticProp
         <HomeStarCta />
       </div>
 
-      <HeroProofRow cliVersion={cliVersion} providerCount={providerCount} />
+      <HeroProofRow publishedVersion={publishedVersion} providerCount={providerCount} />
     </section>
   );
 }

@@ -32,7 +32,7 @@ export function websiteJsonLd() {
  * the repo already asserts elsewhere; nothing is invented.
  */
 export function softwareApplicationJsonLd(input: {
-  readonly version: string;
+  readonly version?: string;
   readonly description: string;
 }) {
   return {
@@ -47,8 +47,8 @@ export function softwareApplicationJsonLd(input: {
     applicationCategory: "MultimediaApplication",
     applicationSubCategory: "Command Line Media Player",
     operatingSystem: "Linux, macOS, Windows",
-    softwareVersion: input.version,
-    softwareRequirements: "mpv",
+    ...(input.version ? { softwareVersion: input.version } : null),
+    softwareRequirements: "mpv for desktop playback; yt-dlp for YouTube and downloads",
     downloadUrl: "https://github.com/KitsuneKode/kunai/releases/latest",
     license: "https://github.com/KitsuneKode/kunai/blob/main/LICENSE",
     isAccessibleForFree: true,

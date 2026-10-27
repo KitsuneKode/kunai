@@ -20,10 +20,10 @@ export function generateMetadata(): Metadata {
     metadataBase: new URL(docsSiteUrl),
     title: {
       default: "Kunai Docs",
-      template: "%s | Kunai · terminal streaming client",
+      template: "%s | Kunai",
     },
     description:
-      "Guides for Kunai, the terminal client for anime, series, movies, and YouTube: resolve a stream, hand off to mpv, recover, and use local offline files.",
+      "Install Kunai and play anime, movies, TV series and YouTube in mpv. Find guides for search, subtitles, source recovery, offline downloads and privacy.",
   };
   if (process.env.VERCEL_ENV === "preview") metadata.robots = { index: false, follow: true };
   return metadata;

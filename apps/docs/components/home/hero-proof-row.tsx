@@ -3,7 +3,7 @@ import { IconExternalLink } from "@tabler/icons-react";
 import Link from "next/link";
 
 type HeroProofRowProps = {
-  readonly cliVersion: string;
+  readonly publishedVersion?: string;
   readonly providerCount: number;
 };
 
@@ -12,12 +12,18 @@ type HeroProofRowProps = {
  * what it costs them, what it runs, how many providers, and where the package
  * lives. Every value is derived — none is written down twice.
  */
-export function HeroProofRow({ cliVersion, providerCount }: HeroProofRowProps) {
+export function HeroProofRow({ publishedVersion, providerCount }: HeroProofRowProps) {
   return (
     <ul className="kunai-proof-row">
       <li>
         <Link href="/releases">
-          v<span className="tabular-nums">{cliVersion}</span>
+          {publishedVersion ? (
+            <>
+              v<span className="tabular-nums">{publishedVersion}</span>
+            </>
+          ) : (
+            "Release notes"
+          )}
         </Link>
       </li>
       <li>
