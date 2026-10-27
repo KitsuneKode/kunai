@@ -14,7 +14,7 @@ const profile = createProviderSmokeProfile("anidb");
 const args = directSmokeArgs();
 
 const episode = Number(args[0] ?? "1");
-const searchQuery = args.slice(1).join(" ") || "bleach";
+const searchQuery = args.slice(1).join(" ") || "Onigiri";
 const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
 
 const { createContainer } = await import("@/container");
@@ -30,17 +30,79 @@ if (clearCache) {
   await container.cacheStore.clear();
 }
 
-// Skip search test - use direct AniDB ID for resolve test
-const title = {
-  id: "anidb:3765",
-  type: "series" as const,
-  name: "Bleach",
-  externalIds: {
-    providerNativeIds: {
-      anidb: "3765",
-    },
-  },
-};
+// Search through the default provider itself. A hard-coded native id would let
+// this smoke pass while AniDB search — the route users actually take — is dead.
+if (!provider.search) {
+  console.log(JSON.stringify({ ok: false, stage: "search", reason: "anidb_has_no_search" }));
+  process.exit(1);
+}
+
+// AniDB search now raises `AnidbHttpStatusError` rather than parsing an error
+// page into zero results, so an outage arrives here as a throw. Uncaught, it
+// would exit with a stack trace and no payload — which the matrix can only
+// report as `harness-failure`, hiding the very outage the throw exists to
+// surface. Report it as provider evidence instead.
+let searchResults: Awaited<ReturnType<NonNullable<typeof provider.search>>> = null;
+try {
+  searchResults = await provider.search(searchQuery, {
+    audioPreference: container.config.animeLanguageProfile.audio,
+    subtitlePreference: container.config.animeLanguageProfile.subtitle,
+  });
+} catch (error) {
+  console.log(
+    JSON.stringify({
+      ...providerSmokeProfilePayload(profile),
+      ok: false,
+      stage: "search",
+      searchedProvider: "anidb",
+      searchResults: 0,
+      reason: error instanceof Error ? error.message : String(error),
+    }),
+  );
+  process.exit(1);
+}
+
+// `null` is the provider contract's transport-failure channel — unreachable
+// upstream, not an answer. Collapsing it into `[]` files an outage (the 503
+// maintenance page anidb.app served on 2026-09-29) as catalog drift.
+if (searchResults === null) {
+  console.log(
+    JSON.stringify({
+      ...providerSmokeProfilePayload(profile),
+      ok: false,
+      stage: "search",
+      searchedProvider: "anidb",
+      searchResults: 0,
+      reason: `anidb search transport failed for "${searchQuery}" (provider unreachable)`,
+    }),
+  );
+  process.exit(1);
+}
+
+const normalizeTitle = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+const selected =
+  searchResults.find((result) => normalizeTitle(result.title) === normalizeTitle(searchQuery)) ??
+  searchResults[0];
+
+if (!selected) {
+  console.log(
+    JSON.stringify({
+      ...providerSmokeProfilePayload(profile),
+      ok: false,
+      stage: "search",
+      searchedProvider: "anidb",
+      searchResults: 0,
+      reason: `anidb search returned zero results for "${searchQuery}"`,
+    }),
+  );
+  process.exit(1);
+}
+
+const title = titleInfoFromSearchResult(selected, selected.title);
 
 let resolveError: unknown = null;
 let failureCodes: readonly string[] = [];
@@ -78,6 +140,8 @@ const payload = {
     resolveDurationMs,
   }),
   ...(resolveError ? providerSmokeError(resolveError) : null),
+  searchedProvider: "anidb",
+  searchResults: searchResults.length,
   failureCodes,
   failureMessages,
   streamCandidates,

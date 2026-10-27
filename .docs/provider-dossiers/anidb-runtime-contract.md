@@ -23,6 +23,14 @@ than restoring a retired domain to make a historical smoke run.
 Catalog capabilities live in [anidb-metadata-capabilities.md](./anidb-metadata-capabilities.md).
 This file holds the runtime behaviour that used to sit in `.docs/providers.md`.
 
+## Live smoke coverage
+
+The `test:live:anidb` command searches the requested title through AniDB before
+resolving a returned identity. An exception, transport failure (`null`), or empty
+catalog exits at the search stage; there is no fixed-id escape hatch. This
+checks the search-to-resolve route, not a claim that the upstream is healthy.
+The isolated profile suppresses analytics and never touches a user profile.
+
 ## AniDB catalog search compatibility
 
 Advanced AniDB discovery uses the explicitly declared compatible AniList catalog
