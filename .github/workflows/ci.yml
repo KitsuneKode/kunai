@@ -607,9 +607,13 @@ jobs:
       - name: Lint PowerShell installer
         shell: pwsh
         run: |
-          Set-PSRepository PSGallery -InstallationPolicy Trusted
-          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
-          $issues = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default -ErrorAction Stop
+          }
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction Stop
+          Install-Module -Name PSScriptAnalyzer -Repository PSGallery -Force -Scope CurrentUser -ErrorAction Stop
+          $issues = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error -ErrorAction Stop
           if ($issues) { $issues | Format-Table; exit 1 }
 
       # The pwsh installer suite is gated on the interpreter, not the OS, and

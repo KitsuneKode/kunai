@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T11:58:38Z"
+lastReviewed: "2026-10-27T12:42:26Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -177,6 +177,11 @@ merge the PR after required checks pass. Recovery is documented in
 
 **Every job must run `actions/checkout` before it uses a local composite
 action.** The composite deliberately does not check out.
+
+The installer-lint job registers the default `PSGallery` repository when a
+fresh runner has none, then installs `PSScriptAnalyzer` explicitly from that
+repository. Registration, installation and analyzer invocation errors remain
+fatal; missing tooling must not produce a passing installer lint check.
 
 A local composite (`uses: ./.github/actions/...`) is loaded from the workspace,
 so GitHub can only resolve it once the repository is already on disk. If the
