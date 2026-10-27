@@ -486,3 +486,27 @@ generated metadata from PR 499 was not copied; current metadata was regenerated.
 The website suite passes 452 tests; its typecheck, lint, and production build pass.
 This is documentation recovery, not a supported mobile release or permission to
 close PR 499 before the integration lands.
+
+## October 27: accepted safety integration and renewed release checks
+
+PR 668 merged normally as `9e99a4841` after GitGuardian cleared and all review
+threads were reconciled. The primary checkout fast-forwarded cleanly to main.
+Merging that main into the watching branch changed no runtime files relative to
+`622c864aa`. Three owning docs were checked against the source again and receive
+UTC review timestamps so their same-day edits remain distinguishable from the
+new base; the provider-order narrative now matches the configured fallback list.
+
+Fresh combined checks on `21f13af0f`: 26 uncached test tasks, 15 typecheck tasks,
+14 lint tasks and 10 host-build tasks pass; existing lint warnings remain. All
+package formatting checks and the direct root formatting check pass. A chained
+`fmt:check --force` invocation forwards an unsupported flag to the root formatter;
+that command error was corrected by running the root check directly.
+
+The renewed isolated live signoff still reports VidLink movie `provider-drift`,
+with no candidate for Dune; series and HiAnime anime resolve and are reachable.
+The live signoff used an isolated `DO_NOT_TRACK` profile and its container
+reported no install ID. The registry preflight
+finds nine public package names and HTTP 404 for both Android package names.
+The publication gate remains closed pending a successful default movie signoff
+and npm-owner bootstrap/trusted-publisher setup for the complete package set.
+No versioned release, package publication or Chromecast integration occurred.

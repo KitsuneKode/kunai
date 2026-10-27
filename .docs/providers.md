@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-27T06:55:37Z"
 ---
 
 # Kunai — Provider Guide
@@ -775,12 +775,13 @@ from that alone, and ~1.1 s once `pewe` was quarantined.
 
 Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
 backends is reached through it, so the providers behind it are the ones that
-share none of that. `kickassanime` and `animegg` follow it in the default
-order: both have their own catalog, site and CDN, but KickAssAnime can also
+share none of that. The shipped fallback order after HiAnime is KickAssAnime,
+AnimeGG, AllAnime, then Miruro. KickAssAnime and AnimeGG have their own catalog,
+site and CDN, but KickAssAnime can also
 take over a title found in _another_ catalog — it matches the show by name and
 year and remembers the result on the title bridge — whereas AnimeGG only plays
-what its own search found. AllAnime closes the shipped order for the ani-cli
-parity path. See
+what its own search found. AllAnime supplies the ani-cli parity path ahead of
+Miruro. See
 [the KickAssAnime dossier](./provider-dossiers/kickassanime.md) and
 [the AnimeGG dossier](./provider-dossiers/animegg.md), both of which record why a
 reachability probe cannot judge their streams.
