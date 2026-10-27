@@ -15,13 +15,23 @@ from priority, disable, and title-pin fields. The package stays for unit/live
 fixtures and historic cache keys — not for live user resolve.
 
 The retired adapter is excluded from `test:live:providers`; the former
-`test:live:anidb` command was removed. Its retained resolve-only script does not
-claim search qualification. Production anime search/resolve qualification now
+`test:live:anidb` command was removed. Its retained search-to-resolve script is historical and
+cannot resolve through the production registry. Production anime search/resolve qualification now
 uses the configured live provider through `test:live:release-signoff`, rather
 than restoring a retired domain to make a historical smoke run.
 
 Catalog capabilities live in [anidb-metadata-capabilities.md](./anidb-metadata-capabilities.md).
 This file holds the runtime behaviour that used to sit in `.docs/providers.md`.
+
+## Historical smoke coverage
+
+Before retirement, the AniDB smoke searched the requested title before resolving
+a returned identity. An exception, transport failure (`null`), or empty catalog
+exits at the search stage; there is no fixed-id escape hatch. PR 668's restored
+search check returned zero results for Onigiri on October 27. That is evidence
+of an unavailable route, not a successful search qualification. The smoke's
+isolated profile suppresses analytics and never touches a user profile; its
+former command remains removed from this production roster.
 
 ## AniDB catalog search compatibility
 
