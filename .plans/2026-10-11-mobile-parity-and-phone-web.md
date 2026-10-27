@@ -10,6 +10,17 @@ downloads as a desktop user, without learning a terminal UI on a touch
 keyboard. Android first (Termux); iOS stays on the `apps/mobile` a-Shell
 preview until Android is qualified.
 
+## 0.4.0 scope checkpoint (2026-10-27)
+
+Android watching and the experimental iOS host/VLC preview are the accepted
+release scope. M1 and M2 code is present on merged main; physical Android
+qualification in #631 and Android package publication are still pending.
+The separate `apps/mobile` host proof builds for 0.4.0 and passes local
+Node/fake-iOS tests, which do not establish phone playback. Full iOS
+search/providers, native store apps and the M3 phone web UI are later work.
+The [Android guide](../docs/users/android.mdx) distinguishes the real CLI
+from the Node host proof and states that staged assets are not public.
+
 ## Why this shape
 
 - Bun ships official Android (Bionic) builds since 1.3.14 and
@@ -40,9 +51,9 @@ preview until Android is qualified.
   `apps/cli/src/main.ts`, not a new binary.
 - Concurrent TUI + `serve` on one profile follows ADR 0003.
 
-## M1 — Termux runs the real CLI (rebase #287)
+## M1 — Termux runs the real CLI (implemented; device qualification pending)
 
-Re-land PR #287 (`feat/mobile-terminal-handoff`) on current `main`:
+The #287 functionality is present on current `main`:
 Bionic `android-arm64`/`android-x64` targets in build, release, checksums,
 npm optional packages, `install.sh` Termux detection (`$TERMUX_VERSION` /
 Termux `$PREFIX`), upgrade asset selection, `--player auto|mpv|vlc`,
@@ -55,7 +66,7 @@ physical-device checklist from #287 is published as an issue for a tester.
 
 ## M2 — Android stream gateway
 
-PR #629 remains in review. The continuation on 2026-10-12 reproduced and
+The gateway implementation is present on merged main. The continuation on 2026-10-12 reproduced and
 fixed idle shutdown during progressive responses, chooser subtitle loss,
 blocked playlist/MPD targets escaping to the external player, and a first-chunk
 playlist size-limit bypass. Upstream DASH now resolves relative hierarchical
@@ -64,9 +75,11 @@ manifest URL. Segment substitutions use guarded session routes; unsupported
 XML/DRM/external-resource forms are refused with a sanitized 422. Generated
 deferred MPDs share the same rewriter. The architecture doc owns the supported
 forms and bounds. Independent review is complete; final hosted gates and
-physical-device proof remain outstanding. M3 and M4 have not started.
+physical-device proof remain outstanding. M3 is deferred beyond 0.4.0;
+M4 has installer implementation and public instructions, with physical
+qualification still pending.
 
-Generalize `hls-relay.ts` into a handoff gateway used when the player cannot
+The implemented handoff gateway is used when the player cannot
 take headers (Android intents; any future launch-only player):
 
 - Bind `127.0.0.1` on an ephemeral port; every route is under an unguessable

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-27T16:46:55Z"
 ---
 
 # Kunai — Quickstart
@@ -86,7 +86,7 @@ evidence, so autoplay, auto-skip, automatic history progress, and queue
 acknowledgement are disabled for that handoff. iOS is not supported by this
 runtime.
 
-Kunai is Bun-first in beta. A Node/npm-only source checkout is not supported because the CLI uses Bun runtime APIs directly. Packaged binaries are the preferred future path for users who should not need to install Bun manually.
+Kunai is Bun-first in beta. A Node/npm-only source checkout is not supported because the CLI uses Bun runtime APIs directly. Published native binaries are the preferred end-user path; source contributors need the Bun version declared above.
 
 ## Test this checkout with an isolated profile
 
