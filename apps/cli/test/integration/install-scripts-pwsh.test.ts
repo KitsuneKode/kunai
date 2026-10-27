@@ -390,20 +390,29 @@ describePwsh("install.ps1 dry-run", () => {
 });
 
 describePwsh("install.ps1 activation identity", () => {
-  test("caps an activation poll to the remaining deadline", () => {
-    const result = runActivationProtocolProbe(String.raw`
-      $script:ActivationLockTimeoutMs = 40
-      $script:ActivationLockPollMs = 10000
-      $timer = [System.Diagnostics.Stopwatch]::StartNew()
+  test.each([
+    { timeoutMs: 40, pollMs: 10000, expectedSleeps: [40] },
+    { timeoutMs: 40, pollMs: 5, expectedSleeps: [5] },
+    { timeoutMs: 0, pollMs: 10000, expectedSleeps: [] },
+  ])(
+    "requests bounded activation sleeps for timeout=$timeoutMs and poll=$pollMs",
+    ({ timeoutMs, pollMs, expectedSleeps }) => {
+      const result = runActivationProtocolProbe(String.raw`
+      $script:ActivationLockTimeoutMs = ${timeoutMs}
+      $script:ActivationLockPollMs = ${pollMs}
+      $script:requestedSleeps = [System.Collections.Generic.List[int]]::new()
+      function Start-Sleep { param([int]$Milliseconds) $script:requestedSleeps.Add($Milliseconds) }
+      # A stopped stopwatch keeps elapsed time exactly zero. Observe the real
+      # protocol's requested delay without sleeping or timing process cleanup.
+      $timer = [System.Diagnostics.Stopwatch]::new()
       Wait-ActivationLockPoll $timer
-      Write-Output $timer.ElapsedMilliseconds
+      ConvertTo-Json -Compress -InputObject @($script:requestedSleeps)
     `);
 
-    expect(result.status).toBe(0);
-    const elapsedMs = Number(result.stdout.trim());
-    expect(elapsedMs).toBeGreaterThanOrEqual(10);
-    expect(elapsedMs).toBeLessThan(1_000);
-  });
+      expect(result.status).toBe(0);
+      expect(JSON.parse(result.stdout.trim())).toEqual(expectedSleeps);
+    },
+  );
 
   test("treats a case-only raw successor as changed during reclaim", () => {
     const result = runActivationProtocolProbe(String.raw`
@@ -1589,12 +1598,13 @@ describePwsh("install.ps1 lifecycle contract", () => {
     }
   });
 
-  test("bounds activation contention by real elapsed time when poll exceeds timeout", async () => {
+  test("preserves the active install when a contended poll exceeds the lock budget", async () => {
     const asset = hostWindowsAsset();
     const body = "MZ-activation-real-deadline";
     const digest = createHash("sha256").update(body).digest("hex");
     const sandbox = createInstallerSandbox("install-ps1-activation-real-deadline");
-    seedActivationLock(sandbox.dataDir, { pid: process.pid });
+    const activationPath = seedActivationLock(sandbox.dataDir, { pid: process.pid });
+    const originalLock = readFileSync(activationPath, "utf8");
     try {
       await withReleaseFixture(
         {
@@ -1602,19 +1612,20 @@ describePwsh("install.ps1 lifecycle contract", () => {
           "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
         },
         async (baseUrl) => {
-          const install = runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
-            // Keep the mutation signal far above ordinary Windows scheduling
-            // noise: an unbounded poll would sleep for ten seconds.
+            // The protocol probe above observes the exact requested sleep.
+            // This full install proves refusal and preserved activation state.
             KUNAI_ACTIVATION_LOCK_POLL_MS: "10000",
           });
-          await waitForPaths([join(sandbox.dataDir, "versions", "9.8.7", "version.json")]);
-          const activationStartedAt = performance.now();
-          const result = await install;
           expect(result.status).not.toBe(0);
-          expect(performance.now() - activationStartedAt).toBeLessThan(5_000);
+          expect(`${result.stderr}${result.stdout}`).toContain("Activation lock held");
+          expect(readFileSync(activationPath, "utf8")).toBe(originalLock);
+          expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
+          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
         },
       );
     } finally {
