@@ -468,3 +468,14 @@ production modules. The root and CLI AniDB smoke aliases were removed. Historica
 fixtures stay available without claiming current production search coverage.
 The focused roster file passes 10 tests; CLI typecheck and lint pass, with the
 existing warnings retained. No runtime defaults or probe gates changed.
+
+## October 27: mobile preview guide recovery
+
+The website integration branch now includes the unique public guide and navigation
+entry from PR 499. It was checked against the current mobile host-proof contracts
+and corrected to keep physical Android/iPhone qualification pending, distinguish
+probe traffic from VLC handoff, and preserve uncertain lock ownership. Stale
+generated metadata from PR 499 was not copied; current metadata was regenerated.
+The website suite passes 452 tests; its typecheck, lint, and production build pass.
+This is documentation recovery, not a supported mobile release or permission to
+close PR 499 before the integration lands.
