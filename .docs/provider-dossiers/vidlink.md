@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27"
+lastReviewed: "2026-10-28"
 ---
 
 # Provider: VidLink (`vidlink`)
@@ -66,7 +66,9 @@ This observation never exempts an actual stream from `verifyCandidateStream`.
   narrows the observed failure to a title-specific upstream no-source response;
   it is not evidence that the encryption or entire movie endpoint is broken.
   No response-shape workaround, default change or resolve-gate bypass was added.
-  The strict default-movie signoff remains red until that route is qualified.
+  The approved schema-2 signoff qualifies Inception and Fight Club separately,
+  retaining Dune as a verified availability diagnostic. This records the catalog
+  gap without substituting a fallback provider or declaring Dune playable.
 
 - Live default-route qualification on 2026-10-04 at `b8c69881745430ea3a8ca43e7af3f7a650d0acd5`
   failed for both TMDB lanes from the review host. Dune (438631) returned HTTP 200

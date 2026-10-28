@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T11:48:19Z"
+lastReviewed: "2026-10-28"
 ---
 
 # Kunai Release Reliability Gate
