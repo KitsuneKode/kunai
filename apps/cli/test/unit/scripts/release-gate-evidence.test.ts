@@ -16,7 +16,11 @@ import {
   type ReleaseGateEvidenceDocument,
   type ReleaseGateName,
 } from "../../../../../scripts/release-gate-evidence";
-import { buildReleaseProviderSignoff } from "../../live/release-provider-signoff";
+import { releaseAvailabilityFixture } from "../../helpers/release-signoff";
+import {
+  buildReleaseProviderSignoff,
+  RELEASE_SIGNOFF_REQUIRED_CONTROLS,
+} from "../../live/release-provider-signoff";
 
 const VERSION = "0.3.0";
 const COMMIT_SHA = "abc123def456";
@@ -341,11 +345,12 @@ describe("release gate evidence production", () => {
     const root = mkdtempSync(join(tmpdir(), "kunai-live-provider-evidence-"));
     const artifactPath = join(root, "release-provider-signoff.json");
     const signoff = buildReleaseProviderSignoff({
+      diagnostics: releaseAvailabilityFixture("fixture"),
       generatedAt: "2026-07-23T11:30:00.000Z",
       commitSha: COMMIT_SHA,
       version: VERSION,
-      routes: ["movie", "series", "anime"].map((lane) => ({
-        lane: lane as "movie" | "series" | "anime",
+      routes: RELEASE_SIGNOFF_REQUIRED_CONTROLS.map((control) => ({
+        ...control,
         configuredProvider: "fixture",
         successfulProvider: "fixture",
         resolved: true,
@@ -369,6 +374,19 @@ describe("release gate evidence production", () => {
           nowMs: NOW_MS,
         }).runId,
       ).toBe(PROVIDER_RUN_ID);
+
+      writeFileSync(artifactPath, JSON.stringify({ ...signoff, schemaVersion: 1 }), "utf8");
+      expect(() =>
+        createReleaseGateEvidence({
+          gate: "liveProviders",
+          version: VERSION,
+          commitSha: COMMIT_SHA,
+          runId: PROVIDER_RUN_ID,
+          artifactName: `liveProviders-${VERSION}-${COMMIT_SHA}`,
+          artifactPath,
+          nowMs: NOW_MS,
+        }),
+      ).toThrow(/schemaVersion/i);
 
       writeFileSync(
         artifactPath,

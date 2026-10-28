@@ -54,6 +54,8 @@ export interface DirectSubtitleInput {
 
 export interface DirectStreamPayload {
   readonly streams: readonly DirectStreamInput[];
+  /** Explicit HTTP 200 JSON null, distinct from parse, transport or probe failure. */
+  readonly catalogAbsent?: boolean;
   readonly subtitles?: readonly DirectSubtitleInput[];
   /** Headers the player must send to fetch the stream (referer/origin/UA). */
   readonly headers?: Record<string, string>;
@@ -168,6 +170,15 @@ export async function resolveDirectStreamSource(
       : [];
     let selectedStream = streams[0];
     if (!selectedStream) {
+      if (payload?.catalogAbsent) {
+        emitTraceEvent(events, context, {
+          type: "source:failed",
+          providerId,
+          sourceId,
+          message: "Provider explicitly reported catalog absence",
+          attributes: { catalogAbsent: true, httpStatus: 200, responseKind: "json-null" },
+        });
+      }
       const failure: ProviderFailure = {
         providerId,
         code: "not-found",

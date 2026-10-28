@@ -269,6 +269,22 @@ from a hand-written checklist:
 KUNAI_LIVE_RELEASE_SIGNOFF=1 bun run test:live:release-signoff
 ```
 
+The provider artifact uses schema 2. Its required controls are Inception
+(TMDB 27205), Fight Club (550), Dutton Ranch (299167, S1E1) and an exact
+Onigiri search on the configured anime default. Both movie controls and the
+series control must use the configured movie/series provider. Every control
+needs positive candidates, confirmed reachability and the same successful
+provider; a fallback cannot qualify the configured default.
+
+Dune (438631) is a separate availability diagnostic. It passes only as either
+an available, probed stream from that provider or an explicitly observed HTTP
+200 JSON null with zero candidates and only not-found failures. VidLink emits
+that redacted trace evidence at its API boundary. HTTP errors, scalar/invalid
+payloads, challenges and timeouts cannot be recorded as verified absence.
+Missing controls/diagnostics and legacy schema-1 provider artifacts fail closed
+in both evidence creation and final release confirmation. Deterministic engine
+fallback and health-neutral catalog absence remain separate fixture checks.
+
 Then run one focused live smoke per provider family touched by the change.
 
 Series/movie direct providers:

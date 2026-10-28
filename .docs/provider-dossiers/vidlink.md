@@ -5,6 +5,11 @@ lastReviewed: "2026-10-27"
 
 # Provider: VidLink (`vidlink`)
 
+Release availability diagnostics distinguish an explicit HTTP 200 JSON null
+from generic not-found failures. Only that API response emits `catalogAbsent`
+in the redacted resolve trace; scalar/malformed payloads and HTTP errors do not.
+This observation never exempts an actual stream from `verifyCandidateStream`.
+
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 ## Summary

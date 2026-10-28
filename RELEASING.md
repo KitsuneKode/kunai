@@ -111,6 +111,13 @@ Short one-line summary of the release.
 
 ## Release metadata (schema v2)
 
+Provider qualification is a separate schema-2 artifact: two working movie
+controls (Inception and Fight Club), the configured series/anime controls, and
+a Dune availability diagnostic. Missing-title evidence needs an observed HTTP
+200 JSON null; transport failures and fallback substitution cannot pass it.
+Legacy schema-1 provider artifacts must be regenerated. This does not change
+the release-metadata or gate-evidence document versions described below.
+
 Each `.release/kunai-vX.Y.Z.json` carries publication state:
 
 | `status`    | Meaning                                                                                   |
