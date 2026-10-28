@@ -81,6 +81,18 @@ hosted, device or release signoff.
 
 ## 3. Real Kitty and modern terminal interaction
 
+- [ ] Integrate the visual verification skill and Kitty driver after its own
+      launch/doctor/action/capture/cleanup cycle is proved. Keep PNG inspection,
+      terminal text, persisted state, mpv decoding and native OS pointer input
+      as separate evidence. Use small models for bounded source research and
+      one coordinator for serial desktop control.
+- [ ] Run the opt-in production-provider matrix one provider and lane at a time;
+      retain failures and exact candidate identity. Do not let fallback, moving
+      audio clocks, screenshot-file existence or a fixture mark video healthy.
+- [ ] Audit pointer coverage per surface, then fix reproduced omissions through
+      shared keyboard/controller actions. Verify Browse footers and home rows,
+      both click stages, changed targets, overlays and narrow layouts; retain
+      Calendar/history/notification/download action gaps until separately proved.
 - [ ] Use the `verify-kunai` skill and a dedicated Kitty window with an isolated
       profile. Do not send keys to the maintainer's existing sessions or alter
       their profile. Capture frames and backend state before fixing defects.

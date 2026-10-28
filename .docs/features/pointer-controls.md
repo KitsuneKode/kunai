@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-10-28"
 ---
 
 # Terminal pointer controls
@@ -47,6 +47,16 @@ Tracks, Settings, setup choices, shared frame footers and command-palette rows. 
 this does not add click controls to every download action. Calendar, history,
 notifications and player-window controls retain their existing input
 contracts and need separate pointer work before claiming parity.
+
+Browse home shortcuts also register measured targets. The first click selects;
+the second click on the same title/episode/job and mode/provider identity activates through the existing
+idle-row action resolver. Keyboard input and overlays clear click authorization;
+a different title with the same label cannot inherit it. Browse's footer now
+uses its keyboard controller and query submit handler, rather than only
+displaying hints. Its command, Enter, navigation, mode, details and other visible
+binding actions keep the same guards. Overlays and the local palette remove
+underlying targets. This is not a claim that every hint on every screen is a
+clickable control; the remaining surfaces above still need their own coverage.
 
 The isolated terminal fixture runs prove routing and persisted state. Physical
 Windows/macOS terminal emulators, multiplexers, accessibility and Android touch

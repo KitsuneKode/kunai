@@ -121,12 +121,17 @@ import { useCalendarState } from "./hooks/use-calendar-state";
 import { SUGGESTION_DEBOUNCE_MS, useSearchSuggestions } from "./hooks/use-search-suggestions";
 import { undisplayPlacementsKeepCache } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
-import { buildFooterActionsFromBindings } from "./keybindings";
+import {
+  bindingsForScope,
+  buildFooterActionsFromBindings,
+  footerKeyFromBinding,
+} from "./keybindings";
 import {
   getBrowseChromeRows,
   getBrowseCommandPaletteMaxVisible,
   getBrowseListMaxVisible,
 } from "./layout-policy";
+import type { LineEditorKey } from "./line-editor";
 import { reducedMotionEnabled } from "./motion-policy";
 import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
 import type { BrowseOverlay } from "./overlay-panel";
@@ -1080,6 +1085,10 @@ export function BrowseShell<T>({
   const pointerActive =
     !rootContentSuspended && !activeOverlay && !commandMode && !viewport.tooSmall;
   const priorPointerSelection = useRef<{ index: number; value: T } | null>(null);
+  const priorIdlePointerSelection = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pointerActive || !idleFocused) priorIdlePointerSelection.current = null;
+  }, [pointerActive, idleFocused]);
   useEffect(() => {
     const prior = priorPointerSelection.current;
     if (
@@ -1510,8 +1519,9 @@ export function BrowseShell<T>({
     }
   }
 
-  useInput((input, key) => {
+  const handleBrowseInput = (input: string, key: LineEditorKey) => {
     priorPointerSelection.current = null;
+    priorIdlePointerSelection.current = null;
     if (rootContentSuspended) return;
     recordKeystroke("browse", key.upArrow ? "up" : key.downArrow ? "down" : input);
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -2076,7 +2086,37 @@ export function BrowseShell<T>({
     if (idleFocused) {
       dispatchFocusZone({ type: "blur-idle" });
     }
-  });
+  };
+  useInput(handleBrowseInput);
+
+  const activateBrowseFooter = (action: FooterAction) => {
+    if (!pointerActive || action.disabled) return;
+    if (action.key === "enter") {
+      if (!listFocused && !idleFocused) handleQuerySubmit(query);
+      else handleBrowseInput("", { return: true });
+      return;
+    }
+    if (action.key === "↑↓") {
+      handleBrowseInput("", { downArrow: true });
+      return;
+    }
+    if (action.key === "/") {
+      handleBrowseInput("/", {});
+      return;
+    }
+    if (action.key === "esc") {
+      handleBrowseInput("", { escape: true });
+      return;
+    }
+    const binding = bindingsForScope("browse").find(
+      (row) => footerKeyFromBinding(row) === action.key,
+    );
+    if (!binding) return;
+    const { chord } = binding;
+    const key: LineEditorKey = { ctrl: chord.ctrl, shift: chord.shift, meta: chord.meta };
+    if (chord.named) key[chord.named] = true;
+    handleBrowseInput(chord.input ?? "", key);
+  };
 
   return (
     <Box flexDirection="column" flexGrow={1}>
@@ -2591,25 +2631,67 @@ export function BrowseShell<T>({
                 <Text color={palette.dim} bold>
                   {idleReturnLoopModel.heading}
                 </Text>
-                {idleReturnLoopModel.rows.map((row) => (
-                  <Text
-                    key={row.id}
-                    backgroundColor={row.focused ? palette.accentFill : undefined}
-                    color={row.focused ? palette.text : palette.muted}
-                  >
-                    {row.focused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
-                    <Text color={row.glyphColor}>{row.glyph}</Text>{" "}
-                    <Text color={row.focused ? palette.text : palette.textDim} bold={row.focused}>
-                      {row.title}
-                    </Text>
-                    {row.meta ? <Text color={palette.dim}>{`  ${row.meta}`}</Text> : null}
-                    {row.hint ? (
-                      <Text color={row.focused ? palette.accent : palette.dim}>
-                        {` · ${row.hint}`}
+                {idleReturnLoopModel.rows.map((row, index) => {
+                  const targetId =
+                    row.id === "continue"
+                      ? activeIdleContext?.continueWatching?.titleId
+                      : row.id === "playlist-next"
+                        ? activeIdleContext?.playlistNext?.titleId
+                        : row.id === "offline-ready"
+                          ? activeIdleContext?.offlineReadyNext?.offlineJobId
+                          : row.id === "saved"
+                            ? activeIdleContext?.savedNext?.titleId
+                            : row.id;
+                  const episode =
+                    row.id === "continue"
+                      ? activeIdleContext?.continueWatching?.ep
+                      : row.id === "playlist-next"
+                        ? activeIdleContext?.playlistNext?.ep
+                        : undefined;
+                  const identity = `${row.id}:${targetId ?? ""}:${episode ?? ""}:${mode}:${provider}`;
+                  return (
+                    <MouseTarget
+                      key={identity}
+                      id={`browse:idle:${identity}`}
+                      active={pointerActive && row.actionable}
+                      onClick={() => {
+                        if (!row.actionable) return;
+                        const activate =
+                          idleFocused &&
+                          idleSelectedIndex === index &&
+                          priorIdlePointerSelection.current === identity;
+                        setIdleSelectedIndex(index);
+                        dispatchFocusZone({ type: "focus-idle" });
+                        priorIdlePointerSelection.current = identity;
+                        if (activate) {
+                          priorIdlePointerSelection.current = null;
+                          const action = resolveIdleRowAction(row.id, activeIdleContext);
+                          if (action) onResolve(action);
+                        }
+                      }}
+                    >
+                      <Text
+                        backgroundColor={row.focused ? palette.accentFill : undefined}
+                        color={row.focused ? palette.text : palette.muted}
+                      >
+                        {row.focused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
+                        <Text color={row.glyphColor}>{row.glyph}</Text>{" "}
+                        <Text
+                          color={row.focused ? palette.text : palette.textDim}
+                          bold={row.focused}
+                        >
+                          {row.title}
+                        </Text>
+                        {row.meta ? <Text color={palette.dim}>{`  ${row.meta}`}</Text> : null}
+                        {row.hint ? (
+                          <Text color={row.focused ? palette.accent : palette.dim}>
+                            {` · ${row.hint}`}
+                          </Text>
+                        ) : null}
                       </Text>
-                    ) : null}
-                  </Text>
-                ))}
+                    </MouseTarget>
+                  );
+                })}
               </Box>
             ) : null}
           </Box>
@@ -2750,6 +2832,7 @@ export function BrowseShell<T>({
             terminalWidth={viewport.columns}
             maxVisible={viewport.breakpoint === "narrow" ? 3 : 5}
             companionHint
+            onActivate={pointerActive ? activateBrowseFooter : undefined}
           />
         );
       })()}

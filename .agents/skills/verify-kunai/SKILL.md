@@ -1,14 +1,15 @@
 ---
 name: verify-kunai
-description: Verify Kunai the way a user would — drive the real CLI with real keystrokes, read the rendered frame, and check the SQLite/config backend in the same run. Use whenever asked to verify, confirm, or prove that a Kunai feature works end to end, when a bug report needs reproducing, or when "did my change work?" deserves more than a unit test. Covers `bun run agent:drive` (fast in-process replay), `bun run agent:session` (held tmux session on real `main.ts`), evidence bundles, citation checks, and the real-mpv tier.
+description: Verify Kunai through real user actions and captured evidence. Use for terminal UX bugs, missing clicks/previews, search or playback regressions, visual inspection, and end-to-end qualification. Drive AppRoot replay, a held PTY, or isolated Kitty; inspect PNGs as well as text and SQLite/config. For live providers require explicit opt-in, pin each provider, and witness decoded mpv video through IPC and a frame capture. Never equate a probe, screenshot file, accepted key, or green fixture with successful live playback.
 ---
 
 # Verify Kunai
 
 **A claim is verified only when it cites captured evidence.** Every drive
-records frames, inputs and backend deltas. Quote the frame line or table row
-that proves the claim and re-check it with `--verify-citation`. If you cannot
-produce the quote, report "not verified" — never "should work".
+records frames, inputs and backend state. Cite the frame, image or table row
+that proves the claim. AppRoot replay supports `--verify-citation` for text;
+Kitty requires image inspection plus its captured text/backend. If the evidence
+is absent, report "not verified" — never "should work".
 
 ## The loop
 
@@ -24,15 +25,53 @@ produce the quote, report "not verified" — never "should work".
 5. **Report** with the template at the bottom, including what you did not
    cover.
 
+## Launch, doctor, drive, evidence, cleanup
+
+For visual, font, image-protocol and pointer reports, use the
+[Kitty loop](references/kitty-visual.md). Kitty's text dump omits the actual
+graphics; open the PNG with the image viewer before judging layout or artwork.
+Capture before acting, derive coordinates from that fresh frame, perform one
+transition, then capture again and inspect the backend. Do not approve a PNG
+merely because its file exists. Do not use a desktop-wide screenshot when an
+owned-window capture is available.
+
+`bun run agent:kitty` creates its own Kitty socket, profile and evidence bundle.
+It never attaches to a user's ordinary terminal or profile. Fixture runs are
+the default; `--live` is required for real providers, and `--matrix --live`
+enumerates the production roster serially. Other providers are disabled per
+route so a fallback cannot make a failed provider appear healthy. See the
+reference for exact commands and limitations.
+
+Doctor before driving: confirm the owned window renders, the expected provider
+and mode are visible, fonts and artwork are legible, and cleanup/privacy checks
+are available. A missing display, screenshot capability, provider, or real mpv
+is an explicit prerequisite failure, never a pass. A dead launch is a harness
+failure; capture its stderr before attempting product fixes. Confirm a focused
+test command actually reports the requested files: an unmatched path can be
+ignored while other tests still pass.
+
+For mouse coverage use both the measured-region regression suite and Kitty
+mouse-protocol injection. These prove application routing, not OS pointer
+delivery. A native mouse claim requires a real desktop input backend, an owned
+window, a fresh screenshot and an observed result. Ghostty's separate platform
+automation may be used for compatibility checks; its text export is not a PNG.
+
+Small models can read a bounded feature's source and propose a recipe or
+classify redacted results. Keep one coordinator in charge of desktop input,
+profiles, cleanup and final image inspection. Do not run multiple live drivers
+against one window, delegate visual judgment to a text-only worker, invent
+model/provider settings, or increase agent count just because models are cheap.
+
 ## Which tier answers what
 
-| Tier                      | Command                                     | Proves                                                     | Does not prove                           |
-| ------------------------- | ------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------- |
-| L1 unit/integration tests | `bun run test`                              | Logic and contracts                                        | That a user can reach it                 |
-| L2 in-process replay      | `bun run agent:drive`                       | Wiring: real `AppRoot` + `SessionController`, ~1–3 s       | Startup, TTY, signals, quit/relaunch     |
-| L3 held tmux session      | `bun run agent:session`                     | The real `main.ts` in a real PTY; relaunch, signals, setup | Provider reachability, real playback     |
-| L4 real mpv               | `KUNAI_REAL_MPV=1` + `test/agent/real-mpv*` | mpv decodes and Kunai records progress                     | Live providers                           |
-| L5 live / device          | `bun run test:live:*`, a physical phone     | Today's upstream and hardware                              | Anything reproducible — date it, it rots |
+| Tier                      | Command                                                | Proves                                                               | Does not prove                                                       |
+| ------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| L1 unit/integration tests | `bun run test`                                         | Logic and contracts                                                  | That a user can reach it                                             |
+| L2 in-process replay      | `bun run agent:drive`                                  | Wiring: real `AppRoot` + `SessionController`, ~1–3 s                 | Startup, TTY, signals, quit/relaunch                                 |
+| L3 held tmux session      | `bun run agent:session`                                | The real `main.ts` in a real PTY; relaunch, signals, setup           | Provider reachability, real playback                                 |
+| L4 real mpv               | `KUNAI_REAL_MPV=1` + `test/agent/real-mpv*`            | mpv decodes and Kunai records progress                               | Live providers                                                       |
+| L5 live / device          | `bun run test:live:*`, a physical phone                | Today's upstream and hardware                                        | Anything reproducible — date it, it rots                             |
+| Kitty visual / live       | `bun run agent:kitty` (explicit `--live` / `--matrix`) | Real terminal rendering, PNGs, input routes; optional real mpv video | Native OS click delivery, physical phones, automatic visual approval |
 
 L2 and L3 run against fixture providers and a fixture catalog: zero network.
 L3 needs `tmux` (Linux/macOS). A missing tool is a skip, and **a skip is not a
@@ -165,9 +204,10 @@ Proof is two witnesses: mpv's own IPC `time-pos` advancing **and** Kunai's
    handlers are attached; bursting keys across a surface change drops them. If
    fast input or paste drops keys, keep that as a separate reproduction — a
    slower retry that passes does not fix the product bug.
-5. **Fixture catalog only.** `smoke` matches `Smoke Movie`, `Smoke Series`,
+5. **Identify the source.** Fixture `smoke` matches `Smoke Movie`, `Smoke Series`,
    `Smoke Anime`, `Return To Shell` and friends; other queries correctly return
-   nothing.
+   nothing. Production Kitty runs require `--live`; their upstream failures
+   stay failures, with no fake provider replacement or automatic retry storm.
 6. **Deferred writes are real.** The frame can claim a toggle ~300 ms before
    `config.json` commits it. Wait with `<wait-config:…>` before concluding
    "persisted" or "no-op".
@@ -215,3 +255,5 @@ Proof is two witnesses: mpv's own IPC `time-pos` advancing **and** Kunai's
 - Key decoder: `apps/cli/test/agent/keys.ts`
 - Real-mpv tier: `apps/cli/test/agent/real-mpv.ts`, `apps/cli/test/agent/real-mpv.test.ts`
 - Wiring scenarios: `apps/cli/test/agent/wiring.test.ts`
+- Kitty driver and serial scenarios/matrix: `apps/cli/test/agent/kitty-session.ts`, `apps/cli/test/agent/kitty.ts`
+- Visual and provider coverage map: [Kitty verification](references/kitty-visual.md)
