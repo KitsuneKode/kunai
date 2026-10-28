@@ -8,6 +8,7 @@ import { RootContentSuspension } from "@/app-shell/RootContentSuspension";
 import { flushSearchHistory } from "@/services/persistence/search-history";
 import { act, createRef, useImperativeHandle, useState } from "react";
 
+import { stripAnsi } from "../../../harness/render-capture";
 import { applyStorageRootEnv } from "../../../helpers/storage-env";
 import { renderWithPointer } from "../../../support/pointer-render";
 
@@ -182,7 +183,7 @@ test("browse footer opens commands and releases its targets while the palette ow
       .find((row) => row.id.includes(":footer:/:command-mode:"));
     expect(target).toBeDefined();
     handle.click(target!.id);
-    expect(handle.lastFrame()).toContain("/ type a command");
+    expect(stripAnsi(handle.lastFrame())).toContain("/ type a command");
     expect(handle.dispatcher.debugRegions().some((row) => row.id.includes(":footer:"))).toBe(false);
   } finally {
     handle.unmount();

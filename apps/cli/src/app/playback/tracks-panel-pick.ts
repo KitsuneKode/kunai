@@ -155,16 +155,33 @@ export async function resolveTracksPanelPick(
 
   if (picked.section === "audio" && selection?.audioMode) {
     const state = container.stateManager.getState();
+    const kind = state.mode === "anime" ? "anime" : title.type === "movie" ? "movie" : "series";
+    const currentProfile =
+      kind === "anime"
+        ? state.animeLanguageProfile
+        : kind === "movie"
+          ? state.movieLanguageProfile
+          : state.seriesLanguageProfile;
     const nextProfile = {
-      ...state.animeLanguageProfile,
+      ...currentProfile,
       audio: selection.audioMode,
     };
     container.stateManager.dispatch({
       type: "UPDATE_LANGUAGE_PROFILE",
-      kind: "anime",
+      kind,
       profile: nextProfile,
     });
-    await container.config.update({ animeLanguageProfile: nextProfile });
+    container.stateManager.dispatch({
+      type: "SET_SESSION_TRACK_PREFERENCES",
+      preferences: { audio: selection.audioMode },
+    });
+    const configUpdate =
+      kind === "anime"
+        ? { animeLanguageProfile: nextProfile }
+        : kind === "movie"
+          ? { movieLanguageProfile: nextProfile }
+          : { seriesLanguageProfile: nextProfile };
+    await container.config.update(configUpdate);
     await container.config.save();
     await invalidateTitlePlaybackCaches({
       cacheStore: container.cacheStore,
@@ -250,6 +267,20 @@ export async function resolveTracksPanelPick(
         type: "SET_SESSION_TRACK_PREFERENCES",
         preferences: { quality: candidate.qualityLabel },
       });
+  }
+
+  if (picked.section === "audio" && selection.streamId) {
+    const stream = container.stateManager.getState().stream;
+    const candidate = stream?.providerResolveResult?.streams.find(
+      (row) => row.id === selection.streamId,
+    );
+    const audioLang = candidate?.audioLanguages?.[0] ?? candidate?.presentation;
+    if (audioLang) {
+      container.stateManager.dispatch({
+        type: "SET_SESSION_TRACK_PREFERENCES",
+        preferences: { audio: audioLang },
+      });
+    }
   }
   return {
     kind: "stream-selection",
