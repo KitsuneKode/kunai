@@ -1,4 +1,5 @@
 import {
+  ANIME_ONLY_PROVIDER_IDS,
   isPlaceholderTitleName,
   mergeBackfillExternalIds,
   resolveHistoryLookupTitleId,
@@ -9,6 +10,7 @@ import type {
   MediaKind,
   ProviderExternalIds,
   ProviderId,
+  ProviderLane,
   TitleIdentity,
 } from "@kunai/types";
 
@@ -510,9 +512,20 @@ export class HistoryRepository {
       .map(mapHistoryRow);
   }
 
-  listLatestByTitle(limit = 500): readonly HistoryProgress[] {
+  /** Filter the latest row's replay lane before the result limit, preserving unscoped callers. */
+  listLatestByTitle(limit = 500, lane?: ProviderLane): readonly HistoryProgress[] {
+    const ids =
+      "CASE WHEN json_valid(history.external_ids_json) THEN history.external_ids_json ELSE '{}' END";
+    const hasId = (key: string) => `COALESCE(json_extract(${ids}, '$.${key}'), '') NOT IN ('', 0)`;
+    // SQL projection of core/history-lane; provider ids share the same authority.
+    const filter = lane
+      ? `AND (CASE
+      WHEN history.media_kind = 'video' OR history.provider_id = 'youtube' OR ${hasId("youtubeId")} THEN 'youtube'
+      WHEN history.provider_id IN (${ANIME_ONLY_PROVIDER_IDS.map(() => "?").join(",")}) OR ${hasId("anilistId")} OR ${hasId("malId")} THEN 'anime'
+      ELSE 'series' END) = ?`
+      : "";
     return this.db
-      .query<HistoryProgressRow, [number]>(
+      .query<HistoryProgressRow, (string | number)[]>(
         `
           SELECT *
           FROM history_progress AS history
@@ -523,11 +536,12 @@ export class HistoryRepository {
             ORDER BY latest.updated_at DESC, latest.created_at DESC, latest.key DESC
             LIMIT 1
           )
+          ${filter}
           ORDER BY history.updated_at DESC, history.created_at DESC
           LIMIT ?
         `,
       )
-      .all(limit)
+      .all(...(lane ? [...ANIME_ONLY_PROVIDER_IDS, lane, limit] : [limit]))
       .map(mapHistoryRow);
   }
 

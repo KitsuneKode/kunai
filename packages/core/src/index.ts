@@ -18,3 +18,5 @@ export * from "./trace";
 export * from "./trace-summary";
 export * from "./hls-url";
 export * from "./stream-target-guard";
+
+export * from "./history-lane";

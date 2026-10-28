@@ -498,7 +498,7 @@ export function BrowseShell<T>({
     let active = true;
     setIdleContextStatus("loading");
     const timer = setTimeout(() => {
-      if (active) setShowIdleLoadingHint(true);
+      if (active && requestGate.isCurrent(request)) setShowIdleLoadingHint(true);
     }, 150);
 
     void (async () => {
@@ -513,7 +513,7 @@ export function BrowseShell<T>({
         setIdleContextStatus("error");
       } finally {
         clearTimeout(timer);
-        if (active) setShowIdleLoadingHint(false);
+        if (active && requestGate.isCurrent(request)) setShowIdleLoadingHint(false);
       }
     })();
 
@@ -522,22 +522,31 @@ export function BrowseShell<T>({
       clearTimeout(timer);
       requestGate.invalidate();
     };
-  }, [idleContextRequestGate, loadIdleContext]);
+  }, [idleContextRequestGate, loadIdleContext, mode]);
 
   useEffect(() => {
     if (!loadIdleContext) return undefined;
+    let active = true;
     setBrowseIdleRefreshListener(() => {
+      const request = idleContextRequestGate.begin();
       void (async () => {
         try {
           const next = await loadIdleContext();
+          if (!active || !idleContextRequestGate.isCurrent(request)) return;
           setActiveIdleContext(next);
+          setIdleContextStatus("ready");
+          setShowIdleLoadingHint(false);
         } catch {
           // best-effort refresh after history mutations
         }
       })();
     });
-    return () => setBrowseIdleRefreshListener(null);
-  }, [loadIdleContext]);
+    return () => {
+      active = false;
+      idleContextRequestGate.invalidate();
+      setBrowseIdleRefreshListener(null);
+    };
+  }, [idleContextRequestGate, loadIdleContext, mode]);
 
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),

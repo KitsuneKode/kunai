@@ -3,54 +3,12 @@
 // Single authority for "is this episode finished" over the canonical
 // HistoryProgress row. Replaces the lossy facade-era isFinished.
 
-import { isAnimeOnlyProviderId } from "@/domain/media/content-kind";
 import type { ContentType, ProviderLane } from "@/domain/types";
+import { isYoutubeHistoryEntry } from "@kunai/core";
 import { isHistoryProgressFinished } from "@kunai/storage";
 import type { HistoryProgress, HistoryRepository } from "@kunai/storage";
-import type { MediaKind } from "@kunai/types";
 
-/**
- * Corrected anime/series/movie kind for a (possibly legacy) history row.
- *
- * `mediaKind` was historically mode-derived, so dramas watched in anime mode were
- * stamped "anime". History stores `externalIds`, so we can re-derive: a stored
- * "anime" row is only really anime when it carries an AniList/MAL id (those DBs
- * only catalog anime). Non-destructive — used by stats + the history type filter
- * so the display is honest without mutating storage. Re-watching re-stamps the
- * row correctly via the write path (resolveContentKind).
- */
-export function correctedHistoryMediaKind(
-  progress: Pick<HistoryProgress, "mediaKind" | "externalIds" | "providerId">,
-): MediaKind {
-  // 1. An anime-only provider (see ANIME_ONLY_PROVIDER_IDS) is definitive — anime even if stored
-  //    "series" with no external id (the common AllAnime mislabel).
-  if (isAnimeOnlyProviderId(progress.providerId)) return "anime";
-  // 2. An AniList/MAL id is definitive too (those catalogs are anime-only) — so an
-  //    anime watched via a TMDB/series provider, or one whose id was self-healed, is
-  //    upgraded to anime regardless of the stored kind.
-  if (progress.externalIds?.anilistId || progress.externalIds?.malId) return "anime";
-  // 3. Otherwise keep the stored kind, except a legacy "anime" with no markers (a
-  //    drama watched in anime mode) corrects down to series.
-  return progress.mediaKind === "anime" ? "series" : progress.mediaKind;
-}
-
-export function isYoutubeHistoryEntry(
-  progress: Pick<HistoryProgress, "mediaKind" | "providerId" | "externalIds">,
-): boolean {
-  return (
-    progress.mediaKind === "video" ||
-    progress.providerId === "youtube" ||
-    Boolean(progress.externalIds?.youtubeId)
-  );
-}
-
-/** Canonical provider lane for replaying a persisted history row. */
-export function historyProviderLane(
-  progress: Pick<HistoryProgress, "mediaKind" | "providerId" | "externalIds">,
-): ProviderLane {
-  if (isYoutubeHistoryEntry(progress)) return "youtube";
-  return correctedHistoryMediaKind(progress) === "anime" ? "anime" : "series";
-}
+export { correctedHistoryMediaKind, historyProviderLane, isYoutubeHistoryEntry } from "@kunai/core";
 
 /**
  * Episode label for history/continue UI. YouTube playlist items use `#N` instead of S01E03.
@@ -106,10 +64,14 @@ export function latestHistoryByTitle(
   return historyByTitle;
 }
 
+/** Optional replay-lane filtering happens in SQLite before the latest-title result cap. */
 export function readLatestHistoryByTitle(
   historyRepository: Pick<HistoryRepository, "listLatestByTitle">,
+  lane?: ProviderLane,
 ): Record<string, HistoryProgress> {
-  return latestHistoryByTitle(historyRepository.listLatestByTitle());
+  return latestHistoryByTitle(
+    lane ? historyRepository.listLatestByTitle(500, lane) : historyRepository.listLatestByTitle(),
+  );
 }
 
 /**
