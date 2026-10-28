@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { createRoamerVisibilityStore, KunaiFoxRoamer } from "../components/brand/kunai-fox-roamer";
+import {
+  createRoamerVisibilityStore,
+  DockedKanna,
+  KunaiFoxRoamer,
+} from "../components/brand/kunai-fox-roamer";
 
 function fixture({ dismissed = false, storageDenied = false } = {}) {
   const events = new EventTarget();
@@ -80,4 +84,15 @@ describe("roamer browser visibility", () => {
     expect(store.getMotionSnapshot()).toBe(false);
     release();
   });
+});
+
+test("docked Kanna offers an accessible dismissal without hiding its control", () => {
+  const markup = renderToStaticMarkup(
+    <DockedKanna size={42} paused={false} onDismiss={() => {}} />,
+  );
+  expect(markup).toContain('aria-label="Dismiss Kanna"');
+  expect(markup).toContain('<button type="button"');
+  expect(markup).not.toContain('tabindex="-1"');
+  expect(markup).toMatch(/^<div[^>]*class="kunai-roamer kunai-roamer--docked"[^>]*>/);
+  expect(markup.split(">")[0]).not.toContain('aria-hidden="true"');
 });

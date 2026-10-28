@@ -169,6 +169,7 @@ export class PersistentMpvSession {
   private readonly ipcEndpoint = createMpvIpcEndpoint(this.id);
   private luaScriptPath: string | null = null;
   private mpv: MpvProcess | null = null;
+  private startupPriority: MpvRuntimeOptions["startupPriority"];
   private mpvUnregister: (() => void) | null = null;
   private ipcSession: MpvIpcSession | null = null;
   private activeCycle: PlayerCycleState | null = null;
@@ -472,6 +473,7 @@ export class PersistentMpvSession {
         stream.isLive ? undefined : options.startAt,
         stream.headers,
         {
+          startupPriority: this.startupPriority,
           requiresYtdl: stream.requiresYtdl,
           ytdlFormat: stream.ytdlFormat,
           ytdlRawOptions: stream.ytdlRawOptions,
@@ -615,6 +617,7 @@ export class PersistentMpvSession {
   }
 
   private async spawn(mpvOptions?: MpvRuntimeOptions): Promise<void> {
+    this.startupPriority = mpvOptions?.startupPriority;
     if (shouldUnlinkUnixSocket(this.ipcEndpoint)) {
       await unlinkIfExists(this.ipcEndpoint.path);
     }
@@ -1787,6 +1790,7 @@ export class PersistentMpvSession {
           shouldSeek ? seekSeconds : 0,
           this.playbackStream.headers,
           {
+            startupPriority: this.startupPriority,
             requiresYtdl: this.playbackStream.requiresYtdl,
             ytdlFormat: this.playbackStream.ytdlFormat,
             ytdlRawOptions: this.playbackStream.ytdlRawOptions,

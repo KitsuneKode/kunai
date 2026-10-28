@@ -155,6 +155,11 @@ dimensions can also describe audio with a cover image. They do not prove
 decoded frame advancement; neither does mpv's estimated frame number. Inspect
 the captured picture separately.
 
+The Kitty control socket lives inside the mode-0700 owned profile (short
+`k.sock` filename), never at a shared predictable `/tmp` path. The mpv wrapper
+records only IPC identity and PID; it must not add a shared `--log-file`, which
+can retain signed media URLs or headers after profile disposal.
+
 Startup setup failures dispose their profile. SIGINT/SIGTERM cancel the active
 route and await the same cleanup as normal completion before results are
 recorded. A concurrent stop call waits for the in-flight stop rather than

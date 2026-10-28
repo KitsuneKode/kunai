@@ -100,7 +100,7 @@ export async function startKittySession(options: {
   const evidenceDir = resolve(options.evidenceDir);
   mkdirSync(evidenceDir, { mode: 0o700 }); // Refuse to overwrite any previous evidence.
   const profile = createIsolatedCliProfile("kitty");
-  const socket = join("/tmp", `k-ctl-${Math.random().toString(36).slice(2, 10)}.sock`);
+  const socket = join(profile.rootDir, "k.sock");
   const socketRecord = join(profile.rootDir, "mpv.json");
   const applicationRecord = join(profile.rootDir, "application.pid");
   let windowId: number | null = null;
@@ -135,7 +135,7 @@ export async function startKittySession(options: {
         // Record only the IPC endpoint, never stream URLs, headers or command lines.
         writeFileSync(
           join(shim, "mpv"),
-          `#!${bun}\nconst args=process.argv.slice(2);\nconst endpoint=args.find(a=>a.startsWith('--input-ipc-server='))?.split('=').slice(1).join('=');\nconst child=Bun.spawn([${JSON.stringify(realMpv)},'--mute=yes','--log-file=/tmp/mpv-exec.log',...args],{stdin:'ignore',stdout:'inherit',stderr:'inherit'});\nif(endpoint) await Bun.write(${JSON.stringify(socketRecord)},JSON.stringify({socket:endpoint,pid:child.pid}));\nfor(const event of ['SIGTERM','SIGINT','SIGHUP']) process.on(event,()=>child.kill());\nprocess.exit(await child.exited);\n`,
+          `#!${bun}\nconst args=process.argv.slice(2);\nconst endpoint=args.find(a=>a.startsWith('--input-ipc-server='))?.split('=').slice(1).join('=');\nconst child=Bun.spawn([${JSON.stringify(realMpv)},'--mute=yes',...args],{stdin:'ignore',stdout:'inherit',stderr:'inherit'});\nif(endpoint) await Bun.write(${JSON.stringify(socketRecord)},JSON.stringify({socket:endpoint,pid:child.pid}));\nfor(const event of ['SIGTERM','SIGINT','SIGHUP']) process.on(event,()=>child.kill());\nprocess.exit(await child.exited);\n`,
           { mode: 0o755 },
         );
       }

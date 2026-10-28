@@ -1,9 +1,13 @@
 import { expect, test } from "bun:test";
 
 import { releaseAvailabilityFixture } from "../../helpers/release-signoff";
-import { buildReleaseProviderRouteCases } from "../../live/release-provider-routes";
+import {
+  buildReleaseProviderRouteCases,
+  buildReleaseProviderDiagnosticCases,
+} from "../../live/release-provider-routes";
 import {
   assertReleaseProviderSignoffComplete,
+  RELEASE_SIGNOFF_REQUIRED_CONTROLS,
   buildReleaseAvailabilityDiagnostic,
   isReleaseProviderSignoffAcceptable,
   type ReleaseAvailabilityDiagnostic,
@@ -145,4 +149,27 @@ test("diagnostic construction requires explicit absence evidence and uncontamina
       verifiedNotFound: false,
     });
   }
+});
+
+test("release builders and validator agree on every control and the Dune diagnostic", () => {
+  const config = { provider: "vidlink", animeProvider: "hianime" };
+  const roster = ["vidlink", "hianime"];
+  const identities = buildReleaseProviderRouteCases(config, roster).map((route) => ({
+    lane: route.lane,
+    targetId: route.lane === "anime" ? `search:${route.searchQuery}` : route.title.id,
+    targetTitle: route.lane === "anime" ? route.expectedTitle : route.title.name,
+  }));
+  expect(identities).toEqual([...RELEASE_SIGNOFF_REQUIRED_CONTROLS]);
+  const diagnostic = buildReleaseProviderDiagnosticCases(config, roster)[0];
+  expect(diagnostic).toBeDefined();
+  if (!diagnostic || diagnostic.lane !== "movie")
+    throw new Error("Missing configured Dune diagnostic");
+  const report = fixture();
+  report.diagnostics[0] = {
+    ...report.diagnostics[0]!,
+    lane: diagnostic.lane,
+    targetId: diagnostic.title.id,
+    targetTitle: diagnostic.title.name,
+  };
+  expect(() => assertReleaseProviderSignoffComplete(report)).not.toThrow();
 });

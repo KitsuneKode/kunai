@@ -31,6 +31,13 @@ hosted, device or release signoff.
 
 ## 1. Watching release gates
 
+- [ ] Reconcile the provider audit branch now integrated into PR #676. Preserve
+      its YouTube format ordering and VidRock concurrency fixes; qualify
+      recommended-tier promotions with captured playback evidence rather than
+      manifest flags. The review corrections cover per-file cache policies,
+      cache-pause-independent recovery, private Kitty IPC/logging, VidRock
+      decrypt accounting, docked Kanna dismissal and route-builder consistency.
+
 - [ ] Integrate the pending mobile readiness docs (PR #672), project previews
       (PR #673) and the Android handoff lifecycle repair after exact-head checks
       and actionable reviews. Review any integration conflicts.

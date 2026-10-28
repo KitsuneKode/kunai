@@ -221,6 +221,31 @@ type GaitState = {
   settleMs: number;
 };
 
+/** Stationary touch/reduced-motion companion with a named, keyboard-reachable exit. */
+export function DockedKanna({
+  size,
+  paused,
+  onDismiss,
+}: {
+  readonly size: number;
+  readonly paused: boolean;
+  readonly onDismiss: () => void;
+}) {
+  return (
+    <div className="kunai-roamer kunai-roamer--docked" data-paused={paused}>
+      <KunaiFox pose="idle" size={Math.min(size, 42)} />
+      <button
+        type="button"
+        className="kunai-roamer__dismiss"
+        aria-label="Dismiss Kanna"
+        onClick={onDismiss}
+      >
+        <span aria-hidden="true">×</span>
+      </button>
+    </div>
+  );
+}
+
 export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const paused = useKannaPaused();
   const canRoam = useSyncExternalStore(
@@ -468,17 +493,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
 
   if (!enabled) return null;
 
-  if (!canRoam)
-    return (
-      <div
-        key="docked"
-        className="kunai-roamer kunai-roamer--docked"
-        data-paused={paused}
-        aria-hidden="true"
-      >
-        <KunaiFox pose="idle" size={Math.min(size, 42)} />
-      </div>
-    );
+  if (!canRoam) return <DockedKanna key="docked" size={size} paused={paused} onDismiss={dismiss} />;
 
   const pose: KunaiFoxPose = paused ? "idle" : poseForPhase(phase);
 

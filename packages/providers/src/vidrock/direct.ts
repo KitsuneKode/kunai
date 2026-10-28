@@ -140,7 +140,7 @@ export function resolveVidrockDirect(
               }
             } catch (error) {
               if (ctx.signal?.aborted) throw error;
-              return null;
+              return { laneStreams, laneSubtitles };
             }
             return { laneStreams, laneSubtitles };
           }
@@ -156,7 +156,8 @@ export function resolveVidrockDirect(
             },
             signal: directStreamFetchSignal(ctx.signal, 8_000),
           });
-          if (isHlsDeadHostStatus(inventory.probe.httpStatus)) return null;
+          if (isHlsDeadHostStatus(inventory.probe.httpStatus))
+            return { laneStreams, laneSubtitles };
           if (inventory.isHls) {
             for (const track of inventory.subtitleTracks) {
               laneSubtitles.push({ url: track.url, language: track.language, label: track.label });
