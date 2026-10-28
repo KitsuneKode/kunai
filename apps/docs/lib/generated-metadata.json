@@ -100,7 +100,7 @@
       "displayName": "AllManga",
       "description": "Anime episodes in sub and dub — the ani-cli parity source",
       "domain": "mkissa.to",
-      "recommended": false,
+      "recommended": true,
       "mediaKinds": ["anime"],
       "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
       "notes": [
