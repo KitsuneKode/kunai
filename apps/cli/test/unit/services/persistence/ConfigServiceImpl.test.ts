@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  playbackLanguageProfile,
   playbackQualityPreference,
   playbackSubtitlePreference,
 } from "@/app/playback/playback-profile-context";
@@ -764,8 +765,15 @@ describe("session overrides", () => {
         service,
       ),
     );
-    for (const mode of ["anime", "series", "youtube"] as const) {
-      const context = { mode, title: { type: "movie" as const }, config: service };
+    const cases = [
+      { mode: "anime", title: { type: "series", isAnime: true }, profile: "animeLanguageProfile" },
+      { mode: "series", title: { type: "series" }, profile: "seriesLanguageProfile" },
+      { mode: "series", title: { type: "movie" }, profile: "movieLanguageProfile" },
+      { mode: "youtube", title: { type: "movie" }, profile: "youtubeLanguageProfile" },
+    ] as const;
+    for (const { mode, title, profile } of cases) {
+      const context = { mode, title, config: service };
+      expect(playbackLanguageProfile(context)).toBe(service[profile]);
       expect(playbackQualityPreference(context)).toBe("480p");
       expect(playbackSubtitlePreference(context)).toBe("none");
     }

@@ -136,7 +136,7 @@ export async function fetchTitleDetail(
 ): Promise<TitleDetail> {
   // The resolve already owns yt-dlp metadata fetching. Do not cache a generic
   // "Unknown" answer before it finishes or send video ids to another catalog.
-  if (id.startsWith("youtube:") || hints?.externalIds?.youtubeId) {
+  if (id.startsWith("youtube:")) {
     return (
       peekYoutubeTitleDetail(id, type, hints?.externalIds?.youtubeId) ?? {
         id,

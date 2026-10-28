@@ -20,10 +20,13 @@ export const PLAYBACK_ADVANCE_SECONDS = 8;
 export async function waitForKittyCondition<T>(
   read: () => Promise<T | null>,
   timeoutMs = 15_000,
+  signal?: AbortSignal,
 ): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   do {
+    signal?.throwIfAborted();
     const result = await read();
+    signal?.throwIfAborted();
     if (result !== null) return result;
     await new Promise<void>((done) => setTimeout(done, 100));
   } while (Date.now() < deadline);
@@ -38,6 +41,7 @@ export function kittyMouseReport(x: number, y: number, release = false): string 
   return `\x1b[<0;${x};${y}${release ? "m" : "M"}`;
 }
 
+/** Resolve one visible label to terminal cells; ambiguous labels cannot authorize a click. */
 export function kittyTextTarget(frame: string, label: string) {
   if (!label || frame.split(label).length !== 2)
     throw new Error("Click label must be uniquely visible");
@@ -48,7 +52,8 @@ export function kittyTextTarget(frame: string, label: string) {
   return { x: Bun.stringWidth(line.slice(0, line.indexOf(label))) + 1, y: y + 1 };
 }
 
-export function decodedVideoProof(start: number, end: number, video: JsonValue) {
+/** Playback clock/dimensions only; a cover image can pass. Inspect actual frame captures separately. */
+export function playbackProgressProof(start: number, end: number, video: JsonValue) {
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start + PLAYBACK_ADVANCE_SECONDS)
     throw new Error("Playback did not advance");
   return {
@@ -58,6 +63,11 @@ export function decodedVideoProof(start: number, end: number, video: JsonValue) 
   };
 }
 
+/**
+ * Own one Kitty window, private storage roots and evidence directory. Live runs
+ * require a provider pin; startup failure cleans up before rejecting, while
+ * unconfirmed child exit retains the profile for investigation.
+ */
 export async function startKittySession(options: {
   readonly evidenceDir: string;
   readonly argv?: readonly string[];
@@ -66,7 +76,9 @@ export async function startKittySession(options: {
   readonly fixture?: boolean;
   readonly requiresMpv?: boolean;
   readonly font?: string;
+  readonly signal?: AbortSignal;
 }) {
+  options.signal?.throwIfAborted();
   if (
     !options.fixture &&
     (!options.providerId || !options.providerIds?.includes(options.providerId))
@@ -82,109 +94,123 @@ export async function startKittySession(options: {
   if (!kitty || !bun) throw new Error("Kitty and Bun are required");
   if (options.requiresMpv && !realMpv) throw new Error("Decoded playback requires installed mpv");
   const kittyExecutable = kitty;
+  const bunExecutable = bun;
   if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
     throw new Error("No graphical desktop available");
   const evidenceDir = resolve(options.evidenceDir);
   mkdirSync(evidenceDir, { mode: 0o700 }); // Refuse to overwrite any previous evidence.
   const profile = createIsolatedCliProfile("kitty");
-  chmodSync(profile.rootDir, 0o700);
   const socket = join(profile.rootDir, "control");
   const socketRecord = join(profile.rootDir, "mpv.json");
   let windowId: number | null = null;
   let applicationPid: number | null = null;
-  let stopped = false;
+  let stopPromise: Promise<void> | undefined;
   let captureNumber = 0;
   const captures: { label: string; filename: string }[] = [];
-  const config = { ...DEFAULT_CONFIG, ...onboardedConfig() };
-  if (!options.fixture) {
-    config.provider = DEFAULT_CONFIG.provider;
-    config.animeProvider = DEFAULT_CONFIG.animeProvider;
-  }
-  if (options.providerId)
-    Object.assign(config, {
-      provider: options.providerId,
-      animeProvider: options.providerId,
-      youtubeProvider: options.providerId,
-      providerPriority: [],
-      animeProviderPriority: [],
-      youtubeProviderPriority: [],
-      disabledProviders: options.providerIds?.filter((id) => id !== options.providerId) ?? [],
-    });
-  writeFileSync(profile.paths.configPath, JSON.stringify(config));
-  const shim = join(profile.rootDir, "bin");
-  mkdirSync(shim);
-  if (realMpv) {
-    // Record only the IPC endpoint, never stream URLs, headers or command lines.
-    writeFileSync(
-      join(shim, "mpv"),
-      `#!${bun}\nconst args=process.argv.slice(2);\nconst endpoint=args.find(a=>a.startsWith('--input-ipc-server='))?.split('=').slice(1).join('=');\nconst child=Bun.spawn([${JSON.stringify(realMpv)},...args,'--mute=yes'],{stdin:'ignore',stdout:'inherit',stderr:'inherit'});\nif(endpoint) await Bun.write(${JSON.stringify(socketRecord)},JSON.stringify({socket:endpoint,pid:child.pid}));\nfor(const event of ['SIGTERM','SIGINT','SIGHUP']) process.on(event,()=>child.kill());\nprocess.exit(await child.exited);\n`,
-      { mode: 0o755 },
-    );
-  }
   const environment: Record<string, string> = {};
-  for (const key of [
-    "HOME",
-    "PATH",
-    "DISPLAY",
-    "WAYLAND_DISPLAY",
-    "XDG_RUNTIME_DIR",
-    "DBUS_SESSION_BUS_ADDRESS",
-    "LANG",
-    "XAUTHORITY",
-  ]) {
-    const value = process.env[key];
-    if (value) environment[key] = value;
+  /** Setup is synchronous: every throw before returning the child disposes the profile. */
+  function launchTerminal() {
+    try {
+      chmodSync(profile.rootDir, 0o700);
+      const config = { ...DEFAULT_CONFIG, ...onboardedConfig() };
+      if (!options.fixture) {
+        config.provider = DEFAULT_CONFIG.provider;
+        config.animeProvider = DEFAULT_CONFIG.animeProvider;
+      }
+      if (options.providerId)
+        Object.assign(config, {
+          provider: options.providerId,
+          animeProvider: options.providerId,
+          youtubeProvider: options.providerId,
+          providerPriority: [],
+          animeProviderPriority: [],
+          youtubeProviderPriority: [],
+          disabledProviders: options.providerIds?.filter((id) => id !== options.providerId) ?? [],
+        });
+      writeFileSync(profile.paths.configPath, JSON.stringify(config));
+      const shim = join(profile.rootDir, "bin");
+      mkdirSync(shim);
+      if (realMpv) {
+        // Record only the IPC endpoint, never stream URLs, headers or command lines.
+        writeFileSync(
+          join(shim, "mpv"),
+          `#!${bun}\nconst args=process.argv.slice(2);\nconst endpoint=args.find(a=>a.startsWith('--input-ipc-server='))?.split('=').slice(1).join('=');\nconst child=Bun.spawn([${JSON.stringify(realMpv)},...args,'--mute=yes'],{stdin:'ignore',stdout:'inherit',stderr:'inherit'});\nif(endpoint) await Bun.write(${JSON.stringify(socketRecord)},JSON.stringify({socket:endpoint,pid:child.pid}));\nfor(const event of ['SIGTERM','SIGINT','SIGHUP']) process.on(event,()=>child.kill());\nprocess.exit(await child.exited);\n`,
+          { mode: 0o755 },
+        );
+      }
+      for (const key of [
+        "HOME",
+        "PATH",
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+        "XDG_RUNTIME_DIR",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "LANG",
+        "XAUTHORITY",
+      ]) {
+        const value = process.env[key];
+        if (value) environment[key] = value;
+      }
+      const childEnv = {
+        ...profile.env,
+        PATH: `${shim}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+        COLORTERM: "truecolor",
+        FORCE_COLOR: "3",
+        KUNAI_POSTER: "1",
+      };
+      if (options.fixture)
+        Object.assign(childEnv, {
+          KUNAI_COMPILED_SMOKE: "1",
+          KUNAI_COMPILED_SMOKE_FIXTURE: join(
+            CLI_ROOT,
+            "src/app/compiled-smoke/fixture-provider.ts",
+          ),
+        });
+      const envArgs = Object.entries(childEnv).map(([key, value]) => `${key}=${value}`);
+      return Bun.spawn(
+        [
+          kittyExecutable,
+          "--config",
+          "NONE",
+          "--listen-on",
+          `unix:${socket}`,
+          "--class",
+          "kunai-verification",
+          "--title",
+          "Kunai verification — isolated profile",
+          "-o",
+          "allow_remote_control=socket-only",
+          "-o",
+          "confirm_os_window_close=0",
+          "-o",
+          `font_family=${options.font ?? "DankMono Nerd Font Mono"}`,
+          "-o",
+          "font_size=14.5",
+          "-o",
+          "initial_window_width=120c",
+          "-o",
+          "initial_window_height=36c",
+          "/usr/bin/env",
+          ...envArgs,
+          bunExecutable,
+          MAIN,
+          ...(options.argv ?? []),
+        ],
+        {
+          cwd: profile.rootDir,
+          env: environment,
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: Bun.file(join(evidenceDir, "terminal.log")),
+        },
+      );
+    } catch (error) {
+      disposeIsolatedCliProfile(profile);
+      throw error;
+    }
   }
-  const childEnv = {
-    ...profile.env,
-    PATH: `${shim}:${process.env.PATH ?? "/usr/bin:/bin"}`,
-    COLORTERM: "truecolor",
-    FORCE_COLOR: "3",
-    KUNAI_POSTER: "1",
-  };
-  if (options.fixture)
-    Object.assign(childEnv, {
-      KUNAI_COMPILED_SMOKE: "1",
-      KUNAI_COMPILED_SMOKE_FIXTURE: join(CLI_ROOT, "src/app/compiled-smoke/fixture-provider.ts"),
-    });
-  const envArgs = Object.entries(childEnv).map(([key, value]) => `${key}=${value}`);
-  const terminal = Bun.spawn(
-    [
-      kitty,
-      "--config",
-      "NONE",
-      "--listen-on",
-      `unix:${socket}`,
-      "--class",
-      "kunai-verification",
-      "--title",
-      "Kunai verification — isolated profile",
-      "-o",
-      "allow_remote_control=socket-only",
-      "-o",
-      "confirm_os_window_close=0",
-      "-o",
-      `font_family=${options.font ?? "DankMono Nerd Font Mono"}`,
-      "-o",
-      "font_size=14.5",
-      "-o",
-      "initial_window_width=120c",
-      "-o",
-      "initial_window_height=36c",
-      "/usr/bin/env",
-      ...envArgs,
-      bun,
-      MAIN,
-      ...(options.argv ?? []),
-    ],
-    {
-      cwd: profile.rootDir,
-      env: environment,
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: Bun.file(join(evidenceDir, "terminal.log")),
-    },
-  );
+  const terminal = launchTerminal();
+  /** Invoke only this session's remote socket, with bounded command execution. */
   async function remote(args: readonly string[], input?: string): Promise<string> {
     const proc = Bun.spawn([kittyExecutable, "@", "--to", `unix:${socket}`, ...args], {
       env: environment,
@@ -209,6 +235,7 @@ export async function startKittySession(options: {
   };
   const text = () => remote(["get-text", ...match(), "--extent", "screen"]);
   const sendText = (value: string) => remote(["send-text", ...match(), "--stdin"], value);
+  /** Capture terminal text, actual graphics and persisted state without approving the picture. */
   async function capture(label: string) {
     if (!/^[a-z0-9-]+$/.test(label)) throw new Error("Capture labels must be simple filenames");
     const filename = `${String(++captureNumber).padStart(3, "0")}-${label}`;
@@ -224,6 +251,7 @@ export async function startKittySession(options: {
     await Bun.write(join(evidenceDir, "captures.json"), JSON.stringify(captures));
     return frame;
   }
+  /** Send one bounded IPC command to the mpv endpoint recorded by this session's shim. */
   async function ipc(command: readonly (string | number)[]): Promise<JsonValue> {
     const record = z
       .object({ socket: z.string().min(1) })
@@ -296,9 +324,12 @@ export async function startKittySession(options: {
       }).catch(finish);
     });
   }
-  async function stop() {
-    if (stopped) return;
-    stopped = true;
+  /** All callers share cleanup completion, including signals racing the runner's finally. */
+  function stop(): Promise<void> {
+    return (stopPromise ??= stopOwnedSession());
+  }
+  /** Close owned processes, inspect analytics isolation, then dispose only after confirmed child exit. */
+  async function stopOwnedSession() {
     let privateStateClean = true;
     let childrenExited = true;
     try {
@@ -350,32 +381,39 @@ export async function startKittySession(options: {
     if (!childrenExited) throw new Error("Owned child exit unconfirmed; isolated profile retained");
   }
   try {
-    await waitForKittyCondition(async () => {
-      if (terminal.exitCode !== null)
-        throw new Error("Owned Kitty exited before readiness; inspect terminal.log");
-      try {
-        const windows = z
-          .array(
-            z.object({
-              tabs: z.array(
-                z.object({
-                  windows: z.array(
-                    z.object({ id: z.number().int().positive(), pid: z.number().int().positive() }),
-                  ),
-                }),
-              ),
-            }),
-          )
-          .parse(JSON.parse(await remote(["ls"])));
-        const found = windows[0]?.tabs?.[0]?.windows?.[0];
-        if (!found) return null;
-        windowId = found.id;
-        applicationPid = found.pid;
-        return true;
-      } catch {
-        return null;
-      }
-    });
+    await waitForKittyCondition(
+      async () => {
+        if (terminal.exitCode !== null)
+          throw new Error("Owned Kitty exited before readiness; inspect terminal.log");
+        try {
+          const windows = z
+            .array(
+              z.object({
+                tabs: z.array(
+                  z.object({
+                    windows: z.array(
+                      z.object({
+                        id: z.number().int().positive(),
+                        pid: z.number().int().positive(),
+                      }),
+                    ),
+                  }),
+                ),
+              }),
+            )
+            .parse(JSON.parse(await remote(["ls"])));
+          const found = windows[0]?.tabs?.[0]?.windows?.[0];
+          if (!found) return null;
+          windowId = found.id;
+          applicationPid = found.pid;
+          return true;
+        } catch {
+          return null;
+        }
+      },
+      15_000,
+      options.signal,
+    );
   } catch (error) {
     await stop();
     throw error;
@@ -399,6 +437,7 @@ export async function startKittySession(options: {
       waitForKittyCondition(
         async () => ((await text()).includes(literal) ? true : null),
         timeoutMs,
+        options.signal,
       ),
     ipc,
     stop,

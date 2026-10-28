@@ -21,6 +21,54 @@ afterEach(() => {
 });
 
 describe("anime metadata helpers", () => {
+  test("fractional AllManga episodes retain their own title and artwork", () => {
+    const episode = { index: 13, label: "Episode 12.5", detail: "Source episode 12.5" };
+    const metadata = new Map<number, AnimeEpisodeMetadata>([
+      [
+        12,
+        {
+          number: 12,
+          title: "Main episode",
+          thumbnail: "https://img.example/12.jpg",
+          source: "anilist",
+        },
+      ],
+      [
+        12.5,
+        {
+          number: 12.5,
+          title: "Special",
+          thumbnail: "https://img.example/12-5.jpg",
+          source: "anilist",
+        },
+      ],
+    ]);
+    expect(parseAllMangaEpisodeNumber(episode)).toBe(12.5);
+    const [enriched] = enrichEpisodeOptionsWithAnimeMetadata(
+      [episode],
+      metadata,
+      parseAllMangaEpisodeNumber,
+    );
+    expect(enriched?.name).toBe("Special");
+    expect(enriched?.artwork?.thumbnailUrl).toBe("https://img.example/12-5.jpg");
+  });
+
+  test("a short real title wins over an episode-number placeholder in either merge order", () => {
+    for (const [current, next] of [
+      ["Episode 1", "Run"],
+      ["Run", "Episode 1"],
+    ]) {
+      const metadata = new Map<number, AnimeEpisodeMetadata>([
+        [1, { number: 1, title: next, source: "anilist" }],
+      ]);
+      expect(
+        enrichEpisodeOptionsWithAnimeMetadata(
+          [{ index: 1, label: "Episode 1", name: current }],
+          metadata,
+        )[0]?.name,
+      ).toBe("Run");
+    }
+  });
   test("sparse or reversed streaming rows keep their explicit episode identity", async () => {
     const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

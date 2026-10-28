@@ -26,6 +26,67 @@ afterEach(async () => {
   }
 });
 
+test("calendar footer names and cycles calendar types instead of claiming a mode switch", () => {
+  const actions: string[] = [];
+  const calendar = {
+    source: "anilist",
+    titleId: "anilist:21",
+    title: "One Piece",
+    contentKind: "anime",
+    releaseAt: "2026-06-01T10:00:00.000Z",
+    releasePrecision: "timestamp",
+    releaseStatus: "upcoming",
+    providerConfirmed: false,
+    reason: "upcoming-episode",
+    dayKey: "2026-06-01",
+    display: { time: "10:00", statusLabel: "airs later", episodeCode: "E01", groupLabel: "MON 1" },
+  } as const;
+  const handle = renderWithPointer(
+    <BrowseShell
+      mode="anime"
+      provider="hianime"
+      placeholder="Search"
+      commands={[]}
+      initialResults={[
+        {
+          label: calendar.title,
+          value: {
+            id: calendar.titleId,
+            type: "series",
+            title: calendar.title,
+            isAnime: true,
+            calendar,
+          },
+          calendar,
+        },
+      ]}
+      initialResultSubtitle="1 this week · schedule"
+      onSearch={async () => ({ options: [], subtitle: "" })}
+      onResolve={(action) => actions.push(action)}
+      onSubmit={() => {}}
+      onCancel={() => {}}
+    />,
+    { columns: 120, rows: 40 },
+  );
+  try {
+    expect(handle.lastFrame()).toContain("calendar type");
+    const target = handle.dispatcher
+      .debugRegions()
+      .find((row) => row.id.includes(":footer:") && row.id.includes(":toggle-mode:"));
+    expect(target?.id).toContain("calendar type");
+    expect(target?.id).not.toContain("switch mode");
+    handle.click(target!.id);
+    expect(actions).toEqual([]);
+    expect(handle.lastFrame()).toContain("One Piece");
+    handle.click(target!.id);
+    expect(handle.lastFrame()).toContain("No tv releases");
+    act(() => handle.stdin.enqueue(["\u001b[Z"]));
+    expect(handle.lastFrame()).toContain("One Piece");
+  } finally {
+    handle.unmount();
+  }
+});
+
 test("home rows remain selectable after discovery returns no results", async () => {
   const actions: string[] = [];
   const handle = renderWithPointer(

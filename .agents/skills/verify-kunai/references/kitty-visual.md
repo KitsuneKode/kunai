@@ -47,6 +47,12 @@ the only enabled provider, so fallback cannot qualify a different adapter.
 
 ## Doctor
 
+Apply compositor placement rules to the actual Kitty launch process. A rule
+attached only to the Bun runner may not propagate to its child window. Before
+input, query the owned native window's monitor and workspace and compare them
+with the maintainer's reserved surface. Stop a misplaced window and correct the
+launcher; do not keep testing on the display in use.
+
 Inspect the first PNG, not only its text: correct app, readable monospace font,
 no clipped controls or stale image, expected mode/provider. Confirm
 `cleanup.json` eventually reports clean privacy state. Missing screenshot
@@ -135,7 +141,7 @@ when explicitly requested; the normal test suite stays deterministic.
 ## Evidence and cleanup
 
 Numbered PNG/text/backend captures preserve each step. `results.json` records
-the source commit and dirty-tree flag. `playback.json` records
+the source commit and dirty tree flag. `playback.json` records
 mpv time positions and video dimensions; `decoded-frame.png` must be inspected
 for real visual output. An advancing clock plus a black or broken frame still
 needs investigation. A capture/IPC deadline does not establish a provider outage;
@@ -143,6 +149,16 @@ inspect the named failed command, the UI capture and any intermediate playback
 proof separately. `results.json` distinguishes route failures and cleanup
 failures and explicitly leaves visual review pending. A passing helper does
 not approve playback quality or release readiness by itself.
+
+The machine status is `playback-progress-observed`: clock progress and positive
+dimensions can also describe audio with a cover image. They do not prove
+decoded frame advancement; neither does mpv's estimated frame number. Inspect
+the captured picture separately.
+
+Startup setup failures dispose their profile. SIGINT/SIGTERM cancel the active
+route and await the same cleanup as normal completion before results are
+recorded. A concurrent stop call waits for the in-flight stop rather than
+returning early. The runner then removes both signal handlers.
 
 The helper closes only its own window and observed mpv session, checks consent
 and install identity, confirms the application/player processes exited, disposes its temporary profile

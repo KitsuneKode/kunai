@@ -27,6 +27,9 @@ titles, never the streaming array's position. Sparse or newest-first links do
 not relabel early episodes with later episode titles or thumbnails. Unnumbered
 links remain unassigned; native/Jikan metadata still supplies known identities.
 This shared reader also serves Miruro and the archived AniDB adapter.
+Fractional episodes retain their number through metadata lookup, so 12.5
+cannot inherit episode 12's title or still. Actual titles outrank episode-number
+placeholders even when the placeholder is longer.
 
 The 2026-10-28 bootstrap check returned HTTP 200 with current crypto. The
 isolated One Piece search/catalog diagnostic then reached the source captcha

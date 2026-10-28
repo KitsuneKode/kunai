@@ -222,6 +222,7 @@ type BrowseQueryDraft = { value: string; mode: ShellMode };
 
 const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
 
+/** Own browse focus, async results and guarded keyboard/pointer routes within the current shell surface. */
 export function BrowseShell<T>({
   mode,
   provider,
@@ -2737,6 +2738,7 @@ export function BrowseShell<T>({
       {actionFeedback ? <Text color={palette.ok}>{`✓ ${actionFeedback}`}</Text> : null}
       {(() => {
         const browseBindingIds: string[] = [
+          ...(isCalendarView ? ["browse-mode"] : []),
           ...(listFocused && searchState === "ready" ? ["browse-details"] : []),
           // Ctrl+O works from the search box without stealing typing — advertise
           // it when results exist and query still owns focus.
@@ -2756,7 +2758,7 @@ export function BrowseShell<T>({
           ...(listFocused && options.length > 0 && !queryDirty && searchState === "ready"
             ? ["browse-filter"]
             : []),
-          "browse-mode",
+          ...(!isCalendarView ? ["browse-mode"] : []),
           ...(onLoadDiscovery ? ["browse-trending"] : []),
           ...(listFocused && options.length > 0 && !queryDirty
             ? [
@@ -2803,7 +2805,9 @@ export function BrowseShell<T>({
             },
             overrides: {
               "browse-mode": {
-                label: getCommandLabel(commands, "toggle-mode", "switch mode"),
+                label: isCalendarView
+                  ? "calendar type"
+                  : getCommandLabel(commands, "toggle-mode", "switch mode"),
               },
             },
           }),

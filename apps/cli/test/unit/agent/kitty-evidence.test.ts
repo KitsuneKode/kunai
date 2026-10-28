@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
 import {
-  decodedVideoProof,
+  playbackProgressProof,
   kittyMouseReport,
   kittyTextTarget,
   startKittySession,
@@ -30,6 +30,24 @@ test("live Kitty sessions reject absent or unknown provider pins before desktop 
   }
 });
 
+test("an already cancelled Kitty run rejects before desktop prerequisites or profile creation", async () => {
+  const controller = new AbortController();
+  const reason = new Error("Already cancelled verification");
+  controller.abort(reason);
+  const display = process.env.DISPLAY;
+  const wayland = process.env.WAYLAND_DISPLAY;
+  delete process.env.DISPLAY;
+  delete process.env.WAYLAND_DISPLAY;
+  try {
+    await expect(
+      startKittySession({ evidenceDir: "unused", fixture: true, signal: controller.signal }),
+    ).rejects.toThrow(reason);
+  } finally {
+    if (display !== undefined) process.env.DISPLAY = display;
+    if (wayland !== undefined) process.env.WAYLAND_DISPLAY = wayland;
+  }
+});
+
 test("terminal targets use cell widths and reject absent or ambiguous labels", () => {
   expect(kittyTextTarget("header\n猫 [/] commands", "[/]")).toEqual({ x: 4, y: 2 });
   expect(() => kittyTextTarget("[/] commands\n[/] other", "[/]")).toThrow("uniquely");
@@ -40,13 +58,13 @@ test("terminal targets use cell widths and reject absent or ambiguous labels", (
   expect(() => kittyMouseReport(1, NaN)).toThrow();
 });
 
-test("decoded-video proof refuses a moving audio clock, stalled playback and invalid dimensions", () => {
-  expect(() => decodedVideoProof(2, 11, null)).toThrow();
-  expect(() => decodedVideoProof(2, 2, { w: 1920, h: 1080 })).toThrow("advance");
-  expect(() => decodedVideoProof(2, 4, { w: 1920, h: 1080 })).toThrow("advance");
-  expect(() => decodedVideoProof(2, 11, { w: 0, h: 1080 })).toThrow();
-  expect(() => decodedVideoProof(NaN, 4, { w: 1920, h: 1080 })).toThrow();
-  expect(decodedVideoProof(2, 11, { w: 1920, h: 1080 })).toEqual({
+test("playback progress requires a moving clock and positive video dimensions; picture approval is separate", () => {
+  expect(() => playbackProgressProof(2, 11, null)).toThrow();
+  expect(() => playbackProgressProof(2, 2, { w: 1920, h: 1080 })).toThrow("advance");
+  expect(() => playbackProgressProof(2, 4, { w: 1920, h: 1080 })).toThrow("advance");
+  expect(() => playbackProgressProof(2, 11, { w: 0, h: 1080 })).toThrow();
+  expect(() => playbackProgressProof(NaN, 4, { w: 1920, h: 1080 })).toThrow();
+  expect(playbackProgressProof(2, 11, { w: 1920, h: 1080 })).toEqual({
     timePosStart: 2,
     timePosEnd: 11,
     video: { w: 1920, h: 1080 },

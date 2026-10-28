@@ -7,6 +7,7 @@ import {
   clearTitleDetailCache,
   peekTitleDetail,
 } from "@/services/catalog/TitleDetailService";
+import { readResolvedYoutubeTitleDetail } from "@/services/youtube/youtube-title-detail";
 import {
   configureYoutubeProvider,
   YOUTUBE_METADATA_SCHEMA_VERSION,
@@ -16,6 +17,46 @@ import type { YoutubeVideoMetadata } from "@kunai/providers/youtube";
 afterEach(() => {
   configureYoutubeProvider({});
   clearTitleDetailCache();
+});
+
+test("resolved YouTube enrichment is optional when its metadata cache fails, while cancellation propagates", () => {
+  const controller = new AbortController();
+  let cancelDuringRead = false;
+  const failure = new Error("Metadata cache unavailable");
+  configureYoutubeProvider({
+    metadataService: {
+      get: () => {
+        if (cancelDuringRead) controller.abort();
+        throw failure;
+      },
+      getOrFetch: async () => null,
+    },
+  });
+  const title = { id: "youtube:aqz-KE-bpKQ", type: "movie" as const };
+  expect(readResolvedYoutubeTitleDetail(title, controller.signal)).toBeUndefined();
+  cancelDuringRead = true;
+  expect(() => readResolvedYoutubeTitleDetail(title, controller.signal)).toThrow(failure);
+  expect(() => readResolvedYoutubeTitleDetail(title, controller.signal)).toThrow();
+});
+
+test("explicit successful YouTube handoff can enrich a mixed identity without changing generic catalog routing", () => {
+  const metadata: YoutubeVideoMetadata = {
+    schemaVersion: YOUTUBE_METADATA_SCHEMA_VERSION,
+    videoId: "aqz-KE-bpKQ",
+    title: "Big Buck Bunny",
+    qualities: [],
+    subtitles: [],
+  };
+  configureYoutubeProvider({
+    metadataService: { get: () => metadata, getOrFetch: async () => metadata },
+  });
+  expect(
+    readResolvedYoutubeTitleDetail({
+      id: "tmdb:550",
+      type: "movie",
+      externalIds: { youtubeId: metadata.videoId },
+    })?.title,
+  ).toBe("Big Buck Bunny");
 });
 
 test("resolved YouTube metadata replaces an earlier empty catalog answer without another fetch", async () => {

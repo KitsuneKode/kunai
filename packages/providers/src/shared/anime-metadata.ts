@@ -129,12 +129,17 @@ function metadataCacheKey(
   return `${ids.anilistId ?? ""}|${ids.malId ?? ""}|${pass}`;
 }
 
+/** Prefer actual episode names to numbered placeholders, then retain the more descriptive name. */
 function pickLongerTitle(
   current: string | undefined,
   next: string | undefined,
 ): string | undefined {
   if (!next?.trim()) return current;
   if (!current?.trim()) return next.trim();
+  const placeholder = /^(?:episode|ep\.?)\s+\d+(?:\.\d+)?$/i;
+  if (placeholder.test(current.trim()) !== placeholder.test(next.trim())) {
+    return placeholder.test(current.trim()) ? next.trim() : current;
+  }
   return next.trim().length > current.trim().length ? next.trim() : current;
 }
 
@@ -398,11 +403,12 @@ export function mergeExternalEpisodeMetadataInto(
   }
 }
 
+/** Read native episode identity for metadata lookup, preserving specials such as 12.5. */
 export function parseAllMangaEpisodeNumber(episode: ProviderEpisodeOption): number {
   const fromDetail = episode.detail?.replace(/^Source episode\s+/i, "").trim();
   const raw = fromDetail || episode.label.replace(/^Episode\s+/i, "").trim();
   const parsed = Number.parseFloat(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : episode.index;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : episode.index;
 }
 
 export function formatAnimeEpisodeLabel(

@@ -6,7 +6,7 @@ import { loadProductionProviderModules } from "@/container/bootstrap-providers";
 import { z } from "zod";
 
 import {
-  decodedVideoProof,
+  playbackProgressProof,
   PLAYBACK_ADVANCE_SECONDS,
   startKittySession,
   waitForKittyCondition,
@@ -88,17 +88,22 @@ if (values.provider && !providerIds.includes(values.provider))
   throw new Error("Provider is not in the production roster");
 
 type Session = Awaited<ReturnType<typeof startKittySession>>;
-async function witnessPlayback(session: Session) {
+/** Record clock/dimension progress and a frame capture; visual approval is a separate manual gate. */
+async function witnessPlayback(session: Session, signal: AbortSignal) {
   if (!Bun.which("mpv")) throw new Error("Decoded playback requires installed mpv");
-  const start = await waitForKittyCondition(async () => {
-    try {
-      const value = await session.ipc(["get_property", "time-pos"]);
-      const parsed = z.number().safeParse(value);
-      return parsed.success ? parsed.data : null;
-    } catch {
-      return null;
-    }
-  }, timeoutSeconds * 1000);
+  const start = await waitForKittyCondition(
+    async () => {
+      try {
+        const value = await session.ipc(["get_property", "time-pos"]);
+        const parsed = z.number().safeParse(value);
+        return parsed.success ? parsed.data : null;
+      } catch {
+        return null;
+      }
+    },
+    timeoutSeconds * 1000,
+    signal,
+  );
   const end = await waitForKittyCondition(
     async () => {
       try {
@@ -110,13 +115,18 @@ async function witnessPlayback(session: Session) {
       }
     },
     (observeSeconds + 12) * 1000,
+    signal,
   );
-  const proof = decodedVideoProof(start, end, await session.ipc(["get_property", "video-params"]));
+  const proof = playbackProgressProof(
+    start,
+    end,
+    await session.ipc(["get_property", "video-params"]),
+  );
   await Bun.write(
     join(session.evidenceDir, "playback.json"),
     JSON.stringify({
       ...proof,
-      proof: "mpv IPC advanced and exposed decoded video; inspect decoded-frame.png separately",
+      proof: "mpv clock advanced with positive video dimensions; actual frame inspection required",
     }),
   );
   await session.ipc([
@@ -160,80 +170,109 @@ const cases = values.matrix
       })
   : [{ label: "scenario", providerId: values.provider, argv: [] }];
 const results: { label: string; status: string; reason?: string }[] = [];
-for (const route of cases) {
-  let session: Session | undefined;
-  try {
-    const scenario = values.matrix
-      ? undefined
-      : scenarioSchema.parse(
-          values.scenario
-            ? await Bun.file(values.scenario).json()
-            : {
-                steps: [
-                  { type: "expect", value: "Search title" },
-                  { type: "capture", value: "home" },
-                  { type: "click", value: "[/]" },
-                  { type: "expect", value: "type a command" },
-                  { type: "capture", value: "palette" },
-                ],
-              },
-        );
-    session = await startKittySession({
-      evidenceDir: join(evidenceRoot, route.label),
-      argv: scenario?.argv ?? route.argv,
-      fixture: !values.live,
-      requiresMpv: values.matrix || scenario?.steps.some((step) => step.type === "decoded"),
-      font,
-      providerId: route.providerId,
-      providerIds,
-    });
-    if (values.matrix) {
-      await witnessPlayback(session);
-      await session.capture("playing");
-      results.push({ label: route.label, status: "decoded-video-observed" });
-    } else {
-      for (const step of scenario?.steps ?? []) {
-        if (step.type === "key") await session.key(step.value);
-        if (step.type === "text") await session.sendText(step.value);
-        if (step.type === "expect") await session.waitForText(step.value);
-        if (step.type === "click") await session.clickText(step.value);
-        if (step.type === "capture") await session.capture(step.value);
-        if (step.type === "decoded") await witnessPlayback(session);
-      }
-      results.push({ label: route.label, status: "scenario-observed" });
-    }
-  } catch (error) {
-    if (session) await session.capture("failure").catch(() => {});
-    const reason =
-      error instanceof Error
-        ? error.message.replace(/https?:\/\/\S+/g, "[redacted-url]").slice(0, 500)
-        : "Unknown verification failure";
-    results.push({ label: route.label, status: "failed", reason });
-  } finally {
-    try {
-      await session?.stop();
-    } catch {
-      results.push({ label: route.label, status: "cleanup-failed" });
-    }
-    await Bun.write(
-      join(evidenceRoot, "results.json"),
-      JSON.stringify(
-        {
-          generatedAt: new Date().toISOString(),
-          revision,
-          timeoutSeconds,
-          observeSeconds,
-          source: values.live ? "production registry, one provider per route" : "fixture registry",
-          mouseInput: "SGR bytes injected into PTY; not native desktop pointer proof",
-          visualReview: "required; screenshots are not automatically approved",
-          results,
-        },
-        null,
-        2,
-      ),
-    );
-    console.log(`${route.label}: ${results.at(-1)?.status}`);
-  }
+const shutdown = new AbortController();
+let activeSession: Session | undefined;
+let interruptExitCode: number | undefined;
+/** Abort polling and share cleanup with finally; never exit before evidence is written. */
+function interrupt(signal: "SIGINT" | "SIGTERM") {
+  interruptExitCode ??= signal === "SIGINT" ? 130 : 143;
+  shutdown.abort(new Error(`Verification interrupted by ${signal}`));
+  void activeSession?.stop().catch(() => {
+    // The route's finally awaits this same promise and records cleanup-failed.
+  });
 }
-if (results.some((result) => result.status === "failed" || result.status === "cleanup-failed"))
+const onInterrupt = () => interrupt("SIGINT");
+const onTerminate = () => interrupt("SIGTERM");
+process.on("SIGINT", onInterrupt);
+process.on("SIGTERM", onTerminate);
+try {
+  for (const route of cases) {
+    if (shutdown.signal.aborted) break;
+    let session: Session | undefined;
+    try {
+      const scenario = values.matrix
+        ? undefined
+        : scenarioSchema.parse(
+            values.scenario
+              ? await Bun.file(values.scenario).json()
+              : {
+                  steps: [
+                    { type: "expect", value: "Search title" },
+                    { type: "capture", value: "home" },
+                    { type: "click", value: "[/]" },
+                    { type: "expect", value: "type a command" },
+                    { type: "capture", value: "palette" },
+                  ],
+                },
+          );
+      session = await startKittySession({
+        evidenceDir: join(evidenceRoot, route.label),
+        argv: scenario?.argv ?? route.argv,
+        fixture: !values.live,
+        requiresMpv: values.matrix || scenario?.steps.some((step) => step.type === "decoded"),
+        font,
+        providerId: route.providerId,
+        providerIds,
+        signal: shutdown.signal,
+      });
+      activeSession = session;
+      shutdown.signal.throwIfAborted();
+      if (values.matrix) {
+        await witnessPlayback(session, shutdown.signal);
+        await session.capture("playing");
+        results.push({ label: route.label, status: "playback-progress-observed" });
+      } else {
+        for (const step of scenario?.steps ?? []) {
+          shutdown.signal.throwIfAborted();
+          if (step.type === "key") await session.key(step.value);
+          if (step.type === "text") await session.sendText(step.value);
+          if (step.type === "expect") await session.waitForText(step.value);
+          if (step.type === "click") await session.clickText(step.value);
+          if (step.type === "capture") await session.capture(step.value);
+          if (step.type === "decoded") await witnessPlayback(session, shutdown.signal);
+        }
+        results.push({ label: route.label, status: "scenario-observed" });
+      }
+    } catch (error) {
+      if (session && !shutdown.signal.aborted) await session.capture("failure").catch(() => {});
+      const reason =
+        error instanceof Error
+          ? error.message.replace(/https?:\/\/\S+/g, "[redacted-url]").slice(0, 500)
+          : "Unknown verification failure";
+      results.push({ label: route.label, status: "failed", reason });
+    } finally {
+      try {
+        await session?.stop();
+      } catch {
+        results.push({ label: route.label, status: "cleanup-failed" });
+      }
+      activeSession = undefined;
+      await Bun.write(
+        join(evidenceRoot, "results.json"),
+        JSON.stringify(
+          {
+            generatedAt: new Date().toISOString(),
+            revision,
+            timeoutSeconds,
+            observeSeconds,
+            source: values.live
+              ? "production registry, one provider per route"
+              : "fixture registry",
+            mouseInput: "SGR bytes injected into PTY; not native desktop pointer proof",
+            visualReview: "required; screenshots are not automatically approved",
+            results,
+          },
+          null,
+          2,
+        ),
+      );
+      console.log(`${route.label}: ${results.at(-1)?.status}`);
+    }
+  }
+} finally {
+  process.removeListener("SIGINT", onInterrupt);
+  process.removeListener("SIGTERM", onTerminate);
+}
+if (interruptExitCode !== undefined) process.exitCode = interruptExitCode;
+else if (results.some((result) => result.status === "failed" || result.status === "cleanup-failed"))
   process.exitCode = 1;

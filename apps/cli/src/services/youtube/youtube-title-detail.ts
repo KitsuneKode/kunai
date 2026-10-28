@@ -1,10 +1,31 @@
 import type { TitleDetail } from "@/domain/catalog/title-detail";
-import type { ContentType, VideoMeta } from "@/domain/types";
+import type { ContentType, TitleInfo, VideoMeta } from "@/domain/types";
 import {
   getCachedYoutubeVideoMetadata,
   mapYtDlpLiveStatus,
   parseYoutubeCatalogId,
 } from "@kunai/providers/youtube";
+
+/**
+ * Optional metadata for a stream already resolved by YouTube. Only that
+ * successful handoff may use a YouTube hint on a mixed catalog identity.
+ * A cache failure cannot block playback; an aborted handoff must still stop.
+ */
+export function readResolvedYoutubeTitleDetail(
+  title: Pick<TitleInfo, "id" | "type" | "externalIds">,
+  signal?: AbortSignal,
+): TitleDetail | undefined {
+  signal?.throwIfAborted();
+  let detail: TitleDetail | undefined;
+  try {
+    detail = peekYoutubeTitleDetail(title.id, title.type, title.externalIds?.youtubeId);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return undefined;
+  }
+  signal?.throwIfAborted();
+  return detail;
+}
 
 /** Read only metadata already fetched by the provider; never resolve another video. */
 export function peekYoutubeTitleDetail(

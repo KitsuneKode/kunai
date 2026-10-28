@@ -627,12 +627,18 @@ fresh measured coordinates against the owned window.
 `--matrix --live` explicitly opts into a serial live pass over the production
 roster, with other providers disabled per route. It covers movie, series,
 anime and YouTube sample targets. Each successful playback observation requires
-advancing mpv IPC time, decoded video dimensions and a video-frame PNG, with
-visual review still pending. Upstream failures remain failures; they cannot
+advancing mpv IPC time, positive video dimensions and a video-frame PNG, with
+visual review still pending. The machine status `playback-progress-observed`
+does not establish moving decoded picture: an attached cover can satisfy the
+clock/dimensions check. Upstream failures remain failures; they cannot
 be replaced by fixtures or another provider. This short qualification is not
 a soak test, physical-device evidence, or every-source/quality/subtitle proof.
 The normal test suite does not launch Kitty or contact these providers.
 The operational recipe is in the repository's `verify-kunai` skill.
+
+Setup failures dispose the isolated profile before returning an error. SIGINT
+and SIGTERM abort the active route, await its shared cleanup promise, and write
+cleanup/results records before exit. Unconfirmed child exit retains the profile.
 
 Wait predicates share a grammar: text is a literal substring unless wrapped in
 `/…/`, which compiles a RegExp (`[\s\S]` spans lines). `keys` (or

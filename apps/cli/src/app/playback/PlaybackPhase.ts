@@ -266,6 +266,7 @@ import {
   resolveEffectiveProviderHealth,
 } from "@/services/playback/provider-health-policy";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
+import { readResolvedYoutubeTitleDetail } from "@/services/youtube/youtube-title-detail";
 import {
   mergeSubtitleTracks,
   resolveSubtitlesByTmdbId,
@@ -636,6 +637,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     return describeMpvPlayerEvent(event);
   }
 
+  /** Orchestrate resolve, guarded player handoff and post-play routing; cancellation returns control to the shell. */
   async execute(title: TitleInfo, context: PhaseContext): Promise<PhaseResult<PlaybackOutcome>> {
     const { container } = context;
     PlaybackPhase.lateSubtitleInflight.clear();
@@ -2386,10 +2388,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (providerHandoff.successfulProviderId === "youtube") {
             // Provider resolve has now populated its metadata cache. Adopt it
             // into both the rendered session and the title persisted below.
-            const detail = await fetchTitleDetail(title.id, title.type, resolveController.signal, {
-              externalIds: title.externalIds,
-            });
-            if (detail.videoMeta) {
+            const detail = readResolvedYoutubeTitleDetail(title, resolveController.signal);
+            if (detail?.videoMeta) {
               title = applyCatalogDetailToTitle(title, detail);
               stateManager.dispatch({
                 type: "SET_TITLE_DETAIL",

@@ -40,6 +40,11 @@ cache an unrelated catalog's empty `Unknown` answer for video IDs. Matching
 search fields; the working playback title also adopts the result for history
 and sharing. A different video or playlist cannot inherit those facts.
 
+Generic TMDB/AniList detail lookups retain their catalog route when the title
+also carries a YouTube ID. Only the explicit successful YouTube handoff reads
+cached video metadata for mixed identities. Cache errors skip that optional
+enrichment; cancellation still propagates and prevents the handoff.
+
 Launch `--quality`, `--audio` and `--sub` choices include the YouTube profile.
 Config getters and `getRaw()` expose the same transient values; background
 saves retain persisted defaults, and an explicit Settings change clears the

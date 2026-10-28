@@ -21,6 +21,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### Playback and providers
 
+- Keep mixed catalog identities on their catalog detail route and treat resolved
+  YouTube metadata as optional enrichment. Preserve fractional episode metadata
+  and prefer actual episode titles over numbered placeholders.
 - Avoid false stall warnings after a backward seek. Apply transient launch
   quality, language and offline choices through their actual config readers
   without changing saved defaults.

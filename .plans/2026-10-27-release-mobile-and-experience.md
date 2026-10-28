@@ -102,7 +102,10 @@ hosted, device or release signoff.
       their profile. Capture frames and backend state before fixing defects.
       Use real providers and titles on a free display/workspace. The latest
       preference is to avoid disturbing the display currently in use; confirm
-      the free display when desktop activity changes. Keep fixture regressions separate
+      the free display when desktop activity changes. The maintainer reserved
+      eDP-1 workspace 9 on 2026-10-28. Confirm the owned native window's actual
+      placement before input; runner placement rules alone are insufficient.
+      Keep fixture regressions separate
       from that live manual session. Ensure the QA launcher does not inherit
       `NO_COLOR=1`; select the maintainer's installed terminal font rather than
       relying on this machine's CJK monospace fallback.
