@@ -3513,20 +3513,82 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const currentStream = streams.find(
               (s) => s.id === preparedStream.providerResolveResult?.selectedStreamId,
             );
-            const currentPresentation =
-              currentStream?.presentation ??
-              (currentStream?.audioLanguages?.includes("en") ? "dub" : "sub");
-            const targetPresentation = currentPresentation === "dub" ? "sub" : "dub";
 
-            const matchingStream = streams.find((s) => {
-              if (s.presentation) {
-                return s.presentation === targetPresentation;
+            // 1. Gather all unique audio languages across available streams
+            const distinctAudioLanguages: string[] = [];
+            for (const s of streams) {
+              for (const lang of s.audioLanguages ?? []) {
+                if (lang && !distinctAudioLanguages.includes(lang)) {
+                  distinctAudioLanguages.push(lang);
+                }
               }
-              if (targetPresentation === "dub") {
-                return s.audioLanguages?.includes("en");
+            }
+
+            let matchingStream: (typeof streams)[number] | undefined;
+
+            if (distinctAudioLanguages.length > 1) {
+              const currentLang = currentStream?.audioLanguages?.[0];
+              const currentIndex = currentLang ? distinctAudioLanguages.indexOf(currentLang) : -1;
+              const nextIndex = (currentIndex + 1) % distinctAudioLanguages.length;
+              const targetLang = distinctAudioLanguages[nextIndex];
+              if (targetLang) {
+                // Prefer preserving current stream quality if possible
+                matchingStream =
+                  streams.find(
+                    (s) =>
+                      s.audioLanguages?.includes(targetLang) &&
+                      s.qualityLabel === currentStream?.qualityLabel,
+                  ) ?? streams.find((s) => s.audioLanguages?.includes(targetLang));
               }
-              return s.audioLanguages?.includes("ja") || !s.audioLanguages?.includes("en");
-            });
+            } else {
+              // 2. Binary presentation switch (sub <-> dub)
+              const currentPresentation =
+                currentStream?.presentation ??
+                (currentStream?.audioLanguages?.includes("en") ? "dub" : "sub");
+              const targetPresentation = currentPresentation === "dub" ? "sub" : "dub";
+
+              matchingStream = streams.find((s) => {
+                if (s.presentation) {
+                  return s.presentation === targetPresentation;
+                }
+                if (targetPresentation === "dub") {
+                  return s.audioLanguages?.includes("en");
+                }
+                return s.audioLanguages?.includes("ja") || !s.audioLanguages?.includes("en");
+              });
+
+              if (!matchingStream && container.stateManager.getState().mode === "anime") {
+                const state = container.stateManager.getState();
+                const nextProfile = {
+                  ...state.animeLanguageProfile,
+                  audio: targetPresentation as "sub" | "dub",
+                };
+                container.stateManager.dispatch({
+                  type: "UPDATE_LANGUAGE_PROFILE",
+                  kind: "anime",
+                  profile: nextProfile,
+                });
+                await container.config.update({ animeLanguageProfile: nextProfile });
+                await container.config.save();
+                if (resolvedProviderId) {
+                  const { invalidateTitlePlaybackCaches } =
+                    await import("@/app/playback/playback-title-cache-invalidation");
+                  await invalidateTitlePlaybackCaches({
+                    cacheStore: container.cacheStore,
+                    sourceInventory: container.sourceInventory,
+                    providerId: resolvedProviderId,
+                    providerManifest: container.providerRegistry.getManifest(resolvedProviderId),
+                    title,
+                    mode: state.mode,
+                    config: container.config.getRaw(),
+                    episodes: [currentEpisode],
+                    cancelReason: "audio-mode-switch",
+                  });
+                }
+                run.pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumePos });
+                continue;
+              }
+            }
 
             if (matchingStream) {
               const nextSelection: StreamSelectionIntent = {
