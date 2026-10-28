@@ -107,86 +107,88 @@ export function resolveVidrockDirect(
       const subtitles: DirectSubtitleInput[] = [];
       let ciphertextLanes = 0;
       let decryptFailures = 0;
-      for (const [name, server] of Object.entries(
-        data as Record<string, VidrockServerEntry | undefined>,
-      )) {
-        const ciphertext = server?.url;
-        if (!ciphertext) continue;
-        ciphertextLanes += 1;
+      const entries = Object.entries(data as Record<string, VidrockServerEntry | undefined>);
+      const laneResults = await Promise.all(
+        entries.map(async ([name, server]) => {
+          const ciphertext = server?.url;
+          if (!ciphertext) return null;
+          let url: string;
+          try {
+            url = await decryptVidrockStreamUrl(ciphertext, key);
+          } catch {
+            return { decryptFailure: true };
+          }
+          const audio = normalizeIsoLanguageCode(server?.language ?? undefined);
+          const audioLanguages = audio ? [audio] : undefined;
+          const laneStreams: DirectStreamInput[] = [];
+          const laneSubtitles: DirectSubtitleInput[] = [];
 
-        let url: string;
-        try {
-          url = await decryptVidrockStreamUrl(ciphertext, key);
-        } catch {
-          // A lane whose ciphertext no longer verifies is skipped rather than
-          // failing the whole resolve — the scheme rotates per deploy and the
-          // remaining lanes still play.
+          if (url.includes("/playlist/")) {
+            try {
+              const playlist = await fetchPlaylist(url, ctx, {
+                "User-Agent": STREAM_USER_AGENT,
+                Referer: STREAM_REFERER,
+                Origin: STREAM_ORIGIN,
+              });
+              for (const item of playlist) {
+                laneStreams.push({
+                  url: item.url,
+                  qualityHint: item.resolution,
+                  serverLabel: name,
+                  audioLanguages,
+                });
+              }
+            } catch (error) {
+              if (ctx.signal?.aborted) throw error;
+              return null;
+            }
+            return { laneStreams, laneSubtitles };
+          }
+
+          const inventory = await expandHlsMasterInventory({
+            fetch: ctx.fetch?.fetch.bind(ctx.fetch) ?? fetch,
+            resolvesLocally: ctx.fetch?.resolvesLocally,
+            masterUrl: url,
+            headers: {
+              "user-agent": STREAM_USER_AGENT,
+              referer: STREAM_REFERER,
+              origin: STREAM_ORIGIN,
+            },
+            signal: directStreamFetchSignal(ctx.signal, 8_000),
+          });
+          if (isHlsDeadHostStatus(inventory.probe.httpStatus)) return null;
+          if (inventory.isHls) {
+            for (const track of inventory.subtitleTracks) {
+              laneSubtitles.push({ url: track.url, language: track.language, label: track.label });
+            }
+            for (const variant of inventory.variants) {
+              laneStreams.push({
+                url: variant.url,
+                protocol: "hls",
+                qualityHint: variant.qualityLabel,
+                serverLabel: name,
+                audioLanguages: inventory.audioLanguages.length
+                  ? inventory.audioLanguages
+                  : audioLanguages,
+              });
+            }
+          } else {
+            laneStreams.push({ url, serverLabel: name, audioLanguages });
+          }
+          return { laneStreams, laneSubtitles };
+        }),
+      );
+
+      for (const res of laneResults) {
+        if (!res) continue;
+        if ("decryptFailure" in res) {
+          ciphertextLanes += 1;
           decryptFailures += 1;
           continue;
         }
-
-        const audio = normalizeIsoLanguageCode(server?.language ?? undefined);
-        const audioLanguages = audio ? [audio] : undefined;
-
-        if (url.includes("/playlist/")) {
-          let playlist: Awaited<ReturnType<typeof fetchPlaylist>>;
-          try {
-            // Playlist URLs live behind the same header gate as the segments:
-            // current-Chrome UA + vidrock.net Referer and Origin (verified
-            // 2026-10-13; even the UA minor version matters — Chrome/124 gets
-            // challenged where Chrome/126 is served).
-            playlist = await fetchPlaylist(url, ctx, {
-              "User-Agent": STREAM_USER_AGENT,
-              Referer: STREAM_REFERER,
-              Origin: STREAM_ORIGIN,
-            });
-          } catch (error) {
-            if (ctx.signal?.aborted) throw error;
-            continue;
-          }
-          for (const item of playlist) {
-            streams.push({
-              url: item.url,
-              qualityHint: item.resolution,
-              serverLabel: name,
-              audioLanguages,
-            });
-          }
-          continue;
-        }
-
-        // The worker path is opaque: inspect bounded, guarded response bytes
-        // rather than treating every workers.dev URL as an HLS stream.
-        const inventory = await expandHlsMasterInventory({
-          fetch: ctx.fetch?.fetch.bind(ctx.fetch) ?? fetch,
-          resolvesLocally: ctx.fetch?.resolvesLocally,
-          masterUrl: url,
-          headers: {
-            "user-agent": STREAM_USER_AGENT,
-            referer: STREAM_REFERER,
-            origin: STREAM_ORIGIN,
-          },
-          signal: directStreamFetchSignal(ctx.signal, 12_000),
-        });
-        if (isHlsDeadHostStatus(inventory.probe.httpStatus)) continue;
-        if (inventory.isHls) {
-          for (const track of inventory.subtitleTracks) {
-            subtitles.push({ url: track.url, language: track.language, label: track.label });
-          }
-          for (const variant of inventory.variants) {
-            streams.push({
-              url: variant.url,
-              protocol: "hls",
-              qualityHint: variant.qualityLabel,
-              serverLabel: name,
-              audioLanguages: inventory.audioLanguages.length
-                ? inventory.audioLanguages
-                : audioLanguages,
-            });
-          }
-        } else {
-          streams.push({ url, serverLabel: name, audioLanguages });
-        }
+        ciphertextLanes += 1;
+        streams.push(...res.laneStreams);
+        subtitles.push(...res.laneSubtitles);
       }
       if (streams.length === 0) {
         // Every lane carried ciphertext and every decrypt failed: the blob

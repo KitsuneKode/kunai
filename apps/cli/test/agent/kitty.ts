@@ -114,7 +114,7 @@ async function witnessPlayback(session: Session, signal: AbortSignal) {
         return null;
       }
     },
-    (observeSeconds + 12) * 1000,
+    (observeSeconds + 30) * 1000,
     signal,
   );
   const proof = playbackProgressProof(

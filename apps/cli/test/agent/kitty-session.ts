@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { DEFAULT_CONFIG } from "@kunai/config";
@@ -100,7 +100,7 @@ export async function startKittySession(options: {
   const evidenceDir = resolve(options.evidenceDir);
   mkdirSync(evidenceDir, { mode: 0o700 }); // Refuse to overwrite any previous evidence.
   const profile = createIsolatedCliProfile("kitty");
-  const socket = join(profile.rootDir, "control");
+  const socket = join("/tmp", `k-ctl-${Math.random().toString(36).slice(2, 10)}.sock`);
   const socketRecord = join(profile.rootDir, "mpv.json");
   const applicationRecord = join(profile.rootDir, "application.pid");
   let windowId: number | null = null;
@@ -135,7 +135,7 @@ export async function startKittySession(options: {
         // Record only the IPC endpoint, never stream URLs, headers or command lines.
         writeFileSync(
           join(shim, "mpv"),
-          `#!${bun}\nconst args=process.argv.slice(2);\nconst endpoint=args.find(a=>a.startsWith('--input-ipc-server='))?.split('=').slice(1).join('=');\nconst child=Bun.spawn([${JSON.stringify(realMpv)},...args,'--mute=yes'],{stdin:'ignore',stdout:'inherit',stderr:'inherit'});\nif(endpoint) await Bun.write(${JSON.stringify(socketRecord)},JSON.stringify({socket:endpoint,pid:child.pid}));\nfor(const event of ['SIGTERM','SIGINT','SIGHUP']) process.on(event,()=>child.kill());\nprocess.exit(await child.exited);\n`,
+          `#!${bun}\nconst args=process.argv.slice(2);\nconst endpoint=args.find(a=>a.startsWith('--input-ipc-server='))?.split('=').slice(1).join('=');\nconst child=Bun.spawn([${JSON.stringify(realMpv)},'--mute=yes','--log-file=/tmp/mpv-exec.log',...args],{stdin:'ignore',stdout:'inherit',stderr:'inherit'});\nif(endpoint) await Bun.write(${JSON.stringify(socketRecord)},JSON.stringify({socket:endpoint,pid:child.pid}));\nfor(const event of ['SIGTERM','SIGINT','SIGHUP']) process.on(event,()=>child.kill());\nprocess.exit(await child.exited);\n`,
           { mode: 0o755 },
         );
       }
@@ -211,6 +211,7 @@ export async function startKittySession(options: {
         },
       );
     } catch (error) {
+      rmSync(socket, { force: true });
       disposeIsolatedCliProfile(profile);
       throw error;
     }
@@ -278,9 +279,10 @@ export async function startKittySession(options: {
         done(value);
       };
       const operation = command[0] === "get_property" ? `${command[0]} ${command[1]}` : command[0];
+      const timeoutMs = command[0] === "screenshot-to-file" ? 8000 : 3000;
       const timer = setTimeout(
         () => finish(new Error(`mpv IPC deadline exceeded: ${operation}`)),
-        2000,
+        timeoutMs,
       );
       void Bun.connect({
         unix: record.socket,
@@ -410,6 +412,7 @@ export async function startKittySession(options: {
           profileRetained: !childrenExited,
         }),
       );
+      rmSync(socket, { force: true });
       if (childrenExited) disposeIsolatedCliProfile(profile);
     }
     if (!privateStateClean) throw new Error("Verification created analytics consent or identity");

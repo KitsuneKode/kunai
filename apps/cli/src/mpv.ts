@@ -765,8 +765,13 @@ export function buildMpvArgs(
   args.push("--autofit-smaller=1280x720");
   args.push("--autofit-larger=90%x90%");
   args.push("--cache=yes");
-  args.push("--cache-pause=yes");
-  args.push("--cache-pause-initial=no");
+  const isYoutube = isYoutubeWatchUrl(opts.url) || opts.requiresYtdl;
+  if (isYoutube) {
+    args.push("--cache-pause=no");
+  } else {
+    args.push("--cache-pause=yes");
+    args.push("--cache-pause-initial=no");
+  }
   // `--demuxer-lavf-o` is single-valued: repeating it replaces the previous value
   // rather than merging. The local-HLS whitelist used to be pushed last and so
   // silently discarded whichever reconnect ladder had been chosen above. Collect
@@ -778,7 +783,9 @@ export function buildMpvArgs(
     }
     reconnectLavfOptions = LIVE_DEMUXER_LAVF_OPTIONS;
   } else {
-    args.push("--cache-pause-wait=2");
+    if (!isYoutube) {
+      args.push("--cache-pause-wait=2");
+    }
     const fastStart = config?.mpv?.startupPriority === "fast";
     if (fastStart) {
       args.push("--demuxer-readahead-secs=10");
@@ -786,6 +793,11 @@ export function buildMpvArgs(
       // Shorter reconnect window so dead CDNs fail fast into Kunai failover.
       reconnectLavfOptions =
         "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=3";
+    } else if (isYoutube) {
+      args.push("--demuxer-readahead-secs=10");
+      args.push("--demuxer-max-bytes=48MiB");
+      reconnectLavfOptions =
+        "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=2,reconnect_max_retries=5";
     } else {
       args.push("--demuxer-readahead-secs=60");
       args.push("--demuxer-max-bytes=200MiB");
