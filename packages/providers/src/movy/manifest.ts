@@ -8,7 +8,7 @@ export const movyManifest = defineProviderManifest({
   aliases: ["movy.sx"],
   description: "Movies and series via a multi-lane source aggregator",
   domain: "movy.sx",
-  recommended: false,
+  recommended: true,
   mediaKinds: ["movie", "series"],
   capabilities: ["source-resolve", "subtitle-resolve", "quality-ranked", "multi-source"],
   runtimePorts: [

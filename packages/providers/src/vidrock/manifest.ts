@@ -8,7 +8,7 @@ export const vidrockManifest = defineProviderManifest({
   aliases: ["Granite", "P-Stream"],
   description: "Backup source for movies and series with direct video files",
   domain: "vidrock.net",
-  recommended: false,
+  recommended: true,
   mediaKinds: ["movie", "series"],
   capabilities: ["source-resolve", "multi-source", "quality-ranked"],
   runtimePorts: [
