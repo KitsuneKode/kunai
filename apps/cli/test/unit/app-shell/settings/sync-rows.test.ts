@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 
 import { syncSettingsRows } from "@/app-shell/settings/registry/sync";
 import type { SettingsRegistryContext } from "@/app-shell/settings/types";
@@ -219,8 +220,9 @@ describe("syncSettingsRows pause", () => {
 describe("syncSettingsRows hygiene", () => {
   /** Settings must decide from typed projections, never by peeking at the env. */
   test("the module reads no environment variable and no credential literal", async () => {
-    const filePath = new URL("../../../../src/app-shell/settings/registry/sync.ts", import.meta.url)
-      .pathname;
+    const filePath = fileURLToPath(
+      new URL("../../../../src/app-shell/settings/registry/sync.ts", import.meta.url),
+    );
     const source = await Bun.file(filePath).text();
     // Comments explain the rule and would otherwise trip it.
     const code = source
