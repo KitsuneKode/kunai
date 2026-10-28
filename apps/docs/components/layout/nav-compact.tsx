@@ -11,7 +11,11 @@ const loadNavFeatures = () => import("motion/react").then((module) => module.dom
 
 /** Position projection keeps labels crisp while the pill changes its contents. */
 export function NavLabel({ children }: { readonly children: ReactNode }) {
-  return <m.span layout="position">{children}</m.span>;
+  return (
+    <m.span layout="position" className="inline-flex items-center">
+      {children}
+    </m.span>
+  );
 }
 
 /** Home navigation has its own mobile menu, independent of the docs sidebar. */
