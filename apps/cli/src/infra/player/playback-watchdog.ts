@@ -99,30 +99,31 @@ export function createPlaybackWatchdog(
     seekingSince = null;
     emittedSeekStall = false;
 
+    const rawRate = latest.demuxerRawInputRate;
+    const networkReadDead =
+      latest.demuxerViaNetwork === true && latest.demuxerCacheUnderrun === true && rawRate === 0;
+
+    if (networkReadDead) {
+      networkReadDeadSince ??= now;
+      const deadForMs = now - networkReadDeadSince;
+      if (deadForMs >= networkReadDeadAfterMs && !emittedNetworkReadDead) {
+        emittedNetworkReadDead = true;
+        emittedStreamStall = true;
+        emit({
+          type: "stream-stalled",
+          secondsWithoutProgress: Math.round(deadForMs / 1000),
+          stallKind: "network-read-dead",
+          duringStartup: !hasProgress,
+        });
+      }
+    } else {
+      networkReadDeadSince = null;
+      emittedNetworkReadDead = false;
+    }
+
     if (latest.pausedForCache) {
       bufferingSince ??= now;
       const bufferingForMs = now - bufferingSince;
-      const rawRate = latest.demuxerRawInputRate;
-      const networkReadDead =
-        latest.demuxerViaNetwork === true && latest.demuxerCacheUnderrun === true && rawRate === 0;
-
-      if (networkReadDead) {
-        networkReadDeadSince ??= now;
-        const deadForMs = now - networkReadDeadSince;
-        if (deadForMs >= networkReadDeadAfterMs && !emittedNetworkReadDead) {
-          emittedNetworkReadDead = true;
-          emittedStreamStall = true;
-          emit({
-            type: "stream-stalled",
-            secondsWithoutProgress: Math.round(deadForMs / 1000),
-            stallKind: "network-read-dead",
-            duringStartup: !hasProgress,
-          });
-        }
-      } else {
-        networkReadDeadSince = null;
-        emittedNetworkReadDead = false;
-      }
 
       const cacheAhead = latest.demuxerCacheDurationSeconds ?? 0;
       const cacheSpeed = latest.cacheSpeedBytesPerSecond ?? 0;
@@ -155,8 +156,6 @@ export function createPlaybackWatchdog(
       return;
     }
 
-    networkReadDeadSince = null;
-    emittedNetworkReadDead = false;
     bufferingSince = null;
     emittedSlowNetwork = false;
 
