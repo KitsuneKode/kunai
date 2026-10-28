@@ -27,6 +27,14 @@ export const AUDIO_PREFERENCE_OPTIONS: readonly MediaPreferenceOption[] = [
   },
   { value: "en", label: "English", detail: "Prefer English audio when available" },
   { value: "ja", label: "Japanese", detail: "Prefer Japanese audio when available" },
+  { value: "es", label: "Spanish", detail: "Prefer Spanish audio when available" },
+  { value: "hi", label: "Hindi", detail: "Prefer Hindi audio when available" },
+  { value: "fr", label: "French", detail: "Prefer French audio when available" },
+  { value: "de", label: "German", detail: "Prefer German audio when available" },
+  { value: "ko", label: "Korean", detail: "Prefer Korean audio when available" },
+  { value: "it", label: "Italian", detail: "Prefer Italian audio when available" },
+  { value: "pt", label: "Portuguese", detail: "Prefer Portuguese audio when available" },
+  { value: "ru", label: "Russian", detail: "Prefer Russian audio when available" },
   { value: "dub", label: "Any dub", detail: "Prefer any dubbed track over the original" },
 ];
 
@@ -38,7 +46,12 @@ export const SUBTITLE_PREFERENCE_OPTIONS: readonly MediaPreferenceOption[] = [
   { value: "de", label: "German", detail: "German subtitles" },
   { value: "es", label: "Spanish", detail: "Spanish subtitles" },
   { value: "fr", label: "French", detail: "French subtitles" },
+  { value: "hi", label: "Hindi", detail: "Hindi subtitles" },
+  { value: "it", label: "Italian", detail: "Italian subtitles" },
   { value: "ja", label: "Japanese", detail: "Japanese subtitles" },
+  { value: "ko", label: "Korean", detail: "Korean subtitles" },
+  { value: "pt", label: "Portuguese", detail: "Portuguese subtitles" },
+  { value: "ru", label: "Russian", detail: "Russian subtitles" },
 ];
 
 /**
@@ -80,12 +93,16 @@ export function describeMediaPreference(preference: MediaPreference): string {
   if (preference.kind === "subtitle") return describeSubtitlePreference(preference.value);
   if (preference.value === "original") return "Original audio";
   if (preference.value === "dub") return "Dub audio";
+  const option = AUDIO_PREFERENCE_OPTIONS.find((o) => o.value === preference.value);
+  if (option) return `${option.label} audio`;
   return `Audio ${preference.value}`;
 }
 
 export function describeSubtitlePreference(value: string): string {
   if (isSubtitlePreferenceDisabled(value)) return "Subtitles off";
   if (value === "interactive" || value === "fzf") return "Pick subtitles each time";
+  const option = SUBTITLE_PREFERENCE_OPTIONS.find((o) => o.value === value);
+  if (option) return `${option.label} subtitles`;
   return `Subtitle ${value}`;
 }
 

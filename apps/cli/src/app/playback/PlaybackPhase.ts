@@ -3503,6 +3503,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           }
 
+          if (playbackControlAction === "up-next") {
+            container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "queue" } });
+            continue;
+          }
+
           if (playbackControlAction === "cycle-audio") {
             const streams = preparedStream.providerResolveResult?.streams ?? [];
             const resumePos = toHistoryTimestamp(
@@ -3568,6 +3573,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   kind: "anime",
                   profile: nextProfile,
                 });
+                container.stateManager.dispatch({
+                  type: "SET_SESSION_TRACK_PREFERENCES",
+                  preferences: { audio: targetPresentation },
+                });
                 await container.config.update({ animeLanguageProfile: nextProfile });
                 await container.config.save();
                 if (resolvedProviderId) {
@@ -3591,6 +3600,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
 
             if (matchingStream) {
+              const nextAudio = matchingStream.audioLanguages?.[0] ?? matchingStream.presentation;
+              if (nextAudio) {
+                container.stateManager.dispatch({
+                  type: "SET_SESSION_TRACK_PREFERENCES",
+                  preferences: { audio: nextAudio },
+                });
+              }
               const nextSelection: StreamSelectionIntent = {
                 sourceId: matchingStream.sourceId ?? null,
                 streamId: matchingStream.id,

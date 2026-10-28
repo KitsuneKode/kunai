@@ -10,11 +10,16 @@
                               ▌ Original                              ▌ English
                                 English                                 Pick each time
                                 Japanese                                None
-                                Any dub                                 Arabic
-                                                                        German
-                                                                        Spanish
-                                                                        French
-                                                                        Japanese
+                                Spanish                                 Arabic
+                                Hindi                                   German
+                                French                                  Spanish
+                                German                                  French
+                                Korean                                  Hindi
+                                Italian                                 Italian
+                                Portuguese                              Japanese
+                                Russian                                 Korean
+                                Any dub                                 Portuguese
+                                                                        Russian
                               Use the language the title was made in
  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
    [enter] next  [tab] profile  [←→] audio / subs  [a] copy to all  [S] finish defaults  [b] back                                   Setup

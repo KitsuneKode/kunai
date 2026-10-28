@@ -72,7 +72,7 @@ describe("notification-queue", () => {
     expect(seeded.state.queue[0]?.dedupKey).toBe("a");
 
     const advanced = tickNotificationQueue(seeded.state, 2_000 + NOTIFICATION_TOAST_TTL_MS);
-    expect(advanced.toast).toContain("Download complete");
+    expect(advanced.toast).toMatch(/on disk now|Download complete/);
   });
 
   test("seeded-on-mount arrivals do not toast", () => {

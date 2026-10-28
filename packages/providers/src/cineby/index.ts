@@ -8,6 +8,7 @@ import type {
 } from "@kunai/types";
 
 import { createExhaustedResult } from "../shared/resolve-helpers";
+import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { resolveVideasyDirect, type VidKingEngineOptions } from "../videasy/direct";
 import { flavorSourceId, listVidkingFlavors, vidkingSourceIdForEndpoint } from "../videasy/flavors";
 
@@ -121,8 +122,11 @@ function selectCinebyFlavor(input: ProviderResolveInput): CinebyFlavor {
       ? CINEBY_FLAVORS.filter((flavor) => !flavor.moviesOnly)
       : CINEBY_FLAVORS;
 
+  const requested = normalizeIsoLanguageCode(input.preferredAudioLanguage);
   return (
-    eligible.find((flavor) => flavor.audioLanguage === input.preferredAudioLanguage) ??
+    (requested && requested !== "original"
+      ? eligible.find((flavor) => flavor.audioLanguage === requested)
+      : undefined) ??
     eligible[0] ??
     DEFAULT_CINEBY_FLAVOR
   );
