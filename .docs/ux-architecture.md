@@ -66,6 +66,13 @@ from every provider.
 
 ### Command philosophy
 
+Launch track preferences are transient across all four language profiles.
+Both config getters and the raw effective snapshot expose them; background
+saves keep the persisted defaults. An explicit Settings change supersedes the
+matching launch override. `--offline` likewise reaches connectivity's config
+reader without becoming a persistent setting. Explicit settings reset clears
+transient launch choices as well as resetting persisted settings.
+
 - `/` is the global entry point for actions
 - post-playback should always expose a direct path back into a fresh search without quitting the app
 - common operations should have short command aliases
@@ -119,6 +126,12 @@ restores text focus. Wheel input over ordinary results clamps at the first
 and last row; keyboard arrows retain their existing wrapping behavior.
 The footer describes the click gesture only when mouse support is enabled.
 These high-frequency interactions repaint immediately without animation.
+
+Visible home rows retain focus eligibility after discovery completes with no
+results. Each row still needs a selection click followed by an activation
+click. Loading, error and typed-query empty-result surfaces do not authorize
+hidden home actions. Pointer regressions isolate all platform storage roots
+before mounting the shell, including its search-history refresh effect.
 
 Local overlays, the command palette, and root-content suspension remove
 covered result regions from hit-testing. Press and release must belong to the

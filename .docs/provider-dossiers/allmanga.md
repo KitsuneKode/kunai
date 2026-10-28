@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-10-28"
 ---
 
 # Provider: AllManga / AllAnime
@@ -15,6 +15,23 @@ lastReviewed: "2026-10-22"
 - **Current status (2026-10-22):** The pinned build181 bootstrap/crypto probe returns HTTP200. Full stream resolution in the local production-provider sweep stopped at CAPTCHA, so bootstrap success is not playback qualification. Episode resolve requires `aaReq` AES-GCM attestation and the current rotating key.
 
 ## Current Evidence
+
+An explicit `anilist:<id>` is catalog identity, not an opaque AllManga show ID.
+Both episode listing and resolve send it through the AniList-to-native bridge;
+other known catalog namespaces are never sent as native show IDs. Stored native
+IDs retain priority. The live smoke uses the same search-result-to-title mapper
+as the application so it retains the AniList/MAL identity bag.
+
+Shared AniList episode enrichment uses explicit episode numbers in streaming
+titles, never the streaming array's position. Sparse or newest-first links do
+not relabel early episodes with later episode titles or thumbnails. Unnumbered
+links remain unassigned; native/Jikan metadata still supplies known identities.
+This shared reader also serves Miruro and the archived AniDB adapter.
+
+The 2026-10-28 bootstrap check returned HTTP 200 with current crypto. The
+isolated One Piece search/catalog diagnostic then reached the source captcha
+refusal. A healthy bootstrap or catalog is not proof of stream playback, and no
+shared relay or captcha bypass was added.
 
 ### Search and catalog
 

@@ -67,6 +67,14 @@ export async function startKittySession(options: {
   readonly requiresMpv?: boolean;
   readonly font?: string;
 }) {
+  if (
+    !options.fixture &&
+    (!options.providerId || !options.providerIds?.includes(options.providerId))
+  ) {
+    throw new Error(
+      "Live Kitty verification requires an explicit production provider pin and roster",
+    );
+  }
   if (process.platform === "win32") throw new Error("Kitty driver requires a Unix desktop");
   const kitty = Bun.which("kitty");
   const bun = Bun.which("bun");

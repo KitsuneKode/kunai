@@ -404,4 +404,44 @@ describe("playback-watchdog", () => {
       demuxerViaNetwork: true,
     });
   });
+
+  test.each([true, false])(
+    "backward playback keeps advancing without a false stall (seek observation=%s)",
+    (observeSeeking) => {
+      const events: PlayerPlaybackEvent[] = [];
+      const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+        stallAfterMs: 500,
+      });
+      const observe = (positionSeconds: number, seeking = false) =>
+        watchdog.observe({
+          source: "ipc",
+          observedAt: nowMs,
+          positionSeconds,
+          seeking,
+          durationSeconds: 100,
+        });
+      try {
+        observe(50);
+        nowMs = 200;
+        observe(51);
+        if (observeSeeking) {
+          nowMs = 300;
+          observe(51, true);
+        }
+        nowMs = 400;
+        observe(10);
+        for (let step = 1; step <= 10; step++) {
+          nowMs += 200;
+          observe(10 + step * 0.5);
+          runTimers();
+        }
+        expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(0);
+        nowMs += 600;
+        runTimers();
+        expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(1);
+      } finally {
+        watchdog.stop();
+      }
+    },
+  );
 });

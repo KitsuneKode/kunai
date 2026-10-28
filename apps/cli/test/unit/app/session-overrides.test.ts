@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+import {
+  playbackQualityPreference,
+  playbackSubtitlePreference,
+} from "@/app/playback/playback-profile-context";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 
 const BASE_LANE = { audio: "original", subtitle: "en", quality: "best" };
@@ -10,10 +14,30 @@ const baseConfig = {
   animeLanguageProfile: { ...BASE_LANE },
   seriesLanguageProfile: { ...BASE_LANE },
   movieLanguageProfile: { ...BASE_LANE },
+  youtubeLanguageProfile: { ...BASE_LANE },
 };
 
 describe("resolveSessionConfigOverrides", () => {
   const off = { ...baseConfig };
+
+  test("YouTube consumes explicit launch quality and subtitle choices through its effective profile", () => {
+    const config = {
+      ...baseConfig,
+      youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
+    };
+    const overrides = resolveSessionConfigOverrides(
+      { zen: false, minimal: false, quality: "480p", subtitle: "none" },
+      config,
+    );
+    const context = {
+      mode: "youtube" as const,
+      title: { type: "movie" as const },
+      config: { ...config, ...overrides },
+    };
+    expect(playbackQualityPreference(context)).toBe("480p");
+    expect(playbackSubtitlePreference(context)).toBe("none");
+    expect(config.youtubeLanguageProfile.quality).toBe("1080p");
+  });
 
   test("-m/--minimal flips minimalMode so the flag matches its name", () => {
     expect(resolveSessionConfigOverrides({ zen: false, minimal: true }, off)).toEqual({
@@ -57,6 +81,7 @@ describe("resolveSessionConfigOverrides", () => {
       animeLanguageProfile: { ...BASE_LANE, quality: "720p" },
       seriesLanguageProfile: { ...BASE_LANE, quality: "720p" },
       movieLanguageProfile: { ...BASE_LANE, quality: "720p" },
+      youtubeLanguageProfile: { ...BASE_LANE, quality: "720p" },
     });
   });
 
@@ -73,6 +98,7 @@ describe("resolveSessionConfigOverrides", () => {
       animeLanguageProfile: { audio: "dub", subtitle: "none", quality: "1080p" },
       seriesLanguageProfile: { ...BASE_LANE, subtitle: "none", audio: "dub" },
       movieLanguageProfile: { ...BASE_LANE, subtitle: "none", audio: "dub" },
+      youtubeLanguageProfile: { ...BASE_LANE, subtitle: "none", audio: "dub" },
     });
   });
 

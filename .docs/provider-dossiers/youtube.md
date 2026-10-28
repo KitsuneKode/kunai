@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-28"
 ---
 
 # Provider: YouTube (`youtube`)
@@ -32,6 +32,20 @@ them as TMDB poster names. Channel artwork requires an absolute HTTPS URL.
 Tracks marks the current connection as selected, not as proof of playback.
 Resolved subtitle inventory is reported as available; only mpv observations
 establish the active subtitle and its visibility.
+
+Direct-ID playback adopts title, poster and video facts from the metadata cache
+populated by provider resolve. It performs no second yt-dlp fetch and does not
+cache an unrelated catalog's empty `Unknown` answer for video IDs. Matching
+`SET_TITLE_DETAIL` updates the session's video facts while retaining known
+search fields; the working playback title also adopts the result for history
+and sharing. A different video or playlist cannot inherit those facts.
+
+Launch `--quality`, `--audio` and `--sub` choices include the YouTube profile.
+Config getters and `getRaw()` expose the same transient values; background
+saves retain persisted defaults, and an explicit Settings change clears the
+corresponding override. The subtitle preference label says tracks are requested
+until mpv supplies selection evidence. None of this establishes sustained media
+delivery for a particular client or network.
 
 `metadata-failure.ts` classifies yt-dlp's stderr (thrown verbatim by
 `fetchYtDlpVideoInfo`) into two buckets:

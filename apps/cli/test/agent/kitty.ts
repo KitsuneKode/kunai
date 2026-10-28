@@ -43,6 +43,10 @@ const { values } = parseArgs({
 });
 if (!values.evidence) throw new Error("Pass --evidence with a NEW output directory");
 if (values.matrix && !values.live) throw new Error("Provider matrix requires explicit --live");
+if (values.live && !values.matrix && !values.provider)
+  throw new Error(
+    "Non-matrix --live verification requires --provider to prevent fallback substitution",
+  );
 const timeoutSeconds = z.coerce.number().int().min(5).max(120).parse(values.timeout);
 const observeSeconds = z.coerce
   .number()

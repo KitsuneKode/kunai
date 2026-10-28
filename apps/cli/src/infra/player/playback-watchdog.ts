@@ -181,9 +181,11 @@ export function createPlaybackWatchdog(
         emittedStreamStall = false;
       }
       if (wasSeeking && !sample.seeking) {
-        lastProgressAt = sample.observedAt;
-        lastCacheProgressAt = sample.observedAt;
-        emittedStreamStall = false;
+        resetProgressClock(sample.observedAt, sample.positionSeconds);
+      } else if (sample.positionSeconds < lastPosition - 0.25) {
+        // A native seek can finish between sampled seeking flags. Progress is
+        // relative to its new position, not the previous high-water mark.
+        resetProgressClock(sample.observedAt, sample.positionSeconds);
       }
       if (
         sample.demuxerViaNetwork === true &&

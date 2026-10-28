@@ -2383,6 +2383,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 })
               : { successfulProviderId: sourceProviderId, nextEpisodeProviderId: sourceProviderId };
 
+          if (providerHandoff.successfulProviderId === "youtube") {
+            // Provider resolve has now populated its metadata cache. Adopt it
+            // into both the rendered session and the title persisted below.
+            const detail = await fetchTitleDetail(title.id, title.type, resolveController.signal, {
+              externalIds: title.externalIds,
+            });
+            if (detail.videoMeta) {
+              title = applyCatalogDetailToTitle(title, detail);
+              stateManager.dispatch({
+                type: "SET_TITLE_DETAIL",
+                titleId: title.id,
+                titleType: detail.type,
+                detail,
+              });
+            }
+          }
+
           // Await timing — stream resolve takes much longer so this is nearly free.
           // If IntroDB timed out and returned null, schedule a background retry that
           // injects timing into the running player once it arrives.

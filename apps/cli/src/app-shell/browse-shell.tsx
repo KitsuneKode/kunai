@@ -1131,7 +1131,7 @@ export function BrowseShell<T>({
   });
   const canFocusIdleRows =
     options.length === 0 &&
-    searchState === "idle" &&
+    (searchState === "idle" || (searchState === "ready" && query.trim().length === 0)) &&
     Boolean(idleReturnLoopModel?.hasSelectableRows);
 
   // Local narrow mode only earns space on long result sets. Ctrl+F opens it;

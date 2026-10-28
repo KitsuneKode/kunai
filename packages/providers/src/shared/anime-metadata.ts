@@ -263,10 +263,16 @@ async function fetchAniListStreamingEpisodes(
       };
     };
     const rows = payload.data?.Media?.streamingEpisodes ?? [];
-    rows.forEach((row, index) => {
-      const number = index + 1;
+    rows.forEach((row) => {
+      // AniList streaming links can be sparse or newest-first. Array position
+      // is not episode identity and must never label episode 1 with episode 130.
+      const title = row.title?.trim() ?? "";
+      const match = /^(?:episode|ep\.?)\s+(\d+(?:\.\d+)?)\s*(?:[-–:]\s*(.*))?$/i.exec(title);
+      if (!match) return;
+      const number = Number(match[1]);
+      if (!Number.isFinite(number) || number <= 0) return;
       mergeEpisodeMetadata(episodes, number, {
-        title: row.title?.trim() || undefined,
+        title: match[2]?.trim() || undefined,
         thumbnail: row.thumbnail?.trim() || undefined,
         source: "anilist",
       });

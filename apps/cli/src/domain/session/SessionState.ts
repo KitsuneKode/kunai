@@ -512,7 +512,11 @@ export function reduceState(state: SessionState, transition: StateTransition): S
     case "SET_TITLE_DETAIL": {
       // Guard against a late fetch for a previous title overwriting the current
       // one (titles switch fast during autonext).
-      if (!state.currentTitle || state.currentTitle.id !== transition.titleId) {
+      if (
+        !state.currentTitle ||
+        state.currentTitle.id !== transition.titleId ||
+        transition.detail.id !== transition.titleId
+      ) {
         return state;
       }
       // Adopt the catalog answer through the same function the playback phase
@@ -520,7 +524,14 @@ export function reduceState(state: SessionState, transition: StateTransition): S
       // film stamped after search, the `-i/--id` placeholder name, a missing
       // poster, and missing external ids all resolve here, upgrade-only.
       const currentTitle = applyCatalogDetailToTitle(state.currentTitle, transition.detail);
-      return { ...state, titleDetail: transition.detail, currentTitle };
+      return {
+        ...state,
+        titleDetail: transition.detail,
+        currentTitle,
+        videoMeta: transition.detail.videoMeta
+          ? { ...state.videoMeta, ...transition.detail.videoMeta }
+          : state.videoMeta,
+      };
     }
 
     case "SELECT_EPISODE":

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-28"
 ---
 
 # Playback Source Inventory Contract
@@ -309,6 +309,11 @@ resolve, while keeping the inventory available for turning subtitles on again.
 Hardcoded subtitles remain a property of the video and cannot be removed by mpv.
 
 ## Interactive subtitle inventory ownership
+
+A YouTube extraction preference requests tracks; it does not establish that
+mpv attached or selected them. Before a live observation or resolved inventory,
+the watching status is informational. Native selection, visibility and Off
+remain authoritative once observed.
 
 An external subtitle picker selection queries the current mpv track list and
 selects an existing matching external track by ID. If the URL is not attached,

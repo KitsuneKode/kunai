@@ -86,9 +86,13 @@ hosted, device or release signoff.
       terminal text, persisted state, mpv decoding and native OS pointer input
       as separate evidence. Use small models for bounded source research and
       one coordinator for serial desktop control.
-- [ ] Run the opt-in production-provider matrix one provider and lane at a time;
-      retain failures and exact candidate identity. Do not let fallback, moving
-      audio clocks, screenshot-file existence or a fixture mark video healthy.
+- [ ] Qualify the remaining failures from the 2026-10-28 serial 16-route live
+      pass: YouTube media starvation, Videasy seed availability, VidRock startup,
+      AllManga captcha refusal, Miruro deadline and Movy movie black frames.
+      Separate Movy-series/AnimeGG capture deadlines from provider failures;
+      fix and recheck the screenshot/cleanup lifecycle before certifying them.
+      Retain first failures and exact candidate identity. Do not let fallback,
+      moving audio clocks, screenshot-file existence or fixtures mark video healthy.
 - [ ] Audit pointer coverage per surface, then fix reproduced omissions through
       shared keyboard/controller actions. Verify Browse footers and home rows,
       both click stages, changed targets, overlays and narrow layouts; retain
@@ -96,8 +100,9 @@ hosted, device or release signoff.
 - [ ] Use the `verify-kunai` skill and a dedicated Kitty window with an isolated
       profile. Do not send keys to the maintainer's existing sessions or alter
       their profile. Capture frames and backend state before fixing defects.
-      The maintainer requested real providers and real titles on the laptop's
-      eDP-1 display, workspace 9, fullscreen. Keep fixture regressions separate
+      Use real providers and titles on a free display/workspace. The latest
+      preference is to avoid disturbing the display currently in use; confirm
+      the free display when desktop activity changes. Keep fixture regressions separate
       from that live manual session. Ensure the QA launcher does not inherit
       `NO_COLOR=1`; select the maintainer's installed terminal font rather than
       relying on this machine's CJK monospace fallback.

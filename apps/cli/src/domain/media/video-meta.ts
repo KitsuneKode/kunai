@@ -1,8 +1,8 @@
 // Derive a VideoMeta snapshot from a SearchResult
 //
 // YouTube/video fields (channel, views, published, duration, …) live on
-// SearchResult but NOT on TitleInfo, and video titles never populate a
-// TitleDetail. This single pure helper captures that snapshot so the session
+// SearchResult but NOT on TitleInfo. Direct-ID playback can also enrich a
+// TitleDetail from the provider metadata cache. This single pure helper captures that snapshot so the session
 // (and the `video` media-panel kind) has a real data source. Keeping it in
 // domain/ lets both the reducer and the bootstrap launch path share one
 // implementation instead of duplicating the field-by-field copy.

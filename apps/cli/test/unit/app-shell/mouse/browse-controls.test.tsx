@@ -1,10 +1,70 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { BrowseShell } from "@/app-shell/browse-shell";
 import { RootContentSuspension } from "@/app-shell/RootContentSuspension";
+import { flushSearchHistory } from "@/services/persistence/search-history";
 import { act, createRef, useImperativeHandle, useState } from "react";
 
+import { applyStorageRootEnv } from "../../../helpers/storage-env";
 import { renderWithPointer } from "../../../support/pointer-render";
+
+let sandbox: string;
+let restoreEnvironment: () => void;
+beforeEach(() => {
+  sandbox = mkdtempSync(join(tmpdir(), "kunai-browse-pointer-"));
+  restoreEnvironment = applyStorageRootEnv(sandbox);
+});
+afterEach(async () => {
+  try {
+    await flushSearchHistory();
+  } finally {
+    restoreEnvironment();
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("home rows remain selectable after discovery returns no results", async () => {
+  const actions: string[] = [];
+  const handle = renderWithPointer(
+    <BrowseShell
+      mode="series"
+      provider="vidlink"
+      placeholder="Search"
+      commands={[]}
+      idleContext={{
+        continueWatching: { title: "Resume series", titleId: "tmdb:1396", mediaKind: "series" },
+      }}
+      onSearch={async () => ({ options: [], subtitle: "0 results" })}
+      onLoadDiscovery={async () => ({
+        options: [],
+        subtitle: "0 trending",
+        emptyMessage: "No trending titles",
+      })}
+      onResolve={(action) => actions.push(action)}
+      onSubmit={() => {}}
+      onCancel={() => {}}
+    />,
+    { columns: 120, rows: 40 },
+  );
+  try {
+    await act(async () => handle.stdin.enqueue(["\x14"]));
+    expect(handle.lastFrame()).toContain("No trending titles");
+    expect(handle.lastFrame()).toContain("Resume series");
+    const target = handle.dispatcher
+      .debugRegions()
+      .find((row) => row.id.startsWith("browse:idle:continue:"));
+    expect(target).toBeDefined();
+    handle.click(target!.id);
+    expect(actions).toEqual([]);
+    handle.click(target!.id);
+    expect(actions).toEqual(["resume-continue-watching"]);
+  } finally {
+    handle.unmount();
+  }
+});
 
 test("browse footer opens commands and releases its targets while the palette owns input", () => {
   const handle = renderWithPointer(

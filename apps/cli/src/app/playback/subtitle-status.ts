@@ -85,7 +85,7 @@ export function projectPlaybackSubtitleState(
       return { kind: "lookup-failed", label: "subtitles not found", tone: "warning" };
     }
     if (plan.statusHint) {
-      return { kind: "available", label: plan.statusHint, tone: "success" };
+      return { kind: "late-lookup-pending", label: plan.statusHint, tone: "info" };
     }
   }
 

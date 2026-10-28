@@ -42,6 +42,10 @@ enumerates the production roster serially. Other providers are disabled per
 route so a fallback cannot make a failed provider appear healthy. See the
 reference for exact commands and limitations.
 
+Every non-matrix `--live` recipe must pass `--provider <production-id>`.
+The CLI and session helper reject an absent pin; the helper also requires the
+production roster so it can disable every other provider before launching.
+
 Doctor before driving: confirm the owned window renders, the expected provider
 and mode are visible, fonts and artwork are legible, and cleanup/privacy checks
 are available. A missing display, screenshot capability, provider, or real mpv

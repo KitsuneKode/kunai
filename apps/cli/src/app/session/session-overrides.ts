@@ -2,7 +2,7 @@ import type { MediaLanguageProfile } from "@kunai/config";
 
 /**
  * Pure resolution of transient, in-memory config overrides a launch flag should
- * apply for the current session only. These are applied with `config.update()`
+ * apply for the current session only. These are applied with `config.applySessionOverrides()`
  * (memory-only) and never `save()`d, so they do not touch the user's config file.
  *
  * Keeping this pure lets us assert that each layout flag honestly flips the
@@ -24,6 +24,7 @@ export interface SessionLayoutConfig {
   readonly animeLanguageProfile: MediaLanguageProfile;
   readonly seriesLanguageProfile: MediaLanguageProfile;
   readonly movieLanguageProfile: MediaLanguageProfile;
+  readonly youtubeLanguageProfile: MediaLanguageProfile;
 }
 
 export type SessionConfigOverrides = Partial<{
@@ -33,12 +34,14 @@ export type SessionConfigOverrides = Partial<{
   animeLanguageProfile: MediaLanguageProfile;
   seriesLanguageProfile: MediaLanguageProfile;
   movieLanguageProfile: MediaLanguageProfile;
+  youtubeLanguageProfile: MediaLanguageProfile;
 }>;
 
 const LANGUAGE_LANES = [
   "animeLanguageProfile",
   "seriesLanguageProfile",
   "movieLanguageProfile",
+  "youtubeLanguageProfile",
 ] as const;
 
 /**
@@ -46,10 +49,10 @@ const LANGUAGE_LANES = [
  * `--minimal` enables minimal mode (companion-pane collapse, minimal footer, dim
  * header). `--zen` implies minimal upstream in cli-args, so a zen launch yields
  * both. `--quality`/`--audio`/`--sub` ride the per-lane language profiles for
- * this session — the same fields the Settings rows write, applied to all three
+ * this session — the same fields the Settings rows write, applied to all four
  * provider lanes because a per-run pick should not care which lane the chosen
- * title resolves into. YouTube is untouched: its quality vocabulary and track
- * model are yt-dlp-shaped, not provider-shaped. Already-matching fields are
+ * title resolves into. The YouTube resolver consumes the same height and
+ * subtitle preferences when constructing yt-dlp options. Already-matching fields are
  * omitted so we never issue a no-op update.
  */
 export function resolveSessionConfigOverrides(

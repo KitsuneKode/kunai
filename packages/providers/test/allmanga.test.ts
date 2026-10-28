@@ -67,6 +67,27 @@ test("AllManga source evidence rejects malformed hosts without losing valid host
 });
 
 describe("resolveAllMangaShowId", () => {
+  test.each([true, false])(
+    "bridges an explicit AniList namespace instead of treating it as a native show (ids=%s)",
+    async (withIds) => {
+      using fetchMock = mockAllMangaBridgeFetch("empty");
+      const showId = await resolveAllMangaShowId(
+        {
+          title: {
+            id: "anilist:20431",
+            kind: "anime",
+            title: "Hozuki",
+            externalIds: withIds ? { anilistId: "20431" } : undefined,
+          },
+        },
+        TEST_CONTEXT,
+      );
+      expect(showId).toBeNull();
+      expect(fetchMock.requests.length).toBeGreaterThan(0);
+      expect(fetchMock.catalogRequests).toEqual([]);
+    },
+  );
+
   test("returns stored providerNativeIds without bridging", async () => {
     const showId = await resolveAllMangaShowId(
       {

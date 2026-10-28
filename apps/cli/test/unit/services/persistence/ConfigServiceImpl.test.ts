@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
+import {
+  playbackQualityPreference,
+  playbackSubtitlePreference,
+} from "@/app/playback/playback-profile-context";
+import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG, type ConfigStore } from "@/services/persistence/ConfigStore";
@@ -734,6 +739,54 @@ describe("youtubeMetadata normalization", () => {
 });
 
 describe("session overrides", () => {
+  test("explicit settings reset clears transient launch choices too", async () => {
+    const store = new MemoryConfigStore(structuredClone(DEFAULT_CONFIG));
+    const service = await ConfigServiceImpl.load(store);
+    service.applySessionOverrides(
+      resolveSessionConfigOverrides(
+        { zen: true, minimal: true, offline: true, quality: "480p", subtitle: "none" },
+        service,
+      ),
+    );
+    await service.reset();
+    expect(service.offlineMode).toBe(DEFAULT_CONFIG.offlineMode);
+    expect(service.youtubeLanguageProfile).toEqual(DEFAULT_CONFIG.youtubeLanguageProfile);
+    expect(service.movieLanguageProfile).toEqual(DEFAULT_CONFIG.movieLanguageProfile);
+    expect(service.zenMode).toBe(DEFAULT_CONFIG.zenMode);
+  });
+  test("launch preferences reach every playback reader without becoming persisted defaults", async () => {
+    const store = new MemoryConfigStore(structuredClone(DEFAULT_CONFIG));
+    const service = await ConfigServiceImpl.load(store);
+    const before = service.getRaw();
+    service.applySessionOverrides(
+      resolveSessionConfigOverrides(
+        { zen: false, minimal: false, offline: true, quality: "480p", subtitle: "none" },
+        service,
+      ),
+    );
+    for (const mode of ["anime", "series", "youtube"] as const) {
+      const context = { mode, title: { type: "movie" as const }, config: service };
+      expect(playbackQualityPreference(context)).toBe("480p");
+      expect(playbackSubtitlePreference(context)).toBe("none");
+    }
+    expect(service.seriesLanguageProfile.quality).toBe("480p");
+    expect(service.offlineMode).toBe(true);
+    await service.save();
+    const persisted = await store.load();
+    expect(persisted.youtubeLanguageProfile).toEqual(before.youtubeLanguageProfile);
+    expect(persisted.movieLanguageProfile).toEqual(before.movieLanguageProfile);
+    expect(persisted.animeLanguageProfile).toEqual(before.animeLanguageProfile);
+    expect(persisted.seriesLanguageProfile).toEqual(before.seriesLanguageProfile);
+    expect(persisted.offlineMode).toBe(before.offlineMode);
+    await service.update({
+      youtubeLanguageProfile: { ...before.youtubeLanguageProfile, quality: "720p" },
+      offlineMode: false,
+    });
+    expect(service.youtubeLanguageProfile.quality).toBe("720p");
+    expect(service.offlineMode).toBe(false);
+    expect(service.movieLanguageProfile.quality).toBe("480p");
+  });
+
   test("a session override never reaches the persisted config file", async () => {
     const store = new MemoryConfigStore();
     const service = await ConfigServiceImpl.load(store);

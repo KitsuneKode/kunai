@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import {
   allMangaEpisodeMetadataCacheKey,
@@ -21,6 +21,36 @@ afterEach(() => {
 });
 
 describe("anime metadata helpers", () => {
+  test("sparse or reversed streaming rows keep their explicit episode identity", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            Media: {
+              streamingEpisodes: [
+                {
+                  title: "Episode 130 - Scent of Danger",
+                  thumbnail: "https://img.example/130.jpg",
+                },
+                { title: "Episode 129 - The Adventure", thumbnail: "https://img.example/129.jpg" },
+                { title: "Unnumbered trailer", thumbnail: "https://img.example/trailer.jpg" },
+              ],
+            },
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    try {
+      const metadata = await fetchAnimeEpisodeMetadataByNumber({ anilistId: "21" });
+      expect([...metadata.keys()].sort((a, b) => a - b)).toEqual([129, 130]);
+      expect(metadata.get(130)?.title).toBe("Scent of Danger");
+      expect(metadata.get(130)?.thumbnail).toBe("https://img.example/130.jpg");
+      expect(metadata.get(1)).toBeUndefined();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
   test("formatAnimeEpisodeLabel adds filler badge", () => {
     expect(formatAnimeEpisodeLabel(1, "Ryomen Sukuna", { filler: true })).toBe(
       "Episode 1 · Ryomen Sukuna · Filler",

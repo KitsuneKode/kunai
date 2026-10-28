@@ -10,7 +10,7 @@
 // testable source of truth instead of ad-hoc picking scattered across surfaces.
 // =============================================================================
 
-import type { ContentType } from "@/domain/types";
+import type { ContentType, VideoMeta } from "@/domain/types";
 import type { ProviderExternalIds } from "@kunai/types";
 
 /** Metadata/artwork origins, in the order they are typically merged. */
@@ -73,6 +73,8 @@ export interface TitleDetail {
   readonly id: string;
   readonly type: ContentType;
   readonly title: string;
+  /** Provider video facts discovered after direct-ID playback resolution. */
+  readonly videoMeta?: VideoMeta;
   readonly year?: string;
   readonly synopsis?: string;
   readonly genres?: readonly string[];

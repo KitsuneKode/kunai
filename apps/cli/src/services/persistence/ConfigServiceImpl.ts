@@ -616,7 +616,7 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   get youtubeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.youtubeLanguageProfile;
+    return this.sessionOverrides.youtubeLanguageProfile ?? this.config.youtubeLanguageProfile;
   }
 
   get youtubeMetadata(): KitsuneConfig["youtubeMetadata"] {
@@ -640,15 +640,15 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   get animeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.animeLanguageProfile;
+    return this.sessionOverrides.animeLanguageProfile ?? this.config.animeLanguageProfile;
   }
 
   get seriesLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.seriesLanguageProfile;
+    return this.sessionOverrides.seriesLanguageProfile ?? this.config.seriesLanguageProfile;
   }
 
   get movieLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.movieLanguageProfile;
+    return this.sessionOverrides.movieLanguageProfile ?? this.config.movieLanguageProfile;
   }
 
   get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
@@ -768,7 +768,7 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   get offlineMode(): boolean {
-    return this.config.offlineMode;
+    return this.sessionOverrides.offlineMode ?? this.config.offlineMode;
   }
 
   get maxConcurrentDownloads(): number {
@@ -1149,6 +1149,7 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   async reset(): Promise<void> {
+    this.sessionOverrides = {};
     this.config = { ...DEFAULT_CONFIG };
     // Reset must write every key, not just session-dirty ones.
     // SAFETY: Object.keys of DEFAULT_CONFIG only yields KitsuneConfig keys.

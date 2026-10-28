@@ -41,6 +41,10 @@ names (`enter`, `down`, `ctrl+c`). Click labels must identify a unique visible
 target; do not guess a row from an old screenshot. A recipe's CLI arguments
 still run inside the isolated profile.
 
+For real providers, add `--live --provider <production-id>` to a non-matrix
+recipe. Omitting the pin is rejected before launch; the selected provider is
+the only enabled provider, so fallback cannot qualify a different adapter.
+
 ## Doctor
 
 Inspect the first PNG, not only its text: correct app, readable monospace font,
