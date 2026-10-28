@@ -1,7 +1,7 @@
 import type { BrowseIdleContext } from "@/app-shell/types";
 import type { Container } from "@/container";
 import { ENGAGE_SECONDS } from "@/domain/playback/progress-engage-policy";
-import { shellModeToProviderLane } from "@/domain/provider-lane";
+import { shellModeToProviderLane, storedTitleProviderLane } from "@/domain/provider-lane";
 import type { ShellMode } from "@/domain/types";
 import {
   historyContentType,
@@ -24,6 +24,7 @@ type IdleContextContainer = Pick<
   | "config"
 >;
 
+/** Build local home actions in the active lane, keeping the global queue head ordered. */
 export async function buildBrowseIdleContext(
   container: IdleContextContainer,
   options?: {
@@ -36,19 +37,8 @@ export async function buildBrowseIdleContext(
 }> {
   const mode = options?.mode;
   const lane = mode ? shellModeToProviderLane(mode) : undefined;
-  const matchesStoredMode = (row: {
-    readonly mediaKind: string;
-    readonly externalIds?: HistoryProgress["externalIds"];
-  }) => {
-    if (!lane) return true;
-    const rowLane =
-      row.mediaKind === "video" || row.externalIds?.youtubeId
-        ? "youtube"
-        : row.mediaKind === "anime" || row.externalIds?.anilistId || row.externalIds?.malId
-          ? "anime"
-          : "series";
-    return rowLane === lane;
-  };
+  const matchesStoredMode = (row: { readonly mediaKind: string }) =>
+    !lane || storedTitleProviderLane(row) === lane;
   // The queue remains global and ordered. Never display a later matching item:
   // the action consumes the actual head, so a foreign-mode head is simply hidden.
   const queuedNextItem = container.queueService.peekNext();
@@ -65,7 +55,7 @@ export async function buildBrowseIdleContext(
 
   try {
     const allHistory =
-      options?.preloadedHistory ?? readLatestHistoryByTitle(container.historyRepository);
+      options?.preloadedHistory ?? readLatestHistoryByTitle(container.historyRepository, lane);
     const entries = Object.entries(allHistory).filter(
       ([, entry]) => !lane || historyProviderLane(entry) === lane,
     );

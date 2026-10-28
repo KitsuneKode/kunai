@@ -440,6 +440,19 @@ retains its global playback order: its shortcut appears only when the actual hea
 matches the mode. The aggregate unwatched-release notification count remains
 global; title-specific history and new-since-visit rows are scoped locally.
 
+Saved/queued titles use their primary stored media kind consistently across home
+and suggestions; AniList/MAL links affect eligibility rather than relabeling a
+series-lane row. History keeps its corrected replay identity, shared by the core
+classifier and the SQLite lane projection. The query picks each title's latest
+row, filters that row's lane, then applies the 500-title cap, so other lanes
+cannot hide older matching history or resurrect an older episode. Unscoped
+readers retain their existing cross-lane snapshot.
+
+Idle hydration and refreshes accept only the latest request in the current mode.
+Both the rendered home context and SearchPhase's continuation target reject an
+obsolete mode result, including a root-overlay mode switch while Browse stays
+mounted. Mode changes reload the shell's context and release the old listener.
+
 ## Picker Filtering
 
 - filterable pickers are the default for season, episode, provider, subtitle, history, and settings flows

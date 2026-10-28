@@ -88,3 +88,62 @@ test("a successful bootstrap search opens the results view, not the search surfa
   expect(state.view).toBe("results");
   expect(browseInput?.initialResults).toHaveLength(1);
 });
+
+test("a deferred idle load cannot publish a previous mode's continuation", async () => {
+  const stateManager = new SessionStateManagerImpl({ logger });
+  const provider = {
+    metadata: { id: "vidlink", isAnimeProvider: false, isYoutubeProvider: false },
+  };
+  const phase = new SearchPhase({
+    searchTitles: async () => {
+      throw new Error("No network expected");
+    },
+    openBrowseShell: async (input) => {
+      expect(input.loadIdleContext).toBeDefined();
+      const loading = input.loadIdleContext!();
+      stateManager.dispatch({ type: "SET_MODE", mode: "anime", provider: "hianime" });
+      expect(await loading).toBeUndefined();
+      return { type: "cancelled" };
+    },
+  });
+  // SAFETY: this local-only fixture supplies the readers exercised before cancellation.
+  const container = {
+    stateManager,
+    connectivity: new Connectivity(() => true),
+    logger,
+    diagnosticsService: { record: () => {} },
+    config: {
+      offlineMode: false,
+      lastCalendarVisitAt: 0,
+      animeLanguageProfile: { audio: "original", subtitle: "en" },
+      youtubeLanguageProfile: { audio: "original", subtitle: "none" },
+      animeTitlePreference: "provider",
+      getRaw: () => ({}),
+    },
+    searchRegistry: { getDefault: () => ({ metadata: { id: "tmdb" } }) },
+    providerRegistry: { get: () => provider, getDefaultForMode: () => provider },
+    queueService: { peekNext: () => null },
+    releaseProgressCache: {
+      summarizeActive: () => ({ episodeCount: 0, titleCount: 0 }),
+      getByTitleIds: () => new Map(),
+    },
+    offlineAssetService: { listNextReadyByTitleCursors: () => [] },
+    historyRepository: {
+      listLatestByTitle: () => [
+        {
+          titleId: "tmdb:1",
+          title: "Old movie",
+          mediaKind: "movie",
+          positionSeconds: 90,
+          completed: false,
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    },
+    listService: { getWatchlist: () => [] },
+    followedTitleRepository: { listByPreference: () => [] },
+  } as never;
+  expect(
+    await phase.execute(undefined, { container, signal: new AbortController().signal }),
+  ).toEqual({ status: "cancelled" });
+});

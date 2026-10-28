@@ -53,6 +53,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Click Browse footer actions and home shortcuts. Home rows select on the first
   click and open on the second; changing the title or episode cancels the
   earlier click.
+- Keep home shortcuts and search suggestions in the active mode even when
+  hundreds of newer titles belong to another mode. Reject stale home refreshes
+  and update favourite previews after both toggle directions.
 - Add direct title launches from the command palette, notification episode
   launches and bounded detail prefetching. Keep command matching and title
   matching distinct, and prevent palette typing from firing playback hotkeys.

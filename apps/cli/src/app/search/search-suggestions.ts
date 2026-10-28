@@ -12,7 +12,7 @@
 // =============================================================================
 
 import type { Container } from "@/container";
-import { shellModeToProviderLane } from "@/domain/provider-lane";
+import { shellModeToProviderLane, storedTitleProviderLane } from "@/domain/provider-lane";
 import type { SearchSuggestion } from "@/domain/search/suggestion-engine";
 import type { ProviderLane, SearchResult, ShellMode } from "@/domain/types";
 import {
@@ -55,12 +55,6 @@ function kindLabel(mediaKind: string): string {
   return "Series";
 }
 
-function laneForMediaKind(mediaKind: string): ProviderLane {
-  if (mediaKind === "anime") return "anime";
-  if (mediaKind === "video") return "youtube";
-  return "series";
-}
-
 function epochMs(iso: string | undefined): number {
   if (!iso) return 0;
   const ms = Date.parse(iso);
@@ -91,6 +85,7 @@ function searchResultFromHistory(row: HistoryProgress): SearchResult {
   };
 }
 
+/** Stored primary kind owns routing; linked catalog ids remain eligibility metadata. */
 function searchResultFromStoredTitle(input: {
   readonly titleId: string;
   readonly title: string;
@@ -108,7 +103,7 @@ function searchResultFromStoredTitle(input: {
     externalIds: input.externalIds,
     isAnime: input.mediaKind === "anime" ? true : undefined,
     resultKind: input.mediaKind === "video" ? "video" : undefined,
-    resolvedLane: laneForMediaKind(input.mediaKind),
+    resolvedLane: storedTitleProviderLane(input),
     metadataSource: "Local library",
   };
 }
@@ -173,7 +168,7 @@ export function loadLocalSuggestionCorpus(
       0,
       limit,
     );
-  const storedLane = (row: { readonly mediaKind: string }) => laneForMediaKind(row.mediaKind);
+  const storedLane = storedTitleProviderLane;
   const push = (suggestion: SearchSuggestion<SearchResult>, titleId: string) => {
     if (mode && suggestion.value?.resolvedLane !== shellModeToProviderLane(mode)) return;
     if (!byTitleId.has(titleId)) byTitleId.set(titleId, suggestion);
@@ -181,7 +176,12 @@ export function loadLocalSuggestionCorpus(
 
   try {
     for (const row of takeInMode(
-      Object.values(readLatestHistoryByTitle(source.historyRepository)),
+      Object.values(
+        readLatestHistoryByTitle(
+          source.historyRepository,
+          mode ? shellModeToProviderLane(mode) : undefined,
+        ),
+      ),
       historyProviderLane,
       CORPUS_BOUNDS.watched,
     )) {

@@ -1,3 +1,5 @@
+import { isAnimeOnlyProviderId } from "@kunai/core";
+export { isAnimeOnlyProviderId } from "@kunai/core";
 // Identity (anime vs series vs movie vs video) is separate
 // from structure (does this title have an episode axis?).
 //
@@ -23,30 +25,6 @@ export function isYoutubeProviderId(providerId: string | undefined | null): bool
 
 /** TMDB genre id for "Animation". */
 const TMDB_ANIMATION_GENRE_ID = 16;
-
-/**
- * Provider ids that ONLY serve anime (their manifests are `mediaKinds: ["anime"]`).
- * A title played through one is anime even when no AniList/MAL id resolved — which is
- * the common case for AllAnime, and the reason most anime were mis-stamped "series".
- * (AllAnime occasionally hosts a live-action drama; the user can reclassify that rare
- * case — defaulting the majority to anime is far more accurate than the reverse.)
- *
- * Domain code cannot load provider manifests, so this mirrors them;
- * `bootstrap-providers.test.ts` fails when a production manifest disagrees.
- */
-const ANIME_ONLY_PROVIDER_IDS: ReadonlySet<string> = new Set([
-  "allanime",
-  "anidb",
-  "animegg",
-  "hianime",
-  "kickassanime",
-  "miruro",
-]);
-
-export function isAnimeOnlyProviderId(providerId: string | undefined | null): boolean {
-  if (providerId === undefined || providerId === null) return false;
-  return ANIME_ONLY_PROVIDER_IDS.has(providerId);
-}
 
 /**
  * Whether a title's *content* is genuinely anime — independent of ShellMode.
