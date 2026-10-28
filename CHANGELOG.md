@@ -50,6 +50,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### Search and terminal interaction
 
+- Click Browse footer actions and home shortcuts. Home rows select on the first
+  click and open on the second; changing the title or episode cancels the
+  earlier click.
 - Add direct title launches from the command palette, notification episode
   launches and bounded detail prefetching. Keep command matching and title
   matching distinct, and prevent palette typing from firing playback hotkeys.
