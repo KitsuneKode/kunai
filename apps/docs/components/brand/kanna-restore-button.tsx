@@ -38,9 +38,7 @@ export function KannaRestoreButton() {
       type="button"
       className="text-fd-muted-foreground hover:text-fd-accent-foreground hover:bg-fd-accent mt-1 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors"
       onClick={() => {
-        // The roamer does not confirm a restore, so hide on dispatch. If she
-        // declined (ineligible page), the flag stayed set and the chip returns
-        // next mount.
+        // Restore clears dismissal on pointer and touch devices alike.
         window.dispatchEvent(new Event("kunai:roamer-restore"));
         setDismissed(false);
       }}

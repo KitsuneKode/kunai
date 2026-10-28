@@ -492,6 +492,20 @@ cover four content types. A provider probe is not decoded playback proof, and
 copy must not present it as one. Native binaries embed their runtime; the npm
 and Bun global-package channels use a Node launcher and require Node on PATH.
 
+Home navigation and the docs sidebar use separate link visibility: every home
+menu destination is available on phone and tablet, while the docs sidebar keeps
+only Releases and Analytics above its page tree. On desktop the home bar compacts
+after 56px, expands on fine-pointer hover or keyboard focus, and dismisses pointer
+expansion on the next scroll. Focus keeps the bar expanded until it leaves. Motion
+uses layout projection with a 220ms ease-out; reduced motion and keyboard expansion
+are immediate. Search retains the existing lazy dialog and platform shortcut.
+
+Kanna's dismissal is independent of motion eligibility. Touch and reduced-motion
+visitors see a small stationary, non-interactive companion at the safe viewport
+edge; pointer following and chatter run only for fine pointers without reduced
+motion. Pause stops the moving drawing too, and a pre-movement pause keeps her
+visible. Restore clears dismissal on every input type.
+
 `apps/docs/scripts/doc-last-modified.ts` memoizes guide timestamps per path
 using full Git history and Fumadocs' author-date convention, avoiding re-dating
 unchanged guides when commits are rebased. File-specific queries retain edits

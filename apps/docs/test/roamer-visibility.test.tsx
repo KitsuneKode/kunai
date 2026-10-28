@@ -58,24 +58,26 @@ describe("roamer browser visibility", () => {
     const release = store.subscribe(() => notifications++);
     reduced.matches = true;
     reduced.dispatchEvent(new Event("change"));
-    expect(store.getSnapshot()).toBe(false);
+    expect(store.getSnapshot()).toBe(true);
+    expect(store.getMotionSnapshot()).toBe(false);
     reduced.matches = false;
     fine.matches = false;
     fine.dispatchEvent(new Event("change"));
-    expect(store.getSnapshot()).toBe(false);
+    expect(store.getSnapshot()).toBe(true);
+    expect(store.getMotionSnapshot()).toBe(false);
     expect(notifications).toBe(2);
     release();
     fine.dispatchEvent(new Event("change"));
     expect(notifications).toBe(2);
   });
 
-  test("ineligible restore preserves a stored dismissal", () => {
+  test("touch visitors can restore a stationary Kanna", () => {
     const { store, events, fine } = fixture({ dismissed: true });
     const release = store.subscribe(() => {});
     fine.matches = false;
     events.dispatchEvent(new Event("kunai:roamer-restore"));
-    fine.matches = true;
-    expect(store.getSnapshot()).toBe(false);
+    expect(store.getSnapshot()).toBe(true);
+    expect(store.getMotionSnapshot()).toBe(false);
     release();
   });
 });

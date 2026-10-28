@@ -34,7 +34,7 @@ hosted, device or release signoff.
 - [ ] Integrate the pending mobile readiness docs (PR #672), project previews
       (PR #673) and the Android handoff lifecycle repair after exact-head checks
       and actionable reviews. Review any integration conflicts.
-- [ ] Implement the approved movie qualification policy: Inception and Fight
+- [ ] Integrate and qualify the schema-2 movie policy: Inception and Fight
       Club controls, existing series/anime controls, Dune availability diagnostic,
       deterministic fallback and health-neutral missing-title regressions.
       Reject legacy/incomplete evidence, transport errors disguised as absence,
@@ -128,6 +128,12 @@ hosted, device or release signoff.
       fallbacks; do not make animation a prerequisite for use.
 
 ## 4. Website navigation, SEO and polish
+
+- [ ] Qualify the mobile/tablet menu (all destinations), scroll/hover/focus desktop
+      compaction and compact Search in a real browser. Source and regression tests
+      are implemented; browser attachment is unavailable in the current session.
+- [ ] Visually qualify stationary mobile/reduced-motion Kanna and restore/pause
+      controls. Visibility regression tests pass; real-device/browser checks remain.
 
 - [ ] Complete the workshop website destinations and local link previews from
       the requested Aceternity/Animate UI patterns, with keyboard/touch/error

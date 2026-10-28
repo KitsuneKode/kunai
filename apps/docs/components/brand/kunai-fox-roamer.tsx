@@ -37,9 +37,9 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
  * ## Restraint
  *
  * She is dismissible and stays dismissed, she never covers anything (pointer
- * events pass straight through except on her), she only exists on a fine
- * pointer, and `prefers-reduced-motion` removes her entirely rather than
- * freezing her mid-page.
+ * events pass straight through except on her). Touch and reduced-motion
+ * visitors get a stationary decorative companion at the viewport edge, without
+ * pointer tracking, chatter timers or an animation loop.
  */
 
 /**
@@ -98,8 +98,8 @@ export function createRoamerVisibilityStore(host: {
   let dismissedForPage: boolean | null = null;
   const eligible = () => fine.matches && !reduced.matches;
   return {
+    getMotionSnapshot: eligible,
     getSnapshot() {
-      if (!eligible()) return false;
       if (dismissedForPage !== null) return !dismissedForPage;
       try {
         return host.localStorage.getItem(STORAGE_KEY) !== "1";
@@ -113,7 +113,6 @@ export function createRoamerVisibilityStore(host: {
         onChange();
       };
       const restore = () => {
-        if (!eligible()) return;
         try {
           host.localStorage.removeItem(STORAGE_KEY);
         } catch {
@@ -147,6 +146,7 @@ let visibilityStore: ReturnType<typeof createRoamerVisibilityStore> | undefined;
 const getVisibilityStore = () => (visibilityStore ??= createRoamerVisibilityStore(window));
 const subscribeVisibility = (onChange: () => void) => getVisibilityStore().subscribe(onChange);
 const getVisibilitySnapshot = () => getVisibilityStore().getSnapshot();
+const getMotionSnapshot = () => getVisibilityStore().getMotionSnapshot();
 const getServerVisibilitySnapshot = () => false;
 
 /**
@@ -223,6 +223,11 @@ type GaitState = {
 
 export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const paused = useKannaPaused();
+  const canRoam = useSyncExternalStore(
+    subscribeVisibility,
+    getMotionSnapshot,
+    getServerVisibilitySnapshot,
+  );
   const hostRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
   // Her whole movement state lives in a ref, not React state: it advances every
@@ -243,10 +248,16 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       hostRef.current = host;
       if (!host) return;
       // A restored host must keep its position even when no frame may run.
-      const pos = machine.current.pos;
+      if (!canRoam) return;
+      const pos = seeded.current
+        ? machine.current.pos
+        : {
+            x: window.innerWidth - size,
+            y: window.innerHeight - size,
+          };
       host.style.transform = `translate3d(${(pos.x - size / 2).toFixed(1)}px, ${(pos.y - size / 2).toFixed(1)}px, 0)`;
     },
-    [machine, size],
+    [machine, size, canRoam],
   );
 
   const [phase, setPhase] = useState<RoamerPhase>("sitting");
@@ -287,7 +298,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   }, [line]);
 
   useEffect(() => {
-    if (!enabled || paused) return undefined;
+    if (!enabled || !canRoam || paused) return undefined;
     lastFrame.current = 0;
 
     function onMove(event: PointerEvent) {
@@ -317,8 +328,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       if (!seeded.current) {
         // `.kunai-roamer` is fixed at the origin, so without this she is parked
         // in the top-left corner from mount until the pointer first moves.
-        const parked = machine.current.pos;
-        host.style.transform = `translate3d(${parked.x}px, ${parked.y}px, 0)`;
+        host.style.transform = `translate3d(${window.innerWidth - size * 1.5}px, ${window.innerHeight - size * 1.5}px, 0)`;
         return;
       }
 
@@ -409,7 +419,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     };
-  }, [enabled, paused, size, machine]);
+  }, [enabled, canRoam, paused, size, machine]);
 
   // Unprompted chatter. `phase` is read through a ref rather than a dependency
   // on purpose: as a dependency it re-ran this effect every time she started or
@@ -421,7 +431,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   }, [phase]);
 
   useEffect(() => {
-    if (!enabled || paused) return undefined;
+    if (!enabled || !canRoam || paused) return undefined;
     let timer: number;
     const schedule = () => {
       const window_ = CHATTER_WINDOW_MS[phaseRef.current];
@@ -444,7 +454,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     };
     schedule();
     return () => window.clearTimeout(timer);
-  }, [enabled, paused, say]);
+  }, [enabled, canRoam, paused, say]);
 
   const dismiss = useCallback(() => {
     try {
@@ -458,21 +468,39 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
 
   if (!enabled) return null;
 
-  const pose: KunaiFoxPose = poseForPhase(phase);
+  if (!canRoam)
+    return (
+      <div
+        key="docked"
+        className="kunai-roamer kunai-roamer--docked"
+        data-paused={paused}
+        aria-hidden="true"
+      >
+        <KunaiFox pose="idle" size={Math.min(size, 42)} />
+      </div>
+    );
+
+  const pose: KunaiFoxPose = paused ? "idle" : poseForPhase(phase);
 
   return (
     // Hidden from assistive tech, and out of the tab order, on purpose: she
     // only ever appears for a fine pointer, so there is no keyboard path that
     // could reach her and nothing here that is not decorative.
-    <div ref={attachHost} className="kunai-roamer" data-paused={paused} aria-hidden="true">
-      {line ? <p className="kunai-roamer__bubble">{line}</p> : null}
+    <div
+      key="roaming"
+      ref={attachHost}
+      className="kunai-roamer"
+      data-paused={paused}
+      aria-hidden="true"
+    >
+      {line && !paused ? <p className="kunai-roamer__bubble">{line}</p> : null}
       <button
         type="button"
-        className={`kunai-roamer__fox is-${phase}`}
+        className={`kunai-roamer__fox is-${paused ? "sitting" : phase}`}
         onClick={() => say(phase === "asleep" ? SLEEPY_LINES : POKED_LINES)}
         tabIndex={-1}
       >
-        {showWalker ? (
+        {showWalker && !paused ? (
           <KunaiFoxWalker ref={walkerRef} facing={facing} size={size} />
         ) : (
           <KunaiFox pose={pose} facing={facing} size={size} />
