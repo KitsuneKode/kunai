@@ -141,7 +141,7 @@ when explicitly requested; the normal test suite stays deterministic.
 ## Evidence and cleanup
 
 Numbered PNG/text/backend captures preserve each step. `results.json` records
-the source commit and dirty tree flag. `playback.json` records
+the source commit and whether the working tree has uncommitted changes. `playback.json` records
 mpv time positions and video dimensions; `decoded-frame.png` must be inspected
 for real visual output. An advancing clock plus a black or broken frame still
 needs investigation. A capture/IPC deadline does not establish a provider outage;
@@ -159,6 +159,9 @@ Startup setup failures dispose their profile. SIGINT/SIGTERM cancel the active
 route and await the same cleanup as normal completion before results are
 recorded. A concurrent stop call waits for the in-flight stop rather than
 returning early. The runner then removes both signal handlers.
+The foreground command records its PID before executing Kunai. A cancellation
+before remote-control readiness uses that record to terminate the owned child;
+an undiscovered child is unconfirmed cleanup and requires retaining the profile.
 
 The helper closes only its own window and observed mpv session, checks consent
 and install identity, confirms the application/player processes exited, disposes its temporary profile

@@ -639,6 +639,10 @@ The operational recipe is in the repository's `verify-kunai` skill.
 Setup failures dispose the isolated profile before returning an error. SIGINT
 and SIGTERM abort the active route, await its shared cleanup promise, and write
 cleanup/results records before exit. Unconfirmed child exit retains the profile.
+The owned foreground command records its PID before executing Kunai, so startup
+cancellation can terminate it before Kitty remote control becomes ready. Missing
+PID discovery is unconfirmed cleanup, even when the terminal process has exited.
+Signal regressions use a separate command child, not the terminal PID as a proxy.
 
 Wait predicates share a grammar: text is a literal substring unless wrapped in
 `/…/`, which compiles a RegExp (`[\s\S]` spans lines). `keys` (or

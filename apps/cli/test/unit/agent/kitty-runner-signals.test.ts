@@ -8,7 +8,7 @@ import { storageRootEnv } from "../../helpers/storage-env";
 
 // Protocol fixture only: these checks launch no desktop window or media player.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  for (const phase of ["startup", "active"] as const) {
+  for (const phase of ["startup", "active", "undiscovered"] as const) {
     test.skipIf(process.platform === "win32")(
       `Kitty runner ${signal} during ${phase} records cleanup before exiting`,
       async () => {
@@ -25,10 +25,15 @@ const args=process.argv.slice(2);
 const file=${JSON.stringify(launchFile)};
 if(args[0]==='@') {
   const launch=await Bun.file(file).json();
-  if(args.includes('ls')) console.log(JSON.stringify([{tabs:[{windows:[{id:1,pid:launch.pid}]}]}]));
+  if(args.includes('ls')) console.log(JSON.stringify(${phase === "active"} ? [{tabs:[{windows:[{id:1,pid:launch.applicationPid}]}]}] : []));
   else if(args.includes('get-text')) { await Bun.write(${JSON.stringify(readMarker)},'1');console.log('Search title'); }
 } else {
-  await Bun.write(file,JSON.stringify({pid:process.pid,profileRoot:process.cwd()}));
+  const childProgram = "process.stdout.write('ready');const timer=setInterval(()=>{},1000);process.on('SIGTERM',()=>{clearInterval(timer);process.exit(0)});process.on('SIGHUP',()=>{});";
+  const command=args.slice(args.indexOf('/usr/bin/env')+1);
+  command.splice(-2,2,process.execPath,'-e',childProgram);
+  const child=Bun.spawn(${phase === "undiscovered"} ? [process.execPath,'-e',childProgram] : ['/usr/bin/env',...command],{stdout:'pipe',stderr:'ignore',stdin:'ignore'});
+  await child.stdout.getReader().read();
+  await Bun.write(file,JSON.stringify({pid:process.pid,applicationPid:child.pid,profileRoot:process.cwd()}));
   const timer=setInterval(()=>{},1000);
   for(const signal of ['SIGINT','SIGTERM','SIGHUP']) process.on(signal,()=>{clearInterval(timer);process.exit(0)});
 }
@@ -65,14 +70,14 @@ if(args[0]==='@') {
             stderr: Bun.file(join(scratch, "runner.log")),
           },
         );
-        let launch: { pid: number; profileRoot: string } | undefined;
+        let launch: { pid: number; applicationPid: number; profileRoot: string } | undefined;
         try {
-          const started: { pid: number; profileRoot: string } = await waitForKittyCondition(
-            async () =>
+          const started: { pid: number; applicationPid: number; profileRoot: string } =
+            await waitForKittyCondition(async () =>
               Bun.file(launchFile)
                 .json()
                 .catch(() => null),
-          );
+            );
           launch = started;
           if (phase === "active")
             await waitForKittyCondition(async () =>
@@ -83,16 +88,26 @@ if(args[0]==='@') {
           const cleanup = await Bun.file(join(evidence, "scenario", "cleanup.json")).json();
           expect(cleanup).toMatchObject({
             privateStateClean: true,
-            childrenExited: true,
-            profileRetained: false,
+            childrenExited: phase !== "undiscovered",
+            profileRetained: phase === "undiscovered",
           });
           expect(await Bun.file(join(evidence, "results.json")).exists()).toBe(true);
-          expect(existsSync(started.profileRoot)).toBe(false);
+          expect(existsSync(started.profileRoot)).toBe(phase === "undiscovered");
           expect(() => process.kill(started.pid, 0)).toThrow();
+          if (phase === "undiscovered") {
+            expect(() => process.kill(started.applicationPid, 0)).not.toThrow();
+          } else {
+            expect(() => process.kill(started.applicationPid, 0)).toThrow();
+          }
         } finally {
           if (runner.exitCode === null) runner.kill();
           await runner.exited;
           if (launch) {
+            try {
+              process.kill(launch.applicationPid, "SIGKILL");
+            } catch {
+              /* Owned fixture child already exited. */
+            }
             try {
               process.kill(launch.pid, "SIGKILL");
             } catch {

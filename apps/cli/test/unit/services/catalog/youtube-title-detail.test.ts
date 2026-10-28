@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 
 import { applyCatalogDetailToTitle } from "@/domain/catalog/apply-title-detail";
+import type { TitleDetail } from "@/domain/catalog/title-detail";
 import { createInitialState, reduceState } from "@/domain/session/SessionState";
 import {
   fetchTitleDetail,
@@ -18,6 +19,61 @@ afterEach(() => {
   configureYoutubeProvider({});
   clearTitleDetailCache();
 });
+
+for (const type of ["movie", "series"] as const) {
+  test(`YouTube handoff preserves existing ${type} catalog detail and artwork`, () => {
+    const metadata: YoutubeVideoMetadata = {
+      schemaVersion: YOUTUBE_METADATA_SCHEMA_VERSION,
+      videoId: "aqz-KE-bpKQ",
+      title: "Big Buck Bunny",
+      thumbnail: "https://i.ytimg.com/vi/aqz-KE-bpKQ/hqdefault.jpg",
+      uploader: "Blender",
+      qualities: [],
+      subtitles: [],
+    };
+    configureYoutubeProvider({
+      metadataService: { get: () => metadata, getOrFetch: async () => metadata },
+    });
+    const catalog: TitleDetail = {
+      id: "tmdb:550",
+      type,
+      title: "Catalog title",
+      synopsis: "Known synopsis",
+      runtimeMinutes: 139,
+      externalIds: { tmdbId: "550", youtubeChannelId: "known-channel" },
+      artwork: {
+        poster: "catalog-poster",
+        backdrop: "catalog-backdrop",
+        contributingSources: ["tmdb"],
+      },
+      videoMeta: { paid: false, durationSeconds: 634 },
+      sources: ["tmdb"],
+    };
+    const title = { id: catalog.id, type, externalIds: { youtubeId: metadata.videoId } };
+    const detail = readResolvedYoutubeTitleDetail(title, undefined, catalog);
+    expect(detail).toMatchObject({
+      synopsis: catalog.synopsis,
+      runtimeMinutes: catalog.runtimeMinutes,
+      externalIds: {
+        tmdbId: "550",
+        youtubeId: metadata.videoId,
+        youtubeChannelId: "known-channel",
+      },
+      artwork: { poster: "catalog-poster", backdrop: "catalog-backdrop" },
+      videoMeta: { paid: false, durationSeconds: 634, channelTitle: "Blender" },
+      sources: ["tmdb", "provider"],
+    });
+    expect(
+      readResolvedYoutubeTitleDetail(title, undefined, { ...catalog, id: "tmdb:other" }),
+    ).not.toHaveProperty("synopsis");
+    expect(
+      readResolvedYoutubeTitleDetail(title, undefined, {
+        ...catalog,
+        type: type === "movie" ? "series" : "movie",
+      }),
+    ).not.toHaveProperty("synopsis");
+  });
+}
 
 test("resolved YouTube enrichment is optional when its metadata cache fails, while cancellation propagates", () => {
   const controller = new AbortController();

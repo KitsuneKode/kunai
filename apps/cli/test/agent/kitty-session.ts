@@ -102,6 +102,7 @@ export async function startKittySession(options: {
   const profile = createIsolatedCliProfile("kitty");
   const socket = join(profile.rootDir, "control");
   const socketRecord = join(profile.rootDir, "mpv.json");
+  const applicationRecord = join(profile.rootDir, "application.pid");
   let windowId: number | null = null;
   let applicationPid: number | null = null;
   let stopPromise: Promise<void> | undefined;
@@ -192,6 +193,11 @@ export async function startKittySession(options: {
           "initial_window_height=36c",
           "/usr/bin/env",
           ...envArgs,
+          "/bin/sh",
+          "-c",
+          'umask 077; printf "%s\\n" "$$" > "$1" || exit 1; shift; exec "$@"',
+          "kunai-owned-command",
+          applicationRecord,
           bunExecutable,
           MAIN,
           ...(options.argv ?? []),
@@ -339,6 +345,29 @@ export async function startKittySession(options: {
         await remote(["close-window", ...match()]).catch(() => {});
       }
     } finally {
+      // Kitty can be interrupted before remote `ls` discovers its foreground
+      // command. The private wrapper records that same PID before execing Bun.
+      const recordedApplicationPid = z.coerce
+        .number()
+        .int()
+        .positive()
+        .safeParse(
+          await Bun.file(applicationRecord)
+            .text()
+            .catch(() => ""),
+        );
+      const applicationPids = new Set([
+        ...(applicationPid === null ? [] : [applicationPid]),
+        ...(recordedApplicationPid.success ? [recordedApplicationPid.data] : []),
+      ]);
+      childrenExited = applicationPids.size > 0;
+      for (const pid of applicationPids) {
+        try {
+          process.kill(pid, "SIGTERM");
+        } catch {
+          // Exit is confirmed below; a failed signal is never proof of exit.
+        }
+      }
       terminal.kill();
       await terminal.exited;
       const mpvRecord = z.object({ pid: z.number().int().positive() }).safeParse(
@@ -346,11 +375,17 @@ export async function startKittySession(options: {
           .json()
           .catch(() => null),
       );
-      const childPids = [applicationPid, mpvRecord.success ? mpvRecord.data.pid : null];
+      const childPids = [...applicationPids, ...(mpvRecord.success ? [mpvRecord.data.pid] : [])];
+      if (mpvRecord.success) {
+        try {
+          process.kill(mpvRecord.data.pid, "SIGTERM");
+        } catch {
+          // As with the app, the subsequent observation decides cleanup safety.
+        }
+      }
       try {
         await waitForKittyCondition(async () => {
           for (const pid of childPids) {
-            if (pid === null) continue;
             try {
               process.kill(pid, 0);
               return null;

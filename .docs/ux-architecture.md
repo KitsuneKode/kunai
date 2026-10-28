@@ -130,7 +130,8 @@ These high-frequency interactions repaint immediately without animation.
 Visible home rows retain focus eligibility after discovery completes with no
 results. Each actionable home row needs a selection click followed by an activation
 click. Loading, error and typed-query empty-result surfaces do not authorize
-hidden home actions. Pointer regressions isolate all platform storage roots
+hidden home actions. Calendar loading, error and empty status screens also
+exclude home rows from keyboard focus and activation. Pointer regressions isolate all platform storage roots
 before mounting the shell, including its search-history refresh effect.
 
 The calendar footer advertises a calendar-type control whose click follows

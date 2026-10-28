@@ -129,6 +129,11 @@ function metadataCacheKey(
   return `${ids.anilistId ?? ""}|${ids.malId ?? ""}|${pass}`;
 }
 
+/** Recognize number-only labels that may be replaced by a real episode name. */
+function isEpisodeTitlePlaceholder(title: string | undefined): boolean {
+  return /^(?:episode|ep\.?)\s+\d+(?:\.\d+)?$/i.test(title?.trim() ?? "");
+}
+
 /** Prefer actual episode names to numbered placeholders, then retain the more descriptive name. */
 function pickLongerTitle(
   current: string | undefined,
@@ -136,9 +141,8 @@ function pickLongerTitle(
 ): string | undefined {
   if (!next?.trim()) return current;
   if (!current?.trim()) return next.trim();
-  const placeholder = /^(?:episode|ep\.?)\s+\d+(?:\.\d+)?$/i;
-  if (placeholder.test(current.trim()) !== placeholder.test(next.trim())) {
-    return placeholder.test(current.trim()) ? next.trim() : current;
+  if (isEpisodeTitlePlaceholder(current) !== isEpisodeTitlePlaceholder(next)) {
+    return isEpisodeTitlePlaceholder(current) ? next.trim() : current;
   }
   return next.trim().length > current.trim().length ? next.trim() : current;
 }
@@ -378,7 +382,8 @@ export async function fetchAnimeEpisodeMetadataByNumber(
 /**
  * Fill gaps in `target` from an external source. Provider-native values win
  * field by field: the provider knows its own catalog, the external source is
- * only there for what the provider does not carry.
+ * only there for what the provider does not carry. A number-only episode title
+ * counts as missing when the external source supplies a real name.
  */
 export function mergeExternalEpisodeMetadataInto(
   target: Map<number, AnimeEpisodeMetadata>,
@@ -392,7 +397,9 @@ export function mergeExternalEpisodeMetadataInto(
     }
     target.set(number, {
       number,
-      title: existing.title ?? meta.title,
+      title: isEpisodeTitlePlaceholder(existing.title)
+        ? pickLongerTitle(existing.title, meta.title)
+        : (existing.title ?? meta.title),
       synopsis: existing.synopsis ?? meta.synopsis,
       airDate: existing.airDate ?? meta.airDate,
       thumbnail: existing.thumbnail ?? meta.thumbnail,

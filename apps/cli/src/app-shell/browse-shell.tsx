@@ -567,6 +567,10 @@ export function BrowseShell<T>({
     options.some((opt) => opt.calendar !== undefined || opt.previewGroup !== undefined) ||
     resultSubtitle.includes("schedule") ||
     resultSubtitle.includes("airing today");
+  const calendarSurfaceActive =
+    isCalendarView ||
+    resultSubtitle.toLowerCase().includes("schedule") ||
+    emptyMessage.toLowerCase().includes("schedule");
   const rootContentSuspended = useRootContentSuspended();
   const calendarNow = useCalendarNow(isCalendarView, rootContentSuspended);
 
@@ -1131,6 +1135,7 @@ export function BrowseShell<T>({
     showDiscoveryRowWhenEmpty: idleContextStatus === "ready",
   });
   const canFocusIdleRows =
+    !calendarSurfaceActive &&
     options.length === 0 &&
     (searchState === "idle" || (searchState === "ready" && query.trim().length === 0)) &&
     Boolean(idleReturnLoopModel?.hasSelectableRows);
@@ -1429,10 +1434,6 @@ export function BrowseShell<T>({
     displayCount: displayOptions.length,
     totalCount: options.length,
   });
-  const calendarSurfaceActive =
-    isCalendarView ||
-    resultSubtitle.toLowerCase().includes("schedule") ||
-    emptyMessage.toLowerCase().includes("schedule");
   const calendarRouteLoadingModel = buildCalendarLoadingState(calendarRouteKind === "retrying");
   const calendarEmptyModeLabel =
     calendarTypeTab === "All" ? "calendar" : calendarTypeTab.toLowerCase();

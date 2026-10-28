@@ -44,6 +44,8 @@ Generic TMDB/AniList detail lookups retain their catalog route when the title
 also carries a YouTube ID. Only the explicit successful YouTube handoff reads
 cached video metadata for mixed identities. Cache errors skip that optional
 enrichment; cancellation still propagates and prevents the handoff.
+The handoff merges matching catalog detail before dispatch: synopsis, runtime,
+external IDs and preferred catalog artwork survive the video enrichment.
 
 Launch `--quality`, `--audio` and `--sub` choices include the YouTube profile.
 Config getters and `getRaw()` expose the same transient values; background

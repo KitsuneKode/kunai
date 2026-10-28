@@ -9,6 +9,7 @@ import {
   formatAnimeEpisodeLabel,
   getSeededEpisodeMetadata,
   mergeMiruroPipeEpisodeMetadata,
+  mergeExternalEpisodeMetadataInto,
   parseAllMangaEpisodeNumber,
   pipeEpisodeMetadataTitleCoverage,
   seedEpisodeMetadataFromProvider,
@@ -21,6 +22,21 @@ afterEach(() => {
 });
 
 describe("anime metadata helpers", () => {
+  test("external real episode names replace seeded placeholders without overriding native names", () => {
+    const seeded = new Map<number, AnimeEpisodeMetadata>([
+      [1, { number: 1, title: "Episode 1", source: "allmanga" }],
+      [2, { number: 2, title: "Native title", source: "allmanga" }],
+    ]);
+    mergeExternalEpisodeMetadataInto(
+      seeded,
+      new Map([
+        [1, { number: 1, title: "Run", source: "anilist" }],
+        [2, { number: 2, title: "Longer external title", source: "anilist" }],
+      ]),
+    );
+    expect(seeded.get(1)?.title).toBe("Run");
+    expect(seeded.get(2)?.title).toBe("Native title");
+  });
   test("fractional AllManga episodes retain their own title and artwork", () => {
     const episode = { index: 13, label: "Episode 12.5", detail: "Source episode 12.5" };
     const metadata = new Map<number, AnimeEpisodeMetadata>([

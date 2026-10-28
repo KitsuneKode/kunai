@@ -127,6 +127,41 @@ test("home rows remain selectable after discovery returns no results", async () 
   }
 });
 
+test("an empty calendar cannot focus or activate a hidden home action", async () => {
+  const actions: string[] = [];
+  const handle = renderWithPointer(
+    <BrowseShell
+      mode="series"
+      provider="vidlink"
+      placeholder="Search"
+      commands={[]}
+      initialCalendarRoute={{ kind: "calendar", requestKey: 1 }}
+      onLoadCalendar={async () => ({ options: [], subtitle: "0 releases · schedule" })}
+      idleContext={{
+        continueWatching: { title: "Hidden resume", titleId: "tmdb:1396", mediaKind: "series" },
+      }}
+      onSearch={async () => ({ options: [], subtitle: "" })}
+      onResolve={(action) => actions.push(action)}
+      onSubmit={() => {}}
+      onCancel={() => {}}
+    />,
+    { columns: 120, rows: 40 },
+  );
+  try {
+    await act(async () => {});
+    expect(handle.lastFrame()).toContain("No calendar releases");
+    expect(handle.lastFrame()).not.toContain("Hidden resume");
+    act(() => handle.stdin.enqueue(["\u001b[B"]));
+    act(() => handle.stdin.enqueue(["\r"]));
+    expect(actions).not.toContain("resume-continue-watching");
+    expect(handle.dispatcher.debugRegions().some((row) => row.id.startsWith("browse:idle:"))).toBe(
+      false,
+    );
+  } finally {
+    handle.unmount();
+  }
+});
+
 test("browse footer opens commands and releases its targets while the palette owns input", () => {
   const handle = renderWithPointer(
     <BrowseShell

@@ -2388,7 +2388,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (providerHandoff.successfulProviderId === "youtube") {
             // Provider resolve has now populated its metadata cache. Adopt it
             // into both the rendered session and the title persisted below.
-            const detail = readResolvedYoutubeTitleDetail(title, resolveController.signal);
+            const detail = readResolvedYoutubeTitleDetail(
+              title,
+              resolveController.signal,
+              stateManager.getState().titleDetail,
+            );
             if (detail?.videoMeta) {
               title = applyCatalogDetailToTitle(title, detail);
               stateManager.dispatch({
