@@ -12,7 +12,7 @@
 // =============================================================================
 
 import type { Container } from "@/container";
-import { shellModeToProviderLane } from "@/domain/provider-lane";
+import { shellModeToProviderLane, storedTitleProviderLane } from "@/domain/provider-lane";
 import type { SearchSuggestion } from "@/domain/search/suggestion-engine";
 import type { ProviderLane, SearchResult, ShellMode } from "@/domain/types";
 import {
@@ -55,12 +55,6 @@ function kindLabel(mediaKind: string): string {
   return "Series";
 }
 
-function laneForMediaKind(mediaKind: string): ProviderLane {
-  if (mediaKind === "anime") return "anime";
-  if (mediaKind === "video") return "youtube";
-  return "series";
-}
-
 function epochMs(iso: string | undefined): number {
   if (!iso) return 0;
   const ms = Date.parse(iso);
@@ -91,6 +85,7 @@ function searchResultFromHistory(row: HistoryProgress): SearchResult {
   };
 }
 
+/** Stored primary kind owns routing; linked catalog ids remain eligibility metadata. */
 function searchResultFromStoredTitle(input: {
   readonly titleId: string;
   readonly title: string;
@@ -108,7 +103,7 @@ function searchResultFromStoredTitle(input: {
     externalIds: input.externalIds,
     isAnime: input.mediaKind === "anime" ? true : undefined,
     resultKind: input.mediaKind === "video" ? "video" : undefined,
-    resolvedLane: laneForMediaKind(input.mediaKind),
+    resolvedLane: storedTitleProviderLane(input),
     metadataSource: "Local library",
   };
 }
@@ -164,14 +159,30 @@ export function loadLocalSuggestionCorpus(
   mode?: ShellMode,
 ): readonly SearchSuggestion<SearchResult>[] {
   const byTitleId = new Map<string, SearchSuggestion<SearchResult>>();
+  const takeInMode = <T>(
+    rows: readonly T[],
+    lane: (row: T) => ProviderLane,
+    limit: number,
+  ): readonly T[] =>
+    (mode ? rows.filter((row) => lane(row) === shellModeToProviderLane(mode)) : rows).slice(
+      0,
+      limit,
+    );
+  const storedLane = storedTitleProviderLane;
   const push = (suggestion: SearchSuggestion<SearchResult>, titleId: string) => {
     if (mode && suggestion.value?.resolvedLane !== shellModeToProviderLane(mode)) return;
     if (!byTitleId.has(titleId)) byTitleId.set(titleId, suggestion);
   };
 
   try {
-    for (const row of Object.values(readLatestHistoryByTitle(source.historyRepository)).slice(
-      0,
+    for (const row of takeInMode(
+      Object.values(
+        readLatestHistoryByTitle(
+          source.historyRepository,
+          mode ? shellModeToProviderLane(mode) : undefined,
+        ),
+      ),
+      historyProviderLane,
       CORPUS_BOUNDS.watched,
     )) {
       push(watchedSuggestion(row), row.titleId);
@@ -181,10 +192,18 @@ export function loadLocalSuggestionCorpus(
   }
 
   try {
-    for (const item of source.listService.getFavorites().slice(0, CORPUS_BOUNDS.perList)) {
+    for (const item of takeInMode(
+      source.listService.getFavorites(),
+      storedLane,
+      CORPUS_BOUNDS.perList,
+    )) {
       push(listItemSuggestion(item, "♥ your list"), item.titleId);
     }
-    for (const item of source.listService.getWatchlist().slice(0, CORPUS_BOUNDS.perList)) {
+    for (const item of takeInMode(
+      source.listService.getWatchlist(),
+      storedLane,
+      CORPUS_BOUNDS.perList,
+    )) {
       push(listItemSuggestion(item, "watchlist"), item.titleId);
     }
   } catch {
@@ -192,9 +211,11 @@ export function loadLocalSuggestionCorpus(
   }
 
   try {
-    for (const record of source.followedTitleRepository
-      .listByPreference("following")
-      .slice(0, CORPUS_BOUNDS.followed)) {
+    for (const record of takeInMode(
+      source.followedTitleRepository.listByPreference("following"),
+      storedLane,
+      CORPUS_BOUNDS.followed,
+    )) {
       push(
         {
           id: `followed:${record.titleId}`,
@@ -215,7 +236,11 @@ export function loadLocalSuggestionCorpus(
   try {
     for (const list of source.listRepository.getLists().slice(0, CORPUS_BOUNDS.lists)) {
       if (list.id === "watchlist" || list.id === "favorites") continue;
-      for (const item of source.listService.getListItems(list.id).slice(0, CORPUS_BOUNDS.perList)) {
+      for (const item of takeInMode(
+        source.listService.getListItems(list.id),
+        storedLane,
+        CORPUS_BOUNDS.perList,
+      )) {
         push(listItemSuggestion(item, list.name), item.titleId);
       }
     }
@@ -225,9 +250,11 @@ export function loadLocalSuggestionCorpus(
 
   try {
     for (const playlist of source.playlistsRepository.list().slice(0, CORPUS_BOUNDS.playlists)) {
-      for (const item of source.playlistsRepository
-        .listItems(playlist.id)
-        .slice(0, CORPUS_BOUNDS.perPlaylist)) {
+      for (const item of takeInMode(
+        source.playlistsRepository.listItems(playlist.id),
+        storedLane,
+        CORPUS_BOUNDS.perPlaylist,
+      )) {
         push(playlistItemSuggestion(item, playlist.name), item.titleId);
       }
     }

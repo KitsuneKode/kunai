@@ -25,6 +25,9 @@ hosted, device or release signoff.
   and demos. Use isolated storage, file credentials and `DO_NOT_TRACK=1`.
 - Use few agents. Prefer focused changes and primary-source research over
   speculative rewrites, dependency churn or unverified feature claims.
+- Verify each bounded work batch first, consolidate reproducible findings and
+  attempted disproofs, then fix the batch. Preserve evidence before changing code;
+  do not turn uncertain observations into reactive patches.
 
 ## 1. Watching release gates
 
@@ -65,6 +68,10 @@ hosted, device or release signoff.
 - [ ] Research MovieBox-TUI's actual mobile/distribution implementation and
       identify transferable behavior with source links, license obligations and
       verification limits. Do not infer reliability from popularity alone.
+- [ ] Compare the current production roster with FMHY's video catalog, then
+      qualify only promising additions through the existing provider intake
+      process. Prioritize working delivery and useful source/quality/subtitle
+      coverage; a directory listing is not playback evidence.
 - [ ] Produce simple Android install/use/recovery instructions and an explicitly
       experimental iOS installation path; avoid presenting unpublished artifacts
       as downloadable releases or requiring unnecessary runtime dependencies.
@@ -77,9 +84,19 @@ hosted, device or release signoff.
 - [ ] Use the `verify-kunai` skill and a dedicated Kitty window with an isolated
       profile. Do not send keys to the maintainer's existing sessions or alter
       their profile. Capture frames and backend state before fixing defects.
+      The maintainer requested real providers and real titles on the laptop's
+      eDP-1 display, workspace 9, fullscreen. Keep fixture regressions separate
+      from that live manual session. Ensure the QA launcher does not inherit
+      `NO_COLOR=1`; select the maintainer's installed terminal font rather than
+      relying on this machine's CJK monospace fallback.
 - [ ] Exercise first run, search editing, debounce and mode-specific history,
       arrow navigation, suggestions, hover detail previews, thumbnails, Tracks,
       quality/Auto, subtitles/Off, failure recovery, queue, downloads and relaunch.
+- [ ] Keep progressive home content scoped to the active mode: most recent
+      unfinished title, saved suggestions and discovery, including YouTube.
+      Verify empty history, switching away and back, older matching rows behind
+      another mode's activity, and stale responses after a mode/provider change.
+      Preserve the global queue's playback order; never reorder it for a home row.
 - [ ] Inspect narrow and normal terminal sizes, keyboard/mouse equivalence,
       focus and selection feedback, overlay cancellation and terminal cleanup.
 - [ ] Research the official Kitty graphics protocol: placement lifecycle,

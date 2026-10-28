@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-28"
 ---
 
 # Kunai — UX Architecture
@@ -304,6 +304,8 @@ Sources and async contract:
 - Query histories are partitioned into anime, series/movie, and YouTube files. Every active
   caller supplies its mode; unclassified legacy queries stay preserved in their original file
   rather than leaking into all modes. Local title suggestions are filtered to the active lane.
+  Per-source item quotas apply after that lane filter: activity in another mode
+  cannot hide a retained matching title. Outer list/playlist fan-out limits remain bounded.
 - Local layer is synchronous and free: past submitted searches, watched titles, followed titles,
   and list/playlist rows (`app/search/search-suggestions.ts` materializes them as
   `SearchSuggestion<SearchResult>` — every row's `value` is a real SearchResult).
@@ -429,6 +431,27 @@ row — `3 new episodes since Tuesday` — Enter opens the schedule already on t
 Tracked tab, and the row is absent entirely when nothing qualifies: never an
 empty strip. Every row in the strip renders instantly; high-frequency paths
 get no decorative animation.
+
+Resume, offline-next and saved-title shortcuts use the current mode, including
+YouTube. SearchPhase supplies the mode to both the immediate and deferred local
+context readers. A mode without unfinished history gets no resume shortcut;
+switching modes never substitutes the newest title from another lane. The queue
+retains its global playback order: its shortcut appears only when the actual head
+matches the mode. The aggregate unwatched-release notification count remains
+global; title-specific history and new-since-visit rows are scoped locally.
+
+Saved/queued titles use their primary stored media kind consistently across home
+and suggestions; AniList/MAL links affect eligibility rather than relabeling a
+series-lane row. History keeps its corrected replay identity, shared by the core
+classifier and the SQLite lane projection. The query picks each title's latest
+row, filters that row's lane, then applies the 500-title cap, so other lanes
+cannot hide older matching history or resurrect an older episode. Unscoped
+readers retain their existing cross-lane snapshot.
+
+Idle hydration and refreshes accept only the latest request in the current mode.
+Both the rendered home context and SearchPhase's continuation target reject an
+obsolete mode result, including a root-overlay mode switch while Browse stays
+mounted. Mode changes reload the shell's context and release the old listener.
 
 ## Picker Filtering
 

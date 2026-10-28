@@ -576,22 +576,34 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               });
 
         let latestIdleContext: BrowseIdleContext | undefined;
+        let idleContextMode: ShellMode | undefined;
         let continueWatchingSelection: ContinueWatchingSelection | null = null;
         if (!deferIdleContext) {
-          const bundle = await buildBrowseIdleContext(container, {
-            preloadedHistory: allHistory,
-          });
-          latestIdleContext = bundle.idleContext;
-          continueWatchingSelection = bundle.continueWatchingSelection;
+          const mode = stateManager.getState().mode;
+          const bundle = await buildBrowseIdleContext(container, { mode });
+          if (stateManager.getState().mode === mode && !context.signal.aborted) {
+            latestIdleContext = bundle.idleContext;
+            idleContextMode = mode;
+            continueWatchingSelection = bundle.continueWatchingSelection;
+          }
         }
+        let idleContextGeneration = 0;
         const loadIdleContext = deferIdleContext
           ? async () => {
+              const mode = stateManager.getState().mode;
+              const generation = ++idleContextGeneration;
               try {
-                const deferredHistory = this.readLocalBrowseHistory(context);
-                const bundle = await buildBrowseIdleContext(container, {
-                  preloadedHistory: deferredHistory,
-                });
+                // Keep cross-lane healing/reconciliation reads separate from the scoped idle query.
+                this.readLocalBrowseHistory(context);
+                const bundle = await buildBrowseIdleContext(container, { mode });
+                if (
+                  generation !== idleContextGeneration ||
+                  stateManager.getState().mode !== mode ||
+                  context.signal.aborted
+                )
+                  return undefined;
                 latestIdleContext = bundle.idleContext;
+                idleContextMode = mode;
                 continueWatchingSelection = bundle.continueWatchingSelection;
                 recordCliStartupMilestone(diagnosticsService, "idle-context-ready");
                 return bundle.idleContext;
@@ -1052,6 +1064,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         });
         recordCliStartupMilestone(diagnosticsService, "browse-mounted");
         const outcome = await outcomePromise;
+        if (idleContextMode !== stateManager.getState().mode) {
+          latestIdleContext = undefined;
+          continueWatchingSelection = null;
+        }
 
         // Leaving the calendar surface — stamp the visit so the next open marks
         // only releases that aired since now as "new". Done at this close event

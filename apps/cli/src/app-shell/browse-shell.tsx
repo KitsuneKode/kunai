@@ -73,6 +73,7 @@ import {
   buildPreviewRailModelFromBrowseOption,
   filterBrowseOptionsByResultFilter,
   mapPosterPreviewState,
+  refreshFavouritePreview,
 } from "./browse-preview-rail";
 import {
   isQueryDirty,
@@ -497,7 +498,7 @@ export function BrowseShell<T>({
     let active = true;
     setIdleContextStatus("loading");
     const timer = setTimeout(() => {
-      if (active) setShowIdleLoadingHint(true);
+      if (active && requestGate.isCurrent(request)) setShowIdleLoadingHint(true);
     }, 150);
 
     void (async () => {
@@ -512,7 +513,7 @@ export function BrowseShell<T>({
         setIdleContextStatus("error");
       } finally {
         clearTimeout(timer);
-        if (active) setShowIdleLoadingHint(false);
+        if (active && requestGate.isCurrent(request)) setShowIdleLoadingHint(false);
       }
     })();
 
@@ -521,22 +522,31 @@ export function BrowseShell<T>({
       clearTimeout(timer);
       requestGate.invalidate();
     };
-  }, [idleContextRequestGate, loadIdleContext]);
+  }, [idleContextRequestGate, loadIdleContext, mode]);
 
   useEffect(() => {
     if (!loadIdleContext) return undefined;
+    let active = true;
     setBrowseIdleRefreshListener(() => {
+      const request = idleContextRequestGate.begin();
       void (async () => {
         try {
           const next = await loadIdleContext();
+          if (!active || !idleContextRequestGate.isCurrent(request)) return;
           setActiveIdleContext(next);
+          setIdleContextStatus("ready");
+          setShowIdleLoadingHint(false);
         } catch {
           // best-effort refresh after history mutations
         }
       })();
     });
-    return () => setBrowseIdleRefreshListener(null);
-  }, [loadIdleContext]);
+    return () => {
+      active = false;
+      idleContextRequestGate.invalidate();
+      setBrowseIdleRefreshListener(null);
+    };
+  }, [idleContextRequestGate, loadIdleContext, mode]);
 
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
@@ -865,7 +875,15 @@ export function BrowseShell<T>({
 
   const boundedSelectedIndex =
     displayOptions.length === 0 ? 0 : Math.min(selectedIndex, displayOptions.length - 1);
-  const selectedOption = displayOptions[boundedSelectedIndex];
+  const selectedResultOption = displayOptions[boundedSelectedIndex];
+  const selectedFavourite =
+    selectedResultOption && isFavorite ? isFavorite(selectedResultOption.value) : undefined;
+  // Keep the enriched option stable between membership changes: the settled
+  // preview must not restart its work on every unrelated render.
+  const selectedOption = useMemo(
+    () => refreshFavouritePreview(selectedResultOption, selectedFavourite),
+    [selectedResultOption, selectedFavourite],
+  );
   // Ink drains every available raw stdin chunk before React paints. Keep the
   // calendar's intended row in a ref so a burst like → ↓ ← ↓ ↵ never resolves
   // the row that was selected before the burst began.

@@ -85,3 +85,10 @@ export function providerPriorityForLane(
   if (lane === "anime") return [config.animeProvider, ...config.animeProviderPriority];
   return [config.provider, ...config.providerPriority];
 }
+
+/** Primary lane of a stored title; linked catalog ids only affect eligibility. */
+export function storedTitleProviderLane(row: { readonly mediaKind: string }): ProviderLane {
+  if (row.mediaKind === "anime") return "anime";
+  if (row.mediaKind === "video") return "youtube";
+  return "series";
+}

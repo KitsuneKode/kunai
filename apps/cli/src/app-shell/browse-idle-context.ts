@@ -1,9 +1,12 @@
 import type { BrowseIdleContext } from "@/app-shell/types";
 import type { Container } from "@/container";
 import { ENGAGE_SECONDS } from "@/domain/playback/progress-engage-policy";
+import { shellModeToProviderLane, storedTitleProviderLane } from "@/domain/provider-lane";
+import type { ShellMode } from "@/domain/types";
 import {
   historyContentType,
   historyEpisodeLabel,
+  historyProviderLane,
   isYoutubeHistoryEntry,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
@@ -21,16 +24,26 @@ type IdleContextContainer = Pick<
   | "config"
 >;
 
+/** Build local home actions in the active lane, keeping the global queue head ordered. */
 export async function buildBrowseIdleContext(
   container: IdleContextContainer,
   options?: {
     readonly preloadedHistory?: Record<string, HistoryProgress>;
+    readonly mode?: ShellMode;
   },
 ): Promise<{
   readonly idleContext: BrowseIdleContext | undefined;
   readonly continueWatchingSelection: ContinueWatchingSelection | null;
 }> {
-  const playlistNextItem = container.queueService.peekNext();
+  const mode = options?.mode;
+  const lane = mode ? shellModeToProviderLane(mode) : undefined;
+  const matchesStoredMode = (row: { readonly mediaKind: string }) =>
+    !lane || storedTitleProviderLane(row) === lane;
+  // The queue remains global and ordered. Never display a later matching item:
+  // the action consumes the actual head, so a foreign-mode head is simply hidden.
+  const queuedNextItem = container.queueService.peekNext();
+  const playlistNextItem =
+    queuedNextItem && matchesStoredMode(queuedNextItem) ? queuedNextItem : undefined;
   const releaseSummary = container.releaseProgressCache.summarizeActive();
 
   let continueWatching: BrowseIdleContext["continueWatching"];
@@ -42,8 +55,10 @@ export async function buildBrowseIdleContext(
 
   try {
     const allHistory =
-      options?.preloadedHistory ?? readLatestHistoryByTitle(container.historyRepository);
-    const entries = Object.entries(allHistory);
+      options?.preloadedHistory ?? readLatestHistoryByTitle(container.historyRepository, lane);
+    const entries = Object.entries(allHistory).filter(
+      ([, entry]) => !lane || historyProviderLane(entry) === lane,
+    );
     const sortedByRecency = [...entries].sort(
       ([, left], [, right]) =>
         (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0),
@@ -121,7 +136,7 @@ export async function buildBrowseIdleContext(
       );
       const fresh = container.releaseProgressCache
         .listNewSince(new Date(lastCalendarVisitAt).toISOString())
-        .filter((projection) => !muted.has(projection.titleId));
+        .filter((projection) => !muted.has(projection.titleId) && matchesStoredMode(projection));
       if (fresh.length > 0) {
         newSinceVisit = {
           episodeCount: fresh.reduce((count, row) => count + row.newEpisodeCount, 0),
@@ -131,7 +146,7 @@ export async function buildBrowseIdleContext(
       }
     }
 
-    const watchlist = container.listService.getWatchlist();
+    const watchlist = container.listService.getWatchlist().filter(matchesStoredMode);
     const topSaved = watchlist[0];
     if (topSaved) {
       savedNext = {

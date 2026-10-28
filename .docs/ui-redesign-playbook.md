@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T07:08:05Z"
+lastReviewed: "2026-10-27T17:50:00Z"
 ---
 
 # Kunai — UI Redesign Playbook
@@ -200,6 +200,15 @@ A UI redesign pass is not done unless it leaves behind:
 - a VHS tape or screenshot path when the change is heavily visual
 - no new duplicate interaction models
 - no new invisible one-off key behavior
+
+## Current list membership in browse
+
+Browse preview facts must use current favourite membership after a mutation,
+not the snapshot built when search results arrived. The same refreshed selected
+option feeds the settled preview and details sheet; its identity stays stable
+between membership changes so unrelated renders do not restart poster work.
+The favourite row marker, preview action and persisted list must agree in both
+toggle directions.
 
 ## Kanna on the docs site
 
