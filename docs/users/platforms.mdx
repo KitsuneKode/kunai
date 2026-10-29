@@ -1,9 +1,14 @@
 ---
 title: Platforms
-description: "Platform-specific notes for Kunai on Linux, macOS, and Windows: install, playback, poster support, protocol handlers, and the troubleshooting each one needs."
+description: "Platform-specific Kunai routes: desktop installs, Android watching in Termux, and the experimental iOS a-Shell/VLC host preview."
 ---
 
-Kunai is terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `ffprobe` can validate completed artifacts when available. Poster previews need nothing installed: Kitty graphics on Kitty/Ghostty, iTerm2 inline images on iTerm2 and VSCode 1.80+, sixel where the terminal reports it, and a built-in half-block fallback everywhere else.
+Kunai is terminal-first. Desktop playback uses `mpv`; optional downloads use `yt-dlp`; `ffprobe` can validate completed artifacts when available. Poster previews need nothing installed: Kitty graphics on Kitty/Ghostty, iTerm2 inline images on iTerm2 and VSCode 1.80+, sixel where the terminal reports it, and a built-in half-block fallback everywhere else.
+
+For staged 0.4.0, Android watching uses the [Termux CLI and an external player](/docs/users/android).
+iOS has a separate [a-Shell/VLC host preview](/docs/users/mobile-preview), with no
+search or provider resolution. Both require physical-device qualification;
+the preview pages state their build, distribution and control limits.
 
 **Who this is for:** anyone choosing an install path or optional tools for their OS.
 
