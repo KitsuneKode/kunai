@@ -211,7 +211,12 @@ export async function resolveDirectStreamSource(
       const refusedStreamIds = new Set<string>();
       let cancelled = false;
 
-      for (const candidate of streams.slice(0, RESOLVE_GATE_MAX_PROBES)) {
+      // Probe the user's pinned stream first, so the first healthy default
+      // cannot silently replace an explicit quality/audio choice.
+      const probeOrder = input.preferredStreamId
+        ? [selectedStream, ...streams.filter((stream) => stream.id !== selectedStream.id)]
+        : streams;
+      for (const candidate of probeOrder.slice(0, RESOLVE_GATE_MAX_PROBES)) {
         // A cancelled resolve must not keep spending probes, and must not be
         // recorded as a stream failure — the caller went away, the CDN is fine.
         if (context.signal?.aborted) {

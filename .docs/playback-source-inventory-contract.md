@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-28"
+lastReviewed: "2026-10-29"
 ---
 
 # Playback Source Inventory Contract
@@ -142,7 +142,9 @@ Source and quality pickers must read from cached inventory.
   selected an audio/mirror lane must not become an explicit first-rung choice: HiAnime
   consumes its sub/dub pin before quality selection, and AnimeGG ignores the matching
   active-mirror pin when ranking that mirror's qualities. An explicit stream id still
-  chooses the exact rung.
+  chooses the exact rung. Shared direct resolvers probe that rung first; if it
+  is refused, fallback candidates still pass the same resolve gate and the
+  refused rung is removed from the shipped inventory.
 - Quality change: select the chosen stream or variant without recomputing inventory.
 - Subtitle change: select from `subtitles` or a separately cached subtitle list; do not refetch unrelated streams.
 - Tracks merges session-attached `subtitleList` tracks into the view alongside provider
