@@ -74,6 +74,7 @@ describe("loadYoutubeRecommendations", () => {
       recommendedVideos: [{}],
     } as never);
 
+    // SAFETY: deliberate test stub for TitleInfo
     const title = {
       id: "youtube:abc",
       name: "Clip",
@@ -142,5 +143,29 @@ describe("loadYoutubeRecommendations", () => {
       "UChistory",
       expect.objectContaining({}),
     );
+  });
+
+  it("respects custom limit parameter", async () => {
+    // SAFETY: test stub for related videos
+    mapInvidiousRecommendedVideos.mockImplementation(() => relatedBatch(16) as never);
+    // SAFETY: test stub for video details
+    invidiousGetVideo.mockResolvedValue({
+      authorId: "UCmine",
+      recommendedVideos: [{}],
+    } as never);
+
+    const title = {
+      id: "youtube:abc",
+      name: "Clip",
+      type: "movie",
+      externalIds: { youtubeId: "abc", youtubeChannelId: "UCmine" },
+    } as TitleInfo;
+
+    const items = await loadYoutubeRecommendations({
+      title,
+      limit: 16,
+    });
+
+    expect(items).toHaveLength(16);
   });
 });

@@ -160,8 +160,13 @@ export function createCatalogDiscoveryService(
 }
 
 async function loadYoutubeDiscoveryList(signal?: AbortSignal): Promise<SearchResult[]> {
-  const results = await loadYoutubeTrending(signal);
-  return [...results].slice(0, 12);
+  try {
+    const results = await loadYoutubeTrending(signal);
+    if (results.length > 0) return [...results].slice(0, 24);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+  }
+  return loadYoutubeSurpriseList({ random: Math.random }, signal);
 }
 
 /**

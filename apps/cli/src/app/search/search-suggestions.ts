@@ -274,13 +274,16 @@ export function toCatalogSuggestions(
     id: `catalog:${result.id}`,
     title: chooseSearchResultTitle(result, titlePreference),
     source: "catalog",
-    meta: [
-      result.year || "",
-      result.isAnime ? "Anime" : kindLabel(result.type === "movie" ? "movie" : "series"),
-      result.episodeCount ? `${result.episodeCount} eps` : "",
-    ]
-      .filter(Boolean)
-      .join(" · "),
+    meta: result.commitQuery
+      ? "YouTube query"
+      : [
+          result.year || "",
+          result.isAnime ? "Anime" : kindLabel(result.type === "movie" ? "movie" : "series"),
+          result.episodeCount ? `${result.episodeCount} eps` : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
     value: result,
+    ...(result.commitQuery ? { commitQuery: result.commitQuery } : null),
   }));
 }

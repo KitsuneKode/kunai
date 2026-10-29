@@ -84,6 +84,18 @@ export async function invidiousSearch(
   );
 }
 
+export async function invidiousGetSearchSuggestions(
+  query: string,
+  options: InvidiousClientOptions = {},
+): Promise<readonly string[]> {
+  const params = new URLSearchParams({ q: query });
+  const data = await requestInvidiousJson<{ readonly suggestions?: readonly string[] }>(
+    `/api/v1/search/suggestions?${params.toString()}`,
+    options,
+  );
+  return data?.suggestions ?? [];
+}
+
 export async function invidiousGetPlaylist(
   playlistId: string,
   options: InvidiousClientOptions = {},

@@ -753,8 +753,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           // enhancement surface, not an error surface.
           onSuggest: async (query, signal) => {
             // Catalog suggestions are a network hop (TMDB/AniList through the
-            // registry). Offline sessions keep local rows only — the same gate
-            // dwell prefetch uses.
+            // registry, or fast YouTube query suggestions). Offline sessions
+            // keep local rows only — the same gate dwell prefetch uses.
             if (!container.connectivity.isOnline()) return [];
             const liveState = stateManager.getState();
             const suggestIntent = createSearchIntentEngine().fromText(query, {

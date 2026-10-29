@@ -604,12 +604,11 @@ async function resolveYoutube(
         confidence: (ytInfo ? 0.95 : 0.85) - laneIndex * 0.05,
         cachePolicy,
         metadata: {
-          ytdlFormat:
-            mappedFormats.length > 0
+          ytdlFormat: isLive
+            ? defaultYtdlPlaybackFormat()
+            : mappedFormats.length > 0
               ? buildExactYtdlFormatSelector(entry.formatId, entry.hasAudio)
-              : isLive
-                ? defaultYtdlPlaybackFormat()
-                : buildYtdlFormatSelector(entry.label),
+              : buildYtdlFormatSelector(entry.label),
           formatId: mappedFormats.length > 0 ? entry.formatId : undefined,
           // Read back by the player so each lane asks yt-dlp for its own client
           // rather than the global default.

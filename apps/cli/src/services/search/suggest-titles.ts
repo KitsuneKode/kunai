@@ -15,6 +15,7 @@ import { shellModeToProviderLane } from "@/domain/provider-lane";
 import { SUGGESTION_MIN_QUERY_LENGTH } from "@/domain/search/suggestion-engine";
 import type { SearchResult, ShellMode } from "@/domain/types";
 import type { ProviderCatalogIdentity } from "@kunai/core";
+import { fetchYoutubeSearchSuggestions } from "@kunai/providers/youtube";
 
 import type { SearchRegistry } from "./SearchRegistry";
 
@@ -69,6 +70,32 @@ export async function suggestCatalogTitles(input: {
 }): Promise<SuggestCatalogOutcome | null> {
   const query = input.query.trim();
   if (query.length < SUGGESTION_MIN_QUERY_LENGTH) return null;
+
+  if (input.mode === "youtube") {
+    try {
+      const suggestions = await fetchYoutubeSearchSuggestions(query, {
+        signal: input.signal,
+      });
+      if (input.signal?.aborted) return null;
+      return {
+        results: suggestions.slice(0, input.limit ?? SUGGESTION_MAX_REMOTE).map((s) => ({
+          id: `yt:suggest:${s}`,
+          title: s,
+          type: "movie",
+          year: "",
+          overview: "",
+          posterPath: null,
+          commitQuery: s,
+          resultKind: "video",
+          resolvedLane: "youtube",
+        })),
+        sourceId: "youtube",
+        sourceName: "YouTube Suggestions",
+      };
+    } catch {
+      return null;
+    }
+  }
 
   const service = resolveSuggestService(input.searchRegistry, input);
   if (!service) return null;

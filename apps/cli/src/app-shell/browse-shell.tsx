@@ -1217,8 +1217,9 @@ export function BrowseShell<T>({
         local: localSuggestionCorpus,
         remote: catalogSuggestions,
         remotePending: suggestionsPending,
+        remoteHeader: mode === "youtube" ? "YouTube Suggestions" : undefined,
       }),
-    [query, localSuggestionCorpus, catalogSuggestions, suggestionsPending],
+    [query, localSuggestionCorpus, catalogSuggestions, suggestionsPending, mode],
   );
 
   const boundedSuggestionIndex =

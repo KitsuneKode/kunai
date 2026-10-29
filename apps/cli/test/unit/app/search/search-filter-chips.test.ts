@@ -29,6 +29,7 @@ describe("buildSearchFilterChipOptions", () => {
   test("only surfaces YouTube content-shape type facets in YouTube mode", () => {
     const youtube = values("youtube");
     expect(youtube).toContain("type:video");
+    expect(youtube).toContain("type:live");
     expect(youtube).toContain("type:short");
     expect(youtube).toContain("type:playlist");
     expect(youtube).toContain("type:channel");

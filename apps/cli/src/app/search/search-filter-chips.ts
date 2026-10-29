@@ -15,9 +15,6 @@ const LANGS: readonly [string, string][] = [
   ["fr", "French"],
   ["de", "German"],
   ["ko", "Korean"],
-  ["it", "Italian"],
-  ["ru", "Russian"],
-  ["pt", "Portuguese"],
 ];
 
 const GENRES: readonly string[] = [
@@ -29,10 +26,6 @@ const GENRES: readonly string[] = [
   "Horror",
   "Mystery",
   "Romance",
-  "Supernatural",
-  "Thriller",
-  "Sports",
-  "Mecha",
   "Sci-Fi",
   "Slice of Life",
 ];
@@ -140,6 +133,7 @@ export function buildSearchFilterChipOptions(context: {
     ...(isYoutube
       ? [
           opt("type:video", "YouTube · Videos", "Only videos"),
+          opt("type:live", "YouTube · Live Streams", "Only live streams"),
           opt("type:short", "YouTube · Shorts", "Only Shorts"),
           opt("type:playlist", "YouTube · Playlists", "Only playlists"),
           opt("type:channel", "YouTube · Channels", "Only channels"),

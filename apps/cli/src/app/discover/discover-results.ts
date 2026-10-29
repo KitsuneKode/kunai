@@ -91,7 +91,9 @@ async function loadYoutubeDiscoverResults(
       type: "movie",
       externalIds: seedRow.externalIds,
     } as TitleInfo;
-    items = await loadYoutubeRecommendations({ title, historySeeds }).catch(() => []);
+    items = await loadYoutubeRecommendations({ title, historySeeds, limit: itemLimit }).catch(
+      () => [],
+    );
   }
   if (items.length === 0) {
     items = await loadYoutubeTrending().catch(() => []);
