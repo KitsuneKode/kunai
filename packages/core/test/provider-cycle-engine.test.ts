@@ -64,7 +64,8 @@ test("runProviderCycle retries a timed out candidate before moving to the next o
     async resolveCandidate(candidate) {
       attempts.push(candidate.id);
       if (candidate.serverId === "kiwi") {
-        await Bun.sleep(20);
+        // Only the engine's deadline may finish this deliberately stuck source.
+        await new Promise<void>(() => {});
       }
       return { streamId: candidate.id };
     },
@@ -92,7 +93,7 @@ test("allowTransientCandidateRetry grants an attempt beyond the normal budget", 
     now: fixedClock(),
     async resolveCandidate(candidate) {
       attempts.push(candidate.id);
-      await Bun.sleep(20);
+      await new Promise<void>(() => {});
       return { streamId: candidate.id };
     },
   });
@@ -144,7 +145,7 @@ test("transient retries wait by default instead of re-firing instantly", async (
     now: fixedClock(),
     async resolveCandidate(candidate) {
       startedAt.push(Date.now());
-      await Bun.sleep(20);
+      await new Promise<void>(() => {});
       return { streamId: candidate.id };
     },
   });

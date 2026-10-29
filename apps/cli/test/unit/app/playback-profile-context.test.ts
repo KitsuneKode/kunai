@@ -36,6 +36,19 @@ describe("playback-profile-context", () => {
     expect(playbackAudioPreference(input)).toBe("en");
     expect(profiles.movieLanguageProfile).toEqual({ audio: "en", subtitle: "en", quality: "4k" });
   });
+
+  test("session track choices can override audio for session and autoplay", () => {
+    const input = {
+      mode: "series" as const,
+      title: { type: "series" as const },
+      config: profiles,
+      overrides: { audio: "hi", quality: "720p" },
+    };
+    expect(playbackAudioPreference(input)).toBe("hi");
+    expect(playbackQualityPreference(input)).toBe("720p");
+    expect(playbackSubtitlePreference(input)).toBe("none");
+    expect(profiles.seriesLanguageProfile.audio).toBe("original");
+  });
   test("selects anime profile in anime mode", () => {
     const input = { mode: "anime" as const, title: { type: "series" as const }, config: profiles };
     expect(playbackLanguageProfile(input)).toEqual(profiles.animeLanguageProfile);

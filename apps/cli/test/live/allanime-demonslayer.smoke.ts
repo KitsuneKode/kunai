@@ -1,3 +1,4 @@
+import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import { searchTitles } from "@/services/search/SearchRoutingService";
 import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
 
@@ -87,13 +88,7 @@ if (!provider) {
 }
 
 const title = {
-  id: selected.id,
-  type: selected.type,
-  name: selected.title,
-  year: selected.year,
-  overview: selected.overview,
-  posterUrl: selected.posterPath ?? undefined,
-  episodeCount: selected.episodeCount,
+  ...titleInfoFromSearchResult(selected),
   isAnime: true,
 };
 

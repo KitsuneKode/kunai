@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-10-29"
 ---
 
 # Terminal pointer controls
@@ -48,6 +48,16 @@ this does not add click controls to every download action. Calendar, history,
 notifications and player-window controls retain their existing input
 contracts and need separate pointer work before claiming parity.
 
+Browse home shortcuts also register measured targets. The first click selects;
+the second click on the same title/episode/job and mode/provider identity activates through the existing
+idle-row action resolver. Keyboard input and overlays clear click authorization;
+a different title with the same label cannot inherit it. Browse's footer now
+uses its keyboard controller and query submit handler, rather than only
+displaying hints. Its command, Enter, navigation, mode, details and other visible
+binding actions keep the same guards. Overlays and the local palette remove
+underlying targets. This is not a claim that every hint on every screen is a
+clickable control; the remaining surfaces above still need their own coverage.
+
 The isolated terminal fixture runs prove routing and persisted state. Physical
 Windows/macOS terminal emulators, multiplexers, accessibility and Android touch
 are separate acceptance checks. Android detached handoff does not prove playback
@@ -64,6 +74,13 @@ Videasy session credentials still reach the direct resolver; the session-source
 labels use the current site name while retaining persisted API identifiers.
 
 ## Setup, palette and navigation
+
+Generic list pickers focus a different row on the first click; an already
+focused ordinary row can be activated by clicking it. Destructive and
+`keyboardOnly` choices only focus on pointer input and require Enter to commit.
+The `/analytics` enable row declares `keyboardOnly`, preserving explicit
+keystroke consent. Opening the picker's palette unregisters underlying option
+targets; confirmation locks out repeated submissions without a delayed callback.
 
 Setup mode, media-profile tabs, audio/subtitle choices and library toggles have
 measured targets. Back and footer decisions share the keyboard controller.

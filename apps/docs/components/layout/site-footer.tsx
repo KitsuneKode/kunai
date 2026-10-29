@@ -1,3 +1,4 @@
+import { KannaRestoreButton } from "@/components/brand/kanna-restore-button";
 import { KunaiFox } from "@/components/brand/kunai-fox";
 import { KunaiFoxPatrol } from "@/components/brand/kunai-fox-patrol";
 import { codeMetadata } from "@/lib/code-metadata";
@@ -142,7 +143,10 @@ export function SiteFooter() {
           <p className="m-0">
             © {COPYRIGHT_YEAR} KitsuneKode. Docs for Kunai v{codeMetadata.cliVersion}.
           </p>
-          <KunaiFoxPatrol />
+          <div className="flex flex-wrap items-center gap-3">
+            <KunaiFoxPatrol />
+            <KannaRestoreButton />
+          </div>
         </div>
       </div>
     </footer>

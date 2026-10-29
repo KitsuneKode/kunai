@@ -9,6 +9,17 @@ import {
   shouldDisableMpvTlsVerify,
 } from "@/infra/player/mpv-stream-http-headers";
 
+const EXPECTED_VOD_CACHE = {
+  cache: "yes",
+  "cache-pause": "yes",
+  "cache-pause-initial": "no",
+  "cache-pause-wait": "2",
+  "demuxer-readahead-secs": "60",
+  "demuxer-max-bytes": "200MiB",
+  "demuxer-lavf-o":
+    "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=10,reconnect_max_retries=8",
+};
+
 describe("normalizeStreamHttpHeaders", () => {
   test("normalizes mixed-case header keys", () => {
     expect(
@@ -260,7 +271,7 @@ describe("buildPersistentLoadfileOptions", () => {
       "user-agent": "kunai",
       "http-header-fields": "Origin: https://www.cineplay.to",
       ytdl: "no",
-      "demuxer-lavf-o-clr": "",
+      ...EXPECTED_VOD_CACHE,
     });
   });
 
@@ -276,7 +287,7 @@ describe("buildPersistentLoadfileOptions", () => {
       "user-agent": "kunai",
       "http-header-fields-clr": "",
       "tls-verify": "no",
-      "demuxer-lavf-o-clr": "",
+      ...EXPECTED_VOD_CACHE,
     });
   });
 
@@ -291,7 +302,7 @@ describe("buildPersistentLoadfileOptions", () => {
       referrer: "https://www.mp4upload.com",
       "user-agent": "kunai",
       "http-header-fields-clr": "",
-      "demuxer-lavf-o-clr": "",
+      ...EXPECTED_VOD_CACHE,
     });
   });
 
@@ -307,7 +318,7 @@ describe("buildPersistentLoadfileOptions", () => {
       "user-agent": "kunai",
       "http-header-fields-clr": "",
       ytdl: "no",
-      "demuxer-lavf-o-clr": "",
+      ...EXPECTED_VOD_CACHE,
     });
   });
 
@@ -323,7 +334,8 @@ describe("buildPersistentLoadfileOptions", () => {
       referrer: "https://cdn.example/page",
       "user-agent": "kunai",
       "http-header-fields": "Origin: https://cdn.example",
-      "demuxer-lavf-o": LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
+      ...EXPECTED_VOD_CACHE,
+      "demuxer-lavf-o": `${EXPECTED_VOD_CACHE["demuxer-lavf-o"]},${LOCAL_HLS_DEMUXER_LAVF_OPTIONS}`,
     });
   });
 
@@ -349,7 +361,7 @@ describe("buildPersistentLoadfileOptions", () => {
     expect(buildPersistentLoadfileOptions("https://cdn.example/e.mp4", 562, undefined)).toEqual({
       start: "562",
       "http-header-fields-clr": "",
-      "demuxer-lavf-o-clr": "",
+      ...EXPECTED_VOD_CACHE,
     });
   });
 });
@@ -365,7 +377,7 @@ describe("buildPersistentLoadfileCommand", () => {
         start: "0",
         "http-header-fields-clr": "",
         ytdl: "no",
-        "demuxer-lavf-o-clr": "",
+        ...EXPECTED_VOD_CACHE,
       },
     ]);
 
@@ -386,7 +398,7 @@ describe("buildPersistentLoadfileCommand", () => {
         "user-agent": "kunai",
         "http-header-fields": "Origin: https://cdn.example",
         ytdl: "no",
-        "demuxer-lavf-o-clr": "",
+        ...EXPECTED_VOD_CACHE,
       },
     ]);
   });
@@ -489,4 +501,22 @@ test("persistent files enforce Off and restore automatic selection for the next 
   );
   expect(on.sid).toBe("auto");
   expect(on.slang).toBe("en");
+});
+
+test("persistent replacements reset the cache profile in both YouTube directions", () => {
+  const youtube = buildPersistentLoadfileOptions(
+    "https://www.youtube.com/watch?v=fixture",
+    0,
+    undefined,
+  );
+  const vod = buildPersistentLoadfileOptions("https://cdn.example/movie.mp4", 0, undefined);
+  expect(youtube["cache-pause"]).toBe("no");
+  expect(youtube["demuxer-readahead-secs"]).toBe("10");
+  expect(youtube["demuxer-max-bytes"]).toBe("48MiB");
+  expect(youtube["demuxer-lavf-o"]).toContain("reconnect_delay_max=2");
+  expect(vod["cache-pause"]).toBe("yes");
+  expect(vod["cache-pause-initial"]).toBe("no");
+  expect(vod["cache-pause-wait"]).toBe("2");
+  expect(vod["demuxer-readahead-secs"]).toBe("60");
+  expect(vod["demuxer-max-bytes"]).toBe("200MiB");
 });

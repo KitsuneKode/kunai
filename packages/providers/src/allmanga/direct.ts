@@ -282,7 +282,10 @@ export const allmangaProviderModule: CoreProviderModule = {
     }
     if (!showId) {
       const rawId = input.title.id.replace(/^allanime:/, "").trim();
-      const anilistId = input.title.externalIds?.anilistId ?? input.title.anilistId;
+      const anilistId =
+        /^anilist:(\d+)$/.exec(rawId)?.[1] ??
+        input.title.externalIds?.anilistId ??
+        input.title.anilistId;
       return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
         code: "unsupported-title",
         message: anilistId

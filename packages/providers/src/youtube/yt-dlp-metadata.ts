@@ -121,14 +121,19 @@ export function mapYtDlpFormatsToQualityLabels(
       isJsonString(format.format_id) &&
       /^[\w.-]+$/.test(format.format_id),
   );
-  // Prefer height, then frame rate and bitrate; id breaks ties deterministically.
-  videoFormats.sort(
-    (a, b) =>
+  // Prefer height, direct HTTPS/DASH over fragmented HLS (which desyncs with direct audio),
+  // then frame rate and bitrate; id breaks ties deterministically.
+  videoFormats.sort((a, b) => {
+    const aM3u8 = a.protocol?.startsWith("m3u8") ? 1 : 0;
+    const bM3u8 = b.protocol?.startsWith("m3u8") ? 1 : 0;
+    return (
       (b.height ?? 0) - (a.height ?? 0) ||
+      aM3u8 - bM3u8 ||
       (b.fps ?? 0) - (a.fps ?? 0) ||
       (b.tbr ?? 0) - (a.tbr ?? 0) ||
-      (a.format_id ?? "").localeCompare(b.format_id ?? ""),
-  );
+      (a.format_id ?? "").localeCompare(b.format_id ?? "")
+    );
+  });
   const seen = new Set<string>();
   return videoFormats.flatMap((format) => {
     const formatId = format.format_id;

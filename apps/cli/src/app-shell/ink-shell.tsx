@@ -62,7 +62,7 @@ import {
   ROOT_HORIZONTAL_PADDING,
 } from "./layout-policy";
 import { startMouseSession } from "./mouse/mouse-session";
-import { MouseDispatchProvider } from "./mouse/MouseRegions";
+import { MouseDispatchProvider, MouseTarget } from "./mouse/MouseRegions";
 import {
   createNotificationQueueState,
   NOTIFICATION_TOAST_TTL_MS,
@@ -1542,7 +1542,7 @@ function normalizeReservedCommandInput(nextValue: string): {
   };
 }
 
-function ListShell<T>({
+export function ListShell<T>({
   title,
   subtitle,
   options,
@@ -1565,6 +1565,7 @@ function ListShell<T>({
 }) {
   const [index, setIndex] = useState(initialSelectedIndex ?? 0);
   const [confirmed, setConfirmed] = useState(false);
+  const submittedRef = useRef(false);
   const [filterQuery, setFilterQuery] = useState(initialFilter ?? "");
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
@@ -1700,6 +1701,15 @@ function ListShell<T>({
     }
   }
 
+  const commitOption = (opt: ShellOption<T>) => {
+    if (opt.disabled || submittedRef.current || commandMode) return;
+    submittedRef.current = true;
+    const optIdx = filteredOptions.indexOf(opt);
+    if (optIdx !== -1) setIndex(optIdx);
+    setConfirmed(true);
+    onSubmit(opt.value);
+  };
+
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
@@ -1765,10 +1775,7 @@ function ListShell<T>({
     }
     if (key.return) {
       const selected = filteredOptions[index];
-      if (selected && !confirmed) {
-        setConfirmed(true);
-        setTimeout(() => onSubmit(selected.value), 150);
-      }
+      if (selected) commitOption(selected);
       return;
     }
     if (key.upArrow && filteredOptions.length > 0) {
@@ -1817,7 +1824,7 @@ function ListShell<T>({
             >
               <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
                 {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
-                {visibleOptions.map((option) => {
+                {visibleOptions.map((option, optionOffset) => {
                   const selected = option === selectedOption;
                   const isConfirmed = confirmed && selected;
                   const itemPrefix = isConfirmed ? "✓" : selected ? "▌" : " ";
@@ -1852,26 +1859,37 @@ function ListShell<T>({
                         ? palette.text
                         : palette.textDim;
                   return (
-                    <Box
+                    <MouseTarget
                       key={`${option.label}-${option.detail ?? ""}`}
-                      width={rowWidth}
-                      backgroundColor={
-                        highlighted
-                          ? option.destructive
-                            ? palette.warnFill
-                            : palette.accentFill
-                          : undefined
-                      }
+                      id={`list:opt:${option.label}`}
+                      active={!commandMode && !confirmed && !option.disabled}
+                      onClick={() => {
+                        const optionIndex = windowStart + optionOffset;
+                        if (optionIndex !== index || option.keyboardOnly || option.destructive)
+                          setIndex(optionIndex);
+                        else commitOption(option);
+                      }}
                     >
-                      <Text
-                        color={rowColor}
-                        bold={highlighted || isConfirmed}
-                        dimColor={option.disabled || (!selected && !isConfirmed)}
+                      <Box
+                        width={rowWidth}
+                        backgroundColor={
+                          highlighted
+                            ? option.destructive
+                              ? palette.warnFill
+                              : palette.accentFill
+                            : undefined
+                        }
                       >
-                        <Text color={itemTone}>{`${itemPrefix} `}</Text>
-                        {padColumnsEnd(rowText, rowWidth - 2)}
-                      </Text>
-                    </Box>
+                        <Text
+                          color={rowColor}
+                          bold={highlighted || isConfirmed}
+                          dimColor={option.disabled || (!selected && !isConfirmed)}
+                        >
+                          <Text color={itemTone}>{`${itemPrefix} `}</Text>
+                          {padColumnsEnd(rowText, rowWidth - 2)}
+                        </Text>
+                      </Box>
+                    </MouseTarget>
                   );
                 })}
                 {windowEnd < filteredOptions.length && <Text color={palette.dim}> ▼ ...</Text>}

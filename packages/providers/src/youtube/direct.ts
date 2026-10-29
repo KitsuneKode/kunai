@@ -47,11 +47,7 @@ import type {
   YoutubeVideoMetadata,
 } from "./youtube-metadata";
 import { createYoutubeMetadataService } from "./youtube-metadata-service";
-import {
-  buildExactYtdlFormatSelector,
-  buildYtdlFormatSelector,
-  defaultYtdlPlaybackFormat,
-} from "./yt-dlp-metadata";
+import { buildExactYtdlFormatSelector, buildYtdlFormatSelector } from "./yt-dlp-metadata";
 import { parseYoutubePlayerClients, withYoutubePlayerClient } from "./ytdl-options";
 
 export { YOUTUBE_PROVIDER_ID, youtubeManifest };
@@ -607,9 +603,7 @@ async function resolveYoutube(
           ytdlFormat:
             mappedFormats.length > 0
               ? buildExactYtdlFormatSelector(entry.formatId, entry.hasAudio)
-              : isLive
-                ? defaultYtdlPlaybackFormat()
-                : buildYtdlFormatSelector(entry.label),
+              : buildYtdlFormatSelector(entry.label),
           formatId: mappedFormats.length > 0 ? entry.formatId : undefined,
           // Read back by the player so each lane asks yt-dlp for its own client
           // rather than the global default.

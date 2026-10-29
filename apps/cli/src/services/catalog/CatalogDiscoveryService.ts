@@ -160,8 +160,9 @@ export function createCatalogDiscoveryService(
 }
 
 async function loadYoutubeDiscoveryList(signal?: AbortSignal): Promise<SearchResult[]> {
-  const results = await loadYoutubeTrending(signal);
-  return [...results].slice(0, 12);
+  // Trending must retain its source identity. Surprise may fall back here once,
+  // but trending must never call surprise back when both sources are unavailable.
+  return [...(await loadYoutubeTrending(signal))].slice(0, 24);
 }
 
 /**

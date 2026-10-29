@@ -238,6 +238,7 @@ export function buildSuggestionBand<TValue>(input: {
   readonly local: readonly SearchSuggestion<TValue>[];
   readonly remote: readonly SearchSuggestion<TValue>[];
   readonly remotePending: boolean;
+  readonly remoteHeader?: string;
   readonly maxItems?: number;
   readonly localCap?: number;
   readonly skeletonRows?: number;
@@ -269,7 +270,7 @@ export function buildSuggestionBand<TValue>(input: {
     for (const item of rankedLocal) rows.push({ kind: "item", item });
   }
   if (remoteItems.length > 0 || input.remotePending) {
-    rows.push({ kind: "header", label: SUGGESTION_CATALOG_HEADER });
+    rows.push({ kind: "header", label: input.remoteHeader ?? SUGGESTION_CATALOG_HEADER });
     for (const item of remoteItems) rows.push({ kind: "item", item });
     if (input.remotePending) {
       for (let i = 0; i < skeletonRows; i += 1) {

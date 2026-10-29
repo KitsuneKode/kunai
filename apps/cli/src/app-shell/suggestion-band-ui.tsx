@@ -12,6 +12,7 @@ import type { ScoredSuggestion, SuggestionBandModel } from "@/domain/search/sugg
 import { Box, Text } from "ink";
 import React from "react";
 
+import { MouseTarget } from "./mouse/MouseRegions";
 import { measureColumns, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 
@@ -122,11 +123,15 @@ export function SearchSuggestionBand<TValue>({
   selectedIndex = -1,
   width,
   maxRows = 12,
+  pointerActive,
+  onSelect,
 }: {
   readonly model: SuggestionBandModel<TValue>;
   readonly selectedIndex?: number;
   readonly width: number;
   readonly maxRows?: number;
+  readonly pointerActive?: boolean;
+  readonly onSelect?: (item: ScoredSuggestion<TValue>) => void;
 }) {
   const selected = model.items[selectedIndex]?.suggestion;
   const contentWidth = Math.max(1, width - 4);
@@ -165,12 +170,18 @@ export function SearchSuggestionBand<TValue>({
             );
           case "item":
             return (
-              <SuggestionRow
+              <MouseTarget
                 key={`i:${row.item.suggestion.id}`}
-                item={row.item}
-                selected={row.item.suggestion === selected}
-                rowWidth={contentWidth}
-              />
+                id={`browse:suggestion:${row.item.suggestion.id}`}
+                active={pointerActive}
+                onClick={() => onSelect?.(row.item)}
+              >
+                <SuggestionRow
+                  item={row.item}
+                  selected={row.item.suggestion === selected}
+                  rowWidth={contentWidth}
+                />
+              </MouseTarget>
             );
           case "skeleton":
             return (

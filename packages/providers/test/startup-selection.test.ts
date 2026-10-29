@@ -126,6 +126,33 @@ describe("selectReadyStream — favorites", () => {
   });
 });
 
+describe("selectReadyStream — preferredAudioLanguage", () => {
+  const multiAudioStreams = [
+    streamCandidate({ id: "en-1080", qualityRank: 1080, audioLanguages: ["en"] }),
+    streamCandidate({ id: "hi-720", qualityRank: 720, audioLanguages: ["hi"] }),
+    streamCandidate({ id: "es-1080", qualityRank: 1080, audioLanguages: ["es"] }),
+  ];
+
+  test("selects preferred audio language matching stream over higher-quality non-matching stream", () => {
+    const result = selectReadyStream(multiAudioStreams, { preferredAudioLanguage: "hi" });
+    expect(result.selected.id).toBe("hi-720");
+  });
+
+  test("within preferred audio language, highest quality wins", () => {
+    const streamsWithMultiple = [
+      ...multiAudioStreams,
+      streamCandidate({ id: "hi-1080", qualityRank: 1080, audioLanguages: ["hi"] }),
+    ];
+    const result = selectReadyStream(streamsWithMultiple, { preferredAudioLanguage: "hi" });
+    expect(result.selected.id).toBe("hi-1080");
+  });
+
+  test("gracefully falls back to highest quality stream if preferred audio language is missing", () => {
+    const result = selectReadyStream(multiAudioStreams, { preferredAudioLanguage: "de" });
+    expect(result.selected.id).toBe("en-1080");
+  });
+});
+
 function streamCandidate(
   overrides: Pick<StreamCandidate, "id"> & Partial<StreamCandidate>,
 ): StreamCandidate {

@@ -511,11 +511,26 @@ export async function resolveVideasyDirect(
 
   // Prefer flavor-id candidates so multi-route backends (hdmovie EN/HI, meine DE, …)
   // keep their language/quality filters. Endpoint-only lists lose that metadata.
+  const requestedLang = normalizeLanguageCode(input.preferredAudioLanguage);
+  const matchingLangFlavorIds =
+    requestedLang && requestedLang !== "en" && requestedLang !== "original"
+      ? listEligibleVidkingFlavorIds(resolvedInput.mediaKind === "series" ? "series" : "movie")
+          .filter((id) => getVidkingFlavor(id)?.audioLanguage === requestedLang)
+          .filter((id) => {
+            const endpoint = getVidkingFlavor(id)?.endpoint;
+            return endpoint ? createVideasyEndpointHealth(context).shouldTry(endpoint) : false;
+          })
+      : [];
+
   const phaseAFlavorIdsOrdered = phaseAOnly
-    ? getPhaseAVidkingFlavorIds().filter((flavorId) => {
-        const endpoint = getVidkingFlavor(flavorId)?.endpoint;
-        return endpoint ? createVideasyEndpointHealth(context).shouldTry(endpoint) : false;
-      })
+    ? [
+        ...matchingLangFlavorIds,
+        ...getPhaseAVidkingFlavorIds().filter((flavorId) => {
+          if (matchingLangFlavorIds.includes(flavorId)) return false;
+          const endpoint = getVidkingFlavor(flavorId)?.endpoint;
+          return endpoint ? createVideasyEndpointHealth(context).shouldTry(endpoint) : false;
+        }),
+      ]
     : [];
   const cycleCandidates = buildVidkingCycleCandidates({
     directServers:
@@ -1064,6 +1079,7 @@ export function createVidkingResultFromPayload({
     preferredStreamId: input.preferredStreamId,
     preferredSourceId: input.preferredSourceId,
     favoriteSourceNames: input.favoriteSourceNames,
+    preferredAudioLanguage: input.preferredAudioLanguage,
   });
   const selectedStream = selection.selected;
   const orderedSubtitles = orderSubtitleCandidates(
@@ -1344,6 +1360,7 @@ async function probeSelectedVidkingPayloadStream({
     preferredStreamId: input.preferredStreamId,
     preferredSourceId: input.preferredSourceId,
     favoriteSourceNames: input.favoriteSourceNames,
+    preferredAudioLanguage: input.preferredAudioLanguage,
   });
   const selected = selection.selected;
   if (!selected.url?.trim()) {

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-28"
+lastReviewed: "2026-10-29"
 ---
 
 # Kunai — Repo Infrastructure
@@ -491,6 +491,22 @@ resume and recovery. Movies and TV series share series mode: three search modes
 cover four content types. A provider probe is not decoded playback proof, and
 copy must not present it as one. Native binaries embed their runtime; the npm
 and Bun global-package channels use a Node launcher and require Node on PATH.
+
+Home navigation and the docs sidebar use separate link visibility: every home
+menu destination is available on phone and tablet, while the docs sidebar keeps
+only Releases and Analytics above its page tree. On desktop the home bar compacts
+after 56px, expands on fine-pointer hover or keyboard focus, and dismisses pointer
+expansion on the next scroll. Focus keeps the bar expanded until it leaves. Motion
+uses layout projection with a 220ms ease-out; reduced motion and keyboard expansion
+are immediate. Search retains the existing lazy dialog and platform shortcut.
+
+Kanna's dismissal is independent of motion eligibility. Touch and reduced-motion
+visitors see a small stationary companion at the safe viewport edge with a
+visible, named dismiss button outside the decorative image's hidden region.
+Pointer following and chatter run only for fine pointers without reduced
+motion. Pause stops the moving drawing too, and a pre-movement pause keeps her
+visible. Restore clears dismissal on every input type. The shared site footer
+also mounts the restore control so dismissal can be reversed on the home page.
 
 `apps/docs/scripts/doc-last-modified.ts` memoizes guide timestamps per path
 using full Git history and Fumadocs' author-date convention, avoiding re-dating

@@ -20,8 +20,12 @@ function isGithubUrl(url: string | undefined): boolean {
 }
 
 describe("docs shell", () => {
+  test("home mobile menu keeps every destination available", () => {
+    const links = baseOptions().links ?? [];
+    expect(links.filter((link) => !("on" in link) || link.on !== "nav")).toHaveLength(8);
+  });
   test("keeps stable product navigation for the generated docs app", () => {
-    const options = baseOptions();
+    const options = baseOptions("docs");
     const links = options.links ?? [];
 
     expect(isValidElement(options.nav?.title)).toBe(true);
@@ -72,7 +76,7 @@ describe("docs shell", () => {
    * the fold. Only destinations the tree does not contain may appear there.
    */
   test("the docs sidebar carries only destinations outside the page tree", () => {
-    const sidebarLinks = (baseOptions().links ?? [])
+    const sidebarLinks = (baseOptions("docs").links ?? [])
       .filter((link) => !("on" in link) || link.on !== "nav")
       .map((link) => ("text" in link ? link.text : null));
 

@@ -1515,11 +1515,11 @@ export function RootOverlayShell({
       });
       return;
     }
-    if (!awaited && mountedKind !== "browse") {
-      // launch-playback only resolves on browse — on active playback, a
-      // picker, or an idle slot nobody consumes it, so claiming would leave
+    if (!awaited && mountedKind !== "browse" && mountedKind !== "playback") {
+      // launch-playback only resolves on browse or playback — on
+      // a picker or an idle slot nobody consumes it, so claiming would leave
       // the row in-flight forever. Keep it pending and say where it plays.
-      setOverlayStatus("Queue play from the search screen or the post-play menu");
+      setOverlayStatus("Queue play from the search screen or during playback");
       return;
     }
     const played = resolveQueueRowPlaySelection(
@@ -1539,6 +1539,13 @@ export function RootOverlayShell({
     if (played.status === "claimed" && !awaited) {
       const episode = episodeInfoFromQueuePlaybackLaunch(played.launch);
       const launchTitle = titleInfoFromQueuePlaybackLaunch(played.launch);
+      if (mountedKind === "playback") {
+        container.playerControl.switchToTitlePlayback(
+          { title: launchTitle, episode },
+          "queue-play-from-playback",
+        );
+        return;
+      }
       forceCloseRootContent<BrowseShellResult<SearchResult>>(
         episode
           ? { type: "launch-playback", launch: { title: launchTitle, episode } }

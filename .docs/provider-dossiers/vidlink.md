@@ -1,9 +1,14 @@
 ---
 status: current
-lastReviewed: "2026-10-27"
+lastReviewed: "2026-10-28"
 ---
 
 # Provider: VidLink (`vidlink`)
+
+Release availability diagnostics distinguish an explicit HTTP 200 JSON null
+from generic not-found failures. Only that API response emits `catalogAbsent`
+in the redacted resolve trace; scalar/malformed payloads and HTTP errors do not.
+This observation never exempts an actual stream from `verifyCandidateStream`.
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
@@ -61,7 +66,9 @@ lastReviewed: "2026-10-27"
   narrows the observed failure to a title-specific upstream no-source response;
   it is not evidence that the encryption or entire movie endpoint is broken.
   No response-shape workaround, default change or resolve-gate bypass was added.
-  The strict default-movie signoff remains red until that route is qualified.
+  The approved schema-2 signoff qualifies Inception and Fight Club separately,
+  retaining Dune as a verified availability diagnostic. This records the catalog
+  gap without substituting a fallback provider or declaring Dune playable.
 
 - Live default-route qualification on 2026-10-04 at `b8c69881745430ea3a8ca43e7af3f7a650d0acd5`
   failed for both TMDB lanes from the review host. Dune (438631) returned HTTP 200

@@ -6,6 +6,13 @@ const json = (body: string) =>
   new Response(body, { headers: { "content-type": "application/json" } });
 
 describe("readJsonObjectBody", () => {
+  test("an absence observer sees literal JSON null only", async () => {
+    let observations = 0;
+    for (const body of ["null", "7", '"done"', "{}", "[]"]) {
+      await readJsonObjectBody(json(body), () => observations++);
+    }
+    expect(observations).toBe(1);
+  });
   test("a JSON null body is no payload, not an object to read fields off", async () => {
     // VidLink answers 200 with exactly this while it has no source; the cast it
     // replaced turned the next property read into `null is not an object`.

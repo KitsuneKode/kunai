@@ -121,12 +121,17 @@ import { useCalendarState } from "./hooks/use-calendar-state";
 import { SUGGESTION_DEBOUNCE_MS, useSearchSuggestions } from "./hooks/use-search-suggestions";
 import { undisplayPlacementsKeepCache } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
-import { buildFooterActionsFromBindings } from "./keybindings";
+import {
+  bindingsForScope,
+  buildFooterActionsFromBindings,
+  footerKeyFromBinding,
+} from "./keybindings";
 import {
   getBrowseChromeRows,
   getBrowseCommandPaletteMaxVisible,
   getBrowseListMaxVisible,
 } from "./layout-policy";
+import type { LineEditorKey } from "./line-editor";
 import { reducedMotionEnabled } from "./motion-policy";
 import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
 import type { BrowseOverlay } from "./overlay-panel";
@@ -217,6 +222,7 @@ type BrowseQueryDraft = { value: string; mode: ShellMode };
 
 const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
 
+/** Own browse focus, async results and guarded keyboard/pointer routes within the current shell surface. */
 export function BrowseShell<T>({
   mode,
   provider,
@@ -561,6 +567,10 @@ export function BrowseShell<T>({
     options.some((opt) => opt.calendar !== undefined || opt.previewGroup !== undefined) ||
     resultSubtitle.includes("schedule") ||
     resultSubtitle.includes("airing today");
+  const calendarSurfaceActive =
+    isCalendarView ||
+    resultSubtitle.toLowerCase().includes("schedule") ||
+    emptyMessage.toLowerCase().includes("schedule");
   const rootContentSuspended = useRootContentSuspended();
   const calendarNow = useCalendarNow(isCalendarView, rootContentSuspended);
 
@@ -723,9 +733,14 @@ export function BrowseShell<T>({
       setQuery(nextQuery);
       if (shouldResearchAfterFilterChange({ searchState, lastSearchedQuery, nextQuery })) {
         void runSearch(nextQuery);
+      } else if (
+        nextQuery.trim().length === 0 &&
+        (searchState === "ready" || searchState === "error")
+      ) {
+        clearResults();
       }
     },
-    [lastSearchedQuery, query, runSearch, searchState, setQuery],
+    [clearResults, lastSearchedQuery, query, runSearch, searchState, setQuery],
   );
 
   const handleQuerySubmit = useCallback(
@@ -1089,6 +1104,10 @@ export function BrowseShell<T>({
   const pointerActive =
     !rootContentSuspended && !activeOverlay && !commandMode && !viewport.tooSmall;
   const priorPointerSelection = useRef<{ index: number; value: T } | null>(null);
+  const priorIdlePointerSelection = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pointerActive || !idleFocused) priorIdlePointerSelection.current = null;
+  }, [pointerActive, idleFocused]);
   useEffect(() => {
     const prior = priorPointerSelection.current;
     if (
@@ -1121,8 +1140,9 @@ export function BrowseShell<T>({
     showDiscoveryRowWhenEmpty: idleContextStatus === "ready",
   });
   const canFocusIdleRows =
+    !calendarSurfaceActive &&
     options.length === 0 &&
-    searchState === "idle" &&
+    (searchState === "idle" || (searchState === "ready" && query.trim().length === 0)) &&
     Boolean(idleReturnLoopModel?.hasSelectableRows);
 
   // Local narrow mode only earns space on long result sets. Ctrl+F opens it;
@@ -1197,8 +1217,9 @@ export function BrowseShell<T>({
         local: localSuggestionCorpus,
         remote: catalogSuggestions,
         remotePending: suggestionsPending,
+        remoteHeader: mode === "youtube" ? "YouTube Suggestions" : undefined,
       }),
-    [query, localSuggestionCorpus, catalogSuggestions, suggestionsPending],
+    [query, localSuggestionCorpus, catalogSuggestions, suggestionsPending, mode],
   );
 
   const boundedSuggestionIndex =
@@ -1219,7 +1240,7 @@ export function BrowseShell<T>({
     (entry: ScoredSuggestion<T>) => {
       const suggestion = entry.suggestion;
       setSuggestionIndex(-1);
-      if (suggestion.value !== undefined) {
+      if (!suggestion.commitQuery && suggestion.value !== undefined) {
         // Title row — identical to Enter on the matching results-list row.
         onSubmit(suggestion.value);
         return;
@@ -1419,10 +1440,6 @@ export function BrowseShell<T>({
     displayCount: displayOptions.length,
     totalCount: options.length,
   });
-  const calendarSurfaceActive =
-    isCalendarView ||
-    resultSubtitle.toLowerCase().includes("schedule") ||
-    emptyMessage.toLowerCase().includes("schedule");
   const calendarRouteLoadingModel = buildCalendarLoadingState(calendarRouteKind === "retrying");
   const calendarEmptyModeLabel =
     calendarTypeTab === "All" ? "calendar" : calendarTypeTab.toLowerCase();
@@ -1519,8 +1536,9 @@ export function BrowseShell<T>({
     }
   }
 
-  useInput((input, key) => {
+  const handleBrowseInput = (input: string, key: LineEditorKey) => {
     priorPointerSelection.current = null;
+    priorIdlePointerSelection.current = null;
     if (rootContentSuspended) return;
     recordKeystroke("browse", key.upArrow ? "up" : key.downArrow ? "down" : input);
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -2085,7 +2103,37 @@ export function BrowseShell<T>({
     if (idleFocused) {
       dispatchFocusZone({ type: "blur-idle" });
     }
-  });
+  };
+  useInput(handleBrowseInput);
+
+  const activateBrowseFooter = (action: FooterAction) => {
+    if (!pointerActive || action.disabled) return;
+    if (action.key === "enter") {
+      if (!listFocused && !idleFocused) handleQuerySubmit(query);
+      else handleBrowseInput("", { return: true });
+      return;
+    }
+    if (action.key === "↑↓") {
+      handleBrowseInput("", { downArrow: true });
+      return;
+    }
+    if (action.key === "/") {
+      handleBrowseInput("/", {});
+      return;
+    }
+    if (action.key === "esc") {
+      handleBrowseInput("", { escape: true });
+      return;
+    }
+    const binding = bindingsForScope("browse").find(
+      (row) => footerKeyFromBinding(row) === action.key,
+    );
+    if (!binding) return;
+    const { chord } = binding;
+    const key: LineEditorKey = { ctrl: chord.ctrl, shift: chord.shift, meta: chord.meta };
+    if (chord.named) key[chord.named] = true;
+    handleBrowseInput(chord.input ?? "", key);
+  };
 
   return (
     <Box flexDirection="column" flexGrow={1}>
@@ -2176,11 +2224,17 @@ export function BrowseShell<T>({
                 <Text color={palette.dim}>Query filters </Text>
                 {structuredFilterChips.map((chip, index) => (
                   <Box key={`${chip.key}-${chip.label}`} marginRight={2}>
-                    <Text color={palette.accentSoft}>
-                      {index < 9 ? `${index + 1} ` : ""}
-                      {sanitizeTerminalText(chip.label)}
-                      <Text color={palette.muted}> ×</Text>
-                    </Text>
+                    <MouseTarget
+                      id={`browse:chip:${chip.key}`}
+                      active={pointerActive}
+                      onClick={() => clearStructuredFilterChip(chip.key)}
+                    >
+                      <Text color={palette.accentSoft}>
+                        {index < 9 ? `${index + 1} ` : ""}
+                        {sanitizeTerminalText(chip.label)}
+                        <Text color={palette.muted}> ×</Text>
+                      </Text>
+                    </MouseTarget>
                   </Box>
                 ))}
                 <Text color={palette.dim} dimColor>
@@ -2262,6 +2316,8 @@ export function BrowseShell<T>({
                 maxRows={suggestionMaxRows}
                 selectedIndex={boundedSuggestionIndex}
                 width={innerWidth}
+                pointerActive={pointerActive}
+                onSelect={commitSuggestion}
               />
             ) : null}
           </>
@@ -2600,25 +2656,67 @@ export function BrowseShell<T>({
                 <Text color={palette.dim} bold>
                   {idleReturnLoopModel.heading}
                 </Text>
-                {idleReturnLoopModel.rows.map((row) => (
-                  <Text
-                    key={row.id}
-                    backgroundColor={row.focused ? palette.accentFill : undefined}
-                    color={row.focused ? palette.text : palette.muted}
-                  >
-                    {row.focused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
-                    <Text color={row.glyphColor}>{row.glyph}</Text>{" "}
-                    <Text color={row.focused ? palette.text : palette.textDim} bold={row.focused}>
-                      {row.title}
-                    </Text>
-                    {row.meta ? <Text color={palette.dim}>{`  ${row.meta}`}</Text> : null}
-                    {row.hint ? (
-                      <Text color={row.focused ? palette.accent : palette.dim}>
-                        {` · ${row.hint}`}
+                {idleReturnLoopModel.rows.map((row, index) => {
+                  const targetId =
+                    row.id === "continue"
+                      ? activeIdleContext?.continueWatching?.titleId
+                      : row.id === "playlist-next"
+                        ? activeIdleContext?.playlistNext?.titleId
+                        : row.id === "offline-ready"
+                          ? activeIdleContext?.offlineReadyNext?.offlineJobId
+                          : row.id === "saved"
+                            ? activeIdleContext?.savedNext?.titleId
+                            : row.id;
+                  const episode =
+                    row.id === "continue"
+                      ? activeIdleContext?.continueWatching?.ep
+                      : row.id === "playlist-next"
+                        ? activeIdleContext?.playlistNext?.ep
+                        : undefined;
+                  const identity = `${row.id}:${targetId ?? ""}:${episode ?? ""}:${mode}:${provider}`;
+                  return (
+                    <MouseTarget
+                      key={identity}
+                      id={`browse:idle:${identity}`}
+                      active={pointerActive && row.actionable}
+                      onClick={() => {
+                        if (!row.actionable) return;
+                        const activate =
+                          idleFocused &&
+                          idleSelectedIndex === index &&
+                          priorIdlePointerSelection.current === identity;
+                        setIdleSelectedIndex(index);
+                        dispatchFocusZone({ type: "focus-idle" });
+                        priorIdlePointerSelection.current = identity;
+                        if (activate) {
+                          priorIdlePointerSelection.current = null;
+                          const action = resolveIdleRowAction(row.id, activeIdleContext);
+                          if (action) onResolve(action);
+                        }
+                      }}
+                    >
+                      <Text
+                        backgroundColor={row.focused ? palette.accentFill : undefined}
+                        color={row.focused ? palette.text : palette.muted}
+                      >
+                        {row.focused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
+                        <Text color={row.glyphColor}>{row.glyph}</Text>{" "}
+                        <Text
+                          color={row.focused ? palette.text : palette.textDim}
+                          bold={row.focused}
+                        >
+                          {row.title}
+                        </Text>
+                        {row.meta ? <Text color={palette.dim}>{`  ${row.meta}`}</Text> : null}
+                        {row.hint ? (
+                          <Text color={row.focused ? palette.accent : palette.dim}>
+                            {` · ${row.hint}`}
+                          </Text>
+                        ) : null}
                       </Text>
-                    ) : null}
-                  </Text>
-                ))}
+                    </MouseTarget>
+                  );
+                })}
               </Box>
             ) : null}
           </Box>
@@ -2655,6 +2753,7 @@ export function BrowseShell<T>({
       {actionFeedback ? <Text color={palette.ok}>{`✓ ${actionFeedback}`}</Text> : null}
       {(() => {
         const browseBindingIds: string[] = [
+          ...(isCalendarView ? ["browse-mode"] : []),
           ...(listFocused && searchState === "ready" ? ["browse-details"] : []),
           // Ctrl+O works from the search box without stealing typing — advertise
           // it when results exist and query still owns focus.
@@ -2674,7 +2773,7 @@ export function BrowseShell<T>({
           ...(listFocused && options.length > 0 && !queryDirty && searchState === "ready"
             ? ["browse-filter"]
             : []),
-          "browse-mode",
+          ...(!isCalendarView ? ["browse-mode"] : []),
           ...(onLoadDiscovery ? ["browse-trending"] : []),
           ...(listFocused && options.length > 0 && !queryDirty
             ? [
@@ -2721,7 +2820,9 @@ export function BrowseShell<T>({
             },
             overrides: {
               "browse-mode": {
-                label: getCommandLabel(commands, "toggle-mode", "switch mode"),
+                label: isCalendarView
+                  ? "calendar type"
+                  : getCommandLabel(commands, "toggle-mode", "switch mode"),
               },
             },
           }),
@@ -2759,6 +2860,7 @@ export function BrowseShell<T>({
             terminalWidth={viewport.columns}
             maxVisible={viewport.breakpoint === "narrow" ? 3 : 5}
             companionHint
+            onActivate={pointerActive ? activateBrowseFooter : undefined}
           />
         );
       })()}

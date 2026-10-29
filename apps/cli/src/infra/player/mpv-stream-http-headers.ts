@@ -5,6 +5,7 @@ import {
   isYoutubeWatchUrl,
   type MpvUrlKind,
 } from "./mpv-playback-url";
+import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { shouldApplyStartAtSeek } from "./mpv-start-seek";
 
 /**
@@ -197,6 +198,9 @@ export type PersistentLoadfileOptions = {
   readonly "demuxer-lavf-o"?: string;
   readonly "demuxer-lavf-o-clr"?: string;
   /** Live-broadcast demuxer profile; see {@link LIVE_DEMUXER_OPTIONS}. */
+  readonly cache?: string;
+  readonly "cache-pause"?: string;
+  readonly "cache-pause-initial"?: string;
   readonly "cache-pause-wait"?: string;
   readonly "demuxer-readahead-secs"?: string;
   readonly "demuxer-max-bytes"?: string;
@@ -214,6 +218,36 @@ export const LIVE_DEMUXER_OPTIONS = {
   "demuxer-readahead-secs": "10",
   "demuxer-max-bytes": "32MiB",
 } as const;
+
+/** File-local cache and reconnect policy, shared by spawn, replacement and replay. */
+export function buildMpvCacheProfile(input: {
+  readonly isYoutube: boolean;
+  readonly isLive?: boolean;
+  readonly startupPriority?: MpvRuntimeOptions["startupPriority"];
+}) {
+  const fast = input.startupPriority === "fast";
+  const options = {
+    cache: "yes",
+    "cache-pause": input.isYoutube ? "no" : "yes",
+    "cache-pause-initial": "no",
+    "cache-pause-wait": "2",
+    "demuxer-readahead-secs": fast || input.isYoutube ? "10" : "60",
+    "demuxer-max-bytes": fast || input.isYoutube ? "48MiB" : "200MiB",
+  };
+  if (input.isLive)
+    return {
+      options: { ...options, ...LIVE_DEMUXER_OPTIONS },
+      reconnect: LIVE_DEMUXER_LAVF_OPTIONS,
+    };
+  return {
+    options,
+    reconnect: fast
+      ? "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=3"
+      : input.isYoutube
+        ? "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=2,reconnect_max_retries=5"
+        : "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=10,reconnect_max_retries=8",
+  };
+}
 
 /**
  * The live half of `demuxer-lavf-o`, kept apart from {@link LIVE_DEMUXER_OPTIONS}
@@ -239,6 +273,7 @@ export function composeDemuxerLavfOptions(
 
 /** Per-file media options a persistent `loadfile` carries alongside the URL. */
 export type PersistentLoadfileMediaOptions = {
+  readonly startupPriority?: MpvRuntimeOptions["startupPriority"];
   readonly requiresYtdl?: boolean;
   readonly ytdlFormat?: string;
   readonly ytdlRawOptions?: string;
@@ -310,18 +345,20 @@ export function buildPersistentLoadfileOptions(
   } else if (isRemoteHlsManifestPlaybackUrl(url)) {
     loadOptions.ytdl = "no";
   }
+  const cacheProfile = buildMpvCacheProfile({
+    isYoutube: isYoutubeWatchUrl(url) || Boolean(ytdlOptions?.requiresYtdl),
+    isLive: ytdlOptions?.isLive,
+    startupPriority: ytdlOptions?.startupPriority,
+  });
+  Object.assign(loadOptions, cacheProfile.options);
   const demuxerLavfOptions = composeDemuxerLavfOptions(
-    ytdlOptions?.isLive ? LIVE_DEMUXER_LAVF_OPTIONS : undefined,
+    cacheProfile.reconnect,
     isLocalHlsManifestPlaybackUrl(url) ? LOCAL_HLS_DEMUXER_LAVF_OPTIONS : undefined,
   );
   if (demuxerLavfOptions) {
     loadOptions["demuxer-lavf-o"] = demuxerLavfOptions;
   } else if (/^https?:\/\//i.test(url.trim())) {
     loadOptions["demuxer-lavf-o-clr"] = "";
-  }
-
-  if (ytdlOptions?.isLive) {
-    Object.assign(loadOptions, LIVE_DEMUXER_OPTIONS);
   }
 
   return loadOptions as PersistentLoadfileOptions;

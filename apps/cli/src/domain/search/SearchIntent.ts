@@ -6,7 +6,8 @@ export type SearchIntentTypeFilter =
   | "video"
   | "short"
   | "playlist"
-  | "channel";
+  | "channel"
+  | "live";
 export type WatchFilter = "any" | "unwatched" | "watching" | "completed";
 export type ReleaseFilter = "today" | "this-week" | "upcoming";
 export type SearchSort = "relevance" | "progress" | "recent" | "popular" | "rating";

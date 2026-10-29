@@ -3,7 +3,6 @@ import "./global.css";
 import { PrivacyAnalytics } from "@/components/analytics/privacy-analytics";
 import { PrivacySpeedInsights } from "@/components/analytics/privacy-speed-insights";
 import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
-import { NavCompact } from "@/components/layout/nav-compact";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { MotionProvider } from "@/components/providers/motion-provider";
 import { LazySearchDialog } from "@/components/search/lazy-search-dialog";
@@ -71,14 +70,12 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
             chrome is full of transforms. Here she is always viewport-relative.
 
             Safe under every rendering mode this site uses. She renders `null`
-            until the browser snapshot has checked pointer type, reduced motion and
-            the stored dismissal, so static and server output contain nothing of
+            until the browser snapshot has checked the stored dismissal, so static and server output contain nothing of
             her and there is no hydration mismatch to reconcile. She holds no
             server data, so ISR revalidation never invalidates her.
 
             Living in the root layout also means she survives route changes
             rather than remounting — she keeps walking while you navigate. */}
-        <NavCompact />
         <KunaiFoxRoamer />
         <PrivacyAnalytics />
         <PrivacySpeedInsights />

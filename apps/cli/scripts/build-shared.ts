@@ -354,7 +354,7 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * has since made stricter.
  */
 // October 22 provider/timing/consent/mouse integration measured 3,185,739 bytes.
-// 3120 KiB leaves 9,141 bytes; public launcher budgets below are unchanged.
+// 3120 KiB is the watching release ceiling; new work must fit this budget.
 export const NPM_BUNDLE_BUDGET_KB = 3_120;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */

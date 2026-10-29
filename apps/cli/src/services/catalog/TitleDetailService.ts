@@ -45,6 +45,7 @@ import {
   seasonHasPlayableEpisodes,
   seasonSummaryNeedsEpisodeVerification,
 } from "@/services/catalog/tmdb-release";
+import { peekYoutubeTitleDetail } from "@/services/youtube/youtube-title-detail";
 import type { ProviderExternalIds } from "@kunai/types";
 
 import { aniListExternalLinks, tmdbExternalLinks, toTrailerUrl } from "./title-detail-extras";
@@ -107,6 +108,8 @@ export function clearTitleDetailCache(): void {
  * the network (e.g. the post-play rail reads this after an early prefetch).
  */
 export function peekTitleDetail(id: string, type: ContentType): TitleDetail | undefined {
+  const youtube = peekYoutubeTitleDetail(id, type);
+  if (youtube) return youtube;
   const cached = detailCache.get(cacheKey(id, type));
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.detail;
   return undefined;
@@ -131,6 +134,17 @@ export async function fetchTitleDetail(
   signal?: AbortSignal,
   hints?: TitleDetailHints,
 ): Promise<TitleDetail> {
+  // The resolve already owns yt-dlp metadata fetching. Do not cache a generic
+  // "Unknown" answer before it finishes or send video ids to another catalog.
+  if (id.startsWith("youtube:")) {
+    return (
+      peekYoutubeTitleDetail(id, type, hints?.externalIds?.youtubeId) ?? {
+        id,
+        type,
+        title: "",
+      }
+    );
+  }
   const key = cacheKey(id, type);
   const now = Date.now();
   const cached = detailCache.get(key);

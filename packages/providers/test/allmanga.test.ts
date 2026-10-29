@@ -67,6 +67,28 @@ test("AllManga source evidence rejects malformed hosts without losing valid host
 });
 
 describe("resolveAllMangaShowId", () => {
+  test.each([true, false])(
+    "bridges an explicit AniList namespace instead of treating it as a native show (ids=%s)",
+    async (withIds) => {
+      using fetchMock = mockAllMangaBridgeFetch("match");
+      const showId = await resolveAllMangaShowId(
+        {
+          title: {
+            id: "anilist:20431",
+            kind: "anime",
+            title: "Hozuki",
+            externalIds: withIds ? { anilistId: "20431" } : undefined,
+          },
+        },
+        TEST_CONTEXT,
+      );
+      expect(showId).toBe("native-20431");
+      expect(fetchMock.anilistIds).toContain(20431);
+      expect(fetchMock.requests.length).toBeGreaterThan(0);
+      expect(fetchMock.catalogRequests).toEqual([]);
+    },
+  );
+
   test("returns stored providerNativeIds without bridging", async () => {
     const showId = await resolveAllMangaShowId(
       {
@@ -1767,15 +1789,17 @@ async function resolveCatalogAllMangaEpisode(): Promise<ProviderResolveResult> {
 }
 
 function mockAllMangaBridgeFetch(
-  outcome: "empty" | "transport-error" | "unexpected",
+  outcome: "empty" | "transport-error" | "unexpected" | "match",
 ): Disposable & {
   readonly requests: readonly string[];
   readonly catalogRequests: readonly string[];
+  readonly anilistIds: readonly number[];
 } {
   clearAllMangaAnilistBridgeCacheForTest();
   const originalFetch = globalThis.fetch;
   const requests: string[] = [];
   const catalogRequests: string[] = [];
+  const anilistIds: number[] = [];
   // SAFETY: This deterministic test stub implements the fetch call shape exercised here.
   globalThis.fetch = (async (request, init) => {
     const url = String(request);
@@ -1784,6 +1808,7 @@ function mockAllMangaBridgeFetch(
       return new Response("unexpected request", { status: 500 });
     }
     if (url.includes("graphql.anilist.co")) {
+      anilistIds.push(JSON.parse(String(init?.body)).variables.id);
       return jsonResponse({
         data: {
           Media: {
@@ -1797,12 +1822,29 @@ function mockAllMangaBridgeFetch(
     if (body.includes("show(_id:$id)")) catalogRequests.push(body);
     return outcome === "transport-error"
       ? new Response("upstream unavailable", { status: 503 })
-      : jsonResponse({ data: { shows: { edges: [] } } });
+      : jsonResponse({
+          data: {
+            shows: {
+              edges:
+                outcome === "match"
+                  ? [
+                      {
+                        _id: "native-20431",
+                        aniListId: 20431,
+                        name: "Hoozuki no Reitetsu",
+                        availableEpisodes: { sub: 13, dub: 0 },
+                      },
+                    ]
+                  : [],
+            },
+          },
+        });
   }) as typeof fetch;
 
   return {
     requests,
     catalogRequests,
+    anilistIds,
     [Symbol.dispose]() {
       globalThis.fetch = originalFetch;
       clearAllMangaAnilistBridgeCacheForTest();

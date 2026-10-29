@@ -205,6 +205,18 @@ describe("buildSuggestionBand", () => {
     expect(model.items[0]?.matchIndices).toEqual([]);
   });
 
+  test("custom remoteHeader overrides default Catalog label", () => {
+    const model = buildSuggestionBand({
+      query: "yt",
+      local: [],
+      remote: [remote("r1", "YouTube Gaming")],
+      remotePending: false,
+      remoteHeader: "YouTube Suggestions",
+    });
+    const header = model.rows.find((r) => r.kind === "header");
+    expect(header).toEqual({ kind: "header", label: "YouTube Suggestions" });
+  });
+
   test("local section is capped so catalog keeps its rows", () => {
     const model = buildSuggestionBand({
       query: "a",

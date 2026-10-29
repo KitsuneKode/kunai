@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-07-29"
+lastReviewed: "2026-10-29"
 ---
 
 # Kunai — Recommendations And Discover
@@ -49,6 +49,12 @@ Recommendations use TMDB surfaces on demand:
 - recency-weighted genre affinity from local history
 
 **YouTube mode** uses a separate native path (`YoutubeRecommendationService`): Invidious related videos, same-channel uploads, history channel affinity, then Invidious trending. It never falls through to TMDB discover for post-play rails.
+
+YouTube `/trending` returns the trending feed or an honest empty/error state;
+it never silently substitutes a random search pool. `/surprise` searches a
+broad-interest topic and may fall back to trending once. The dependency is
+one-way so empty feeds and upstream failures cannot create cyclic requests.
+Empty or failed loads remain retryable rather than becoming cached empty trays.
 
 Calendar uses catalog schedule services on demand:
 

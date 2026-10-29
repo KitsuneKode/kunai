@@ -31,10 +31,33 @@ hosted, device or release signoff.
 
 ## 1. Watching release gates
 
+- [ ] Integrate and qualify the review correction batch on PR #676 after
+      exact-head hosted checks. Local regressions now cover YouTube query
+      dispatch and configured draft routing, keyboard-only consent/destructive
+      actions, palette pointer ownership, exact live formats, bounded discovery
+      and compound genre removal. The Kitty witness excludes intro skips and
+      missing IPC intervals. Offline title-group actions now share the existing
+      router, preserving diagnostics and repairing metadata before shelf refresh.
+      The original 3120 KiB cap is restored; the measured bundle is 3,193,265
+      bytes (1,615 bytes below it). Forced tests and the native/docs builds pass;
+      these checks do not qualify live providers or physical devices.
+
+- [ ] Persist explicit embedded mpv audio-language changes across autoplay.
+      Provider audio picks already set session preferences; the native `a`
+      branch only cycles mpv's current file and its track-change hook currently
+      records diagnostics without updating the session language.
+
+- [ ] Reconcile the provider audit branch now integrated into PR #676. Preserve
+      its YouTube format ordering and VidRock concurrency fixes; qualify
+      recommended-tier promotions with captured playback evidence rather than
+      manifest flags. The review corrections cover per-file cache policies,
+      cache-pause-independent recovery, private Kitty IPC/logging, VidRock
+      decrypt accounting, docked Kanna dismissal and route-builder consistency.
+
 - [ ] Integrate the pending mobile readiness docs (PR #672), project previews
       (PR #673) and the Android handoff lifecycle repair after exact-head checks
       and actionable reviews. Review any integration conflicts.
-- [ ] Implement the approved movie qualification policy: Inception and Fight
+- [ ] Integrate and qualify the schema-2 movie policy: Inception and Fight
       Club controls, existing series/anime controls, Dune availability diagnostic,
       deterministic fallback and health-neutral missing-title regressions.
       Reject legacy/incomplete evidence, transport errors disguised as absence,
@@ -81,11 +104,31 @@ hosted, device or release signoff.
 
 ## 3. Real Kitty and modern terminal interaction
 
+- [ ] Integrate the visual verification skill and Kitty driver after its own
+      launch/doctor/action/capture/cleanup cycle is proved. Keep PNG inspection,
+      terminal text, persisted state, mpv decoding and native OS pointer input
+      as separate evidence. Use small models for bounded source research and
+      one coordinator for serial desktop control.
+- [ ] Qualify the remaining failures from the 2026-10-28 serial 16-route live
+      pass: YouTube media starvation, Videasy seed availability, VidRock startup,
+      AllManga captcha refusal, Miruro deadline and Movy movie black frames.
+      Separate Movy-series/AnimeGG capture deadlines from provider failures;
+      fix and recheck the screenshot/cleanup lifecycle before certifying them.
+      Retain first failures and exact candidate identity. Do not let fallback,
+      moving audio clocks, screenshot-file existence or fixtures mark video healthy.
+- [ ] Audit pointer coverage per surface, then fix reproduced omissions through
+      shared keyboard/controller actions. Verify Browse footers and home rows,
+      both click stages, changed targets, overlays and narrow layouts; retain
+      Calendar/history/notification/download action gaps until separately proved.
 - [ ] Use the `verify-kunai` skill and a dedicated Kitty window with an isolated
       profile. Do not send keys to the maintainer's existing sessions or alter
       their profile. Capture frames and backend state before fixing defects.
-      The maintainer requested real providers and real titles on the laptop's
-      eDP-1 display, workspace 9, fullscreen. Keep fixture regressions separate
+      Use real providers and titles on a free display/workspace. The latest
+      preference is to avoid disturbing the display currently in use; confirm
+      the free display when desktop activity changes. The maintainer reserved
+      eDP-1 workspace 9 on 2026-10-28. Confirm the owned native window's actual
+      placement before input; runner placement rules alone are insufficient.
+      Keep fixture regressions separate
       from that live manual session. Ensure the QA launcher does not inherit
       `NO_COLOR=1`; select the maintainer's installed terminal font rather than
       relying on this machine's CJK monospace fallback.
@@ -108,6 +151,12 @@ hosted, device or release signoff.
       fallbacks; do not make animation a prerequisite for use.
 
 ## 4. Website navigation, SEO and polish
+
+- [ ] Qualify the mobile/tablet menu (all destinations), scroll/hover/focus desktop
+      compaction and compact Search in a real browser. Source and regression tests
+      are implemented; browser attachment is unavailable in the current session.
+- [ ] Visually qualify stationary mobile/reduced-motion Kanna and restore/pause
+      controls. Visibility regression tests pass; real-device/browser checks remain.
 
 - [ ] Complete the workshop website destinations and local link previews from
       the requested Aceternity/Animate UI patterns, with keyboard/touch/error

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-28"
+lastReviewed: "2026-10-29"
 ---
 
 # Kunai — UX Architecture
@@ -66,6 +66,13 @@ from every provider.
 
 ### Command philosophy
 
+Launch track preferences are transient across all four language profiles.
+Both config getters and the raw effective snapshot expose them; background
+saves keep the persisted defaults. An explicit Settings change supersedes the
+matching launch override. `--offline` likewise reaches connectivity's config
+reader without becoming a persistent setting. Explicit settings reset clears
+transient launch choices as well as resetting persisted settings.
+
 - `/` is the global entry point for actions
 - post-playback should always expose a direct path back into a fresh search without quitting the app
 - common operations should have short command aliases
@@ -119,6 +126,16 @@ restores text focus. Wheel input over ordinary results clamps at the first
 and last row; keyboard arrows retain their existing wrapping behavior.
 The footer describes the click gesture only when mouse support is enabled.
 These high-frequency interactions repaint immediately without animation.
+
+Visible home rows retain focus eligibility after discovery completes with no
+results. Each actionable home row needs a selection click followed by an activation
+click. Loading, error and typed-query empty-result surfaces do not authorize
+hidden home actions. Calendar loading, error and empty status screens also
+exclude home rows from keyboard focus and activation. Pointer regressions isolate all platform storage roots
+before mounting the shell, including its search-history refresh effect.
+
+The calendar footer advertises a calendar-type control whose click follows
+Tab's type-cycling route; it does not label that action as a catalog mode switch.
 
 Local overlays, the command palette, and root-content suspension remove
 covered result regions from hit-testing. Press and release must belong to the
@@ -308,13 +325,16 @@ Sources and async contract:
   cannot hide a retained matching title. Outer list/playlist fan-out limits remain bounded.
 - Local layer is synchronous and free: past submitted searches, watched titles, followed titles,
   and list/playlist rows (`app/search/search-suggestions.ts` materializes them as
-  `SearchSuggestion<SearchResult>` — every row's `value` is a real SearchResult).
+  `SearchSuggestion<SearchResult>` — title rows carry real results; query rows carry
+  `commitQuery` and run a search instead of opening a title).
 - Remote layer is ONE call into the fast registry catalog for the lane —
   `apps/cli/src/services/search/suggest-titles.ts` resolves `getForProvider(provider)` first (AniList for anime providers,
   same as `searchTitles`), then the registry default (TMDB). It never runs the provider-lane
-  search walk, never enriches, never resolves a provider or probes a stream. YouTube mode has
-  no registry catalog, so the band shows local rows only — provider-native search is too heavy
-  per keystroke.
+  search walk, never enriches, never resolves a provider or probes a stream. YouTube mode uses
+  bounded query completions instead of video search: an explicit Invidious instance receives
+  those requests exclusively; otherwise Google suggestions may fall back to Invidious.
+  Offline sessions make no remote request. Cancelled drafts cannot start a fallback or
+  commit suggestions. Selecting a completion executes the query, not a synthetic video ID.
 - `app-shell/hooks/use-search-suggestions.ts` debounces ~300ms, aborts the superseded request,
   and gates commits by request id and mode/provider scope — a stale response can never
   overwrite a newer draft or lane's rows. Changing providers cancels and restarts the debounce

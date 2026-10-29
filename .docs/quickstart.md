@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-29"
 ---
 
 # Kunai — Quickstart
@@ -79,9 +79,13 @@ kunai --player vlc
 
 The cross-built ELF declares API 28 as its platform floor; physical-device
 qualification is still pending. Install VLC or mpv-android as an Android app.
-`--player auto` opens the system chooser. This preview hands off only direct
-HTTP(S) streams that need no custom headers, cookies, yt-dlp, local file, or
-external subtitle. Launch acceptance does not give Kunai progress/completion
+`--player auto` opens the system chooser. Headered streams and supported
+HLS/DASH manifests use a private on-device loopback gateway. Select VLC or
+mpv-android for external subtitles; the chooser cannot carry them. Local files,
+yt-dlp-dependent playback and unsupported manifests are still refused. Keep
+Kunai running while the gateway serves playback. These paths have automated
+contract coverage; physical-device qualification remains pending.
+Launch acceptance does not give Kunai progress/completion
 evidence, so autoplay, auto-skip, automatic history progress, and queue
 acknowledgement are disabled for that handoff. iOS is not supported by this
 runtime.

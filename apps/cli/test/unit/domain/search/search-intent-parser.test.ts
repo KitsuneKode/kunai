@@ -135,5 +135,6 @@ describe("SearchIntentParser Track B vocabulary", () => {
     expect(parseSearchIntentText("type:video").filters.type).toBe("video");
     expect(parseSearchIntentText("type:short").filters.type).toBe("short");
     expect(parseSearchIntentText("type:channel").filters.type).toBe("channel");
+    expect(parseSearchIntentText("type:live").filters.type).toBe("live");
   });
 });

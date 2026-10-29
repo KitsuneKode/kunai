@@ -169,7 +169,7 @@ describe("live streams on the persistent session", () => {
       },
     );
     expect(options.start).toBe("900");
-    expect(options["demuxer-readahead-secs"]).toBeUndefined();
+    expect(options["demuxer-readahead-secs"]).toBe("10");
   });
 
   test("the loadfile format fallback matches the provider default", () => {
@@ -214,9 +214,10 @@ describe("demuxer-lavf-o composition", () => {
     expect(value).toContain("protocol_whitelist=[file,tcp,tls,https,http,crypto,data]");
   });
 
-  test("a non-live local-HLS loadfile still carries the whitelist alone", () => {
+  test("a non-live local-HLS loadfile carries reconnect and whitelist together", () => {
     const options = buildPersistentLoadfileOptions(LOCAL_HLS, 0, {}, { isLive: false });
-    expect(options["demuxer-lavf-o"]).toBe(
+    expect(options["demuxer-lavf-o"]).toContain("reconnect_delay_max=10");
+    expect(options["demuxer-lavf-o"]).toContain(
       "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]",
     );
   });

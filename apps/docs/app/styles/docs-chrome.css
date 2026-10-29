@@ -38,25 +38,6 @@
     overflow: hidden;
   }
 
-  /* The bar shrinks once the page has scrolled (see `NavCompact`). It is a scale of
-     the whole pill, not a change of its width or padding: a transform stays on the
-     compositor, where animating the bar's size would reflow it every frame. It
-     scales about its top centre so it tucks toward the top of the page rather than
-     drifting, and it gains a little depth because it is now over content. */
-  #nd-home-layout #nd-nav > div {
-    transform-origin: 50% 0;
-    transition:
-      transform 240ms var(--ease-out),
-      box-shadow 240ms var(--ease-out),
-      background-color 240ms var(--ease-out);
-  }
-
-  html[data-nav-compact="true"] #nd-home-layout #nd-nav > div {
-    transform: scale(0.92);
-    box-shadow: var(--kunai-shadow-md);
-    background: color-mix(in oklab, var(--kunai-surface) 90%, transparent) !important;
-  }
-
   #nd-sidebar,
   #nd-toc {
     backdrop-filter: blur(16px);
@@ -351,4 +332,92 @@
     max-width: none;
     overflow-x: auto;
   }
+}
+
+/* The home header's menu and the docs sidebar are separate navigation surfaces.
+   Fumadocs switches its menu at lg; keep links in that menu until then too. */
+@media (max-width: 1023.98px) {
+  #nd-home-layout #nd-nav nav > ul {
+    display: none;
+  }
+  #nd-home-layout #nd-nav > div > div [data-orientation="horizontal"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  #nd-home-layout #nd-nav > div > div a {
+    display: inline-flex;
+    min-block-size: 44px;
+  }
+  #nd-home-layout #nd-nav button {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+  }
+}
+
+.kunai-nav-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--kunai-line);
+  background: var(--kunai-surface);
+  color: var(--color-fd-muted-foreground);
+  padding: 0.375rem 0.625rem;
+  white-space: nowrap;
+}
+.kunai-nav-search__keys {
+  margin-inline-start: auto;
+}
+.kunai-nav-search kbd {
+  border: 1px solid var(--kunai-line);
+  border-radius: 0.25rem;
+  padding-inline: 0.25rem;
+  margin-inline-start: 0.2rem;
+  background: var(--kunai-bg);
+}
+#nd-home-layout #nd-nav :is(a, button):focus-visible {
+  outline: 2px solid var(--color-fd-primary);
+  outline-offset: 3px;
+}
+
+@media (min-width: 1024px) {
+  #nd-home-layout #nd-nav {
+    inline-size: fit-content;
+  }
+  #nd-home-layout #nd-nav nav {
+    inline-size: max-content;
+  }
+}
+
+@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+  #nd-home-layout
+    #nd-nav[data-compact="true"]
+    nav
+    > ul
+    > li:has(
+      > a:is([href="/docs"], [href="/docs/developer"], [href="/releases"], [href$="#disclaimer"])
+    ) {
+    display: none;
+  }
+  #nd-home-layout #nd-nav[data-compact="true"] .kunai-nav-search__label {
+    display: none;
+  }
+  #nd-home-layout #nd-nav[data-compact="true"] > div {
+    box-shadow: var(--kunai-shadow-md);
+    background: color-mix(in oklab, var(--kunai-surface) 90%, transparent) !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @starting-style {
+    #nd-home-layout #nd-nav[data-compact="false"][data-focused="false"] nav > ul > li {
+      opacity: 0;
+    }
+  }
+  #nd-home-layout #nd-nav nav > ul > li {
+    transition: opacity 160ms var(--ease-out);
+  }
+}
+
+#nd-home-layout #nd-nav[data-focused="true"] nav > ul > li {
+  transition: none;
 }

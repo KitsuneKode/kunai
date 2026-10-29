@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { resolveDirectStreamSource } from "../src/shared/direct-stream-source";
+import { createStreamId } from "../src/shared/source-inventory";
 
 function createContext(
   fetchImpl: (url: string, init: RequestInit) => Promise<Response>,
@@ -262,5 +263,81 @@ describe("direct stream resolve gate", () => {
       fetchPayload: async () => THREE_STREAMS,
     });
     expect(missing.status).toBe("exhausted");
+  });
+  test("preferredAudioLanguage prioritizes matching audio stream", async () => {
+    const result = await resolveDirectStreamSource({
+      providerId: "vidlink",
+      host: "vidlink.pro",
+      label: "VidLink",
+      input: createInput({ preferredAudioLanguage: "es" }),
+      context: createContext(async () => new Response("ok")),
+      fetchPayload: async () => ({
+        streams: [
+          { url: "https://cdn.example/en-1080.mp4", qualityHint: "1080p", audioLanguages: ["en"] },
+          { url: "https://cdn.example/es-720.mp4", qualityHint: "720p", audioLanguages: ["es"] },
+        ],
+      }),
+      resolveGateProbe: false,
+    });
+    expect(result.status).toBe("resolved");
+    const selected = result.streams.find((s) => s.id === result.selectedStreamId);
+    expect(selected?.url).toBe("https://cdn.example/es-720.mp4");
+  });
+
+  test.each([false, true])(
+    "preferredStreamId respects explicitly requested candidate with resolve gate %s",
+    async (resolveGateProbe) => {
+      const probed: string[] = [];
+      const result = await resolveDirectStreamSource({
+        providerId: "vidlink",
+        host: "vidlink.pro",
+        label: "VidLink",
+        input: createInput({
+          preferredStreamId: createStreamId("vidlink", ["https://cdn.example/720.mp4"]),
+        }),
+        context: createContext(async (url) => {
+          probed.push(url);
+          return new Response("ok");
+        }),
+        fetchPayload: async () => ({
+          streams: [
+            { url: "https://cdn.example/1080.mp4", qualityHint: "1080p" },
+            { url: "https://cdn.example/720.mp4", qualityHint: "720p" },
+          ],
+        }),
+        resolveGateProbe,
+      });
+      expect(result.status).toBe("resolved");
+      const selected = result.streams.find((s) => s.id === result.selectedStreamId);
+      expect(selected?.qualityLabel).toBe("720p");
+      if (resolveGateProbe) {
+        expect(probed[0]).toBe("https://cdn.example/720.mp4");
+        expect(result.streamReachabilityVerified).toBe(true);
+      }
+    },
+  );
+  test("a refused pinned stream falls back through the same probe gate", async () => {
+    const probed: string[] = [];
+    const result = await resolveDirectStreamSource({
+      providerId: "vidlink",
+      host: "vidlink.pro",
+      label: "VidLink",
+      input: createInput({
+        preferredStreamId: createStreamId("vidlink", ["https://cdn.example/720.mp4"]),
+      }),
+      context: createContext(async (url) => {
+        probed.push(url);
+        return url.includes("720") ? new Response("gone", { status: 404 }) : new Response("ok");
+      }),
+      fetchPayload: async () => THREE_STREAMS,
+      resolveGateProbe: true,
+    });
+    expect(result.status).toBe("resolved");
+    expect(probed).toEqual(["https://cdn.example/720.mp4", "https://cdn.example/1080.mp4"]);
+    expect(result.streams.find((s) => s.id === result.selectedStreamId)?.qualityLabel).toBe(
+      "1080p",
+    );
+    expect(result.streams.some((s) => s.url?.includes("720"))).toBe(false);
+    expect(result.streamReachabilityVerified).toBe(true);
   });
 });

@@ -265,7 +265,7 @@ export function loadLocalSuggestionCorpus(
   return [...byTitleId.values()];
 }
 
-/** Map a fast-catalog result into a band row; `value` is the untouched result. */
+/** Catalog titles open directly; query completions run a committed search. */
 export function toCatalogSuggestions(
   results: readonly SearchResult[],
   titlePreference: Parameters<typeof chooseSearchResultTitle>[1],
@@ -274,13 +274,16 @@ export function toCatalogSuggestions(
     id: `catalog:${result.id}`,
     title: chooseSearchResultTitle(result, titlePreference),
     source: "catalog",
-    meta: [
-      result.year || "",
-      result.isAnime ? "Anime" : kindLabel(result.type === "movie" ? "movie" : "series"),
-      result.episodeCount ? `${result.episodeCount} eps` : "",
-    ]
-      .filter(Boolean)
-      .join(" · "),
-    value: result,
+    meta: result.commitQuery
+      ? "YouTube query"
+      : [
+          result.year || "",
+          result.isAnime ? "Anime" : kindLabel(result.type === "movie" ? "movie" : "series"),
+          result.episodeCount ? `${result.episodeCount} eps` : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+    value: result.commitQuery ? undefined : result,
+    ...(result.commitQuery ? { commitQuery: result.commitQuery } : null),
   }));
 }

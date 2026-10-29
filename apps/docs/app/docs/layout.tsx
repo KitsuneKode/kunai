@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 
 export default function Layout({ children }: { readonly children: ReactNode }) {
   return (
-    <DocsLayout {...baseOptions()} tree={source.getPageTree()} sidebar={docsSidebar}>
+    <DocsLayout {...baseOptions("docs")} tree={source.getPageTree()} sidebar={docsSidebar}>
       {children}
     </DocsLayout>
   );

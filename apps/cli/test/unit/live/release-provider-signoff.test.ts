@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { DEFAULT_CONFIG } from "@kunai/config";
 
+import { releaseAvailabilityFixture } from "../../helpers/release-signoff";
 import {
   buildReleaseProviderRouteCases,
   resolveReleaseAnimeSearchTitle,
@@ -25,6 +26,8 @@ function baseRoutes(
 ): readonly ReleaseProviderSignoffRoute[] {
   const movie: ReleaseProviderSignoffRoute = {
     lane: "movie",
+    targetId: "27205",
+    targetTitle: "Inception",
     configuredProvider: "videasy",
     successfulProvider: "videasy",
     resolved: true,
@@ -36,6 +39,8 @@ function baseRoutes(
   };
   const series: ReleaseProviderSignoffRoute = {
     lane: "series",
+    targetId: "299167",
+    targetTitle: "Dutton Ranch",
     configuredProvider: "videasy",
     successfulProvider: "videasy",
     resolved: true,
@@ -47,6 +52,8 @@ function baseRoutes(
   };
   const anime: ReleaseProviderSignoffRoute = {
     lane: "anime",
+    targetId: "search:Onigiri",
+    targetTitle: "Onigiri",
     configuredProvider: "anidb",
     successfulProvider: "anidb",
     resolved: true,
@@ -56,12 +63,13 @@ function baseRoutes(
     durationMs: 3_400,
     ...overrides.anime,
   };
-  return [movie, series, anime];
+  return [movie, { ...movie, targetId: "550", targetTitle: "Fight Club" }, series, anime];
 }
 
 describe("release provider signoff", () => {
   test("requires all three lanes with separate configured/successful provider fields", () => {
     const signoff = buildReleaseProviderSignoff({
+      diagnostics: releaseAvailabilityFixture(),
       generatedAt: "2026-07-21T06:00:00.000Z",
       commitSha: "abc123",
       version: "0.3.0",
@@ -70,12 +78,19 @@ describe("release provider signoff", () => {
       }),
     });
 
-    expect(signoff.schemaVersion).toBe(1);
-    expect(signoff.routes.map((route) => route.lane)).toEqual(["movie", "series", "anime"]);
-    expect(signoff.routes[1]?.configuredProvider).toBe("videasy");
-    expect(signoff.routes[1]?.successfulProvider).toBe("rivestream");
+    expect(signoff.schemaVersion).toBe(2);
+    expect(signoff.routes.map((route) => route.lane)).toEqual([
+      "movie",
+      "movie",
+      "series",
+      "anime",
+    ]);
+    expect(signoff.routes[2]?.configuredProvider).toBe("videasy");
+    expect(signoff.routes[2]?.successfulProvider).toBe("rivestream");
     expect(Object.keys(signoff.routes[0]!).sort()).toEqual(
       [
+        "targetId",
+        "targetTitle",
         "configuredProvider",
         "durationMs",
         "failureClass",
@@ -90,30 +105,33 @@ describe("release provider signoff", () => {
 
   test("completeness rejects missing or duplicate lanes", () => {
     const incomplete: ReleaseProviderSignoff = {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      diagnostics: releaseAvailabilityFixture(),
       generatedAt: "2026-07-21T06:00:00.000Z",
       commitSha: "abc123",
       version: "0.3.0",
-      routes: baseRoutes().slice(0, 2),
+      routes: baseRoutes().slice(0, 3),
     };
     expect(() => assertReleaseProviderSignoffComplete(incomplete)).toThrow(
-      /Missing release signoff lane: anime/,
+      /Missing release signoff control for lane: anime/,
     );
 
     const duplicate: ReleaseProviderSignoff = {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      diagnostics: releaseAvailabilityFixture(),
       generatedAt: "2026-07-21T06:00:00.000Z",
       commitSha: "abc123",
       version: "0.3.0",
       routes: [...baseRoutes().slice(0, 2), { ...baseRoutes()[0]! }],
     };
     expect(() => assertReleaseProviderSignoffComplete(duplicate)).toThrow(
-      /Duplicate release signoff lane: movie/,
+      /Duplicate release signoff control: movie/,
     );
   });
 
   test("redaction rejects stream URL, token, cookie, and home path leakage", () => {
     const clean = buildReleaseProviderSignoff({
+      diagnostics: releaseAvailabilityFixture(),
       generatedAt: "2026-07-21T06:00:00.000Z",
       commitSha: "abc123",
       version: "0.3.0",
@@ -161,6 +179,7 @@ describe("release provider signoff", () => {
     );
 
     const signoff = buildReleaseProviderSignoff({
+      diagnostics: releaseAvailabilityFixture(),
       generatedAt,
       commitSha: "abc123",
       version: "0.3.0",
@@ -169,6 +188,7 @@ describe("release provider signoff", () => {
     expect(isReleaseProviderSignoffAcceptable(signoff, now)).toBe(true);
 
     const unresolved = buildReleaseProviderSignoff({
+      diagnostics: releaseAvailabilityFixture(),
       generatedAt,
       commitSha: "abc123",
       version: "0.3.0",
@@ -259,6 +279,34 @@ describe("release provider signoff", () => {
 });
 
 describe("release provider route derivation", () => {
+  test("a different anime title cannot silently qualify the requested control", async () => {
+    await expect(
+      resolveReleaseAnimeSearchTitle(
+        {
+          lane: "anime",
+          configuredProvider: "hianime",
+          mode: "anime",
+          searchQuery: "Onigiri",
+          expectedTitle: "Onigiri",
+          season: 1,
+          episode: 1,
+        },
+        {
+          search: async () => [
+            {
+              id: "other",
+              type: "series",
+              title: "Unrelated anime",
+              year: "",
+              overview: "",
+              posterPath: null,
+            },
+          ],
+        },
+        { audio: "original", subtitle: "en" },
+      ),
+    ).rejects.toThrow(/exact.*Onigiri/i);
+  });
   test("derives signoff providers from production defaults", () => {
     const cases = buildReleaseProviderRouteCases(DEFAULT_CONFIG, [
       "vidlink",
@@ -267,6 +315,7 @@ describe("release provider route derivation", () => {
       "youtube",
     ]);
     expect(cases.map((route) => [route.lane, route.configuredProvider])).toEqual([
+      ["movie", "vidlink"],
       ["movie", "vidlink"],
       ["series", "vidlink"],
       ["anime", "hianime"],
@@ -423,6 +472,7 @@ describe("release provider route derivation", () => {
 
   test("release evidence is unacceptable when a different provider succeeds", () => {
     const signoff = buildReleaseProviderSignoff({
+      diagnostics: releaseAvailabilityFixture(),
       generatedAt: "2026-08-11T12:00:00.000Z",
       commitSha: "abc123",
       version: "0.3.0",
