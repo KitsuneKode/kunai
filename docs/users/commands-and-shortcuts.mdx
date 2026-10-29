@@ -111,8 +111,8 @@ you run `bun run --cwd apps/docs generate`.
 Locked chords worth calling out:
 
 - `Tab` cycles browse catalog mode (series / anime / YouTube).
-- `a` cycles audio tracks in mpv and saves your audio language preference for the session, so autoplay continues in your chosen language.
-- `ctrl+q` opens the Up Next queue overlay directly over active playback, letting you inspect the queue and jump to any episode or title without stopping playback prematurely.
+- `a` cycles embedded audio tracks when mpv has alternatives; otherwise it asks Kunai to switch provider audio. Provider audio choices carry into autoplay; embedded mpv track changes apply to the current file.
+- `ctrl+q` in mpv opens Up Next in the Kunai terminal while playback continues. Return to the terminal to inspect the queue or choose another title or episode.
 - `k` opens quality selection during playback.
 - `o` (or `/source`) opens source selection during playback.
 - During playback, live `m` opens the title control menu. The memory panel is

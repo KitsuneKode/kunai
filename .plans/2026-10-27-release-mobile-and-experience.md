@@ -31,6 +31,11 @@ hosted, device or release signoff.
 
 ## 1. Watching release gates
 
+- [ ] Persist explicit embedded mpv audio-language changes across autoplay.
+      Provider audio picks already set session preferences; the native `a`
+      branch only cycles mpv's current file and its track-change hook currently
+      records diagnostics without updating the session language.
+
 - [ ] Reconcile the provider audit branch now integrated into PR #676. Preserve
       its YouTube format ordering and VidRock concurrency fixes; qualify
       recommended-tier promotions with captured playback evidence rather than
