@@ -38,6 +38,28 @@ function buildResolveInput(): ProviderResolveInput {
 const hasYtDlp = () => Boolean(Bun.which("yt-dlp"));
 const ytdlpTest = test.skipIf(!hasYtDlp());
 
+ytdlpTest("live quality choices keep their discovered exact format", async () => {
+  const metadata = normalizeYtDlpVideoInfo(
+    {
+      id: FIXTURE_VIDEO_ID,
+      title: "Live fixture",
+      is_live: true,
+      formats: [
+        { format_id: "live1080", height: 1080, vcodec: "avc1", acodec: "mp4a" },
+        { format_id: "live480", height: 480, vcodec: "avc1", acodec: "mp4a" },
+      ],
+    },
+    FIXTURE_VIDEO_ID,
+  );
+  configureYoutubeProvider({ metadataCache: { get: () => metadata, set: () => {} } });
+  const resolve = youtubeProviderModule.resolve;
+  if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");
+  const result = await resolve({ ...buildResolveInput(), qualityPreference: "480p" }, TEST_CONTEXT);
+  const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+  expect(selected?.metadata?.formatId).toBe("live480");
+  expect(selected?.metadata?.ytdlFormat).toBe("live480");
+});
+
 describe("resolveYoutube", () => {
   test("configureYoutubeProvider replaces previous runtime config", () => {
     configureYoutubeProvider({

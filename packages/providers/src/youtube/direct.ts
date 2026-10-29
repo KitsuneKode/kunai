@@ -47,11 +47,7 @@ import type {
   YoutubeVideoMetadata,
 } from "./youtube-metadata";
 import { createYoutubeMetadataService } from "./youtube-metadata-service";
-import {
-  buildExactYtdlFormatSelector,
-  buildYtdlFormatSelector,
-  defaultYtdlPlaybackFormat,
-} from "./yt-dlp-metadata";
+import { buildExactYtdlFormatSelector, buildYtdlFormatSelector } from "./yt-dlp-metadata";
 import { parseYoutubePlayerClients, withYoutubePlayerClient } from "./ytdl-options";
 
 export { YOUTUBE_PROVIDER_ID, youtubeManifest };
@@ -604,9 +600,8 @@ async function resolveYoutube(
         confidence: (ytInfo ? 0.95 : 0.85) - laneIndex * 0.05,
         cachePolicy,
         metadata: {
-          ytdlFormat: isLive
-            ? defaultYtdlPlaybackFormat()
-            : mappedFormats.length > 0
+          ytdlFormat:
+            mappedFormats.length > 0
               ? buildExactYtdlFormatSelector(entry.formatId, entry.hasAudio)
               : buildYtdlFormatSelector(entry.label),
           formatId: mappedFormats.length > 0 ? entry.formatId : undefined,

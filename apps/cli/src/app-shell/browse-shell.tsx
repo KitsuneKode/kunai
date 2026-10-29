@@ -1240,7 +1240,7 @@ export function BrowseShell<T>({
     (entry: ScoredSuggestion<T>) => {
       const suggestion = entry.suggestion;
       setSuggestionIndex(-1);
-      if (suggestion.value !== undefined) {
+      if (!suggestion.commitQuery && suggestion.value !== undefined) {
         // Title row — identical to Enter on the matching results-list row.
         onSubmit(suggestion.value);
         return;

@@ -354,11 +354,8 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * has since made stricter.
  */
 // October 22 provider/timing/consent/mouse integration measured 3,185,739 bytes.
-// Raised to 3,124 on October 29 for YouTube search query auto-complete suggestions,
-// live-stream typeahead and playback routing, and discovery tray depth expansion.
-// Measured 3,196,517 bytes (+1,709 bytes distributed code, 2,459 bytes headroom).
-// Public launcher budgets below are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_124;
+// 3120 KiB is the watching release ceiling; new work must fit this budget.
+export const NPM_BUNDLE_BUDGET_KB = 3_120;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -60,41 +60,30 @@ export function isFilterChipActive(query: string, chipValue: string): boolean {
  * - Freeform search query text is preserved.
  */
 export function toggleSearchFilterChip(query: string, chip: string): string {
-  const trimmed = query.trim();
-  if (!trimmed) return chip;
-
-  const colonIdx = chip.indexOf(":");
-  if (colonIdx === -1) {
-    const tokens = trimmed.split(/\s+/);
-    if (tokens.includes(chip)) {
-      return tokens.filter((t) => t !== chip).join(" ");
-    }
-    return `${trimmed} ${chip}`;
+  const tokens = query.trim().split(/\s+/).filter(Boolean);
+  const genre = chip.startsWith("genre:");
+  if (genre && isFilterChipActive(query, chip)) {
+    const removed = chip.slice(6);
+    return tokens
+      .flatMap((token) => {
+        if (!token.startsWith("genre:")) return [token];
+        const remaining = token
+          .slice(6)
+          .split(",")
+          .filter((value) => value !== removed);
+        return remaining.length > 0 ? [`genre:${remaining.join(",")}`] : [];
+      })
+      .join(" ");
   }
-
-  const prefix = chip.slice(0, colonIdx);
-  const isExclusive = prefix !== "genre";
-  const tokens = trimmed.split(/\s+/);
-
-  if (isExclusive) {
-    const existingIndex = tokens.findIndex((t) => t.startsWith(`${prefix}:`));
-    if (existingIndex !== -1) {
-      if (tokens[existingIndex] === chip) {
-        tokens.splice(existingIndex, 1);
-        return tokens.join(" ");
-      }
-      tokens[existingIndex] = chip;
-      return tokens.join(" ");
-    }
-    return `${trimmed} ${chip}`;
-  } else {
-    const existingIndex = tokens.findIndex((t) => t === chip);
-    if (existingIndex !== -1) {
-      tokens.splice(existingIndex, 1);
-      return tokens.join(" ");
-    }
-    return `${trimmed} ${chip}`;
-  }
+  const colon = chip.indexOf(":");
+  const prefix = chip.slice(0, colon + 1);
+  const index = tokens.findIndex(
+    (token) => token === chip || (!genre && colon >= 0 && token.startsWith(prefix)),
+  );
+  if (index < 0) tokens.push(chip);
+  else if (tokens[index] === chip) tokens.splice(index, 1);
+  else tokens[index] = chip;
+  return tokens.join(" ");
 }
 
 /**

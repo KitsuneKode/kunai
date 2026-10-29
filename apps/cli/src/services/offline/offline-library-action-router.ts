@@ -2,6 +2,10 @@ import { chooseFromListShell, type ListShellActionContext } from "@/app-shell/pi
 import { queueMoreOfflineTitleEpisodes } from "@/app-shell/workflows";
 import type { Container } from "@/container";
 import {
+  buildDownloadDiagnosticEvent,
+  buildSearchDiagnosticEvent,
+} from "@/services/diagnostics/diagnostic-event-helpers";
+import {
   parseOfflineTitleCleanupPreference,
   type OfflineTitleCleanupPreference,
 } from "@/services/download/download-cleanup-policy";
@@ -100,6 +104,22 @@ export async function routeOfflineLibraryGroupAction(
       type: "SET_PLAYBACK_FEEDBACK",
       note: `Search prepared for ${first.titleName}. Submit it to continue online.`,
     });
+    container.diagnosticsService.record(
+      buildSearchDiagnosticEvent({
+        operation: "search.offline-continuation.requested",
+        status: "started",
+        severity: "healthy",
+        recommendedAction: "none",
+        message: "Offline title requested online continuation",
+        titleId: first.titleId,
+        providerId: first.providerId,
+        context: {
+          titleId: first.titleId,
+          titleName: first.titleName,
+          provider: first.providerId,
+        },
+      }),
+    );
     return "exit";
   }
 
@@ -118,6 +138,27 @@ export async function routeOfflineLibraryGroupAction(
           ? `Integrity check passed for ${entries.length} local item(s).`
           : `Integrity check found ${issueCount} item(s) needing repair.`,
     });
+    container.diagnosticsService.record(
+      buildDownloadDiagnosticEvent({
+        operation: "download.artifact.integrity.checked",
+        status: "succeeded",
+        severity: issueCount === 0 ? "healthy" : "recoverable",
+        recommendedAction: issueCount === 0 ? "none" : "retry-download",
+        message: "Offline group integrity checked",
+        titleId: first.titleId,
+        providerId: first.providerId,
+        context: {
+          titleId: first.titleId,
+          total: entries.length,
+          issueCount,
+          statuses: statuses.map((entry) => ({
+            jobId: entry.job.id,
+            status: entry.status,
+            outputConfigured: Boolean(entry.job.outputPath),
+          })),
+        },
+      }),
+    );
     return "continue";
   }
 
@@ -261,6 +302,7 @@ export async function routeOfflineLibraryGroupAction(
         { value: false, label: "Keep title", detail: "Go back without deleting anything" },
         {
           value: true,
+          destructive: true,
           label: "Delete local title",
           detail: "Remove all local files and download records in this group",
         },

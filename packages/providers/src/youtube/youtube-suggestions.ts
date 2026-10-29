@@ -1,13 +1,22 @@
-import { isJsonString } from "@kunai/types";
+import { isJsonString, type JsonValue } from "@kunai/types";
 
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { invidiousGetSearchSuggestions, type InvidiousClientOptions } from "./invidious-client";
 
 const GOOGLE_SUGGEST_TIMEOUT_MS = 2_000;
 
+function suggestionStrings(value: JsonValue | undefined): readonly string[] {
+  return Array.isArray(value)
+    ? value
+        .filter(isJsonString)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+}
+
 /**
  * Fetch raw search suggestions for YouTube from Google's public suggestion endpoint.
- * Highly responsive (<50ms), unauthenticated, and matches official YouTube query auto-complete.
+ * Uses a bounded request; callers may instead select their own Invidious instance.
  */
 export async function fetchGoogleYoutubeSuggestions(
   query: string,
@@ -15,6 +24,7 @@ export async function fetchGoogleYoutubeSuggestions(
 ): Promise<readonly string[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
+  signal?.throwIfAborted();
 
   const url = `https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=${encodeURIComponent(trimmed)}`;
   try {
@@ -25,15 +35,9 @@ export async function fetchGoogleYoutubeSuggestions(
       },
     });
     if (!response.ok) return [];
-    // SAFETY: external Google suggestion JSON response shape is [query, suggestionsArray]
-    const data = (await response.json()) as unknown;
-    if (Array.isArray(data) && Array.isArray(data[1])) {
-      return data[1]
-        .filter(isJsonString)
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-    return [];
+    // SAFETY: Response.json parses JSON; array and string shapes are checked before use.
+    const data = (await response.json()) as JsonValue;
+    return suggestionStrings(Array.isArray(data) ? data[1] : undefined);
   } catch (error) {
     if (signal?.aborted) throw error;
     return [];
@@ -49,6 +53,14 @@ export async function fetchYoutubeSearchSuggestions(
 ): Promise<readonly string[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
+  options.signal?.throwIfAborted();
+
+  // An explicit instance is a routing choice, not permission to send drafts elsewhere.
+  if (options.preferredInstanceUrl?.trim()) {
+    return suggestionStrings(
+      await invidiousGetSearchSuggestions(trimmed, { ...options, allowInstanceFallback: false }),
+    );
+  }
 
   // Try Google's suggestion endpoint first (fast, reliable, unauthenticated)
   try {

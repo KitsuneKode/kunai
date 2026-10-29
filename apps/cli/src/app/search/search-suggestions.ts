@@ -265,7 +265,7 @@ export function loadLocalSuggestionCorpus(
   return [...byTitleId.values()];
 }
 
-/** Map a fast-catalog result into a band row; `value` is the untouched result. */
+/** Catalog titles open directly; query completions run a committed search. */
 export function toCatalogSuggestions(
   results: readonly SearchResult[],
   titlePreference: Parameters<typeof chooseSearchResultTitle>[1],
@@ -283,7 +283,7 @@ export function toCatalogSuggestions(
         ]
           .filter(Boolean)
           .join(" · "),
-    value: result,
+    value: result.commitQuery ? undefined : result,
     ...(result.commitQuery ? { commitQuery: result.commitQuery } : null),
   }));
 }

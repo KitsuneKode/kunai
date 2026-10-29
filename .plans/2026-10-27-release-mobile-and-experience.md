@@ -31,6 +31,17 @@ hosted, device or release signoff.
 
 ## 1. Watching release gates
 
+- [ ] Integrate and qualify the review correction batch on PR #676 after
+      exact-head hosted checks. Local regressions now cover YouTube query
+      dispatch and configured draft routing, keyboard-only consent/destructive
+      actions, palette pointer ownership, exact live formats, bounded discovery
+      and compound genre removal. The Kitty witness excludes intro skips and
+      missing IPC intervals. Offline title-group actions now share the existing
+      router, preserving diagnostics and repairing metadata before shelf refresh.
+      The original 3120 KiB cap is restored; the measured bundle is 3,193,265
+      bytes (1,615 bytes below it). Forced tests and the native/docs builds pass;
+      these checks do not qualify live providers or physical devices.
+
 - [ ] Persist explicit embedded mpv audio-language changes across autoplay.
       Provider audio picks already set session preferences; the native `a`
       branch only cycles mpv's current file and its track-change hook currently

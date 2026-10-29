@@ -52,14 +52,48 @@ export function kittyTextTarget(frame: string, label: string) {
   return { x: Bun.stringWidth(line.slice(0, line.indexOf(label))) + 1, y: y + 1 };
 }
 
+/** A seek contributes at most one sample interval, never its entire media jump. */
+export function observedPlaybackAdvanceMs(
+  previousPosition: number | null,
+  position: number,
+  previousObservedAt: number,
+  observedAt: number,
+): number {
+  if (previousPosition === null) return 0;
+  return Math.max(
+    0,
+    Math.min((position - previousPosition) * 1000, observedAt - previousObservedAt),
+  );
+}
+
 /** Playback clock/dimensions only; a cover image can pass. Inspect actual frame captures separately. */
-export function playbackProgressProof(start: number, end: number, video: JsonValue) {
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start + PLAYBACK_ADVANCE_SECONDS)
+export function playbackProgressProof(
+  start: number,
+  end: number,
+  video: JsonValue,
+  observation: {
+    readonly elapsedMs: number;
+    readonly advancingMs: number;
+    readonly minimumSeconds: number;
+  },
+) {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start + observation.minimumSeconds)
     throw new Error("Playback did not advance");
+  if (
+    !Number.isFinite(observation.elapsedMs) ||
+    !Number.isFinite(observation.minimumSeconds) ||
+    !Number.isFinite(observation.advancingMs) ||
+    observation.minimumSeconds < PLAYBACK_ADVANCE_SECONDS ||
+    observation.elapsedMs < observation.minimumSeconds * 1000 ||
+    observation.advancingMs < observation.minimumSeconds * 1000
+  )
+    throw new Error("Playback observation period was not completed");
   return {
     timePosStart: start,
     timePosEnd: end,
     video: z.object({ w: z.number().positive(), h: z.number().positive() }).parse(video),
+    observedForMs: observation.elapsedMs,
+    advancingForMs: observation.advancingMs,
   };
 }
 

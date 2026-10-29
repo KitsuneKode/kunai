@@ -15,7 +15,7 @@ import { shellModeToProviderLane } from "@/domain/provider-lane";
 import { SUGGESTION_MIN_QUERY_LENGTH } from "@/domain/search/suggestion-engine";
 import type { SearchResult, ShellMode } from "@/domain/types";
 import type { ProviderCatalogIdentity } from "@kunai/core";
-import { fetchYoutubeSearchSuggestions } from "@kunai/providers/youtube";
+import { fetchYoutubeSearchSuggestions, getYoutubeProviderConfig } from "@kunai/providers/youtube";
 
 import type { SearchRegistry } from "./SearchRegistry";
 
@@ -69,12 +69,13 @@ export async function suggestCatalogTitles(input: {
   readonly limit?: number;
 }): Promise<SuggestCatalogOutcome | null> {
   const query = input.query.trim();
-  if (query.length < SUGGESTION_MIN_QUERY_LENGTH) return null;
+  if (query.length < SUGGESTION_MIN_QUERY_LENGTH || input.signal?.aborted) return null;
 
   if (input.mode === "youtube") {
     try {
       const suggestions = await fetchYoutubeSearchSuggestions(query, {
         signal: input.signal,
+        preferredInstanceUrl: getYoutubeProviderConfig().invidiousInstanceUrl,
       });
       if (input.signal?.aborted) return null;
       return {

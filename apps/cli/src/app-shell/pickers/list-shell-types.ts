@@ -33,4 +33,6 @@ export type ShellOption<T> = {
   readonly disabled?: boolean;
   /** Discards data or resets state; rendered in a warning tone. */
   readonly destructive?: boolean;
+  /** Pointer input may focus this choice, but only Enter may commit it. */
+  readonly keyboardOnly?: boolean;
 };

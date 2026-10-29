@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import {
   playbackProgressProof,
+  observedPlaybackAdvanceMs,
   PLAYBACK_ADVANCE_SECONDS,
   startKittySession,
   waitForKittyCondition,
@@ -104,23 +105,64 @@ async function witnessPlayback(session: Session, signal: AbortSignal) {
     timeoutSeconds * 1000,
     signal,
   );
-  const end = await waitForKittyCondition(
-    async () => {
-      try {
-        const value = await session.ipc(["get_property", "time-pos"]);
-        const parsed = z.number().safeParse(value);
-        return parsed.success && parsed.data > start + observeSeconds ? parsed.data : null;
-      } catch {
-        return null;
-      }
-    },
-    (observeSeconds + 30) * 1000,
-    signal,
-  );
+  const observationStarted = performance.now();
+  let previousObservedAt = observationStarted;
+  let previousPosition: number | null = start;
+  let advancingMs = 0;
+  let end: number;
+  try {
+    end = await waitForKittyCondition(
+      async () => {
+        try {
+          const value = await session.ipc(["get_property", "time-pos"]);
+          const parsed = z.number().safeParse(value);
+          const observedAt = performance.now();
+          if (parsed.success) {
+            advancingMs += observedPlaybackAdvanceMs(
+              previousPosition,
+              parsed.data,
+              previousObservedAt,
+              observedAt,
+            );
+          }
+          previousPosition = parsed.success ? parsed.data : null;
+          previousObservedAt = observedAt;
+          return parsed.success &&
+            parsed.data > start + observeSeconds &&
+            advancingMs >= observeSeconds * 1000 &&
+            performance.now() - observationStarted >= observeSeconds * 1000
+            ? parsed.data
+            : null;
+        } catch {
+          previousPosition = null;
+          return null;
+        }
+      },
+      (observeSeconds + 30) * 1000,
+      signal,
+    );
+  } catch (error) {
+    await Bun.write(
+      join(session.evidenceDir, "playback-observation.json"),
+      JSON.stringify({
+        timePosStart: start,
+        lastTimePos: previousPosition,
+        observedForMs: Math.round(performance.now() - observationStarted),
+        advancingForMs: Math.round(advancingMs),
+        requiredSeconds: observeSeconds,
+      }),
+    );
+    throw error;
+  }
   const proof = playbackProgressProof(
     start,
     end,
     await session.ipc(["get_property", "video-params"]),
+    {
+      elapsedMs: Math.round(performance.now() - observationStarted),
+      advancingMs: Math.round(advancingMs),
+      minimumSeconds: observeSeconds,
+    },
   );
   await Bun.write(
     join(session.evidenceDir, "playback.json"),

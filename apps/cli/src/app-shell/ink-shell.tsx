@@ -1542,7 +1542,7 @@ function normalizeReservedCommandInput(nextValue: string): {
   };
 }
 
-function ListShell<T>({
+export function ListShell<T>({
   title,
   subtitle,
   options,
@@ -1565,6 +1565,7 @@ function ListShell<T>({
 }) {
   const [index, setIndex] = useState(initialSelectedIndex ?? 0);
   const [confirmed, setConfirmed] = useState(false);
+  const submittedRef = useRef(false);
   const [filterQuery, setFilterQuery] = useState(initialFilter ?? "");
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
@@ -1701,11 +1702,12 @@ function ListShell<T>({
   }
 
   const commitOption = (opt: ShellOption<T>) => {
-    if (opt.disabled || confirmed) return;
+    if (opt.disabled || submittedRef.current || commandMode) return;
+    submittedRef.current = true;
     const optIdx = filteredOptions.indexOf(opt);
     if (optIdx !== -1) setIndex(optIdx);
     setConfirmed(true);
-    setTimeout(() => onSubmit(opt.value), 150);
+    onSubmit(opt.value);
   };
 
   useInput((input, key) => {
@@ -1822,7 +1824,7 @@ function ListShell<T>({
             >
               <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
                 {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
-                {visibleOptions.map((option) => {
+                {visibleOptions.map((option, optionOffset) => {
                   const selected = option === selectedOption;
                   const isConfirmed = confirmed && selected;
                   const itemPrefix = isConfirmed ? "✓" : selected ? "▌" : " ";
@@ -1860,8 +1862,13 @@ function ListShell<T>({
                     <MouseTarget
                       key={`${option.label}-${option.detail ?? ""}`}
                       id={`list:opt:${option.label}`}
-                      active={!confirmed && !option.disabled}
-                      onClick={() => commitOption(option)}
+                      active={!commandMode && !confirmed && !option.disabled}
+                      onClick={() => {
+                        const optionIndex = windowStart + optionOffset;
+                        if (optionIndex !== index || option.keyboardOnly || option.destructive)
+                          setIndex(optionIndex);
+                        else commitOption(option);
+                      }}
                     >
                       <Box
                         width={rowWidth}

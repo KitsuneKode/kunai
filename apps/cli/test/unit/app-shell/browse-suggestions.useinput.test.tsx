@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { BrowseShell } from "@/app-shell/browse-shell";
+import { toCatalogSuggestions } from "@/app/search/search-suggestions";
 import type { SearchSuggestion } from "@/domain/search/suggestion-engine";
 import type { SearchResult } from "@/domain/types";
 import React, { act } from "react";
@@ -83,6 +84,58 @@ async function type(handle: ReturnType<typeof render>, text: string): Promise<vo
 }
 
 describe("browse shell suggestion band", () => {
+  test("YouTube query suggestions run a search instead of selecting a synthetic video", async () => {
+    const searches: string[] = [];
+    const submitted: string[] = [];
+    const handle = render(
+      <BrowseShell
+        mode="youtube"
+        provider="youtube"
+        placeholder="Search"
+        commands={[]}
+        suggestionDebounceMs={0}
+        loadLocalSuggestions={() => []}
+        onSuggest={async () =>
+          toCatalogSuggestions(
+            [
+              {
+                ...searchResult("yt:suggest:lofi music", "lofi music"),
+                commitQuery: "lofi music",
+                resolvedLane: "youtube",
+              },
+            ],
+            "romaji",
+          )
+        }
+        onSearch={async (query) => {
+          searches.push(query);
+          return { options: [], subtitle: "0 results" };
+        }}
+        onResolve={() => {}}
+        onSubmit={(value) => submitted.push(value.id)}
+        onCancel={() => {}}
+      />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await type(handle, "lo");
+      await act(async () => {
+        await nextMacrotask();
+      });
+      expect(stripAnsi(handle.lastFrame())).toContain("lofi music");
+      await act(async () => {
+        handle.stdin.enqueue(["\x1b[B"]);
+      });
+      await act(async () => {
+        handle.stdin.enqueue(["\r"]);
+      });
+      expect(submitted).toEqual([]);
+      expect(searches).toEqual(["lofi music"]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("band renders local + catalog rows under the field after ~2 chars", async () => {
     const handle = render(
       <BrowseShell

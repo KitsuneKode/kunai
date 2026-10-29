@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T06:55:37Z"
+lastReviewed: "2026-10-29"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -392,6 +392,12 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
   terminal image renderer when the selected row needs a preview.
 - Deleting a downloaded artifact removes the media file, subtitle sidecar, recorded artwork sidecar,
   and deterministic derived artwork path to avoid orphaned local preview files.
+- Library detail and the offline workflow picker share title-group actions in
+  `apps/cli/src/services/offline/offline-library-action-router.ts`. Integrity and
+  online-continuation actions retain their diagnostic events. Repair retries missing
+  files and repairs missing metadata for readable files; the workflow returns to
+  its parent shelf to reload changed jobs. Protection, cleanup preferences and
+  deletion cancellation use the same path on both surfaces.
 
 ## Config Fields (current + planned)
 

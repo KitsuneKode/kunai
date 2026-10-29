@@ -59,7 +59,6 @@ import {
 import {
   buildDiagnosticEvent,
   buildDownloadDiagnosticEvent,
-  buildSearchDiagnosticEvent,
   buildUiDiagnosticEvent,
 } from "@/services/diagnostics/diagnostic-event-helpers";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
@@ -86,6 +85,7 @@ import {
   resolveOfflineArtifactStatus,
   resolveOfflineJobPreviewImage,
 } from "@/services/offline/offline-library";
+import { routeOfflineLibraryGroupAction } from "@/services/offline/offline-library-action-router";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
 import { getKunaiPaths, type DownloadJobRecord } from "@/services/storage/storage-read-models";
 import type { SyncPushSummary } from "@/services/sync/SyncService";
@@ -280,209 +280,18 @@ export async function openOfflineLibraryGroupPicker(
       options,
     });
     if (!picked || picked.type === "back") return;
-    if (picked.type === "check-integrity") {
-      const statuses = await Promise.all(
-        entries.map(async (entry) => ({
-          job: entry.job,
-          status: await resolveOfflineArtifactStatus(entry.job),
-        })),
-      );
-      const issueCount = statuses.filter((entry) => entry.status !== "ready").length;
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note:
-          issueCount === 0
-            ? `Integrity check passed for ${entries.length} local item(s).`
-            : `Integrity check found ${issueCount} item(s) needing repair.`,
-      });
-      container.diagnosticsService.record(
-        buildDownloadDiagnosticEvent({
-          operation: "download.artifact.integrity.checked",
-          status: "succeeded",
-          severity: issueCount === 0 ? "healthy" : "recoverable",
-          recommendedAction: issueCount === 0 ? "none" : "retry-download",
-          message: "Offline group integrity checked",
-          titleId: first.titleId,
-          providerId: first.providerId,
-          context: {
-            titleId: first.titleId,
-            total: entries.length,
-            issueCount,
-            statuses: statuses.map((entry) => ({
-              jobId: entry.job.id,
-              status: entry.status,
-              outputConfigured: Boolean(entry.job.outputPath),
-            })),
-          },
-        }),
-      );
-      continue;
-    }
-    if (picked.type === "repair-missing") {
-      const repairEntries = entries.filter((entry) => entry.status !== "ready");
-      for (const entry of repairEntries) {
-        container.downloadService.retry(entry.job.id);
-      }
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: `Re-download queued for ${repairEntries.length} missing ${
-          repairEntries.length === 1 ? "item" : "items"
-        }`,
-      });
-      container.downloadService.kickQueue("offline-repair");
-      continue;
-    }
-    if (picked.type === "download-more") {
-      await queueMoreOfflineTitleEpisodes(
+    if (picked.type !== "job") {
+      const result = await routeOfflineLibraryGroupAction(
         container,
-        first,
-        groupSummary?.contentType,
+        entries,
+        { type: picked.type, contentType: groupSummary?.contentType },
         actionContext,
       );
+      // Repair changes stored jobs: the parent reloads the shelf before reopening a group.
+      if (result !== "continue") return;
       continue;
     }
-    if (picked.type === "toggle-continuation") {
-      const enrolling = offlinePolicy?.enrolled !== true;
-      container.offlineTitlePolicies.upsert({
-        titleId: first.titleId,
-        mediaKind: first.mediaKind,
-        titleName: first.titleName,
-        enrolled: enrolling,
-        runwayTarget: container.config.offlineDefaultRunwayTarget,
-        profileJson: JSON.stringify({
-          audio: first.animeLang ?? "original",
-          subtitle: first.subLang ?? "none",
-          quality: first.selectedQualityLabel ?? "best",
-        }),
-        cleanupJson:
-          offlinePolicy?.cleanupJson ?? JSON.stringify({ mode: "keep-last-watched", count: 1 }),
-        updatedAt: new Date().toISOString(),
-      });
-      if (enrolling) {
-        container.offlineRunwayService.enqueueEvaluation(first.titleId, "policy-change");
-      }
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: enrolling
-          ? `Keeping ${first.titleName} ready offline within your runway limit.`
-          : `Stopped offline continuation for ${first.titleName}. Existing files stay local.`,
-      });
-      continue;
-    }
-    if (picked.type === "edit-cleanup") {
-      const policy = await chooseFromListShell<OfflineTitleCleanupPreference>({
-        title: `After watching ${first.titleName}`,
-        subtitle:
-          "Controls cleanup suggestions only; local files stay until you explicitly delete them",
-        actionContext,
-        options: [
-          {
-            value: { mode: "keep-last-watched", count: 1 },
-            label: "Keep latest watched episode",
-            detail: "Keep one watched local fallback and suggest older watched files",
-          },
-          {
-            value: { mode: "cleanup-watched", graceDays: container.config.autoCleanupGraceDays },
-            label: `Suggest cleanup after ${container.config.autoCleanupGraceDays} days`,
-            detail: "Uses your cleanup grace window when cleanup suggestions are enabled",
-          },
-        ],
-      });
-      if (!policy) continue;
-      container.offlineTitlePolicies.upsert({
-        titleId: first.titleId,
-        mediaKind: first.mediaKind,
-        titleName: first.titleName,
-        enrolled: offlinePolicy?.enrolled === true,
-        runwayTarget: offlinePolicy?.runwayTarget ?? container.config.offlineDefaultRunwayTarget,
-        profileJson:
-          offlinePolicy?.profileJson ??
-          JSON.stringify({
-            audio: first.animeLang ?? "original",
-            subtitle: first.subLang ?? "none",
-            quality: first.selectedQualityLabel ?? "best",
-          }),
-        cleanupJson: JSON.stringify(policy),
-        updatedAt: new Date().toISOString(),
-      });
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note:
-          policy.mode === "keep-last-watched"
-            ? `Keeping one watched local episode for ${first.titleName}.`
-            : `Cleanup suggestions for ${first.titleName} use a ${policy.graceDays}-day grace.`,
-      });
-      continue;
-    }
-    if (picked.type === "search-online") {
-      container.stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: first.titleName });
-      container.stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: `Search prepared for ${first.titleName}. Submit it to continue online.`,
-      });
-      container.diagnosticsService.record(
-        buildSearchDiagnosticEvent({
-          operation: "search.offline-continuation.requested",
-          status: "started",
-          severity: "healthy",
-          recommendedAction: "none",
-          message: "Offline title requested online continuation",
-          titleId: first.titleId,
-          providerId: first.providerId,
-          context: {
-            titleId: first.titleId,
-            titleName: first.titleName,
-            provider: first.providerId,
-          },
-        }),
-      );
-      return;
-    }
-    if (picked.type === "protect-group" || picked.type === "unprotect-group") {
-      await setOfflineGroupProtection(
-        container,
-        entries.map((entry) => entry.job.id),
-        picked.type === "protect-group",
-      );
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note:
-          picked.type === "protect-group"
-            ? `Protected ${first.titleName} from watched-download cleanup.`
-            : `Removed cleanup protection for ${first.titleName}.`,
-      });
-      continue;
-    }
-    if (picked.type === "delete-group") {
-      const confirmed = await chooseFromListShell<boolean>({
-        title: `Delete ${first.titleName}?`,
-        subtitle: `Remove ${entries.length} local ${
-          entries.length === 1 ? "item" : "items"
-        }, subtitles, and queue records for this title.`,
-        actionContext,
-        options: [
-          { value: false, label: "Keep title", detail: "Go back without deleting anything" },
-          {
-            value: true,
-            label: "Delete local title",
-            detail: "Remove all local files and download records in this group",
-          },
-        ],
-      });
-      if (!confirmed) continue;
-      const summary = await deleteDownloads(
-        container.downloadService,
-        entries.map((entry) => entry.job.id),
-        true,
-      );
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: formatDownloadRemovalFeedback(summary),
-      });
-      if (summary.retained.length > 0) continue;
-      return;
-    }
+
     const job = container.downloadService.getJob(picked.id);
     if (!job || (job.status !== "completed" && job.status !== "completed-with-notes")) continue;
 
@@ -526,11 +335,13 @@ export async function openOfflineLibraryGroupPicker(
         },
         {
           value: "delete-artifact",
+          destructive: true,
           label: "Delete local file and job",
           detail: "Remove local media, subtitle file, and queue record",
         },
         {
           value: "delete-job",
+          destructive: true,
           label: "Delete job only",
           detail: "Keep local files on disk but remove this queue record",
         },
@@ -696,6 +507,7 @@ function buildOfflineGroupActions(
   });
   actions.push({
     value: { type: "delete-group" },
+    destructive: true,
     label: "Delete this offline title",
     detail: "Confirm before removing all local files and queue records",
   });
@@ -744,23 +556,6 @@ export async function queueMoreOfflineTitleEpisodes(
       },
     }),
   );
-}
-
-async function setOfflineGroupProtection(
-  container: Container,
-  jobIds: readonly string[],
-  protectedFromCleanup: boolean,
-): Promise<void> {
-  const current = new Set(container.config.protectedDownloadJobIds);
-  for (const jobId of jobIds) {
-    if (protectedFromCleanup) {
-      current.add(jobId);
-    } else {
-      current.delete(jobId);
-    }
-  }
-  await container.config.update({ protectedDownloadJobIds: [...current] });
-  await container.config.save();
 }
 
 async function openStaticInfoShell({
@@ -1559,7 +1354,9 @@ async function handleAnalytics(container: Container): Promise<"handled"> {
       {
         value: "enable" as const,
         label: status === "enabled" ? "Analytics enabled" : "Turn on anonymous usage ping",
-        detail: "One ping / 24h · installId + version + os + arch + ts only",
+        detail:
+          "Press Enter to confirm · One ping / 24h · installId + version + os + arch + ts only",
+        keyboardOnly: true,
       },
       {
         value: "disable" as const,

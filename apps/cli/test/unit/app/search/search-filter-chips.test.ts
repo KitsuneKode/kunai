@@ -114,6 +114,14 @@ describe("isFilterChipActive", () => {
 });
 
 describe("toggleSearchFilterChip", () => {
+  test("removes an active member of a comma-separated genre facet", () => {
+    const query = "naruto genre:action,comedy";
+    expect(isFilterChipActive(query, "genre:action")).toBe(true);
+    const toggled = toggleSearchFilterChip(query, "genre:action");
+    expect(toggled).toBe("naruto genre:comedy");
+    expect(isFilterChipActive(toggled, "genre:action")).toBe(false);
+    expect(toggleSearchFilterChip(toggled, "genre:comedy")).toBe("naruto");
+  });
   test("appends chip to empty query", () => {
     expect(toggleSearchFilterChip("", "type:movie")).toBe("type:movie");
   });

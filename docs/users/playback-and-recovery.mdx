@@ -20,8 +20,13 @@ Detached playback therefore has deliberately smaller behavior:
 - no automatic progress, completion, watched-state, or provider-health inference;
 - no autoplay, auto-skip, near-EOF prefetch, or in-terminal player controls;
 - a claimed queue item returns to pending instead of being marked played;
-- offline/local files, external subtitles, yt-dlp-dependent playback, and
-  streams requiring headers or cookies are rejected before launch.
+- offline/local files and yt-dlp-dependent playback are rejected before launch.
+
+Streams requiring headers or cookies, supported HLS/DASH manifests, and external
+subtitles use a private on-device loopback gateway. Choose VLC or mpv-android
+for subtitles; the system chooser cannot carry them. Keep Kunai open while
+the gateway serves playback. These paths have automated coverage but still need
+physical-device qualification. See [Android installation and limits](/docs/users/install-and-update#install-paths).
 
 Use desktop managed mpv when you need full history/resume, subtitle attachment,
 track controls, recovery, or autoplay parity. iOS is not implemented.

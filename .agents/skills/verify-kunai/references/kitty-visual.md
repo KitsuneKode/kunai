@@ -130,8 +130,11 @@ The default deadline is 45 seconds to observe mpv progress, bounded by
 `--timeout 5..120`. Routes run one at a time; an unsuccessful case records its
 failure and the matrix continues. After startup it requires over eight seconds
 of advancing playback within a separate twenty-second observation window.
-Use `--observe 8..120` for an explicitly longer sample, with twelve seconds of
-extra observation allowance. A short black opening needs a later inspected
+Use `--observe 8..120` for an explicitly longer sample, with thirty seconds of
+extra observation allowance. The sample requires elapsed monotonic time and
+accumulated clock advancement; intro skips and seeks contribute at most one
+sample interval. `playback.json` records both durations, and an incomplete
+sample retains `playback-observation.json`. A short black opening needs a later inspected
 frame before classifying it as a video defect. Preserve the first result; do not
 rewrite it as a pass. This is a short smoke, not a soak or stream-completion
 test. No automatic reruns, stream downloading, WAF bypass,
