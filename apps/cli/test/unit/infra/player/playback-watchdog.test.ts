@@ -143,6 +143,31 @@ describe("playback-watchdog", () => {
     },
   );
 
+  test("emits stream-stalled with network-read-dead even when pausedForCache is false", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      networkReadDeadAfterMs: 1_000,
+    });
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 0,
+      positionSeconds: 30,
+      durationSeconds: 100,
+      paused: false,
+      pausedForCache: false,
+      demuxerViaNetwork: true,
+      demuxerCacheUnderrun: true,
+      demuxerRawInputRate: 0,
+    });
+    runTimers();
+    nowMs = 1_100;
+    runTimers();
+    const stalls = events.filter((event) => event.type === "stream-stalled");
+    expect(stalls).toHaveLength(1);
+    expect(stalls[0]).toMatchObject({ stallKind: "network-read-dead" });
+    watchdog.stop();
+  });
+
   test("does not emit stream-stalled after long user pause then resume", () => {
     const events: PlayerPlaybackEvent[] = [];
     const watchdog = createPlaybackWatchdog(

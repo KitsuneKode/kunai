@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * Regression guard: `runProviderCycle` candidate timeouts must go through
@@ -10,7 +11,7 @@ import { join } from "node:path";
  * (10s under a 6s `fast` budget, 15s under 6s/12s budgets).
  */
 
-const SRC_DIR = new URL("../src", import.meta.url).pathname;
+const SRC_DIR = fileURLToPath(new URL("../src", import.meta.url));
 
 function* tsFiles(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
