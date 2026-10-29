@@ -733,9 +733,14 @@ export function BrowseShell<T>({
       setQuery(nextQuery);
       if (shouldResearchAfterFilterChange({ searchState, lastSearchedQuery, nextQuery })) {
         void runSearch(nextQuery);
+      } else if (
+        nextQuery.trim().length === 0 &&
+        (searchState === "ready" || searchState === "error")
+      ) {
+        clearResults();
       }
     },
-    [lastSearchedQuery, query, runSearch, searchState, setQuery],
+    [clearResults, lastSearchedQuery, query, runSearch, searchState, setQuery],
   );
 
   const handleQuerySubmit = useCallback(
@@ -2218,11 +2223,17 @@ export function BrowseShell<T>({
                 <Text color={palette.dim}>Query filters </Text>
                 {structuredFilterChips.map((chip, index) => (
                   <Box key={`${chip.key}-${chip.label}`} marginRight={2}>
-                    <Text color={palette.accentSoft}>
-                      {index < 9 ? `${index + 1} ` : ""}
-                      {sanitizeTerminalText(chip.label)}
-                      <Text color={palette.muted}> ×</Text>
-                    </Text>
+                    <MouseTarget
+                      id={`browse:chip:${chip.key}`}
+                      active={pointerActive}
+                      onClick={() => clearStructuredFilterChip(chip.key)}
+                    >
+                      <Text color={palette.accentSoft}>
+                        {index < 9 ? `${index + 1} ` : ""}
+                        {sanitizeTerminalText(chip.label)}
+                        <Text color={palette.muted}> ×</Text>
+                      </Text>
+                    </MouseTarget>
                   </Box>
                 ))}
                 <Text color={palette.dim} dimColor>
@@ -2304,6 +2315,8 @@ export function BrowseShell<T>({
                 maxRows={suggestionMaxRows}
                 selectedIndex={boundedSuggestionIndex}
                 width={innerWidth}
+                pointerActive={pointerActive}
+                onSelect={commitSuggestion}
               />
             ) : null}
           </>

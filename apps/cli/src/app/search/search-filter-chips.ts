@@ -7,106 +7,195 @@ export type SearchFilterChipOption = {
   readonly detail: string;
 };
 
+const LANGS: readonly [string, string][] = [
+  ["en", "English"],
+  ["ja", "Japanese"],
+  ["hi", "Hindi"],
+  ["es", "Spanish"],
+  ["fr", "French"],
+  ["de", "German"],
+  ["ko", "Korean"],
+  ["it", "Italian"],
+  ["ru", "Russian"],
+  ["pt", "Portuguese"],
+];
+
+const GENRES: readonly string[] = [
+  "Action",
+  "Adventure",
+  "Comedy",
+  "Drama",
+  "Fantasy",
+  "Horror",
+  "Mystery",
+  "Romance",
+  "Supernatural",
+  "Thriller",
+  "Sports",
+  "Mecha",
+  "Sci-Fi",
+  "Slice of Life",
+];
+
+const YEARS = ["2026", "2025", "2024", "2023", "2022", "2020"] as const;
+const ACTIVE_REMOVE = "active (select to remove)";
+
 /**
- * Guided-facet chips for the `/filters` sheet. Type facets are gated to the
- * current catalog mode so we never advertise a token that cannot apply — e.g.
- * `type:playlist` only surfaces in YouTube mode, and `type:movie|series` only
- * outside YouTube. This keeps the sheet honest with what the routing layer will
- * actually apply (see SearchRoutingService content-shape gating).
+ * Check whether a specific filter chip is currently active in the search query.
+ * Matches literal token occurrences and compound genre lists.
+ */
+export function isFilterChipActive(query: string, chipValue: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return false;
+  const tokens = trimmed.split(/\s+/);
+  if (tokens.includes(chipValue)) return true;
+
+  if (chipValue.startsWith("genre:")) {
+    const genre = chipValue.slice(6);
+    return tokens.some((t) => t.startsWith("genre:") && t.slice(6).split(",").includes(genre));
+  }
+
+  return false;
+}
+
+/**
+ * Combobox facet toggler ($shadcn pattern):
+ * - If the chip is already in the query, toggling it removes it.
+ * - If an exclusive facet (type, sort, mode, rating, year, release, audio, subtitles, etc.)
+ *   already exists in the query, selecting another value replaces the existing facet.
+ * - Non-exclusive facets (e.g. genre) toggle individually.
+ * - Freeform search query text is preserved.
+ */
+export function toggleSearchFilterChip(query: string, chip: string): string {
+  const trimmed = query.trim();
+  if (!trimmed) return chip;
+
+  const colonIdx = chip.indexOf(":");
+  if (colonIdx === -1) {
+    const tokens = trimmed.split(/\s+/);
+    if (tokens.includes(chip)) {
+      return tokens.filter((t) => t !== chip).join(" ");
+    }
+    return `${trimmed} ${chip}`;
+  }
+
+  const prefix = chip.slice(0, colonIdx);
+  const isExclusive = prefix !== "genre";
+  const tokens = trimmed.split(/\s+/);
+
+  if (isExclusive) {
+    const existingIndex = tokens.findIndex((t) => t.startsWith(`${prefix}:`));
+    if (existingIndex !== -1) {
+      if (tokens[existingIndex] === chip) {
+        tokens.splice(existingIndex, 1);
+        return tokens.join(" ");
+      }
+      tokens[existingIndex] = chip;
+      return tokens.join(" ");
+    }
+    return `${trimmed} ${chip}`;
+  } else {
+    const existingIndex = tokens.findIndex((t) => t === chip);
+    if (existingIndex !== -1) {
+      tokens.splice(existingIndex, 1);
+      return tokens.join(" ");
+    }
+    return `${trimmed} ${chip}`;
+  }
+}
+
+/**
+ * Guided-facet chips for the `/filters` combobox sheet.
+ * Follows shadcn Combobox / Command pattern:
+ * - Active chips display [✓] and "(active · select to remove)".
+ * - Inactive chips display [ ] when currentQuery is supplied.
+ * - Facets are catalog-scoped so tokens that cannot apply are never advertised.
  */
 export function buildSearchFilterChipOptions(context: {
   readonly sessionMode: ShellMode;
   readonly library: BrowseLibraryFilterAvailability;
+  readonly currentQuery?: string;
 }): SearchFilterChipOption[] {
-  const { sessionMode, library } = context;
+  const { sessionMode, library, currentQuery } = context;
   const isYoutube = sessionMode === "youtube";
+
+  const opt = (value: string, baseLabel: string, baseDetail: string): SearchFilterChipOption => {
+    if (currentQuery === undefined) {
+      return { value, label: baseLabel, detail: baseDetail };
+    }
+    const active = isFilterChipActive(currentQuery, value);
+    return {
+      value,
+      label: `${active ? "[✓] " : "[ ] "}${baseLabel}`,
+      detail: active
+        ? baseDetail
+          ? `${baseDetail} · ${ACTIVE_REMOVE}`
+          : ACTIVE_REMOVE
+        : baseDetail,
+    };
+  };
 
   return [
     // ── Type (catalog-scoped) ──
     ...(isYoutube
       ? [
-          { value: "type:video", label: "YouTube · Videos", detail: "Only videos" },
-          { value: "type:short", label: "YouTube · Shorts", detail: "Only Shorts" },
-          { value: "type:playlist", label: "YouTube · Playlists", detail: "Only playlists" },
-          { value: "type:channel", label: "YouTube · Channels", detail: "Only channels" },
+          opt("type:video", "YouTube · Videos", "Only videos"),
+          opt("type:short", "YouTube · Shorts", "Only Shorts"),
+          opt("type:playlist", "YouTube · Playlists", "Only playlists"),
+          opt("type:channel", "YouTube · Channels", "Only channels"),
         ]
       : [
-          { value: "type:movie", label: "Type · Movies", detail: "Only movies" },
-          { value: "type:series", label: "Type · Series", detail: "Only TV / series" },
+          opt("type:movie", "Type · Movies", "Only movies"),
+          opt("type:series", "Type · Series", "Only TV / series"),
         ]),
-    // ── Cross-mode switches (skip the one you are already in) ──
+    // ── Cross-mode switches ──
     ...(sessionMode !== "anime"
-      ? [{ value: "mode:anime", label: "Type · Anime", detail: "Search anime catalogs" }]
+      ? [opt("mode:anime", "Type · Anime", "Search anime catalogs")]
       : []),
-    ...(sessionMode !== "youtube"
-      ? [{ value: "mode:youtube", label: "Type · YouTube", detail: "Search YouTube" }]
-      : []),
-    // ── Genre (anime catalogs honor these directly) ──
-    { value: "genre:action", label: "Genre · Action", detail: "" },
-    { value: "genre:adventure", label: "Genre · Adventure", detail: "" },
-    { value: "genre:comedy", label: "Genre · Comedy", detail: "" },
-    { value: "genre:drama", label: "Genre · Drama", detail: "" },
-    { value: "genre:fantasy", label: "Genre · Fantasy", detail: "" },
-    { value: "genre:horror", label: "Genre · Horror", detail: "" },
-    { value: "genre:mystery", label: "Genre · Mystery", detail: "" },
-    { value: "genre:romance", label: "Genre · Romance", detail: "" },
-    { value: "genre:supernatural", label: "Genre · Supernatural", detail: "" },
-    { value: "genre:thriller", label: "Genre · Thriller", detail: "" },
-    { value: "genre:sports", label: "Genre · Sports", detail: "" },
-    { value: "genre:mecha", label: "Genre · Mecha", detail: "" },
+    ...(sessionMode !== "youtube" ? [opt("mode:youtube", "Type · YouTube", "Search YouTube")] : []),
+    // ── Audio / Dub (first-class language options) ──
+    ...LANGS.map(([code, name]) =>
+      opt(
+        `audio:${code}`,
+        `Audio · ${name}${code === "en" ? " (Dub)" : code === "ja" ? " (Original)" : ""}`,
+        `${name} audio`,
+      ),
+    ),
+    // ── Subtitles ──
+    ...LANGS.map(([code, name]) => opt(`subtitles:${code}`, `Subtitles · ${name}`, "")),
+    // ── Genre ──
+    ...GENRES.map((name) =>
+      opt(`genre:${name.toLowerCase().replace(/\s+/g, "-")}`, `Genre · ${name}`, ""),
+    ),
     // ── Year ──
-    { value: "year:2025", label: "Year · 2025", detail: "" },
-    { value: "year:2024", label: "Year · 2024", detail: "" },
-    { value: "year:2023", label: "Year · 2023", detail: "" },
-    { value: "year:2022", label: "Year · 2022", detail: "" },
-    { value: "year:2020", label: "Year · 2020", detail: "" },
+    ...YEARS.map((y) => opt(`year:${y}`, `Year · ${y}`, "")),
     ...(library.release
       ? [
-          { value: "release:today", label: "Release · Today", detail: "Releasing today" },
-          {
-            value: "release:this-week",
-            label: "Release · This week",
-            detail: "Airing this week",
-          },
-          { value: "release:upcoming", label: "Release · Upcoming", detail: "Not yet aired" },
+          opt("release:today", "Release · Today", "Releasing today"),
+          opt("release:this-week", "Release · This week", "Airing this week"),
+          opt("release:upcoming", "Release · Upcoming", "Not yet aired"),
         ]
       : []),
     // ── Rating ──
-    { value: "rating:9", label: "Rating · 9+", detail: "Top rated" },
-    { value: "rating:8", label: "Rating · 8+", detail: "Highly rated" },
-    { value: "rating:7", label: "Rating · 7+", detail: "Well rated" },
+    opt("rating:9", "Rating · 9+", "Top rated"),
+    opt("rating:8", "Rating · 8+", "Highly rated"),
+    opt("rating:7", "Rating · 7+", "Well rated"),
     ...(library.watched
       ? [
-          {
-            value: "watched:watching",
-            label: "Library · Continue watching",
-            detail: "In-progress",
-          },
-          { value: "watched:completed", label: "Library · Completed", detail: "Finished" },
-          { value: "watched:unwatched", label: "Library · Unwatched", detail: "Not started" },
+          opt("watched:watching", "Library · Continue watching", "In-progress"),
+          opt("watched:completed", "Library · Completed", "Finished"),
+          opt("watched:unwatched", "Library · Unwatched", "Not started"),
         ]
       : []),
     ...(library.downloaded
-      ? [
-          {
-            value: "downloaded:true",
-            label: "Library · Downloaded",
-            detail: "Available offline",
-          },
-        ]
+      ? [opt("downloaded:true", "Library · Downloaded", "Available offline")]
       : []),
     // ── Sort ──
-    { value: "sort:popular", label: "Sort · Popular", detail: "" },
-    { value: "sort:rating", label: "Sort · Top rated", detail: "" },
-    { value: "sort:recent", label: "Sort · Recent", detail: "" },
-    // ── Advanced (edit the code after inserting) ──
-    { value: "audio:ja", label: "Audio · Japanese", detail: "Edit code: ja/en/hi/de…" },
-    { value: "subtitles:en", label: "Subtitles · English", detail: "Edit code: en/es/ja…" },
-    {
-      value: "provider:allanime",
-      label: "Provider · …",
-      detail: "Edit provider id after insert",
-    },
+    opt("sort:popular", "Sort · Popular", "Most popular"),
+    opt("sort:rating", "Sort · Top rated", "Highest score"),
+    opt("sort:recent", "Sort · Recent", "Newly added"),
+    // ── Provider ──
+    opt("provider:allanime", "Provider · allanime", "Filter to allanime"),
     { value: null, label: "Cancel", detail: "" },
   ];
 }

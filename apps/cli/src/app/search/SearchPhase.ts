@@ -48,7 +48,11 @@ import {
   buildSearchFailureNote,
   shouldRunBootstrapSearch,
 } from "@/app/search/search-failure-policy";
-import { buildSearchFilterChipOptions } from "@/app/search/search-filter-chips";
+import {
+  buildSearchFilterChipOptions,
+  isFilterChipActive,
+  toggleSearchFilterChip,
+} from "@/app/search/search-filter-chips";
 import { applySearchSelectionSessionRouting } from "@/app/search/search-selection-routing";
 import {
   shouldDeferBrowseIdleContext,
@@ -1130,7 +1134,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
         if (outcome.type === "action") {
           if (outcome.action === "filters") {
-            const chip = await chooseSearchFilterChip(stateManager.getState().searchQuery, {
+            const currentQuery = stateManager.getState().searchQuery;
+            const chip = await chooseSearchFilterChip(currentQuery, {
               sessionMode: stateManager.getState().mode,
               downloadsEnabled: container.config.downloadsEnabled,
               calendarReleaseContext: stateManager
@@ -1138,11 +1143,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 .searchResults.some(isCalendarSearchResult),
             });
             if (chip) {
-              const nextQuery = appendSearchFilterChip(stateManager.getState().searchQuery, chip);
+              const wasActive = isFilterChipActive(currentQuery, chip);
+              const nextQuery = toggleSearchFilterChip(currentQuery, chip);
               stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: nextQuery });
+              // Clear stale search results so the remounted browseShell triggers an immediate re-search
+              stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results: [] });
               stateManager.dispatch({
                 type: "SET_PLAYBACK_FEEDBACK",
-                note: `Filter added: ${chip}`,
+                note: wasActive ? `Filter removed: ${chip}` : `Filter applied: ${chip}`,
               });
             }
             syncBrowseQueryDraft();
@@ -1152,11 +1160,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 status: chip ? "succeeded" : "skipped",
                 severity: "healthy",
                 recommendedAction: "none",
-                message: chip ? "Search filter chip added" : "Search filter help opened",
+                message: chip ? "Search filter chip toggled" : "Search filter help opened",
                 context: {
                   chip,
                   supported:
-                    "mode, provider, downloaded, watched, year, release, sort, type, rating",
+                    "mode, provider, downloaded, watched, year, release, sort, type, rating, audio, subtitles",
                 },
               }),
             );
@@ -1529,23 +1537,20 @@ async function chooseSearchFilterChip(
     downloadsEnabled: context.downloadsEnabled,
     calendarReleaseContext: context.calendarReleaseContext,
   });
-  const options = buildSearchFilterChipOptions({ sessionMode: context.sessionMode, library });
+  const options = buildSearchFilterChipOptions({
+    sessionMode: context.sessionMode,
+    library,
+    currentQuery,
+  });
 
   const picked = await chooseFromListShell<string | null>({
-    title: "Filter by category",
+    title: "Filter by category (Combobox)",
     subtitle: currentQuery.trim()
-      ? `Adds to "${currentQuery.trim()}"  ·  type to narrow chips`
-      : "Pick a category — type to narrow (e.g. 'genre', 'year', 'rating').",
+      ? `Active: "${currentQuery.trim()}"  ·  [✓] active  ·  select to toggle  ·  type to narrow`
+      : "Combobox filters  ·  type to narrow (e.g. 'audio', 'genre', 'year', 'rating')  ·  Enter toggles",
     options,
   });
   return picked ?? null;
-}
-
-function appendSearchFilterChip(query: string, chip: string): string {
-  const trimmed = query.trim();
-  if (!trimmed) return chip;
-  if (trimmed.split(/\s+/).includes(chip)) return trimmed;
-  return `${trimmed} ${chip}`;
 }
 
 /**

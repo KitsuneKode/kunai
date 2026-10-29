@@ -62,7 +62,7 @@ import {
   ROOT_HORIZONTAL_PADDING,
 } from "./layout-policy";
 import { startMouseSession } from "./mouse/mouse-session";
-import { MouseDispatchProvider } from "./mouse/MouseRegions";
+import { MouseDispatchProvider, MouseTarget } from "./mouse/MouseRegions";
 import {
   createNotificationQueueState,
   NOTIFICATION_TOAST_TTL_MS,
@@ -1700,6 +1700,14 @@ function ListShell<T>({
     }
   }
 
+  const commitOption = (opt: ShellOption<T>) => {
+    if (opt.disabled || confirmed) return;
+    const optIdx = filteredOptions.indexOf(opt);
+    if (optIdx !== -1) setIndex(optIdx);
+    setConfirmed(true);
+    setTimeout(() => onSubmit(opt.value), 150);
+  };
+
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
@@ -1765,10 +1773,7 @@ function ListShell<T>({
     }
     if (key.return) {
       const selected = filteredOptions[index];
-      if (selected && !confirmed) {
-        setConfirmed(true);
-        setTimeout(() => onSubmit(selected.value), 150);
-      }
+      if (selected) commitOption(selected);
       return;
     }
     if (key.upArrow && filteredOptions.length > 0) {
@@ -1852,26 +1857,32 @@ function ListShell<T>({
                         ? palette.text
                         : palette.textDim;
                   return (
-                    <Box
+                    <MouseTarget
                       key={`${option.label}-${option.detail ?? ""}`}
-                      width={rowWidth}
-                      backgroundColor={
-                        highlighted
-                          ? option.destructive
-                            ? palette.warnFill
-                            : palette.accentFill
-                          : undefined
-                      }
+                      id={`list:opt:${option.label}`}
+                      active={!confirmed && !option.disabled}
+                      onClick={() => commitOption(option)}
                     >
-                      <Text
-                        color={rowColor}
-                        bold={highlighted || isConfirmed}
-                        dimColor={option.disabled || (!selected && !isConfirmed)}
+                      <Box
+                        width={rowWidth}
+                        backgroundColor={
+                          highlighted
+                            ? option.destructive
+                              ? palette.warnFill
+                              : palette.accentFill
+                            : undefined
+                        }
                       >
-                        <Text color={itemTone}>{`${itemPrefix} `}</Text>
-                        {padColumnsEnd(rowText, rowWidth - 2)}
-                      </Text>
-                    </Box>
+                        <Text
+                          color={rowColor}
+                          bold={highlighted || isConfirmed}
+                          dimColor={option.disabled || (!selected && !isConfirmed)}
+                        >
+                          <Text color={itemTone}>{`${itemPrefix} `}</Text>
+                          {padColumnsEnd(rowText, rowWidth - 2)}
+                        </Text>
+                      </Box>
+                    </MouseTarget>
                   );
                 })}
                 {windowEnd < filteredOptions.length && <Text color={palette.dim}> ▼ ...</Text>}
