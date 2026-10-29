@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T07:08:05Z"
+lastReviewed: "2026-10-27T17:19:27Z"
 ---
 
 # Kunai — UI Redesign Playbook
@@ -235,10 +235,28 @@ the link layout or accessibility tree. Sibling project links use the curated
 website when available, otherwise GitHub, with no category sublabels.
 
 Workshop previews in `apps/docs/lib/workshop.ts` are reviewed local images or
-short text introductions, never live iframes, embeds or a screenshot service.
+short text introductions, never live iframes, embeds or a runtime screenshot service.
 NvChad Themes replaces Arche in the shared list. The Tokyonight editor image
 comes from `KitsuneKode/nvchad-themes` commit
 `02b23368fd66fc415f056ef5a0a770d3deaabe56`; its palettes credit NvChad/base46.
 The run-cli social image comes from `KitsuneKode/run-cli` commit
 `60b414d3639a9b115148709d09982037a8a4d882`. Both are resized WebP derivatives,
 served locally with reserved aspect ratios and descriptive alternative text.
+
+Sweep, kittymux and JS Questions Lab link to their maintained websites. Sweep
+and kittymux use copies of their websites' `og.png` social images; JS Questions
+Lab uses its GitHub repository social image, labelled as a repository preview
+rather than a website screenshot. These assets were retrieved on 2026-10-27.
+The home cards retain a separate GitHub source link.
+
+`apps/docs/components/layout/project-link-preview.tsx` adds a supplementary
+preview to the compact footer links using the installed Base UI Preview Card.
+Mouse hover and keyboard focus open it after a short intent delay; Escape or
+leaving the link closes it. Touch activation follows the native link without
+requiring an extra tap. The portal avoids footer clipping, and positioning
+flips within the viewport. The popup contains no additional interactive links
+or essential information; the named native anchor remains usable before
+hydration. Local media is requested only when the popup mounts, with fixed
+geometry and a readable fallback on image failure. Reduced motion retains
+only the opacity transition. No third party screenshot API receives visitors'
+link interests.

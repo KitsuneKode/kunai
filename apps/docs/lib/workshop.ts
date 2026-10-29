@@ -29,7 +29,7 @@ export type WorkshopProject = {
   /** A live site or package page, when there is one. */
   readonly siteUrl?: string;
   readonly siteLabel?: string;
-  /** Local, reviewed imagery: never an iframe or a remote screenshot service. */
+  /** Reviewed local assets; no iframe or runtime screenshot service. */
   readonly preview:
     | { readonly image: string; readonly alt: string }
     | { readonly code: string; readonly label: string };
@@ -61,9 +61,10 @@ export const workshop: readonly WorkshopProject[] = [
     tagline:
       "Safe, fast artifact cleanup for any project tree: node_modules, dist, .next and target, with hard guardrails.",
     language: "TypeScript",
+    siteUrl: "https://sweep.kitsunekode.in",
     preview: {
-      code: "$ sweep\n\nReview build artifacts.\nKeep control of what goes.",
-      label: "Artifact cleanup",
+      image: "/workshop/sweep-site.png",
+      alt: "sweep website social preview: safe project artifact cleanup",
     },
   }),
   defineProject({
@@ -74,8 +75,8 @@ export const workshop: readonly WorkshopProject[] = [
     language: "Python",
     siteUrl: "https://kittymux.kitsunekode.in",
     preview: {
-      code: "$ kittymux demo\n\nOne workspace.\nA herd of coding agents.",
-      label: "Kitty workspaces",
+      image: "/workshop/kittymux-site.png",
+      alt: "kittymux website social preview: workspaces for kitty",
     },
   }),
   defineProject({
@@ -100,8 +101,8 @@ export const workshop: readonly WorkshopProject[] = [
     siteUrl: "https://jsquestionslab.kitsunekode.in",
     siteLabel: "jsquestionslab.kitsunekode.in",
     preview: {
-      code: "console.log(typeof null)\n\nThink it through.\nRun it. See why.",
-      label: "JavaScript practice",
+      image: "/workshop/jsquestionslab-project.png",
+      alt: "JS Questions Lab repository preview from GitHub",
     },
   }),
   defineProject({
