@@ -213,8 +213,9 @@ export async function resolveDirectStreamSource(
 
       // Probe the user's pinned stream first, so the first healthy default
       // cannot silently replace an explicit quality/audio choice.
+      const initialStreamId = selectedStream.id;
       const probeOrder = input.preferredStreamId
-        ? [selectedStream, ...streams.filter((stream) => stream.id !== selectedStream.id)]
+        ? [selectedStream, ...streams.filter((stream) => stream.id !== initialStreamId)]
         : streams;
       for (const candidate of probeOrder.slice(0, RESOLVE_GATE_MAX_PROBES)) {
         // A cancelled resolve must not keep spending probes, and must not be
