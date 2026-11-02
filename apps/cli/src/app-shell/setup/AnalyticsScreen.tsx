@@ -15,6 +15,7 @@ import React from "react";
 import packageJson from "../../../package.json" with { type: "json" };
 import { palette } from "../shell-theme";
 import { ChoiceRow, ScreenTitle } from "./SetupFrame";
+import { SetupTarget } from "./SetupPointer";
 
 /** "Turn it on" leads. Index is load-bearing — see the input handler. */
 export const ANALYTICS_ON_INDEX = 0;
@@ -41,13 +42,14 @@ export function AnalyticsScreen({ selectedIndex }: { readonly selectedIndex: num
 
       <Box flexDirection="column">
         {OPTIONS.map((option, i) => (
-          <ChoiceRow
-            key={option.label}
-            label={option.label}
-            detail={option.detail}
-            selected={i === selectedIndex}
-            {...(i === ANALYTICS_ON_INDEX ? { badge: "← recommended" } : {})}
-          />
+          <SetupTarget key={option.label} field="analytics" value={String(i)}>
+            <ChoiceRow
+              label={option.label}
+              detail={option.detail}
+              selected={i === selectedIndex}
+              {...(i === ANALYTICS_ON_INDEX ? { badge: "← recommended" } : {})}
+            />
+          </SetupTarget>
         ))}
       </Box>
 

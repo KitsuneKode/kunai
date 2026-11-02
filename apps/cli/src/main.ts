@@ -617,8 +617,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // `kunai upgrade` / `kunai uninstall` / `kunai doctor` / `kunai rollback` —
   // channel-aware maintenance. Handled before the shell boots so they can run
   // standalone (binary self-replace).
+  if (argv[0] === "serve" || argv[0] === "web") {
+    const { runServeCommand } = await import("./services/web-companion/run-serve-command");
+    process.exit(await runServeCommand(argv.slice(1)));
+  }
   if (argv[0] === "doctor") {
     const { runDoctor } = await import("./services/update/run-doctor");
+
     process.exit(
       await runDoctor({
         json: argv.includes("--json"),

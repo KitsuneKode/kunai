@@ -70,6 +70,8 @@ USAGE
   kunai -i anilist:21        Open a known AniList id (anime lane)
   kunai -a                   Start in anime mode
   kunai -y                   Start in YouTube mode
+  kunai serve                Start the web companion & mobile streaming server
+
 
 LAUNCH
   -S, --search <query>       Search for a title on launch

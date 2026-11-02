@@ -3,9 +3,13 @@ import React, { createContext, useContext } from "react";
 import { MouseTarget } from "../mouse/MouseRegions";
 
 export type SetupPointerActions = {
-  readonly pick: (field: "mode" | "lane" | "audio" | "subtitle" | "library", value: string) => void;
+  readonly pick: (
+    field: "mode" | "lane" | "audio" | "subtitle" | "library" | "deps" | "analytics",
+    value: string,
+  ) => void;
   readonly action: (key: string) => void;
 };
+
 export const SetupPointerContext = createContext<SetupPointerActions | null>(null);
 
 export function SetupTarget({

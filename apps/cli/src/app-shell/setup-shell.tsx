@@ -659,7 +659,20 @@ export function SetupShell({
       }
       const index = Number(value);
       if (!Number.isInteger(index) || index < 0) return;
+      if (field === "deps" && index < depRows.length) {
+        if (depIdx === index) {
+          setShowFix((current) => !current);
+        } else {
+          setDepIdx(index);
+        }
+        return;
+      }
+      if (field === "analytics" && (index === 0 || index === 1)) {
+        setAnalyticsIdx(index);
+        return;
+      }
       if (field === "mode" && index < MODE_OPTIONS.length) setModeIdx(index);
+
       if (field === "library" && index < 8) {
         if (libraryIdx === index) toggle();
         else setLibraryIdx(index);

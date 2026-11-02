@@ -59,6 +59,29 @@ test("setup pointer chooses a media profile and language, goes back, and never g
   }
 });
 
+test("setup pointer can click dependency rows and select analytics options", () => {
+  const h = renderWithPointer(<SetupShell snapshot={ready} finish={() => {}} />, {
+    columns: 120,
+    rows: 45,
+  });
+  try {
+    // Clicking dependency row 0
+    h.click("setup:deps:0");
+    expect(h.lastFrame()).toContain("Let's get you watching");
+    // Advance to mode, language, library, analytics
+    h.click("setup:action:enter");
+    h.click("setup:action:enter");
+    h.click("setup:action:enter");
+    h.click("setup:action:enter");
+    expect(h.lastFrame()).toContain("Help Kunai know it's being used");
+    // Click on Keep it off
+    h.click("setup:analytics:1");
+    expect(h.lastFrame()).toContain("Keep it off");
+  } finally {
+    h.unmount();
+  }
+});
+
 test.each([
   [72, 24],
   [100, 30],

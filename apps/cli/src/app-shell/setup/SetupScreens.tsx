@@ -108,36 +108,42 @@ export function DependencyScreen({
         {rows.map((row, i) => {
           const isSelected = i === selected;
           return (
-            <Box key={row.id} flexDirection="column">
-              <Box backgroundColor={isSelected ? palette.accentFill : undefined}>
-                <Text color={isSelected ? palette.accent : palette.dim}>
-                  {isSelected ? "▌" : " "}
-                </Text>
-                <Text color={stateColor(row.state)} bold>
-                  {` ${stateGlyph(row.state)} `}
-                </Text>
-                <Text color={row.state === "ok" ? palette.text : palette.textDim}>
-                  {pad(row.name, nameWidth)}
-                </Text>
-                <Text color={palette.dim}>{pad(row.detail, detailWidth)}</Text>
-                {roleWidth > 0 ? <Text> </Text> : null}
-                {roleWidth > 0 ? <Text color={palette.dim}>{pad(row.role, roleWidth)}</Text> : null}
-              </Box>
-              {isSelected && row.consequence ? (
-                <Box paddingLeft={4}>
-                  <Text color={palette.muted}>{row.consequence}</Text>
+            <SetupTarget key={row.id} field="deps" value={String(i)}>
+              <Box flexDirection="column">
+                <Box backgroundColor={isSelected ? palette.accentFill : undefined}>
+                  <Text color={isSelected ? palette.accent : palette.dim}>
+                    {isSelected ? "▌" : " "}
+                  </Text>
+                  <Text color={stateColor(row.state)} bold>
+                    {` ${stateGlyph(row.state)} `}
+                  </Text>
+                  <Text color={row.state === "ok" ? palette.text : palette.textDim}>
+                    {pad(row.name, nameWidth)}
+                  </Text>
+                  <Text color={palette.dim}>{pad(row.detail, detailWidth)}</Text>
+                  {roleWidth > 0 ? <Text> </Text> : null}
+                  {roleWidth > 0 ? (
+                    <Text color={palette.dim}>{pad(row.role, roleWidth)}</Text>
+                  ) : null}
                 </Box>
-              ) : null}
-            </Box>
+                {isSelected && row.consequence ? (
+                  <Box paddingLeft={4}>
+                    <Text color={palette.muted}>{row.consequence}</Text>
+                  </Box>
+                ) : null}
+              </Box>
+            </SetupTarget>
           );
         })}
       </Box>
 
       {showFix && active?.fix ? (
-        <Box flexDirection="column" marginTop={1} paddingLeft={4}>
-          <Text color={palette.muted}>{`Install ${active.name} on this machine`}</Text>
-          <Text color={palette.accent}>{active.fix}</Text>
-        </Box>
+        <SetupTarget field="action" value="d">
+          <Box flexDirection="column" marginTop={1} paddingLeft={4}>
+            <Text color={palette.muted}>{`Install ${active.name} on this machine`}</Text>
+            <Text color={palette.accent}>{active.fix}</Text>
+          </Box>
+        </SetupTarget>
       ) : null}
     </Box>
   );
