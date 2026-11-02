@@ -54,6 +54,7 @@ function ShareQrShell({
             { key: "enter", label: "back", primary: true },
             { key: "esc", label: "close" },
           ]}
+          onActivate={onBack}
           mode="minimal"
           terminalWidth={cols}
         />
@@ -94,6 +95,7 @@ function ShareQrShell({
           { key: "enter", label: "back", primary: true },
           { key: "esc", label: "close" },
         ]}
+        onActivate={onBack}
         mode="minimal"
         terminalWidth={cols}
       />

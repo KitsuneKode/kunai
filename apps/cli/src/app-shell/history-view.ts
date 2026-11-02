@@ -31,14 +31,14 @@ import { getWindowStart } from "./shell-text";
 import { palette, semanticToneColor } from "./shell-theme";
 import type { ShellPickerOption, ShellStatusTone } from "./types";
 
-const HISTORY_TABS = ["continue", "completed", "new-episodes", "all"] as const;
+export const HISTORY_TABS = ["continue", "completed", "new-episodes", "all"] as const;
 export type HistoryTab = (typeof HISTORY_TABS)[number];
 
 // Second filter axis: content type. Uses correctedHistoryMediaKind so a drama
 // watched in anime mode (legacy mislabel) filters as Series, not Anime (#1/#4).
 // YouTube is its own facet: entries arrive with mediaKind "movie"/"video", so
 // without it a watched video is filed under Movies next to actual films.
-const HISTORY_TYPE_FILTERS = ["all", "anime", "series", "movie", "youtube"] as const;
+export const HISTORY_TYPE_FILTERS = ["all", "anime", "series", "movie", "youtube"] as const;
 export type HistoryTypeFilter = (typeof HISTORY_TYPE_FILTERS)[number];
 
 export function historyTypeFilterLabels(): readonly string[] {

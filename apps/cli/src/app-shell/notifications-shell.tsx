@@ -3,6 +3,7 @@ import React from "react";
 
 import { mapPosterPreviewState } from "./browse-preview-rail";
 import { useRailPoster } from "./hooks/use-rail-poster";
+import { MouseTarget } from "./mouse/MouseRegions";
 import type { NotificationRow, NotificationsView } from "./notifications-view";
 import { ListRow } from "./primitives/ListRow";
 import {
@@ -57,11 +58,15 @@ export function NotificationsShell({
   columns,
   selectedIndex,
   unreadCount,
+  onRowClick,
+  onWheel,
 }: {
   readonly view: NotificationsView;
   readonly columns: number;
   readonly selectedIndex: number;
   readonly unreadCount: number;
+  readonly onRowClick?: (index: number, row: NotificationRow) => void;
+  readonly onWheel?: (direction: "up" | "down") => void;
 }) {
   const showRail = shouldRenderPreviewRail({ columns, hasModel: view.rail !== null });
   const { poster, posterState, spinner } = useRailPoster(view.rail?.preview.posterUrl, {
@@ -121,13 +126,20 @@ export function NotificationsShell({
   ) : (
     <Box flexDirection="column">
       {view.rows.map((row, index) => (
-        <ListRow
+        <MouseTarget
           key={row.dedupKey}
-          selected={index === selectedIndex}
-          columns={rowColumns(row)}
-          rowWidth={listWidth}
-          flexColumnIndex={1}
-        />
+          id={`notification:row:${index}`}
+          active={Boolean(onRowClick)}
+          onWheel={onWheel}
+          onClick={() => onRowClick?.(index, row)}
+        >
+          <ListRow
+            selected={index === selectedIndex}
+            columns={rowColumns(row)}
+            rowWidth={listWidth}
+            flexColumnIndex={1}
+          />
+        </MouseTarget>
       ))}
     </Box>
   );

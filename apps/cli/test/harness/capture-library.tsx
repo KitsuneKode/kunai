@@ -78,11 +78,13 @@ export function gatedLibraryContainer(entries: readonly OfflineLibraryEntry[]) {
   const gate = new Promise<void>((resolve) => {
     open = resolve;
   });
+  const EMPTY_PROTECTED_JOB_IDS: readonly string[] = [];
+
   const container = {
     config: {
       zenMode: false,
       downloadsEnabled: true,
-      protectedDownloadJobIds: [] as string[],
+      protectedDownloadJobIds: EMPTY_PROTECTED_JOB_IDS,
       update: async () => undefined,
       save: async () => undefined,
     },
@@ -136,11 +138,17 @@ export function libraryCaptureFixture(entries: readonly OfflineLibraryEntry[]) {
   };
 }
 
-if (import.meta.main) {
+async function runCapture(): Promise<void> {
   process.env.KUNAI_POSTER = "0";
+  process.env.KUNAI_PET = "off";
+  process.env.KUNAI_REDUCED_MOTION = "1";
   await captureSurfaceSettled("library-empty", libraryCaptureFixture([]));
   await captureSurfaceSettled("library-populated", libraryCaptureFixture(POPULATED_ENTRIES));
 
   console.log("captured library empty + populated");
   process.exit(0);
+}
+
+if (import.meta.main) {
+  void runCapture();
 }

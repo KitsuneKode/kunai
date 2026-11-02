@@ -131,6 +131,14 @@ export function TrackerConnectShell({
                 ]
               : [{ key: "esc", label: "cancel", primary: true }]
           }
+          onActivate={(action) => {
+            if (action.key === "esc") {
+              controllerRef.current?.abort();
+              finishOnce({ status: "cancelled" });
+            } else if (phase.kind === "failed" && action.key.toLowerCase() === "r") {
+              setAttempt((current) => current + 1);
+            }
+          }}
           mode="minimal"
           terminalWidth={cols}
         />

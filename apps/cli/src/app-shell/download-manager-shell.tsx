@@ -17,7 +17,7 @@ import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
 import { ProgressBar } from "@/app-shell/primitives/ProgressBar";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
 import { resolveRootLibraryPlaybackLaunch } from "@/app-shell/root-library-playback-bridge";
-import { ResizeBlocker } from "@/app-shell/shell-primitives";
+import { MouseTarget, ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
 import { getWindowStart } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
@@ -477,6 +477,52 @@ export function DownloadManagerContent({
   const isConfirming = (index: number) =>
     confirmingDeletion?.jobId === allJobs[index]?.id && selectedIndex === index;
 
+  const handleJobClick = (job: DownloadJobRecord, index: number) => {
+    if (index !== selectedIndex) {
+      setConfirmingDeletion(null);
+      setSelectedIndex(index);
+      return;
+    }
+    if (
+      job.status === "completed" ||
+      job.status === "completed-with-notes" ||
+      job.status === "repairable"
+    ) {
+      void import("@/app/offline/offline-playback-launch").then(
+        ({ requestUnifiedOfflinePlayback }) =>
+          requestUnifiedOfflinePlayback(container, job.id, {
+            onDirectLaunch: resolveRootLibraryPlaybackLaunch,
+          }),
+      );
+      return;
+    }
+    if (job.status === "failed" || job.status === "aborted") {
+      void container.downloadService
+        .retry(job.id)
+        .then(() => {
+          refresh();
+          container.downloadService.kickQueue("download-manager");
+          return undefined;
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          setRepairSweepStatus(`Retry failed: ${message}`);
+        });
+      return;
+    }
+    if (job.status === "running") {
+      void container.downloadService.abort(job.id);
+    }
+  };
+
+  const handleWheel = (direction: "up" | "down") => {
+    if (allJobs.length === 0) return;
+    setConfirmingDeletion(null);
+    setSelectedIndex((current) =>
+      Math.max(0, Math.min(allJobs.length - 1, current + (direction === "down" ? 1 : -1))),
+    );
+  };
+
   const renderJob = (job: DownloadJobRecord, index: number) => {
     const isSelected = index === selectedIndex;
     const state = queueStatePresentation(job);
@@ -497,67 +543,76 @@ export function DownloadManagerContent({
     );
 
     return (
-      <Box
+      <MouseTarget
         key={job.id}
-        flexDirection="column"
-        width={shellWidth}
-        backgroundColor={isSelected ? palette.accentFill : undefined}
+        id={`download:job:${job.id}`}
+        active={!suspended}
+        onClick={() => handleJobClick(job, index)}
+        onWheel={handleWheel}
       >
-        <Box flexDirection="row" width={shellWidth} overflow="hidden">
-          <Text color={isSelected ? palette.accent : palette.dim}>{isSelected ? "▌ " : "  "}</Text>
-          <Box width={titleCol} overflow="hidden">
-            <Text
-              wrap="truncate"
-              color={isSelected ? palette.text : palette.textDim}
-              bold={isSelected}
+        <Box
+          flexDirection="column"
+          width={shellWidth}
+          backgroundColor={isSelected ? palette.accentFill : undefined}
+        >
+          <Box flexDirection="row" width={shellWidth} overflow="hidden">
+            <Text color={isSelected ? palette.accent : palette.dim}>
+              {isSelected ? "▌ " : "  "}
+            </Text>
+            <Box width={titleCol} overflow="hidden">
+              <Text
+                wrap="truncate"
+                color={isSelected ? palette.text : palette.textDim}
+                bold={isSelected}
+              >
+                {titleLine}
+              </Text>
+            </Box>
+            <Box width={queueLayout.stateWidth} overflow="hidden">
+              <Text wrap="truncate" color={state.color}>
+                {truncateLine(state.label, queueLayout.stateWidth - 1)}
+              </Text>
+            </Box>
+            <Box width={queueLayout.progressWidth}>
+              {job.status === "running" ? (
+                <ProgressBar
+                  value={progressBarValue(job)}
+                  max={100}
+                  width={queueLayout.progressWidth - 2}
+                  color={progressBarColor(job)}
+                />
+              ) : (
+                <Text color={palette.dim} dimColor>
+                  {" "}
+                </Text>
+              )}
+            </Box>
+            <Box
+              width={queueLayout.metaWidth}
+              flexDirection="row"
+              justifyContent="flex-end"
+              overflow="hidden"
             >
-              {titleLine}
-            </Text>
-          </Box>
-          <Box width={queueLayout.stateWidth} overflow="hidden">
-            <Text wrap="truncate" color={state.color}>
-              {truncateLine(state.label, queueLayout.stateWidth - 1)}
-            </Text>
-          </Box>
-          <Box width={queueLayout.progressWidth}>
-            {job.status === "running" ? (
-              <ProgressBar
-                value={progressBarValue(job)}
-                max={100}
-                width={queueLayout.progressWidth - 2}
-                color={progressBarColor(job)}
-              />
-            ) : (
-              <Text color={palette.dim} dimColor>
-                {" "}
+              <Text wrap="truncate" color={meta.tone} bold={job.status === "running"}>
+                {truncateLine(meta.primary, queueLayout.metaWidth - 1)}
               </Text>
-            )}
+              {meta.secondary ? (
+                <Text color={palette.dim} dimColor wrap="truncate">
+                  {" "}
+                  {truncateLine(meta.secondary, Math.max(4, queueLayout.metaWidth - 4))}
+                </Text>
+              ) : null}
+            </Box>
           </Box>
-          <Box
-            width={queueLayout.metaWidth}
-            flexDirection="row"
-            justifyContent="flex-end"
-            overflow="hidden"
-          >
-            <Text wrap="truncate" color={meta.tone} bold={job.status === "running"}>
-              {truncateLine(meta.primary, queueLayout.metaWidth - 1)}
-            </Text>
-            {meta.secondary ? (
-              <Text color={palette.dim} dimColor wrap="truncate">
-                {" "}
-                {truncateLine(meta.secondary, Math.max(4, queueLayout.metaWidth - 4))}
+          {isConfirming(index) ? (
+            <Box marginLeft={2}>
+              <Text color={palette.accentDeep} bold>
+                {confirmationPrompt}
               </Text>
-            ) : null}
-          </Box>
+            </Box>
+          ) : null}
         </Box>
-        {isConfirming(index) ? (
-          <Box marginLeft={2}>
-            <Text color={palette.accentDeep} bold>
-              {confirmationPrompt}
-            </Text>
-          </Box>
-        ) : null}
-      </Box>
+      </MouseTarget>
     );
   };
 

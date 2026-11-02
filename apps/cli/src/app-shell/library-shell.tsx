@@ -144,6 +144,15 @@ export function LibraryShell({
             "minimal",
             viewport.columns,
           )}
+          onActivate={(action) => {
+            if (action.key === "esc") {
+              onClose();
+              return;
+            }
+            if (action.key.toLowerCase() === "tab") {
+              setTab((prev) => (prev === "library" ? "queue" : "library"));
+            }
+          }}
           terminalWidth={viewport.columns}
           companionHint
         />

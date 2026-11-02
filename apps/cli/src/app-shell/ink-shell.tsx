@@ -1869,6 +1869,17 @@ export function ListShell<T>({
                           setIndex(optionIndex);
                         else commitOption(option);
                       }}
+                      onWheel={(direction) => {
+                        setIndex((current) =>
+                          Math.max(
+                            0,
+                            Math.min(
+                              filteredOptions.length - 1,
+                              current + (direction === "down" ? 1 : -1),
+                            ),
+                          ),
+                        );
+                      }}
                     >
                       <Box
                         width={rowWidth}
@@ -1952,6 +1963,24 @@ export function ListShell<T>({
       <ShellFooter
         taskLabel={`${footerTask}  ·  ${subtitle}`}
         actions={footerActions}
+        onActivate={(action) => {
+          if (action.key === "esc") {
+            if (filterQuery.length > 0) {
+              setFilterQuery("");
+              return;
+            }
+            onCancel();
+            return;
+          }
+          if (action.action === "command-mode" || action.key === "/") {
+            if (actionContext) openPalette();
+            return;
+          }
+          if (action.key === "enter") {
+            const selected = filteredOptions[index];
+            if (selected) commitOption(selected);
+          }
+        }}
         mode={effectiveFooterMode}
         commandMode={commandMode}
       />
@@ -2408,6 +2437,16 @@ function TextInputShell({
           { key: "enter", label: "confirm", primary: true },
           { key: "esc", label: "cancel", action: "quit" },
         ]}
+        onActivate={(action) => {
+          if (action.key === "esc" || action.action === "quit") {
+            onCancel();
+          } else if (action.key === "enter") {
+            const normalized = value.trim();
+            if (normalized.length > 0) {
+              onSubmit(normalized);
+            }
+          }
+        }}
         mode="minimal"
       />
     </Box>

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import type { ResolvedAppCommand } from "./commands";
 import { GUIDE_SURFACE_TAGS, type GuideRow, type GuideSectionRows } from "./guide-model";
+import { MouseTarget } from "./mouse/MouseRegions";
 import { useOverlayLayout } from "./overlay-layout-context";
 import { CommandPalette } from "./shell-command-ui";
 import { ShellFooter } from "./shell-primitives";
@@ -43,6 +44,7 @@ export function GuideShell({
   footerActions,
   statusNote,
   onActivate,
+  onFooterAction,
 }: {
   readonly sections: readonly GuideSectionRows[];
   /** Terminal-row budget for the scrollable list — not a count of items. */
@@ -55,6 +57,7 @@ export function GuideShell({
   readonly footerActions: readonly FooterAction[];
   readonly statusNote: string | null;
   readonly onActivate: (row: GuideRow) => void;
+  readonly onFooterAction?: (action: FooterAction) => void;
 }) {
   const lines = useMemo(() => flattenGuideLines(sections), [sections]);
   const entryCount = useMemo(
@@ -137,11 +140,26 @@ export function GuideShell({
                 <Text color={palette.dim}>{line.blurb}</Text>
               </Box>
             ) : (
-              <GuideRowLine
+              <MouseTarget
                 key={line.row.command}
-                row={line.row}
-                selected={line.entryIndex === safeIndex}
-              />
+                id={`guide:row:${line.entryIndex}`}
+                onClick={() => {
+                  if (line.entryIndex !== safeIndex) {
+                    setSelectedIndex(line.entryIndex);
+                  } else {
+                    onActivate(line.row);
+                  }
+                }}
+                onWheel={(direction) => {
+                  setSelectedIndex((current) =>
+                    direction === "up"
+                      ? (current - 1 + entryCount) % entryCount
+                      : (current + 1) % entryCount,
+                  );
+                }}
+              >
+                <GuideRowLine row={line.row} selected={line.entryIndex === safeIndex} />
+              </MouseTarget>
             ),
           )}
         </Box>
@@ -160,6 +178,16 @@ export function GuideShell({
         mode="detailed"
         commandMode={commandMode}
         companionHint
+        onActivate={(action) => {
+          if (action.key === "enter") {
+            const line = lines.find(
+              (candidate) => candidate.kind === "entry" && candidate.entryIndex === safeIndex,
+            );
+            if (line?.kind === "entry") onActivate(line.row);
+            return;
+          }
+          onFooterAction?.(action);
+        }}
       />
     </Box>
   );

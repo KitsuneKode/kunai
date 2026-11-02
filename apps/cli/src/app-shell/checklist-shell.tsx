@@ -4,6 +4,7 @@ import {
   getPickerListMaxVisible,
 } from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
+import { MouseTarget } from "@/app-shell/mouse/MouseRegions";
 import { mountRootContent } from "@/app-shell/root-content-state";
 import { LineEditorText } from "@/app-shell/shell-command-ui";
 import { ShellFooter, ResizeBlocker } from "@/app-shell/shell-primitives";
@@ -209,19 +210,42 @@ function ChecklistShell<T>({
                     : "";
                   const rowText = truncateLine(`${option.label}${secondary}`, rowWidth - 4);
                   return (
-                    <Box key={`${option.label}-${option.detail ?? ""}`}>
-                      <Text
-                        backgroundColor={highlighted ? palette.accentFill : undefined}
-                        color={highlighted ? palette.text : "white"}
-                        bold={highlighted || isChecked}
-                        dimColor={!highlighted && !isChecked}
-                      >
+                    <MouseTarget
+                      key={`${option.label}-${option.detail ?? ""}`}
+                      id={`checklist:opt:${option.label}`}
+                      onClick={() => {
+                        setSelectedSet((current) => {
+                          const next = new Set(current);
+                          if (next.has(option.value)) {
+                            next.delete(option.value);
+                          } else {
+                            next.add(option.value);
+                          }
+                          return next;
+                        });
+                      }}
+                      onWheel={(direction) => {
+                        setIndex((current) =>
+                          direction === "up"
+                            ? Math.max(0, current - 1)
+                            : Math.min(filteredOptions.length - 1, current + 1),
+                        );
+                      }}
+                    >
+                      <Box>
                         <Text
-                          color={highlighted ? palette.accent : itemTone}
-                        >{`${itemPrefix} `}</Text>
-                        {rowText}
-                      </Text>
-                    </Box>
+                          backgroundColor={highlighted ? palette.accentFill : undefined}
+                          color={highlighted ? palette.text : "white"}
+                          bold={highlighted || isChecked}
+                          dimColor={!highlighted && !isChecked}
+                        >
+                          <Text
+                            color={highlighted ? palette.accent : itemTone}
+                          >{`${itemPrefix} `}</Text>
+                          {rowText}
+                        </Text>
+                      </Box>
+                    </MouseTarget>
                   );
                 })}
                 {windowEnd < filteredOptions.length && <Text color={palette.dim}> ▼ ...</Text>}
@@ -234,7 +258,7 @@ function ChecklistShell<T>({
         actions={[
           { key: "ctrl+a", label: "all in view", action: "search" },
           { key: "space", label: "toggle", action: "search" },
-          { key: "enter", label: "confirm", action: "search" },
+          { key: "enter", label: "confirm", action: "search", primary: true },
           { key: "esc", label: "back", action: "quit" },
         ]}
         mode="minimal"
@@ -243,6 +267,38 @@ function ChecklistShell<T>({
             ? "Clear filter to toggle checks with Space"
             : "Space toggle · Ctrl+A all visible"
         }
+        onActivate={(action) => {
+          if (action.key === "ctrl+a") {
+            setSelectedSet((current) => {
+              if (current.size === filteredOptions.length) {
+                return new Set();
+              }
+              return new Set(filteredOptions.map((o) => o.value));
+            });
+          } else if (action.key === "space") {
+            const selected = filteredOptions[index];
+            if (selected) {
+              setSelectedSet((current) => {
+                const next = new Set(current);
+                if (next.has(selected.value)) {
+                  next.delete(selected.value);
+                } else {
+                  next.add(selected.value);
+                }
+                return next;
+              });
+            }
+          } else if (action.key === "enter") {
+            if (!confirmed) {
+              setConfirmed(true);
+              confirmTimer.current = setTimeout(() => {
+                onSubmit(Array.from(selectedSet));
+              }, 250);
+            }
+          } else if (action.key === "esc" || action.action === "quit") {
+            onCancel();
+          }
+        }}
       />
     </Box>
   );
