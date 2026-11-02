@@ -17,3 +17,4 @@ export * from "./subtitle-language";
 export * from "./metadata-failure";
 export * from "./quality-selection";
 export * from "./version-freshness";
+export * from "./youtube-suggestions";

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-28"
+lastReviewed: "2026-10-29"
 ---
 
 # Terminal pointer controls
@@ -74,6 +74,13 @@ Videasy session credentials still reach the direct resolver; the session-source
 labels use the current site name while retaining persisted API identifiers.
 
 ## Setup, palette and navigation
+
+Generic list pickers focus a different row on the first click; an already
+focused ordinary row can be activated by clicking it. Destructive and
+`keyboardOnly` choices only focus on pointer input and require Enter to commit.
+The `/analytics` enable row declares `keyboardOnly`, preserving explicit
+keystroke consent. Opening the picker's palette unregisters underlying option
+targets; confirmation locks out repeated submissions without a delayed callback.
 
 Setup mode, media-profile tabs, audio/subtitle choices and library toggles have
 measured targets. Back and footer decisions share the keyboard controller.

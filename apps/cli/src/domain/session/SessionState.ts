@@ -177,7 +177,11 @@ export interface SessionState {
   readonly movieLanguageProfile: import("../../services/persistence/ConfigService").MediaLanguageProfile;
 
   /** Explicit Tracks choices for this title; never written to global defaults. */
-  readonly playbackTrackPreferences: { readonly subtitle?: string; readonly quality?: string };
+  readonly playbackTrackPreferences: {
+    readonly audio?: string;
+    readonly subtitle?: string;
+    readonly quality?: string;
+  };
   readonly currentTitle: TitleInfo | null;
   readonly currentEpisode: EpisodeInfo | null;
   /**

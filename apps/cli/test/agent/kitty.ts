@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import {
   playbackProgressProof,
+  observedPlaybackAdvanceMs,
   PLAYBACK_ADVANCE_SECONDS,
   startKittySession,
   waitForKittyCondition,
@@ -107,33 +108,72 @@ async function witnessPlayback(session: Session, signal: AbortSignal) {
     signal,
   );
   console.log(`[witnessPlayback] Started at time-pos: ${start.toFixed(2)}s`);
-  let lastLogged = 0;
-  const observationTimeoutMs =
-    (observeSeconds + Math.max(20, Math.round(observeSeconds * 0.6))) * 1000;
-  const end = await waitForKittyCondition(
-    async () => {
-      try {
-        const value = await session.ipc(["get_property", "time-pos"]);
-        const parsed = z.number().safeParse(value);
-        if (parsed.success && parsed.data - lastLogged >= 5) {
-          lastLogged = parsed.data;
-          console.log(
-            `[witnessPlayback] Playing: ${parsed.data.toFixed(1)}s / ${(start + observeSeconds).toFixed(1)}s target`,
-          );
+  const observationStarted = performance.now();
+  let previousObservedAt = observationStarted;
+  let previousPosition: number | null = start;
+  let advancingMs = 0;
+  let lastLogged = start;
+  let end: number;
+  try {
+    end = await waitForKittyCondition(
+      async () => {
+        try {
+          const value = await session.ipc(["get_property", "time-pos"]);
+          const parsed = z.number().safeParse(value);
+          const observedAt = performance.now();
+          if (parsed.success) {
+            advancingMs += observedPlaybackAdvanceMs(
+              previousPosition,
+              parsed.data,
+              previousObservedAt,
+              observedAt,
+            );
+            if (parsed.data - lastLogged >= 5) {
+              lastLogged = parsed.data;
+              console.log(
+                `[witnessPlayback] Playing: ${parsed.data.toFixed(1)}s / ${(start + observeSeconds).toFixed(1)}s target`,
+              );
+            }
+          }
+          previousPosition = parsed.success ? parsed.data : null;
+          previousObservedAt = observedAt;
+          return parsed.success &&
+            parsed.data > start + observeSeconds &&
+            advancingMs >= observeSeconds * 1000 &&
+            performance.now() - observationStarted >= observeSeconds * 1000
+            ? parsed.data
+            : null;
+        } catch {
+          previousPosition = null;
+          return null;
         }
-        return parsed.success && parsed.data > start + observeSeconds ? parsed.data : null;
-      } catch {
-        return null;
-      }
-    },
-    observationTimeoutMs,
-    signal,
-  );
-  console.log(`[witnessPlayback] Reached target time-pos: ${end.toFixed(2)}s`);
+      },
+      (observeSeconds + 30) * 1000,
+      signal,
+    );
+    console.log(`[witnessPlayback] Reached target time-pos: ${end.toFixed(2)}s`);
+  } catch (error) {
+    await Bun.write(
+      join(session.evidenceDir, "playback-observation.json"),
+      JSON.stringify({
+        timePosStart: start,
+        lastTimePos: previousPosition,
+        observedForMs: Math.round(performance.now() - observationStarted),
+        advancingForMs: Math.round(advancingMs),
+        requiredSeconds: observeSeconds,
+      }),
+    );
+    throw error;
+  }
   const proof = playbackProgressProof(
     start,
     end,
     await session.ipc(["get_property", "video-params"]),
+    {
+      elapsedMs: Math.round(performance.now() - observationStarted),
+      advancingMs: Math.round(advancingMs),
+      minimumSeconds: observeSeconds,
+    },
   );
   await Bun.write(
     join(session.evidenceDir, "playback.json"),

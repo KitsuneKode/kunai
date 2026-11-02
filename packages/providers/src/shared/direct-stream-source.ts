@@ -166,9 +166,18 @@ export async function resolveDirectStreamSource(
     });
 
     let streams = payload
-      ? normalizeStreams(payload, providerId, sourceId, label, cachePolicy)
+      ? normalizeStreams(
+          payload,
+          providerId,
+          sourceId,
+          label,
+          cachePolicy,
+          input.preferredAudioLanguage,
+        )
       : [];
-    let selectedStream = streams[0];
+    let selectedStream = input.preferredStreamId
+      ? (streams.find((s) => s.id === input.preferredStreamId) ?? streams[0])
+      : streams[0];
     if (!selectedStream) {
       if (payload?.catalogAbsent) {
         emitTraceEvent(events, context, {
@@ -202,7 +211,13 @@ export async function resolveDirectStreamSource(
       const refusedStreamIds = new Set<string>();
       let cancelled = false;
 
-      for (const candidate of streams.slice(0, RESOLVE_GATE_MAX_PROBES)) {
+      // Probe the user's pinned stream first, so the first healthy default
+      // cannot silently replace an explicit quality/audio choice.
+      const initialStreamId = selectedStream.id;
+      const probeOrder = input.preferredStreamId
+        ? [selectedStream, ...streams.filter((stream) => stream.id !== initialStreamId)]
+        : streams;
+      for (const candidate of probeOrder.slice(0, RESOLVE_GATE_MAX_PROBES)) {
         // A cancelled resolve must not keep spending probes, and must not be
         // recorded as a stream failure — the caller went away, the CDN is fine.
         if (context.signal?.aborted) {
@@ -432,6 +447,7 @@ function normalizeStreams(
   sourceId: string,
   label: string,
   cachePolicy: CachePolicy,
+  preferredAudioLanguage?: string,
 ): StreamCandidate[] {
   const streams: StreamCandidate[] = [];
   const seen = new Set<string>();
@@ -463,7 +479,23 @@ function normalizeStreams(
     });
   }
 
-  return streams.sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0));
+  const requestedLang = normalizeIsoLanguageCode(preferredAudioLanguage);
+  return streams.sort((a, b) => {
+    if (requestedLang && requestedLang !== "original") {
+      const aMatches = a.audioLanguages?.some(
+        (lang) => normalizeIsoLanguageCode(lang) === requestedLang,
+      )
+        ? 1
+        : 0;
+      const bMatches = b.audioLanguages?.some(
+        (lang) => normalizeIsoLanguageCode(lang) === requestedLang,
+      )
+        ? 1
+        : 0;
+      if (aMatches !== bMatches) return bMatches - aMatches;
+    }
+    return (b.qualityRank ?? 0) - (a.qualityRank ?? 0);
+  });
 }
 
 function normalizeSubtitles(

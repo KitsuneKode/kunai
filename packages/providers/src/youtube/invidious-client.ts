@@ -66,6 +66,8 @@ export type InvidiousPlaylistVideo = {
 
 export type InvidiousClientOptions = {
   readonly preferredInstanceUrl?: string;
+  /** False keeps draft-query requests on the explicitly configured instance. */
+  readonly allowInstanceFallback?: boolean;
   readonly signal?: AbortSignal;
 };
 
@@ -82,6 +84,18 @@ export async function invidiousSearch(
     `/api/v1/search?${params.toString()}`,
     options,
   );
+}
+
+export async function invidiousGetSearchSuggestions(
+  query: string,
+  options: InvidiousClientOptions = {},
+): Promise<readonly string[]> {
+  const params = new URLSearchParams({ q: query });
+  const data = await requestInvidiousJson<{ readonly suggestions?: readonly string[] }>(
+    `/api/v1/search/suggestions?${params.toString()}`,
+    options,
+  );
+  return data?.suggestions ?? [];
 }
 
 export async function invidiousGetPlaylist(
@@ -170,6 +184,7 @@ async function requestInvidiousJson<T>(
 ): Promise<T> {
   const instance = await pickInvidiousInstance({
     preferredInstanceUrl: options.preferredInstanceUrl,
+    allowInstanceFallback: options.allowInstanceFallback,
     signal: options.signal,
   });
   if (options.signal?.aborted) {
@@ -191,7 +206,7 @@ async function requestInvidiousJson<T>(
     }
     return (await response.json()) as T;
   } catch (error) {
-    if (options.signal?.aborted) throw error;
+    if (options.signal?.aborted || options.allowInstanceFallback === false) throw error;
     markInvidiousInstanceFailure(instance);
     if (attempt >= 2) throw error;
     return requestInvidiousJson<T>(path, options, attempt + 1);

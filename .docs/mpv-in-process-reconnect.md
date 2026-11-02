@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-29"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -26,7 +26,14 @@ startup, same-URL replay, normal replacement, and both enabled/disabled baseline
 
 ## When it runs
 
-1. **`network-read-dead`** (from `playback-watchdog`): demuxer reports network + underrun + `raw-input-rate === 0` while paused-for-cache, sustained for ~8s. Fires at most once per stall incident from the watchdog; **reconnect attempts** are still capped per cycle.
+1. **`network-read-dead`** (from `playback-watchdog`): demuxer reports network + underrun + `raw-input-rate === 0`, sustained for ~8s, regardless of `paused-for-cache`. Fires at most once per stall incident from the watchdog; **reconnect attempts** are still capped per cycle.
+
+Startup, every replacement and same-URL reconnect use the same file-local cache
+profile. YouTube disables cache pause and uses its bounded 10-second/48-MiB
+readahead; recorded non-YouTube media restores cache pause and the balanced
+60-second/200-MiB profile. Fast startup and live broadcasts keep their existing
+smaller profiles. Reconnect options and local-HLS protocol whitelists are composed
+once, so no option silently replaces another.
 
 An explicit user pause or `idle-active` suspends the watchdog clocks.
 `core-idle` alone does not: mpv can report it while waiting for network cache,

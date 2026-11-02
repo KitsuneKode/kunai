@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-28"
+lastReviewed: "2026-10-29"
 ---
 
 # Kunai — Repo Infrastructure
@@ -501,10 +501,12 @@ uses layout projection with a 220ms ease-out; reduced motion and keyboard expans
 are immediate. Search retains the existing lazy dialog and platform shortcut.
 
 Kanna's dismissal is independent of motion eligibility. Touch and reduced-motion
-visitors see a small stationary, non-interactive companion at the safe viewport
-edge; pointer following and chatter run only for fine pointers without reduced
+visitors see a small stationary companion at the safe viewport edge with a
+visible, named dismiss button outside the decorative image's hidden region.
+Pointer following and chatter run only for fine pointers without reduced
 motion. Pause stops the moving drawing too, and a pre-movement pause keeps her
-visible. Restore clears dismissal on every input type.
+visible. Restore clears dismissal on every input type. The shared site footer
+also mounts the restore control so dismissal can be reversed on the home page.
 
 `apps/docs/scripts/doc-last-modified.ts` memoizes guide timestamps per path
 using full Git history and Fumadocs' author-date convention, avoiding re-dating

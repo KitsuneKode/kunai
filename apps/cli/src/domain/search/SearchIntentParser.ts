@@ -40,6 +40,7 @@ const TYPE_FILTERS = new Set<SearchIntentTypeFilter>([
   "short",
   "playlist",
   "channel",
+  "live",
 ]);
 const WATCH_FILTERS = new Set<WatchFilter>(["any", "unwatched", "watching", "completed"]);
 const RELEASE_FILTERS = new Set<ReleaseFilter>(["today", "this-week", "upcoming"]);

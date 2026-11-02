@@ -41,6 +41,7 @@ const cooldownUntil = new Map<string, number>();
 export type InvidiousInstancePoolOptions = {
   readonly instancesUrl?: string;
   readonly preferredInstanceUrl?: string;
+  readonly allowInstanceFallback?: boolean;
   readonly now?: () => number;
   readonly signal?: AbortSignal;
 };
@@ -52,7 +53,7 @@ export async function fetchHealthyInvidiousInstances(
   pruneExpiredCooldowns(now);
   if (options.preferredInstanceUrl?.trim()) {
     const preferred = normalizeInstanceUrl(options.preferredInstanceUrl);
-    if ((cooldownUntil.get(preferred) ?? 0) <= now) {
+    if (options.allowInstanceFallback === false || (cooldownUntil.get(preferred) ?? 0) <= now) {
       return [preferred];
     }
   }

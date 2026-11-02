@@ -38,8 +38,7 @@ import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
 import {
   DEFAULT_MPV_YTDL_FORMAT,
   composeDemuxerLavfOptions,
-  LIVE_DEMUXER_LAVF_OPTIONS,
-  LIVE_DEMUXER_OPTIONS,
+  buildMpvCacheProfile,
   LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
   normalizeStreamHttpHeaders,
   shouldDisableMpvTlsVerify,
@@ -764,42 +763,16 @@ export function buildMpvArgs(
   args.push("--resume-playback=no");
   args.push("--autofit-smaller=1280x720");
   args.push("--autofit-larger=90%x90%");
-  args.push("--cache=yes");
-  args.push("--cache-pause=yes");
-  args.push("--cache-pause-initial=no");
-  // `--demuxer-lavf-o` is single-valued: repeating it replaces the previous value
-  // rather than merging. The local-HLS whitelist used to be pushed last and so
-  // silently discarded whichever reconnect ladder had been chosen above. Collect
-  // the fragments and emit the option exactly once.
-  let reconnectLavfOptions: string;
-  if (opts.isLive) {
-    for (const [key, value] of Object.entries(LIVE_DEMUXER_OPTIONS)) {
-      args.push(`--${key}=${value}`);
-    }
-    reconnectLavfOptions = LIVE_DEMUXER_LAVF_OPTIONS;
-  } else {
-    args.push("--cache-pause-wait=2");
-    const fastStart = config?.mpv?.startupPriority === "fast";
-    if (fastStart) {
-      args.push("--demuxer-readahead-secs=10");
-      args.push("--demuxer-max-bytes=48MiB");
-      // Shorter reconnect window so dead CDNs fail fast into Kunai failover.
-      reconnectLavfOptions =
-        "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=3";
-    } else {
-      args.push("--demuxer-readahead-secs=60");
-      args.push("--demuxer-max-bytes=200MiB");
-      // libavformat HTTP/HLS reconnect hints (backend-dependent). We still rely on IPC
-      // watchdogs + refresh/reload; keep-open=always is intentionally not used here because
-      // it can suppress end-file and stall autoplay/session hand-off (see keep-open=no above).
-      reconnectLavfOptions =
-        "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=10,reconnect_max_retries=8";
-    }
-  }
+  const cacheProfile = buildMpvCacheProfile({
+    isYoutube: isYoutubeWatchUrl(opts.url) || Boolean(opts.requiresYtdl),
+    isLive: opts.isLive,
+    startupPriority: config?.mpv?.startupPriority,
+  });
+  for (const [key, value] of Object.entries(cacheProfile.options)) args.push(`--${key}=${value}`);
   // Materialized local HLS playlists reference remote HTTPS segments. libavformat defaults
   // to file,crypto,data only for local manifests, which makes every segment fail instantly.
   const demuxerLavfOptions = composeDemuxerLavfOptions(
-    reconnectLavfOptions,
+    cacheProfile.reconnect,
     isLocalHlsManifestPlaybackUrl(opts.url) ? LOCAL_HLS_DEMUXER_LAVF_OPTIONS : undefined,
   );
   if (demuxerLavfOptions) {

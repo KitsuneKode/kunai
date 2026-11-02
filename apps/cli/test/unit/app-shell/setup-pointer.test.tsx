@@ -5,6 +5,7 @@ import type { CapabilitySnapshot } from "@/ui";
 import { Box } from "ink";
 import React from "react";
 
+import { stripAnsi } from "../../harness/render-capture";
 import { renderWithPointer } from "../../support/pointer-render";
 
 const ready: CapabilitySnapshot = {
@@ -71,7 +72,7 @@ test.each([
   );
   try {
     for (let step = 0; step < 6; step++) {
-      expect(h.lastFrame()).toContain(`setup ${step + 1}⁄6`);
+      expect(stripAnsi(h.lastFrame())).toContain(`setup ${step + 1}⁄6`);
       const regions = h.dispatcher
         .debugRegions()
         .filter((region) => region.id.startsWith("setup:"));
@@ -81,7 +82,7 @@ test.each([
           rows - 3,
         );
       }
-      if (step === 3) expect(h.lastFrame()).toContain("Discord presence");
+      if (step === 3) expect(stripAnsi(h.lastFrame())).toContain("Discord presence");
       if (step === 4) h.click("setup:action:s");
       else if (step < 5) h.click("setup:action:enter");
     }

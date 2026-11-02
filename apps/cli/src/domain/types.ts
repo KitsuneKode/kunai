@@ -216,6 +216,7 @@ export interface SearchResult {
   readonly resultKind?: YouTubeResultKind;
   /** Lane that produced this row at the search-routing boundary (selection prefers this over shell mode). */
   readonly resolvedLane?: ProviderLane;
+  readonly commitQuery?: string;
 }
 
 export type TitleAliasKind = "english" | "romaji" | "native" | "provider" | "synonym";

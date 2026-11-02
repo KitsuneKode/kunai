@@ -234,3 +234,38 @@ test("VidRock does not declare arbitrary worker bytes to be HLS", async () => {
   );
   expect(result.streams.every((s) => s.protocol !== "hls")).toBe(true);
 });
+
+test.each(["playlist-failure", "dead-hls-host"])(
+  "a decrypted but unavailable lane is not a GCM rotation: %s",
+  async (kind) => {
+    const ciphertext = await encryptLaneUrl(
+      kind === "playlist-failure"
+        ? "https://cdn.example/playlist/fixture"
+        : "https://cdn.example/master.m3u8",
+    );
+    const result = await vidrockProviderModule.resolve(
+      {
+        title: { id: "tmdb:550", kind: "movie", title: "Fight Club", tmdbId: "550" },
+        mediaKind: "movie",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      {
+        providerId: "vidrock",
+        now: () => "2026-10-29T00:00:00.000Z",
+        fetch: {
+          runtime: "direct-http",
+          fetch: async (url) => {
+            if (String(url).includes("/api/"))
+              return Response.json({ good: { url: ciphertext }, bad: { url: "!!!not-base64!!!" } });
+            if (kind === "playlist-failure") throw new Error("fixture transport unavailable");
+            return new Response("missing", { status: 404 });
+          },
+        },
+      },
+    );
+    expect(result.status).toBe("exhausted");
+    expect(result.failures?.[0]?.code).not.toBe("parse-failed");
+    expect(result.failures?.[0]?.message).not.toContain("GCM");
+  },
+);

@@ -14,17 +14,23 @@ function normalizeAudioSetting(audio: string): string {
  */
 export function resolveAnimeAudioIntent(audio: string): AnimeAudioIntent {
   const normalized = normalizeAudioSetting(audio);
-  if (normalized === "en" || normalized === "dub") {
+  if (
+    normalized === "original" ||
+    normalized === "ja" ||
+    normalized === "jpn" ||
+    normalized === "sub" ||
+    normalized === ""
+  ) {
     return {
-      catalogMode: "dub",
-      presentation: "dub",
-      preferredAudioLanguage: normalized === "en" ? "en" : "dub",
+      catalogMode: "sub",
+      presentation: "sub",
+      preferredAudioLanguage: normalized === "ja" || normalized === "jpn" ? "ja" : "original",
     };
   }
   return {
-    catalogMode: "sub",
-    presentation: "sub",
-    preferredAudioLanguage: normalized === "ja" ? "ja" : "original",
+    catalogMode: "dub",
+    presentation: "dub",
+    preferredAudioLanguage: normalized === "en" ? "en" : normalized,
   };
 }
 

@@ -123,6 +123,17 @@ async function waitForSettled(predicate: () => boolean): Promise<void> {
   await waitUntil(predicate, { label: "mpv bootstrap teardown" });
 }
 
+const EXPECTED_VOD_CACHE = {
+  cache: "yes",
+  "cache-pause": "yes",
+  "cache-pause-initial": "no",
+  "cache-pause-wait": "2",
+  "demuxer-readahead-secs": "60",
+  "demuxer-max-bytes": "200MiB",
+  "demuxer-lavf-o":
+    "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=10,reconnect_max_retries=8",
+};
+
 describe("PersistentMpvSession single pending load owner", () => {
   async function createLoadedSession() {
     const harness = createHarness();
@@ -595,7 +606,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
         "user-agent": nextHeaders["user-agent"],
         "http-header-fields": "Origin: https://www.cineplay.to",
         ytdl: "no",
-        "demuxer-lavf-o-clr": "",
+        ...EXPECTED_VOD_CACHE,
       },
     ]);
   });
@@ -660,7 +671,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
         "user-agent": providerHeaders["user-agent"],
         "http-header-fields": "Origin: https://player.videasy.to",
         ytdl: "no",
-        "demuxer-lavf-o-clr": "",
+        ...EXPECTED_VOD_CACHE,
       },
     ]);
     expect(session.isReusable()).toBe(true);
@@ -715,7 +726,8 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
         referrer: "https://cdn.example/page",
         "user-agent": "kunai-test",
         "http-header-fields": "Origin: https://cdn.example",
-        "demuxer-lavf-o": LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
+        ...EXPECTED_VOD_CACHE,
+        "demuxer-lavf-o": `${EXPECTED_VOD_CACHE["demuxer-lavf-o"]},${LOCAL_HLS_DEMUXER_LAVF_OPTIONS}`,
       },
     ]);
   });
@@ -924,7 +936,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
         referrer: "https://video.example",
         "http-header-fields-clr": "",
         ytdl: "no",
-        "demuxer-lavf-o-clr": "",
+        ...EXPECTED_VOD_CACHE,
       },
     ]);
     expect(harness.commands).toContainEqual([

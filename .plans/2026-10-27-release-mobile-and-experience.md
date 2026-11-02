@@ -31,6 +31,29 @@ hosted, device or release signoff.
 
 ## 1. Watching release gates
 
+- [ ] Integrate and qualify the review correction batch on PR #676 after
+      exact-head hosted checks. Local regressions now cover YouTube query
+      dispatch and configured draft routing, keyboard-only consent/destructive
+      actions, palette pointer ownership, exact live formats, bounded discovery
+      and compound genre removal. The Kitty witness excludes intro skips and
+      missing IPC intervals. Offline title-group actions now share the existing
+      router, preserving diagnostics and repairing metadata before shelf refresh.
+      The original 3120 KiB cap is restored; the measured bundle is 3,193,265
+      bytes (1,615 bytes below it). Forced tests and the native/docs builds pass;
+      these checks do not qualify live providers or physical devices.
+
+- [ ] Persist explicit embedded mpv audio-language changes across autoplay.
+      Provider audio picks already set session preferences; the native `a`
+      branch only cycles mpv's current file and its track-change hook currently
+      records diagnostics without updating the session language.
+
+- [ ] Reconcile the provider audit branch now integrated into PR #676. Preserve
+      its YouTube format ordering and VidRock concurrency fixes; qualify
+      recommended-tier promotions with captured playback evidence rather than
+      manifest flags. The review corrections cover per-file cache policies,
+      cache-pause-independent recovery, private Kitty IPC/logging, VidRock
+      decrypt accounting, docked Kanna dismissal and route-builder consistency.
+
 - [ ] Integrate the pending mobile readiness docs (PR #672), project previews
       (PR #673) and the Android handoff lifecycle repair after exact-head checks
       and actionable reviews. Review any integration conflicts.

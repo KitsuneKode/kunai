@@ -1377,6 +1377,14 @@ function inferRivestreamAudioLanguage(
   if (raw.includes("hindi")) return "hi";
   if (raw.includes("german")) return "de";
   if (raw.includes("spanish")) return "es";
+  if (raw.includes("french")) return "fr";
+  if (raw.includes("italian")) return "it";
+  if (raw.includes("portuguese")) return "pt";
+  if (raw.includes("russian")) return "ru";
+  if (raw.includes("korean")) return "ko";
+  if (raw.includes("japanese")) return "ja";
+  if (raw.includes("tamil")) return "ta";
+  if (raw.includes("telugu")) return "te";
   if (raw.includes("english") || raw.includes("flowcast") || raw.includes("primevids")) return "en";
   return undefined;
 }

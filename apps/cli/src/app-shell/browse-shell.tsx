@@ -733,9 +733,14 @@ export function BrowseShell<T>({
       setQuery(nextQuery);
       if (shouldResearchAfterFilterChange({ searchState, lastSearchedQuery, nextQuery })) {
         void runSearch(nextQuery);
+      } else if (
+        nextQuery.trim().length === 0 &&
+        (searchState === "ready" || searchState === "error")
+      ) {
+        clearResults();
       }
     },
-    [lastSearchedQuery, query, runSearch, searchState, setQuery],
+    [clearResults, lastSearchedQuery, query, runSearch, searchState, setQuery],
   );
 
   const handleQuerySubmit = useCallback(
@@ -1212,8 +1217,9 @@ export function BrowseShell<T>({
         local: localSuggestionCorpus,
         remote: catalogSuggestions,
         remotePending: suggestionsPending,
+        remoteHeader: mode === "youtube" ? "YouTube Suggestions" : undefined,
       }),
-    [query, localSuggestionCorpus, catalogSuggestions, suggestionsPending],
+    [query, localSuggestionCorpus, catalogSuggestions, suggestionsPending, mode],
   );
 
   const boundedSuggestionIndex =
@@ -1234,7 +1240,7 @@ export function BrowseShell<T>({
     (entry: ScoredSuggestion<T>) => {
       const suggestion = entry.suggestion;
       setSuggestionIndex(-1);
-      if (suggestion.value !== undefined) {
+      if (!suggestion.commitQuery && suggestion.value !== undefined) {
         // Title row — identical to Enter on the matching results-list row.
         onSubmit(suggestion.value);
         return;
@@ -2218,11 +2224,17 @@ export function BrowseShell<T>({
                 <Text color={palette.dim}>Query filters </Text>
                 {structuredFilterChips.map((chip, index) => (
                   <Box key={`${chip.key}-${chip.label}`} marginRight={2}>
-                    <Text color={palette.accentSoft}>
-                      {index < 9 ? `${index + 1} ` : ""}
-                      {sanitizeTerminalText(chip.label)}
-                      <Text color={palette.muted}> ×</Text>
-                    </Text>
+                    <MouseTarget
+                      id={`browse:chip:${chip.key}`}
+                      active={pointerActive}
+                      onClick={() => clearStructuredFilterChip(chip.key)}
+                    >
+                      <Text color={palette.accentSoft}>
+                        {index < 9 ? `${index + 1} ` : ""}
+                        {sanitizeTerminalText(chip.label)}
+                        <Text color={palette.muted}> ×</Text>
+                      </Text>
+                    </MouseTarget>
                   </Box>
                 ))}
                 <Text color={palette.dim} dimColor>
@@ -2304,6 +2316,8 @@ export function BrowseShell<T>({
                 maxRows={suggestionMaxRows}
                 selectedIndex={boundedSuggestionIndex}
                 width={innerWidth}
+                pointerActive={pointerActive}
+                onSelect={commitSuggestion}
               />
             ) : null}
           </>

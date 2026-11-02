@@ -18,7 +18,7 @@ import {
 } from "../../../../src/app-shell/mouse/MouseRegions";
 // Named import for the side effect: the module sets IS_REACT_ACT_ENVIRONMENT
 // before act() is first called, so state updates flush inside act() bounds.
-import { CAPTURE_WIDTHS } from "../../../harness/render-capture";
+import { CAPTURE_WIDTHS, stripAnsi } from "../../../harness/render-capture";
 
 class FakeSource extends EventEmitter {
   isTTY = true;
@@ -109,7 +109,7 @@ function mountWithMouse(node: React.ReactElement, columns: number = CAPTURE_WIDT
     dispatcher,
     proxy,
     stdout,
-    lastFrame: () => stdout.frames.at(-1) ?? "",
+    lastFrame: () => stripAnsi(stdout.frames.at(-1) ?? ""),
     rerender: (next: React.ReactElement) =>
       act(() =>
         instance.rerender(
