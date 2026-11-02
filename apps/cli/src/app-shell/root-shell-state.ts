@@ -15,6 +15,7 @@ export type RootOwnedOverlay = Extract<
       | "downloads"
       | "library"
       | "provider_picker"
+      | "provider_status"
       | "history"
       | "queue"
       | "notifications"

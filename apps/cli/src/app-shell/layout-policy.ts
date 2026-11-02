@@ -234,7 +234,8 @@ export function resolveOverlayPanelKind(overlayType: string): OverlayPanelKind {
     overlayType === "history" ||
     overlayType === "queue" ||
     overlayType === "notifications" ||
-    overlayType === "downloads"
+    overlayType === "downloads" ||
+    overlayType === "provider_status"
   ) {
     return "dedicated";
   }

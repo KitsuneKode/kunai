@@ -174,6 +174,7 @@ import {
   type HistoryPickerOptionsContext,
   sortProvidersByConfigPriority,
 } from "./panel-data";
+import { ProviderStatusSheet } from "./provider-status/ProviderStatusSheet";
 import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
 import type { QueueViewRow } from "./queue-view";
@@ -1007,11 +1008,8 @@ export function RootOverlayShell({
   } = useShellInput({
     footerActions,
     commands,
-    // The settings surface owns `/` itself — its footer advertises it as
-    // search. Without disabling here, one keystroke opened the palette AND
-    // armed the settings filter (both handlers see commandMode=false on the
-    // same event), and closing the palette left a phantom focused search.
-    disabled: overlay.type === "settings",
+    // The settings and provider_status surfaces own their input.
+    disabled: overlay.type === "settings" || overlay.type === "provider_status",
     escapeAction: null,
     localTitles: () => collectLocalTitleEntries(container),
     onTitlePick: (entry) => pickPaletteTitle(container, entry),
@@ -1029,7 +1027,10 @@ export function RootOverlayShell({
 
   const overlayPanelKind = resolveOverlayPanelKind(overlay.type);
   const overlayDedicatedShell =
-    overlay.type === "history" || overlay.type === "queue" || overlay.type === "downloads";
+    overlay.type === "history" ||
+    overlay.type === "queue" ||
+    overlay.type === "downloads" ||
+    overlay.type === "provider_status";
   const overlayHostChromeRows = getOverlayHostChromeRows({
     commandMode,
     dedicatedShell: overlayDedicatedShell,
@@ -1559,7 +1560,7 @@ export function RootOverlayShell({
       return;
     }
 
-    if (overlay.type === "settings") {
+    if (overlay.type === "settings" || overlay.type === "provider_status") {
       return;
     }
 
@@ -2331,6 +2332,27 @@ export function RootOverlayShell({
             initialView={overlay.view ?? "library"}
           />
         </RootContentSuspension>
+        {commandMode ? (
+          <CommandPalette
+            input={commandInput}
+            cursor={commandCursor}
+            commands={commands}
+            highlightedIndex={highlightedIndex}
+          />
+        ) : null}
+      </Box>,
+    );
+  }
+
+  if (overlay.type === "provider_status") {
+    return wrapWithLayout(
+      <Box flexDirection="column" flexGrow={1} alignItems="center">
+        <ProviderStatusSheet
+          container={container}
+          initialLane={overlay.initialLane}
+          width={overlayLayout.contentColumns}
+          onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+        />
         {commandMode ? (
           <CommandPalette
             input={commandInput}

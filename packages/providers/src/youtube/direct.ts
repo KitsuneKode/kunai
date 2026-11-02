@@ -312,14 +312,18 @@ async function listYoutubeEpisodes(
         preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
         signal: context.signal,
       });
-      return (playlist.videos ?? []).map((video, index) => ({
-        index: video.index ?? index + 1,
-        label: `#${video.index ?? index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
-        name: video.title,
-        detail: video.title,
-        totalEpisodeCount: playlist.videoCount ?? playlist.videos?.length,
-        externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
-      }));
+      return (playlist.videos ?? []).map((video, index) => {
+        const thumbUrl = video.videoId ? youtubeThumbnailUrl(video.videoId) : undefined;
+        return {
+          index: video.index ?? index + 1,
+          label: `#${video.index ?? index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
+          name: video.title,
+          detail: video.title,
+          totalEpisodeCount: playlist.videoCount ?? playlist.videos?.length,
+          externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
+          artwork: thumbUrl ? { thumbnailUrl: thumbUrl, posterUrl: thumbUrl } : undefined,
+        };
+      });
     } catch {
       // The public instance pool is thin — fall through to local yt-dlp.
     }
@@ -336,13 +340,17 @@ async function listYoutubeEpisodes(
         signal: context.signal,
       });
       const channelVideos = channel.latestVideos ?? channel.videos ?? [];
-      return channelVideos.map((video, index) => ({
-        index: index + 1,
-        label: `#${index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
-        name: video.title,
-        detail: video.title,
-        externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
-      }));
+      return channelVideos.map((video, index) => {
+        const thumbUrl = video.videoId ? youtubeThumbnailUrl(video.videoId) : undefined;
+        return {
+          index: index + 1,
+          label: `#${index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
+          name: video.title,
+          detail: video.title,
+          externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
+          artwork: thumbUrl ? { thumbnailUrl: thumbUrl, posterUrl: thumbUrl } : undefined,
+        };
+      });
     } catch {
       // The public instance pool is thin — fall through to local yt-dlp.
     }
@@ -391,12 +399,14 @@ async function listYoutubeEpisodesViaYtdlp(
         const entry = JSON.parse(trimmed) as { id?: string; title?: string; duration?: number };
         if (!entry.id || !entry.title) continue;
         const index = episodes.length + 1;
+        const thumbUrl = entry.id ? youtubeThumbnailUrl(entry.id) : undefined;
         episodes.push({
           index,
           label: `#${index}${entry.duration ? ` · ${formatDurationSeconds(entry.duration)}` : ""}`,
           name: entry.title,
           detail: entry.title,
           externalIds: { youtubeId: entry.id },
+          artwork: thumbUrl ? { thumbnailUrl: thumbUrl, posterUrl: thumbUrl } : undefined,
         });
       } catch {
         // skip malformed line

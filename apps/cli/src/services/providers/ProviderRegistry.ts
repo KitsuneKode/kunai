@@ -150,7 +150,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                 providerEpisodeIdentity: ep.providerEpisodeIdentity,
                 name: ep.name,
                 detail: ep.detail,
-                previewImageUrl: ep.artwork?.thumbnailUrl,
+                previewImageUrl: ep.artwork?.thumbnailUrl ?? ep.artwork?.posterUrl,
                 airDate: ep.release?.airDate,
                 overview: ep.detail,
                 externalIds: ep.externalIds,

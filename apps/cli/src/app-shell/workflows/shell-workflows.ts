@@ -685,6 +685,8 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   settings: (c) => handleSettings(c),
   providers: (c) => handleProvidersHub(c),
   provider: (c) => handleProvidersHub(c),
+  "provider-status": (c) => handleProviderStatus(c),
+  status: (c) => handleProviderStatus(c),
   presence: (c) => handleSettings(c),
   analytics: (c) => handleAnalytics(c),
   "analytics-show": (c) => handleAnalyticsShow(c),
@@ -915,9 +917,14 @@ async function handleProviderPicker(container: Container): Promise<"handled"> {
   return "handled";
 }
 
-type ProvidersHubChoice = "session" | "defaults" | "toggle";
+async function handleProviderStatus(container: Container): Promise<"handled"> {
+  await openRootOwnedOverlay(container, { type: "provider_status" });
+  return "handled";
+}
 
-/** Single entry for /providers: session switch vs sticky defaults. */
+type ProvidersHubChoice = "status" | "session" | "defaults" | "toggle";
+
+/** Single entry for /providers: status matrix, session switch, or sticky defaults. */
 async function handleProvidersHub(container: Container): Promise<"handled"> {
   const state = container.stateManager.getState();
   const currentName =
@@ -928,13 +935,18 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
 
   const choice = await chooseFromListShell<ProvidersHubChoice>({
     title: "Providers",
-    subtitle: `${currentName} · ${laneLabel}${disabledCount > 0 ? ` · ${disabledCount} off` : ""} · session, defaults, or switches`,
+    subtitle: `${currentName} · ${laneLabel}${disabledCount > 0 ? ` · ${disabledCount} off` : ""} · live status, session, or defaults`,
     actionContext: buildPickerActionContext({
       container,
       taskLabel: "Choose provider action",
       allowed: ["settings", "history", "diagnostics", "help", "about", "quit"],
     }),
     options: [
+      {
+        value: "status" as const,
+        label: "Provider status & live health",
+        detail: "Global real-time reachability, latency, and capability matrix",
+      },
       {
         value: "session" as const,
         label: "Switch for this session",
@@ -953,6 +965,9 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
     ],
   });
 
+  if (choice === "status") {
+    return handleProviderStatus(container);
+  }
   if (choice === "session") {
     return handleProviderPicker(container);
   }

@@ -27,6 +27,7 @@ export type ShellAction =
   | "settings"
   | "theme"
   | "providers"
+  | "provider-status"
   | "presence"
   | "analytics"
   | "analytics-show"
@@ -499,6 +500,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "settings":
     case "theme":
     case "providers":
+    case "provider-status":
     case "presence":
     case "analytics":
     case "analytics-show":

@@ -18,6 +18,7 @@ export type AppCommandId =
   | "settings"
   | "theme"
   | "providers"
+  | "provider-status"
   | "presence"
   | "analytics"
   | "analytics-show"
@@ -128,6 +129,7 @@ export const COMMAND_CONTEXTS = {
     "pet",
     "sync",
     "providers",
+    "provider-status",
     "presence",
     "analytics",
     "analytics-show",
@@ -408,6 +410,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Providers",
     aliases: ["providers", "provider-settings", "default-provider"],
     description: "Switch the session provider or set defaults and priority",
+  },
+  {
+    id: "provider-status",
+    label: "Provider Status",
+    aliases: ["provider-status", "providers-status", "status"],
+    description: "Inspect live global provider reachability, latency, and capability matrix",
   },
   {
     id: "presence",
@@ -887,6 +895,7 @@ export function commandGroupFor(id: AppCommandId): AppCommandGroup {
     case "settings":
     case "theme":
     case "providers":
+    case "provider-status":
     case "help":
       return "Core";
     case "next":
@@ -1162,6 +1171,7 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
 
     case "provider":
     case "providers":
+    case "provider-status":
       if (resolving) {
         return {
           enabled: false,

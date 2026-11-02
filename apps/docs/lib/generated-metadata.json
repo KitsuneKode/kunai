@@ -1,7 +1,7 @@
 {
   "version": "0.4.0",
   "cliVersion": "0.4.0",
-  "commandCount": 85,
+  "commandCount": 86,
   "providerIds": [
     "videasy",
     "vidlink",
@@ -313,6 +313,12 @@
       "label": "Providers",
       "aliases": ["providers", "provider-settings", "default-provider"],
       "description": "Switch the session provider or set defaults and priority"
+    },
+    {
+      "id": "provider-status",
+      "label": "Provider Status",
+      "aliases": ["provider-status", "providers-status", "status"],
+      "description": "Inspect live global provider reachability, latency, and capability matrix"
     },
     {
       "id": "presence",

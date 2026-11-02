@@ -146,6 +146,7 @@ export type OverlayState =
   | { type: "help" }
   | { type: "guide" }
   | { type: "about" }
+  | { type: "provider_status"; initialLane?: import("../types").ProviderLane }
   | { type: "setup"; missing: readonly string[] }
   | { type: "confirm"; message: string; confirmLabel?: string };
 

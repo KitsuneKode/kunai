@@ -292,7 +292,7 @@ async function pickEpisodeSelection(
     "currentId" | "isAnime" | "animeEpisodeCount" | "animeEpisodes" | "container"
   > & { readonly loaders?: EpisodeSelectionLoaders },
 ): Promise<EpisodeSelectionOutcome> {
-  if (opts.isAnime) {
+  if (opts.isAnime || (opts.animeEpisodes && opts.animeEpisodes.length > 0)) {
     const episode = await pickAnimeEpisode(
       initEpisode,
       opts.animeEpisodes,

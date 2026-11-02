@@ -307,12 +307,12 @@ try {
             );
             console.log(`[seek] After seek time-pos: ${afterPos}s`);
             await Bun.write(
-              join(session.evidenceDir, "seek.json"),
+              join(activeSession.evidenceDir, "seek.json"),
               JSON.stringify({ beforePos, afterPos, requestedSeconds: step.seconds }),
             );
-            await session.ipc([
+            await activeSession.ipc([
               "screenshot-to-file",
-              join(session.evidenceDir, "decoded-frame-after-seek.png"),
+              join(activeSession.evidenceDir, "decoded-frame-after-seek.png"),
               "video",
             ]);
           }
