@@ -292,10 +292,11 @@ try {
               `[seek] Before seek time-pos: ${beforePos}s, seeking relative: ${step.seconds}s`,
             );
             await session.ipc(["seek", step.seconds, "relative"]);
+            const live = session;
             const afterPos = await waitForKittyCondition(
               async () => {
                 try {
-                  const val = await session.ipc(["get_property", "time-pos"]);
+                  const val = await live.ipc(["get_property", "time-pos"]);
                   const parsed = z.number().safeParse(val);
                   return parsed.success && parsed.data !== beforePos ? parsed.data : null;
                 } catch {
