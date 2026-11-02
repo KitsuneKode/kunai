@@ -34,9 +34,7 @@ export interface ProviderStatusMatrix {
 }
 
 /** Canonical probe endpoints for providers to measure live reachability and latency. */
-export const PROVIDER_PROBE_ENDPOINTS: Readonly<
-  Record<string, { url: string; headers?: Record<string, string> }>
-> = {
+export const PROVIDER_PROBE_ENDPOINTS = {
   movy: {
     url: "https://api.wecollege.net",
     headers: { Referer: "https://www.movy.sx/", Origin: "https://www.movy.sx" },
@@ -93,7 +91,10 @@ export const PROVIDER_PROBE_ENDPOINTS: Readonly<
     url: "https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=kunai",
     headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" },
   },
-};
+} as const satisfies Record<
+  string,
+  { readonly url: string; readonly headers?: Record<string, string> }
+>;
 
 function formatCapabilities(manifest?: CoreProviderManifest): readonly string[] {
   if (!manifest) return ["Direct"];
@@ -137,6 +138,7 @@ export function buildProviderStatusMatrix(
           : (rawConfig.provider ?? state.provider);
 
     const isActive = state.provider === id || activeProviderForLane === id;
+    // SAFETY: provider id comes from registered provider metadata matching ProviderId
     const health = container.providerHealth.get(id as ProviderId);
     const override = overrides.get(id);
 
@@ -215,7 +217,12 @@ export async function probeSingleProvider(
   httpStatus?: number;
   evidence: string;
 }> {
-  const probeConfig = PROVIDER_PROBE_ENDPOINTS[providerId];
+  // SAFETY: providerId is registered in providerRegistry matching ProviderId
+  const typedId = providerId as ProviderId;
+  // SAFETY: key membership verified before indexed access
+  const probeConfig = Object.hasOwn(PROVIDER_PROBE_ENDPOINTS, providerId)
+    ? PROVIDER_PROBE_ENDPOINTS[providerId as keyof typeof PROVIDER_PROBE_ENDPOINTS]
+    : undefined;
   const url =
     probeConfig?.url ??
     `https://${container.providerRegistry.get(providerId)?.metadata.domain ?? `${providerId}.com`}`;
@@ -252,15 +259,15 @@ export async function probeSingleProvider(
     }
 
     container.providerHealth.set({
-      providerId: providerId as ProviderId,
+      providerId: typedId,
       status,
       checkedAt: new Date().toISOString(),
       medianResolveMs: latencyMs,
-      observations: (container.providerHealth.get(providerId as ProviderId)?.observations ?? 0) + 1,
+      observations: (container.providerHealth.get(typedId)?.observations ?? 0) + 1,
       consecutiveFailures:
         status === "healthy"
           ? 0
-          : (container.providerHealth.get(providerId as ProviderId)?.consecutiveFailures ?? 0) + 1,
+          : (container.providerHealth.get(typedId)?.consecutiveFailures ?? 0) + 1,
     });
 
     return { status, latencyMs, httpStatus, evidence };
@@ -274,12 +281,11 @@ export async function probeSingleProvider(
       : `Network unreachable: ${errorMsg.slice(0, 30)}`;
 
     container.providerHealth.set({
-      providerId: providerId as ProviderId,
+      providerId: typedId,
       status: "down",
       checkedAt: new Date().toISOString(),
       medianResolveMs: latencyMs,
-      consecutiveFailures:
-        (container.providerHealth.get(providerId as ProviderId)?.consecutiveFailures ?? 0) + 1,
+      consecutiveFailures: (container.providerHealth.get(typedId)?.consecutiveFailures ?? 0) + 1,
     });
 
     return { status, latencyMs, evidence };

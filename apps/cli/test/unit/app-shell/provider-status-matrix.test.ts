@@ -55,7 +55,7 @@ function createMockContainer(
     },
   ];
 
-  return {
+  const container = {
     stateManager,
     config: {
       getRaw: () => ({
@@ -108,7 +108,9 @@ function createMockContainer(
         },
       ],
     ]),
-  } as unknown as Container;
+  };
+  // SAFETY: Mock test container providing only the fields consumed by buildProviderStatusMatrix
+  return container as never;
 }
 
 describe("buildProviderStatusMatrix", () => {
