@@ -1,5 +1,4 @@
 import { chooseFromListShell, type ListShellActionContext } from "@/app-shell/pickers";
-import { queueMoreOfflineTitleEpisodes } from "@/app-shell/workflows";
 import type { Container } from "@/container";
 import {
   buildDownloadDiagnosticEvent,
@@ -196,6 +195,7 @@ export async function routeOfflineLibraryGroupAction(
   }
 
   if (action.type === "download-more") {
+    const { queueMoreOfflineTitleEpisodes } = await import("@/app-shell/workflows");
     await queueMoreOfflineTitleEpisodes(container, first, action.contentType, actionContext);
     return "continue";
   }

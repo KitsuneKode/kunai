@@ -73,7 +73,7 @@ export function listThemes(): readonly ThemeDef[] {
 }
 
 export function isThemeName(value: string | null | undefined): value is ThemeName {
-  return value != null && value in THEMES;
+  return value !== null && value !== undefined && value in THEMES;
 }
 
 export function getThemeLabel(name: ThemeName): string {

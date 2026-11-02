@@ -85,6 +85,7 @@ export function createSearchHistoryStore(
           // A refresh that raced an accepted local query must not replace its
           // durable snapshot with older bytes from before the write.
           if ((revisions.get(file) ?? 0) === revision) publish(file, history);
+          return undefined;
         })
         .finally(() => {
           refreshing.delete(file);
@@ -126,6 +127,7 @@ export function createSearchHistoryStore(
               publish(entry.file, merged);
             },
           );
+          return undefined;
         })
         .finally(() => {
           pending.splice(pending.indexOf(entry), 1);

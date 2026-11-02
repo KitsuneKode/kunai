@@ -645,7 +645,8 @@ export function SetupShell({
     }
   });
 
-  const pointer: SetupPointerActions = {
+  const pointerRef = React.useRef<SetupPointerActions | null>(null);
+  pointerRef.current = {
     pick(field, value) {
       if (viewport.tooSmall || rechecking) return;
       if (confirmingAbort) {
@@ -716,6 +717,14 @@ export function SetupShell({
       else if (key === "d") setShowFix((current) => !current);
     },
   };
+
+  const pointer = React.useMemo<SetupPointerActions>(
+    () => ({
+      pick: (field, value) => pointerRef.current?.pick(field, value),
+      action: (key) => pointerRef.current?.action(key),
+    }),
+    [],
+  );
 
   const footer = buildFooter(screen, {
     hasFix: Boolean(depRows[depIdx]?.fix),

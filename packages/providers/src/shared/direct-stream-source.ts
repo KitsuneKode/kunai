@@ -208,7 +208,6 @@ export async function resolveDirectStreamSource(
     const refusedStreamIds = new Set<string>();
     if (resolveGateProbe) {
       let gateFailure: ProviderFailure | undefined;
-      const refusedStreamIds = new Set<string>();
       let cancelled = false;
 
       // Probe the user's pinned stream first, so the first healthy default

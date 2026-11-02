@@ -657,7 +657,10 @@ export async function reconcileNpmPublication(
 ): Promise<PublicationDecision[]> {
   await validateLocalCandidates(options.candidates);
   const platforms = options.candidates.filter((candidate) => candidate.role === "platform");
-  const launcher = options.candidates.find((candidate) => candidate.role === "launcher")!;
+  const launcher = options.candidates.find((candidate) => candidate.role === "launcher");
+  if (!launcher) {
+    throw new Error("[publish] missing launcher package candidate");
+  }
 
   const platformDecisions: PublicationDecision[] = [];
   for (const candidate of platforms) platformDecisions.push(await decide(candidate, options));
