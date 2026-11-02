@@ -280,7 +280,7 @@ export function ProviderStatusSheet({
               <Text color={palette.warn}> · {matrix.degradedCount} degraded</Text>
             ) : null}
             {matrix.downCount > 0 ? (
-              <Text color={palette.danger}> · {matrix.downCount} offline</Text>
+              <Text color={palette.dangerText}> · {matrix.downCount} offline</Text>
             ) : null}
             {matrix.disabledCount > 0 ? (
               <Text color={palette.dim}> · {matrix.disabledCount} off</Text>
@@ -382,7 +382,7 @@ export function ProviderStatusSheet({
             statusColor = palette.warn;
           } else if (entry.status === "down") {
             statusIcon = "✖ Offline";
-            statusColor = palette.danger;
+            statusColor = palette.dangerText;
           } else if (entry.status === "unknown") {
             statusIcon = "◌ Unknown";
             statusColor = palette.muted;
@@ -497,7 +497,8 @@ export function ProviderStatusSheet({
             ) : null}
             {selectedEntry.consecutiveFailures ? (
               <Text color={palette.warn}>
-                Failures: <Text color={palette.danger}>{selectedEntry.consecutiveFailures}</Text>
+                Failures:{" "}
+                <Text color={palette.dangerText}>{selectedEntry.consecutiveFailures}</Text>
               </Text>
             ) : null}
           </Box>
