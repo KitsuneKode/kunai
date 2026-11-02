@@ -301,7 +301,7 @@ bun run scripts/set-release-status.ts <version> published <UTC-ISO>
 
 Then focused release-artifact tests and `release:notes:check` run before a narrow PR containing `.release/kunai-v<version>.json` is opened against main. The branch is keyed by version and workflow run ID, so retrying the metadata job reuses its review branch. Main is updated only through review and required checks. GitHub may require a maintainer to approve workflow runs for this bot-created PR.
 
-## Package channels (Homebrew, Scoop, AUR)
+## Package channels (Homebrew, Scoop, AUR, WinGet)
 
 `.github/workflows/package-channels.yml` runs automatically when a release is
 **published** (prereleases are skipped) and can also be dispatched by hand with
@@ -323,6 +323,8 @@ a `tag` input for backfills. It:
    - `PKGBUILD` + `.SRCINFO` → `ssh://aur@aur.archlinux.org/kunai-bin.git` via
      secret `AUR_SSH_PRIVATE_KEY` (deploy key registered as the AUR package's
      co-maintainer; `ssh-keyscan` pins `aur.archlinux.org` at publish time).
+   - WinGet multi-manifests (`KitsuneKode.Kunai.*.yaml`) → `microsoft/winget-pkgs`
+     PR via `WINGET_TOKEN` (or `PACKAGE_CHANNELS_TOKEN`).
 
 One-time owner setup:
 
@@ -331,7 +333,8 @@ One-time owner setup:
   publish).
 - Create the `kunai-bin` package on AUR and register the deploy key as a
   (co-)maintainer.
-- Add repository secrets `PACKAGE_CHANNELS_TOKEN` and `AUR_SSH_PRIVATE_KEY`.
+- Add repository secrets `PACKAGE_CHANNELS_TOKEN`, `AUR_SSH_PRIVATE_KEY`, and
+  `WINGET_TOKEN`.
 
 None of this is a publish blocker: release assets are self-contained, and each
 channel step degrades to a notice when its secret is missing.

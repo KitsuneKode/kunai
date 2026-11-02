@@ -20,7 +20,8 @@
     "./vidlink": "./src/vidlink/direct.ts",
     "./movy": "./src/movy/direct.ts",
     "./vidrock": "./src/vidrock/direct.ts",
-    "./youtube": "./src/youtube/index.ts"
+    "./youtube": "./src/youtube/index.ts",
+    "./debrid": "./src/debrid/index.ts"
   },
   "scripts": {
     "typecheck": "bun tsc --noEmit",
