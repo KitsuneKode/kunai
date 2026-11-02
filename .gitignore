@@ -28,6 +28,7 @@ apps/cli/test/vhs/captures/
 kunai-demo.tape
 .video-production/
 .launch/
+.evidence/
 
 
 # monorepo & frameworks

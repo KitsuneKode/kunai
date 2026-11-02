@@ -2574,7 +2574,14 @@ export function BrowseShell<T>({
                 // `emptyMessage` names the cause when we know one — a provider
                 // outage and a typo used to render the same copy (#464).
                 detail:
-                  emptyMessage || "Try a different title, adjust filters, or browse by genre.",
+                  emptyMessage ||
+                  (lastSearchedQuery.startsWith("magnet:?")
+                    ? "Magnet URI detected. Use /debrid or /play to stream via cloud debrid cache."
+                    : "No matching titles found in this lane. Press Tab to switch lanes or try a broader keyword."),
+                actions: [
+                  { id: "switch-lane", label: "Switch category", shortcut: "Tab" },
+                  { id: "clear", label: "Clear search query", shortcut: "Esc", tone: "muted" },
+                ],
               }}
               width={Math.min(innerWidth, 72)}
             />

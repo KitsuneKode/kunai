@@ -308,6 +308,43 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
       font-size: 3rem;
       opacity: 0.6;
     }
+    .lane-chips {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .lane-chip {
+      background: var(--surface-hover);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 14px;
+      color: var(--text);
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .lane-chip:hover {
+      background: rgba(255, 143, 176, 0.15);
+      border-color: var(--accent);
+    }
+    .player-error-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(18, 19, 26, 0.94);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 10;
+      text-align: center;
+      border-radius: var(--radius-sm);
+    }
     .spinner {
       width: 32px;
       height: 32px;
@@ -592,8 +629,18 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
           <button class="close-btn" id="sheetClose">✕</button>
         </div>
         <div class="sheet-body" id="sheetBody">
-          <div class="video-wrap" id="videoWrap" style="display: none;">
+          <div class="video-wrap" id="videoWrap" style="display: none; position: relative;">
             <video id="player" controls playsinline></video>
+            <div id="playerErrorOverlay" class="player-error-overlay" style="display: none;">
+              <div style="font-size: 2rem; margin-bottom: 6px;">⚠️</div>
+              <div style="font-weight: 700; font-size: 0.95rem; color: #fff;" id="playerErrorTitle">Playback Interrupted</div>
+              <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 4px; max-width: 290px;" id="playerErrorDetail">Direct browser stream dropped or codec unsupported. Try an external player or route via Relay Proxy:</div>
+              <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; justify-content: center;">
+                <button class="launch-btn primary" id="retryProxyBtn" style="padding: 6px 12px; font-size: 0.8rem;">🔄 Stream via Relay Proxy</button>
+                <a class="launch-btn" id="errVlcBtn" href="#" style="padding: 6px 12px; font-size: 0.8rem;">⚡ Open in VLC</a>
+                <a class="launch-btn" id="errInfuseBtn" href="#" style="padding: 6px 12px; font-size: 0.8rem;">🎬 Open in Infuse</a>
+              </div>
+            </div>
           </div>
           <div class="launchers" id="launchersBar">
             <button class="launch-btn primary" id="streamBrowserBtn">▶ Stream in Browser</button>
@@ -671,6 +718,27 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
         }, 320);
       });
 
+      var playerErrorOverlay = document.getElementById("playerErrorOverlay");
+      var retryProxyBtn = document.getElementById("retryProxyBtn");
+      var errVlcBtn = document.getElementById("errVlcBtn");
+      var errInfuseBtn = document.getElementById("errInfuseBtn");
+
+      function hidePlayerError() {
+        if (playerErrorOverlay) playerErrorOverlay.style.display = "none";
+      }
+
+      function showPlayerError(title, detail) {
+        if (!playerErrorOverlay) return;
+        playerErrorOverlay.style.display = "flex";
+        if (title) document.getElementById("playerErrorTitle").innerText = title;
+        if (detail) document.getElementById("playerErrorDetail").innerText = detail;
+      }
+
+      player.addEventListener("playing", hidePlayerError);
+      player.addEventListener("error", function() {
+        showPlayerError("Stream Dropped", "Browser direct decode failed. Retry via Relay Proxy or open in VLC.");
+      });
+
       searchClear.addEventListener("click", function() {
         searchInput.value = "";
         searchClear.style.display = "none";
@@ -683,6 +751,7 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
         sheetOverlay.classList.remove("active");
         player.pause();
         player.src = "";
+        hidePlayerError();
         videoWrap.style.display = "none";
       });
 
@@ -698,7 +767,35 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
             currentResults = data.results || [];
             if (currentResults.length === 0) {
               emptyState.style.display = "flex";
-              emptyState.innerHTML = '<div class="empty-icon">🔍</div><div style="font-weight:600;">No results found</div><div style="font-size:0.85rem;">Try another search term.</div>';
+              var otherLanes = [
+                { id: "anime", label: "🌸 Anime" },
+                { id: "movies", label: "🎬 Movies" },
+                { id: "series", label: "📺 Series" },
+                { id: "youtube", label: "▶ YouTube" },
+              ].filter(function(l) { return l.id !== activeTab; });
+
+              var chipsHtml = otherLanes.map(function(l) {
+                return '<button class="lane-chip" data-lane="' + l.id + '">' + l.label + '</button>';
+              }).join("");
+
+              emptyState.innerHTML =
+                '<div class="empty-icon">🔍</div>' +
+                '<div style="font-weight:700;color:var(--text);font-size:1.05rem;">No results in ' + activeTab.toUpperCase() + '</div>' +
+                '<div style="font-size:0.85rem;color:var(--text-dim);max-width:320px;">Could not find matches for "' + query + '". Try searching in another category:</div>' +
+                '<div class="lane-chips">' + chipsHtml + '</div>';
+
+              emptyState.querySelectorAll(".lane-chip").forEach(function(btn) {
+                btn.addEventListener("click", function() {
+                  var targetLane = btn.getAttribute("data-lane");
+                  if (targetLane) {
+                    activeTab = targetLane;
+                    tabs.forEach(function(t) {
+                      t.classList.toggle("active", t.getAttribute("data-tab") === activeTab);
+                    });
+                    performSearch(query);
+                  }
+                });
+              });
               return;
             }
             renderResults(currentResults);
@@ -782,11 +879,27 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
               var proxyStreamUrl = window.location.origin + "/proxy?url=" + encodeURIComponent(streamUrl);
               openVlcBtn.href = "vlc://" + streamUrl;
               openInfuseBtn.href = "infuse://x-callback-url/play?url=" + encodeURIComponent(streamUrl);
+              if (errVlcBtn) errVlcBtn.href = "vlc://" + streamUrl;
+              if (errInfuseBtn) errInfuseBtn.href = "infuse://x-callback-url/play?url=" + encodeURIComponent(streamUrl);
+
+              if (retryProxyBtn) {
+                retryProxyBtn.onclick = function() {
+                  hidePlayerError();
+                  player.src = proxyStreamUrl;
+                  player.load();
+                  player.play().catch(function() {
+                    showPlayerError("Proxy Connection Stalled", "Could not route through relay server.");
+                  });
+                };
+              }
 
               streamBrowserBtn.onclick = function() {
+                hidePlayerError();
                 videoWrap.style.display = "block";
                 player.src = proxyStreamUrl;
-                player.play();
+                player.play().catch(function() {
+                  showPlayerError("Playback Failed", "Tap below to retry via proxy or open directly in VLC:");
+                });
               };
 
               castHostBtn.onclick = function() {

@@ -134,7 +134,7 @@ export async function startKittySession(options: {
   const evidenceDir = resolve(options.evidenceDir);
   mkdirSync(evidenceDir, { mode: 0o700 }); // Refuse to overwrite any previous evidence.
   const profile = createIsolatedCliProfile("kitty");
-  const socket = join(profile.rootDir, "k.sock");
+  const socket = join("/tmp", `kunai-k-${crypto.randomUUID().slice(0, 8)}.sock`);
   const socketRecord = join(profile.rootDir, "mpv.json");
   const applicationRecord = join(profile.rootDir, "application.pid");
   let windowId: number | null = null;
