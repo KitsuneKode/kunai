@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-11-02"
 ---
 
 # Feature Map
@@ -38,6 +38,7 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | Bootstrap, first run, `--setup`                                     | `apps/cli/src/app/bootstrap/*`                                            | [download-offline-onboarding.md](./download-offline-onboarding.md)                                          |
 | `--open` / `kunai://` protocol                                      | `apps/cli/src/domain/share/*`, `app/bootstrap/resolve-share-target.ts`    | [share-links.md](./share-links.md)                                                                          |
 | Container / DI wiring                                               | `apps/cli/src/container/*` (`container.ts` is a barrel)                   | [architecture.md](./architecture.md)                                                                        |
+| Web companion / serve command                                       | `apps/cli/src/services/web-companion/*`                                   | [runtime-boundary-map.md](./runtime-boundary-map.md#provider-relay-ownership)                               |
 | Mobile terminal host proof                                          | `apps/mobile/src/entry.ts`, `application/*`, `runtime/{android,ashell}/*` | [mobile-terminal-runtime.md](./mobile-terminal-runtime.md) · [mobile-device-lab.md](./mobile-device-lab.md) |
 
 ## Shell (Ink)
