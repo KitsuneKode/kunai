@@ -57,10 +57,22 @@ const MATRIX: readonly MatrixEntry[] = [
     fixture: "Fight Club (Chrome UA + Referer/Origin)",
   },
   {
-    provider: "anidb",
-    command: ["bun", "-e", "await import('./test/live/anidb-onigiri.smoke.ts')"],
+    provider: "movy",
+    command: ["bun", "test/live/movy-inception.smoke.ts"],
+    media: "movie",
+    fixture: "Inception (lane miami)",
+  },
+  {
+    provider: "hianime",
+    command: ["bun", "test/live/hianime-naruto.smoke.ts"],
     media: "anime",
-    fixture: "Onigiri S01E01",
+    fixture: "Naruto E01 (ZokoAnime embed)",
+  },
+  {
+    provider: "animegg",
+    command: ["bun", "test/live/animegg-naruto.smoke.ts"],
+    media: "anime",
+    fixture: "Naruto E01",
   },
   {
     provider: "allanime",

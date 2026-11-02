@@ -23,6 +23,8 @@ const scenarioSchema = z.object({
         z.object({ type: z.literal("expect"), value: z.string().min(1).max(200) }),
         z.object({ type: z.literal("capture"), value: z.string().regex(/^[a-z0-9-]+$/) }),
         z.object({ type: z.literal("decoded") }),
+        z.object({ type: z.literal("seek"), seconds: z.number() }),
+        z.object({ type: z.literal("sleep"), ms: z.number().int().positive() }),
       ]),
     )
     .max(100),
@@ -104,19 +106,30 @@ async function witnessPlayback(session: Session, signal: AbortSignal) {
     timeoutSeconds * 1000,
     signal,
   );
+  console.log(`[witnessPlayback] Started at time-pos: ${start.toFixed(2)}s`);
+  let lastLogged = 0;
+  const observationTimeoutMs =
+    (observeSeconds + Math.max(20, Math.round(observeSeconds * 0.6))) * 1000;
   const end = await waitForKittyCondition(
     async () => {
       try {
         const value = await session.ipc(["get_property", "time-pos"]);
         const parsed = z.number().safeParse(value);
+        if (parsed.success && parsed.data - lastLogged >= 5) {
+          lastLogged = parsed.data;
+          console.log(
+            `[witnessPlayback] Playing: ${parsed.data.toFixed(1)}s / ${(start + observeSeconds).toFixed(1)}s target`,
+          );
+        }
         return parsed.success && parsed.data > start + observeSeconds ? parsed.data : null;
       } catch {
         return null;
       }
     },
-    (observeSeconds + 12) * 1000,
+    observationTimeoutMs,
     signal,
   );
+  console.log(`[witnessPlayback] Reached target time-pos: ${end.toFixed(2)}s`);
   const proof = playbackProgressProof(
     start,
     end,
@@ -209,7 +222,9 @@ try {
         evidenceDir: join(evidenceRoot, route.label),
         argv: scenario?.argv ?? route.argv,
         fixture: !values.live,
-        requiresMpv: values.matrix || scenario?.steps.some((step) => step.type === "decoded"),
+        requiresMpv:
+          values.matrix ||
+          scenario?.steps.some((step) => step.type === "decoded" || step.type === "seek"),
         font,
         providerId: route.providerId,
         providerIds,
@@ -230,6 +245,37 @@ try {
           if (step.type === "click") await session.clickText(step.value);
           if (step.type === "capture") await session.capture(step.value);
           if (step.type === "decoded") await witnessPlayback(session, shutdown.signal);
+          if (step.type === "sleep") await Bun.sleep(step.ms);
+          if (step.type === "seek") {
+            const beforePos = await session.ipc(["get_property", "time-pos"]);
+            console.log(
+              `[seek] Before seek time-pos: ${beforePos}s, seeking relative: ${step.seconds}s`,
+            );
+            await session.ipc(["seek", step.seconds, "relative"]);
+            const afterPos = await waitForKittyCondition(
+              async () => {
+                try {
+                  const val = await session.ipc(["get_property", "time-pos"]);
+                  const parsed = z.number().safeParse(val);
+                  return parsed.success && parsed.data !== beforePos ? parsed.data : null;
+                } catch {
+                  return null;
+                }
+              },
+              15_000,
+              shutdown.signal,
+            );
+            console.log(`[seek] After seek time-pos: ${afterPos}s`);
+            await Bun.write(
+              join(session.evidenceDir, "seek.json"),
+              JSON.stringify({ beforePos, afterPos, requestedSeconds: step.seconds }),
+            );
+            await session.ipc([
+              "screenshot-to-file",
+              join(session.evidenceDir, "decoded-frame-after-seek.png"),
+              "video",
+            ]);
+          }
         }
         results.push({ label: route.label, status: "scenario-observed" });
       }

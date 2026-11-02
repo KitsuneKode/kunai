@@ -90,20 +90,20 @@ export type AllMangaCryptoProfile = {
 };
 
 /**
- * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/Cs-j4hUW.js`
- * on 2026-10-19 and confirmed by a successful bootstrap (HTTP 200, epoch 2963)
+ * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/CKJdDtiN.js`
+ * on 2026-11-02 and confirmed by a successful bootstrap (HTTP 200, epoch 2965)
  * plus a persisted-query episode round-trip (`aaReq` accepted).
  */
 export const ALLMANGA_CRYPTO_PROFILE: AllMangaCryptoProfile = {
-  buildId: "181",
-  saltMul: 60,
-  saltAdd: 175,
-  fragMul: 44,
-  fragAdd: 1,
-  bootPrefix: "UZQjku7:",
-  bootJoin: ":",
-  bootParts: ["buildId", "group", "host", "epoch", "lane"],
-  maskFragments: ["Yh7GkKY7p1E=", "GhmFaOUHEGk=", "prExpp5kt+4=", "FSm6Hdvb+S4="],
+  buildId: "186",
+  saltMul: 234,
+  saltAdd: 35,
+  fragMul: 187,
+  fragAdd: 64,
+  bootPrefix: "1fwWJAeMU:",
+  bootJoin: "+",
+  bootParts: ["buildId", "host", "group", "lane", "epoch"],
+  maskFragments: ["1KCP6HH4CIw=", "AKst81/pPjI=", "5DdlrLuAeF0=", "Kgtk2A3ZOVk="],
 };
 
 export const ALLMANGA_BUILD_ID = ALLMANGA_CRYPTO_PROFILE.buildId;
@@ -148,8 +148,8 @@ export type AllMangaCryptoMaterial = {
 };
 
 /**
- * Last-known-good material when bootstrap fails (epoch 2963, build 181),
- * captured from a live bootstrap on 2026-10-19. It must be derived under the
+ * Last-known-good material when bootstrap fails (epoch 2965, build 186),
+ * captured from a live bootstrap on 2026-11-02. It must be derived under the
  * same profile as {@link ALLMANGA_CRYPTO_PROFILE}: a key left over from an
  * older build is not a degraded fallback, it is a guaranteed decrypt failure.
  * `allmanga.test.ts` pins that relationship.
@@ -159,8 +159,8 @@ export type AllMangaCryptoMaterial = {
  * that quietly runs on a fallback two epochs old looks exactly like a dead
  * provider.
  */
-export const ALLMANGA_KEY_HEX = "5ce91c85a5aa5a2a670c553daf07a8a5ab730508692106a9e7fbb519dd219ae1";
-export const ALLMANGA_EPOCH = 2963;
+export const ALLMANGA_KEY_HEX = "389ce3fa135002461f953fec55ffc899317c05bff97c004a5135dd7b8c104d7a";
+export const ALLMANGA_EPOCH = 2965;
 
 export const BUNDLED_ALLMANGA_CRYPTO: AllMangaCryptoMaterial = {
   keyHex: ALLMANGA_KEY_HEX,

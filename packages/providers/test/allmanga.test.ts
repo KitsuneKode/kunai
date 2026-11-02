@@ -352,7 +352,7 @@ describe("buildAllMangaAaReq", () => {
 describe("AllManga crypto material (mkissa bootstrap)", () => {
   const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
   const PART_B = Buffer.from(partBBytes).toString("base64");
-  const EXPECTED_KEY_HEX = "fdced1c500d2803581c49f3996bbeb48b860aef2b985118bf605d1b44906ea4e";
+  const EXPECTED_KEY_HEX = "c7d7cdfc873d21f5f7366283c321d3b17808263785449e6c20a51fd5a22529c9";
   const PLAIN_SOURCE_JSON = JSON.stringify({
     data: {
       episode: {
@@ -446,7 +446,7 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(material?.buildId).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
     expect(site.bootstrapHeaders?.get("x-build-id")).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
     expect(site.bootstrapHeaders?.get("x-aa-boot")).toBe(
-      "7f1f320f9cabf04a839d62d201af090d968031a0f9eaca20b157782d33ad6935",
+      "54be06d7442ebb5222984ffe48a7ced13e2a141f2e35801b284198a57e77b383",
     );
     expect(site.bootstrapHeaders?.get("origin")).toBe("https://mkissa.to");
     expect(site.bootstrapHeaders?.get("referer")).toBe("https://mkissa.to/");
@@ -456,23 +456,23 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(site.bootstrapFetchCount).toBe(1);
   });
 
-  test("matches independent build-181 derivation and boot-token vectors", () => {
-    expect(hashBuildId("181").toString("hex")).toBe(
-      "9ed31652a7ea266bbefa3f724e83c602579ad61b6eaaef227eb3f632074a86cb",
+  test("matches independent build-186 derivation and boot-token vectors", () => {
+    expect(hashBuildId("186").toString("hex")).toBe(
+      "1235c1d0f383aeb1456c7f072a3dd9e8fb9ba6b95d64071f22c5d1e08393be41",
     );
-    expect(deriveMaskKey("181").toString("hex")).toBe(
-      "fcccd2c105d4873d88ce94359bb5e458a972bde6ac930693ef1fcaa85418f56e",
+    expect(deriveMaskKey("186").toString("hex")).toBe(
+      "c6d5cef8823b26fdfe3c698fce2fdca1691a35239052897439bf04c9bf3b36e9",
     );
-    expect(deriveKeyFromPartB(PART_B, "181").toString("hex")).toBe(EXPECTED_KEY_HEX);
+    expect(deriveKeyFromPartB(PART_B, "186").toString("hex")).toBe(EXPECTED_KEY_HEX);
     expect(
       buildAllMangaBootToken({
-        buildId: "181",
+        buildId: "186",
         epoch: 6900,
         keyGroup: "mkissa",
         refererHost: "mkissa.to",
         contentLane: "k7",
       }),
-    ).toBe("7f1f320f9cabf04a839d62d201af090d968031a0f9eaca20b157782d33ad6935");
+    ).toBe("54be06d7442ebb5222984ffe48a7ced13e2a141f2e35801b284198a57e77b383");
   });
 
   test("bundled fallback key is derived under the pinned profile", () => {
@@ -480,8 +480,8 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     // a guaranteed decrypt failure. This is what made the 140 -> 171 rotation
     // fail silently: the buildId moved and the bundled key did not.
     // `livePartB` is the partB the live bootstrap actually returned on
-    // 2026-10-19 (build 181, epoch 2963), so it must derive ALLMANGA_KEY_HEX.
-    const livePartB = "oCXORKB+3RfvwsEINLJM/QIBuO7FsgA6COR/sYk5b48=";
+    // 2026-11-02 (build 186, epoch 2965), so it must derive ALLMANGA_KEY_HEX.
+    const livePartB = "/kktApFrJLvhqVZjm9AUOFhmMJxpLok+aIrZsjMre5M=";
     expect(deriveKeyFromPartB(livePartB, ALLMANGA_CRYPTO_PROFILE.buildId).toString("hex")).toBe(
       ALLMANGA_KEY_HEX,
     );

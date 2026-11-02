@@ -1,0 +1,26 @@
+{
+  "argv": [],
+  "steps": [
+    { "type": "expect", "value": "Search title" },
+    { "type": "capture", "value": "home" },
+    { "type": "click", "value": "[/]" },
+    { "type": "expect", "value": "type a command" },
+    { "type": "capture", "value": "palette-open" },
+    { "type": "key", "value": "escape" },
+    { "type": "expect", "value": "Search title" },
+    { "type": "capture", "value": "palette-dismissed" },
+    { "type": "key", "value": "down" },
+    { "type": "capture", "value": "navigated-down" },
+    { "type": "key", "value": "up" },
+    { "type": "capture", "value": "navigated-up" },
+    { "type": "text", "value": "/" },
+    { "type": "expect", "value": "type a command" },
+    { "type": "text", "value": "settings" },
+    { "type": "key", "value": "enter" },
+    { "type": "expect", "value": "Settings" },
+    { "type": "capture", "value": "settings-screen" },
+    { "type": "key", "value": "escape" },
+    { "type": "expect", "value": "Search title" },
+    { "type": "capture", "value": "back-to-home" }
+  ]
+}
