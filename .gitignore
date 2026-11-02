@@ -27,6 +27,7 @@ dist
 apps/cli/test/vhs/captures/
 kunai-demo.tape
 .video-production/
+.launch/
 
 
 # monorepo & frameworks
