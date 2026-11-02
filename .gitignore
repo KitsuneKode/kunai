@@ -26,6 +26,7 @@ dist
 # baselines. Named `captures/`, not `golden/`, because nothing diffs them.
 apps/cli/test/vhs/captures/
 kunai-demo.tape
+.video-production/
 
 
 # monorepo & frameworks
