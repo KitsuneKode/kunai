@@ -1,3 +1,5 @@
+import type { ProviderRuntimeContext } from "@kunai/types";
+
 export type DebridServiceId = "real-debrid" | "all-debrid";
 
 export interface DebridAccountInfo {
@@ -25,7 +27,10 @@ export interface DebridResolveResult {
 export interface DebridClient {
   readonly serviceId: DebridServiceId;
   getUser(): Promise<DebridAccountInfo>;
-  resolveStream(magnetOrLink: string): Promise<DebridResolveResult>;
+  resolveStream(
+    magnetOrLink: string,
+    context?: ProviderRuntimeContext,
+  ): Promise<DebridResolveResult>;
 }
 
 export type DebridFetchFunction = (

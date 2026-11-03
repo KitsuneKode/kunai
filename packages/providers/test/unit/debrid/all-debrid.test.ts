@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import type { ProviderRuntimeContext } from "@kunai/types";
+
 import {
   type DebridFetchFunction,
   AllDebridClient,
@@ -556,6 +558,70 @@ describe("AllDebridClient", () => {
 
       const client = new AllDebridClient({ apiKey: dummyApiKey, fetch: mockFetch });
       await expect(client.resolveStream(magnet)).rejects.toThrow(DebridError);
+    });
+
+    test("probes stream with verifyCandidateStream when context is provided", async () => {
+      const hosterUrl = "https://1fichier.com/?abcdef12345";
+      const mockFetch: DebridFetchFunction = async (url) => {
+        const u = new URL(String(url));
+        expect(u.pathname).toBe("/v4/link/unlock");
+        return new Response(
+          JSON.stringify({
+            status: "success",
+            data: {
+              download: "https://storage.alldebrid.com/dl/Movie_4k.mkv",
+              filename: "Movie_4K.mkv",
+              filesize: 5000000000,
+            },
+          }),
+          { status: 200 },
+        );
+      };
+
+      const client = new AllDebridClient({ apiKey: dummyApiKey, fetch: mockFetch });
+      const context: ProviderRuntimeContext = {
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () =>
+            new Response("OK", { status: 200, headers: { "Content-Type": "video/mp4" } }),
+          resolvesLocally: () => false,
+        },
+        now: () => new Date().toISOString(),
+      };
+
+      const result = await client.resolveStream(hosterUrl, context);
+      expect(result.stream.url).toBe("https://storage.alldebrid.com/dl/Movie_4k.mkv");
+    });
+
+    test("throws DebridError if stream probe fails when context is provided", async () => {
+      const hosterUrl = "https://1fichier.com/?abcdef12345";
+      const mockFetch: DebridFetchFunction = async (url) => {
+        const u = new URL(String(url));
+        expect(u.pathname).toBe("/v4/link/unlock");
+        return new Response(
+          JSON.stringify({
+            status: "success",
+            data: {
+              download: "https://storage.alldebrid.com/dl/Movie_4k.mkv",
+              filename: "Movie_4K.mkv",
+              filesize: 5000000000,
+            },
+          }),
+          { status: 200 },
+        );
+      };
+
+      const client = new AllDebridClient({ apiKey: dummyApiKey, fetch: mockFetch });
+      const context: ProviderRuntimeContext = {
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () => new Response("Not Found", { status: 404 }),
+          resolvesLocally: () => false,
+        },
+        now: () => new Date().toISOString(),
+      };
+
+      await expect(client.resolveStream(hosterUrl, context)).rejects.toThrow(DebridError);
     });
   });
 

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import type { ProviderRuntimeContext } from "@kunai/types";
+
 import {
   type DebridFetchFunction,
   DebridAuthError,
@@ -427,6 +429,66 @@ describe("RealDebridClient", () => {
 
       const client = new RealDebridClient({ token: dummyToken, fetch: mockFetch });
       await expect(client.resolveStream(magnet)).rejects.toThrow(DebridError);
+    });
+
+    test("probes stream with verifyCandidateStream when context is provided", async () => {
+      const hosterUrl = "https://rapidgator.net/file/12345/video_720p.mp4";
+      const mockFetch: DebridFetchFunction = async (url) => {
+        expect(String(url)).toContain("/unrestrict/link");
+        return new Response(
+          JSON.stringify({
+            id: "UNRESTRICT_DIRECT",
+            filename: "video_720p.mp4",
+            filesize: 800000000,
+            download: "https://download.real-debrid.com/stream/video_720p.mp4",
+            streamable: 1,
+          }),
+          { status: 200 },
+        );
+      };
+
+      const client = new RealDebridClient({ token: dummyToken, fetch: mockFetch });
+      const context: ProviderRuntimeContext = {
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () =>
+            new Response("OK", { status: 200, headers: { "Content-Type": "video/mp4" } }),
+          resolvesLocally: () => false,
+        },
+        now: () => new Date().toISOString(),
+      };
+
+      const result = await client.resolveStream(hosterUrl, context);
+      expect(result.stream.url).toBe("https://download.real-debrid.com/stream/video_720p.mp4");
+    });
+
+    test("throws DebridError if stream probe fails when context is provided", async () => {
+      const hosterUrl = "https://rapidgator.net/file/12345/video_720p.mp4";
+      const mockFetch: DebridFetchFunction = async (url) => {
+        expect(String(url)).toContain("/unrestrict/link");
+        return new Response(
+          JSON.stringify({
+            id: "UNRESTRICT_DIRECT",
+            filename: "video_720p.mp4",
+            filesize: 800000000,
+            download: "https://download.real-debrid.com/stream/video_720p.mp4",
+            streamable: 1,
+          }),
+          { status: 200 },
+        );
+      };
+
+      const client = new RealDebridClient({ token: dummyToken, fetch: mockFetch });
+      const context: ProviderRuntimeContext = {
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () => new Response("Not Found", { status: 404 }),
+          resolvesLocally: () => false,
+        },
+        now: () => new Date().toISOString(),
+      };
+
+      await expect(client.resolveStream(hosterUrl, context)).rejects.toThrow(DebridError);
     });
   });
 

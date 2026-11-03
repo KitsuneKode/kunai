@@ -1,3 +1,6 @@
+import type { ProviderRuntimeContext } from "@kunai/types";
+
+import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import {
   type DebridAccountInfo,
@@ -395,7 +398,10 @@ export class RealDebridClient implements DebridClient {
     });
   }
 
-  async resolveStream(magnetOrLink: string): Promise<DebridResolveResult> {
+  async resolveStream(
+    magnetOrLink: string,
+    context?: ProviderRuntimeContext,
+  ): Promise<DebridResolveResult> {
     if (!magnetOrLink || magnetOrLink.trim().length === 0) {
       throw new DebridError("Invalid magnet or link provided", {
         service: "real-debrid",
@@ -476,6 +482,19 @@ export class RealDebridClient implements DebridClient {
 
       const unrestrict = await this.unrestrictLink(selectedLink);
 
+      if (context) {
+        const verdict = await verifyCandidateStream({
+          stream: { url: unrestrict.download, headers: {} },
+          context,
+        });
+        if (!verdict.accepted) {
+          throw new DebridError(`Stream verification probe rejected: ${verdict.reason}`, {
+            service: "real-debrid",
+            code: "STREAM_UNREACHABLE",
+          });
+        }
+      }
+
       return {
         stream: {
           url: unrestrict.download,
@@ -491,6 +510,19 @@ export class RealDebridClient implements DebridClient {
 
     if (/^https?:\/\//i.test(trimmed)) {
       const unrestrict = await this.unrestrictLink(trimmed);
+
+      if (context) {
+        const verdict = await verifyCandidateStream({
+          stream: { url: unrestrict.download, headers: {} },
+          context,
+        });
+        if (!verdict.accepted) {
+          throw new DebridError(`Stream verification probe rejected: ${verdict.reason}`, {
+            service: "real-debrid",
+            code: "STREAM_UNREACHABLE",
+          });
+        }
+      }
 
       return {
         stream: {

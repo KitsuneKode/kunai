@@ -158,22 +158,10 @@ test("relay app serves web companion HTML and manifest", async () => {
   expect(Array.isArray(statusBody.providers)).toBe(true);
 });
 
-test("relay app proxy validates input and handles preflight", async () => {
-  const preflight = await handleRelayRequest(
-    new Request("https://relay.test/proxy", { method: "OPTIONS" }),
+test("relay server adheres to metadata-only architecture and rejects media proxy", async () => {
+  const res = await handleRelayRequest(
+    new Request("https://relay.test/proxy?url=https://example.com/video.mp4"),
     { authorization: localLoopbackAuthorization },
   );
-  expect(preflight.status).toBe(204);
-  expect(preflight.headers.get("Access-Control-Allow-Origin")).toBe("*");
-
-  const missingUrl = await handleRelayRequest(new Request("https://relay.test/proxy"), {
-    authorization: localLoopbackAuthorization,
-  });
-  expect(missingUrl.status).toBe(400);
-
-  const invalidUrl = await handleRelayRequest(
-    new Request("https://relay.test/proxy?url=not-a-url"),
-    { authorization: localLoopbackAuthorization },
-  );
-  expect(invalidUrl.status).toBe(400);
+  expect(res.status).toBe(404);
 });

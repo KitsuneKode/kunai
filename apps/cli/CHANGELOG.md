@@ -13,7 +13,8 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Preview the selected title from suggestions and command-palette title rows.
   Use YouTube artwork and video identity without mixing in anime or TMDB data.
 - Make mouse and keyboard controls agree across Browse, Library, Up Next,
-  Tracks, Settings and setup. Guard unavailable actions, show press feedback,
+  History, Notifications, Checklist, Guide, Downloads, Tracks, Settings,
+  Pickers, Footers and setup. Guard unavailable actions, show press feedback,
   and cancel clicks when overlays or moved targets invalidate them. Keep visible
   home actions selectable after an empty discovery response.
 - Recover from failed playback through visible provider controls and a
@@ -21,6 +22,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### Playback and providers
 
+- Integrate Real-Debrid and AllDebrid clients with candidate stream health
+  verification gates, and preserve metadata-only architecture boundaries on the
+  relay server.
 - Keep mixed catalog identities on their catalog detail route and treat resolved
   YouTube metadata as optional enrichment. Preserve fractional episode metadata
   and prefer actual episode titles over numbered placeholders.

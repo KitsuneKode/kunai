@@ -2576,7 +2576,7 @@ export function BrowseShell<T>({
                 detail:
                   emptyMessage ||
                   (lastSearchedQuery.startsWith("magnet:?")
-                    ? "Magnet URI detected. Use /debrid or /play to stream via cloud debrid cache."
+                    ? "Magnet URI detected. Pass magnet links directly to 'kunai play <magnet>' to stream via configured debrid services."
                     : "No matching titles found in this lane. Press Tab to switch lanes or try a broader keyword."),
                 actions: [
                   { id: "switch-lane", label: "Switch category", shortcut: "Tab" },
