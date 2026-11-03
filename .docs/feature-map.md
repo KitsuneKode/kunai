@@ -109,6 +109,7 @@ callbacks. See [features/pointer-controls.md](./features/pointer-controls.md).
 | Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — progress/completion policy, problem classification, local streams            | [architecture.md](./architecture.md)                                             |
 | Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                         | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
 | Entry auto-play decision (Enter vs menu)   | `apps/cli/src/app-shell/title-control/smart-auto-launch.ts`                                                     | [ux-architecture.md](./ux-architecture.md)                                       |
+| Debrid magnet playback                     | `apps/cli/src/services/debrid/*`                                                                                | [architecture.md](./architecture.md)                                             |
 
 ## Library and personal state
 
