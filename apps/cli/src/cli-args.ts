@@ -53,6 +53,9 @@ export type CliArgs = {
   openUrl?: string;
   installProtocolHandler: boolean;
   dryRun: boolean;
+  status?: boolean;
+  providersStatus?: boolean;
+  debrid?: string;
   help: boolean;
   version: boolean;
   initialRoute?: "recommendation" | "calendar" | "random";
@@ -70,6 +73,8 @@ USAGE
   kunai -i anilist:21        Open a known AniList id (anime lane)
   kunai -a                   Start in anime mode
   kunai -y                   Start in YouTube mode
+  kunai status               Display provider & debrid service health table
+  kunai play <magnet>        Stream a magnet link via configured debrid service
   kunai serve                Start the web companion & mobile streaming server
 
 
@@ -158,6 +163,9 @@ export const CLI_SUBCOMMANDS: readonly string[] = [
   "upgrade",
   "rollback",
   "doctor",
+  "status",
+  "providers",
+  "play",
   "uninstall",
   "diagnostics",
   "completion",
@@ -210,6 +218,9 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--handoff-url",
   "--install-protocol-handler",
   "--dry-run",
+  "--status",
+  "--providers-status",
+  "--debrid",
   "--mpv-debug",
   "--mpv-clean",
   "--no-user-mpv-config",
@@ -243,6 +254,7 @@ export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "--download-path",
   "--open",
   "--handoff-url",
+  "--debrid",
   "--mpv-log-file",
   "--player",
   "--to",
@@ -282,6 +294,9 @@ type CommanderCliOptions = {
   readonly open?: string;
   readonly installProtocolHandler?: boolean;
   readonly dryRun?: boolean;
+  readonly status?: boolean;
+  readonly providersStatus?: boolean;
+  readonly debrid?: string;
   readonly mpvDebug?: boolean;
   readonly mpvClean?: boolean;
   /**
@@ -337,6 +352,9 @@ function createCliCommand(): Command {
     .option("--handoff-url <url>")
     .option("--install-protocol-handler")
     .option("--dry-run")
+    .option("--status")
+    .option("--providers-status")
+    .option("--debrid <magnet>")
     .option("--mpv-debug")
     .option("--mpv-clean")
     .option("--no-user-mpv-config")
@@ -603,6 +621,9 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   }
   args.installProtocolHandler = Boolean(options.installProtocolHandler);
   args.dryRun = Boolean(options.dryRun);
+  args.status = Boolean(options.status || options.providersStatus);
+  args.providersStatus = Boolean(options.providersStatus);
+  args.debrid = options.debrid;
   args.mpv = {
     ...(options.mpvDebug ? { debug: true } : {}),
     ...(options.mpvClean ? { clean: true } : {}),

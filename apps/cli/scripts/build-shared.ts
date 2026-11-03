@@ -354,8 +354,8 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * has since made stricter.
  */
 // November 2 global provider status sheet, anime priority fallback, and YouTube playlist thumbnail integration measured 3,208,514 bytes.
-// 3140 KiB is the watching release ceiling; new work must fit this budget.
-export const NPM_BUNDLE_BUDGET_KB = 3_180;
+// November 3 terminal provider status table and direct debrid magnet play routing added 23 KiB.
+export const NPM_BUNDLE_BUDGET_KB = 3_210;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -681,6 +681,57 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       }),
     );
   }
+  if (
+    argv[0] === "status" ||
+    (argv[0] === "providers" && argv[1] === "status") ||
+    argv.includes("--status") ||
+    argv.includes("--providers-status")
+  ) {
+    const { runProviderStatusCommand } = await import("./services/providers/run-provider-status");
+    const statusArgs =
+      argv[0] === "providers" && argv[1] === "status" ? argv.slice(2) : argv.slice(1);
+    process.exit(
+      await runProviderStatusCommand(statusArgs, {
+        isTty: Boolean(process.stdout.isTTY),
+        noColor: Boolean(process.env.NO_COLOR),
+      }),
+    );
+  }
+  if (argv[0] === "play" && argv[1]) {
+    const { isMagnetOrTorrentHash, runPlayMagnetCommand } =
+      await import("./services/debrid/run-play-magnet");
+    if (isMagnetOrTorrentHash(argv[1])) {
+      process.exit(
+        await runPlayMagnetCommand(argv[1], {
+          dryRun: argv.includes("--dry-run"),
+        }),
+      );
+    }
+  }
+  if (
+    argv[0] &&
+    !argv[0].startsWith("-") &&
+    (argv[0].startsWith("magnet:?") ||
+      /^[a-fA-F0-9]{40}$/.test(argv[0]) ||
+      /^[a-fA-F0-9]{64}$/.test(argv[0]))
+  ) {
+    const { runPlayMagnetCommand } = await import("./services/debrid/run-play-magnet");
+    process.exit(
+      await runPlayMagnetCommand(argv[0], {
+        dryRun: argv.includes("--dry-run"),
+      }),
+    );
+  }
+  const debridIdx = argv.indexOf("--debrid");
+  const debridArg = debridIdx >= 0 ? argv[debridIdx + 1] : undefined;
+  if (debridArg !== undefined) {
+    const { runPlayMagnetCommand } = await import("./services/debrid/run-play-magnet");
+    process.exit(
+      await runPlayMagnetCommand(debridArg, {
+        dryRun: argv.includes("--dry-run"),
+      }),
+    );
+  }
 
   // Best-effort: clear the running Kunai binary's own Windows self-replace backup.
   void import("./services/update/self-replace").then(({ cleanupOldBinary }) =>
@@ -803,7 +854,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       "kunai: this command needs an interactive terminal.\n" +
         "Nothing was started. Pipe-aware routes that do work without a TTY:\n" +
         "  kunai --help | --version | --dry-run\n" +
-        "  kunai doctor | kunai diagnostics | kunai completion | kunai upgrade --check\n" +
+        "  kunai doctor | kunai status | kunai diagnostics | kunai completion | kunai upgrade --check\n" +
         "  kunai --support-bundle\n",
     );
     process.exitCode = 1;

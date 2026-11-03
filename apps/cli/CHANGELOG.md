@@ -22,6 +22,8 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### Playback and providers
 
+- Add non-interactive 'kunai status' / 'kunai providers status' command to inspect live health, latency, and credentials across streaming, scraper, and debrid services.
+- Add direct magnet URI / torrent infohash stream resolution and playback routing via 'kunai play <magnet>' and '--debrid'.
 - Integrate Real-Debrid and AllDebrid clients with candidate stream health
   verification gates, and preserve metadata-only architecture boundaries on the
   relay server.
