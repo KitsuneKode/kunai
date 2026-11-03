@@ -439,12 +439,16 @@ export class RealDebridClient implements DebridClient {
         await this.selectFiles(added.id, "all");
         let info = await this.getTorrentInfo(added.id);
 
-        // Allow instant cache to settle (up to 1.5s if in intermediate states)
-        const pollDeadline = Date.now() + 1500;
-        while (
-          (info.status === "waiting_files_selection" || info.status === "queued") &&
-          Date.now() < pollDeadline
-        ) {
+        // Allow instant cache to settle (up to 2s if in intermediate states)
+        const inProgressStates = new Set([
+          "waiting_files_selection",
+          "queued",
+          "downloading",
+          "compressing",
+          "uploading",
+        ]);
+        const pollDeadline = Date.now() + 2000;
+        while (inProgressStates.has(info.status) && Date.now() < pollDeadline) {
           await new Promise((r) => setTimeout(r, 250));
           info = await this.getTorrentInfo(added.id);
         }
@@ -536,6 +540,8 @@ export class RealDebridClient implements DebridClient {
           service: "real-debrid",
         };
       } catch (err) {
+        // Cleanup the newly created torrent if stream resolution failed or was not cached.
+        // Swallowing cleanup errors ensures the original resolution error is preserved.
         await this.deleteTorrent(added.id).catch(() => {});
         throw err;
       }

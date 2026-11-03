@@ -699,46 +699,55 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
   const serviceIdx = argv.indexOf("--service");
   const candidateService = serviceIdx >= 0 ? argv[serviceIdx + 1] : undefined;
+  if (serviceIdx >= 0) {
+    if (candidateService === undefined || candidateService.startsWith("-")) {
+      process.stderr.write("kunai: --service expected a value\n");
+      process.exit(2);
+    }
+    if (candidateService !== "real-debrid" && candidateService !== "all-debrid") {
+      process.stderr.write(
+        `kunai: invalid --service "${candidateService}" — must be "real-debrid" or "all-debrid"\n`,
+      );
+      process.exit(2);
+    }
+  }
   const serviceArg: "real-debrid" | "all-debrid" | undefined =
     candidateService === "real-debrid" || candidateService === "all-debrid"
       ? candidateService
       : undefined;
 
-  if (argv[0] === "play" && argv[1]) {
-    const { isMagnetOrTorrentHash, runPlayMagnetCommand } =
-      await import("./services/debrid/run-play-magnet");
-    if (isMagnetOrTorrentHash(argv[1])) {
-      process.exit(
-        await runPlayMagnetCommand(argv[1], {
-          dryRun: argv.includes("--dry-run"),
-          service: serviceArg,
-        }),
-      );
-    }
-  }
-  if (
-    argv[0] &&
-    !argv[0].startsWith("-") &&
-    (argv[0].startsWith("magnet:?") ||
-      /^[a-fA-F0-9]{40}$/.test(argv[0]) ||
-      /^[a-fA-F0-9]{64}$/.test(argv[0]))
-  ) {
-    const { runPlayMagnetCommand } = await import("./services/debrid/run-play-magnet");
-    process.exit(
-      await runPlayMagnetCommand(argv[0], {
-        dryRun: argv.includes("--dry-run"),
-        service: serviceArg,
-      }),
-    );
-  }
   const debridIdx = argv.indexOf("--debrid");
   const debridArg = debridIdx >= 0 ? argv[debridIdx + 1] : undefined;
-  if (debridArg !== undefined && !debridArg.startsWith("-")) {
+
+  const nonFlagTokens: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (!token) continue;
+    if (token === "--service" || token === "--debrid") {
+      i += 1;
+      continue;
+    }
+    if (token.startsWith("-")) {
+      continue;
+    }
+    nonFlagTokens.push(token);
+  }
+
+  let candidateMagnet: string | undefined;
+  if (nonFlagTokens[0] === "play" && nonFlagTokens[1]) {
+    candidateMagnet = nonFlagTokens[1];
+  } else if (nonFlagTokens[0] && nonFlagTokens[0] !== "play") {
+    candidateMagnet = nonFlagTokens[0];
+  } else if (debridArg !== undefined && !debridArg.startsWith("-")) {
+    candidateMagnet = debridArg;
+  }
+
+  if (candidateMagnet) {
     const { isMagnetOrTorrentHash, runPlayMagnetCommand } =
       await import("./services/debrid/run-play-magnet");
-    if (isMagnetOrTorrentHash(debridArg)) {
+    if (isMagnetOrTorrentHash(candidateMagnet)) {
       process.exit(
-        await runPlayMagnetCommand(debridArg, {
+        await runPlayMagnetCommand(candidateMagnet, {
           dryRun: argv.includes("--dry-run"),
           service: serviceArg,
         }),

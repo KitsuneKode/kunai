@@ -182,4 +182,23 @@ describe("run-provider-status", () => {
       process.stdout.write = originalWrite;
     }
   });
+
+  test("marks YouTube as DEGRADED when network is reachable but yt-dlp is missing on PATH", async () => {
+    const mockFetch: ProviderStatusFetch = async () => new Response("OK", { status: 200 });
+    const mockGetEnv = (key: string) => {
+      if (key === "PATH") return "";
+      return undefined;
+    };
+
+    const report = await buildProviderStatusReport({
+      fetchFn: mockFetch,
+      getEnv: mockGetEnv,
+      timeoutMs: 500,
+    });
+
+    const yt = report.entries.find((e) => e.id === "youtube");
+    expect(yt).toBeDefined();
+    expect(yt?.status).toBe("DEGRADED");
+    expect(yt?.notes).toContain("yt-dlp not on PATH");
+  });
 });

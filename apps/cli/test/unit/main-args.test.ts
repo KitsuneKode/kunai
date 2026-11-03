@@ -419,3 +419,14 @@ test("parseArgs folds --dub into audio and rejects it combined with --audio", ()
     /--dub and --audio are mutually exclusive/,
   );
 });
+
+test("parseArgs parses and validates --service option", () => {
+  const rd = parseArgs(["--service", "real-debrid", "-S", "Dune"]);
+  expect(rd.service).toBe("real-debrid");
+
+  const ad = parseArgs(["-S", "Dune", "--service", "all-debrid"]);
+  expect(ad.service).toBe("all-debrid");
+
+  expect(() => parseArgs(["--service", "premiumize"])).toThrow(/invalid --service "premiumize"/);
+  expect(() => parseArgs(["--service", "--dry-run"])).toThrow(/--service expected a value/);
+});

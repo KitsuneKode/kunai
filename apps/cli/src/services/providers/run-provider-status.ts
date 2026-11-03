@@ -315,37 +315,45 @@ async function probeAllDebrid(
 async function probeYouTube(
   fetchFn: ProviderStatusFetch,
   timeoutMs: number,
+  getEnv?: (key: string) => string | undefined,
 ): Promise<ProviderStatusEntry> {
   const start = performance.now();
   let ytDlpVersion: string | null = null;
 
   try {
-    const proc = Bun.spawn(["yt-dlp", "--version"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const customPath = getEnv?.("PATH");
+    const ytDlpBinary = Bun.which(
+      "yt-dlp",
+      customPath !== undefined ? { PATH: customPath } : undefined,
+    );
+    if (ytDlpBinary) {
+      const proc = Bun.spawn([ytDlpBinary, "--version"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
 
-    const timeoutPromise = new Promise<null>((resolve) => {
-      setTimeout(
-        () => {
-          try {
-            proc.kill();
-          } catch {
-            // Process already ended
-          }
-          resolve(null);
-        },
-        Math.min(timeoutMs, 2000),
-      );
-    });
+      const timeoutPromise = new Promise<null>((resolve) => {
+        setTimeout(
+          () => {
+            try {
+              proc.kill();
+            } catch {
+              // Process already ended
+            }
+            resolve(null);
+          },
+          Math.min(timeoutMs, 2000),
+        );
+      });
 
-    const readPromise = (async () => {
-      const versionText = (await new Response(proc.stdout).text()).trim();
-      const exitCode = await proc.exited;
-      return exitCode === 0 && versionText ? versionText : null;
-    })();
+      const readPromise = (async () => {
+        const versionText = (await new Response(proc.stdout).text()).trim();
+        const exitCode = await proc.exited;
+        return exitCode === 0 && versionText ? versionText : null;
+      })();
 
-    ytDlpVersion = await Promise.race([readPromise, timeoutPromise]);
+      ytDlpVersion = await Promise.race([readPromise, timeoutPromise]);
+    }
   } catch {
     ytDlpVersion = null;
   }
@@ -367,7 +375,7 @@ async function probeYouTube(
         name: "YouTube",
         category: "platform",
         configured: true,
-        status: "ONLINE",
+        status: ytDlpVersion ? "ONLINE" : "DEGRADED",
         latencyMs,
         notes: note,
       };
@@ -438,7 +446,7 @@ export async function buildProviderStatusReport(
 
   const youtubeProbePromise = options.probeYouTube
     ? options.probeYouTube()
-    : probeYouTube(fetchFn, timeoutMs);
+    : probeYouTube(fetchFn, timeoutMs, getEnv);
 
   const probePromises: Promise<ProviderStatusEntry>[] = [
     probeRealDebrid(rdToken, fetchFn, timeoutMs),

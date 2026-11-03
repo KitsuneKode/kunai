@@ -57,4 +57,34 @@ describe("CLI usage errors exit 2", () => {
 
     expect(status).toBe(0);
   });
+
+  test("--service without value or with invalid value exits 2", () => {
+    const emptyVal = runKunai("--service", "--dry-run");
+    expect(emptyVal.status).toBe(2);
+    expect(emptyVal.stderr).toContain("--service expected a value");
+
+    const invalidVal = runKunai("--service", "unsupported-debrid");
+    expect(invalidVal.status).toBe(2);
+    expect(invalidVal.stderr).toContain('invalid --service "unsupported-debrid"');
+  });
+
+  test("accepts --service in any position relative to play and magnet", () => {
+    const dummyMagnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567";
+
+    // `--service` before `play <magnet>`
+    const res1 = runKunai("--service", "real-debrid", "play", dummyMagnet);
+    // Exits 1 (no credentials configured), proving it successfully reached debrid handler instead of exiting 2 (unknown option)
+    expect(res1.status).toBe(1);
+    expect(res1.stderr).toContain("no Debrid service is configured");
+
+    // `play --service <svc> <magnet>`
+    const res2 = runKunai("play", "--service", "real-debrid", dummyMagnet);
+    expect(res2.status).toBe(1);
+    expect(res2.stderr).toContain("no Debrid service is configured");
+
+    // Bare magnet with `--service` before it: `kunai --service <svc> <magnet>`
+    const res3 = runKunai("--service", "real-debrid", dummyMagnet);
+    expect(res3.status).toBe(1);
+    expect(res3.stderr).toContain("no Debrid service is configured");
+  });
 });

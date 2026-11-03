@@ -56,6 +56,7 @@ export type CliArgs = {
   status?: boolean;
   providersStatus?: boolean;
   debrid?: string;
+  service?: "real-debrid" | "all-debrid";
   help: boolean;
   version: boolean;
   initialRoute?: "recommendation" | "calendar" | "random";
@@ -221,6 +222,7 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--status",
   "--providers-status",
   "--debrid",
+  "--service",
   "--mpv-debug",
   "--mpv-clean",
   "--no-user-mpv-config",
@@ -255,6 +257,7 @@ export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "--open",
   "--handoff-url",
   "--debrid",
+  "--service",
   "--mpv-log-file",
   "--player",
   "--to",
@@ -297,6 +300,7 @@ type CommanderCliOptions = {
   readonly status?: boolean;
   readonly providersStatus?: boolean;
   readonly debrid?: string;
+  readonly service?: string;
   readonly mpvDebug?: boolean;
   readonly mpvClean?: boolean;
   /**
@@ -355,6 +359,7 @@ function createCliCommand(): Command {
     .option("--status")
     .option("--providers-status")
     .option("--debrid <magnet>")
+    .option("--service <service>")
     .option("--mpv-debug")
     .option("--mpv-clean")
     .option("--no-user-mpv-config")
@@ -624,6 +629,15 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.status = Boolean(options.status || options.providersStatus);
   args.providersStatus = Boolean(options.providersStatus);
   args.debrid = options.debrid;
+  if (options.service !== undefined) {
+    const service = options.service.toLowerCase();
+    if (service !== "real-debrid" && service !== "all-debrid") {
+      throw new CliUsageError(
+        `invalid --service "${options.service}" — must be "real-debrid" or "all-debrid"`,
+      );
+    }
+    args.service = service;
+  }
   args.mpv = {
     ...(options.mpvDebug ? { debug: true } : {}),
     ...(options.mpvClean ? { clean: true } : {}),

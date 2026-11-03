@@ -400,6 +400,104 @@ describe("RealDebridClient", () => {
       await expect(client.resolveStream(magnet)).rejects.toThrow(DebridNotCachedError);
     });
 
+    test("settles in-progress state (downloading -> downloaded) during poll loop", async () => {
+      const magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567";
+      let infoCalls = 0;
+
+      const mockFetch: DebridFetchFunction = async (url) => {
+        const u = String(url);
+        if (u.includes("/torrents/instantAvailability/")) {
+          return new Response(JSON.stringify({}), { status: 200 });
+        }
+        if (u.endsWith("/torrents/addMagnet")) {
+          return new Response(JSON.stringify({ id: "SETTLE_1" }), { status: 201 });
+        }
+        if (u.includes("/torrents/selectFiles/")) {
+          return new Response(null, { status: 204 });
+        }
+        if (u.includes("/torrents/info/")) {
+          infoCalls++;
+          if (infoCalls === 1) {
+            return new Response(
+              JSON.stringify({
+                id: "SETTLE_1",
+                status: "downloading",
+                progress: 50,
+                links: [],
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              id: "SETTLE_1",
+              status: "downloaded",
+              filename: "video.mkv",
+              links: ["https://real-debrid.com/d/LINK_SETTLED"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (u.includes("/unrestrict/link")) {
+          return new Response(
+            JSON.stringify({
+              id: "UNR_SETTLED",
+              filename: "video.mkv",
+              filesize: 1000000000,
+              download: "https://download.real-debrid.com/d/LINK_SETTLED/video.mkv",
+              streamable: 1,
+            }),
+            { status: 200 },
+          );
+        }
+        throw new Error(`Unexpected request to ${u}`);
+      };
+
+      const client = new RealDebridClient({ token: dummyToken, fetch: mockFetch });
+      const result = await client.resolveStream(magnet);
+      expect(result.cached).toBe(true);
+      expect(result.stream.url).toContain("download.real-debrid.com");
+      expect(infoCalls).toBeGreaterThanOrEqual(2);
+    });
+
+    test("cleans up torrent via deleteTorrent on resolution failure", async () => {
+      const magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567";
+      let deleteCalled = false;
+
+      const mockFetch: DebridFetchFunction = async (url, init) => {
+        const u = String(url);
+        if (u.includes("/torrents/instantAvailability/")) {
+          return new Response(JSON.stringify({}), { status: 200 });
+        }
+        if (u.endsWith("/torrents/addMagnet")) {
+          return new Response(JSON.stringify({ id: "CLEANUP_1" }), { status: 201 });
+        }
+        if (u.includes("/torrents/selectFiles/")) {
+          return new Response(null, { status: 204 });
+        }
+        if (u.includes("/torrents/info/")) {
+          return new Response(
+            JSON.stringify({
+              id: "CLEANUP_1",
+              status: "magnet_error",
+              links: [],
+            }),
+            { status: 200 },
+          );
+        }
+        if (u.includes("/torrents/delete/CLEANUP_1")) {
+          expect(init?.method).toBe("DELETE");
+          deleteCalled = true;
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`Unexpected request to ${u}`);
+      };
+
+      const client = new RealDebridClient({ token: dummyToken, fetch: mockFetch });
+      await expect(client.resolveStream(magnet)).rejects.toThrow(DebridError);
+      expect(deleteCalled).toBe(true);
+    });
+
     test("throws DebridError if torrent failed or dead", async () => {
       const magnet = "magnet:?xt=urn:btih:deaddeaddeaddeaddeaddeaddeaddeaddeaddead";
 

@@ -643,5 +643,86 @@ describe("AllDebridClient", () => {
       const client = new AllDebridClient({ apiKey: dummyApiKey, fetch: mockFetch });
       await expect(client.getUser()).rejects.toThrow(DebridRateLimitError);
     });
+
+    test("redacts apikey in both message and error cause properties", async () => {
+      const secretKey = ["super", "secret", "alldebrid", "key", "xyz"].join("_");
+      const rawError = new TypeError("fetch failed");
+      // Simulate Bun/Node TypeError with path property containing apikey
+      Reflect.set(
+        rawError,
+        "path",
+        `https://api.alldebrid.com/v4/user?apikey=${secretKey}&agent=kunai`,
+      );
+
+      const mockFetch: DebridFetchFunction = async () => {
+        throw rawError;
+      };
+
+      const client = new AllDebridClient({ apiKey: secretKey, maxRetries: 0, fetch: mockFetch });
+
+      try {
+        await client.getUser();
+        expect.unreachable();
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(DebridError);
+        // SAFETY: err is verified as DebridError by toBeInstanceOf check above
+        const debridErr = err as DebridError;
+        expect(debridErr.message).not.toContain(secretKey);
+        // SAFETY: cause is typed as unknown on Error and inspected for test verification
+        const causeObj = debridErr.cause as { readonly path?: string } | undefined;
+        expect(causeObj).toBeDefined();
+        if (causeObj && String(causeObj.path) === causeObj.path) {
+          expect(causeObj.path).not.toContain(secretKey);
+          expect(causeObj.path).toContain("apikey=REDACTED");
+        }
+        const inspected = Bun.inspect(debridErr);
+        expect(inspected).not.toContain(secretKey);
+      }
+    });
+
+    test("cleans up uploaded magnet via deleteMagnet on failure", async () => {
+      const magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567";
+      let deleteCalled = false;
+
+      const mockFetch: DebridFetchFunction = async (url) => {
+        const u = new URL(String(url));
+        if (u.pathname === "/v4/magnet/instant") {
+          return new Response(JSON.stringify({ status: "success", data: { magnets: [] } }), {
+            status: 200,
+          });
+        }
+        if (u.pathname === "/v4/magnet/upload") {
+          return new Response(
+            JSON.stringify({ status: "success", data: { magnets: [{ id: 54321 }] } }),
+            { status: 200 },
+          );
+        }
+        if (u.pathname === "/v4/magnet/status") {
+          return new Response(
+            JSON.stringify({
+              status: "success",
+              data: {
+                magnets: {
+                  id: 54321,
+                  status: "Upload fail",
+                  statusCode: 5,
+                },
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (u.pathname === "/v4/magnet/delete") {
+          expect(u.searchParams.get("id")).toBe("54321");
+          deleteCalled = true;
+          return new Response(JSON.stringify({ status: "success" }), { status: 200 });
+        }
+        throw new Error(`Unexpected request to ${u.pathname}`);
+      };
+
+      const client = new AllDebridClient({ apiKey: dummyApiKey, fetch: mockFetch });
+      await expect(client.resolveStream(magnet)).rejects.toThrow(DebridError);
+      expect(deleteCalled).toBe(true);
+    });
   });
 });

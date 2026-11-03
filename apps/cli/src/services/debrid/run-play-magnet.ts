@@ -113,16 +113,33 @@ export async function runPlayMagnetCommand(
     // Verify stream URL is reachable before proceeding
     const fetchFn = options.fetchFn ?? fetch;
     try {
-      const probe = await fetchFn(result.stream.url, {
-        method: "HEAD",
-        signal: AbortSignal.timeout(6000),
-      }).catch(async () =>
-        fetchFn(result.stream.url, {
+      const probeDeadline = performance.now() + 6000;
+      const getRemainingSignal = () => {
+        const remaining = Math.max(100, Math.round(probeDeadline - performance.now()));
+        return AbortSignal.timeout(remaining);
+      };
+
+      let probe: Response;
+      try {
+        probe = await fetchFn(result.stream.url, {
+          method: "HEAD",
+          signal: getRemainingSignal(),
+        });
+        if ((probe.status === 405 || probe.status === 501) && performance.now() < probeDeadline) {
+          probe = await fetchFn(result.stream.url, {
+            method: "GET",
+            headers: { Range: "bytes=0-0" },
+            signal: getRemainingSignal(),
+          });
+        }
+      } catch (headErr) {
+        if (performance.now() >= probeDeadline) throw headErr;
+        probe = await fetchFn(result.stream.url, {
           method: "GET",
           headers: { Range: "bytes=0-0" },
-          signal: AbortSignal.timeout(6000),
-        }),
-      );
+          signal: getRemainingSignal(),
+        });
+      }
 
       if (!probe.ok && probe.status !== 206) {
         process.stderr.write(

@@ -187,4 +187,89 @@ describe("run-play-magnet", () => {
       process.stderr.write = originalStderr;
     }
   });
+
+  test("normalizes 64-hex v2 torrent hashes to urn:btmh:1220 magnet URI", () => {
+    const hash64 = "0123456789abcdef0123456789abcdef012345670123456789abcdef01234567";
+    expect(normalizeMagnetUri(hash64)).toBe(`magnet:?xt=urn:btmh:1220${hash64}`);
+  });
+
+  test("succeeds when HEAD probe returns HTTP 405 but ranged GET returns 206", async () => {
+    let stdout = "";
+    const originalStdout = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (chunk: string | Uint8Array): boolean => {
+      stdout += String(chunk);
+      return true;
+    };
+
+    try {
+      let headAttempts = 0;
+      let getAttempts = 0;
+
+      const testFetch = async (url: string | URL | Request, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes("/torrents/instantAvailability/")) {
+          return new Response(JSON.stringify({}), { status: 200 });
+        }
+        if (u.includes("/torrents/addMagnet")) {
+          return new Response(JSON.stringify({ id: "T123" }), { status: 201 });
+        }
+        if (u.includes("/torrents/selectFiles/")) {
+          return new Response(null, { status: 204 });
+        }
+        if (u.includes("/torrents/info/T123")) {
+          return new Response(
+            JSON.stringify({
+              id: "T123",
+              filename: "Frieren_01_1080p.mkv",
+              bytes: 1400000000,
+              status: "downloaded",
+              links: ["https://real-debrid.com/d/LINK123"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (u.includes("/unrestrict/link")) {
+          return new Response(
+            JSON.stringify({
+              id: "U123",
+              filename: "Frieren_01_1080p.mkv",
+              filesize: 1400000000,
+              download: "https://download.real-debrid.com/d/LINK123/stream.mkv",
+            }),
+            { status: 200 },
+          );
+        }
+        if (u.includes("download.real-debrid.com")) {
+          if (init?.method === "HEAD") {
+            headAttempts++;
+            return new Response(null, { status: 405, statusText: "Method Not Allowed" });
+          }
+          if (init?.method === "GET") {
+            getAttempts++;
+            return new Response("bytes 0-0/1400000000", {
+              status: 206,
+              headers: { "Content-Range": "bytes 0-0/1400000000" },
+            });
+          }
+        }
+        return new Response("Not found", { status: 404 });
+      };
+
+      const exitCode = await runPlayMagnetCommand(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+        {
+          getEnv: (key) => (key === "REAL_DEBRID_API_KEY" ? "token" : undefined),
+          fetchFn: testFetch,
+          dryRun: true,
+        },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(headAttempts).toBe(1);
+      expect(getAttempts).toBe(1);
+      expect(stdout).toContain("[dry-run] URL:");
+    } finally {
+      process.stdout.write = originalStdout;
+    }
+  });
 });

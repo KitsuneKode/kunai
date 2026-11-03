@@ -105,6 +105,24 @@ function isRetryableNetworkError(err: Error): boolean {
   );
 }
 
+function sanitizeError(err: Error, depth = 0): Error {
+  if (depth > 3) return err;
+  const redact = (str: string) => str.replace(/apikey=[^&'"\s]+/gi, "apikey=REDACTED");
+  const sanitized = new Error(redact(err.message));
+  sanitized.name = err.name;
+  if (err.stack) {
+    sanitized.stack = redact(err.stack);
+  }
+  for (const [key, value] of Object.entries(err)) {
+    if (String(value) === value) {
+      Reflect.set(sanitized, key, redact(value));
+    } else if (key === "cause" && value instanceof Error) {
+      Reflect.set(sanitized, "cause", sanitizeError(value, depth + 1));
+    }
+  }
+  return sanitized;
+}
+
 export class AllDebridClient implements DebridClient {
   readonly serviceId: DebridServiceId = "all-debrid";
 
@@ -170,7 +188,7 @@ export class AllDebridClient implements DebridClient {
           throw new DebridError(`Request to AllDebrid timed out after ${this.timeoutMs}ms`, {
             service: "all-debrid",
             code: "TIMEOUT",
-            cause: err,
+            cause: sanitizeError(err),
           });
         }
 
@@ -179,7 +197,7 @@ export class AllDebridClient implements DebridClient {
         throw new DebridError(`Network error communicating with AllDebrid: ${safeMsg}`, {
           service: "all-debrid",
           code: "NETWORK_ERROR",
-          cause: err,
+          cause: err instanceof Error ? sanitizeError(err) : undefined,
         });
       }
     }
@@ -553,6 +571,8 @@ export class AllDebridClient implements DebridClient {
           },
         );
       } catch (err) {
+        // Cleanup the newly created magnet upload if stream resolution failed or was not cached.
+        // Swallowing cleanup errors ensures the original resolution error is preserved.
         await this.deleteMagnet(uploadItem.id).catch(() => {});
         throw err;
       }
