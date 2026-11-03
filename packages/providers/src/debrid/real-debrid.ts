@@ -371,6 +371,13 @@ export class RealDebridClient implements DebridClient {
     });
   }
 
+  async deleteTorrent(id: string): Promise<void> {
+    if (!id || id.trim().length === 0) return;
+    await this.request<void>(`/torrents/delete/${encodeURIComponent(id.trim())}`, {
+      method: "DELETE",
+    });
+  }
+
   async unrestrictLink(link: string, password?: string): Promise<RealDebridUnrestrictResult> {
     if (!link || link.trim().length === 0) {
       throw new DebridError("Link is required", {
@@ -428,84 +435,110 @@ export class RealDebridClient implements DebridClient {
       }
 
       const added = await this.addMagnet(trimmed);
-      await this.selectFiles(added.id, "all");
-      const info = await this.getTorrentInfo(added.id);
+      try {
+        await this.selectFiles(added.id, "all");
+        let info = await this.getTorrentInfo(added.id);
 
-      const terminalErrors = new Set(["magnet_error", "error", "virus", "dead"]);
-      if (terminalErrors.has(info.status)) {
-        throw new DebridError(`Real-Debrid torrent processing failed: ${info.status}`, {
-          service: "real-debrid",
-          code: info.status,
-        });
-      }
+        // Allow instant cache to settle (up to 1.5s if in intermediate states)
+        const pollDeadline = Date.now() + 1500;
+        while (
+          (info.status === "waiting_files_selection" || info.status === "queued") &&
+          Date.now() < pollDeadline
+        ) {
+          await new Promise((r) => setTimeout(r, 250));
+          info = await this.getTorrentInfo(added.id);
+        }
 
-      if (info.status !== "downloaded") {
-        throw new DebridNotCachedError(
-          `Torrent is not cached on Real-Debrid (status: ${info.status})`,
-          {
+        const terminalErrors = new Set(["magnet_error", "error", "virus", "dead"]);
+        if (terminalErrors.has(info.status)) {
+          throw new DebridError(`Real-Debrid torrent processing failed: ${info.status}`, {
             service: "real-debrid",
             code: info.status,
-          },
-        );
-      }
-
-      if (!info.links || info.links.length === 0) {
-        throw new DebridNotCachedError("No download links generated for torrent", {
-          service: "real-debrid",
-          code: "NO_LINKS",
-        });
-      }
-
-      // Pick the largest file's link if files information is available
-      let selectedLink: string | undefined = info.links[0];
-      if (info.files && info.files.length > 0 && info.links.length === info.files.length) {
-        let maxBytes = -1;
-        let bestIdx = 0;
-        info.files.forEach((file, idx) => {
-          if (file.bytes > maxBytes) {
-            maxBytes = file.bytes;
-            bestIdx = idx;
-          }
-        });
-        const candidate = info.links[bestIdx];
-        if (candidate) {
-          selectedLink = candidate;
-        }
-      }
-
-      if (!selectedLink) {
-        throw new DebridNotCachedError("No valid download link found for torrent", {
-          service: "real-debrid",
-          code: "NO_LINKS",
-        });
-      }
-
-      const unrestrict = await this.unrestrictLink(selectedLink);
-
-      if (context) {
-        const verdict = await verifyCandidateStream({
-          stream: { url: unrestrict.download, headers: {} },
-          context,
-        });
-        if (!verdict.accepted) {
-          throw new DebridError(`Stream verification probe rejected: ${verdict.reason}`, {
-            service: "real-debrid",
-            code: "STREAM_UNREACHABLE",
           });
         }
-      }
 
-      return {
-        stream: {
-          url: unrestrict.download,
-          filename: unrestrict.filename,
-          filesize: unrestrict.filesize,
-          quality: extractQuality(unrestrict.filename),
-          streamable: Boolean(unrestrict.streamable),
-        },
-        cached: isCached || info.status === "downloaded",
-        service: "real-debrid",
-      };
+        if (info.status !== "downloaded") {
+          throw new DebridNotCachedError(
+            `Torrent is not cached on Real-Debrid (status: ${info.status})`,
+            {
+              service: "real-debrid",
+              code: info.status,
+            },
+          );
+        }
+
+        if (!info.links || info.links.length === 0) {
+          throw new DebridNotCachedError("No download links generated for torrent", {
+            service: "real-debrid",
+            code: "NO_LINKS",
+          });
+        }
+
+        // Pick the largest video file's link, falling back to largest overall file
+        let selectedLink: string | undefined = info.links[0];
+        const isVideo = (path: string) => /\.(mkv|mp4|avi|webm|mov|m4v|ts|flv)$/i.test(path);
+
+        if (info.files && info.files.length > 0 && info.links.length === info.files.length) {
+          let bestVideoIdx = -1;
+          let maxVideoBytes = 0;
+          let bestAnyIdx = 0;
+          let maxAnyBytes = 0;
+
+          info.files.forEach((file, idx) => {
+            if (file.bytes > maxAnyBytes) {
+              maxAnyBytes = file.bytes;
+              bestAnyIdx = idx;
+            }
+            if (isVideo(file.path) && file.bytes > maxVideoBytes) {
+              maxVideoBytes = file.bytes;
+              bestVideoIdx = idx;
+            }
+          });
+
+          const chosenIdx = bestVideoIdx >= 0 ? bestVideoIdx : bestAnyIdx;
+          const candidate = info.links[chosenIdx];
+          if (candidate) {
+            selectedLink = candidate;
+          }
+        }
+
+        if (!selectedLink) {
+          throw new DebridNotCachedError("No valid download link found for torrent", {
+            service: "real-debrid",
+            code: "NO_LINKS",
+          });
+        }
+
+        const unrestrict = await this.unrestrictLink(selectedLink);
+
+        if (context) {
+          const verdict = await verifyCandidateStream({
+            stream: { url: unrestrict.download, headers: {} },
+            context,
+          });
+          if (!verdict.accepted) {
+            throw new DebridError(`Stream verification probe rejected: ${verdict.reason}`, {
+              service: "real-debrid",
+              code: "STREAM_UNREACHABLE",
+            });
+          }
+        }
+
+        return {
+          stream: {
+            url: unrestrict.download,
+            filename: unrestrict.filename,
+            filesize: unrestrict.filesize,
+            quality: extractQuality(unrestrict.filename),
+            streamable: Boolean(unrestrict.streamable),
+          },
+          cached: isCached || info.status === "downloaded",
+          service: "real-debrid",
+        };
+      } catch (err) {
+        await this.deleteTorrent(added.id).catch(() => {});
+        throw err;
+      }
     }
 
     if (/^https?:\/\//i.test(trimmed)) {

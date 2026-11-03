@@ -11,6 +11,7 @@ import { getKunaiPaths } from "@kunai/storage";
 export interface PlayMagnetOptions {
   readonly service?: "real-debrid" | "all-debrid";
   readonly getEnv?: (key: string) => string | undefined;
+  readonly configPath?: string;
   readonly fetchFn?: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
   readonly dryRun?: boolean;
 }
@@ -25,8 +26,11 @@ export function isMagnetOrTorrentHash(input: string): boolean {
 export function normalizeMagnetUri(input: string): string {
   const trimmed = input.trim();
   if (trimmed.startsWith("magnet:?")) return trimmed;
-  if (/^[a-fA-F0-9]{40}$/.test(trimmed) || /^[a-fA-F0-9]{64}$/.test(trimmed)) {
+  if (/^[a-fA-F0-9]{40}$/.test(trimmed)) {
     return `magnet:?xt=urn:btih:${trimmed}`;
+  }
+  if (/^[a-fA-F0-9]{64}$/.test(trimmed)) {
+    return `magnet:?xt=urn:btmh:1220${trimmed}`;
   }
   return trimmed;
 }
@@ -47,7 +51,7 @@ export async function runPlayMagnetCommand(
 
   if (!rdToken || !adToken) {
     try {
-      const configPath = getKunaiPaths().configPath;
+      const configPath = options.configPath ?? getKunaiPaths().configPath;
       const file = Bun.file(configPath);
       if (await file.exists()) {
         // SAFETY: config JSON file optionally contains user debrid API keys
@@ -92,16 +96,45 @@ export async function runPlayMagnetCommand(
 
   try {
     const result = await client.resolveStream(magnet);
-    const sizeMb = (result.stream.filesize / (1024 * 1024)).toFixed(1);
+    const sizeMb =
+      Number.isFinite(result.stream.filesize) && result.stream.filesize > 0
+        ? `${(result.stream.filesize / (1024 * 1024)).toFixed(1)} MB`
+        : "Unknown size";
     const quality = result.stream.quality ?? "Direct";
 
     process.stdout.write(
       `Stream resolved:\n` +
         `  Title:   ${result.stream.filename}\n` +
-        `  Size:    ${sizeMb} MB\n` +
+        `  Size:    ${sizeMb}\n` +
         `  Quality: ${quality}\n` +
         `  Service: ${result.service}\n`,
     );
+
+    // Verify stream URL is reachable before proceeding
+    const fetchFn = options.fetchFn ?? fetch;
+    try {
+      const probe = await fetchFn(result.stream.url, {
+        method: "HEAD",
+        signal: AbortSignal.timeout(6000),
+      }).catch(async () =>
+        fetchFn(result.stream.url, {
+          method: "GET",
+          headers: { Range: "bytes=0-0" },
+          signal: AbortSignal.timeout(6000),
+        }),
+      );
+
+      if (!probe.ok && probe.status !== 206) {
+        process.stderr.write(
+          `kunai: Resolved stream URL returned HTTP ${probe.status} and is unreachable.\n`,
+        );
+        return 1;
+      }
+    } catch (probeErr) {
+      const msg = probeErr instanceof Error ? probeErr.message : String(probeErr);
+      process.stderr.write(`kunai: Failed to verify stream reachability: ${msg}\n`);
+      return 1;
+    }
 
     if (options.dryRun) {
       process.stdout.write(`[dry-run] URL: ${result.stream.url}\n`);

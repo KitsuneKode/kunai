@@ -98,6 +98,9 @@ describe("run-play-magnet", () => {
             { status: 200 },
           );
         }
+        if (u.includes("download.real-debrid.com")) {
+          return new Response("mock video bytes", { status: 200 });
+        }
         return new Response("Not found", { status: 404 });
       };
 
@@ -116,6 +119,72 @@ describe("run-play-magnet", () => {
       expect(stdout).toContain("[dry-run] URL:");
     } finally {
       process.stdout.write = originalStdout;
+    }
+  });
+
+  test("rejects playback if resolved stream is unreachable", async () => {
+    let stderr = "";
+    const originalStderr = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (chunk: string | Uint8Array): boolean => {
+      stderr += String(chunk);
+      return true;
+    };
+
+    try {
+      const testFetch = async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes("/torrents/instantAvailability/")) {
+          return new Response(JSON.stringify({}), { status: 200 });
+        }
+        if (u.includes("/torrents/addMagnet")) {
+          return new Response(JSON.stringify({ id: "T123" }), { status: 201 });
+        }
+        if (u.includes("/torrents/selectFiles/")) {
+          return new Response(null, { status: 204 });
+        }
+        if (u.includes("/torrents/info/T123")) {
+          return new Response(
+            JSON.stringify({
+              id: "T123",
+              filename: "Frieren_01_1080p.mkv",
+              bytes: 1400000000,
+              status: "downloaded",
+              links: ["https://real-debrid.com/d/LINK123"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (u.includes("/unrestrict/link")) {
+          return new Response(
+            JSON.stringify({
+              id: "U123",
+              filename: "Frieren_01_1080p.mkv",
+              filesize: 1400000000,
+              download: "https://download.real-debrid.com/d/LINK123/unreachable.mkv",
+            }),
+            { status: 200 },
+          );
+        }
+        if (u.includes("/torrents/delete/")) {
+          return new Response(null, { status: 204 });
+        }
+        // Stream URL fails with 404
+        return new Response("Stream expired or dead", { status: 404 });
+      };
+
+      const exitCode = await runPlayMagnetCommand(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+        {
+          getEnv: (key) => (key === "REAL_DEBRID_API_KEY" ? "token" : undefined),
+          fetchFn: testFetch,
+          dryRun: true,
+        },
+      );
+
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain("HTTP 404 and is unreachable");
+    } finally {
+      process.stderr.write = originalStderr;
     }
   });
 });

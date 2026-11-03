@@ -174,14 +174,13 @@ export class AllDebridClient implements DebridClient {
           });
         }
 
-        throw new DebridError(
-          `Network error communicating with AllDebrid: ${err instanceof Error ? err.message : String(err)}`,
-          {
-            service: "all-debrid",
-            code: "NETWORK_ERROR",
-            cause: err,
-          },
-        );
+        const rawMsg = err instanceof Error ? err.message : String(err);
+        const safeMsg = rawMsg.replace(/apikey=[^&]+/g, "apikey=REDACTED");
+        throw new DebridError(`Network error communicating with AllDebrid: ${safeMsg}`, {
+          service: "all-debrid",
+          code: "NETWORK_ERROR",
+          cause: err,
+        });
       }
     }
   }
@@ -383,6 +382,11 @@ export class AllDebridClient implements DebridClient {
     return item;
   }
 
+  async deleteMagnet(id: number | string): Promise<void> {
+    if (id === undefined || id === null) return;
+    await this.request<unknown>("/magnet/delete", {}, { id: String(id) }).catch(() => {});
+  }
+
   async unlockLink(link: string, password?: string): Promise<AllDebridUnlockedLink> {
     if (!link || link.trim().length === 0) {
       throw new DebridError("Link is required", {
@@ -461,88 +465,97 @@ export class AllDebridClient implements DebridClient {
         });
       }
 
-      const status = await this.getMagnetStatus(uploadItem.id);
+      try {
+        const status = await this.getMagnetStatus(uploadItem.id);
 
-      // StatusCode 4: Ready
-      if (status.statusCode === 4) {
-        if (!status.links || status.links.length === 0) {
-          throw new DebridError("Magnet is marked ready but contains no downloadable links", {
-            service: "all-debrid",
-            code: "NO_LINKS",
-          });
-        }
-
-        // Pick largest file link
-        const sorted = [...status.links].sort((a, b) => b.size - a.size);
-        const bestLink = sorted[0]?.link;
-
-        if (!bestLink) {
-          throw new DebridError("No valid link found to unlock", {
-            service: "all-debrid",
-            code: "NO_LINKS",
-          });
-        }
-
-        const unlocked = await this.unlockLink(bestLink);
-
-        if (context) {
-          const verdict = await verifyCandidateStream({
-            stream: { url: unlocked.download, headers: {} },
-            context,
-          });
-          if (!verdict.accepted) {
-            throw new DebridError(`Stream verification probe rejected: ${verdict.reason}`, {
+        // StatusCode 4: Ready
+        if (status.statusCode === 4) {
+          if (!status.links || status.links.length === 0) {
+            throw new DebridError("Magnet is marked ready but contains no downloadable links", {
               service: "all-debrid",
-              code: "STREAM_UNREACHABLE",
+              code: "NO_LINKS",
             });
           }
+
+          // Pick largest video file link first, falling back to largest overall file
+          const isVideo = (filename: string) =>
+            /\.(mkv|mp4|avi|webm|mov|m4v|ts|flv)$/i.test(filename);
+          const videoLinks = status.links.filter((l) => isVideo(l.filename));
+          const pool = videoLinks.length > 0 ? videoLinks : status.links;
+          const sorted = [...pool].sort((a, b) => b.size - a.size);
+          const bestLink = sorted[0]?.link;
+
+          if (!bestLink) {
+            throw new DebridError("No valid link found to unlock", {
+              service: "all-debrid",
+              code: "NO_LINKS",
+            });
+          }
+
+          const unlocked = await this.unlockLink(bestLink);
+
+          if (context) {
+            const verdict = await verifyCandidateStream({
+              stream: { url: unlocked.download, headers: {} },
+              context,
+            });
+            if (!verdict.accepted) {
+              throw new DebridError(`Stream verification probe rejected: ${verdict.reason}`, {
+                service: "all-debrid",
+                code: "STREAM_UNREACHABLE",
+              });
+            }
+          }
+
+          return {
+            stream: {
+              url: unlocked.download,
+              filename: unlocked.filename,
+              filesize: unlocked.filesize,
+              quality: extractQuality(unlocked.filename),
+              streamable: true,
+            },
+            cached: isCached,
+            service: "all-debrid",
+          };
         }
 
-        return {
-          stream: {
-            url: unlocked.download,
-            filename: unlocked.filename,
-            filesize: unlocked.filesize,
-            quality: extractQuality(unlocked.filename),
-            streamable: true,
-          },
-          cached: isCached,
-          service: "all-debrid",
-        };
-      }
+        // Status codes 0 to 3: in progress (not cached/ready)
+        // 0 = Processing, 1 = Downloading, 2 = Compressing, 3 = Uploading
+        if (status.statusCode >= 0 && status.statusCode <= 3) {
+          throw new DebridNotCachedError(
+            `Torrent is not cached on AllDebrid (status: ${status.status}, statusCode: ${status.statusCode})`,
+            {
+              service: "all-debrid",
+              code: "NOT_READY",
+            },
+          );
+        }
 
-      // Status codes 0 to 3: in progress (not cached/ready)
-      // 0 = Processing, 1 = Downloading, 2 = Compressing, 3 = Uploading
-      if (status.statusCode >= 0 && status.statusCode <= 3) {
-        throw new DebridNotCachedError(
-          `Torrent is not cached on AllDebrid (status: ${status.status}, statusCode: ${status.statusCode})`,
-          {
-            service: "all-debrid",
-            code: "NOT_READY",
-          },
-        );
-      }
+        // Status codes 5 to 11: known error states
+        // 5: Upload fail, 6: Error, 7: Too big, 8: Archive not allowed, etc.
+        if (status.statusCode >= 5 && status.statusCode <= 11) {
+          throw new DebridError(
+            `AllDebrid magnet processing failed: ${status.status} (code: ${status.statusCode})`,
+            {
+              service: "all-debrid",
+              code: `MAGNET_ERROR_${status.statusCode}`,
+            },
+          );
+        }
 
-      // Status codes 5 to 11: known error states
-      // 5: Upload fail, 6: Error, 7: Too big, 8: Archive not allowed, etc.
-      if (status.statusCode >= 5 && status.statusCode <= 11) {
+        // Unhandled / unknown status code
         throw new DebridError(
-          `AllDebrid magnet processing failed: ${status.status} (code: ${status.statusCode})`,
+          `Unhandled AllDebrid magnet status: ${status.status} (statusCode: ${status.statusCode})`,
           {
             service: "all-debrid",
-            code: `MAGNET_ERROR_${status.statusCode}`,
+            code: "UNHANDLED_STATUS",
           },
         );
+      } catch (err) {
+        await this.deleteMagnet(uploadItem.id).catch(() => {});
+        throw err;
       }
-
-      // Unhandled / unknown status code
-      throw new DebridError(
-        `Unhandled AllDebrid magnet status: ${status.status} (statusCode: ${status.statusCode})`,
-        {
-          service: "all-debrid",
-          code: "UNHANDLED_STATUS",
-        },
-      );
     }
 
     if (/^https?:\/\//i.test(trimmed)) {

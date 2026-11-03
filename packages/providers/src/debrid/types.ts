@@ -112,9 +112,15 @@ export function extractTorrentHash(magnetOrHash: string): string | null {
   if (/^[0-9a-fA-F]{40}$/.test(trimmed)) {
     return trimmed.toLowerCase();
   }
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
   if (/^[2-7a-zA-Z]{32}$/.test(trimmed)) {
     return trimmed.toLowerCase();
   }
-  const match = trimmed.match(/xt=urn:btih:([a-zA-Z0-9]+)/i);
-  return match?.[1] ? match[1].toLowerCase() : null;
+  const btihMatch = trimmed.match(/xt=urn:btih:([a-zA-Z0-9]+)/i);
+  if (btihMatch?.[1]) return btihMatch[1].toLowerCase();
+  const btmhMatch = trimmed.match(/xt=urn:btmh:1220([0-9a-fA-F]{64})/i);
+  if (btmhMatch?.[1]) return btmhMatch[1].toLowerCase();
+  return null;
 }

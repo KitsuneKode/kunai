@@ -86,7 +86,7 @@ describe("run-provider-status", () => {
 
     const rd = report.entries.find((e) => e.id === "real-debrid");
     expect(rd?.status).toBe("AUTH_ERROR");
-    expect(rd?.notes).toContain("Invalid");
+    expect(rd?.notes).toContain("bad_token");
   });
 
   test("marks Cloudflare challenges when 403 has cloudflare server header", async () => {

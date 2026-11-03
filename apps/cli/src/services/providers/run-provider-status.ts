@@ -1,3 +1,4 @@
+import { RealDebridClient, AllDebridClient, DebridAuthError } from "@kunai/providers/debrid";
 import { getKunaiPaths } from "@kunai/storage";
 
 export type ProviderCategory = "debrid" | "anime" | "movie/series" | "platform";
@@ -37,6 +38,8 @@ export interface RunProviderStatusOptions {
   readonly timeoutMs?: number;
   readonly fetchFn?: ProviderStatusFetch;
   readonly getEnv?: (key: string) => string | undefined;
+  readonly configPath?: string;
+  readonly probeYouTube?: () => Promise<ProviderStatusEntry>;
   readonly isTty?: boolean;
   readonly noColor?: boolean;
 }
@@ -47,50 +50,86 @@ const KNOWN_HTTP_PROVIDERS: readonly {
   readonly id: string;
   readonly name: string;
   readonly category: ProviderCategory;
-  readonly domain: string;
-  readonly probePath?: string;
+  readonly url: string;
+  readonly headers?: Record<string, string>;
 }[] = [
-  { id: "hianime", name: "HiAnime", category: "anime", domain: "hianime.at" },
-  { id: "miruro", name: "Miruro", category: "anime", domain: "miruro.to" },
-  { id: "allmanga", name: "AllManga", category: "anime", domain: "allmanga.to" },
-  { id: "animegg", name: "AnimeGG", category: "anime", domain: "animegg.org" },
-  { id: "kickassanime", name: "KickAssAnime", category: "anime", domain: "kickassanime.am" },
-  { id: "vidrock", name: "VidRock", category: "movie/series", domain: "vidrock.net" },
-  { id: "vidlink", name: "VidLink", category: "movie/series", domain: "vidlink.pro" },
-  { id: "videasy", name: "Videasy", category: "movie/series", domain: "player.videasy.net" },
-  { id: "rivestream", name: "Rivestream", category: "movie/series", domain: "rivestream.live" },
-  { id: "movy", name: "Movy", category: "movie/series", domain: "movy.stream" },
+  {
+    id: "hianime",
+    name: "HiAnime",
+    category: "anime",
+    url: "https://hianime.at/",
+    headers: { Referer: "https://hianime.at/" },
+  },
+  { id: "miruro", name: "Miruro", category: "anime", url: "https://www.miruro.bz" },
+  {
+    id: "allmanga",
+    name: "AllManga",
+    category: "anime",
+    url: "https://mkissa.to",
+    headers: { Origin: "https://mkissa.to" },
+  },
+  { id: "animegg", name: "AnimeGG", category: "anime", url: "https://animegg.org" },
+  { id: "kickassanime", name: "KickAssAnime", category: "anime", url: "https://kaa.lt" },
+  { id: "vidrock", name: "VidRock", category: "movie/series", url: "https://vidrock.net" },
+  { id: "vidlink", name: "VidLink", category: "movie/series", url: "https://vidlink.pro" },
+  { id: "videasy", name: "Videasy", category: "movie/series", url: "https://api.videasy.to" },
+  {
+    id: "rivestream",
+    name: "Rivestream",
+    category: "movie/series",
+    url: "https://www.rivestream.app/",
+  },
+  {
+    id: "movy",
+    name: "Movy",
+    category: "movie/series",
+    url: "https://api.wecollege.net",
+    headers: { Referer: "https://www.movy.sx/", Origin: "https://www.movy.sx" },
+  },
 ];
 
 /**
- * Probes a direct HTTP web provider domain with a short timeout.
+ * Probes a direct HTTP web provider domain with a single bounded timeout budget.
  */
 async function probeHttpProvider(
   provider: (typeof KNOWN_HTTP_PROVIDERS)[number],
   fetchFn: ProviderStatusFetch,
   timeoutMs: number,
 ): Promise<ProviderStatusEntry> {
-  const url = `https://${provider.domain}${provider.probePath ?? "/"}`;
   const start = performance.now();
+  const deadline = start + timeoutMs;
+  const getRemainingSignal = () => {
+    const remaining = Math.max(100, Math.round(deadline - performance.now()));
+    return AbortSignal.timeout(remaining);
+  };
+
   try {
-    const response = await fetchFn(url, {
+    const baseHeaders = {
+      "User-Agent":
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      ...provider.headers,
+    };
+
+    let response = await fetchFn(provider.url, {
       method: "HEAD",
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-      },
-    }).catch(async () => {
-      // Some CDNs reject HEAD (405) — fallback to lightweight GET
-      return fetchFn(url, {
+      signal: getRemainingSignal(),
+      headers: baseHeaders,
+    }).catch(async (headError) => {
+      if (performance.now() >= deadline) throw headError;
+      return fetchFn(provider.url, {
         method: "GET",
-        signal: AbortSignal.timeout(timeoutMs),
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        },
+        signal: getRemainingSignal(),
+        headers: baseHeaders,
       });
     });
+
+    if ((response.status === 405 || response.status === 501) && performance.now() < deadline) {
+      response = await fetchFn(provider.url, {
+        method: "GET",
+        signal: getRemainingSignal(),
+        headers: baseHeaders,
+      }).catch(() => response);
+    }
 
     const latencyMs = Math.round(performance.now() - start);
 
@@ -147,7 +186,7 @@ async function probeHttpProvider(
 }
 
 /**
- * Probes Real-Debrid service using configured token.
+ * Probes Real-Debrid service using configured token via RealDebridClient.
  */
 async function probeRealDebrid(
   token: string | undefined,
@@ -168,14 +207,21 @@ async function probeRealDebrid(
 
   const start = performance.now();
   try {
-    const res = await fetchFn("https://api.real-debrid.com/rest/1.0/user", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    const client = new RealDebridClient({ token, fetch: fetchFn, timeoutMs });
+    const user = await client.getUser();
     const latencyMs = Math.round(performance.now() - start);
-    if (res.status === 401 || res.status === 403) {
+    return {
+      id: "real-debrid",
+      name: "Real-Debrid",
+      category: "debrid",
+      configured: true,
+      status: "ONLINE",
+      latencyMs,
+      notes: `${user.premium ? "Premium" : "Free"} account (${user.username || "user"})`,
+    };
+  } catch (error) {
+    const latencyMs = Math.round(performance.now() - start);
+    if (error instanceof DebridAuthError) {
       return {
         id: "real-debrid",
         name: "Real-Debrid",
@@ -183,48 +229,26 @@ async function probeRealDebrid(
         configured: true,
         status: "AUTH_ERROR",
         latencyMs,
-        notes: "Invalid or expired API token",
+        notes: error.message.slice(0, 35) || "Invalid API token",
       };
     }
-    if (res.ok) {
-      // SAFETY: Real-Debrid API /user endpoint returns JSON with account info
-      const data = (await res.json()) as { username?: string; type?: string; expiration?: string };
-      const isPremium = data.type === "premium";
-      return {
-        id: "real-debrid",
-        name: "Real-Debrid",
-        category: "debrid",
-        configured: true,
-        status: "ONLINE",
-        latencyMs,
-        notes: `${isPremium ? "Premium" : "Free"} account (${data.username ?? "user"})`,
-      };
-    }
-    return {
-      id: "real-debrid",
-      name: "Real-Debrid",
-      category: "debrid",
-      configured: true,
-      status: "DEGRADED",
-      latencyMs,
-      notes: `HTTP ${res.status}`,
-    };
-  } catch (error) {
-    const latencyMs = Math.round(performance.now() - start);
+    const message = error instanceof Error ? error.message : String(error);
+    const isTimeout =
+      message.toLowerCase().includes("timeout") || message.toLowerCase().includes("aborted");
     return {
       id: "real-debrid",
       name: "Real-Debrid",
       category: "debrid",
       configured: true,
       status: "OFFLINE",
-      latencyMs,
-      notes: error instanceof Error ? error.message.slice(0, 35) : "Network error",
+      latencyMs: isTimeout ? null : latencyMs,
+      notes: isTimeout ? "Probe timed out" : message.slice(0, 35),
     };
   }
 }
 
 /**
- * Probes AllDebrid service using configured token.
+ * Probes AllDebrid service using configured token via AllDebridClient.
  */
 async function probeAllDebrid(
   token: string | undefined,
@@ -245,14 +269,21 @@ async function probeAllDebrid(
 
   const start = performance.now();
   try {
-    const res = await fetchFn("https://api.alldebrid.com/v4/user?agent=kunai", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    const client = new AllDebridClient({ token, fetch: fetchFn, timeoutMs });
+    const user = await client.getUser();
     const latencyMs = Math.round(performance.now() - start);
-    if (res.status === 401 || res.status === 403) {
+    return {
+      id: "all-debrid",
+      name: "AllDebrid",
+      category: "debrid",
+      configured: true,
+      status: "ONLINE",
+      latencyMs,
+      notes: `${user.premium ? "Premium" : "Free"} account (${user.username || "user"})`,
+    };
+  } catch (error) {
+    const latencyMs = Math.round(performance.now() - start);
+    if (error instanceof DebridAuthError) {
       return {
         id: "all-debrid",
         name: "AllDebrid",
@@ -260,89 +291,114 @@ async function probeAllDebrid(
         configured: true,
         status: "AUTH_ERROR",
         latencyMs,
-        notes: "Invalid or expired API token",
+        notes: error.message.slice(0, 35) || "Invalid API key",
       };
     }
-    if (res.ok) {
-      // SAFETY: AllDebrid API /user endpoint returns JSON with user data
-      const data = (await res.json()) as {
-        status?: string;
-        data?: { user?: { username?: string; isPremium?: boolean } };
-      };
-      const user = data.data?.user;
-      return {
-        id: "all-debrid",
-        name: "AllDebrid",
-        category: "debrid",
-        configured: true,
-        status: "ONLINE",
-        latencyMs,
-        notes: `${user?.isPremium ? "Premium" : "Free"} account (${user?.username ?? "user"})`,
-      };
-    }
-    return {
-      id: "all-debrid",
-      name: "AllDebrid",
-      category: "debrid",
-      configured: true,
-      status: "DEGRADED",
-      latencyMs,
-      notes: `HTTP ${res.status}`,
-    };
-  } catch (error) {
-    const latencyMs = Math.round(performance.now() - start);
+    const message = error instanceof Error ? error.message : String(error);
+    const isTimeout =
+      message.toLowerCase().includes("timeout") || message.toLowerCase().includes("aborted");
     return {
       id: "all-debrid",
       name: "AllDebrid",
       category: "debrid",
       configured: true,
       status: "OFFLINE",
-      latencyMs,
-      notes: error instanceof Error ? error.message.slice(0, 35) : "Network error",
+      latencyMs: isTimeout ? null : latencyMs,
+      notes: isTimeout ? "Probe timed out" : message.slice(0, 35),
     };
   }
 }
 
 /**
- * Checks YouTube platform provider status via yt-dlp probe.
+ * Checks YouTube platform provider status via network probe and bounded yt-dlp binary probe.
  */
-async function probeYouTube(): Promise<ProviderStatusEntry> {
+async function probeYouTube(
+  fetchFn: ProviderStatusFetch,
+  timeoutMs: number,
+): Promise<ProviderStatusEntry> {
+  const start = performance.now();
+  let ytDlpVersion: string | null = null;
+
   try {
     const proc = Bun.spawn(["yt-dlp", "--version"], {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const versionText = (await new Response(proc.stdout).text()).trim();
-    const exitCode = await proc.exited;
-    if (exitCode === 0 && versionText) {
+
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(
+        () => {
+          try {
+            proc.kill();
+          } catch {
+            // Process already ended
+          }
+          resolve(null);
+        },
+        Math.min(timeoutMs, 2000),
+      );
+    });
+
+    const readPromise = (async () => {
+      const versionText = (await new Response(proc.stdout).text()).trim();
+      const exitCode = await proc.exited;
+      return exitCode === 0 && versionText ? versionText : null;
+    })();
+
+    ytDlpVersion = await Promise.race([readPromise, timeoutPromise]);
+  } catch {
+    ytDlpVersion = null;
+  }
+
+  const ytProbeUrl =
+    "https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=kunai";
+  try {
+    const res = await fetchFn(ytProbeUrl, {
+      method: "GET",
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" },
+    });
+    const latencyMs = Math.round(performance.now() - start);
+
+    if (res.ok || (res.status >= 200 && res.status < 400)) {
+      const note = ytDlpVersion ? `yt-dlp ${ytDlpVersion}` : "yt-dlp not on PATH";
       return {
         id: "youtube",
         name: "YouTube",
         category: "platform",
         configured: true,
         status: "ONLINE",
-        latencyMs: null,
-        notes: `yt-dlp ${versionText}`,
+        latencyMs,
+        notes: note,
       };
     }
+
     return {
       id: "youtube",
       name: "YouTube",
       category: "platform",
-      configured: false,
+      configured: true,
       status: "DEGRADED",
-      latencyMs: null,
-      notes: "yt-dlp exited with error",
+      latencyMs,
+      notes: `HTTP ${res.status}`,
     };
-  } catch {
+  } catch (err) {
+    const latencyMs = Math.round(performance.now() - start);
+    const message = err instanceof Error ? err.message : String(err);
+    const isTimeout =
+      message.toLowerCase().includes("timeout") || message.toLowerCase().includes("aborted");
     return {
       id: "youtube",
       name: "YouTube",
       category: "platform",
-      configured: false,
+      configured: ytDlpVersion !== null,
       status: "OFFLINE",
-      latencyMs: null,
-      notes: "yt-dlp not found on PATH",
+      latencyMs: isTimeout ? null : latencyMs,
+      notes: isTimeout
+        ? "Network timeout"
+        : ytDlpVersion
+          ? `yt-dlp ${ytDlpVersion}`
+          : message.slice(0, 35),
     };
   }
 }
@@ -364,7 +420,7 @@ export async function buildProviderStatusReport(
 
   if (!rdToken || !adToken) {
     try {
-      const configPath = getKunaiPaths().configPath;
+      const configPath = options.configPath ?? getKunaiPaths().configPath;
       const file = Bun.file(configPath);
       if (await file.exists()) {
         // SAFETY: config JSON file optionally contains user debrid API keys
@@ -380,17 +436,19 @@ export async function buildProviderStatusReport(
     }
   }
 
+  const youtubeProbePromise = options.probeYouTube
+    ? options.probeYouTube()
+    : probeYouTube(fetchFn, timeoutMs);
+
   const probePromises: Promise<ProviderStatusEntry>[] = [
     probeRealDebrid(rdToken, fetchFn, timeoutMs),
     probeAllDebrid(adToken, fetchFn, timeoutMs),
-    probeYouTube(),
+    youtubeProbePromise,
     ...KNOWN_HTTP_PROVIDERS.map((p) => probeHttpProvider(p, fetchFn, timeoutMs)),
   ];
 
   const results = await Promise.all(probePromises);
-  const onlineCount = results.filter(
-    (r) => r.status === "ONLINE" || r.status === "CLOUDFLARE",
-  ).length;
+  const onlineCount = results.filter((r) => r.status === "ONLINE").length;
 
   return {
     timestamp: new Date().toISOString(),

@@ -697,6 +697,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       }),
     );
   }
+  const serviceIdx = argv.indexOf("--service");
+  const candidateService = serviceIdx >= 0 ? argv[serviceIdx + 1] : undefined;
+  const serviceArg: "real-debrid" | "all-debrid" | undefined =
+    candidateService === "real-debrid" || candidateService === "all-debrid"
+      ? candidateService
+      : undefined;
+
   if (argv[0] === "play" && argv[1]) {
     const { isMagnetOrTorrentHash, runPlayMagnetCommand } =
       await import("./services/debrid/run-play-magnet");
@@ -704,6 +711,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       process.exit(
         await runPlayMagnetCommand(argv[1], {
           dryRun: argv.includes("--dry-run"),
+          service: serviceArg,
         }),
       );
     }
@@ -719,18 +727,23 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     process.exit(
       await runPlayMagnetCommand(argv[0], {
         dryRun: argv.includes("--dry-run"),
+        service: serviceArg,
       }),
     );
   }
   const debridIdx = argv.indexOf("--debrid");
   const debridArg = debridIdx >= 0 ? argv[debridIdx + 1] : undefined;
-  if (debridArg !== undefined) {
-    const { runPlayMagnetCommand } = await import("./services/debrid/run-play-magnet");
-    process.exit(
-      await runPlayMagnetCommand(debridArg, {
-        dryRun: argv.includes("--dry-run"),
-      }),
-    );
+  if (debridArg !== undefined && !debridArg.startsWith("-")) {
+    const { isMagnetOrTorrentHash, runPlayMagnetCommand } =
+      await import("./services/debrid/run-play-magnet");
+    if (isMagnetOrTorrentHash(debridArg)) {
+      process.exit(
+        await runPlayMagnetCommand(debridArg, {
+          dryRun: argv.includes("--dry-run"),
+          service: serviceArg,
+        }),
+      );
+    }
   }
 
   // Best-effort: clear the running Kunai binary's own Windows self-replace backup.
