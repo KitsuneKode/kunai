@@ -19,7 +19,16 @@ function runKunai(...argv: string[]) {
   try {
     const result = spawnSync("bun", ["apps/cli/src/main.ts", ...argv], {
       cwd: repoRoot,
-      env: { ...process.env, ...storageRootEnv(root) },
+      env: {
+        ...process.env,
+        ...storageRootEnv(root),
+        REAL_DEBRID_API_KEY: "",
+        REAL_DEBRID_TOKEN: "",
+        KUNAI_REAL_DEBRID_TOKEN: "",
+        ALLDEBRID_API_KEY: "",
+        ALL_DEBRID_TOKEN: "",
+        KUNAI_ALLDEBRID_TOKEN: "",
+      },
       encoding: "utf8",
       timeout: 30_000,
     });
@@ -68,7 +77,7 @@ describe("CLI usage errors exit 2", () => {
     expect(invalidVal.stderr).toContain('invalid --service "unsupported-debrid"');
   });
 
-  test("accepts --service in any position relative to play and magnet", () => {
+  test("accepts --service in any position relative to play and magnet, case-insensitively", () => {
     const dummyMagnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567";
 
     // `--service` before `play <magnet>`
@@ -76,6 +85,11 @@ describe("CLI usage errors exit 2", () => {
     // Exits 1 (no credentials configured), proving it successfully reached debrid handler instead of exiting 2 (unknown option)
     expect(res1.status).toBe(1);
     expect(res1.stderr).toContain("no Debrid service is configured");
+
+    // Case-insensitive service: `Real-Debrid`
+    const resCase = runKunai("--service", "Real-Debrid", "play", dummyMagnet);
+    expect(resCase.status).toBe(1);
+    expect(resCase.stderr).toContain("no Debrid service is configured");
 
     // `play --service <svc> <magnet>`
     const res2 = runKunai("play", "--service", "real-debrid", dummyMagnet);
@@ -86,5 +100,19 @@ describe("CLI usage errors exit 2", () => {
     const res3 = runKunai("--service", "real-debrid", dummyMagnet);
     expect(res3.status).toBe(1);
     expect(res3.stderr).toContain("no Debrid service is configured");
+  });
+
+  test("does not hijack magnet-shaped values passed to other flags", () => {
+    const dummyMagnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567";
+
+    // `-S <magnet>` should be treated as search query, not debrid playback
+    // Without TTY, search exits with help or executes search instead of debrid error
+    const resSearch = runKunai("-S", dummyMagnet, "--help");
+    expect(resSearch.status).toBe(0);
+
+    // `--open <magnet>` fails validation for invalid kunai:// URL, NOT debrid handler
+    const resOpen = runKunai("--open", dummyMagnet);
+    expect(resOpen.stderr).toContain("Invalid kunai:// share URL");
+    expect(resOpen.stderr).not.toContain("no Debrid service is configured");
   });
 });

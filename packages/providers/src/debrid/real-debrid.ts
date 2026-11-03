@@ -441,6 +441,7 @@ export class RealDebridClient implements DebridClient {
 
         // Allow instant cache to settle (up to 2s if in intermediate states)
         const inProgressStates = new Set([
+          "magnet_conversion",
           "waiting_files_selection",
           "queued",
           "downloading",

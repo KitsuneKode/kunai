@@ -141,7 +141,11 @@ export async function runPlayMagnetCommand(
         });
       }
 
-      if (!probe.ok && probe.status !== 206) {
+      const statusOk = probe.ok || probe.status === 206;
+      // Immediately cancel the probe body stream to ensure hosts ignoring Range do not continue downloading
+      void probe.body?.cancel().catch(() => {});
+
+      if (!statusOk) {
         process.stderr.write(
           `kunai: Resolved stream URL returned HTTP ${probe.status} and is unreachable.\n`,
         );

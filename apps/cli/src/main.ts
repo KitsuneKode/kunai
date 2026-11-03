@@ -55,7 +55,13 @@ import {
   type ShutdownRuntime,
 } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
-import { buildCliHelpText, CliUsageError, parseCliArgs, type CliArgs } from "@/cli-args";
+import {
+  buildCliHelpText,
+  CliUsageError,
+  parseCliArgs,
+  type CliArgs,
+  VALUE_FLAGS,
+} from "@/cli-args";
 import { createContainer, disposeContainer } from "@/container";
 import { detectPlayerPlatform, resolvePlayerMode } from "@/domain/playback/player-choice";
 import {
@@ -699,12 +705,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
   const serviceIdx = argv.indexOf("--service");
   const candidateService = serviceIdx >= 0 ? argv[serviceIdx + 1] : undefined;
+  const normalizedService = candidateService?.toLowerCase();
   if (serviceIdx >= 0) {
     if (candidateService === undefined || candidateService.startsWith("-")) {
       process.stderr.write("kunai: --service expected a value\n");
       process.exit(2);
     }
-    if (candidateService !== "real-debrid" && candidateService !== "all-debrid") {
+    if (normalizedService !== "real-debrid" && normalizedService !== "all-debrid") {
       process.stderr.write(
         `kunai: invalid --service "${candidateService}" — must be "real-debrid" or "all-debrid"\n`,
       );
@@ -712,8 +719,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   }
   const serviceArg: "real-debrid" | "all-debrid" | undefined =
-    candidateService === "real-debrid" || candidateService === "all-debrid"
-      ? candidateService
+    normalizedService === "real-debrid" || normalizedService === "all-debrid"
+      ? normalizedService
       : undefined;
 
   const debridIdx = argv.indexOf("--debrid");
@@ -723,7 +730,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
     if (!token) continue;
-    if (token === "--service" || token === "--debrid") {
+    if (VALUE_FLAGS.has(token)) {
       i += 1;
       continue;
     }
