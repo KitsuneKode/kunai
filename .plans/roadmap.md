@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-10-27
+Last updated: 2026-11-05
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -12,7 +12,8 @@ plan in the same change set. Shipped behavior belongs in `.docs/` and
 
 ## Execution mode
 
-CLI first. Web, desktop, remote sync, paid cloud compute, premium dashboards,
+CLI first. The approved same-device companion preview supports the phone route;
+its current implementation batch is linked below. Hosted web, remote sync, paid cloud compute, premium dashboards,
 watch rooms, and account-required flows are parked until the CLI runtime feels
 excellent. Their direction is recorded in
 [kunai-architecture-and-cache-hardening.md](./kunai-architecture-and-cache-hardening.md)
@@ -28,6 +29,8 @@ so it is not re-derived — not because it is scheduled.
 | [kunai-principal-grill-qa.md](./kunai-principal-grill-qa.md)                         | Product/architecture decisions already pressure-tested |
 
 ## Active tracks
+
+Current implementation batch: [desktop, Android and local companion](2026-11-04-desktop-android-companion.md). Provider adapter repair is owned separately.
 
 Current execution: [watching release candidate](./2026-10-22-watching-release-candidate.md)
 

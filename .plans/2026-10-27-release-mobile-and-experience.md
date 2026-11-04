@@ -38,14 +38,15 @@ hosted, device or release signoff.
       and compound genre removal. The Kitty witness excludes intro skips and
       missing IPC intervals. Offline title-group actions now share the existing
       router, preserving diagnostics and repairing metadata before shelf refresh.
-      The original 3120 KiB cap is restored; the measured bundle is 3,193,265
-      bytes (1,615 bytes below it). Forced tests and the native/docs builds pass;
-      these checks do not qualify live providers or physical devices.
+      The source now enforces a 3210 KiB cap. The November companion batch keeps
+      that cap and compresses its embedded page at build time; rerun the complete
+      build for exact candidate bytes. Earlier 3120 KiB measurements describe an
+      older tree and are not current qualification evidence.
 
-- [ ] Persist explicit embedded mpv audio-language changes across autoplay.
-      Provider audio picks already set session preferences; the native `a`
-      branch only cycles mpv's current file and its track-change hook currently
-      records diagnostics without updating the session language.
+- [ ] Integrate and qualify the [desktop, Android and companion batch](2026-11-04-desktop-android-companion.md).
+      It implements session-only native audio intent across same-title restart
+      and autoplay, verified local-file handoff and authenticated companion
+      consumers. Hosted integration and physical-device evidence remain open.
 
 - [ ] Reconcile the provider audit branch now integrated into PR #676. Preserve
       its YouTube format ordering and VidRock concurrency fixes; qualify
@@ -75,13 +76,15 @@ hosted, device or release signoff.
 
 ## 2. Functional Android and mobile distribution
 
-- [ ] Finish cancellation, shutdown, output bounds and deadline handling for
-      Android player launch; prove cleanup and a subsequent successful retry.
+- [ ] Integrate Android launch and token-lifecycle repairs, then qualify them on
+      hardware. Automated regressions cover cancellation, replacement, late
+      failures, bounded launch output and retry without revoking a successor.
 - [ ] Review the complete Termux install, update, rollback and uninstall route,
       architecture selection, executable storage and actionable doctor output.
 - [ ] Audit download directory defaults, path overrides, permissions, free-space
       failures, interrupted downloads and offline playback on each platform.
-      Do not advertise Android local-file handoff until it is implemented.
+      Local-file handoff is implemented in the November batch; physical Android
+      decoding, background behavior and storage qualification remain pending.
 - [ ] Trace Android YouTube/yt-dlp limitations and define a working handoff
       contract before lifting refusals. Preserve exact format/client choices,
       request headers, subtitles and the provider probe gate.

@@ -20,6 +20,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### Playback and providers
 
+- Keep explicit native mpv audio-language choices for same-title restart and
+  autoplay without overwriting saved defaults or accepting stale file events.
+
 - Add non-interactive 'kunai status' / 'kunai providers status' command to inspect live health, latency, and credentials across streaming, scraper, and debrid services.
 - Add direct magnet URI / torrent infohash stream resolution and playback routing via 'kunai play <magnet>' and '--debrid'.
 - Integrate Real-Debrid and AllDebrid clients with candidate stream health
@@ -119,6 +122,14 @@ subtitle controls, and safer persistence, downloads and native installation.
   checksum manifests and attestations through the protected release workflow.
 - Improve Windows helper discovery and verified provisioning, exact winget
   guidance, Flatpak mpv discovery and installer wording.
+- Add a same-device `kunai serve` companion preview with per-run authentication,
+  mode-specific search, real episode selection and guarded browser/player actions.
+  Closing media cancels stale work and revokes its URL; LAN access and full shell
+  parity remain outside this preview.
+- Serve verified Android offline files and subtitle sidecars through revocable
+  loopback sessions with byte-range support. Cancellation and late failures
+  cannot revoke a newer handoff. Compress the embedded companion at build time
+  without changing its HTML or increasing the bundle limit.
 - Add experimental Android Termux targets and guarded external-player handoff.
   This is not a supported full mobile application; accepted OS handoff does not
   prove decoded playback, progress, completion or autoplay.

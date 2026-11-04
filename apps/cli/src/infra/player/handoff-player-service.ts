@@ -23,6 +23,7 @@ import {
 export type HandoffPlaybackErrorReason =
   | "unsupported-stream"
   | "local-source-unsupported"
+  | "local-source-unavailable"
   | "player-shutting-down"
   | AndroidIntentFailure;
 
@@ -33,11 +34,12 @@ const BLOCKER_COPY = {
   "deferred-source": "the provider has not produced a final media URL",
   "unsupported-scheme": "the media URL is not absolute HTTP or HTTPS",
   "external-subtitle-unsupported": "the selected stream requires external subtitles",
-  "local-source-unsupported": "local files are not supported by Android handoff",
+  "local-source-unsupported": "the local media path does not match the verified offline source",
 } satisfies Readonly<Record<HandoffBlocker, string>>;
 
 const FAILURE_COPY = {
-  "local-source-unsupported": "Android handoff does not support local files yet.",
+  "local-source-unsupported": "The local media path does not match the verified offline source.",
+  "local-source-unavailable": "The local file is missing or unreadable.",
   "player-shutting-down": "The player is shutting down.",
   "intent-launcher-missing":
     "No Android intent launcher was found. Run `pkg install termux-am` and try again.",
@@ -64,9 +66,13 @@ export class HandoffPlaybackError extends Error {
 }
 
 export class HandoffPlayerService implements PlayerService {
-  readonly capabilities = DETACHED_HANDOFF_CAPABILITIES;
+  readonly capabilities: PlayerService["capabilities"] = Object.freeze({
+    ...DETACHED_HANDOFF_CAPABILITIES,
+    localFiles: true,
+  });
   private shuttingDown = false;
   private readonly shutdown = new AbortController();
+  private activeHandoff: AbortController | undefined;
   private readonly target: DetachedPlayerTarget;
   private readonly runtime: AndroidIntentRuntime;
 
@@ -80,10 +86,11 @@ export class HandoffPlayerService implements PlayerService {
 
   async play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult> {
     if (this.shuttingDown) throw new HandoffPlaybackError("player-shutting-down");
-    const signal = options.abortSignal
-      ? AbortSignal.any([options.abortSignal, this.shutdown.signal])
-      : this.shutdown.signal;
-    if (signal.aborted) throw new DOMException("playback aborted", "AbortError");
+    const signal = this.beginHandoff(options.abortSignal);
+
+    if (options.localPlaybackSource) {
+      return this.playAuthorizedLocal(stream, options.localPlaybackSource, signal);
+    }
 
     // A deferred locator becomes an in-memory MPD the gateway can serve; when
     // it is expired or unknown the plan reports deferred-source as before.
@@ -127,6 +134,9 @@ export class HandoffPlayerService implements PlayerService {
       throw new HandoffPlaybackError("unsupported-stream", plan.blockers);
     }
 
+    let release = () => {
+      void deferredCleanup?.().catch(() => {});
+    };
     try {
       signal.throwIfAborted();
       let url = plan.url;
@@ -139,6 +149,7 @@ export class HandoffPlayerService implements PlayerService {
           subtitles,
           document,
         });
+        release = this.retainSession(signal, session.stop, deferredCleanup);
         url = session.mediaUrl;
         subtitleExtras = session.subtitleUrls;
       }
@@ -150,6 +161,7 @@ export class HandoffPlayerService implements PlayerService {
         runtime: this.runtime,
         signal,
       });
+      signal.throwIfAborted();
       if (!launched.ok) {
         throw new HandoffPlaybackError(launched.reason, [], launched.detail);
       }
@@ -166,10 +178,41 @@ export class HandoffPlayerService implements PlayerService {
         }),
       });
     } catch (error) {
-      if (needsGateway) stopSharedStreamGateway();
-      await deferredCleanup?.();
+      release();
       throw error;
     }
+  }
+
+  private beginHandoff(abortSignal?: AbortSignal): AbortSignal {
+    this.activeHandoff?.abort(new DOMException("playback superseded", "AbortError"));
+    const controller = new AbortController();
+    this.activeHandoff = controller;
+    const signal = AbortSignal.any([
+      controller.signal,
+      this.shutdown.signal,
+      ...(abortSignal ? [abortSignal] : []),
+    ]);
+    signal.throwIfAborted();
+    return signal;
+  }
+
+  /** Keep only this handoff's token alive until cancellation, replacement or shutdown. */
+  private retainSession(
+    signal: AbortSignal,
+    stop: () => void,
+    cleanup?: () => Promise<void>,
+  ): () => void {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      signal.removeEventListener("abort", release);
+      stop();
+      void cleanup?.().catch(() => {});
+    };
+    signal.addEventListener("abort", release, { once: true });
+    if (signal.aborted) release();
+    return release;
   }
 
   async releasePersistentSession(): Promise<void> {}
@@ -190,10 +233,75 @@ export class HandoffPlayerService implements PlayerService {
     }).ok;
   }
 
-  async playLocal(_options: { readonly source: LocalPlaybackSource }): Promise<PlaybackResult> {
-    throw new HandoffPlaybackError("local-source-unsupported");
+  async playLocal(options: { readonly source: LocalPlaybackSource }): Promise<PlaybackResult> {
+    if (this.shuttingDown) throw new HandoffPlaybackError("player-shutting-down");
+    const signal = this.beginHandoff();
+    const stream: StreamInfo = {
+      url: options.source.filePath,
+      headers: {},
+      timestamp: 1,
+      subtitle: options.source.subtitlePath,
+    };
+    return this.playAuthorizedLocal(stream, options.source, signal);
+  }
+
+  private async playAuthorizedLocal(
+    stream: StreamInfo,
+    source: LocalPlaybackSource,
+    signal: AbortSignal,
+  ): Promise<PlaybackResult> {
+    if (stream.url !== source.filePath) {
+      throw new HandoffPlaybackError("unsupported-stream", ["local-source-unsupported"]);
+    }
+
+    const subtitles = collectHandoffSubtitles(stream);
+    if (this.target === "chooser" && (Boolean(source.subtitlePath) || subtitles.length > 0)) {
+      throw new HandoffPlaybackError("unsupported-stream", ["external-subtitle-unsupported"]);
+    }
+
+    const gateway = getSharedStreamGateway();
+    let session: Awaited<ReturnType<StreamGateway["registerLocalSession"]>>;
+    try {
+      session = await gateway.registerLocalSession({ source, signal });
+    } catch {
+      signal.throwIfAborted();
+      throw new HandoffPlaybackError("local-source-unavailable");
+    }
+
+    const release = this.retainSession(signal, session.stop);
+    try {
+      signal.throwIfAborted();
+      const launched = await launchAndroidIntent({
+        target: this.target,
+        url: session.mediaUrl,
+        subtitles: session.subtitleUrls,
+        runtime: this.runtime,
+        signal,
+      });
+      signal.throwIfAborted();
+      if (!launched.ok) {
+        throw new HandoffPlaybackError(launched.reason, [], launched.detail);
+      }
+
+      return Object.freeze({
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "unknown",
+        resultSource: "handoff",
+        handoff: Object.freeze({
+          accepted: true,
+          player: this.target,
+          launcher: launched.launcher,
+        }),
+      });
+    } catch (error) {
+      release();
+      throw error;
+    }
   }
 }
+
+type StreamGateway = ReturnType<typeof getSharedStreamGateway>;
 
 function collectHandoffSubtitles(stream: StreamInfo): readonly string[] {
   const urls: string[] = [];

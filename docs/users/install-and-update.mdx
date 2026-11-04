@@ -93,13 +93,26 @@ Idle shutdown waits for an active stream to finish. Shell exit stops the gateway
 Blocked playlist URLs stay on a local refusal route, and every route requires
 the session token.
 
+Completed offline files and their optional subtitle sidecars also use a
+revocable loopback URL. VLC or mpv-android can read those bytes without direct
+access to Termux's private download directory. Keep Kunai running while the
+external player uses that URL. Missing or changed files are refused; replacing
+the handoff or exiting Kunai revokes the previous URL.
+
 Still refused, with an explanation instead of a broken launch: yt-dlp-only
-streams, local files, and non-HTTP schemes. DRM, malformed DASH, alternative
+streams and non-HTTP remote schemes. DRM, malformed DASH, alternative
 BaseURLs, unknown segment variables, and external DASH resources are not
 supported; the gateway returns a short refusal instead of forwarding them.
 Headered, subtitled, and deferred streams are covered by unit and contract tests
 but still need a physical-device
-pass before they graduate from preview. iOS is not supported.
+pass before they graduate from preview. Launch acceptance does not prove that
+VLC or mpv-android decoded the video. iOS is not supported by this CLI route.
+
+For a touch interface on the same device, run `kunai serve` and open the URL it
+prints in that device's browser. This local companion is experimental and does
+not expose Kunai to other devices on your network. See the
+[CLI reference](/docs/users/cli-reference#local-web-companion) for its current
+controls and browser playback limits.
 
 </Tab>
 <Tab value="Windows">

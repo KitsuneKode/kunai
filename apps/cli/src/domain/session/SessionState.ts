@@ -830,6 +830,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
     case "RESET_CONTENT":
       return {
         ...state,
+        playbackTrackPreferences: {},
         view: "home",
         currentTitle: null,
         currentEpisode: null,

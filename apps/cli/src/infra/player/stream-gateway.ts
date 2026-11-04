@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 
+import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import {
   blockedLiteralTargetReason,
   fetchGuardedStreamTarget,
@@ -18,6 +19,11 @@ import {
   type DashTemplate,
 } from "./dash-gateway-manifest";
 import { fromB64Url, toB64Url } from "./hls-relay";
+import {
+  authorizeLocalGatewayFile,
+  serveLocalGatewayFile,
+  type LocalGatewayFile,
+} from "./local-gateway-file";
 import { classifyManifestPrefix } from "./manifest-prefix";
 import {
   normalizeStreamHttpHeaders,
@@ -130,7 +136,14 @@ type LiveSession = {
   readonly dashTemplateIds: Map<string, string>;
 };
 
+type LocalSession = {
+  readonly media: LocalGatewayFile;
+  readonly subtitle?: LocalGatewayFile;
+};
+
 export type StreamGatewayOptions = {
+  /** Optional exact numeric-loopback origin for an authenticated local companion. */
+  readonly browserOrigin?: string;
   /** Injected for tests; the platform fetch gets DNS re-validation per hop. */
   readonly fetchImpl?: StreamReachabilityFetch;
   /** Injected for tests — a fake scheduler lets idle shutdown be asserted
@@ -143,6 +156,11 @@ export type StreamGateway = {
   readonly baseUrl: string;
   readonly isStopped: () => boolean;
   readonly registerSession: (input: RegisterGatewaySessionInput) => GatewaySession;
+  /** Trusted offline library sources only. No HTTP route accepts filesystem paths. */
+  readonly registerLocalSession: (input: {
+    readonly source: LocalPlaybackSource;
+    readonly signal?: AbortSignal;
+  }) => Promise<GatewaySession>;
   readonly stop: () => void;
 };
 
@@ -269,6 +287,17 @@ function passthroughResponseHeaders(upstream: Response, contentType?: string): H
 }
 
 export function createStreamGateway(options: StreamGatewayOptions = {}): StreamGateway {
+  const browserOrigin = options.browserOrigin;
+  if (browserOrigin) {
+    const parsed = new URL(browserOrigin);
+    if (
+      parsed.protocol !== "http:" ||
+      parsed.hostname !== "127.0.0.1" ||
+      parsed.origin !== browserOrigin
+    ) {
+      throw new Error("Browser gateway origin must be numeric loopback");
+    }
+  }
   const fetchImpl = options.fetchImpl ?? fetch;
   const timers: GatewayTimers = options.timers ?? {
     schedule: (cb, ms) => {
@@ -279,6 +308,7 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
 
   const sessions = new Map<string, LiveSession>();
+  const localSessions = new Map<string, LocalSession>();
   let stopped = false;
   let cancelIdle: (() => void) | null = null;
   let activeRequests = 0;
@@ -561,7 +591,16 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
     // The same 404 whether the path is unknown or the token is wrong: a
     // probe must never learn whether a token exists.
     if (!match) return new Response("not found", { status: 404 });
-    const session = sessions.get(match[1] ?? "");
+    const token = match[1] ?? "";
+    const localSession = localSessions.get(token);
+    if (localSession) {
+      if (MEDIA_ROUTE.test(path)) return serveLocalGatewayFile(req, localSession.media);
+      if (SUBTITLE_ROUTE.test(path) && match[2] === "0" && localSession.subtitle) {
+        return serveLocalGatewayFile(req, localSession.subtitle);
+      }
+      return new Response("not found", { status: 404 });
+    }
+    const session = sessions.get(token);
     if (!session) return new Response("not found", { status: 404 });
 
     try {
@@ -656,7 +695,16 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
       activeRequests++;
       resetIdle();
       try {
-        return keepAlive(await handleRequest(req));
+        const requestOrigin = req.headers.get("origin");
+        if (browserOrigin && requestOrigin && requestOrigin !== browserOrigin) {
+          return new Response("forbidden", { status: 403 });
+        }
+        const response = keepAlive(await handleRequest(req));
+        if (browserOrigin && requestOrigin === browserOrigin) {
+          response.headers.set("Access-Control-Allow-Origin", browserOrigin);
+          response.headers.append("Vary", "Origin");
+        }
+        return response;
       } finally {
         activeRequests--;
         resetIdle();
@@ -670,6 +718,7 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
     cancelIdle?.();
     cancelIdle = null;
     sessions.clear();
+    localSessions.clear();
     server.stop(true);
   }
 
@@ -681,6 +730,7 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
       // One playback at a time: a new handoff revokes every prior token so a
       // stale player cannot keep pulling streams after the user moved on.
       sessions.clear();
+      localSessions.clear();
       const token = mintToken();
       const normalized = normalizeStreamHttpHeaders({ ...input.headers });
       const allowedOrigins = new Set<string>();
@@ -727,7 +777,32 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
       return {
         mediaUrl: input.document ? `${base}/g/${token}/doc` : `${base}/g/${token}/media`,
         subtitleUrls: subtitles.map((_, i) => `${base}/g/${token}/sub/${i}`),
-        stop,
+        stop: () => {
+          sessions.delete(token);
+        },
+      };
+    },
+    async registerLocalSession({ source, signal }) {
+      signal?.throwIfAborted();
+      if (stopped) throw new Error("stream gateway is stopped");
+      const media = await authorizeLocalGatewayFile(source.filePath, source.fileSize);
+      const subtitle = source.subtitlePath
+        ? await authorizeLocalGatewayFile(source.subtitlePath)
+        : undefined;
+      // File authorization awaits I/O; an obsolete request must not revoke a successor.
+      signal?.throwIfAborted();
+      if (stopped) throw new Error("stream gateway is stopped");
+      sessions.clear();
+      localSessions.clear();
+      const token = mintToken();
+      localSessions.set(token, { media, subtitle });
+      resetIdle();
+      return {
+        mediaUrl: `${gateway.baseUrl}/g/${token}/media`,
+        subtitleUrls: subtitle ? [`${gateway.baseUrl}/g/${token}/sub/0`] : [],
+        stop: () => {
+          localSessions.delete(token);
+        },
       };
     },
     stop,

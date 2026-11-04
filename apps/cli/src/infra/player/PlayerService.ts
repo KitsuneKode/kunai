@@ -72,6 +72,8 @@ export type PlayerPlaybackEvent =
       trackType: "audio" | "sub";
       id: number;
       subtitleState?: PlaybackSubtitleObservation;
+      /** Known language selected by an explicit native audio-cycle key action. */
+      audioLanguageIntent?: string;
     }
   | {
       type: "mpv-in-process-reconnect";

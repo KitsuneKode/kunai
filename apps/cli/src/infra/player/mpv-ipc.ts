@@ -25,6 +25,7 @@ export const MPV_OBSERVED_PROPERTIES = [
   "filename",
   "media-title",
   "track-list",
+  "user-data/kunai-audio-intent",
   "sid",
   "sub-visibility",
 ] as const;

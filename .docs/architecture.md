@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-28"
+lastReviewed: "2026-11-04"
 ---
 
 # Kunai — Runtime Architecture
@@ -184,8 +184,8 @@ so the external player cannot bypass the target guard. Playlists are bounded
 to 4 MiB, including the first chunk. Idle shutdown waits for requests and
 response bodies to finish; shell shutdown stops the gateway immediately.
 The chooser refuses external subtitles because it has no subtitle extras;
-explicit VLC and mpv-android targets carry them. yt-dlp-only streams,
-local files, and non-HTTP schemes still refuse. The intent launcher constructs
+explicit VLC and mpv-android targets carry them. yt-dlp-only streams and
+non-HTTP remote schemes still refuse. The intent launcher constructs
 an argv array for `am`/Termux launchers, passes subtitles as `subs` /
 `subtitles_location` extras, scrubs the child environment, and never
 interpolates a shell command.
@@ -193,11 +193,23 @@ interpolates a shell command.
 The Android launch has a ten-second deadline across both process exit and
 stdout/stderr completion, with a 64 KiB limit per output stream. Playback
 cancellation and application shutdown abort the pending launcher, cancel its
-pipe readers and stop a gateway created for that failed handoff. The native
+pipe readers and revoke that handoff's token. A late failure must not revoke a
+newer handoff. The native
 child receives a kill signal; timers and abort listeners are released on every
 outcome. Cancellation never becomes accepted-handoff evidence. This cannot
 revoke an intent Android has already delivered or stop an external player
 that has already opened it.
+
+Verified offline sources use the same gateway through `playLocal` or the
+`localPlaybackSource` player option. Registration authorizes the known media
+file and optional sidecar, rather than accepting a path from an HTTP request.
+`infra/player/local-gateway-file.ts` reopens and checks file identity before
+serving bytes from that descriptor. GET, HEAD and a single byte range are
+supported; missing, changed and invalid-range files return 404, 409 and 416.
+An external player therefore does not need access to Termux's private file
+paths. The chooser still refuses a sidecar; select VLC or mpv-android.
+Cancellation, replacement and shutdown revoke access. This does not make the
+external player's progress observable.
 
 DASH rewriting lives in `infra/player/dash-gateway-manifest.ts`. It parses
 MPDs with `@xmldom/xmldom`, resolves hierarchical BaseURLs against the final
@@ -230,6 +242,45 @@ Android is an experimental preview until the physical-device matrix in
 [release-reliability-gate.md](./release-reliability-gate.md) passes. iOS remains
 unimplemented pending a separately approved runtime proof.
 
+### Local web companion
+
+`kunai serve` (alias `kunai web`) enters
+`apps/cli/src/services/web-companion/run-serve-command.ts` from the desktop
+entrypoint. It builds the normal container and binds numeric loopback only,
+by default `127.0.0.1:4141`. This is a same-device browser surface, not a LAN
+server or another device's resolver.
+
+The printed URL contains a per-run 128-bit secret in its fragment. The embedded
+page removes that fragment and exchanges it for an HttpOnly, SameSite=Strict
+cookie. API calls check the exact bound Host and origin; foreign origins are
+refused on reads as well as writes. JSON bodies are bounded to 16 KiB. The
+companion exposes no arbitrary URL proxy and reports provider health as unknown
+rather than manufacturing a successful probe.
+
+Search uses the configured mode's registry and normal search routing. Opaque
+result IDs retain their provider and lane. Episode selection stores the real
+provider episode identity, including fractional episodes; an unavailable
+catalog is an error, not a synthetic episode. Resolution uses the existing
+playback service and language profiles. Browser media and external subtitles
+use a dedicated, revocable stream gateway. Its optional CORS response is scoped
+to the exact companion loopback origin; API responses do not enable CORS.
+Provider URLs and headers are not exposed as browser proxy parameters.
+
+Closing or replacing browser media cancels stale work and revokes that media
+token without erasing the search catalog or stopping an independent player.
+Play on this device resolves through the normal player service. Stop cancels a
+pending resolution as well as active managed playback; pause, seek and other
+unimplemented remote controls are not offered. Status distinguishes starting,
+observed playback, detached handoff, ended and failed states. A successful
+Android intent is still only a handoff. After acceptance, Stop is not offered
+for that external app; playback controls remain in the external player.
+
+The embedded page offers native browser playback only when it receives a
+usable gateway URL. Browser codec and manifest support varies; yt-dlp-only
+streams need the on-device player. A gateway response is not a decoded-playback
+qualification. Full shell feature parity, LAN pairing and physical-phone
+qualification remain outside the implemented companion slice.
+
 ### Provider resolve flow
 
 Production resolution is browserless by default:
@@ -257,6 +308,16 @@ still reaches the normal stall deadline; explicit pause keeps stall clocks off.
 - treats IPC bootstrap failure as an ownership failure: terminate and reap the
   exact spawned child before provider fallback can create another player
 - keeps socket cleanup and final playback stats bounded after process exit
+
+Explicit embedded-audio cycling in the Kunai mpv bridge carries a separate
+intent payload. The IPC adapters validate its media identity and language;
+ordinary startup/default audio observations do not become preferences.
+`PlaybackPhase` updates `playbackTrackPreferences` only for this explicit intent,
+so subsequent episode resolution and autoplay can retain the chosen language.
+The choice is session-only, never a `config.json` write, and `RESET_CONTENT`
+clears it. Stale playback-generation observations must not change the active
+session. Missing or undetermined track-language metadata cannot create a
+language preference.
 
 Persistent watchdog reconnects replace a still-active file. mpv emits the old
 file's `end-file(stop)` before the replacement's `file-loaded`; Kunai retains
