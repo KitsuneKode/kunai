@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-29"
+lastReviewed: "2026-11-04"
 ---
 
 # Playback Source Inventory Contract
@@ -297,12 +297,20 @@ For beta, prefer reducing onboarding friction through packaged binaries or insta
 
 ## Session track choices
 
-`SessionState.playbackTrackPreferences` overlays subtitle and quality choices on
+`SessionState.playbackTrackPreferences` overlays audio, subtitle and quality choices on
 the active media profile. Resolve, prefetch, mpv options, inventory keys and
 recovery invalidation consume that same effective profile. Source/provider picks
 do not write these choices back to configuration. Auto clears an exact stream
 pick and uses best available quality in the active source; numeric picks carry
 their quality preference into later source switches.
+
+An explicit native audio-cycle key action in the Kunai mpv bridge overlays the
+chosen track's known language. That audio preference survives a same-title
+restart and autoplay into later episodes. Startup/default observations and
+tracks with missing or undetermined language metadata do not overwrite the
+preference. The observation must belong to the current media and playback
+generation. Selecting a new title or resetting content clears these session
+choices; none of them writes `config.json`.
 
 An accepted live external-subtitle choice updates the override only if its stream
 is still current. Rejected or superseded acknowledgements change no preference.

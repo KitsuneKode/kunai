@@ -4707,6 +4707,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         },
         applyPlaybackStatusSignal: (signal) => this.applyPlaybackStatusSignal(context, signal),
         onTrackChanged: (event) => {
+          if (event.trackType === "audio" && event.audioLanguageIntent) {
+            stateManager.dispatch({
+              type: "SET_SESSION_TRACK_PREFERENCES",
+              preferences: { audio: event.audioLanguageIntent },
+            });
+          }
           const currentStream = stateManager.getState().stream;
           if (currentStream && event.trackType === "sub" && event.subtitleState) {
             const observedStream = { ...currentStream, playbackSubtitle: event.subtitleState };

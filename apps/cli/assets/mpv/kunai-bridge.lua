@@ -1076,9 +1076,25 @@ local function has_multiple_internal_audio_tracks()
 	return count > 1
 end
 
+local audio_intent_revision = 0
+
 local function do_cycle_audio()
 	if has_multiple_internal_audio_tracks() then
 		mp.commandv("cycle", "audio")
+		-- Only this explicit key action carries intent. Property observers above
+		-- also run at startup/default selection and must never save a preference.
+		for _, track in ipairs(mp.get_property_native("track-list", {})) do
+			if track.type == "audio" and track.selected and track.lang then
+				audio_intent_revision = audio_intent_revision + 1
+				mp.set_property("user-data/kunai-audio-intent", require("mp.utils").format_json({
+					id = track.id,
+					language = track.lang,
+					path = mp.get_property("path", ""),
+					revision = audio_intent_revision,
+				}))
+				break
+			end
+		end
 		return
 	end
 	mp.set_property("user-data/kunai-loading", "Kunai · Toggling Sub / Dub…")
