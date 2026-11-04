@@ -142,6 +142,15 @@ export type InvidiousVideoDetails = {
   readonly liveStatus?: string;
   readonly isShort?: boolean;
   readonly url?: string;
+  readonly dashUrl?: string;
+  readonly hlsUrl?: string;
+  readonly adaptiveFormats?: readonly unknown[];
+  readonly formatStreams?: readonly unknown[];
+  readonly captions?: readonly {
+    readonly label?: string;
+    readonly language_code?: string;
+    readonly url?: string;
+  }[];
   readonly videoThumbnails?: InvidiousSearchVideo["videoThumbnails"];
   readonly recommendedVideos?: readonly InvidiousRecommendedVideo[];
 };

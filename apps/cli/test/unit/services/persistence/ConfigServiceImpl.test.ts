@@ -940,10 +940,12 @@ describe("ConfigServiceImpl untrusted-shape hardening", () => {
       expect(service.animeProviderPriority).toEqual([
         "kickassanime",
         "animegg",
-        "allanime",
         "miruro",
+        "allanime",
       ]);
-      expect((await store.load()).providerDefaultsRevision).toBe(6);
+      expect((await store.load()).providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
     });
 
     test("normalizes anidb away on update as well as load", async () => {

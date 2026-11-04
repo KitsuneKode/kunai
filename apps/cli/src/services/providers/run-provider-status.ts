@@ -60,7 +60,13 @@ const KNOWN_HTTP_PROVIDERS: readonly {
     url: "https://hianime.at/",
     headers: { Referer: "https://hianime.at/" },
   },
-  { id: "miruro", name: "Miruro", category: "anime", url: "https://www.miruro.bz" },
+  { id: "miruro", name: "Miruro", category: "anime", url: "https://www.miruro.cx" },
+  {
+    id: "invidious",
+    name: "Invidious",
+    category: "platform",
+    url: "https://api.invidious.io/instances.json?sort_by=type,health,api",
+  },
   {
     id: "allmanga",
     name: "AllManga",

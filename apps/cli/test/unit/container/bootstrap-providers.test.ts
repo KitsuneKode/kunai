@@ -40,7 +40,7 @@ describe("production provider defaults", () => {
     );
     const ids = modules.map((module) => module.providerId);
 
-    expect(DEFAULT_CONFIG.provider).toBe("vidlink");
+    expect(DEFAULT_CONFIG.provider).toBe("vidrock");
     // The anime lane default must be a provider that answers — search only
     // queries the configured default.
     expect(DEFAULT_CONFIG.animeProvider).toBe("hianime");
