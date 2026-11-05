@@ -1379,6 +1379,13 @@ const INHERITED_SERIES_DEFAULTS: readonly {
     provider: "vidlink",
     priorities: [["rivestream", "vidrock", "movy", "videasy"]],
   },
+  // Revision 7 led with VidRock and priorities ["rivestream", "movy", "vidlink", "videasy"].
+  // Revision 8 retires Videasy from production and drops it from shipped defaults.
+  {
+    revision: 7,
+    provider: "vidrock",
+    priorities: [["rivestream", "movy", "vidlink", "videasy"]],
+  },
 ];
 
 /**

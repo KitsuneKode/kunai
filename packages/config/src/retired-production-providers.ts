@@ -4,7 +4,7 @@ import { DEFAULT_CONFIG } from "./defaults";
  * Production adapters removed from `loadProductionProviderModules()` but kept
  * in `@kunai/providers` for fixtures, history ids, and metadata helpers.
  */
-export const RETIRED_PRODUCTION_PROVIDER_IDS = ["anidb"] as const;
+export const RETIRED_PRODUCTION_PROVIDER_IDS = ["anidb", "videasy"] as const;
 
 export type RetiredProductionProviderId = (typeof RETIRED_PRODUCTION_PROVIDER_IDS)[number];
 

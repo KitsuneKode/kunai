@@ -1,22 +1,24 @@
 import { defineProviderManifest } from "@kunai/core";
 
+/** @deprecated Videasy upstream domains and endpoints are defunct (api.videasy.to NXDOMAIN, dead player/wings hosts). */
 export const VIDEOSY_PROVIDER_ID = "videasy" as const;
 
 /** @deprecated Use VIDEOSY_PROVIDER_ID — kept for config/cache migration. */
 export const VIDKING_PROVIDER_ID = VIDEOSY_PROVIDER_ID;
 
+/**
+ * @deprecated Videasy is retired from active production selection due to defunct upstream services.
+ */
 export const videasyManifest = defineProviderManifest({
   id: VIDEOSY_PROVIDER_ID,
   displayName: "Videasy",
   aliases: ["VidKing", "Cineplay", "Cineby", "HDToday", "Bitcine"],
-  description: "Registered movies/series adapter; source and subtitle inventory vary by title",
+  description: "[Deprecated] Movies/series adapter; upstream services defunct",
   domain: "videasy.to",
   // Not recommended: the whole videasy family is down upstream — api.videasy.to
   // NXDOMAIN, the wings stream path (api.speedracelight.com) CF 502 since
   // 2026-09-21, and the player hosts (player.videasy.to, cineby.at, cineplay.to)
-  // all unreachable (2026-10-04). It stays registered last in the order so a
-  // revival needs no code change; only db.wingsdatabase.com (catalog mirror)
-  // still answers.
+  // all unreachable (2026-10-04). Retired from active production selection.
   recommended: false,
   mediaKinds: ["movie", "series"],
   capabilities: ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],

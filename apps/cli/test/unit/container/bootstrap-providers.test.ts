@@ -24,6 +24,8 @@ describe("production provider defaults", () => {
     expect(smokeIds.sort()).toEqual(modules.map((module) => module.providerId).sort());
     expect(cliPackage.scripts["test:live:anidb"]).toBeUndefined();
     expect(rootPackage.scripts["test:live:anidb"]).toBeUndefined();
+    expect(cliPackage.scripts["test:live:videasy"]).toBeUndefined();
+    expect(rootPackage.scripts["test:live:videasy"]).toBeUndefined();
   });
 
   test("retired adapters stay out of the live production roster", async () => {
@@ -32,6 +34,7 @@ describe("production provider defaults", () => {
     );
     const ids = modules.map((module) => module.providerId);
     expect(ids).not.toContain("anidb");
+    expect(ids).not.toContain("videasy");
   });
 
   test("every configured lane default is a registered production module", async () => {
@@ -70,7 +73,6 @@ describe("production provider defaults", () => {
       "miruro",
       "movy",
       "rivestream",
-      "videasy",
       "vidlink",
       "vidrock",
       "youtube",

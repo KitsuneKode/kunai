@@ -70,8 +70,10 @@ export interface KitsuneConfig {
    * AniDB to Miruro (2026-09-11). 2 = unused intermediate revision.
    * 3 = anime lane moved to HiAnime, Miruro second, KickAssAnime and AnimeGG
    * behind it (2026-09-30). 6 = AniDB retired from production and dropped from
-   * shipped anime defaults (2026-10-24). A bump needs the previous default added
-   * to `INHERITED_ANIME_DEFAULTS` in ConfigServiceImpl, or it migrates nobody.
+   * shipped anime defaults (2026-10-24). 7 = VidRock leads, Miruro promoted.
+   * 8 = Videasy retired from production and dropped from shipped defaults.
+   * A bump needs the previous default added to `INHERITED_ANIME_DEFAULTS` or
+   * `INHERITED_SERIES_DEFAULTS` in ConfigServiceImpl, or it migrates nobody.
    */
   providerDefaultsRevision?: number;
   youtubeLanguageProfile: MediaLanguageProfile;

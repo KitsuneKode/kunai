@@ -57,8 +57,9 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // holds the *rest* of the order — not the lane default. Rivestream leads the
   // rest (eleven-service local cycle behind the shared resolve gate, so one
   // dead mirror costs a candidate, not the lane); Movy follows (16 geo-lanes,
-  // multi-language). VidLink and Videasy stay at the tail.
-  providerPriority: ["rivestream", "movy", "vidlink", "videasy"],
+  // multi-language). VidLink sits at the tail. Videasy was retired from production
+  // in revision 8 due to defunct upstream services.
+  providerPriority: ["rivestream", "movy", "vidlink"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
   // holds the *rest* of the order and must not repeat the lane default.
@@ -73,7 +74,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // Revision 5 demoted Miruro and AniDB behind AllAnime while both stayed live.
   // Revision 6 retires AniDB from production and drops it from shipped defaults.
   // Revision 7 leads with VidRock, promotes Miruro with active .cx mirror, and adds Invidious to YouTube priority.
-  providerDefaultsRevision: 7,
+  // Revision 8 retires Videasy from production and drops it from shipped defaults.
+  providerDefaultsRevision: 8,
   disabledProviders: [],
   youtubeProviderPriority: ["youtube", "invidious"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },

@@ -91,33 +91,33 @@ describe("ConfigServiceImpl", () => {
 
   test("normalizes provider priority lists on load and update", async () => {
     const store = new MemoryConfigStore({
-      providerPriority: [" vidking ", "rivestream", "vidking", ""],
+      providerPriority: [" movy ", "rivestream", "movy", ""],
       animeProviderPriority: [" miruro ", "allanime", "miruro"],
     });
     const service = await ConfigServiceImpl.load(store);
 
-    expect(service.providerPriority).toEqual(["videasy", "rivestream"]);
+    expect(service.providerPriority).toEqual(["movy", "rivestream"]);
     expect(service.animeProviderPriority).toEqual(["miruro", "allanime"]);
 
     await service.update({
-      providerPriority: ["vidlink", " vidking ", "vidlink"],
+      providerPriority: ["vidlink", " movy ", "vidlink"],
       animeProviderPriority: ["allanime", " miruro "],
     });
     await service.save();
 
-    expect((await store.load()).providerPriority).toEqual(["vidlink", "videasy"]);
+    expect((await store.load()).providerPriority).toEqual(["vidlink", "movy"]);
     expect((await store.load()).animeProviderPriority).toEqual(["allanime", "miruro"]);
   });
 
   test("normalizes the disabled-providers list on load and update", async () => {
     const store = new MemoryConfigStore({
       // SAFETY: deliberately poisoned JSON shape — validates the non-string guard.
-      disabledProviders: [" videasy ", "videasy", "", 42 as never],
+      disabledProviders: [" movy ", "movy", "", 42 as never],
     });
     const service = await ConfigServiceImpl.load(store);
 
-    expect(service.disabledProviders).toEqual(["videasy"]);
-    expect(service.getRaw().disabledProviders).toEqual(["videasy"]);
+    expect(service.disabledProviders).toEqual(["movy"]);
+    expect(service.getRaw().disabledProviders).toEqual(["movy"]);
 
     await service.update({ disabledProviders: [" miruro ", "anidb", "miruro"] });
     await service.save();
@@ -576,29 +576,29 @@ describe("ConfigServiceImpl", () => {
     test("leaves a deliberate series provider pick alone but stamps the revision", async () => {
       const store = new MemoryConfigStore({
         provider: "rivestream",
-        providerPriority: ["vidlink", "videasy"],
+        providerPriority: ["vidlink", "movy"],
       });
       const service = await ConfigServiceImpl.load(store);
 
       expect(service.provider).toBe("rivestream");
-      expect(service.providerPriority).toEqual(["vidlink", "videasy"]);
+      expect(service.providerPriority).toEqual(["vidlink", "movy"]);
       expect(service.getRaw().providerDefaultsRevision).toBe(
         DEFAULT_CONFIG.providerDefaultsRevision,
       );
     });
 
-    test("leaves a reordered series list headed by videasy alone", async () => {
+    test("maps a reordered series list headed by videasy to the live default after retirement", async () => {
       const store = new MemoryConfigStore({
         provider: "videasy",
         providerPriority: ["vidlink", "rivestream"],
       });
       const service = await ConfigServiceImpl.load(store);
 
-      expect(service.provider).toBe("videasy");
+      expect(service.provider).toBe("vidrock");
       expect(service.providerPriority).toEqual(["vidlink", "rivestream"]);
     });
 
-    test("does not re-migrate a stamped config whose user re-picked videasy", async () => {
+    test("heals a stamped config that still names the retired videasy adapter", async () => {
       const store = new MemoryConfigStore({
         provider: "videasy",
         providerPriority: ["rivestream", "vidlink"],
@@ -607,7 +607,7 @@ describe("ConfigServiceImpl", () => {
       await ConfigServiceImpl.load(store);
 
       const persisted = await store.load();
-      expect(persisted.provider).toBe("videasy");
+      expect(persisted.provider).toBe("vidrock");
       expect(persisted.providerPriority).toEqual(["rivestream", "vidlink"]);
     });
 
@@ -657,13 +657,13 @@ describe("ConfigServiceImpl", () => {
     test("leaves a revision-3 series list the user reordered alone", async () => {
       const store = new MemoryConfigStore({
         provider: "vidlink",
-        providerPriority: ["vidrock", "rivestream", "videasy"],
+        providerPriority: ["vidrock", "rivestream", "movy"],
         providerDefaultsRevision: 3,
       });
       const service = await ConfigServiceImpl.load(store);
 
       expect(service.provider).toBe("vidlink");
-      expect(service.providerPriority).toEqual(["vidrock", "rivestream", "videasy"]);
+      expect(service.providerPriority).toEqual(["vidrock", "rivestream", "movy"]);
     });
 
     test("moves a revision-3 HiAnime anime pair to the current defaults", async () => {
@@ -957,6 +957,49 @@ describe("ConfigServiceImpl untrusted-shape hardening", () => {
 
       expect(service.animeProvider).toBe("hianime");
       expect(service.animeProviderPriority).toEqual(["allanime"]);
+    });
+  });
+
+  describe("ConfigServiceImpl untrusted-shape hardening > retired production provider: videasy", () => {
+    test("maps an explicit series selection and strips the id from custom priority", async () => {
+      const store = new MemoryConfigStore({
+        provider: "videasy",
+        providerPriority: ["rivestream", "videasy", "movy"],
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.provider).toBe("vidrock");
+      expect(service.providerPriority).toEqual(["rivestream", "movy"]);
+    });
+
+    test("removes a retired disable entry without disabling vidrock", async () => {
+      const store = new MemoryConfigStore({
+        disabledProviders: ["videasy"],
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.disabledProviders).toEqual([]);
+      expect(service.provider).toBe("vidrock");
+    });
+
+    test("drops title pins that still point at videasy", async () => {
+      const store = new MemoryConfigStore({
+        titleProviderPreferences: { "tmdb:550": "videasy", "tmdb:1399": "rivestream" },
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.titleProviderPreferences).toEqual({ "tmdb:1399": "rivestream" });
+    });
+
+    test("normalizes videasy away on update as well as load", async () => {
+      const service = await ConfigServiceImpl.load(new MemoryConfigStore({}));
+      await service.update({
+        provider: "videasy",
+        providerPriority: ["videasy", "movy"],
+      });
+
+      expect(service.provider).toBe("vidrock");
+      expect(service.providerPriority).toEqual(["movy"]);
     });
   });
 });
