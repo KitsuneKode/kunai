@@ -12,6 +12,11 @@ import {
   startKittySession,
   waitForKittyCondition,
 } from "./kitty-session";
+import {
+  assertKittyEvidenceSurvival,
+  checkKittyDoctor,
+  inspectOwnedKittySession,
+} from "./verification";
 
 const scenarioSchema = z.object({
   argv: z.array(z.string().max(1000)).max(20).default([]),
@@ -42,8 +47,18 @@ const { values } = parseArgs({
     font: { type: "string" },
     timeout: { type: "string", default: "45" },
     observe: { type: "string", default: String(PLAYBACK_ADVANCE_SECONDS) },
+    doctor: { type: "boolean" },
   },
 });
+if (values.doctor) {
+  const report = await checkKittyDoctor({
+    live: values.live,
+    requiresMpv: values.matrix || values.live,
+    providerId: values.provider,
+  });
+  for (const line of report.lines) console.log(line);
+  process.exit(report.ok ? 0 : 1);
+}
 if (!values.evidence) throw new Error("Pass --evidence with a NEW output directory");
 if (values.matrix && !values.live) throw new Error("Provider matrix requires explicit --live");
 if (values.live && !values.matrix && !values.provider)
@@ -272,6 +287,11 @@ try {
       });
       activeSession = session;
       shutdown.signal.throwIfAborted();
+      const health = await inspectOwnedKittySession({
+        text: session.text,
+        paths: session.profile.paths,
+      });
+      console.log(`doctor: healthy owned Kitty · ${health.surface} · credential backend file`);
       if (values.matrix) {
         await witnessPlayback(session, shutdown.signal);
         await session.capture("playing");
@@ -359,6 +379,14 @@ try {
 } finally {
   process.removeListener("SIGINT", onInterrupt);
   process.removeListener("SIGTERM", onTerminate);
+}
+if (interruptExitCode === undefined && results.length > 0) {
+  try {
+    assertKittyEvidenceSurvival(evidenceRoot, results);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    interruptExitCode ??= 1;
+  }
 }
 if (interruptExitCode !== undefined) process.exitCode = interruptExitCode;
 else if (results.some((result) => result.status === "failed" || result.status === "cleanup-failed"))

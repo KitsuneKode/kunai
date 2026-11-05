@@ -51,6 +51,7 @@
     "agent:drive": "bun test/agent/drive.ts",
     "agent:session": "bun test/agent/session.ts",
     "agent:kitty": "bun test/agent/kitty.ts",
+    "agent:verify": "bun test/agent/verify-cli.ts",
     "test:agent": "bun test test/agent --timeout=20000",
     "test": "bun run scripts/run-default-tests.ts",
     "test:coverage": "bun test test/unit test/integration --coverage",

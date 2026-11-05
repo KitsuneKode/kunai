@@ -22,7 +22,12 @@ is absent, report "not verified" — never "should work".
    type into, act, then wait for the next.
 4. **Witness twice** — the frame says it, and the backend (SQLite, config)
    agrees. A frame alone can be a deferred write or a silent no-op.
-5. **Report** with the template at the bottom, including what you did not
+5. **Doctor** before the first drive and again after any surprising failure.
+   Preflight: `bun run agent:verify -- doctor` or `bun run agent:kitty -- --doctor`.
+   Owned Kitty also self-checks surface + privacy immediately after launch.
+6. **Confirm evidence survival** after cleanup — `bun run agent:verify -- evidence --evidence DIR`.
+   Profile disposal must not delete external proof artifacts.
+7. **Report** with the template at the bottom, including what you did not
    cover.
 
 ## Launch, doctor, drive, evidence, cleanup
@@ -48,7 +53,9 @@ production roster so it can disable every other provider before launching.
 
 Doctor before driving: confirm the owned window renders, the expected provider
 and mode are visible, fonts and artwork are legible, and cleanup/privacy checks
-are available. A missing display, screenshot capability, provider, or real mpv
+are available. Run `bun run agent:verify -- doctor` (or `bun run agent:kitty -- --doctor`)
+for a read-only host preflight; Kitty runs also print `doctor: healthy owned Kitty …`
+after the window is ready. A missing display, screenshot capability, provider, or real mpv
 is an explicit prerequisite failure, never a pass. A dead launch is a harness
 failure; capture its stderr before attempting product fixes. Confirm a focused
 test command actually reports the requested files: an unmatched path can be
@@ -80,6 +87,18 @@ model/provider settings, or increase agent count just because models are cheap.
 L2 and L3 run against fixture providers and a fixture catalog: zero network.
 L3 needs `tmux` (Linux/macOS). A missing tool is a skip, and **a skip is not a
 pass** — say which tier you could not run.
+
+## Helpers (root shortcuts)
+
+```sh
+bun run verify:kunai:doctor              # Kitty/tmux preflight (no launch)
+bun run verify:kunai:l2-smoke            # fixture search → play → post-play (L2)
+bun run verify:kunai:kitty-fixture       # doctor + interactive Kitty scenario + survival check
+cd apps/cli && bun run agent:verify -- evidence --evidence /tmp/your-bundle
+cd apps/cli && bun run agent:verify -- citation --bundle /tmp/ev --citation "Smoke Movie"
+```
+
+Periodic map upkeep: Cursor `/maintain-verification-skill` against this skill directory.
 
 ## Quickstart
 
@@ -251,6 +270,7 @@ Proof is two witnesses: mpv's own IPC `time-pos` advancing **and** Kunai's
 
 ## Files
 
+- Feature map (pstack): [features/README.md](features/README.md)
 - L2 driver + session API: `apps/cli/test/agent/agent-driver.ts`
 - Replay CLI: `apps/cli/test/agent/drive.ts` (`bun run agent:drive`)
 - tmux driver + CLI: `apps/cli/test/agent/tmux-session.ts`, `apps/cli/test/agent/session.ts`
@@ -260,4 +280,6 @@ Proof is two witnesses: mpv's own IPC `time-pos` advancing **and** Kunai's
 - Real-mpv tier: `apps/cli/test/agent/real-mpv.ts`, `apps/cli/test/agent/real-mpv.test.ts`
 - Wiring scenarios: `apps/cli/test/agent/wiring.test.ts`
 - Kitty driver and serial scenarios/matrix: `apps/cli/test/agent/kitty-session.ts`, `apps/cli/test/agent/kitty.ts`
+- Verification helpers + CLI: `apps/cli/test/agent/verification.ts`, `apps/cli/test/agent/verify-cli.ts` (`bun run agent:verify`)
+- Bundled Kitty scenarios: `apps/cli/test/agent/scenario-interactive.json`, `scenario-playback-*.json`
 - Visual and provider coverage map: [Kitty verification](references/kitty-visual.md)
