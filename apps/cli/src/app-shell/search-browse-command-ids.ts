@@ -31,6 +31,7 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "anime-mode",
   "youtube-mode",
   "diagnostics",
+  "provider-status",
   "reset-provider-health",
   "clear-cache",
   "help",

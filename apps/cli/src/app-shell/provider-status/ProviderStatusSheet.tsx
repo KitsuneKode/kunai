@@ -339,33 +339,33 @@ export function ProviderStatusSheet({
 
       {/* Table Header */}
       <Box flexDirection="row" borderStyle="single" borderColor={palette.dim} paddingX={1}>
-        <Box width={12}>
+        <Box width={13} marginRight={1}>
           <Text bold color={palette.dim}>
             STATUS
           </Text>
         </Box>
-        <Box width={18}>
+        <Box width={20} marginRight={1}>
           <Text bold color={palette.dim}>
             PROVIDER
           </Text>
         </Box>
-        <Box width={8}>
+        <Box width={8} marginRight={1}>
           <Text bold color={palette.dim}>
             LANE
           </Text>
         </Box>
-        <Box width={9}>
+        <Box width={9} marginRight={1}>
           <Text bold color={palette.dim}>
             LATENCY
           </Text>
         </Box>
-        <Box width={14}>
+        <Box width={16} marginRight={1}>
           <Text bold color={palette.dim}>
             CAPABILITIES
           </Text>
         </Box>
         <Box flexGrow={1}>
-          <Text bold color={palette.dim}>
+          <Text bold color={palette.dim} wrap="truncate">
             EVIDENCE & REACHABILITY
           </Text>
         </Box>
@@ -421,7 +421,7 @@ export function ProviderStatusSheet({
                   backgroundColor={isSelected ? "#1a2333" : undefined}
                 >
                   {/* Cursor & Status */}
-                  <Box width={12}>
+                  <Box width={13} marginRight={1}>
                     <Text color={statusColor} bold={isSelected}>
                       {isSelected ? "> " : "  "}
                       {statusIcon}
@@ -429,10 +429,11 @@ export function ProviderStatusSheet({
                   </Box>
 
                   {/* Provider Name & active tag */}
-                  <Box width={18}>
+                  <Box width={20} marginRight={1}>
                     <Text
                       bold={entry.isActive || isSelected}
                       color={entry.disabled ? palette.dim : palette.text}
+                      wrap="truncate"
                     >
                       {entry.name}
                       {entry.isActive ? <Text color={palette.accent}> ★</Text> : null}
@@ -441,7 +442,7 @@ export function ProviderStatusSheet({
                   </Box>
 
                   {/* Lane */}
-                  <Box width={8}>
+                  <Box width={8} marginRight={1}>
                     <Text color={palette.muted}>
                       {entry.lane === "anime"
                         ? "Anime"
@@ -452,7 +453,7 @@ export function ProviderStatusSheet({
                   </Box>
 
                   {/* Latency */}
-                  <Box width={9}>
+                  <Box width={9} marginRight={1}>
                     <Text
                       color={
                         entry.latencyMs && entry.latencyMs > 2000 ? palette.warn : palette.muted
@@ -463,8 +464,10 @@ export function ProviderStatusSheet({
                   </Box>
 
                   {/* Capabilities */}
-                  <Box width={14}>
-                    <Text color={palette.dim}>{entry.capabilities.slice(0, 2).join(" · ")}</Text>
+                  <Box width={16} marginRight={1}>
+                    <Text color={palette.dim} wrap="truncate">
+                      {entry.capabilities.slice(0, 2).join(" · ")}
+                    </Text>
                   </Box>
 
                   {/* Evidence / Reachability note */}

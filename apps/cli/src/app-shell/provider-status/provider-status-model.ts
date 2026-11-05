@@ -76,7 +76,7 @@ export const PROVIDER_PROBE_ENDPOINTS = {
     headers: { "User-Agent": "Mozilla/5.0" },
   },
   animegg: {
-    url: "https://animegg.org",
+    url: "https://www.animegg.org",
     headers: { "User-Agent": "Mozilla/5.0" },
   },
   miruro: {
