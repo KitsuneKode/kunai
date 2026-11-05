@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-08"
+lastReviewed: "2026-11-05"
 ---
 
 # Mobile device lab
@@ -150,13 +150,17 @@ command -v termux-am || command -v am
 ```
 
 Compare the file hash with the Android artifact entry in
-`mobile-build-meta.json`. The schema-2 artifact-set digest is a separate
-canonical digest copied from the trusted metadata after every member is
-verified. Never execute from shared storage.
+`mobile-build-meta.json`. Candidate verification must pin the exact git commit
+SHA (e.g. `aed24a230`) and verify all artifact SHA-256 hashes against
+`apps/mobile/dist/mobile-build-meta.json`. Candidate artifacts are built from
+source and not fetched from public install URLs. Never execute from shared
+storage.
 
-The explicit VLC route supports only `termux-am` or `am`. `termux-open` and
-`termux-open-url` are chooser routes and are not fallbacks for this build. If
-neither supported command resolves, record a handoff failure.
+This lab exercises `apps/mobile`, whose Android host proof supports VLC only.
+The full Android CLI's chooser, mpv-android, header/subtitle gateway and offline
+library are separate. Qualify those using
+[the verification skill's phone matrix](../.agents/skills/verify-kunai/references/mobile-phone.md)
+and the public [Android installation guide](../docs/users/install-and-update.mdx).
 
 ## Android: run and qualify
 

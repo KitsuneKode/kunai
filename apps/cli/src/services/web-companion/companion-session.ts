@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 
-export const COMPANION_SESSION_COOKIE = "kunai_companion_session";
 const TOKEN_BYTES = 16;
 
 export function mintCompanionRunSecret(): string {
@@ -11,29 +10,22 @@ export function companionLocalUrl(port: number, secret: string): string {
   return `http://127.0.0.1:${port}/#token=${secret}`;
 }
 
-export function readSessionToken(request: Request): string | null {
-  const header = request.headers.get("cookie");
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const [name, ...rest] = part.trim().split("=");
-    if (name === COMPANION_SESSION_COOKIE) {
-      const value = rest.join("=").trim();
-      return /^[0-9a-f]{32}$/.test(value) ? value : null;
-    }
-  }
-  return null;
-}
-
-export function sessionCookieHeader(token: string): string {
-  return `${COMPANION_SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/`;
+/** Page credentials are explicit: loopback cookies have no port isolation. */
+export function readCompanionCredential(request: Request): string | null {
+  return /^Bearer ([0-9a-f]{32})$/.exec(request.headers.get("authorization") ?? "")?.[1] ?? null;
 }
 
 export function validateCompanionRequestHost(request: Request, expectedHost: string): boolean {
-  const headerHost = request.headers.get("host")?.trim().toLowerCase();
-  const urlHost = new URL(request.url).host.toLowerCase();
-  const host = (headerHost || urlHost).toLowerCase();
-  if (!host) return false;
-  return host === expectedHost.toLowerCase() && urlHost === expectedHost.toLowerCase();
+  const urlHost = new URL(request.url).host;
+  const raw = request.headers.get("host") ?? urlHost;
+  // Parse only an authority, never a URL, userinfo, alias or path. URL.host
+  // then normalizes the default HTTP port exactly as the browser does.
+  if (!/^127\.0\.0\.1(?::[0-9]{1,5})?$/.test(raw)) return false;
+  try {
+    return new URL(`http://${raw}`).host === expectedHost && urlHost === expectedHost;
+  } catch {
+    return false;
+  }
 }
 
 export function validateCompanionRequestOrigin(request: Request, expectedOrigin: string): boolean {

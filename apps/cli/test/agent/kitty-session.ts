@@ -21,6 +21,7 @@ export async function waitForKittyCondition<T>(
   read: () => Promise<T | null>,
   timeoutMs = 15_000,
   signal?: AbortSignal,
+  pollIntervalMs = 100,
 ): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   do {
@@ -28,7 +29,7 @@ export async function waitForKittyCondition<T>(
     const result = await read();
     signal?.throwIfAborted();
     if (result !== null) return result;
-    await new Promise<void>((done) => setTimeout(done, 100));
+    await new Promise<void>((done) => setTimeout(done, pollIntervalMs));
   } while (Date.now() < deadline);
   throw new Error("Kitty observation deadline exceeded");
 }
@@ -169,7 +170,7 @@ export async function startKittySession(options: {
         // Record only the IPC endpoint, never stream URLs, headers or command lines.
         writeFileSync(
           join(shim, "mpv"),
-          `#!${bun}\nconst args=process.argv.slice(2);\nconst endpoint=args.find(a=>a.startsWith('--input-ipc-server='))?.split('=').slice(1).join('=');\nconst child=Bun.spawn([${JSON.stringify(realMpv)},'--mute=yes',...args],{stdin:'ignore',stdout:'inherit',stderr:'inherit'});\nif(endpoint) await Bun.write(${JSON.stringify(socketRecord)},JSON.stringify({socket:endpoint,pid:child.pid}));\nfor(const event of ['SIGTERM','SIGINT','SIGHUP']) process.on(event,()=>child.kill());\nprocess.exit(await child.exited);\n`,
+          `#!${bun}\nconst args=process.argv.slice(2);\nconst endpoint=args.find(a=>a.startsWith('--input-ipc-server='))?.split('=').slice(1).join('=');\nconst child=Bun.spawn([${JSON.stringify(realMpv)},'--mute=yes',...(process.platform==='linux'?['--wayland-app-id=kunai-verification-player']:[]),...args],{stdin:'ignore',stdout:'inherit',stderr:'inherit'});\nif(endpoint) await Bun.write(${JSON.stringify(socketRecord)},JSON.stringify({socket:endpoint,pid:child.pid}));\nfor(const event of ['SIGTERM','SIGINT','SIGHUP']) process.on(event,()=>child.kill());\nprocess.exit(await child.exited);\n`,
           { mode: 0o755 },
         );
       }

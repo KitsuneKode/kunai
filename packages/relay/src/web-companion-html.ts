@@ -683,6 +683,7 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
       var searchController;
       var episodeController;
       var streamController;
+      var activeMediaId = null;
       var controlController;
       var releasePromise = Promise.resolve();
       var controls = [];
@@ -717,7 +718,7 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
       function failed(error) { return error && error.name === "AbortError"; }
       function connection(message) { el("connText").textContent = message; }
       async function responseData(response) {
-        if (response.status === 403) { connection(reconnect); throw new Error(reconnect); }
+        if (response.status === 403) { credential = null; try { sessionStorage.removeItem("kunai-companion-credential"); } catch (_) {} connection(reconnect); throw new Error(reconnect); }
         var data;
         try { data = await response.json(); } catch (_) { throw new Error("Invalid server response. Try again."); }
         if (!response.ok) throw new Error(text(data.error) || text(data.reason) || "Request failed. Try again.");
@@ -725,22 +726,28 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
       }
       // Fragments are not sent to the server. Remove the one-time secret before
       // any requests, media or external links can expose the current page URL.
-      var token = new URLSearchParams(window.location.hash.slice(1)).get("token");
+      var fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get("token");
       if (window.location.hash) history.replaceState(null, "", window.location.pathname + window.location.search);
+      var credential = fragmentToken;
+      if (credential === null) { try { credential = sessionStorage.getItem("kunai-companion-credential"); } catch (_) {} }
       var authentication = (async function() {
-        if (token !== null) {
-          if (!/^[a-f0-9]{32}$/i.test(token)) throw new Error(reconnect);
+        if (!/^[a-f0-9]{32}$/.test(credential || "")) throw new Error(reconnect);
+        if (fragmentToken !== null) {
           await responseData(await fetch("/api/session", {
-            method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: token })
+            method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: credential })
           }));
-          token = null;
         }
+        try { sessionStorage.setItem("kunai-companion-credential", credential); } catch (_) {}
+        fragmentToken = null;
       })();
-      authentication.catch(function(error) { token = null; connection(errorMessage(error)); });
+      authentication.catch(function(error) { credential = null; fragmentToken = null; connection(errorMessage(error)); });
       async function api(path, options) {
         await authentication;
+        if (!credential) throw new Error(reconnect);
         if (options && options.signal && options.signal.aborted) throw new DOMException("Canceled", "AbortError");
-        return responseData(await fetch(path, Object.assign({ credentials: "same-origin" }, options || {})));
+        var init = Object.assign({}, options || {}, { credentials: "omit" });
+        init.headers = Object.assign({}, init.headers || {}, { Authorization: "Bearer " + credential });
+        return responseData(await fetch(path, init));
       }
       function post(path, body, signal) {
         return api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: signal });
@@ -774,7 +781,9 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
         resetLaunchers();
         // Serialize revocation before another resolution; server also guards
         // canceled generations so late provider work cannot resurrect a URL.
-        releasePromise = releasePromise.then(function() { return post("/api/release", {}); }).catch(function(error) {
+        var releasedId = activeMediaId;
+        activeMediaId = null;
+        if (releasedId) releasePromise = releasePromise.then(function() { return post("/api/release", { mediaId: releasedId }); }).catch(function(error) {
           if (!failed(error)) connection(errorMessage(error));
         });
       }
@@ -785,9 +794,9 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
         activeItem = null;
         activeEpisode = null;
       }
-      sheet.addEventListener("close", cleanupSheet);
-      el("sheetClose").addEventListener("click", function() { sheet.close(); });
-      function closeSheet() { if (sheet.open) sheet.close(); else cleanupSheet(); }
+      sheet.addEventListener("close", function() { if (!sheet.open) cleanupSheet(); });
+      el("sheetClose").addEventListener("click", closeSheet);
+      function closeSheet() { cleanupSheet(); if (sheet.open) sheet.close(); }
       player.addEventListener("error", function() {
         if (!player.src) return;
         el("playerErrorOverlay").style.display = "flex";
@@ -896,7 +905,7 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
           var data = await api("/api/episodes?id=" + encodeURIComponent(item.id) + "&lane=" + lane + "&season=" + (season || 1), { signal: episodeController.signal });
           if (version !== sheetVersion || activeItem !== item) return;
           if (!Array.isArray(data.episodes)) throw new Error("Invalid episode response.");
-          var episodes = data.episodes.slice(0, 1000).filter(function(ep) { return ep && Number.isFinite(ep.number) && ep.number > 0 && (ep.season === undefined || Number.isInteger(ep.season) && ep.season > 0); });
+          var episodes = data.episodes.filter(function(ep) { return ep && Number.isFinite(ep.number) && ep.number > 0 && (ep.season === undefined || Number.isInteger(ep.season) && ep.season > 0); });
           episodesList.replaceChildren();
           var oldSeasons = el("seasonPicker");
           if (oldSeasons) oldSeasons.remove();
@@ -922,12 +931,14 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
           selectEpisode(item, episodes[0], lane);
         } catch (error) {
           if (version !== sheetVersion || failed(error)) return;
-          episodesList.replaceChildren(node("p", "", errorMessage(error)), button("Retry episodes", function() { loadEpisodes(item, lane, version); }));
+          episodesList.replaceChildren(node("p", "", errorMessage(error)), button("Retry episodes", function() { loadEpisodes(item, lane, version, season); }));
         }
       }
       async function selectEpisode(item, episode, lane) {
         cancelStream();
         activeEpisode = episode;
+        var mediaId = crypto.randomUUID().replaceAll("-", "");
+        activeMediaId = mediaId;
         var version = streamVersion;
         var titleVersion = sheetVersion;
         desktopButton.disabled = !controls.includes("play");
@@ -937,7 +948,7 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
         try {
           await releasePromise;
           if (version !== streamVersion) return;
-          var data = await api("/api/stream?titleId=" + encodeURIComponent(item.id) + "&episode=" + episode.number + "&season=" + (episode.season || 1) + "&lane=" + lane, { signal: signal });
+          var data = await api("/api/stream?titleId=" + encodeURIComponent(item.id) + "&episode=" + episode.number + "&season=" + (episode.season || 1) + "&lane=" + lane + "&mediaId=" + mediaId, { signal: signal });
           if (version !== streamVersion || titleVersion !== sheetVersion) return;
           var url = httpUrl(data.streamUrl, true);
           if (!data.ok || !url) { sheetStatus.textContent = text(data.reason) || "Browser stream unavailable. Use Play on this device."; return; }
@@ -952,7 +963,9 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
             player.src = url;
             player.replaceChildren();
             subtitles.forEach(function(subtitle, index) {
-              var track = node("track"); track.src = subtitle; track.kind = "subtitles"; track.label = "Subtitle " + (index + 1); player.appendChild(track);
+              var track = node("track"); track.src = subtitle; track.kind = "subtitles"; track.label = "Subtitle " + (index + 1);
+              track.addEventListener("error", function() { if (version === streamVersion) sheetStatus.textContent = "A subtitle could not load in this browser. Try another track or Play on this device."; });
+              player.appendChild(track);
             });
             try { await player.play(); } catch (_) {
               if (version === streamVersion) sheetStatus.textContent = "Browser playback did not start. Try the video controls, Open in VLC or Play on this device.";

@@ -40,6 +40,7 @@ export type PersistentMpvPropertyRouterDeps = {
   getCurrentOptions(): PersistentMpvPropertyOptions;
   /** Current authorized path; replacement generations must finish loading first. */
   getAudioIntentMediaPath?(): string | null;
+  onAudioIntent?(language: string): void;
   subtitleManager: PersistentSubtitleManager;
   notifyMpvActionRequest(action: MpvRequestedAction): void;
   finishResumeChoiceWait(choice: "resume" | "start"): void;
@@ -125,7 +126,12 @@ export class PersistentMpvPropertyRouter {
         isJsonString(value) ? value : undefined,
         this.deps.getAudioIntentMediaPath?.() ?? null,
       );
-      if (event) this.deps.getCurrentOptions().onPlaybackEvent?.(event);
+      if (event) {
+        if (event.audioLanguageIntent) {
+          this.deps.onAudioIntent?.(event.audioLanguageIntent);
+        }
+        this.deps.getCurrentOptions().onPlaybackEvent?.(event);
+      }
       return;
     }
 

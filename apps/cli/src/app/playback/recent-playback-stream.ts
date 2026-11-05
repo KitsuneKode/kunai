@@ -15,6 +15,7 @@ type RecentPlaybackStreamBase = {
   readonly episode: EpisodeInfo;
   readonly selectedProviderId: string;
   readonly resolvedProviderId: string;
+  readonly audioPreference?: string;
 };
 
 export type RecentPlaybackStreamRecord =
@@ -41,11 +42,32 @@ export function restoreRecentPlaybackStream(recent: RecentPlaybackStreamRecord):
   };
 }
 
-export function recentPlaybackStreamKey(titleId: string, episode: EpisodeInfo): string {
+export function recentPlaybackStreamKeyPrefix(titleId: string, episode: EpisodeInfo): string {
   const providerIdentity = episode.providerEpisodeIdentity
     ? `:${encodeProviderEpisodeIdentity(episode.providerEpisodeIdentity)}`
     : "";
   return `${titleId}:${episode.season}:${episode.episode}${providerIdentity}`;
+}
+
+export function recentPlaybackStreamKey(
+  titleId: string,
+  episode: EpisodeInfo,
+  audioPreference?: string,
+): string {
+  const prefix = recentPlaybackStreamKeyPrefix(titleId, episode);
+  const normalizedAudio = audioPreference?.trim().toLowerCase();
+  const audioPart = normalizedAudio ? `:audio=${normalizedAudio}` : "";
+  return `${prefix}${audioPart}`;
+}
+
+export function recentPlaybackStreamMatchesAudioPreference(
+  recent: RecentPlaybackStreamRecord | undefined,
+  currentAudioPreference?: string,
+): boolean {
+  if (!recent) return false;
+  const recentAudio = recent.audioPreference?.trim().toLowerCase() || undefined;
+  const currentAudio = currentAudioPreference?.trim().toLowerCase() || undefined;
+  return recentAudio === currentAudio;
 }
 
 export function recentPlaybackStreamMatchesProvider(

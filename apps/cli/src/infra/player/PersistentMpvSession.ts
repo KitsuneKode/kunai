@@ -196,6 +196,9 @@ export class PersistentMpvSession {
         (this.loadedFileGeneration && this.isGenerationCurrent(this.loadedFileGeneration)))
         ? this.playbackStream.url
         : null,
+    onAudioIntent: (language) => {
+      this.updateAudioPreference(language);
+    },
     subtitleManager: this.subtitleManager,
     notifyMpvActionRequest: (action) => this.currentCycleOptions().onMpvActionRequest?.(action),
     finishResumeChoiceWait: (choice) => {
@@ -562,6 +565,11 @@ export class PersistentMpvSession {
     this.currentOptions = { ...this.currentOptions, autoSkipEnabled: enabled };
     this.clearSkipPromptState();
     void this.handleSegmentSkipProgress(this.currentOptions);
+  }
+
+  updateAudioPreference(audioPreference: string): void {
+    if (!this.activeCycle) return;
+    this.currentOptions = { ...this.currentOptions, audioPreference };
   }
 
   waitForCurrentPlayback(): Promise<PlaybackResult> {

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-04"
+lastReviewed: "2026-11-05"
 ---
 
 # Kunai — Runtime Architecture
@@ -208,7 +208,8 @@ serving bytes from that descriptor. GET, HEAD and a single byte range are
 supported; missing, changed and invalid-range files return 404, 409 and 416.
 An external player therefore does not need access to Termux's private file
 paths. The chooser still refuses a sidecar; select VLC or mpv-android.
-Cancellation, replacement and shutdown revoke access. This does not make the
+Cancellation, replacement and shutdown revoke access and cancel in-flight
+local response readers. This does not make the
 external player's progress observable.
 
 DASH rewriting lives in `infra/player/dash-gateway-manifest.ts`. It parses
@@ -251,8 +252,13 @@ by default `127.0.0.1:4141`. This is a same-device browser surface, not a LAN
 server or another device's resolver.
 
 The printed URL contains a per-run 128-bit secret in its fragment. The embedded
-page removes that fragment and exchanges it for an HttpOnly, SameSite=Strict
-cookie. API calls check the exact bound Host and origin; foreign origins are
+page removes that fragment, validates it through `/api/session`, and retains
+it in tab-scoped sessionStorage (memory only if storage is unavailable). API
+calls send an explicit Bearer credential with cookies omitted: cookies have no
+loopback port isolation. Media uses separate revocable capability URLs, so
+native video and external players never need the API credential. API calls
+check the canonical numeric bound Host and origin (including HTTP port 80
+normalization); foreign origins are
 refused on reads as well as writes. JSON bodies are bounded to 16 KiB. The
 companion exposes no arbitrary URL proxy and reports provider health as unknown
 rather than manufacturing a successful probe.
@@ -268,6 +274,8 @@ Provider URLs and headers are not exposed as browser proxy parameters.
 
 Closing or replacing browser media cancels stale work and revokes that media
 token without erasing the search catalog or stopping an independent player.
+Release carries the media generation ID; a delayed release from a previous
+page or episode cannot revoke its successor.
 Play on this device resolves through the normal player service. Stop cancels a
 pending resolution as well as active managed playback; pause, seek and other
 unimplemented remote controls are not offered. Status distinguishes starting,
@@ -278,7 +286,10 @@ for that external app; playback controls remain in the external player.
 The embedded page offers native browser playback only when it receives a
 usable gateway URL. Browser codec and manifest support varies; yt-dlp-only
 streams need the on-device player. A gateway response is not a decoded-playback
-qualification. Full shell feature parity, LAN pairing and physical-phone
+qualification. Browser subtitle routes accept bounded UTF-8 WebVTT and convert
+ordinary SRT cues to WebVTT; ASS, malformed and oversized tracks are refused with
+a sanitized error and a visible track-load message. Native player handoffs keep
+the original subtitle format. Full shell feature parity, LAN pairing and physical-phone
 qualification remain outside the implemented companion slice.
 
 ### Provider resolve flow
@@ -312,6 +323,12 @@ still reaches the normal stall deadline; explicit pause keeps stall clocks off.
 Explicit embedded-audio cycling in the Kunai mpv bridge carries a separate
 intent payload. The IPC adapters validate its media identity and language;
 ordinary startup/default audio observations do not become preferences.
+The bridge compares path and active playlist-entry identity before cycling and
+after reading the selected track, including same-URL file replacement. Accepted
+intent also updates the persistent session's reconnect options, while next-episode
+prefetch and resolution read the current session profile. Recent episode streams
+are partitioned by effective audio preference; backward navigation cannot reuse
+a stream resolved for another language.
 `PlaybackPhase` updates `playbackTrackPreferences` only for this explicit intent,
 so subsequent episode resolution and autoplay can retain the chosen language.
 The choice is session-only, never a `config.json` write, and `RESET_CONTENT`

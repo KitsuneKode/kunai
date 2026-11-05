@@ -54,15 +54,21 @@ bun run --cwd apps/mobile test:integration
 ```
 
 `apps/mobile/dist/` now holds the artifacts plus `mobile-build-meta.json` with SHA-256 digests for each one.
+Unpublished candidate artifacts (such as 0.4.0 candidate builds or commit `aed24a230`) are built from source; do not claim or expect them to be hosted on public release URLs.
 
 **Android**: copy `dist/android/kunai-mobile-android.mjs` to the device (`adb push` to shared storage is fine for transfer; copy it into private Termux storage and `chmod 700` before running, and never execute from shared storage). Then in a foreground Termux session:
 
 ```sh
+sha256sum kunai-mobile-android.mjs   # verify against mobile-build-meta.json
 node kunai-mobile-android.mjs --help
 node kunai-mobile-android.mjs --host-proof \
   --probe-url "https://your.example/status" \
   --media-url "https://your.example/video.m3u8"
 ```
+
+This host proof supports VLC only. For full Android search, providers, offline
+files and VLC/mpv-android selection, use the separate
+[Android CLI candidate route](/docs/users/install-and-update).
 
 **iPhone**: copy all five `dist/ios/` files into a fresh a-Shell directory (Files, AirDrop, or `Put File`), `chmod 700` the four helper scripts, then:
 
@@ -75,14 +81,16 @@ node kunai-mobile-android.mjs --host-proof \
 
 Verify every transferred file's hash against `mobile-build-meta.json` before running. `--help` and `--version` must return to the prompt on their own; a command that prints and stays alive is a failure, not a slow start.
 
-## Boundaries worth knowing
+## Boundaries and operational checklist
 
-- Exit codes: `0` help, version, cancellation, or accepted handoff; `2` invalid arguments or URL; `1` state, HTTP, or handoff failure.
-- URLs must be absolute credential-free HTTPS; plaintext HTTP, embedded credentials, fragments, and control characters exit `2` before any network or VLC work.
-- VLC missing means the handoff is rejected with exit `1`, honestly labeled.
-- A second concurrent launch is refused. Android checks process ownership and can recover a verifiably stale owner; uncertain ownership requires explicit recovery. On iOS, close every session before removing only an empty `session.lock` directory with `rmdir`. Preserve uncertain Android ownership data and report the lock failure instead of deleting it.
-- Quote and backslash characters in URLs are data, never evaluated; they must reach the prompt safely. Try it.
-- If VLC opens but nothing plays, compare the same direct URL opened manually in VLC. Manual failure points to media, network, or player behavior; manual success points back to the handoff route.
+- **Exit codes**: `0` help, version, cancellation, or accepted handoff; `2` invalid arguments or URL; `1` state, HTTP, or handoff failure.
+- **URLs**: Must be absolute credential-free HTTPS; plaintext HTTP, embedded credentials, fragments, and control characters exit `2` before any network or VLC work.
+- **Player handoff**: Missing player command (`termux-am` or `am`) or missing player app is rejected with exit `1`, honestly labeled.
+- **Concurrency & lock safety**: A second concurrent launch is refused. Android checks process ownership and can recover a verifiably stale owner; uncertain ownership requires explicit recovery. On iOS, close every session before removing only an empty `session.lock` directory with `rmdir`.
+- **Handoff & return**: Switch to VLC and observe whether playback begins, then return to the terminal. The host proof has no offline library or subtitle gateway; those belong to the Android CLI route.
+- **Rollback and cleanup**:
+  - Android: Remove the transferred `kunai-mobile-android.mjs` file. Preserve captured evidence and private test state until review is complete.
+  - iOS: Remove testing directory in a-Shell.
 
 ## Reporting and qualification
 

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   mintCompanionRunSecret,
-  readSessionToken,
+  readCompanionCredential,
   validateCompanionRequestHost,
   validateCompanionRequestOrigin,
 } from "@/services/web-companion/companion-session";
@@ -53,19 +53,40 @@ test("companion origin checks refuse foreign origins on reads and writes", () =>
   ).toBe(false);
 });
 
-test("companion cookies ignore malformed values", () => {
+test("credentials are explicit and never recovered from a cross-port cookie", () => {
+  const request = (headers: Record<string, string>) =>
+    new Request("http://127.0.0.1:4141/", { headers });
   expect(
-    readSessionToken(
-      new Request("http://127.0.0.1:4141/", {
-        headers: { cookie: "kunai_companion_session=short" },
-      }),
-    ),
+    readCompanionCredential(request({ cookie: `kunai_companion_session=${"a".repeat(32)}` })),
   ).toBeNull();
-  expect(
-    readSessionToken(
-      new Request("http://127.0.0.1:4141/", {
-        headers: { cookie: `kunai_companion_session=${"a".repeat(32)}` },
-      }),
-    ),
-  ).toBe("a".repeat(32));
+  expect(readCompanionCredential(request({ authorization: "Bearer short" }))).toBeNull();
+  expect(readCompanionCredential(request({ authorization: `Bearer ${"a".repeat(32)}` }))).toBe(
+    "a".repeat(32),
+  );
+});
+
+test("default-port canonicalization admits only the numeric bound authority", () => {
+  for (const host of ["127.0.0.1", "127.0.0.1:80"]) {
+    expect(
+      validateCompanionRequestHost(
+        new Request("http://127.0.0.1/api/status", { headers: { host } }),
+        "127.0.0.1",
+      ),
+    ).toBe(true);
+  }
+  for (const host of [
+    "localhost",
+    "localhost:80",
+    "127.0.0.1:81",
+    "127.0.0.1/",
+    "user@127.0.0.1",
+    "127.0.0.1:",
+  ]) {
+    expect(
+      validateCompanionRequestHost(
+        new Request("http://127.0.0.1/api/status", { headers: { host } }),
+        "127.0.0.1",
+      ),
+    ).toBe(false);
+  }
 });

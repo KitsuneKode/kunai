@@ -150,6 +150,10 @@ async function witnessPlayback(session: Session, signal: AbortSignal) {
       },
       (observeSeconds + 30) * 1000,
       signal,
+      // Coarse/batched mpv clock updates are repeatedly identical at 10 Hz.
+      // One-second observation windows remain conservative across seeks while
+      // avoiding crediting only the final 100 ms of each clock update.
+      1_000,
     );
     console.log(`[witnessPlayback] Reached target time-pos: ${end.toFixed(2)}s`);
   } catch (error) {

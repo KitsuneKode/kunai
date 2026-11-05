@@ -1,6 +1,6 @@
 import { linkSync, unlinkSync, statSync, closeSync, rmSync } from "node:fs";
 import { mkdir, rm, stat, statfs } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
+import { dirname, extname, join, resolve as resolvePath } from "node:path";
 
 import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
 import { resolveContentKind } from "@/domain/media/content-kind";
@@ -2691,8 +2691,10 @@ export class DownloadService {
 
   private resolveOutputPath(input: EnqueueDownloadInput): string {
     const configuredBase = input.outputDirectory?.trim() || this.deps.config.downloadPath.trim();
-    const baseDir =
-      configuredBase.length > 0 ? configuredBase : this.resolveDefaultDownloadDirectory();
+    // Persist the enqueue-time location. A later process may have another cwd.
+    const baseDir = resolvePath(
+      configuredBase.length > 0 ? configuredBase : this.resolveDefaultDownloadDirectory(),
+    );
 
     // The same authority that decides what the user is shown decides what the
     // file is called, using the same kind enqueue is about to persist.

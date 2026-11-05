@@ -69,7 +69,7 @@ class Element {
   }
   close() {
     this.open = false;
-    this.dispatch("close");
+    // Native dialog queues close; tests deliver it explicitly.
   }
   focus() {}
   pause() {}
@@ -113,6 +113,7 @@ function harness(
   let timerId = 0;
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   const history: string[] = [];
+  const stored = new Map([["kunai-companion-credential", "a".repeat(32)]]);
   runInNewContext(html.split("<script>")[1]!.split("</script>")[0]!, {
     document: {
       getElementById: (id: string) => elements.get(id),
@@ -125,6 +126,13 @@ function harness(
       calls.push({ url, init });
       return Promise.resolve(handler(url, init));
     },
+    sessionStorage: {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => stored.set(key, value),
+      removeItem: (key: string) => stored.delete(key),
+    },
+    crypto,
+    DOMException,
     URL,
     URLSearchParams,
     AbortController,
@@ -167,9 +175,13 @@ test("bootstrap exchanges fragment once, removes it and waits before API request
   expect(ui.history).toEqual(["/"]);
   expect(ui.calls.map((call) => call.url)).toEqual(["/api/session"]);
   expect(JSON.parse(String(ui.calls[0]!.init!.body))).toEqual({ token: "a".repeat(32) });
+  expect(ui.calls[0]!.init!.credentials).toBe("omit");
   auth.resolve(reply({ ok: true }));
   await flush();
   expect(ui.calls.some((call) => call.url.startsWith("/api/search?"))).toBe(true);
+  const search = ui.calls.find((call) => call.url.startsWith("/api/search?"))!;
+  expect(search.init!.headers).toMatchObject({ Authorization: `Bearer ${"a".repeat(32)}` });
+  expect(search.init!.credentials).toBe("omit");
 });
 
 test("search safely renders provider text, ignores stale replies and remembers each lane query", async () => {
@@ -228,7 +240,12 @@ test("browser uses only returned loopback gateway; close clears media and revoke
         : url.startsWith("/api/episodes")
           ? { episodes: [{ number: 3, season: 2, title: "Actual episode" }] }
           : url.startsWith("/api/stream")
-            ? { ok: true, browserPlayable: true, streamUrl: gateway }
+            ? {
+                ok: true,
+                browserPlayable: true,
+                streamUrl: gateway,
+                subtitleUrls: [gateway.replace("/media", "/sub/0")],
+              }
             : status,
     ),
   );
@@ -240,6 +257,8 @@ test("browser uses only returned loopback gateway; close clears media and revoke
   ui.get("streamBrowserBtn").dispatch("click");
   await flush();
   expect(ui.get("player").src).toBe(gateway);
+  ui.get("player").children[0]!.dispatch("error");
+  expect(texts(ui.get("sheetStatus"))).toContain("subtitle could not load");
   expect(ui.get("openVlcBtn").href).toBe("vlc://" + gateway);
   ui.get("sheetClose").dispatch("click");
   await flush();
@@ -342,4 +361,74 @@ test("an unavailable thumbnail has an explicit fallback without losing the title
   expect(texts(poster)).toContain("🎬");
   expect(texts(card)).toContain(title.title);
   expect(card.tagName).toBe("button");
+});
+
+test("delayed close from the old sheet cannot erase a reopened title", async () => {
+  const ui = harness((url) =>
+    reply(
+      url.startsWith("/api/search")
+        ? { results: [title] }
+        : url.startsWith("/api/episodes")
+          ? { episodes: [{ number: 1 }] }
+          : url.startsWith("/api/stream")
+            ? { ok: true, browserPlayable: true, streamUrl: "http://127.0.0.1:4567/g/token/media" }
+            : status,
+    ),
+  );
+  ui.input("title");
+  await flush();
+  const card = ui.get("resultsGrid").children[0]!;
+  card.dispatch("click");
+  await flush();
+  const first = ui.calls.find((call) => call.url.startsWith("/api/stream"))!;
+  ui.get("sheetClose").dispatch("click");
+  card.dispatch("click");
+  await flush();
+  const second = ui.calls.filter((call) => call.url.startsWith("/api/stream")).at(-1)!;
+  expect(new URL(second.url, "http://127.0.0.1").searchParams.get("mediaId")).not.toBe(
+    new URL(first.url, "http://127.0.0.1").searchParams.get("mediaId"),
+  );
+  const count = ui.calls.filter((call) => call.url === "/api/release").length;
+  ui.get("sheetOverlay").dispatch("close");
+  await flush();
+  expect(ui.get("sheetOverlay").open).toBe(true);
+  expect(ui.get("streamBrowserBtn").disabled).toBe(false);
+  expect(ui.calls.filter((call) => call.url === "/api/release")).toHaveLength(count);
+  expect(
+    JSON.parse(String(ui.calls.find((call) => call.url === "/api/release")!.init!.body)).mediaId,
+  ).toBe(new URL(first.url, "http://127.0.0.1").searchParams.get("mediaId"));
+});
+
+test("episode 1001 is selectable and selected-season failures retry that season", async () => {
+  let failSeason = true;
+  const ui = harness((url) => {
+    if (url.startsWith("/api/episodes")) {
+      if (url.includes("season=2") && failSeason) return reply({ error: "retry me" }, 502);
+      return reply({
+        seasons: [1, 2],
+        episodes: Array.from({ length: 1001 }, (_, i) => ({ number: i + 1, season: 1 })),
+      });
+    }
+    return reply(url.startsWith("/api/search") ? { results: [title] } : status);
+  });
+  ui.input("title");
+  await flush();
+  ui.get("resultsGrid").children[0]!.dispatch("click");
+  await flush();
+  expect(ui.get("episodesList").children).toHaveLength(1001);
+  ui.get("episodesList").children[1000]!.dispatch("click");
+  await flush();
+  expect(ui.calls.filter((call) => call.url.startsWith("/api/stream")).at(-1)!.url).toContain(
+    "episode=1001&",
+  );
+  const picker = ui.get("episodesList").preceding[0]!;
+  picker.value = "2";
+  picker.dispatch("change");
+  await flush();
+  failSeason = false;
+  ui.get("episodesList").children.at(-1)!.dispatch("click");
+  await flush();
+  expect(ui.calls.filter((call) => call.url.startsWith("/api/episodes")).at(-1)!.url).toContain(
+    "season=2",
+  );
 });

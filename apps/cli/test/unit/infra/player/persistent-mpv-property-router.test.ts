@@ -209,6 +209,7 @@ describe("PersistentMpvPropertyRouter", () => {
 
   test("accepts explicit embedded audio language only for the loaded file", () => {
     const events: unknown[] = [];
+    const audioIntents: string[] = [];
     let accepting = true;
     const router = new PersistentMpvPropertyRouter({
       getActiveCycle: () => null,
@@ -219,6 +220,7 @@ describe("PersistentMpvPropertyRouter", () => {
         onPlaybackEvent: (event) => events.push(event),
       }),
       getAudioIntentMediaPath: () => (accepting ? "https://example.test/current.mkv" : null),
+      onAudioIntent: (lang) => audioIntents.push(lang),
       subtitleManager: new PersistentSubtitleManager(),
       notifyMpvActionRequest: () => {},
       finishResumeChoiceWait: () => {},
@@ -233,6 +235,7 @@ describe("PersistentMpvPropertyRouter", () => {
       fireNearEofIfNeeded: () => {},
       observeWatchdog: () => {},
     });
+
     const send = (payload: import("@kunai/types").JsonValue) =>
       router.handlePropertyUpdate({
         name: "user-data/kunai-audio-intent",
@@ -243,7 +246,9 @@ describe("PersistentMpvPropertyRouter", () => {
     expect(events).toEqual([
       { type: "track-changed", trackType: "audio", id: 2, audioLanguageIntent: "ja" },
     ]);
+    expect(audioIntents).toEqual(["ja"]);
     events.length = 0;
+    audioIntents.length = 0;
     const rejectedPayloads: import("@kunai/types").JsonValue[] = [
       { id: 2, language: "en", path: "https://example.test/retired.mkv" },
       { id: 0, language: "en", path: "https://example.test/current.mkv" },
